@@ -13,9 +13,9 @@ const ROOT = path.resolve(__dirname, '../..');
 
 const ROLLOUT_PAGES: Array<{ name: string; path: string; activeVar: string }> = [
     {
-        name: 'Tasks',
-        path: 'src/app/t/[tenantSlug]/(app)/tasks/TasksClient.tsx',
-        activeVar: 'activeTaskKpi',
+        name: 'Farm Tasks',
+        path: 'src/app/t/[tenantSlug]/(app)/farm-tasks/FarmTasksClient.tsx',
+        activeVar: 'activeKpiId',
     },
     {
         name: 'Evidence',

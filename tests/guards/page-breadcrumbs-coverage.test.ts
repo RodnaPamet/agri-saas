@@ -79,7 +79,6 @@ const EXEMPT_FILES = new Set<string>([
     // step indicators.
     "src/app/t/[tenantSlug]/(app)/risks/import/page.tsx",
     "src/app/t/[tenantSlug]/(app)/risks/ai/page.tsx",
-    "src/app/t/[tenantSlug]/(app)/tasks/new/page.tsx",
     "src/app/t/[tenantSlug]/(app)/policies/new/page.tsx",
     "src/app/t/[tenantSlug]/(app)/vendors/new/page.tsx",
     "src/app/t/[tenantSlug]/(app)/frameworks/[frameworkKey]/install/page.tsx",
@@ -108,7 +107,6 @@ const EXEMPT_FILES = new Set<string>([
     // sidebar nav is the canonical entry point.
     "src/app/t/[tenantSlug]/(app)/controls/dashboard/page.tsx",
     "src/app/t/[tenantSlug]/(app)/risks/dashboard/page.tsx",
-    "src/app/t/[tenantSlug]/(app)/tasks/dashboard/page.tsx",
     "src/app/t/[tenantSlug]/(app)/tests/dashboard/page.tsx",
     "src/app/t/[tenantSlug]/(app)/vendors/dashboard/page.tsx",
 

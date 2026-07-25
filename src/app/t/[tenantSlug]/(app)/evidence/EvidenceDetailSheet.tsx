@@ -128,7 +128,7 @@ export function EvidenceDetailSheet({
                 label: t('detailSheet.uploadedFromTask'),
                 value: (
                     <Link
-                        href={tenantHref(`/tasks/${evidence.task.id}`)}
+                        href={tenantHref(`/farm-tasks/${evidence.task.id}`)}
                         className={textLinkVariants({ tone: 'link' })}
                     >
                         {evidence.task.key ? `${evidence.task.key} — ` : ''}

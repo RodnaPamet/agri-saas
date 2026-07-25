@@ -35,15 +35,13 @@ const SHEET_SRC = read(
 // assertions don't care WHICH file carries an import / id / handler;
 // they just lock the migration shape. Concatenate every related file.
 const TASK_NEW_SRC =
-    read('src/app/t/[tenantSlug]/(app)/tasks/new/page.tsx') +
+    read('src/components/tasks/NewTaskModal.tsx') +
     '\n' +
-    read('src/app/t/[tenantSlug]/(app)/tasks/NewTaskModal.tsx') +
+    read('src/components/tasks/_form/NewTaskFields.tsx') +
     '\n' +
-    read('src/app/t/[tenantSlug]/(app)/tasks/_form/NewTaskFields.tsx') +
-    '\n' +
-    read('src/app/t/[tenantSlug]/(app)/tasks/_form/useNewTaskForm.ts');
+    read('src/components/tasks/_form/useNewTaskForm.ts');
 const TASK_DETAIL_SRC = read(
-    'src/app/t/[tenantSlug]/(app)/tasks/[taskId]/page.tsx',
+    'src/app/t/[tenantSlug]/(app)/farm-tasks/[taskId]/FarmTaskDetailClient.tsx',
 );
 
 // ─── 1. UserCombobox contract ───────────────────────────────────

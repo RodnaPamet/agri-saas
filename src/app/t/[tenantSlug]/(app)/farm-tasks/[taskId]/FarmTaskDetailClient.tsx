@@ -4,7 +4,6 @@ import { formatDate, formatDateTime } from '@/lib/format-date';
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
 import { textLinkVariants } from '@/components/ui/typography';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useTenantApiUrl, useTenantHref, useTenantContext } from '@/lib/tenant-context-provider';
@@ -23,6 +22,9 @@ import { FieldOperationPanel } from '@/components/ui/map/FieldOperationPanel';
 import { Combobox, ComboboxOption } from '@/components/ui/combobox';
 import { Modal } from '@/components/ui/modal';
 import { FormField } from '@/components/ui/form-field';
+import { Input } from '@/components/ui/input';
+import { DatePicker } from '@/components/ui/date-picker';
+import { toYMD } from '@/components/ui/date-picker/date-utils';
 import { CopyText } from '@/components/ui/copy-text';
 import { TERMINAL_WORK_ITEM_STATUSES } from '@/app-layer/domain/work-item-status';
 import { StatusBadge } from '@/components/ui/status-badge';
@@ -33,78 +35,102 @@ import {
     TASK_SEVERITY_VARIANT,
 } from '@/app-layer/domain/entity-status-mapping';
 import { cardVariants } from '@/components/ui/card';
-// Shared evidence sub-table — lives under the control detail route's
-// `_tabs/` (kept there so existing guard exemptions + a unit test keyed
-// on that path stay valid). Imported here via the `@/app` alias.
+// Shared evidence sub-table — lives under the control detail route's `_tabs/`
+// (kept there so existing guard exemptions + a unit test keyed on that path
+// stay valid). Imported here via the `@/app` alias.
 import { EvidenceSubTable } from '@/app/t/[tenantSlug]/(app)/controls/[controlId]/_tabs/EvidenceSubTable';
 import { EvidenceAddForm } from '@/components/EvidenceAddForm';
-import { EditTaskModal, type EditTaskForm } from './_modals/EditTaskModal';
-import { toYMD } from '@/components/ui/date-picker/date-utils';
-import { Pen2 } from '@/components/ui/icons/nucleo';
+import { Pen2, CircleCheck, Trash } from '@/components/ui/icons/nucleo';
 import { cn } from '@/lib/cn';
 import { useTranslations } from 'next-intl';
+import {
+    FARM_TASK_TYPES,
+    FARM_TASK_CATEGORIES,
+    getFarmTaskType,
+} from '@/lib/agriculture/farm-task-types';
 
-// Polish PR-1 — STATUS_BADGE / SEVERITY_BADGE moved to shared
-// domain mapping (TASK_STATUS_VARIANT / TASK_SEVERITY_VARIANT).
-// Enum display labels resolve at render time via the `taskEnums`
-// translator; only the load-bearing VALUES live here.
-const ENTITY_TYPE_OPTIONS = ['CONTROL', 'RISK', 'ASSET', 'EVIDENCE', 'FRAMEWORK_REQUIREMENT'];
+// Farm task detail — the SINGLE task-detail destination in the app (the
+// compliance /tasks/[taskId] page was retired). It reuses the whole shared
+// task API surface (GET/PATCH/DELETE /tasks/{id}, …/status, …/assign,
+// …/comments, …/evidence, …/links, …/activity) unchanged, so it renders any
+// Task — a FARM_TASK / FIELD_OPERATION, or a legacy compliance row reached
+// from a repointed deep-link. Farm-first: the header leads with the field-work
+// catalog type; severity / control / audit fields only surface when the row
+// actually carries them.
+const ENTITY_TYPE_OPTIONS = ['CONTROL', 'RISK', 'ASSET', 'EVIDENCE', 'FRAMEWORK_REQUIREMENT', 'LOCATION', 'PARCEL', 'EQUIPMENT'];
 const RELATION_OPTIONS = ['RELATES_TO', 'CAUSED_BY', 'MITIGATED_BY', 'EVIDENCE_FOR'];
-// RESOLVED retired from the picker — it was redundant with CLOSED.
-// A legacy RESOLVED task still shows the right badge; it just isn't
-// offered as a choice (closed via the CLOSED option). CLOSED +
-// CANCELED prompt for a resolution note.
 const SELECTABLE_STATUSES = ['OPEN', 'TRIAGED', 'IN_PROGRESS', 'BLOCKED', 'CLOSED', 'CANCELED'];
+// Statuses a task can legally move to RESOLVED from (BLOCKED must be unblocked
+// first — see WORK_ITEM_TRANSITIONS). "Mark done" is only offered from these.
+const DONE_FROM_STATUSES = ['OPEN', 'TRIAGED', 'IN_PROGRESS', 'PENDING_REVIEW'];
+const PRIORITY_VALUES = ['P0', 'P1', 'P2', 'P3'];
+
+// Farm-task type picker options, grouped by category (catalog order).
+const TYPE_BY_VALUE = new Map(FARM_TASK_TYPES.map((ty) => [ty.key, ty]));
+const FARM_TYPE_OPTIONS: ComboboxOption[] = FARM_TASK_CATEGORIES.flatMap((cat) =>
+    FARM_TASK_TYPES.filter((ty) => ty.category === cat).map((ty) => ({
+        value: ty.key,
+        label: ty.name,
+    })),
+);
 
 type Tab = 'overview' | 'evidence' | 'links' | 'comments' | 'activity';
 
+interface EditFarmTaskForm {
+    title: string;
+    description: string;
+    priority: string;
+    dueAt: string;
+    farmTaskType: string;
+}
 
-export default function TaskDetailPage() {
-    const params = useParams();
+export function FarmTaskDetailClient({
+    tenantSlug,
+    taskId,
+    currentUserId,
+}: {
+    tenantSlug: string;
+    taskId: string;
+    currentUserId: string | null;
+}) {
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
-    const { permissions, role, tenantSlug } = useTenantContext();
-    const taskId = params?.taskId as string;
+    const { permissions, role } = useTenantContext();
     const triggerUndoToast = useToastWithUndo();
     const t = useTranslations('tasks.detail');
+    const tf = useTranslations('farmTasks');
     const te = useTranslations('taskEnums');
-    // Enum-value → localized label helpers (keyed by value). The `pretty`
-    // variants fall back to a de-underscored raw value for dynamic
-    // audit-log actions / relations not present in the catalog.
     const statusLabel = (s: string) => (te.has(`status.${s}`) ? te(`status.${s}`) : s);
     const typeLabel = (ty: string) => (te.has(`type.${ty}`) ? te(`type.${ty}`) : ty);
     const severityLabel = (s: string) => (te.has(`severity.${s}`) ? te(`severity.${s}`) : s);
     const priorityLabel = (p: string) => (te.has(`priority.${p}`) ? te(`priority.${p}`) : p);
+    const categoryLabel = (c: string) => (te.has(`category.${c}`) ? te(`category.${c}`) : c);
     const actionLabel = (a: string) => (te.has(`action.${a}`) ? te(`action.${a}`) : a.replace(/_/g, ' '));
     const relationLabel = (r: string) => (te.has(`relation.${r}`) ? te(`relation.${r}`) : r.replace(/_/g, ' '));
-    const entityTypeLabel = (et: string) => (te.has(`entityType.${et}`) ? te(`entityType.${et}`) : et);
+    const entityTypeLabel = (et: string) => (te.has(`entityType.${et}`) ? te(`entityType.${et}`) : et.replace(/_/g, ' '));
     const ENTITY_TYPE_CB_OPTIONS: ComboboxOption[] = ENTITY_TYPE_OPTIONS.map((et) => ({ value: et, label: entityTypeLabel(et) }));
     const RELATION_CB_OPTIONS: ComboboxOption[] = RELATION_OPTIONS.map((r) => ({ value: r, label: relationLabel(r) }));
     const TASK_STATUS_CB_OPTIONS: ComboboxOption[] = SELECTABLE_STATUSES.map((val) => ({ value: val, label: statusLabel(val) }));
+    const PRIORITY_CB_OPTIONS: ComboboxOption[] = PRIORITY_VALUES.map((p) => ({ value: p, label: priorityLabel(p) }));
 
     const [tab, setTab] = useState<Tab>('overview');
 
-    // Mutation in-flight flags (UI-disable only — not data).
+    // Status-change flags + terminal resolution prompt.
     const [changingStatus, setChangingStatus] = useState(false);
-    // Terminal-status close prompt: the status awaiting a resolution
-    // note (null = no prompt open) + the note draft + last error.
     const [pendingTerminalStatus, setPendingTerminalStatus] = useState<string | null>(null);
     const [resolutionDraft, setResolutionDraft] = useState('');
     const [statusError, setStatusError] = useState('');
     const [assigning, setAssigning] = useState(false);
-    // Assignee-picker draft. `undefined` = untouched (mirror the
-    // task's persisted assignee); `string | null` = an explicit pick.
     const [assigneeDraft, setAssigneeDraft] = useState<string | null | undefined>(undefined);
 
     // Link form state.
     const [showLinkForm, setShowLinkForm] = useState(false);
-    const [linkEntityType, setLinkEntityType] = useState('CONTROL');
+    const [linkEntityType, setLinkEntityType] = useState('LOCATION');
     const [linkEntityId, setLinkEntityId] = useState('');
     const [linkRelation, setLinkRelation] = useState('RELATES_TO');
     const [savingLink, setSavingLink] = useState(false);
 
-    // Evidence form state — mirrors the control "+ Evidence" form: a
-    // single form that either uploads a file OR links a URL.
+    // Evidence form state.
     const [showEvidenceForm, setShowEvidenceForm] = useState(false);
     const [evidenceUrl, setEvidenceUrl] = useState('');
     const [evidenceNote, setEvidenceNote] = useState('');
@@ -118,67 +144,52 @@ export default function TaskDetailPage() {
     const [commentBody, setCommentBody] = useState('');
     const [savingComment, setSavingComment] = useState(false);
 
-    // Edit-task modal state — mirrors the control detail edit flow.
+    // Edit-task modal state (farm-flavoured: title / notes / priority / due /
+    // field-work type). Severity + compliance type are not edited here.
     const [showEditModal, setShowEditModal] = useState(false);
-    const [editForm, setEditForm] = useState<EditTaskForm>({
-        title: '', description: '', type: 'TASK', severity: 'MEDIUM', priority: 'P2', dueAt: '',
+    const [editForm, setEditForm] = useState<EditFarmTaskForm>({
+        title: '', description: '', priority: 'P2', dueAt: '', farmTaskType: '',
     });
     const [savingEdit, setSavingEdit] = useState(false);
     const [editError, setEditError] = useState('');
 
+    // Delete flow uses the Epic-67 undo-toast convention.
+    const [deleted, setDeleted] = useState(false);
+
     const canComment = role !== 'READER';
 
-    // #102 item 5 — the page read the task and each tab via raw
-    // useState + useEffect + fetch, and every mutation re-fetched the
-    // whole task. Migrated to `useTenantSWR` (Epic 69 — the pattern
-    // this file's own TODO asked for, and the one the sibling
-    // control-detail page uses). Tab data fetches lazily through a
-    // null SWR key while its tab is inactive; mutations write the
-    // cache through `mutate` — optimistic for instant feedback, then
-    // revalidate to reconcile server-derived fields.
     const taskQuery = useTenantSWR<any>(taskId ? `/tasks/${taskId}` : null);
     const task = taskQuery.data ?? null;
     const loading = taskQuery.isLoading;
     const error = taskQuery.error
-        ? (taskQuery.error instanceof Error
-            ? taskQuery.error.message
-            : 'Task not found')
+        ? (taskQuery.error instanceof Error ? taskQuery.error.message : t('notFound'))
         : '';
 
-    const linksQuery = useTenantSWR<any[]>(
-        taskId && tab === 'links' ? `/tasks/${taskId}/links` : null,
-    );
+    const linksQuery = useTenantSWR<any[]>(taskId && tab === 'links' ? `/tasks/${taskId}/links` : null);
     const links = linksQuery.data ?? [];
     const linksLoading = linksQuery.isLoading;
 
-    // Task Evidence tab — same `{ links, evidence }` payload the control
-    // evidence tab fetches, so the shared <EvidenceSubTable> renders it.
     const evidenceQuery = useTenantSWR<{ links: any[]; evidence: any[] }>(
         taskId && tab === 'evidence' ? `/tasks/${taskId}/evidence` : null,
     );
 
-    const commentsQuery = useTenantSWR<any[]>(
-        taskId && tab === 'comments' ? `/tasks/${taskId}/comments` : null,
-    );
+    const commentsQuery = useTenantSWR<any[]>(taskId && tab === 'comments' ? `/tasks/${taskId}/comments` : null);
     const comments = commentsQuery.data ?? [];
     const commentsLoading = commentsQuery.isLoading;
 
-    const activityQuery = useTenantSWR<any[]>(
-        taskId && tab === 'activity' ? `/tasks/${taskId}/activity` : null,
-    );
+    const activityQuery = useTenantSWR<any[]>(taskId && tab === 'activity' ? `/tasks/${taskId}/activity` : null);
     const activity = activityQuery.data ?? [];
     const activityLoading = activityQuery.isLoading;
 
-    // Effective assignee for the picker — the draft if the user has
-    // touched it, otherwise the task's persisted assignee.
     const assigneeValue: string | null =
-        assigneeDraft !== undefined
-            ? assigneeDraft
-            : (task?.assigneeUserId ?? null);
+        assigneeDraft !== undefined ? assigneeDraft : (task?.assigneeUserId ?? null);
 
-    // A terminal status (CLOSED / CANCELED) requires a resolution note
-    // server-side (S8 audit control). Picking one opens a small prompt
-    // for the note; non-terminal changes commit immediately.
+    // Assignee self-serve: an operator assigned to the task can complete it
+    // even without general write (mirrors setTaskStatus:320). Managers
+    // (OWNER/ADMIN/EDITOR → canWrite) can complete any task.
+    const isAssignee = !!currentUserId && task?.assigneeUserId === currentUserId;
+    const canComplete = !!permissions.canWrite || isAssignee;
+
     const requestStatusChange = (status: string) => {
         setStatusError('');
         if ((TERMINAL_WORK_ITEM_STATUSES as readonly string[]).includes(status)) {
@@ -189,7 +200,7 @@ export default function TaskDetailPage() {
         void commitStatus(status, null);
     };
 
-    // Review gate (#6) — approve/request-changes a PENDING_REVIEW field op.
+    // Review gate (#6) — approve / request-changes a PENDING_REVIEW field op.
     const [reviewComment, setReviewComment] = useState('');
     const [reviewing, setReviewing] = useState(false);
     const submitReview = async (action: 'APPROVE' | 'REQUEST_CHANGES') => {
@@ -217,38 +228,20 @@ export default function TaskDetailPage() {
         setChangingStatus(true);
         setStatusError('');
         try {
-            // Optimistic — the new status shows instantly, no spinner.
-            await taskQuery.mutate(
-                (cur: any) => (cur ? { ...cur, status } : cur),
-                { revalidate: false },
-            );
+            await taskQuery.mutate((cur: any) => (cur ? { ...cur, status } : cur), { revalidate: false });
             const res = await fetch(apiUrl(`/tasks/${taskId}/status`), {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(
-                    resolution ? { status, resolution } : { status },
-                ),
+                body: JSON.stringify(resolution ? { status, resolution } : { status }),
             });
             if (!res.ok) {
-                // Surface the reason instead of silently reverting — the
-                // old flow swallowed the 4xx and the optimistic patch
-                // snapped back, so "nothing happened" on close.
                 const data = await res.json().catch(() => ({}));
-                throw new Error(
-                    (typeof data?.error === 'string' && data.error) ||
-                        data?.message ||
-                        'Failed to change status',
-                );
+                throw new Error((typeof data?.error === 'string' && data.error) || data?.message || 'Failed to change status');
             }
             setPendingTerminalStatus(null);
         } catch (e) {
-            setStatusError(
-                e instanceof Error ? e.message : 'Failed to change status',
-            );
+            setStatusError(e instanceof Error ? e.message : 'Failed to change status');
         } finally {
             setChangingStatus(false);
-            // Reconcile — pick up server-derived fields (completedAt,
-            // resolution) the optimistic patch can't know (and revert
-            // the optimistic status if the write failed).
             await taskQuery.mutate();
         }
     };
@@ -257,10 +250,7 @@ export default function TaskDetailPage() {
         setAssigning(true);
         const assigneeUserId = assigneeValue || null;
         try {
-            await taskQuery.mutate(
-                (cur: any) => (cur ? { ...cur, assigneeUserId } : cur),
-                { revalidate: false },
-            );
+            await taskQuery.mutate((cur: any) => (cur ? { ...cur, assigneeUserId } : cur), { revalidate: false });
             await fetch(apiUrl(`/tasks/${taskId}/assign`), {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ assigneeUserId }),
@@ -284,37 +274,23 @@ export default function TaskDetailPage() {
             setShowLinkForm(false);
         } finally {
             setSavingLink(false);
-            // Refresh the links list + the task (its _count.links
-            // drives the Links tab badge).
             await Promise.all([linksQuery.mutate(), taskQuery.mutate()]);
         }
     };
 
-    // Epic 67 — delayed-commit link removal. Optimistic SWR cache
-    // filter so the row disappears immediately; undo restores it,
-    // commit-failure rolls back.
+    // Epic 67 — delayed-commit link removal.
     const removeLink = (linkId: string) => {
         const previous = linksQuery.data ?? [];
-        void linksQuery.mutate(
-            previous.filter((l: any) => l.id !== linkId),
-            { revalidate: false },
-        );
+        void linksQuery.mutate(previous.filter((l: any) => l.id !== linkId), { revalidate: false });
         triggerUndoToast({
             message: t('linkRemoved'),
             undoMessage: t('undo'),
             action: async () => {
-                const res = await fetch(
-                    apiUrl(`/tasks/${taskId}/links/${linkId}`),
-                    { method: 'DELETE' },
-                );
+                const res = await fetch(apiUrl(`/tasks/${taskId}/links/${linkId}`), { method: 'DELETE' });
                 if (!res.ok) throw new Error('Remove link failed');
             },
-            undoAction: () => {
-                void linksQuery.mutate(previous, { revalidate: false });
-            },
-            onError: () => {
-                void linksQuery.mutate(previous, { revalidate: false });
-            },
+            undoAction: () => { void linksQuery.mutate(previous, { revalidate: false }); },
+            onError: () => { void linksQuery.mutate(previous, { revalidate: false }); },
         });
     };
 
@@ -328,15 +304,9 @@ export default function TaskDetailPage() {
         setShowEvidenceForm(false);
     };
 
-    // Unified "+ Evidence" submit — mirrors the control evidence form. A
-    // chosen file uploads via /evidence/uploads (FileRecord + Evidence
-    // tagged with this taskId); otherwise a non-empty URL links a LINK
-    // evidence row to the task. Both land in this task's Evidence tab
-    // AND the Evidence Library.
     const addEvidence = async (e: React.FormEvent) => {
         e.preventDefault();
         setEvidenceError('');
-
         if (fileToUpload) {
             setSavingEvidence(true);
             try {
@@ -344,10 +314,7 @@ export default function TaskDetailPage() {
                 formData.append('file', fileToUpload);
                 if (fileUploadTitle) formData.append('title', fileUploadTitle);
                 formData.append('taskId', taskId);
-                const res = await fetch(apiUrl('/evidence/uploads'), {
-                    method: 'POST',
-                    body: formData,
-                });
+                const res = await fetch(apiUrl('/evidence/uploads'), { method: 'POST', body: formData });
                 if (!res.ok) {
                     const err = await res.json().catch(() => ({ error: 'Upload failed' }));
                     throw new Error(err.error || err.message || 'Upload failed');
@@ -361,7 +328,6 @@ export default function TaskDetailPage() {
             }
             return;
         }
-
         if (!evidenceUrl.trim()) {
             setEvidenceError(t('chooseFileError'));
             return;
@@ -369,8 +335,7 @@ export default function TaskDetailPage() {
         setSavingEvidence(true);
         try {
             const res = await fetch(apiUrl(`/tasks/${taskId}/evidence`), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ url: evidenceUrl.trim(), note: evidenceNote || undefined }),
             });
             if (!res.ok) {
@@ -387,33 +352,22 @@ export default function TaskDetailPage() {
     };
 
     // Epic 67 — delayed-commit evidence removal (detach Evidence.taskId).
-    // Optimistic SWR filter so the row disappears immediately; undo
-    // restores it, commit-failure rolls back.
     const removeEvidence = (evidenceId: string) => {
         const previous = evidenceQuery.data;
         void evidenceQuery.mutate(
-            previous
-                ? { ...previous, evidence: (previous.evidence ?? []).filter((ev: any) => ev.id !== evidenceId) }
-                : previous,
+            previous ? { ...previous, evidence: (previous.evidence ?? []).filter((ev: any) => ev.id !== evidenceId) } : previous,
             { revalidate: false },
         );
         triggerUndoToast({
             message: t('evidenceRemoved'),
             undoMessage: t('undo'),
             action: async () => {
-                const res = await fetch(
-                    apiUrl(`/tasks/${taskId}/evidence/${evidenceId}`),
-                    { method: 'DELETE' },
-                );
+                const res = await fetch(apiUrl(`/tasks/${taskId}/evidence/${evidenceId}`), { method: 'DELETE' });
                 if (!res.ok) throw new Error('Remove evidence failed');
                 await Promise.all([evidenceQuery.mutate(), taskQuery.mutate()]);
             },
-            undoAction: () => {
-                void evidenceQuery.mutate(previous, { revalidate: false });
-            },
-            onError: () => {
-                void evidenceQuery.mutate(previous, { revalidate: false });
-            },
+            undoAction: () => { void evidenceQuery.mutate(previous, { revalidate: false }); },
+            onError: () => { void evidenceQuery.mutate(previous, { revalidate: false }); },
         });
     };
 
@@ -423,10 +377,9 @@ export default function TaskDetailPage() {
         setEditForm({
             title: task.title ?? '',
             description: task.description ?? '',
-            type: task.type ?? 'TASK',
-            severity: task.severity ?? 'MEDIUM',
             priority: task.priority ?? 'P2',
             dueAt: task.dueAt ? toYMD(new Date(task.dueAt)) ?? '' : '',
+            farmTaskType: task.metadataJson?.farmTaskType ?? '',
         });
         setShowEditModal(true);
     };
@@ -436,27 +389,23 @@ export default function TaskDetailPage() {
         setSavingEdit(true);
         setEditError('');
         try {
+            const typeDef = editForm.farmTaskType ? getFarmTaskType(editForm.farmTaskType) : null;
+            const body: Record<string, unknown> = {
+                title: editForm.title,
+                description: editForm.description || null,
+                priority: editForm.priority,
+                dueAt: editForm.dueAt ? new Date(editForm.dueAt).toISOString() : null,
+            };
+            // Only farm tasks carry a catalog type in metadataJson; preserve it
+            // (and its category) on save. Compliance rows leave metadata alone.
+            if (typeDef) body.metadataJson = { farmTaskType: typeDef.key, farmTaskCategory: typeDef.category };
             const res = await fetch(apiUrl(`/tasks/${taskId}`), {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    title: editForm.title,
-                    description: editForm.description || null,
-                    type: editForm.type,
-                    severity: editForm.severity,
-                    priority: editForm.priority,
-                    dueAt: editForm.dueAt
-                        ? new Date(editForm.dueAt).toISOString()
-                        : null,
-                }),
+                method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
             });
             if (!res.ok) {
                 const data = await res.json().catch(() => ({}));
-                throw new Error(
-                    (typeof data?.error === 'string' && data.error) ||
-                        data?.message ||
-                        'Failed to save task',
-                );
+                throw new Error((typeof data?.error === 'string' && data.error) || data?.message || 'Failed to save task');
             }
             setShowEditModal(false);
             await taskQuery.mutate();
@@ -465,6 +414,23 @@ export default function TaskDetailPage() {
         } finally {
             setSavingEdit(false);
         }
+    };
+
+    // Epic 67 — delayed-commit delete. The row is optimistically hidden (the
+    // page shows an empty state); Undo restores it, commit navigates away.
+    const handleDelete = () => {
+        setDeleted(true);
+        triggerUndoToast({
+            message: tf('detail.deleted'),
+            undoMessage: t('undo'),
+            action: async () => {
+                const res = await fetch(apiUrl(`/tasks/${taskId}`), { method: 'DELETE' });
+                if (!res.ok) throw new Error('Delete failed');
+            },
+            undoAction: () => setDeleted(false),
+            onError: () => setDeleted(false),
+            onCommit: () => { window.location.href = tenantHref('/farm-tasks'); },
+        });
     };
 
     const addComment = async (e: React.FormEvent) => {
@@ -485,29 +451,17 @@ export default function TaskDetailPage() {
 
     const breadcrumbs = [
         { label: t('dashboard'), href: tenantHref('/dashboard') },
-        { label: t('breadcrumbTasks'), href: tenantHref('/tasks') },
+        { label: tf('breadcrumb'), href: tenantHref('/farm-tasks') },
         { label: task?.title ?? t('taskFallback') },
     ];
     if (loading) {
-        return (
-            <EntityDetailLayout loading title="" breadcrumbs={breadcrumbs}>
-                <></>
-            </EntityDetailLayout>
-        );
+        return <EntityDetailLayout loading title="" breadcrumbs={breadcrumbs}><></></EntityDetailLayout>;
     }
     if (error) {
-        return (
-            <EntityDetailLayout error={error} title="" breadcrumbs={breadcrumbs}>
-                <></>
-            </EntityDetailLayout>
-        );
+        return <EntityDetailLayout error={error} title="" breadcrumbs={breadcrumbs}><></></EntityDetailLayout>;
     }
-    if (!task) {
-        return (
-            <EntityDetailLayout empty={{ message: t('notFound') }} title="" breadcrumbs={breadcrumbs}>
-                <></>
-            </EntityDetailLayout>
-        );
+    if (!task || deleted) {
+        return <EntityDetailLayout empty={{ message: t('notFound') }} title="" breadcrumbs={breadcrumbs}><></></EntityDetailLayout>;
     }
 
     const tabs: { key: Tab; label: string; count?: number }[] = [
@@ -520,82 +474,85 @@ export default function TaskDetailPage() {
 
     const isOverdue = task.dueAt && new Date(task.dueAt) < new Date() && !(TERMINAL_WORK_ITEM_STATUSES as readonly string[]).includes(task.status);
     const metadata = task.metadataJson || {};
+    const isFarmTask = task.type === 'FARM_TASK' || task.type === 'FIELD_OPERATION';
+    const farmTypeDef = metadata.farmTaskType ? getFarmTaskType(metadata.farmTaskType) : undefined;
+    const farmTypeName = farmTypeDef?.name ?? (metadata.farmTaskType as string | undefined);
+    const canMarkDone = canComplete && DONE_FROM_STATUSES.includes(task.status);
 
     return (
         <EntityDetailLayout
             id="task-detail-page"
             breadcrumbs={breadcrumbs}
-
             title={<span id="task-title">{task.title}</span>}
             meta={
                 <MetaStrip
                     items={[
                         ...(task.key
-                            ? [
-                                  {
-                                      label: t('metaKey'),
-                                      value: (
-                                          <CopyText
-                                              value={task.key}
-                                              label={t('copyTaskKey', { key: task.key })}
-                                              successMessage={t('taskKeyCopied')}
-                                              className="text-xs text-content-subtle"
-                                          >
-                                              {task.key}
-                                          </CopyText>
-                                      ),
-                                  } as const,
-                              ]
+                            ? [{
+                                  label: t('metaKey'),
+                                  value: (
+                                      <CopyText
+                                          value={task.key}
+                                          label={t('copyTaskKey', { key: task.key })}
+                                          successMessage={t('taskKeyCopied')}
+                                          className="text-xs text-content-subtle"
+                                      >
+                                          {task.key}
+                                      </CopyText>
+                                  ),
+                              } as const]
                             : []),
                         {
                             kind: 'status' as const,
                             id: 'task-status',
                             label: t('metaStatus'),
-                            value:
-                                statusLabel(task.status),
-                            variant:
-                                TASK_STATUS_VARIANT[task.status] ??
-                                'neutral',
+                            value: statusLabel(task.status),
+                            variant: TASK_STATUS_VARIANT[task.status] ?? 'neutral',
                         },
-                        {
-                            kind: 'status' as const,
-                            id: 'task-severity',
-                            label: t('metaSeverity'),
-                            value: severityLabel(task.severity),
-                            variant:
-                                TASK_SEVERITY_VARIANT[task.severity] ??
-                                'neutral',
-                        },
-                        {
-                            label: t('metaType'),
-                            value: typeLabel(task.type),
-                        },
+                        // Farm rows lead with the field-work type; compliance
+                        // rows keep the severity pill they were triaged with.
+                        ...(isFarmTask && farmTypeName
+                            ? [{ label: tf('detail.fieldWorkType'), value: farmTypeName } as const]
+                            : [{
+                                  kind: 'status' as const,
+                                  id: 'task-severity',
+                                  label: t('metaSeverity'),
+                                  value: severityLabel(task.severity),
+                                  variant: TASK_SEVERITY_VARIANT[task.severity] ?? 'neutral',
+                              } as const]),
+                        { label: t('metaType'), value: typeLabel(task.type) },
                         ...(isOverdue
-                            ? [
-                                  {
-                                      kind: 'status' as const,
-                                      label: t('metaSla'),
-                                      value: t('overdue'),
-                                      variant: 'error' as const,
-                                  },
-                              ]
+                            ? [{ kind: 'status' as const, label: t('metaSla'), value: t('overdue'), variant: 'error' as const }]
                             : []),
                     ]}
                 />
             }
             actions={
-                permissions.canWrite && (
-                    <Combobox
-                        hideSearch
-                        id="task-status-select"
-                        selected={TASK_STATUS_CB_OPTIONS.find(o => o.value === task.status) ?? null}
-                        setSelected={(opt) => { if (opt) requestStatusChange(opt.value); }}
-                        options={TASK_STATUS_CB_OPTIONS}
-                        disabled={changingStatus}
-                        placeholder={t('statusPlaceholder')}
-                        buttonProps={{ className: 'text-sm' }}
-                    />
-                )
+                <div className="flex items-center gap-compact">
+                    {canMarkDone && (
+                        <Button
+                            variant="primary"
+                            icon={<CircleCheck className="size-4" />}
+                            onClick={() => requestStatusChange('RESOLVED')}
+                            disabled={changingStatus}
+                            id="mark-done-btn"
+                        >
+                            {tf('detail.markDone')}
+                        </Button>
+                    )}
+                    {permissions.canWrite && (
+                        <Combobox
+                            hideSearch
+                            id="task-status-select"
+                            selected={TASK_STATUS_CB_OPTIONS.find(o => o.value === task.status) ?? null}
+                            setSelected={(opt) => { if (opt) requestStatusChange(opt.value); }}
+                            options={TASK_STATUS_CB_OPTIONS}
+                            disabled={changingStatus}
+                            placeholder={t('statusPlaceholder')}
+                            buttonProps={{ className: 'text-sm' }}
+                        />
+                    )}
+                </div>
             }
             tabs={tabs}
             activeTab={tab}
@@ -604,7 +561,7 @@ export default function TaskDetailPage() {
             {/* Assignment controls */}
             {permissions.canWrite && (
                 <div className={cardVariants({ density: 'compact' })}>
-                    <div className="flex items-center gap-compact">
+                    <div className="flex items-center gap-compact flex-wrap">
                         <span className="text-sm text-content-muted">{t('assigneeLabel')}</span>
                         <span className="text-sm text-content-emphasis font-medium" id="task-assignee">
                             {task.assignee?.name || task.assigneeUserId || t('unassigned')}
@@ -615,9 +572,7 @@ export default function TaskDetailPage() {
                                 name="assigneeUserId"
                                 tenantSlug={tenantSlug}
                                 selectedId={assigneeValue}
-                                onChange={(userId) =>
-                                    setAssigneeDraft(userId ?? null)
-                                }
+                                onChange={(userId) => setAssigneeDraft(userId ?? null)}
                                 placeholder={t('unassigned')}
                                 forceDropdown={false}
                             />
@@ -632,12 +587,10 @@ export default function TaskDetailPage() {
             {/* Overview Tab */}
             {tab === 'overview' && (
                 <div className={cn(cardVariants(), 'space-y-default')}>
-                    {task && task.type === 'FIELD_OPERATION' && (
+                    {task.type === 'FIELD_OPERATION' && (
                         <div className="border-b border-border-subtle pb-section">
                             <Heading level={3} className="mb-3">{t('fieldOperation')}</Heading>
                             <FieldOperationPanel taskId={task.id} />
-                            {/* Review gate (#6): a completed field op awaits an
-                                ADMIN reviewer's approval before it's final. */}
                             {task.status === 'PENDING_REVIEW' && permissions.canAdmin && (
                                 <div className="mt-default space-y-default rounded-lg border border-border-emphasis bg-bg-subtle p-4">
                                     <p className="text-sm font-medium text-content-emphasis">{t('review.title')}</p>
@@ -652,22 +605,10 @@ export default function TaskDetailPage() {
                                         />
                                     </FormField>
                                     <div className="flex gap-compact">
-                                        <Button
-                                            variant="primary"
-                                            size="sm"
-                                            loading={reviewing}
-                                            onClick={() => submitReview('APPROVE')}
-                                            id="review-approve-btn"
-                                        >
+                                        <Button variant="primary" size="sm" loading={reviewing} onClick={() => submitReview('APPROVE')} id="review-approve-btn">
                                             {t('review.approve')}
                                         </Button>
-                                        <Button
-                                            variant="secondary"
-                                            size="sm"
-                                            disabled={reviewing}
-                                            onClick={() => submitReview('REQUEST_CHANGES')}
-                                            id="review-request-changes-btn"
-                                        >
+                                        <Button variant="secondary" size="sm" disabled={reviewing} onClick={() => submitReview('REQUEST_CHANGES')} id="review-request-changes-btn">
                                             {t('review.requestChanges')}
                                         </Button>
                                     </div>
@@ -675,20 +616,29 @@ export default function TaskDetailPage() {
                             )}
                         </div>
                     )}
-                    {/* Overview header with Edit button — mirrors the
-                        control detail overview edit affordance. */}
                     {permissions.canWrite && (
-                        <div className="flex justify-end -mt-1 -mb-2">
+                        <div className="flex justify-end gap-compact -mt-1 -mb-2">
                             <Button
                                 variant="secondary"
                                 size="icon"
                                 onClick={openEditModal}
                                 data-testid="task-edit-button"
                                 id="task-edit-button"
-                                aria-label={t('editTask')}
-                                title={t('editTask')}
+                                aria-label={tf('detail.editTask')}
+                                title={tf('detail.editTask')}
                             >
                                 <Pen2 className="size-4" />
+                            </Button>
+                            <Button
+                                variant="secondary"
+                                size="icon"
+                                onClick={handleDelete}
+                                data-testid="task-delete-button"
+                                id="task-delete-button"
+                                aria-label={tf('detail.deleteTask')}
+                                title={tf('detail.deleteTask')}
+                            >
+                                <Trash className="size-4 text-content-error" />
                             </Button>
                         </div>
                     )}
@@ -698,8 +648,12 @@ export default function TaskDetailPage() {
                             <p className="text-sm text-content-default mt-1 whitespace-pre-wrap">{task.description || t('noDescription')}</p>
                         </div>
                         <div>
-                            <span className="text-xs text-content-subtle uppercase">{t('type')}</span>
-                            <p className="text-sm text-content-default mt-1">{typeLabel(task.type)}</p>
+                            <span className="text-xs text-content-subtle uppercase">{isFarmTask ? tf('detail.fieldWorkType') : t('type')}</span>
+                            <p className="text-sm text-content-default mt-1">
+                                {isFarmTask && farmTypeName
+                                    ? (farmTypeDef ? `${farmTypeName} · ${categoryLabel(farmTypeDef.category)}` : farmTypeName)
+                                    : typeLabel(task.type)}
+                            </p>
                         </div>
                         <div>
                             <span className="text-xs text-content-subtle uppercase">{t('priority')}</span>
@@ -721,19 +675,11 @@ export default function TaskDetailPage() {
                             <span className="text-xs text-content-subtle uppercase">{t('created')}</span>
                             <p className="text-sm text-content-default mt-1">{formatDateTime(task.createdAt)}</p>
                         </div>
-                        <div>
-                            <span className="text-xs text-content-subtle uppercase">{t('createdBy')}</span>
-                            <p className="text-sm text-content-default mt-1">{task.createdBy?.name || '—'}</p>
-                        </div>
                         {task.control && (
                             <div>
                                 <span className="text-xs text-content-subtle uppercase">{t('control')}</span>
                                 <p className="text-sm mt-1">
-                                    <Link
-                                        href={tenantHref(`/controls/${task.control.id}`)}
-                                        className={textLinkVariants({ tone: 'link' })}
-                                        id="task-control-link"
-                                    >
+                                    <Link href={tenantHref(`/controls/${task.control.id}`)} className={textLinkVariants({ tone: 'link' })} id="task-control-link">
                                         {task.control.code} — {task.control.name}
                                     </Link>
                                 </p>
@@ -753,7 +699,6 @@ export default function TaskDetailPage() {
                         )}
                     </div>
 
-                    {/* Audit / Finding Fields from metadataJson */}
                     {(task.type === 'AUDIT_FINDING' || task.type === 'CONTROL_GAP') && (metadata.findingSource || metadata.controlGapType) && (
                         <div className="border-t border-border-default pt-4 mt-4">
                             <Heading level={3} className="mb-3">{t('auditDetails')}</Heading>
@@ -776,9 +721,7 @@ export default function TaskDetailPage() {
                 </div>
             )}
 
-            {/* Evidence Tab — same look + behaviour as the control
-                Evidence tab: upload a file OR link a URL, both scoped to
-                this task via Evidence.taskId. */}
+            {/* Evidence Tab */}
             {tab === 'evidence' && (
                 <div className="space-y-default">
                     <EvidenceAddForm
@@ -813,10 +756,7 @@ export default function TaskDetailPage() {
                         saving={savingEvidence && !fileToUpload}
                     />
                     {evidenceQuery.error ? (
-                        <InlineEmptyState
-                            title={t('evidenceLoadErrorTitle')}
-                            description={t('evidenceLoadErrorDescription')}
-                        />
+                        <InlineEmptyState title={t('evidenceLoadErrorTitle')} description={t('evidenceLoadErrorDescription')} />
                     ) : (
                         <EvidenceSubTable
                             data={evidenceQuery.data}
@@ -844,14 +784,6 @@ export default function TaskDetailPage() {
                         <form onSubmit={addLink} className={cn(cardVariants({ density: 'compact' }), 'space-y-compact')}>
                             <div className="grid grid-cols-3 gap-compact">
                                 <Combobox hideSearch id="link-entity-type" selected={ENTITY_TYPE_CB_OPTIONS.find(o => o.value === linkEntityType) ?? null} setSelected={(opt) => setLinkEntityType(opt?.value ?? linkEntityType)} options={ENTITY_TYPE_CB_OPTIONS} matchTriggerWidth />
-                                {/* PR-D — entity picker replaces the
-                                    legacy "Paste ID" `<input>`. The
-                                    type Combobox to the left drives
-                                    which candidate set the picker
-                                    fetches; selecting from the list
-                                    writes the cuid into linkEntityId
-                                    so the existing addLink handler
-                                    is unchanged. */}
                                 <EntityPicker
                                     tenantSlug={tenantSlug}
                                     entityType={linkEntityType as EntityPickerKind}
@@ -868,12 +800,7 @@ export default function TaskDetailPage() {
                             </Button>
                         </form>
                     )}
-                    <TaskLinksTable
-                        links={links}
-                        loading={linksLoading}
-                        canWrite={!!permissions.canWrite}
-                        onRemove={removeLink}
-                    />
+                    <TaskLinksTable links={links} loading={linksLoading} canWrite={!!permissions.canWrite} onRemove={removeLink} />
                 </div>
             )}
 
@@ -907,10 +834,7 @@ export default function TaskDetailPage() {
                                 ))}
                             </div>
                         ) : comments.length === 0 ? (
-                            <InlineEmptyState
-                                title={t('noCommentsTitle')}
-                                description={t('noCommentsDescription')}
-                            />
+                            <InlineEmptyState title={t('noCommentsTitle')} description={t('noCommentsDescription')} />
                         ) : (
                             <div className="divide-y divide-border-default/50">
                                 {comments.map((c: any) => (
@@ -944,10 +868,7 @@ export default function TaskDetailPage() {
                             ))}
                         </div>
                     ) : activity.length === 0 ? (
-                        <InlineEmptyState
-                            title={t('noActivityTitle')}
-                            description={t('noActivityDescription')}
-                        />
+                        <InlineEmptyState title={t('noActivityTitle')} description={t('noActivityDescription')} />
                     ) : (
                         <div className="divide-y divide-border-default/50">
                             {activity.map((evt: any) => (
@@ -968,17 +889,13 @@ export default function TaskDetailPage() {
                 </div>
             )}
 
-            {/* Resolution prompt — moving a task to a terminal status
-                (CLOSED / CANCELED) records a resolution note on the
-                audit trail (S8). Collected here so closing actually
-                works instead of silently reverting on the 4xx. */}
+            {/* Resolution prompt — completing / closing a task records a
+                resolution note on the audit trail (S8). Reused for the
+                "Mark done" button (RESOLVED) and the CLOSED / CANCELED
+                status picks. */}
             <Modal
                 showModal={pendingTerminalStatus !== null}
-                setShowModal={(next) => {
-                    if (next === false && !changingStatus) {
-                        setPendingTerminalStatus(null);
-                    }
-                }}
+                setShowModal={(next) => { if (next === false && !changingStatus) setPendingTerminalStatus(null); }}
                 size="sm"
                 title={`${pendingTerminalStatus ? statusLabel(pendingTerminalStatus) : t('closeFallback')} ${t('taskWord')}`}
                 description={t('resolutionModalDescription')}
@@ -990,11 +907,7 @@ export default function TaskDetailPage() {
                 />
                 <Modal.Body>
                     {statusError && (
-                        <div
-                            className="mb-4 rounded-lg border border-border-error bg-bg-error px-3 py-2 text-sm text-content-error"
-                            role="alert"
-                            id="task-status-error"
-                        >
+                        <div className="mb-4 rounded-lg border border-border-error bg-bg-error px-3 py-2 text-sm text-content-error" role="alert" id="task-status-error">
                             {statusError}
                         </div>
                     )}
@@ -1011,13 +924,7 @@ export default function TaskDetailPage() {
                     </FormField>
                 </Modal.Body>
                 <Modal.Actions>
-                    <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => setPendingTerminalStatus(null)}
-                        disabled={changingStatus}
-                        id="task-status-cancel-btn"
-                    >
+                    <Button variant="secondary" size="sm" onClick={() => setPendingTerminalStatus(null)} disabled={changingStatus} id="task-status-cancel-btn">
                         {t('cancel')}
                     </Button>
                     <Button
@@ -1025,41 +932,100 @@ export default function TaskDetailPage() {
                         size="sm"
                         id="confirm-task-status-btn"
                         disabled={!resolutionDraft.trim() || changingStatus}
-                        onClick={() =>
-                            pendingTerminalStatus &&
-                            commitStatus(
-                                pendingTerminalStatus,
-                                resolutionDraft.trim(),
-                            )
-                        }
+                        onClick={() => pendingTerminalStatus && commitStatus(pendingTerminalStatus, resolutionDraft.trim())}
                     >
-                        {changingStatus
-                            ? t('savingEllipsis')
-                            : `${pendingTerminalStatus ? statusLabel(pendingTerminalStatus) : t('closeFallback')} ${t('taskWord')}`}
+                        {changingStatus ? t('savingEllipsis') : `${pendingTerminalStatus ? statusLabel(pendingTerminalStatus) : t('closeFallback')} ${t('taskWord')}`}
                     </Button>
                 </Modal.Actions>
             </Modal>
 
-            {/* Edit-task modal — page owns state + mutation, the modal
-                is a thin renderer (control-detail parity). */}
-            <EditTaskModal
-                open={showEditModal}
-                setOpen={setShowEditModal}
-                form={editForm}
-                setForm={setEditForm}
-                saving={savingEdit}
-                error={editError}
-                onCancel={() => setShowEditModal(false)}
-                onSubmit={handleEditSave}
-            />
+            {/* Edit-task modal (farm-flavoured, inline). */}
+            <Modal
+                showModal={showEditModal}
+                setShowModal={setShowEditModal}
+                size="lg"
+                title={tf('detail.editTask')}
+                description={tf('detail.editDescription')}
+                preventDefaultClose={savingEdit}
+            >
+                <Modal.Header title={tf('detail.editTask')} description={tf('detail.editDescription')} />
+                <Modal.Form id="edit-farm-task-form" onSubmit={handleEditSave}>
+                    <Modal.Body>
+                        {editError && (
+                            <div className="mb-4 rounded-lg border border-border-error bg-bg-error px-3 py-2 text-sm text-content-error" role="alert" id="edit-task-error">
+                                {editError}
+                            </div>
+                        )}
+                        <fieldset disabled={savingEdit} className="m-0 p-0 border-0 space-y-default">
+                            <FormField label={tf('fieldTitle')} required>
+                                <Input id="edit-task-title" value={editForm.title} onChange={(e) => setEditForm((f) => ({ ...f, title: e.target.value }))} placeholder={tf('titlePlaceholder')} />
+                            </FormField>
+                            <FormField label={tf('detail.notes')}>
+                                <textarea
+                                    id="edit-task-description"
+                                    className="input w-full"
+                                    rows={3}
+                                    value={editForm.description}
+                                    onChange={(e) => setEditForm((f) => ({ ...f, description: e.target.value }))}
+                                    placeholder={tf('detail.notesPlaceholder')}
+                                />
+                            </FormField>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-default">
+                                {isFarmTask && (
+                                    <FormField label={tf('fieldTaskType')}>
+                                        <Combobox
+                                            id="edit-task-type"
+                                            options={FARM_TYPE_OPTIONS}
+                                            selected={FARM_TYPE_OPTIONS.find((o) => o.value === editForm.farmTaskType) ?? null}
+                                            setSelected={(o) => setEditForm((f) => ({ ...f, farmTaskType: o?.value ?? '' }))}
+                                            optionDescription={(o) => { const def = TYPE_BY_VALUE.get(o.value); return def ? categoryLabel(def.category) : null; }}
+                                            placeholder={tf('taskTypePlaceholder')}
+                                            searchPlaceholder={tf('taskTypeSearch')}
+                                            aria-label={tf('taskTypeAria')}
+                                            matchTriggerWidth
+                                        />
+                                    </FormField>
+                                )}
+                                <FormField label={tf('fieldPriority')}>
+                                    <Combobox
+                                        id="edit-task-priority"
+                                        options={PRIORITY_CB_OPTIONS}
+                                        selected={PRIORITY_CB_OPTIONS.find((o) => o.value === editForm.priority) ?? null}
+                                        setSelected={(o) => setEditForm((f) => ({ ...f, priority: o?.value ?? 'P2' }))}
+                                        placeholder={tf('priorityPlaceholder')}
+                                        hideSearch
+                                        aria-label={tf('priorityAria')}
+                                        matchTriggerWidth
+                                    />
+                                </FormField>
+                                <FormField label={tf('fieldDueDate')}>
+                                    <DatePicker
+                                        id="edit-task-due"
+                                        className="w-full"
+                                        value={editForm.dueAt ? new Date(editForm.dueAt) : null}
+                                        onChange={(d) => setEditForm((f) => ({ ...f, dueAt: d ? toYMD(d) ?? '' : '' }))}
+                                        clearable
+                                        placeholder={tf('datePlaceholder')}
+                                        aria-label={tf('dueDateAria')}
+                                    />
+                                </FormField>
+                            </div>
+                        </fieldset>
+                    </Modal.Body>
+                    <Modal.Actions>
+                        <Button variant="secondary" size="sm" type="button" onClick={() => setShowEditModal(false)} disabled={savingEdit} id="edit-task-cancel">
+                            {t('cancel')}
+                        </Button>
+                        <Button variant="primary" size="sm" type="submit" loading={savingEdit} disabled={!editForm.title.trim()} id="edit-task-submit">
+                            {tf('detail.saveTask')}
+                        </Button>
+                    </Modal.Actions>
+                </Modal.Form>
+            </Modal>
         </EntityDetailLayout>
     );
 }
 
-// R11-PR8 — task links sub-table routed through DataTable. Inline
-// columns derive from the same fields the prior raw <table> rendered;
-// canWrite gates the Remove action column. `loading` proxies to
-// DataTable's built-in skeleton (which inherits R11-PR2's shimmer).
 interface TaskLinkRow {
     id: string;
     entityType: string;
@@ -1081,60 +1047,25 @@ function TaskLinksTable({
 }) {
     const t = useTranslations('tasks.detail.links');
     const te = useTranslations('taskEnums');
-    const entityTypeLabel = (et: string) => (te.has(`entityType.${et}`) ? te(`entityType.${et}`) : et);
+    const entityTypeLabel = (et: string) => (te.has(`entityType.${et}`) ? te(`entityType.${et}`) : et.replace(/_/g, ' '));
     const relationLabel = (r: string) => (te.has(`relation.${r}`) ? te(`relation.${r}`) : r.replace(/_/g, ' '));
     const columns = useMemo(
         () =>
             createColumns<TaskLinkRow>([
-                {
-                    id: 'entityType',
-                    header: t('colType'),
-                    cell: ({ row }) => (
-                        <StatusBadge variant="info">{entityTypeLabel(row.original.entityType)}</StatusBadge>
-                    ),
-                },
-                {
-                    id: 'entityId',
-                    header: t('colEntityId'),
-                    cell: ({ row }) => (
-                        <span className="text-sm text-content-default font-mono">
-                            {row.original.entityId}
-                        </span>
-                    ),
-                },
-                {
-                    id: 'relation',
-                    header: t('colRelation'),
-                    cell: ({ row }) => (
-                        <span className="text-xs text-content-muted">
-                            {row.original.relation ? relationLabel(row.original.relation) : '—'}
-                        </span>
-                    ),
-                },
-                {
-                    id: 'createdAt',
-                    header: t('colCreated'),
-                    cell: ({ row }) => (
-                        <span className="text-xs text-content-muted">
-                            {formatDate(row.original.createdAt)}
-                        </span>
-                    ),
-                },
+                { id: 'entityType', header: t('colType'), cell: ({ row }) => (<StatusBadge variant="info">{entityTypeLabel(row.original.entityType)}</StatusBadge>) },
+                { id: 'entityId', header: t('colEntityId'), cell: ({ row }) => (<span className="text-sm text-content-default font-mono">{row.original.entityId}</span>) },
+                { id: 'relation', header: t('colRelation'), cell: ({ row }) => (<span className="text-xs text-content-muted">{row.original.relation ? relationLabel(row.original.relation) : '—'}</span>) },
+                { id: 'createdAt', header: t('colCreated'), cell: ({ row }) => (<span className="text-xs text-content-muted">{formatDate(row.original.createdAt)}</span>) },
                 ...(canWrite
-                    ? [
-                          {
-                              id: 'actions',
-                              header: t('colActions'),
-                              cell: ({ row }) => (
-                                  <button
-                                      className="text-content-error text-xs hover:text-content-error"
-                                      onClick={() => onRemove(row.original.id)}
-                                  >
-                                      × {te('ui.remove')}
-                                  </button>
-                              ),
-                          } as Parameters<typeof createColumns<TaskLinkRow>>[0][number],
-                      ]
+                    ? [{
+                          id: 'actions',
+                          header: t('colActions'),
+                          cell: ({ row }) => (
+                              <button className="text-content-error text-xs hover:text-content-error" onClick={() => onRemove(row.original.id)}>
+                                  × {te('ui.remove')}
+                              </button>
+                          ),
+                      } as Parameters<typeof createColumns<TaskLinkRow>>[0][number]]
                     : []),
             ]),
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1146,12 +1077,7 @@ function TaskLinksTable({
             columns={columns}
             getRowId={(l) => l.id}
             loading={loading}
-            emptyState={
-                <InlineEmptyState
-                    title={t('noLinksTitle')}
-                    description={t('noLinksDescription')}
-                />
-            }
+            emptyState={<InlineEmptyState title={t('noLinksTitle')} description={t('noLinksDescription')} />}
             resourceName={(p) => (p ? 'links' : 'link')}
             data-testid="task-links-table"
         />

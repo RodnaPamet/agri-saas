@@ -87,7 +87,7 @@ export async function createFarmTask(ctx: RequestContext, input: CreateFarmTaskI
 }
 
 export interface FarmTaskQueueOptions {
-    /** Defaults to the caller (the operator's own queue). */
+    /** Defaults to the caller (the operator's own queue) when scope is 'mine'. */
     assigneeUserId?: string;
     status?: string;
     /**
@@ -97,6 +97,16 @@ export interface FarmTaskQueueOptions {
      * the reviewer's turn, not the operator's). Drives the "My work" screen.
      */
     openOnly?: boolean;
+    /**
+     * 'mine' (default) → tasks assigned to the caller (the operator queue that
+     * backs /my-work and the bare endpoint).
+     * 'all' → every FARM_TASK + FIELD_OPERATION in the tenant. This backs the
+     * /farm-tasks page now that it is the SOLE task UI: OWNER/ADMIN/EDITOR must
+     * see and manage tasks they assigned to others, and the assignee filter is
+     * only meaningful across assignees. Still gated by task READ permission
+     * inside `listTasks` (same visibility the retired compliance list had).
+     */
+    scope?: 'mine' | 'all';
 }
 
 /** Statuses that count as an operator's outstanding to-do. */
@@ -108,7 +118,14 @@ const OPERATOR_OPEN_STATUSES = new Set(['OPEN', 'TRIAGED', 'IN_PROGRESS', 'BLOCK
  * type) and merges; no new repository surface.
  */
 export async function listMyFarmTasks(ctx: RequestContext, opts: FarmTaskQueueOptions = {}) {
-    const assigneeUserId = opts.assigneeUserId ?? ctx.userId ?? undefined;
+    const scope = opts.scope ?? 'mine';
+    // 'all' leaves assignee unset (unless an explicit narrowing was asked for)
+    // so `listTasks` returns every tenant task of the type; 'mine' defaults to
+    // the caller. `listTasks` still asserts read permission either way.
+    const assigneeUserId =
+        scope === 'all'
+            ? opts.assigneeUserId
+            : (opts.assigneeUserId ?? ctx.userId ?? undefined);
 
     const lists = await Promise.all(
         FARM_TASK_TYPES_FILTER.map((type) =>

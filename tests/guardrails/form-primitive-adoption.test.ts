@@ -46,11 +46,10 @@ const FORM_FIELD_SURFACES: FormSurface[] = [
     },
     { label: 'risks/NewRiskModal.tsx', files: ['src/app/t/[tenantSlug]/(app)/risks/NewRiskModal.tsx'] },
     {
-        label: 'tasks/new (shim + modal + fields)',
+        label: 'tasks create (modal + fields)',
         files: [
-            'src/app/t/[tenantSlug]/(app)/tasks/new/page.tsx',
-            'src/app/t/[tenantSlug]/(app)/tasks/NewTaskModal.tsx',
-            'src/app/t/[tenantSlug]/(app)/tasks/_form/NewTaskFields.tsx',
+            'src/components/tasks/NewTaskModal.tsx',
+            'src/components/tasks/_form/NewTaskFields.tsx',
         ],
     },
     {
@@ -71,11 +70,10 @@ const FORM_ERROR_SURFACES: FormSurface[] = [
     // listing it here. Field-level error surfaces remain ratcheted below.
     { label: 'risks/NewRiskModal.tsx', files: ['src/app/t/[tenantSlug]/(app)/risks/NewRiskModal.tsx'] },
     {
-        label: 'tasks/new (shim + modal + fields)',
+        label: 'tasks create (modal + fields)',
         files: [
-            'src/app/t/[tenantSlug]/(app)/tasks/new/page.tsx',
-            'src/app/t/[tenantSlug]/(app)/tasks/NewTaskModal.tsx',
-            'src/app/t/[tenantSlug]/(app)/tasks/_form/NewTaskFields.tsx',
+            'src/components/tasks/NewTaskModal.tsx',
+            'src/components/tasks/_form/NewTaskFields.tsx',
         ],
     },
 ];

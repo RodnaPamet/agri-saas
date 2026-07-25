@@ -15,17 +15,17 @@ test.describe('FilterToolbar coverage', () => {
         page,
     }) => {
         const tenantSlug = await loginAndGetTenant(page);
-        // `INCIDENT` is a valid `TaskType` (filters.spec.ts uses the
-        // same value). A value Prisma rejects errors the page load
-        // before the filter chip can render.
-        await safeGoto(page, `/t/${tenantSlug}/tasks?type=INCIDENT`, {
+        // `OPEN` is a valid farm-tasks `status` filter value
+        // (filters.spec.ts uses the same value). A value the page
+        // rejects errors the load before the filter chip can render.
+        await safeGoto(page, `/t/${tenantSlug}/farm-tasks?status=OPEN`, {
             waitUntil: 'domcontentloaded',
         });
         await page.waitForLoadState('networkidle').catch(() => {});
 
         // The URL pre-applied the filter — the page must accept
         // that round-trip without erroring.
-        await expect(page).toHaveURL(/[?&]type=INCIDENT/, {
+        await expect(page).toHaveURL(/[?&]status=OPEN/, {
             timeout: 15_000,
         });
 
@@ -38,7 +38,7 @@ test.describe('FilterToolbar coverage', () => {
         await clearAll.click();
 
         await expect.poll(() => page.url(), { timeout: 5_000 }).not.toContain(
-            'type=INCIDENT',
+            'status=OPEN',
         );
     });
 });

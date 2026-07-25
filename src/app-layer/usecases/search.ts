@@ -455,7 +455,7 @@ function buildTaskHit(
         title,
         subtitle: row.severity,
         badge: row.status,
-        href: `/t/${slug}/tasks/${row.id}`,
+        href: `/t/${slug}/farm-tasks/${row.id}`,
         score: computeRankScore(query, {
             type: 'task',
             title: row.title,

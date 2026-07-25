@@ -57,7 +57,7 @@ const COPY: Record<AssignmentNotificationKind, AssignmentCopy> = {
     TASK_ASSIGNED: {
         title: 'You were assigned a task',
         body: (label) => `${label} is now yours.`,
-        linkPath: (slug, id) => `/t/${slug}/tasks/${id}`,
+        linkPath: (slug, id) => `/t/${slug}/farm-tasks/${id}`,
     },
     CONTROL_ASSIGNED: {
         title: 'You were assigned a control',

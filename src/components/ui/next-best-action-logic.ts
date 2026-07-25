@@ -59,7 +59,7 @@ export function resolveNextBestAction(
             id: "overdue-tasks",
             label: "Resolve overdue tasks",
             description: `${overdueTasks} task${overdueTasks === 1 ? "" : "s"} past due. Address them before the next audit.`,
-            href: tenantHref("/tasks?filter=overdue"),
+            href: tenantHref("/farm-tasks?filter=overdue"),
         };
     }
     if (input.highRisks > 0) {

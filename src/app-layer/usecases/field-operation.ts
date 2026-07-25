@@ -670,7 +670,7 @@ export async function reviewFieldOperation(
                         || (action === 'APPROVE'
                             ? `Your field operation "${task.title}" was approved.`
                             : `Your field operation "${task.title}" needs changes.`),
-                    linkUrl: `/tasks/${taskId}`,
+                    linkUrl: `/farm-tasks/${taskId}`,
                 },
             });
         }

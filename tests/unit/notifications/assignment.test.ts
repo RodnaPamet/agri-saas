@@ -114,7 +114,7 @@ describe('createAssignmentNotification', () => {
         const args = createManyMock.mock.calls[0][0];
         const row = args.data[0];
         expect(row.type).toBe('TASK_ASSIGNED');
-        expect(row.linkUrl).toBe('/t/acme/tasks/task-X');
+        expect(row.linkUrl).toBe('/t/acme/farm-tasks/task-X');
         expect(args.skipDuplicates).toBe(true);
     });
 
@@ -228,7 +228,7 @@ describe('createAssignmentNotification — SSE publish (2026-05-28 follow-up)', 
 
         expect(received).toHaveLength(1);
         expect(received[0].type).toBe('TASK_ASSIGNED');
-        expect(received[0].linkUrl).toBe('/t/acme/tasks/task-1');
+        expect(received[0].linkUrl).toBe('/t/acme/farm-tasks/task-1');
         // The publish uses the dedupeKey as the event id (the
         // helper doesn't have the DB-assigned id from createMany).
         expect(received[0].id).toBe(

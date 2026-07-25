@@ -101,14 +101,6 @@ describe('Action-button canonical entity label', () => {
                 'policies',
             ],
             [
-                'src/app/t/[tenantSlug]/(app)/tasks/TasksClient.tsx',
-                'new-task-btn',
-                'Task',
-                // T10 i18n — TasksClient uses useTranslations('tasks.list'),
-                // so the header button is `{t('addTask')}` → tasks.list.addTask.
-                'tasks.list',
-            ],
-            [
                 'src/app/t/[tenantSlug]/(app)/vendors/VendorsClient.tsx',
                 'new-vendor-btn',
                 'Vendor',

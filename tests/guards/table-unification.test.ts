@@ -175,12 +175,6 @@ const FIRST_COLUMN_TABLES: FirstColumnEntry[] = [
         note: "Policies list — title is the canonical identifier (e.g. 'Information Security Policy v2.1'). Versions are a separate column.",
     },
     {
-        file: "src/app/t/[tenantSlug]/(app)/tasks/TasksClient.tsx",
-        firstColumnId: "title",
-        adopted: true,
-        note: "Tasks list — first content column is `id: 'title'` (header 'Key / Title'). A utility `id: 'select'` column may precede it; the canonical content column is title.",
-    },
-    {
         file: "src/app/t/[tenantSlug]/(app)/findings/FindingsClient.tsx",
         firstColumnId: "title",
         adopted: true,

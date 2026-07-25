@@ -8,8 +8,9 @@
  * buffer + the per-type validation (`AUDIT_FINDING` / `CONTROL_GAP`
  * requires a control or link); the modal just chrome's it.
  *
- * The legacy `/tasks/new` route is now a redirect → `/tasks?create=1`;
- * the list page (TasksClient) auto-opens this modal.
+ * Shared create-task modal, consumed by the calendar and the Epic-67
+ * LinkedTasksPanel. The compliance /tasks list was retired; the default
+ * post-create destination is the single task detail at /farm-tasks/[taskId].
  */
 import { type Dispatch, type SetStateAction } from 'react';
 import { useRouter } from 'next/navigation';
@@ -62,7 +63,7 @@ export function NewTaskModal({
             if (onCreated) {
                 onCreated();
             } else {
-                router.push(tenantHref(`/tasks/${task.id}`));
+                router.push(tenantHref(`/farm-tasks/${task.id}`));
             }
         },
         initialDueAt,

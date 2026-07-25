@@ -42,12 +42,6 @@ const LIST_PAGES: readonly ListPageContract[] = [
         hasMutation: false,
     },
     {
-        label: 'TasksClient',
-        filePath: 'src/app/t/[tenantSlug]/(app)/tasks/TasksClient.tsx',
-        cacheKey: 'CACHE_KEYS.tasks.list()',
-        hasMutation: true,
-    },
-    {
         label: 'VendorsClient',
         filePath:
             'src/app/t/[tenantSlug]/(app)/vendors/VendorsClient.tsx',

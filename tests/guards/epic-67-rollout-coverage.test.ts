@@ -48,8 +48,8 @@ const SITE_CONTRACTS: ReadonlyArray<SiteContract> = [
         handlers: ['unmapRequirement'],
     },
     {
-        file: 'src/app/t/[tenantSlug]/(app)/tasks/[taskId]/page.tsx',
-        name: 'Task link removal (task detail)',
+        file: 'src/app/t/[tenantSlug]/(app)/farm-tasks/[taskId]/FarmTaskDetailClient.tsx',
+        name: 'Farm task link removal (task detail)',
         handlers: ['removeLink'],
     },
     {

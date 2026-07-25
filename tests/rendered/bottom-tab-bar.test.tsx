@@ -51,7 +51,7 @@ const FULL_NAV = [
     },
     {
         title: 'Comply',
-        items: [{ href: '/t/acme/tasks', label: 'Plan', icon: ClipboardList }],
+        items: [{ href: '/t/acme/farm-tasks', label: 'Plan', icon: ClipboardList }],
     },
 ];
 

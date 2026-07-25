@@ -28,7 +28,7 @@ import { GanttTimeline } from '@/components/ui/GanttTimeline';
 import { ToggleGroup } from '@/components/ui/toggle-group';
 import { queryKeys } from '@/lib/queryKeys';
 import { formatDate } from '@/lib/format-date';
-import { NewTaskModal } from '@/app/t/[tenantSlug]/(app)/tasks/NewTaskModal';
+import { NewTaskModal } from '@/components/tasks/NewTaskModal';
 import { useQueryClient } from '@tanstack/react-query';
 import type {
     CalendarEvent,

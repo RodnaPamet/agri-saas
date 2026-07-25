@@ -32,7 +32,6 @@ describe('B2 — table unification', () => {
             { label: 'Risks', file: 'src/app/t/[tenantSlug]/(app)/risks/RisksClient.tsx' },
             { label: 'Policies', file: 'src/app/t/[tenantSlug]/(app)/policies/PoliciesClient.tsx' },
             { label: 'Vendors', file: 'src/app/t/[tenantSlug]/(app)/vendors/VendorsClient.tsx' },
-            { label: 'Tasks', file: 'src/app/t/[tenantSlug]/(app)/tasks/TasksClient.tsx' },
             { label: 'Assets', file: 'src/app/t/[tenantSlug]/(app)/assets/AssetsClient.tsx' },
         ];
 

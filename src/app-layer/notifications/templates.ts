@@ -25,7 +25,7 @@ export function buildTaskAssignedEmail(payload: TaskAssignedPayload): EmailTempl
     const { taskTitle, taskKey, taskType, assigneeName, assignerName, tenantSlug } = payload;
     const keyLabel = taskKey ? `[${taskKey}] ` : '';
     const byLine = assignerName ? ` by ${assignerName}` : '';
-    const link = absoluteUrl(`/t/${tenantSlug}/tasks`);
+    const link = absoluteUrl(`/t/${tenantSlug}/farm-tasks`);
 
     return {
         subject: `Task assigned to you: ${keyLabel}${taskTitle}`,

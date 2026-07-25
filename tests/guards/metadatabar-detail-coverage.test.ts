@@ -82,9 +82,9 @@ const DETAIL_PAGES: DetailPageEntry[] = [
         note: "Audit cycle detail — uses <MetaStrip> for framework / period / scope / readiness score.",
     },
     {
-        file: "src/app/t/[tenantSlug]/(app)/tasks/[taskId]/page.tsx",
+        file: "src/app/t/[tenantSlug]/(app)/farm-tasks/[taskId]/FarmTaskDetailClient.tsx",
         adopted: true,
-        note: "Task detail — uses <MetaStrip> for status / priority / assignee / due-date / SLA.",
+        note: "Farm task detail — uses <MetaStrip> for status / priority / assignee / due-date / SLA (in the Client component; page.tsx is a server shell).",
     },
     {
         file: "src/app/t/[tenantSlug]/(app)/assets/[id]/page.tsx",

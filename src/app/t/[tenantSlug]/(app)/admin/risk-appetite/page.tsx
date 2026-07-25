@@ -175,7 +175,7 @@ export default function RiskAppetitePage() {
                                 {/* RQ2-6 — breach → remediation task. */}
                                 {b.remediationTaskId ? (
                                     <a
-                                        href={tenantHref(`/tasks/${b.remediationTaskId}`)}
+                                        href={tenantHref(`/farm-tasks/${b.remediationTaskId}`)}
                                         className="text-xs underline text-content-default"
                                         data-testid={`breach-task-link-${b.id}`}
                                     >

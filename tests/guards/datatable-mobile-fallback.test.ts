@@ -138,7 +138,7 @@ const EXEMPTIONS: Record<string, string> = {
         'detail-page sub-table — evidence rows for one control',
     't/[tenantSlug]/(app)/controls/[controlId]/_tabs/ControlMappingsTab.tsx':
         'detail-page sub-table — framework mappings for one control',
-    't/[tenantSlug]/(app)/tasks/[taskId]/page.tsx':
+    't/[tenantSlug]/(app)/farm-tasks/[taskId]/FarmTaskDetailClient.tsx':
         'detail page — DataTable is the inner links sub-table',
     't/[tenantSlug]/(app)/planning/[cropPlanId]/PlantingBoard.tsx':
         'detail-page sub-table — plantings of one crop plan (succession board)',
@@ -204,7 +204,7 @@ describe('DataTable mobile-fallback coverage ratchet', () => {
                     violators.join('\n  ') +
                     '\n\nFix options:\n' +
                     '  • Add mobileFallback="card" and tag ~3-5 columns with meta: { mobileCard: { slot: ... } }\n' +
-                    "    (see tasks/TasksClient.tsx / farm-tasks/FarmTasksClient.tsx for the pattern), OR\n" +
+                    "    (see farm-tasks/FarmTasksClient.tsx for the pattern), OR\n" +
                     '  • Add mobileFallback="scroll" + a comment explaining why the table stays horizontal\n' +
                     '    (wide numeric grids only), OR\n' +
                     '  • Add the file to EXEMPTIONS in this test with a one-line reason (non-list DataTable).\n',

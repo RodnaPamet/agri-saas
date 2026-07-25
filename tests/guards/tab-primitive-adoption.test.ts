@@ -50,9 +50,9 @@ const TAB_PAGES: TabPageEntry[] = [
         note: "Policies detail — tabs for content / versions / acknowledgements.",
     },
     {
-        file: "src/app/t/[tenantSlug]/(app)/tasks/[taskId]/page.tsx",
+        file: "src/app/t/[tenantSlug]/(app)/farm-tasks/[taskId]/FarmTaskDetailClient.tsx",
         migrated: false,
-        note: "Task detail — tabs for Overview / Links / Comments / Activity.",
+        note: "Farm task detail — tabs for Overview / Evidence / Links / Comments / Activity.",
     },
     {
         file: "src/app/t/[tenantSlug]/(app)/mapping/page.tsx",

@@ -63,7 +63,7 @@ describe('canonical-parents', () => {
     });
 
     it('routes task detail back to the Farm Tasks list', () => {
-        expect(resolveCanonicalParent('/t/acme/tasks/t1', 'acme')).toEqual({
+        expect(resolveCanonicalParent('/t/acme/farm-tasks/t1', 'acme')).toEqual({
             href: '/t/acme/farm-tasks',
             label: 'farmTasks',
         });

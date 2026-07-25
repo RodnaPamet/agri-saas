@@ -74,17 +74,19 @@ test.describe('Controls Center', () => {
         await expect(authedPage.locator('#control-status')).toBeVisible();
     });
 
-    test('open control → create task via the unified modal → appears in linked tasks + global list', async ({ authedPage, isolatedTenant }) => {
+    test('open control → create task via the unified modal → appears in linked tasks', async ({ authedPage, isolatedTenant }) => {
         const { tenantSlug } = isolatedTenant;
         // Self-contained: create the control this test operates on.
         await createControl(authedPage, tenantSlug);
         const uid = Date.now().toString(36);
         const title = `E2E Task ${uid}`;
 
-        // Go to tasks tab — task creation now uses the SAME canonical
-        // modal as the Tasks page (via the shared LinkedTasksPanel),
-        // and the created task lands in the global Tasks table linked
-        // back to this control.
+        // Go to tasks tab — task creation uses the canonical NewTaskModal
+        // (via the shared LinkedTasksPanel), and the created compliance
+        // task lands in the control's linked-tasks table. (The retired
+        // /tasks global list once verified here is gone; the farm-tasks
+        // queue only surfaces FARM_TASK / FIELD_OPERATION rows, so a
+        // control-linked TASK is asserted at the control, not there.)
         await authedPage.click('#tab-tasks');
         await authedPage.waitForSelector('#linked-task-create-btn', { timeout: 5000 });
         await authedPage.click('#linked-task-create-btn');
@@ -101,20 +103,13 @@ test.describe('Controls Center', () => {
         ]);
 
         // The new task shows in the control's linked-tasks table.
-        // (The Tasks tab is now a DataTable matching the Tasks page —
-        // rows no longer carry a per-row `linked-task-<id>` id, so
-        // assert on the row text within the table itself.)
+        // (The Tasks tab is a DataTable — rows no longer carry a per-row
+        // `linked-task-<id>` id, so assert on the row text within the
+        // table itself.)
         await expect(
             authedPage
                 .locator('[data-testid="linked-tasks-table"]')
                 .getByText(title),
-        ).toBeVisible({ timeout: 15000 });
-
-        // ...and in the global Tasks list (it's a real Task row now,
-        // not an isolated ControlTask).
-        await authedPage.goto(`/t/${tenantSlug}/tasks`);
-        await expect(
-            authedPage.getByRole('main').getByText(title),
         ).toBeVisible({ timeout: 15000 });
     });
 

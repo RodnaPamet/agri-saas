@@ -42,17 +42,6 @@ describe('icon-only action discipline', () => {
     // distinctive enough that its presence proves the icon-only button is
     // wired — and a revert to a text `<Button>Freeze Pack</Button>` would
     // drop the `label=`/`aria-label=` and fail here.
-    // The tasks bulk "Apply" IconAction label now routes through next-intl
-    // (`te('ui.apply')` on the `taskEnums` namespace, i18n Bulgarian sweep).
-    // Assert the icon-only wiring is preserved AND en.json keeps the copy so
-    // the a11y contract holds — same shape as the pack IconAction block below.
-    it('IconAction site stays icon-only (i18n): tasks "Apply"', () => {
-        const src = read(`${APP}/tasks/TasksClient.tsx`);
-        expect(src).toMatch(/import \{ IconAction \} from '@\/components\/ui\/icon-action'/);
-        expect(src).toMatch(/<IconAction[\s\S]*?label=\{te\('ui\.apply'\)\}/);
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
-        expect(require('../../messages/en.json').taskEnums.ui.apply).toBe('Apply');
-    });
 
     // i18n batch T08 — the audit-pack IconAction labels now route through
     // next-intl (`t('packDetail.freezePack')` etc.). Assert the icon-only

@@ -88,8 +88,8 @@ const OBSESSION_CHECKLIST: ObsessionItem[] = [
 
     // ─── Detail-page chrome refresh ───────────────────────────────
     {
-        name: 'tasks detail page has zero raw <table> elements',
-        ratchet: 'src/app/t/[tenantSlug]/(app)/tasks/[taskId]/page.tsx',
+        name: 'farm task detail page has zero raw <table> elements',
+        ratchet: 'src/app/t/[tenantSlug]/(app)/farm-tasks/[taskId]/FarmTaskDetailClient.tsx',
     },
     {
         name: 'controls detail tasks sub-table uses DataTable',

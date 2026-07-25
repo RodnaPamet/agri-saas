@@ -805,18 +805,38 @@ async function main() {
                 createdByUserId: editor.id,
             },
         });
+        // A FARM_TASK so /farm-tasks — the sole task UI, which lists only
+        // FARM_TASK + FIELD_OPERATION — is never empty in the shared tenant.
+        // The row→detail, mobile-card, and task-key CopyText E2E flows need a
+        // farm-typed row to exercise (the TASK rows above never surface there).
+        await prisma.task.create({
+            data: {
+                tenantId: tenant.id,
+                key: 'TSK-4',
+                title: 'Scout the north block for aphids',
+                description: 'Walk the north block and check the undersides of leaves for aphid colonies.',
+                type: 'FARM_TASK',
+                severity: 'MEDIUM',
+                priority: 'P2',
+                status: 'OPEN',
+                source: 'MANUAL',
+                createdByUserId: admin.id,
+                assigneeUserId: editor.id,
+                metadataJson: { farmTaskType: 'SCOUTING', farmTaskCategory: 'PEST_DISEASE' },
+            },
+        });
         // Seed the per-tenant key counter to match. `WorkItemRepository`
         // mints `TSK-N` from `TaskKeySequence`; the #102 migration
         // backfills that counter from existing keys, but the backfill
-        // runs BEFORE this seed inserts TSK-1/2/3. Without this row the
+        // runs BEFORE this seed inserts TSK-1..4. Without this row the
         // first API-created task mints `TSK-1` and collides with the
         // seeded task on the unique `[tenantId, key]` index.
         await prisma.taskKeySequence.upsert({
             where: { tenantId: tenant.id },
-            create: { tenantId: tenant.id, lastValue: 3 },
-            update: { lastValue: 3 },
+            create: { tenantId: tenant.id, lastValue: 4 },
+            update: { lastValue: 4 },
         });
-        console.log('✅ Tasks seeded (TSK-1 / TSK-2 / TSK-3) + key counter');
+        console.log('✅ Tasks seeded (TSK-1 / TSK-2 / TSK-3 + FARM_TASK TSK-4) + key counter');
     }
 
     // ─── Policies (E2E: policies list + detail navigation) ───

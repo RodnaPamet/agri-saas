@@ -255,7 +255,7 @@ describe('processTaskDueNotifications — notification creation', () => {
             type: 'TASK_DUE',
             title: 'Task due today',
             message: 'TSK-1 "Rotate API keys" is due today.',
-            linkUrl: '/t/acme/tasks/task-1',
+            linkUrl: '/t/acme/farm-tasks/task-1',
             dedupeKey: 'tenant-a:TASK_DUE:today:task-1:user-1:2026-05-20',
         });
         expect(result).toEqual({
@@ -337,7 +337,7 @@ describe('processTaskDueNotifications — notification creation', () => {
 
         await processTaskDueNotifications(db, { now: NOW });
 
-        expect(lastCreateData(createMany).linkUrl).toBe('/t/globex/tasks/abc');
+        expect(lastCreateData(createMany).linkUrl).toBe('/t/globex/farm-tasks/abc');
     });
 
     test('no matching tasks → no writes, zeroed result', async () => {
@@ -490,7 +490,7 @@ describe('createTaskDueNotification — per-task helper', () => {
             type: 'TASK_DUE',
             title: 'Task due tomorrow',
             message: 'TSK-9 "Ship it" is due tomorrow.',
-            linkUrl: '/t/acme/tasks/task-x',
+            linkUrl: '/t/acme/farm-tasks/task-x',
             dedupeKey: 'tenant-a:TASK_DUE:day:task-x:user-1:2026-05-20',
         });
     });

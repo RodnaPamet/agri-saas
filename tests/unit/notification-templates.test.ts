@@ -62,13 +62,13 @@ describe('Notification Templates', () => {
 
         it('returns link to tenant tasks page', () => {
             const result = buildTaskAssignedEmail(payload);
-            expect(result.bodyText).toContain('/t/acme-corp/tasks');
+            expect(result.bodyText).toContain('/t/acme-corp/farm-tasks');
         });
 
         it('builds an ABSOLUTE link (no host-less http:///) for the mail client', () => {
             const result = buildTaskAssignedEmail(payload);
-            expect(result.bodyText).toContain('https://app.agrent.bg/t/acme-corp/tasks');
-            expect(result.bodyHtml).toContain('href="https://app.agrent.bg/t/acme-corp/tasks"');
+            expect(result.bodyText).toContain('https://app.agrent.bg/t/acme-corp/farm-tasks');
+            expect(result.bodyHtml).toContain('href="https://app.agrent.bg/t/acme-corp/farm-tasks"');
             expect(result.bodyText).not.toContain('http:///');
             expect(result.bodyHtml).not.toContain('http:///');
         });
