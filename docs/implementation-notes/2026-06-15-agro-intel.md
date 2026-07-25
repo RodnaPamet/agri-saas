@@ -69,3 +69,8 @@ existing public vendor-assessment submit route.
 - **NDVI is a tile-URL passthrough**, not a satellite pipeline — the
   layer renders from `AGRO_NDVI_TILE_URL`; real Sentinel/COG provisioning
   is out of scope.
+  > **Superseded.** The real Google Earth Engine Sentinel-2 pipeline landed
+  > later (`/agro/<index>-tiles` + `src/lib/agro/earth-engine.ts`), which made
+  > the passthrough dead: `AGRO_NDVI_TILE_URL` and its `/agro/ndvi-config`
+  > route were deleted 2026-07-25 — see
+  > `2026-07-25-farm-risk-honesty-reconciliation.md`.

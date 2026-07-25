@@ -16,13 +16,21 @@
  * shows a muted hint). `tileUrl:''` with `configured:true` ⇒ configured but
  * nothing to show (no field geometry, or a transient generation failure in
  * `error`) — the overlay simply stays off without breaking the map.
+ *
+ * `date` is the imagery's REAL acquisition date, not the requested one. The
+ * Earth-Engine composite falls back to the latest available window when the
+ * requested one holds no imagery, so the two legitimately differ (the wall
+ * clock outruns the published Sentinel-2 archive, or a cloudy stretch emptied
+ * the window). Reporting the request back would label old imagery with a fresh
+ * date; the client shows this value verbatim. Falls back to the requested end
+ * date only when EE could not report an acquisition date at all.
  */
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { getTenantCtx } from '@/app-layer/context';
 import { listLocationParcels } from '@/app-layer/usecases/location';
 import { isGeeConfigured } from '@/lib/agro/earth-engine';
-import type { NdviAoi, NdviWindow } from '@/lib/agro/earth-engine';
+import type { IndexTileResult, NdviAoi, NdviWindow } from '@/lib/agro/earth-engine';
 import type { VegetationIndex } from '@/lib/agro/vegetation-indices';
 import { getRedis } from '@/lib/redis';
 import { jsonResponse } from '@/lib/api-response';
@@ -66,7 +74,7 @@ function parcelClipGeometry(
 
 export async function handleIndexTiles(
     index: VegetationIndex,
-    getTileUrl: (aoi: NdviAoi, win: NdviWindow, clipGeometry?: unknown) => Promise<string>,
+    getTileUrl: (aoi: NdviAoi, win: NdviWindow, clipGeometry?: unknown) => Promise<IndexTileResult>,
     req: NextRequest,
     paramsPromise: Promise<{ tenantSlug: string }>,
 ) {
@@ -101,26 +109,36 @@ export async function handleIndexTiles(
     const startDate = new Date(endDate.getTime() - WINDOW_DAYS * 86_400_000);
     const start = ymd(startDate);
 
-    // `clip2` marks the parcel-polygon-clipped tiles so any bbox-clipped URLs
-    // cached under the old key aren't served after this change.
-    const cacheKey = `${index}:tile:${ctx.tenantId}:${query.locationId}:clip2:${end}`;
+    // The cached VALUE is now a `{ tileUrl, acquiredDate }` JSON pair rather
+    // than a bare URL string, so the key generation moves `clip2` → `clip3`:
+    // a `clip2` entry written by the previous deploy would `JSON.parse`-throw
+    // (or worse, parse a URL-shaped string) if read under the new shape.
+    const cacheKey = `${index}:tile:${ctx.tenantId}:${query.locationId}:clip3:${end}`;
     const redis = getRedis();
 
-    // Cache hit — return the still-valid tile URL.
+    // Cache hit — return the still-valid tile URL with the date of the imagery
+    // it was generated from (NOT the requested date).
     if (redis) {
         try {
             const cached = await redis.get(cacheKey);
             if (cached) {
-                return jsonResponse({ configured: true, tileUrl: cached, date: end });
+                const hit = JSON.parse(cached) as { tileUrl?: string; acquiredDate?: string | null };
+                if (hit?.tileUrl) {
+                    return jsonResponse({
+                        configured: true,
+                        tileUrl: hit.tileUrl,
+                        date: hit.acquiredDate ?? end,
+                    });
+                }
             }
         } catch {
-            /* redis hiccup — fall through and generate */
+            /* redis hiccup or an unreadable entry — fall through and generate */
         }
     }
 
-    let tileUrl: string;
+    let result: IndexTileResult;
     try {
-        tileUrl = await getTileUrl({ west, south, east, north }, { start, end }, clipGeometry ?? undefined);
+        result = await getTileUrl({ west, south, east, north }, { start, end }, clipGeometry ?? undefined);
     } catch {
         // A GEE failure must not break the map — report it softly so the
         // overlay stays off and the rest of the page works.
@@ -129,11 +147,18 @@ export async function handleIndexTiles(
 
     if (redis) {
         try {
-            await redis.set(cacheKey, tileUrl, 'EX', CACHE_TTL_SECONDS);
+            await redis.set(
+                cacheKey,
+                JSON.stringify({ tileUrl: result.tileUrl, acquiredDate: result.acquiredDate }),
+                'EX',
+                CACHE_TTL_SECONDS,
+            );
         } catch {
             /* redis hiccup — the URL is still returned, just uncached */
         }
     }
 
-    return jsonResponse({ configured: true, tileUrl, date: end });
+    // The real acquisition date is the honest label; the requested `end` is
+    // only a fallback for when EE couldn't report one.
+    return jsonResponse({ configured: true, tileUrl: result.tileUrl, date: result.acquiredDate ?? end });
 }

@@ -40,6 +40,12 @@
  *       "storage":  { "status": "ok" | "error" | "skipped", ... }
  *     },
  *     "failed":    string[]   // names of components that failed
+ *     "capabilities": {
+ *       // Degradable, OPTIONAL features — reported for operator
+ *       // observability, never part of `checks`/`failed`, so they can
+ *       // never 503 the probe.
+ *       "satellite": { "configured": boolean, "missing": string[] }
+ *     },
  *     "latencyMs": N           // total probe time
  *   }
  *
@@ -56,6 +62,7 @@ import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { HeadBucketCommand, S3Client } from '@aws-sdk/client-s3';
 import { env } from '@/env';
+import { geeConfigStatus } from '@/lib/agro/gee-config';
 import { jsonResponse } from '@/lib/api-response';
 import { logger } from '@/lib/observability/logger';
 
@@ -238,6 +245,16 @@ export async function GET() {
 
     const allOk = failed.length === 0;
 
+    // OPTIONAL CAPABILITIES — reported, never gating.
+    //
+    // Satellite (Google Earth Engine) is a degradable capability, not a
+    // dependency: with no credentials `/farm-risk` shows "no data" levels and
+    // the field briefing runs without satellite input — both by design. But a
+    // prod deploy that lost its GEE keys would go dark SILENTLY, so the state is
+    // surfaced here for operators (and dashboards) to alert on. It is
+    // deliberately OUTSIDE `checks`/`failed` so it can never 503 the probe.
+    const satellite = geeConfigStatus();
+
     if (!allOk) {
         // Log the failure for observability — operators want to see
         // readyz failures in the logs even though the probe response
@@ -258,6 +275,7 @@ export async function GET() {
             version: process.env.BUILD_SHA || process.env.VERCEL_GIT_COMMIT_SHA || 'dev',
             checks,
             failed,
+            capabilities: { satellite },
             latencyMs: Date.now() - start,
         },
         { status: allOk ? 200 : 503 },

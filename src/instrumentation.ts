@@ -97,6 +97,28 @@ export async function register() {
         // process exits. Idempotent under HMR.
         installShutdownHandlers();
 
+        // ── Satellite capability signal (NOT fail-fast) ──
+        // Google Earth Engine is OPTIONAL by design: with no credentials
+        // /farm-risk reports "no data" levels and the field briefing runs
+        // without satellite input — the product degrades honestly. But a prod
+        // deploy whose GEE keys were never set (or were dropped) goes dark
+        // SILENTLY: no error, no empty state an operator would notice, just
+        // permanently blank readings. Log it once at startup so "satellite is
+        // off" is discoverable in the logs, and report it in `/api/readyz`
+        // under `capabilities.satellite` for dashboards. Deliberately a WARN,
+        // not an exit — mirrors the DEK dev-fallback warning.
+        if (process.env.NODE_ENV === 'production') {
+            const { geeConfigStatus } = await import('@/lib/agro/gee-config');
+            const satellite = geeConfigStatus();
+            if (!satellite.configured) {
+                const { logger } = await import('@/lib/observability/logger');
+                logger.warn(
+                    'satellite (Google Earth Engine) is not configured — /farm-risk and the field briefing will run without imagery',
+                    { component: 'startup', missing: satellite.missing },
+                );
+            }
+        }
+
         // Verify Redis is not configured to EVICT keys — BullMQ job
         // state lives in Redis, so an eviction `maxmemory-policy`
         // would silently drop queued jobs. Best-effort + non-blocking:
