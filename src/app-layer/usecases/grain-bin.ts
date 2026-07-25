@@ -27,12 +27,14 @@ import type { CreateBinInput, UpdateBinInput } from '../schemas/grain.schemas';
  *     'Location', the grain-bin role recorded in the summary),
  *   - all DB access through runInTenantContext (RLS-bound) + bounded `take:`.
  *
- * Fill computation avoids N+1: list the bins, then ONE
- * `inventoryLot.groupBy({ by: ['locationId','unitId'] })` aggregate covering
- * every bin, reduced in memory by `@/lib/grain/bin-fill`. Grouping (rather
- * than fetching rows) is what makes the per-lot UNIT available for conversion
- * to tonnes, and what removes the farm-wide row cap that used to truncate
- * arbitrary bins' stock.
+ * Fill computation avoids N+1: list the bins, then TWO bounded
+ * `inventoryLot.groupBy({ by: ['locationId','unitId'] })` aggregates covering
+ * every bin — two rather than one because BIN and STORAGE count different
+ * stock (see `BinDto.storedTonnes`), and two rather than per-bin because the
+ * count must not grow with the number of bins. Reduced in memory by
+ * `@/lib/grain/bin-fill`. Grouping (rather than fetching rows) is what makes
+ * the per-lot UNIT available for conversion to tonnes, and what removes the
+ * farm-wide row cap that used to truncate arbitrary bins' stock.
  */
 
 const LIST_TAKE = 500;
@@ -52,12 +54,17 @@ export interface BinDto {
     description: string | null;
     capacityTonnes: number | null;
     /**
-     * Stored produce CONVERTED TO TONNES (the unit `capacityTonnes` is in),
-     * so this is directly comparable to the capacity. Excludes stock in
+     * Stored stock CONVERTED TO TONNES (the unit `capacityTonnes` is in), so
+     * this is directly comparable to the capacity. Excludes stock in
      * non-weight units — see `unconvertible`.
+     *
+     * WHAT counts depends on `kind`: a `BIN` is a grain silo and measures
+     * HARVESTED_PRODUCE only; a `STORAGE` row is a barn/store and measures ALL
+     * stock, because that is where seed and fertiliser live and a full barn
+     * reading as empty capacity is not useful.
      */
     storedTonnes: number;
-    /** Number of stored produce lots in the bin, including unconvertible ones. */
+    /** Number of stored lots in the bin, including unconvertible ones. */
     lotCount: number;
     /** storedTonnes / capacityTonnes; null without a capacity or when mixedUnits. */
     fillPct: number | null;
@@ -88,6 +95,7 @@ async function storedTotalsForBins(
     db: PrismaTx,
     ctx: RequestContext,
     binIds: string[],
+    opts: { produceOnly: boolean },
 ): Promise<Map<string, BinStoredTotals>> {
     if (binIds.length === 0) return new Map();
 
@@ -97,7 +105,12 @@ async function storedTotalsForBins(
             tenantId: ctx.tenantId,
             deletedAt: null,
             locationId: { in: binIds },
-            item: { is: { category: 'HARVESTED_PRODUCE' } },
+            // A BIN is a grain silo, so its fill measures produce. A STORAGE
+            // row is a barn/store where seed and fertiliser live — counting
+            // only produce there made a full barn read as empty capacity.
+            ...(opts.produceOnly
+                ? { item: { is: { category: 'HARVESTED_PRODUCE' } } }
+                : {}),
         },
         _sum: { quantityOnHand: true },
         _count: { _all: true },
@@ -124,11 +137,13 @@ async function storedTotalsForBins(
 /**
  * List the tenant's grain bins (BIN/STORAGE Locations) with a computed fill.
  *
- * `storedTonnes` is the bin's HARVESTED_PRODUCE stock converted into tonnes,
- * so it is comparable to `capacityTonnes`; `fillPct` is the fraction of
- * capacity used. Stock in a unit with no tonnage (COUNT/VOLUME) is reported
- * via `unconvertible` and suppresses `fillPct` rather than being folded in at
- * face value. See `src/lib/grain/bin-fill.ts` for the rule and its rationale.
+ * `storedTonnes` is the bin's stock converted into tonnes, so it is comparable
+ * to `capacityTonnes`; `fillPct` is the fraction of capacity used. WHICH stock
+ * counts depends on `kind` — a BIN measures produce, a STORAGE row measures
+ * everything (that is the only behavioural difference between the two kinds).
+ * Stock in a unit with no tonnage (COUNT/VOLUME) is reported via
+ * `unconvertible` and suppresses `fillPct` rather than being folded in at face
+ * value. See `src/lib/grain/bin-fill.ts` for the rule and its rationale.
  */
 export async function listBins(ctx: RequestContext, opts: { take?: number } = {}): Promise<BinDto[]> {
     assertCanRead(ctx);
@@ -145,7 +160,24 @@ export async function listBins(ctx: RequestContext, opts: { take?: number } = {}
         });
         if (bins.length === 0) return [];
 
-        const storedByBin = await storedTotalsForBins(db, ctx, bins.map((b) => b.id));
+        // Two aggregates, not one per bin: BIN rows count produce only,
+        // STORAGE rows count all stock. Still N+1-free — two queries total
+        // regardless of how many bins the tenant has.
+        const [produceTotals, allStockTotals] = await Promise.all([
+            storedTotalsForBins(
+                db,
+                ctx,
+                bins.filter((b) => b.kind === 'BIN').map((b) => b.id),
+                { produceOnly: true },
+            ),
+            storedTotalsForBins(
+                db,
+                ctx,
+                bins.filter((b) => b.kind !== 'BIN').map((b) => b.id),
+                { produceOnly: false },
+            ),
+        ]);
+        const storedByBin = new Map([...produceTotals, ...allStockTotals]);
 
         return bins.map((bin): BinDto => {
             const totals = storedByBin.get(bin.id) ?? EMPTY_BIN_TOTALS;
@@ -183,8 +215,10 @@ export async function getBin(ctx: RequestContext, id: string): Promise<BinDto> {
 
         // Same grouped aggregate as the list path — no per-bin row cap, so a
         // bin holding more than LIST_TAKE lots no longer under-reports.
-        const totals = (await storedTotalsForBins(db, ctx, [bin.id])).get(bin.id)
-            ?? EMPTY_BIN_TOTALS;
+        const totals =
+            (await storedTotalsForBins(db, ctx, [bin.id], {
+                produceOnly: bin.kind === 'BIN',
+            })).get(bin.id) ?? EMPTY_BIN_TOTALS;
         const capacity = dec(bin.capacityTonnes);
         return {
             id: bin.id,

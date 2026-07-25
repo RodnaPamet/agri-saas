@@ -53,11 +53,14 @@ describe('listBins', () => {
             { id: 'bin-1', name: 'Bin A', key: null, kind: 'BIN', description: null, capacityTonnes: 100 },
             { id: 'bin-2', name: 'Bin B', key: null, kind: 'STORAGE', description: null, capacityTonnes: null },
         ]);
-        // ONE groupBy returns (bin, unit) sums across BOTH bins.
-        mockDb.inventoryLot.groupBy.mockResolvedValue([
-            { locationId: 'bin-1', unitId: TONNE.id, _sum: { quantityOnHand: 45 }, _count: { _all: 2 } },
-            { locationId: 'bin-2', unitId: TONNE.id, _sum: { quantityOnHand: 8 }, _count: { _all: 1 } },
-        ]);
+        // One grouped result per kind rule.
+        mockDb.inventoryLot.groupBy
+            .mockResolvedValueOnce([
+                { locationId: 'bin-1', unitId: TONNE.id, _sum: { quantityOnHand: 45 }, _count: { _all: 2 } },
+            ])
+            .mockResolvedValueOnce([
+                { locationId: 'bin-2', unitId: TONNE.id, _sum: { quantityOnHand: 8 }, _count: { _all: 1 } },
+            ]);
         mockDb.unit.findMany.mockResolvedValue([TONNE]);
 
         const bins = await listBins(adminCtx);
@@ -67,13 +70,19 @@ describe('listBins', () => {
         expect(locArgs.where.kind).toEqual({ in: ['BIN', 'STORAGE'] });
         expect(locArgs.where).toMatchObject({ tenantId: 'tenant-1', deletedAt: null });
 
-        // Exactly ONE aggregate for the whole list (the N+1 guard), grouped by
-        // unit so each quantity can be converted before summing.
-        expect(mockDb.inventoryLot.groupBy).toHaveBeenCalledTimes(1);
+        // TWO aggregates for the whole list — one per kind rule (BIN counts
+        // produce, STORAGE counts all stock) — and crucially NOT one per bin:
+        // the query count must not grow with the number of bins.
+        expect(mockDb.inventoryLot.groupBy).toHaveBeenCalledTimes(2);
         const lotArgs = mockDb.inventoryLot.groupBy.mock.calls[0][0];
         expect(lotArgs.by).toEqual(['locationId', 'unitId']);
-        expect(lotArgs.where.locationId).toEqual({ in: ['bin-1', 'bin-2'] });
+        // First call: the BIN rows, produce-filtered.
+        expect(lotArgs.where.locationId).toEqual({ in: ['bin-1'] });
         expect(lotArgs.where.item).toEqual({ is: { category: 'HARVESTED_PRODUCE' } });
+        // Second call: the STORAGE rows, with NO category filter.
+        const storeArgs = mockDb.inventoryLot.groupBy.mock.calls[1][0];
+        expect(storeArgs.where.locationId).toEqual({ in: ['bin-2'] });
+        expect(storeArgs.where.item).toBeUndefined();
         // No row cap: a `take` here is what silently truncated bins farm-wide.
         expect(lotArgs.take).toBeUndefined();
 
@@ -146,6 +155,27 @@ describe('listBins', () => {
         expect(bin.unconvertible).toEqual([
             { unitKey: 'each', symbol: 'ea', quantity: 12, lotCount: 1 },
         ]);
+    });
+
+    it('counts ALL stock for a STORAGE row, produce only for a BIN', async () => {
+        // A STORAGE row is a barn/store — it is where seed and fertiliser live,
+        // so a produce-only fill made a full barn read as empty capacity. This
+        // is the only behavioural difference between the two kinds.
+        mockDb.location.findMany.mockResolvedValue([
+            { id: 'store-1', name: 'Main Store', key: null, kind: 'STORAGE', description: null, capacityTonnes: 50 },
+        ]);
+        mockDb.inventoryLot.groupBy.mockResolvedValue([
+            { locationId: 'store-1', unitId: KILO.id, _sum: { quantityOnHand: 25_000 }, _count: { _all: 4 } },
+        ]);
+        mockDb.unit.findMany.mockResolvedValue([KILO]);
+
+        const [store] = await listBins(adminCtx);
+
+        // Only the STORAGE aggregate runs (no BIN rows to query for).
+        expect(mockDb.inventoryLot.groupBy).toHaveBeenCalledTimes(1);
+        expect(mockDb.inventoryLot.groupBy.mock.calls[0][0].where.item).toBeUndefined();
+        expect(store.storedTonnes).toBe(25); // 25 000 kg of seed + fertiliser
+        expect(store.fillPct).toBe(0.5);
     });
 
     it('short-circuits with no lot query when there are no bins', async () => {
