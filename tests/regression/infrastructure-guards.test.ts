@@ -74,8 +74,8 @@ describe('Infrastructure Regression Guards', () => {
             }
         });
 
-        test('exactly 28 scheduled jobs exist', () => {
-            expect(SCHEDULED_JOBS).toHaveLength(28);
+        test('exactly 29 scheduled jobs exist', () => {
+            expect(SCHEDULED_JOBS).toHaveLength(29);
         });
 
         test('scheduled job names match expected set', () => {
@@ -91,6 +91,12 @@ describe('Infrastructure Regression Guards', () => {
                 'automation-runner',
                 'compliance-digest',
                 'compliance-snapshot',
+                // Grain fulfilment — daily 07:30 UTC sweep firing
+                // delivery-window alerts for ACTIVE contracts. Shares its
+                // definition of "late" with the list badge via
+                // src/lib/grain/contract-window.ts, so the badge a farmer
+                // sees and the notification they receive cannot disagree.
+                'contract-delivery-window-sweep',
                 // Epic G-2 — every-5-min repeatable scanning
                 // ControlTestPlan and enqueuing runner jobs.
                 'control-test-scheduler',

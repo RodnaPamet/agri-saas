@@ -25,10 +25,11 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
     useEffect,
+    useMemo,
     type Dispatch,
     type SetStateAction,
 } from 'react';
-import { Controller, useForm } from 'react-hook-form';
+import { Controller, useForm, useWatch } from 'react-hook-form';
 import { useTranslations } from 'next-intl';
 import { z } from 'zod';
 import { Button } from '@/components/ui/button';
@@ -39,24 +40,25 @@ import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
+import { currencyOptions } from '@/lib/grain/currencies';
 import {
-    CONTRACT_STATUS_LABELS,
-    CONTRACT_TYPE_LABELS,
+    contractStatusOptions,
+    contractTypeOptions,
 } from './filter-defs';
-import type { ContractRow } from './ContractsClient';
-
-// ─── Options ─────────────────────────────────────────────────────────
-
-const TYPE_OPTIONS: ComboboxOption[] = Object.entries(CONTRACT_TYPE_LABELS).map(
-    ([value, label]) => ({ value, label }),
-);
-const STATUS_OPTIONS: ComboboxOption[] = Object.entries(
-    CONTRACT_STATUS_LABELS,
-).map(([value, label]) => ({ value, label }));
+import type { ContractDetail, ContractRow } from './ContractsClient';
 
 interface SeasonOption {
     id: string;
     name: string;
+}
+
+/** The PLANNING module is not enabled for this tenant — distinct from
+ *  "the seasons request failed" and from "there are no seasons yet". */
+class PlanningUnavailableError extends Error {
+    constructor() {
+        super('PLANNING module unavailable');
+        this.name = 'PlanningUnavailableError';
+    }
 }
 
 // ─── Schema ──────────────────────────────────────────────────────────
@@ -75,6 +77,7 @@ const numericText = z
     );
 
 const formSchema = z.object({
+    key: z.string().max(120).optional(),
     counterparty: z.string().min(1, 'Counterparty is required'),
     commodity: z.string().optional(),
     type: z.enum(['SALE', 'PURCHASE']),
@@ -91,7 +94,35 @@ const formSchema = z.object({
 
 type FormValues = z.infer<typeof formSchema>;
 
+/**
+ * Pull the human message out of an API error body, appending field
+ * details when the server sent them (a Zod issue list or the offending
+ * unique-constraint columns).
+ */
+function resolveApiError(data: unknown, isEdit: boolean): string {
+    const body = data as {
+        error?: { message?: string; code?: string; details?: unknown };
+    };
+    const base =
+        body?.error?.message ??
+        `Failed to ${isEdit ? 'update' : 'create'} contract`;
+
+    const details = body?.error?.details;
+    if (Array.isArray(details) && details.length > 0) {
+        const fields = details
+            .map((d) => {
+                const issue = d as { path?: unknown; message?: string };
+                const path = Array.isArray(issue.path) ? issue.path.join('.') : '';
+                return path && issue.message ? `${path}: ${issue.message}` : issue.message;
+            })
+            .filter(Boolean);
+        if (fields.length > 0) return `${base} (${fields.join('; ')})`;
+    }
+    return base;
+}
+
 const DEFAULT_VALUES: FormValues = {
+    key: '',
     counterparty: '',
     commodity: '',
     type: 'SALE',
@@ -143,30 +174,76 @@ export function ContractFormModal({
     onSaved,
 }: ContractFormModalProps) {
     const t = useTranslations('grain.contracts.form');
+    // ENUM MEMBER labels come from the `ag` namespace — the SAME keys
+    // `<AgStatusBadge>` renders in the table. Before this, the modal
+    // built its dropdowns from hardcoded English literals, so a
+    // Bulgarian user saw translated badges and chips and then an
+    // English dropdown in the form that edits them.
+    const tAg = useTranslations('ag');
+    const tContracts = useTranslations('grain.contracts');
+    const typeOptions: ComboboxOption[] = useMemo(() => contractTypeOptions(tAg), [tAg]);
+    const statusOptions: ComboboxOption[] = useMemo(
+        () => contractStatusOptions(tAg),
+        [tAg],
+    );
     const apiUrl = useTenantApiUrl();
     const queryClient = useQueryClient();
     const isEdit = Boolean(contract);
 
+    // ── Full row on demand ──
+    //
+    // The LIST no longer carries `terms` / `pricingNotes` — they are
+    // Epic-B encrypted columns that used to ride along decrypted for up
+    // to 500 rows into every viewer's cache. This is the fetch that
+    // replaces that: ONE contract, only when someone actually opens it.
+    // It also gives the previously-dead GET /grain/contracts/[id] route
+    // its first caller.
+    const detailQuery = useQuery<ContractDetail>({
+        queryKey: ['grain-contracts', tenantSlug, 'detail', contract?.id],
+        queryFn: async () => {
+            const res = await fetch(apiUrl(`/grain/contracts/${contract!.id}`));
+            if (!res.ok) throw new Error('Failed to load contract');
+            return res.json();
+        },
+        enabled: open && Boolean(contract?.id),
+        staleTime: 30_000,
+    });
+
     // Seasons for the optional season select. Fetched lazily when the
-    // modal is open; a grain tenant always also has the PLANNING module.
+    // modal is open.
     const seasonsQuery = useQuery<SeasonOption[]>({
         queryKey: ['grain', tenantSlug, 'seasons'],
         queryFn: async () => {
             const res = await fetch(apiUrl('/planning/seasons'));
+            // 404 / 403 here means the PLANNING module is off for this
+            // tenant — a different thing from "no seasons exist", and the
+            // form must not conflate them.
+            if (res.status === 404 || res.status === 403) {
+                throw new PlanningUnavailableError();
+            }
             if (!res.ok) throw new Error('Failed to load seasons');
             return res.json();
         },
         enabled: open,
+        retry: false,
         staleTime: 60_000,
     });
+
+    // Three distinct states, each said out loud rather than collapsed
+    // into a lone "No season" option:
+    //   • module off      → explain, and disable the picker;
+    //   • load failed     → say so;
+    //   • loaded + empty  → invite creating a season.
+    const planningUnavailable =
+        seasonsQuery.error instanceof PlanningUnavailableError;
+    const seasonsFailed = seasonsQuery.isError && !planningUnavailable;
+    const seasons = seasonsQuery.data ?? [];
+
     // Prepend a "No season" sentinel so the optional relation is
     // clearable (the Combobox has no built-in clear affordance).
     const seasonOptions: ComboboxOption[] = [
         { value: '', label: t('noSeason') },
-        ...(seasonsQuery.data ?? []).map((s) => ({
-            value: s.id,
-            label: s.name,
-        })),
+        ...seasons.map((s) => ({ value: s.id, label: s.name })),
     ];
 
     const {
@@ -183,12 +260,28 @@ export function ContractFormModal({
         mode: 'onTouched',
     });
 
+    // `useWatch` (subscription-based) rather than `watch()`: the latter
+    // returns a fresh function each render, so feeding its result into a
+    // `useMemo` dep array is not memoization-safe.
+    const watchedType = useWatch({ control, name: 'type' });
+    const watchedCurrency = useWatch({ control, name: 'priceCurrency' });
+    // A currency already stored but not in our offered set is kept at the
+    // top rather than silently dropped on the next unrelated edit.
+    const currencyChoices: ComboboxOption[] = useMemo(
+        () => [
+            { value: '', label: t('currencyNone') },
+            ...currencyOptions(watchedCurrency ?? contract?.priceCurrency),
+        ],
+        [t, watchedCurrency, contract?.priceCurrency],
+    );
+
     // Re-seed the form whenever the modal opens — from the edited contract
     // or back to empty defaults for create.
     useEffect(() => {
         if (!open) return;
         if (contract) {
             reset({
+                key: contract.key ?? '',
                 counterparty: contract.counterparty,
                 commodity: contract.commodity ?? '',
                 type: contract.type,
@@ -199,19 +292,22 @@ export function ContractFormModal({
                 deliveryStart: isoToDate(contract.deliveryStart),
                 deliveryEnd: isoToDate(contract.deliveryEnd),
                 seasonId: contract.seasonId ?? '',
-                terms: contract.terms ?? '',
-                pricingNotes: contract.pricingNotes ?? '',
+                // `terms` / `pricingNotes` come from the detail fetch —
+                // the list row does not carry them.
+                terms: detailQuery.data?.terms ?? '',
+                pricingNotes: detailQuery.data?.pricingNotes ?? '',
             });
         } else {
             reset(DEFAULT_VALUES);
         }
         const t = setTimeout(() => setFocus('counterparty'), 60);
         return () => clearTimeout(t);
-    }, [open, contract, reset, setFocus]);
+    }, [open, contract, detailQuery.data, reset, setFocus]);
 
     const onSubmit = async (values: FormValues) => {
         try {
             const body = {
+                key: values.key?.trim() || null,
                 counterparty: values.counterparty.trim(),
                 commodity: values.commodity?.trim() || null,
                 type: values.type,
@@ -240,13 +336,15 @@ export function ContractFormModal({
                 },
             );
             if (!res.ok) {
+                // The API error body is `{ error: { code, message,
+                // details? } }` (see `toApiErrorResponse`). Reading
+                // `data.error` as a STRING meant `typeof` was always
+                // 'object', so every server rejection fell through to a
+                // generic message and discarded the real one — including
+                // the clean 409 on a duplicate contract number and the
+                // per-field validation issues.
                 const data = await res.json().catch(() => ({}));
-                const msg =
-                    typeof data.error === 'string'
-                        ? data.error
-                        : data.message ||
-                          `Failed to ${isEdit ? 'update' : 'create'} contract`;
-                throw new Error(msg);
+                throw new Error(resolveApiError(data, isEdit));
             }
             queryClient.invalidateQueries({
                 queryKey: ['grain-contracts', tenantSlug],
@@ -292,16 +390,42 @@ export function ContractFormModal({
 
                     <div className="space-y-default">
                         <FormField
-                            label={t('counterparty')}
+                            // The schema has always known this is a
+                            // BUYER on a SALE and a SUPPLIER on a
+                            // PURCHASE; the form said "Counterparty" to
+                            // everyone. `type` is in hand at render time.
+                            label={
+                                watchedType === 'PURCHASE'
+                                    ? t('supplier')
+                                    : t('buyer')
+                            }
                             required
                             error={errors.counterparty?.message}
                         >
                             <Input
                                 id="contract-counterparty-input"
                                 type="text"
-                                placeholder={t('counterpartyPlaceholder')}
+                                placeholder={
+                                    watchedType === 'PURCHASE'
+                                        ? t('supplierPlaceholder')
+                                        : t('buyerPlaceholder')
+                                }
                                 autoComplete="off"
                                 {...register('counterparty')}
+                            />
+                        </FormField>
+
+                        <FormField
+                            label={t('contractNumber')}
+                            hint={t('contractNumberHint')}
+                            error={errors.key?.message}
+                        >
+                            <Input
+                                id="contract-key-input"
+                                type="text"
+                                placeholder={t('contractNumberPlaceholder')}
+                                autoComplete="off"
+                                {...register('key')}
                             />
                         </FormField>
 
@@ -314,9 +438,9 @@ export function ContractFormModal({
                                         <Combobox
                                             id="contract-type-input"
                                             name="type"
-                                            options={TYPE_OPTIONS}
+                                            options={typeOptions}
                                             selected={
-                                                TYPE_OPTIONS.find(
+                                                typeOptions.find(
                                                     (o) => o.value === field.value,
                                                 ) ?? null
                                             }
@@ -343,9 +467,9 @@ export function ContractFormModal({
                                         <Combobox
                                             id="contract-status-input"
                                             name="status"
-                                            options={STATUS_OPTIONS}
+                                            options={statusOptions}
                                             selected={
-                                                STATUS_OPTIONS.find(
+                                                statusOptions.find(
                                                     (o) => o.value === field.value,
                                                 ) ?? null
                                             }
@@ -405,12 +529,32 @@ export function ContractFormModal({
                                 label={t('currency')}
                                 error={errors.priceCurrency?.message}
                             >
-                                <Input
-                                    id="contract-currency-input"
-                                    type="text"
-                                    placeholder={t('currencyPlaceholder')}
-                                    autoComplete="off"
-                                    {...register('priceCurrency')}
+                                {/* ISO-4217 picker, not free text. The org
+                                    rollup groups money by this exact
+                                    string, so "eur" / "EUR" / "€" used to
+                                    read as three separate currencies. */}
+                                <Controller
+                                    control={control}
+                                    name="priceCurrency"
+                                    render={({ field }) => (
+                                        <Combobox
+                                            id="contract-currency-input"
+                                            name="priceCurrency"
+                                            options={currencyChoices}
+                                            selected={
+                                                currencyChoices.find(
+                                                    (o) => o.value === field.value,
+                                                ) ?? null
+                                            }
+                                            setSelected={(o) =>
+                                                field.onChange(o?.value ?? '')
+                                            }
+                                            placeholder={t('currencyPlaceholder')}
+                                            matchTriggerWidth
+                                            buttonProps={{ className: 'w-full' }}
+                                            caret
+                                        />
+                                    )}
                                 />
                             </FormField>
                         </div>
@@ -454,7 +598,15 @@ export function ContractFormModal({
 
                         <FormField
                             label={t('season')}
-                            hint={t('seasonHint')}
+                            hint={
+                                planningUnavailable
+                                    ? t('seasonPlanningOff')
+                                    : seasonsFailed
+                                      ? t('seasonLoadFailed')
+                                      : seasons.length === 0 && !seasonsQuery.isLoading
+                                        ? t('seasonNoneYet')
+                                        : t('seasonHint')
+                            }
                             error={errors.seasonId?.message}
                         >
                             <Controller
@@ -474,6 +626,7 @@ export function ContractFormModal({
                                             field.onChange(o?.value ?? '')
                                         }
                                         placeholder={t('seasonPlaceholder')}
+                                        disabled={planningUnavailable}
                                         matchTriggerWidth
                                         buttonProps={{ className: 'w-full' }}
                                         caret
@@ -485,7 +638,10 @@ export function ContractFormModal({
                         <FormField label={t('terms')} error={errors.terms?.message}>
                             <Textarea
                                 id="contract-terms-input"
-                                rows={2}
+                                // 20 000-char column: two rows showed
+                                // roughly one line of a negotiated
+                                // contract.
+                                rows={8}
                                 placeholder={t('termsPlaceholder')}
                                 {...register('terms')}
                             />
@@ -493,11 +649,14 @@ export function ContractFormModal({
 
                         <FormField
                             label={t('pricingNotes')}
+                            // "Basis" is the term of art this field is
+                            // for; spelling it out costs one tooltip.
+                            hint={tContracts('jargonBasis')}
                             error={errors.pricingNotes?.message}
                         >
                             <Textarea
                                 id="contract-pricing-notes-input"
-                                rows={2}
+                                rows={4}
                                 placeholder={t('pricingNotesPlaceholder')}
                                 {...register('pricingNotes')}
                             />

@@ -9,6 +9,7 @@ import { ToggleGroup } from '@/components/ui/toggle-group';
 import { DataTable, createColumns } from '@/components/ui/table';
 import { EmptyState } from '@/components/ui/empty-state';
 import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
+import { formatDecimal } from '@/lib/number-format';
 
 // ─── Row shapes (mirror the cost-rollup usecase DTOs) ───
 
@@ -58,7 +59,7 @@ interface CostsClientProps {
 /** Format a cost magnitude with the row's own currency (precise, not compact). */
 function money(v: number | null | undefined, currency: string | null): string {
     if (v == null) return '—';
-    const n = v.toLocaleString(undefined, { maximumFractionDigits: 2 });
+    const n = formatDecimal(v, 2);
     return currency ? `${n} ${currency}` : n;
 }
 
@@ -97,6 +98,14 @@ export function CostsClient({
 
     const loading = costsQuery.isLoading && !costsQuery.data;
     const data = costsQuery.data;
+
+    // A failed rollup read must surface as an error, not as the empty
+    // state ("no cost data yet") — that reads as "this farm spent
+    // nothing", the most misleading possible answer for a cost report.
+    // Gated on having no response at all so a failed background refetch
+    // never blanks rows already on screen (the DataTable renders `error`
+    // INSTEAD of the table).
+    const loadError = costsQuery.isError && !data ? tc('loadFailed') : undefined;
 
     // ─── Columns per dimension. Each branch is fully typed against its
     //     own row shape; the table is rendered in the matching branch so
@@ -321,6 +330,7 @@ export function CostsClient({
                         }
                         columns={plantingColumns}
                         loading={loading}
+                        error={loadError}
                         getRowId={(r) => r.plantingId}
                         emptyState={emptyState}
                         resourceName={(p) => (p ? 'plantings' : 'planting')}
@@ -334,6 +344,7 @@ export function CostsClient({
                         data={data && data.by === 'season' ? data.rows : []}
                         columns={seasonColumns}
                         loading={loading}
+                        error={loadError}
                         getRowId={(r) => r.seasonId ?? 'unassigned'}
                         emptyState={emptyState}
                         resourceName={(p) => (p ? 'seasons' : 'season')}
@@ -347,6 +358,7 @@ export function CostsClient({
                         data={data && data.by === 'field' ? data.rows : []}
                         columns={fieldColumns}
                         loading={loading}
+                        error={loadError}
                         getRowId={(r) => r.locationId ?? 'unassigned'}
                         emptyState={emptyState}
                         resourceName={(p) => (p ? 'fields' : 'field')}

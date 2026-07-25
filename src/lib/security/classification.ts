@@ -245,4 +245,10 @@ export const SOFT_DELETE_TARGETS = [
     { model: 'Audit',      hasDeletedAt: false, priority: 'P3' },
     { model: 'AuditCycle', hasDeletedAt: false, priority: 'P3' },
     { model: 'AuditPack',  hasDeletedAt: false, priority: 'P3' },
+    // Grain (2026-07-25). Contract shipped with the full soft-delete
+    // trio and a soft-deleting usecase but was registered nowhere, so
+    // `retentionUntil` was written by nothing and read by nothing. Kept
+    // in step with SOFT_DELETE_MODELS in `src/lib/soft-delete.ts` — the
+    // two lists are documented as mirrors of each other.
+    { model: 'Contract',   hasDeletedAt: true,  priority: 'P3' },
 ] as const;

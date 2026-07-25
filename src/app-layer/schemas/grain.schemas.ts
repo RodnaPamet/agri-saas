@@ -85,6 +85,24 @@ export const UpdateContractSchema = z
 export type UpdateContractInput = z.infer<typeof UpdateContractSchema>;
 
 // ═════════════════════════════════════════════════════════════════════
+//  Grain deliveries (fulfilment against a contract)
+// ═════════════════════════════════════════════════════════════════════
+
+export const CreateGrainDeliverySchema = z
+    .object({
+        contractId: z.string().min(1),
+        deliveredAt: z.string().min(8),
+        // Strictly positive: a zero-tonne delivery closes nothing, and a
+        // negative one is a correction that belongs as a deletion of the
+        // wrong ticket, not a phantom "negative delivery" row.
+        tonnes: z.number().finite().positive('must be greater than zero'),
+        reference: OptionalText(120),
+    })
+    .strip();
+
+export type CreateGrainDeliveryInput = z.infer<typeof CreateGrainDeliverySchema>;
+
+// ═════════════════════════════════════════════════════════════════════
 //  Yield records
 // ═════════════════════════════════════════════════════════════════════
 

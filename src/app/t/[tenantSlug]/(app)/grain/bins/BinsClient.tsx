@@ -13,10 +13,12 @@ import {
     useFilters,
 } from '@/components/ui/filter';
 import { EntityListPage } from '@/components/layout/EntityListPage';
+import { GrainSectionNav } from '../GrainSectionNav';
 import { EmptyState } from '@/components/ui/empty-state';
 import { TableTitleCell } from '@/components/ui/table-title-cell';
 import { AgStatusBadge } from '@/components/ag/ag-status';
 import { ProgressBar } from '@/components/ui/progress-bar';
+import { formatDecimal } from '@/lib/number-format';
 import { BinFormModal } from './BinFormModal';
 
 // ─── Types ───
@@ -47,7 +49,7 @@ interface BinsClientProps {
 
 function fmtNum(v: number | null): string {
     if (v == null) return '—';
-    return v.toLocaleString(undefined, { maximumFractionDigits: 2 });
+    return formatDecimal(v, 2);
 }
 
 export function BinsClient(props: BinsClientProps) {
@@ -90,6 +92,13 @@ function BinsPageInner({ initialBins, tenantSlug, permissions }: BinsClientProps
     // Stable ref so the search memo below doesn't recompute every render.
     const rawBins = useMemo(() => binsQuery.data ?? [], [binsQuery.data]);
     const loading = binsQuery.isLoading && !binsQuery.data;
+
+    // A failed list read must surface as an error, not as the empty
+    // state (which claims zero rows). Gated on having nothing to show so
+    // a failed background refetch never blanks cached/SSR rows — the
+    // DataTable renders `error` INSTEAD of the table.
+    const loadError =
+        binsQuery.isError && rawBins.length === 0 ? t('loadFailed') : undefined;
 
     // Live free-text search (name / key) over loaded rows.
     const bins = useMemo(() => {
@@ -246,11 +255,15 @@ function BinsPageInner({ initialBins, tenantSlug, permissions }: BinsClientProps
                 defs: [],
                 searchId: 'grain-bins-search',
                 searchPlaceholder: t('searchPlaceholder'),
+                toolbarActions: (
+                    <GrainSectionNav tenantSlug={tenantSlug} active="bins" />
+                ),
             }}
             table={{
                 data: bins,
                 columns,
                 loading,
+                error: loadError,
                 getRowId,
                 mobileFallback: 'card',
                 onRowClick: permissions.canWrite ? handleRowClick : undefined,
