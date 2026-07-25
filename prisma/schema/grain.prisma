@@ -26,10 +26,19 @@
 //  middleware encrypts strings into the same column).
 //
 //  Back-relations added elsewhere (Prisma needs both sides):
-//    • auth.prisma        Tenant:   contracts / yieldRecords
+//    • auth.prisma        Tenant:   contracts / yieldRecords / grainDeliveries
 //    • agriculture.prisma Location: yieldRecords
 //    • planning.prisma    Season:   contracts / yieldRecords
 //    • planning.prisma    Planting: yieldRecords
+//
+//  ── Production vs delivery (the fulfilment loop) ──
+//  YieldRecord is PRODUCTION (what came off the field); GrainDelivery is
+//  DISPATCH (what physically moved against a specific contract). They are
+//  deliberately separate rows: one harvest can serve several buyers, grain
+//  sits in a bin in between, and a contract can be filled from several
+//  harvests. Attributing a tonne to a counterparty is what closes the loop
+//  — `Contract.status = DELIVERED` is gated on real GrainDelivery movement
+//  (see `src/app-layer/usecases/contract.ts`).
 // ═══════════════════════════════════════════════════════════════════
 
 /// A grain marketing / supply contract — a forward SALE of produce or
@@ -40,10 +49,22 @@
 model Contract {
   id              String         @id @default(cuid())
   tenantId        String
-  /// Optional link to the marketing-year Season (portfolio rollup:
-  /// contracted-vs-produced per season).
+  /// Optional link to the marketing-year Season. Drives the org
+  /// portfolio's per-season contracted-vs-produced rollup
+  /// (`getPortfolioGrainSummary().perSeason`), which pairs these
+  /// contracted tonnes against `YieldRecord.grossTonnes` for the same
+  /// season. That rollup counts ACTIVE + DELIVERED + SETTLED — every
+  /// commitment ever really made against the harvest — which is a
+  /// WIDER set than the live-book headline. See
+  /// `CONTRACTED_SEASON_STATUSES` in
+  /// `src/app-layer/domain/contract-status.ts`.
   seasonId        String?
-  /// External contract reference / number.
+  /// External contract reference / number — the reference printed on
+  /// the paper the farmer is holding. Unique per tenant among LIVE
+  /// rows: the DB index is PARTIAL (`WHERE deletedAt IS NULL`, see
+  /// migration 20260725140000) so deleting a contract releases its
+  /// number for re-use. Prisma cannot express a partial index, so the
+  /// `@@unique` below states the logical constraint.
   key             String?
   /// Buyer (SALE) or supplier (PURCHASE) name — plaintext, filterable.
   counterparty    String
@@ -53,10 +74,18 @@ model Contract {
   status          ContractStatus @default(DRAFT)
   /// Contracted volume in metric tonnes — plaintext (SUM'd by rollups).
   volumeTonnes    Decimal?       @db.Decimal(14, 3)
-  /// Agreed price per tonne — plaintext (contract value = volume × price).
+  /// Agreed price per tonne — plaintext. Contract value =
+  /// `volumeTonnes × pricePerTonne`, computed Decimal-exactly by
+  /// `computeContractValue` (`src/lib/grain/contract-value.ts`) and
+  /// surfaced per row + as a per-currency book total on the list. Values
+  /// are NEVER summed across `priceCurrency`.
   pricePerTonne   Decimal?       @db.Decimal(14, 2)
   priceCurrency   String?
   deliveryStart   DateTime?
+  /// End of the agreed delivery window. Backs the "closing soon" /
+  /// "overdue" signal on ACTIVE contracts (`deriveContractWindowState`)
+  /// and the daily `contract-delivery-window-sweep` job — the
+  /// `[tenantId, deliveryEnd]` index below is what that sweep scans.
   deliveryEnd     DateTime?
   /// ENCRYPTED (Epic B manifest) — full negotiated contract terms.
   terms           String?
@@ -68,8 +97,9 @@ model Contract {
   deletedByUserId String?
   retentionUntil  DateTime?
 
-  tenant Tenant  @relation(fields: [tenantId], references: [id])
-  season Season? @relation(fields: [seasonId, tenantId], references: [id, tenantId])
+  tenant     Tenant          @relation(fields: [tenantId], references: [id])
+  season     Season?         @relation(fields: [seasonId, tenantId], references: [id, tenantId])
+  deliveries GrainDelivery[]
 
   @@unique([id, tenantId])
   @@unique([tenantId, key])
@@ -77,6 +107,54 @@ model Contract {
   @@index([tenantId, type])
   @@index([tenantId, seasonId])
   @@index([tenantId, deliveryStart])
+  /// Backs the delivery-window sweep's `deliveryEnd` range scan, which
+  /// is filtered on status — hence the status column in the composite.
+  @@index([tenantId, status, deliveryEnd])
+}
+
+/// One physical DELIVERY of tonnage against a Contract — a weighbridge
+/// ticket, in effect. This is the row that closes the fulfilment loop:
+/// `SUM(tonnes)` per contract gives delivered-to-date, and
+/// `Contract.volumeTonnes − delivered` gives what is still owed to that
+/// counterparty.
+///
+/// Deliberately NOT a field on YieldRecord: production is not dispatch
+/// (see the header note). `contractId` is REQUIRED — a delivery with no
+/// contract is just an inventory movement and belongs to the stock
+/// ledger, not here.
+///
+/// Every column is plaintext: `tonnes` is a magnitude the fulfilment
+/// rollups SUM in-DB, and `reference` is a short external identifier
+/// (weighbridge / delivery-note number) that operators filter on. The
+/// commercially-sensitive narrative for a deal stays on the parent
+/// Contract (`terms` / `pricingNotes`, both encrypted) — this row
+/// carries no free-text commentary, so the Epic-B split holds by
+/// construction rather than by manifest entry.
+model GrainDelivery {
+  id              String   @id @default(cuid())
+  tenantId        String
+  /// The contract this movement is delivered against.
+  contractId      String
+  /// When the tonnage physically moved.
+  deliveredAt     DateTime
+  /// Delivered mass in metric tonnes — plaintext (SUM'd by the
+  /// fulfilment rollup). Non-null: a delivery of "unknown" tonnes
+  /// cannot close any part of a contract.
+  tonnes          Decimal  @db.Decimal(14, 3)
+  /// Weighbridge ticket / delivery-note reference — plaintext.
+  reference       String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  deletedAt       DateTime?
+  deletedByUserId String?
+  retentionUntil  DateTime?
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id])
+  contract Contract @relation(fields: [contractId, tenantId], references: [id, tenantId])
+
+  @@unique([id, tenantId])
+  @@index([tenantId, contractId])
+  @@index([tenantId, deliveredAt])
 }
 
 /// An actual harvest production record — gross tonnes realised against a

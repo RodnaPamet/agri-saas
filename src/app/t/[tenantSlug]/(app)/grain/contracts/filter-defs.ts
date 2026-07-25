@@ -28,8 +28,11 @@ import type {
 } from '@/components/ui/filter/filter-definitions';
 import {
     createTypedFilterDefs,
-    optionsFromEnum,
 } from '@/components/ui/filter/filter-definitions';
+import {
+    ALL_CONTRACT_STATUSES,
+    ALL_CONTRACT_TYPES,
+} from '@/app-layer/domain/contract-status';
 // Icons are Nucleo (the canonical family) cast to the icon shape the
 // `FilterDefInput` contract types — the cast is sourced from the contract
 // type itself, so this file never depends on the legacy lucide package
@@ -45,27 +48,47 @@ import {
 type FilterIcon = FilterDefInput['icon'];
 const asIcon = (c: unknown): FilterIcon => c as FilterIcon;
 
-/** A next-intl translator scoped to the `grainEnums` namespace. */
+/** A next-intl translator scoped to the `grainEnums` namespace (facet
+ *  labels — "Status", "Statuses", "Type", "Types"). */
 type Translator = (key: string) => string;
 
-// ─── Static labels (enum copy lives here, not in the client) ─────────
+/** A next-intl translator scoped to the `ag` namespace — the one that
+ *  resolves ENUM MEMBER labels (`status.contract.DRAFT`, …). */
+export type AgTranslator = (key: string) => string;
+
+// ─── Enum member labels: ONE source of truth ─────────────────────────
 //
-// English fallbacks kept as the source of truth for `optionsFromEnum`
-// (used by the create/edit form modal). The Contracts filter toolbar
-// overrides these with translated copy via `buildContractFilters(t)`.
+// `ag.status.contract.<MEMBER>` / `ag.status.contractType.<MEMBER>` —
+// the very keys `<AgStatusBadge>` renders in the table. Every other
+// surface that names a ContractStatus or ContractType (the filter chip,
+// the create/edit form dropdowns) resolves through the builders below,
+// so a label can never be right in one place and wrong in another.
+//
+// It used to be three copies: hardcoded English literals here, a
+// flattened `grainEnums.statusDraft…` set, and `ag.status.contract`.
+// The Bulgarian catalogue had already drifted between two of them — the
+// filter chip said "Уредена / Отказан" while the table badge two
+// columns away said "Уреден / Отменен" for the same row. The literals
+// and the `grainEnums` copies are gone; this is the only one left.
+//
+// The member LIST comes from the domain module, so adding a status to
+// the Prisma enum surfaces here without a second edit.
 
-export const CONTRACT_STATUS_LABELS = {
-    DRAFT: 'Draft',
-    ACTIVE: 'Active',
-    DELIVERED: 'Delivered',
-    SETTLED: 'Settled',
-    CANCELLED: 'Cancelled',
-} as const;
+/** `{ value, label }` options for the five ContractStatus members. */
+export function contractStatusOptions(t: AgTranslator) {
+    return ALL_CONTRACT_STATUSES.map((value) => ({
+        value,
+        label: t(`status.contract.${value}`),
+    }));
+}
 
-export const CONTRACT_TYPE_LABELS = {
-    SALE: 'Sale',
-    PURCHASE: 'Purchase',
-} as const;
+/** `{ value, label }` options for the two ContractType members. */
+export function contractTypeOptions(t: AgTranslator) {
+    return ALL_CONTRACT_TYPES.map((value) => ({
+        value,
+        label: t(`status.contractType.${value}`),
+    }));
+}
 
 // ─── Static filter definitions ───────────────────────────────────────
 
@@ -76,7 +99,11 @@ const STATIC_DEFS = {
         description: 'Lifecycle stage of the contract.',
         group: 'Attributes',
         icon: asIcon(CircleDotted),
-        options: optionsFromEnum(CONTRACT_STATUS_LABELS),
+        // Placeholder members only — `buildContractFilters` replaces
+        // these with translated labels before the toolbar ever sees
+        // them. The static def exists so the filter KEYS are typed at
+        // module load, which happens before any translator exists.
+        options: ALL_CONTRACT_STATUSES.map((value) => ({ value, label: value })),
         multiple: true,
         resetBehavior: 'clearable',
     },
@@ -86,7 +113,7 @@ const STATIC_DEFS = {
         description: 'Whether the contract sells produce or buys inputs.',
         group: 'Attributes',
         icon: asIcon(ArrowsOppositeDirectionX),
-        options: optionsFromEnum(CONTRACT_TYPE_LABELS),
+        options: ALL_CONTRACT_TYPES.map((value) => ({ value, label: value })),
         multiple: true,
         resetBehavior: 'clearable',
     },
@@ -100,23 +127,27 @@ export const contractFilterDefs = createTypedFilterDefs()(STATIC_DEFS);
  * separate search slot owned by `useFilterContext`. */
 export const CONTRACT_FILTER_KEYS = contractFilterDefs.filterKeys;
 
-/** Produce the Filter[] array FilterToolbar consumes. Both facets are
- * static (enum-backed); the builder takes a `grainEnums` translator so the
- * facet labels + enum option labels render in the active locale. */
-export function buildContractFilters(t: Translator): FilterDef[] {
+/**
+ * Produce the Filter[] array FilterToolbar consumes.
+ *
+ * Takes TWO translators, deliberately:
+ *   - `t`   (`grainEnums`) for the FACET labels — "Status" / "Statuses".
+ *   - `tAg` (`ag`)         for the ENUM MEMBER labels, the same keys the
+ *                          table badge resolves. This is what stops the
+ *                          chip and the badge from disagreeing.
+ */
+export function buildContractFilters(
+    t: Translator,
+    tAg: AgTranslator,
+): FilterDef[] {
     return contractFilterDefs.filters.map((f) => {
         if (f.key === 'status') {
             return {
                 ...f,
                 label: t('status'),
                 labelPlural: t('statuses'),
-                options: optionsFromEnum({
-                    DRAFT: t('statusDraft'),
-                    ACTIVE: t('statusActive'),
-                    DELIVERED: t('statusDelivered'),
-                    SETTLED: t('statusSettled'),
-                    CANCELLED: t('statusCancelled'),
-                }),
+                description: t('statusDescription'),
+                options: contractStatusOptions(tAg),
             };
         }
         if (f.key === 'type') {
@@ -124,10 +155,8 @@ export function buildContractFilters(t: Translator): FilterDef[] {
                 ...f,
                 label: t('type'),
                 labelPlural: t('types'),
-                options: optionsFromEnum({
-                    SALE: t('typeSale'),
-                    PURCHASE: t('typePurchase'),
-                }),
+                description: t('typeDescription'),
+                options: contractTypeOptions(tAg),
             };
         }
         return f;

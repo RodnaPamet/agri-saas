@@ -528,6 +528,13 @@ export interface LeaseExpirySweepPayload {
     withinDays?: number;
 }
 
+/** Grain fulfilment — daily cross-tenant sweep of ACTIVE contracts whose
+ *  delivery window is closing or lapsed + CONTRACT_DELIVERY_DUE alerts. */
+export interface ContractDeliveryWindowSweepPayload {
+    tenantId?: string;
+    withinDays?: number;
+}
+
 /** Data-integrity — daily cross-tenant stock-ledger reconciliation (chain + balances). */
 export interface ReconcileInventoryLedgersPayload {
     tenantId?: string;
@@ -734,6 +741,7 @@ export interface JobPayloadMap {
     'report-delivery': ReportDeliveryPayload;
     'low-stock-monitor': LowStockMonitorPayload;
     'lease-expiry-sweep': LeaseExpirySweepPayload;
+    'contract-delivery-window-sweep': ContractDeliveryWindowSweepPayload;
     'reconcile-inventory-ledgers': ReconcileInventoryLedgersPayload;
     'agronomy-copilot': AgronomyCopilotPayload;
     'classify-photo': ClassifyPhotoPayload;
@@ -898,6 +906,14 @@ export const JOB_DEFAULTS: Record<JobName, {
         removeOnFail: 200,
     },
     'lease-expiry-sweep': {
+        attempts: 2,
+        backoff: { type: 'exponential', delay: 10000 },
+        removeOnComplete: 100,
+        removeOnFail: 200,
+    },
+    'contract-delivery-window-sweep': {
+        // Notification sweep; one retry on a transient DB blip.
+        // Idempotent — the dedupeKey means a re-run sends nothing twice.
         attempts: 2,
         backoff: { type: 'exponential', delay: 10000 },
         removeOnComplete: 100,

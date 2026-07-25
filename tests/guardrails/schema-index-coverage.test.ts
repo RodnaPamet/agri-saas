@@ -405,6 +405,9 @@ const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
     // ─── Land administration (roadmap 2/3) — parcel lease register ───
     ParcelLease:
         'listParcelLeases findMany filters by (tenantId, parcelId, deletedAt) — covered by @@index([tenantId, parcelId]); the endDate/createdAt orderBy runs over a parcel\'s handful of leases (take:100), no separate composite needed. listTenantLeases (Rent page, roadmap 3/3) is the tenant-wide register — filters (tenantId, deletedAt) with an optional parcel.locationId relation filter, orders by endDate/createdAt, take:500 — served by @@index([tenantId, endDate]) (the same index the rent-roll expiry scan uses); the createdAt tiebreak sorts a tenant\'s bounded lease set in memory.',
+    // ─── Grain fulfilment — delivery ledger against a contract ───
+    GrainDelivery:
+        'listContractDeliveries findMany filters by (tenantId, contractId, deletedAt), orders by deliveredAt desc, take:500 — covered by @@index([tenantId, contractId]); a contract fills in a handful of loads so the date sort runs over a tiny set. The rollups do NOT findMany: delivered-to-date is one groupBy([contractId]) over an id set (same index), and the delivery-window sweep groups by contractId across the batch it already scanned.',
     // ─── Rent roll — lease settlement leg ───
     LeasePayment:
         'listLeasePayments findMany filters by (tenantId, leaseId, deletedAt), orders by paidAt/createdAt desc, take:200 — covered by @@index([tenantId, leaseId]); a lease settles a handful of times per season so the date sort runs over a tiny set. The rent-roll aggregation reads payments through a raw-SQL LEFT JOIN grouped by leaseId and filtered on (tenantId, deletedAt, seasonYear) — served by @@index([tenantId, seasonYear]).',

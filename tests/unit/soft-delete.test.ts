@@ -220,7 +220,13 @@ describe('Soft-Delete Middleware', () => {
             expect(SOFT_DELETE_MODELS.has('Audit')).toBe(true);
             expect(SOFT_DELETE_MODELS.has('AuditCycle')).toBe(true);
             expect(SOFT_DELETE_MODELS.has('AuditPack')).toBe(true);
-            expect(SOFT_DELETE_MODELS.size).toBe(12);
+            // Grain (2026-07-25) — Contract already carried the full
+            // soft-delete trio and its usecase soft-deletes, but it was
+            // registered in neither this set nor the retention sweep, so
+            // `retentionUntil` was written by nothing and read by
+            // nothing.
+            expect(SOFT_DELETE_MODELS.has('Contract')).toBe(true);
+            expect(SOFT_DELETE_MODELS.size).toBe(13);
         });
 
         test('does NOT include ephemeral models', () => {
