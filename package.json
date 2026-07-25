@@ -259,6 +259,7 @@
         "@typescript-eslint/type-utils": "^8.61.0",
         "typescript-eslint": "^8.61.0",
         "picomatch": "^4.0.4",
+        "valibot": "^1.4.2",
         "protobufjs": "^8.2.0",
         "@hono/node-server": "^1.19.13",
         "hono": "^4.12.25",

@@ -26,18 +26,25 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 
 // ─── Shared module mocks ─────────────────────────────────────────────
 
-jest.mock('@/lib/tenant-context-provider', () => ({
-    useTenantApiUrl:
-        () =>
-        (path: string) =>
-            `/api/t/acme${path.startsWith('/') ? path : `/${path}`}`,
-    useTenantHref: () => (path: string) => `/t/acme${path}`,
-    useTenantContext: () => ({
-        tenantName: 'Acme Farms',
-        tenantSlug: 'acme',
-        currencySymbol: '€',
-    }),
-}));
+jest.mock('@/lib/tenant-context-provider', () => {
+    // Mirror the real hooks' referential stability: production
+    // useTenantApiUrl / useTenantHref are useCallback-memoized (one stable
+    // fn per tenant). Returning a fresh closure per call would make any
+    // consumer effect that lists the builder in its deps re-run every
+    // render — so hoist the builders to module scope here.
+    const apiUrl = (path: string) =>
+        `/api/t/acme${path.startsWith('/') ? path : `/${path}`}`;
+    const href = (path: string) => `/t/acme${path}`;
+    return {
+        useTenantApiUrl: () => apiUrl,
+        useTenantHref: () => href,
+        useTenantContext: () => ({
+            tenantName: 'Acme Farms',
+            tenantSlug: 'acme',
+            currencySymbol: '€',
+        }),
+    };
+});
 
 jest.mock('next-intl', () => {
     // next-intl's `useTranslations` returns a CALLABLE that also carries
@@ -111,28 +118,33 @@ const SWR_FIXTURES: Record<string, unknown> = {
         { id: 'loc-1', name: 'Home Farm', status: 'ACTIVE', _count: { parcels: 4 } },
         { id: 'loc-2', name: 'River Block', status: 'ACTIVE', _count: { parcels: 2 } },
     ],
-    '/inventory/lots': [
-        {
-            id: 'lot-1',
-            lotCode: 'BATCH-2027-04',
-            item: { id: 'i1', name: 'Roundup PowerMAX', category: 'PESTICIDE' },
-            unit: { id: 'u1', symbol: 'L' },
-            location: { id: 'loc-1', name: 'Home Farm' },
-            quantityOnHand: 120,
-            expiresAt: '2027-09-01T00:00:00.000Z',
-            lowStock: true,
-        },
-        {
-            id: 'lot-2',
-            lotCode: 'SEED-CORN-A',
-            item: { id: 'i2', name: 'Corn Seed', category: 'SEED' },
-            unit: { id: 'u2', symbol: 'kg' },
-            location: null,
-            quantityOnHand: 800,
-            expiresAt: null,
-            lowStock: false,
-        },
-    ],
+    // FLAG 5 — the lot list now fetches the cursor first page (`?limit=50`),
+    // which returns the `{ items, pageInfo }` envelope.
+    '/inventory/lots?limit=50': {
+        items: [
+            {
+                id: 'lot-1',
+                lotCode: 'BATCH-2027-04',
+                item: { id: 'i1', name: 'Roundup PowerMAX', category: 'PESTICIDE' },
+                unit: { id: 'u1', symbol: 'L' },
+                location: { id: 'loc-1', name: 'Home Farm' },
+                quantityOnHand: 120,
+                expiresAt: '2027-09-01T00:00:00.000Z',
+                lowStock: true,
+            },
+            {
+                id: 'lot-2',
+                lotCode: 'SEED-CORN-A',
+                item: { id: 'i2', name: 'Corn Seed', category: 'SEED' },
+                unit: { id: 'u2', symbol: 'kg' },
+                location: null,
+                quantityOnHand: 800,
+                expiresAt: null,
+                lowStock: false,
+            },
+        ],
+        pageInfo: { hasNextPage: false },
+    },
     '/items': [
         { id: 'i1', name: 'Roundup PowerMAX', category: 'PESTICIDE' },
         { id: 'i2', name: 'Corn Seed', category: 'SEED' },

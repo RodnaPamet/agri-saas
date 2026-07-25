@@ -1,5 +1,5 @@
 import { RequestContext } from '../types';
-import { assertCanRead, assertCanWrite } from '../policies/common';
+import { assertCanRead, assertCanWrite, assertCanAdmin } from '../policies/common';
 import { logEvent } from '../events/audit';
 import { badRequest, notFound } from '@/lib/errors/types';
 import { runInTenantContext } from '@/lib/db-context';
@@ -528,7 +528,7 @@ async function recordInputApplicationImpl(
  * full trace.
  */
 export async function reconcileStockLedger(ctx: RequestContext): Promise<StockLedgerReconciliation> {
-    assertCanWrite(ctx);
+    assertCanAdmin(ctx);
     const startMs = performance.now();
     let healthy = false;
     try {

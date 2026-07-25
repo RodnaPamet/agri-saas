@@ -1,11 +1,11 @@
 'use client';
 
-import { useMemo, useState, useEffect } from 'react';
+import { useCallback, useMemo, useState, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
-import { apiPost } from '@/lib/api-client';
+import { apiGet, apiPost, apiPatch } from '@/lib/api-client';
 import { ListPageShell } from '@/components/layout/ListPageShell';
 import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { DataTable, createColumns } from '@/components/ui/table';
@@ -80,12 +80,90 @@ interface TraceLotResult {
     edges: { parentLotId: string; childLotId: string; type: string }[];
 }
 
+// Full editable item shape — GET /items/{itemId} (edit-product prefill).
+interface ItemDetail {
+    id: string;
+    name: string;
+    category: string;
+    defaultUnitId: string;
+    sku: string | null;
+    reorderLevel: number | null;
+    quarantinePeriodDays: number | null;
+    activeIngredient: string | null;
+    pppRegistrationNo: string | null;
+}
+
+// FLAG 5 — the inventory list/ledger endpoints return this envelope
+// (`{ items, pageInfo }`), NOT the `{ rows, nextCursor }` shape the shared
+// `useCursorPagination` hook consumes. The envelope is locked by an OpenAPI
+// DTO + load tests, so we adapt on the client with the tiny accumulator
+// below rather than reshaping the endpoint.
+interface CursorPage<T> {
+    items: T[];
+    pageInfo: { nextCursor?: string | null; hasNextPage: boolean };
+}
+
 const CATEGORIES = ['SEED', 'PESTICIDE', 'FERTILIZER', 'AMENDMENT', 'FUEL', 'HARVESTED_PRODUCE', 'OTHER'] as const;
+
+/**
+ * Local cursor "load more" accumulator. `seed()` (re)sets page 1 — from an
+ * SWR-owned first page (lot list, so create/movement `mutate()` reseeds it)
+ * or a direct fetch (ledger). `loadMore()` fetches `buildPageUrl(cursor)`
+ * and appends `items`, taking the next cursor + hasNextPage from `pageInfo`.
+ * Mirrors `useCursorPagination`'s reseed/append contract for the `{ items,
+ * pageInfo }` envelope.
+ */
+function useInventoryCursor<T>(buildPageUrl: (cursor: string) => string) {
+    const [rows, setRows] = useState<T[]>([]);
+    const [nextCursor, setNextCursor] = useState<string | null>(null);
+    const [hasMore, setHasMore] = useState(false);
+    const [loading, setLoading] = useState(false);
+
+    const seed = useCallback((items: T[], cursor: string | null, more: boolean) => {
+        setRows(items);
+        setNextCursor(cursor);
+        setHasMore(more);
+        setLoading(false);
+    }, []);
+
+    const loadMore = useCallback(async () => {
+        if (loading || !nextCursor) return;
+        setLoading(true);
+        try {
+            const page = await apiGet<CursorPage<T>>(buildPageUrl(nextCursor));
+            setRows((prev) => [...prev, ...page.items]);
+            setNextCursor(page.pageInfo.nextCursor ?? null);
+            setHasMore(page.pageInfo.hasNextPage);
+        } catch {
+            // Leave hasMore set so the operator can retry the same page.
+        } finally {
+            setLoading(false);
+        }
+    }, [loading, nextCursor, buildPageUrl]);
+
+    return { rows, hasMore, loading, seed, loadMore };
+}
 
 export function InventoryClient({ tenantSlug }: { tenantSlug: string }) {
     const t = useTranslations('inventory');
     const buildUrl = useTenantApiUrl();
-    const { data: lots, mutate, isLoading } = useTenantSWR<Lot[]>('/inventory/lots');
+    // FLAG 5 — lot list: first page via SWR (so create-lot / movement
+    // `mutate()` reseeds it), deeper pages via the local cursor accumulator.
+    const { data: lotPage, mutate, isLoading } = useTenantSWR<CursorPage<Lot>>('/inventory/lots?limit=50');
+    const buildLotPageUrl = useCallback(
+        (cursor: string) => buildUrl(`/inventory/lots?limit=50&cursor=${encodeURIComponent(cursor)}`),
+        [buildUrl],
+    );
+    const {
+        rows: lotRows,
+        hasMore: lotsHasMore,
+        loading: lotsLoadingMore,
+        seed: seedLots,
+        loadMore: loadMoreLots,
+    } = useInventoryCursor<Lot>(buildLotPageUrl);
+    useEffect(() => {
+        if (lotPage) seedLots(lotPage.items, lotPage.pageInfo.nextCursor ?? null, lotPage.pageInfo.hasNextPage);
+    }, [lotPage, seedLots]);
     const { data: items, mutate: mutateItems } = useTenantSWR<ItemRow[]>('/items');
     // Units are a slow-changing catalog — relax SWR revalidation.
     const { data: units } = useTenantSWR<UnitRow[]>('/units', {
@@ -96,11 +174,15 @@ export function InventoryClient({ tenantSlug }: { tenantSlug: string }) {
     const [error, setError] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
 
-    // New product modal
+    // Product modal — dual-mode (create when editItemId is null, edit otherwise).
     const [showProduct, setShowProduct] = useState(false);
+    const [editItemId, setEditItemId] = useState<string | null>(null);
     const [pName, setPName] = useState('');
     const [pCategory, setPCategory] = useState<string>('PESTICIDE');
     const [pUnitId, setPUnitId] = useState<string>('');
+    // Low-stock reorder threshold (in the default unit) — drives the Low badge
+    // + the daily reorder notification.
+    const [pReorderLevel, setPReorderLevel] = useState('');
     // БАБХ farm-record — product regulatory fields.
     const [pQuarantineDays, setPQuarantineDays] = useState('');
     const [pActiveIngredient, setPActiveIngredient] = useState('');
@@ -130,12 +212,85 @@ export function InventoryClient({ tenantSlug }: { tenantSlug: string }) {
     const [mvQty, setMvQty] = useState('');
     const [mvReason, setMvReason] = useState('');
 
+    // FLAG 5 — lot ledger: sourced entirely from the cursor `/ledger`
+    // endpoint (the inline `lotDetail.ledger` first page carries no cursor,
+    // so we fetch page 1 here and page forward with "Load more"). `lotDetail`
+    // still drives the header on-hand.
+    const buildLedgerPageUrl = useCallback(
+        (cursor: string) =>
+            buildUrl(`/inventory/lots/${activeLotId}/ledger?limit=50&cursor=${encodeURIComponent(cursor)}`),
+        [buildUrl, activeLotId],
+    );
+    const {
+        rows: ledgerRows,
+        hasMore: ledgerHasMore,
+        loading: ledgerLoadingMore,
+        seed: seedLedger,
+        loadMore: loadMoreLedger,
+    } = useInventoryCursor<LedgerRow>(buildLedgerPageUrl);
+    const refreshLedger = useCallback(
+        async (lotId: string) => {
+            try {
+                const page = await apiGet<CursorPage<LedgerRow>>(
+                    buildUrl(`/inventory/lots/${lotId}/ledger?limit=50`),
+                );
+                seedLedger(page.items, page.pageInfo.nextCursor ?? null, page.pageInfo.hasNextPage);
+            } catch {
+                seedLedger([], null, false);
+            }
+        },
+        [buildUrl, seedLedger],
+    );
+    // Reset/refetch page 1 whenever the active lot changes. `activeLotId` is
+    // the sole trigger — `refreshLedger` / `seedLedger` are stable (memoized
+    // on a stable `buildUrl`), and listing them would re-run this effect on
+    // any incidental identity churn of the URL builder, re-seeding an empty
+    // page every render in a setState loop.
+    useEffect(() => {
+        if (!activeLotId) {
+            seedLedger([], null, false);
+            return;
+        }
+        void refreshLedger(activeLotId);
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- activeLotId is the sole reactive trigger; refreshLedger/seedLedger are stable
+    }, [activeLotId]);
+
     // Lot traceability (food-safety recall walk) — fetched lazily when the
     // operator opens the genealogy section for the active lot.
     const [showTrace, setShowTrace] = useState(false);
     const { data: trace, isLoading: traceLoading } = useTenantSWR<TraceLotResult>(
         showTrace && activeLotId ? `/inventory/lots/${activeLotId}/trace` : null,
     );
+
+    // FLAG 6 — humanize raw enums for the UI. Static `t()` calls (no
+    // dynamic template-literal keys) so next-intl's key typing holds; the
+    // helpers fall back to the raw value for any unmapped enum member.
+    const stockTypeLabels = useMemo<Record<string, string>>(
+        () => ({
+            RECEIPT: t('stockType.RECEIPT'),
+            CONSUMPTION: t('stockType.CONSUMPTION'),
+            HARVEST_IN: t('stockType.HARVEST_IN'),
+            TRANSFER: t('stockType.TRANSFER'),
+            ADJUSTMENT: t('stockType.ADJUSTMENT'),
+            SALE_OUT: t('stockType.SALE_OUT'),
+            DISPOSAL: t('stockType.DISPOSAL'),
+        }),
+        [t],
+    );
+    const categoryLabels = useMemo<Record<string, string>>(
+        () => ({
+            SEED: t('itemCategory.SEED'),
+            PESTICIDE: t('itemCategory.PESTICIDE'),
+            FERTILIZER: t('itemCategory.FERTILIZER'),
+            AMENDMENT: t('itemCategory.AMENDMENT'),
+            FUEL: t('itemCategory.FUEL'),
+            HARVESTED_PRODUCE: t('itemCategory.HARVESTED_PRODUCE'),
+            OTHER: t('itemCategory.OTHER'),
+        }),
+        [t],
+    );
+    const humanizeStockType = (type: string) => stockTypeLabels[type] ?? type;
+    const humanizeCategory = (cat: string) => categoryLabels[cat] ?? cat;
 
     const itemOptions = useMemo(
         () => (items ?? []).map((i) => ({ label: `${i.name}`, value: i.id })),
@@ -146,32 +301,75 @@ export function InventoryClient({ tenantSlug }: { tenantSlug: string }) {
         [units],
     );
     const categoryOptions = useMemo(
-        () => CATEGORIES.map((c) => ({ label: c.replace('_', ' '), value: c })),
-        [],
+        () => CATEGORIES.map((c) => ({ label: humanizeCategory(c), value: c })),
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- humanizeCategory closes over categoryLabels (memoized on t)
+        [t],
     );
 
-    const createProduct = async (e: React.FormEvent) => {
+    const resetProductForm = () => {
+        setEditItemId(null);
+        setPName('');
+        setPCategory('PESTICIDE');
+        setPUnitId('');
+        setPReorderLevel('');
+        setPQuarantineDays('');
+        setPActiveIngredient('');
+        setPPppRegNo('');
+    };
+
+    const openNewProduct = () => {
+        resetProductForm();
+        setError(null);
+        setShowProduct(true);
+    };
+
+    // Open the product modal in edit mode, pre-filled with the item's
+    // current values (fetched from GET /items/{itemId}).
+    const openEditProduct = async (itemId: string) => {
+        setError(null);
+        try {
+            const item = await apiGet<ItemDetail>(buildUrl(`/items/${itemId}`));
+            setEditItemId(item.id);
+            setPName(item.name);
+            setPCategory(item.category);
+            setPUnitId(item.defaultUnitId);
+            setPReorderLevel(item.reorderLevel != null ? String(item.reorderLevel) : '');
+            setPQuarantineDays(item.quarantinePeriodDays != null ? String(item.quarantinePeriodDays) : '');
+            setPActiveIngredient(item.activeIngredient ?? '');
+            setPPppRegNo(item.pppRegistrationNo ?? '');
+            setShowProduct(true);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Failed to load product');
+        }
+    };
+
+    const submitProduct = async (e: React.FormEvent) => {
         e.preventDefault();
         setBusy(true);
         setError(null);
         try {
-            await apiPost(buildUrl('/items'), {
+            const payload = {
                 name: pName,
                 category: pCategory,
                 defaultUnitId: pUnitId,
+                reorderLevel: pReorderLevel.trim() ? Number(pReorderLevel) : null,
                 quarantinePeriodDays: pQuarantineDays.trim() ? Number(pQuarantineDays) : null,
                 activeIngredient: pActiveIngredient.trim() || null,
                 pppRegistrationNo: pPppRegNo.trim() || null,
-            });
+            };
+            if (editItemId) {
+                await apiPatch(buildUrl(`/items/${editItemId}`), payload);
+            } else {
+                await apiPost(buildUrl('/items'), payload);
+            }
             setShowProduct(false);
-            setPName('');
-            setPUnitId('');
-            setPQuarantineDays('');
-            setPActiveIngredient('');
-            setPPppRegNo('');
+            resetProductForm();
             await mutateItems();
+            // On edit the item's name / reorder level feed the lots table, the
+            // low-stock badge, and any open lot-detail header — refresh them.
+            if (editItemId) await Promise.all([mutate(), lotDetail ? mutateLot() : Promise.resolve()]);
         } catch (err) {
-            setError(err instanceof Error ? err.message : 'Failed to create product');
+            setError(err instanceof Error ? err.message : 'Failed to save product');
         } finally {
             setBusy(false);
         }
@@ -220,6 +418,7 @@ export function InventoryClient({ tenantSlug }: { tenantSlug: string }) {
             setMvQty('');
             setMvReason('');
             await Promise.all([mutate(), mutateLot()]);
+            await refreshLedger(activeLotId);
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to post movement');
         } finally {
@@ -263,11 +462,18 @@ export function InventoryClient({ tenantSlug }: { tenantSlug: string }) {
                     // Mobile card key/value row — expiry date.
                     meta: { mobileCard: { slot: 'meta', label: t('colExpires') } },
                 },
+                {
+                    id: 'location',
+                    header: t('colLocation'),
+                    cell: ({ row }) => row.original.location?.name ?? '—',
+                    // Mobile card key/value row — storage location.
+                    meta: { mobileCard: { slot: 'meta', label: t('colLocation') } },
+                },
             ]),
         [t],
     );
 
-    const rows = lots ?? [];
+    const rows = lotRows;
 
     return (
         <ListPageShell className="gap-section">
@@ -282,7 +488,7 @@ export function InventoryClient({ tenantSlug }: { tenantSlug: string }) {
                         <p className="text-sm text-content-secondary">{t('subtitle')}</p>
                     </div>
                     <div className="flex items-center gap-compact">
-                        <Button variant="secondary" size="sm" onClick={() => setShowProduct(true)}>{t('newProduct')}</Button>
+                        <Button variant="secondary" size="sm" onClick={openNewProduct}>{t('newProduct')}</Button>
                         <Button variant="primary" size="sm" onClick={() => setShowLot(true)} disabled={!items?.length}>{t('newLot')}</Button>
                     </div>
                 </div>
@@ -294,7 +500,7 @@ export function InventoryClient({ tenantSlug }: { tenantSlug: string }) {
                     data-testid="inventory-lots-table"
                     data={rows}
                     columns={columns}
-                    loading={isLoading && !lots}
+                    loading={isLoading && !lotPage}
                     getRowId={(l) => l.id}
                     onRowClick={(l) => {
                         setActiveLotId(l.id);
@@ -308,16 +514,39 @@ export function InventoryClient({ tenantSlug }: { tenantSlug: string }) {
                             variant="no-records"
                             title={t('emptyTitle')}
                             description={t('emptyDescription')}
-                            primaryAction={{ label: t('newProduct'), onClick: () => setShowProduct(true) }}
+                            primaryAction={{ label: t('newProduct'), onClick: openNewProduct }}
                         />
                     }
                 />
             </ListPageShell.Body>
+            <ListPageShell.Footer>
+                {lotsHasMore && (
+                    <div className="flex justify-center pt-default">
+                        <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => void loadMoreLots()}
+                            loading={lotsLoadingMore}
+                        >
+                            {t('loadMore')}
+                        </Button>
+                    </div>
+                )}
+            </ListPageShell.Footer>
 
-            {/* New product */}
-            <Modal showModal={showProduct} setShowModal={setShowProduct} size="md" title={t('productModalTitle')} description={t('productModalDescription')}>
-                <Modal.Header title={t('productModalTitle')} description={t('productModalHeaderDescription')} />
-                <Modal.Form id="new-product-form" onSubmit={createProduct}>
+            {/* Product — dual-mode (new / edit) */}
+            <Modal
+                showModal={showProduct}
+                setShowModal={setShowProduct}
+                size="md"
+                title={editItemId ? t('editProductModalTitle') : t('productModalTitle')}
+                description={t('productModalDescription')}
+            >
+                <Modal.Header
+                    title={editItemId ? t('editProductModalTitle') : t('productModalTitle')}
+                    description={editItemId ? t('editProductModalHeaderDescription') : t('productModalHeaderDescription')}
+                />
+                <Modal.Form id="new-product-form" onSubmit={submitProduct}>
                     <Modal.Body>
                         {error && showProduct && (
                             <div role="alert" className="mb-4 rounded-lg border border-border-error bg-bg-error px-3 py-2 text-sm text-content-error">{error}</div>
@@ -340,6 +569,18 @@ export function InventoryClient({ tenantSlug }: { tenantSlug: string }) {
                                     selected={unitOptions.find((o) => o.value === pUnitId) ?? null}
                                     setSelected={(o) => setPUnitId(o?.value ?? '')}
                                     placeholder={t('unitPlaceholder')}
+                                />
+                            </FormField>
+                            <FormField label={t('reorderLevel')} hint={t('reorderLevelHint')}>
+                                <Input
+                                    inputMode="decimal"
+                                    value={pReorderLevel}
+                                    onChange={(e) =>
+                                        setPReorderLevel(
+                                            e.target.value.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1'),
+                                        )
+                                    }
+                                    placeholder={t('reorderLevelPlaceholder')}
                                 />
                             </FormField>
                             {/* БАБХ farm-record — regulatory fields (optional). */}
@@ -371,7 +612,7 @@ export function InventoryClient({ tenantSlug }: { tenantSlug: string }) {
                     </Modal.Body>
                     <Modal.Actions>
                         <Button variant="secondary" size="sm" type="button" onClick={() => setShowProduct(false)}>{t('cancel')}</Button>
-                        <Button variant="primary" size="sm" type="submit" loading={busy} disabled={!pName || !pUnitId || busy}>{t('createProduct')}</Button>
+                        <Button variant="primary" size="sm" type="submit" loading={busy} disabled={!pName || !pUnitId || busy}>{editItemId ? t('saveProduct') : t('createProduct')}</Button>
                     </Modal.Actions>
                 </Modal.Form>
             </Modal>
@@ -433,6 +674,19 @@ export function InventoryClient({ tenantSlug }: { tenantSlug: string }) {
                     {error && activeLotId && (
                         <div role="alert" className="mb-4 rounded-lg border border-border-error bg-bg-error px-3 py-2 text-sm text-content-error">{error}</div>
                     )}
+                    {lotDetail && (
+                        <div className="mb-default flex items-center justify-between gap-compact">
+                            <span className="text-sm text-content-secondary">{lotDetail.item.name}</span>
+                            <Button
+                                variant="secondary"
+                                size="sm"
+                                type="button"
+                                onClick={() => openEditProduct(lotDetail.item.id)}
+                            >
+                                {t('editProduct')}
+                            </Button>
+                        </div>
+                    )}
                     {activeLotId && typeof window !== 'undefined' && (
                         <div className="mb-default flex items-center gap-default rounded-lg border border-border-subtle p-3">
                             <QrCode
@@ -460,7 +714,7 @@ export function InventoryClient({ tenantSlug }: { tenantSlug: string }) {
                             <FormField label={mvMode === 'receive' ? t('quantityIn') : t('signedDelta')} className="flex-1">
                                 <Input inputMode="decimal" value={mvQty} onChange={(e) => setMvQty(e.target.value)} placeholder={mvMode === 'receive' ? '0' : t('deltaPlaceholder')} />
                             </FormField>
-                            <Button variant="primary" size="sm" type="submit" loading={busy} disabled={!mvQty || (mvMode === 'adjust' && !mvReason) || busy}>
+                            <Button variant="primary" size="sm" type="submit" loading={busy} disabled={!mvQty || (mvMode === 'adjust' && !mvReason) || (mvMode === 'receive' && !(Number(mvQty) > 0)) || busy}>
                                 {t('post')}
                             </Button>
                         </div>
@@ -473,24 +727,37 @@ export function InventoryClient({ tenantSlug }: { tenantSlug: string }) {
 
                     <div className="mt-default">
                         <Heading level={3}>{t('ledger')}</Heading>
-                        {lotDetail?.ledger?.length ? (
+                        {ledgerRows.length ? (
                             <ul className="mt-2 space-y-tight text-sm">
-                                {lotDetail.ledger.map((t) => (
-                                    <li key={t.id} className="flex items-center justify-between border-b border-border-subtle py-1.5">
+                                {ledgerRows.map((entry) => (
+                                    <li key={entry.id} className="flex items-center justify-between border-b border-border-subtle py-1.5">
                                         <span className="flex items-center gap-compact">
-                                            <StatusBadge variant={t.quantityDelta < 0 ? 'error' : 'success'}>{t.type}</StatusBadge>
-                                            <span className="text-content-muted">{formatDate(t.occurredAt)}</span>
-                                            {t.reason && <span className="text-content-subtle">· {t.reason}</span>}
+                                            <StatusBadge variant={entry.quantityDelta < 0 ? 'error' : 'success'}>{humanizeStockType(entry.type)}</StatusBadge>
+                                            <span className="text-content-muted">{formatDate(entry.occurredAt)}</span>
+                                            {entry.reason && <span className="text-content-subtle">· {entry.reason}</span>}
                                         </span>
-                                        <span className={t.quantityDelta < 0 ? 'text-content-error' : 'text-content-success'}>
-                                            {t.quantityDelta > 0 ? '+' : ''}
-                                            {t.quantityDelta} {t.unitSymbol}
+                                        <span className={entry.quantityDelta < 0 ? 'text-content-error' : 'text-content-success'}>
+                                            {entry.quantityDelta > 0 ? '+' : ''}
+                                            {entry.quantityDelta} {entry.unitSymbol}
                                         </span>
                                     </li>
                                 ))}
                             </ul>
                         ) : (
                             <p className="mt-2 text-sm text-content-subtle">{t('movementsEmpty')}</p>
+                        )}
+                        {ledgerHasMore && (
+                            <div className="mt-default flex justify-center">
+                                <Button
+                                    variant="secondary"
+                                    size="sm"
+                                    type="button"
+                                    onClick={() => void loadMoreLedger()}
+                                    loading={ledgerLoadingMore}
+                                >
+                                    {t('loadMore')}
+                                </Button>
+                            </div>
                         )}
                     </div>
 
@@ -542,7 +809,7 @@ export function InventoryClient({ tenantSlug }: { tenantSlug: string }) {
             <PullToRefresh onRefresh={() => mutate()} />
             <ScrollToTop />
             <Fab
-                onClick={() => setShowProduct(true)}
+                onClick={openNewProduct}
                 label={t('fabLabel')}
                 icon={<Plus aria-hidden className="h-6 w-6" />}
             />
@@ -565,6 +832,20 @@ function TraceGroup({
     nodes: TraceLotNode[];
 }) {
     const t = useTranslations('inventory');
+    // FLAG 6 — own category label map (this sub-component has its own `t`).
+    const categoryLabels = useMemo<Record<string, string>>(
+        () => ({
+            SEED: t('itemCategory.SEED'),
+            PESTICIDE: t('itemCategory.PESTICIDE'),
+            FERTILIZER: t('itemCategory.FERTILIZER'),
+            AMENDMENT: t('itemCategory.AMENDMENT'),
+            FUEL: t('itemCategory.FUEL'),
+            HARVESTED_PRODUCE: t('itemCategory.HARVESTED_PRODUCE'),
+            OTHER: t('itemCategory.OTHER'),
+        }),
+        [t],
+    );
+    const humanizeCategory = (cat: string) => categoryLabels[cat] ?? cat;
     return (
         <section className="space-y-tight">
             <Eyebrow>{title}</Eyebrow>
@@ -580,7 +861,7 @@ function TraceGroup({
                             <div className="flex items-center justify-between gap-compact">
                                 <span className="flex items-center gap-compact">
                                     <span className="font-medium text-content-emphasis">{n.lotCode}</span>
-                                    <StatusBadge variant="neutral">{n.item.category.replace('_', ' ')}</StatusBadge>
+                                    <StatusBadge variant="neutral">{humanizeCategory(n.item.category)}</StatusBadge>
                                 </span>
                                 <span className="text-sm text-content-muted">
                                     {n.quantityOnHand} {n.unitSymbol}

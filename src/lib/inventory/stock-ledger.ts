@@ -224,7 +224,7 @@ export async function appendStockTransaction(
     });
     const onHand = agg._sum.quantityDelta ?? 0;
     await db.inventoryLot.update({
-        where: { id: input.lotId },
+        where: { id_tenantId: { id: input.lotId, tenantId: ctx.tenantId } },
         data: { quantityOnHand: onHand },
     });
 

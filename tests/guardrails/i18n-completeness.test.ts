@@ -118,7 +118,6 @@ const UNTRANSLATED_ALLOWLIST = new Map<string, string>([
     ['locations.spray.techniqueLabel', 'deliberately bilingual heading (BG / EN)'],
     // Units / example content already locale-neutral or in Bulgarian.
     ['grain.yield.colTPerHa', 'unit "t / ha" — identical across locales'],
-    ['inventory.activeIngredientPlaceholder', 'example text already written in Bulgarian'],
 ]);
 
 /**

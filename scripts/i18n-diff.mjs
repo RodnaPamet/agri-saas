@@ -68,7 +68,6 @@ const UNTRANSLATED_ALLOWLIST = new Set([
     'admin.sso.clientSecretPlaceholder', 'admin.sso.scopesPlaceholder', 'admin.sso.certificatePlaceholder',
     'org.newTenant.namePlaceholder',
     'exchange.client.heading', 'locations.spray.techniqueLabel', 'grain.yield.colTPerHa',
-    'inventory.activeIngredientPlaceholder',
 ]);
 
 function readLocale(name) {

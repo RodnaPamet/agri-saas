@@ -2,7 +2,7 @@ import { RequestContext } from '../types';
 import { assertCanRead, assertCanWrite } from '../policies/common';
 import { runInTenantContext } from '@/lib/db-context';
 import { logEvent } from '../events/audit';
-import { badRequest } from '@/lib/errors/types';
+import { badRequest, notFound } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { cachedListRead } from '@/lib/cache/list-cache';
 import { Prisma, ItemCategory, QuantityMeasure } from '@prisma/client';
@@ -96,6 +96,116 @@ export async function createItem(ctx: RequestContext, input: CreateItemInput) {
                 operation: 'created',
                 after: { name: item.name, category: item.category },
                 summary: `Created product ${item.name}`,
+            },
+        });
+
+        return item;
+    });
+}
+
+/**
+ * Single-item read for the inventory edit form — returns every editable
+ * field (name, category, default unit, reorder level, and the БАБХ
+ * regulatory fields) so the product modal can pre-fill on "Edit product".
+ * Tenant-scoped; the `Decimal` reorderLevel is normalised to a plain
+ * number for the wire.
+ */
+export async function getItemDetail(ctx: RequestContext, itemId: string) {
+    assertCanRead(ctx);
+    return runInTenantContext(ctx, async (db) => {
+        const item = await db.item.findFirst({
+            where: { id: itemId, tenantId: ctx.tenantId, deletedAt: null },
+            select: {
+                id: true,
+                name: true,
+                category: true,
+                defaultUnitId: true,
+                sku: true,
+                reorderLevel: true,
+                quarantinePeriodDays: true,
+                activeIngredient: true,
+                pppRegistrationNo: true,
+            },
+        });
+        if (!item) throw notFound('Item not found.');
+        return {
+            id: item.id,
+            name: item.name,
+            category: item.category,
+            defaultUnitId: item.defaultUnitId,
+            sku: item.sku,
+            reorderLevel: item.reorderLevel !== null ? Number(item.reorderLevel) : null,
+            quarantinePeriodDays: item.quarantinePeriodDays,
+            activeIngredient: item.activeIngredient,
+            pppRegistrationNo: item.pppRegistrationNo,
+        };
+    });
+}
+
+export interface UpdateItemInput {
+    name?: string;
+    category?: CreateItemInput['category'];
+    defaultUnitId?: string;
+    sku?: string | null;
+    reorderLevel?: number | null;
+    quarantinePeriodDays?: number | null;
+    activeIngredient?: string | null;
+    pppRegistrationNo?: string | null;
+}
+
+/**
+ * Partial update of an input-product catalog entry. Mirrors `createItem`
+ * (assertCanWrite, sanitise free-text, tenant-scoped write, audit event)
+ * but writes ONLY the provided fields — an undefined key is left
+ * untouched, a null clears the column. Emits the `updated` variant of the
+ * item lifecycle audit event.
+ */
+export async function updateItem(ctx: RequestContext, itemId: string, input: UpdateItemInput) {
+    assertCanWrite(ctx);
+    return runInTenantContext(ctx, async (db) => {
+        const existing = await db.item.findFirst({
+            where: { id: itemId, tenantId: ctx.tenantId, deletedAt: null },
+            select: { id: true },
+        });
+        if (!existing) throw notFound('Item not found.');
+
+        const data: Prisma.ItemUpdateInput = {};
+        if (input.name !== undefined) {
+            const name = sanitizePlainText(input.name.trim());
+            if (!name) throw badRequest('Product name is required.');
+            data.name = name;
+        }
+        if (input.category !== undefined) data.category = input.category as ItemCategory;
+        if (input.defaultUnitId !== undefined) {
+            const unit = await db.unit.findUnique({ where: { id: input.defaultUnitId }, select: { id: true } });
+            if (!unit) throw badRequest('Default unit not found.');
+            data.defaultUnit = { connect: { id: input.defaultUnitId } };
+        }
+        if (input.sku !== undefined) data.sku = input.sku ? sanitizePlainText(input.sku.trim()) : null;
+        if (input.reorderLevel !== undefined) data.reorderLevel = input.reorderLevel ?? null;
+        if (input.quarantinePeriodDays !== undefined) data.quarantinePeriodDays = input.quarantinePeriodDays ?? null;
+        if (input.activeIngredient !== undefined)
+            data.activeIngredient = input.activeIngredient ? sanitizePlainText(input.activeIngredient.trim()) : null;
+        if (input.pppRegistrationNo !== undefined)
+            data.pppRegistrationNo = input.pppRegistrationNo ? sanitizePlainText(input.pppRegistrationNo.trim()) : null;
+
+        const item = await db.item.update({
+            where: { id: existing.id },
+            data,
+            select: { id: true, name: true, category: true },
+        });
+
+        await logEvent(db, ctx, {
+            action: 'INVENTORY_ITEM_UPDATED',
+            entityType: 'Item',
+            entityId: item.id,
+            details: `Updated product ${item.name}`,
+            detailsJson: {
+                category: 'entity_lifecycle',
+                entityName: 'Item',
+                operation: 'updated',
+                after: { name: item.name, category: item.category },
+                summary: `Updated product ${item.name}`,
             },
         });
 
