@@ -1,10 +1,14 @@
-import { Prisma } from '@prisma/client';
+import { Prisma, type ContractStatus, type ContractType } from '@prisma/client';
 import { RequestContext } from '../types';
 import { runInTenantContext } from '@/lib/db-context';
 import { assertCanRead, assertCanWrite } from '../policies/common';
 import { logEvent } from '../events/audit';
 import { notFound, badRequest } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
+import {
+    checkContractTransition,
+    formatContractTransitionError,
+} from '../domain/contract-status';
 import type {
     CreateContractInput,
     UpdateContractInput,
@@ -26,6 +30,13 @@ import type {
  *   - emit a hash-chained audit event on EVERY mutation,
  *   - all DB access through runInTenantContext (RLS-bound), every read
  *     tenant-scoped + bounded with `take:`.
+ *
+ * Contract-specific: `updateContract` enforces the documented
+ * ContractStatus lifecycle via `../domain/contract-status.ts`
+ * (DRAFT → ACTIVE → DELIVERED → SETTLED, CANCELLED terminal from any
+ * pre-SETTLED state). `createContract` does NOT — a contract may be
+ * recorded at whatever stage it already is; only subsequent moves are
+ * constrained.
  */
 
 // Single cap for the contracts list read. Mirrors crop-planning's LIST_TAKE;
@@ -41,9 +52,33 @@ function parseDate(value: string | null | undefined, label: string): Date | null
     return d;
 }
 
+/**
+ * Sanitise an optional short free-text field and normalise the empty
+ * result to `null`.
+ *
+ * `sanitizePlainText` strips markup but does NOT trim, so a value of
+ * `"   "` survives as `"   "` — which for `key` meant a second
+ * blank-keyed contract collided on the `[tenantId, key]` unique index
+ * (a 409 the operator could not diagnose), and for `counterparty`
+ * meant whitespace passed the required-field check.
+ */
+function cleanOptionalText(value: string | null | undefined): string | null {
+    if (value == null) return null;
+    const cleaned = sanitizePlainText(value).trim();
+    return cleaned === '' ? null : cleaned;
+}
+
+/**
+ * List filters. Both enum facets are MULTI-select in the UI
+ * (`filter-defs.ts` sets `multiple: true`), so they arrive as arrays and
+ * query with `{ in: [...] }`. The route validates every member against
+ * the Prisma enum before calling in — this signature is typed to the
+ * enum precisely so an unvalidated string can no longer reach Prisma
+ * (which is what turned a two-status filter into a 500).
+ */
 export interface ContractListFilters {
-    status?: string;
-    type?: string;
+    status?: ContractStatus[];
+    type?: ContractType[];
     seasonId?: string;
 }
 
@@ -58,8 +93,8 @@ export async function listContracts(
             where: {
                 tenantId: ctx.tenantId,
                 deletedAt: null,
-                ...(filters.status ? { status: filters.status as Prisma.EnumContractStatusFilter['equals'] } : {}),
-                ...(filters.type ? { type: filters.type as Prisma.EnumContractTypeFilter['equals'] } : {}),
+                ...(filters.status?.length ? { status: { in: filters.status } } : {}),
+                ...(filters.type?.length ? { type: { in: filters.type } } : {}),
                 ...(filters.seasonId ? { seasonId: filters.seasonId } : {}),
             },
             orderBy: [{ createdAt: 'desc' }],
@@ -84,11 +119,17 @@ export async function getContract(ctx: RequestContext, id: string) {
 export async function createContract(ctx: RequestContext, input: CreateContractInput) {
     assertCanWrite(ctx);
 
-    const counterparty = sanitizePlainText(input.counterparty ?? '');
+    // Trim AFTER sanitising: the sanitiser does not trim, so an
+    // all-whitespace counterparty would otherwise pass the required check
+    // and persist as a blank row title.
+    const counterparty = sanitizePlainText(input.counterparty ?? '').trim();
     if (!counterparty) throw badRequest('Contract counterparty is required');
 
-    const key = input.key != null ? sanitizePlainText(input.key) : null;
-    const commodity = input.commodity != null ? sanitizePlainText(input.commodity) : null;
+    // `key` is on a [tenantId, key] unique index — an empty string is not
+    // a key, so normalise it to null (multiple key-less contracts are
+    // legal; two `key: ""` rows would 409).
+    const key = cleanOptionalText(input.key);
+    const commodity = cleanOptionalText(input.commodity);
     const terms = input.terms != null ? sanitizePlainText(input.terms) : null;
     const pricingNotes = input.pricingNotes != null ? sanitizePlainText(input.pricingNotes) : null;
 
@@ -158,21 +199,21 @@ export async function updateContract(ctx: RequestContext, id: string, input: Upd
 
     const data: Prisma.ContractUncheckedUpdateInput = {};
     if (input.counterparty !== undefined) {
-        const counterparty = sanitizePlainText(input.counterparty);
+        const counterparty = sanitizePlainText(input.counterparty).trim();
         if (!counterparty) throw badRequest('Contract counterparty is required');
         data.counterparty = counterparty;
     }
-    if (input.key !== undefined) data.key = input.key != null ? sanitizePlainText(input.key) : null;
-    if (input.commodity !== undefined) {
-        data.commodity = input.commodity != null ? sanitizePlainText(input.commodity) : null;
-    }
+    if (input.key !== undefined) data.key = cleanOptionalText(input.key);
+    if (input.commodity !== undefined) data.commodity = cleanOptionalText(input.commodity);
     if (input.terms !== undefined) data.terms = input.terms != null ? sanitizePlainText(input.terms) : null;
     if (input.pricingNotes !== undefined) {
         data.pricingNotes = input.pricingNotes != null ? sanitizePlainText(input.pricingNotes) : null;
     }
     if (input.seasonId !== undefined) data.seasonId = input.seasonId;
     if (input.type !== undefined) data.type = input.type;
-    if (input.status !== undefined) data.status = input.status;
+    // `status` is deliberately NOT folded in here — the lifecycle guard
+    // below needs the CURRENT status, so it is applied inside the
+    // transaction once the existing row has been read.
     if (input.volumeTonnes !== undefined) {
         if (input.volumeTonnes != null && input.volumeTonnes < 0) {
             throw badRequest('Contract volume must be zero or positive');
@@ -186,15 +227,61 @@ export async function updateContract(ctx: RequestContext, id: string, input: Upd
         data.pricePerTonne = input.pricePerTonne;
     }
     if (input.priceCurrency !== undefined) data.priceCurrency = input.priceCurrency;
-    if (input.deliveryStart !== undefined) data.deliveryStart = parseDate(input.deliveryStart, 'Delivery start');
-    if (input.deliveryEnd !== undefined) data.deliveryEnd = parseDate(input.deliveryEnd, 'Delivery end');
+
+    // Parse the window edges up front (a malformed date is a 400 either
+    // way); the ORDERING check needs the existing row, so it runs inside
+    // the transaction below against the EFFECTIVE post-update values.
+    const nextDeliveryStart =
+        input.deliveryStart !== undefined ? parseDate(input.deliveryStart, 'Delivery start') : undefined;
+    const nextDeliveryEnd =
+        input.deliveryEnd !== undefined ? parseDate(input.deliveryEnd, 'Delivery end') : undefined;
+    if (nextDeliveryStart !== undefined) data.deliveryStart = nextDeliveryStart;
+    if (nextDeliveryEnd !== undefined) data.deliveryEnd = nextDeliveryEnd;
 
     return runInTenantContext(ctx, async (db) => {
         const existing = await db.contract.findFirst({
             where: { id, tenantId: ctx.tenantId, deletedAt: null },
-            select: { id: true },
+            select: { id: true, status: true, deliveryStart: true, deliveryEnd: true },
         });
         if (!existing) throw notFound('Contract not found');
+
+        // ── Lifecycle guard ──
+        //
+        // `createContract` may open a contract at any status (recording
+        // one that is already mid-lifecycle), but every SUBSEQUENT move
+        // must follow the documented graph. A no-op (same status
+        // re-sent, which ContractFormModal does on every edit) passes
+        // and simply writes nothing.
+        //
+        // SEAM — contract fulfillment (flag 3, not yet landed): once
+        // deliveries are tracked against a contract, ACTIVE → DELIVERED
+        // should ALSO require evidence that volume actually moved
+        // (a linked yield record / stock transaction summing to the
+        // contracted tonnage). That check belongs right here, beside the
+        // graph check, and needs no signature change — it reads `db` +
+        // `id`, both already in scope. Deliberately not stubbed: an
+        // unreachable helper would be dead code today.
+        if (input.status !== undefined && input.status !== existing.status) {
+            const transitionErr = checkContractTransition(existing.status, input.status);
+            if (transitionErr) throw badRequest(formatContractTransitionError(transitionErr));
+            data.status = input.status;
+        }
+
+        // ── Delivery-window ordering ──
+        //
+        // Checked against the EFFECTIVE values, not just the submitted
+        // ones: a PATCH that sends only `deliveryEnd` must still be
+        // compared against the STORED `deliveryStart`, or an edit could
+        // leave the row with end < start (which `createContract` has
+        // always rejected).
+        const effectiveStart =
+            nextDeliveryStart !== undefined ? nextDeliveryStart : existing.deliveryStart;
+        const effectiveEnd =
+            nextDeliveryEnd !== undefined ? nextDeliveryEnd : existing.deliveryEnd;
+        if (effectiveStart && effectiveEnd && effectiveEnd < effectiveStart) {
+            throw badRequest('Delivery end must be on or after the delivery start');
+        }
+
         if (input.seasonId) {
             const season = await db.season.findFirst({
                 where: { id: input.seasonId, tenantId: ctx.tenantId, deletedAt: null },

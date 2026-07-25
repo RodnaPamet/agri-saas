@@ -86,6 +86,13 @@ function BinsPageInner({ initialBins, tenantSlug, permissions }: BinsClientProps
     const rawBins = useMemo(() => binsQuery.data ?? [], [binsQuery.data]);
     const loading = binsQuery.isLoading && !binsQuery.data;
 
+    // A failed list read must surface as an error, not as the empty
+    // state (which claims zero rows). Gated on having nothing to show so
+    // a failed background refetch never blanks cached/SSR rows — the
+    // DataTable renders `error` INSTEAD of the table.
+    const loadError =
+        binsQuery.isError && rawBins.length === 0 ? t('loadFailed') : undefined;
+
     // Live free-text search (name / key) over loaded rows.
     const bins = useMemo(() => {
         const q = search.trim().toLowerCase();
@@ -227,6 +234,7 @@ function BinsPageInner({ initialBins, tenantSlug, permissions }: BinsClientProps
                 data: bins,
                 columns,
                 loading,
+                error: loadError,
                 getRowId,
                 mobileFallback: 'card',
                 onRowClick: permissions.canWrite ? handleRowClick : undefined,

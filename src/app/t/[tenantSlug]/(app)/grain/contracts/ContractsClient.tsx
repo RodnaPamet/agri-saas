@@ -138,6 +138,20 @@ function ContractsPageInner({
     );
     const loading = contractsQuery.isLoading && !contractsQuery.data;
 
+    // A failed list read must NOT fall through to the empty state — an
+    // unreachable API, a 403, or a 500 rendered as "No contracts match
+    // your filters", i.e. a confident claim of zero rows. Surface it as
+    // an error instead.
+    //
+    // Gated on having nothing to show: when a background refetch fails
+    // but cached/SSR rows are still on screen, keep the rows (the
+    // DataTable renders `error` INSTEAD of the table, so raising it here
+    // would blank good data).
+    const loadError =
+        contractsQuery.isError && rawContracts.length === 0
+            ? t('loadFailed')
+            : undefined;
+
     // Live free-text search (counterparty / commodity) over loaded rows —
     // FilterToolbar's search box is live (no Enter).
     const contracts = useMemo(() => {
@@ -356,6 +370,7 @@ function ContractsPageInner({
                 data: contracts,
                 columns,
                 loading,
+                error: loadError,
                 getRowId,
                 mobileFallback: 'card',
                 onRowClick: permissions.canWrite ? handleRowClick : undefined,

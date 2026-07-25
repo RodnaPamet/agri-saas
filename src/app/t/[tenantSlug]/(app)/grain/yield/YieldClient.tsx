@@ -120,6 +120,15 @@ function YieldPageInner({
     );
     const loading = recordsQuery.isLoading && !recordsQuery.data;
 
+    // A failed list read must surface as an error, not as the empty
+    // state (which claims zero rows). Gated on having nothing to show so
+    // a failed background refetch never blanks cached/SSR rows — the
+    // DataTable renders `error` INSTEAD of the table.
+    const loadError =
+        recordsQuery.isError && rawRecords.length === 0
+            ? t('loadFailed')
+            : undefined;
+
     // Live free-text search (commodity / field / season) over loaded rows.
     const records = useMemo(() => {
         const q = search.trim().toLowerCase();
@@ -341,6 +350,7 @@ function YieldPageInner({
                 data: records,
                 columns,
                 loading,
+                error: loadError,
                 getRowId,
                 // mobileFallback: 'scroll' — the yield matrix is a wide,
                 // dense numeric grid (crop / field / area / weight / moisture

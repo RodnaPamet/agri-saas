@@ -27,7 +27,10 @@
  *
  * Per tenant we run a handful of BOUNDED, single-row queries:
  *   - Contracts: `groupBy(['type'])` summing `volumeTonnes` → SALE vs
- *     PURCHASE contracted tonnes.
+ *     PURCHASE contracted tonnes, restricted to the LIVE commitment
+ *     statuses (`CONTRACTED_COMMITMENT_STATUSES` — ACTIVE + DELIVERED).
+ *     DRAFT / CANCELLED / SETTLED are excluded: see that constant for
+ *     why "contracted" means the live book, not a lifetime total.
  *   - Yield:     `aggregate` summing `grossTonnes`.
  *   - Cost:      `aggregate` summing `LogEntry.costAmount` +
  *                `aggregate` summing `StockTransaction.costAmount`.
@@ -49,6 +52,7 @@ import type { OrgContext } from '@/app-layer/types';
 import { forbidden } from '@/lib/errors/types';
 import { getPortfolioData } from '@/app-layer/usecases/portfolio-data';
 import { withTenantDb, type PrismaTx } from '@/lib/db-context';
+import { CONTRACTED_COMMITMENT_STATUSES } from '@/app-layer/domain/contract-status';
 import type { OrgTenantMeta } from '@/app-layer/repositories/PortfolioRepository';
 
 // Bound for the per-tenant bin list. Mirrors the `PER_TENANT_LIMIT`
@@ -81,9 +85,11 @@ function round2(n: number): number {
 export interface PortfolioGrainTenantRow {
     tenantId: string;
     tenantName: string;
-    /** SUM of `volumeTonnes` over SALE contracts (deletedAt: null). */
+    /** SUM of `volumeTonnes` over live (ACTIVE + DELIVERED) SALE
+     *  contracts. Excludes DRAFT / CANCELLED / SETTLED. */
     contractedSaleTonnes: number;
-    /** SUM of `volumeTonnes` over PURCHASE contracts (deletedAt: null). */
+    /** SUM of `volumeTonnes` over live (ACTIVE + DELIVERED) PURCHASE
+     *  contracts. Excludes DRAFT / CANCELLED / SETTLED. */
     contractedPurchaseTonnes: number;
     /** SUM of `grossTonnes` over yield records (deletedAt: null). */
     totalYieldTonnes: number;
@@ -148,9 +154,19 @@ async function computeTenantGrainRow(
     };
 
     // ── Contracts: SALE vs PURCHASE contracted tonnes ──
+    //
+    // Only LIVE commitments count (ACTIVE + DELIVERED). Without the
+    // status filter this summed DRAFT (unsigned), CANCELLED (void) and
+    // SETTLED (closed out) too, so the group operator's headline
+    // commitment could only ever grow — see
+    // CONTRACTED_COMMITMENT_STATUSES for the full rationale.
     const contractGroups = await db.contract.groupBy({
         by: ['type'],
-        where: { tenantId: tenant.id, deletedAt: null },
+        where: {
+            tenantId: tenant.id,
+            deletedAt: null,
+            status: { in: [...CONTRACTED_COMMITMENT_STATUSES] },
+        },
         _sum: { volumeTonnes: true },
     });
     let contractedSaleTonnes = 0;

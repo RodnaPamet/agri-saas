@@ -26,7 +26,15 @@ jest.mock('@/app-layer/usecases/portfolio-data', () => ({
 
 // Per-tenant canned aggregate results — keyed by tenant id.
 interface FakeTenantData {
-    contractGroups: Array<{ type: string; _sum: { volumeTonnes: string | null } }>;
+    /**
+     * Raw contract rows (status + type + tonnes). The fake `groupBy`
+     * APPLIES the query's `where.status.in` before grouping by type, so
+     * a test proves the usecase's status filter for real instead of
+     * trusting a canned group result. Set `contractGroups` instead to
+     * hand back pre-grouped rows verbatim.
+     */
+    contracts?: Array<{ status: string; type: string; volumeTonnes: string }>;
+    contractGroups?: Array<{ type: string; _sum: { volumeTonnes: string | null } }>;
     yieldSum: string | null;
     logCost: string | null;
     stockCost: string | null;
@@ -37,11 +45,30 @@ interface FakeTenantData {
 
 const TENANT_DATA: Record<string, FakeTenantData> = {};
 
+/** Every `contract.groupBy` arg object the usecase issued, in order —
+ *  so a test can assert the WHERE shape, not just the result. */
+const contractGroupByArgs: Array<Record<string, any>> = [];
+
 function fakeDbFor(tenantId: string) {
     const d = TENANT_DATA[tenantId];
     return {
         contract: {
-            groupBy: jest.fn(async () => d.contractGroups),
+            groupBy: jest.fn(async (args: Record<string, any>) => {
+                contractGroupByArgs.push(args);
+                if (!d.contracts) return d.contractGroups ?? [];
+                // Mimic the DB: filter by `where.status.in`, then SUM
+                // volumeTonnes grouped by type.
+                const allowed: string[] | undefined = args?.where?.status?.in;
+                const byType = new Map<string, number>();
+                for (const c of d.contracts) {
+                    if (allowed && !allowed.includes(c.status)) continue;
+                    byType.set(c.type, (byType.get(c.type) ?? 0) + Number(c.volumeTonnes));
+                }
+                return [...byType].map(([type, sum]) => ({
+                    type,
+                    _sum: { volumeTonnes: String(sum) },
+                }));
+            }),
             findFirst: jest.fn(async () =>
                 d.currency ? { priceCurrency: d.currency } : null,
             ),
@@ -84,6 +111,7 @@ function ctxFor(overrides: Partial<OrgContext> = {}): OrgContext {
 beforeEach(() => {
     getPortfolioDataMock.mockReset();
     for (const k of Object.keys(TENANT_DATA)) delete TENANT_DATA[k];
+    contractGroupByArgs.length = 0;
 });
 
 describe('getPortfolioGrainSummary', () => {
@@ -94,10 +122,14 @@ describe('getPortfolioGrainSummary', () => {
                 { id: 'farm-b', name: 'Bravo Farm', slug: 'bravo' },
             ],
         });
+        // Raw rows, deliberately mixed-status: 1600 tonnes across the two
+        // farms are NOT live commitments and must not reach the totals.
         TENANT_DATA['farm-a'] = {
-            contractGroups: [
-                { type: 'SALE', _sum: { volumeTonnes: '500' } },
-                { type: 'PURCHASE', _sum: { volumeTonnes: '120' } },
+            contracts: [
+                { status: 'ACTIVE', type: 'SALE', volumeTonnes: '500' },
+                { status: 'DRAFT', type: 'SALE', volumeTonnes: '900' }, // unsigned
+                { status: 'ACTIVE', type: 'PURCHASE', volumeTonnes: '120' },
+                { status: 'CANCELLED', type: 'PURCHASE', volumeTonnes: '400' }, // void
             ],
             yieldSum: '420.5',
             logCost: '1000',
@@ -107,7 +139,10 @@ describe('getPortfolioGrainSummary', () => {
             currency: 'EUR',
         };
         TENANT_DATA['farm-b'] = {
-            contractGroups: [{ type: 'SALE', _sum: { volumeTonnes: '300' } }],
+            contracts: [
+                { status: 'DELIVERED', type: 'SALE', volumeTonnes: '300' },
+                { status: 'SETTLED', type: 'SALE', volumeTonnes: '700' }, // closed out
+            ],
             yieldSum: '180',
             logCost: '400',
             stockCost: null,
@@ -119,7 +154,12 @@ describe('getPortfolioGrainSummary', () => {
         const res = await getPortfolioGrainSummary(ctxFor());
 
         // Org totals.
-        expect(res.totals.contractedSaleTonnes).toBe(800); // 500 + 300
+        //
+        // 500 (farm-a ACTIVE) + 300 (farm-b DELIVERED) = 800. The 900
+        // DRAFT and 700 SETTLED sale tonnes are NOT commitments — an
+        // unfiltered sum would read 2400 here.
+        expect(res.totals.contractedSaleTonnes).toBe(800);
+        // 120 ACTIVE; the 400 CANCELLED purchase tonnes are void.
         expect(res.totals.contractedPurchaseTonnes).toBe(120);
         expect(res.totals.totalYieldTonnes).toBe(600.5); // 420.5 + 180
         expect(res.totals.totalActivityCost).toBe(1650); // 1000+250 + 400
@@ -138,6 +178,92 @@ describe('getPortfolioGrainSummary', () => {
         expect(alpha.contractedSaleTonnes).toBe(500);
         expect(alpha.totalActivityCost).toBe(1250);
         expect(alpha.binStoredTonnes).toBe(600);
+    });
+
+    it('scopes the contract rollup to the live commitment statuses in the QUERY', async () => {
+        getPortfolioDataMock.mockResolvedValue({
+            tenants: [{ id: 'farm-a', name: 'Alpha Farm', slug: 'alpha' }],
+        });
+        TENANT_DATA['farm-a'] = {
+            contracts: [{ status: 'ACTIVE', type: 'SALE', volumeTonnes: '10' }],
+            yieldSum: null,
+            logCost: null,
+            stockCost: null,
+            bins: [],
+            stored: [],
+            currency: null,
+        };
+
+        await getPortfolioGrainSummary(ctxFor());
+
+        // The filter is pushed DOWN into Prisma (not applied in JS after
+        // the fact), still tenant-scoped and soft-delete aware.
+        expect(contractGroupByArgs).toHaveLength(1);
+        expect(contractGroupByArgs[0].where).toEqual({
+            tenantId: 'farm-a',
+            deletedAt: null,
+            status: { in: ['ACTIVE', 'DELIVERED'] },
+        });
+        expect(contractGroupByArgs[0].by).toEqual(['type']);
+    });
+
+    it('excludes DRAFT and CANCELLED contracts from contracted tonnes', async () => {
+        getPortfolioDataMock.mockResolvedValue({
+            tenants: [{ id: 'paper-farm', name: 'Paper Farm', slug: 'paper' }],
+        });
+        // Nothing signed, nothing live: a pile of unsigned drafts and a
+        // cancelled deal. The headline commitment must be ZERO — before
+        // the status filter this farm reported 1500 contracted tonnes.
+        TENANT_DATA['paper-farm'] = {
+            contracts: [
+                { status: 'DRAFT', type: 'SALE', volumeTonnes: '600' },
+                { status: 'DRAFT', type: 'SALE', volumeTonnes: '500' },
+                { status: 'CANCELLED', type: 'SALE', volumeTonnes: '300' },
+                { status: 'CANCELLED', type: 'PURCHASE', volumeTonnes: '100' },
+            ],
+            yieldSum: null,
+            logCost: null,
+            stockCost: null,
+            bins: [],
+            stored: [],
+            currency: null,
+        };
+
+        const res = await getPortfolioGrainSummary(ctxFor());
+
+        expect(res.totals.contractedSaleTonnes).toBe(0);
+        expect(res.totals.contractedPurchaseTonnes).toBe(0);
+        expect(res.perTenant[0].contractedSaleTonnes).toBe(0);
+        expect(res.perTenant[0].contractedPurchaseTonnes).toBe(0);
+        // No live commitment + no other grain figure ⇒ not a grain farm
+        // for portfolio purposes.
+        expect(res.totals.tenantsWithGrain).toBe(0);
+    });
+
+    it('counts SETTLED as closed-out history, not a live commitment', async () => {
+        getPortfolioDataMock.mockResolvedValue({
+            tenants: [{ id: 'farm-a', name: 'Alpha Farm', slug: 'alpha' }],
+        });
+        // Last season's business is delivered AND paid. Including it made
+        // the headline a lifetime total that could only ever grow.
+        TENANT_DATA['farm-a'] = {
+            contracts: [
+                { status: 'SETTLED', type: 'SALE', volumeTonnes: '5000' },
+                { status: 'ACTIVE', type: 'SALE', volumeTonnes: '250' },
+                { status: 'DELIVERED', type: 'SALE', volumeTonnes: '150' },
+            ],
+            yieldSum: null,
+            logCost: null,
+            stockCost: null,
+            bins: [],
+            stored: [],
+            currency: null,
+        };
+
+        const res = await getPortfolioGrainSummary(ctxFor());
+
+        // 250 ACTIVE + 150 DELIVERED; the 5000 SETTLED tonnes are history.
+        expect(res.totals.contractedSaleTonnes).toBe(400);
     });
 
     it('a tenant with no grain contributes zeros and is excluded from tenantsWithGrain', async () => {
