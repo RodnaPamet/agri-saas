@@ -13,6 +13,7 @@ import { StatusBreakdown, type StatusBreakdownItem } from '@/components/ui/statu
 import { EmptyState } from '@/components/ui/empty-state';
 import KpiCard from '@/components/ui/KpiCard';
 import { Heading } from '@/components/ui/typography';
+import { formatDecimal } from '@/lib/number-format';
 import type {
     PortfolioGrainSummary,
     PortfolioGrainTenantRow,
@@ -54,7 +55,7 @@ function currencySymbol(currency: string | null): string {
 }
 
 function formatTonnes(n: number): string {
-    return `${n.toLocaleString(undefined, { maximumFractionDigits: 1 })} t`;
+    return `${formatDecimal(n, 1)} t`;
 }
 
 function formatCost(n: number, currency: string | null): string {

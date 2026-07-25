@@ -28,6 +28,12 @@ export const SOFT_DELETE_MODELS = new Set([
     'Audit',
     'AuditCycle',
     'AuditPack',
+    // Grain (2026-07-25) — Contract carries the full soft-delete trio
+    // (deletedAt / deletedByUserId / retentionUntil) and its usecase
+    // soft-deletes, but it was in neither this set nor the retention
+    // sweep, so `retentionUntil` was written by nothing and read by
+    // nothing.
+    'Contract',
 ]);
 
 // ─── Read actions that should filter out deleted records ───

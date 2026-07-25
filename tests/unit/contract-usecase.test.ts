@@ -77,7 +77,7 @@ const readerCtx = makeRequestContext('READER', { tenantSlug: 'acme', tenantId: '
 describe('listContracts', () => {
     it('reads tenant-scoped + non-deleted with filters folded in', async () => {
         mockDb.contract.findMany.mockResolvedValue([{ id: 'c-1' }]);
-        const out = await listContracts(adminCtx, {
+        const { rows: out } = await listContracts(adminCtx, {
             status: ['ACTIVE'],
             type: ['SALE'],
             seasonId: 's-1',
@@ -104,7 +104,7 @@ describe('listContracts', () => {
         // PrismaClientValidationError (a 500 the table rendered as
         // "no contracts match your filters").
         mockDb.contract.findMany.mockResolvedValue([{ id: 'c-1' }, { id: 'c-2' }]);
-        const out = await listContracts(adminCtx, {
+        const { rows: out } = await listContracts(adminCtx, {
             status: ['DRAFT', 'ACTIVE'],
             type: ['SALE', 'PURCHASE'],
         });
@@ -138,7 +138,11 @@ describe('listContracts', () => {
 
     it('READER can read', async () => {
         mockDb.contract.findMany.mockResolvedValue([]);
-        await expect(listContracts(readerCtx, {})).resolves.toEqual([]);
+        await expect(listContracts(readerCtx, {})).resolves.toMatchObject({
+            rows: [],
+            totalCount: 0,
+            truncated: false,
+        });
     });
 
     // ── Derived decoration (fulfilment + value) ──
@@ -152,7 +156,7 @@ describe('listContracts', () => {
                 { contractId: 'c-1', _sum: { tonnes: new Decimal('300') }, _count: { _all: 2 } },
             ]);
 
-            const out = await listContracts(adminCtx, {});
+            const { rows: out } = await listContracts(adminCtx, {});
 
             // One aggregate for the whole page — not one per row.
             expect(mockDb.grainDelivery.groupBy).toHaveBeenCalledTimes(1);
@@ -181,7 +185,7 @@ describe('listContracts', () => {
                 { id: 'c-2', volumeTonnes: new Decimal('100'), pricePerTonne: null },
             ]);
 
-            const out = await listContracts(adminCtx, {});
+            const { rows: out } = await listContracts(adminCtx, {});
 
             expect(out[0].valueAmount).toBe('110024.61104');
             // Unpriced ⇒ null, never 0 (zero would claim the deal is

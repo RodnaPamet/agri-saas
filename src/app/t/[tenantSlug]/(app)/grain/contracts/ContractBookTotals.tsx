@@ -24,19 +24,13 @@
 
 import { useTranslations } from 'next-intl';
 import { InfoTooltip } from '@/components/ui/tooltip';
+import { formatDecimal } from '@/lib/number-format';
 import type { ContractBookTotalDto } from './ContractsClient';
 
-function fmtAmount(v: string): string {
-    const n = Number(v);
-    if (!Number.isFinite(n)) return v;
-    return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
-}
-
-function fmtTonnes(v: string): string {
-    const n = Number(v);
-    if (!Number.isFinite(n)) return v;
-    return n.toLocaleString(undefined, { maximumFractionDigits: 3 });
-}
+// Pinned locale — see `formatDecimal`. An unpinned separator differs
+// between the Node render and the browser hydrate.
+const fmtAmount = (v: string) => formatDecimal(v, 2, v);
+const fmtTonnes = (v: string) => formatDecimal(v, 3, v);
 
 export function ContractBookTotals({ totals }: { totals: ContractBookTotalDto[] }) {
     const t = useTranslations('grain.contracts');

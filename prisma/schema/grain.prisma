@@ -59,7 +59,12 @@ model Contract {
   /// `CONTRACTED_SEASON_STATUSES` in
   /// `src/app-layer/domain/contract-status.ts`.
   seasonId        String?
-  /// External contract reference / number.
+  /// External contract reference / number — the reference printed on
+  /// the paper the farmer is holding. Unique per tenant among LIVE
+  /// rows: the DB index is PARTIAL (`WHERE deletedAt IS NULL`, see
+  /// migration 20260725140000) so deleting a contract releases its
+  /// number for re-use. Prisma cannot express a partial index, so the
+  /// `@@unique` below states the logical constraint.
   key             String?
   /// Buyer (SALE) or supplier (PURCHASE) name — plaintext, filterable.
   counterparty    String

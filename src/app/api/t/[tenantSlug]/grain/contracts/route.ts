@@ -14,10 +14,12 @@ import { jsonResponse } from '@/lib/api-response';
 
 /**
  * Contracts — grain marketing / supply contracts (GRAIN module).
- *   GET  → `{ rows, totals }` — contracts newest first (?status= /
- *          ?type= / ?seasonId= filters), each row decorated with its
- *          `fulfilment` position and Decimal-exact `valueAmount`, plus
- *          per-currency book totals for the live commitment statuses.
+ *   GET  → `{ rows, totals, totalCount, truncated }` — contracts newest
+ *          first (?status= / ?type= / ?seasonId= / ?q= filters), each row
+ *          decorated with its `fulfilment` position and Decimal-exact
+ *          `valueAmount`, plus per-currency book totals for the live
+ *          commitment statuses. Rows carry NO encrypted narrative
+ *          (`terms` / `pricingNotes`) — fetch one contract for those.
  *   POST → create a contract.
  *
  * `status` and `type` are MULTI-value: the list toolbar declares both
@@ -37,10 +39,11 @@ export const GET = withApiErrorHandling(
         const ctx = await getTenantCtx(params, req);
         await assertModuleEnabled(ctx, 'GRAIN');
         const sp = req.nextUrl.searchParams;
-        const rows = await listContracts(ctx, {
+        const { rows, totalCount, truncated } = await listContracts(ctx, {
             status: parseCsvEnumParam(sp.get('status'), StatusMember, 'status'),
             type: parseCsvEnumParam(sp.get('type'), TypeMember, 'type'),
             seasonId: sp.get('seasonId') ?? undefined,
+            q: sp.get('q') ?? undefined,
         });
         // Book totals are computed from the SAME bounded page, so they
         // can never disagree with the rows on screen, and are grouped by
@@ -49,6 +52,8 @@ export const GET = withApiErrorHandling(
         return jsonResponse({
             rows,
             totals: summariseContractBook(rows, CONTRACTED_COMMITMENT_STATUSES),
+            totalCount,
+            truncated,
         });
     },
 );

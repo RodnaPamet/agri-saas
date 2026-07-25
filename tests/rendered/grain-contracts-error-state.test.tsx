@@ -76,8 +76,6 @@ function row(over: Partial<ContractRow> = {}): ContractRow {
         priceCurrency: 'EUR',
         deliveryStart: '2026-08-01T00:00:00.000Z',
         deliveryEnd: '2026-09-01T00:00:00.000Z',
-        terms: null,
-        pricingNotes: null,
         createdAt: '2026-07-01T00:00:00.000Z',
         updatedAt: '2026-07-01T00:00:00.000Z',
         season: null,

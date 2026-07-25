@@ -5963,7 +5963,18 @@
                 "pricingNotesPlaceholder": "Basis, premiums, hedging notes",
                 "cancel": "Cancel",
                 "saveContract": "Save contract",
-                "createContract": "Create contract"
+                "createContract": "Create contract",
+                "buyer": "Buyer",
+                "supplier": "Supplier",
+                "buyerPlaceholder": "Who is buying the produce",
+                "supplierPlaceholder": "Who is supplying the inputs",
+                "contractNumber": "Contract no.",
+                "contractNumberHint": "The reference on the contract document. Must be unique among your active contracts.",
+                "contractNumberPlaceholder": "e.g. WHT-2026-014",
+                "currencyNone": "No currency",
+                "seasonPlanningOff": "Seasons need the Planning module, which is not enabled for this farm.",
+                "seasonLoadFailed": "Couldn't load seasons. The contract can still be saved without one.",
+                "seasonNoneYet": "No seasons created yet — add one in Planning to group contracts by marketing year."
             },
             "colDelivered": "Delivered",
             "colValue": "Value",
@@ -6003,7 +6014,14 @@
                 "deleteDelivery": "Remove delivery",
                 "deletedToast": "Removed a {tonnes} t delivery",
                 "undo": "Undo"
-            }
+            },
+            "colParty": "Counterparty",
+            "colKey": "Contract no.",
+            "roleBuyer": "Buyer",
+            "roleSupplier": "Supplier",
+            "truncatedNotice": "Showing the first {shown} of {total} contracts. Narrow the filters or search to see the rest.",
+            "jargonSettled": "Settled means the grain was delivered and the invoice has been paid — the contract is closed.",
+            "jargonBasis": "Basis is the difference between the agreed price and the reference market price, covering haulage, quality and timing."
         },
         "yield": {
             "breadcrumbDashboard": "Dashboard",
@@ -6083,6 +6101,13 @@
             "colPlantings": "Plantings",
             "colField": "Field",
             "unassigned": "Unassigned"
+        },
+        "nav": {
+            "ariaLabel": "Grain sections",
+            "contracts": "Contracts",
+            "yield": "Yield",
+            "bins": "Bins & stores",
+            "costs": "Costs"
         }
     },
     "inventory": {
@@ -7452,15 +7477,8 @@
     "grainEnums": {
         "status": "Status",
         "statuses": "Statuses",
-        "statusDraft": "Draft",
-        "statusActive": "Active",
-        "statusDelivered": "Delivered",
-        "statusSettled": "Settled",
-        "statusCancelled": "Cancelled",
         "type": "Type",
         "types": "Types",
-        "typeSale": "Sale",
-        "typePurchase": "Purchase",
         "season": "Season",
         "seasons": "Seasons",
         "field": "Field",
@@ -7469,7 +7487,9 @@
         "costs": "Costs",
         "groupByPlanting": "By planting",
         "groupByField": "By field",
-        "groupBySeason": "By season"
+        "groupBySeason": "By season",
+        "statusDescription": "Lifecycle stage of the contract.",
+        "typeDescription": "Whether the contract sells produce or buys inputs."
     },
     "exchangeFilters": {
         "side": "Side",

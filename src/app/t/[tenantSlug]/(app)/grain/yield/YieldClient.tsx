@@ -15,12 +15,14 @@ import {
     type FilterType,
 } from '@/components/ui/filter';
 import { EntityListPage } from '@/components/layout/EntityListPage';
+import { GrainSectionNav } from '../GrainSectionNav';
 import { EmptyState } from '@/components/ui/empty-state';
 import { TableTitleCell } from '@/components/ui/table-title-cell';
 import { Tooltip } from '@/components/ui/tooltip';
 import { Pen2, Trash } from '@/components/ui/icons/nucleo';
 import { useToastWithUndo } from '@/components/ui/hooks';
 import { formatDate } from '@/lib/format-date';
+import { formatDecimal } from '@/lib/number-format';
 import { buildYieldFilters, YIELD_FILTER_KEYS } from './filter-defs';
 import { YieldFormModal } from './YieldFormModal';
 
@@ -51,7 +53,7 @@ interface YieldClientProps {
 
 function fmtNum(v: number | null): string {
     if (v == null) return '—';
-    return v.toLocaleString(undefined, { maximumFractionDigits: 2 });
+    return formatDecimal(v, 2);
 }
 
 export function YieldClient(props: YieldClientProps) {
@@ -345,6 +347,9 @@ function YieldPageInner({
                 defs: liveFilterDefs,
                 searchId: 'grain-yield-search',
                 searchPlaceholder: t('searchPlaceholder'),
+                toolbarActions: (
+                    <GrainSectionNav tenantSlug={tenantSlug} active="yield" />
+                ),
             }}
             table={{
                 data: records,

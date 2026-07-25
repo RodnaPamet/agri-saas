@@ -36,6 +36,11 @@ export const ALL_CONTRACT_STATUSES = [
 
 export type ContractStatusValue = (typeof ALL_CONTRACT_STATUSES)[number];
 
+/** Every valid ContractType. Kept in sync with the Prisma enum. */
+export const ALL_CONTRACT_TYPES = ['SALE', 'PURCHASE'] as const;
+
+export type ContractTypeValue = (typeof ALL_CONTRACT_TYPES)[number];
+
 /**
  * Statuses that represent a LIVE tonnage commitment for the portfolio
  * "contracted tonnes" rollup.

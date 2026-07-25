@@ -24,15 +24,14 @@ import { ProgressBar } from '@/components/ui/progress-bar';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Tooltip } from '@/components/ui/tooltip';
 import { deriveContractWindowState } from '@/lib/grain/contract-window';
+import { formatDecimal } from '@/lib/number-format';
 import type { ContractFulfilmentDto } from './ContractsClient';
 
 /** Format a decimal-string tonnage for display. The exact value stays
  *  in the string; only the rendering is localised. */
 export function fmtTonnes(v: string | null | undefined): string {
     if (v == null || v === '') return '—';
-    const n = Number(v);
-    if (!Number.isFinite(n)) return '—';
-    return n.toLocaleString(undefined, { maximumFractionDigits: 3 });
+    return formatDecimal(v, 3);
 }
 
 export function ContractProgressCell({

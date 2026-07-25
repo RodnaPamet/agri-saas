@@ -5963,7 +5963,18 @@
                 "pricingNotesPlaceholder": "Базис, премии, бележки за хеджиране",
                 "cancel": "Отказ",
                 "saveContract": "Запази договор",
-                "createContract": "Създай договор"
+                "createContract": "Създай договор",
+                "buyer": "Купувач",
+                "supplier": "Доставчик",
+                "buyerPlaceholder": "Кой купува продукцията",
+                "supplierPlaceholder": "Кой доставя материалите",
+                "contractNumber": "Договор №",
+                "contractNumberHint": "Референцията от документа на договора. Трябва да е уникална сред активните ви договори.",
+                "contractNumberPlaceholder": "напр. WHT-2026-014",
+                "currencyNone": "Без валута",
+                "seasonPlanningOff": "Сезоните изискват модул „Планиране“, който не е активиран за тази ферма.",
+                "seasonLoadFailed": "Сезоните не можаха да се заредят. Договорът може да бъде запазен и без сезон.",
+                "seasonNoneYet": "Все още няма създадени сезони — добавете сезон в „Планиране“, за да групирате договори по стопанска година."
             },
             "colDelivered": "Доставено",
             "colValue": "Стойност",
@@ -6003,7 +6014,14 @@
                 "deleteDelivery": "Премахни доставка",
                 "deletedToast": "Премахната доставка от {tonnes} т",
                 "undo": "Отмени"
-            }
+            },
+            "colParty": "Контрагент",
+            "colKey": "Договор №",
+            "roleBuyer": "Купувач",
+            "roleSupplier": "Доставчик",
+            "truncatedNotice": "Показани са първите {shown} от {total} договора. Стеснете филтрите или търсенето, за да видите останалите.",
+            "jargonSettled": "„Уреден“ означава, че зърното е доставено и фактурата е платена — договорът е приключен.",
+            "jargonBasis": "„Базис“ е разликата между договорената цена и референтната пазарна цена — покрива транспорт, качество и срокове."
         },
         "yield": {
             "breadcrumbDashboard": "Табло",
@@ -6083,6 +6101,13 @@
             "colPlantings": "Посеви",
             "colField": "Поле",
             "unassigned": "Без назначение"
+        },
+        "nav": {
+            "ariaLabel": "Зърнени раздели",
+            "contracts": "Договори",
+            "yield": "Добив",
+            "bins": "Силози и складове",
+            "costs": "Разходи"
         }
     },
     "inventory": {
@@ -7452,15 +7477,8 @@
     "grainEnums": {
         "status": "Статус",
         "statuses": "Статуси",
-        "statusDraft": "Чернова",
-        "statusActive": "Активен",
-        "statusDelivered": "Доставен",
-        "statusSettled": "Уредена",
-        "statusCancelled": "Отказан",
         "type": "Тип",
         "types": "Типове",
-        "typeSale": "Продажба",
-        "typePurchase": "Покупка",
         "season": "Сезон",
         "seasons": "Сезони",
         "field": "Поле",
@@ -7469,7 +7487,9 @@
         "costs": "Разходи",
         "groupByPlanting": "По насаждение",
         "groupByField": "По поле",
-        "groupBySeason": "По сезон"
+        "groupBySeason": "По сезон",
+        "statusDescription": "Етап от жизнения цикъл на договора.",
+        "typeDescription": "Дали договорът продава продукция, или купува материали."
     },
     "exchangeFilters": {
         "side": "Страна",

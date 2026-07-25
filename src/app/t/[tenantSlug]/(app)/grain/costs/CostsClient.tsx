@@ -9,6 +9,7 @@ import { ToggleGroup } from '@/components/ui/toggle-group';
 import { DataTable, createColumns } from '@/components/ui/table';
 import { EmptyState } from '@/components/ui/empty-state';
 import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
+import { formatDecimal } from '@/lib/number-format';
 
 // ─── Row shapes (mirror the cost-rollup usecase DTOs) ───
 
@@ -58,7 +59,7 @@ interface CostsClientProps {
 /** Format a cost magnitude with the row's own currency (precise, not compact). */
 function money(v: number | null | undefined, currency: string | null): string {
     if (v == null) return '—';
-    const n = v.toLocaleString(undefined, { maximumFractionDigits: 2 });
+    const n = formatDecimal(v, 2);
     return currency ? `${n} ${currency}` : n;
 }
 

@@ -15,13 +15,15 @@ import {
     type FilterType,
 } from '@/components/ui/filter';
 import { EntityListPage } from '@/components/layout/EntityListPage';
+import { GrainSectionNav } from '../GrainSectionNav';
 import { EmptyState } from '@/components/ui/empty-state';
 import { TableTitleCell } from '@/components/ui/table-title-cell';
 import { AgStatusBadge } from '@/components/ag/ag-status';
-import { Tooltip } from '@/components/ui/tooltip';
+import { InfoTooltip, Tooltip } from '@/components/ui/tooltip';
 import { Pen2, Trash, StackY3 } from '@/components/ui/icons/nucleo';
-import { useToastWithUndo } from '@/components/ui/hooks';
-import { formatDate } from '@/lib/format-date';
+import { useDebounce, useToastWithUndo } from '@/components/ui/hooks';
+import { formatDateRange } from '@/lib/format-date';
+import { formatDecimal } from '@/lib/number-format';
 import {
     buildContractFilters,
     CONTRACT_FILTER_KEYS,
@@ -61,8 +63,6 @@ export interface ContractRow {
     priceCurrency: string | null;
     deliveryStart: string | null;
     deliveryEnd: string | null;
-    terms: string | null;
-    pricingNotes: string | null;
     createdAt: string;
     updatedAt: string;
     season?: { id: string; name: string; status: string } | null;
@@ -70,6 +70,19 @@ export interface ContractRow {
     fulfilment?: ContractFulfilmentDto;
     /** Derived server-side: volume × price, exact decimal string. */
     valueAmount?: string | null;
+}
+
+/**
+ * The full row, including the two Epic-B ENCRYPTED narrative columns.
+ *
+ * The LIST deliberately omits `terms` / `pricingNotes` — they used to
+ * ride along decrypted for up to 500 rows into every viewer's cache,
+ * including READERs and AUDITORs who have no surface that renders them.
+ * The edit modal fetches this shape for ONE contract when it opens.
+ */
+export interface ContractDetail extends ContractRow {
+    terms: string | null;
+    pricingNotes: string | null;
 }
 
 /** One currency's slice of the book (never summed across currencies). */
@@ -81,25 +94,35 @@ export interface ContractBookTotalDto {
     unpricedCount: number;
 }
 
-/** The list endpoint's payload — rows plus per-currency book totals. */
+/** The list endpoint's payload — rows, per-currency book totals, and the
+ *  truth about the 500-row cap. */
 export interface ContractListResponse {
     rows: ContractRow[];
     totals: ContractBookTotalDto[];
+    /** Matching contracts in the tenant (not just on this page). */
+    totalCount: number;
+    /** True when the page hit the server cap and rows are missing. */
+    truncated: boolean;
 }
 
 interface ContractsClientProps {
     initialContracts: ContractRow[];
     initialTotals: ContractBookTotalDto[];
+    initialTotalCount?: number;
+    initialTruncated?: boolean;
     tenantSlug: string;
     permissions: { canWrite: boolean };
 }
 
-/** Format a string|null decimal for display; right-aligned tabular-nums. */
+/** Format a string|null decimal for display; right-aligned tabular-nums.
+ *
+ *  Pinned to the repo's fixed formatting locale (`formatDecimal`) rather
+ *  than `toLocaleString(undefined)`: the runtime default differs between
+ *  the Node render and the browser, so an unpinned separator is a
+ *  hydration mismatch waiting for the first non-en-US visitor. */
 function fmtNum(v: string | null): string {
     if (v == null || v === '') return '—';
-    const n = Number(v);
-    if (!Number.isFinite(n)) return '—';
-    return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+    return formatDecimal(v, 2);
 }
 
 export function ContractsClient(props: ContractsClientProps) {
@@ -114,11 +137,16 @@ export function ContractsClient(props: ContractsClientProps) {
 function ContractsPageInner({
     initialContracts,
     initialTotals,
+    initialTotalCount,
+    initialTruncated,
     tenantSlug,
     permissions,
 }: ContractsClientProps) {
     const t = useTranslations('grain.contracts');
     const tEnums = useTranslations('grainEnums');
+    // Enum MEMBER labels — the same `ag.status.contract.*` keys the
+    // table badge resolves, so the chip and the badge cannot disagree.
+    const tAg = useTranslations('ag');
     const apiUrl = useCallback(
         (path: string) => `/api/t/${tenantSlug}${path}`,
         [tenantSlug],
@@ -137,12 +165,17 @@ function ContractsPageInner({
     const [deliveriesFor, setDeliveriesFor] = useState<ContractRow | null>(null);
 
     // ─── API query string from filter state (status + type only) ───
+    // Search is a SERVER param now. The in-memory filter only ever saw
+    // the 500-row page, so a match on row 501 was invisible — a silent
+    // wrong answer. Debounced so typing does not fire a request a
+    // keystroke.
+    const debouncedSearch = useDebounce(search, 300);
     const filtersForQuery = useMemo(() => {
         const params = filterStateToUrlParams(state);
-        // `q` is not a server param for contracts — search filters loaded
-        // rows in-memory below.
+        const q = debouncedSearch.trim();
+        if (q) params.set('q', q);
         return params;
-    }, [state]);
+    }, [state, debouncedSearch]);
 
     const queryKeyFilters = useMemo(() => {
         const obj: Record<string, string> = {};
@@ -163,7 +196,12 @@ function ContractsPageInner({
             return res.json();
         },
         initialData: noFacets
-            ? { rows: initialContracts, totals: initialTotals }
+            ? {
+                  rows: initialContracts,
+                  totals: initialTotals,
+                  totalCount: initialTotalCount ?? initialContracts.length,
+                  truncated: initialTruncated ?? false,
+              }
             : undefined,
         // eslint-disable-next-line react-hooks/purity
         initialDataUpdatedAt: noFacets ? Date.now() : 0,
@@ -180,6 +218,11 @@ function ContractsPageInner({
         () => contractsQuery.data?.totals ?? [],
         [contractsQuery.data],
     );
+    // The 500-row server cap used to be silent — a tenant with 600
+    // contracts saw 500 and was told nothing, which is a wrong answer
+    // delivered confidently. Say so.
+    const truncated = contractsQuery.data?.truncated ?? false;
+    const totalCount = contractsQuery.data?.totalCount ?? rawContracts.length;
     const loading = contractsQuery.isLoading && !contractsQuery.data;
 
     // A failed list read must NOT fall through to the empty state — an
@@ -196,22 +239,14 @@ function ContractsPageInner({
             ? t('loadFailed')
             : undefined;
 
-    // Live free-text search (counterparty / commodity) over loaded rows —
-    // FilterToolbar's search box is live (no Enter).
-    const contracts = useMemo(() => {
-        const q = search.trim().toLowerCase();
-        if (!q) return rawContracts;
-        // guardrail-ignore: in-memory text filter over the loaded page, not a DB query.
-        return rawContracts.filter(
-            (c) =>
-                c.counterparty.toLowerCase().includes(q) ||
-                (c.commodity ?? '').toLowerCase().includes(q),
-        );
-    }, [rawContracts, search]);
+    // No in-memory filter pass: `q` goes to the server (see above), so
+    // `rawContracts` is already the answer. Filtering again here would
+    // only re-hide rows the server deliberately returned.
+    const contracts = rawContracts;
 
     const liveFilterDefs: FilterType[] = useMemo(
-        () => buildContractFilters(tEnums),
-        [tEnums],
+        () => buildContractFilters(tEnums, tAg),
+        [tEnums, tAg],
     );
 
     const refetch = useCallback(() => {
@@ -274,13 +309,42 @@ function ContractsPageInner({
             createColumns<ContractRow>([
                 {
                     accessorKey: 'counterparty',
-                    header: t('colCounterparty'),
+                    // "Counterparty" is trade jargon for two concrete
+                    // roles the schema already distinguishes: a SALE has
+                    // a BUYER, a PURCHASE has a SUPPLIER. The header
+                    // names the common case and each row names its own.
+                    header: t('colParty'),
                     cell: ({ row }) => (
-                        <TableTitleCell id={`contract-link-${row.original.id}`}>
-                            {row.original.counterparty}
-                        </TableTitleCell>
+                        <div className="flex flex-col">
+                            <TableTitleCell id={`contract-link-${row.original.id}`}>
+                                {row.original.counterparty}
+                            </TableTitleCell>
+                            <span className="text-[0.625rem] uppercase tracking-wide text-content-subtle">
+                                {row.original.type === 'SALE'
+                                    ? t('roleBuyer')
+                                    : t('roleSupplier')}
+                            </span>
+                        </div>
                     ),
                     meta: { mobileCard: { slot: 'title' } },
+                },
+                {
+                    id: 'key',
+                    // The contract NUMBER — the reference printed on the
+                    // paper the farmer is holding. It has always had a
+                    // real unique index and no way to enter, see or
+                    // search it.
+                    header: t('colKey'),
+                    accessorFn: (c) => c.key ?? '',
+                    cell: ({ row }) =>
+                        row.original.key ? (
+                            <span className="font-mono text-xs text-content-muted">
+                                {row.original.key}
+                            </span>
+                        ) : (
+                            <span className="text-xs text-content-subtle">—</span>
+                        ),
+                    meta: { mobileCard: { slot: 'meta', label: t('colKey') } },
                 },
                 {
                     id: 'commodity',
@@ -306,6 +370,12 @@ function ContractsPageInner({
                     cell: ({ row }) => (
                         <div className="flex flex-wrap items-center gap-tight">
                             <AgStatusBadge entity="contract" status={row.original.status} />
+                            {/* "Settled" is trade jargon — it means paid,
+                                not merely delivered. One tooltip beats a
+                                farmer guessing. */}
+                            {row.original.status === 'SETTLED' && (
+                                <InfoTooltip content={t('jargonSettled')} />
+                            )}
                             <ContractWindowBadge
                                 status={row.original.status}
                                 deliveryEnd={row.original.deliveryEnd}
@@ -376,10 +446,18 @@ function ContractsPageInner({
                     header: t('colDelivery'),
                     accessorFn: (c) => c.deliveryStart ?? '',
                     cell: ({ row }) => (
-                        <span className="text-xs text-content-muted">
-                            {formatDate(row.original.deliveryStart)}
+                        // The WINDOW, not just its opening date. A
+                        // delivery window is a period the farmer plans
+                        // haulage around; showing only the start hid the
+                        // deadline that actually matters.
+                        <span className="whitespace-nowrap text-xs text-content-muted">
+                            {formatDateRange(
+                                row.original.deliveryStart,
+                                row.original.deliveryEnd,
+                            )}
                         </span>
                     ),
+                    meta: { mobileCard: { slot: 'meta', label: t('colDelivery') } },
                 },
                 {
                     id: 'actions',
@@ -462,11 +540,30 @@ function ContractsPageInner({
                     </Button>
                 ) : null,
             }}
-            kpis={<ContractBookTotals totals={bookTotals} />}
+            kpis={
+                <>
+                    <ContractBookTotals totals={bookTotals} />
+                    {truncated && (
+                        <div
+                            role="status"
+                            id="grain-contracts-truncation-notice"
+                            className="rounded-lg border border-border-subtle bg-bg-warning px-3 py-2 text-xs text-content-warning"
+                        >
+                            {t('truncatedNotice', {
+                                shown: rawContracts.length,
+                                total: totalCount,
+                            })}
+                        </div>
+                    )}
+                </>
+            }
             filters={{
                 defs: liveFilterDefs,
                 searchId: 'grain-contracts-search',
                 searchPlaceholder: t('searchPlaceholder'),
+                toolbarActions: (
+                    <GrainSectionNav tenantSlug={tenantSlug} active="contracts" />
+                ),
             }}
             table={{
                 data: contracts,

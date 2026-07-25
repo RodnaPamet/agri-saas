@@ -53,6 +53,61 @@ import type {
 // [tenantId,seasonId]) back the filtered reads.
 const LIST_TAKE = 500;
 
+/**
+ * Columns the LIST read returns.
+ *
+ * `terms` (≤20 000 chars) and `pricingNotes` are deliberately absent.
+ * They are the two Epic-B encrypted columns on this model, and a
+ * `findMany` with no `select` returned them DECRYPTED for up to 500 rows
+ * — into the SSR payload, into the client query cache, and into the
+ * browser memory of every READER and AUDITOR, none of whom have any
+ * surface that renders them (the only renderer is the edit modal, gated
+ * on `canWrite`). Encrypting a column at rest and then broadcasting it
+ * to everyone who can open a list is not confidentiality.
+ *
+ * The full row — including both narrative fields — is fetched on demand
+ * by `getContract` when someone actually opens one.
+ */
+const LIST_SELECT = {
+    id: true,
+    tenantId: true,
+    seasonId: true,
+    key: true,
+    counterparty: true,
+    commodity: true,
+    type: true,
+    status: true,
+    volumeTonnes: true,
+    pricePerTonne: true,
+    priceCurrency: true,
+    deliveryStart: true,
+    deliveryEnd: true,
+    createdAt: true,
+    updatedAt: true,
+    season: { select: { id: true, name: true, status: true } },
+} as const;
+
+/**
+ * Server-side free-text search across the plaintext identifying columns.
+ *
+ * Restricted to `counterparty` / `commodity` / `key` on purpose: those
+ * are plaintext and indexed-adjacent. `terms` and `pricingNotes` are
+ * ENCRYPTED at rest, so a `contains` against them would match ciphertext
+ * — silently returning nothing rather than erroring, the worst failure
+ * shape for a search box.
+ */
+function buildSearchWhere(q: string): Prisma.ContractWhereInput {
+    const term = q.trim();
+    if (!term) return {};
+    return {
+        OR: [
+            { counterparty: { contains: term, mode: 'insensitive' } },
+            { commodity: { contains: term, mode: 'insensitive' } },
+            { key: { contains: term, mode: 'insensitive' } },
+        ],
+    };
+}
+
 /** Parse a wire date string → Date, or throw a 400. Null/undefined → null. */
 function parseDate(value: string | null | undefined, label: string): Date | null {
     if (value == null) return null;
@@ -89,6 +144,10 @@ export interface ContractListFilters {
     status?: ContractStatus[];
     type?: ContractType[];
     seasonId?: string;
+    /** Free-text search over counterparty / commodity / contract number.
+     *  Server-side: the in-memory client filter only ever saw the
+     *  500-row page, so a match on row 501 was invisible. */
+    q?: string;
 }
 
 export async function listContracts(
@@ -105,9 +164,12 @@ export async function listContracts(
                 ...(filters.status?.length ? { status: { in: filters.status } } : {}),
                 ...(filters.type?.length ? { type: { in: filters.type } } : {}),
                 ...(filters.seasonId ? { seasonId: filters.seasonId } : {}),
+                ...(filters.q ? buildSearchWhere(filters.q) : {}),
             },
+            // Explicit projection — `terms` and `pricingNotes` are
+            // DELIBERATELY absent. See LIST_SELECT.
+            select: LIST_SELECT,
             orderBy: [{ createdAt: 'desc' }],
-            include: { season: { select: { id: true, name: true, status: true } } },
             take: opts.take ?? LIST_TAKE,
         });
 
@@ -123,7 +185,7 @@ export async function listContracts(
         // Decimal-exact value. Both are derived, not stored: value is
         // volume × price (the schema has claimed this since the module
         // landed), and fulfilment comes from the delivery ledger.
-        return rows.map((row) => {
+        const decorated = rows.map((row) => {
             const agg = delivered.get(row.id);
             return {
                 ...row,
@@ -136,6 +198,27 @@ export async function listContracts(
                 valueAmount: computeContractValue(row.volumeTonnes, row.pricePerTonne),
             };
         });
+
+        // The 500-row cap used to be silent: a tenant with 600 contracts
+        // saw 500 and was told nothing. Count only when the page came
+        // back FULL — in the ordinary case (fewer rows than the cap) the
+        // page length IS the total and the extra query is skipped.
+        const take = opts.take ?? LIST_TAKE;
+        const truncated = rows.length === take;
+        const totalCount = truncated
+            ? await db.contract.count({
+                  where: {
+                      tenantId: ctx.tenantId,
+                      deletedAt: null,
+                      ...(filters.status?.length ? { status: { in: filters.status } } : {}),
+                      ...(filters.type?.length ? { type: { in: filters.type } } : {}),
+                      ...(filters.seasonId ? { seasonId: filters.seasonId } : {}),
+                      ...(filters.q ? buildSearchWhere(filters.q) : {}),
+                  },
+              })
+            : rows.length;
+
+        return { rows: decorated, totalCount, truncated };
     });
 }
 
