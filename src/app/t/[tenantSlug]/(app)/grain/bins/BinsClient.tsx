@@ -28,10 +28,15 @@ export interface BinRow {
     kind: 'BIN' | 'STORAGE';
     description: string | null;
     capacityTonnes: number | null;
-    storedQuantity: number;
+    /** Stored produce CONVERTED to tonnes — comparable to capacityTonnes. */
+    storedTonnes: number;
     lotCount: number;
-    /** Ratio storedQuantity / capacity (0..1+), or null when no capacity. */
+    /** Ratio storedTonnes / capacity (0..1+); null without a capacity or when mixedUnits. */
     fillPct: number | null;
+    /** Bin holds stock with no tonnage (e.g. `each`), so no honest fill exists. */
+    mixedUnits: boolean;
+    /** That unconvertible stock, per unit. */
+    unconvertible: { unitKey: string; symbol: string; quantity: number; lotCount: number }[];
 }
 
 interface BinsClientProps {
@@ -145,12 +150,23 @@ function BinsPageInner({ initialBins, tenantSlug, permissions }: BinsClientProps
                     meta: { mobileCard: { slot: 'meta', label: t('colCapacity') } },
                 },
                 {
-                    id: 'storedQuantity',
+                    id: 'storedTonnes',
                     header: t('colStored'),
-                    accessorFn: (b) => b.storedQuantity,
+                    accessorFn: (b) => b.storedTonnes,
                     cell: ({ row }) => (
                         <span className="text-xs text-content-default tabular-nums block text-right">
-                            {fmtNum(row.original.storedQuantity)}
+                            {fmtNum(row.original.storedTonnes)}
+                            {/* Stock with no tonnage is listed beside the tonnes
+                                rather than folded into them — numbers + unit
+                                symbols only, so no i18n key is needed. */}
+                            {row.original.unconvertible.map((u) => (
+                                <span
+                                    key={u.unitKey}
+                                    className="block text-content-subtle"
+                                >
+                                    {`+${fmtNum(u.quantity)} ${u.symbol}`}
+                                </span>
+                            ))}
                         </span>
                     ),
                     meta: { mobileCard: { slot: 'meta', label: t('colStored') } },
@@ -162,8 +178,16 @@ function BinsPageInner({ initialBins, tenantSlug, permissions }: BinsClientProps
                     cell: ({ row }) => {
                         const ratio = row.original.fillPct;
                         if (ratio == null) {
+                            // Distinguish "no capacity configured" (—) from
+                            // "capacity set but the contents have no tonnage",
+                            // so a suppressed fill bar is explained rather than
+                            // just blank.
                             return (
-                                <span className="text-xs text-content-subtle">—</span>
+                                <span className="text-xs text-content-subtle">
+                                    {row.original.mixedUnits
+                                        ? t('fillMixedUnits')
+                                        : '—'}
+                                </span>
                             );
                         }
                         const pct = Math.round(ratio * 100);

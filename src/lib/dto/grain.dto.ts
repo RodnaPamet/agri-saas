@@ -116,17 +116,30 @@ export const GrainBinDTOSchema = z
         kind: z.enum(['BIN', 'STORAGE']),
         description: z.string().nullable(),
         capacityTonnes: z.number().nullable(),
-        /** Sum of quantityOnHand across the bin's HARVESTED_PRODUCE lots. */
-        storedQuantity: z.number(),
-        /** Number of stored produce lots in the bin. */
+        /** HARVESTED_PRODUCE stock CONVERTED to tonnes (the capacity's unit). */
+        storedTonnes: z.number(),
+        /** Number of stored produce lots, including unconvertible ones. */
         lotCount: z.number(),
-        /** storedQuantity / capacityTonnes when a capacity is set; else null. */
+        /** storedTonnes / capacityTonnes; null without a capacity or when mixedUnits. */
         fillPct: z.number().nullable(),
+        /** True when the bin holds stock that has no tonnage, so fillPct is null. */
+        mixedUnits: z.boolean(),
+        /** Per-unit breakdown of that unconvertible stock; empty when clean. */
+        unconvertible: z
+            .array(
+                z.object({
+                    unitKey: z.string(),
+                    symbol: z.string(),
+                    quantity: z.number(),
+                    lotCount: z.number(),
+                }),
+            )
+            .default([]),
     })
     .passthrough()
     .openapi('GrainBin', {
         description:
-            'A grain bin — a BIN/STORAGE Location with a computed fill (storedQuantity = sum of HARVESTED_PRODUCE lots; fillPct = storedQuantity / capacityTonnes when a capacity is configured).',
+            "A grain bin — a BIN/STORAGE Location with a computed fill. storedTonnes is the bin's HARVESTED_PRODUCE stock converted into tonnes via each lot's unit, so it is comparable to capacityTonnes; fillPct is the fraction of capacity used. Stock in a unit with no tonnage (COUNT/VOLUME) is reported in `unconvertible` and sets `mixedUnits`, which suppresses fillPct rather than being counted at face value.",
     });
 
 export type GrainBinDTO = z.infer<typeof GrainBinDTOSchema>;

@@ -144,6 +144,12 @@ function useInventoryCursor<T>(buildPageUrl: (cursor: string) => string) {
     return { rows, hasMore, loading, seed, loadMore };
 }
 
+interface StorageLocationRow {
+    id: string;
+    name: string;
+    kind: string;
+}
+
 export function InventoryClient({ tenantSlug }: { tenantSlug: string }) {
     const t = useTranslations('inventory');
     const buildUrl = useTenantApiUrl();
@@ -170,6 +176,15 @@ export function InventoryClient({ tenantSlug }: { tenantSlug: string }) {
         revalidateOnFocus: false,
         dedupingInterval: 60_000,
     });
+    // Storage locations for the lot's position. `InventoryLot.locationId` is
+    // what ties stock to a grain bin, so without this picker a bin can only
+    // ever read as empty. Explicitly kind-filtered: a Location is a growing
+    // FIELD or a storage row depending on `kind`, and produce stored against
+    // a field would be invisible to every bin view.
+    const { data: storageLocations } = useTenantSWR<StorageLocationRow[]>(
+        '/locations?kind=BIN,STORAGE,BARN,WAREHOUSE',
+        { revalidateOnFocus: false, dedupingInterval: 60_000 },
+    );
 
     const [error, setError] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
@@ -194,6 +209,11 @@ export function InventoryClient({ tenantSlug }: { tenantSlug: string }) {
     const [lCode, setLCode] = useState('');
     const [lQty, setLQty] = useState('');
     const [lExpires, setLExpires] = useState<Date | null>(null);
+    const [lLocationId, setLLocationId] = useState<string>('');
+    // Move control on the lot detail. `null` means "not yet edited" so the
+    // Combobox falls back to the lot's current location.
+    const [moveLocationId, setMoveLocationId] = useState<string | null>(null);
+    const [moving, setMoving] = useState(false);
 
     // Lot detail / movement modal
     const [activeLotId, setActiveLotId] = useState<string | null>(null);
@@ -292,6 +312,10 @@ export function InventoryClient({ tenantSlug }: { tenantSlug: string }) {
     const humanizeStockType = (type: string) => stockTypeLabels[type] ?? type;
     const humanizeCategory = (cat: string) => categoryLabels[cat] ?? cat;
 
+    const locationOptions = useMemo(
+        () => (storageLocations ?? []).map((l) => ({ value: l.id, label: l.name })),
+        [storageLocations],
+    );
     const itemOptions = useMemo(
         () => (items ?? []).map((i) => ({ label: `${i.name}`, value: i.id })),
         [items],
@@ -375,6 +399,27 @@ export function InventoryClient({ tenantSlug }: { tenantSlug: string }) {
         }
     };
 
+    /**
+     * Reassign an open lot's storage location. A position change, so it PATCHes
+     * the lot row — it is NOT ledger activity and must not alter quantity.
+     */
+    const moveLot = async (lotId: string, locationId: string | null) => {
+        setMoving(true);
+        setError(null);
+        try {
+            await apiPatch(buildUrl(`/inventory/lots/${lotId}`), { locationId });
+            setMoveLocationId(null);
+            // Refresh the lot's own detail and the lot list. Bin fill is
+            // server-rendered on the bins page, so it picks the move up on
+            // navigation rather than needing a cross-page invalidation.
+            await Promise.all([mutateLot(), mutate()]);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Failed to move lot');
+        } finally {
+            setMoving(false);
+        }
+    };
+
     const createLot = async (e: React.FormEvent) => {
         e.preventDefault();
         setBusy(true);
@@ -385,12 +430,14 @@ export function InventoryClient({ tenantSlug }: { tenantSlug: string }) {
                 lotCode: lCode,
                 initialQuantity: lQty ? Number(lQty) : null,
                 expiresAt: lExpires ? lExpires.toISOString() : null,
+                locationId: lLocationId || null,
             });
             setShowLot(false);
             setLItemId('');
             setLCode('');
             setLQty('');
             setLExpires(null);
+            setLLocationId('');
             await mutate();
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to create lot');
@@ -628,7 +675,8 @@ export function InventoryClient({ tenantSlug }: { tenantSlug: string }) {
                     lItemId.length > 0 ||
                     lCode.trim().length > 0 ||
                     lQty.trim().length > 0 ||
-                    lExpires !== null
+                    lExpires !== null ||
+                    lLocationId.length > 0
                 }
             >
                 <Modal.Header title={t('lotModalTitle')} description={t('lotModalHeaderDescription')} />
@@ -654,6 +702,14 @@ export function InventoryClient({ tenantSlug }: { tenantSlug: string }) {
                             </FormField>
                             <FormField label={t('expires')} hint={t('expiresHint')}>
                                 <DatePicker value={lExpires} onChange={setLExpires} clearable placeholder={t('datePlaceholder')} />
+                            </FormField>
+                            <FormField label={t('storageLocation')} hint={t('storageLocationHint')}>
+                                <Combobox
+                                    options={locationOptions}
+                                    selected={locationOptions.find((o) => o.value === lLocationId) ?? null}
+                                    setSelected={(o) => setLLocationId(o?.value ?? '')}
+                                    placeholder={t('storageLocationPlaceholder')}
+                                />
                             </FormField>
                         </div>
                     </Modal.Body>
@@ -685,6 +741,42 @@ export function InventoryClient({ tenantSlug }: { tenantSlug: string }) {
                             >
                                 {t('editProduct')}
                             </Button>
+                        </div>
+                    )}
+                    {lotDetail && (
+                        <div className="mb-default rounded-lg border border-border-subtle p-3">
+                            <FormField label={t('storageLocation')} hint={t('storageLocationMoveHint')}>
+                                <div className="flex items-end gap-compact">
+                                    <div className="flex-1">
+                                        <Combobox
+                                            options={locationOptions}
+                                            selected={
+                                                locationOptions.find(
+                                                    (o) =>
+                                                        o.value ===
+                                                        (moveLocationId ?? lotDetail.location?.id ?? ''),
+                                                ) ?? null
+                                            }
+                                            setSelected={(o) => setMoveLocationId(o?.value ?? '')}
+                                            placeholder={t('storageLocationPlaceholder')}
+                                        />
+                                    </div>
+                                    <Button
+                                        variant="secondary"
+                                        size="sm"
+                                        type="button"
+                                        loading={moving}
+                                        disabled={
+                                            moving ||
+                                            moveLocationId === null ||
+                                            moveLocationId === (lotDetail.location?.id ?? '')
+                                        }
+                                        onClick={() => moveLot(lotDetail.id, moveLocationId || null)}
+                                    >
+                                        {t('moveLot')}
+                                    </Button>
+                                </div>
+                            </FormField>
                         </div>
                     )}
                     {activeLotId && typeof window !== 'undefined' && (

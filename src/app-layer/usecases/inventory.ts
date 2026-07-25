@@ -6,6 +6,7 @@ import { runInTenantContext } from '@/lib/db-context';
 import type { PrismaTx } from '@/lib/db-context';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { InventoryRepository } from '../repositories/InventoryRepository';
+import { LocationRepository } from '../repositories/LocationRepository';
 import { JournalRepository } from '../repositories/JournalRepository';
 import { createLogEntryWithAudit } from './journal-write';
 import { ModuleSettingsRepository } from '../repositories/ModuleSettingsRepository';
@@ -236,6 +237,81 @@ export async function createLot(ctx: RequestContext, input: CreateLotInput) {
         });
 
         return { id: lot.id, lotCode: lot.lotCode };
+    });
+}
+
+/** Locations a lot may be stored in. A FIELD is a growing area, not a shelf. */
+const STORAGE_LOCATION_KINDS = ['BIN', 'STORAGE', 'BARN', 'WAREHOUSE'] as const;
+
+/**
+ * Move a lot into a storage location, or unassign it (`locationId: null`).
+ *
+ * `InventoryLot.locationId` is what ties stock to a grain bin, and until now
+ * nothing but the demo seeder ever set it — bins could only read as empty.
+ *
+ * This is a POSITION change, so it is a lot-row update rather than ledger
+ * activity: no quantity is created, consumed, or moved between items. The
+ * module's single-writer rule still holds — `quantityOnHand` is a
+ * denormalised ledger sum and this path does not touch it (enforced by
+ * `InventoryRepository.updateLotLocation`, which writes `locationId` alone).
+ * The move is audited so a lot's whereabouts remain reconstructible.
+ */
+export async function updateLotLocation(
+    ctx: RequestContext,
+    lotId: string,
+    locationId: string | null,
+) {
+    assertCanWrite(ctx);
+    return runInTenantContext(ctx, async (db) => {
+        const lot = await InventoryRepository.getLot(db, ctx, lotId);
+        if (!lot) throw notFound('Lot not found.');
+
+        let target: { id: string; name: string; kind: string } | null = null;
+        if (locationId) {
+            const location = await LocationRepository.getById(db, ctx, locationId);
+            if (!location) throw badRequest('Storage location not found.');
+            if (!STORAGE_LOCATION_KINDS.includes(location.kind as (typeof STORAGE_LOCATION_KINDS)[number])) {
+                // Receipting produce into a FIELD would make it invisible to
+                // every bin view while still counting as stock on hand.
+                throw badRequest('Stock can only be stored in a bin or storage location.');
+            }
+            target = { id: location.id, name: location.name, kind: location.kind };
+        }
+
+        const previousLocationId = lot.locationId ?? null;
+        if (previousLocationId === (target?.id ?? null)) {
+            // No-op moves are legal (an edit form may resubmit the same value)
+            // but must not write an audit row claiming a move happened.
+            return { id: lot.id, locationId: previousLocationId, moved: false };
+        }
+
+        const updated = await InventoryRepository.updateLotLocation(db, ctx, lot.id, target?.id ?? null);
+        if (updated === 0) throw notFound('Lot not found.');
+
+        await logEvent(db, ctx, {
+            // `UPDATE` + changedFields, not a bespoke MOVED verb: the audit
+            // vocabulary is dominated by CREATE/UPDATE/SOFT_DELETE and the
+            // one-off verbs already in the tree are a known wart.
+            action: 'UPDATE',
+            entityType: 'InventoryLot',
+            entityId: lot.id,
+            details: target
+                ? `Moved lot ${lot.lotCode} to ${target.name}`
+                : `Removed lot ${lot.lotCode} from its storage location`,
+            detailsJson: {
+                category: 'entity_lifecycle',
+                entityName: 'InventoryLot',
+                operation: 'updated',
+                changedFields: ['locationId'],
+                before: { locationId: previousLocationId },
+                after: { locationId: target?.id ?? null },
+                summary: target
+                    ? `Moved inventory lot ${lot.lotCode} to ${target.name}`
+                    : `Unassigned inventory lot ${lot.lotCode} from storage`,
+            },
+        });
+
+        return { id: lot.id, locationId: target?.id ?? null, moved: true };
     });
 }
 

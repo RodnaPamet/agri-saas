@@ -1,10 +1,17 @@
 import { Prisma, LocationKind } from '@prisma/client';
 import { RequestContext } from '../types';
-import { runInTenantContext } from '@/lib/db-context';
+import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { assertCanRead, assertCanWrite } from '../policies/common';
 import { logEvent } from '../events/audit';
 import { notFound, badRequest } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
+import {
+    EMPTY_BIN_TOTALS,
+    fillFractionFor,
+    summariseStoredByBin,
+    type BinStoredTotals,
+    type UnconvertibleStock,
+} from '@/lib/grain/bin-fill';
 import type { CreateBinInput, UpdateBinInput } from '../schemas/grain.schemas';
 
 /**
@@ -21,8 +28,11 @@ import type { CreateBinInput, UpdateBinInput } from '../schemas/grain.schemas';
  *   - all DB access through runInTenantContext (RLS-bound) + bounded `take:`.
  *
  * Fill computation avoids N+1: list the bins, then ONE
- * `inventoryLot.findMany({ where: { locationId: { in: binIds } } })` and
- * reduce stored quantity per bin in memory.
+ * `inventoryLot.groupBy({ by: ['locationId','unitId'] })` aggregate covering
+ * every bin, reduced in memory by `@/lib/grain/bin-fill`. Grouping (rather
+ * than fetching rows) is what makes the per-lot UNIT available for conversion
+ * to tonnes, and what removes the farm-wide row cap that used to truncate
+ * arbitrary bins' stock.
  */
 
 const LIST_TAKE = 500;
@@ -41,21 +51,84 @@ export interface BinDto {
     kind: 'BIN' | 'STORAGE';
     description: string | null;
     capacityTonnes: number | null;
-    /** Sum of `quantityOnHand` across the bin's HARVESTED_PRODUCE lots. */
-    storedQuantity: number;
-    /** Number of stored produce lots in the bin. */
+    /**
+     * Stored produce CONVERTED TO TONNES (the unit `capacityTonnes` is in),
+     * so this is directly comparable to the capacity. Excludes stock in
+     * non-weight units — see `unconvertible`.
+     */
+    storedTonnes: number;
+    /** Number of stored produce lots in the bin, including unconvertible ones. */
     lotCount: number;
-    /** storedQuantity / capacityTonnes when a capacity is set; else null. */
+    /** storedTonnes / capacityTonnes; null without a capacity or when mixedUnits. */
     fillPct: number | null;
+    /**
+     * True when the bin holds produce that cannot be expressed in tonnes
+     * (a COUNT/VOLUME unit), which makes any fill percentage a partial
+     * truth. Forces `fillPct` to null.
+     */
+    mixedUnits: boolean;
+    /** Per-unit breakdown of that unconvertible stock; empty when clean. */
+    unconvertible: UnconvertibleStock[];
 }
 
 /**
- * List the tenant's grain bins (BIN/STORAGE Locations) with a computed
- * fill. Fill = sum of `quantityOnHand` across the HARVESTED_PRODUCE lots
- * whose `locationId` is the bin. Both `storedQuantity` and `capacityTonnes`
- * are exposed so the caller can render either; `fillPct` is provided when a
- * capacity is set. (Units are assumed already in the lot's unit — Phase-1
- * grain lots are tonnes; no cross-unit conversion.)
+ * ONE grouped aggregate covering EVERY requested bin.
+ *
+ * Grouping by `(locationId, unitId)` does two jobs. It carries each lot's
+ * unit, so quantities can be converted to tonnes before summing — a bin
+ * holding kg-denominated grain used to report 1000× its true fill. And it
+ * bounds the result by `bins × units` instead of by lot count, which is what
+ * the previous `take: 500` on a single farm-wide `findMany` silently
+ * truncated (with no `orderBy`, so differently on each call).
+ *
+ * Still N+1-free: one aggregate for the whole list, plus one lookup of the
+ * handful of `Unit` rows involved (`Unit` is a small global table, no RLS).
+ */
+async function storedTotalsForBins(
+    db: PrismaTx,
+    ctx: RequestContext,
+    binIds: string[],
+): Promise<Map<string, BinStoredTotals>> {
+    if (binIds.length === 0) return new Map();
+
+    const groups = await db.inventoryLot.groupBy({
+        by: ['locationId', 'unitId'],
+        where: {
+            tenantId: ctx.tenantId,
+            deletedAt: null,
+            locationId: { in: binIds },
+            item: { is: { category: 'HARVESTED_PRODUCE' } },
+        },
+        _sum: { quantityOnHand: true },
+        _count: { _all: true },
+    });
+    if (groups.length === 0) return new Map();
+
+    const unitIds = [...new Set(groups.map((g) => g.unitId))];
+    const units = await db.unit.findMany({
+        where: { id: { in: unitIds } },
+        select: { id: true, key: true, symbol: true },
+    });
+
+    return summariseStoredByBin(
+        groups.map((g) => ({
+            locationId: g.locationId,
+            unitId: g.unitId,
+            quantity: dec(g._sum.quantityOnHand) ?? 0,
+            lotCount: g._count._all,
+        })),
+        units,
+    );
+}
+
+/**
+ * List the tenant's grain bins (BIN/STORAGE Locations) with a computed fill.
+ *
+ * `storedTonnes` is the bin's HARVESTED_PRODUCE stock converted into tonnes,
+ * so it is comparable to `capacityTonnes`; `fillPct` is the fraction of
+ * capacity used. Stock in a unit with no tonnage (COUNT/VOLUME) is reported
+ * via `unconvertible` and suppresses `fillPct` rather than being folded in at
+ * face value. See `src/lib/grain/bin-fill.ts` for the rule and its rationale.
  */
 export async function listBins(ctx: RequestContext, opts: { take?: number } = {}): Promise<BinDto[]> {
     assertCanRead(ctx);
@@ -72,34 +145,11 @@ export async function listBins(ctx: RequestContext, opts: { take?: number } = {}
         });
         if (bins.length === 0) return [];
 
-        // ── ONE query for the stored produce across every bin ──
-        const binIds = bins.map((b) => b.id);
-        const lots = await db.inventoryLot.findMany({
-            where: {
-                tenantId: ctx.tenantId,
-                deletedAt: null,
-                locationId: { in: binIds },
-                item: { is: { category: 'HARVESTED_PRODUCE' } },
-            },
-            select: { locationId: true, quantityOnHand: true },
-            take: LIST_TAKE,
-        });
-        const storedByBin = new Map<string, { qty: number; lots: number }>();
-        for (const lot of lots) {
-            if (!lot.locationId) continue;
-            const agg = storedByBin.get(lot.locationId) ?? { qty: 0, lots: 0 };
-            agg.qty += dec(lot.quantityOnHand) ?? 0;
-            agg.lots += 1;
-            storedByBin.set(lot.locationId, agg);
-        }
+        const storedByBin = await storedTotalsForBins(db, ctx, bins.map((b) => b.id));
 
         return bins.map((bin): BinDto => {
-            const agg = storedByBin.get(bin.id) ?? { qty: 0, lots: 0 };
-            const storedQuantity = Math.round(agg.qty * 1e4) / 1e4;
+            const totals = storedByBin.get(bin.id) ?? EMPTY_BIN_TOTALS;
             const capacity = dec(bin.capacityTonnes);
-            const fillPct = capacity != null && capacity > 0
-                ? Math.round((storedQuantity / capacity) * 1e4) / 1e4
-                : null;
             return {
                 id: bin.id,
                 name: bin.name,
@@ -107,9 +157,11 @@ export async function listBins(ctx: RequestContext, opts: { take?: number } = {}
                 kind: bin.kind as 'BIN' | 'STORAGE',
                 description: bin.description,
                 capacityTonnes: capacity,
-                storedQuantity,
-                lotCount: agg.lots,
-                fillPct,
+                storedTonnes: totals.storedTonnes,
+                lotCount: totals.lotCount,
+                fillPct: fillFractionFor(totals.storedTonnes, capacity, totals.mixedUnits),
+                mixedUnits: totals.mixedUnits,
+                unconvertible: totals.unconvertible,
             };
         });
     });
@@ -129,19 +181,10 @@ export async function getBin(ctx: RequestContext, id: string): Promise<BinDto> {
         });
         if (!bin) throw notFound('Grain bin not found');
 
-        const lots = await db.inventoryLot.findMany({
-            where: {
-                tenantId: ctx.tenantId,
-                deletedAt: null,
-                locationId: bin.id,
-                item: { is: { category: 'HARVESTED_PRODUCE' } },
-            },
-            select: { quantityOnHand: true },
-            take: LIST_TAKE,
-        });
-        const storedQuantity = Math.round(
-            lots.reduce((sum, l) => sum + (dec(l.quantityOnHand) ?? 0), 0) * 1e4,
-        ) / 1e4;
+        // Same grouped aggregate as the list path — no per-bin row cap, so a
+        // bin holding more than LIST_TAKE lots no longer under-reports.
+        const totals = (await storedTotalsForBins(db, ctx, [bin.id])).get(bin.id)
+            ?? EMPTY_BIN_TOTALS;
         const capacity = dec(bin.capacityTonnes);
         return {
             id: bin.id,
@@ -150,11 +193,11 @@ export async function getBin(ctx: RequestContext, id: string): Promise<BinDto> {
             kind: bin.kind as 'BIN' | 'STORAGE',
             description: bin.description,
             capacityTonnes: capacity,
-            storedQuantity,
-            lotCount: lots.length,
-            fillPct: capacity != null && capacity > 0
-                ? Math.round((storedQuantity / capacity) * 1e4) / 1e4
-                : null,
+            storedTonnes: totals.storedTonnes,
+            lotCount: totals.lotCount,
+            fillPct: fillFractionFor(totals.storedTonnes, capacity, totals.mixedUnits),
+            mixedUnits: totals.mixedUnits,
+            unconvertible: totals.unconvertible,
         };
     });
 }

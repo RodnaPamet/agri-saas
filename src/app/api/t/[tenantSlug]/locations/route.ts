@@ -14,6 +14,17 @@ const LocationQuerySchema = z.object({
     cursor: z.string().optional(),
     status: z.string().optional(),
     q: z.string().optional().transform(normalizeQ),
+    /**
+     * Comma-separated `LocationKind`s, e.g. `?kind=BIN,STORAGE`. A Location is
+     * a field or a storage row depending on kind, so a caller that wants one
+     * (the inventory lot's storage picker wants storage) asks for it.
+     */
+    kind: z
+        .string()
+        .optional()
+        .transform((v) =>
+            v ? v.split(',').map((k) => k.trim().toUpperCase()).filter(Boolean) : undefined,
+        ),
 }).strip();
 
 export const GET = withApiErrorHandling(async (req: NextRequest, { params: paramsPromise }: { params: Promise<{ tenantSlug: string }> }) => {
@@ -27,12 +38,12 @@ export const GET = withApiErrorHandling(async (req: NextRequest, { params: param
         const result = await listLocationsPaginated(ctx, {
             limit: query.limit,
             cursor: query.cursor,
-            filters: { status: query.status, q: query.q },
+            filters: { status: query.status, q: query.q, kind: query.kind },
         });
         return jsonWithETag(req, result);
     }
 
-    const locations = await listLocations(ctx, { status: query.status, q: query.q });
+    const locations = await listLocations(ctx, { status: query.status, q: query.q, kind: query.kind });
     return jsonWithETag(req, locations);
 });
 

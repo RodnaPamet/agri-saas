@@ -80,6 +80,8 @@ interface HarvestPayload {
     itemId: string;
     quantity: number;
     lotCode?: string | null;
+    /** Bin/store the minted lot is placed in — what ties it to a grain bin. */
+    locationId?: string | null;
 }
 
 interface JournalSubmitBody {
@@ -180,6 +182,14 @@ export function JournalEntryModal({ open, setOpen, tenantSlug, initial, onSaved,
     const { data: locations } = useTenantSWR<LocationOption[]>(open ? '/locations' : null);
     // Items catalog — backs the optional harvest-output picker (HARVEST only).
     const { data: items } = useTenantSWR<ItemOption[]>(open ? '/items' : null);
+    // Storage destinations for the minted harvest lot. Deliberately a separate
+    // read from the `/locations` above: that one backs the field-block link
+    // (growing areas), this one must offer only places stock can sit, since a
+    // lot receipted against a FIELD is invisible to every bin view.
+    const { data: storageLocations } = useTenantSWR<LocationOption[]>(
+        open ? '/locations?kind=BIN,STORAGE,BARN,WAREHOUSE' : null,
+        { revalidateOnFocus: false, dedupingInterval: 60_000 },
+    );
     // Equipment catalog — backs the multi-picker (schemas already accepted
     // equipmentIds; the detail page already displayed them).
     const { data: equipment } = useTenantSWR<EquipmentOption[]>(open ? '/equipment' : null);
@@ -210,6 +220,7 @@ export function JournalEntryModal({ open, setOpen, tenantSlug, initial, onSaved,
     const [harvestItemId, setHarvestItemId] = useState<string>('');
     const [harvestQty, setHarvestQty] = useState<string>('');
     const [harvestLotCode, setHarvestLotCode] = useState<string>('');
+    const [harvestLocationId, setHarvestLocationId] = useState<string>('');
     const [dirty, setDirty] = useState(false);
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -237,6 +248,7 @@ export function JournalEntryModal({ open, setOpen, tenantSlug, initial, onSaved,
         setHarvestItemId('');
         setHarvestQty('');
         setHarvestLotCode('');
+        setHarvestLocationId('');
         setDirty(false);
         setError(null);
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -250,6 +262,10 @@ export function JournalEntryModal({ open, setOpen, tenantSlug, initial, onSaved,
     const locationOptions: ComboboxOption[] = useMemo(
         () => (locations ?? []).map((l) => ({ value: l.id, label: l.name })),
         [locations],
+    );
+    const storageOptions: ComboboxOption[] = useMemo(
+        () => (storageLocations ?? []).map((l) => ({ value: l.id, label: l.name })),
+        [storageLocations],
     );
     const equipmentOptions: ComboboxOption[] = useMemo(
         () => (equipment ?? []).map((e) => ({
@@ -300,8 +316,9 @@ export function JournalEntryModal({ open, setOpen, tenantSlug, initial, onSaved,
             itemId: harvestItemId,
             quantity: qty,
             lotCode: harvestLotCode.trim() || null,
+            locationId: harvestLocationId || null,
         };
-    }, [type, harvestItemId, harvestQty, harvestLotCode]);
+    }, [type, harvestItemId, harvestQty, harvestLotCode, harvestLocationId]);
 
     const submit = async () => {
         setSubmitting(true);
@@ -572,6 +589,28 @@ export function JournalEntryModal({ open, setOpen, tenantSlug, initial, onSaved,
                                         }}
                                         placeholder={t('lotCodePlaceholder')}
                                         aria-label={t('lotCodeAria')}
+                                    />
+                                </FormField>
+                                <FormField
+                                    label={t('harvestDestination')}
+                                    hint={t('harvestDestinationHint')}
+                                >
+                                    <Combobox
+                                        options={storageOptions}
+                                        selected={
+                                            storageOptions.find((o) => o.value === harvestLocationId) ?? null
+                                        }
+                                        setSelected={(o) => {
+                                            setHarvestLocationId(o?.value ?? '');
+                                            markDirty();
+                                        }}
+                                        placeholder={
+                                            storageOptions.length
+                                                ? t('harvestDestinationPlaceholder')
+                                                : t('harvestDestinationEmpty')
+                                        }
+                                        aria-label={t('harvestDestination')}
+                                        matchTriggerWidth
                                     />
                                 </FormField>
                             </div>

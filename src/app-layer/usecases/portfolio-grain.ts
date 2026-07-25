@@ -49,6 +49,7 @@ import type { OrgContext } from '@/app-layer/types';
 import { forbidden } from '@/lib/errors/types';
 import { getPortfolioData } from '@/app-layer/usecases/portfolio-data';
 import { withTenantDb, type PrismaTx } from '@/lib/db-context';
+import { summariseStoredByBin } from '@/lib/grain/bin-fill';
 import type { OrgTenantMeta } from '@/app-layer/repositories/PortfolioRepository';
 
 // Bound for the per-tenant bin list. Mirrors the `PER_TENANT_LIMIT`
@@ -199,9 +200,13 @@ async function computeTenantGrainRow(
     if (bins.length > 0) {
         const binIds = bins.map((b) => b.id);
         // ONE bounded groupBy for the stored HARVESTED_PRODUCE quantity
-        // across every bin (no N+1).
+        // across every bin (no N+1). Grouped by unit as well as bin because
+        // a lot's quantity is in ITS OWN unit — `Item.defaultUnitId` is
+        // user-chosen and kg/g/t are distinct units, so summing raw
+        // quantities reported a kg-denominated tenant at 1000× its real
+        // tonnage, straight into the cross-tenant executive summary.
         const storedGroups = await db.inventoryLot.groupBy({
-            by: ['locationId'],
+            by: ['locationId', 'unitId'],
             where: {
                 tenantId: tenant.id,
                 deletedAt: null,
@@ -209,8 +214,26 @@ async function computeTenantGrainRow(
                 item: { is: { category: 'HARVESTED_PRODUCE' } },
             },
             _sum: { quantityOnHand: true },
+            _count: { _all: true },
         });
-        for (const g of storedGroups) binStoredTonnes += dec(g._sum.quantityOnHand);
+        const units = await db.unit.findMany({
+            where: { id: { in: [...new Set(storedGroups.map((g) => g.unitId))] } },
+            select: { id: true, key: true, symbol: true },
+        });
+        const byBin = summariseStoredByBin(
+            storedGroups.map((g) => ({
+                locationId: g.locationId,
+                unitId: g.unitId,
+                quantity: dec(g._sum.quantityOnHand),
+                lotCount: g._count._all,
+            })),
+            units,
+        );
+        // This is a TONNES metric, so stock in a unit with no tonnage
+        // (COUNT/VOLUME) contributes nothing — it is surfaced per-bin on the
+        // bins page (`BinDto.unconvertible`), which is where the detail
+        // belongs; folding it in at face value is the bug being fixed.
+        for (const totals of byBin.values()) binStoredTonnes += totals.storedTonnes;
     }
 
     // Currency hint — read once cheaply from the first contract that
