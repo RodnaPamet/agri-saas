@@ -33,9 +33,7 @@ const PARENT_MAP: Record<string, CanonicalParent> = {
     '/planning/seasons': { href: '/planning', label: 'planning' },
     // Field-operator view + task detail both hang off the Farm Tasks list.
     '/field/[taskId]': { href: '/farm-tasks', label: 'farmTasks' },
-    '/tasks/[taskId]': { href: '/farm-tasks', label: 'farmTasks' },
-    '/tasks/dashboard': { href: '/farm-tasks', label: 'farmTasks' },
-    '/tasks/new': { href: '/farm-tasks', label: 'farmTasks' },
+    '/farm-tasks/[taskId]': { href: '/farm-tasks', label: 'farmTasks' },
 
     // ── Access reviews ────────────────────────────────────────────────
     '/access-reviews/[reviewId]': { href: '/access-reviews', label: 'accessReviews' },

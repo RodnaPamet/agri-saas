@@ -104,15 +104,6 @@ const BASELINE_PLUS_LITERAL_SITES = new Set<string>([
     // would trip no-plus-prefix-labels).
     'src/app/t/[tenantSlug]/(app)/policies/[policyId]/page.tsx:457',
     'src/app/t/[tenantSlug]/(app)/policies/[policyId]/page.tsx:761',
-    // Legacy `'+ Link'` / `'× Remove'` string literals (kept inline —
-    // migrating them into i18n message values would trip
-    // no-plus-prefix-labels, which HARD-REJECTs values leading with
-    // `+ ` / `× `). Line numbers shift whenever this file grows;
-    // re-anchored after the T10 i18n migration added the
-    // useTranslations hooks + t() calls above them (`+ Link` 782→784,
-    // `× Remove` 1072→1075). The literals themselves are unchanged.
-    'src/app/t/[tenantSlug]/(app)/tasks/[taskId]/page.tsx:784',
-    'src/app/t/[tenantSlug]/(app)/tasks/[taskId]/page.tsx:1075',
     // T13 i18n — the `+ Evidence` literal stays inline (moving it into a
     // message value would trip no-plus-prefix-labels). Its line shifted
     // 419 → 424 when the useTranslations import/hook + useMemo import

@@ -69,8 +69,11 @@ describe('PR-D — entity-ID picker migration', () => {
     });
 
     describe('Task link form (task detail page)', () => {
+        // /tasks compliance UI retired 2026-07-25 — the single task detail
+        // (and its EntityPicker link form) now lives in the farm-tasks detail
+        // client. The task-link seam moved with the file, testid unchanged.
         const src = read(
-            'src/app/t/[tenantSlug]/(app)/tasks/[taskId]/page.tsx',
+            'src/app/t/[tenantSlug]/(app)/farm-tasks/[taskId]/FarmTaskDetailClient.tsx',
         );
 
         it('mounts <EntityPicker> with the canonical testid', () => {
@@ -95,7 +98,7 @@ describe('PR-D — entity-ID picker migration', () => {
 
     describe('NewTaskFields modal', () => {
         const src = read(
-            'src/app/t/[tenantSlug]/(app)/tasks/_form/NewTaskFields.tsx',
+            'src/components/tasks/_form/NewTaskFields.tsx',
         );
 
         it('mounts <EntityPicker> with the canonical testid', () => {

@@ -32,13 +32,11 @@ function read(rel: string): string {
 // constant ended up in. Concatenate the relevant files so the
 // assertions resolve correctly post-extraction.
 const TASK_NEW_SRC =
-    read('src/app/t/[tenantSlug]/(app)/tasks/new/page.tsx') +
+    read('src/components/tasks/NewTaskModal.tsx') +
     '\n' +
-    read('src/app/t/[tenantSlug]/(app)/tasks/NewTaskModal.tsx') +
+    read('src/components/tasks/_form/NewTaskFields.tsx') +
     '\n' +
-    read('src/app/t/[tenantSlug]/(app)/tasks/_form/NewTaskFields.tsx') +
-    '\n' +
-    read('src/app/t/[tenantSlug]/(app)/tasks/_form/useNewTaskForm.ts');
+    read('src/components/tasks/_form/useNewTaskForm.ts');
 const CONTROL_MODAL_SRC = read(
     'src/app/t/[tenantSlug]/(app)/controls/NewControlModal.tsx',
 );

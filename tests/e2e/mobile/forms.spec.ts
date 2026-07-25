@@ -7,7 +7,11 @@
  *   1. The FAB is visible on a key list page (md:hidden → shown < md).
  *   2. Tapping it launches the create flow as a bottom drawer (the <Modal>
  *      primitive renders a Vaul drawer on mobile) with the pinned footer's
- *      primary action ("Create Task") reachable — i.e. Save isn't buried.
+ *      primary action reachable — i.e. Save isn't buried.
+ *
+ * The farm-tasks queue is the exception: its FAB jumps to the field map, so
+ * its create-drawer + reachable-Save contract is exercised from the header
+ * "Task" button (which stays visible at phone width) instead of the FAB.
  *
  * The keyboard-aware footer + the drag/dirty-guard are unit/rendered-tested
  * (hard to drive a soft keyboard in Playwright); this covers the launch +
@@ -23,28 +27,30 @@ test.describe('mobile forms — FAB launches create @mobile', () => {
         tenantSlug = await loginAndGetTenant(page);
     });
 
-    test('the Tasks FAB opens the create drawer with a reachable Save', async ({
+    test('the Tasks create button opens the create drawer with a reachable Save', async ({
         page,
     }) => {
-        await safeGoto(page, `/t/${tenantSlug}/tasks`);
+        await safeGoto(page, `/t/${tenantSlug}/farm-tasks`);
         const main = page.getByRole('main');
         await expect(
             main.getByRole('heading', { name: 'Tasks', level: 1 }),
         ).toBeVisible({ timeout: 30_000 });
 
-        // The mobile FAB is shown (md:hidden → visible at phone width).
-        const fab = page.getByTestId('fab');
-        await expect(fab).toBeVisible();
+        // The farm-tasks FAB is repurposed to jump to the field map, so the
+        // create flow is launched from the header "Task" button (visible at
+        // phone width — the page-header action cluster is not md:hidden).
+        const createBtn = main.locator('#new-farm-task-btn');
+        await expect(createBtn).toBeVisible({ timeout: 30_000 });
 
         // Tap it → the create modal opens as a bottom drawer (role=dialog).
-        await fab.click();
+        await createBtn.click();
         const dialog = page.getByRole('dialog');
         await expect(dialog).toBeVisible({ timeout: 15_000 });
 
         // The pinned footer's primary action is present + reachable — Save
         // is never buried even before scrolling the form.
         await expect(
-            dialog.getByRole('button', { name: 'Create Task' }),
+            dialog.getByRole('button', { name: 'Create task' }),
         ).toBeVisible({ timeout: 15_000 });
     });
 

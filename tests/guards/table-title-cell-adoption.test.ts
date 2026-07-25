@@ -9,9 +9,9 @@
  * different format."
  *
  * R13-PR1 introduces `<TableTitleCell>` as the canonical title-
- * column primitive. Eight entity list pages migrated:
- * Controls / Risks / Policies / Evidence / Tasks / Vendors /
- * Assets / Findings.
+ * column primitive. Entity list pages migrated:
+ * Controls / Risks / Policies / Evidence / Vendors /
+ * Assets / Findings / Farm tasks.
  *
  * Ratchet locks two invariants:
  *
@@ -33,10 +33,10 @@ const ADOPTED_PAGES = [
     'src/app/t/[tenantSlug]/(app)/risks/RisksClient.tsx',
     'src/app/t/[tenantSlug]/(app)/policies/PoliciesClient.tsx',
     'src/app/t/[tenantSlug]/(app)/evidence/EvidenceClient.tsx',
-    'src/app/t/[tenantSlug]/(app)/tasks/TasksClient.tsx',
     'src/app/t/[tenantSlug]/(app)/vendors/VendorsClient.tsx',
     'src/app/t/[tenantSlug]/(app)/assets/AssetsClient.tsx',
     'src/app/t/[tenantSlug]/(app)/findings/FindingsClient.tsx',
+    'src/app/t/[tenantSlug]/(app)/farm-tasks/FarmTasksClient.tsx',
 ];
 
 describe('TableTitleCell adoption (R13-PR1)', () => {

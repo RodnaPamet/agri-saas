@@ -27,7 +27,7 @@ export const BACK_AFFORDANCE_EXEMPT_SUBPAGES: readonly string[] = [
     '/audits/new',          // redirect shim
     '/auth/mfa',            // auth flow — back would bypass MFA challenge
     '/controls/new',        // redirect shim
-    '/issues/[issueId]',    // legacy redirect → /tasks/[taskId]
+    '/issues/[issueId]',    // legacy redirect → /farm-tasks/[taskId]
     '/issues/dashboard',    // legacy redirect
     '/issues/new',          // legacy redirect
     '/onboarding',          // forced flow — back would skip a required step
@@ -35,7 +35,6 @@ export const BACK_AFFORDANCE_EXEMPT_SUBPAGES: readonly string[] = [
     '/reports/soa/print',   // print view, chrome-less by design
     '/risks/new',           // redirect shim
     '/security/mfa',        // self-service security flow
-    '/tasks/new',           // redirect shim
     '/vendors/new',         // redirect shim
 ] as const;
 
@@ -192,10 +191,8 @@ export const SUBPAGES: readonly string[] = [
     // Security (self-service)
     '/security/mfa',
 
-    // Tasks (detail reached from /farm-tasks)
-    '/tasks/[taskId]',
-    '/tasks/dashboard',
-    '/tasks/new',
+    // Farm tasks (the single task detail — reached from /farm-tasks)
+    '/farm-tasks/[taskId]',
 
     // Tests
     '/tests/dashboard',

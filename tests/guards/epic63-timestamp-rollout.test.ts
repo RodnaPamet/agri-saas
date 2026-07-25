@@ -41,10 +41,6 @@ const ROLLED_OUT: Rolled[] = [
         label: 'Policies',
     },
     {
-        file: path.join(APP, 'tasks/TasksClient.tsx'),
-        label: 'Tasks',
-    },
-    {
         file: path.join(APP, 'vendors/VendorsClient.tsx'),
         label: 'Vendors',
     },

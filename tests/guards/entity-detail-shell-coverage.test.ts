@@ -49,7 +49,7 @@ const ADOPTED_PAGES: ReadonlyArray<Adopter> = [
   { page: "src/app/t/[tenantSlug]/(app)/audits/packs/[packId]/page.tsx", entity: "Audit pack" },
   // Wave 2 (PR-4b)
   { page: "src/app/t/[tenantSlug]/(app)/risks/[riskId]/page.tsx", entity: "Risk" },
-  { page: "src/app/t/[tenantSlug]/(app)/tasks/[taskId]/page.tsx", entity: "Task" },
+  { page: "src/app/t/[tenantSlug]/(app)/farm-tasks/[taskId]/FarmTaskDetailClient.tsx", entity: "Farm task" },
   { page: "src/app/t/[tenantSlug]/(app)/vendors/[vendorId]/page.tsx", entity: "Vendor" },
   { page: "src/app/t/[tenantSlug]/(app)/policies/[policyId]/page.tsx", entity: "Policy" },
   { page: "src/app/t/[tenantSlug]/(app)/tests/runs/[runId]/page.tsx", entity: "Test run" },
@@ -156,7 +156,7 @@ describe("EntityDetailLayout adoption — PR-4", () => {
       "src/app/t/[tenantSlug]/(app)/frameworks/[frameworkKey]/install/page.tsx",
       "src/app/t/[tenantSlug]/(app)/frameworks/[frameworkKey]/templates/page.tsx",
       "src/app/t/[tenantSlug]/(app)/vendors/[vendorId]/assessment/[assessmentId]/page.tsx",
-      "src/app/t/[tenantSlug]/(app)/issues/[issueId]/page.tsx", // legacy redirect → /tasks/[id]
+      "src/app/t/[tenantSlug]/(app)/issues/[issueId]/page.tsx", // legacy redirect → /farm-tasks/[id]
       "src/app/t/[tenantSlug]/(app)/admin/vendor-templates/[templateId]/page.tsx",
       "src/app/t/[tenantSlug]/(app)/admin/vendor-assessment-reviews/[assessmentId]/page.tsx",
       // Offline operator PWA — phones-with-gloves field-execution surface

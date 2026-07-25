@@ -92,11 +92,6 @@ const PAGES: PageEntry[] = [
         note: "Calendar / Review page. Pending migration — needs viewport-specific header behaviour preserved.",
     },
     {
-        file: "src/app/t/[tenantSlug]/(app)/tasks/TasksClient.tsx",
-        adopted: false,
-        note: "Tasks list. Pending migration.",
-    },
-    {
         file: "src/app/t/[tenantSlug]/(app)/frameworks/FrameworksClient.tsx",
         adopted: false,
         note: "Frameworks catalogue. Pending migration.",

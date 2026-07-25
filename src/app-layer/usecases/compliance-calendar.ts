@@ -579,7 +579,7 @@ async function loadTaskEvents(
                 status: classifyStatus(date, now, isDone),
                 entityType: 'TASK',
                 entityId: r.id,
-                href: tenantHrefFromCtx(ctx, `/tasks/${r.id}`),
+                href: tenantHrefFromCtx(ctx, `/farm-tasks/${r.id}`),
                 ownerUserId: r.assigneeUserId ?? undefined,
             };
         });

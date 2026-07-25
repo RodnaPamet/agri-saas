@@ -154,7 +154,7 @@ describe('LinkedTasksPanel — response-shape resilience', () => {
         ).not.toBeInTheDocument();
         const link = titleEl.closest('a');
         expect(link).not.toBeNull();
-        expect(link).toHaveAttribute('href', '/t/acme/tasks/task-9');
+        expect(link).toHaveAttribute('href', '/t/acme/farm-tasks/task-9');
         expect(container.querySelector('[data-testid="linked-tasks-table"]')).not.toBeNull();
     });
 });

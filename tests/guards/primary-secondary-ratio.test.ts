@@ -260,7 +260,11 @@ const MIN_SECONDARY_TO_PRIMARY_RATIO = 0.9;
 // EditCropPlanModal (2026-07-23): +1 primary — the "Save changes" CTA on the
 // new crop-plan edit modal (one earned modal-confirm primary; the inline
 // "Add variety" sub-action is secondary). Measured = 172; ceiling at 172.
-const MAX_PRIMARY_COUNT = 172;
+// /tasks retirement (2026-07-25): the compliance Tasks UI (TasksClient +
+// tasks/[taskId]/page) was replaced by the farm-tasks list + detail. Net −1
+// primary in src/app (the relocated NewTaskModal moved to src/components,
+// out of this scan's scope). Measured = 171; ceiling at 171 (one-way down).
+const MAX_PRIMARY_COUNT = 171;
 
 describe("primary:secondary ratio direction", () => {
     const counts = (() => {

@@ -35,6 +35,9 @@ const FarmTaskQuerySchema = z
         status: z.string().optional(),
         // `?open=1` → only the caller's outstanding work (drives "My work").
         open: z.enum(['1', 'true']).optional(),
+        // `?scope=all` → the tenant-wide manager queue (drives the /farm-tasks
+        // page, which is the sole task UI); omitted/`mine` → the caller's own.
+        scope: z.enum(['mine', 'all']).optional(),
     })
     .strip();
 
@@ -47,6 +50,7 @@ export const GET = withApiErrorHandling(
             assigneeUserId: query.assigneeUserId,
             status: query.status,
             openOnly: query.open !== undefined,
+            scope: query.scope,
         });
         return jsonWithETag(req, tasks);
     },

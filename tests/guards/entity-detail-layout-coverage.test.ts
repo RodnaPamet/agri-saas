@@ -73,9 +73,11 @@ const DETAIL_PAGES: DetailPageEntry[] = [
         note: "Audit cycle detail with readiness + checklist tabs.",
     },
     {
-        file: "src/app/t/[tenantSlug]/(app)/tasks/[taskId]/page.tsx",
+        file: "src/app/t/[tenantSlug]/(app)/farm-tasks/[taskId]/page.tsx",
+        compositionFile:
+            "src/app/t/[tenantSlug]/(app)/farm-tasks/[taskId]/FarmTaskDetailClient.tsx",
         adopted: true,
-        note: "Task detail with Links / Comments / Activity tabs.",
+        note: "Farm task detail — server shell delegates to FarmTaskDetailClient which mounts <EntityDetailLayout> with Overview / Evidence / Links / Comments / Activity tabs.",
     },
     {
         file: "src/app/t/[tenantSlug]/(app)/assets/[id]/page.tsx",

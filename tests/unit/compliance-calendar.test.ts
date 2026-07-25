@@ -394,7 +394,7 @@ describe('getComplianceCalendarEvents — aggregation', () => {
             to: TO,
             now: NOW,
         });
-        expect(result.events[0].href).toBe('/t/acme/tasks/t-1');
+        expect(result.events[0].href).toBe('/t/acme/farm-tasks/t-1');
     });
 });
 

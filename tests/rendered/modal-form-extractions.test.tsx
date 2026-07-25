@@ -55,8 +55,11 @@ const EXTRACTIONS: Extraction[] = [
     },
     {
         name: 'tasks (create)',
-        hookPath: 'tasks/_form/useNewTaskForm.ts',
-        fieldsPath: 'tasks/_form/NewTaskFields.tsx',
+        // Relocated out of the app dir to src/components/tasks/ when the
+        // /tasks compliance UI was retired (the modal is shared by calendar +
+        // LinkedTasksPanel). Paths reach up out of APP to src/components/.
+        hookPath: '../../../../components/tasks/_form/useNewTaskForm.ts',
+        fieldsPath: '../../../../components/tasks/_form/NewTaskFields.tsx',
         hookExport: 'useNewTaskForm',
         fieldsExport: 'NewTaskFields',
         requiredReturnKeys: [
@@ -71,7 +74,7 @@ const EXTRACTIONS: Extraction[] = [
             'validationMessage',
             'submit',
         ],
-        pageWrapperPath: 'tasks/NewTaskModal.tsx',
+        pageWrapperPath: '../../../../components/tasks/NewTaskModal.tsx',
     },
     {
         name: 'vendors (create)',
@@ -173,7 +176,7 @@ describe('modal-form P2 — modal wrappers exist', () => {
         },
         {
             label: 'NewTaskModal',
-            file: 'src/app/t/[tenantSlug]/(app)/tasks/NewTaskModal.tsx',
+            file: 'src/components/tasks/NewTaskModal.tsx',
         },
         {
             label: 'NewVendorModal',
@@ -208,11 +211,6 @@ describe('modal-form P2 — /new routes are redirect shims', () => {
             target: '/policies?',
         },
         {
-            label: 'tasks/new',
-            file: 'src/app/t/[tenantSlug]/(app)/tasks/new/page.tsx',
-            target: '/tasks?create=1',
-        },
-        {
             label: 'vendors/new',
             file: 'src/app/t/[tenantSlug]/(app)/vendors/new/page.tsx',
             target: '/vendors?create=1',
@@ -238,11 +236,6 @@ describe('modal-form P2 — list clients open the modal on ?create=1', () => {
             label: 'PoliciesClient',
             file: 'src/app/t/[tenantSlug]/(app)/policies/PoliciesClient.tsx',
             modal: 'NewPolicyModal',
-        },
-        {
-            label: 'TasksClient',
-            file: 'src/app/t/[tenantSlug]/(app)/tasks/TasksClient.tsx',
-            modal: 'NewTaskModal',
         },
         {
             label: 'VendorsClient',

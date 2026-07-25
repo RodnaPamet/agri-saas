@@ -84,8 +84,8 @@ const EXEMPTIONS: Record<string, string> = {
         '(a) sub-component — control-detail evidence sub-table (R10-PR3 follow-up); EntityDetailLayout owns chrome.',
     'controls/[controlId]/_tabs/ControlMappingsTab.tsx':
         '(a) sub-component — control-detail mappings sub-table (R10-PR3 follow-up); EntityDetailLayout owns chrome.',
-    'tasks/[taskId]/page.tsx':
-        '(a) sub-component — task-detail links sub-table (R11-PR8); EntityDetailLayout owns chrome.',
+    'farm-tasks/[taskId]/FarmTaskDetailClient.tsx':
+        '(a) sub-component — farm-task-detail links sub-table; EntityDetailLayout owns chrome.',
     'planning/[cropPlanId]/PlantingBoard.tsx':
         '(a) sub-component — crop-plan succession board (Gantt + plan-vs-actual table); EntityDetailLayout owns chrome, fixed columns.',
 

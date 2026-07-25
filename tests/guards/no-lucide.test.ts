@@ -96,10 +96,9 @@ const LEGACY_LUCIDE_USERS = new Set<string>([
     // change: one new lucide consumer on the allowlist.
     'src/app/t/[tenantSlug]/(app)/reports/ReportsClient.tsx',
     'src/app/t/[tenantSlug]/(app)/reports/soa/SoAClient.tsx',
+    'src/app/t/[tenantSlug]/(app)/farm-tasks/filter-defs.ts',
     'src/app/t/[tenantSlug]/(app)/risks/filter-defs.ts',
     'src/app/t/[tenantSlug]/(app)/security/mfa/page.tsx',
-    'src/app/t/[tenantSlug]/(app)/tasks/dashboard/page.tsx',
-    'src/app/t/[tenantSlug]/(app)/tasks/filter-defs.ts',
     // T13 i18n migration — the sole lucide import (Paperclip) migrated to
     // the Nucleo `paperclip` icon; the file no longer imports lucide, so
     // it is removed from the allowlist in the same diff (stale-entry rule).

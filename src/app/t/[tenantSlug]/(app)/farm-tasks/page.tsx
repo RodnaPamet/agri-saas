@@ -1,3 +1,4 @@
+import { auth } from '@/auth';
 import { FarmTasksClient } from './FarmTasksClient';
 
 export const dynamic = 'force-dynamic';
@@ -5,9 +6,9 @@ export const dynamic = 'force-dynamic';
 /**
  * Farm Tasks — Server Component wrapper.
  *
- * The operator queue is read client-side via SWR (GET /farm-tasks), so the
- * wrapper only resolves the tenant slug and mounts the client island.
- * Mirrors the Inventory page shape.
+ * The farm queue is read client-side via SWR (GET /farm-tasks?scope=all), so
+ * the wrapper only resolves the tenant slug + the caller's user id (used to
+ * gate the assignee "Mark done" affordance) and mounts the client island.
  */
 export default async function FarmTasksPage({
     params,
@@ -15,5 +16,11 @@ export default async function FarmTasksPage({
     params: Promise<{ tenantSlug: string }>;
 }) {
     const { tenantSlug } = await params;
-    return <FarmTasksClient tenantSlug={tenantSlug} />;
+    const session = await auth();
+    return (
+        <FarmTasksClient
+            tenantSlug={tenantSlug}
+            currentUserId={session?.user?.id ?? null}
+        />
+    );
 }

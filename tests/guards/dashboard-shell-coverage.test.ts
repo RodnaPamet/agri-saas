@@ -7,11 +7,10 @@
  * `<EntityListPage>` (lists) and `<EntityDetailLayout>` (detail) as
  * the third public layout primitive.
  *
- * Six dashboard composites already adopt it:
+ * Five dashboard composites already adopt it:
  *   • Main tenant dashboard (DashboardClient)
  *   • Risks dashboard
  *   • Controls dashboard
- *   • Tasks dashboard
  *   • Tests dashboard
  *   • Vendors dashboard
  *
@@ -60,11 +59,6 @@ const DASHBOARDS: DashboardEntry[] = [
         file: "src/app/t/[tenantSlug]/(app)/controls/dashboard/page.tsx",
         adopted: true,
         note: "Controls performance dashboard with status breakdown + owner workload tiles.",
-    },
-    {
-        file: "src/app/t/[tenantSlug]/(app)/tasks/dashboard/page.tsx",
-        adopted: true,
-        note: "Tasks productivity dashboard with assignment + SLA + trend cards.",
     },
     {
         file: "src/app/t/[tenantSlug]/(app)/tests/dashboard/page.tsx",

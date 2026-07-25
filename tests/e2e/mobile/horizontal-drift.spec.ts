@@ -102,7 +102,6 @@ const DETAIL_PAGES: ReadonlyArray<{
 }> = [
     { label: 'risks/[riskId]', list: (s) => `/t/${s}/risks`, entity: 'risks' },
     { label: 'controls/[controlId]', list: (s) => `/t/${s}/controls`, entity: 'controls' },
-    { label: 'tasks/[taskId]', list: (s) => `/t/${s}/tasks`, entity: 'tasks' },
     { label: 'vendors/[vendorId]', list: (s) => `/t/${s}/vendors`, entity: 'vendors' },
     { label: 'journal/[id]', list: (s) => `/t/${s}/journal`, entity: 'journal' },
     { label: 'field/[taskId]', list: (s) => `/t/${s}/farm-tasks`, entity: 'field' },
@@ -184,16 +183,6 @@ test.describe('mobile horizontal-drift ratchet @mobile', () => {
                 await page.waitForTimeout(300);
             }
             await expectNoHorizontalDrift(page, 'exchange + create-offer modal');
-        });
-        await test.step('tasks + create-task', async () => {
-            await safeGoto(page, `/t/${tenantSlug}/tasks`);
-            await settle(page);
-            const trigger = page.locator('#new-task-btn');
-            if (await trigger.count()) {
-                await trigger.click().catch(() => undefined);
-                await page.waitForTimeout(300);
-            }
-            await expectNoHorizontalDrift(page, 'tasks + create-task modal');
         });
         await test.step('journal + create-entry', async () => {
             await safeGoto(page, `/t/${tenantSlug}/journal`);

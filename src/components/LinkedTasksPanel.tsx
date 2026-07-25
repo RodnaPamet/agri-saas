@@ -21,7 +21,7 @@ import { TimestampTooltip } from '@/components/ui/timestamp-tooltip';
 // risk detail page is identical to a standalone task — full fields, and
 // it lands in the global Tasks table (visible in the Tasks list) linked
 // back to this entity via TaskLink.
-import { NewTaskModal } from '@/app/t/[tenantSlug]/(app)/tasks/NewTaskModal';
+import { NewTaskModal } from '@/components/tasks/NewTaskModal';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -132,7 +132,7 @@ export default function LinkedTasksPanel({
                     // long name can't overrun the next column.
                     cell: ({ row }) => (
                         <TableTitleCell
-                            href={tenantHref(`/tasks/${row.original.id}`)}
+                            href={tenantHref(`/farm-tasks/${row.original.id}`)}
                         >
                             {row.original.title}
                         </TableTitleCell>
@@ -238,7 +238,7 @@ export default function LinkedTasksPanel({
                 // navigate to the full task detail page on click.
                 selectionEnabled={canWrite}
                 onRowClick={(row) =>
-                    router.push(tenantHref(`/tasks/${row.original.id}`))
+                    router.push(tenantHref(`/farm-tasks/${row.original.id}`))
                 }
                 resourceName={(plural) => (plural ? 'tasks' : 'task')}
                 emptyState={te('ui.noLinkedTasks')}

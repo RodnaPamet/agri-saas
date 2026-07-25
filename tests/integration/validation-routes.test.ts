@@ -16,7 +16,6 @@ jest.mock('@/lib/auth', () => ({
     requireRole: jest.fn(),
 }));
 
-import { POST as TasksPost } from '@/app/api/tasks/route';
 import { POST as PoliciesPost } from '@/app/api/t/[tenantSlug]/policies/route';
 
 // Mock getTenantCtx to avoid real DB lookups
@@ -29,22 +28,6 @@ import { POST as EvidencePost } from '@/app/api/evidence/route';
 
 describe('Validation Layer Integration', () => {
     describe('JSON Body Validation', () => {
-        it('POST /api/tasks returns 400 VALIDATION_ERROR when required fields are missing', async () => {
-            const req = new NextRequest('http://localhost/api/tasks', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({}), // Empty body, missing 'title'
-            });
-            const res = await TasksPost(req, { params: {} } as any);
-            expect(res.status).toBe(400);
-
-            const data = await res.json();
-            expect(data.error.code).toBe('VALIDATION_ERROR');
-            expect(data.error.message).toBe('Invalid request payload');
-            // 'title' is a required field in CreateTaskSchema
-            expect(data.error.details.some((issue: any) => issue.path.includes('title'))).toBe(true);
-        });
-
         it('POST /api/t/:tenantSlug/policies returns 400 on invalid JSON payload', async () => {
             const req = new NextRequest('http://localhost/api/t/acme/policies', {
                 method: 'POST',

@@ -124,10 +124,10 @@ const EXEMPTIONS: Record<string, string> = {
     'controls/[controlId]/_tabs/ControlMappingsTab.tsx':
         'detail page sub-table — framework mappings for one control (R10-PR3 follow-up)',
 
-    // R11-PR8 — task detail page mounts DataTable for the links
-    // sub-table. Detail page (EntityDetailLayout).
-    'tasks/[taskId]/page.tsx':
-        'detail page — DataTable is the inner links sub-table (R11-PR8)',
+    // Farm task detail — the single task-detail page; DataTable is the inner
+    // links/traceability sub-table. Detail page (EntityDetailLayout).
+    'farm-tasks/[taskId]/FarmTaskDetailClient.tsx':
+        'detail page — DataTable is the inner links sub-table',
     // Crop-plan detail page mounts DataTable for the succession board
     // (plan-vs-actual rows beside the Gantt). Detail page sub-table.
     'planning/[cropPlanId]/PlantingBoard.tsx':

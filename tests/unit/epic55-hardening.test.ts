@@ -42,13 +42,11 @@ const POLICIES_NEW_SRC =
     '\n' +
     read('src/app/t/[tenantSlug]/(app)/policies/_form/useNewPolicyForm.ts');
 const TASKS_NEW_SRC =
-    read('src/app/t/[tenantSlug]/(app)/tasks/new/page.tsx') +
+    read('src/components/tasks/NewTaskModal.tsx') +
     '\n' +
-    read('src/app/t/[tenantSlug]/(app)/tasks/NewTaskModal.tsx') +
+    read('src/components/tasks/_form/NewTaskFields.tsx') +
     '\n' +
-    read('src/app/t/[tenantSlug]/(app)/tasks/_form/NewTaskFields.tsx') +
-    '\n' +
-    read('src/app/t/[tenantSlug]/(app)/tasks/_form/useNewTaskForm.ts');
+    read('src/components/tasks/_form/useNewTaskForm.ts');
 const STRATEGY_DOC = read('docs/combobox-form-strategy.md');
 
 // ─── findings severity + type ───────────────────────────────────
@@ -220,7 +218,9 @@ describe('Epic 55 — native <select> ratchet is installed', () => {
         );
     });
 
-    it('enumerates the 11 migrated surfaces that must not regress', () => {
+    it('enumerates the 10 migrated surfaces that must not regress', () => {
+        // tasks/new/page.tsx dropped when the /tasks compliance UI was retired;
+        // its create form now lives in the shared src/components/tasks/ modal.
         for (const surface of [
             'audits/cycles/page.tsx',
             'risks/NewRiskModal.tsx',
@@ -228,7 +228,6 @@ describe('Epic 55 — native <select> ratchet is installed', () => {
             'controls/ControlDetailSheet.tsx',
             'evidence/UploadEvidenceModal.tsx',
             'evidence/NewEvidenceTextModal.tsx',
-            'tasks/new/page.tsx',
             'vendors/new/page.tsx',
             'findings/FindingsClient.tsx',
             'clauses/ClausesBrowser.tsx',

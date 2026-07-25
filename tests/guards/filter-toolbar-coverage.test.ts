@@ -132,8 +132,8 @@ const EXEMPTIONS: Record<string, string> = {
         "Detail-page evidence sub-table (R10-PR3 follow-up) — fixed scope (evidence links + direct evidence for this one control) with per-row unlink action; not a faceted-filter surface.",
     "src/app/t/[tenantSlug]/(app)/controls/[controlId]/_tabs/ControlMappingsTab.tsx":
         "Detail-page mappings sub-table (R10-PR3 follow-up) — fixed scope (framework mappings for this one control) with per-row unmap action; not a faceted-filter surface.",
-    "src/app/t/[tenantSlug]/(app)/tasks/[taskId]/page.tsx":
-        "Detail-page links sub-table (R11-PR8) — fixed scope (cross-links from this one task); not a faceted-filter surface.",
+    "src/app/t/[tenantSlug]/(app)/farm-tasks/[taskId]/FarmTaskDetailClient.tsx":
+        "Detail-page links sub-table — fixed scope (cross-links from this one farm task); not a faceted-filter surface.",
     "src/app/t/[tenantSlug]/(app)/planning/[cropPlanId]/PlantingBoard.tsx":
         "Detail-page succession board — fixed scope (the plantings of this one crop plan), paired with a Gantt timeline; plan-vs-actual rows, not a faceted-filter surface.",
     "src/app/t/[tenantSlug]/(app)/admin/integrations/page.tsx":

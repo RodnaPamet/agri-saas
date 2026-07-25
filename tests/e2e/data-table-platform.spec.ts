@@ -100,9 +100,9 @@ test.describe('DataTable Platform — Cross-page regression', () => {
 
     test('Tasks page renders DataTable', async ({ page }) => {
         tenantSlug = await loginAndGetTenant(page);
-        await assertTableRendered(page, '/tasks', {
+        await assertTableRendered(page, '/farm-tasks', {
             heading: 'Tasks',
-            testId: 'tasks-table',
+            testId: 'farm-tasks-table',
             minHeaders: 4,
         });
     });

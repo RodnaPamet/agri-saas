@@ -46,7 +46,6 @@ const SCAN_FILES: string[] = [
     'src/components/ui/DonutChart.tsx',
     'src/app/t/[tenantSlug]/(app)/coverage/CoverageClient.tsx',
     'src/app/t/[tenantSlug]/(app)/risks/dashboard/page.tsx',
-    'src/app/t/[tenantSlug]/(app)/tasks/dashboard/page.tsx',
     'src/app/t/[tenantSlug]/(app)/controls/dashboard/page.tsx',
     'src/app/t/[tenantSlug]/(app)/vendors/dashboard/page.tsx',
     'src/app/t/[tenantSlug]/(app)/tests/dashboard/page.tsx',

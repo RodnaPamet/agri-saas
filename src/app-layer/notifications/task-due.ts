@@ -179,7 +179,7 @@ export async function createTaskDueNotification(
         type: 'TASK_DUE' as const,
         title: copy.title,
         message: `${label} ${copy.phrase}.`,
-        linkUrl: `/t/${task.tenantSlug}/tasks/${task.id}`,
+        linkUrl: `/t/${task.tenantSlug}/farm-tasks/${task.id}`,
         dedupeKey: buildTaskDueDedupeKey(
             task.tenantId,
             window,

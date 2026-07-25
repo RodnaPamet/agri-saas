@@ -37,7 +37,7 @@ describe("Control/Asset/Risk task creation — unified canonical modal", () => {
             // Same component the Tasks list page mounts — so the
             // create experience is identical everywhere.
             expect(src()).toMatch(
-                /import\s*\{\s*NewTaskModal\s*\}\s*from\s+['"]@\/app\/t\/\[tenantSlug\]\/\(app\)\/tasks\/NewTaskModal['"]/,
+                /import\s*\{\s*NewTaskModal\s*\}\s*from\s+['"]@\/components\/tasks\/NewTaskModal['"]/,
             );
         });
 

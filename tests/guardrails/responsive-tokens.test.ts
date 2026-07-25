@@ -42,8 +42,7 @@ const KNOWN_EXCEPTIONS = new Set([
     'policies/[policyId]/page.tsx',
     'risks/new/page.tsx',
     'risks/[riskId]/page.tsx',
-    'tasks/page.tsx',
-    'tasks/[taskId]/page.tsx',
+    'farm-tasks/[taskId]/FarmTaskDetailClient.tsx',
     'vendors/[vendorId]/page.tsx',
 ]);
 

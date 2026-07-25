@@ -18,7 +18,7 @@ const ROOT = path.resolve(__dirname, '../..');
 const read = (p: string) => fs.readFileSync(path.join(ROOT, p), 'utf8');
 
 const CONTROLS = read('src/app/t/[tenantSlug]/(app)/controls/ControlsClient.tsx');
-const TASKS = read('src/app/t/[tenantSlug]/(app)/tasks/TasksClient.tsx');
+const TASKS = read('src/app/t/[tenantSlug]/(app)/farm-tasks/FarmTasksClient.tsx');
 const TOOLBAR = read('src/components/ui/table/selection-toolbar.tsx');
 
 describe('B1 — row-select action bar in the header row', () => {
@@ -34,8 +34,11 @@ describe('B1 — row-select action bar in the header row', () => {
         expect(CONTROLS).not.toMatch(/SelectionSummaryPanel/);
     });
 
-    it('Tasks renders the bulk-edit form via selectionControls, NOT a standalone #bulk-toolbar', () => {
-        expect(TASKS).toMatch(/selectionControls=\{\(\)\s*=>/);
+    it('Farm Tasks renders the bulk-edit form via selectionControls, NOT a standalone #bulk-toolbar', () => {
+        // Farm Tasks wires the bulk form through the DataTable's
+        // `selectionControls` slot (object-property form inside the
+        // `table={{ … }}` prop) so it renders in the header bar.
+        expect(TASKS).toMatch(/selectionControls:\s*\(\)\s*=>/);
         expect(TASKS).toMatch(/id="bulk-apply-btn"/);
         // The standalone bulk-action card is gone.
         expect(TASKS).not.toMatch(/id="bulk-toolbar"/);

@@ -21,7 +21,7 @@
  *   • /t/{slug}/controls     — list page (DataTable + filter shell)
  *   • /t/{slug}/risks        — list page (filter + heatmap)
  *   • /t/{slug}/evidence     — list page + uploads
- *   • /t/{slug}/tasks        — list page (work items)
+ *   • /t/{slug}/farm-tasks   — list page (field work)
  *   • /t/{slug}/coverage     — dashboard-style page
  *
  * Modal / interactive surfaces:
@@ -277,9 +277,9 @@ test.describe('a11y — authenticated tenant pages', () => {
     });
 
     test('tasks list has no critical/serious WCAG violations', async ({ page }) => {
-        await safeGoto(page, `/t/${tenantSlug}/tasks`);
-        await page.waitForSelector('table, [data-testid="tasks-table"], h1', { timeout: 30_000 });
-        await runA11yScan(page, 'tasks list');
+        await safeGoto(page, `/t/${tenantSlug}/farm-tasks`);
+        await page.waitForSelector('table, [data-testid="farm-tasks-table"], h1', { timeout: 30_000 });
+        await runA11yScan(page, 'farm tasks list');
     });
 
     test('coverage page has no critical/serious WCAG violations', async ({ page }) => {

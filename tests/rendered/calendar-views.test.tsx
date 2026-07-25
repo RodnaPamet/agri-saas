@@ -40,7 +40,7 @@ function makeEvent(overrides: Partial<CalendarEvent> = {}): CalendarEvent {
         status: 'scheduled',
         entityType: 'TASK',
         entityId: 't-1',
-        href: '/t/acme/tasks/t-1',
+        href: '/t/acme/farm-tasks/t-1',
         ...overrides,
     };
 }

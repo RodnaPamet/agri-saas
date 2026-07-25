@@ -33,7 +33,6 @@ describe('UI-2/3 — entity-table tags are one size smaller (size="sm")', () => 
         ['risks', CLIENTS.risks],
         ['assets', CLIENTS.assets],
         ['controls', CLIENTS.controls],
-        ['tasks', 'src/app/t/[tenantSlug]/(app)/tasks/TasksClient.tsx'],
     ])('%s status/tag badges carry size="sm"', (_n, file) => {
         const src = read(file);
         // Every table-cell StatusBadge should be the smaller size to match the

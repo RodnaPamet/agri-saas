@@ -12,8 +12,8 @@
  *      button opens a bottom Drawer dialog) — the existing responsive
  *      FilterToolbar (Popover→Drawer), not a hand-rolled sheet.
  *
- * Tasks is the primary subject: `prisma/seed.ts` seeds compliance tasks,
- * the list is card-mode + clickable (→ /tasks/<id>) + has a FilterToolbar.
+ * The farm-tasks queue (the sole task UI) is the primary subject: the list
+ * is card-mode + clickable (→ /farm-tasks/<id>) + has a FilterToolbar.
  * The seeded "Home Farm — Demo" parcels sub-table is a second no-scroll
  * proof on guaranteed data.
  */
@@ -41,41 +41,41 @@ test.describe('mobile lists — card fallback @mobile', () => {
     test('Tasks render as tappable cards (no horizontal scroll) and tap through to detail', async ({
         page,
     }) => {
-        await safeGoto(page, `/t/${tenantSlug}/tasks`);
+        await safeGoto(page, `/t/${tenantSlug}/farm-tasks`);
         const main = page.getByRole('main');
         await expect(
             main.getByRole('heading', { name: 'Tasks', level: 1 }),
         ).toBeVisible({ timeout: 30_000 });
 
-        // The card list (seeded tasks) renders instead of the scrolling table.
+        // The card list (farm tasks) renders instead of the scrolling table.
         const cardList = main.locator('#mobile-card-list');
         await expect(cardList).toBeVisible({ timeout: 30_000 });
         const cards = cardList.getByRole('listitem');
         expect(await cards.count()).toBeGreaterThan(0);
 
         // PRIMARY GOAL: no horizontal overflow at the phone viewport.
-        await expectNoHorizontalOverflow(page, 'tasks list (card mode)');
+        await expectNoHorizontalOverflow(page, 'farm-tasks list (card mode)');
 
-        // Tap-through: a card navigates to /tasks/<id>. The detail route is a
-        // lazy chunk; on mobile there's no hover-prefetch, so the FIRST tap does
-        // a cold chunk fetch that can intermittently fail under CI load /
+        // Tap-through: a card navigates to /farm-tasks/<id>. The detail route is
+        // a lazy chunk; on mobile there's no hover-prefetch, so the FIRST tap
+        // does a cold chunk fetch that can intermittently fail under CI load /
         // rural-LTE conditions (ChunkLoadError → App Router doesn't commit the
         // URL, so the nav stalls). Production recovers by reloading (see
         // ServiceWorkerRegistrar); mirror that here — reload the list and tap
         // again — so a transient chunk miss doesn't fail the suite.
         await expect(async () => {
-            await safeGoto(page, `/t/${tenantSlug}/tasks`);
+            await safeGoto(page, `/t/${tenantSlug}/farm-tasks`);
             await main
                 .locator('#mobile-card-list')
                 .getByRole('listitem')
                 .first()
                 .click({ timeout: 15_000 });
-            await page.waitForURL(/\/t\/[^/]+\/tasks\/[^/]+/, { timeout: 15_000 });
+            await page.waitForURL(/\/t\/[^/]+\/farm-tasks\/[^/]+/, { timeout: 15_000 });
         }).toPass({ timeout: 75_000 });
     });
 
     test('list filters live in a vaul bottom-sheet on mobile', async ({ page }) => {
-        await safeGoto(page, `/t/${tenantSlug}/tasks`);
+        await safeGoto(page, `/t/${tenantSlug}/farm-tasks`);
         const main = page.getByRole('main');
         await expect(
             main.getByRole('heading', { name: 'Tasks', level: 1 }),

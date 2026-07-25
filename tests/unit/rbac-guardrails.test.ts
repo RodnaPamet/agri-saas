@@ -94,15 +94,13 @@ describe('RBAC Guardrail Scans', () => {
         });
     });
 
-    describe('Tasks page RBAC', () => {
-        test('task create button uses appPerms', () => {
-            const content = readFile('app/t/[tenantSlug]/(app)/tasks/TasksClient.tsx');
-            expect(content).toMatch(/appPermissions\.tasks\.create/);
-        });
-
-        test('task bulk actions use appPerms', () => {
-            const content = readFile('app/t/[tenantSlug]/(app)/tasks/TasksClient.tsx');
-            expect(content).toMatch(/appPermissions\.tasks\.edit/);
+    describe('Farm tasks page RBAC', () => {
+        // The compliance /tasks list was retired; /farm-tasks is the sole task
+        // UI. Its create affordance + bulk selection gate on write permission
+        // (permissions.canWrite from the tenant context).
+        test('farm-tasks create + bulk actions gate on write permission', () => {
+            const content = readFile('app/t/[tenantSlug]/(app)/farm-tasks/FarmTasksClient.tsx');
+            expect(content).toMatch(/canWrite/);
         });
     });
 

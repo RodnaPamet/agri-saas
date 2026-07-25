@@ -39,7 +39,11 @@ const MIGRATED_PAGES = [
     'evidence/EvidenceClient.tsx',
     'risks/RisksClient.tsx',
     'policies/PoliciesClient.tsx',
-    'tasks/TasksClient.tsx',
+    // /tasks compliance UI retired 2026-07-25 → the farm-tasks list is the
+    // task-entity list page now (it mounts <DataTable> via the EntityListPage
+    // shell, so it satisfies the structural check without importing DataTable
+    // directly).
+    'farm-tasks/FarmTasksClient.tsx',
     'vendors/VendorsClient.tsx',
     'assets/AssetsClient.tsx',
     'findings/FindingsClient.tsx',
@@ -276,13 +280,17 @@ const RATCHET_ALLOWLIST = new Set<string>([
 //   1  reports/soa/SoAClient.tsx        cross-cutting SoA grid (also
 //                                       in EXCLUDED_PAGES because of
 //                                       expandable-row UX)
-//   1  tasks/[taskId]/page.tsx          activity log table
 //   1  access-reviews/[reviewId]/AccessReviewDetailClient.tsx
 //                                       per-decision roster — same
 //                                       master/detail shape as
 //                                       AuditsClient (also listed in
 //                                       EXCLUDED_PAGES above).
-const RAW_TABLE_BASELINE = 15;
+//
+// /tasks retirement (2026-07-25): the compliance `tasks/[taskId]/page.tsx`
+// activity-log table was deleted with the rest of the /tasks UI; the
+// farm-tasks detail uses cards, not a raw <table>. Baseline lowered
+// 15 → 12 to lock the win (one-way down).
+const RAW_TABLE_BASELINE = 12;
 const RAW_TABLE_RE = /<table\b/g;
 
 function countAdHocTables(): { total: number; byFile: Record<string, number> } {

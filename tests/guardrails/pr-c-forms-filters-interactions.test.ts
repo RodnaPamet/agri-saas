@@ -98,7 +98,7 @@ describe('PR-C — forms, filters & interactions', () => {
 
         it('CalendarClient mounts NewTaskModal driven by taskCreateDate', () => {
             expect(clientSrc).toMatch(
-                /import\s*\{\s*NewTaskModal\s*\}\s*from\s*['"]@\/app\/t\/\[tenantSlug\]\/\(app\)\/tasks\/NewTaskModal['"]/,
+                /import\s*\{\s*NewTaskModal\s*\}\s*from\s*['"]@\/components\/tasks\/NewTaskModal['"]/,
             );
             expect(clientSrc).toMatch(/setTaskCreateDate\(ymd\)/);
             // The NewTaskModal mount must thread initialDueAt
@@ -111,10 +111,10 @@ describe('PR-C — forms, filters & interactions', () => {
 
     describe('NewTaskModal pre-fill seam', () => {
         const modalSrc = read(
-            'src/app/t/[tenantSlug]/(app)/tasks/NewTaskModal.tsx',
+            'src/components/tasks/NewTaskModal.tsx',
         );
         const hookSrc = read(
-            'src/app/t/[tenantSlug]/(app)/tasks/_form/useNewTaskForm.ts',
+            'src/components/tasks/_form/useNewTaskForm.ts',
         );
 
         it('NewTaskModalProps declares initialDueAt + onCreated', () => {
@@ -131,7 +131,7 @@ describe('PR-C — forms, filters & interactions', () => {
 
         it('NewTaskModal skips the router push when onCreated is supplied', () => {
             // Pre-PR-C the success branch unconditionally
-            // `router.push(`/tasks/${task.id}`)`. Post-PR-C the
+            // `router.push(`/farm-tasks/${task.id}`)`. Post-PR-C the
             // calendar caller passes a no-op onCreated so the user
             // stays on the calendar.
             expect(modalSrc).toMatch(

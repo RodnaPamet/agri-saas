@@ -44,6 +44,14 @@ const ENTITIES = [
         formHook: "useNewTaskForm",
         // mobile-forms PR-3 — migrated to the <Modal isDirty> native guard.
         guard: "native",
+        // /tasks compliance UI retired 2026-07-25. The shared create modal +
+        // form hook relocated to src/components/tasks (LinkedTasksPanel and the
+        // farm-tasks list both mount it). The list page — and therefore the
+        // `/tasks/new` redirect shim — was deleted, so this row overrides the
+        // slug-templated paths and opts out of the /new-shim assertion.
+        modalPath: "src/components/tasks/NewTaskModal.tsx",
+        formHookPath: "src/components/tasks/_form/useNewTaskForm.ts",
+        noRedirectShim: true,
     },
     {
         slug: "policies",
@@ -66,10 +74,17 @@ describe("R32-task-63 — modal-form completeness", () => {
     for (const entity of ENTITIES) {
         describe(`${entity.slug} entity`, () => {
             const redirectPath = `src/app/t/[tenantSlug]/(app)/${entity.slug}/new/page.tsx`;
-            const modalPath = `src/app/t/[tenantSlug]/(app)/${entity.slug}/${entity.modal}.tsx`;
-            const formHookPath = `src/app/t/[tenantSlug]/(app)/${entity.slug}/_form/${entity.formHook}.ts`;
+            const modalPath =
+                "modalPath" in entity
+                    ? entity.modalPath
+                    : `src/app/t/[tenantSlug]/(app)/${entity.slug}/${entity.modal}.tsx`;
+            const formHookPath =
+                "formHookPath" in entity
+                    ? entity.formHookPath
+                    : `src/app/t/[tenantSlug]/(app)/${entity.slug}/_form/${entity.formHook}.ts`;
 
-            it("ships the /new redirect shim (P2 contract)", () => {
+            const hasRedirectShim = !("noRedirectShim" in entity && entity.noRedirectShim);
+            (hasRedirectShim ? it : it.skip)("ships the /new redirect shim (P2 contract)", () => {
                 // Bookmarks, deep links, and E2E
                 // `page.goto('/{slug}/new')` continue to work — they
                 // land on `/{slug}?create=1`, which the list-page

@@ -115,7 +115,7 @@ const EXEMPT_FILES = new Set<string>([
     // from `tasks/new/page.tsx` into `tasks/_form/NewTaskFields.tsx`
     // so the future modal can compose the same markup. The warning-
     // tone FormError moved with the fields; the exemption follows.
-    "src/app/t/[tenantSlug]/(app)/tasks/_form/NewTaskFields.tsx",
+    "src/components/tasks/_form/NewTaskFields.tsx",
 ]);
 
 // Match `bg-bg-{variant}` co-occurring with `border-border-{variant}`

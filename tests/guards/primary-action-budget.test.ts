@@ -118,9 +118,16 @@ const PRIMARY_BUDGET: Record<string, number> = {
     // are mutually exclusive at runtime; the static scanner counts all
     // three.
     "src/app/t/[tenantSlug]/(app)/knowledge/[id]/page.tsx": 3,
-    // Farm-tasks list — two separate primary regions: the page "Task"
-    // header CTA + the create-modal "Create task" confirm.
-    "src/app/t/[tenantSlug]/(app)/farm-tasks/FarmTasksClient.tsx": 2,
+    // Farm-tasks list — three separate primary regions, never co-visible:
+    // the page "Task" header CTA + the bulk-action toolbar "Apply" submit
+    // (only mounts when rows are selected) + the create-modal "Create task"
+    // confirm.
+    "src/app/t/[tenantSlug]/(app)/farm-tasks/FarmTasksClient.tsx": 3,
+    // Farm-task detail — seven primary regions across mutually-exclusive
+    // tabs/modals: the header edit/status CTA + the field-operation review
+    // "Approve" CTA + the Links tab add-trigger & submit pair + the Comments
+    // tab submit + the edit-modal open + the edit-modal "Save" confirm.
+    "src/app/t/[tenantSlug]/(app)/farm-tasks/[taskId]/FarmTaskDetailClient.tsx": 7,
     // Climate — two distinct primary regions, each the single earned primary of
     // its card: the no-locations empty-state "Go to locations" CTA (Open-Meteo
     // weather region) and the Meteobot station config "Save" CTA (the station
@@ -140,12 +147,6 @@ const PRIMARY_BUDGET: Record<string, number> = {
     "src/app/t/[tenantSlug]/(app)/planning/seasons/SeasonsClient.tsx": 2,
     // 3-primary tier — page CTA + inline form + 1 contextual region
     "src/app/t/[tenantSlug]/(app)/tests/runs/[runId]/page.tsx": 3,
-    // 3 page-level primaries + 1 for the close-resolution Modal's
-    // confirm CTA (a distinct modal region added when terminal status
-    // changes started prompting for a resolution note) + 2 for the
-    // Evidence tab region (its "Add Evidence" trigger + form submit,
-    // mirroring the Links tab's add/submit pair).
-    "src/app/t/[tenantSlug]/(app)/tasks/[taskId]/page.tsx": 6,
     "src/app/t/[tenantSlug]/(app)/risks/ai/page.tsx": 3,
     "src/app/t/[tenantSlug]/(app)/controls/[controlId]/tests/[planId]/page.tsx": 3,
     "src/app/t/[tenantSlug]/(app)/admin/members/page.tsx": 3,
@@ -171,10 +172,6 @@ const PRIMARY_BUDGET: Record<string, number> = {
     "src/app/t/[tenantSlug]/(app)/audits/cycles/page.tsx": 2,
     "src/app/t/[tenantSlug]/(app)/audits/AuditsClient.tsx": 2,
     "src/app/t/[tenantSlug]/(app)/assets/AssetsClient.tsx": 2,
-    // Modal-form P2 — page-header "Create Task" + bulk-action-toolbar
-    // "Apply" submit. Two genuinely separate visual regions; the
-    // bulk toolbar only mounts when rows are selected.
-    "src/app/t/[tenantSlug]/(app)/tasks/TasksClient.tsx": 2,
     "src/app/t/[tenantSlug]/(app)/admin/scim/page.tsx": 2,
     "src/app/t/[tenantSlug]/(app)/admin/roles/page.tsx": 2,
     "src/app/t/[tenantSlug]/(app)/admin/integrations/page.tsx": 2,

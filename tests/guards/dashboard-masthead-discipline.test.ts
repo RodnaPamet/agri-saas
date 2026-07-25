@@ -1,13 +1,12 @@
 /**
  * Roadmap-3 PR-10 — per-resource dashboard masthead discipline.
  *
- * The product has six dashboard surfaces:
+ * The product has five dashboard surfaces:
  *
  *   • `/dashboard`               — main / executive (uses
  *                                   `<HeroMetric>` + `<KPIStat>`)
  *   • `/risks/dashboard`         — per-resource (uses `<KPIStat>`)
  *   • `/controls/dashboard`      — per-resource (uses `<KPIStat>`)
- *   • `/tasks/dashboard`         — per-resource (uses `<KPIStat>`)
  *   • `/vendors/dashboard`       — per-resource (uses `<KPIStat>`
  *                                   via a local `MetricCard`
  *                                   wrapper — adds click-nav)
@@ -15,7 +14,7 @@
  *                                   via a local `MetricCard`
  *                                   wrapper — adds tone-mapping)
  *
- * The five per-resource dashboards all reach for `<KPIStat>`. The
+ * The four per-resource dashboards all reach for `<KPIStat>`. The
  * MAIN `/dashboard` adds a `<HeroMetric>` lead number above the
  * row — that's the canonical "executive" shape, distinct from the
  * per-resource dashboards which are KPI-row only.
@@ -49,7 +48,6 @@ const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
 const PER_RESOURCE_DASHBOARDS = [
     'src/app/t/[tenantSlug]/(app)/risks/dashboard/page.tsx',
     'src/app/t/[tenantSlug]/(app)/controls/dashboard/page.tsx',
-    'src/app/t/[tenantSlug]/(app)/tasks/dashboard/page.tsx',
     'src/app/t/[tenantSlug]/(app)/vendors/dashboard/page.tsx',
     'src/app/t/[tenantSlug]/(app)/tests/dashboard/page.tsx',
 ];

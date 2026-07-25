@@ -1,15 +1,17 @@
 /**
- * Hydration-fetch ratchet for the controls + tasks list pages.
+ * Hydration-fetch ratchet for the controls list page.
  *
  * The SSR path returns the initial list, hydrates the client, and
  * the client's `useQuery` is supposed to honour that payload until
  * `staleTime` elapses. If `initialDataUpdatedAt` is set to `0` (or
  * `staleTime` is unset on controls), React Query treats the SSR data
- * as instantly stale and fires a duplicate `GET /controls` /
- * `GET /tasks` on hydration. Both pages also narrow the
- * server-side `_count` aggregate to the two keys the list view
- * actually reads — bloating it back to six is a silent perf
- * regression.
+ * as instantly stale and fires a duplicate `GET /controls` on
+ * hydration. The page also narrows the server-side `_count` aggregate
+ * to the two keys the list view actually reads — bloating it back to
+ * six is a silent perf regression.
+ *
+ * (The tasks list arm was retired 2026-07-25 when the compliance
+ * `/tasks` UI was replaced by `/farm-tasks`.)
  *
  * This guardrail catches all three regressions structurally so
  * future refactors can't reintroduce them without an explicit diff.
@@ -28,37 +30,17 @@ describe('list-page hydration shape', () => {
     const controlsClient = read(
         'src/app/t/[tenantSlug]/(app)/controls/ControlsClient.tsx',
     );
-    const tasksClient = read(
-        'src/app/t/[tenantSlug]/(app)/tasks/TasksClient.tsx',
-    );
 
     test('ControlsClient sets initialDataUpdatedAt + staleTime on the list useQuery', () => {
         expect(controlsClient).toMatch(/initialDataUpdatedAt:\s*filtersMatchInitial\s*\?\s*Date\.now\(\)/);
         expect(controlsClient).toMatch(/staleTime:\s*30_000/);
     });
 
-    test('TasksClient gates fallbackData on filtersMatchInitial + tunes dedupingInterval (Epic 69)', () => {
-        // Epic 69 migrated TasksClient from React Query to
-        // `useTenantSWR`. The prior `initialData: filtersMatchInitial
-        // ? initialTasks : undefined` shape became `fallbackData:
-        // filtersMatchInitial ? initialTasks : undefined`. PR-9 then
-        // wrapped the cache value as `CappedList<TaskListItem>`
-        // (mirroring the package shape change from PR-5), so the
-        // fallback now constructs `{ rows: initialTasks, truncated:
-        // false }`. Pin both halves: the gate predicate AND the
-        // wrapped-shape construction.
-        expect(tasksClient).toMatch(
-            /fallbackData:\s*filtersMatchInitial\s*\?\s*\{\s*rows:\s*initialTasks,\s*truncated:\s*false\s*\}/,
-        );
-        expect(tasksClient).toMatch(/dedupingInterval:\s*30_000/);
-    });
-
-    test('neither client uses the regression shape `initialDataUpdatedAt: 0` standalone', () => {
+    test('the controls client does not use the regression shape `initialDataUpdatedAt: 0` standalone', () => {
         // The literal "initialDataUpdatedAt: 0," with no ternary is the
         // pre-fix shape. Allow it to appear only inside the ternary fallback.
         const badShape = /initialDataUpdatedAt:\s*0\s*[,\n}]/;
         expect(controlsClient).not.toMatch(badShape);
-        expect(tasksClient).not.toMatch(badShape);
     });
 });
 

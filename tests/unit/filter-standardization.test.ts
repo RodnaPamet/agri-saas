@@ -40,7 +40,7 @@ const MIGRATED_PAGES: Array<{
     { dir: 'evidence', client: 'EvidenceClient.tsx', allowLegacyUrlFilterScope: ['tab', 'view'] },
     { dir: 'risks', client: 'RisksClient.tsx' },
     { dir: 'policies', client: 'PoliciesClient.tsx' },
-    { dir: 'tasks', client: 'TasksClient.tsx' },
+    { dir: 'farm-tasks', client: 'FarmTasksClient.tsx' },
     { dir: 'vendors', client: 'VendorsClient.tsx' },
     { dir: 'assets', client: 'AssetsClient.tsx' },
 ];

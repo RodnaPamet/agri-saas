@@ -78,7 +78,7 @@ describe("v2-PR-11 NextBestAction priority chain (resolveNextBestAction)", () =>
             tenantHref,
         );
         expect(a.id).toBe("overdue-tasks");
-        expect(a.href).toBe("/t/acme/tasks?filter=overdue");
+        expect(a.href).toBe("/t/acme/farm-tasks?filter=overdue");
     });
 
     it("returns `overdue-evidence` (highest priority) when evidence is overdue", () => {

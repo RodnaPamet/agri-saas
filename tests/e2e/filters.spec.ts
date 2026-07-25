@@ -2,11 +2,11 @@ import { test, expect } from '@playwright/test';
 import { loginAndGetTenant, safeGoto } from './e2e-utils';
 
 /**
- * FilterToolbar contract — Tasks and Vendors.
+ * FilterToolbar contract — Tasks (farm-tasks) and Vendors.
  *
  * The Controls page has its own canonical coverage in
  * `controls-filter-epic53.spec.ts`. This spec extends that contract to
- * the two other migrated list pages (Tasks, Vendors).
+ * the two other migrated list pages (the farm-tasks queue, Vendors).
  *
  * The pre-Epic-53 version of this file exercised the deprecated
  * `CompactFilterBar` DOM (`filter-dd-status`, `filter-chip-overdue`,
@@ -14,8 +14,12 @@ import { loginAndGetTenant, safeGoto } from './e2e-utils';
  * single popover, so the tests below drive the actual UI:
  *
  *   1. Click the trigger → the cmdk listbox appears.
- *   2. Click the top-level filter (e.g. "Type") → value options appear.
+ *   2. Click the top-level filter (e.g. "Status") → value options appear.
  *   3. Click a value → the URL picks up the param.
+ *
+ * The farm-tasks queue exposes the manager-relevant filter subset
+ * (status · assignee · due); the compliance-only type / severity axes
+ * were retired with the /tasks list.
  *
  * NOTE: R14 (#443) removed the free-text search input from every list
  * page — the per-page `search input writes q param` tests and the
@@ -29,46 +33,46 @@ test.describe('FilterToolbar — Tasks', () => {
 
     let tenantSlug: string;
 
-    test('picking a type filter pushes it into the URL', async ({ page }) => {
+    test('picking a status filter pushes it into the URL', async ({ page }) => {
         tenantSlug = await loginAndGetTenant(page);
-        await safeGoto(page, `/t/${tenantSlug}/tasks`);
+        await safeGoto(page, `/t/${tenantSlug}/farm-tasks`);
         await page.waitForLoadState('networkidle').catch(() => {});
 
         await page.getByRole('button', { name: /^filter$/i }).first().click();
         await expect(page.getByRole('listbox').first()).toBeVisible({ timeout: 10000 });
 
-        // Drill into Type
-        const typeRow = page.getByRole('option', { name: /^Type$/ });
-        await typeRow.waitFor({ state: 'visible', timeout: 5000 });
-        await typeRow.click();
+        // Drill into Status
+        const statusRow = page.getByRole('option', { name: /^Status$/ });
+        await statusRow.waitFor({ state: 'visible', timeout: 5000 });
+        await statusRow.click();
 
-        // Pick "Incident"
-        const incident = page.getByRole('option', { name: /^Incident$/ });
-        await incident.waitFor({ state: 'visible', timeout: 5000 });
-        await incident.click();
+        // Pick "Open"
+        const open = page.getByRole('option', { name: /^Open$/ });
+        await open.waitFor({ state: 'visible', timeout: 5000 });
+        await open.click();
 
-        await expect(page).toHaveURL(/[?&]type=INCIDENT/, { timeout: 10000 });
+        await expect(page).toHaveURL(/[?&]status=OPEN/, { timeout: 10000 });
     });
 
-    test('picking a severity filter pushes it into the URL', async ({ page }) => {
+    test('picking a due filter pushes it into the URL', async ({ page }) => {
         tenantSlug = await loginAndGetTenant(page);
-        await safeGoto(page, `/t/${tenantSlug}/tasks`);
+        await safeGoto(page, `/t/${tenantSlug}/farm-tasks`);
         await page.waitForLoadState('networkidle').catch(() => {});
 
         await page.getByRole('button', { name: /^filter$/i }).first().click();
         await expect(page.getByRole('listbox').first()).toBeVisible({ timeout: 10000 });
 
-        const severityRow = page.getByRole('option', { name: /^Severity$/ });
-        await severityRow.waitFor({ state: 'visible', timeout: 5000 });
-        await severityRow.click();
+        const dueRow = page.getByRole('option', { name: /^Due$/ });
+        await dueRow.waitFor({ state: 'visible', timeout: 5000 });
+        await dueRow.click();
 
-        const critical = page.getByRole('option', { name: /^Critical$/ });
-        await critical.waitFor({ state: 'visible', timeout: 5000 });
-        await critical.click();
+        const overdue = page.getByRole('option', { name: /^Overdue$/ });
+        await overdue.waitFor({ state: 'visible', timeout: 5000 });
+        await overdue.click();
 
-        // Long timeout: dev-server can be mid-recompile for /tasks after
+        // Long timeout: dev-server can be mid-recompile for /farm-tasks after
         // a long suite, and router.replace is async.
-        await expect(page).toHaveURL(/[?&]severity=CRITICAL/, { timeout: 30000 });
+        await expect(page).toHaveURL(/[?&]due=overdue/, { timeout: 30000 });
     });
 });
 

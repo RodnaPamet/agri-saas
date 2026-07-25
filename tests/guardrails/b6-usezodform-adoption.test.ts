@@ -119,7 +119,7 @@ describe('B6 — Phase 3 useZodForm adoption', () => {
             },
             {
                 label: 'task',
-                file: 'src/app/t/[tenantSlug]/(app)/tasks/_form/useNewTaskForm.ts',
+                file: 'src/components/tasks/_form/useNewTaskForm.ts',
             },
             {
                 label: 'asset',

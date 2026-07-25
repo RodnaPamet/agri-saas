@@ -106,7 +106,7 @@ describeFn('task-due-notification (integration)', () => {
             userId: user.id,
             type: 'TASK_DUE',
             title: 'Task due today',
-            linkUrl: `/t/${tenant.slug}/tasks/${task.id}`,
+            linkUrl: `/t/${tenant.slug}/farm-tasks/${task.id}`,
             read: false,
         });
         expect(notifs[0].dedupeKey).toContain(':TASK_DUE:today:');

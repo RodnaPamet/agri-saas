@@ -157,20 +157,20 @@ test.describe('Epic 56 — tooltip + copy primitives', () => {
         page,
     }) => {
         const tenantSlug = await loginAndGetTenant(page, ADMIN_USER);
-        await safeGoto(page, `/t/${tenantSlug}/tasks`, {
+        await safeGoto(page, `/t/${tenantSlug}/farm-tasks`, {
             waitUntil: 'domcontentloaded',
         });
         await page.waitForLoadState('networkidle').catch(() => {});
 
-        // Seed provisions TSK-1/2/3 — first task ROW link inside the
-        // tasks table (not the page-level Dashboard / New Task nav
-        // buttons that share the `/tasks/` prefix).
+        // First task ROW link inside the farm-tasks table (the title cell is a
+        // TableTitleCell <Link>). Not the page-level header / FAB nav buttons
+        // that share the `/farm-tasks/` prefix. Seeded tasks always carry a key.
         const firstTask = page
-            .locator('[data-testid="tasks-table"] tbody tr a[href*="/tasks/"]')
+            .locator('[data-testid="farm-tasks-table"] tbody tr a[href*="/farm-tasks/"]')
             .first();
         await expect(firstTask).toBeVisible({ timeout: 30_000 });
         await firstTask.click();
-        await page.waitForURL(/tasks\/[a-z0-9]+$/i, {
+        await page.waitForURL(/farm-tasks\/[a-z0-9]+$/i, {
             waitUntil: 'domcontentloaded',
             timeout: 30_000,
         });
