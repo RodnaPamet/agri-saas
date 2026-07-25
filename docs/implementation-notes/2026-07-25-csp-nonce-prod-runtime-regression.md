@@ -98,3 +98,51 @@ in the PR that regenerates it, without needing a built `node_modules`.
   confirmation (no CSP violations in console on an authenticated page) is worth
   doing after deploy — the guard test proves the bundle is patched, not that the
   browser is happy.
+
+## Follow-up — the image never applied the patch at all
+
+**Commit:** `<pending> fix(docker): copy patches/ before npm ci so patch-package applies`
+
+Restoring the bundle hunks above did **not** fix production. Deploying the new
+image and running the detector inside the live container still reported the
+unnonced site. The image build log explains why:
+
+```
+> patch-package
+patch-package 8.0.1
+Applying patches...
+No patch files found
+```
+
+The Dockerfile's deps stage copied only `package.json` + `package-lock.json`
+before `npm ci`. `patch-package` resolves `patches/` relative to CWD, so it
+found nothing and no-op'd, producing an unpatched `node_modules` that the
+builder inherits (`COPY --from=deps`) and the runner ships
+(`COPY --from=builder`). The builder's `COPY . .` does bring `patches/` in — but
+after the install, and nothing re-runs the hook.
+
+Consequences worth being precise about:
+
+- **The scope is wider than #929.** This path has never applied the patch, so
+  the CSP bug has been live in every deployed container since #484 landed
+  (2026-05-14), not since #929 (2026-06-08). #929 dropped the bundle hunks from
+  a patch that was already not reaching production.
+- **#484's verification could not have caught it.** Its own diagnosis path
+  records confirming the fix by *manually* patching the running prod runtime.
+  That validates the code change, not the delivery mechanism, and no redeploy
+  preserves it.
+- **The existing assertions were misleading, not wrong.** Assertions 4 and 5
+  read the LOCAL `node_modules`, where `npm ci` *does* see `patches/` and the
+  patch *does* apply. Locally patched, in-image unpatched — a green CI and a
+  broken production, with no contradiction between them.
+
+Fix: `COPY patches ./patches` before `RUN npm ci`, plus a sixth assertion
+checking that ordering in the Dockerfile. That assertion is the only one in the
+file that reflects what production actually runs, which is precisely why it was
+the one missing.
+
+**Generalisation:** any repo-level artefact that must exist at install time
+(patches, `.npmrc`, `prisma/` for a postinstall generate) has to be COPY'd
+before the install in a layer-cached Dockerfile. A test asserting the local
+`node_modules` cannot see that class of bug — the assertion has to read the
+build definition.

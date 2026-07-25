@@ -69,6 +69,27 @@
  *      the patch round-tripped successfully.)
  *   5. NO bundled prod runtime contains an unnonced component
  *      script element.
+ *   6. The Dockerfile copies `patches/` BEFORE `npm ci`. This is the
+ *      one invariant the other five cannot see.
+ *
+ * SECOND REGRESSION (2026-07-25): restoring the four bundle hunks did
+ * not fix production, because the production image had NEVER applied
+ * the patch at all. The Dockerfile's deps stage copied only
+ * package.json + package-lock.json before `npm ci`, so the
+ * `postinstall` patch-package hook logged "No patch files found" and
+ * produced an unpatched node_modules, which the builder and runner
+ * stages inherit. The builder's `COPY . .` brings patches/ in, but
+ * after the install.
+ *
+ * That made assertions 4 and 5 misleading rather than wrong: they read
+ * the LOCAL node_modules, where `npm ci` does see patches/ and the
+ * patch does apply. Locally patched, in-image unpatched — so CI was
+ * green while every deployed container served the CSP bug. #484's
+ * original verification was a MANUAL patch of a running container
+ * (see the diagnosis path above), which no redeploy preserves, so this
+ * was broken from 2026-05-14 rather than from #929. Assertion 6 closes
+ * the gap by checking the image build itself, which is the only one of
+ * these signals that reflects what production actually runs.
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -132,6 +153,29 @@ describe('CSP nonce — Next.js component-script patch', () => {
         );
         const src = fs.readFileSync(srcPath, 'utf8');
         expect(src).toMatch(/nonce:\s*ctx\.nonce/);
+    });
+
+    it('the Dockerfile copies patches/ before npm ci', () => {
+        // Without this, `postinstall`'s patch-package finds nothing and the
+        // built image ships an UNPATCHED next — while every other assertion
+        // in this file still passes, because they read the LOCAL
+        // node_modules where patches/ IS present at install time. This is
+        // the only check here that reflects what production runs.
+        const dockerfile = fs.readFileSync(
+            path.join(ROOT, 'Dockerfile'),
+            'utf8',
+        );
+        const lines = dockerfile.split('\n');
+
+        const copyPatchesAt = lines.findIndex((l) =>
+            /^\s*COPY\s+(--\S+\s+)*patches[\s/]/.test(l),
+        );
+        const npmCiAt = lines.findIndex((l) => /^\s*RUN\s+npm ci\b/.test(l));
+
+        expect(copyPatchesAt).toBeGreaterThan(-1);
+        expect(npmCiAt).toBeGreaterThan(-1);
+        // Order is the whole point: a COPY after the install is a no-op.
+        expect(copyPatchesAt).toBeLessThan(npmCiAt);
     });
 
     it('the patch covers all four bundled prod runtimes (the #929 lock)', () => {
