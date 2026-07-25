@@ -155,12 +155,16 @@ describe('CSP nonce — Next.js component-script patch', () => {
         expect(src).toMatch(/nonce:\s*ctx\.nonce/);
     });
 
-    it('the Dockerfile copies patches/ before npm ci', () => {
+    it('the Dockerfile copies patches/ before npm ci, with scripts enabled', () => {
         // Without this, `postinstall`'s patch-package finds nothing and the
         // built image ships an UNPATCHED next — while every other assertion
         // in this file still passes, because they read the LOCAL
-        // node_modules where patches/ IS present at install time. This is
-        // the only check here that reflects what production runs.
+        // node_modules where patches/ IS present at install time.
+        //
+        // NOTE this is a PROXY: it asserts the build inputs, not the built
+        // artifact. The non-proxy check is the "Gate: image applied the
+        // CSP-nonce patch" step in ci.yml (asserted below), which runs
+        // scripts/verify-image-patches.mjs inside the image itself.
         const dockerfile = fs.readFileSync(
             path.join(ROOT, 'Dockerfile'),
             'utf8',
@@ -176,6 +180,34 @@ describe('CSP nonce — Next.js component-script patch', () => {
         expect(npmCiAt).toBeGreaterThan(-1);
         // Order is the whole point: a COPY after the install is a no-op.
         expect(copyPatchesAt).toBeLessThan(npmCiAt);
+
+        // `--ignore-scripts` skips postinstall entirely, so patches/ being
+        // present in the right layer would stop meaning anything. The
+        // ordering assertion above cannot see that flag.
+        expect(lines[npmCiAt]).not.toMatch(/--ignore-scripts/);
+    });
+
+    it('CI verifies the BUILT IMAGE applied the patch', () => {
+        // The load-bearing one. Every other assertion in this file reads
+        // the repo or the local node_modules; this asserts that the
+        // pipeline runs a check against the artifact it ships. Removing
+        // that step is how the 2026-05-14 → 2026-07-25 outage stayed
+        // invisible for ten weeks.
+        const verifier = path.join(ROOT, 'scripts/verify-image-patches.mjs');
+        expect(fs.existsSync(verifier)).toBe(true);
+
+        const ci = fs.readFileSync(
+            path.join(ROOT, '.github/workflows/ci.yml'),
+            'utf8',
+        );
+        expect(ci).toContain('scripts/verify-image-patches.mjs');
+
+        // It has to run against a locally-loaded image, and before the
+        // Trivy scan so a delivery bug fails fast.
+        const loadAt = ci.indexOf('load: true');
+        const verifyAt = ci.indexOf('scripts/verify-image-patches.mjs');
+        expect(loadAt).toBeGreaterThan(-1);
+        expect(loadAt).toBeLessThan(verifyAt);
     });
 
     it('the patch covers all four bundled prod runtimes (the #929 lock)', () => {

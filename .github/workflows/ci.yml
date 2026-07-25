@@ -1185,6 +1185,27 @@ jobs:
           # Export to local Docker daemon for Trivy scanning
           load: true
 
+      # ── Gate: the IMAGE applied patch-package ──
+      # Runs against the image already loaded above (`load: true`), so it
+      # costs no extra build — same reasoning that folded Trivy into this
+      # job. Placed BEFORE the scan so a delivery bug fails in seconds
+      # rather than after a multi-minute vulnerability scan.
+      #
+      # This is the only check in the repo that reads the ARTIFACT. From
+      # 2026-05-14 to 2026-07-25 every deployed container served an
+      # unnonced <script> (blocked by our nonce + strict-dynamic CSP)
+      # while CI stayed green, because the Dockerfile copied only
+      # package.json + package-lock.json before `npm ci` and
+      # patch-package logged "No patch files found". The guard tests read
+      # the LOCAL node_modules, where the patch DOES apply — so locally
+      # patched / in-image unpatched produced no contradiction anywhere.
+      # A Dockerfile-shape assertion is a proxy; this is not.
+      - name: "Gate: image applied the CSP-nonce patch"
+        run: |
+          docker run --rm --entrypoint node \
+            -v "$PWD/scripts/verify-image-patches.mjs:/verify.mjs:ro" \
+            inflect-compliance:ci-${{ github.sha }} /verify.mjs
+
       # ── Trivy scan: BLOCKING on CRITICAL,HIGH ──
       # Runs in the SAME job as the build above — the image is already
       # loaded into the local daemon (`load: true`), so there is NO

@@ -146,3 +146,44 @@ the one missing.
 before the install in a layer-cached Dockerfile. A test asserting the local
 `node_modules` cannot see that class of bug — the assertion has to read the
 build definition.
+
+## Follow-up 2 — verifying the artefact, not the inputs (#385)
+
+**Commit:** `<pending> ci(docker): verify the built image applied patch-package`
+
+The Dockerfile-ordering assertion added above is still a **proxy**. It encodes
+"these inputs usually produce a good artefact" and sits on the same side of the
+line as the assertions that failed us. Two concrete holes proved it:
+
+- `RUN npm ci --ignore-scripts` satisfies the ordering assertion while skipping
+  `postinstall` entirely — reproducing the original bug.
+- `ghcr-publish.yml` never inspected what it built: Checkout → Buildx → Login →
+  Extract tags → Build and push.
+
+The fix reads the artefact. `scripts/verify-image-patches.mjs` runs **inside the
+built image** and asserts no unnonced component-script site survives in any of
+the four prod runtimes, failing closed if a bundle is missing.
+
+It hooks into the existing `Docker Build & Scan` job in `ci.yml`, which already
+builds with `load: true` to hand the image to Trivy — so it costs **no extra
+build**, the same consolidation reasoning that folded the standalone Trivy job
+in. It runs before the scan so a delivery bug fails in seconds rather than after
+a multi-minute vulnerability scan.
+
+Verified two-sided against real artefacts rather than by inspection: run inside
+the published patched image it PASSes (exit 0); run against the same image with
+one bundle's nonce stripped it FAILs (exit 1) naming the bundle and printing the
+offending element.
+
+**Residual gap, stated rather than hidden:** `ghcr-publish.yml` runs in parallel
+with CI on push to `main`, so it does not gate on this. In practice `main` is
+protected and every change arrives via a PR whose CI must be green, so the image
+built from `main` was already verified at PR time. The uncovered paths are
+`workflow_dispatch` and an admin direct-push. Closing those means moving the
+publish to `build (load: true)` → verify → push, which costs a multi-GB export on
+every deploy — deliberately not paid yet.
+
+**The durable lesson:** prefer a check that reads the artefact over one that reads
+the inputs that produce it. Every signal in this incident described the
+developer's machine; the one that would have caught it in ten seconds runs the
+thing we ship.
