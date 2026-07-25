@@ -4,6 +4,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { EntityDetailLayout } from '@/components/layout/EntityDetailLayout';
+import { MetaStrip } from '@/components/ui/meta-strip';
 import { DataTable, createColumns } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -118,39 +119,47 @@ export function BinDetailClient({ bin, tenantSlug, permissions }: Props) {
     return (
         <>
             <EntityDetailLayout
-                back={{ href: `/t/${tenantSlug}/grain/bins`, label: t('breadcrumbBins') }}
+                breadcrumbs={[
+                    { label: t('breadcrumbDashboard'), href: `/t/${tenantSlug}/dashboard` },
+                    { label: t('breadcrumbBins'), href: `/t/${tenantSlug}/grain/bins` },
+                    { label: bin.name },
+                ]}
                 title={bin.name}
                 meta={
-                    <div className="flex flex-wrap items-center gap-compact">
-                        <AgStatusBadge entity="bin" status={bin.kind} />
-                        {bin.key && (
-                            <span className="text-xs text-content-subtle">{bin.key}</span>
-                        )}
-                        <span className="text-xs text-content-secondary">
-                            {t('detail.storedSummary', {
-                                stored: formatDecimal(bin.storedTonnes, 2),
-                                capacity:
-                                    bin.capacityTonnes == null
-                                        ? '—'
-                                        : formatDecimal(bin.capacityTonnes, 2),
-                            })}
-                        </span>
-                        {fillPctDisplay != null && (
-                            <ProgressBar
-                                value={fillPctDisplay}
-                                variant={fillPctDisplay >= 100 ? 'warning' : 'success'}
-                                size="sm"
-                                showValue
-                                className="w-28"
-                                aria-label={t('fillAria', { pct: fillPctDisplay })}
-                            />
-                        )}
-                        {bin.mixedUnits && (
-                            <span className="text-xs text-content-subtle">
-                                {t('fillMixedUnits')}
-                            </span>
-                        )}
-                    </div>
+                    <MetaStrip
+                        items={[
+                            { label: t('colKind'), value: <AgStatusBadge entity="bin" status={bin.kind} /> },
+                            ...(bin.key ? [{ label: t('form.key'), value: bin.key }] : []),
+                            {
+                                label: t('colStored'),
+                                value: t('detail.storedSummary', {
+                                    stored: formatDecimal(bin.storedTonnes, 2),
+                                    capacity:
+                                        bin.capacityTonnes == null
+                                            ? '—'
+                                            : formatDecimal(bin.capacityTonnes, 2),
+                                }),
+                            },
+                            {
+                                label: t('colFill'),
+                                value:
+                                    fillPctDisplay != null ? (
+                                        <ProgressBar
+                                            value={fillPctDisplay}
+                                            variant={fillPctDisplay >= 100 ? 'warning' : 'success'}
+                                            size="sm"
+                                            showValue
+                                            className="w-full sm:w-28"
+                                            aria-label={t('fillAria', { pct: fillPctDisplay })}
+                                        />
+                                    ) : bin.mixedUnits ? (
+                                        t('fillMixedUnits')
+                                    ) : (
+                                        '—'
+                                    ),
+                            },
+                        ]}
+                    />
                 }
                 actions={
                     permissions.canWrite ? (
@@ -210,6 +219,9 @@ export function BinDetailClient({ bin, tenantSlug, permissions }: Props) {
                         data={bin.lots}
                         columns={columns}
                         getRowId={getRowId}
+                        mobileFallback="card"
+                        virtualize={false}
+                        data-testid="bin-lots-table"
                         onRowClick={(row) =>
                             router.push(
                                 `/t/${tenantSlug}/inventory?lotId=${row.original.id}`,

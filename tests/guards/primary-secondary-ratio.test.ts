@@ -264,7 +264,10 @@ const MIN_SECONDARY_TO_PRIMARY_RATIO = 0.9;
 // tasks/[taskId]/page) was replaced by the farm-tasks list + detail. Net −1
 // primary in src/app (the relocated NewTaskModal moved to src/components,
 // out of this scan's scope). Measured = 171; ceiling at 171 (one-way down).
-const MAX_PRIMARY_COUNT = 171;
+// 172 (was 171): the grain blend modal's confirm button. A modal's confirm
+// IS the canonical primary per docs/ui-buttons.md — the surface exists to
+// commit one action — so this is an earned primary, not budget drift.
+const MAX_PRIMARY_COUNT = 172;
 
 describe("primary:secondary ratio direction", () => {
     const counts = (() => {

@@ -40,6 +40,10 @@ interface Adopter {
  *   2. references `<EntityDetailLayout` somewhere (rendered tag).
  */
 const ADOPTED_PAGES: ReadonlyArray<Adopter> = [
+  // Grain bins roadmap PR2 — new detail pages adopt the shell at creation.
+  // Registered against the CLIENT, which is where the shell is mounted (same
+  // shape as the access-review entry below) — the server page only fetches.
+  { page: "src/app/t/[tenantSlug]/(app)/grain/bins/[binId]/BinDetailClient.tsx", entity: "Grain bin" },
   // Wave 1 (PR-4)
   { page: "src/app/t/[tenantSlug]/(app)/controls/[controlId]/page.tsx", entity: "Control" },
   { page: "src/app/t/[tenantSlug]/(app)/assets/[id]/page.tsx", entity: "Asset" },

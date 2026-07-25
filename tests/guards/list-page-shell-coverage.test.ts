@@ -49,6 +49,10 @@ const APP_ROOT = path.resolve(
  * consistency is large.
  */
 const EXEMPTIONS: Record<string, string> = {
+    // Grain bin detail (bins roadmap PR2).
+    "grain/bins/[binId]/BinDetailClient.tsx":
+        "detail-page sub-table — the lots INSIDE one bin, not a list page. The set is one bin's contents (bounded, already sorted soonest-expiry first), so faceted filtering, a column gear and viewport-clamping all add chrome without adding reach.",
+
     // Multi-section dashboard with KPI strip + summary bar + two
     // side-by-side gap tables. Viewport-clamping would compress the
     // whole grid awkwardly. Natural scroll is the right shape.

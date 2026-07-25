@@ -5933,7 +5933,7 @@
                 "description": "Combine lots stored in {bin} into one blended lot.",
                 "sources": "Lots to blend",
                 "sourcesHint": "Whole lots are consumed. All selected lots must share one unit.",
-                "noLots": "This bin holds no lots to blend.",
+                "noLots": "No lots to blend yet",
                 "totalPreview": "{count} lots · {qty} {unit} blended",
                 "quality_moisture": "Moisture",
                 "quality_protein": "Protein",
