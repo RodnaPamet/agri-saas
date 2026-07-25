@@ -57,9 +57,24 @@ wedge the whole pipeline.
 | Override | Advisory | Why |
 |----------|----------|-----|
 | `uuid` → `^11.1.1` | GHSA-w5hq-g745-h8pq — missing buffer bounds check in uuid v3/v5/v6 when `buf` is provided (moderate) | `next-auth@4` declares `uuid@^8.3.2`; the whole `<11.1.1` line is vulnerable, so the only fix is forcing the patched major. `next-auth` uses the version-stable named `uuid` exports (`v4`, …), which are unchanged v8 → v11. Drop this entry if `next-auth` itself moves to a patched `uuid` range. |
+| `hono` → `^4.12.27` | GHSA-hvrm-45r6-mjfj — `hono/jsx` does not isolate context per request, leaking data across requests; affects `>=4.11.8 <4.12.27` (moderate) | Arrives transitively through `@prisma/dev` (#367). `hono` currently resolves to **no** instance at all — prisma 7.9.0 dropped it — so this is a floor for if it returns, not a live rewrite. |
+| `tmp` → `^0.2.7` | GHSA-7c78-jf6q-g5cm — path traversal via a type-confusion bypass of `_assertPath`; affects `>=0.2.6 <0.2.7` (high) | Transitive via `fengari` + `patch-package`. #828 pinned `^0.2.6` for the earlier traversal (GHSA-ph9p-34f9-6g65); the follow-up advisory affects 0.2.6 itself. Lockfile already resolves 0.2.7. |
+| `protobufjs` → `^8.6.6` | GHSA-j3f2-48v5-ccww — DoS via an infinite loop in `.proto` parsing; affects `>=8.0.0 <=8.6.5` (moderate) | Pulled by the OpenTelemetry OTLP exporter, which sits in the production tree. #421 pinned `^8.2.0` for GHSA-jggg-4jg4-v7c6 (fixed 8.2.0); that floor was later superseded. Lockfile resolves 8.7.1. |
 
 A security override is NOT a bridge to drop on convenience — keep it
 until the upstream package legitimately depends on a patched range.
+
+**A floor is only a fix while it still excludes every vulnerable
+release.** All three entries above were raised on 2026-07-25 after an
+audit against the GitHub Advisory Database found their ranges had
+decayed into admitting a version the recorded advisory still affects —
+`hono` at `^4.12.25` against a 4.12.27 fix, `tmp` at `^0.2.6` against
+an advisory affecting 0.2.6, `protobufjs` at `^8.2.0` against a fix in
+8.6.6. In each case the lockfile happened to sit on a patched version,
+so `npm audit` was green and nothing in the repo was wrong-looking —
+which is exactly why the floor, not just the lockfile, has to be
+checked when a follow-up advisory lands on a package already pinned
+here.
 
 ## Deterministic installs — `npm ci`
 
