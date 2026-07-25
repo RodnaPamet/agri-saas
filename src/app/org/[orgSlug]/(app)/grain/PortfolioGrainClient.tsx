@@ -16,6 +16,7 @@ import { Heading } from '@/components/ui/typography';
 import type {
     PortfolioGrainSummary,
     PortfolioGrainTenantRow,
+    PortfolioGrainSeasonRow,
 } from '@/app-layer/usecases/portfolio-grain';
 
 /**
@@ -66,6 +67,9 @@ function formatCost(n: number, currency: string | null): string {
 export function PortfolioGrainClient({ summary }: Props) {
     const t = useTranslations('grain.portfolio');
     const { totals, perTenant } = summary;
+    // Older cached payloads predate the per-season rollup — default so a
+    // stale response degrades to "no season table" rather than crashing.
+    const perSeason = summary.perSeason ?? [];
     const sym = currencySymbol(totals.currency);
 
     const [sortBy, setSortBy] = useState<string>('tenantName');
@@ -109,6 +113,92 @@ export function PortfolioGrainClient({ summary }: Props) {
         });
         return copy;
     }, [perTenant, sortBy, sortOrder]);
+
+    const seasonColumns = useMemo(
+        () =>
+            createColumns<PortfolioGrainSeasonRow>([
+                {
+                    id: 'seasonName',
+                    header: t('colSeason'),
+                    accessorFn: (r) => r.seasonName ?? '',
+                    cell: ({ row }) => (
+                        <span className="text-content-emphasis">
+                            {row.original.seasonName ?? t('seasonUnassigned')}
+                        </span>
+                    ),
+                },
+                {
+                    id: 'contractedSaleTonnes',
+                    header: t('colContractedSeason'),
+                    accessorFn: (r) => r.contractedSaleTonnes,
+                    cell: ({ row }) => (
+                        <span className="text-xs tabular-nums text-content-default block text-right">
+                            {formatTonnes(row.original.contractedSaleTonnes)}
+                        </span>
+                    ),
+                },
+                {
+                    id: 'producedTonnes',
+                    header: t('colProduced'),
+                    accessorFn: (r) => r.producedTonnes,
+                    cell: ({ row }) => (
+                        <span className="text-xs tabular-nums text-content-default block text-right">
+                            {formatTonnes(row.original.producedTonnes)}
+                        </span>
+                    ),
+                },
+                {
+                    id: 'coveragePct',
+                    header: t('colCoverage'),
+                    accessorFn: (r) => r.coveragePct ?? -1,
+                    cell: ({ row }) => {
+                        const pct = row.original.coveragePct;
+                        if (pct == null) {
+                            // Produced nothing: a percentage of zero is
+                            // undefined, not 0%.
+                            return (
+                                <span className="text-xs text-content-subtle block text-right">
+                                    —
+                                </span>
+                            );
+                        }
+                        // Over 100% means more was sold than grown — the
+                        // most actionable cell in this table, so it gets
+                        // the warning tone rather than being clamped away.
+                        return (
+                            <span
+                                className={`text-xs tabular-nums block text-right ${
+                                    pct > 100
+                                        ? 'text-content-warning font-medium'
+                                        : 'text-content-default'
+                                }`}
+                            >
+                                {pct.toFixed(1)}%
+                            </span>
+                        );
+                    },
+                },
+                {
+                    id: 'deltaTonnes',
+                    header: t('colSurplus'),
+                    accessorFn: (r) => r.deltaTonnes,
+                    cell: ({ row }) => {
+                        const delta = row.original.deltaTonnes;
+                        return (
+                            <span
+                                className={`text-xs tabular-nums block text-right ${
+                                    delta < 0 ? 'text-content-warning' : 'text-content-muted'
+                                }`}
+                            >
+                                {delta > 0 ? '+' : ''}
+                                {formatTonnes(delta)}
+                            </span>
+                        );
+                    },
+                },
+            ]),
+        [t],
+    );
 
     const columns = useMemo(
         () =>
@@ -236,6 +326,33 @@ export function PortfolioGrainClient({ summary }: Props) {
                                 subtitle={t('kpiAcrossFarms')}
                                 trendPolarity="neutral"
                             />
+                            {/* Contract value — the revenue side. Until
+                                this landed the dashboard showed activity
+                                COST with nothing to weigh it against, so
+                                a group operator saw only money going
+                                out. `mixedCurrency` is surfaced in the
+                                subtitle rather than hidden: a partial
+                                total presented as complete is worse than
+                                no total. */}
+                            <KpiCard
+                                label={
+                                    totals.currency
+                                        ? t('kpiContractValueCurrency', {
+                                              currency: totals.currency,
+                                          })
+                                        : t('kpiContractValue')
+                                }
+                                value={totals.contractedValue}
+                                format="compact"
+                                icon={MoneyBill}
+                                gradient="from-lime-500 to-emerald-500"
+                                subtitle={
+                                    totals.mixedCurrency
+                                        ? t('kpiContractValueMixed')
+                                        : t('kpiContractValueSubtitle')
+                                }
+                                trendPolarity="neutral"
+                            />
                             <KpiCard
                                 label={t('kpiActivityCost')}
                                 value={totals.totalActivityCost}
@@ -259,6 +376,30 @@ export function PortfolioGrainClient({ summary }: Props) {
                                 trendPolarity="neutral"
                             />
                         </div>
+
+                        {/* Contracted-vs-produced per season — the rollup
+                            `Contract.seasonId` has described in the schema
+                            since the module shipped. Before this, contracted
+                            tonnes and harvested tonnes rendered as two
+                            unrelated tiles with nothing relating them. */}
+                        {perSeason.length > 0 && (
+                            <section
+                                className="rounded-lg border border-border-default bg-bg-default p-4"
+                                data-testid="org-grain-per-season"
+                            >
+                                <Heading level={3}>{t('seasonCoverage')}</Heading>
+                                <p className="text-xs text-content-muted mt-1 mb-3">
+                                    {t('seasonCoverageNote')}
+                                </p>
+                                <DataTable<PortfolioGrainSeasonRow>
+                                    data={perSeason}
+                                    mobileFallback="scroll"
+                                    columns={seasonColumns}
+                                    getRowId={(r) => r.seasonName ?? '__unassigned__'}
+                                    data-testid="org-grain-season-table"
+                                />
+                            </section>
+                        )}
 
                         {/* Yield-by-farm breakdown — the single visual. */}
                         {yieldByFarm.length > 0 && (

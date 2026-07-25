@@ -65,6 +65,33 @@ export type ContractedCommitmentStatus =
     (typeof CONTRACTED_COMMITMENT_STATUSES)[number];
 
 /**
+ * Statuses that count as a real commitment made against a SEASON'S
+ * harvest, for the portfolio's per-season contracted-vs-produced rollup.
+ *
+ * WIDER than `CONTRACTED_COMMITMENT_STATUSES` on purpose — the two
+ * answer different questions:
+ *
+ *   - live book   ("what am I on the hook for right now?")
+ *                 → ACTIVE + DELIVERED. SETTLED is closed out.
+ *   - season roll ("how much of the 2026 harvest did I sell forward?")
+ *                 → ACTIVE + DELIVERED + SETTLED.
+ *
+ * Using the live-book set for the season view would be actively
+ * misleading: a COMPLETED season's contracts are mostly SETTLED, so
+ * coverage would collapse toward 0% precisely for the seasons an
+ * operator is reviewing. Both sets exclude DRAFT (unsigned) and
+ * CANCELLED (void) — that discipline is common to every "contracted"
+ * figure in the product.
+ */
+export const CONTRACTED_SEASON_STATUSES = [
+    'ACTIVE',
+    'DELIVERED',
+    'SETTLED',
+] as const;
+
+export type ContractedSeasonStatus = (typeof CONTRACTED_SEASON_STATUSES)[number];
+
+/**
  * Legal transitions out of each status.
  *
  *   DRAFT     → ACTIVE · CANCELLED

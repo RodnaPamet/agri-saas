@@ -9,6 +9,8 @@ import {
     checkContractTransition,
     formatContractTransitionError,
 } from '../domain/contract-status';
+import { aggregateDeliveredTonnes, deriveFulfilment } from './grain-delivery';
+import { computeContractValue } from '@/lib/grain/contract-value';
 import type {
     CreateContractInput,
     UpdateContractInput,
@@ -36,7 +38,14 @@ import type {
  * (DRAFT → ACTIVE → DELIVERED → SETTLED, CANCELLED terminal from any
  * pre-SETTLED state). `createContract` does NOT — a contract may be
  * recorded at whatever stage it already is; only subsequent moves are
- * constrained.
+ * constrained. Moving to DELIVERED additionally requires real movement
+ * in the `GrainDelivery` ledger (see `./grain-delivery.ts`).
+ *
+ * `listContracts` decorates each row with two DERIVED figures, neither
+ * of them stored: `fulfilment` (delivered / remaining / progress, from
+ * ONE groupBy over the page) and `valueAmount` (volume × price,
+ * Decimal-exact). Per-currency book totals are built from the same page
+ * by `summariseContractBook` — see `@/lib/grain/contract-value`.
  */
 
 // Single cap for the contracts list read. Mirrors crop-planning's LIST_TAKE;
@@ -88,8 +97,8 @@ export async function listContracts(
     opts: { take?: number } = {},
 ) {
     assertCanRead(ctx);
-    return runInTenantContext(ctx, (db) =>
-        db.contract.findMany({
+    return runInTenantContext(ctx, async (db) => {
+        const rows = await db.contract.findMany({
             where: {
                 tenantId: ctx.tenantId,
                 deletedAt: null,
@@ -100,8 +109,34 @@ export async function listContracts(
             orderBy: [{ createdAt: 'desc' }],
             include: { season: { select: { id: true, name: true, status: true } } },
             take: opts.take ?? LIST_TAKE,
-        }),
-    );
+        });
+
+        // ONE groupBy for the whole page's delivered tonnes — never a
+        // query per row.
+        const delivered = await aggregateDeliveredTonnes(
+            db,
+            ctx.tenantId,
+            rows.map((r) => r.id),
+        );
+
+        // Decorate each row with its fulfilment position and its
+        // Decimal-exact value. Both are derived, not stored: value is
+        // volume × price (the schema has claimed this since the module
+        // landed), and fulfilment comes from the delivery ledger.
+        return rows.map((row) => {
+            const agg = delivered.get(row.id);
+            return {
+                ...row,
+                fulfilment: deriveFulfilment(
+                    row.id,
+                    agg?.tonnes ?? new Prisma.Decimal(0),
+                    agg?.count ?? 0,
+                    row.volumeTonnes,
+                ),
+                valueAmount: computeContractValue(row.volumeTonnes, row.pricePerTonne),
+            };
+        });
+    });
 }
 
 export async function getContract(ctx: RequestContext, id: string) {
@@ -252,18 +287,34 @@ export async function updateContract(ctx: RequestContext, id: string, input: Upd
         // must follow the documented graph. A no-op (same status
         // re-sent, which ContractFormModal does on every edit) passes
         // and simply writes nothing.
-        //
-        // SEAM — contract fulfillment (flag 3, not yet landed): once
-        // deliveries are tracked against a contract, ACTIVE → DELIVERED
-        // should ALSO require evidence that volume actually moved
-        // (a linked yield record / stock transaction summing to the
-        // contracted tonnage). That check belongs right here, beside the
-        // graph check, and needs no signature change — it reads `db` +
-        // `id`, both already in scope. Deliberately not stubbed: an
-        // unreachable helper would be dead code today.
         if (input.status !== undefined && input.status !== existing.status) {
             const transitionErr = checkContractTransition(existing.status, input.status);
             if (transitionErr) throw badRequest(formatContractTransitionError(transitionErr));
+
+            // ── Movement gate (the fulfilment half of the lifecycle) ──
+            //
+            // DELIVERED must mean grain actually moved, not that
+            // somebody picked it from a dropdown. Requires at least one
+            // recorded GrainDelivery against this contract.
+            //
+            // The bar is "> 0 delivered", NOT "fully delivered":
+            // partial and tolerance-adjusted deliveries are ordinary in
+            // grain marketing (moisture shrink, a short final load), and
+            // refusing to let an operator close a 499.2 t delivery on a
+            // 500 t contract would push them straight back to lying to
+            // the system. `fulfilment.complete` on the read side is what
+            // distinguishes fully- from partially-delivered.
+            if (input.status === 'DELIVERED') {
+                const agg = await aggregateDeliveredTonnes(db, ctx.tenantId, [id]);
+                const deliveredTonnes = agg.get(id)?.tonnes;
+                if (!deliveredTonnes || deliveredTonnes.lessThanOrEqualTo(0)) {
+                    throw badRequest(
+                        'Cannot mark a contract DELIVERED with no recorded deliveries — ' +
+                            'record the delivered tonnage first.',
+                    );
+                }
+            }
+
             data.status = input.status;
         }
 

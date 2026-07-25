@@ -19,7 +19,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { TableTitleCell } from '@/components/ui/table-title-cell';
 import { AgStatusBadge } from '@/components/ag/ag-status';
 import { Tooltip } from '@/components/ui/tooltip';
-import { Pen2, Trash } from '@/components/ui/icons/nucleo';
+import { Pen2, Trash, StackY3 } from '@/components/ui/icons/nucleo';
 import { useToastWithUndo } from '@/components/ui/hooks';
 import { formatDate } from '@/lib/format-date';
 import {
@@ -27,12 +27,27 @@ import {
     CONTRACT_FILTER_KEYS,
 } from './filter-defs';
 import { ContractFormModal } from './ContractFormModal';
+import {
+    ContractProgressCell,
+    ContractWindowBadge,
+} from './ContractFulfilmentCell';
+import { ContractBookTotals } from './ContractBookTotals';
+import { DeliveriesSheet } from './DeliveriesSheet';
 
 // ─── Types ───
 //
 // RAW Prisma Contract model: Decimal columns serialize as STRINGS over
 // JSON. Parse with Number(...) for display; keep them as strings on the
 // row so the edit form can round-trip them losslessly.
+export interface ContractFulfilmentDto {
+    contractId: string;
+    deliveredTonnes: string;
+    deliveryCount: number;
+    remainingTonnes: string | null;
+    progressPct: number | null;
+    complete: boolean;
+}
+
 export interface ContractRow {
     id: string;
     seasonId: string | null;
@@ -51,10 +66,30 @@ export interface ContractRow {
     createdAt: string;
     updatedAt: string;
     season?: { id: string; name: string; status: string } | null;
+    /** Derived server-side from the GrainDelivery ledger. */
+    fulfilment?: ContractFulfilmentDto;
+    /** Derived server-side: volume × price, exact decimal string. */
+    valueAmount?: string | null;
+}
+
+/** One currency's slice of the book (never summed across currencies). */
+export interface ContractBookTotalDto {
+    currency: string | null;
+    contractCount: number;
+    contractedTonnes: string;
+    contractValue: string;
+    unpricedCount: number;
+}
+
+/** The list endpoint's payload — rows plus per-currency book totals. */
+export interface ContractListResponse {
+    rows: ContractRow[];
+    totals: ContractBookTotalDto[];
 }
 
 interface ContractsClientProps {
     initialContracts: ContractRow[];
+    initialTotals: ContractBookTotalDto[];
     tenantSlug: string;
     permissions: { canWrite: boolean };
 }
@@ -78,6 +113,7 @@ export function ContractsClient(props: ContractsClientProps) {
 
 function ContractsPageInner({
     initialContracts,
+    initialTotals,
     tenantSlug,
     permissions,
 }: ContractsClientProps) {
@@ -97,6 +133,8 @@ function ContractsPageInner({
     // create; a row sets edit mode.
     const [isCreateOpen, setIsCreateOpen] = useState(false);
     const [editing, setEditing] = useState<ContractRow | null>(null);
+    // Delivery-ledger sheet — which contract's fulfilment is open.
+    const [deliveriesFor, setDeliveriesFor] = useState<ContractRow | null>(null);
 
     // ─── API query string from filter state (status + type only) ───
     const filtersForQuery = useMemo(() => {
@@ -116,7 +154,7 @@ function ContractsPageInner({
     // unfiltered newest-first list).
     const noFacets = Object.keys(queryKeyFilters).length === 0;
 
-    const contractsQuery = useQuery<ContractRow[]>({
+    const contractsQuery = useQuery<ContractListResponse>({
         queryKey: ['grain-contracts', tenantSlug, 'list', queryKeyFilters],
         queryFn: async () => {
             const qs = filtersForQuery.toString();
@@ -124,16 +162,22 @@ function ContractsPageInner({
             if (!res.ok) throw new Error('Failed to fetch contracts');
             return res.json();
         },
-        initialData: noFacets ? initialContracts : undefined,
+        initialData: noFacets
+            ? { rows: initialContracts, totals: initialTotals }
+            : undefined,
         // eslint-disable-next-line react-hooks/purity
         initialDataUpdatedAt: noFacets ? Date.now() : 0,
         staleTime: 30_000,
     });
 
     // Stable ref so the search memo below doesn't recompute every render
-    // (query.data ?? [] would mint a fresh array each pass).
+    // (query.data?.rows ?? [] would mint a fresh array each pass).
     const rawContracts = useMemo(
-        () => contractsQuery.data ?? [],
+        () => contractsQuery.data?.rows ?? [],
+        [contractsQuery.data],
+    );
+    const bookTotals = useMemo(
+        () => contractsQuery.data?.totals ?? [],
         [contractsQuery.data],
     );
     const loading = contractsQuery.isLoading && !contractsQuery.data;
@@ -183,10 +227,15 @@ function ContractsPageInner({
                 queryKeyFilters,
             ];
             const previous =
-                queryClient.getQueryData<ContractRow[]>(listKey);
-            // Optimistic remove.
-            queryClient.setQueryData<ContractRow[]>(listKey, (old) =>
-                (old ?? []).filter((c) => c.id !== contract.id),
+                queryClient.getQueryData<ContractListResponse>(listKey);
+            // Optimistic remove. Totals are left alone for the 5-second
+            // undo window: recomputing the book client-side would need
+            // decimal arithmetic on strings, and the refetch on commit
+            // replaces them with the server's exact figures anyway.
+            queryClient.setQueryData<ContractListResponse>(listKey, (old) =>
+                old
+                    ? { ...old, rows: old.rows.filter((c) => c.id !== contract.id) }
+                    : old,
             );
             triggerUndoToast({
                 message: t('deletedToast', { counterparty: contract.counterparty }),
@@ -255,9 +304,28 @@ function ContractsPageInner({
                     accessorKey: 'status',
                     header: t('colStatus'),
                     cell: ({ row }) => (
-                        <AgStatusBadge entity="contract" status={row.original.status} />
+                        <div className="flex flex-wrap items-center gap-tight">
+                            <AgStatusBadge entity="contract" status={row.original.status} />
+                            <ContractWindowBadge
+                                status={row.original.status}
+                                deliveryEnd={row.original.deliveryEnd}
+                            />
+                        </div>
                     ),
                     meta: { mobileCard: { slot: 'status', label: t('colStatus') } },
+                },
+                {
+                    id: 'fulfilment',
+                    header: t('colDelivered'),
+                    // Sort by progress, with "no denominator" rows last.
+                    accessorFn: (c) => c.fulfilment?.progressPct ?? -1,
+                    cell: ({ row }) => (
+                        <ContractProgressCell
+                            fulfilment={row.original.fulfilment}
+                            volumeTonnes={row.original.volumeTonnes}
+                        />
+                    ),
+                    meta: { mobileCard: { slot: 'meta', label: t('colDelivered') } },
                 },
                 {
                     id: 'volumeTonnes',
@@ -285,6 +353,25 @@ function ContractsPageInner({
                     meta: { mobileCard: { slot: 'meta', label: t('colPrice') } },
                 },
                 {
+                    id: 'valueAmount',
+                    header: t('colValue'),
+                    // Sort numerically; unpriced rows sort last.
+                    accessorFn: (c) =>
+                        c.valueAmount != null ? Number(c.valueAmount) : -1,
+                    cell: ({ row }) => (
+                        <span className="text-xs text-content-default tabular-nums tracking-tight block text-right">
+                            {row.original.valueAmount == null
+                                ? '—'
+                                : `${fmtNum(row.original.valueAmount)}${
+                                      row.original.priceCurrency
+                                          ? ` ${row.original.priceCurrency}`
+                                          : ''
+                                  }`}
+                        </span>
+                    ),
+                    meta: { mobileCard: { slot: 'meta', label: t('colValue') } },
+                },
+                {
                     id: 'deliveryStart',
                     header: t('colDelivery'),
                     accessorFn: (c) => c.deliveryStart ?? '',
@@ -301,6 +388,20 @@ function ContractsPageInner({
                     cell: ({ row }) =>
                         permissions.canWrite ? (
                             <div className="flex items-center justify-end gap-tight">
+                                <Tooltip content={t('recordDelivery')}>
+                                    <button
+                                        type="button"
+                                        aria-label={t('recordDelivery')}
+                                        className="inline-flex h-7 w-7 items-center justify-center rounded-md text-content-muted transition-colors hover:bg-bg-muted hover:text-content-emphasis focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                        data-testid={`contract-deliveries-${row.original.id}`}
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            setDeliveriesFor(row.original);
+                                        }}
+                                    >
+                                        <StackY3 className="h-3.5 w-3.5" aria-hidden />
+                                    </button>
+                                </Tooltip>
                                 <Tooltip content={t('editContract')}>
                                     <button
                                         type="button"
@@ -361,6 +462,7 @@ function ContractsPageInner({
                     </Button>
                 ) : null,
             }}
+            kpis={<ContractBookTotals totals={bookTotals} />}
             filters={{
                 defs: liveFilterDefs,
                 searchId: 'grain-contracts-search',
@@ -415,6 +517,19 @@ function ContractsPageInner({
                     onSaved={refetch}
                 />
             )}
+            {/* Delivery ledger. Mounted for readers too — seeing what has
+                been delivered is a read, and the sheet gates its own
+                write affordances on `canWrite`. */}
+            <DeliveriesSheet
+                open={deliveriesFor != null}
+                onOpenChange={(next) => {
+                    if (!next) setDeliveriesFor(null);
+                }}
+                contract={deliveriesFor}
+                tenantSlug={tenantSlug}
+                canWrite={permissions.canWrite}
+                onChanged={refetch}
+            />
         </EntityListPage>
     );
 }

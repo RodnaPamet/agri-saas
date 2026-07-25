@@ -25,6 +25,7 @@
 const mockDb = {
     contract: { findFirst: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn() },
     season: { findFirst: jest.fn() },
+    grainDelivery: { groupBy: jest.fn() },
 } as any;
 
 jest.mock('@/lib/db-context', () => ({
@@ -48,7 +49,10 @@ import {
     updateContract,
     deleteContract,
 } from '@/app-layer/usecases/contract';
+import { Prisma } from '@prisma/client';
 import { makeRequestContext } from '../helpers/make-context';
+
+const Decimal = Prisma.Decimal;
 
 /** The REAL sanitiser, for tests that must prove production behaviour. */
 const realSanitize: (s: string) => string = jest.requireActual(
@@ -61,6 +65,10 @@ beforeEach(() => {
     // default so a per-test `mockImplementationOnce(realSanitize)` can
     // never leak into the next test.
     (sanitizePlainText as jest.Mock).mockImplementation((s: string) => `SAN::${s}`);
+    // Default: nothing delivered. Tests that exercise the DELIVERED gate
+    // override this per-case.
+    mockDb.grainDelivery.groupBy.mockResolvedValue([]);
+    mockDb.contract.findMany.mockResolvedValue([]);
 });
 
 const adminCtx = makeRequestContext('ADMIN', { tenantSlug: 'acme', tenantId: 'tenant-1', userId: 'user-1' });
@@ -74,7 +82,10 @@ describe('listContracts', () => {
             type: ['SALE'],
             seasonId: 's-1',
         });
-        expect(out).toEqual([{ id: 'c-1' }]);
+        // Rows are DECORATED with derived figures (fulfilment + value),
+        // so this is a subset match, not equality.
+        expect(out).toHaveLength(1);
+        expect(out[0]).toMatchObject({ id: 'c-1' });
         const args = mockDb.contract.findMany.mock.calls[0][0];
         expect(args.where).toMatchObject({
             tenantId: 'tenant-1',
@@ -128,6 +139,55 @@ describe('listContracts', () => {
     it('READER can read', async () => {
         mockDb.contract.findMany.mockResolvedValue([]);
         await expect(listContracts(readerCtx, {})).resolves.toEqual([]);
+    });
+
+    // ── Derived decoration (fulfilment + value) ──
+    describe('row decoration', () => {
+        it('attaches the fulfilment position from ONE delivery groupBy', async () => {
+            mockDb.contract.findMany.mockResolvedValue([
+                { id: 'c-1', volumeTonnes: new Decimal('500'), pricePerTonne: null },
+                { id: 'c-2', volumeTonnes: new Decimal('100'), pricePerTonne: null },
+            ]);
+            mockDb.grainDelivery.groupBy.mockResolvedValue([
+                { contractId: 'c-1', _sum: { tonnes: new Decimal('300') }, _count: { _all: 2 } },
+            ]);
+
+            const out = await listContracts(adminCtx, {});
+
+            // One aggregate for the whole page — not one per row.
+            expect(mockDb.grainDelivery.groupBy).toHaveBeenCalledTimes(1);
+            expect(out[0].fulfilment).toMatchObject({
+                deliveredTonnes: '300',
+                remainingTonnes: '200',
+                progressPct: 60,
+                deliveryCount: 2,
+            });
+            // A contract with no deliveries reads as zero, not undefined.
+            expect(out[1].fulfilment).toMatchObject({
+                deliveredTonnes: '0',
+                remainingTonnes: '100',
+                progressPct: 0,
+                complete: false,
+            });
+        });
+
+        it('attaches a Decimal-exact contract value', async () => {
+            mockDb.contract.findMany.mockResolvedValue([
+                {
+                    id: 'c-1',
+                    volumeTonnes: new Decimal('1234.567'),
+                    pricePerTonne: new Decimal('89.12'),
+                },
+                { id: 'c-2', volumeTonnes: new Decimal('100'), pricePerTonne: null },
+            ]);
+
+            const out = await listContracts(adminCtx, {});
+
+            expect(out[0].valueAmount).toBe('110024.61104');
+            // Unpriced ⇒ null, never 0 (zero would claim the deal is
+            // worth nothing and would drag a book total down).
+            expect(out[1].valueAmount).toBeNull();
+        });
     });
 });
 
@@ -285,6 +345,12 @@ describe('updateContract', () => {
         ])('allows %s → %s', async (from, to) => {
             mockDb.contract.findFirst.mockResolvedValue(existing({ status: from }));
             mockDb.contract.update.mockResolvedValue({ id: 'c-1', counterparty: 'Acme', status: to });
+            // → DELIVERED additionally requires real movement in the
+            // ledger; give every case a delivery so this table tests the
+            // GRAPH, with the movement gate covered separately below.
+            mockDb.grainDelivery.groupBy.mockResolvedValue([
+                { contractId: 'c-1', _sum: { tonnes: new Decimal('100') }, _count: { _all: 1 } },
+            ]);
             await updateContract(adminCtx, 'c-1', { status: to as any });
             expect(mockDb.contract.update.mock.calls[0][0].data.status).toBe(to);
         });
@@ -322,6 +388,80 @@ describe('updateContract', () => {
             const data = mockDb.contract.update.mock.calls[0][0].data;
             expect(data.counterparty).toBe('SAN::Fixed');
             expect(data.status).toBeUndefined();
+        });
+
+        // ── Movement gate: DELIVERED must mean grain actually moved ──
+        describe('DELIVERED movement gate', () => {
+            it('refuses DELIVERED when the delivery ledger is empty', async () => {
+                mockDb.contract.findFirst.mockResolvedValue(existing({ status: 'ACTIVE' }));
+                mockDb.grainDelivery.groupBy.mockResolvedValue([]);
+                await expect(
+                    updateContract(adminCtx, 'c-1', { status: 'DELIVERED' }),
+                ).rejects.toThrow(/no recorded deliveries/i);
+                expect(mockDb.contract.update).not.toHaveBeenCalled();
+            });
+
+            it('refuses DELIVERED when the ledger sums to zero', async () => {
+                mockDb.contract.findFirst.mockResolvedValue(existing({ status: 'ACTIVE' }));
+                mockDb.grainDelivery.groupBy.mockResolvedValue([
+                    { contractId: 'c-1', _sum: { tonnes: new Decimal('0') }, _count: { _all: 1 } },
+                ]);
+                await expect(
+                    updateContract(adminCtx, 'c-1', { status: 'DELIVERED' }),
+                ).rejects.toThrow(/no recorded deliveries/i);
+            });
+
+            it('allows DELIVERED on a PARTIAL delivery — the bar is movement, not completion', async () => {
+                // Grain marketing runs on tolerance: moisture shrink and a
+                // short final load are ordinary. Demanding an exact match
+                // would push operators back to lying to the system.
+                mockDb.contract.findFirst.mockResolvedValue(existing({ status: 'ACTIVE' }));
+                mockDb.grainDelivery.groupBy.mockResolvedValue([
+                    { contractId: 'c-1', _sum: { tonnes: new Decimal('0.5') }, _count: { _all: 1 } },
+                ]);
+                mockDb.contract.update.mockResolvedValue({
+                    id: 'c-1',
+                    counterparty: 'Acme',
+                    status: 'DELIVERED',
+                });
+                await updateContract(adminCtx, 'c-1', { status: 'DELIVERED' });
+                expect(mockDb.contract.update.mock.calls[0][0].data.status).toBe('DELIVERED');
+            });
+
+            it('does NOT gate other transitions on movement', async () => {
+                // DRAFT → ACTIVE is signing a contract; no grain has moved
+                // yet by definition.
+                mockDb.contract.findFirst.mockResolvedValue(existing({ status: 'DRAFT' }));
+                mockDb.grainDelivery.groupBy.mockResolvedValue([]);
+                mockDb.contract.update.mockResolvedValue({
+                    id: 'c-1',
+                    counterparty: 'Acme',
+                    status: 'ACTIVE',
+                });
+                await updateContract(adminCtx, 'c-1', { status: 'ACTIVE' });
+                expect(mockDb.contract.update).toHaveBeenCalled();
+                // The gate is not even consulted off the DELIVERED path.
+                expect(mockDb.grainDelivery.groupBy).not.toHaveBeenCalled();
+            });
+
+            it('does not re-check movement when DELIVERED is a no-op', async () => {
+                // Editing a typo on an already-DELIVERED contract must not
+                // re-litigate the ledger.
+                mockDb.contract.findFirst.mockResolvedValue(
+                    existing({ status: 'DELIVERED' }),
+                );
+                mockDb.contract.update.mockResolvedValue({
+                    id: 'c-1',
+                    counterparty: 'SAN::Fixed',
+                    status: 'DELIVERED',
+                });
+                await updateContract(adminCtx, 'c-1', {
+                    counterparty: 'Fixed',
+                    status: 'DELIVERED',
+                });
+                expect(mockDb.grainDelivery.groupBy).not.toHaveBeenCalled();
+                expect(mockDb.contract.update).toHaveBeenCalled();
+            });
         });
 
         it('leaves status untouched when the patch omits it', async () => {

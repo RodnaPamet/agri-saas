@@ -115,6 +115,7 @@ function mount(initialContracts: ContractRow[] = []) {
         <QueryClientProvider client={client}>
             <ContractsClient
                 initialContracts={initialContracts}
+                initialTotals={[]}
                 tenantSlug="acme"
                 permissions={{ canWrite: false }}
             />
@@ -162,7 +163,9 @@ describe('grain contracts — failed read', () => {
 
     it('renders rows and no error on a successful read', async () => {
         setUrl('?status=ACTIVE');
-        global.fetch = jest.fn(async () => okJson([row()])) as unknown as typeof fetch;
+        global.fetch = jest.fn(async () =>
+            okJson({ rows: [row()], totals: [] }),
+        ) as unknown as typeof fetch;
 
         mount();
 
@@ -194,7 +197,8 @@ describe('grain contracts — failed read', () => {
     it('sends the comma-joined multi-select facet the route parses', async () => {
         setUrl('?status=DRAFT,ACTIVE&type=SALE,PURCHASE');
         const fetchMock = jest.fn(
-            async (_input: RequestInfo | URL, _init?: RequestInit) => okJson([]),
+            async (_input: RequestInfo | URL, _init?: RequestInit) =>
+                okJson({ rows: [], totals: [] }),
         );
         global.fetch = fetchMock as unknown as typeof fetch;
 

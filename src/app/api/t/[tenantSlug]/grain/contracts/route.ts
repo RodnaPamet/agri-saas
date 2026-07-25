@@ -8,11 +8,16 @@ import { CreateContractSchema } from '@/app-layer/schemas/grain.schemas';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { withValidatedBody } from '@/lib/validation/route';
 import { parseCsvEnumParam } from '@/lib/validation/query-params';
+import { summariseContractBook } from '@/lib/grain/contract-value';
+import { CONTRACTED_COMMITMENT_STATUSES } from '@/app-layer/domain/contract-status';
 import { jsonResponse } from '@/lib/api-response';
 
 /**
  * Contracts — grain marketing / supply contracts (GRAIN module).
- *   GET  → list contracts (newest first; ?status= / ?type= / ?seasonId= filters).
+ *   GET  → `{ rows, totals }` — contracts newest first (?status= /
+ *          ?type= / ?seasonId= filters), each row decorated with its
+ *          `fulfilment` position and Decimal-exact `valueAmount`, plus
+ *          per-currency book totals for the live commitment statuses.
  *   POST → create a contract.
  *
  * `status` and `type` are MULTI-value: the list toolbar declares both
@@ -32,12 +37,19 @@ export const GET = withApiErrorHandling(
         const ctx = await getTenantCtx(params, req);
         await assertModuleEnabled(ctx, 'GRAIN');
         const sp = req.nextUrl.searchParams;
-        const contracts = await listContracts(ctx, {
+        const rows = await listContracts(ctx, {
             status: parseCsvEnumParam(sp.get('status'), StatusMember, 'status'),
             type: parseCsvEnumParam(sp.get('type'), TypeMember, 'type'),
             seasonId: sp.get('seasonId') ?? undefined,
         });
-        return jsonResponse(contracts);
+        // Book totals are computed from the SAME bounded page, so they
+        // can never disagree with the rows on screen, and are grouped by
+        // currency — never summed across. Scoped to the live commitment
+        // statuses: a DRAFT is not part of the book.
+        return jsonResponse({
+            rows,
+            totals: summariseContractBook(rows, CONTRACTED_COMMITMENT_STATUSES),
+        });
     },
 );
 

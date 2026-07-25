@@ -248,6 +248,7 @@ model Tenant {
   // Enterprise-grain domain.
   contracts                Contract[]
   yieldRecords             YieldRecord[]
+  grainDeliveries          GrainDelivery[]
   // Phase 1 — inventory ledger + journal.
   inventoryLots            InventoryLot[]
   stockTransactions        StockTransaction[]
