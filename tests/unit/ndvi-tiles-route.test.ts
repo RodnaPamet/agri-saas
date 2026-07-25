@@ -4,9 +4,22 @@
  * Proves the route wiring around the Google Earth Engine NDVI service:
  *   - reports `configured:false` when GEE has no creds (no EE call);
  *   - returns `tileUrl:''` when the location has no mapped field;
- *   - on a cache MISS, generates a tile URL + writes it to Redis;
- *   - on a cache HIT, returns the cached URL without calling GEE;
+ *   - on a cache MISS, generates a tile URL + writes the
+ *     `{ tileUrl, acquiredDate }` pair to Redis under the `clip3` key;
+ *   - on a cache HIT, returns the cached URL + cached acquisition date
+ *     without calling GEE;
  *   - degrades softly (`error:'generation_failed'`) when GEE throws.
+ *
+ * This is the CANONICAL tile-route test — the other four index routes are thin
+ * mirrors of the shared-handler wiring, so the acquisition-date contract is
+ * covered once, here:
+ *   - the response `date` is the date Earth Engine reported for the imagery,
+ *     NOT the `?date=` the client asked for (the adaptive EE window legitimately
+ *     falls back to older imagery, and labelling that with a fresh date lies);
+ *   - `acquiredDate:null` (EE couldn't report one) falls back to the requested
+ *     window end;
+ *   - a legacy/unparseable cache entry (e.g. a `clip2`-era bare URL string)
+ *     falls through and regenerates instead of throwing.
  *
  * GEE, the parcels source, and Redis are all mocked — no network/DB.
  */
@@ -18,7 +31,12 @@ jest.mock('@/app-layer/context', () => ({
 }));
 
 const isGeeConfiguredMock = jest.fn<boolean, []>();
-const getNdviTileUrlMock = jest.fn<Promise<string>, [unknown, unknown, unknown?]>();
+// `get<Index>TileUrl` resolves an `IndexTileResult` — the tile template PLUS the
+// real acquisition date of the composite it was rendered from.
+const getNdviTileUrlMock = jest.fn<
+    Promise<{ tileUrl: string; acquiredDate: string | null }>,
+    [unknown, unknown, unknown?]
+>();
 jest.mock('@/lib/agro/earth-engine', () => ({
     isGeeConfigured: () => isGeeConfiguredMock(),
     getNdviTileUrl: (aoi: unknown, win: unknown, clip?: unknown) => getNdviTileUrlMock(aoi, win, clip),
@@ -48,6 +66,8 @@ function call(qs: string) {
     return GET(req, { params: Promise.resolve({ tenantSlug: 'acme' }) });
 }
 
+const TILE_URL = 'https://earthengine.googleapis.com/v1/projects/p/maps/m/tiles/{z}/{x}/{y}';
+
 beforeEach(() => {
     jest.clearAllMocks();
     redisInstance = { get: redisGet, set: redisSet };
@@ -56,7 +76,10 @@ beforeEach(() => {
     listLocationParcelsMock.mockResolvedValue({ bounds: [10, 40, 11, 41], parcels: [] });
     redisGet.mockResolvedValue(null);
     redisSet.mockResolvedValue('OK');
-    getNdviTileUrlMock.mockResolvedValue('https://earthengine.googleapis.com/v1/projects/p/maps/m/tiles/{z}/{x}/{y}');
+    // Default: EE reports imagery from exactly the requested window end, so the
+    // response `date` and the `?date=` agree (the divergent cases get their own
+    // tests below).
+    getNdviTileUrlMock.mockResolvedValue({ tileUrl: TILE_URL, acquiredDate: '2026-06-15' });
 });
 
 it('reports not-configured without calling GEE when creds are absent', async () => {
@@ -87,9 +110,11 @@ it('generates + caches a tile URL on a cache miss', async () => {
         { start: '2026-05-16', end: '2026-06-15' },
         undefined,
     );
+    // The cached VALUE is the `{ tileUrl, acquiredDate }` pair (not a bare URL),
+    // under the `clip3` key generation that shape change forced.
     expect(redisSet).toHaveBeenCalledWith(
-        'ndvi:tile:tenant-1:loc-1:clip2:2026-06-15',
-        body.tileUrl,
+        'ndvi:tile:tenant-1:loc-1:clip3:2026-06-15',
+        JSON.stringify({ tileUrl: body.tileUrl, acquiredDate: '2026-06-15' }),
         'EX',
         21_600,
     );
@@ -112,13 +137,82 @@ it("clips the raster to the parcels' polygons (union), not the bbox", async () =
     );
 });
 
-it('returns the cached URL without calling GEE on a cache hit', async () => {
-    redisGet.mockResolvedValue('https://earthengine.googleapis.com/cached/{z}/{x}/{y}');
+it('returns the cached URL + cached acquisition date without calling GEE on a cache hit', async () => {
+    redisGet.mockResolvedValue(
+        JSON.stringify({
+            tileUrl: 'https://earthengine.googleapis.com/cached/{z}/{x}/{y}',
+            acquiredDate: '2026-06-09',
+        }),
+    );
     const res = await call('locationId=loc-1&date=2026-06-15');
     const body = await res.json();
     expect(body.tileUrl).toBe('https://earthengine.googleapis.com/cached/{z}/{x}/{y}');
+    // The date rides along in the cache entry — a hit must not relabel stale
+    // imagery with the requested date.
+    expect(body.date).toBe('2026-06-09');
     expect(getNdviTileUrlMock).not.toHaveBeenCalled();
     expect(redisSet).not.toHaveBeenCalled();
+});
+
+it('reports the EE acquisition date, not the requested date, when the two differ', async () => {
+    // The adaptive EE window falls back to the latest available imagery when the
+    // requested window is empty (wall clock ahead of the S2 archive, or a cloudy
+    // stretch) — so the composite is genuinely older than what was asked for.
+    getNdviTileUrlMock.mockResolvedValue({ tileUrl: TILE_URL, acquiredDate: '2026-06-02' });
+    const res = await call('locationId=loc-1&date=2026-06-15');
+    const body = await res.json();
+    expect(body.date).toBe('2026-06-02');
+    expect(body.tileUrl).toBe(TILE_URL);
+    // ...and the honest date is what gets cached, keyed by the REQUESTED end.
+    expect(redisSet).toHaveBeenCalledWith(
+        'ndvi:tile:tenant-1:loc-1:clip3:2026-06-15',
+        JSON.stringify({ tileUrl: TILE_URL, acquiredDate: '2026-06-02' }),
+        'EX',
+        21_600,
+    );
+});
+
+it('falls back to the requested window end when EE reports no acquisition date', async () => {
+    getNdviTileUrlMock.mockResolvedValue({ tileUrl: TILE_URL, acquiredDate: null });
+    const res = await call('locationId=loc-1&date=2026-06-15');
+    const body = await res.json();
+    expect(body.configured).toBe(true);
+    expect(body.tileUrl).toBe(TILE_URL);
+    expect(body.date).toBe('2026-06-15');
+    // `null` is cached verbatim — a later hit re-applies the same fallback.
+    expect(redisSet).toHaveBeenCalledWith(
+        'ndvi:tile:tenant-1:loc-1:clip3:2026-06-15',
+        JSON.stringify({ tileUrl: TILE_URL, acquiredDate: null }),
+        'EX',
+        21_600,
+    );
+});
+
+it('regenerates instead of throwing when a legacy/unreadable cache entry is read', async () => {
+    // A `clip2`-era entry was a BARE URL string — `JSON.parse` throws on it. The
+    // key generation bumped to `clip3` precisely so this cannot happen, but the
+    // handler must still fall through and regenerate rather than 500.
+    redisGet.mockResolvedValue('https://earthengine.googleapis.com/legacy/{z}/{x}/{y}');
+    const res = await call('locationId=loc-1&date=2026-06-15');
+    const body = await res.json();
+    expect(body.tileUrl).toBe(TILE_URL);
+    expect(body.date).toBe('2026-06-15');
+    expect(getNdviTileUrlMock).toHaveBeenCalledTimes(1);
+    expect(redisSet).toHaveBeenCalledWith(
+        'ndvi:tile:tenant-1:loc-1:clip3:2026-06-15',
+        JSON.stringify({ tileUrl: TILE_URL, acquiredDate: '2026-06-15' }),
+        'EX',
+        21_600,
+    );
+});
+
+it('regenerates when a cached entry parses but carries no tileUrl', async () => {
+    // Parses cleanly, wrong shape — must not be served as a tile URL.
+    redisGet.mockResolvedValue(JSON.stringify({ acquiredDate: '2026-06-09' }));
+    const res = await call('locationId=loc-1&date=2026-06-15');
+    const body = await res.json();
+    expect(body.tileUrl).toBe(TILE_URL);
+    expect(getNdviTileUrlMock).toHaveBeenCalledTimes(1);
 });
 
 it('degrades softly when GEE generation throws', async () => {

@@ -389,13 +389,6 @@ export const env = createEnv({
 
         // Agro-intel — NDVI raster tile source for the location map's
         // satellite-vegetation overlay. An XYZ `{z}/{x}/{y}` template URL.
-        // Optional + default '' — when unset the NDVI toggle renders a
-        // "configure a tile source" empty state instead of a raster layer.
-        // Real satellite provisioning (Sentinel/Planet/EOX) is a follow-up;
-        // the deliverable here is that the layer renders when a URL is set.
-        // CC0 / openly-licensed sources only.
-        AGRO_NDVI_TILE_URL: z.string().default(''),
-
         // Google Earth Engine (NDVI overlay). Both OPTIONAL — when either
         // is unset the NDVI service reports "not configured" and the map
         // overlay stays off, so CI + contributor builds need no GEE creds.
@@ -626,7 +619,6 @@ export const env = createEnv({
         AI_EVAL_AB_BACKEND: process.env.AI_EVAL_AB_BACKEND,
         AI_RISK_PLAN_REQUIRED: process.env.AI_RISK_PLAN_REQUIRED,
         AGRO_DATASTREAMS_ENABLED: process.env.AGRO_DATASTREAMS_ENABLED,
-        AGRO_NDVI_TILE_URL: process.env.AGRO_NDVI_TILE_URL,
         GEE_PROJECT_ID: process.env.GEE_PROJECT_ID,
         GEE_SERVICE_ACCOUNT_KEY: process.env.GEE_SERVICE_ACCOUNT_KEY,
 

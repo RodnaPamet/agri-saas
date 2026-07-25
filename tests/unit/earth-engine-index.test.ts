@@ -12,6 +12,13 @@
  * handed to EE for a negative-over-land index like NDMI has `min < 0`, so
  * land pixels are no longer clamped to one colour.
  *
+ * It also covers the ACQUISITION-DATE seam: `getIndexTileUrl` resolves an
+ * `{ tileUrl, acquiredDate }` pair, where `acquiredDate` comes from
+ * `collection.aggregate_max('system:time_start')`. That lookup is fail-soft BY
+ * CONTRACT — an EE error or a non-numeric value must yield `acquiredDate:null`
+ * while STILL resolving the tile URL, because a missing date label must never
+ * sink an otherwise-good composite.
+ *
  * `@google/earthengine` is replaced with a recording fake — no network.
  */
 
@@ -20,11 +27,36 @@ interface VisRec {
     max: number;
     palette: string[];
 }
+/**
+ * `aggregate_max(...).evaluate(cb)` behaviour, per test. `mode` drives the
+ * three branches `resolveAcquiredDate` has to survive:
+ *   `value` — `cb(millis)`, the happy path;
+ *   `error` — `cb(null, err)`, EE reported a failure;
+ *   `throw` — `aggregate_max` itself blows up (member missing / EE internal).
+ */
+interface AggregateRec {
+    mode: 'value' | 'error' | 'throw';
+    value: unknown;
+}
 const mockRec: {
     nd: string[][];
     expr: { formula: string; vars: string[] }[];
     getMapVis: VisRec[];
-} = { nd: [], expr: [], getMapVis: [] };
+    /** Every property name handed to `aggregate_max`. */
+    aggregateProps: string[];
+    aggregate: AggregateRec;
+} = {
+    nd: [],
+    expr: [],
+    getMapVis: [],
+    aggregateProps: [],
+    // 2026-06-12T10:00:00Z — deliberately NOT the requested window end, so a
+    // test asserting the date proves it came from EE and not from `win.end`.
+    aggregate: { mode: 'value', value: Date.UTC(2026, 5, 12, 10, 0, 0) },
+};
+
+/** The `YYYY-MM-DD` the default `mockRec.aggregate.value` must render as. */
+const ACQUIRED_DATE = '2026-06-12';
 
 jest.mock('@/env', () => ({
     env: {
@@ -71,6 +103,23 @@ jest.mock('@google/earthengine', () => {
         return collection;
     };
     collection.median = () => img;
+    // Acquisition-date lookup. Reads `mockRec` lazily (inside the closures) —
+    // the mock factory body runs before the `const mockRec` initializer.
+    collection.aggregate_max = (...a: unknown[]) => {
+        mockRec.aggregateProps.push(a[0] as string);
+        if (mockRec.aggregate.mode === 'throw') {
+            throw new Error('aggregate_max exploded');
+        }
+        return {
+            evaluate: (cb: (v: unknown, err?: unknown) => void) => {
+                if (mockRec.aggregate.mode === 'error') {
+                    cb(null, new Error('EE aggregate failed'));
+                    return;
+                }
+                cb(mockRec.aggregate.value);
+            },
+        };
+    };
     return {
         __esModule: true,
         default: {
@@ -99,14 +148,20 @@ beforeEach(() => {
     mockRec.nd = [];
     mockRec.expr = [];
     mockRec.getMapVis = [];
+    mockRec.aggregateProps = [];
+    mockRec.aggregate = { mode: 'value', value: Date.UTC(2026, 5, 12, 10, 0, 0) };
 });
 
 describe.each<VegetationIndex>(['ndvi', 'ndmi', 'ndre', 'gndvi'])(
     'ratio index %s',
     (id) => {
         it('feeds its band pair + recipe display window into getMap', async () => {
-            const url = await getIndexTileUrl(id, AOI, WIN);
-            expect(url).toContain('{z}/{x}/{y}');
+            const { tileUrl, acquiredDate } = await getIndexTileUrl(id, AOI, WIN);
+            expect(tileUrl).toContain('{z}/{x}/{y}');
+            // The date is EE's, read off the collection — not the requested
+            // `WIN.end` (2026-06-15), which is what makes it honest.
+            expect(acquiredDate).toBe(ACQUIRED_DATE);
+            expect(mockRec.aggregateProps).toEqual(['system:time_start']);
 
             const recipe = INDEX_RECIPES[id];
             // normalizedDifference was called with the recipe's band pair.
@@ -125,8 +180,9 @@ describe.each<VegetationIndex>(['ndvi', 'ndmi', 'ndre', 'gndvi'])(
 );
 
 it('EVI feeds the enhanced-VI expression (3 bands) + display window into getMap', async () => {
-    const url = await getIndexTileUrl('evi', AOI, WIN);
-    expect(url).toContain('{z}/{x}/{y}');
+    const { tileUrl, acquiredDate } = await getIndexTileUrl('evi', AOI, WIN);
+    expect(tileUrl).toContain('{z}/{x}/{y}');
+    expect(acquiredDate).toBe(ACQUIRED_DATE);
     expect(mockRec.expr).toHaveLength(1);
     expect(mockRec.expr[0].formula).toContain('2.5');
     expect(mockRec.expr[0].vars.sort()).toEqual(['BLUE', 'NIR', 'RED']);
@@ -143,4 +199,39 @@ it('NDMI display window includes negatives so land pixels are not clamped', asyn
     // low-end colour → one flat block.
     await getIndexTileUrl('ndmi', AOI, WIN);
     expect(mockRec.getMapVis[0].min).toBeLessThan(0);
+});
+
+describe('acquisition date is fail-soft', () => {
+    // The date is a LABEL. Losing it must degrade to `null` — never reject the
+    // tile request, which is the whole reason the overlay renders at all.
+
+    it('resolves acquiredDate:null (tile URL intact) when EE reports an error', async () => {
+        mockRec.aggregate = { mode: 'error', value: null };
+        const { tileUrl, acquiredDate } = await getIndexTileUrl('ndvi', AOI, WIN);
+        expect(tileUrl).toContain('{z}/{x}/{y}');
+        expect(acquiredDate).toBeNull();
+    });
+
+    it.each<[string, unknown]>([
+        ['null', null],
+        ['undefined (empty collection)', undefined],
+        ['a string', '2026-06-12'],
+        ['NaN', Number.NaN],
+        ['Infinity', Number.POSITIVE_INFINITY],
+    ])('resolves acquiredDate:null when EE yields %s', async (_label, value) => {
+        mockRec.aggregate = { mode: 'value', value };
+        const { tileUrl, acquiredDate } = await getIndexTileUrl('ndvi', AOI, WIN);
+        expect(tileUrl).toContain('{z}/{x}/{y}');
+        expect(acquiredDate).toBeNull();
+    });
+
+    it('resolves acquiredDate:null when aggregate_max itself throws', async () => {
+        mockRec.aggregate = { mode: 'throw', value: null };
+        const { tileUrl, acquiredDate } = await getIndexTileUrl('ndvi', AOI, WIN);
+        expect(tileUrl).toContain('{z}/{x}/{y}');
+        expect(acquiredDate).toBeNull();
+        // getMap still ran with the recipe window — the failed date lookup did
+        // not short-circuit the render.
+        expect(mockRec.getMapVis).toHaveLength(1);
+    });
 });

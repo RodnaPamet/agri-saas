@@ -28,6 +28,14 @@ import ee from '@google/earthengine';
 import { env } from '@/env';
 import type { VegetationIndex } from '@/lib/agro/vegetation-indices';
 import { INDEX_RECIPES } from '@/lib/agro/index-recipes';
+import { isGeeConfigured } from '@/lib/agro/gee-config';
+
+// The credential predicate lives in the EE-free `gee-config` module so a page
+// shell / health probe / startup hook can ask "is satellite on?" without
+// importing this module's heavy `@google/earthengine` client. Re-exported here
+// because every existing caller (and the route unit tests that mock
+// `@/lib/agro/earth-engine`) imports it from this path.
+export { isGeeConfigured };
 
 /**
  * Loosely-typed Earth Engine value. The EE client is a fluent, deeply
@@ -49,11 +57,6 @@ export interface NdviWindow {
     start: string;
     /** Exclusive end date, `YYYY-MM-DD`. */
     end: string;
-}
-
-/** True only when BOTH the project id and service-account key are set. */
-export function isGeeConfigured(): boolean {
-    return Boolean(env.GEE_PROJECT_ID && env.GEE_SERVICE_ACCOUNT_KEY);
 }
 
 // Earth Engine auth + initialize is process-global and must run exactly
@@ -154,8 +157,62 @@ function adaptiveS2Collection(region: EeImage, win: NdviWindow): EeImage {
 }
 
 /**
+ * The date of the NEWEST acquisition actually in `collection`, `YYYY-MM-DD`.
+ *
+ * Load-bearing for honest labelling: because {@link adaptiveS2Collection} may
+ * silently fall back to a window ending on the latest available acquisition,
+ * the composite can be older than the date the caller asked for — so reporting
+ * the REQUESTED date as "as of" would be a lie. Callers surface this value
+ * instead.
+ *
+ * Fail-soft by contract: any EE hiccup resolves `null` (caller falls back to
+ * the requested date) rather than sinking a tile/means request that otherwise
+ * succeeded. Costs one extra `evaluate`, issued in parallel with the main one.
+ */
+async function resolveAcquiredDate(collection: EeImage): Promise<string | null> {
+    try {
+        const aggregated = (
+            collection as unknown as {
+                aggregate_max: (prop: string) => {
+                    evaluate: (cb: (value: unknown, err?: unknown) => void) => void;
+                };
+            }
+        ).aggregate_max('system:time_start');
+
+        const millis = await new Promise<unknown>((resolve, reject) => {
+            aggregated.evaluate((value: unknown, err?: unknown) => {
+                if (err) {
+                    reject(new Error(`EE aggregate_max failed: ${String(err)}`));
+                    return;
+                }
+                resolve(value);
+            });
+        });
+
+        if (typeof millis !== 'number' || !Number.isFinite(millis)) return null;
+        return new Date(millis).toISOString().slice(0, 10);
+    } catch {
+        // Never break an otherwise-good composite over a missing label.
+        return null;
+    }
+}
+
+/** A rendered index composite: its ephemeral tile template + the imagery's real date. */
+export interface IndexTileResult {
+    /** Ephemeral XYZ `{z}/{x}/{y}` tile-URL template from `getMap`. */
+    tileUrl: string;
+    /**
+     * `YYYY-MM-DD` of the newest acquisition in the composite, or `null` when
+     * EE couldn't report it. May be OLDER than the requested window end — see
+     * {@link adaptiveS2Collection} — which is exactly why it is returned.
+     */
+    acquiredDate: string | null;
+}
+
+/**
  * Build a recent cloud-masked Sentinel-2 composite of `index` for `aoi` over
- * the `[start, end)` window and return its ephemeral XYZ tile-URL template.
+ * the `[start, end)` window and return its ephemeral XYZ tile-URL template
+ * alongside the imagery's ACTUAL acquisition date.
  *
  * Shared pipeline for every index: filter S2_SR_HARMONIZED to the bounds +
  * date window + <60% cloud, drop cloud/shadow/snow pixels via the SCL
@@ -168,7 +225,7 @@ export async function getIndexTileUrl(
     aoi: NdviAoi,
     win: NdviWindow,
     clipGeometry?: unknown,
-): Promise<string> {
+): Promise<IndexTileResult> {
     await initEarthEngine();
 
     const recipe = INDEX_RECIPES[index];
@@ -198,20 +255,25 @@ export async function getIndexTileUrl(
 
     const visParams = { min: recipe.min, max: recipe.max, palette: recipe.palette };
 
-    const urlFormat = await new Promise<string>((resolve, reject) => {
-        composite.getMap(
-            visParams,
-            (map: { urlFormat?: string } | null, err?: unknown) => {
-                if (err || !map?.urlFormat) {
-                    reject(new Error(`EE getMap failed: ${String(err ?? 'no urlFormat')}`));
-                    return;
-                }
-                resolve(map.urlFormat);
-            },
-        );
-    });
+    // Both round-trips are issued together — the date label must not add a
+    // serial hop to the tile request. `resolveAcquiredDate` never rejects.
+    const [urlFormat, acquiredDate] = await Promise.all([
+        new Promise<string>((resolve, reject) => {
+            composite.getMap(
+                visParams,
+                (map: { urlFormat?: string } | null, err?: unknown) => {
+                    if (err || !map?.urlFormat) {
+                        reject(new Error(`EE getMap failed: ${String(err ?? 'no urlFormat')}`));
+                        return;
+                    }
+                    resolve(map.urlFormat);
+                },
+            );
+        }),
+        resolveAcquiredDate(collection),
+    ]);
 
-    return urlFormat;
+    return { tileUrl: urlFormat, acquiredDate };
 }
 
 /** Field-area mean vegetation-index readings (the AI-briefing input). */
@@ -227,6 +289,13 @@ export interface FieldIndexMeans {
      * values indicate drier canopy / water stress. `null` when unavailable.
      */
     ndmi: number | null;
+    /**
+     * `YYYY-MM-DD` of the newest acquisition the means were reduced over, or
+     * `null` when EE couldn't report it. May be OLDER than the requested window
+     * end (the adaptive-window fallback), so callers label with THIS, not the
+     * date they asked for.
+     */
+    acquiredDate: string | null;
 }
 
 /**
@@ -280,21 +349,24 @@ export async function getIndexMeansForBounds(
         bestEffort: true,
     });
 
-    const info = await new Promise<Record<string, unknown>>((resolve, reject) => {
-        reduced.evaluate((value: unknown, err?: unknown) => {
-            if (err) {
-                reject(new Error(`EE reduceRegion failed: ${String(err)}`));
-                return;
-            }
-            resolve((value ?? {}) as Record<string, unknown>);
-        });
-    });
+    const [info, acquiredDate] = await Promise.all([
+        new Promise<Record<string, unknown>>((resolve, reject) => {
+            reduced.evaluate((value: unknown, err?: unknown) => {
+                if (err) {
+                    reject(new Error(`EE reduceRegion failed: ${String(err)}`));
+                    return;
+                }
+                resolve((value ?? {}) as Record<string, unknown>);
+            });
+        }),
+        resolveAcquiredDate(collection),
+    ]);
 
     const round3 = (v: unknown): number | null =>
         typeof v === 'number' && Number.isFinite(v) ? Math.round(v * 1000) / 1000 : null;
 
     // Band names are the uppercased index names from `bandFn`'s `.rename(...)`.
-    return { ndvi: round3(info.NDVI), ndmi: round3(info.NDMI) };
+    return { ndvi: round3(info.NDVI), ndmi: round3(info.NDMI), acquiredDate };
 }
 
 /**
@@ -341,32 +413,35 @@ export async function getIndexMeansForPolygon(
         bestEffort: true,
     });
 
-    const info = await new Promise<Record<string, unknown>>((resolve, reject) => {
-        reduced.evaluate((value: unknown, err?: unknown) => {
-            if (err) {
-                reject(new Error(`EE reduceRegion failed: ${String(err)}`));
-                return;
-            }
-            resolve((value ?? {}) as Record<string, unknown>);
-        });
-    });
+    const [info, acquiredDate] = await Promise.all([
+        new Promise<Record<string, unknown>>((resolve, reject) => {
+            reduced.evaluate((value: unknown, err?: unknown) => {
+                if (err) {
+                    reject(new Error(`EE reduceRegion failed: ${String(err)}`));
+                    return;
+                }
+                resolve((value ?? {}) as Record<string, unknown>);
+            });
+        }),
+        resolveAcquiredDate(collection),
+    ]);
 
     const round3 = (v: unknown): number | null =>
         typeof v === 'number' && Number.isFinite(v) ? Math.round(v * 1000) / 1000 : null;
 
-    return { ndvi: round3(info.NDVI), ndmi: round3(info.NDMI) };
+    return { ndvi: round3(info.NDVI), ndmi: round3(info.NDMI), acquiredDate };
 }
 
 // Per-index named exports — one per `/agro/<index>-tiles` route. Each is a
 // thin wrapper over `getIndexTileUrl` so a route (and its unit test) can
 // import + mock a single stable function.
-export const getNdviTileUrl = (aoi: NdviAoi, win: NdviWindow, clipGeometry?: unknown): Promise<string> =>
+export const getNdviTileUrl = (aoi: NdviAoi, win: NdviWindow, clipGeometry?: unknown): Promise<IndexTileResult> =>
     getIndexTileUrl('ndvi', aoi, win, clipGeometry);
-export const getNdmiTileUrl = (aoi: NdviAoi, win: NdviWindow, clipGeometry?: unknown): Promise<string> =>
+export const getNdmiTileUrl = (aoi: NdviAoi, win: NdviWindow, clipGeometry?: unknown): Promise<IndexTileResult> =>
     getIndexTileUrl('ndmi', aoi, win, clipGeometry);
-export const getNdreTileUrl = (aoi: NdviAoi, win: NdviWindow, clipGeometry?: unknown): Promise<string> =>
+export const getNdreTileUrl = (aoi: NdviAoi, win: NdviWindow, clipGeometry?: unknown): Promise<IndexTileResult> =>
     getIndexTileUrl('ndre', aoi, win, clipGeometry);
-export const getGndviTileUrl = (aoi: NdviAoi, win: NdviWindow, clipGeometry?: unknown): Promise<string> =>
+export const getGndviTileUrl = (aoi: NdviAoi, win: NdviWindow, clipGeometry?: unknown): Promise<IndexTileResult> =>
     getIndexTileUrl('gndvi', aoi, win, clipGeometry);
-export const getEviTileUrl = (aoi: NdviAoi, win: NdviWindow, clipGeometry?: unknown): Promise<string> =>
+export const getEviTileUrl = (aoi: NdviAoi, win: NdviWindow, clipGeometry?: unknown): Promise<IndexTileResult> =>
     getIndexTileUrl('evi', aoi, win, clipGeometry);

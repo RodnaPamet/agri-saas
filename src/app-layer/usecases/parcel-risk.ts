@@ -2,12 +2,25 @@
  * Per-parcel satellite risk analysis (#13).
  *
  * For a single parcel, reduce its exact geometry over a recent cloud-masked
- * Sentinel-2 window to mean NDVI (vegetation) + NDMI (moisture), derive a
- * traffic-light risk level for each, and (when configured) attach a short
- * Claude summary — reusing the fail-safe `generateFieldBriefing` AI wrapper.
- * Cached per parcel per day in Redis. Degrades gracefully: with no Earth-Engine
- * credentials the indices are null and the levels are "unknown" — the page
- * still renders the parcel + the insurer "ask for offer" action.
+ * Sentinel-2 window to mean NDVI (vegetation) + NDMI (moisture) and derive a
+ * traffic-light risk level for each. Numbers and levels only — there is no
+ * per-parcel prose summary (see the fork note below). Degrades gracefully: with
+ * no Earth-Engine credentials the indices are null and the levels are "unknown"
+ * — the page still renders the parcel + the insurer "ask for offer" action.
+ *
+ * Cached per parcel per day in Redis, but ONLY when the analysis actually had
+ * imagery. Caching a degraded ("unknown") reading would pin "No data" on the
+ * parcel for the whole TTL after a one-off Earth-Engine hiccup, long past the
+ * point where a retry would have succeeded.
+ *
+ * NO per-parcel AI summary — deliberate. The module used to advertise a Claude
+ * summary it never produced (`summary` was hardcoded `null`). The whole-farm
+ * briefing (`satellite-briefing.ts`) already delivers localised AI prose over
+ * the same readings in ONE call; a per-parcel variant would mean one Claude
+ * call per card per page render, and this usecase has no locale to generate in
+ * (the client renders the levels through next-intl). The traffic-light levels
+ * plus the NDVI/NDMI numbers carry the signal, so the promise was removed
+ * rather than implemented.
  *
  * @module app-layer/usecases/parcel-risk
  */
@@ -36,8 +49,12 @@ export interface ParcelRiskResult {
     moisture: RiskLevel;
     /** Worst of the two — the headline risk for the parcel. */
     overall: RiskLevel;
-    /** Short AI summary (Claude), or null when unconfigured / it declined. */
-    summary: string | null;
+    /**
+     * `YYYY-MM-DD` of the satellite pass the readings came from, or null when
+     * there was no reading. NOT the request date: the composite falls back to
+     * the latest available window, so this can be older than today.
+     */
+    acquiredDate: string | null;
     /** ISO timestamp the analysis was produced. */
     generatedAt: string;
 }
@@ -108,6 +125,7 @@ export async function analyzeParcelRisk(
     const configured = isGeeConfigured();
     let ndvi: number | null = null;
     let ndmi: number | null = null;
+    let acquiredDate: string | null = null;
     if (configured && geometry) {
         const win = {
             start: ymd(new Date(now.getTime() - WINDOW_DAYS * 86_400_000)),
@@ -117,6 +135,7 @@ export async function analyzeParcelRisk(
             const means = await getIndexMeansForPolygon(geometry, win);
             ndvi = means.ndvi;
             ndmi = means.ndmi;
+            acquiredDate = means.acquiredDate;
         } catch {
             /* no clear pixels / EE error — leave null, degrade to "unknown" */
         }
@@ -126,12 +145,6 @@ export async function analyzeParcelRisk(
     const moisture = moistureLevel(ndmi);
     const overall = worst(vegetation, moisture);
     const areaHa = parcel.areaHa != null ? Number(parcel.areaHa) : null;
-
-    // No server-generated prose summary — it can't be localised server-side,
-    // and the traffic-light levels below carry the risk. A per-parcel Claude
-    // briefing (localised) is a clean follow-up seam; the whole-farm
-    // field-briefing shape doesn't fit a single parcel.
-    const summary: string | null = null;
 
     const result: ParcelRiskResult = {
         parcelId: parcel.id,
@@ -144,11 +157,18 @@ export async function analyzeParcelRisk(
         vegetation,
         moisture,
         overall,
-        summary,
+        acquiredDate,
         generatedAt: now.toISOString(),
     };
 
-    if (redis) {
+    // Cache ONLY a reading that actually had imagery — mirrors the
+    // `if (briefing && redis)` rule in `satellite-briefing.ts`. A transient EE
+    // failure (or a deploy with no credentials) yields null indices and an
+    // "unknown" level; persisting that would show the farmer "No data" for the
+    // full 6h TTL even after Earth Engine recovered. Uncached ⇒ the next
+    // request retries.
+    const hasImagery = ndvi != null || ndmi != null;
+    if (hasImagery && redis) {
         try {
             await redis.set(cacheKey, JSON.stringify(result), 'EX', CACHE_TTL_SECONDS);
         } catch {
@@ -157,11 +177,3 @@ export async function analyzeParcelRisk(
     }
     return result;
 }
-
-/** Traffic-light fill colours for the per-parcel risk map overlay (#13). */
-export const RISK_COLORS: Record<RiskLevel, string> = {
-    good: '#16a34a',
-    watch: '#d97706',
-    stress: '#dc2626',
-    unknown: '#94a3b8',
-};

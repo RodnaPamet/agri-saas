@@ -72,7 +72,7 @@ jest.mock('@/lib/hooks/use-tenant-swr', () => ({
                 mutate,
             };
         }
-        // /agro/ndvi-config, /operations, etc.
+        // /agro/<index>-tiles, /operations, etc.
         return { data: undefined, isLoading: false, error: null, mutate };
     },
 }));

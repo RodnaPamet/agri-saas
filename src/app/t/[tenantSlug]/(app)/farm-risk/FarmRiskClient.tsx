@@ -9,6 +9,7 @@ import { Heading } from '@/components/ui/typography';
 import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { StatusBadge } from '@/components/ui/status-badge';
+import { InfoTooltip } from '@/components/ui/tooltip';
 import { AskInsuranceModal } from './AskInsuranceModal';
 
 interface LocationOption {
@@ -30,7 +31,8 @@ interface ParcelRisk {
     vegetation: RiskLevel;
     moisture: RiskLevel;
     overall: RiskLevel;
-    summary: string | null;
+    /** Date of the satellite pass the readings came from — can be older than today. */
+    acquiredDate: string | null;
 }
 
 const LEVEL_VARIANT: Record<RiskLevel, 'success' | 'warning' | 'error' | 'neutral'> = {
@@ -40,7 +42,20 @@ const LEVEL_VARIANT: Record<RiskLevel, 'success' | 'warning' | 'error' | 'neutra
     unknown: 'neutral',
 };
 
-export function FarmRiskClient({ tenantSlug, locations }: { tenantSlug: string; locations: LocationOption[] }) {
+export function FarmRiskClient({
+    tenantSlug,
+    locations,
+    geeConfigured,
+}: {
+    tenantSlug: string;
+    locations: LocationOption[];
+    /**
+     * Whether this deployment has Earth-Engine credentials. Resolved on the
+     * server so the loading copy is honest on the FIRST paint — the per-parcel
+     * response also carries `configured`, but only after it lands.
+     */
+    geeConfigured: boolean;
+}) {
     const t = useTranslations('ag.risk');
     const [locationId, setLocationId] = useState<string>(locations[0]?.id ?? '');
 
@@ -95,6 +110,7 @@ export function FarmRiskClient({ tenantSlug, locations }: { tenantSlug: string; 
                                     locationId={locationId}
                                     fallbackName={p.name}
                                     areaHa={p.areaHa ?? null}
+                                    geeConfigured={geeConfigured}
                                 />
                             ))}
                         </ul>
@@ -110,11 +126,13 @@ function ParcelRiskCard({
     locationId,
     fallbackName,
     areaHa,
+    geeConfigured,
 }: {
     parcelId: string;
     locationId: string;
     fallbackName: string;
     areaHa: number | null;
+    geeConfigured: boolean;
 }) {
     const t = useTranslations('ag.risk');
     const tCrops = useTranslations('crops');
@@ -139,26 +157,56 @@ function ParcelRiskCard({
             </div>
 
             {riskQ.isLoading && !risk ? (
-                <p className="mt-2 text-sm text-content-subtle">{t('analyzing')}</p>
+                // Only claim imagery analysis when this deployment can actually
+                // do it. With no Earth-Engine credentials the request never
+                // touches a satellite pass, so it is just a load.
+                <p className="mt-2 text-sm text-content-subtle">
+                    {geeConfigured ? t('analyzing') : t('loading')}
+                </p>
             ) : risk ? (
                 <>
                     <div className="mt-3 grid grid-cols-2 gap-default text-sm">
                         <div>
                             <span className="text-xs text-content-subtle">{t('vegetation')}</span>
+                            {/* The badge is the signal; the raw index sits beside
+                                it with an InfoTooltip because "NDVI 0.62" means
+                                nothing to a farm operator on its own. */}
                             <div className="mt-0.5 flex items-center gap-tight">
                                 <StatusBadge variant={LEVEL_VARIANT[risk.vegetation]}>{levelLabel(risk.vegetation)}</StatusBadge>
-                                {risk.ndvi != null && <span className="text-xs text-content-muted tabular-nums">NDVI {risk.ndvi}</span>}
+                                {risk.ndvi != null && (
+                                    <span className="flex items-center gap-tight text-xs text-content-muted">
+                                        <span className="tabular-nums">NDVI {risk.ndvi}</span>
+                                        <InfoTooltip
+                                            content={t('ndviHelp')}
+                                            aria-label={t('ndviHelpLabel')}
+                                        />
+                                    </span>
+                                )}
                             </div>
                         </div>
                         <div>
                             <span className="text-xs text-content-subtle">{t('moisture')}</span>
                             <div className="mt-0.5 flex items-center gap-tight">
                                 <StatusBadge variant={LEVEL_VARIANT[risk.moisture]}>{levelLabel(risk.moisture)}</StatusBadge>
-                                {risk.ndmi != null && <span className="text-xs text-content-muted tabular-nums">NDMI {risk.ndmi}</span>}
+                                {risk.ndmi != null && (
+                                    <span className="flex items-center gap-tight text-xs text-content-muted">
+                                        <span className="tabular-nums">NDMI {risk.ndmi}</span>
+                                        <InfoTooltip
+                                            content={t('ndmiHelp')}
+                                            aria-label={t('ndmiHelpLabel')}
+                                        />
+                                    </span>
+                                )}
                             </div>
                         </div>
                     </div>
-                    {risk.summary && <p className="mt-2 text-sm text-content-muted">{risk.summary}</p>}
+                    {/* The date of the pass the readings came from — the composite
+                        can fall back to an older window, so this is the real one. */}
+                    {risk.acquiredDate && (
+                        <p className="mt-2 text-xs text-content-subtle">
+                            {t('asOf', { date: risk.acquiredDate })}
+                        </p>
+                    )}
                     {!risk.configured && <p className="mt-2 text-xs text-content-subtle">{t('unavailable')}</p>}
                     <div className="mt-3">
                         <AskInsuranceModal

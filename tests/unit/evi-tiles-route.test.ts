@@ -6,9 +6,11 @@
  * `handleIndexTiles` handler:
  *   - reports `configured:false` when GEE has no creds (no EE call);
  *   - returns `tileUrl:''` when the location has no mapped field;
- *   - on a cache MISS, generates a tile URL + writes it to Redis under the
- *     `ndre:` cache-key prefix (proves the route passes the right index);
- *   - on a cache HIT, returns the cached URL without calling GEE;
+ *   - on a cache MISS, generates a tile URL + writes the
+ *     `{ tileUrl, acquiredDate }` pair to Redis under the `evi:` cache-key
+ *     prefix (proves the route passes the right index);
+ *   - on a cache HIT, returns the cached URL + cached acquisition date without
+ *     calling GEE;
  *   - degrades softly (`error:'generation_failed'`) when GEE throws.
  *
  * GEE, the parcels source, and Redis are all mocked — no network/DB.
@@ -21,7 +23,10 @@ jest.mock('@/app-layer/context', () => ({
 }));
 
 const isGeeConfiguredMock = jest.fn<boolean, []>();
-const getEviTileUrlMock = jest.fn<Promise<string>, [unknown, unknown]>();
+const getEviTileUrlMock = jest.fn<
+    Promise<{ tileUrl: string; acquiredDate: string | null }>,
+    [unknown, unknown]
+>();
 jest.mock('@/lib/agro/earth-engine', () => ({
     isGeeConfigured: () => isGeeConfiguredMock(),
     getEviTileUrl: (aoi: unknown, win: unknown) => getEviTileUrlMock(aoi, win),
@@ -59,7 +64,10 @@ beforeEach(() => {
     listLocationParcelsMock.mockResolvedValue({ bounds: [10, 40, 11, 41], parcels: [] });
     redisGet.mockResolvedValue(null);
     redisSet.mockResolvedValue('OK');
-    getEviTileUrlMock.mockResolvedValue('https://earthengine.googleapis.com/v1/projects/p/maps/m/tiles/{z}/{x}/{y}');
+    getEviTileUrlMock.mockResolvedValue({
+        tileUrl: 'https://earthengine.googleapis.com/v1/projects/p/maps/m/tiles/{z}/{x}/{y}',
+        acquiredDate: '2026-06-15',
+    });
 });
 
 it('reports not-configured without calling GEE when creds are absent', async () => {
@@ -87,18 +95,24 @@ it('generates + caches a tile URL on a cache miss', async () => {
         { start: '2026-05-16', end: '2026-06-15' },
     );
     expect(redisSet).toHaveBeenCalledWith(
-        'evi:tile:tenant-1:loc-1:clip2:2026-06-15',
-        body.tileUrl,
+        'evi:tile:tenant-1:loc-1:clip3:2026-06-15',
+        JSON.stringify({ tileUrl: body.tileUrl, acquiredDate: '2026-06-15' }),
         'EX',
         21_600,
     );
 });
 
-it('returns the cached URL without calling GEE on a cache hit', async () => {
-    redisGet.mockResolvedValue('https://earthengine.googleapis.com/cached/{z}/{x}/{y}');
+it('returns the cached URL + cached acquisition date without calling GEE on a cache hit', async () => {
+    redisGet.mockResolvedValue(
+        JSON.stringify({
+            tileUrl: 'https://earthengine.googleapis.com/cached/{z}/{x}/{y}',
+            acquiredDate: '2026-06-09',
+        }),
+    );
     const res = await call('locationId=loc-1&date=2026-06-15');
     const body = await res.json();
     expect(body.tileUrl).toBe('https://earthengine.googleapis.com/cached/{z}/{x}/{y}');
+    expect(body.date).toBe('2026-06-09');
     expect(getEviTileUrlMock).not.toHaveBeenCalled();
     expect(redisSet).not.toHaveBeenCalled();
 });

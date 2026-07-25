@@ -84,7 +84,9 @@ beforeEach(() => {
     mocks.listMyFarmTasks.mockResolvedValue([] as never);
     mocks.listLogEntries.mockResolvedValue([] as never);
     mocks.getSeasonRecap.mockResolvedValue(null as never);
-    mocks.getIndexMeansForBounds.mockResolvedValue({ ndvi: null, ndmi: null });
+    // `FieldIndexMeans` carries the imagery's real acquisition date alongside
+    // the means; "no clear pixels" means all three are absent.
+    mocks.getIndexMeansForBounds.mockResolvedValue({ ndvi: null, ndmi: null, acquiredDate: null });
     mocks.generateFieldBriefing.mockResolvedValue({ headline: 'H', summary: 'S', actions: [] });
 });
 
@@ -110,7 +112,11 @@ describe('getFieldBriefing', () => {
             bounds: [1, 2, 3, 4],
             parcels: [{ cropType: 'wheat', areaHa: 40 }],
         } as never);
-        mocks.getIndexMeansForBounds.mockResolvedValue({ ndvi: 0.74, ndmi: 0.31 });
+        mocks.getIndexMeansForBounds.mockResolvedValue({
+            ndvi: 0.74,
+            ndmi: 0.31,
+            acquiredDate: '2026-06-12',
+        });
         mocks.getSeasonRecap.mockResolvedValue({
             seasonName: 'Summer', year: 2026, totalAreaHa: 40, totalYieldTonnes: 0,
             avgYieldTPerHa: null, activityCount: 3, topFields: [], costPerHa: null,

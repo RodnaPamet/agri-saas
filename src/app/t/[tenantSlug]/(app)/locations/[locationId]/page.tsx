@@ -236,6 +236,11 @@ export default function LocationDetailPage() {
     const cadastreEnabled = cadastreImportCfgQ.data?.enabled ?? false;
     const indexConfigured = indexQ.data?.configured ?? true;
     const indexTileUrl = indexQ.data?.tileUrl ?? '';
+    // The REAL acquisition date of the rendered composite (the route reports the
+    // imagery's own date, which the adaptive-window fallback can push earlier
+    // than the requested one). The picker keeps showing the user's selection;
+    // this drives the "imagery actually from …" note beside the legend.
+    const actualImageryYmd = indexQ.data?.date ?? '';
     const indexLoading = !!activeSpec && !indexQ.data && !indexQ.error;
 
     // Cadastre overlay availability — a server-only feature flag (the upstream
@@ -730,6 +735,17 @@ export default function LocationDetailPage() {
                                         className={cn('h-2 w-24 rounded-full', activeSpec.legendGradientClass)}
                                     />
                                     <span>{activeSpec.highLabel}</span>
+                                    {/* The composite falls back to the latest
+                                        available pass when the picked date has no
+                                        imagery, so the raster on screen can be
+                                        older than the date in the picker. Say so
+                                        whenever the two differ — silence would
+                                        label old imagery with a fresh date. */}
+                                    {actualImageryYmd && actualImageryYmd !== imageryYmd && (
+                                        <span className="text-content-muted">
+                                            {t('imageryActualDate', { date: actualImageryYmd })}
+                                        </span>
+                                    )}
                                     {/* Deep-links to the exact section of the
                                         imagery explainer for the active index. */}
                                     <a

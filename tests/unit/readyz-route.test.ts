@@ -135,3 +135,70 @@ describe('GET /api/readyz (GAP-13: Redis is a production dependency)', () => {
         expect(bodyStr).not.toContain('NOAUTH');
     });
 });
+
+describe('GET /api/readyz — capabilities.satellite is REPORTED, never GATING', () => {
+    const originalEnv = process.env;
+
+    beforeEach(() => {
+        jest.clearAllMocks();
+        process.env = { ...originalEnv };
+    });
+
+    afterAll(() => {
+        process.env = originalEnv;
+    });
+
+    it('stays 200/ready with NO Earth-Engine credentials and names the missing keys', async () => {
+        // Satellite is a DEGRADABLE capability, not a dependency: /farm-risk
+        // shows "no data" levels and the briefing runs without imagery, both
+        // by design. A missing key must therefore never 503 a healthy
+        // instance — but it must be visible, because otherwise a prod deploy
+        // that never got its keys goes dark with no signal at all.
+        process.env.REDIS_URL = 'redis://localhost:6379';
+        delete process.env.GEE_PROJECT_ID;
+        delete process.env.GEE_SERVICE_ACCOUNT_KEY;
+        pingMock.mockResolvedValue('PONG');
+        const { GET } = loadRouteFresh();
+
+        const res = await GET();
+        const body = await res.json();
+
+        expect(res.status).toBe(200);
+        expect(body.status).toBe('ready');
+        expect(body.capabilities.satellite).toEqual({
+            configured: false,
+            missing: ['GEE_PROJECT_ID', 'GEE_SERVICE_ACCOUNT_KEY'],
+        });
+        // Outside the probe's gating surfaces, so automation is unaffected.
+        expect(body.failed).not.toContain('satellite');
+        expect(body.checks).not.toHaveProperty('satellite');
+    });
+
+    it('reports configured:true when both keys are present', async () => {
+        process.env.REDIS_URL = 'redis://localhost:6379';
+        process.env.GEE_PROJECT_ID = 'my-ee-project';
+        process.env.GEE_SERVICE_ACCOUNT_KEY = '{"type":"service_account"}';
+        pingMock.mockResolvedValue('PONG');
+        const { GET } = loadRouteFresh();
+
+        const res = await GET();
+        const body = await res.json();
+
+        expect(res.status).toBe(200);
+        expect(body.capabilities.satellite).toEqual({ configured: true, missing: [] });
+    });
+
+    it('never echoes the credential VALUES into the probe body', async () => {
+        process.env.REDIS_URL = 'redis://localhost:6379';
+        process.env.GEE_PROJECT_ID = 'secret-ee-project-id';
+        process.env.GEE_SERVICE_ACCOUNT_KEY = '{"private_key":"---BEGIN PRIVATE KEY---"}';
+        pingMock.mockResolvedValue('PONG');
+        const { GET } = loadRouteFresh();
+
+        const res = await GET();
+        const bodyStr = JSON.stringify(await res.json());
+
+        expect(bodyStr).not.toContain('secret-ee-project-id');
+        expect(bodyStr).not.toContain('PRIVATE KEY');
+    });
+});

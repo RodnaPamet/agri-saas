@@ -59,3 +59,8 @@ deleting the GRC risk module (keep it behind CERTIFICATION, off the farm nav).
 - **Map risk overlay deferred.** `RISK_COLORS` is exported for a future
   `riskColorById` MapCanvas side-channel (mirroring `soilColorById`); the page
   conveys the same risk via colored `StatusBadge`s for now.
+  > **Superseded 2026-07-25.** Both deferrals above were resolved by
+  > *closing* them: the `summary` DTO field and the `RISK_COLORS` export were
+  > REMOVED rather than implemented, because a docstring/DTO that describes an
+  > unbuilt feature reads as a delivered one. See
+  > `2026-07-25-farm-risk-honesty-reconciliation.md` for both fork decisions.

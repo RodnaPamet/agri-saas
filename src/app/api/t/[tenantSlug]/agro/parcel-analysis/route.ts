@@ -7,8 +7,11 @@ import { jsonResponse } from '@/lib/api-response';
 
 /**
  * Per-parcel satellite risk analysis (#13) — GET /agro/parcel-analysis?parcelId=.
- * Returns mean NDVI/NDMI + traffic-light risk levels + an optional Claude
- * summary. Degrades gracefully when Earth Engine / the AI key is absent.
+ * Returns mean NDVI/NDMI, the traffic-light risk levels derived from them, and
+ * the date of the satellite pass they came from. No prose summary — see the
+ * fork note in `@/app-layer/usecases/parcel-risk`. Degrades gracefully when
+ * Earth Engine is unconfigured or a pass yields no clear pixels: the readings
+ * are null and the levels are "unknown".
  */
 const QuerySchema = z.object({ parcelId: z.string().min(1) }).strip();
 
