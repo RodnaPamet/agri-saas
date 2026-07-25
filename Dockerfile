@@ -7,6 +7,21 @@ WORKDIR /app
 # package.json. Never `npm install` in an image build (it can mutate
 # the lockfile and resolve fresh versions, defeating reproducibility).
 COPY package.json package-lock.json ./
+# `patches/` MUST be present before `npm ci`, because the `postinstall`
+# hook is `patch-package` and it resolves patches relative to the CWD.
+# Without this COPY the build logged "No patch files found" and produced
+# an UNPATCHED node_modules — which stage 2 then inherits and stage 3
+# ships. The `COPY . .` in the builder stage brings patches/ in, but that
+# is AFTER the install, and nothing re-runs patch-package.
+#
+# This silently shipped the CSP-nonce bug that patches/next+*.patch
+# exists to fix: `createComponentStylesAndScripts` rendered a <script>
+# with no nonce, which script-src 'nonce-…' 'strict-dynamic' blocks. It
+# was invisible because the patch file WAS in the repo and CI asserted
+# against the local node_modules (where postinstall does see patches/),
+# so only the image was affected. Guarded by
+# tests/guards/csp-nonce-component-scripts-patch.test.ts.
+COPY patches ./patches
 RUN npm ci
 
 # ─── Stage 2: Builder ──────────────────────────────────────
