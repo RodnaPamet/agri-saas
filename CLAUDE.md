@@ -86,7 +86,7 @@ NOT a hand-edit on the VM. Back up any file before editing it (the
 
 ### Framework baseline
 
-**Next.js 16.2.6** (App Router) + **React 19.2** + **TypeScript 5.5**.
+**Next.js 16.2.11** (App Router) + **React 19.2** + **TypeScript 6.0**.
 The React 18 → 19 bump (#67) is complete: React 19 removed
 `propTypes`, function-component `defaultProps`, string refs and
 legacy context — the codebase carries none of those.
