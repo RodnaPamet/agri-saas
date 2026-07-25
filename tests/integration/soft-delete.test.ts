@@ -310,6 +310,8 @@ describeFn('Soft-Delete & Retention', () => {
                 'Asset', 'Risk', 'Control', 'Evidence', 'Policy',
                 'Vendor', 'FileRecord', 'Task', 'Finding',
                 'Audit', 'AuditCycle', 'AuditPack',
+                // Grain (2026-07-25) — see SOFT_DELETE_MODELS.
+                'Contract',
             ];
             for (const model of expected) {
                 expect(SOFT_DELETE_MODELS.has(model)).toBe(true);
