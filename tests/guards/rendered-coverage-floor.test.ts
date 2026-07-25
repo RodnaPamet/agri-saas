@@ -78,7 +78,13 @@ const ROOT = path.resolve(__dirname, '../..');
 // refetch wiring), trends-page-client (two-tab shell, Prices default),
 // market-trends-widget (headline + sparkline + tap-through), plus accumulated
 // rendered gains. Locked to the live count of 201.
-const RENDERED_TEST_FLOOR = 201;
+// Raised 201 → 210 (grain-contracts defect fixes): the contracts list error
+// surface adds rendered coverage — grain-contracts-error-state locks that a
+// failed list read renders the error copy rather than the "no results" empty
+// state (for both an HTTP failure and a network throw), that stale rows
+// survive a failed background refetch, and that the multi-select facet still
+// goes out comma-joined — plus accumulated rendered gains.
+const RENDERED_TEST_FLOOR = 210;
 const E2E_SPEC_FLOOR = 55;
 const REGISTRY_FLOOR = 5;
 

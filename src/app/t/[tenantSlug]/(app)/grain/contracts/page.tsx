@@ -1,5 +1,7 @@
 import { getTenantCtx } from '@/app-layer/context';
 import { listContracts } from '@/app-layer/usecases/contract';
+import { summariseContractBook } from '@/lib/grain/contract-value';
+import { CONTRACTED_COMMITMENT_STATUSES } from '@/app-layer/domain/contract-status';
 import { ContractsClient } from './ContractsClient';
 
 export const dynamic = 'force-dynamic';
@@ -20,11 +22,17 @@ export default async function GrainContractsPage({
     const { tenantSlug } = await params;
     const ctx = await getTenantCtx({ tenantSlug });
 
-    const contracts = await listContracts(ctx);
+    const { rows, totalCount, truncated } = await listContracts(ctx);
+    // Totals come from the SAME page the rows do, so the book figure can
+    // never disagree with what is on screen.
+    const totals = summariseContractBook(rows, CONTRACTED_COMMITMENT_STATUSES);
 
     return (
         <ContractsClient
-            initialContracts={JSON.parse(JSON.stringify(contracts))}
+            initialContracts={JSON.parse(JSON.stringify(rows))}
+            initialTotals={JSON.parse(JSON.stringify(totals))}
+            initialTotalCount={totalCount}
+            initialTruncated={truncated}
             tenantSlug={tenantSlug}
             permissions={{ canWrite: ctx.permissions.canWrite }}
         />

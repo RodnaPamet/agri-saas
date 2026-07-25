@@ -13,7 +13,8 @@
  *   2. InventoryClient        — input stock / lots / ledger
  *   3. CropPlansClient        — crop-plan succession list (EntityListPage)
  *   4. YieldClient            — grain yield records (EntityListPage)
- *   5. OfflineFieldPanel      — phones-with-gloves field-op client
+ *   5. ContractsClient        — grain marketing contracts (EntityListPage)
+ *   6. OfflineFieldPanel      — phones-with-gloves field-op client
  */
 
 import * as React from 'react';
@@ -221,6 +222,11 @@ import { LocationsClient } from '@/app/t/[tenantSlug]/(app)/locations/LocationsC
 import { InventoryClient } from '@/app/t/[tenantSlug]/(app)/inventory/InventoryClient';
 import { CropPlansClient } from '@/app/t/[tenantSlug]/(app)/planning/CropPlansClient';
 import { YieldClient } from '@/app/t/[tenantSlug]/(app)/grain/yield/YieldClient';
+import {
+    ContractsClient,
+    type ContractBookTotalDto,
+    type ContractRow,
+} from '@/app/t/[tenantSlug]/(app)/grain/contracts/ContractsClient';
 import { OfflineFieldPanel } from '@/components/offline/OfflineFieldPanel';
 
 // ─── Harness ─────────────────────────────────────────────────────────
@@ -269,6 +275,74 @@ const CROP_PLANS = [
         cropType: { id: 'ct2', name: 'Carrot' },
         variety: null,
         _count: { plantings: 0 },
+    },
+];
+
+/** One contract per status/type combination the cells branch on, so the
+ *  sweep exercises the window badge, the progress bar and the value
+ *  column rather than a single happy row. */
+const CONTRACTS: ContractRow[] = [
+    {
+        id: 'c-1',
+        seasonId: null,
+        key: 'WHT-2026-014',
+        counterparty: 'AgriBuyer Ltd',
+        commodity: 'Wheat',
+        type: 'SALE',
+        status: 'ACTIVE',
+        volumeTonnes: '500',
+        pricePerTonne: '210',
+        priceCurrency: 'EUR',
+        deliveryStart: '2026-08-01T00:00:00.000Z',
+        deliveryEnd: '2026-09-01T00:00:00.000Z',
+        createdAt: '2026-07-01T00:00:00.000Z',
+        updatedAt: '2026-07-01T00:00:00.000Z',
+        season: null,
+        fulfilment: {
+            contractId: 'c-1',
+            deliveredTonnes: '300',
+            deliveryCount: 2,
+            remainingTonnes: '200',
+            progressPct: 60,
+            complete: false,
+        },
+        valueAmount: '105000',
+    },
+    {
+        id: 'c-2',
+        seasonId: null,
+        key: null,
+        counterparty: 'InputSupply BG',
+        commodity: null,
+        type: 'PURCHASE',
+        status: 'DRAFT',
+        volumeTonnes: null,
+        pricePerTonne: null,
+        priceCurrency: null,
+        deliveryStart: null,
+        deliveryEnd: null,
+        createdAt: '2026-07-02T00:00:00.000Z',
+        updatedAt: '2026-07-02T00:00:00.000Z',
+        season: null,
+        fulfilment: {
+            contractId: 'c-2',
+            deliveredTonnes: '0',
+            deliveryCount: 0,
+            remainingTonnes: null,
+            progressPct: null,
+            complete: false,
+        },
+        valueAmount: null,
+    },
+];
+
+const CONTRACT_TOTALS: ContractBookTotalDto[] = [
+    {
+        currency: 'EUR',
+        contractCount: 1,
+        contractedTonnes: '500',
+        contractValue: '105000',
+        unpricedCount: 0,
     },
 ];
 
@@ -327,6 +401,20 @@ describe('Ag pages — WCAG 2.1 AA (jest-axe)', () => {
         const { container } = renderWithProviders(
             <YieldClient
                 initialRecords={YIELD_RECORDS}
+                tenantSlug="acme"
+                permissions={{ canWrite: true }}
+            />,
+        );
+        expect(await axe(container)).toHaveNoViolations();
+    });
+
+    it('ContractsClient has no accessibility violations', async () => {
+        const { container } = renderWithProviders(
+            <ContractsClient
+                initialContracts={CONTRACTS}
+                initialTotals={CONTRACT_TOTALS}
+                initialTotalCount={CONTRACTS.length}
+                initialTruncated={false}
                 tenantSlug="acme"
                 permissions={{ canWrite: true }}
             />,

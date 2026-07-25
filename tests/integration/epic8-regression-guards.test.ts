@@ -190,16 +190,22 @@ describeFn('Dual-Write Verification', () => {
 // ═══════════════════════════════════════════════════════════════
 
 describeFn('Soft-Delete Guards', () => {
-    it('SOFT_DELETE_MODELS includes all 12 critical entities', () => {
+    it('SOFT_DELETE_MODELS includes all 13 critical entities', () => {
         const expected = [
             'Asset', 'Risk', 'Control', 'Evidence', 'Policy',
             'Vendor', 'FileRecord', 'Task', 'Finding',
             'Audit', 'AuditCycle', 'AuditPack',
+            // Grain (2026-07-25) — Contract already carried the full
+            // soft-delete trio and a soft-deleting usecase, but was
+            // registered in neither SOFT_DELETE_MODELS nor the retention
+            // sweep, so `retentionUntil` was written by nothing and read
+            // by nothing.
+            'Contract',
         ];
         for (const model of expected) {
             expect(SOFT_DELETE_MODELS.has(model)).toBe(true);
         }
-        expect(SOFT_DELETE_MODELS.size).toBe(12);
+        expect(SOFT_DELETE_MODELS.size).toBe(expected.length);
     });
 
     it('deleting a Risk sets deletedAt instead of hard-deleting', async () => {

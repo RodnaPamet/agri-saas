@@ -43,6 +43,10 @@ export const DEFAULT_EVIDENCE_PURGE_DAYS = 365;
 const RETENTION_MODELS = [
     'Risk', 'Control', 'Evidence', 'Policy',
     'Vendor', 'FileRecord', 'Task',
+    // Grain marketing contracts hold commercial terms (encrypted) and a
+    // counterparty name, so they are exactly the kind of row a retention
+    // policy exists for. The column was already there; nothing swept it.
+    'Contract',
 ] as const;
 
 // ─── Types ──────────────────────────────────────────────────────────

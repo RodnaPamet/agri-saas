@@ -598,6 +598,19 @@ executorRegistry.register('lease-expiry-sweep', async (payload) => {
     return result;
 });
 
+// ── contract-delivery-window-sweep (grain fulfilment) ────────────────
+
+executorRegistry.register('contract-delivery-window-sweep', async (payload) => {
+    const { runContractDeliveryWindowSweep } = await import(
+        './contract-delivery-window-sweep'
+    );
+    const { result } = await runContractDeliveryWindowSweep({
+        tenantId: payload.tenantId,
+        withinDays: payload.withinDays,
+    });
+    return result;
+});
+
 // ── reconcile-inventory-ledgers (data-integrity) ─────────────────────
 
 executorRegistry.register('reconcile-inventory-ledgers', async (payload) => {

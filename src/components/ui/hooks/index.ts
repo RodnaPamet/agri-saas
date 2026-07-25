@@ -21,6 +21,9 @@ export {
     type UseLocalStorageOptions,
 } from "./use-local-storage";
 
+// ─── Timing ───────────────────────────────────────────────────────────
+export { useDebounce } from "./use-debounce";
+
 // ─── Viewport / observer ──────────────────────────────────────────────
 export { useInViewport } from "./use-in-viewport";
 export { useIntersectionObserver } from "./use-intersection-observer";

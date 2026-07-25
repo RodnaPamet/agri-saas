@@ -1150,6 +1150,28 @@ Use `FilterToolbar` + `FilterProvider` + `useFilterContext` from
 `useState` + manual URL sync. See
 `src/components/ui/filter/GUIDE.md` and `docs/filters.md`.
 
+**A `multiple: true` facet has a REQUIRED server-side counterpart.**
+`filterStateToUrlParams` comma-joins a multi-select facet into ONE
+param (`?status=DRAFT,ACTIVE`), so a route that reads it with a bare
+`searchParams.get(key)` receives the literal string `"DRAFT,ACTIVE"`.
+Passing that to Prisma as an enum equality throws a
+`PrismaClientValidationError` — a 500 the list page renders as its
+EMPTY state, i.e. a confident claim of zero matching rows in response
+to a crash. Parse such params with `parseCsvEnumParam` from
+`@/lib/validation/query-params` (validates each member against
+`z.nativeEnum(...)`, 400 on any invalid one), type the usecase's
+filter field as an ENUM ARRAY — never `string` plus a cast — and query
+with `{ field: { in: [...] } }` guarded on `.length` so a cleared
+facet omits the filter instead of emitting `{ in: [] }` (which matches
+nothing). Reference: `grain/contracts` route + `listContracts`.
+
+**A failed list read must never fall through to the empty state.**
+`<DataTable>` / `EntityListPage` accept `error` — wire it. Gate it on
+having nothing to show (`isError && rows.length === 0`) so a failed
+BACKGROUND refetch keeps stale rows on screen: `error` renders
+*instead of* the table, so raising it unconditionally blanks good
+data. See `docs/implementation-notes/2026-07-25-grain-contract-defect-fixes.md`.
+
 ### Epic 54 — Modal & Sheet Strategy
 
 Use `<Modal>` for quick create/edit/confirm flows and `<Sheet>` for

@@ -49,9 +49,28 @@ const USER_FACING_PROPS = new Set([
     'heading', 'subtitle', 'description',
 ]);
 
-/** Current floor (measured 2026-07-10). Can only go DOWN as strings are
- *  extracted to the catalog — every extraction PR lowers this in the same diff. */
+/** Current floor for JSX copy (measured 2026-07-10). Can only go DOWN as
+ *  strings are extracted to the catalog — every extraction PR lowers this
+ *  in the same diff. */
 const CURRENT_BASELINE = 20;
+
+/**
+ * Separate floor for the `.ts` CONFIG-PROPERTY class (2026-07-25).
+ *
+ * The scan originally covered `.tsx` only, which is precisely why the
+ * contracts modal shipped English dropdowns to Bulgarian users: its
+ * labels came from a `.ts` filter-def module. Widening the walk to `.ts`
+ * immediately surfaced ~380 pre-existing offenders across admin pages,
+ * widget dispatchers and other config modules — real i18n debt, none of
+ * it introduced here.
+ *
+ * Rather than pretend that debt away with one inflated number, the two
+ * classes ratchet SEPARATELY: the JSX floor stays where it was, and this
+ * one locks the config-prop count so it can only fall. Same reasoning
+ * the repo applies to `as any` — a large existing debt makes a hard
+ * error infeasible, so the ratchet is the enforcement.
+ */
+const CONFIG_PROP_BASELINE = 391;
 
 /** A string counts as user-facing copy if — after stripping HTML entities —
  *  it has a real word (≥2 latin letters) and is not an ALL-CAPS enum/acronym
@@ -69,7 +88,7 @@ function walk(dir: string, out: string[] = []): string[] {
         if (entry.isDirectory()) {
             if (/node_modules|\.next|__tests__/.test(entry.name)) continue;
             walk(full, out);
-        } else if (/\.tsx$/.test(entry.name) && !/\.(test|spec|stories)\.tsx$/.test(entry.name)) {
+        } else if (/\.tsx?$/.test(entry.name) && !/\.(test|spec|stories)\.tsx?$/.test(entry.name)) {
             out.push(full);
         }
     }
@@ -78,15 +97,56 @@ function walk(dir: string, out: string[] = []): string[] {
 
 interface Hit {
     file: string;
-    kind: 'jsx-text' | 'attr';
+    kind: 'jsx-text' | 'attr' | 'config-prop';
     sample: string;
 }
 
-/** Count hard-coded user-facing strings in one TSX source via the TS AST. */
+/**
+ * Count hard-coded user-facing strings in one source file via the TS AST.
+ *
+ * `.tsx` files are scanned for JSX text + user-facing JSX attributes.
+ *
+ * `.ts` files are scanned for user-facing OBJECT PROPERTIES — `label:`,
+ * `description:`, `placeholder:` and friends in a config module. This
+ * is not a theoretical class: the contracts filter-def module exported
+ * `CONTRACT_STATUS_LABELS = { DRAFT: 'Draft', … }` and the create/edit
+ * modal rendered it verbatim, so a Bulgarian user saw translated badges
+ * and chips and then an English dropdown. The scan skipped it purely
+ * because the file ends in `.ts`.
+ *
+ * Deliberately narrow: only the SAME `USER_FACING_PROPS` names already
+ * used for JSX attributes, plus `*_LABELS`-shaped maps. Every other
+ * string in a `.ts` file (error messages, log lines, query keys, enum
+ * members) is out of scope — flagging those would drown the signal.
+ */
 function scanSource(file: string, source: string): Hit[] {
     const hits: Hit[] = [];
-    const sf = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+    const isTsx = /\.tsx$/.test(file);
+    const sf = ts.createSourceFile(
+        file,
+        source,
+        ts.ScriptTarget.Latest,
+        true,
+        isTsx ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
+    );
     const visit = (node: ts.Node): void => {
+        // ── .ts config modules: user-facing object properties ──
+        if (
+            ts.isPropertyAssignment(node) &&
+            ts.isStringLiteral(node.initializer) &&
+            isUserFacingCopy(node.initializer.text)
+        ) {
+            const name = ts.isIdentifier(node.name) || ts.isStringLiteral(node.name)
+                ? node.name.text
+                : '';
+            if (USER_FACING_PROPS.has(name)) {
+                hits.push({
+                    file,
+                    kind: 'config-prop',
+                    sample: `${name}: "${node.initializer.text.slice(0, 40)}"`,
+                });
+            }
+        }
         if (ts.isJsxText(node)) {
             const text = node.text.trim();
             if (text && isUserFacingCopy(text)) {
@@ -119,7 +179,9 @@ function scanAll(): Hit[] {
 }
 
 describe('no-new-hardcoded-UI-string ratchet', () => {
-    const hits = scanAll();
+    const allHits = scanAll();
+    const hits = allHits.filter((h) => h.kind !== 'config-prop');
+    const configHits = allHits.filter((h) => h.kind === 'config-prop');
 
     it(`hard-coded user-facing strings stay ≤ ${CURRENT_BASELINE}`, () => {
         if (hits.length > CURRENT_BASELINE) {
@@ -141,6 +203,31 @@ describe('no-new-hardcoded-UI-string ratchet', () => {
     // below the baseline, this nudges you to lower it in the same PR.
     it('baseline tracks the real count (no accumulated slack)', () => {
         expect(CURRENT_BASELINE).toBeLessThanOrEqual(hits.length + 15);
+    });
+
+    // ── .ts config-property class ──
+    it(`hard-coded user-facing config properties stay ≤ ${CONFIG_PROP_BASELINE}`, () => {
+        if (configHits.length > CONFIG_PROP_BASELINE) {
+            const sample = configHits
+                .slice(0, 25)
+                .map((h) => `  ${h.file}  ${h.sample}`)
+                .join('\n');
+            throw new Error(
+                `Hard-coded config-property copy rose to ${configHits.length} ` +
+                    `(baseline ${CONFIG_PROP_BASELINE}).\n` +
+                    `A user-facing \`label:\` / \`description:\` / \`placeholder:\` was ` +
+                    `added to a config module without going through next-intl. ` +
+                    `Resolve it through a translator at render time (see ` +
+                    `grain/contracts/filter-defs.ts::buildContractFilters) and add the ` +
+                    `key to BOTH messages/en.json AND messages/bg.json.\n\n` +
+                    `First offenders:\n${sample}`,
+            );
+        }
+        expect(configHits.length).toBeLessThanOrEqual(CONFIG_PROP_BASELINE);
+    });
+
+    it('config-prop baseline tracks the real count (no accumulated slack)', () => {
+        expect(CONFIG_PROP_BASELINE).toBeLessThanOrEqual(configHits.length + 15);
     });
 });
 

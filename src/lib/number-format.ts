@@ -84,3 +84,34 @@ export function currencyFormatter(
         ...options,
     } as CurrencyFormatterOptions).format(zeroDecimal ? cents : cents / 100);
 }
+
+/**
+ * The locale every first-party number rendering is pinned to.
+ *
+ * NOT `undefined` (the runtime default). `toLocaleString(undefined)`
+ * resolves to the *host* locale, which differs between the Node process
+ * that server-renders a page and the browser that hydrates it — so an
+ * unpinned separator is a hydration mismatch waiting for the first
+ * visitor whose OS is not en-US. `nFormatter` / `currencyFormatter`
+ * above already pin the same value; this exposes it for the grouping
+ * cases they do not cover.
+ */
+export const NUMBER_LOCALE = 'en-US';
+
+/**
+ * Grouped decimal for display: `"1234.5" → "1,234.5"`.
+ *
+ * Takes the value as a `string | number` because Decimal columns cross
+ * the wire as exact strings — the parse happens here, at the very last
+ * step before rendering, and never earlier.
+ */
+export function formatDecimal(
+    value: string | number | null | undefined,
+    maximumFractionDigits = 2,
+    fallback = '—',
+): string {
+    if (value == null || value === '') return fallback;
+    const n = typeof value === 'number' ? value : Number(value);
+    if (!Number.isFinite(n)) return fallback;
+    return new Intl.NumberFormat(NUMBER_LOCALE, { maximumFractionDigits }).format(n);
+}

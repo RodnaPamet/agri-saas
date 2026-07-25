@@ -540,6 +540,15 @@ enum NotificationType {
   // endDate. One bell notification per (lease, owner, endDate); routed to
   // the tenant's OWNER/ADMIN members.
   LEASE_EXPIRING
+  // Grain fulfilment (2026-07-25) — fired by the
+  // `contract-delivery-window-sweep` daily job for an ACTIVE contract
+  // whose `deliveryEnd` is near or past. Scoped to ACTIVE only: a DRAFT
+  // is unsigned, CANCELLED is void, and DELIVERED/SETTLED are already
+  // fulfilled, so none of them can be "late". One bell notification per
+  // (contract, recipient, deliveryEnd, phase) — the phase bucket means a
+  // contract alerts once on approach and once when it goes overdue,
+  // never daily. Routed to the tenant's OWNER/ADMIN members.
+  CONTRACT_DELIVERY_DUE
   GENERAL
 }
 
