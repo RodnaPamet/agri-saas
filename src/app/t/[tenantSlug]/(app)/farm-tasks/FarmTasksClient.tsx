@@ -35,6 +35,7 @@ import { Button } from '@/components/ui/button';
 import { Plus, CircleCheck } from '@/components/ui/icons/nucleo';
 import { Fab } from '@/components/ui/fab';
 import { createColumns, useBulkDelete } from '@/components/ui/table';
+import { TableTitleCell } from '@/components/ui/table-title-cell';
 import { EntityListPage } from '@/components/layout/EntityListPage';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Modal } from '@/components/ui/modal';
@@ -323,7 +324,17 @@ function FarmTasksInner({ tenantSlug, currentUserId }: { tenantSlug: string; cur
                 {
                     accessorKey: 'title',
                     header: t('colTitle'),
-                    cell: ({ row }) => (<span className="font-medium text-content-emphasis">{row.original.title}</span>),
+                    // Title is a <Link> (TableTitleCell) so a single click on it
+                    // navigates to the detail even while row-selection owns the
+                    // row's single click — canonical list-page behaviour.
+                    cell: ({ row }) => (
+                        <TableTitleCell
+                            href={tenantHref(`/farm-tasks/${row.original.id}`)}
+                            id={`farm-task-link-${row.original.id}`}
+                        >
+                            {row.original.title}
+                        </TableTitleCell>
+                    ),
                     meta: { mobileCard: { slot: 'title' } },
                 },
                 {

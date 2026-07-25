@@ -162,9 +162,9 @@ test.describe('Epic 56 — tooltip + copy primitives', () => {
         });
         await page.waitForLoadState('networkidle').catch(() => {});
 
-        // First task ROW link inside the farm-tasks table (not the
-        // page-level header / FAB nav buttons that share the
-        // `/farm-tasks/` prefix). Seeded tasks always carry a key.
+        // First task ROW link inside the farm-tasks table (the title cell is a
+        // TableTitleCell <Link>). Not the page-level header / FAB nav buttons
+        // that share the `/farm-tasks/` prefix. Seeded tasks always carry a key.
         const firstTask = page
             .locator('[data-testid="farm-tasks-table"] tbody tr a[href*="/farm-tasks/"]')
             .first();
