@@ -2666,7 +2666,8 @@
             "bucketLabel": "{lo}–{hi}: {count, plural, one {# риск} other {# риска}}"
         },
         "timeSeriesChart": {
-            "emptyState": "Няма налични данни за този период."
+            "emptyState": "Няма налични данни за този период.",
+            "ariaLabel": "Времева графика"
         },
         "sankeyChart": {
             "noFlowsMatch": "Няма потоци, съответстващи на „{query}“",

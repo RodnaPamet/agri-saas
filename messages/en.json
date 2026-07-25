@@ -2666,7 +2666,8 @@
             "bucketLabel": "{lo}–{hi}: {count, plural, one {# risk} other {# risks}}"
         },
         "timeSeriesChart": {
-            "emptyState": "No data available for this range."
+            "emptyState": "No data available for this range.",
+            "ariaLabel": "Time-series chart"
         },
         "sankeyChart": {
             "noFlowsMatch": "No flows match \"{query}\"",

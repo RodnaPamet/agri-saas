@@ -62,6 +62,14 @@ interface TimeSeriesChartExtraProps {
 
     /** Optional className forwarded to the outer wrapper (positioning / height). */
     className?: string;
+
+    /**
+     * Accessible name for the chart `<svg role="img">`. Defaults to a generic
+     * i18n label so every time-series chart satisfies the `svg-img-alt` a11y
+     * rule; pass a specific description (e.g. "Farm task trend, last 14 days")
+     * for richer screen-reader output.
+     */
+    ariaLabel?: string;
 }
 
 type TimeSeriesChartProps<T extends Datum> = PropsWithChildren<ChartProps<T>> &
@@ -122,10 +130,12 @@ function TimeSeriesChartInner<T extends Datum>({
     onHoverDateChange,
     margin: marginProp = DEFAULT_CHART_MARGIN,
     padding: paddingProp,
+    ariaLabel,
 }: {
     width: number;
     height: number;
 } & TimeSeriesChartProps<T>) {
+    const t = useTranslations("ui");
     const [leftAxisMargin, setLeftAxisMargin] = useState<number>();
 
     const margin = {
@@ -222,6 +232,7 @@ function TimeSeriesChartInner<T extends Datum>({
                     height={outerHeight}
                     ref={containerRef}
                     role="img"
+                    aria-label={ariaLabel ?? t("timeSeriesChart.ariaLabel")}
                     data-chart="time-series"
                     data-chart-type={type}
                 >

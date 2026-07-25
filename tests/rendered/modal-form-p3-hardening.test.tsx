@@ -51,9 +51,11 @@ const FLOWS: HardenedFlow[] = [
     },
     {
         label: 'tasks',
-        hookPath: 'tasks/_form/useNewTaskForm.ts',
+        // Relocated to src/components/tasks/ when the /tasks UI was retired;
+        // reach up out of APP (src/app/t/[tenantSlug]/(app)) to src/components/.
+        hookPath: '../../../../components/tasks/_form/useNewTaskForm.ts',
         hookExport: 'useNewTaskForm',
-        modalPath: 'tasks/NewTaskModal.tsx',
+        modalPath: '../../../../components/tasks/NewTaskModal.tsx',
         // mobile-forms PR-3 — migrated to the Modal primitive's native guard.
         confirmCopy: /Discard changes\?/,
         guard: 'native',
