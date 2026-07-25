@@ -78,6 +78,35 @@ export interface BinDto {
     unconvertible: UnconvertibleStock[];
 }
 
+/** One lot sitting in a bin, as the detail view renders it. */
+export interface BinLotDto {
+    id: string;
+    lotCode: string;
+    itemId: string;
+    itemName: string;
+    /** Quantity in the LOT'S OWN unit — never silently converted for display. */
+    quantity: number;
+    unitSymbol: string;
+    expiresAt: string | null;
+    /** Grain quality attributes (moisture, protein, test weight, …) or null. */
+    attributes: Record<string, unknown> | null;
+}
+
+/** `getBin` — a bin plus the lots inside it. */
+export interface BinDetailDto extends BinDto {
+    lots: BinLotDto[];
+    /** True when `lots` was truncated at `BIN_LOTS_TAKE`. */
+    lotsTruncated: boolean;
+}
+
+/**
+ * Bound on the detail view's lot list. The TOTALS above are exact regardless
+ * (they come from a grouped aggregate, not from these rows) — this only caps
+ * how many individual lots the page lists, and `lotsTruncated` says when it
+ * bit rather than letting the list quietly look complete.
+ */
+const BIN_LOTS_TAKE = 200;
+
 /**
  * ONE grouped aggregate covering EVERY requested bin.
  *
@@ -199,7 +228,7 @@ export async function listBins(ctx: RequestContext, opts: { take?: number } = {}
     });
 }
 
-export async function getBin(ctx: RequestContext, id: string): Promise<BinDto> {
+export async function getBin(ctx: RequestContext, id: string): Promise<BinDetailDto> {
     assertCanRead(ctx);
     return runInTenantContext(ctx, async (db) => {
         const bin = await db.location.findFirst({
@@ -219,6 +248,45 @@ export async function getBin(ctx: RequestContext, id: string): Promise<BinDto> {
             (await storedTotalsForBins(db, ctx, [bin.id], {
                 produceOnly: bin.kind === 'BIN',
             })).get(bin.id) ?? EMPTY_BIN_TOTALS;
+        // The lots themselves. Same produce-vs-all-stock rule as the fill, so
+        // the list and the number above it can never disagree about what is
+        // being counted. Soonest-expiry first: the lot a farmer must move next.
+        const lotRows = await db.inventoryLot.findMany({
+            where: {
+                tenantId: ctx.tenantId,
+                deletedAt: null,
+                locationId: bin.id,
+                ...(bin.kind === 'BIN'
+                    ? { item: { is: { category: 'HARVESTED_PRODUCE' } } }
+                    : {}),
+            },
+            orderBy: [{ expiresAt: 'asc' }, { lotCode: 'asc' }],
+            select: {
+                id: true,
+                lotCode: true,
+                quantityOnHand: true,
+                expiresAt: true,
+                attributesJson: true,
+                item: { select: { id: true, name: true } },
+                unit: { select: { symbol: true } },
+            },
+            take: BIN_LOTS_TAKE + 1,
+        });
+        const lotsTruncated = lotRows.length > BIN_LOTS_TAKE;
+        const lots: BinLotDto[] = lotRows.slice(0, BIN_LOTS_TAKE).map((l) => ({
+            id: l.id,
+            lotCode: l.lotCode,
+            itemId: l.item.id,
+            itemName: l.item.name,
+            quantity: dec(l.quantityOnHand) ?? 0,
+            unitSymbol: l.unit.symbol,
+            expiresAt: l.expiresAt ? l.expiresAt.toISOString() : null,
+            attributes:
+                l.attributesJson && typeof l.attributesJson === 'object' && !Array.isArray(l.attributesJson)
+                    ? (l.attributesJson as Record<string, unknown>)
+                    : null,
+        }));
+
         const capacity = dec(bin.capacityTonnes);
         return {
             id: bin.id,
@@ -232,6 +300,8 @@ export async function getBin(ctx: RequestContext, id: string): Promise<BinDto> {
             fillPct: fillFractionFor(totals.storedTonnes, capacity, totals.mixedUnits),
             mixedUnits: totals.mixedUnits,
             unconvertible: totals.unconvertible,
+            lots,
+            lotsTruncated,
         };
     });
 }
@@ -331,5 +401,67 @@ export async function updateBin(ctx: RequestContext, id: string, input: UpdateBi
             },
         });
         return { id: bin.id, name: bin.name, kind: bin.kind, capacityTonnes: dec(bin.capacityTonnes) };
+    });
+}
+
+/**
+ * Soft-delete a bin, REFUSING while stock is still assigned to it.
+ *
+ * `InventoryLot.locationId` has no FK cascade and lots are not deleted with
+ * their location, so deleting an occupied bin would leave every lot pointing
+ * at a soft-deleted row: the stock stays on hand and keeps counting in
+ * inventory, but vanishes from every bin view. Silent, and hard to notice
+ * until the numbers stop reconciling.
+ *
+ * Refusing rather than warning is deliberate. The escape hatch is to move the
+ * lots somewhere (or unassign them) — which is now possible from the UI — so
+ * the farmer is never stuck, and the destructive path never has to guess what
+ * they meant to happen to the grain.
+ */
+export async function deleteBin(ctx: RequestContext, id: string) {
+    assertCanWrite(ctx);
+    return runInTenantContext(ctx, async (db) => {
+        const bin = await db.location.findFirst({
+            where: {
+                id,
+                tenantId: ctx.tenantId,
+                deletedAt: null,
+                kind: { in: [...BIN_KINDS] as LocationKind[] },
+            },
+            select: { id: true, name: true, kind: true },
+        });
+        if (!bin) throw notFound('Grain bin not found');
+
+        // Counting ALL lots regardless of item category: the refusal is about
+        // orphaning stock, and seed in a barn orphans exactly like grain does.
+        const assignedLots = await db.inventoryLot.count({
+            where: { tenantId: ctx.tenantId, deletedAt: null, locationId: bin.id },
+        });
+        if (assignedLots > 0) {
+            throw badRequest(
+                `${bin.name} still holds ${assignedLots} lot(s). Move or unassign them before deleting it.`,
+            );
+        }
+
+        await db.location.update({
+            where: { id: bin.id },
+            data: { deletedAt: new Date(), deletedByUserId: ctx.userId ?? null },
+        });
+
+        await logEvent(db, ctx, {
+            action: 'SOFT_DELETE',
+            entityType: 'Location',
+            entityId: bin.id,
+            details: `Deleted grain bin: ${bin.name}`,
+            detailsJson: {
+                category: 'entity_lifecycle',
+                entityName: 'Location',
+                operation: 'deleted',
+                before: { name: bin.name, kind: bin.kind },
+                summary: `Deleted grain ${bin.kind.toLowerCase()} ${bin.name}`,
+            },
+        });
+
+        return { id: bin.id, deleted: true };
     });
 }

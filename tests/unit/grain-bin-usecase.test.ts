@@ -14,7 +14,7 @@
 
 const mockDb = {
     location: { findFirst: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn() },
-    inventoryLot: { groupBy: jest.fn() },
+    inventoryLot: { groupBy: jest.fn(), findMany: jest.fn(), count: jest.fn() },
     unit: { findMany: jest.fn() },
 } as any;
 
@@ -37,7 +37,7 @@ jest.mock('@/lib/security/sanitize', () => ({
 
 import { logEvent } from '@/app-layer/events/audit';
 import { sanitizePlainText } from '@/lib/security/sanitize';
-import { listBins, createBin, updateBin } from '@/app-layer/usecases/grain-bin';
+import { listBins, createBin, updateBin, deleteBin } from '@/app-layer/usecases/grain-bin';
 import { makeRequestContext } from '../helpers/make-context';
 
 beforeEach(() => {
@@ -222,5 +222,57 @@ describe('updateBin', () => {
         await updateBin(adminCtx, 'bin-1', { name: 'Bin A2', capacityTonnes: 120 });
         expect(sanitizePlainText).toHaveBeenCalledWith('Bin A2');
         expect(logEvent).toHaveBeenCalledTimes(1);
+    });
+});
+
+describe('deleteBin', () => {
+    const BIN = { id: 'bin-1', name: 'Bin A', kind: 'BIN' };
+
+    it('refuses while stock is still assigned', async () => {
+        // Lots have no FK cascade to Location, so deleting an occupied bin
+        // leaves them pointing at a soft-deleted row: still on hand, still
+        // counted in inventory, invisible to every bin view.
+        mockDb.location.findFirst.mockResolvedValue(BIN);
+        mockDb.inventoryLot.count.mockResolvedValue(3);
+
+        await expect(deleteBin(adminCtx, 'bin-1')).rejects.toThrow(/still holds 3 lot/i);
+        expect(mockDb.location.update).not.toHaveBeenCalled();
+        expect(logEvent).not.toHaveBeenCalled();
+    });
+
+    it('counts stock of ANY category, not just produce', async () => {
+        mockDb.location.findFirst.mockResolvedValue({ ...BIN, kind: 'STORAGE' });
+        mockDb.inventoryLot.count.mockResolvedValue(1);
+
+        await expect(deleteBin(adminCtx, 'bin-1')).rejects.toThrow(/still holds/i);
+        // Seed in a barn orphans exactly like grain does.
+        expect(mockDb.inventoryLot.count.mock.calls[0][0].where.item).toBeUndefined();
+    });
+
+    it('soft-deletes an empty bin and audits it', async () => {
+        mockDb.location.findFirst.mockResolvedValue(BIN);
+        mockDb.inventoryLot.count.mockResolvedValue(0);
+        mockDb.location.update.mockResolvedValue({ id: 'bin-1' });
+
+        const res = await deleteBin(adminCtx, 'bin-1');
+
+        expect(res).toEqual({ id: 'bin-1', deleted: true });
+        // Soft delete, never a hard delete.
+        const data = mockDb.location.update.mock.calls[0][0].data;
+        expect(data.deletedAt).toBeInstanceOf(Date);
+        expect(data.deletedByUserId).toBe('user-1');
+        const payload = (logEvent as jest.Mock).mock.calls[0][2];
+        expect(payload.action).toBe('SOFT_DELETE');
+        expect(payload.entityType).toBe('Location');
+    });
+
+    it('throws notFound for a FIELD or another tenant\'s row', async () => {
+        mockDb.location.findFirst.mockResolvedValue(null);
+        await expect(deleteBin(adminCtx, 'field-1')).rejects.toThrow(/not found/i);
+    });
+
+    it('READER cannot delete', async () => {
+        await expect(deleteBin(readerCtx, 'bin-1')).rejects.toThrow();
+        expect(mockDb.location.update).not.toHaveBeenCalled();
     });
 });

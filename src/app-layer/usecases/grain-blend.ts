@@ -7,7 +7,15 @@ import { notFound, badRequest } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { InventoryRepository } from '../repositories/InventoryRepository';
 import { appendStockTransaction, appendLotLink } from '@/lib/inventory/stock-ledger';
+import { canConvert, convert } from '@/lib/units/unit-conversion';
+import { BIN_CAPACITY_UNIT_KEY } from '@/lib/grain/bin-fill';
 import type { BlendLotsInput } from '../schemas/grain.schemas';
+
+/**
+ * Locations blended grain may be receipted into. A FIELD is a growing area,
+ * so grain "stored" there is on-hand stock that no bin view can see.
+ */
+const BLEND_OUTPUT_KINDS = ['BIN', 'STORAGE', 'BARN', 'WAREHOUSE'] as const;
 
 /**
  * Grain blending — consume N source lots into ONE blended output lot
@@ -90,13 +98,21 @@ export async function blendLots(ctx: RequestContext, input: BlendLotsInput): Pro
         const outputItem = await InventoryRepository.getItem(db, ctx, input.outputItemId);
         if (!outputItem) throw badRequest('Output item not found or belongs to a different tenant');
 
-        // Validate the output location (a bin) belongs to the tenant, if set.
+        // Validate the output location belongs to the tenant AND can actually
+        // hold stock. Without the kind check, blended grain could be receipted
+        // into a FIELD — still counted as stock on hand, but invisible to every
+        // bin view. `capacityTonnes` is captured for the room check below.
+        let outputBin: { id: string; name: string; kind: string; capacityTonnes: unknown } | null = null;
         if (input.outputLocationId) {
             const loc = await db.location.findFirst({
                 where: { id: input.outputLocationId, tenantId: ctx.tenantId, deletedAt: null },
-                select: { id: true },
+                select: { id: true, name: true, kind: true, capacityTonnes: true },
             });
             if (!loc) throw badRequest('Output location not found or belongs to a different tenant');
+            if (!BLEND_OUTPUT_KINDS.includes(loc.kind as (typeof BLEND_OUTPUT_KINDS)[number])) {
+                throw badRequest('Blended grain must be stored in a bin or storage location');
+            }
+            outputBin = loc;
         }
 
         // ── ONE query for every source lot ──
@@ -140,9 +156,69 @@ export async function blendLots(ctx: RequestContext, input: BlendLotsInput): Pro
         }
         totalQuantity = Math.round(totalQuantity * 1e4) / 1e4;
 
+        // Does the destination have room? Capacity is denominated in tonnes,
+        // the blend is in the source lots' unit, so this only applies when the
+        // unit converts to tonnes (a COUNT unit has no tonnage to compare).
+        // Checked BEFORE any ledger write so a rejected blend leaves nothing
+        // behind.
+        if (outputBin && outputBin.capacityTonnes != null) {
+            const unitRow = await db.unit.findFirst({
+                where: { id: unitId },
+                select: { key: true },
+            });
+            if (unitRow && canConvert(unitRow.key, BIN_CAPACITY_UNIT_KEY)) {
+                const capacityTonnes = Number(
+                    (outputBin.capacityTonnes as { toString(): string }).toString(),
+                );
+                if (capacityTonnes > 0) {
+                    const incomingTonnes = convert(totalQuantity, unitRow.key, BIN_CAPACITY_UNIT_KEY);
+                    // Existing contents of the destination, in tonnes.
+                    const storedAgg = await db.inventoryLot.groupBy({
+                        by: ['unitId'],
+                        where: {
+                            tenantId: ctx.tenantId,
+                            deletedAt: null,
+                            locationId: outputBin.id,
+                        },
+                        _sum: { quantityOnHand: true },
+                    });
+                    const storedUnits = await db.unit.findMany({
+                        where: { id: { in: storedAgg.map((g) => g.unitId) } },
+                        select: { id: true, key: true },
+                    });
+                    const keyById = new Map(storedUnits.map((u) => [u.id, u.key]));
+                    let storedTonnes = 0;
+                    for (const g of storedAgg) {
+                        const key = keyById.get(g.unitId);
+                        if (!key || !canConvert(key, BIN_CAPACITY_UNIT_KEY)) continue;
+                        const qty = Number(
+                            ((g._sum.quantityOnHand ?? 0) as unknown as { toString(): string }).toString(),
+                        );
+                        storedTonnes += convert(qty, key, BIN_CAPACITY_UNIT_KEY);
+                    }
+                    if (storedTonnes + incomingTonnes > capacityTonnes) {
+                        throw badRequest(
+                            `Blended output does not fit in ${outputBin.name}: capacity ${capacityTonnes} t, already holds ${
+                                Math.round(storedTonnes * 1e3) / 1e3
+                            } t, blend adds ${Math.round(incomingTonnes * 1e3) / 1e3} t`,
+                        );
+                    }
+                }
+            }
+        }
+
         const attributes = blendQuality(blendInputs, overrides);
 
         // 1 — consume each source lot (negative delta).
+        //
+        // `disallowNegative` is load-bearing, not belt-and-braces. The
+        // sufficiency check above reads `quantityOnHand` BEFORE the ledger
+        // takes its per-tenant advisory lock, and the transaction runs under
+        // READ COMMITTED — so two concurrent blends of the same lot both pass
+        // that check and both consume, driving stock negative. The ledger's
+        // guard re-reads the balance INSIDE the lock, making the read and the
+        // insert one race-free step. The check above stays because it gives a
+        // useful per-lot error message before any write happens.
         for (const s of input.sourceLots) {
             await appendStockTransaction(db, ctx, {
                 lotId: s.lotId,
@@ -151,6 +227,7 @@ export async function blendLots(ctx: RequestContext, input: BlendLotsInput): Pro
                 unitId,
                 reason: 'Blended into output lot',
                 actorUserId: ctx.userId ?? null,
+                disallowNegative: true,
             });
         }
 

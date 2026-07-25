@@ -182,7 +182,12 @@ export const BlendLotsSchema = z
                     quantity: z.number().finite().positive('blend quantity must be positive'),
                 }),
             )
-            .min(1, 'at least one source lot is required'),
+            .min(1, 'at least one source lot is required')
+            // Bounded because every source lot becomes a ledger append + a
+            // genealogy edge INSIDE one transaction that holds the per-tenant
+            // stock advisory lock. An unbounded list stalls every other stock
+            // write for that tenant until the 5s transaction timeout.
+            .max(50, 'at most 50 source lots can be blended at once'),
         outputItemId: z.string().min(1),
         outputLotCode: OptionalText(120),
         outputLocationId: z.string().min(1).nullable().optional(),
