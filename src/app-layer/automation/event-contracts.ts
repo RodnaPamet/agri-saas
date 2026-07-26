@@ -189,6 +189,16 @@ export interface HarvestYieldRecordedData {
     areaHa: number | null;
     plantingId: string | null;
     seasonId: string | null;
+    /**
+     * Which surface recorded it. A harvest logged in the journal can now
+     * mint its yield record alongside the stock lot, so the same event
+     * arrives from two places — a rule that cares (e.g. one that also
+     * inspects the lot) can tell them apart, and one that does not can
+     * ignore this. Absent on records typed directly on /grain/yield.
+     */
+    source?: 'journal_harvest';
+    /** The journal HARVEST entry that minted it, when source is journal. */
+    logEntryId?: string;
 }
 
 // ─── Discriminated union ───────────────────────────────────────────────

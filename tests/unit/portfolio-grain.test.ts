@@ -51,6 +51,12 @@ interface FakeTenantData {
     yieldBySeason?: Array<{ seasonId: string | null; grossTonnes: string }>;
     contractGroups?: Array<{ type: string; _sum: { volumeTonnes: string | null } }>;
     yieldSum: string | null;
+    /**
+     * Σ grossTonnes over yield records that came from a journal HARVEST
+     * (logEntryId IS NOT NULL) — the production/stock OVERLAP. Defaults to
+     * null, i.e. none of the production is linked to store.
+     */
+    yieldFromJournalSum?: string | null;
     logCost: string | null;
     stockCost: string | null;
     bins: Array<{ id: string; capacityTonnes: string | null }>;
@@ -73,6 +79,11 @@ const locationFindManyArgs: Array<{ where: Record<string, unknown> }> = [];
 /** Every `contract.groupBy` arg object the usecase issued, in order —
  *  so a test can assert the WHERE shape, not just the result. */
 const contractGroupByArgs: Array<Record<string, any>> = [];
+
+/** Every `yieldRecord.aggregate` arg object, in order — production and the
+ *  journal-linked subset are two different questions and a test should be
+ *  able to prove BOTH were asked. */
+const yieldAggregateArgs: Array<Record<string, any>> = [];
 
 function fakeDbFor(tenantId: string) {
     const d = TENANT_DATA[tenantId];
@@ -136,7 +147,20 @@ function fakeDbFor(tenantId: string) {
             ),
         },
         yieldRecord: {
-            aggregate: jest.fn(async () => ({ _sum: { grossTonnes: d.yieldSum } })),
+            // Two aggregates now run over YieldRecord: total production and
+            // the journal-linked subset. Discriminate on the `where` so a
+            // test proves the usecase asked the right question, rather than
+            // both calls getting the same canned sum.
+            aggregate: jest.fn(async (args: any) => {
+                yieldAggregateArgs.push(args ?? {});
+                return ({
+                    _sum: {
+                        grossTonnes: args?.where?.logEntryId
+                            ? (d.yieldFromJournalSum ?? null)
+                            : d.yieldSum,
+                    },
+                });
+            }),
             groupBy: jest.fn(async () =>
                 (d.yieldBySeason ?? []).map((y) => ({
                     seasonId: y.seasonId,
@@ -189,6 +213,7 @@ beforeEach(() => {
     for (const k of Object.keys(TENANT_DATA)) delete TENANT_DATA[k];
     locationFindManyArgs.length = 0;
     contractGroupByArgs.length = 0;
+    yieldAggregateArgs.length = 0;
 });
 
 describe('getPortfolioGrainSummary', () => {
@@ -826,5 +851,80 @@ describe('getPortfolioGrainSummary — contract value', () => {
         const res = await getPortfolioGrainSummary(ctxFor());
         expect(res.totals.contractedValue).toBe(0);
         expect(res.totals.mixedCurrency).toBe(false);
+    });
+});
+
+// ─── production vs stock: the overlap figure ────────────────────────
+//
+// The dashboard renders production beside on-hand stock. They measure
+// different things and are not additive, so where the SAME grain appears in
+// both — a journal harvest that minted its yield record — the total has to
+// say how much, or a group operator reading the two tiles as one figure is
+// double-counting with nothing to warn them.
+
+describe('getPortfolioGrainSummary — yield/stock overlap', () => {
+    const oneFarm = () => {
+        getPortfolioDataMock.mockResolvedValue({
+            tenants: [{ id: 'farm-a', name: 'Alpha Farm', slug: 'alpha' }],
+        });
+    };
+
+    it('reports how much recorded production is also in store', async () => {
+        oneFarm();
+        TENANT_DATA['farm-a'] = {
+            yieldSum: '500',
+            // 200 t of it was logged in the journal, so the same grain is
+            // ALSO counted in binStoredTonnes.
+            yieldFromJournalSum: '200',
+            logCost: null,
+            stockCost: null,
+            bins: [{ id: 'bin-1', capacityTonnes: '1000' }],
+            stored: [{ locationId: 'bin-1', unitId: 'unit-t', _sum: { quantityOnHand: '200' }, _count: { _all: 1 } }],
+            currency: 'BGN',
+        };
+
+        const res = await getPortfolioGrainSummary(ctxFor());
+
+        expect(res.totals.totalYieldTonnes).toBe(500);
+        expect(res.totals.yieldAlsoInStoreTonnes).toBe(200);
+        expect(res.perTenant[0].yieldAlsoInStoreTonnes).toBe(200);
+    });
+
+    it('reports zero overlap when every yield was typed on the yield page', async () => {
+        oneFarm();
+        TENANT_DATA['farm-a'] = {
+            yieldSum: '500',
+            yieldFromJournalSum: null,
+            logCost: null,
+            stockCost: null,
+            bins: [],
+            stored: [],
+            currency: 'BGN',
+        };
+
+        const res = await getPortfolioGrainSummary(ctxFor());
+        expect(res.totals.totalYieldTonnes).toBe(500);
+        expect(res.totals.yieldAlsoInStoreTonnes).toBe(0);
+    });
+
+    it('asks the DB for the linked subset rather than filtering in memory', async () => {
+        oneFarm();
+        TENANT_DATA['farm-a'] = {
+            yieldSum: '10',
+            yieldFromJournalSum: '4',
+            logCost: null,
+            stockCost: null,
+            bins: [],
+            stored: [],
+            currency: null,
+        };
+
+        await getPortfolioGrainSummary(ctxFor());
+
+        // Two aggregates, both real DB aggregates — the recap's take-5000
+        // findMany is precisely the anti-pattern this view avoids.
+        expect(yieldAggregateArgs).toHaveLength(2);
+        expect(yieldAggregateArgs.some((a) => a?.where?.logEntryId?.not === null)).toBe(true);
+        expect(yieldAggregateArgs.some((a) => a?.where?.logEntryId === undefined)).toBe(true);
     });
 });

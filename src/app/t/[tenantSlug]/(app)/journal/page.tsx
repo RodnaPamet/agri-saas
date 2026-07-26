@@ -1,5 +1,6 @@
 import { getTenantCtx } from '@/app-layer/context';
 import { listLogEntriesPaginated } from '@/app-layer/usecases/journal';
+import { getEnabledModules } from '@/app-layer/usecases/modules';
 import { JournalClient, JOURNAL_PAGE_SIZE } from './JournalClient';
 
 export const dynamic = 'force-dynamic';
@@ -39,6 +40,12 @@ export default async function JournalPage({
         filters: Object.keys(filters).length > 0 ? filters : undefined,
     });
 
+    // Resolved here rather than fetched by the modal: the only client-
+    // readable module endpoint is admin-gated, and a mechanisator authoring
+    // a harvest is not an admin. Drives the "also record as yield" option —
+    // a GRAIN concept, so a tenant without the module is never offered it.
+    const enabledModules = await getEnabledModules(ctx);
+
     return (
         <div className="space-y-section animate-fadeIn">
             <JournalClient
@@ -47,6 +54,7 @@ export default async function JournalPage({
                 initialFilters={filters}
                 tenantSlug={tenantSlug}
                 permissions={{ canWrite: ctx.permissions.canWrite, canAdmin: ctx.permissions.canAdmin }}
+                grainEnabled={enabledModules.includes('GRAIN')}
             />
         </div>
     );

@@ -173,6 +173,18 @@ model YieldRecord {
   locationId      String?
   /// Optional link to the marketing-year Season.
   seasonId        String?
+  /// The journal HARVEST entry this record was minted from, when the farmer
+  /// recorded the harvest ONCE and asked for it to count as both stock and
+  /// yield. NULL for a yield typed directly on /grain/yield.
+  ///
+  /// This is the reconciliation link: `logEntryId IS NOT NULL` means the
+  /// same physical grain is ALSO represented as an InventoryLot +
+  /// HARVEST_IN ledger row (reachable via StockTransaction.logEntryId), so
+  /// the org dashboard can say which of its recorded production already
+  /// entered store instead of presenting two unrelated tonnages.
+  /// UNIQUE (with tenantId, below) — one harvest entry mints at most one
+  /// yield record, which is what makes the journal→yield effect idempotent.
+  logEntryId      String?
   /// Commodity harvested, e.g. "Wheat" — plaintext.
   commodity       String?
   harvestedAt     DateTime?
@@ -194,8 +206,15 @@ model YieldRecord {
   planting Planting? @relation(fields: [plantingId, tenantId], references: [id, tenantId])
   location Location? @relation(fields: [locationId, tenantId], references: [id, tenantId])
   season   Season?   @relation(fields: [seasonId, tenantId], references: [id, tenantId])
+  logEntry LogEntry? @relation(fields: [logEntryId, tenantId], references: [id, tenantId])
 
   @@unique([id, tenantId])
+  // One yield record per harvest entry — the idempotency guarantee behind
+  // the journal→yield effect. Nullable column ⇒ NULLS DISTINCT, so the many
+  // yields typed directly on /grain/yield never collide with each other.
+  // Also indexes the FK (logEntryId leads), satisfying the Layer-B index
+  // guardrail.
+  @@unique([logEntryId, tenantId])
   @@index([tenantId, plantingId])
   @@index([tenantId, locationId])
   @@index([tenantId, seasonId])

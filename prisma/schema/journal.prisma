@@ -80,6 +80,10 @@ model LogEntry {
   plantings       LogPlanting[]
   /// Lot-genealogy edges recorded by a HARVEST entry (provenance link).
   lotLinks        LotLink[]
+  /// The yield record a HARVEST entry minted, when the farmer asked for the
+  /// harvest to count as production as well as stock. At most one — see
+  /// YieldRecord.logEntryId.
+  yieldRecord     YieldRecord?
 
   @@unique([id, tenantId])
   // Offline idempotency ledger — a replayed journal-entry create dedupes here.

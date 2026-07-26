@@ -10,7 +10,9 @@ import {
 } from '../repositories/JournalRepository';
 import { FileRepository } from '../repositories/FileRepository';
 import { recordHarvestLot } from './inventory';
+import { recordYieldFromHarvest, type HarvestYieldResult } from './yield-record';
 import { advancePlantingStatusForLinks } from './crop-planning';
+import { emitAutomationEvent } from '../automation';
 import { attachAutoEvidenceFromLogEntry } from './auto-evidence';
 import { assertCanRead, assertCanWrite, assertCanAdmin } from '../policies/common';
 import { logEvent } from '../events/audit';
@@ -76,6 +78,12 @@ interface HarvestPayload {
     sourceLotIds?: string[];
     costAmount?: number | null;
     costCurrency?: string | null;
+    /**
+     * Also record the PRODUCTION side — a YieldRecord linked to this entry.
+     * Opt-in; the tonnage is derived from `quantity` and refused outright
+     * when the item's unit is not a mass. See `recordYieldFromHarvest`.
+     */
+    recordYield?: boolean;
 }
 
 interface CreateLogEntryData {
@@ -260,7 +268,12 @@ async function createLogEntryImpl(
         plantingLinks: data.plantingLinks,
     };
 
-    return runInTenantContext(ctx, async (db) => {
+    // Captured inside the tx, emitted after it commits — an automation rule
+    // must never observe a yield record the transaction could still roll
+    // back. Mirrors how the /grain/yield create path emits.
+    let mintedYield: HarvestYieldResult | null = null;
+
+    const created = await runInTenantContext(ctx, async (db) => {
         await assertLinksValid(db, ctx, data.locationIds, data.equipmentIds);
         // Crop-planning actuals — validate every linked planting belongs
         // to the tenant before the LogPlanting rows are written (no
@@ -304,6 +317,30 @@ async function createLogEntryImpl(
                 costAmount: data.harvest.costAmount ?? null,
                 costCurrency: data.harvest.costCurrency ?? null,
             });
+
+            // …and, when the farmer asked for it, ALSO record the production
+            // side in the SAME transaction. This is the harvest-
+            // reconciliation link: before it, a harvest logged here produced
+            // stock but left the yield figure at zero, while a harvest typed
+            // on /grain/yield produced a tonnage with empty bins — two
+            // systems both claiming to record "the harvest" and no way to
+            // tell whether a group total was double-counting.
+            //
+            // Opt-in and never silent: `recordYield` is a checkbox in the
+            // harvest section, shown only when the tonnage is actually
+            // derivable, with the derived figure displayed next to it.
+            if (data.harvest.recordYield) {
+                mintedYield = await recordYieldFromHarvest(db, ctx, {
+                    logEntryId: entry.id,
+                    itemId: data.harvest.itemId,
+                    quantity: data.harvest.quantity,
+                    parcelId: data.harvest.parcelId ?? null,
+                    plantingIds: (data.plantingLinks ?? [])
+                        .filter((p) => p.stage === 'HARVEST')
+                        .map((p) => p.plantingId),
+                    occurredAt: entry.occurredAt,
+                });
+            }
         }
 
         // A directly-authored INPUT_APPLICATION record (spray/fertiliser) is
@@ -330,6 +367,41 @@ async function createLogEntryImpl(
 
         return entry;
     });
+
+    // Post-commit: a journal-minted yield fires the same automation event a
+    // yield typed on /grain/yield does, so a rule watching production cannot
+    // tell (and does not care) which surface recorded it.
+    if (mintedYield) {
+        const minted: HarvestYieldResult = mintedYield;
+        if (minted.yieldRecordId && !minted.note) {
+            await emitAutomationEvent(ctx, {
+                event: 'HARVEST_YIELD_RECORDED',
+                entityType: 'YieldRecord',
+                entityId: minted.yieldRecordId,
+                actorUserId: ctx.userId,
+                stableKey: minted.yieldRecordId,
+                data: {
+                    yieldRecordId: minted.yieldRecordId,
+                    commodity: minted.commodity,
+                    grossTonnes: minted.grossTonnes,
+                    // Always null here: a journal harvest does not state the
+                    // area cut, so the yield record carries no areaHa and a
+                    // rule must not infer a t/ha from this event.
+                    areaHa: null,
+                    plantingId: minted.plantingId,
+                    seasonId: minted.seasonId,
+                    source: 'journal_harvest',
+                    logEntryId: created.id,
+                },
+            });
+        }
+        trace.getActiveSpan()?.setAttributes({
+            'ag.harvestYieldRecorded': !!minted.yieldRecordId && !minted.note,
+            'ag.harvestYieldNote': minted.note ?? '',
+        });
+    }
+
+    return created;
 }
 
 // ─── Update ─────────────────────────────────────────────────────────

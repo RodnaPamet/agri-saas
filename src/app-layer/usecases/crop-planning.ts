@@ -1156,22 +1156,56 @@ export async function getCropPlanProgress(ctx: RequestContext, cropPlanId: strin
               })
             : [];
 
+        // Yield records are the OTHER way a harvest gets recorded, and until
+        // now the planning board could not see them: `plantingId` was written
+        // by the yield form and read by nothing, so a farmer who recorded 90 t
+        // against a planting still saw an unrealised HARVEST milestone. One
+        // bounded query for every planting (no N+1), same earliest-wins fold
+        // as the LogPlanting links below.
+        const yieldActuals = plantingIds.length
+            ? await db.yieldRecord.findMany({
+                  where: {
+                      tenantId: ctx.tenantId,
+                      plantingId: { in: plantingIds },
+                      deletedAt: null,
+                      harvestedAt: { not: null },
+                  },
+                  select: { plantingId: true, harvestedAt: true },
+                  take: LIST_TAKE,
+              })
+            : [];
+
         // Group: plantingId → stage → earliest actual occurredAt.
         const actualsByPlanting = new Map<string, PlantingActuals>();
-        for (const link of logLinks) {
-            const occurred = link.logEntry?.occurredAt ?? null;
-            if (!occurred) continue;
-            let row = actualsByPlanting.get(link.plantingId);
+        const foldActual = (
+            plantingId: string,
+            stage: 'SOW' | 'TRANSPLANT' | 'HARVEST',
+            occurredAt: Date,
+        ) => {
+            let row = actualsByPlanting.get(plantingId);
             if (!row) {
                 row = { SOW: null, TRANSPLANT: null, HARVEST: null };
-                actualsByPlanting.set(link.plantingId, row);
+                actualsByPlanting.set(plantingId, row);
             }
-            const stage = link.stage as 'SOW' | 'TRANSPLANT' | 'HARVEST';
-            const iso = occurred.toISOString();
-            // Earliest realisation wins.
+            const iso = occurredAt.toISOString();
+            // Earliest realisation wins — whichever surface recorded it.
             if (row[stage] == null || iso < row[stage]!) {
                 row[stage] = iso;
             }
+        };
+        for (const link of logLinks) {
+            const occurred = link.logEntry?.occurredAt ?? null;
+            if (!occurred) continue;
+            foldActual(link.plantingId, link.stage as 'SOW' | 'TRANSPLANT' | 'HARVEST', occurred);
+        }
+        // A recorded yield IS a harvest actual. Folded through the same
+        // earliest-wins helper, so a planting harvested via the journal (a
+        // LogPlanting link) and via /grain/yield reports one date, not two
+        // competing ones — and a yield-only tenant stops showing every
+        // HARVEST milestone as unrealised.
+        for (const y of yieldActuals) {
+            if (!y.plantingId || !y.harvestedAt) continue;
+            foldActual(y.plantingId, 'HARVEST', y.harvestedAt);
         }
 
         return plantings.map((p) => ({

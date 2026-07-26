@@ -317,6 +317,16 @@ export function PortfolioGrainClient({ summary }: Props) {
                                 subtitle={t('kpiPurchaseSubtitle', { amount: formatTonnes(totals.contractedPurchaseTonnes) })}
                                 trendPolarity="neutral"
                             />
+                            {/* PRODUCTION, not stock. These two tiles sit
+                                side by side and measure different things:
+                                this one is everything harvested across every
+                                recorded season, the bin tile is what is in
+                                store right now. They are not additive, and
+                                where the same grain appears in both (a
+                                journal harvest that minted its yield record)
+                                the subtitle says how much — otherwise a
+                                group operator reading them as one total is
+                                double-counting and cannot tell. */}
                             <KpiCard
                                 label={t('kpiHarvestedYield')}
                                 value={totals.totalYieldTonnes}
@@ -324,7 +334,13 @@ export function PortfolioGrainClient({ summary }: Props) {
                                 icon={ArrowTrendUp}
                                 gradient="from-emerald-500 to-teal-500"
                                 trendVariant="success"
-                                subtitle={t('kpiAcrossFarms')}
+                                subtitle={
+                                    totals.yieldAlsoInStoreTonnes > 0
+                                        ? t('kpiYieldAlsoInStore', {
+                                              amount: formatTonnes(totals.yieldAlsoInStoreTonnes),
+                                          })
+                                        : t('kpiYieldProductionOnly')
+                                }
                                 trendPolarity="neutral"
                             />
                             {/* Contract value — the revenue side. Until

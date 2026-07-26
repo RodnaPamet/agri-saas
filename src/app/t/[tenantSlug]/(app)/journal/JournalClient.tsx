@@ -78,6 +78,10 @@ interface JournalClientProps {
     initialFilters: Record<string, string>;
     tenantSlug: string;
     permissions: { canWrite: boolean; canAdmin: boolean };
+    /** GRAIN module on — enables the harvest entry's "also record as yield"
+     *  option. Resolved server-side in page.tsx (the module read is
+     *  admin-gated, and a mechanisator authoring a harvest is not one). */
+    grainEnabled?: boolean;
 }
 
 const STATUS_BADGE: Record<string, StatusBadgeVariant> = {
@@ -96,7 +100,7 @@ export function JournalClient(props: JournalClientProps) {
     );
 }
 
-function JournalPageInner({ initialEntries, initialNextCursor, initialFilters, tenantSlug, permissions }: JournalClientProps) {
+function JournalPageInner({ initialEntries, initialNextCursor, initialFilters, tenantSlug, permissions, grainEnabled }: JournalClientProps) {
     const tenantHref = (path: string) => `/t/${tenantSlug}${path}`;
     const router = useRouter();
     const buildApiUrl = useTenantApiUrl();
@@ -511,6 +515,7 @@ function JournalPageInner({ initialEntries, initialNextCursor, initialFilters, t
                         tenantSlug={tenantSlug}
                         offlineSubmit={offlineSubmit}
                         onCreated={handleEntryCreated}
+                        grainEnabled={grainEnabled}
                     />
                     {/* Surfaces a queued (offline) create + a "Sync now" when
                         back online. Hidden while online with nothing pending. */}
