@@ -35,7 +35,13 @@ export function LocationsClient({ tenantSlug }: { tenantSlug: string }) {
     const buildUrl = useTenantApiUrl();
     const prefetchData = usePrefetchTenant();
     const router = useRouter();
-    const { data, mutate, isLoading } = useTenantSWR<LocationItem[]>('/locations');
+    // FIELD-kind only. A Location row is a growing field OR a grain bin/store
+    // depending on `kind`, and this page's columns describe fields — a bin
+    // rendered here shows "0 parcels" and a Status that does not apply to it.
+    // Bins have their own page (/grain/bins) with capacity and fill.
+    const { data, mutate, isLoading } = useTenantSWR<LocationItem[]>(
+        '/locations?kind=FIELD',
+    );
 
     const [showNew, setShowNew] = useState(false);
     const [name, setName] = useState('');

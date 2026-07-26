@@ -3,8 +3,8 @@ import { LocationRepository, LocationFilters, LocationListParams } from '../repo
 import { ParcelRepository } from '../repositories/ParcelRepository';
 import { assertCanRead, assertCanWrite, assertCanAdmin } from '../policies/common';
 import { logEvent } from '../events/audit';
-import { notFound } from '@/lib/errors/types';
-import { runInTenantContext } from '@/lib/db-context';
+import { notFound, badRequest } from '@/lib/errors/types';
+import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { assertWithinLimit } from '@/lib/billing/entitlements';
 
 export interface CreateLocationInput {
@@ -170,9 +170,66 @@ export async function updateLocation(ctx: RequestContext, id: string, data: Upda
     });
 }
 
+
+/**
+ * Refuse to delete a Location that still has inventory assigned to it.
+ *
+ * `InventoryLot.locationId` has no FK cascade and lots are not deleted with
+ * their location, so soft-deleting an occupied row leaves every lot pointing at
+ * a deleted Location: the stock stays on hand and keeps counting in inventory,
+ * but disappears from every bin view. Silent, and only noticeable once the
+ * numbers stop reconciling.
+ *
+ * This mirrors the refusal in `grain-bin.ts::deleteBin`. Both paths delete the
+ * SAME table, so a guard on only one of them is arguably worse than none: the
+ * protected path teaches you to trust a protection the other path lacks.
+ *
+ * Deliberately NOT a `kind` guard. Blocking bin deletion here would leave bins
+ * undeletable for any tenant without the GRAIN module, since the grain route is
+ * module-gated and this is then the only path. The integrity risk is orphaned
+ * stock, not which page you deleted from — so guard the stock.
+ */
+async function assertNoDependentStock(
+    db: PrismaTx,
+    ctx: RequestContext,
+    locationIds: string[],
+): Promise<void> {
+    if (locationIds.length === 0) return;
+
+    const occupied = await db.inventoryLot.groupBy({
+        by: ['locationId'],
+        where: {
+            tenantId: ctx.tenantId,
+            deletedAt: null,
+            locationId: { in: locationIds },
+        },
+        _count: { _all: true },
+    });
+    const blocking = occupied.filter((g) => g.locationId && g._count._all > 0);
+    if (blocking.length === 0) return;
+
+    // Name the offenders — "some location has stock" is not actionable.
+    const names = await db.location.findMany({
+        where: {
+            id: { in: blocking.map((g) => g.locationId as string) },
+            tenantId: ctx.tenantId,
+        },
+        select: { id: true, name: true },
+        take: 20,
+    });
+    const nameById = new Map(names.map((n) => [n.id, n.name]));
+    const detail = blocking
+        .map((g) => `${nameById.get(g.locationId as string) ?? g.locationId} (${g._count._all} lot(s))`)
+        .join(', ');
+    throw badRequest(
+        `Cannot delete a location that still holds stock: ${detail}. Move or unassign the lots first.`,
+    );
+}
+
 export async function deleteLocation(ctx: RequestContext, id: string) {
     assertCanAdmin(ctx);
     return runInTenantContext(ctx, async (db) => {
+        await assertNoDependentStock(db, ctx, [id]);
         const deleted = await LocationRepository.softDelete(db, ctx, id);
         if (!deleted) throw notFound('Location not found');
 
@@ -207,6 +264,10 @@ export async function bulkDeleteLocation(
 ): Promise<{ deleted: number }> {
     assertCanAdmin(ctx);
     return runInTenantContext(ctx, async (db) => {
+        // Whole-batch refusal, not skip-and-continue: this runs in ONE
+        // transaction, so a partial delete followed by a throw would roll back
+        // anyway — and "deleted 3 of 5, silently" is worse than a clear no.
+        await assertNoDependentStock(db, ctx, locationIds);
         let deleted = 0;
         for (const id of locationIds) {
             const ok = await LocationRepository.softDelete(db, ctx, id);

@@ -5,6 +5,7 @@ import { assertCanRead, assertCanWrite } from '../policies/common';
 import { logEvent } from '../events/audit';
 import { notFound, badRequest } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
+import { assertWithinLimit } from '@/lib/billing/entitlements';
 import {
     EMPTY_BIN_TOTALS,
     fillFractionFor,
@@ -51,6 +52,13 @@ export interface BinDto {
     name: string;
     key: string | null;
     kind: 'BIN' | 'STORAGE';
+    /**
+     * `Location.status`. Surfaced rather than filtered: the grain UI cannot
+     * change a Location's status (that is `/locations`' half of the split
+     * writer), so hiding ARCHIVED bins here would make a bin vanish with no
+     * way back from this page. The org capacity metrics DO exclude them.
+     */
+    status: 'ACTIVE' | 'ARCHIVED';
     description: string | null;
     capacityTonnes: number | null;
     /**
@@ -184,7 +192,7 @@ export async function listBins(ctx: RequestContext, opts: { take?: number } = {}
                 kind: { in: [...BIN_KINDS] as LocationKind[] },
             },
             orderBy: [{ name: 'asc' }],
-            select: { id: true, name: true, key: true, kind: true, description: true, capacityTonnes: true },
+            select: { id: true, name: true, key: true, kind: true, status: true, description: true, capacityTonnes: true },
             take: opts.take ?? LIST_TAKE,
         });
         if (bins.length === 0) return [];
@@ -216,6 +224,7 @@ export async function listBins(ctx: RequestContext, opts: { take?: number } = {}
                 name: bin.name,
                 key: bin.key,
                 kind: bin.kind as 'BIN' | 'STORAGE',
+                status: bin.status as 'ACTIVE' | 'ARCHIVED',
                 description: bin.description,
                 capacityTonnes: capacity,
                 storedTonnes: totals.storedTonnes,
@@ -238,7 +247,7 @@ export async function getBin(ctx: RequestContext, id: string): Promise<BinDetail
                 deletedAt: null,
                 kind: { in: [...BIN_KINDS] as LocationKind[] },
             },
-            select: { id: true, name: true, key: true, kind: true, description: true, capacityTonnes: true },
+            select: { id: true, name: true, key: true, kind: true, status: true, description: true, capacityTonnes: true },
         });
         if (!bin) throw notFound('Grain bin not found');
 
@@ -293,6 +302,7 @@ export async function getBin(ctx: RequestContext, id: string): Promise<BinDetail
             name: bin.name,
             key: bin.key,
             kind: bin.kind as 'BIN' | 'STORAGE',
+            status: bin.status as 'ACTIVE' | 'ARCHIVED',
             description: bin.description,
             capacityTonnes: capacity,
             storedTonnes: totals.storedTonnes,
@@ -308,6 +318,24 @@ export async function getBin(ctx: RequestContext, id: string): Promise<BinDetail
 
 export async function createBin(ctx: RequestContext, input: CreateBinInput) {
     assertCanWrite(ctx);
+    // Plan gate — the SAME `location` cap `createLocation` enforces.
+    //
+    // A bin IS a Location row, and the entitlement counter has always counted
+    // every Location regardless of kind. Without this call the two disagreed in
+    // both directions: a FREE tenant could mint unlimited Locations through the
+    // grain endpoint, AND each bin silently consumed the field budget that
+    // `createLocation` is checked against — so a farmer's 6th field was
+    // rejected because of bins they were never told counted.
+    //
+    // Sharing the cap rather than adding a `grain_bin` resource is deliberate:
+    // the counter already means "any Location", so this makes the gate match
+    // the count instead of introducing a second dimension. Splitting them would
+    // additionally require excluding bins from the existing `location` count —
+    // a behaviour change to a shipped gate — and inventing per-plan bin numbers
+    // with no product input. If distinct budgets are wanted later, that is a
+    // PLAN_LIMITS entry + a `getCurrentCount` arm + kind-filtered counts on
+    // BOTH resources, and should be decided as a pricing question.
+    await assertWithinLimit(ctx, 'location');
     const name = sanitizePlainText(input.name ?? '');
     if (!name) throw badRequest('Bin name is required');
     const key = input.key != null ? sanitizePlainText(input.key) : null;

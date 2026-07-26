@@ -67,6 +67,8 @@ interface FakeTenantData {
 }
 
 const TENANT_DATA: Record<string, FakeTenantData> = {};
+/** Captured `location.findMany` args, so a test can assert the pushed-down filter. */
+const locationFindManyArgs: Array<{ where: Record<string, unknown> }> = [];
 
 /** Every `contract.groupBy` arg object the usecase issued, in order —
  *  so a test can assert the WHERE shape, not just the result. */
@@ -144,7 +146,12 @@ function fakeDbFor(tenantId: string) {
         },
         logEntry: { aggregate: jest.fn(async () => ({ _sum: { costAmount: d.logCost } })) },
         stockTransaction: { aggregate: jest.fn(async () => ({ _sum: { costAmount: d.stockCost } })) },
-        location: { findMany: jest.fn(async () => d.bins) },
+        location: {
+            findMany: jest.fn(async (args: unknown) => {
+                locationFindManyArgs.push(args as { where: Record<string, unknown> });
+                return d.bins;
+            }),
+        },
         inventoryLot: { groupBy: jest.fn(async () => d.stored) },
         unit: { findMany: jest.fn(async () => d.units ?? TONNE_UNITS) },
     };
@@ -180,6 +187,7 @@ function ctxFor(overrides: Partial<OrgContext> = {}): OrgContext {
 beforeEach(() => {
     getPortfolioDataMock.mockReset();
     for (const k of Object.keys(TENANT_DATA)) delete TENANT_DATA[k];
+    locationFindManyArgs.length = 0;
     contractGroupByArgs.length = 0;
 });
 
@@ -345,6 +353,27 @@ describe('getPortfolioGrainSummary', () => {
 
         // 250 ACTIVE + 150 DELIVERED; the 5000 SETTLED tonnes are history.
         expect(res.totals.contractedSaleTonnes).toBe(400);
+    });
+
+    it('excludes ARCHIVED bins from org capacity metrics', async () => {
+        // An archived bin is retired storage. Counting it deflated
+        // binUtilisationPct and inflated binCount/binCapacityTonnes for the
+        // whole org. The per-tenant bins PAGE still shows archived bins —
+        // this is the metrics view.
+        getPortfolioDataMock.mockResolvedValue({
+            tenants: [{ id: 'farm-a', name: 'Alpha Farm', slug: 'alpha' }],
+        });
+        TENANT_DATA['farm-a'] = {
+            contractGroups: [], yieldSum: null, logCost: null, stockCost: null,
+            bins: [{ id: 'bin-1', capacityTonnes: '100' }],
+            stored: [], currency: null,
+        };
+
+        await getPortfolioGrainSummary(ctxFor());
+
+        // The filter is pushed DOWN into the query, not applied after.
+        const binArgs = locationFindManyArgs[0];
+        expect(binArgs.where.status).toBe('ACTIVE');
     });
 
     it('converts non-tonne stock into tonnes before it reaches the org summary', async () => {

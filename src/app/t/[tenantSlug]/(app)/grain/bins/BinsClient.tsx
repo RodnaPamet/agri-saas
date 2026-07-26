@@ -18,6 +18,7 @@ import { GrainSectionNav } from '../GrainSectionNav';
 import { EmptyState } from '@/components/ui/empty-state';
 import { TableTitleCell } from '@/components/ui/table-title-cell';
 import { AgStatusBadge } from '@/components/ag/ag-status';
+import { StatusBadge } from '@/components/ui/status-badge';
 import { ProgressBar } from '@/components/ui/progress-bar';
 import { formatDecimal } from '@/lib/number-format';
 import { BinFormModal } from './BinFormModal';
@@ -29,6 +30,7 @@ export interface BinRow {
     name: string;
     key: string | null;
     kind: 'BIN' | 'STORAGE';
+    status: 'ACTIVE' | 'ARCHIVED';
     description: string | null;
     capacityTonnes: number | null;
     /** Stored produce CONVERTED to tonnes — comparable to capacityTonnes. */
@@ -144,7 +146,16 @@ function BinsPageInner({ initialBins, tenantSlug, permissions }: BinsClientProps
                     accessorKey: 'kind',
                     header: t('colKind'),
                     cell: ({ row }) => (
-                        <AgStatusBadge entity="bin" status={row.original.kind} />
+                        <span className="flex flex-wrap items-center gap-tight">
+                            <AgStatusBadge entity="bin" status={row.original.kind} />
+                            {/* Only the exceptional state is badged — ACTIVE is
+                                the norm and a badge on every row is noise. An
+                                archived bin keeps counting nowhere, but it must
+                                not silently look like a live one. */}
+                            {row.original.status === 'ARCHIVED' && (
+                                <StatusBadge variant="neutral">{t('archived')}</StatusBadge>
+                            )}
+                        </span>
                     ),
                     meta: { mobileCard: { slot: 'status', label: t('colKind') } },
                 },

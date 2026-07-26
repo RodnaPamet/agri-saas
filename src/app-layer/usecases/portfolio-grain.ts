@@ -275,6 +275,13 @@ async function computeTenantGrainRow(
             tenantId: tenant.id,
             deletedAt: null,
             kind: { in: [...BIN_KINDS] },
+            // ARCHIVED bins are retired: their capacity is not operating
+            // capacity, so counting them deflated binUtilisationPct and
+            // inflated binCount/binCapacityTonnes for the whole org. The
+            // per-tenant bins PAGE still shows them (surfaced, not hidden) —
+            // this is the metrics view, where "how full is the farm" must
+            // only measure storage actually in use.
+            status: 'ACTIVE',
         },
         select: { id: true, capacityTonnes: true },
         take: PER_TENANT_LIMIT,

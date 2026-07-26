@@ -114,6 +114,8 @@ export const GrainBinDTOSchema = z
         name: z.string(),
         key: z.string().nullable(),
         kind: z.enum(['BIN', 'STORAGE']),
+        /** Location lifecycle. ARCHIVED bins are shown but excluded from org capacity metrics. */
+        status: z.enum(['ACTIVE', 'ARCHIVED']),
         description: z.string().nullable(),
         capacityTonnes: z.number().nullable(),
         /** HARVESTED_PRODUCE stock CONVERTED to tonnes (the capacity's unit). */

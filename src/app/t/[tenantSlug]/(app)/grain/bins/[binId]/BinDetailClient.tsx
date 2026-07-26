@@ -129,6 +129,9 @@ export function BinDetailClient({ bin, tenantSlug, permissions }: Props) {
                     <MetaStrip
                         items={[
                             { label: t('colKind'), value: <AgStatusBadge entity="bin" status={bin.kind} /> },
+                            ...(bin.status === 'ARCHIVED'
+                                ? [{ label: t('colStatus'), value: t('archived') }]
+                                : []),
                             ...(bin.key ? [{ label: t('form.key'), value: bin.key }] : []),
                             {
                                 label: t('colStored'),

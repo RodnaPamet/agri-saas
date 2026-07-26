@@ -35,6 +35,11 @@ jest.mock('@/lib/security/sanitize', () => ({
     sanitizePlainText: jest.fn((s: string) => `SAN::${s}`),
 }));
 
+const assertWithinLimit: jest.Mock = jest.fn();
+jest.mock('@/lib/billing/entitlements', () => ({
+    assertWithinLimit: (...a: unknown[]) => assertWithinLimit(...a),
+}));
+
 import { logEvent } from '@/app-layer/events/audit';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { listBins, createBin, updateBin, deleteBin } from '@/app-layer/usecases/grain-bin';
@@ -50,8 +55,8 @@ const readerCtx = makeRequestContext('READER', { tenantSlug: 'acme', tenantId: '
 describe('listBins', () => {
     it('filters to BIN/STORAGE kinds and computes fill in ONE grouped query (no N+1)', async () => {
         mockDb.location.findMany.mockResolvedValue([
-            { id: 'bin-1', name: 'Bin A', key: null, kind: 'BIN', description: null, capacityTonnes: 100 },
-            { id: 'bin-2', name: 'Bin B', key: null, kind: 'STORAGE', description: null, capacityTonnes: null },
+            { id: 'bin-1', name: 'Bin A', key: null, kind: 'BIN', status: 'ACTIVE', description: null, capacityTonnes: 100 },
+            { id: 'bin-2', name: 'Bin B', key: null, kind: 'STORAGE', status: 'ACTIVE', description: null, capacityTonnes: null },
         ]);
         // One grouped result per kind rule.
         mockDb.inventoryLot.groupBy
@@ -101,7 +106,7 @@ describe('listBins', () => {
         // The shipped demo data: 320 kg in a 500 t bin. The old code summed raw
         // quantities and rendered 64% for a bin 0.064% full.
         mockDb.location.findMany.mockResolvedValue([
-            { id: 'bin-kg', name: 'Bin A', key: null, kind: 'BIN', description: null, capacityTonnes: 500 },
+            { id: 'bin-kg', name: 'Bin A', key: null, kind: 'BIN', status: 'ACTIVE', description: null, capacityTonnes: 500 },
         ]);
         mockDb.inventoryLot.groupBy.mockResolvedValue([
             { locationId: 'bin-kg', unitId: KILO.id, _sum: { quantityOnHand: 320 }, _count: { _all: 2 } },
@@ -118,7 +123,7 @@ describe('listBins', () => {
 
     it('sums mixed WEIGHT units into one correct tonnage', async () => {
         mockDb.location.findMany.mockResolvedValue([
-            { id: 'bin-1', name: 'Bin A', key: null, kind: 'BIN', description: null, capacityTonnes: 10 },
+            { id: 'bin-1', name: 'Bin A', key: null, kind: 'BIN', status: 'ACTIVE', description: null, capacityTonnes: 10 },
         ]);
         mockDb.inventoryLot.groupBy.mockResolvedValue([
             { locationId: 'bin-1', unitId: TONNE.id, _sum: { quantityOnHand: 2 }, _count: { _all: 1 } },
@@ -136,7 +141,7 @@ describe('listBins', () => {
 
     it('suppresses fillPct and reports the stock when a unit has no tonnage', async () => {
         mockDb.location.findMany.mockResolvedValue([
-            { id: 'bin-1', name: 'Bin A', key: null, kind: 'BIN', description: null, capacityTonnes: 100 },
+            { id: 'bin-1', name: 'Bin A', key: null, kind: 'BIN', status: 'ACTIVE', description: null, capacityTonnes: 100 },
         ]);
         mockDb.inventoryLot.groupBy.mockResolvedValue([
             { locationId: 'bin-1', unitId: TONNE.id, _sum: { quantityOnHand: 40 }, _count: { _all: 1 } },
@@ -162,7 +167,7 @@ describe('listBins', () => {
         // so a produce-only fill made a full barn read as empty capacity. This
         // is the only behavioural difference between the two kinds.
         mockDb.location.findMany.mockResolvedValue([
-            { id: 'store-1', name: 'Main Store', key: null, kind: 'STORAGE', description: null, capacityTonnes: 50 },
+            { id: 'store-1', name: 'Main Store', key: null, kind: 'STORAGE', status: 'ACTIVE', description: null, capacityTonnes: 50 },
         ]);
         mockDb.inventoryLot.groupBy.mockResolvedValue([
             { locationId: 'store-1', unitId: KILO.id, _sum: { quantityOnHand: 25_000 }, _count: { _all: 4 } },
@@ -274,5 +279,63 @@ describe('deleteBin', () => {
     it('READER cannot delete', async () => {
         await expect(deleteBin(readerCtx, 'bin-1')).rejects.toThrow();
         expect(mockDb.location.update).not.toHaveBeenCalled();
+    });
+});
+
+describe('createBin — plan gate', () => {
+    it('gates on the same `location` cap as createLocation', async () => {
+        // A bin IS a Location row and the entitlement counter has always
+        // counted every Location regardless of kind, so the grain endpoint
+        // bypassing the gate let a FREE tenant mint unlimited Locations —
+        // while each bin silently ate the field budget createLocation is
+        // checked against.
+        mockDb.location.create.mockResolvedValue({
+            id: 'bin-1', name: 'SAN::Bin A', kind: 'BIN', capacityTonnes: 100,
+        });
+
+        await createBin(adminCtx, { name: 'Bin A', capacityTonnes: 100 });
+
+        expect(assertWithinLimit).toHaveBeenCalledWith(adminCtx, 'location');
+    });
+
+    it('checks the limit BEFORE writing the row', async () => {
+        assertWithinLimit.mockRejectedValueOnce(
+            new Error('plan_limit_exceeded: location'),
+        );
+
+        await expect(createBin(adminCtx, { name: 'Bin A' })).rejects.toThrow(
+            /plan_limit_exceeded/,
+        );
+        expect(mockDb.location.create).not.toHaveBeenCalled();
+        expect(logEvent).not.toHaveBeenCalled();
+    });
+
+    it('does not consult the plan for a READER (authz first)', async () => {
+        await expect(createBin(readerCtx, { name: 'Bin A' })).rejects.toThrow();
+        // Cheap authz rejection must not cost a billing read.
+        expect(assertWithinLimit).not.toHaveBeenCalled();
+    });
+});
+
+describe('archived bins', () => {
+    it('surfaces ARCHIVED rather than hiding the bin', async () => {
+        // Hiding would be worse than it sounds: the grain UI cannot change a
+        // Location's status (that is /locations' half of the split writer), so
+        // a hidden archived bin has no route back from this page.
+        mockDb.location.findMany.mockResolvedValue([
+            {
+                id: 'bin-old', name: 'Old Silo', key: null, kind: 'BIN',
+                status: 'ARCHIVED', description: null, capacityTonnes: 100,
+            },
+        ]);
+        mockDb.inventoryLot.groupBy.mockResolvedValue([]);
+        mockDb.unit.findMany.mockResolvedValue([]);
+
+        const [bin] = await listBins(adminCtx);
+
+        expect(bin.status).toBe('ARCHIVED');
+        // Still listed — the reads do NOT filter on status.
+        const where = mockDb.location.findMany.mock.calls[0][0].where;
+        expect(where.status).toBeUndefined();
     });
 });

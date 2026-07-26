@@ -254,7 +254,11 @@ async function getCurrentCount(
                     where: { tenantId: ctx.tenantId, status: 'ACTIVE' },
                 });
             case 'location':
-                // Farms / fields (non-deleted).
+                // ANY non-deleted Location row — farms/fields AND grain
+                // bins/stores, which are the same table distinguished by
+                // `kind`. Both creation paths (`createLocation`,
+                // `createBin`) gate on this one cap, so the count and the
+                // gate agree.
                 return db.location.count({
                     where: { tenantId: ctx.tenantId, deletedAt: null },
                 });

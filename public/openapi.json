@@ -2654,6 +2654,13 @@
               "STORAGE"
             ]
           },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ACTIVE",
+              "ARCHIVED"
+            ]
+          },
           "description": {
             "type": [
               "string",
@@ -2714,6 +2721,7 @@
           "name",
           "key",
           "kind",
+          "status",
           "description",
           "capacityTonnes",
           "storedTonnes",
