@@ -3375,6 +3375,12 @@ exports[`API contract — per-schema snapshots schema: LogEntryCreateRequest 1`]
             "null"
           ],
           "maxLength": 8
+        },
+        "recordYield": {
+          "type": [
+            "boolean",
+            "null"
+          ]
         }
       },
       "required": [

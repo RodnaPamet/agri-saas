@@ -661,23 +661,20 @@ export function JournalEntryModal({ open, setOpen, tenantSlug, initial, onSaved,
                                     the tonnage is genuinely derivable; when it is
                                     not, say why instead of hiding the option. */}
                                 {grainEnabled && yieldTonnes != null && (
-                                    <div className="flex items-start gap-tight border-t border-border-subtle pt-3">
-                                        <Checkbox
-                                            id="journal-harvest-record-yield"
-                                            checked={recordYield}
-                                            onCheckedChange={(v) => {
-                                                setRecordYield(v === true);
-                                                markDirty();
-                                            }}
-                                        />
-                                        <label htmlFor="journal-harvest-record-yield" className="cursor-pointer">
-                                            <span className="text-sm text-content-default">
-                                                {t('recordYieldLabel', { tonnes: yieldTonnes })}
-                                            </span>
-                                            <span className="mt-1 block text-xs text-content-muted">
-                                                {t('recordYieldHint')}
-                                            </span>
-                                        </label>
+                                    <div className="border-t border-border-subtle pt-3">
+                                        <FormField
+                                            label={t('recordYieldLabel', { tonnes: yieldTonnes })}
+                                            description={t('recordYieldHint')}
+                                        >
+                                            <Checkbox
+                                                id="journal-harvest-record-yield"
+                                                checked={recordYield}
+                                                onCheckedChange={(v) => {
+                                                    setRecordYield(v === true);
+                                                    markDirty();
+                                                }}
+                                            />
+                                        </FormField>
                                     </div>
                                 )}
                                 {grainEnabled && yieldTonnes == null && harvestItemId && (
