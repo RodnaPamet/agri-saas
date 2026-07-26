@@ -104,6 +104,25 @@ jobs:
 
       - name: Enable pgvector (PGDG)
         uses: ./.github/actions/enable-pgvector
+
+      # ── Create roles required by RLS migrations ──
+      # Mirrors the identical step in ci.yml's DB-backed jobs. Without it
+      # `prisma migrate deploy` dies on the first RLS migration with
+      # `ERROR: role "app_user" does not exist` (SQLSTATE 42704), because the
+      # tenant-isolation policies GRANT to app_user and a fresh service
+      # container has no such role. This job has never had the step, so its
+      # migrations have always failed — the load scenarios below never ran.
+      - name: Create PostgreSQL roles for RLS
+        run: |
+          PGPASSWORD=ci_password psql -h localhost -U ci -d ci_testdb <<'SQL'
+          DO $$ BEGIN
+            IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'app_user') THEN CREATE ROLE app_user NOLOGIN; END IF;
+            IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'postgres') THEN CREATE ROLE postgres NOLOGIN; END IF;
+          END $$;
+          GRANT app_user TO ci;
+          GRANT app_user TO postgres;
+          SQL
+
       - name: Apply migrations + seed
         run: |
           npx prisma migrate deploy
