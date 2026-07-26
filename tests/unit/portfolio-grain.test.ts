@@ -25,6 +25,10 @@ jest.mock('@/app-layer/usecases/portfolio-data', () => ({
 }));
 
 // Per-tenant canned aggregate results — keyed by tenant id.
+/** Default catalog: every fixture quantity is tonnes unless it says otherwise. */
+const TONNE_UNITS = [{ id: 'unit-t', key: 't', symbol: 't' }];
+const KG_UNIT = { id: 'unit-kg', key: 'kg', symbol: 'kg' };
+
 interface FakeTenantData {
     /**
      * Raw contract rows (status + type + tonnes). The fake `groupBy`
@@ -50,7 +54,15 @@ interface FakeTenantData {
     logCost: string | null;
     stockCost: string | null;
     bins: Array<{ id: string; capacityTonnes: string | null }>;
-    stored: Array<{ locationId: string; _sum: { quantityOnHand: string | null } }>;
+    /** groupBy(['locationId','unitId']) rows — a lot's quantity is in ITS unit. */
+    stored: Array<{
+        locationId: string;
+        unitId: string;
+        _sum: { quantityOnHand: string | null };
+        _count: { _all: number };
+    }>;
+    /** The `Unit` rows those unitIds resolve to (global table, no RLS). */
+    units?: Array<{ id: string; key: string; symbol: string }>;
     currency: string | null;
 }
 
@@ -134,6 +146,7 @@ function fakeDbFor(tenantId: string) {
         stockTransaction: { aggregate: jest.fn(async () => ({ _sum: { costAmount: d.stockCost } })) },
         location: { findMany: jest.fn(async () => d.bins) },
         inventoryLot: { groupBy: jest.fn(async () => d.stored) },
+        unit: { findMany: jest.fn(async () => d.units ?? TONNE_UNITS) },
     };
 }
 
@@ -191,7 +204,7 @@ describe('getPortfolioGrainSummary', () => {
             logCost: '1000',
             stockCost: '250',
             bins: [{ id: 'bin-1', capacityTonnes: '1000' }],
-            stored: [{ locationId: 'bin-1', _sum: { quantityOnHand: '600' } }],
+            stored: [{ locationId: 'bin-1', unitId: 'unit-t', _sum: { quantityOnHand: '600' }, _count: { _all: 1 } }],
             currency: 'EUR',
         };
         TENANT_DATA['farm-b'] = {
@@ -203,7 +216,7 @@ describe('getPortfolioGrainSummary', () => {
             logCost: '400',
             stockCost: null,
             bins: [{ id: 'bin-2', capacityTonnes: '500' }],
-            stored: [{ locationId: 'bin-2', _sum: { quantityOnHand: '200' } }],
+            stored: [{ locationId: 'bin-2', unitId: 'unit-t', _sum: { quantityOnHand: '200' }, _count: { _all: 1 } }],
             currency: null,
         };
 
@@ -332,6 +345,43 @@ describe('getPortfolioGrainSummary', () => {
 
         // 250 ACTIVE + 150 DELIVERED; the 5000 SETTLED tonnes are history.
         expect(res.totals.contractedSaleTonnes).toBe(400);
+    });
+
+    it('converts non-tonne stock into tonnes before it reaches the org summary', async () => {
+        // Regression: the grouped sum ignored each lot's unit, so a tenant
+        // whose produce items default to kg reported 1000x its real tonnage
+        // — into the CROSS-TENANT executive summary, where it also inflated
+        // binUtilisationPct against a tonnes-denominated capacity.
+        getPortfolioDataMock.mockResolvedValue({
+            tenants: [{ id: 'farm-kg', name: 'Kilo Farm', slug: 'kilo' }],
+        });
+        TENANT_DATA['farm-kg'] = {
+            contractGroups: [],
+            yieldSum: null,
+            logCost: null,
+            stockCost: null,
+            bins: [{ id: 'bin-kg', capacityTonnes: '500' }],
+            // 320 kg — the shipped demo-data shape (seed-demo.ts).
+            stored: [
+                {
+                    locationId: 'bin-kg',
+                    unitId: 'unit-kg',
+                    _sum: { quantityOnHand: '320' },
+                    _count: { _all: 2 },
+                },
+            ],
+            units: [KG_UNIT],
+            currency: null,
+        };
+
+        const res = await getPortfolioGrainSummary(ctxFor());
+
+        // 320 kg = 0.32 t — NOT 320.
+        expect(res.totals.binStoredTonnes).toBe(0.32);
+        // 0.32 / 500 = 0.064%, which the metric rounds to 1dp → 0.1.
+        // The old code reported 64% for this same bin.
+        expect(res.totals.binUtilisationPct).toBe(0.1);
+        expect(res.perTenant[0].binStoredTonnes).toBe(0.32);
     });
 
     it('a tenant with no grain contributes zeros and is excluded from tenantsWithGrain', async () => {

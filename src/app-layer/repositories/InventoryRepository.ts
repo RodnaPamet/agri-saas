@@ -167,6 +167,29 @@ export class InventoryRepository {
     }
 
     /**
+     * Move a lot to a different storage location (or unassign it with null).
+     *
+     * Writes `locationId` and NOTHING else — deliberately. The inventory
+     * module is single-writer: `quantityOnHand` is a denormalised ledger sum
+     * refreshed only by the ledger writer, so a position change must not go
+     * near it. That is also why this is a lot-row update rather than a pair
+     * of ledger transactions: no stock is created, consumed or moved between
+     * items, only the shelf it sits on.
+     */
+    static async updateLotLocation(
+        db: PrismaTx,
+        ctx: RequestContext,
+        lotId: string,
+        locationId: string | null,
+    ) {
+        const res = await db.inventoryLot.updateMany({
+            where: { id: lotId, tenantId: ctx.tenantId, deletedAt: null },
+            data: { locationId },
+        });
+        return res.count;
+    }
+
+    /**
      * First-Expiry-First-Out lot selection for an item: the non-deleted
      * lot with stock on hand whose contents expire soonest. Used by the
      * spray-completion CONSUMPTION path to pick which lot to draw from.

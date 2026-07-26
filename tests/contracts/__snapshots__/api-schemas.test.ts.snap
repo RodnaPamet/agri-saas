@@ -2754,7 +2754,7 @@ exports[`API contract — per-schema snapshots schema: GrainBin 1`] = `
         "null"
       ]
     },
-    "storedQuantity": {
+    "storedTonnes": {
       "type": "number"
     },
     "lotCount": {
@@ -2765,6 +2765,36 @@ exports[`API contract — per-schema snapshots schema: GrainBin 1`] = `
         "number",
         "null"
       ]
+    },
+    "mixedUnits": {
+      "type": "boolean"
+    },
+    "unconvertible": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "unitKey": {
+            "type": "string"
+          },
+          "symbol": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "number"
+          },
+          "lotCount": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "unitKey",
+          "symbol",
+          "quantity",
+          "lotCount"
+        ]
+      },
+      "default": []
     }
   },
   "required": [
@@ -2774,12 +2804,13 @@ exports[`API contract — per-schema snapshots schema: GrainBin 1`] = `
     "kind",
     "description",
     "capacityTonnes",
-    "storedQuantity",
+    "storedTonnes",
     "lotCount",
-    "fillPct"
+    "fillPct",
+    "mixedUnits"
   ],
   "additionalProperties": {},
-  "description": "A grain bin — a BIN/STORAGE Location with a computed fill (storedQuantity = sum of HARVESTED_PRODUCE lots; fillPct = storedQuantity / capacityTonnes when a capacity is configured)."
+  "description": "A grain bin — a BIN/STORAGE Location with a computed fill. storedTonnes is the bin's HARVESTED_PRODUCE stock converted into tonnes via each lot's unit, so it is comparable to capacityTonnes; fillPct is the fraction of capacity used. Stock in a unit with no tonnage (COUNT/VOLUME) is reported in \`unconvertible\` and sets \`mixedUnits\`, which suppresses fillPct rather than being counted at face value."
 }"
 `;
 

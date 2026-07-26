@@ -5138,7 +5138,11 @@
             "equipmentAria": "Equipment used",
             "fieldCost": "Cost",
             "costPlaceholder": "e.g. 120",
-            "costHint": "Optional — the intervention cost."
+            "costHint": "Optional — the intervention cost.",
+            "harvestDestination": "Store in",
+            "harvestDestinationHint": "Which bin or store receives this harvest. Leave empty to assign it later.",
+            "harvestDestinationPlaceholder": "Select a bin or store…",
+            "harvestDestinationEmpty": "No bins or stores yet"
         },
         "photos": {
             "attachHint": "Attach field photos and documents to this entry.",
@@ -5902,7 +5906,8 @@
                 "cancel": "Cancel",
                 "saveBin": "Save bin",
                 "createBin": "Create bin"
-            }
+            },
+            "fillMixedUnits": "Mixed units"
         },
         "contracts": {
             "breadcrumbDashboard": "Dashboard",
@@ -6208,7 +6213,12 @@
             "FUEL": "Fuel",
             "HARVESTED_PRODUCE": "Harvested produce",
             "OTHER": "Other"
-        }
+        },
+        "storageLocation": "Storage location",
+        "storageLocationHint": "Which bin or store this lot sits in. Optional.",
+        "storageLocationPlaceholder": "Select a bin or store…",
+        "storageLocationMoveHint": "Moving a lot changes where it is stored — the quantity is untouched.",
+        "moveLot": "Move"
     },
     "planning": {
         "bcDashboard": "Dashboard",

@@ -5138,7 +5138,11 @@
             "equipmentAria": "Използвана техника",
             "fieldCost": "Разход",
             "costPlaceholder": "напр. 120",
-            "costHint": "По избор — разход за операцията."
+            "costHint": "По избор — разход за операцията.",
+            "harvestDestination": "Съхранение в",
+            "harvestDestinationHint": "В кой силоз или склад постъпва добивът. Оставете празно, за да го зададете по-късно.",
+            "harvestDestinationPlaceholder": "Изберете силоз или склад…",
+            "harvestDestinationEmpty": "Още няма силози или складове"
         },
         "photos": {
             "attachHint": "Прикачете земеделски снимки и документи към този запис.",
@@ -5902,7 +5906,8 @@
                 "cancel": "Отказ",
                 "saveBin": "Запази силоз",
                 "createBin": "Създай силоз"
-            }
+            },
+            "fillMixedUnits": "Смесени мерни единици"
         },
         "contracts": {
             "breadcrumbDashboard": "Табло",
@@ -6208,7 +6213,12 @@
             "FUEL": "Гориво",
             "HARVESTED_PRODUCE": "Прибрана продукция",
             "OTHER": "Друго"
-        }
+        },
+        "storageLocation": "Място за съхранение",
+        "storageLocationHint": "В кой силоз или склад се намира партидата. Незадължително.",
+        "storageLocationPlaceholder": "Изберете силоз или склад…",
+        "storageLocationMoveHint": "Преместването променя само мястото на съхранение — количеството остава същото.",
+        "moveLot": "Премести"
     },
     "planning": {
         "bcDashboard": "Табло",

@@ -1,12 +1,18 @@
 import { PrismaTx } from '@/lib/db-context';
 import { RequestContext } from '../types';
-import { Prisma, LocationStatus } from '@prisma/client';
+import { Prisma, LocationStatus, LocationKind } from '@prisma/client';
 import { buildCursorWhere, CURSOR_ORDER_BY, computePageInfo, clampLimit } from '@/lib/pagination';
 import type { PaginatedResponse } from '@/lib/dto/pagination';
 
 export interface LocationFilters {
     status?: string;
     q?: string;
+    /**
+     * Restrict to these `LocationKind`s. A `Location` row is both a field and
+     * a grain bin depending on `kind`, so callers that mean one of the two
+     * must say so — an unfiltered list mixes growing areas with storage.
+     */
+    kind?: string[];
 }
 
 export interface LocationListParams {
@@ -62,6 +68,9 @@ export class LocationRepository {
         const where: Prisma.LocationWhereInput = { tenantId: ctx.tenantId, deletedAt: null };
 
         if (filters?.status) where.status = filters.status as LocationStatus;
+        if (filters?.kind && filters.kind.length > 0) {
+            where.kind = { in: filters.kind as LocationKind[] };
+        }
         if (filters?.q) {
             where.OR = [
                 { name: { contains: filters.q, mode: 'insensitive' } },
