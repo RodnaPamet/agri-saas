@@ -79,25 +79,16 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v6
+      # Use the shared composite action rather than hand-rolling setup. It
+      # runs `npm ci` AND `prisma generate`, both with the Roadmap-27 retry
+      # hardening. This workflow previously duplicated only the npm-ci half,
+      # so `npm run db:seed` died on `Cannot find module
+      # '.prisma/client/default'` — the generated client never existed.
+      # Duplicating half of a shared setup is how the halves drift apart.
+      - name: Setup Node + Prisma client
+        uses: ./.github/actions/setup-node-prisma
         with:
           node-version: '22'
-          cache: 'npm'
-
-      - name: Install dependencies
-        # CI hardening — retry npm ci so a flaky postinstall binary
-        # download (e.g. onnxruntime-node ETIMEDOUT from an external
-        # CDN) doesn't fail the job.
-        run: |
-          npm config set fetch-retries 5
-          npm config set fetch-retry-maxtimeout 120000
-          npm config set fetch-timeout 300000
-          for attempt in 1 2 3; do
-            if npm ci; then exit 0; fi
-            echo "::warning::npm ci failed (attempt ${attempt}/3) — retrying"
-            sleep 15
-          done
-          exit 1
 
       - name: Setup k6
         uses: grafana/setup-k6-action@v1
