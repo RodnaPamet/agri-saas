@@ -71,6 +71,15 @@ const sharedCollectCoverageFrom = [
     'src/lib/**/*.ts',
     '!src/**/*.d.ts',
     '!src/**/types.ts',
+    // Colocated test files are not production code, but they ARE `.ts` under
+    // the two scoped roots — so they were being scored as 0%-covered source
+    // and dragging the global threshold down. Two files today
+    // (src/lib/controls/__tests__/control-taxonomy.test.ts,
+    // src/app-layer/utils/__tests__/cadence.test.ts); excluded by pattern so a
+    // third cannot reintroduce the distortion.
+    '!src/**/__tests__/**',
+    '!src/**/*.test.ts',
+    '!src/**/*.spec.ts',
 ];
 
 /** @type {import('jest').Config} */
