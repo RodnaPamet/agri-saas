@@ -271,21 +271,24 @@ function YieldPageInner({
                     id: 'tPerHa',
                     header: t('colTPerHa'),
                     accessorFn: (r) => r.tPerHa ?? -1,
+                    // A t/ha computed from gross sits in the same column as
+                    // one computed at the standard basis; say which, rather
+                    // than let them look alike. Via the Tooltip primitive —
+                    // Epic 56 bans raw `title=`, and a native tooltip would
+                    // not be keyboard-reachable anyway.
                     cell: ({ row }) => (
-                        <span
-                            className="text-xs text-content-emphasis tabular-nums block text-right"
-                            // A t/ha computed from gross sits in the same
-                            // column as one computed at the standard basis;
-                            // say which, rather than let them look alike.
-                            title={
+                        <Tooltip
+                            content={
                                 row.original.tPerHaBasis === 'gross'
                                     ? t('tPerHaBasisGross')
                                     : t('tPerHaBasisStandard')
                             }
                         >
-                            {fmtNum(row.original.tPerHa)}
-                            {row.original.tPerHaBasis === 'gross' && row.original.tPerHa != null ? '*' : ''}
-                        </span>
+                            <span className="text-xs text-content-emphasis tabular-nums block text-right">
+                                {fmtNum(row.original.tPerHa)}
+                                {row.original.tPerHaBasis === 'gross' && row.original.tPerHa != null ? '*' : ''}
+                            </span>
+                        </Tooltip>
                     ),
                 },
                 {
