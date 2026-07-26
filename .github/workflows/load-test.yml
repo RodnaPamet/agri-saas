@@ -158,6 +158,16 @@ jobs:
             echo "duration=1m" >> "$GITHUB_OUTPUT"
           fi
 
+      # k6's handleSummary writes tests/load/results/<scenario>-summary.json.
+      # The directory is gitignored (a developer artefact) and nothing created
+      # it here, so every run ended with:
+      #   failed to handle the end-of-test summary … no such file or directory
+      # The run still exited on its thresholds, but the per-step numbers needed
+      # to CALIBRATE those thresholds were never written — which is why the
+      # login budget has never been checked against a real measurement.
+      - name: Create k6 results directory
+        run: mkdir -p tests/load/results
+
       - name: Run k6 — auth scenario
         if: steps.params.outputs.scenario == 'auth' || steps.params.outputs.scenario == 'both'
         run: |
