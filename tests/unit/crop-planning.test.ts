@@ -27,6 +27,9 @@ const mockDb = {
     planting: { deleteMany: jest.fn(), createMany: jest.fn(), update: jest.fn(), findMany: jest.fn() },
     taskLink: { findMany: jest.fn() },
     logPlanting: { findMany: jest.fn() },
+    // A recorded yield is ALSO a harvest actual — see the fold in
+    // getCropPlanProgress.
+    yieldRecord: { findMany: jest.fn() },
     season: { findFirst: jest.fn(), create: jest.fn(), update: jest.fn(), findMany: jest.fn() },
     cropType: { findFirst: jest.fn(), create: jest.fn(), findMany: jest.fn() },
     cropVariety: { findFirst: jest.fn(), create: jest.fn(), findMany: jest.fn() },
@@ -155,6 +158,7 @@ beforeEach(() => {
     // No pre-existing PLANTING task links by default (fresh fan-out).
     mockDb.taskLink.findMany.mockResolvedValue([]);
     mockDb.logPlanting.findMany.mockResolvedValue([]);
+    mockDb.yieldRecord.findMany.mockResolvedValue([]);
 });
 
 // ─── generatePlantings — engine → plantings → tasks ─────────────────
@@ -417,6 +421,60 @@ describe('getCropPlanProgress', () => {
     it('throws notFound for a missing plan', async () => {
         mockDb.cropPlan.findFirst.mockResolvedValue(null);
         await expect(getCropPlanProgress(readerCtx, 'nope')).rejects.toThrow(/not found/i);
+    });
+
+    // ── a recorded yield IS a harvest actual ──
+    //
+    // `YieldRecord.plantingId` was written by the yield form and read by
+    // nothing, so a farmer who recorded 90 t against a planting still saw an
+    // unrealised HARVEST milestone on the board. These cover the fold.
+
+    it('realises the HARVEST milestone from a YieldRecord, not just LogPlanting', async () => {
+        mockDb.yieldRecord.findMany.mockResolvedValue([
+            { plantingId: 'planting-1', harvestedAt: new Date('2026-06-18T00:00:00Z') },
+        ]);
+
+        const rows = await getCropPlanProgress(readerCtx, 'plan-1');
+
+        expect(rows[0].actual.HARVEST).toBe('2026-06-18T00:00:00.000Z');
+        // ONE query for every planting's yields — no N+1.
+        expect(mockDb.yieldRecord.findMany).toHaveBeenCalledTimes(1);
+        expect(mockDb.yieldRecord.findMany.mock.calls[0][0].where.plantingId.in).toEqual([
+            'planting-1',
+            'planting-2',
+        ]);
+    });
+
+    it('keeps the earliest actual across BOTH sources', async () => {
+        // The journal says the 20th, the yield record says the 14th. A
+        // planting harvested via both surfaces must report one date.
+        mockDb.logPlanting.findMany.mockResolvedValue([
+            { plantingId: 'planting-1', stage: 'HARVEST', logEntry: { occurredAt: new Date('2026-06-20T00:00:00Z') } },
+        ]);
+        mockDb.yieldRecord.findMany.mockResolvedValue([
+            { plantingId: 'planting-1', harvestedAt: new Date('2026-06-14T00:00:00Z') },
+        ]);
+
+        const rows = await getCropPlanProgress(readerCtx, 'plan-1');
+        expect(rows[0].actual.HARVEST).toBe('2026-06-14T00:00:00.000Z');
+    });
+
+    it('ignores a yield record with no harvest date', async () => {
+        // harvestedAt is nullable; a record without one says nothing about
+        // WHEN the milestone was realised, so it must not fabricate a date.
+        mockDb.yieldRecord.findMany.mockResolvedValue([
+            { plantingId: 'planting-1', harvestedAt: null },
+        ]);
+        const rows = await getCropPlanProgress(readerCtx, 'plan-1');
+        expect(rows[0].actual.HARVEST).toBeNull();
+    });
+
+    it('only reads live yield records with a harvest date', async () => {
+        await getCropPlanProgress(readerCtx, 'plan-1');
+        const where = mockDb.yieldRecord.findMany.mock.calls[0][0].where;
+        expect(where.deletedAt).toBeNull();
+        expect(where.harvestedAt).toEqual({ not: null });
+        expect(where.tenantId).toBe('tenant-1');
     });
 });
 

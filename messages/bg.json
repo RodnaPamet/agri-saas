@@ -5142,7 +5142,10 @@
             "harvestDestination": "Съхранение в",
             "harvestDestinationHint": "В кой силоз или склад постъпва добивът. Оставете празно, за да го зададете по-късно.",
             "harvestDestinationPlaceholder": "Изберете силоз или склад…",
-            "harvestDestinationEmpty": "Още няма силози или складове"
+            "harvestDestinationEmpty": "Още няма силози или складове",
+            "recordYieldLabel": "Запиши и като добив — {tonnes} т",
+            "recordYieldHint": "Добавя тази реколта към производствените показатели за сезона, свързана с този запис. Без това зърното влиза в склада, но общият добив остава нула.",
+            "recordYieldUnavailable": "Тази реколта не може да се запише като добив: производството се измерва в тонове, а избраният продукт не се тегли."
         },
         "photos": {
             "attachHint": "Прикачете земеделски снимки и документи към този запис.",
@@ -5831,13 +5834,12 @@
             "withGrainData": " ({count} с данни за зърно)",
             "kpiContractedSale": "Договорено (продажба)",
             "kpiPurchaseSubtitle": "{amount} покупка",
-            "kpiHarvestedYield": "Прибран добив",
-            "kpiAcrossFarms": "за всички ферми",
+            "kpiHarvestedYield": "Записано производство",
             "kpiActivityCost": "Разходи за дейности",
             "kpiTotalCurrency": "общо ({currency})",
             "kpiTotal": "общо",
             "kpiBinUtilisation": "Запълване на силозите",
-            "kpiBinSubtitle": "{stored} от {capacity}",
+            "kpiBinSubtitle": "{stored} в склада сега от {capacity}",
             "yieldByFarm": "Добив по ферми",
             "yieldByFarmNote": "Прибрани тонове по ферми (договори в {sym}).",
             "yieldByFarmAria": "Прибран добив по ферми",
@@ -5863,7 +5865,9 @@
             "colContractedSeason": "Договорено",
             "colProduced": "Произведено",
             "colCoverage": "Покритие",
-            "colSurplus": "Излишък"
+            "colSurplus": "Излишък",
+            "kpiYieldAlsoInStore": "за всички ферми · {amount} от него е и в склада",
+            "kpiYieldProductionOnly": "за всички ферми · нищо от него не е свързано със склад"
         },
         "bins": {
             "breadcrumbDashboard": "Табло",

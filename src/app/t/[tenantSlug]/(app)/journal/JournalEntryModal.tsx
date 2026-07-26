@@ -24,12 +24,14 @@ import { Modal } from '@/components/ui/modal';
 import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
+import { Checkbox } from '@/components/ui/checkbox';
 import { DatePicker } from '@/components/ui/date-picker';
 import { SkeletonCard } from '@/components/ui/skeleton';
 import {
     LOG_ENTRY_TYPE_LABELS,
     LOG_ENTRY_STATUS_LABELS,
 } from './filter-defs';
+import { canConvert, convert } from '@/lib/units/unit-conversion';
 import { useTranslations } from 'next-intl';
 
 const RichTextEditor = dynamic(
@@ -63,6 +65,10 @@ interface ItemOption {
     id: string;
     name: string;
     category: string;
+    /** The item's default unit. Its `key` decides whether a harvest
+     *  quantity can be converted to tonnes for a yield record — crates
+     *  ('each') and volumes ('l') cannot be. */
+    defaultUnit?: { key: string; symbol: string } | null;
 }
 
 interface QuantityRow {
@@ -82,6 +88,8 @@ interface HarvestPayload {
     lotCode?: string | null;
     /** Bin/store the minted lot is placed in — what ties it to a grain bin. */
     locationId?: string | null;
+    /** Also record the harvest as production (a linked YieldRecord). */
+    recordYield?: boolean;
 }
 
 interface JournalSubmitBody {
@@ -141,6 +149,13 @@ export interface JournalEntryModalProps {
      */
     onCreated?: (queued: boolean, optimistic: OptimisticJournalEntry) => void;
     /**
+     * GRAIN module on. Gates the harvest section's "also record as yield"
+     * option — recording production is a GRAIN concept, so a tenant without
+     * the module is never offered it. Resolved server-side (page.tsx),
+     * because the client-readable module endpoint is admin-gated.
+     */
+    grainEnabled?: boolean;
+    /**
      * Shared offline-sync submit from the parent, so the parent's
      * `OfflineSyncBar` pending count reflects a queued create immediately.
      * Falls back to the modal's own hook when omitted (other call sites).
@@ -149,7 +164,7 @@ export interface JournalEntryModalProps {
 }
 
 
-export function JournalEntryModal({ open, setOpen, tenantSlug, initial, onSaved, onCreated, offlineSubmit }: JournalEntryModalProps) {
+export function JournalEntryModal({ open, setOpen, tenantSlug, initial, onSaved, onCreated, offlineSubmit, grainEnabled }: JournalEntryModalProps) {
     const buildUrl = useTenantApiUrl();
     const localSync = useOfflineSync();
     // Prefer the parent's shared submit (keeps its OfflineSyncBar pending count
@@ -221,6 +236,12 @@ export function JournalEntryModal({ open, setOpen, tenantSlug, initial, onSaved,
     const [harvestQty, setHarvestQty] = useState<string>('');
     const [harvestLotCode, setHarvestLotCode] = useState<string>('');
     const [harvestLocationId, setHarvestLocationId] = useState<string>('');
+    // Harvest → yield reconciliation. A HARVEST entry can record the
+    // PRODUCTION side too, so the yield figure and the stock come from ONE
+    // entry instead of two that never reconcile. Pre-checked (the common
+    // intent on a grain farm) but always visible with its derived tonnage
+    // shown, so it is opt-out rather than silent.
+    const [recordYield, setRecordYield] = useState(true);
     const [dirty, setDirty] = useState(false);
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -303,6 +324,20 @@ export function JournalEntryModal({ open, setOpen, tenantSlug, initial, onSaved,
         quantities.every((q) => q.unitId && q.value.trim() !== '' && !Number.isNaN(Number(q.value)))
     );
 
+    // Tonnage for the optional yield record. Derivable ONLY when the item's
+    // default unit is a mass: `canConvert` is dimensional, so crates
+    // ('each') or a volume ('l') yield null here rather than a fabricated
+    // number in a production total. Mirrors the server's own gate in
+    // `recordYieldFromHarvest`, which refuses the same cases.
+    const yieldTonnes = useMemo<number | null>(() => {
+        if (type !== 'HARVEST' || !grainEnabled) return null;
+        const unitKey = (items ?? []).find((i) => i.id === harvestItemId)?.defaultUnit?.key;
+        const qty = Number(harvestQty);
+        if (!unitKey || !canConvert(unitKey, 't')) return null;
+        if (harvestQty.trim() === '' || Number.isNaN(qty) || qty <= 0) return null;
+        return Math.round(convert(qty, unitKey, 't') * 1e3) / 1e3;
+    }, [type, grainEnabled, items, harvestItemId, harvestQty]);
+
     // The harvest payload rides along only on a HARVEST entry that actually
     // names an output item + quantity. Everything else (lot code) is optional;
     // a HARVEST entry with no item set still submits with no harvest object.
@@ -317,8 +352,11 @@ export function JournalEntryModal({ open, setOpen, tenantSlug, initial, onSaved,
             quantity: qty,
             lotCode: harvestLotCode.trim() || null,
             locationId: harvestLocationId || null,
+            // Only ever sent when the tonnage is genuinely derivable, so the
+            // server never has to refuse a request the UI implied would work.
+            ...(recordYield && yieldTonnes != null ? { recordYield: true } : {}),
         };
-    }, [type, harvestItemId, harvestQty, harvestLotCode, harvestLocationId]);
+    }, [type, harvestItemId, harvestQty, harvestLotCode, harvestLocationId, recordYield, yieldTonnes]);
 
     const submit = async () => {
         setSubmitting(true);
@@ -613,6 +651,40 @@ export function JournalEntryModal({ open, setOpen, tenantSlug, initial, onSaved,
                                         matchTriggerWidth
                                     />
                                 </FormField>
+
+                                {/* Also record the PRODUCTION side. Before this
+                                    existed, a harvest logged here produced stock
+                                    but left the yield figure at zero, while a
+                                    harvest typed on /grain/yield produced a
+                                    tonnage with empty bins — the group total
+                                    could not tell the two apart. Shown only when
+                                    the tonnage is genuinely derivable; when it is
+                                    not, say why instead of hiding the option. */}
+                                {grainEnabled && yieldTonnes != null && (
+                                    <div className="flex items-start gap-tight border-t border-border-subtle pt-3">
+                                        <Checkbox
+                                            id="journal-harvest-record-yield"
+                                            checked={recordYield}
+                                            onCheckedChange={(v) => {
+                                                setRecordYield(v === true);
+                                                markDirty();
+                                            }}
+                                        />
+                                        <label htmlFor="journal-harvest-record-yield" className="cursor-pointer">
+                                            <span className="text-sm text-content-default">
+                                                {t('recordYieldLabel', { tonnes: yieldTonnes })}
+                                            </span>
+                                            <span className="mt-1 block text-xs text-content-muted">
+                                                {t('recordYieldHint')}
+                                            </span>
+                                        </label>
+                                    </div>
+                                )}
+                                {grainEnabled && yieldTonnes == null && harvestItemId && (
+                                    <p className="border-t border-border-subtle pt-3 text-xs text-content-muted">
+                                        {t('recordYieldUnavailable')}
+                                    </p>
+                                )}
                             </div>
                         )}
 

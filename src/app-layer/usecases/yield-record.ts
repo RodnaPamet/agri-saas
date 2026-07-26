@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 import { RequestContext } from '../types';
-import { runInTenantContext } from '@/lib/db-context';
+import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
+import { canConvert, convert } from '@/lib/units/unit-conversion';
 import { assertCanRead, assertCanWrite } from '../policies/common';
 import { logEvent } from '../events/audit';
 import { notFound, badRequest } from '@/lib/errors/types';
@@ -8,6 +9,8 @@ import { sanitizePlainText } from '@/lib/security/sanitize';
 import { traceAgUsecase } from '@/lib/observability';
 import { trace } from '@opentelemetry/api';
 import { emitAutomationEvent } from '../automation';
+import { ModuleSettingsRepository } from '../repositories/ModuleSettingsRepository';
+import { resolveEnabledModules } from '@/lib/modules';
 import type {
     CreateYieldRecordInput,
     UpdateYieldRecordInput,
@@ -237,6 +240,186 @@ async function createYieldRecordImpl(ctx: RequestContext, input: CreateYieldReco
     });
 
     return toDto(row);
+}
+
+// ─── Journal-minted yield (harvest reconciliation) ──────────────────
+
+/** A journal HARVEST entry's payload, as far as the yield side needs it. */
+export interface HarvestYieldInput {
+    /** The HARVEST LogEntry that produced the stock lot. */
+    logEntryId: string;
+    /** The harvested-produce Item the lot holds — names the commodity. */
+    itemId: string;
+    /** Harvested amount in the item's DEFAULT unit (which is the lot's unit). */
+    quantity: number;
+    /** Parcel harvested, when the entry named one — resolves the field. */
+    parcelId?: string | null;
+    /** Plantings this entry realises; the first is taken as the yield's. */
+    plantingIds?: string[];
+    /** The entry's occurrence date — the harvest date. */
+    occurredAt: Date;
+}
+
+export interface HarvestYieldResult {
+    yieldRecordId: string | null;
+    grossTonnes: number | null;
+    /** Commodity name taken from the harvested item. */
+    commodity: string | null;
+    /** Planting the yield realises, when the entry linked one. */
+    plantingId: string | null;
+    /** Season resolved through the planting's crop plan. */
+    seasonId: string | null;
+    /** Why nothing new was recorded. Absent on a fresh record. */
+    note?: 'already_recorded' | 'zero_quantity' | 'item_not_found' | 'unit_not_mass' | 'grain_disabled';
+}
+
+/**
+ * Record the PRODUCTION side of a journal harvest — a YieldRecord linked to
+ * the entry that minted the stock lot, so one farmer action lands both the
+ * yield figure and the stock.
+ *
+ * This is the chosen reconciliation direction, and the direction matters.
+ * `recordHarvestLot` requires a `logEntryId` as its provenance anchor (it is
+ * written onto StockTransaction.logEntryId and LotLink.logEntryId), so
+ * driving it from the yield page would mean fabricating a HARVEST journal
+ * entry the farmer never wrote, or widening the ledger's provenance model —
+ * either way a SECOND writer of stock. Going journal → yield adds none: the
+ * inventory ledger keeps exactly one writer, and this function only ever
+ * INSERTs a YieldRecord.
+ *
+ * Runs INSIDE the caller's tenant transaction (`db`), so the yield row and
+ * the stock lot commit together or not at all. Authorization is the
+ * caller's (`journal.createLogEntry` has already asserted write) — mirrors
+ * `recordHarvestLot`, which is likewise tx-bound and caller-authorized.
+ *
+ * Returns a `note` instead of throwing when it cannot record, because a
+ * harvest whose produce is counted in crates rather than weighed must still
+ * succeed as a journal entry + stock lot. The UI gates the option on the
+ * same rule, so the note is a backstop, not the normal path.
+ */
+export async function recordYieldFromHarvest(
+    db: PrismaTx,
+    ctx: RequestContext,
+    input: HarvestYieldInput,
+): Promise<HarvestYieldResult> {
+    const empty = { yieldRecordId: null, grossTonnes: null, commodity: null, plantingId: null, seasonId: null } as const;
+
+    // GRAIN-module gated, the same shape recordHarvestLot uses for INVENTORY.
+    // The UI gate (a server-resolved `grainEnabled` prop) is the one users
+    // meet; this is the one an API client meets. Production figures belong to
+    // the grain module, so a tenant without it never grows a YieldRecord.
+    const modules = resolveEnabledModules(await ModuleSettingsRepository.get(db, ctx));
+    if (!modules.includes('GRAIN')) {
+        return { ...empty, note: 'grain_disabled' };
+    }
+    if (!(input.quantity > 0)) {
+        return { ...empty, note: 'zero_quantity' };
+    }
+
+    // Idempotency — a replayed offline journal create must not double-count
+    // production. The unique index on (logEntryId, tenantId) is the real
+    // guarantee; this read turns the collision into a clean no-op.
+    const existing = await db.yieldRecord.findFirst({
+        where: { logEntryId: input.logEntryId, tenantId: ctx.tenantId },
+        select: { id: true, grossTonnes: true },
+    });
+    if (existing) {
+        return {
+            ...empty,
+            yieldRecordId: existing.id,
+            grossTonnes: dec(existing.grossTonnes),
+            note: 'already_recorded',
+        };
+    }
+
+    const item = await db.item.findFirst({
+        where: { id: input.itemId, tenantId: ctx.tenantId, deletedAt: null },
+        select: { name: true, defaultUnit: { select: { key: true } } },
+    });
+    if (!item) {
+        return { ...empty, note: 'item_not_found' };
+    }
+
+    // A yield record is measured in tonnes, so the harvest quantity has to
+    // BE a mass. `canConvert` is dimensional: crates ('each') or a volume
+    // ('l') are refused here rather than silently reinterpreted as tonnes.
+    const unitKey = item.defaultUnit?.key ?? null;
+    if (!unitKey || !canConvert(unitKey, 't')) {
+        return { ...empty, note: 'unit_not_mass' };
+    }
+    // Decimal(14,3) — round at the column's precision so the stored value
+    // and the value we report back are the same number.
+    const grossTonnes = Math.round(convert(input.quantity, unitKey, 't') * 1e3) / 1e3;
+
+    // Season comes from the planting's crop plan (CropPlan.seasonId is
+    // required), which is what puts this production in the right bucket on
+    // the per-season portfolio view. The field falls back to the planting's
+    // parcel when the harvest payload named none.
+    const plantingId = input.plantingIds?.[0] ?? null;
+    let seasonId: string | null = null;
+    let parcelId = input.parcelId ?? null;
+    if (plantingId) {
+        const planting = await db.planting.findFirst({
+            where: { id: plantingId, tenantId: ctx.tenantId, deletedAt: null },
+            select: { parcelId: true, cropPlan: { select: { seasonId: true } } },
+        });
+        if (planting) {
+            seasonId = planting.cropPlan?.seasonId ?? null;
+            parcelId = parcelId ?? planting.parcelId;
+        }
+    }
+
+    // YieldRecord.locationId is the FIELD (a Location); the harvest payload
+    // names a Parcel, which belongs to one.
+    let locationId: string | null = null;
+    if (parcelId) {
+        const parcel = await db.parcel.findFirst({
+            where: { id: parcelId, tenantId: ctx.tenantId, deletedAt: null },
+            select: { locationId: true },
+        });
+        locationId = parcel?.locationId ?? null;
+    }
+
+    const commodity = sanitizePlainText(item.name);
+    const record = await db.yieldRecord.create({
+        data: {
+            tenantId: ctx.tenantId,
+            logEntryId: input.logEntryId,
+            plantingId,
+            locationId,
+            seasonId,
+            commodity,
+            harvestedAt: input.occurredAt,
+            grossTonnes,
+            // areaHa stays NULL deliberately: a journal harvest does not say
+            // how much area was cut. Defaulting to the parcel's total area
+            // would silently assume a whole-field harvest and understate
+            // t/ha on a partial one, so "unknown" is the honest value and
+            // toDto already renders tPerHa as null for it.
+            areaHa: null,
+            // Likewise moisture — nothing in the journal measures it.
+            moisturePct: null,
+            valuationNotes: null,
+        },
+        select: { id: true },
+    });
+
+    await logEvent(db, ctx, {
+        action: 'HARVEST_YIELD_RECORDED',
+        entityType: 'YieldRecord',
+        entityId: record.id,
+        details: `Recorded yield from journal harvest: ${commodity} (${grossTonnes} t)`,
+        detailsJson: {
+            category: 'entity_lifecycle',
+            entityName: 'YieldRecord',
+            operation: 'created',
+            after: { commodity, grossTonnes, seasonId, logEntryId: input.logEntryId },
+            summary: `Recorded ${grossTonnes} t of ${commodity} from a journal harvest`,
+            source: 'journal_harvest',
+        },
+    });
+
+    return { yieldRecordId: record.id, grossTonnes, commodity, plantingId, seasonId };
 }
 
 export async function updateYieldRecord(ctx: RequestContext, id: string, input: UpdateYieldRecordInput) {

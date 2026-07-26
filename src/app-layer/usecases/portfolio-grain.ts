@@ -117,8 +117,27 @@ export interface PortfolioGrainTenantRow {
     /** SUM of `volumeTonnes` over live (ACTIVE + DELIVERED) PURCHASE
      *  contracts. Excludes DRAFT / CANCELLED / SETTLED. */
     contractedPurchaseTonnes: number;
-    /** SUM of `grossTonnes` over yield records (deletedAt: null). */
+    /**
+     * PRODUCTION: Σ `grossTonnes` over yield records (deletedAt: null),
+     * across every season the tenant has recorded.
+     *
+     * NOT comparable with, and NOT additive to, `binStoredTonnes` — see the
+     * note on that field. Grain that was harvested and then sold off the
+     * field is counted here and nowhere else.
+     */
     totalYieldTonnes: number;
+    /**
+     * The part of `totalYieldTonnes` that is ALSO counted in
+     * `binStoredTonnes` — production recorded by a journal HARVEST entry,
+     * which minted a stock lot at the same time (YieldRecord.logEntryId is
+     * set).
+     *
+     * This is the overlap figure. Without it the dashboard showed
+     * production beside stock as unrelated peers, so a tenant recording
+     * harvests in the journal AND on /grain/yield displayed the same
+     * physical grain twice with nothing able to say so.
+     */
+    yieldAlsoInStoreTonnes: number;
     /** SUM of LogEntry.costAmount + StockTransaction.costAmount. */
     totalActivityCost: number;
     /** Σ (volume × price) over live contracts, in `currency`. The
@@ -132,14 +151,25 @@ export interface PortfolioGrainTenantRow {
     binCount: number;
     /** SUM of `capacityTonnes` across the tenant's bins. */
     binCapacityTonnes: number;
-    /** SUM of HARVESTED_PRODUCE `quantityOnHand` stored in those bins. */
+    /**
+     * STOCK ON HAND, NOW: Σ HARVESTED_PRODUCE `quantityOnHand` in those bins.
+     *
+     * A different measurement from `totalYieldTonnes`, not a subset and not
+     * a remainder: it moves down as grain ships out and up when purchased
+     * grain arrives, and it says nothing about how much was grown. The two
+     * must never be summed; `yieldAlsoInStoreTonnes` states how much grain
+     * appears in both.
+     */
     binStoredTonnes: number;
 }
 
 export interface PortfolioGrainTotals {
     contractedSaleTonnes: number;
     contractedPurchaseTonnes: number;
+    /** PRODUCTION across the group — see the per-tenant field docs. */
     totalYieldTonnes: number;
+    /** Σ of the per-tenant overlap: production that is also in store. */
+    yieldAlsoInStoreTonnes: number;
     totalActivityCost: number;
     /** Σ contracted value across tenants THAT SHARE `currency`. Tenants
      *  priced in another currency are excluded from this sum and
@@ -255,6 +285,17 @@ async function computeTenantGrainRow(
         _sum: { grossTonnes: true },
     });
     const totalYieldTonnes = dec(yieldAgg._sum.grossTonnes);
+
+    // …and how much of it ALSO entered store. `logEntryId IS NOT NULL` means
+    // the record was minted by a journal HARVEST entry, so the same physical
+    // grain is represented twice on this dashboard: once as production, once
+    // as stock. Reporting the overlap is what stops the two figures reading
+    // as one additive total — see the field docs on PortfolioGrainTotals.
+    const yieldFromJournalAgg = await db.yieldRecord.aggregate({
+        where: { tenantId: tenant.id, deletedAt: null, logEntryId: { not: null } },
+        _sum: { grossTonnes: true },
+    });
+    const yieldAlsoInStoreTonnes = dec(yieldFromJournalAgg._sum.grossTonnes);
 
     // ── Cost: LogEntry.costAmount + StockTransaction.costAmount ──
     // Tenant-level totals only (no per-planting join needed here).
@@ -379,6 +420,7 @@ async function computeTenantGrainRow(
         contractedSaleTonnes: round3(contractedSaleTonnes),
         contractedPurchaseTonnes: round3(contractedPurchaseTonnes),
         totalYieldTonnes: round3(totalYieldTonnes),
+        yieldAlsoInStoreTonnes: round3(yieldAlsoInStoreTonnes),
         totalActivityCost: round2(totalActivityCost),
         contractedValue: round2(contractedValue),
         currency,
@@ -555,6 +597,7 @@ export async function getPortfolioGrainSummary(
     let contractedSaleTonnes = 0;
     let contractedPurchaseTonnes = 0;
     let totalYieldTonnes = 0;
+    let yieldAlsoInStoreTonnes = 0;
     let totalActivityCost = 0;
     let binCount = 0;
     let binCapacityTonnes = 0;
@@ -574,6 +617,7 @@ export async function getPortfolioGrainSummary(
         contractedSaleTonnes += r.contractedSaleTonnes;
         contractedPurchaseTonnes += r.contractedPurchaseTonnes;
         totalYieldTonnes += r.totalYieldTonnes;
+        yieldAlsoInStoreTonnes += r.yieldAlsoInStoreTonnes;
         totalActivityCost += r.totalActivityCost;
         binCount += r.binCount;
         binCapacityTonnes += r.binCapacityTonnes;
@@ -604,6 +648,7 @@ export async function getPortfolioGrainSummary(
             contractedSaleTonnes: round3(contractedSaleTonnes),
             contractedPurchaseTonnes: round3(contractedPurchaseTonnes),
             totalYieldTonnes: round3(totalYieldTonnes),
+            yieldAlsoInStoreTonnes: round3(yieldAlsoInStoreTonnes),
             totalActivityCost: round2(totalActivityCost),
             contractedValue: round2(contractedValue),
             mixedCurrency,

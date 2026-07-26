@@ -974,6 +974,17 @@ const HarvestLotPayloadSchema = z.object({
     sourceLotIds: z.array(z.string().min(1)).max(100).optional(),
     costAmount: z.coerce.number().nonnegative().optional().nullable(),
     costCurrency: z.string().max(8).optional().nullable(),
+    /**
+     * Also record this harvest as PRODUCTION — a YieldRecord linked to the
+     * entry, so the yield figure and the stock come from one farmer action
+     * instead of two unreconciled ones.
+     *
+     * Opt-in by design: the server refuses to invent a tonnage it cannot
+     * derive (the quantity's unit must be a mass), and the UI only offers
+     * the checkbox when it is derivable. Absent/false leaves the previous
+     * behaviour exactly as it was.
+     */
+    recordYield: z.coerce.boolean().optional(),
 }).strip();
 
 export const CreateLogEntrySchema = z.object({

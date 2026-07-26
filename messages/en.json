@@ -5142,7 +5142,10 @@
             "harvestDestination": "Store in",
             "harvestDestinationHint": "Which bin or store receives this harvest. Leave empty to assign it later.",
             "harvestDestinationPlaceholder": "Select a bin or store…",
-            "harvestDestinationEmpty": "No bins or stores yet"
+            "harvestDestinationEmpty": "No bins or stores yet",
+            "recordYieldLabel": "Also record as yield — {tonnes} t",
+            "recordYieldHint": "Adds this harvest to your production figures for the season, linked to this entry. Without it the grain lands in store but the yield total stays at zero.",
+            "recordYieldUnavailable": "This harvest cannot be recorded as yield: production is measured in tonnes, and the selected product is not weighed."
         },
         "photos": {
             "attachHint": "Attach field photos and documents to this entry.",
@@ -5831,13 +5834,12 @@
             "withGrainData": " ({count} with grain data)",
             "kpiContractedSale": "Contracted (sale)",
             "kpiPurchaseSubtitle": "{amount} purchase",
-            "kpiHarvestedYield": "Harvested yield",
-            "kpiAcrossFarms": "across all farms",
+            "kpiHarvestedYield": "Production recorded",
             "kpiActivityCost": "Activity cost",
             "kpiTotalCurrency": "total ({currency})",
             "kpiTotal": "total",
             "kpiBinUtilisation": "Bin utilisation",
-            "kpiBinSubtitle": "{stored} of {capacity}",
+            "kpiBinSubtitle": "{stored} in store now of {capacity}",
             "yieldByFarm": "Yield by farm",
             "yieldByFarmNote": "Harvested tonnes per farm ({sym}-priced contracts).",
             "yieldByFarmAria": "Harvested yield by farm",
@@ -5863,7 +5865,9 @@
             "colContractedSeason": "Contracted",
             "colProduced": "Produced",
             "colCoverage": "Coverage",
-            "colSurplus": "Surplus"
+            "colSurplus": "Surplus",
+            "kpiYieldAlsoInStore": "across all farms · {amount} of it also in store",
+            "kpiYieldProductionOnly": "across all farms · none of it linked to store"
         },
         "bins": {
             "breadcrumbDashboard": "Dashboard",
