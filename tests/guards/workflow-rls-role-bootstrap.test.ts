@@ -25,6 +25,9 @@ const WORKFLOWS = path.resolve(__dirname, '../../.github/workflows');
 
 const MIGRATE = /prisma\s+migrate\s+deploy/;
 const CREATE_ROLE = /CREATE ROLE app_user/;
+const SEED = /npm run db:seed|tsx prisma\/seed/;
+/** Either the shared composite action or an explicit generate call. */
+const GENERATES_CLIENT = /setup-node-prisma|prisma generate/;
 
 interface WorkflowFile {
     name: string;
@@ -84,4 +87,24 @@ describe('workflow RLS role bootstrap', () => {
             expect(name).toBeTruthy();
         }
     });
+
+    it.each(migratingWorkflows().map((w) => w.name))(
+        '%s generates the Prisma client before seeding',
+        (name) => {
+            // Second half of the same lesson. Fixing the role bootstrap made
+            // `prisma migrate deploy` pass and revealed the next failure:
+            // `npm run db:seed` died on `Cannot find module
+            // '.prisma/client/default'` because nothing generated the client.
+            //
+            // load-test.yml had duplicated the shared setup action's `npm ci`
+            // retry logic but not its `prisma generate` half — duplicating
+            // half of a shared setup is how the halves drift apart. Prefer the
+            // composite action; an explicit `prisma generate` also satisfies
+            // this.
+            const { lines } = migratingWorkflows().find((w) => w.name === name)!;
+            const src = lines.join('\n');
+            if (!SEED.test(src)) return; // nothing to seed, nothing to prove
+            expect(src).toMatch(GENERATES_CLIENT);
+        },
+    );
 });
