@@ -39,6 +39,10 @@ const SCAN_DIR = 'src/app/t/[tenantSlug]/(app)';
  * absence of a gear; PRs that mount a gear should REMOVE the entry.
  */
 const EXEMPTIONS: Record<string, string> = {
+    // Grain bin detail (bins roadmap PR2).
+    "grain/bins/[binId]/BinDetailClient.tsx":
+        "(a) detail-page sub-table — the lots INSIDE one bin, not a list page. The set is one bin's contents (bounded, already sorted soonest-expiry first), so faceted filtering, a column gear and viewport-clamping all add chrome without adding reach.",
+
     // Platform-support console (#12) — bounded global-catalogue rosters.
     "admin/promotions/PromotionsAdminClient.tsx":
         "(b) lean curation roster — five fixed columns (offer/status/window/enquiries/actions); every one is load-bearing for support, so there is nothing to hide behind a gear.",

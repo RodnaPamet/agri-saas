@@ -47,6 +47,10 @@ const EXEMPT_FILE_PATTERNS: RegExp[] = [
  * length to stop hand-waved exemptions.
  */
 const EXEMPTIONS: Record<string, string> = {
+    // Grain bin detail (bins roadmap PR2).
+    "src/app/t/[tenantSlug]/(app)/grain/bins/[binId]/BinDetailClient.tsx":
+        "detail-page sub-table — the lots INSIDE one bin, not a list page. The set is one bin's contents (bounded, already sorted soonest-expiry first), so faceted filtering, a column gear and viewport-clamping all add chrome without adding reach.",
+
     // Platform-support console (#12) — admin sub-pages over a GLOBAL catalogue
     // that only platform staff can reach. Both are bounded curation rosters
     // (hundreds of rows at most, not a tenant's operational data), and support

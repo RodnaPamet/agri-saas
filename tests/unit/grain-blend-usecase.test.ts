@@ -14,7 +14,8 @@
 
 const mockDb = {
     location: { findFirst: jest.fn() },
-    inventoryLot: { findMany: jest.fn() },
+    inventoryLot: { findMany: jest.fn(), groupBy: jest.fn() },
+    unit: { findFirst: jest.fn(), findMany: jest.fn() },
 } as any;
 
 jest.mock('@/lib/db-context', () => ({
@@ -55,6 +56,11 @@ beforeEach(() => {
     appendLotLink.mockResolvedValue({ created: true });
     getItem.mockResolvedValue({ id: 'item-out', name: 'Blended Wheat', defaultUnitId: 'unit-t' });
     createLot.mockResolvedValue({ id: 'out-lot', lotCode: 'BLEND-1', unitId: 'unit-t' });
+    // Destination reads default to "no capacity configured" so the existing
+    // cases are unaffected by the capacity guard.
+    mockDb.unit.findFirst.mockResolvedValue({ key: 't' });
+    mockDb.unit.findMany.mockResolvedValue([{ id: 'unit-t', key: 't' }]);
+    mockDb.inventoryLot.groupBy.mockResolvedValue([]);
 });
 
 const adminCtx = makeRequestContext('ADMIN', { tenantSlug: 'acme', tenantId: 'tenant-1', userId: 'user-1' });
@@ -212,5 +218,87 @@ describe('blendLots — validation', () => {
             blendLots(readerCtx, { sourceLots: [{ lotId: 'lot-1', quantity: 1 }], outputItemId: 'item-out' }),
         ).rejects.toThrow();
         expect(appendStockTransaction).not.toHaveBeenCalled();
+    });
+});
+
+describe('blendLots — latent defects that became live once reachable', () => {
+    const SOURCES = [
+        { id: 'lot-1', unitId: 'unit-t', quantityOnHand: 10, attributesJson: null, lotCode: 'A' },
+    ];
+
+    it('consumes with disallowNegative so a concurrent blend cannot drive stock negative', async () => {
+        // The sufficiency check reads quantityOnHand BEFORE the ledger takes
+        // its per-tenant advisory lock, under READ COMMITTED — so two
+        // concurrent blends of the same lot both pass it. The ledger's guard
+        // re-reads the balance INSIDE the lock, which is the only place the
+        // read and the insert are one atomic step.
+        mockDb.inventoryLot.findMany.mockResolvedValue(SOURCES);
+
+        await blendLots(adminCtx, {
+            sourceLots: [{ lotId: 'lot-1', quantity: 4 }],
+            outputItemId: 'item-out',
+        });
+
+        const consumption = appendStockTransaction.mock.calls
+            .map((c) => c[2])
+            .filter((a) => a.type === 'CONSUMPTION');
+        expect(consumption).toHaveLength(1);
+        expect(consumption[0].disallowNegative).toBe(true);
+    });
+
+    it('refuses to receipt blended grain into a FIELD', async () => {
+        // Stock "stored" in a growing area is on-hand but invisible to every
+        // bin view.
+        mockDb.inventoryLot.findMany.mockResolvedValue(SOURCES);
+        mockDb.location.findFirst.mockResolvedValue({
+            id: 'field-1', name: 'North Field', kind: 'FIELD', capacityTonnes: null,
+        });
+
+        await expect(
+            blendLots(adminCtx, {
+                sourceLots: [{ lotId: 'lot-1', quantity: 4 }],
+                outputItemId: 'item-out',
+                outputLocationId: 'field-1',
+            }),
+        ).rejects.toThrow(/bin or storage location/i);
+        // Rejected before any ledger write.
+        expect(appendStockTransaction).not.toHaveBeenCalled();
+    });
+
+    it('refuses a blend that would overflow the destination capacity', async () => {
+        mockDb.inventoryLot.findMany.mockResolvedValue(SOURCES);
+        mockDb.location.findFirst.mockResolvedValue({
+            id: 'bin-1', name: 'Bin A', kind: 'BIN', capacityTonnes: 5,
+        });
+        // Bin already holds 3 t; blending 4 t more would exceed 5 t.
+        mockDb.inventoryLot.groupBy.mockResolvedValue([
+            { unitId: 'unit-t', _sum: { quantityOnHand: 3 } },
+        ]);
+
+        await expect(
+            blendLots(adminCtx, {
+                sourceLots: [{ lotId: 'lot-1', quantity: 4 }],
+                outputItemId: 'item-out',
+                outputLocationId: 'bin-1',
+            }),
+        ).rejects.toThrow(/does not fit/i);
+        expect(appendStockTransaction).not.toHaveBeenCalled();
+    });
+
+    it('allows a blend that fits', async () => {
+        mockDb.inventoryLot.findMany.mockResolvedValue(SOURCES);
+        mockDb.location.findFirst.mockResolvedValue({
+            id: 'bin-1', name: 'Bin A', kind: 'BIN', capacityTonnes: 10,
+        });
+        mockDb.inventoryLot.groupBy.mockResolvedValue([
+            { unitId: 'unit-t', _sum: { quantityOnHand: 3 } },
+        ]);
+
+        const res = await blendLots(adminCtx, {
+            sourceLots: [{ lotId: 'lot-1', quantity: 4 }],
+            outputItemId: 'item-out',
+            outputLocationId: 'bin-1',
+        });
+        expect(res.outputLotId).toBe('out-lot');
     });
 });

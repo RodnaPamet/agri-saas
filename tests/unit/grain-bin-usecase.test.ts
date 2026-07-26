@@ -14,7 +14,7 @@
 
 const mockDb = {
     location: { findFirst: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn() },
-    inventoryLot: { groupBy: jest.fn() },
+    inventoryLot: { groupBy: jest.fn(), findMany: jest.fn(), count: jest.fn() },
     unit: { findMany: jest.fn() },
 } as any;
 
@@ -37,7 +37,7 @@ jest.mock('@/lib/security/sanitize', () => ({
 
 import { logEvent } from '@/app-layer/events/audit';
 import { sanitizePlainText } from '@/lib/security/sanitize';
-import { listBins, createBin, updateBin } from '@/app-layer/usecases/grain-bin';
+import { listBins, createBin, updateBin, deleteBin } from '@/app-layer/usecases/grain-bin';
 import { makeRequestContext } from '../helpers/make-context';
 
 beforeEach(() => {
@@ -53,11 +53,14 @@ describe('listBins', () => {
             { id: 'bin-1', name: 'Bin A', key: null, kind: 'BIN', description: null, capacityTonnes: 100 },
             { id: 'bin-2', name: 'Bin B', key: null, kind: 'STORAGE', description: null, capacityTonnes: null },
         ]);
-        // ONE groupBy returns (bin, unit) sums across BOTH bins.
-        mockDb.inventoryLot.groupBy.mockResolvedValue([
-            { locationId: 'bin-1', unitId: TONNE.id, _sum: { quantityOnHand: 45 }, _count: { _all: 2 } },
-            { locationId: 'bin-2', unitId: TONNE.id, _sum: { quantityOnHand: 8 }, _count: { _all: 1 } },
-        ]);
+        // One grouped result per kind rule.
+        mockDb.inventoryLot.groupBy
+            .mockResolvedValueOnce([
+                { locationId: 'bin-1', unitId: TONNE.id, _sum: { quantityOnHand: 45 }, _count: { _all: 2 } },
+            ])
+            .mockResolvedValueOnce([
+                { locationId: 'bin-2', unitId: TONNE.id, _sum: { quantityOnHand: 8 }, _count: { _all: 1 } },
+            ]);
         mockDb.unit.findMany.mockResolvedValue([TONNE]);
 
         const bins = await listBins(adminCtx);
@@ -67,13 +70,19 @@ describe('listBins', () => {
         expect(locArgs.where.kind).toEqual({ in: ['BIN', 'STORAGE'] });
         expect(locArgs.where).toMatchObject({ tenantId: 'tenant-1', deletedAt: null });
 
-        // Exactly ONE aggregate for the whole list (the N+1 guard), grouped by
-        // unit so each quantity can be converted before summing.
-        expect(mockDb.inventoryLot.groupBy).toHaveBeenCalledTimes(1);
+        // TWO aggregates for the whole list — one per kind rule (BIN counts
+        // produce, STORAGE counts all stock) — and crucially NOT one per bin:
+        // the query count must not grow with the number of bins.
+        expect(mockDb.inventoryLot.groupBy).toHaveBeenCalledTimes(2);
         const lotArgs = mockDb.inventoryLot.groupBy.mock.calls[0][0];
         expect(lotArgs.by).toEqual(['locationId', 'unitId']);
-        expect(lotArgs.where.locationId).toEqual({ in: ['bin-1', 'bin-2'] });
+        // First call: the BIN rows, produce-filtered.
+        expect(lotArgs.where.locationId).toEqual({ in: ['bin-1'] });
         expect(lotArgs.where.item).toEqual({ is: { category: 'HARVESTED_PRODUCE' } });
+        // Second call: the STORAGE rows, with NO category filter.
+        const storeArgs = mockDb.inventoryLot.groupBy.mock.calls[1][0];
+        expect(storeArgs.where.locationId).toEqual({ in: ['bin-2'] });
+        expect(storeArgs.where.item).toBeUndefined();
         // No row cap: a `take` here is what silently truncated bins farm-wide.
         expect(lotArgs.take).toBeUndefined();
 
@@ -148,6 +157,27 @@ describe('listBins', () => {
         ]);
     });
 
+    it('counts ALL stock for a STORAGE row, produce only for a BIN', async () => {
+        // A STORAGE row is a barn/store — it is where seed and fertiliser live,
+        // so a produce-only fill made a full barn read as empty capacity. This
+        // is the only behavioural difference between the two kinds.
+        mockDb.location.findMany.mockResolvedValue([
+            { id: 'store-1', name: 'Main Store', key: null, kind: 'STORAGE', description: null, capacityTonnes: 50 },
+        ]);
+        mockDb.inventoryLot.groupBy.mockResolvedValue([
+            { locationId: 'store-1', unitId: KILO.id, _sum: { quantityOnHand: 25_000 }, _count: { _all: 4 } },
+        ]);
+        mockDb.unit.findMany.mockResolvedValue([KILO]);
+
+        const [store] = await listBins(adminCtx);
+
+        // Only the STORAGE aggregate runs (no BIN rows to query for).
+        expect(mockDb.inventoryLot.groupBy).toHaveBeenCalledTimes(1);
+        expect(mockDb.inventoryLot.groupBy.mock.calls[0][0].where.item).toBeUndefined();
+        expect(store.storedTonnes).toBe(25); // 25 000 kg of seed + fertiliser
+        expect(store.fillPct).toBe(0.5);
+    });
+
     it('short-circuits with no lot query when there are no bins', async () => {
         mockDb.location.findMany.mockResolvedValue([]);
         const bins = await listBins(adminCtx);
@@ -192,5 +222,57 @@ describe('updateBin', () => {
         await updateBin(adminCtx, 'bin-1', { name: 'Bin A2', capacityTonnes: 120 });
         expect(sanitizePlainText).toHaveBeenCalledWith('Bin A2');
         expect(logEvent).toHaveBeenCalledTimes(1);
+    });
+});
+
+describe('deleteBin', () => {
+    const BIN = { id: 'bin-1', name: 'Bin A', kind: 'BIN' };
+
+    it('refuses while stock is still assigned', async () => {
+        // Lots have no FK cascade to Location, so deleting an occupied bin
+        // leaves them pointing at a soft-deleted row: still on hand, still
+        // counted in inventory, invisible to every bin view.
+        mockDb.location.findFirst.mockResolvedValue(BIN);
+        mockDb.inventoryLot.count.mockResolvedValue(3);
+
+        await expect(deleteBin(adminCtx, 'bin-1')).rejects.toThrow(/still holds 3 lot/i);
+        expect(mockDb.location.update).not.toHaveBeenCalled();
+        expect(logEvent).not.toHaveBeenCalled();
+    });
+
+    it('counts stock of ANY category, not just produce', async () => {
+        mockDb.location.findFirst.mockResolvedValue({ ...BIN, kind: 'STORAGE' });
+        mockDb.inventoryLot.count.mockResolvedValue(1);
+
+        await expect(deleteBin(adminCtx, 'bin-1')).rejects.toThrow(/still holds/i);
+        // Seed in a barn orphans exactly like grain does.
+        expect(mockDb.inventoryLot.count.mock.calls[0][0].where.item).toBeUndefined();
+    });
+
+    it('soft-deletes an empty bin and audits it', async () => {
+        mockDb.location.findFirst.mockResolvedValue(BIN);
+        mockDb.inventoryLot.count.mockResolvedValue(0);
+        mockDb.location.update.mockResolvedValue({ id: 'bin-1' });
+
+        const res = await deleteBin(adminCtx, 'bin-1');
+
+        expect(res).toEqual({ id: 'bin-1', deleted: true });
+        // Soft delete, never a hard delete.
+        const data = mockDb.location.update.mock.calls[0][0].data;
+        expect(data.deletedAt).toBeInstanceOf(Date);
+        expect(data.deletedByUserId).toBe('user-1');
+        const payload = (logEvent as jest.Mock).mock.calls[0][2];
+        expect(payload.action).toBe('SOFT_DELETE');
+        expect(payload.entityType).toBe('Location');
+    });
+
+    it('throws notFound for a FIELD or another tenant\'s row', async () => {
+        mockDb.location.findFirst.mockResolvedValue(null);
+        await expect(deleteBin(adminCtx, 'field-1')).rejects.toThrow(/not found/i);
+    });
+
+    it('READER cannot delete', async () => {
+        await expect(deleteBin(readerCtx, 'bin-1')).rejects.toThrow();
+        expect(mockDb.location.update).not.toHaveBeenCalled();
     });
 });

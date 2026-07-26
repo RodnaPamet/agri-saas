@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import type { Row } from '@tanstack/react-table';
@@ -65,6 +66,7 @@ export function BinsClient(props: BinsClientProps) {
 
 function BinsPageInner({ initialBins, tenantSlug, permissions }: BinsClientProps) {
     const t = useTranslations('grain.bins');
+    const router = useRouter();
     const apiUrl = useCallback(
         (path: string) => `/api/t/${tenantSlug}${path}`,
         [tenantSlug],
@@ -74,7 +76,8 @@ function BinsPageInner({ initialBins, tenantSlug, permissions }: BinsClientProps
     const { search } = filterCtx;
 
     const [isCreateOpen, setIsCreateOpen] = useState(false);
-    const [editing, setEditing] = useState<BinRow | null>(null);
+    // No `editing` state: the list creates, the detail page edits. Keeping a
+    // never-set editing slot here would imply the list still edits.
 
     const binsQuery = useQuery<BinRow[]>({
         queryKey: ['grain-bins', tenantSlug, 'list'],
@@ -112,17 +115,15 @@ function BinsPageInner({ initialBins, tenantSlug, permissions }: BinsClientProps
         );
     }, [rawBins, search]);
 
-    const openEdit = useCallback((bin: BinRow) => {
-        setEditing(bin);
-        setIsCreateOpen(true);
-    }, []);
-
     const handleRowClick = useCallback(
         (row: Row<BinRow>) => {
-            if (!permissions.canWrite) return;
-            openEdit(row.original);
+            // Opens the bin DETAIL page. It used to open the edit form, which
+            // meant a READER — who cannot write — got a completely inert
+            // table, and the purpose-built read endpoint had no callers.
+            // Editing now lives on the detail page.
+            router.push(`/t/${tenantSlug}/grain/bins/${row.original.id}`);
         },
-        [permissions.canWrite, openEdit],
+        [router, tenantSlug],
     );
     const getRowId = useCallback((b: BinRow) => b.id, []);
 
@@ -242,10 +243,7 @@ function BinsPageInner({ initialBins, tenantSlug, permissions }: BinsClientProps
                         variant="primary"
                         icon={<Plus className="-ml-0.5 -mr-2.5" />}
                         id="new-bin-btn"
-                        onClick={() => {
-                            setEditing(null);
-                            setIsCreateOpen(true);
-                        }}
+                        onClick={() => setIsCreateOpen(true)}
                     >
                         {t('newBin')}
                     </Button>
@@ -284,10 +282,7 @@ function BinsPageInner({ initialBins, tenantSlug, permissions }: BinsClientProps
                             permissions.canWrite
                                 ? {
                                       label: t('addBin'),
-                                      onClick: () => {
-                                          setEditing(null);
-                                          setIsCreateOpen(true);
-                                      },
+                                      onClick: () => setIsCreateOpen(true),
                                   }
                                 : undefined
                         }
@@ -303,7 +298,6 @@ function BinsPageInner({ initialBins, tenantSlug, permissions }: BinsClientProps
                     open={isCreateOpen}
                     setOpen={setIsCreateOpen}
                     tenantSlug={tenantSlug}
-                    bin={editing}
                     onSaved={() => binsQuery.refetch()}
                 />
             )}

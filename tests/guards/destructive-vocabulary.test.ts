@@ -92,6 +92,10 @@ interface Offence {
 // literal scan can't read it yet it cannot ship an ambiguous verb.
 // Each entry needs a written reason.
 const DYNAMIC_LABEL_EXEMPT: Record<string, string> = {
+    // Grain bin detail — confirmLabel is an i18n key; the resolved values are
+    // "Delete bin" (en) / "Изтриване на силоз" (bg), both canonical.
+    'src/app/t/[tenantSlug]/(app)/grain/bins/[binId]/BinDetailClient.tsx':
+        "confirmLabel={t('detail.deleteConfirm')} → \"Delete bin\"",
     // Shared bulk-delete action-row hook: `verb` prop is typed
     // `'Delete' | 'Remove' | 'Revoke' | 'Archive' | 'Discard'` (all
     // canonical), defaulting to "Delete". Every table reuses this, so the

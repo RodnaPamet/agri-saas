@@ -5907,7 +5907,46 @@
                 "saveBin": "Save bin",
                 "createBin": "Create bin"
             },
-            "fillMixedUnits": "Mixed units"
+            "fillMixedUnits": "Mixed units",
+            "detail": {
+                "colLot": "Lot",
+                "colItem": "Product",
+                "colQuantity": "Quantity",
+                "col_moisture": "Moisture %",
+                "col_protein": "Protein %",
+                "col_testWeight": "Test weight",
+                "colExpires": "Expires",
+                "edit": "Edit bin",
+                "storedSummary": "{stored} t of {capacity} t",
+                "alsoHolds": "Also holds {items}, which has no tonnage and is excluded from the fill.",
+                "emptyTitle": "Nothing stored here yet",
+                "emptyDescription": "Assign a lot to this bin from the inventory page, or set a destination when you record a harvest.",
+                "lotsTruncated": "Showing the first 200 lots. The totals above cover every lot.",
+                "delete": "Delete",
+                "deleteTitle": "Delete {name}?",
+                "deleteDescription": "The bin is removed from your bin list. Stock must be moved or unassigned first — a bin holding lots cannot be deleted.",
+                "deleteConfirm": "Delete bin"
+            },
+            "blend": {
+                "action": "Blend",
+                "title": "Blend lots",
+                "description": "Combine lots stored in {bin} into one blended lot.",
+                "sources": "Lots to blend",
+                "sourcesHint": "Whole lots are consumed. All selected lots must share one unit.",
+                "noLots": "No lots to blend yet",
+                "totalPreview": "{count} lots · {qty} {unit} blended",
+                "quality_moisture": "Moisture",
+                "quality_protein": "Protein",
+                "quality_testWeight": "Test weight",
+                "mixedUnits": "Selected lots use different units and cannot be blended.",
+                "outputItem": "Blended product",
+                "outputItemPlaceholder": "Select the resulting product…",
+                "outputLotCode": "Lot code",
+                "outputLotCodeHint": "Optional — generated when left empty.",
+                "outputLotCodePlaceholder": "e.g. BLEND-2026-07",
+                "cancel": "Cancel",
+                "confirm": "Blend lots"
+            }
         },
         "contracts": {
             "breadcrumbDashboard": "Dashboard",
