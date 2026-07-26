@@ -139,3 +139,83 @@ describe('deleteYieldRecord', () => {
         expect(data.deletedByUserId).toBe('user-1');
     });
 });
+
+// ─── one basis, one denominator ─────────────────────────────────────
+//
+// `moisturePct` used to be stored, displayed and used in nothing, so two
+// harvests measured at different moistures were summed and ranked as if
+// identical. The DTO now carries the standard-basis tonnage read from the
+// database-generated column, and t/ha comes from the SHARED helper the
+// season recap and the year-end PDF also call.
+
+describe('yield DTO — moisture basis and t/ha', () => {
+    /** A minimal live row; each test overrides the numbers it cares about. */
+    const BASE_ROW = {
+        id: 'y-1',
+        plantingId: null,
+        locationId: null,
+        seasonId: null,
+        commodity: 'Wheat',
+        harvestedAt: null,
+        valuationNotes: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+    };
+
+    it('passes the database-generated standard-basis tonnage through', async () => {
+        mockDb.yieldRecord.findMany.mockResolvedValue([
+            {
+                ...BASE_ROW,
+                grossTonnes: '90',
+                moisturePct: '18',
+                areaHa: '10',
+                netTonnesStd: '85.814',
+            },
+        ]);
+        const out = await listYieldRecords(readerCtx);
+        expect(out[0].netTonnesStd).toBe(85.814);
+    });
+
+    it('computes t/ha from the ADJUSTED tonnage when moisture is known', async () => {
+        mockDb.yieldRecord.findMany.mockResolvedValue([
+            {
+                ...BASE_ROW,
+                grossTonnes: '90',
+                moisturePct: '18',
+                areaHa: '10',
+                netTonnesStd: '85.814',
+            },
+        ]);
+        const out = await listYieldRecords(readerCtx);
+        // 85.814 / 10 — NOT 90 / 10, which would rank a wet field above a
+        // dry one carrying the same sellable grain.
+        expect(out[0].tPerHa).toBe(8.5814);
+        expect(out[0].tPerHaBasis).toBe('standard-moisture');
+    });
+
+    it('falls back to gross when moisture was never measured, and says so', async () => {
+        mockDb.yieldRecord.findMany.mockResolvedValue([
+            {
+                ...BASE_ROW,
+                grossTonnes: '90',
+                moisturePct: null,
+                areaHa: '10',
+                netTonnesStd: null,
+            },
+        ]);
+        const out = await listYieldRecords(readerCtx);
+        expect(out[0].netTonnesStd).toBeNull();
+        expect(out[0].tPerHa).toBe(9);
+        // The flag is the whole point: an unadjusted figure sits in the same
+        // column as adjusted ones and must not look identical to them.
+        expect(out[0].tPerHaBasis).toBe('gross');
+    });
+
+    it('keeps the zero-area guard — undefined, not 0 t/ha', async () => {
+        mockDb.yieldRecord.findMany.mockResolvedValue([
+            { ...BASE_ROW, grossTonnes: '90', moisturePct: '14', areaHa: '0', netTonnesStd: '90' },
+        ]);
+        const out = await listYieldRecords(readerCtx);
+        expect(out[0].tPerHa).toBeNull();
+    });
+});

@@ -1,4 +1,5 @@
 import { Prisma } from '@prisma/client';
+import { tonnesPerHectare } from '@/lib/grain/moisture';
 import { RequestContext } from '../types';
 import { runInTenantContext } from '@/lib/db-context';
 import { assertCanRead } from '../policies/common';
@@ -65,8 +66,31 @@ export interface SeasonRecap {
     seasonName: string | null; // null when all-time
     year: number | null;
     totalAreaHa: number; // SUM of in-scope Parcel.areaHa (all tenant parcels when unscoped)
-    totalYieldTonnes: number; // SUM YieldRecord.grossTonnes in scope
-    avgYieldTPerHa: number | null; // totalYieldTonnes / totalAreaHa (null if area 0)
+    /**
+     * SUM of the HARVESTED area farmers typed on their yield records — the
+     * denominator behind `avgYieldTPerHa`, and a different quantity from
+     * `totalAreaHa` (which counts every parcel under a producing field).
+     * Dividing by the latter is what made the same harvest read 7.0 t/ha on
+     * the yield page and 4.2 t/ha in the year-end PDF.
+     */
+    harvestedAreaHa: number;
+    totalYieldTonnes: number; // SUM YieldRecord.grossTonnes in scope (GROSS)
+    /**
+     * SUM at the 14% standard moisture basis, over the records that carry a
+     * moisture reading. This is the only total on which two harvests are
+     * comparable — gross tonnages measured at different moistures are not
+     * the same quantity of grain.
+     */
+    totalNetTonnesStd: number;
+    /** Gross tonnes from records with NO moisture reading, reported rather
+     *  than folded in, so "at 14%" never quietly means "mostly at 14%". */
+    unadjustedTonnes: number;
+    /** How many in-scope records carry a moisture reading. */
+    recordsWithMoisture: number;
+    /** In-scope yield record count (the denominator for the above). */
+    yieldRecordCount: number;
+    /** Comparable tonnage / harvested area. Null when nothing was harvested. */
+    avgYieldTPerHa: number | null;
     costPerHa: number | null; // SUM(LogEntry.costAmount in scope) / totalAreaHa; null if NO costAmount rows
     topFields: RecapTopField[]; // top 3 locations by yieldTonnes desc
     activityCount: number; // count of in-scope LogEntry
@@ -99,28 +123,70 @@ export async function getSeasonRecap(
 
         const scoped = season != null;
 
-        // ─── Yield records in scope ──────────────────────────────────
-        const yieldRows = await db.yieldRecord.findMany({
-            where: {
-                tenantId: ctx.tenantId,
-                deletedAt: null,
-                ...(scoped ? { seasonId: season!.id } : {}),
-            },
-            select: { locationId: true, grossTonnes: true },
-            take: RECAP_TAKE,
-        });
+        // ─── Yield: aggregates, not a truncated row scan ─────────────
+        //
+        // This was `findMany({ take: 5000 })` with NO orderBy, so past the
+        // cap the total silently dropped rows AND which rows survived varied
+        // between calls — while the portfolio view computed the same
+        // quantity as a real DB aggregate. The two views could therefore
+        // disagree on one tenant's harvest, with the recap always the one
+        // that was quietly wrong. Aggregating in-DB drops nothing and makes
+        // the two agree by construction.
+        const yieldWhere = {
+            tenantId: ctx.tenantId,
+            deletedAt: null,
+            ...(scoped ? { seasonId: season!.id } : {}),
+        };
 
-        let totalYieldTonnes = 0;
-        // Per-location yield rollup (in-memory; no N+1).
+        const [yieldTotals, yieldByLocationRows] = await Promise.all([
+            db.yieldRecord.aggregate({
+                where: yieldWhere,
+                // Both bases: the comparable one, and gross so the share of
+                // the total that could NOT be adjusted stays visible.
+                _sum: { grossTonnes: true, netTonnesStd: true, areaHa: true },
+                _count: { _all: true, netTonnesStd: true },
+            }),
+            db.yieldRecord.groupBy({
+                by: ['locationId'],
+                where: yieldWhere,
+                _sum: { grossTonnes: true, netTonnesStd: true, areaHa: true },
+            }),
+        ]);
+
+        const totalGrossTonnes = round4(dec(yieldTotals._sum.grossTonnes) ?? 0);
+        const totalNetTonnesStd = round4(dec(yieldTotals._sum.netTonnesStd) ?? 0);
+        // The HARVESTED area the farmer typed — the agronomically correct
+        // denominator, and the one the yield page has always used. The old
+        // code never read it: it divided by Σ Parcel.areaHa, i.e. every
+        // parcel under any field that produced yield, which is why the same
+        // harvest printed 7.0 t/ha on screen and 4.2 t/ha in the PDF.
+        const totalHarvestedAreaHa = round4(dec(yieldTotals._sum.areaHa) ?? 0);
+        const recordCount = yieldTotals._count._all;
+        const recordsWithMoisture = yieldTotals._count.netTonnesStd;
+
+        // Tonnes carried by records with NO moisture reading. Reported
+        // rather than folded into the adjusted figure, so "at 14%" never
+        // quietly means "at 14% plus whatever these were".
+        const unadjustedAgg = await db.yieldRecord.aggregate({
+            where: { ...yieldWhere, netTonnesStd: null },
+            _sum: { grossTonnes: true },
+        });
+        const unadjustedTonnes = round4(dec(unadjustedAgg._sum.grossTonnes) ?? 0);
+
+        // Kept for the existing consumers; gross is what "total harvested"
+        // has always meant on this screen.
+        const totalYieldTonnes = totalGrossTonnes;
+
+        // Per-location rollup, now straight from the groupBy.
         const yieldByLocation = new Map<string, number>();
-        for (const row of yieldRows) {
-            const t = dec(row.grossTonnes) ?? 0;
-            totalYieldTonnes += t;
-            if (row.locationId) {
-                yieldByLocation.set(row.locationId, (yieldByLocation.get(row.locationId) ?? 0) + t);
-            }
+        const netByLocation = new Map<string, number>();
+        const harvestedAreaByLocation = new Map<string, number>();
+        for (const row of yieldByLocationRows) {
+            if (!row.locationId) continue;
+            yieldByLocation.set(row.locationId, dec(row._sum.grossTonnes) ?? 0);
+            netByLocation.set(row.locationId, dec(row._sum.netTonnesStd) ?? 0);
+            harvestedAreaByLocation.set(row.locationId, dec(row._sum.areaHa) ?? 0);
         }
-        totalYieldTonnes = round4(totalYieldTonnes);
 
         const inScopeLocationIds = [...yieldByLocation.keys()];
 
@@ -149,7 +215,17 @@ export async function getSeasonRecap(
         }
         totalAreaHa = round4(totalAreaHa);
 
-        const avgYieldTPerHa = totalAreaHa > 0 ? round4(totalYieldTonnes / totalAreaHa) : null;
+        // ONE definition of t/ha, shared with the yield page and the PDF:
+        // adjusted tonnage over HARVESTED area. `totalAreaHa` (every parcel
+        // under the fields that produced) stays as the cropped-area metric
+        // it always was — it just stops being a yield denominator, which is
+        // what made the same harvest read 7.0 t/ha on screen and 4.2 here.
+        //
+        // Numerator: the adjusted total plus the tonnes that could not be
+        // adjusted, so no harvest is dropped from the average; the DTO
+        // reports `unadjustedTonnes` so a reader can see how mixed it is.
+        const comparableTonnes = round4(totalNetTonnesStd + unadjustedTonnes);
+        const avgYieldTPerHa = tonnesPerHectare(comparableTonnes, totalHarvestedAreaHa);
 
         // ─── Activity + cost (LogEntry) ──────────────────────────────
         // No seasonId/locationId on LogEntry — scope by occurredAt window.
@@ -197,14 +273,19 @@ export async function getSeasonRecap(
 
         const topFields: RecapTopField[] = topLocationIds.map((id) => {
             const yieldTonnes = round4(yieldByLocation.get(id) ?? 0);
-            const areaHa = areaByLocation.has(id) ? round4(areaByLocation.get(id)!) : null;
-            const tPerHa = areaHa != null && areaHa > 0 ? round4(yieldTonnes / areaHa) : null;
+            const netTonnes = round4(netByLocation.get(id) ?? 0);
+            // Harvested area for THIS field, not its parcel area — same
+            // denominator as the headline figure and the yield page.
+            const harvested = round4(harvestedAreaByLocation.get(id) ?? 0);
+            const areaHa = harvested > 0 ? harvested : null;
+            // Fall back to gross for the part with no moisture reading.
+            const comparable = netTonnes > 0 ? netTonnes : yieldTonnes;
             return {
                 locationId: id,
                 name: locationNames.get(id) ?? id,
                 yieldTonnes,
                 areaHa,
-                tPerHa,
+                tPerHa: tonnesPerHectare(comparable, areaHa),
             };
         });
 
@@ -213,7 +294,16 @@ export async function getSeasonRecap(
             seasonName: season?.name ?? null,
             year: season?.year ?? null,
             totalAreaHa,
+            /** Σ of the HARVESTED area farmers typed — the t/ha denominator. */
+            harvestedAreaHa: totalHarvestedAreaHa,
             totalYieldTonnes,
+            /** Σ at the 14% standard basis (records with a moisture reading). */
+            totalNetTonnesStd,
+            /** Gross tonnes from records with NO moisture reading. */
+            unadjustedTonnes,
+            /** How many of `yieldRecordCount` carry a moisture reading. */
+            recordsWithMoisture,
+            yieldRecordCount: recordCount,
             avgYieldTPerHa,
             costPerHa,
             topFields,

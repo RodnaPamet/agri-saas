@@ -14,6 +14,7 @@
  *     additionally encrypted at rest via the Epic B manifest.
  */
 import { z } from 'zod';
+import { MAX_PLAUSIBLE_MOISTURE_PCT } from '@/lib/grain/moisture';
 import {
     ContractType,
     ContractStatus,
@@ -34,6 +35,42 @@ const NonNegativeNumber = z
     .number()
     .finite()
     .min(0, 'must be zero or positive')
+    .nullable()
+    .optional();
+
+/**
+ * A magnitude bounded to what its DECIMAL column can actually hold.
+ *
+ * Without an upper bound the API accepted any finite number and handed it
+ * to Postgres, where a value wider than the column's precision raises
+ * `22003 numeric field overflow` — surfacing to the user as a 500 on a
+ * request that was simply out of range. `Decimal(p,s)` holds values below
+ * 10^(p−s), so that exponent is the ceiling here and the failure becomes a
+ * 400 that names the field.
+ */
+const BoundedNumber = (max: number, label: string) =>
+    z
+        .number()
+        .finite()
+        .min(0, 'must be zero or positive')
+        .max(max, `${label} must be ${max} or less`)
+        .nullable()
+        .optional();
+
+/**
+ * Moisture %, bounded to a physically plausible reading.
+ *
+ * `Decimal(5,2)` accepted 999.99%, which is not a wet harvest — it is a
+ * typo, and it produced a NEGATIVE moisture-adjusted tonnage once the
+ * standard-basis conversion started using this field (see
+ * `src/lib/grain/moisture.ts`). Bounding the input is what keeps that
+ * formula's output physical.
+ */
+const MoisturePercent = z
+    .number()
+    .finite()
+    .min(0, 'must be zero or positive')
+    .max(MAX_PLAUSIBLE_MOISTURE_PCT, `moisture must be ${MAX_PLAUSIBLE_MOISTURE_PCT}% or less`)
     .nullable()
     .optional();
 
@@ -113,9 +150,9 @@ export const CreateYieldRecordSchema = z
         seasonId: z.string().min(1).nullable().optional(),
         commodity: OptionalText(120),
         harvestedAt: DateString,
-        grossTonnes: NonNegativeNumber,
-        moisturePct: NonNegativeNumber,
-        areaHa: NonNegativeNumber,
+        grossTonnes: BoundedNumber(99_999_999_999, 'gross tonnes'),
+        moisturePct: MoisturePercent,
+        areaHa: BoundedNumber(99_999_999, 'area'),
         valuationNotes: OptionalText(8000),
     })
     .strip();
@@ -129,9 +166,9 @@ export const UpdateYieldRecordSchema = z
         seasonId: z.string().min(1).nullable().optional(),
         commodity: OptionalText(120),
         harvestedAt: DateString,
-        grossTonnes: NonNegativeNumber,
-        moisturePct: NonNegativeNumber,
-        areaHa: NonNegativeNumber,
+        grossTonnes: BoundedNumber(99_999_999_999, 'gross tonnes'),
+        moisturePct: MoisturePercent,
+        areaHa: BoundedNumber(99_999_999, 'area'),
         valuationNotes: OptionalText(8000),
     })
     .strip();

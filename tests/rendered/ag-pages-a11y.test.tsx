@@ -357,7 +357,10 @@ const YIELD_RECORDS = [
         grossTonnes: 42.5,
         moisturePct: 13.2,
         areaHa: 8.4,
-        tPerHa: 5.06,
+        // 42.5 t at 13.2% moisture, expressed at the 14% basis.
+        netTonnesStd: 42.895,
+        tPerHa: 5.106,
+        tPerHaBasis: 'standard-moisture' as const,
         valuationNotes: null,
         planting: { id: 'p1', successionNumber: 1 },
         location: { id: 'loc-1', name: 'Home Farm' },
