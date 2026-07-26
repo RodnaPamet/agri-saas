@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client';
 import { RequestContext } from '../types';
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { canConvert, convert } from '@/lib/units/unit-conversion';
+import { tonnesPerHectare } from '@/lib/grain/moisture';
 import { assertCanRead, assertCanWrite } from '../policies/common';
 import { logEvent } from '../events/audit';
 import { notFound, badRequest } from '@/lib/errors/types';
@@ -48,9 +49,24 @@ function parseDate(value: string | null | undefined, label: string): Date | null
 }
 
 /**
- * Shape a YieldRecord row into a DTO, adding the COMPUTED (not stored)
- * `tPerHa = grossTonnes / areaHa`. Null when either input is missing or
- * area is zero.
+ * Shape a YieldRecord row into a DTO.
+ *
+ * Two derived figures ride along:
+ *
+ *   `netTonnesStd` — grossTonnes expressed at the 14% standard moisture
+ *     basis. Read from the database-generated column rather than computed
+ *     here, so the number a reader sees is the same one the rollups SUM.
+ *     Null when moisture was never measured: that record's comparable
+ *     weight is unknown, and pretending otherwise is what made two
+ *     harvests at different moistures look identical.
+ *
+ *   `tPerHa` — via the shared `tonnesPerHectare` helper, over the HARVESTED
+ *     area. It is the moisture-adjusted tonnage where one exists, so two
+ *     fields are ranked on one basis, and falls back to gross where
+ *     moisture is unknown (with `tPerHaBasis` saying which was used, so a
+ *     reader is never left guessing). The season recap and the year-end PDF
+ *     call the SAME helper — that divergence (7.0 t/ha on screen, 4.2 in
+ *     the PDF) came from two call sites picking different denominators.
  */
 function toDto(row: {
     id: string;
@@ -62,6 +78,7 @@ function toDto(row: {
     grossTonnes: Prisma.Decimal | null;
     moisturePct: Prisma.Decimal | null;
     areaHa: Prisma.Decimal | null;
+    netTonnesStd?: Prisma.Decimal | null;
     valuationNotes: string | null;
     createdAt: Date;
     updatedAt: Date;
@@ -71,9 +88,11 @@ function toDto(row: {
 }) {
     const grossTonnes = dec(row.grossTonnes);
     const areaHa = dec(row.areaHa);
-    const tPerHa = grossTonnes != null && areaHa != null && areaHa > 0
-        ? Math.round((grossTonnes / areaHa) * 1e4) / 1e4
-        : null;
+    const netTonnesStd = dec(row.netTonnesStd);
+    // Adjusted where we have it, gross otherwise — and the DTO says which,
+    // so a t/ha shown next to another t/ha is never silently on a different
+    // basis. The zero-guard lives in the helper (area 0 → null, not 0 t/ha).
+    const tPerHa = tonnesPerHectare(netTonnesStd ?? grossTonnes, areaHa);
     return {
         id: row.id,
         plantingId: row.plantingId,
@@ -84,7 +103,12 @@ function toDto(row: {
         grossTonnes,
         moisturePct: dec(row.moisturePct),
         areaHa,
+        netTonnesStd,
         tPerHa,
+        /** Which tonnage `tPerHa` was computed from. */
+        tPerHaBasis: (netTonnesStd != null ? 'standard-moisture' : 'gross') as
+            | 'standard-moisture'
+            | 'gross',
         valuationNotes: row.valuationNotes,
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,

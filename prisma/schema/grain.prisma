@@ -192,6 +192,23 @@ model YieldRecord {
   grossTonnes     Decimal?  @db.Decimal(14, 3)
   /// Moisture % at which grossTonnes was measured — plaintext.
   moisturePct     Decimal?  @db.Decimal(5, 2)
+  /// grossTonnes expressed at the 14% standard moisture basis, so two
+  /// harvests measured at different moistures can be summed and ranked.
+  ///
+  /// DATABASE-GENERATED (`GENERATED ALWAYS AS ... STORED`) — the application
+  /// never writes it. That is deliberate: a derived tonnage maintained by
+  /// application code drifts the moment any write path forgets to recompute
+  /// it, whereas Postgres recomputes this on every insert and update of its
+  /// inputs. Being a real stored column, it is also SUM()-able in-DB, which
+  /// is what lets the portfolio rollups stay pure aggregates instead of
+  /// loading rows to normalise them in memory.
+  ///
+  /// NULL when moisturePct is NULL — an unmeasured record has no comparable
+  /// weight, and callers report those tonnes separately rather than
+  /// assuming they were at standard. See src/lib/grain/moisture.ts for the
+  /// formula and tests/guards/generated-columns.test.ts for the guard that
+  /// keeps application code from writing it.
+  netTonnesStd    Decimal?  @db.Decimal(14, 3)
   /// Harvested area in hectares — plaintext (drives t/ha).
   areaHa          Decimal?  @db.Decimal(12, 4)
   /// ENCRYPTED (Epic B manifest) — commercial valuation commentary.

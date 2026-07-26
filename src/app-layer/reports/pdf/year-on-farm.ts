@@ -78,11 +78,31 @@ export async function generateYearOnFarmPdf(
     addSectionTitle(doc, 'Season recap');
     addSummaryMetrics(doc, [
         // Area in decares (дка = ha × 10); yield/cost densities stay per-ha.
-        { label: 'Total area (dca)', value: fmtNum(recap.totalAreaHa == null ? null : haToDca(recap.totalAreaHa)) },
-        { label: 'Total yield (t)', value: fmtNum(recap.totalYieldTonnes) },
-        { label: 'Avg yield (t/ha)', value: fmtNum(recap.avgYieldTPerHa) },
+        //
+        // Two areas, deliberately distinguished. "Cropped" is every parcel
+        // under the fields that produced; "harvested" is what farmers
+        // actually typed against each yield record, and it is the ONLY
+        // denominator behind the t/ha figure — shared with the yield page,
+        // which is what stops the same harvest reading 7.0 t/ha on screen
+        // and 4.2 t/ha here.
+        { label: 'Cropped area (dca)', value: fmtNum(recap.totalAreaHa == null ? null : haToDca(recap.totalAreaHa)) },
+        { label: 'Harvested area (dca)', value: fmtNum(recap.harvestedAreaHa == null ? null : haToDca(recap.harvestedAreaHa)) },
+        { label: 'Total yield (t, gross)', value: fmtNum(recap.totalYieldTonnes) },
+        // Gross tonnages measured at different moistures are not comparable;
+        // this is the same grain expressed at the 14% trade basis.
+        { label: 'Yield at 14% (t)', value: fmtNum(recap.totalNetTonnesStd) },
+        { label: 'Avg yield (t/ha, harvested)', value: fmtNum(recap.avgYieldTPerHa) },
         { label: 'Cost per ha', value: fmtNum(recap.costPerHa) },
     ]);
+    // Say so when part of the total could not be put on the standard basis,
+    // rather than printing a precise-looking number that mixes bases.
+    if (recap.unadjustedTonnes > 0) {
+        addSpacer(doc);
+        addParagraph(
+            doc,
+            `Note: ${fmtNum(recap.unadjustedTonnes)} t of the harvest (${recap.yieldRecordCount - recap.recordsWithMoisture} of ${recap.yieldRecordCount} records) has no moisture reading and is counted at its measured weight, not at the 14% basis.`,
+        );
+    }
     addSpacer(doc);
 
     // Top fields table

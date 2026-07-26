@@ -38,7 +38,13 @@ export interface YieldRow {
     grossTonnes: number | null;
     moisturePct: number | null;
     areaHa: number | null;
+    /** grossTonnes at the 14% standard moisture basis. Null when moisture
+     *  was never measured — that record has no comparable weight. */
+    netTonnesStd: number | null;
     tPerHa: number | null;
+    /** Which tonnage `tPerHa` came from, so two figures in one column are
+     *  never silently on different bases. */
+    tPerHaBasis: 'standard-moisture' | 'gross';
     valuationNotes: string | null;
     planting?: { id: string; successionNumber: number } | null;
     location?: { id: string; name: string } | null;
@@ -227,6 +233,21 @@ function YieldPageInner({
                     ),
                 },
                 {
+                    // Gross tonnages measured at different moistures are not
+                    // comparable; this column is the same grain expressed at
+                    // the 14% trade basis, and it is what t/ha divides.
+                    // Em dash where moisture was never measured — that
+                    // record's comparable weight is genuinely unknown.
+                    id: 'netTonnesStd',
+                    header: t('colNetStd'),
+                    accessorFn: (r) => r.netTonnesStd ?? -1,
+                    cell: ({ row }) => (
+                        <span className="text-xs text-content-default tabular-nums block text-right">
+                            {fmtNum(row.original.netTonnesStd)}
+                        </span>
+                    ),
+                },
+                {
                     id: 'moisturePct',
                     header: t('colMoisture'),
                     accessorFn: (r) => r.moisturePct ?? -1,
@@ -250,10 +271,24 @@ function YieldPageInner({
                     id: 'tPerHa',
                     header: t('colTPerHa'),
                     accessorFn: (r) => r.tPerHa ?? -1,
+                    // A t/ha computed from gross sits in the same column as
+                    // one computed at the standard basis; say which, rather
+                    // than let them look alike. Via the Tooltip primitive —
+                    // Epic 56 bans raw `title=`, and a native tooltip would
+                    // not be keyboard-reachable anyway.
                     cell: ({ row }) => (
-                        <span className="text-xs text-content-emphasis tabular-nums block text-right">
-                            {fmtNum(row.original.tPerHa)}
-                        </span>
+                        <Tooltip
+                            content={
+                                row.original.tPerHaBasis === 'gross'
+                                    ? t('tPerHaBasisGross')
+                                    : t('tPerHaBasisStandard')
+                            }
+                        >
+                            <span className="text-xs text-content-emphasis tabular-nums block text-right">
+                                {fmtNum(row.original.tPerHa)}
+                                {row.original.tPerHaBasis === 'gross' && row.original.tPerHa != null ? '*' : ''}
+                            </span>
+                        </Tooltip>
                     ),
                 },
                 {

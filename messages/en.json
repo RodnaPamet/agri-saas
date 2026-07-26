@@ -6134,7 +6134,10 @@
                 "cancel": "Cancel",
                 "saveYield": "Save yield record",
                 "createYield": "Create yield record"
-            }
+            },
+            "colNetStd": "At 14% (t)",
+            "tPerHaBasisStandard": "Yield per harvested hectare, at the 14% standard moisture basis.",
+            "tPerHaBasisGross": "Computed from the gross weight — this record has no moisture reading, so it is not on the same basis as the others."
         },
         "costs": {
             "title": "Costs",
