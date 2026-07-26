@@ -200,7 +200,7 @@ export function BinFormModal({
                             />
                         </FormField>
 
-                        <FormField label={t('kind')} error={errors.kind?.message}>
+                        <FormField label={t('kind')} error={errors.kind?.message} hint={t('kindHint')}>
                             <Controller
                                 control={control}
                                 name="kind"

@@ -80,20 +80,33 @@ export function ProgressBar({
     const safeMax = max > 0 ? max : 0;
     const clampedValue = Math.max(0, value);
     const effectiveValue = Math.min(clampedValue, safeMax);
+    // The BAR is clamped — it cannot render past its own track. The NUMBER is
+    // not: an over-full bin is the one signal a farmer most needs, and showing
+    // "100%" for a 140%-full bin while the aria-label said 140% meant sighted
+    // and screen-reader users were told different things about the same bin.
     const percent = safeMax === 0 ? 0 : (effectiveValue / safeMax) * 100;
+    const truePercent = safeMax === 0 ? 0 : (clampedValue / safeMax) * 100;
     const overflowed = value > safeMax && safeMax > 0;
+    // `aria-valuetext` is the spec-sanctioned human-readable value and is what
+    // assistive tech announces; `aria-valuenow` stays in [min,max] as ARIA
+    // requires. Both now describe the same reality as the visible label.
+    const valueText = `${truePercent.toFixed(0)}%`;
 
     const track = (
         <div
             role="progressbar"
             aria-label={ariaLabel}
             aria-valuenow={effectiveValue}
+            aria-valuetext={valueText}
             aria-valuemin={0}
             aria-valuemax={safeMax}
             data-overflow={overflowed ? "true" : undefined}
             className={cn(
                 "w-full overflow-hidden rounded-full bg-bg-subtle",
                 SIZE_HEIGHT[size],
+                // Overflow is visible, not just announced: a full track alone
+                // is indistinguishable from exactly-100%.
+                overflowed && "ring-1 ring-border-emphasis",
                 !showValue && className,
             )}>
             <motion.div
@@ -111,7 +124,7 @@ export function ProgressBar({
         <div className={cn("flex items-center gap-compact", className)}>
             <div className="flex-1">{track}</div>
             <span className="min-w-[2.75rem] text-right text-xs tabular-nums text-content-muted">
-                {percent.toFixed(0)}%
+                {valueText}
             </span>
         </div>
     );

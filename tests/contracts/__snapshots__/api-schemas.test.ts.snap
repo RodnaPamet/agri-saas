@@ -2742,6 +2742,13 @@ exports[`API contract — per-schema snapshots schema: GrainBin 1`] = `
         "STORAGE"
       ]
     },
+    "status": {
+      "type": "string",
+      "enum": [
+        "ACTIVE",
+        "ARCHIVED"
+      ]
+    },
     "description": {
       "type": [
         "string",
@@ -2802,6 +2809,7 @@ exports[`API contract — per-schema snapshots schema: GrainBin 1`] = `
     "name",
     "key",
     "kind",
+    "status",
     "description",
     "capacityTonnes",
     "storedTonnes",

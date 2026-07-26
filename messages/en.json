@@ -5905,7 +5905,8 @@
                 "descriptionPlaceholder": "Location, type, or handling notes",
                 "cancel": "Cancel",
                 "saveBin": "Save bin",
-                "createBin": "Create bin"
+                "createBin": "Create bin",
+                "kindHint": "A bin is a grain silo — its fill measures harvested produce. A store is a barn or warehouse — its fill measures all stock, including seed and fertiliser."
             },
             "fillMixedUnits": "Mixed units",
             "detail": {
@@ -5946,7 +5947,9 @@
                 "outputLotCodePlaceholder": "e.g. BLEND-2026-07",
                 "cancel": "Cancel",
                 "confirm": "Blend lots"
-            }
+            },
+            "archived": "Archived",
+            "colStatus": "Status"
         },
         "contracts": {
             "breadcrumbDashboard": "Dashboard",
