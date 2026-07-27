@@ -1077,6 +1077,11 @@ export async function listPlantings(
                 variety: { select: { id: true, name: true } },
                 location: { select: { id: true, name: true } },
                 parcel: { select: { id: true, name: true } },
+                // Named so a picker can tell two "Succession 1" plantings
+                // apart — the same succession number recurs in every crop
+                // plan, which made the yield form's planting list a column
+                // of identical rows.
+                cropPlan: { select: { id: true, name: true } },
             },
             take: opts.take ?? LIST_TAKE,
         }),

@@ -6092,7 +6092,7 @@
             "colSeason": "Season",
             "editYield": "Edit yield record",
             "deleteYield": "Delete yield record",
-            "deletedToast": "Yield record deleted",
+            "deletedToast": "Yield record deleted — {name}",
             "undo": "Undo",
             "loadFailed": "Couldn't load yield records. Check your connection and reload the page.",
             "emptyNoResultsTitle": "No yield records match your filters",
@@ -6133,11 +6133,18 @@
                 "valuationPlaceholder": "Grading, price basis, or valuation notes",
                 "cancel": "Cancel",
                 "saveYield": "Save yield record",
-                "createYield": "Create yield record"
+                "createYield": "Create yield record",
+                "planningUnavailable": "Plantings and seasons come from the Planning module, which is not available for this farm. You can still record the harvest without them.",
+                "errNotANumber": "Enter a number",
+                "errNegative": "Must be zero or positive",
+                "errTooLarge": "That value is too large",
+                "errMoistureRange": "Moisture must be between 0 and {max}%"
             },
             "colNetStd": "At 14% (t)",
             "tPerHaBasisStandard": "Yield per harvested hectare, at the 14% standard moisture basis.",
-            "tPerHaBasisGross": "Computed from the gross weight — this record has no moisture reading, so it is not on the same basis as the others."
+            "tPerHaBasisGross": "Computed from the gross weight — this record has no moisture reading, so it is not on the same basis as the others.",
+            "deletedToastFallback": "unnamed harvest",
+            "truncatedNotice": "Showing the {shown} most recent of {total} harvest records — narrow the filters or search to see the rest."
         },
         "costs": {
             "title": "Costs",
@@ -7548,7 +7555,9 @@
         "groupByField": "By field",
         "groupBySeason": "By season",
         "statusDescription": "Lifecycle stage of the contract.",
-        "typeDescription": "Whether the contract sells produce or buys inputs."
+        "typeDescription": "Whether the contract sells produce or buys inputs.",
+        "commodity": "Commodity",
+        "commodities": "Commodities"
     },
     "exchangeFilters": {
         "side": "Side",

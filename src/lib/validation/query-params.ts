@@ -61,3 +61,57 @@ export function parseCsvEnumParam<T extends string>(
     }
     return out;
 }
+
+/**
+ * The non-enum sibling of `parseCsvEnumParam`, for multi-select facets whose
+ * values are opaque IDs (a season, a field, a planting) rather than members
+ * of a known set.
+ *
+ * Same defect, quieter symptom. An enum param handed a comma-joined string
+ * throws a `PrismaClientValidationError` — a 500 the operator at least sees
+ * as broken. An ID param is a plain `String` column, so Prisma accepts
+ * `seasonId = "a,b"` happily and matches NOTHING: the table renders "No
+ * records match your filters", which reads as *this farm has no harvest for
+ * those two seasons* rather than *your filter never ran*. A wrong answer
+ * that looks like an answer is the worse of the two.
+ *
+ * IDs cannot be validated against a value set the way enum members can, so
+ * the checks here are structural: non-empty, bounded length, bounded count.
+ * That is enough to keep a malformed param out of the query layer without
+ * pretending to know which IDs exist — the tenant-scoped `where` already
+ * decides that, and an ID belonging to another tenant simply matches no row.
+ *
+ * @returns `undefined` when absent/empty so callers can spread it into a
+ *          Prisma `where` and omit the filter entirely.
+ * @throws  `badRequest` (400) on a member that cannot be an ID, or on more
+ *          members than a real multi-select produces.
+ */
+export function parseCsvIdParam(
+    raw: string | null | undefined,
+    label: string,
+    opts: { maxValues?: number; maxLength?: number } = {},
+): string[] | undefined {
+    if (raw == null) return undefined;
+
+    const maxValues = opts.maxValues ?? 100;
+    const maxLength = opts.maxLength ?? 200;
+
+    const parts = raw
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+    if (parts.length === 0) return undefined;
+
+    if (parts.length > maxValues) {
+        throw badRequest(`Too many ${label} filter values (max ${maxValues})`);
+    }
+
+    const out: string[] = [];
+    for (const part of parts) {
+        if (part.length > maxLength) {
+            throw badRequest(`Invalid ${label} filter value: too long`);
+        }
+        if (!out.includes(part)) out.push(part);
+    }
+    return out;
+}

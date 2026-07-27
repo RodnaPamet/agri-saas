@@ -7,7 +7,7 @@ import { listContracts, createContract } from '@/app-layer/usecases/contract';
 import { CreateContractSchema } from '@/app-layer/schemas/grain.schemas';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { withValidatedBody } from '@/lib/validation/route';
-import { parseCsvEnumParam } from '@/lib/validation/query-params';
+import { parseCsvEnumParam, parseCsvIdParam } from '@/lib/validation/query-params';
 import { summariseContractBook } from '@/lib/grain/contract-value';
 import { CONTRACTED_COMMITMENT_STATUSES } from '@/app-layer/domain/contract-status';
 import { jsonResponse } from '@/lib/api-response';
@@ -42,7 +42,7 @@ export const GET = withApiErrorHandling(
         const { rows, totalCount, truncated } = await listContracts(ctx, {
             status: parseCsvEnumParam(sp.get('status'), StatusMember, 'status'),
             type: parseCsvEnumParam(sp.get('type'), TypeMember, 'type'),
-            seasonId: sp.get('seasonId') ?? undefined,
+            seasonIds: parseCsvIdParam(sp.get('seasonId'), 'season'),
             q: sp.get('q') ?? undefined,
         });
         // Book totals are computed from the SAME bounded page, so they

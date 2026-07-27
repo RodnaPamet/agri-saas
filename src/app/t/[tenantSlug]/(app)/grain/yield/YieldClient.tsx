@@ -45,14 +45,17 @@ export interface YieldRow {
     /** Which tonnage `tPerHa` came from, so two figures in one column are
      *  never silently on different bases. */
     tPerHaBasis: 'standard-moisture' | 'gross';
-    valuationNotes: string | null;
+    /** NOT sent with list rows — commercial commentary, fetched on demand
+     *  by the edit form. Present only on a detail read. */
+    valuationNotes?: string | null;
     planting?: { id: string; successionNumber: number } | null;
     location?: { id: string; name: string } | null;
     season?: { id: string; name: string } | null;
 }
 
 interface YieldClientProps {
-    initialRecords: YieldRow[];
+    /** SSR first page + whether the 500-row cap bit. */
+    initialPayload: { rows: YieldRow[]; totalCount: number; truncated: boolean };
     tenantSlug: string;
     permissions: { canWrite: boolean };
 }
@@ -72,7 +75,7 @@ export function YieldClient(props: YieldClientProps) {
 }
 
 function YieldPageInner({
-    initialRecords,
+    initialPayload,
     tenantSlug,
     permissions,
 }: YieldClientProps) {
@@ -102,19 +105,30 @@ function YieldPageInner({
         return obj;
     }, [filtersForQuery]);
 
-    const noFacets = Object.keys(queryKeyFilters).length === 0;
+    const noFacets = Object.keys(queryKeyFilters).length === 0 && search.trim() === '';
 
-    const recordsQuery = useQuery<YieldRow[]>({
-        queryKey: ['grain-yield', tenantSlug, 'list', queryKeyFilters],
+    interface YieldListPayload {
+        rows: YieldRow[];
+        totalCount: number;
+        truncated: boolean;
+    }
+
+    const recordsQuery = useQuery<YieldListPayload>({
+        queryKey: ['grain-yield', tenantSlug, 'list', queryKeyFilters, search.trim()],
         queryFn: async () => {
-            const qs = filtersForQuery.toString();
+            // `q` rides with the facets: searching only the loaded page
+            // meant a match on row 501 was invisible and reported as "no
+            // results" for a record that exists.
+            const params = new URLSearchParams(filtersForQuery);
+            if (search.trim()) params.set('q', search.trim());
+            const qs = params.toString();
             const res = await fetch(
                 apiUrl(`/grain/yield-records${qs ? `?${qs}` : ''}`),
             );
             if (!res.ok) throw new Error('Failed to fetch yield records');
             return res.json();
         },
-        initialData: noFacets ? initialRecords : undefined,
+        initialData: noFacets ? initialPayload : undefined,
         // eslint-disable-next-line react-hooks/purity
         initialDataUpdatedAt: noFacets ? Date.now() : 0,
         staleTime: 30_000,
@@ -123,7 +137,7 @@ function YieldPageInner({
     // Stable ref so the search + facet memos below don't recompute every
     // render (query.data ?? [] would mint a fresh array each pass).
     const rawRecords = useMemo(
-        () => recordsQuery.data ?? [],
+        () => recordsQuery.data?.rows ?? [],
         [recordsQuery.data],
     );
     const loading = recordsQuery.isLoading && !recordsQuery.data;
@@ -137,18 +151,10 @@ function YieldPageInner({
             ? t('loadFailed')
             : undefined;
 
-    // Live free-text search (commodity / field / season) over loaded rows.
-    const records = useMemo(() => {
-        const q = search.trim().toLowerCase();
-        if (!q) return rawRecords;
-        // guardrail-ignore: in-memory text filter over the loaded page, not a DB query.
-        return rawRecords.filter(
-            (r) =>
-                (r.commodity ?? '').toLowerCase().includes(q) ||
-                (r.location?.name ?? '').toLowerCase().includes(q) ||
-                (r.season?.name ?? '').toLowerCase().includes(q),
-        );
-    }, [rawRecords, search]);
+    // Search is applied by the server (see the `q` param above), so the
+    // rows arriving here are already the answer — no second, narrower
+    // filter over the loaded page.
+    const records = rawRecords;
 
     // Season / location facet options derived from the loaded rows.
     const liveFilterDefs: FilterType[] = useMemo(
@@ -168,7 +174,12 @@ function YieldPageInner({
                 (old ?? []).filter((r) => r.id !== rec.id),
             );
             triggerUndoToast({
-                message: t('deletedToast'),
+                // Name the record: with several deletes in flight, "Yield
+                // record deleted" gives the reader no way to tell which
+                // one Undo would bring back.
+                message: t('deletedToast', {
+                    name: rec.commodity ?? t('deletedToastFallback'),
+                }),
                 undoMessage: t('undo'),
                 action: async () => {
                     const res = await fetch(
@@ -363,7 +374,15 @@ function YieldPageInner({
                     { label: t('breadcrumbYield') },
                 ],
                 title: t('title'),
-                description: t('description'),
+                // The 500-row cap used to be silent: a farm with 600 harvest
+                // records saw 500 and was told nothing, so any total read off
+                // this page was simply wrong. Say so when it bites.
+                description: recordsQuery.data?.truncated
+                    ? t('truncatedNotice', {
+                          shown: rawRecords.length,
+                          total: recordsQuery.data.totalCount,
+                      })
+                    : t('description'),
                 actions: permissions.canWrite ? (
                     <Button
                         variant="primary"

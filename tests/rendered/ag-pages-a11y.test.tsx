@@ -403,7 +403,7 @@ describe('Ag pages — WCAG 2.1 AA (jest-axe)', () => {
     it('YieldClient has no accessibility violations', async () => {
         const { container } = renderWithProviders(
             <YieldClient
-                initialRecords={YIELD_RECORDS}
+                initialPayload={{ rows: YIELD_RECORDS, totalCount: YIELD_RECORDS.length, truncated: false }}
                 tenantSlug="acme"
                 permissions={{ canWrite: true }}
             />,

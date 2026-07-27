@@ -143,7 +143,12 @@ function cleanOptionalText(value: string | null | undefined): string | null {
 export interface ContractListFilters {
     status?: ContractStatus[];
     type?: ContractType[];
-    seasonId?: string;
+    /** Multi-select, like `status`/`type`: the season facet declares
+     *  `multiple: true`, so it arrives comma-joined. Read as a scalar it
+     *  became `seasonId = "a,b"`, which a String column accepts and no row
+     *  matches — a silent empty table rather than the 500 the enum facets
+     *  produced. */
+    seasonIds?: string[];
     /** Free-text search over counterparty / commodity / contract number.
      *  Server-side: the in-memory client filter only ever saw the
      *  500-row page, so a match on row 501 was invisible. */
@@ -163,7 +168,7 @@ export async function listContracts(
                 deletedAt: null,
                 ...(filters.status?.length ? { status: { in: filters.status } } : {}),
                 ...(filters.type?.length ? { type: { in: filters.type } } : {}),
-                ...(filters.seasonId ? { seasonId: filters.seasonId } : {}),
+                ...(filters.seasonIds?.length ? { seasonId: { in: filters.seasonIds } } : {}),
                 ...(filters.q ? buildSearchWhere(filters.q) : {}),
             },
             // Explicit projection — `terms` and `pricingNotes` are
@@ -212,7 +217,7 @@ export async function listContracts(
                       deletedAt: null,
                       ...(filters.status?.length ? { status: { in: filters.status } } : {}),
                       ...(filters.type?.length ? { type: { in: filters.type } } : {}),
-                      ...(filters.seasonId ? { seasonId: filters.seasonId } : {}),
+                      ...(filters.seasonIds?.length ? { seasonId: { in: filters.seasonIds } } : {}),
                       ...(filters.q ? buildSearchWhere(filters.q) : {}),
                   },
               })
