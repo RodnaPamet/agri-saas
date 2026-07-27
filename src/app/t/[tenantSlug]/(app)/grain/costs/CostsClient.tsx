@@ -46,9 +46,9 @@ interface FieldCostRow {
 type Dimension = 'planting' | 'field' | 'season';
 
 type CostResponse =
-    | { by: 'planting'; rows: PlantingCostRow[] }
-    | { by: 'field'; rows: FieldCostRow[] }
-    | { by: 'season'; rows: SeasonCostRow[] };
+    | { by: 'planting'; rows: PlantingCostRow[]; truncated?: boolean }
+    | { by: 'field'; rows: FieldCostRow[]; truncated?: boolean }
+    | { by: 'season'; rows: SeasonCostRow[]; truncated?: boolean };
 
 interface CostsClientProps {
     tenantSlug: string;

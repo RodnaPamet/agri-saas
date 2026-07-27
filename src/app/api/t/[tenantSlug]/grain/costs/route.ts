@@ -23,13 +23,18 @@ export const GET = withApiErrorHandling(
         await assertModuleEnabled(ctx, 'GRAIN');
 
         const by = req.nextUrl.searchParams.get('by') ?? 'planting';
+        // `truncated` rides with every shape: a partial financial total that
+        // does not say it is partial is the failure this endpoint had.
         if (by === 'season') {
-            return jsonResponse({ by, rows: await getCostRollupBySeason(ctx) });
+            const { rows, truncated } = await getCostRollupBySeason(ctx);
+            return jsonResponse({ by, rows, truncated });
         }
         if (by === 'field') {
-            return jsonResponse({ by, rows: await getCostRollupByField(ctx) });
+            const { rows, truncated } = await getCostRollupByField(ctx);
+            return jsonResponse({ by, rows, truncated });
         }
         const seasonId = req.nextUrl.searchParams.get('seasonId') ?? undefined;
-        return jsonResponse({ by: 'planting', rows: await getCostRollupByPlanting(ctx, { seasonId }) });
+        const { rows, truncated } = await getCostRollupByPlanting(ctx, { seasonId });
+        return jsonResponse({ by: 'planting', rows, truncated });
     },
 );
