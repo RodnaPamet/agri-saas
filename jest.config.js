@@ -355,5 +355,28 @@ module.exports = {
     // ignores top-level `coverageThreshold` when `projects:` is set —
     // see the comment block on `nodeProject.coverageThreshold` for the
     // full GAP-15 enforcement-fix history.
-    coverageReporters: ['text-summary', 'lcov'],
+    // `json-summary` writes coverage/coverage-summary.json — per-file
+    // covered/total for every metric. It is the ONLY output that lets you
+    // work out WHICH files a threshold failure came from.
+    //
+    // Why that is not obvious, and why this line matters:
+    //
+    //   Jest removes a file from the `global` threshold group as soon as it
+    //   matches a PATH threshold. `jest.thresholds.json` declares paths for
+    //   ./src/app-layer/{usecases,policies,events}/ and ./src/lib/, so the
+    //   `global` numbers are computed over EVERYTHING ELSE — chiefly
+    //   src/components/**, src/app/**, and the rest of src/app-layer/**.
+    //
+    //   The consequence is a genuinely confusing failure. `text-summary`
+    //   prints the whole-map figure (e.g. "Branches: 66.54%") while the gate
+    //   fails with a different, lower one ("Coverage for branches (59.94%)
+    //   does not meet global threshold (63%)"). Both are correct; they are
+    //   different populations. Without a per-file report there is no way to
+    //   reconcile them, and effort gets aimed at files that cannot move the
+    //   failing number — covering something under src/lib/ improves the
+    //   ./src/lib/ threshold and leaves `global` untouched.
+    //
+    // Keep `json-summary` here. `coverage/` is uploaded whole by the CI
+    // coverage job, so the artifact carries it automatically.
+    coverageReporters: ['text-summary', 'lcov', 'json-summary'],
 };
