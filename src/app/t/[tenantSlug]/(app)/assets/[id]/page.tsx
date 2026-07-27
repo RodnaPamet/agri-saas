@@ -15,7 +15,6 @@ import { useTenantMembers } from '@/components/ui/user-combobox';
 import { useToastWithUndo } from '@/components/ui/hooks';
 import dynamic from 'next/dynamic';
 import LinkedTasksPanel from '@/components/LinkedTasksPanel';
-import { EmptyState } from '@/components/ui/empty-state';
 import { InlineEmptyState } from '@/components/ui/inline-empty-state';
 import { CopyText } from '@/components/ui/copy-text';
 import { Button } from '@/components/ui/button';

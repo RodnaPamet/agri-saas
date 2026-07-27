@@ -120,6 +120,17 @@ export function useTenantApiUrl() {
 
 import { formatCompactCurrency } from '@/lib/risk-coherence';
 
+/**
+ * The tenant's configured display currency SYMBOL (default €).
+ *
+ * Exposed separately from `useMoneyFormatter` because that formatter is
+ * COMPACT (€1.2M) — right for dashboard tiles, wrong for a financial table
+ * where a farmer reconciles figures against invoices and needs the cents.
+ */
+export function useTenantCurrencySymbol(): string {
+    return useTenantContext().currencySymbol ?? '€';
+}
+
 export function useMoneyFormatter(): (v: number | null | undefined) => string {
     const ctx = useTenantContext();
     const symbol = ctx.currencySymbol ?? '€';

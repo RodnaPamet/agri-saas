@@ -22,7 +22,7 @@ export default async function GrainCostsPage({
     const { tenantSlug } = await params;
     const ctx = await getTenantCtx({ tenantSlug });
 
-    const rows = await getCostRollupByPlanting(ctx);
+    const { rows, truncated } = await getCostRollupByPlanting(ctx);
 
     return (
         <CostsClient
@@ -31,6 +31,7 @@ export default async function GrainCostsPage({
             initialData={{
                 by: 'planting',
                 rows: JSON.parse(JSON.stringify(rows)),
+                truncated,
             }}
         />
     );

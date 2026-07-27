@@ -8,7 +8,6 @@ import * as location from '@/app-layer/usecases/location';
 import * as spatialImport from '@/app-layer/usecases/spatial-import';
 import * as fieldOperation from '@/app-layer/usecases/field-operation';
 import * as catalog from '@/app-layer/usecases/catalog';
-import * as agriEvents from '@/app-layer/usecases/agri-events';
 import * as promotions from '@/app-layer/usecases/promotions';
 import * as parcelRisk from '@/app-layer/usecases/parcel-risk';
 import * as insurance from '@/app-layer/usecases/insurance';

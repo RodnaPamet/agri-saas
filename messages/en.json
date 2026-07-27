@@ -6161,7 +6161,14 @@
             "colSeason": "Season",
             "colPlantings": "Plantings",
             "colField": "Field",
-            "unassigned": "Unassigned"
+            "unassigned": "Unassigned",
+            "currencyMixedWarning": "These costs were recorded in more than one currency ({currencies}) and cannot be added together — the totals below are not comparable. Record costs in one currency, or read each row on its own.",
+            "truncatedWarning": "Showing part of the farm only — this total does not cover every planting. Narrow the view to see complete figures.",
+            "colCostPerHa": "Cost / ha",
+            "colCostPerTonne": "Cost / t",
+            "metricAttributedCropCost": "Cost attributed to crops",
+            "metricTenantActivitySpend": "Total farm spend",
+            "metricSeasonActivityCost": "Season activity cost"
         },
         "nav": {
             "ariaLabel": "Grain sections",

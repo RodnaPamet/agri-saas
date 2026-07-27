@@ -28,7 +28,6 @@ import {
     listTenantMembers,
 } from '@/app-layer/usecases/tenant-admin';
 import { createTenantWithOwner } from '@/app-layer/usecases/tenant-lifecycle';
-import { hashForLookup } from '@/lib/security/encryption';
 
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 
@@ -136,7 +135,7 @@ describeFn('member remove / reactivate lifecycle', () => {
     });
 
     it('remove protects the last active OWNER', async () => {
-        const { tenantId, adminCtx, ownerUserId } = await setupTenant();
+        const { tenantId, ownerUserId } = await setupTenant();
         // A second admin acting, so the guard (not self-removal) is what bites.
         const admin2 = await addMember(tenantId, { role: 'ADMIN', status: 'ACTIVE' });
         const actingCtx = makeRequestContext('ADMIN', {

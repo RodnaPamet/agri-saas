@@ -139,14 +139,44 @@ export interface PortfolioGrainTenantRow {
      */
     yieldAlsoInStoreTonnes: number;
     /** SUM of LogEntry.costAmount + StockTransaction.costAmount. */
+    /**
+     * COST_METRICS.TENANT_ACTIVITY_SPEND — EVERY LogEntry and cost-bearing
+     * StockTransaction in the tenant, including entries attributed to no
+     * planting. Deliberately wider than the costs page's attributed figure:
+     * an org operator comparing farms wants the money that left the
+     * business, and unattributed spend is precisely the spend worth
+     * finding. See src/lib/grain/cost-metrics.ts.
+     */
     totalActivityCost: number;
     /** Σ (volume × price) over live contracts, in `currency`. The
      *  revenue side the dashboard previously lacked — cost was shown
      *  with nothing to weigh it against. Never blended across
      *  currencies: this is the tenant's DOMINANT currency only. */
     contractedValue: number;
-    /** Dominant cost/price currency for this tenant, or null. */
+    /**
+     * The tenant's dominant CONTRACT currency (from `Contract.priceCurrency`),
+     * or null.
+     *
+     * It labels `contractedValue` and NOTHING ELSE. It used to be documented
+     * as the "cost/price" currency and was applied to `totalActivityCost`
+     * too — but that figure is a sum of `LogEntry.costAmount` and
+     * `StockTransaction.costAmount`, which carry their own `costCurrency`
+     * and have no relationship to what a grain buyer priced a contract in.
+     * A tenant selling in EUR and buying inputs in BGN had its spend
+     * labelled EUR, and when no live contract carried a currency the label
+     * fell back to the OLDEST contract on record.
+     *
+     * Activity cost is reported in the tenant's configured display currency
+     * by the UI, with `costCurrencies` below saying what was actually
+     * recorded.
+     */
     currency: string | null;
+    /** Distinct currencies the ACTIVITY COST was recorded in. */
+    costCurrencies: string[];
+    /** True when activity cost sums more than one currency — the figure is
+     *  then not a meaningful single number. No FX table exists in this
+     *  product, so the honest response is to say so, not to convert. */
+    costCurrencyMixed: boolean;
     /** Count of BIN/STORAGE locations. */
     binCount: number;
     /** SUM of `capacityTonnes` across the tenant's bins. */
@@ -310,6 +340,31 @@ async function computeTenantGrainRow(
     const totalActivityCost =
         dec(logCostAgg._sum.costAmount) + dec(stockCostAgg._sum.costAmount);
 
+    // What that spend was actually recorded in — read from the cost rows
+    // themselves rather than borrowed from a contract. Two bounded distinct
+    // reads; a tenant has a handful of currencies at most.
+    const [logCostCurrencies, stockCostCurrencies] = await Promise.all([
+        db.logEntry.findMany({
+            where: { tenantId: tenant.id, deletedAt: null, costCurrency: { not: null } },
+            select: { costCurrency: true },
+            distinct: ['costCurrency'],
+            take: 10,
+        }),
+        db.stockTransaction.findMany({
+            where: { tenantId: tenant.id, costCurrency: { not: null } },
+            select: { costCurrency: true },
+            distinct: ['costCurrency'],
+            take: 10,
+        }),
+    ]);
+    const costCurrencies = [
+        ...new Set(
+            [...logCostCurrencies, ...stockCostCurrencies]
+                .map((r) => r.costCurrency)
+                .filter((c): c is string => c != null),
+        ),
+    ].sort();
+
     // ── Bins: capacity + stored produce ──
     const bins = await db.location.findMany({
         where: {
@@ -421,6 +476,8 @@ async function computeTenantGrainRow(
         contractedPurchaseTonnes: round3(contractedPurchaseTonnes),
         totalYieldTonnes: round3(totalYieldTonnes),
         yieldAlsoInStoreTonnes: round3(yieldAlsoInStoreTonnes),
+        costCurrencies,
+        costCurrencyMixed: costCurrencies.length > 1,
         totalActivityCost: round2(totalActivityCost),
         contractedValue: round2(contractedValue),
         currency,

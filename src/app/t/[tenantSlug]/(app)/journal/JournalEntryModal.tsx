@@ -202,7 +202,7 @@ export function JournalEntryModal({ open, setOpen, tenantSlug, initial, onSaved,
     // (growing areas), this one must offer only places stock can sit, since a
     // lot receipted against a FIELD is invisible to every bin view.
     const { data: storageLocations } = useTenantSWR<LocationOption[]>(
-        open ? '/locations?kind=BIN,STORAGE,BARN,WAREHOUSE' : null,
+        open ? '/locations?kind=BIN,STORAGE' : null,
         { revalidateOnFocus: false, dedupingInterval: 60_000 },
     );
     // Equipment catalog — backs the multi-picker (schemas already accepted

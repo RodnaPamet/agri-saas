@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { ListPageShell } from '@/components/layout/ListPageShell';
@@ -8,7 +8,8 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { ToggleGroup } from '@/components/ui/toggle-group';
 import { DataTable, createColumns } from '@/components/ui/table';
 import { EmptyState } from '@/components/ui/empty-state';
-import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
+import { useTenantApiUrl, useTenantHref, useTenantCurrencySymbol } from '@/lib/tenant-context-provider';
+import { COST_METRICS, COST_METRIC_LABEL_KEYS } from '@/lib/grain/cost-metrics';
 import { formatDecimal } from '@/lib/number-format';
 
 // ─── Row shapes (mirror the cost-rollup usecase DTOs) ───
@@ -22,7 +23,15 @@ interface PlantingCostRow {
     logEntryCost: number;
     stockCost: number;
     totalCost: number;
-    currency: string | null;
+    /** Currencies the underlying costs were recorded in (usually one). */
+    currencies: string[];
+    /** True when this row sums costs recorded in more than one currency —
+     *  the total is then not a meaningful single figure. */
+    currencyMixed: boolean;
+    costPerHa?: number | null;
+    costPerTonne?: number | null;
+    harvestedAreaHa?: number | null;
+    producedTonnes?: number | null;
 }
 interface SeasonCostRow {
     seasonId: string | null;
@@ -30,7 +39,15 @@ interface SeasonCostRow {
     logEntryCost: number;
     stockCost: number;
     totalCost: number;
-    currency: string | null;
+    /** Currencies the underlying costs were recorded in (usually one). */
+    currencies: string[];
+    /** True when this row sums costs recorded in more than one currency —
+     *  the total is then not a meaningful single figure. */
+    currencyMixed: boolean;
+    costPerHa?: number | null;
+    costPerTonne?: number | null;
+    harvestedAreaHa?: number | null;
+    producedTonnes?: number | null;
     plantingCount: number;
 }
 interface FieldCostRow {
@@ -39,16 +56,24 @@ interface FieldCostRow {
     logEntryCost: number;
     stockCost: number;
     totalCost: number;
-    currency: string | null;
+    /** Currencies the underlying costs were recorded in (usually one). */
+    currencies: string[];
+    /** True when this row sums costs recorded in more than one currency —
+     *  the total is then not a meaningful single figure. */
+    currencyMixed: boolean;
+    costPerHa?: number | null;
+    costPerTonne?: number | null;
+    harvestedAreaHa?: number | null;
+    producedTonnes?: number | null;
     plantingCount: number;
 }
 
 type Dimension = 'planting' | 'field' | 'season';
 
 type CostResponse =
-    | { by: 'planting'; rows: PlantingCostRow[] }
-    | { by: 'field'; rows: FieldCostRow[] }
-    | { by: 'season'; rows: SeasonCostRow[] };
+    | { by: 'planting'; rows: PlantingCostRow[]; truncated?: boolean }
+    | { by: 'field'; rows: FieldCostRow[]; truncated?: boolean }
+    | { by: 'season'; rows: SeasonCostRow[]; truncated?: boolean };
 
 interface CostsClientProps {
     tenantSlug: string;
@@ -56,11 +81,31 @@ interface CostsClientProps {
     initialData: CostResponse;
 }
 
-/** Format a cost magnitude with the row's own currency (precise, not compact). */
-function money(v: number | null | undefined, currency: string | null): string {
-    if (v == null) return '—';
-    const n = formatDecimal(v, 2);
-    return currency ? `${n} ${currency}` : n;
+/**
+ * Format a cost magnitude in the TENANT's configured currency.
+ *
+ * The previous version labelled each row with its own `costCurrency`, which
+ * is null for every entry the journal UI creates (the field was declared in
+ * the modal's type and never sent), so money printed as a bare unlabelled
+ * number. It only looked right because the demo seed writes 'EUR'.
+ *
+ * Two vocabularies were also being conflated: `Tenant.currencySymbol` is a
+ * SYMBOL ("€") and `costCurrency` is an ISO CODE ("EUR"), with no mapping
+ * between them and no FX table anywhere in the product. So a per-row
+ * currency cannot be rendered faithfully OR converted — the tenant's
+ * configured display currency, which the schema already documents as "the
+ * tenant's display currency for every monetary surface", is the only label
+ * this page can honestly print.
+ *
+ * Rows whose recorded currencies disagree are flagged separately
+ * (`currencyMixed`) rather than being silently blended under one symbol.
+ */
+function useCostFormatter(): (v: number | null | undefined) => string {
+    const symbol = useTenantCurrencySymbol();
+    return useCallback(
+        (v: number | null | undefined) => (v == null ? '—' : `${symbol}${formatDecimal(v, 2)}`),
+        [symbol],
+    );
 }
 
 export function CostsClient({
@@ -70,6 +115,7 @@ export function CostsClient({
 }: CostsClientProps) {
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
+    const money = useCostFormatter();
     const t = useTranslations('grainEnums');
     const tc = useTranslations('grain.costs');
     const [by, setBy] = useState<Dimension>(initialBy);
@@ -138,7 +184,7 @@ export function CostsClient({
                     accessorFn: (r) => r.logEntryCost,
                     cell: ({ row }) => (
                         <span className="text-xs text-content-muted tabular-nums block text-right">
-                            {money(row.original.logEntryCost, row.original.currency)}
+                            {money(row.original.logEntryCost)}
                         </span>
                     ),
                 },
@@ -148,7 +194,7 @@ export function CostsClient({
                     accessorFn: (r) => r.stockCost,
                     cell: ({ row }) => (
                         <span className="text-xs text-content-muted tabular-nums block text-right">
-                            {money(row.original.stockCost, row.original.currency)}
+                            {money(row.original.stockCost)}
                         </span>
                     ),
                 },
@@ -158,12 +204,12 @@ export function CostsClient({
                     accessorFn: (r) => r.totalCost,
                     cell: ({ row }) => (
                         <span className="text-xs text-content-emphasis tabular-nums block text-right">
-                            {money(row.original.totalCost, row.original.currency)}
+                            {money(row.original.totalCost)}
                         </span>
                     ),
                 },
             ]),
-        [tc],
+        [tc, money],
     );
 
     const seasonColumns = useMemo(
@@ -195,7 +241,7 @@ export function CostsClient({
                     accessorFn: (r) => r.logEntryCost,
                     cell: ({ row }) => (
                         <span className="text-xs text-content-muted tabular-nums block text-right">
-                            {money(row.original.logEntryCost, row.original.currency)}
+                            {money(row.original.logEntryCost)}
                         </span>
                     ),
                 },
@@ -205,7 +251,7 @@ export function CostsClient({
                     accessorFn: (r) => r.stockCost,
                     cell: ({ row }) => (
                         <span className="text-xs text-content-muted tabular-nums block text-right">
-                            {money(row.original.stockCost, row.original.currency)}
+                            {money(row.original.stockCost)}
                         </span>
                     ),
                 },
@@ -215,12 +261,37 @@ export function CostsClient({
                     accessorFn: (r) => r.totalCost,
                     cell: ({ row }) => (
                         <span className="text-xs text-content-emphasis tabular-nums block text-right">
-                            {money(row.original.totalCost, row.original.currency)}
+                            {money(row.original.totalCost)}
+                        </span>
+                    ),
+                },
+                {
+                    // The two figures that turn spend into a question a
+                    // farmer can act on: what an area cost, and what a tonne
+                    // cost. Null (—) rather than 0 when the yield register
+                    // has no area/tonnage for the grouping — "0 per hectare"
+                    // would read as a free crop.
+                    id: 'costPerHa',
+                    header: tc('colCostPerHa'),
+                    accessorFn: (r) => r.costPerHa ?? -1,
+                    cell: ({ row }) => (
+                        <span className="text-xs text-content-muted tabular-nums block text-right">
+                            {money(row.original.costPerHa)}
+                        </span>
+                    ),
+                },
+                {
+                    id: 'costPerTonne',
+                    header: tc('colCostPerTonne'),
+                    accessorFn: (r) => r.costPerTonne ?? -1,
+                    cell: ({ row }) => (
+                        <span className="text-xs text-content-muted tabular-nums block text-right">
+                            {money(row.original.costPerTonne)}
                         </span>
                     ),
                 },
             ]),
-        [tc],
+        [tc, money],
     );
 
     const fieldColumns = useMemo(
@@ -252,7 +323,7 @@ export function CostsClient({
                     accessorFn: (r) => r.logEntryCost,
                     cell: ({ row }) => (
                         <span className="text-xs text-content-muted tabular-nums block text-right">
-                            {money(row.original.logEntryCost, row.original.currency)}
+                            {money(row.original.logEntryCost)}
                         </span>
                     ),
                 },
@@ -262,7 +333,7 @@ export function CostsClient({
                     accessorFn: (r) => r.stockCost,
                     cell: ({ row }) => (
                         <span className="text-xs text-content-muted tabular-nums block text-right">
-                            {money(row.original.stockCost, row.original.currency)}
+                            {money(row.original.stockCost)}
                         </span>
                     ),
                 },
@@ -272,12 +343,32 @@ export function CostsClient({
                     accessorFn: (r) => r.totalCost,
                     cell: ({ row }) => (
                         <span className="text-xs text-content-emphasis tabular-nums block text-right">
-                            {money(row.original.totalCost, row.original.currency)}
+                            {money(row.original.totalCost)}
+                        </span>
+                    ),
+                },
+                {
+                    id: 'costPerHa',
+                    header: tc('colCostPerHa'),
+                    accessorFn: (r) => r.costPerHa ?? -1,
+                    cell: ({ row }) => (
+                        <span className="text-xs text-content-muted tabular-nums block text-right">
+                            {money(row.original.costPerHa)}
+                        </span>
+                    ),
+                },
+                {
+                    id: 'costPerTonne',
+                    header: tc('colCostPerTonne'),
+                    accessorFn: (r) => r.costPerTonne ?? -1,
+                    cell: ({ row }) => (
+                        <span className="text-xs text-content-muted tabular-nums block text-right">
+                            {money(row.original.costPerTonne)}
                         </span>
                     ),
                 },
             ]),
-        [tc],
+        [tc, money],
     );
 
     const emptyState = (
@@ -288,6 +379,27 @@ export function CostsClient({
             description={tc('emptyDescription')}
         />
     );
+
+    // A partial total and a blended-currency total are both figures a
+    // farmer would otherwise act on. Derived from the loaded payload so they
+    // track whichever dimension is on screen.
+    const truncated = Boolean(data?.truncated);
+    const mixedCurrencies = useMemo(() => {
+        // Iterated rather than annotated: `rows` is a UNION of three row
+        // arrays, which TypeScript will not assign to one array type — but
+        // it iterates the union happily, and every member carries the same
+        // two currency fields. No cast needed.
+        const rows = data?.rows ?? [];
+        const all = new Set<string>();
+        let mixed = false;
+        for (const r of rows) {
+            for (const c of r.currencies) all.add(c);
+            if (r.currencyMixed) mixed = true;
+        }
+        return { list: [...all].sort(), mixed: mixed || all.size > 1 };
+    }, [data]);
+    const currencyMixed = mixedCurrencies.mixed;
+    const mixedCurrencyList = mixedCurrencies.list.join(', ');
 
     // Pick the matching DataTable in a typed branch so the row + column
     // generics always agree (the API echoes `by`, so we trust it; fall
@@ -303,7 +415,24 @@ export function CostsClient({
                         { label: t('costs') },
                     ]}
                     title={tc('title')}
-                    description={tc('description')}
+                    // Named, because two other pages report a DIFFERENT
+                    // cost for the same season by design — the org
+                    // dashboard counts unattributed spend, the season recap
+                    // counts a date window. A reader who sees two numbers
+                    // should be able to tell why.
+                    eyebrow={tc(COST_METRIC_LABEL_KEYS[COST_METRICS.ATTRIBUTED_CROP_COST])}
+                    // Two things a financial page must never hide: that the
+                    // figures are only part of the farm, and that they blend
+                    // currencies that cannot be added. Either replaces the
+                    // ordinary description rather than sitting below it,
+                    // because a caveat nobody reads is not a caveat.
+                    description={
+                        currencyMixed
+                            ? tc('currencyMixedWarning', { currencies: mixedCurrencyList })
+                            : truncated
+                              ? tc('truncatedWarning')
+                              : tc('description')
+                    }
                 />
             </ListPageShell.Header>
             <ListPageShell.Filters className="space-y-section">
