@@ -182,7 +182,7 @@ export function InventoryClient({ tenantSlug }: { tenantSlug: string }) {
     // FIELD or a storage row depending on `kind`, and produce stored against
     // a field would be invisible to every bin view.
     const { data: storageLocations } = useTenantSWR<StorageLocationRow[]>(
-        '/locations?kind=BIN,STORAGE,BARN,WAREHOUSE',
+        '/locations?kind=BIN,STORAGE',
         { revalidateOnFocus: false, dedupingInterval: 60_000 },
     );
 

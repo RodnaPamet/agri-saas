@@ -15,7 +15,9 @@ import type { BlendLotsInput } from '../schemas/grain.schemas';
  * Locations blended grain may be receipted into. A FIELD is a growing area,
  * so grain "stored" there is on-hand stock that no bin view can see.
  */
-const BLEND_OUTPUT_KINDS = ['BIN', 'STORAGE', 'BARN', 'WAREHOUSE'] as const;
+// See LocationKind: FIELD | BIN | STORAGE. (BARN/WAREHOUSE were listed here
+// once; they are not enum members and could never match.)
+const BLEND_OUTPUT_KINDS = ['BIN', 'STORAGE'] as const;
 
 /**
  * Grain blending — consume N source lots into ONE blended output lot

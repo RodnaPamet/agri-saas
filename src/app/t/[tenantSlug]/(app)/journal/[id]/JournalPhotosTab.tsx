@@ -37,6 +37,25 @@ interface JournalPhotosTabProps {
  * through the shared storage pipeline and links it via LogEntryFile.
  * Detach uses the Epic 67 undo-toast (5s delayed commit).
  */
+/**
+ * Mint the local preview URL for a just-captured photo.
+ *
+ * `URL.createObjectURL` returns a browser-generated `blob:<origin>/<uuid>`
+ * — its contents are minted by the browser, never by a caller — so this is
+ * the one place a preview URL can come from, and the regex is the assertion
+ * of that invariant rather than a sanitiser doing real work. Anything that
+ * does not match is dropped instead of rendered, so a future refactor that
+ * routes some other string here fails closed.
+ */
+function mintPreviewUrl(file: File): string | null {
+    const url = URL.createObjectURL(file);
+    if (!/^blob:/.test(url)) {
+        URL.revokeObjectURL(url);
+        return null;
+    }
+    return url;
+}
+
 export function JournalPhotosTab({ entryId, photos, apiUrl, canWrite, onChanged }: JournalPhotosTabProps) {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -155,7 +174,7 @@ export function JournalPhotosTab({ entryId, photos, apiUrl, canWrite, onChanged 
         // Show the thumbnail instantly (offline-safe), then upload.
         setPreviewSrc((prev) => {
             if (prev) URL.revokeObjectURL(prev);
-            return URL.createObjectURL(file);
+            return mintPreviewUrl(file);
         });
         await uploadFile(file);
     };

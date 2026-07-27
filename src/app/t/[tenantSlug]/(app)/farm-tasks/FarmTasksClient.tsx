@@ -279,7 +279,6 @@ function FarmTasksInner({ tenantSlug, currentUserId }: { tenantSlug: string; cur
     const selectedRows = useMemo(() => Object.fromEntries([...selected].map((id) => [id, true])), [selected]);
     const [bulkAction, setBulkAction] = useState('');
     const [bulkValue, setBulkValue] = useState('');
-    const [bulkValueLabel, setBulkValueLabel] = useState('');
     const [bulkBusy, setBulkBusy] = useState(false);
     const bulkActionOptions: ComboboxOption[] = [
         { value: 'assign', label: te('ui.assign') },
@@ -313,7 +312,7 @@ function FarmTasksInner({ tenantSlug, currentUserId }: { tenantSlug: string; cur
         } finally {
             setBulkBusy(false);
             setSelected(new Set());
-            setBulkAction(''); setBulkValue(''); setBulkValueLabel('');
+            setBulkAction(''); setBulkValue('');
             await mutate();
         }
     };
@@ -462,7 +461,7 @@ function FarmTasksInner({ tenantSlug, currentUserId }: { tenantSlug: string; cur
                                       hideSearch
                                       id="bulk-action-select"
                                       selected={bulkActionOptions.find((o) => o.value === bulkAction) ?? null}
-                                      setSelected={(opt) => { setBulkAction(opt?.value ?? ''); setBulkValue(''); setBulkValueLabel(''); }}
+                                      setSelected={(opt) => { setBulkAction(opt?.value ?? ''); setBulkValue(''); }}
                                       options={bulkActionOptions}
                                       placeholder={t('bulkChooseAction')}
                                       matchTriggerWidth
@@ -472,7 +471,7 @@ function FarmTasksInner({ tenantSlug, currentUserId }: { tenantSlug: string; cur
                                       <UserCombobox
                                           tenantSlug={tenantSlug}
                                           selectedId={bulkValue || null}
-                                          onChange={(id, m) => { setBulkValue(id ?? ''); setBulkValueLabel(m?.name ?? m?.email ?? ''); }}
+                                          onChange={(id) => { setBulkValue(id ?? ''); }}
                                           forceDropdown
                                           matchTriggerWidth
                                           placeholder={t('unassigned')}

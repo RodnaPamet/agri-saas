@@ -7,7 +7,6 @@ import type { PrismaTx } from '@/lib/db-context';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { InventoryRepository } from '../repositories/InventoryRepository';
 import { LocationRepository } from '../repositories/LocationRepository';
-import { JournalRepository } from '../repositories/JournalRepository';
 import { createLogEntryWithAudit } from './journal-write';
 import { ModuleSettingsRepository } from '../repositories/ModuleSettingsRepository';
 import { AuditLogRepository } from '../repositories/AuditLogRepository';
@@ -212,12 +211,22 @@ export async function createLot(ctx: RequestContext, input: CreateLotInput) {
         });
 
         if (input.initialQuantity && input.initialQuantity > 0) {
+            // `costAmount` on a StockTransaction is the MOVEMENT total, not a
+            // rate. Posting the per-unit price here booked 1000 L of product
+            // at 5/L as a receipt worth 5 — a figure three orders of
+            // magnitude light, which then flowed into the org dashboard's
+            // activity cost. Multiply by the quantity received.
+            const receiptCost =
+                input.unitCostAmount == null
+                    ? null
+                    // Decimal(14,2) — round where it is stored.
+                    : Math.round(input.initialQuantity * input.unitCostAmount * 100) / 100;
             await appendStockTransaction(db, ctx, {
                 lotId: lot.id,
                 type: 'RECEIPT',
                 quantityDelta: input.initialQuantity,
                 unitId: lot.unitId,
-                costAmount: input.unitCostAmount ?? null,
+                costAmount: receiptCost,
                 costCurrency: input.unitCostCurrency ?? null,
             });
         }
@@ -241,7 +250,10 @@ export async function createLot(ctx: RequestContext, input: CreateLotInput) {
 }
 
 /** Locations a lot may be stored in. A FIELD is a growing area, not a shelf. */
-const STORAGE_LOCATION_KINDS = ['BIN', 'STORAGE', 'BARN', 'WAREHOUSE'] as const;
+// Every non-FIELD LocationKind. Produce assigned to a FIELD is invisible to
+// every bin view, so those are refused. (BARN/WAREHOUSE were listed here
+// once; they are not LocationKind members and could never match.)
+const STORAGE_LOCATION_KINDS = ['BIN', 'STORAGE'] as const;
 
 /**
  * Move a lot into a storage location, or unassign it (`locationId: null`).
@@ -531,6 +543,40 @@ async function recordInputApplicationImpl(
     if (inventoryOn && consumed > 0) {
         const lot = await InventoryRepository.getFefoLot(db, ctx, product.id);
         if (lot) {
+            // ── Value the draw-down ────────────────────────────────────
+            //
+            // `unitCostAmount` is the lot's per-unit acquisition cost. It
+            // was written at lot creation and read by NOTHING, so every
+            // CONSUMPTION posted a null costAmount and the product's input
+            // cost — the dominant variable cost on a real farm — reported
+            // as exactly zero everywhere it was summed.
+            //
+            // Dimensional care: `consumed` was converted into the PRODUCT's
+            // default unit above, while the price is per unit of the LOT
+            // (units are fixed at lot creation and mixed-unit lots are
+            // forbidden). Those normally coincide, but when they do not the
+            // multiplication would be nonsense — so cost is posted only
+            // when the two units agree, and skipped with a warning
+            // otherwise. A missing cost is recoverable; a wrong one is a
+            // number somebody budgets against.
+            const lotUnitMatchesProduct = lot.unitId === product.defaultUnitId;
+            const unitCost = lot.unitCostAmount == null ? null : Number(lot.unitCostAmount);
+            const consumptionCost =
+                unitCost != null && lotUnitMatchesProduct
+                    ? // StockTransaction.costAmount is Decimal(14,2).
+                      Math.round(consumed * unitCost * 100) / 100
+                    : null;
+            if (unitCost != null && !lotUnitMatchesProduct) {
+                logger.warn('lot unit differs from product unit — consumption left unvalued', {
+                    component: 'usecase',
+                    operation: 'inventory.recordInputApplication',
+                    tenantId: ctx.tenantId,
+                    lotId: lot.id,
+                    lotUnitId: lot.unitId,
+                    productUnitId: product.defaultUnitId,
+                });
+            }
+
             const res = await appendStockTransaction(db, ctx, {
                 lotId: lot.id,
                 type: 'CONSUMPTION',
@@ -538,6 +584,8 @@ async function recordInputApplicationImpl(
                 unitId: lot.unitId,
                 logEntryId: journalEntryId,
                 actorUserId: ctx.userId ?? null,
+                costAmount: consumptionCost,
+                costCurrency: lot.unitCostCurrency ?? null,
                 // Idempotency layer 2 (race-safe DB backstop): keyed on the
                 // STABLE operationParcelId, never the per-call logEntryId, so
                 // a concurrent retry can't double-deduct the lot.

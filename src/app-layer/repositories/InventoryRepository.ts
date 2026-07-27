@@ -208,7 +208,19 @@ export class InventoryRepository {
                 { receivedAt: { sort: 'asc', nulls: 'last' } },
                 { createdAt: 'asc' },
             ],
-            select: { id: true, unitId: true, lotCode: true, quantityOnHand: true },
+            // unitCostAmount / unitCostCurrency are selected because the
+            // CONSUMPTION that follows this lookup VALUES the draw-down —
+            // without them `StockTransaction.costAmount` was always null and
+            // every input cost in the product reported as zero. The column
+            // was written at lot creation and read by nothing.
+            select: {
+                id: true,
+                unitId: true,
+                lotCode: true,
+                quantityOnHand: true,
+                unitCostAmount: true,
+                unitCostCurrency: true,
+            },
         });
     }
 
