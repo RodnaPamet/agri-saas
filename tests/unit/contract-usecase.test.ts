@@ -80,7 +80,7 @@ describe('listContracts', () => {
         const { rows: out } = await listContracts(adminCtx, {
             status: ['ACTIVE'],
             type: ['SALE'],
-            seasonId: 's-1',
+            seasonIds: ['s-1'],
         });
         // Rows are DECORATED with derived figures (fulfilment + value),
         // so this is a subset match, not equality.
@@ -92,7 +92,9 @@ describe('listContracts', () => {
             deletedAt: null,
             status: { in: ['ACTIVE'] },
             type: { in: ['SALE'] },
-            seasonId: 's-1',
+            // Season is multi-select too — it was the one facet still read
+            // as a scalar, which a String column accepts and no row matches.
+            seasonId: { in: ['s-1'] },
         });
         expect(args.take).toBe(500);
     });
@@ -573,5 +575,25 @@ describe('getContract', () => {
     it('throws notFound when missing', async () => {
         mockDb.contract.findFirst.mockResolvedValue(null);
         await expect(getContract(adminCtx, 'missing')).rejects.toThrow(/not found/i);
+    });
+});
+
+describe('listContracts — the season facet is multi-select too', () => {
+    beforeEach(() => {
+        jest.clearAllMocks();
+        mockDb.contract.findMany.mockResolvedValue([]);
+        mockDb.grainDelivery.groupBy.mockResolvedValue([]);
+    });
+
+    it('folds two selected seasons into one IN filter', async () => {
+        await listContracts(adminCtx, { seasonIds: ['s-1', 's-2'] });
+        expect(mockDb.contract.findMany.mock.calls[0][0].where).toMatchObject({
+            seasonId: { in: ['s-1', 's-2'] },
+        });
+    });
+
+    it('omits the filter for an empty selection rather than matching nothing', async () => {
+        await listContracts(adminCtx, { seasonIds: [] });
+        expect(mockDb.contract.findMany.mock.calls[0][0].where.seasonId).toBeUndefined();
     });
 });

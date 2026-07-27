@@ -29,13 +29,27 @@ test('harvest yield: a record computes t/ha from gross tonnes and area', async (
     });
     expect(res.status(), `create yield: ${await res.text()}`).toBe(201);
     const rec = await res.json();
-    // 90 t / 10 ha = 9.0 t/ha, computed server-side.
+    // 90 t at 14% moisture is already ON the standard basis, so the adjusted
+    // tonnage equals the gross one and t/ha is 90 / 10 either way.
+    expect(rec.netTonnesStd).toBeCloseTo(90, 3);
     expect(rec.tPerHa).toBeCloseTo(9, 3);
+    expect(rec.tPerHaBasis).toBe('standard-moisture');
 
-    // It appears in the list with the computed t/ha.
+    // It appears in the list. The list read returns a paged envelope
+    // ({ rows, totalCount, truncated }) so the 500-row cap can be reported
+    // rather than silently truncating.
     const list = await (await api.get(`/api/t/${slug}/grain/yield-records`)).json();
-    const arr = Array.isArray(list) ? list : list.items;
-    expect(arr.some((r: { id: string }) => r.id === rec.id)).toBe(true);
+    expect(Array.isArray(list.rows)).toBe(true);
+    expect(list.rows.some((r: { id: string }) => r.id === rec.id)).toBe(true);
+    // Commercial valuation commentary is NOT broadcast in list rows.
+    const listed = list.rows.find((r: { id: string }) => r.id === rec.id);
+    expect(listed).not.toHaveProperty('valuationNotes');
+
+    // Two selected seasons/fields must filter, not return an empty table.
+    const filtered = await (
+        await api.get(`/api/t/${slug}/grain/yield-records?locationId=${locationId},${locationId}`)
+    ).json();
+    expect(filtered.rows.some((r: { id: string }) => r.id === rec.id)).toBe(true);
 
     // UI: the yield page renders the harvest.
     await authedPage.goto(`/t/${slug}/grain/yield`);

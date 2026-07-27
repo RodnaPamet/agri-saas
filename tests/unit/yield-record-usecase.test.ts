@@ -34,6 +34,7 @@ import { logEvent } from '@/app-layer/events/audit';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import {
     listYieldRecords,
+    getYieldRecord,
     createYieldRecord,
     updateYieldRecord,
     deleteYieldRecord,
@@ -53,9 +54,11 @@ describe('listYieldRecords', () => {
             { id: 'y-1', grossTonnes: 420, areaHa: 50, moisturePct: 14, plantingId: null, locationId: null, seasonId: null, commodity: 'Wheat', harvestedAt: null, valuationNotes: null, createdAt: new Date(), updatedAt: new Date() },
             { id: 'y-2', grossTonnes: 100, areaHa: 0, moisturePct: null, plantingId: null, locationId: null, seasonId: null, commodity: null, harvestedAt: null, valuationNotes: null, createdAt: new Date(), updatedAt: new Date() },
         ]);
-        const out = await listYieldRecords(adminCtx, { seasonId: 's-1' });
+        const { rows: out } = await listYieldRecords(adminCtx, { seasonIds: ['s-1'] });
         const args = mockDb.yieldRecord.findMany.mock.calls[0][0];
-        expect(args.where).toMatchObject({ tenantId: 'tenant-1', deletedAt: null, seasonId: 's-1' });
+        // `{ in: [...] }` even for one value — the facet is multi-select, so
+        // one selection and two must take the same code path.
+        expect(args.where).toMatchObject({ tenantId: 'tenant-1', deletedAt: null, seasonId: { in: ['s-1'] } });
         expect(args.take).toBe(500);
         // 420 / 50 = 8.4 ; area 0 ⇒ null (no divide-by-zero).
         expect(out[0].tPerHa).toBe(8.4);
@@ -172,7 +175,7 @@ describe('yield DTO — moisture basis and t/ha', () => {
                 netTonnesStd: '85.814',
             },
         ]);
-        const out = await listYieldRecords(readerCtx);
+        const { rows: out } = await listYieldRecords(readerCtx);
         expect(out[0].netTonnesStd).toBe(85.814);
     });
 
@@ -186,7 +189,7 @@ describe('yield DTO — moisture basis and t/ha', () => {
                 netTonnesStd: '85.814',
             },
         ]);
-        const out = await listYieldRecords(readerCtx);
+        const { rows: out } = await listYieldRecords(readerCtx);
         // 85.814 / 10 — NOT 90 / 10, which would rank a wet field above a
         // dry one carrying the same sellable grain.
         expect(out[0].tPerHa).toBe(8.5814);
@@ -203,7 +206,7 @@ describe('yield DTO — moisture basis and t/ha', () => {
                 netTonnesStd: null,
             },
         ]);
-        const out = await listYieldRecords(readerCtx);
+        const { rows: out } = await listYieldRecords(readerCtx);
         expect(out[0].netTonnesStd).toBeNull();
         expect(out[0].tPerHa).toBe(9);
         // The flag is the whole point: an unadjusted figure sits in the same
@@ -215,7 +218,107 @@ describe('yield DTO — moisture basis and t/ha', () => {
         mockDb.yieldRecord.findMany.mockResolvedValue([
             { ...BASE_ROW, grossTonnes: '90', moisturePct: '14', areaHa: '0', netTonnesStd: '90' },
         ]);
-        const out = await listYieldRecords(readerCtx);
+        const { rows: out } = await listYieldRecords(readerCtx);
         expect(out[0].tPerHa).toBeNull();
+    });
+});
+
+// ─── multi-select facets ────────────────────────────────────────────
+//
+// Both facets on the yield page declare `multiple: true`, so the filter
+// layer sends them comma-joined. The route used to read a scalar, producing
+// `seasonId = "a,b"` — which a String column accepts and no row matches, so
+// the page said "No yield records match your filters". That reads as *this
+// farm harvested nothing those seasons*, not *your filter never ran*.
+
+describe('listYieldRecords — multi-select filters', () => {
+    beforeEach(() => {
+        jest.clearAllMocks();
+        mockDb.yieldRecord.findMany.mockResolvedValue([]);
+    });
+
+    it('queries IN for two selected seasons', async () => {
+        await listYieldRecords(adminCtx, { seasonIds: ['s-1', 's-2'] });
+        expect(mockDb.yieldRecord.findMany.mock.calls[0][0].where).toMatchObject({
+            seasonId: { in: ['s-1', 's-2'] },
+        });
+    });
+
+    it('queries IN for two selected fields', async () => {
+        await listYieldRecords(adminCtx, { locationIds: ['loc-1', 'loc-2'] });
+        expect(mockDb.yieldRecord.findMany.mock.calls[0][0].where).toMatchObject({
+            locationId: { in: ['loc-1', 'loc-2'] },
+        });
+    });
+
+    it('combines two facets without dropping either', async () => {
+        await listYieldRecords(adminCtx, { seasonIds: ['s-1', 's-2'], locationIds: ['loc-9'] });
+        expect(mockDb.yieldRecord.findMany.mock.calls[0][0].where).toMatchObject({
+            seasonId: { in: ['s-1', 's-2'] },
+            locationId: { in: ['loc-9'] },
+        });
+    });
+
+    it('omits the filter entirely for an empty selection', async () => {
+        // An empty array must not become `IN ()`, which matches nothing —
+        // the same silent-empty-table failure in a new costume.
+        await listYieldRecords(adminCtx, { seasonIds: [], locationIds: undefined });
+        const where = mockDb.yieldRecord.findMany.mock.calls[0][0].where;
+        expect(where.seasonId).toBeUndefined();
+        expect(where.locationId).toBeUndefined();
+    });
+});
+
+// ─── encrypted commentary is not list data ──────────────────────────
+//
+// `valuationNotes` is commercial valuation text, encrypted at rest by the
+// Epic B manifest, and its only renderer is the write-gated edit form. The
+// list decrypted it into every response and inlined it into the RSC payload,
+// so a READER received commercial commentary they can never open.
+
+describe('listYieldRecords — valuation notes are not broadcast', () => {
+    beforeEach(() => {
+        jest.clearAllMocks();
+        mockDb.yieldRecord.findMany.mockResolvedValue([]);
+    });
+
+    it('does not ask the database for valuationNotes', async () => {
+        await listYieldRecords(adminCtx);
+        const args = mockDb.yieldRecord.findMany.mock.calls[0][0];
+        // An explicit allowlist, not an omit: a column added later must
+        // default to NOT shipping, rather than shipping the moment it exists.
+        expect(args.select).toBeDefined();
+        expect(args.select.valuationNotes).toBeUndefined();
+        expect(args.include).toBeUndefined();
+        // …while still selecting what the table actually renders.
+        expect(args.select).toMatchObject({
+            grossTonnes: true,
+            netTonnesStd: true,
+            areaHa: true,
+            moisturePct: true,
+        });
+    });
+
+    it('omits the key entirely rather than sending null', async () => {
+        // null would assert "this record has no notes" — a different claim
+        // from "not sent on this endpoint".
+        mockDb.yieldRecord.findMany.mockResolvedValue([
+            { id: 'y-1', grossTonnes: '10', areaHa: '2', moisturePct: '14', netTonnesStd: '10',
+              plantingId: null, locationId: null, seasonId: null, commodity: 'Wheat',
+              harvestedAt: null, createdAt: new Date(), updatedAt: new Date() },
+        ]);
+        const { rows: out } = await listYieldRecords(adminCtx);
+        expect('valuationNotes' in out[0]).toBe(false);
+    });
+
+    it('still returns it on a single-record read', async () => {
+        mockDb.yieldRecord.findFirst.mockResolvedValue({
+            id: 'y-1', grossTonnes: '10', areaHa: '2', moisturePct: '14', netTonnesStd: '10',
+            plantingId: null, locationId: null, seasonId: null, commodity: 'Wheat',
+            harvestedAt: null, valuationNotes: 'Sold forward at 214 EUR/t',
+            createdAt: new Date(), updatedAt: new Date(),
+        });
+        const out = await getYieldRecord(adminCtx, 'y-1');
+        expect(out.valuationNotes).toBe('Sold forward at 214 EUR/t');
     });
 });

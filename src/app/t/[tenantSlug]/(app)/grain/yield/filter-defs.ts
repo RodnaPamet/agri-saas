@@ -23,7 +23,7 @@ import { createTypedFilterDefs } from '@/components/ui/filter/filter-definitions
 import type { FilterOption } from '@/components/ui/filter/types';
 // Nucleo icons cast to the contract's icon shape — keeps this file off
 // the lucide allowlist (same precedent as `planning/filter-defs.ts`).
-import { CalendarDays, LocationPin } from '@/components/ui/icons/nucleo';
+import { Apple, CalendarDays, LocationPin } from '@/components/ui/icons/nucleo';
 
 /** The icon shape the filter contract expects, derived from the contract
  *  type itself (no direct legacy-icon-package dependency). */
@@ -56,6 +56,16 @@ const STATIC_DEFS = {
         multiple: true,
         resetBehavior: 'clearable',
     },
+    commodity: {
+        label: 'Commodity',
+        labelPlural: 'Commodities',
+        description: 'Crop the harvest produced.',
+        group: 'Attributes',
+        icon: asIcon(Apple),
+        options: null, // filled in at render time from loaded rows
+        multiple: true,
+        resetBehavior: 'clearable',
+    },
 } satisfies Record<string, FilterDefInput>;
 
 // ─── Public API ──────────────────────────────────────────────────────
@@ -71,6 +81,7 @@ export const YIELD_FILTER_KEYS = yieldFilterDefs.filterKeys;
 interface YieldLike {
     season?: { id: string; name: string } | null;
     location?: { id: string; name: string } | null;
+    commodity?: string | null;
 }
 
 function dedupeOptions(
@@ -99,6 +110,13 @@ export function buildYieldFilters(
 ): FilterDef[] {
     const seasonOpts = dedupeOptions(loaded.map((y) => y.season));
     const locationOpts = dedupeOptions(loaded.map((y) => y.location));
+    // Commodity is free text, so the facet doubles as a view of how badly
+    // it has fragmented: "Wheat" and "wheat" appearing as two entries is
+    // the signal that the pre-fill from the planting's variety is earning
+    // its keep.
+    const commodityOpts = dedupeOptions(
+        loaded.map((y) => (y.commodity ? { id: y.commodity, name: y.commodity } : null)),
+    );
     return yieldFilterDefs.filters.map((f) => {
         if (f.key === 'seasonId')
             return {
@@ -113,6 +131,13 @@ export function buildYieldFilters(
                 label: t('field'),
                 labelPlural: t('fields'),
                 options: locationOpts,
+            };
+        if (f.key === 'commodity')
+            return {
+                ...f,
+                label: t('commodity'),
+                labelPlural: t('commodities'),
+                options: commodityOpts,
             };
         return f;
     });

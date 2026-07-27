@@ -199,6 +199,13 @@ export interface HarvestYieldRecordedData {
     source?: 'journal_harvest';
     /** The journal HARVEST entry that minted it, when source is journal. */
     logEntryId?: string;
+    /**
+     * The record was DELETED — production the farm no longer claims. Update
+     * and delete emit this event too, because a corrected or retracted
+     * tonnage is news to a rule watching production (arguably more than the
+     * original, since a figure someone acted on has moved).
+     */
+    retracted?: boolean;
 }
 
 // ─── Discriminated union ───────────────────────────────────────────────

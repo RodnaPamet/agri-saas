@@ -63,7 +63,25 @@ describe('YieldClient — EntityListPage adoption', () => {
 
     it('uses React Query hydrated with server initialData', () => {
         expect(source).toMatch(/useQuery</);
-        expect(source).toContain('initialRecords');
+        // The SSR prop is the paged envelope ({ rows, totalCount,
+        // truncated }), not a bare row array — the list read reports
+        // whether the 500-row cap bit, which the page has to show.
+        expect(source).toContain('initialPayload');
+        expect(source).toMatch(/initialData:\s*noFacets\s*\?\s*initialPayload/);
+    });
+
+    it('reports the row cap instead of truncating silently', () => {
+        // A farm past the cap used to see 500 rows and be told nothing, so
+        // any total read off this page was wrong.
+        expect(source).toContain('truncated');
+        expect(source).toContain('truncatedNotice');
+    });
+
+    it('sends free-text search to the server, not the loaded page', () => {
+        // An in-memory filter over the loaded rows reported "no results"
+        // for a record that exists on row 501.
+        expect(source).toMatch(/params\.set\('q'/);
+        expect(source).not.toMatch(/rawRecords\.filter\(/);
     });
 
     it('gates the create button behind canWrite and uses the bare-noun + Plus pattern', () => {

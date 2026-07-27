@@ -79,7 +79,8 @@ function toDto(row: {
     moisturePct: Prisma.Decimal | null;
     areaHa: Prisma.Decimal | null;
     netTonnesStd?: Prisma.Decimal | null;
-    valuationNotes: string | null;
+    /** Absent on LIST rows — see YIELD_LIST_SELECT. */
+    valuationNotes?: string | null;
     createdAt: Date;
     updatedAt: Date;
     planting?: { id: string; successionNumber: number } | null;
@@ -109,7 +110,9 @@ function toDto(row: {
         tPerHaBasis: (netTonnesStd != null ? 'standard-moisture' : 'gross') as
             | 'standard-moisture'
             | 'gross',
-        valuationNotes: row.valuationNotes,
+        // Undefined (not null) on list rows: null would assert "this record
+        // has no notes", which is a different claim from "not sent here".
+        ...(row.valuationNotes !== undefined ? { valuationNotes: row.valuationNotes } : {}),
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,
         planting: row.planting ?? null,
@@ -124,10 +127,70 @@ const YIELD_INCLUDE = {
     season: { select: { id: true, name: true } },
 } satisfies Prisma.YieldRecordInclude;
 
+/**
+ * The LIST projection — every scalar EXCEPT `valuationNotes`.
+ *
+ * An explicit allowlist rather than an omit: a column added later should
+ * default to NOT being broadcast, and with `omit` it would ship the moment
+ * it is added with nobody noticing.
+ *
+ * `valuationNotes` is commercial valuation commentary, encrypted at rest by
+ * the Epic B manifest, and its only renderer is the write-gated edit form.
+ * Including it in the list meant every READER received decrypted commercial
+ * text — inlined into the RSC payload of a page they can look at but not
+ * act on. It is fetched on demand from `getYieldRecord` instead.
+ */
+const YIELD_LIST_SELECT = {
+    id: true,
+    plantingId: true,
+    locationId: true,
+    seasonId: true,
+    commodity: true,
+    harvestedAt: true,
+    grossTonnes: true,
+    moisturePct: true,
+    areaHa: true,
+    netTonnesStd: true,
+    createdAt: true,
+    updatedAt: true,
+    ...YIELD_INCLUDE,
+} satisfies Prisma.YieldRecordSelect;
+
+/**
+ * Multi-select by design: each facet on the yield page declares
+ * `multiple: true`, so "the 2025 and 2026 seasons" is one filter, not two
+ * requests. Arrays here, `{ in: [...] }` in the query.
+ */
 export interface YieldRecordListFilters {
-    seasonId?: string;
-    locationId?: string;
-    plantingId?: string;
+    seasonIds?: string[];
+    locationIds?: string[];
+    plantingIds?: string[];
+    /** Commodity facet — plaintext, and the reason free text fragments it. */
+    commodities?: string[];
+    /**
+     * Free-text search over commodity / field / season.
+     *
+     * Server-side because the in-memory client filter only ever saw the
+     * loaded page: a match on row 501 was invisible, and the user was told
+     * "no results" for a record that exists. Deliberately EXCLUDES
+     * `valuationNotes` — it is encrypted at rest, so a LIKE over it cannot
+     * match anything. Searching it would look thorough and return nothing,
+     * which is worse than a narrower search that works.
+     */
+    q?: string;
+}
+
+/** Search predicate shared by the page read and its count. */
+function buildYieldSearchWhere(q: string): Prisma.YieldRecordWhereInput {
+    const term = q.trim();
+    if (!term) return {};
+    return {
+        OR: [
+            { commodity: { contains: term, mode: 'insensitive' } },
+            { location: { name: { contains: term, mode: 'insensitive' } } },
+            { season: { name: { contains: term, mode: 'insensitive' } } },
+        ],
+    };
 }
 
 export async function listYieldRecords(
@@ -136,21 +199,34 @@ export async function listYieldRecords(
     opts: { take?: number } = {},
 ) {
     assertCanRead(ctx);
-    const rows = await runInTenantContext(ctx, (db) =>
-        db.yieldRecord.findMany({
-            where: {
-                tenantId: ctx.tenantId,
-                deletedAt: null,
-                ...(filters.seasonId ? { seasonId: filters.seasonId } : {}),
-                ...(filters.locationId ? { locationId: filters.locationId } : {}),
-                ...(filters.plantingId ? { plantingId: filters.plantingId } : {}),
-            },
+    const where: Prisma.YieldRecordWhereInput = {
+        tenantId: ctx.tenantId,
+        deletedAt: null,
+        ...(filters.seasonIds?.length ? { seasonId: { in: filters.seasonIds } } : {}),
+        ...(filters.locationIds?.length ? { locationId: { in: filters.locationIds } } : {}),
+        ...(filters.plantingIds?.length ? { plantingId: { in: filters.plantingIds } } : {}),
+        ...(filters.commodities?.length ? { commodity: { in: filters.commodities } } : {}),
+        ...(filters.q ? buildYieldSearchWhere(filters.q) : {}),
+    };
+    const take = opts.take ?? LIST_TAKE;
+
+    return runInTenantContext(ctx, async (db) => {
+        const rows = await db.yieldRecord.findMany({
+            where,
             orderBy: [{ harvestedAt: 'desc' }, { createdAt: 'desc' }],
-            include: YIELD_INCLUDE,
-            take: opts.take ?? LIST_TAKE,
-        }),
-    );
-    return rows.map(toDto);
+            select: YIELD_LIST_SELECT,
+            take,
+        });
+
+        // The cap used to be silent: a farm with 600 harvest records saw 500
+        // and was told nothing, so a season total read off this page was
+        // simply wrong. Count only when the page came back FULL — in the
+        // ordinary case the page length IS the total and the query is skipped.
+        const truncated = rows.length === take;
+        const totalCount = truncated ? await db.yieldRecord.count({ where }) : rows.length;
+
+        return { rows: rows.map(toDto), totalCount, truncated };
+    });
 }
 
 export async function getYieldRecord(ctx: RequestContext, id: string) {
@@ -521,12 +597,40 @@ export async function updateYieldRecord(ctx: RequestContext, id: string, input: 
         });
         return record;
     });
+
+    // A CORRECTED tonnage is news to a rule watching production — arguably
+    // more than the original was, since it means a figure someone may have
+    // acted on has moved. Only create emitted before, so a correction was
+    // invisible to automation.
+    trace.getActiveSpan()?.setAttributes({
+        'ag.yieldRecordId': row.id,
+        'ag.grossTonnes': dec(row.grossTonnes) ?? 0,
+        'ag.areaHa': dec(row.areaHa) ?? 0,
+    });
+    await emitAutomationEvent(ctx, {
+        event: 'HARVEST_YIELD_RECORDED',
+        entityType: 'YieldRecord',
+        entityId: row.id,
+        actorUserId: ctx.userId,
+        // Distinct from the create event's key so a rule sees the revision
+        // rather than deduping it against the original.
+        stableKey: `${row.id}:${row.updatedAt.toISOString()}`,
+        data: {
+            yieldRecordId: row.id,
+            commodity: row.commodity,
+            grossTonnes: dec(row.grossTonnes),
+            areaHa: dec(row.areaHa),
+            plantingId: row.plantingId,
+            seasonId: row.seasonId,
+        },
+    });
+
     return toDto(row);
 }
 
 export async function deleteYieldRecord(ctx: RequestContext, id: string) {
     assertCanWrite(ctx);
-    return runInTenantContext(ctx, async (db) => {
+    const result = await runInTenantContext(ctx, async (db) => {
         const existing = await db.yieldRecord.findFirst({
             where: { id, tenantId: ctx.tenantId, deletedAt: null },
             select: { id: true, commodity: true },
@@ -551,6 +655,29 @@ export async function deleteYieldRecord(ctx: RequestContext, id: string) {
                 summary: `Deleted yield record for ${existing.commodity ?? 'harvest'}`,
             },
         });
-        return { id, deleted: true };
+        return { id, deleted: true, commodity: existing.commodity };
     });
+
+    // A RETRACTED tonnage matters to a rule for the same reason a corrected
+    // one does: production the farm no longer claims.
+    trace.getActiveSpan()?.setAttributes({ 'ag.yieldRecordId': id, 'ag.deleted': true });
+    await emitAutomationEvent(ctx, {
+        event: 'HARVEST_YIELD_RECORDED',
+        entityType: 'YieldRecord',
+        entityId: id,
+        actorUserId: ctx.userId,
+        stableKey: `${id}:deleted`,
+        data: {
+            yieldRecordId: id,
+            commodity: result.commodity,
+            // Retracted: the record no longer claims any tonnage.
+            grossTonnes: null,
+            areaHa: null,
+            plantingId: null,
+            seasonId: null,
+            retracted: true,
+        },
+    });
+
+    return { id: result.id, deleted: true };
 }
