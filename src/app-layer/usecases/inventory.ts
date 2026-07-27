@@ -7,7 +7,6 @@ import type { PrismaTx } from '@/lib/db-context';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { InventoryRepository } from '../repositories/InventoryRepository';
 import { LocationRepository } from '../repositories/LocationRepository';
-import { JournalRepository } from '../repositories/JournalRepository';
 import { createLogEntryWithAudit } from './journal-write';
 import { ModuleSettingsRepository } from '../repositories/ModuleSettingsRepository';
 import { AuditLogRepository } from '../repositories/AuditLogRepository';

@@ -11,11 +11,7 @@ import { useTranslations } from 'next-intl';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 import { apiPost, apiPatch, apiDelete } from '@/lib/api-client';
-import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { ToggleGroup } from '@/components/ui/toggle-group';
-import { DatePicker } from '@/components/ui/date-picker/date-picker';
-import { FormField } from '@/components/ui/form-field';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Plus, PenWriting, Trash } from '@/components/ui/icons/nucleo';
 import {

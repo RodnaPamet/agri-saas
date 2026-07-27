@@ -26,14 +26,10 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import {
-    checkRateLimit,
     type RateLimitConfig,
     type RateLimitResult,
 } from './rate-limit';
-import {
-    checkRateLimitDistributed,
-    resetRateLimitDistributed,
-} from '@/lib/rate-limit/mutationRateLimit';
+import { checkRateLimitDistributed } from '@/lib/rate-limit/mutationRateLimit';
 import { logger } from '@/lib/observability/logger';
 
 // ─── Types ───────────────────────────────────────────────────────────
