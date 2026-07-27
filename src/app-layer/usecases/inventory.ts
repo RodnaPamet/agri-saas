@@ -240,7 +240,10 @@ export async function createLot(ctx: RequestContext, input: CreateLotInput) {
 }
 
 /** Locations a lot may be stored in. A FIELD is a growing area, not a shelf. */
-const STORAGE_LOCATION_KINDS = ['BIN', 'STORAGE', 'BARN', 'WAREHOUSE'] as const;
+// Every non-FIELD LocationKind. Produce assigned to a FIELD is invisible to
+// every bin view, so those are refused. (BARN/WAREHOUSE were listed here
+// once; they are not LocationKind members and could never match.)
+const STORAGE_LOCATION_KINDS = ['BIN', 'STORAGE'] as const;
 
 /**
  * Move a lot into a storage location, or unassign it (`locationId: null`).
