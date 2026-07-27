@@ -12,9 +12,37 @@ import type { PrismaTx } from '@/lib/db-context';
  *   1. `LogEntry.costAmount` — the field-event cost (Ekylibre intervention
  *      cost concept), for the LogEntries linked to a planting via
  *      `LogPlanting`.
- *   2. `StockTransaction.costAmount` — the per-movement cost of the stock
- *      transactions linked to those same LogEntries (via
- *      `StockTransaction.logEntryId`).
+ *   2. `StockTransaction.costAmount` — the per-movement cost of the
+ *      COST-BEARING stock transactions linked to those same LogEntries (via
+ *      `StockTransaction.logEntryId`). See the movement-type policy below.
+ *
+ * ─── Movement-type policy ───────────────────────────────────────────
+ *
+ * Only `CONSUMPTION` counts as crop cost. The rollup used to sum EVERY
+ * movement type carrying a `costAmount`, which meant `HARVEST_IN` — a
+ * POSITIVE quantity, the grain the farm produced — was added into spend.
+ * Output booked as cost is not a rounding error; it moves the total in the
+ * wrong direction and grows with a good harvest.
+ *
+ * Each type, and why:
+ *
+ *   CONSUMPTION  COUNTS. The moment an input is applied to a crop is the
+ *                moment it becomes that crop's cost.
+ *   RECEIPT      Does NOT count. Buying stock is working capital, not crop
+ *                cost — the spend lands on a crop when the stock is
+ *                consumed. Counting both would double-count every input:
+ *                once on purchase, again on application. (Receipts also
+ *                carry no `logEntryId`, so they never joined here anyway;
+ *                the exclusion is explicit so a future receipt that DOES
+ *                carry one cannot quietly change the meaning of this total.)
+ *   HARVEST_IN   Never. It is output.
+ *   SALE_OUT     Never. It is revenue.
+ *   TRANSFER     Never. Stock moving between locations costs nothing.
+ *   ADJUSTMENT   Never. A correction to a count, not money spent.
+ *   DISPOSAL     Not today. Written-off stock is a real loss, but it is a
+ *                LOSS rather than a cost of growing this crop, and folding
+ *                it in silently would overstate what the crop cost to
+ *                produce. If it is wanted it belongs as its own column.
  *
  * N+1 avoidance: every level is resolved in BOUNDED batched queries —
  * gather plantings, gather their LogPlanting→logEntryIds in one query,
@@ -26,6 +54,13 @@ import type { PrismaTx } from '@/lib/db-context';
  * the FIRST non-null currency seen is passed through (pragmatic — the
  * magnitudes still sum; a multi-currency tenant should normalise upstream).
  */
+
+/**
+ * The movement types that are crop COST. Deliberately a whitelist: a new
+ * `StockTransactionType` must be argued into this list rather than silently
+ * landing in every farmer's cost total the day it is added.
+ */
+const COST_BEARING_MOVEMENTS = ['CONSUMPTION'] as const;
 
 const LIST_TAKE = 500;
 // Bound for the batched id-set queries below — plantings × their log
@@ -84,14 +119,18 @@ async function computePlantingCostRows(
     ctx: RequestContext,
     filters: { seasonId?: string } = {},
     take = LIST_TAKE,
-): Promise<PlantingCostRow[]> {
+): Promise<{ rows: PlantingCostRow[]; truncated: boolean }> {
     const plantings = await db.planting.findMany({
         where: {
             tenantId: ctx.tenantId,
             deletedAt: null,
             ...(filters.seasonId ? { cropPlan: { is: { seasonId: filters.seasonId } } } : {}),
         },
-        orderBy: [{ createdAt: 'desc' }],
+        // `createdAt` alone is not a total order — ties resolve
+        // arbitrarily, so a capped read could return different plantings
+        // (and therefore a different total) for identical requests. `id`
+        // breaks the tie.
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         select: {
             id: true,
             successionNumber: true,
@@ -99,38 +138,92 @@ async function computePlantingCostRows(
             variety: { select: { name: true } },
             cropPlan: { select: { seasonId: true, name: true } },
         },
-        take,
+        // One extra row is the cheapest way to KNOW the cap bit rather than
+        // infer it from a full page (which is ambiguous at exactly `take`).
+        take: take + 1,
     });
-    if (plantings.length === 0) return [];
+    // Slice rather than mutate: the read result is not ours to shorten in
+    // place, and a caller holding the same array would see it change under
+    // them (which is exactly how the propagation test caught this).
+    const plantingsTruncated = plantings.length > take;
+    const plantingPage = plantingsTruncated ? plantings.slice(0, take) : plantings;
+    if (plantingPage.length === 0) return { rows: [], truncated: false };
 
-    const plantingIds = plantings.map((p) => p.id);
+    const plantingIds = plantingPage.map((p) => p.id);
 
     // ── ONE query: every LogPlanting link for these plantings ──
+    //
+    // Deterministic order so a capped read returns the SAME subset every
+    // time. Without it, an over-cap tenant saw a different total on each
+    // refresh of the same page — the worst failure mode a money figure has,
+    // because it looks like activity rather than a bug.
     const logLinks = await db.logPlanting.findMany({
         where: { tenantId: ctx.tenantId, plantingId: { in: plantingIds } },
         select: { plantingId: true, logEntryId: true },
-        take: BATCH_TAKE,
+        orderBy: [{ logEntryId: 'asc' }, { plantingId: 'asc' }],
+        take: BATCH_TAKE + 1,
     });
-    // logEntryId → plantingId (a log entry realises one planting stage).
+    const linksTruncated = logLinks.length > BATCH_TAKE;
+    const linkPage = linksTruncated ? logLinks.slice(0, BATCH_TAKE) : logLinks;
+
+    // logEntryId → plantingId. NOTE: LogPlanting is many-per-entry
+    // (@@unique([logEntryId, plantingId, stage])), so this Map is
+    // last-write-wins and a spray covering several plantings lands wholly on
+    // one of them. The read above is now deterministically ordered, so the
+    // choice is at least STABLE between requests; making it correct is a
+    // separate change (attribution policy) rather than something to bury
+    // here.
     const logEntryToPlanting = new Map<string, string>();
-    for (const link of logLinks) logEntryToPlanting.set(link.logEntryId, link.plantingId);
+    for (const link of linkPage) logEntryToPlanting.set(link.logEntryId, link.plantingId);
     const logEntryIds = [...logEntryToPlanting.keys()];
 
-    // ── ONE query: the LogEntry cost for those entries ──
+    // ── The LogEntry cost for those entries (live rows only) ──
     const logEntries = logEntryIds.length
         ? await db.logEntry.findMany({
               where: { tenantId: ctx.tenantId, id: { in: logEntryIds }, deletedAt: null },
               select: { id: true, costAmount: true, costCurrency: true },
-              take: BATCH_TAKE,
+              // guardrail-allow: unbounded — bounded by logEntryIds, which is
+              // itself capped above. A `take` here would silently drop cost
+              // from a total instead of reporting the cap.
           })
         : [];
 
-    // ── ONE query: the StockTransaction cost linked to those entries ──
-    const stockTx = logEntryIds.length
+    // Soft-deleted entries must take their stock cost with them. The stock
+    // query previously reused the UNFILTERED id set, so a deleted journal
+    // entry kept contributing its consumption cost forever — invisible while
+    // consumption was unvalued, a live money bug the moment it is valued.
+    const liveLogEntryIds = logEntries.map((e) => e.id);
+
+    // ── The StockTransaction cost linked to those live entries ──
+    //
+    // Aggregated in-DB per entry: nothing to truncate, and the sum is the
+    // database's rather than a page of rows we happened to read.
+    const stockTxGroups = liveLogEntryIds.length
+        ? await db.stockTransaction.groupBy({
+              by: ['logEntryId'],
+              where: {
+                  tenantId: ctx.tenantId,
+                  logEntryId: { in: liveLogEntryIds },
+                  type: { in: [...COST_BEARING_MOVEMENTS] },
+              },
+              _sum: { costAmount: true },
+          })
+        : [];
+
+    // Currency is per-movement, so it cannot ride on a _sum. One extra
+    // bounded read, distinct on the currencies actually present.
+    const stockCurrencies = liveLogEntryIds.length
         ? await db.stockTransaction.findMany({
-              where: { tenantId: ctx.tenantId, logEntryId: { in: logEntryIds } },
-              select: { logEntryId: true, costAmount: true, costCurrency: true },
-              take: BATCH_TAKE,
+              where: {
+                  tenantId: ctx.tenantId,
+                  logEntryId: { in: liveLogEntryIds },
+                  type: { in: [...COST_BEARING_MOVEMENTS] },
+                  costCurrency: { not: null },
+              },
+              select: { logEntryId: true, costCurrency: true },
+              distinct: ['logEntryId', 'costCurrency'],
+              // guardrail-allow: unbounded — one row per (entry, currency),
+              // and a tenant has a handful of currencies at most.
           })
         : [];
 
@@ -151,15 +244,19 @@ async function computePlantingCostRows(
         row.logCost += dec(entry.costAmount);
         row.currency = pickCurrency(row.currency, entry.costCurrency);
     }
-    for (const tx of stockTx) {
-        const pid = tx.logEntryId ? logEntryToPlanting.get(tx.logEntryId) : undefined;
+    for (const g of stockTxGroups) {
+        const pid = g.logEntryId ? logEntryToPlanting.get(g.logEntryId) : undefined;
+        if (!pid) continue;
+        ensure(pid).stockCost += dec(g._sum.costAmount);
+    }
+    for (const c of stockCurrencies) {
+        const pid = c.logEntryId ? logEntryToPlanting.get(c.logEntryId) : undefined;
         if (!pid) continue;
         const row = ensure(pid);
-        row.stockCost += dec(tx.costAmount);
-        row.currency = pickCurrency(row.currency, tx.costCurrency);
+        row.currency = pickCurrency(row.currency, c.costCurrency);
     }
 
-    return plantings.map((p): PlantingCostRow => {
+    const rows = plantingPage.map((p): PlantingCostRow => {
         const row = acc.get(p.id) ?? { logCost: 0, stockCost: 0, currency: null };
         const logEntryCost = Math.round(row.logCost * 100) / 100;
         const stockCost = Math.round(row.stockCost * 100) / 100;
@@ -175,12 +272,17 @@ async function computePlantingCostRows(
             currency: row.currency,
         };
     });
+
+    // Either cap means the figures below cover only part of the farm. The
+    // callers surface this; none of them may present a partial total as a
+    // complete one.
+    return { rows, truncated: plantingsTruncated || linksTruncated };
 }
 
 export async function getCostRollupByPlanting(
     ctx: RequestContext,
     opts: { seasonId?: string; take?: number } = {},
-): Promise<PlantingCostRow[]> {
+): Promise<{ rows: PlantingCostRow[]; truncated: boolean }> {
     assertCanRead(ctx);
     return runInTenantContext(ctx, (db) =>
         computePlantingCostRows(db, ctx, { seasonId: opts.seasonId }, opts.take ?? LIST_TAKE),
@@ -190,10 +292,10 @@ export async function getCostRollupByPlanting(
 export async function getCostRollupBySeason(
     ctx: RequestContext,
     opts: { take?: number } = {},
-): Promise<SeasonCostRow[]> {
+): Promise<{ rows: SeasonCostRow[]; truncated: boolean }> {
     assertCanRead(ctx);
     return runInTenantContext(ctx, async (db) => {
-        const rows = await computePlantingCostRows(db, ctx, {}, opts.take ?? LIST_TAKE);
+        const { rows, truncated } = await computePlantingCostRows(db, ctx, {}, opts.take ?? LIST_TAKE);
 
         const bySeason = new Map<string, SeasonCostRow>();
         for (const r of rows) {
@@ -231,17 +333,17 @@ export async function getCostRollupBySeason(
                 if (agg.seasonId) agg.seasonName = names.get(agg.seasonId) ?? null;
             }
         }
-        return [...bySeason.values()];
+        return { rows: [...bySeason.values()], truncated };
     });
 }
 
 export async function getCostRollupByField(
     ctx: RequestContext,
     opts: { take?: number } = {},
-): Promise<FieldCostRow[]> {
+): Promise<{ rows: FieldCostRow[]; truncated: boolean }> {
     assertCanRead(ctx);
     return runInTenantContext(ctx, async (db) => {
-        const rows = await computePlantingCostRows(db, ctx, {}, opts.take ?? LIST_TAKE);
+        const { rows, truncated } = await computePlantingCostRows(db, ctx, {}, opts.take ?? LIST_TAKE);
 
         const byField = new Map<string, FieldCostRow>();
         for (const r of rows) {
@@ -279,6 +381,6 @@ export async function getCostRollupByField(
                 if (agg.locationId) agg.locationName = names.get(agg.locationId) ?? null;
             }
         }
-        return [...byField.values()];
+        return { rows: [...byField.values()], truncated };
     });
 }
