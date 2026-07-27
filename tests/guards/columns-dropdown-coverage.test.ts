@@ -62,7 +62,7 @@ const EXEMPTIONS: Record<string, string> = {
         "(c) lean inventory roster — four fixed columns (lot/product/on-hand/expiry); column-visibility gear deferred until the lots table grows wider.",
     // Enterprise-grain (GRAIN) — read-only cost rollup report.
     "grain/costs/CostsClient.tsx":
-        "(b) read-only cost rollup report — dimension toggle (planting/field/season) + sort; the whole page is a fixed-shape aggregation digest with no per-column hide/show.",
+        "(b) read-only cost rollup report — dimension toggle (planting/field/season) plus sortable columns and a name search; the column SET is fixed per dimension, so a visibility gear has nothing to hide. The \"+ sort\" this rationale claimed was not real until 2026-07-27: sortableColumns was never passed to DataTable. It is now.",
     // ─── (a) Sub-components — parent owns the toolbar ──────────────
     // R13-PR10 — `admin/AdminClient.tsx` was deleted; audit log
     // moved to `admin/audit-log/AuditLogClient.tsx`. The new sub-

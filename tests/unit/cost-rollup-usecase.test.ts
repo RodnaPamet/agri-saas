@@ -335,3 +335,81 @@ describe('cost rollup — cost per hectare and per tonne', () => {
         expect(rows[0].costPerTonne).toBeNull();
     });
 });
+
+// ─── multi-planting attribution ─────────────────────────────────────
+//
+// LogPlanting is many-per-entry. The old code collapsed it to a
+// last-write-wins Map, so a spray covering three plantings dumped its whole
+// cost onto whichever the database returned last — over a read with no
+// orderBy, so the row carrying the cost moved between refreshes.
+
+describe('cost rollup — an entry covering several plantings', () => {
+    it('splits the cost evenly rather than dumping it on one', async () => {
+        mockDb.logPlanting.findMany.mockResolvedValueOnce([
+            { plantingId: 'p-1', logEntryId: 'le-1' },
+            { plantingId: 'p-2', logEntryId: 'le-1' },
+        ]);
+        mockDb.logEntry.findMany.mockResolvedValueOnce([
+            { id: 'le-1', costAmount: 100, costCurrency: 'EUR' },
+        ]);
+        mockDb.stockTransaction.groupBy.mockResolvedValueOnce([]);
+        mockDb.stockTransaction.findMany.mockResolvedValueOnce([]);
+
+        const { rows } = await getCostRollupByPlanting(adminCtx);
+        expect(rows.find((r) => r.plantingId === 'p-1')!.logEntryCost).toBe(50);
+        expect(rows.find((r) => r.plantingId === 'p-2')!.logEntryCost).toBe(50);
+    });
+
+    it('splits the linked stock cost the same way', async () => {
+        mockDb.logPlanting.findMany.mockResolvedValueOnce([
+            { plantingId: 'p-1', logEntryId: 'le-1' },
+            { plantingId: 'p-2', logEntryId: 'le-1' },
+        ]);
+        mockDb.logEntry.findMany.mockResolvedValueOnce([
+            { id: 'le-1', costAmount: 0, costCurrency: 'EUR' },
+        ]);
+        mockDb.stockTransaction.groupBy.mockResolvedValueOnce([
+            { logEntryId: 'le-1', _sum: { costAmount: 30 } },
+        ]);
+
+        const { rows } = await getCostRollupByPlanting(adminCtx);
+        expect(rows.find((r) => r.plantingId === 'p-1')!.stockCost).toBe(15);
+        expect(rows.find((r) => r.plantingId === 'p-2')!.stockCost).toBe(15);
+    });
+
+    it('counts a planting linked at two STAGES once, not twice', async () => {
+        // @@unique([logEntryId, plantingId, stage]) — the same planting can
+        // appear twice for one entry. Two stages is still one planting, so
+        // it must not receive a double share.
+        mockDb.logPlanting.findMany.mockResolvedValueOnce([
+            { plantingId: 'p-1', logEntryId: 'le-1' },
+            { plantingId: 'p-1', logEntryId: 'le-1' },
+            { plantingId: 'p-2', logEntryId: 'le-1' },
+        ]);
+        mockDb.logEntry.findMany.mockResolvedValueOnce([
+            { id: 'le-1', costAmount: 100, costCurrency: 'EUR' },
+        ]);
+        mockDb.stockTransaction.groupBy.mockResolvedValueOnce([]);
+        mockDb.stockTransaction.findMany.mockResolvedValueOnce([]);
+
+        const { rows } = await getCostRollupByPlanting(adminCtx);
+        expect(rows.find((r) => r.plantingId === 'p-1')!.logEntryCost).toBe(50);
+        expect(rows.find((r) => r.plantingId === 'p-2')!.logEntryCost).toBe(50);
+    });
+
+    it('conserves the total: a split never invents or loses money', async () => {
+        mockDb.logPlanting.findMany.mockResolvedValueOnce([
+            { plantingId: 'p-1', logEntryId: 'le-1' },
+            { plantingId: 'p-2', logEntryId: 'le-1' },
+        ]);
+        mockDb.logEntry.findMany.mockResolvedValueOnce([
+            { id: 'le-1', costAmount: 100, costCurrency: 'EUR' },
+        ]);
+        mockDb.stockTransaction.groupBy.mockResolvedValueOnce([]);
+        mockDb.stockTransaction.findMany.mockResolvedValueOnce([]);
+
+        const { rows } = await getCostRollupByPlanting(adminCtx);
+        const summed = rows.reduce((acc, r) => acc + r.totalCost, 0);
+        expect(summed).toBe(100);
+    });
+});

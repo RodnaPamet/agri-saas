@@ -2859,11 +2859,14 @@ exports[`API contract — per-schema snapshots schema: GrainCostRow 1`] = `
     "totalCost": {
       "type": "number"
     },
-    "currency": {
-      "type": [
-        "string",
-        "null"
-      ]
+    "currencies": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "currencyMixed": {
+      "type": "boolean"
     }
   },
   "required": [
@@ -2875,10 +2878,173 @@ exports[`API contract — per-schema snapshots schema: GrainCostRow 1`] = `
     "logEntryCost",
     "stockCost",
     "totalCost",
-    "currency"
+    "currencies",
+    "currencyMixed"
   ],
   "additionalProperties": {},
-  "description": "One row of the per-activity grain cost rollup, grouped by planting. totalCost = logEntryCost (field-event cost) + stockCost (linked stock-movement cost)."
+  "description": "One row of the grain cost rollup grouped by planting. totalCost = logEntryCost + stockCost. Cost attributed to a planting: journal entries linked to it plus the stock CONSUMED against those entries. An entry covering several plantings is split evenly between them."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: GrainFieldCostRow 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "locationId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "locationName": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "plantingCount": {
+      "type": "number"
+    },
+    "logEntryCost": {
+      "type": "number"
+    },
+    "stockCost": {
+      "type": "number"
+    },
+    "totalCost": {
+      "type": "number"
+    },
+    "currencies": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "currencyMixed": {
+      "type": "boolean"
+    },
+    "costPerHa": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "costPerTonne": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "harvestedAreaHa": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "producedTonnes": {
+      "type": [
+        "number",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "locationId",
+    "locationName",
+    "plantingCount",
+    "logEntryCost",
+    "stockCost",
+    "totalCost",
+    "currencies",
+    "currencyMixed",
+    "costPerHa",
+    "costPerTonne",
+    "harvestedAreaHa",
+    "producedTonnes"
+  ],
+  "additionalProperties": {},
+  "description": "Grain cost rolled up to a field, with cost per harvested hectare and per tonne. Same null rules as the season row."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: GrainSeasonCostRow 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "seasonId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "seasonName": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "plantingCount": {
+      "type": "number"
+    },
+    "logEntryCost": {
+      "type": "number"
+    },
+    "stockCost": {
+      "type": "number"
+    },
+    "totalCost": {
+      "type": "number"
+    },
+    "currencies": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "currencyMixed": {
+      "type": "boolean"
+    },
+    "costPerHa": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "costPerTonne": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "harvestedAreaHa": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "producedTonnes": {
+      "type": [
+        "number",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "seasonId",
+    "seasonName",
+    "plantingCount",
+    "logEntryCost",
+    "stockCost",
+    "totalCost",
+    "currencies",
+    "currencyMixed",
+    "costPerHa",
+    "costPerTonne",
+    "harvestedAreaHa",
+    "producedTonnes"
+  ],
+  "additionalProperties": {},
+  "description": "Grain cost rolled up to a season, with cost per harvested hectare and per tonne. Per-unit figures are null when the yield register has no area/tonnage for the season, or when the costs span multiple currencies."
 }"
 `;
 

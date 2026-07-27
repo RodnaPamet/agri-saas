@@ -7,7 +7,7 @@ import {
     getCostRollupByField,
 } from '@/app-layer/usecases/cost-rollup';
 import { withApiErrorHandling } from '@/lib/errors/api';
-import { jsonResponse } from '@/lib/api-response';
+import { jsonWithETag } from '@/lib/http/etag';
 
 /**
  * Per-activity cost rollup (GRAIN module).
@@ -23,18 +23,21 @@ export const GET = withApiErrorHandling(
         await assertModuleEnabled(ctx, 'GRAIN');
 
         const by = req.nextUrl.searchParams.get('by') ?? 'planting';
+        // Applies to every dimension now — it used to be read only on the
+        // planting branch, so a shared ?seasonId link silently showed the
+        // whole farm on the field and season views.
+        const seasonId = req.nextUrl.searchParams.get('seasonId') ?? undefined;
         // `truncated` rides with every shape: a partial financial total that
         // does not say it is partial is the failure this endpoint had.
         if (by === 'season') {
-            const { rows, truncated } = await getCostRollupBySeason(ctx);
-            return jsonResponse({ by, rows, truncated });
+            const { rows, truncated } = await getCostRollupBySeason(ctx, { seasonId });
+            return jsonWithETag(req, { by, rows, truncated });
         }
         if (by === 'field') {
-            const { rows, truncated } = await getCostRollupByField(ctx);
-            return jsonResponse({ by, rows, truncated });
+            const { rows, truncated } = await getCostRollupByField(ctx, { seasonId });
+            return jsonWithETag(req, { by, rows, truncated });
         }
-        const seasonId = req.nextUrl.searchParams.get('seasonId') ?? undefined;
         const { rows, truncated } = await getCostRollupByPlanting(ctx, { seasonId });
-        return jsonResponse({ by: 'planting', rows, truncated });
+        return jsonWithETag(req, { by: 'planting', rows, truncated });
     },
 );

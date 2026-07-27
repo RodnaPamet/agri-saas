@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { ListPageShell } from '@/components/layout/ListPageShell';
 import { PageHeader } from '@/components/layout/PageHeader';
+import { Input } from '@/components/ui/input';
 import { ToggleGroup } from '@/components/ui/toggle-group';
 import { DataTable, createColumns } from '@/components/ui/table';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -380,6 +381,18 @@ export function CostsClient({
         />
     );
 
+    // ── Navigability ──
+    //
+    // The table shipped with sortableColumns never passed to DataTable, so
+    // it defaulted to [] and nothing sorted — while two guard exemptions
+    // justified the missing toolbar by claiming the page had "+ sort".
+    // Total cost descending is the default because the farmer's first
+    // question is "what cost me most", and answering it should not require
+    // reading 500 rows.
+    const [sortBy, setSortBy] = useState<string>('totalCost');
+    const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+    const [search, setSearch] = useState('');
+
     // A partial total and a blended-currency total are both figures a
     // farmer would otherwise act on. Derived from the loaded payload so they
     // track whichever dimension is on screen.
@@ -400,6 +413,48 @@ export function CostsClient({
     }, [data]);
     const currencyMixed = mixedCurrencies.mixed;
     const mixedCurrencyList = mixedCurrencies.list.join(', ');
+
+    /** Sort + name-filter applied to whichever dimension is on screen. */
+    function presentRows<T>(rows: T[], nameKey: keyof T): T[] {
+        const q = search.trim().toLowerCase();
+        const filtered = q
+            ? rows.filter((r) => String(r[nameKey] ?? '').toLowerCase().includes(q))
+            : rows;
+        const dir = sortOrder === 'asc' ? 1 : -1;
+        // The sort key arrives from the DataTable as a string, so the lookup
+        // is dynamic by nature; the cast is confined to these two reads
+        // rather than widening the row type.
+        const at = (row: T): unknown => (row as Record<string, unknown>)[sortBy];
+        return [...filtered].sort((a, b) => {
+            const av = at(a);
+            const bv = at(b);
+            // Nulls last regardless of direction: a row with no cost-per-tonne
+            // is missing a denominator, not cheap.
+            if (av == null && bv == null) return 0;
+            if (av == null) return 1;
+            if (bv == null) return -1;
+            if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * dir;
+            return String(av).localeCompare(String(bv)) * dir;
+        });
+    }
+
+    const onSortChange = ({ sortBy: nextBy, sortOrder: nextOrder }: { sortBy?: string; sortOrder?: 'asc' | 'desc' }) => {
+        if (nextBy) setSortBy(nextBy);
+        if (nextOrder) setSortOrder(nextOrder);
+    };
+
+    /** Every money + magnitude column sorts; names sort alphabetically. */
+    const SORTABLE = [
+        'plantingName',
+        'seasonName',
+        'locationName',
+        'logEntryCost',
+        'stockCost',
+        'totalCost',
+        'costPerHa',
+        'costPerTonne',
+        'plantingCount',
+    ];
 
     // Pick the matching DataTable in a typed branch so the row + column
     // generics always agree (the API echoes `by`, so we trust it; fall
@@ -431,36 +486,62 @@ export function CostsClient({
                             ? tc('currencyMixedWarning', { currencies: mixedCurrencyList })
                             : truncated
                               ? tc('truncatedWarning')
-                              : tc('description')
+                              : `${tc('description')} ${tc('scopeNote')}`
                     }
                 />
             </ListPageShell.Header>
             <ListPageShell.Filters className="space-y-section">
-                <ToggleGroup
-                    ariaLabel={tc('dimensionAria')}
-                    options={dimensionOptions}
-                    selected={by}
-                    selectAction={(v) => setBy(v as Dimension)}
-                />
+                <div className="flex flex-wrap items-center gap-default">
+                    <ToggleGroup
+                        ariaLabel={tc('dimensionAria')}
+                        options={dimensionOptions}
+                        selected={by}
+                        selectAction={(v) => setBy(v as Dimension)}
+                    />
+                    {/* Find-by-name over the loaded rows. Deliberately not a
+                        faceted FilterToolbar: this report has no facets, it
+                        has a dimension toggle — but 500 rows with no way to
+                        reach one of them is not a report a farmer can use. */}
+                    <Input
+                        id="grain-costs-search"
+                        value={search}
+                        onChange={(e) => setSearch(e.target.value)}
+                        placeholder={tc('searchPlaceholder')}
+                        aria-label={tc('searchPlaceholder')}
+                        className="w-full sm:w-64"
+                    />
+                </div>
             </ListPageShell.Filters>
             <ListPageShell.Body>
-                {/* mobileFallback="scroll" on all three cost tables — these
-                    are wide, dense financial breakdowns (seed / fertiliser /
-                    chemical / labour / fuel / total cost columns per row). The
+                {/* mobileFallback="scroll" on all three cost tables — the
                     cost columns only make sense read side-by-side, so on a
-                    phone we keep the horizontally-scrollable table rather than
-                    collapse each row into a card. */}
+                    phone we keep the horizontally-scrollable table rather
+                    than collapse each row into a card.
+
+                    (This comment used to advertise seed / fertiliser /
+                    chemical / labour / fuel columns. None of them exist —
+                    it was the residue of a category breakdown that was
+                    designed and dropped. Building it needs cost CATEGORIES
+                    on the underlying entries, which the schema does not
+                    have; describing them in a comment was the only part
+                    that shipped.) */}
                 {activeBy === 'planting' && (
                     <DataTable<PlantingCostRow>
                         fillBody
                         mobileFallback="scroll"
                         data={
-                            data && data.by === 'planting' ? data.rows : []
+                            data && data.by === 'planting'
+                                ? presentRows(data.rows, 'plantingName')
+                                : []
                         }
                         columns={plantingColumns}
                         loading={loading}
                         error={loadError}
                         getRowId={(r) => r.plantingId}
+                        sortableColumns={SORTABLE}
+                        sortBy={sortBy}
+                        sortOrder={sortOrder}
+                        onSortChange={onSortChange}
                         emptyState={emptyState}
                         resourceName={(p) => (p ? 'plantings' : 'planting')}
                         data-testid="grain-costs-table"
@@ -470,11 +551,19 @@ export function CostsClient({
                     <DataTable<SeasonCostRow>
                         fillBody
                         mobileFallback="scroll"
-                        data={data && data.by === 'season' ? data.rows : []}
+                        data={
+                            data && data.by === 'season'
+                                ? presentRows(data.rows, 'seasonName')
+                                : []
+                        }
                         columns={seasonColumns}
                         loading={loading}
                         error={loadError}
                         getRowId={(r) => r.seasonId ?? 'unassigned'}
+                        sortableColumns={SORTABLE}
+                        sortBy={sortBy}
+                        sortOrder={sortOrder}
+                        onSortChange={onSortChange}
                         emptyState={emptyState}
                         resourceName={(p) => (p ? 'seasons' : 'season')}
                         data-testid="grain-costs-table"
@@ -484,11 +573,19 @@ export function CostsClient({
                     <DataTable<FieldCostRow>
                         fillBody
                         mobileFallback="scroll"
-                        data={data && data.by === 'field' ? data.rows : []}
+                        data={
+                            data && data.by === 'field'
+                                ? presentRows(data.rows, 'locationName')
+                                : []
+                        }
                         columns={fieldColumns}
                         loading={loading}
                         error={loadError}
                         getRowId={(r) => r.locationId ?? 'unassigned'}
+                        sortableColumns={SORTABLE}
+                        sortBy={sortBy}
+                        sortOrder={sortOrder}
+                        onSortChange={onSortChange}
                         emptyState={emptyState}
                         resourceName={(p) => (p ? 'fields' : 'field')}
                         data-testid="grain-costs-table"
