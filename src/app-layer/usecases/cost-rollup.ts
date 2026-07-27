@@ -291,16 +291,36 @@ async function computePlantingCostRows(
     const linksTruncated = logLinks.length > BATCH_TAKE;
     const linkPage = linksTruncated ? logLinks.slice(0, BATCH_TAKE) : logLinks;
 
-    // logEntryId → plantingId. NOTE: LogPlanting is many-per-entry
-    // (@@unique([logEntryId, plantingId, stage])), so this Map is
-    // last-write-wins and a spray covering several plantings lands wholly on
-    // one of them. The read above is now deterministically ordered, so the
-    // choice is at least STABLE between requests; making it correct is a
-    // separate change (attribution policy) rather than something to bury
-    // here.
-    const logEntryToPlanting = new Map<string, string>();
-    for (const link of linkPage) logEntryToPlanting.set(link.logEntryId, link.plantingId);
-    const logEntryIds = [...logEntryToPlanting.keys()];
+    // ── Attribution policy: SPLIT EVENLY across the plantings covered ──
+    //
+    // `LogPlanting` is many-per-entry (@@unique([logEntryId, plantingId,
+    // stage])), and the old code collapsed it into a last-write-wins
+    // `Map<logEntryId, plantingId>`. A spray covering three plantings
+    // therefore dumped its ENTIRE cost onto whichever one the database
+    // happened to return last — over a read with no `orderBy`, so the row
+    // that carried the cost changed between refreshes. The code comment
+    // ("a log entry realises one planting stage") asserted the opposite of
+    // what the schema allows.
+    //
+    // An even split is the honest default: the entry covered N plantings and
+    // nothing in the data says how the work divided between them. A
+    // pro-rata split by area was considered and rejected — planting area is
+    // frequently null, so it would silently fall back to an even split for
+    // exactly the farms whose fields differ most, which is worse than being
+    // predictably even everywhere.
+    //
+    // Distinct plantings per entry: the same planting linked at two STAGES
+    // is one planting, not two shares.
+    const plantingsByEntry = new Map<string, Set<string>>();
+    for (const link of linkPage) {
+        let set = plantingsByEntry.get(link.logEntryId);
+        if (!set) {
+            set = new Set<string>();
+            plantingsByEntry.set(link.logEntryId, set);
+        }
+        set.add(link.plantingId);
+    }
+    const logEntryIds = [...plantingsByEntry.keys()];
 
     // ── The LogEntry cost for those entries (live rows only) ──
     const logEntries = logEntryIds.length
@@ -363,22 +383,25 @@ async function computePlantingCostRows(
         return row;
     };
     for (const entry of logEntries) {
-        const pid = logEntryToPlanting.get(entry.id);
-        if (!pid) continue;
-        const row = ensure(pid);
-        row.logCost += dec(entry.costAmount);
-        addCurrency(row.currencies, entry.costCurrency);
+        const targets = plantingsByEntry.get(entry.id);
+        if (!targets?.size) continue;
+        const share = dec(entry.costAmount) / targets.size;
+        for (const pid of targets) {
+            const row = ensure(pid);
+            row.logCost += share;
+            addCurrency(row.currencies, entry.costCurrency);
+        }
     }
     for (const g of stockTxGroups) {
-        const pid = g.logEntryId ? logEntryToPlanting.get(g.logEntryId) : undefined;
-        if (!pid) continue;
-        ensure(pid).stockCost += dec(g._sum.costAmount);
+        const targets = g.logEntryId ? plantingsByEntry.get(g.logEntryId) : undefined;
+        if (!targets?.size) continue;
+        const share = dec(g._sum.costAmount) / targets.size;
+        for (const pid of targets) ensure(pid).stockCost += share;
     }
     for (const c of stockCurrencies) {
-        const pid = c.logEntryId ? logEntryToPlanting.get(c.logEntryId) : undefined;
-        if (!pid) continue;
-        const row = ensure(pid);
-        addCurrency(row.currencies, c.costCurrency);
+        const targets = c.logEntryId ? plantingsByEntry.get(c.logEntryId) : undefined;
+        if (!targets?.size) continue;
+        for (const pid of targets) addCurrency(ensure(pid).currencies, c.costCurrency);
     }
 
     const rows = plantingPage.map((p): PlantingCostRow => {
@@ -387,7 +410,13 @@ async function computePlantingCostRows(
         const stockCost = Math.round(row.stockCost * 100) / 100;
         return {
             plantingId: p.id,
-            plantingName: `${p.cropPlan?.name ?? 'Planting'} #${p.successionNumber}`,
+            // No hardcoded English fallback: "Planting #3" rendered
+            // untranslated for a Bulgarian farmer. A planting whose crop
+            // plan has no name is identified by its succession number, and
+            // the UI supplies the localised noun.
+            plantingName: p.cropPlan?.name
+                ? `${p.cropPlan.name} #${p.successionNumber}`
+                : `#${p.successionNumber}`,
             cropVariety: p.variety?.name ?? null,
             seasonId: p.cropPlan?.seasonId ?? null,
             locationId: p.locationId,
@@ -417,11 +446,18 @@ export async function getCostRollupByPlanting(
 
 export async function getCostRollupBySeason(
     ctx: RequestContext,
-    opts: { take?: number } = {},
+    opts: { seasonId?: string; take?: number } = {},
 ): Promise<{ rows: SeasonCostRow[]; truncated: boolean }> {
     assertCanRead(ctx);
     return runInTenantContext(ctx, async (db) => {
-        const { rows, truncated } = await computePlantingCostRows(db, ctx, {}, opts.take ?? LIST_TAKE);
+        // ?seasonId now narrows EVERY dimension. It used to be accepted and
+        // silently ignored here, so a filtered link showed unfiltered totals.
+        const { rows, truncated } = await computePlantingCostRows(
+            db,
+            ctx,
+            { seasonId: opts.seasonId },
+            opts.take ?? LIST_TAKE,
+        );
 
         const bySeason = new Map<string, SeasonCostRow>();
         for (const r of rows) {
@@ -460,7 +496,11 @@ export async function getCostRollupBySeason(
             const seasons = await db.season.findMany({
                 where: { tenantId: ctx.tenantId, id: { in: seasonIds } },
                 select: { id: true, name: true },
-                take: LIST_TAKE,
+                // guardrail-allow: unbounded — bounded by the id set above,
+                // which is already capped. A second cap here silently
+                // dropped NAMES, so a real field past row 500 rendered as
+                // "unassigned" — which reads as a data-entry problem rather
+                // than a display limit.
             });
             const names = new Map(seasons.map((s) => [s.id, s.name]));
             for (const agg of bySeason.values()) {
@@ -486,11 +526,18 @@ export async function getCostRollupBySeason(
 
 export async function getCostRollupByField(
     ctx: RequestContext,
-    opts: { take?: number } = {},
+    opts: { seasonId?: string; take?: number } = {},
 ): Promise<{ rows: FieldCostRow[]; truncated: boolean }> {
     assertCanRead(ctx);
     return runInTenantContext(ctx, async (db) => {
-        const { rows, truncated } = await computePlantingCostRows(db, ctx, {}, opts.take ?? LIST_TAKE);
+        // ?seasonId now narrows EVERY dimension. It used to be accepted and
+        // silently ignored here, so a filtered link showed unfiltered totals.
+        const { rows, truncated } = await computePlantingCostRows(
+            db,
+            ctx,
+            { seasonId: opts.seasonId },
+            opts.take ?? LIST_TAKE,
+        );
 
         const byField = new Map<string, FieldCostRow>();
         for (const r of rows) {
@@ -529,7 +576,11 @@ export async function getCostRollupByField(
             const locations = await db.location.findMany({
                 where: { tenantId: ctx.tenantId, id: { in: locationIds } },
                 select: { id: true, name: true },
-                take: LIST_TAKE,
+                // guardrail-allow: unbounded — bounded by the id set above,
+                // which is already capped. A second cap here silently
+                // dropped NAMES, so a real field past row 500 rendered as
+                // "unassigned" — which reads as a data-entry problem rather
+                // than a display limit.
             });
             const names = new Map(locations.map((l) => [l.id, l.name]));
             for (const agg of byField.values()) {

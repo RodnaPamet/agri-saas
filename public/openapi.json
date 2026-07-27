@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Agrent API",
-    "version": "1.95.2",
+    "version": "1.97.3",
     "description": "Multi-tenant agriculture-operations API. The schema layer in `src/lib/schemas/index.ts` (request bodies) and `src/lib/dto/*.dto.ts` (response shapes) is the single source of truth — this document is generated from those Zod schemas via `npm run openapi:generate`.",
     "license": {
       "name": "Proprietary"
@@ -2768,11 +2768,14 @@
           "totalCost": {
             "type": "number"
           },
-          "currency": {
-            "type": [
-              "string",
-              "null"
-            ]
+          "currencies": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "currencyMixed": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -2784,10 +2787,167 @@
           "logEntryCost",
           "stockCost",
           "totalCost",
-          "currency"
+          "currencies",
+          "currencyMixed"
         ],
         "additionalProperties": {},
-        "description": "One row of the per-activity grain cost rollup, grouped by planting. totalCost = logEntryCost (field-event cost) + stockCost (linked stock-movement cost)."
+        "description": "One row of the grain cost rollup grouped by planting. totalCost = logEntryCost + stockCost. Cost attributed to a planting: journal entries linked to it plus the stock CONSUMED against those entries. An entry covering several plantings is split evenly between them."
+      },
+      "GrainFieldCostRow": {
+        "type": "object",
+        "properties": {
+          "locationId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "locationName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "plantingCount": {
+            "type": "number"
+          },
+          "logEntryCost": {
+            "type": "number"
+          },
+          "stockCost": {
+            "type": "number"
+          },
+          "totalCost": {
+            "type": "number"
+          },
+          "currencies": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "currencyMixed": {
+            "type": "boolean"
+          },
+          "costPerHa": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "costPerTonne": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "harvestedAreaHa": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "producedTonnes": {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "locationId",
+          "locationName",
+          "plantingCount",
+          "logEntryCost",
+          "stockCost",
+          "totalCost",
+          "currencies",
+          "currencyMixed",
+          "costPerHa",
+          "costPerTonne",
+          "harvestedAreaHa",
+          "producedTonnes"
+        ],
+        "additionalProperties": {},
+        "description": "Grain cost rolled up to a field, with cost per harvested hectare and per tonne. Same null rules as the season row."
+      },
+      "GrainSeasonCostRow": {
+        "type": "object",
+        "properties": {
+          "seasonId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "seasonName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "plantingCount": {
+            "type": "number"
+          },
+          "logEntryCost": {
+            "type": "number"
+          },
+          "stockCost": {
+            "type": "number"
+          },
+          "totalCost": {
+            "type": "number"
+          },
+          "currencies": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "currencyMixed": {
+            "type": "boolean"
+          },
+          "costPerHa": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "costPerTonne": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "harvestedAreaHa": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "producedTonnes": {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "seasonId",
+          "seasonName",
+          "plantingCount",
+          "logEntryCost",
+          "stockCost",
+          "totalCost",
+          "currencies",
+          "currencyMixed",
+          "costPerHa",
+          "costPerTonne",
+          "harvestedAreaHa",
+          "producedTonnes"
+        ],
+        "additionalProperties": {},
+        "description": "Grain cost rolled up to a season, with cost per harvested hectare and per tonne. Per-unit figures are null when the yield register has no area/tonnage for the season, or when the costs span multiple currencies."
       },
       "InventoryLot": {
         "type": "object",

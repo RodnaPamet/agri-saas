@@ -80,7 +80,7 @@ const EXEMPTIONS: Record<string, string> = {
         "Lean inventory lots roster — lot/product/on-hand/expiry; faceted filtering (by item/low-stock) arrives once the catalog grows past a single screen.",
     // Enterprise-grain (GRAIN) — read-only cost rollup report.
     "src/app/t/[tenantSlug]/(app)/grain/costs/CostsClient.tsx":
-        "Read-only cost rollup report — dimension toggle (planting/field/season) + sort, no faceted filters. The whole page is an aggregation digest with no per-row mutation.",
+        "Read-only cost rollup report — dimension toggle (planting/field/season), sortable columns and a name search, but no FACETED filters: the rollup has dimensions, not facets. The claim of \"+ sort\" in this rationale was false until 2026-07-27 — sortableColumns was never passed to DataTable, so it defaulted to [] and nothing sorted. Sorting and search now exist; if a facet ever does, this exemption must go rather than be reworded again.",
     // ── Cross-tenant read-only aggregation views (org-level) ──
     // These render a portfolio of tenant-scoped data without the
     // per-tenant filtering surface that FilterToolbar provides.

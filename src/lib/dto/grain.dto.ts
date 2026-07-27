@@ -146,9 +146,32 @@ export const GrainBinDTOSchema = z
 
 export type GrainBinDTO = z.infer<typeof GrainBinDTOSchema>;
 
-// ─── GrainCostRow ───
-// PlantingCostRow (cost-rollup.ts). One row of the per-activity cost
-// rollup: LogEntry.costAmount + linked StockTransaction.costAmount.
+// ─── Grain cost rollup rows ───
+// The /grain/costs endpoint returns ONE of three shapes depending on
+// ?by=planting|season|field. Only the planting row was documented, and it
+// had drifted from the usecase — so the published contract described a
+// `currency` field that no longer exists and omitted the per-hectare and
+// per-tonne figures. All three are described here.
+
+/** Fields every cost row carries, whatever it is grouped by. */
+const CostRowCommon = {
+    logEntryCost: z.number(),
+    stockCost: z.number(),
+    totalCost: z.number(),
+    /** Distinct currencies the costs were recorded in. */
+    currencies: z.array(z.string()),
+    /** True when the row sums more than one currency — the total is then
+     *  not a meaningful single figure and per-unit costs are withheld. */
+    currencyMixed: z.boolean(),
+};
+
+/** Denominators, present on the season and field rollups. */
+const CostRowDenominators = {
+    costPerHa: z.number().nullable(),
+    costPerTonne: z.number().nullable(),
+    harvestedAreaHa: z.number().nullable(),
+    producedTonnes: z.number().nullable(),
+};
 
 export const GrainCostRowDTOSchema = z
     .object({
@@ -157,18 +180,47 @@ export const GrainCostRowDTOSchema = z
         cropVariety: z.string().nullable(),
         seasonId: z.string().nullable(),
         locationId: z.string().nullable(),
-        logEntryCost: z.number(),
-        stockCost: z.number(),
-        totalCost: z.number(),
-        currency: z.string().nullable(),
+        ...CostRowCommon,
     })
     .passthrough()
     .openapi('GrainCostRow', {
         description:
-            'One row of the per-activity grain cost rollup, grouped by planting. totalCost = logEntryCost (field-event cost) + stockCost (linked stock-movement cost).',
+            'One row of the grain cost rollup grouped by planting. totalCost = logEntryCost + stockCost. Cost attributed to a planting: journal entries linked to it plus the stock CONSUMED against those entries. An entry covering several plantings is split evenly between them.',
     });
 
 export type GrainCostRowDTO = z.infer<typeof GrainCostRowDTOSchema>;
+
+export const GrainSeasonCostRowDTOSchema = z
+    .object({
+        seasonId: z.string().nullable(),
+        seasonName: z.string().nullable(),
+        plantingCount: z.number(),
+        ...CostRowCommon,
+        ...CostRowDenominators,
+    })
+    .passthrough()
+    .openapi('GrainSeasonCostRow', {
+        description:
+            'Grain cost rolled up to a season, with cost per harvested hectare and per tonne. Per-unit figures are null when the yield register has no area/tonnage for the season, or when the costs span multiple currencies.',
+    });
+
+export type GrainSeasonCostRowDTO = z.infer<typeof GrainSeasonCostRowDTOSchema>;
+
+export const GrainFieldCostRowDTOSchema = z
+    .object({
+        locationId: z.string().nullable(),
+        locationName: z.string().nullable(),
+        plantingCount: z.number(),
+        ...CostRowCommon,
+        ...CostRowDenominators,
+    })
+    .passthrough()
+    .openapi('GrainFieldCostRow', {
+        description:
+            'Grain cost rolled up to a field, with cost per harvested hectare and per tonne. Same null rules as the season row.',
+    });
+
+export type GrainFieldCostRowDTO = z.infer<typeof GrainFieldCostRowDTOSchema>;
 
 // ─── PortfolioGrainSummary ───
 // Org-level cross-tenant aggregation (portfolio-grain.ts). Numbers
