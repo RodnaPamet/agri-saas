@@ -69,7 +69,18 @@ export class LocationRepository {
 
         if (filters?.status) where.status = filters.status as LocationStatus;
         if (filters?.kind && filters.kind.length > 0) {
-            where.kind = { in: filters.kind as LocationKind[] };
+            // Forward ONLY real `LocationKind` members. `kind` arrives as a
+            // comma-separated query string, so an unknown value is entirely
+            // reachable from the client — and Prisma rejects the whole query
+            // with a validation error when it sees one, turning the locations
+            // list into a 500 rather than an empty result. (That is exactly
+            // what `?kind=BIN,STORAGE,BARN,WAREHOUSE` did: BARN/WAREHOUSE are
+            // not in the enum.) An unchecked `as LocationKind[]` cast stood
+            // here and defeated the only type check that would have caught it.
+            const kinds = filters.kind.filter((k): k is LocationKind =>
+                (Object.values(LocationKind) as string[]).includes(k),
+            );
+            where.kind = { in: kinds };
         }
         if (filters?.q) {
             where.OR = [
