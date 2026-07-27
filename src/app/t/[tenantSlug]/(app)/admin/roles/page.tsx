@@ -76,19 +76,6 @@ function isOwnerOnly(resource: keyof PermissionSet, action: string): boolean {
     return OWNER_ONLY_PERMISSIONS.some((p) => p.domain === resource && p.action === action);
 }
 
-const RESOURCE_LABELS: Record<string, string> = {
-    controls: 'Controls',
-    evidence: 'Evidence',
-    policies: 'Policies',
-    tasks: 'Tasks',
-    risks: 'Risks',
-    vendors: 'Vendors',
-    tests: 'Tests',
-    frameworks: 'Frameworks',
-    audits: 'Audits',
-    reports: 'Reports',
-    admin: 'Admin',
-};
 
 const BASE_ROLES: Role[] = ['ADMIN', 'EDITOR', 'AUDITOR', 'READER'];
 const ROLE_COLORS: Record<string, StatusBadgeVariant> = {
