@@ -20,6 +20,9 @@ const mockDb = {
     stockTransaction: { findMany: jest.fn(), groupBy: jest.fn() },
     season: { findMany: jest.fn() },
     location: { findMany: jest.fn() },
+    // Denominators for cost/ha and cost/tonne — the yield register already
+    // holds area + tonnage keyed by the same season/location ids.
+    yieldRecord: { groupBy: jest.fn() },
 } as any;
 
 jest.mock('@/lib/db-context', () => ({
@@ -58,6 +61,14 @@ beforeEach(() => {
         { logEntryId: 'le-1', costCurrency: 'EUR' },
     ]);
     mockDb.season.findMany.mockResolvedValue([{ id: 's-1', name: 'Main Season' }]);
+    mockDb.yieldRecord.groupBy.mockImplementation(async (args: any) =>
+        args.by[0] === 'seasonId'
+            ? [{ seasonId: 's-1', _sum: { areaHa: 20, netTonnesStd: 90, grossTonnes: 92 } }]
+            : [
+                  { locationId: 'loc-1', _sum: { areaHa: 12, netTonnesStd: 60, grossTonnes: 61 } },
+                  { locationId: 'loc-2', _sum: { areaHa: 8, netTonnesStd: 30, grossTonnes: 31 } },
+              ],
+    );
     mockDb.location.findMany.mockResolvedValue([
         { id: 'loc-1', name: 'North Field' },
         { id: 'loc-2', name: 'South Field' },
@@ -86,7 +97,14 @@ describe('getCostRollupByPlanting', () => {
         const p1 = rows.find((r) => r.plantingId === 'p-1')!;
         const p2 = rows.find((r) => r.plantingId === 'p-2')!;
         // p-1: log 100 + stock (25+5)=30 ⇒ total 130.
-        expect(p1).toMatchObject({ logEntryCost: 100, stockCost: 30, totalCost: 130, currency: 'EUR', cropVariety: 'Wheat' });
+        expect(p1).toMatchObject({
+            logEntryCost: 100,
+            stockCost: 30,
+            totalCost: 130,
+            currencies: ['EUR'],
+            currencyMixed: false,
+            cropVariety: 'Wheat',
+        });
         // p-2: log 50 + stock 0 ⇒ total 50.
         expect(p2).toMatchObject({ logEntryCost: 50, stockCost: 0, totalCost: 50 });
     });
@@ -124,7 +142,8 @@ describe('getCostRollupBySeason', () => {
             stockCost: 30,
             totalCost: 180,
             plantingCount: 2,
-            currency: 'EUR',
+            currencies: ['EUR'],
+            currencyMixed: false,
         });
     });
 });
@@ -223,5 +242,96 @@ describe('cost rollup — a partial total says so', () => {
         expect(season.truncated).toBe(true);
         const field = await getCostRollupByField(adminCtx, { take: 1 });
         expect(field.truncated).toBe(true);
+    });
+});
+
+describe('cost rollup — mixed currencies are reported, never blended', () => {
+    it('flags a planting whose costs span two currencies', async () => {
+        // No FX table exists in this product, so 100 BGN + 50 EUR is not
+        // 150 of anything. The old code labelled the sum with whichever
+        // currency the database returned first — and the read had no
+        // orderBy, so the label changed between refreshes.
+        mockDb.logEntry.findMany.mockResolvedValueOnce([
+            { id: 'le-1', costAmount: 100, costCurrency: 'BGN' },
+        ]);
+        mockDb.stockTransaction.findMany.mockResolvedValueOnce([
+            { logEntryId: 'le-1', costCurrency: 'EUR' },
+        ]);
+
+        const { rows } = await getCostRollupByPlanting(adminCtx);
+        const p1 = rows.find((r) => r.plantingId === 'p-1')!;
+        expect(p1.currencies).toEqual(['BGN', 'EUR']);
+        expect(p1.currencyMixed).toBe(true);
+    });
+
+    it('does not flag a single-currency row', async () => {
+        const { rows } = await getCostRollupByPlanting(adminCtx);
+        expect(rows.every((r) => r.currencyMixed === false)).toBe(true);
+    });
+
+    it('propagates a mix up to the season aggregate', async () => {
+        mockDb.logEntry.findMany.mockResolvedValueOnce([
+            { id: 'le-1', costAmount: 100, costCurrency: 'BGN' },
+            { id: 'le-2', costAmount: 50, costCurrency: 'EUR' },
+        ]);
+        const { rows } = await getCostRollupBySeason(adminCtx);
+        expect(rows[0].currencyMixed).toBe(true);
+        expect(rows[0].currencies).toEqual(['BGN', 'EUR']);
+    });
+});
+
+// ─── cost needs a denominator ───────────────────────────────────────
+//
+// A total spend figure answers "how much did I spend", never "did this
+// field pay". Area and tonnage already live in the yield register under the
+// SAME season/location keys, so the denominators need no new plumbing.
+
+describe('cost rollup — cost per hectare and per tonne', () => {
+    it('divides season cost by harvested area and by comparable tonnes', async () => {
+        const { rows } = await getCostRollupBySeason(adminCtx);
+        const season = rows[0];
+        // Season total 180 (log 150 + stock 30) over 20 ha and 90 t.
+        expect(season.totalCost).toBe(180);
+        expect(season.harvestedAreaHa).toBe(20);
+        expect(season.producedTonnes).toBe(90);
+        expect(season.costPerHa).toBe(9);
+        expect(season.costPerTonne).toBe(2);
+    });
+
+    it('divides field cost by that field\'s own area and tonnage', async () => {
+        const { rows } = await getCostRollupByField(adminCtx);
+        const loc1 = rows.find((r) => r.locationId === 'loc-1')!;
+        // loc-1 total 130 over 12 ha.
+        expect(loc1.costPerHa).toBe(Math.round((130 / 12) * 100) / 100);
+        expect(loc1.costPerTonne).toBe(Math.round((130 / 60) * 100) / 100);
+    });
+
+    it('prefers the standard-moisture tonnage over gross', async () => {
+        // Two harvests at different moistures are not the same quantity of
+        // grain — the canonical basis is the one the yield pages use.
+        const { rows } = await getCostRollupBySeason(adminCtx);
+        expect(rows[0].producedTonnes).toBe(90); // netTonnesStd, not grossTonnes 92
+    });
+
+    it('returns null — not zero — when no area was recorded', async () => {
+        mockDb.yieldRecord.groupBy.mockResolvedValue([]);
+        const { rows } = await getCostRollupBySeason(adminCtx);
+        // "0 per hectare" would read as a free crop.
+        expect(rows[0].costPerHa).toBeNull();
+        expect(rows[0].costPerTonne).toBeNull();
+        expect(rows[0].harvestedAreaHa).toBeNull();
+    });
+
+    it('refuses a per-unit figure when the currencies are mixed', async () => {
+        // A blended-currency total is not a number, so it must not become a
+        // per-hectare number either.
+        mockDb.logEntry.findMany.mockResolvedValueOnce([
+            { id: 'le-1', costAmount: 100, costCurrency: 'BGN' },
+            { id: 'le-2', costAmount: 50, costCurrency: 'EUR' },
+        ]);
+        const { rows } = await getCostRollupBySeason(adminCtx);
+        expect(rows[0].currencyMixed).toBe(true);
+        expect(rows[0].costPerHa).toBeNull();
+        expect(rows[0].costPerTonne).toBeNull();
     });
 });
