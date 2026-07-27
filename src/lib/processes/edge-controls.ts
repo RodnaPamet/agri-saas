@@ -31,6 +31,11 @@ export function edgeControlsForSave(e: Edge): EdgeControlWire[] {
     if (!Array.isArray(raw)) return [];
     return raw
         .map((r) => {
+            // A null/non-object entry can only come from partially-written
+            // or hand-edited graph JSON, but this helper's whole job is to
+            // be tolerant of that — and it runs on the SAVE path, so
+            // throwing here would block the user from persisting the map.
+            if (r === null || typeof r !== "object") return null;
             const row = r as {
                 controlKey?: unknown;
                 label?: unknown;
