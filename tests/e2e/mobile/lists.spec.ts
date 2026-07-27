@@ -18,7 +18,7 @@
  * proof on guaranteed data.
  */
 import { test, expect, type Page } from '@playwright/test';
-import { safeGoto, loginAndGetTenant } from '../e2e-utils';
+import { safeGoto, loginAndGetTenant, waitForHydration } from '../e2e-utils';
 
 async function expectNoHorizontalOverflow(page: Page, label: string) {
     const o = await page.evaluate(() => ({
@@ -56,21 +56,43 @@ test.describe('mobile lists — card fallback @mobile', () => {
         // PRIMARY GOAL: no horizontal overflow at the phone viewport.
         await expectNoHorizontalOverflow(page, 'farm-tasks list (card mode)');
 
-        // Tap-through: a card navigates to /farm-tasks/<id>. The detail route is
-        // a lazy chunk; on mobile there's no hover-prefetch, so the FIRST tap
-        // does a cold chunk fetch that can intermittently fail under CI load /
-        // rural-LTE conditions (ChunkLoadError → App Router doesn't commit the
-        // URL, so the nav stalls). Production recovers by reloading (see
-        // ServiceWorkerRegistrar); mirror that here — reload the list and tap
-        // again — so a transient chunk miss doesn't fail the suite.
+        // Tap-through: a card navigates to /farm-tasks/<id>.
+        //
+        // The card's tap-through is a React `onClick` — see
+        // `mobile-card-list.tsx`, where the handler is deliberately a MOUSE
+        // convenience (the nested title <Link> is the keyboard/AT affordance).
+        // That handler only exists once React has HYDRATED the list, and
+        // `safeGoto` resolves at `domcontentloaded`, which is strictly before
+        // hydration. So the server-rendered card is already visible, stable
+        // and enabled — Playwright's actionability checks all pass — while its
+        // listener is still detached. The tap is then swallowed by a no-op DOM
+        // node and `waitForURL` waits out its budget for a navigation that was
+        // never going to happen.
+        //
+        // Gate on the list's own hydration (not `main`'s: the shell can hydrate
+        // before this client island does) and the race is gone.
+        //
+        // Supersedes the reload-and-retry loop from #318, which was written
+        // against a ChunkLoadError theory. That diagnosis does not survive the
+        // logs — in the run that prompted this, every ChunkLoadError belonged
+        // to a different, PASSING spec — and the loop made things worse: it
+        // re-navigated at the top of each attempt, re-arming the hydration race
+        // from scratch instead of letting it settle, which is why all three
+        // Playwright retries failed while a plain job re-run passed.
+        await waitForHydration(page, '#mobile-card-list');
+
+        // The retry that remains is narrow on purpose: click + wait ONLY, with
+        // no re-navigation, so hydration state survives across attempts. It
+        // covers a genuinely cold lazy-chunk fetch for the detail route (no
+        // hover-prefetch on mobile) without masking a hydration regression,
+        // which the gate above now fails on loudly.
         await expect(async () => {
-            await safeGoto(page, `/t/${tenantSlug}/farm-tasks`);
             await main
                 .locator('#mobile-card-list')
                 .getByRole('listitem')
                 .first()
-                .click({ timeout: 15_000 });
-            await page.waitForURL(/\/t\/[^/]+\/farm-tasks\/[^/]+/, { timeout: 15_000 });
+                .click({ timeout: 10_000 });
+            await page.waitForURL(/\/t\/[^/]+\/farm-tasks\/[^/]+/, { timeout: 20_000 });
         }).toPass({ timeout: 75_000 });
     });
 
