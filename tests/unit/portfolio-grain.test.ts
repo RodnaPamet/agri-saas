@@ -57,6 +57,8 @@ interface FakeTenantData {
      * null, i.e. none of the production is linked to store.
      */
     yieldFromJournalSum?: string | null;
+    /** Currencies the tenant's activity cost was recorded in. */
+    costCurrencies?: string[];
     logCost: string | null;
     stockCost: string | null;
     bins: Array<{ id: string; capacityTonnes: string | null }>;
@@ -168,8 +170,16 @@ function fakeDbFor(tenantId: string) {
                 })),
             ),
         },
-        logEntry: { aggregate: jest.fn(async () => ({ _sum: { costAmount: d.logCost } })) },
-        stockTransaction: { aggregate: jest.fn(async () => ({ _sum: { costAmount: d.stockCost } })) },
+        logEntry: {
+            aggregate: jest.fn(async () => ({ _sum: { costAmount: d.logCost } })),
+            // Activity cost now reports the currencies it was RECORDED in,
+            // instead of borrowing a label from the oldest contract.
+            findMany: jest.fn(async () => (d.costCurrencies ?? []).map((c) => ({ costCurrency: c }))),
+        },
+        stockTransaction: {
+            aggregate: jest.fn(async () => ({ _sum: { costAmount: d.stockCost } })),
+            findMany: jest.fn(async () => []),
+        },
         location: {
             findMany: jest.fn(async (args: unknown) => {
                 locationFindManyArgs.push(args as { where: Record<string, unknown> });
@@ -926,5 +936,60 @@ describe('getPortfolioGrainSummary — yield/stock overlap', () => {
         expect(yieldAggregateArgs).toHaveLength(2);
         expect(yieldAggregateArgs.some((a) => a?.where?.logEntryId?.not === null)).toBe(true);
         expect(yieldAggregateArgs.some((a) => a?.where?.logEntryId === undefined)).toBe(true);
+    });
+});
+
+// ─── cost currency is not contract currency ─────────────────────────
+//
+// `currency` on a tenant row is the DOMINANT CONTRACT currency, and it used
+// to be documented as the "cost/price" currency and applied to
+// totalActivityCost too. A farm selling in EUR and buying inputs in BGN had
+// its spend labelled EUR — and with no live priced contract, the label fell
+// back to the OLDEST contract on record.
+
+describe('getPortfolioGrainSummary — activity cost reports its own currency', () => {
+    const oneFarm = () => {
+        getPortfolioDataMock.mockResolvedValue({
+            tenants: [{ id: 'farm-a', name: 'Alpha Farm', slug: 'alpha' }],
+        });
+    };
+
+    it('reads cost currencies from the cost rows, not from contracts', async () => {
+        oneFarm();
+        TENANT_DATA['farm-a'] = {
+            contracts: [{ status: 'ACTIVE', type: 'SALE', volumeTonnes: '100', pricePerTonne: '200', priceCurrency: 'EUR' }],
+            yieldSum: null,
+            logCost: '500',
+            stockCost: '250',
+            costCurrencies: ['BGN'],
+            bins: [],
+            stored: [],
+            currency: 'EUR',
+        };
+
+        const res = await getPortfolioGrainSummary(ctxFor());
+        const row = res.perTenant[0];
+        // The contract currency still labels contracted value…
+        expect(row.currency).toBe('EUR');
+        // …while the spend says what it was actually recorded in.
+        expect(row.costCurrencies).toEqual(['BGN']);
+        expect(row.costCurrencyMixed).toBe(false);
+    });
+
+    it('flags activity cost recorded in more than one currency', async () => {
+        oneFarm();
+        TENANT_DATA['farm-a'] = {
+            yieldSum: null,
+            logCost: '500',
+            stockCost: '250',
+            costCurrencies: ['BGN', 'EUR'],
+            bins: [],
+            stored: [],
+            currency: null,
+        };
+
+        const res = await getPortfolioGrainSummary(ctxFor());
+        expect(res.perTenant[0].costCurrencyMixed).toBe(true);
+        expect(res.perTenant[0].costCurrencies).toEqual(['BGN', 'EUR']);
     });
 });

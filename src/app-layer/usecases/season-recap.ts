@@ -61,6 +61,12 @@ export interface RecapTopField {
     tPerHa: number | null;
 }
 
+/**
+ * `costPerHa` here reports COST_METRICS.SEASON_ACTIVITY_COST: field-event
+ * cost inside the season's date window, with no stock and no planting link.
+ * It will NOT equal the costs page's attributed figure, by design — see
+ * src/lib/grain/cost-metrics.ts.
+ */
 export interface SeasonRecap {
     seasonId: string | null;
     seasonName: string | null; // null when all-time

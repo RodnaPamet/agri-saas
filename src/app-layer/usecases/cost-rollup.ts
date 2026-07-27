@@ -7,6 +7,11 @@ import type { PrismaTx } from '@/lib/db-context';
 /**
  * Per-activity cost rollup (ENTERPRISE-grain, GRAIN module).
  *
+ * Reports COST_METRICS.ATTRIBUTED_CROP_COST — cost tied to a planting, and
+ * therefore the only one of the three cost metrics that can carry a
+ * per-hectare or per-tonne denominator. See src/lib/grain/cost-metrics.ts
+ * for why the product has three and how they differ.
+ *
  * Rolls up two cost sources, grouped by planting / field (location) /
  * season:
  *   1. `LogEntry.costAmount` — the field-event cost (Ekylibre intervention
@@ -81,7 +86,13 @@ export interface PlantingCostRow {
     logEntryCost: number;
     stockCost: number;
     totalCost: number;
-    currency: string | null;
+    /** Distinct currencies the underlying costs were recorded in. Empty
+     *  when nothing carried one. */
+    currencies: string[];
+    /** True when costs in MORE THAN ONE currency were summed into this
+     *  row. The total is then not a meaningful single figure and the UI
+     *  must say so rather than print it with one of the labels. */
+    currencyMixed: boolean;
 }
 
 export interface SeasonCostRow {
@@ -90,7 +101,29 @@ export interface SeasonCostRow {
     logEntryCost: number;
     stockCost: number;
     totalCost: number;
-    currency: string | null;
+    /** Distinct currencies the underlying costs were recorded in. Empty
+     *  when nothing carried one. */
+    currencies: string[];
+    /** True when costs in MORE THAN ONE currency were summed into this
+     *  row. The total is then not a meaningful single figure and the UI
+     *  must say so rather than print it with one of the labels. */
+    currencyMixed: boolean;
+    /**
+     * Cost ÷ HARVESTED area, in the same tonnes/hectare vocabulary the yield
+     * pages use. Null when no yield record for this grouping states an area
+     * — a cost with no denominator is not "0 per hectare", it is unknown.
+     */
+    costPerHa: number | null;
+    /**
+     * Cost ÷ tonnes produced, at the 14% standard moisture basis where the
+     * moisture was measured (see src/lib/grain/moisture.ts). This is the
+     * figure that answers "what did a tonne of this grain cost me to grow?".
+     */
+    costPerTonne: number | null;
+    /** Harvested hectares behind `costPerHa`. */
+    harvestedAreaHa: number | null;
+    /** Tonnes behind `costPerTonne`. */
+    producedTonnes: number | null;
     plantingCount: number;
 }
 
@@ -100,13 +133,50 @@ export interface FieldCostRow {
     logEntryCost: number;
     stockCost: number;
     totalCost: number;
-    currency: string | null;
+    /** Distinct currencies the underlying costs were recorded in. Empty
+     *  when nothing carried one. */
+    currencies: string[];
+    /** True when costs in MORE THAN ONE currency were summed into this
+     *  row. The total is then not a meaningful single figure and the UI
+     *  must say so rather than print it with one of the labels. */
+    currencyMixed: boolean;
+    /**
+     * Cost ÷ HARVESTED area, in the same hectares the yield pages use. Null
+     * when no yield record for this grouping states an area — a cost with no
+     * denominator is not "0 per hectare", it is unknown.
+     */
+    costPerHa: number | null;
+    /**
+     * Cost ÷ tonnes produced, at the 14% standard moisture basis where the
+     * moisture was measured (src/lib/grain/moisture.ts). The figure that
+     * answers "what did a tonne of this grain cost me to grow?".
+     */
+    costPerTonne: number | null;
+    /** Harvested hectares behind `costPerHa`. */
+    harvestedAreaHa: number | null;
+    /** Tonnes behind `costPerTonne`. */
+    producedTonnes: number | null;
     plantingCount: number;
 }
 
-/** Pick the first non-null currency, preferring an existing value. */
-function pickCurrency(current: string | null, next: string | null): string | null {
-    return current ?? next ?? null;
+/**
+ * Collect the distinct currencies a row's costs were recorded in.
+ *
+ * This replaces a `first non-null wins` pick, which made the LABEL on a
+ * summed total depend on row order: 100 BGN + 50 EUR displayed as "150 BGN"
+ * or "150 EUR" depending on which row the database happened to return
+ * first, and the read had no `orderBy`. Both answers were wrong, and the
+ * one shown changed between refreshes.
+ *
+ * There is no FX table anywhere in this product (verified: no
+ * exchangeRate / fxRate / currencyRate concept exists), so amounts in
+ * different currencies CANNOT be converted, and a single summed total
+ * across them is not a number that means anything. The rollup therefore
+ * reports what it saw and lets the caller refuse to present a blended
+ * figure — see `currencyMixed`.
+ */
+function addCurrency(seen: Set<string>, next: string | null | undefined): void {
+    if (next) seen.add(next);
 }
 
 /**
@@ -114,6 +184,61 @@ function pickCurrency(current: string | null, next: string | null): string | nul
  * caller's RLS-bound tenant transaction). The heavy lifting all three
  * public rollups share.
  */
+
+/**
+ * Cost per unit of something, rounded for money display.
+ *
+ * Null — not zero — when the denominator is missing or zero. "0 per hectare"
+ * would read as a free crop; "unknown" is the truth when nobody recorded the
+ * area. Mirrors the zero-guard in `tonnesPerHectare`, which is the canonical
+ * t/ha definition this page deliberately reuses rather than inventing a
+ * third one.
+ */
+function per(cost: number, denominator: number | null): number | null {
+    if (denominator == null || !(denominator > 0)) return null;
+    return Math.round((cost / denominator) * 100) / 100;
+}
+
+/**
+ * Harvested area + comparable tonnage per season and per field.
+ *
+ * ONE aggregate per grouping — the yield register already holds `areaHa`
+ * and the standard-moisture tonnage, keyed by the SAME season / location
+ * ids the cost rollup groups by, so a denominator needs no new plumbing.
+ * `netTonnesStd` is preferred over `grossTonnes` because two harvests
+ * measured at different moistures are not the same quantity of grain; gross
+ * fills in where moisture was never measured.
+ */
+async function loadYieldDenominators(db: PrismaTx, ctx: RequestContext) {
+    const [bySeason, byLocation] = await Promise.all([
+        db.yieldRecord.groupBy({
+            by: ['seasonId'],
+            where: { tenantId: ctx.tenantId, deletedAt: null },
+            _sum: { areaHa: true, netTonnesStd: true, grossTonnes: true },
+        }),
+        db.yieldRecord.groupBy({
+            by: ['locationId'],
+            where: { tenantId: ctx.tenantId, deletedAt: null },
+            _sum: { areaHa: true, netTonnesStd: true, grossTonnes: true },
+        }),
+    ]);
+    const shape = (rows: Array<{ _sum: { areaHa: unknown; netTonnesStd: unknown; grossTonnes: unknown } }>, key: 'seasonId' | 'locationId') => {
+        const map = new Map<string, { areaHa: number; tonnes: number }>();
+        for (const r of rows as Array<Record<string, unknown> & { _sum: Record<string, unknown> }>) {
+            const id = r[key];
+            if (typeof id !== 'string') continue;
+            const net = dec(r._sum.netTonnesStd as Prisma.Decimal | null);
+            const gross = dec(r._sum.grossTonnes as Prisma.Decimal | null);
+            map.set(id, { areaHa: dec(r._sum.areaHa as Prisma.Decimal | null), tonnes: net > 0 ? net : gross });
+        }
+        return map;
+    };
+    return {
+        bySeason: shape(bySeason, 'seasonId'),
+        byLocation: shape(byLocation, 'locationId'),
+    };
+}
+
 async function computePlantingCostRows(
     db: PrismaTx,
     ctx: RequestContext,
@@ -228,11 +353,11 @@ async function computePlantingCostRows(
         : [];
 
     // Accumulate per planting.
-    const acc = new Map<string, { logCost: number; stockCost: number; currency: string | null }>();
+    const acc = new Map<string, { logCost: number; stockCost: number; currencies: Set<string> }>();
     const ensure = (pid: string) => {
         let row = acc.get(pid);
         if (!row) {
-            row = { logCost: 0, stockCost: 0, currency: null };
+            row = { logCost: 0, stockCost: 0, currencies: new Set<string>() };
             acc.set(pid, row);
         }
         return row;
@@ -242,7 +367,7 @@ async function computePlantingCostRows(
         if (!pid) continue;
         const row = ensure(pid);
         row.logCost += dec(entry.costAmount);
-        row.currency = pickCurrency(row.currency, entry.costCurrency);
+        addCurrency(row.currencies, entry.costCurrency);
     }
     for (const g of stockTxGroups) {
         const pid = g.logEntryId ? logEntryToPlanting.get(g.logEntryId) : undefined;
@@ -253,11 +378,11 @@ async function computePlantingCostRows(
         const pid = c.logEntryId ? logEntryToPlanting.get(c.logEntryId) : undefined;
         if (!pid) continue;
         const row = ensure(pid);
-        row.currency = pickCurrency(row.currency, c.costCurrency);
+        addCurrency(row.currencies, c.costCurrency);
     }
 
     const rows = plantingPage.map((p): PlantingCostRow => {
-        const row = acc.get(p.id) ?? { logCost: 0, stockCost: 0, currency: null };
+        const row = acc.get(p.id) ?? { logCost: 0, stockCost: 0, currencies: new Set<string>() };
         const logEntryCost = Math.round(row.logCost * 100) / 100;
         const stockCost = Math.round(row.stockCost * 100) / 100;
         return {
@@ -269,7 +394,8 @@ async function computePlantingCostRows(
             logEntryCost,
             stockCost,
             totalCost: Math.round((logEntryCost + stockCost) * 100) / 100,
-            currency: row.currency,
+            currencies: [...row.currencies].sort(),
+            currencyMixed: row.currencies.size > 1,
         };
     });
 
@@ -308,7 +434,12 @@ export async function getCostRollupBySeason(
                     logEntryCost: 0,
                     stockCost: 0,
                     totalCost: 0,
-                    currency: null,
+                    currencies: [],
+                    currencyMixed: false,
+                    costPerHa: null,
+                    costPerTonne: null,
+                    harvestedAreaHa: null,
+                    producedTonnes: null,
                     plantingCount: 0,
                 };
                 bySeason.set(key, agg);
@@ -316,7 +447,10 @@ export async function getCostRollupBySeason(
             agg.logEntryCost = Math.round((agg.logEntryCost + r.logEntryCost) * 100) / 100;
             agg.stockCost = Math.round((agg.stockCost + r.stockCost) * 100) / 100;
             agg.totalCost = Math.round((agg.totalCost + r.totalCost) * 100) / 100;
-            agg.currency = pickCurrency(agg.currency, r.currency);
+            // Union, not first-wins: a season that mixes currencies must
+            // report BOTH, so the UI can refuse to print one blended total.
+            agg.currencies = [...new Set([...agg.currencies, ...r.currencies])].sort();
+            agg.currencyMixed = agg.currencyMixed || r.currencyMixed || agg.currencies.length > 1;
             agg.plantingCount += 1;
         }
 
@@ -333,6 +467,19 @@ export async function getCostRollupBySeason(
                 if (agg.seasonId) agg.seasonName = names.get(agg.seasonId) ?? null;
             }
         }
+        // Denominators last: cost ÷ area and cost ÷ tonnes only mean
+        // anything once the costs for the grouping are complete.
+        const denominators = await loadYieldDenominators(db, ctx);
+        for (const row of bySeason.values()) {
+            const d = row.seasonId ? denominators.bySeason.get(row.seasonId) : undefined;
+            row.harvestedAreaHa = d?.areaHa ?? null;
+            row.producedTonnes = d?.tonnes ?? null;
+            // A blended-currency total is not a number, so it must not
+            // become a per-hectare number either.
+            row.costPerHa = row.currencyMixed ? null : per(row.totalCost, d?.areaHa ?? null);
+            row.costPerTonne = row.currencyMixed ? null : per(row.totalCost, d?.tonnes ?? null);
+        }
+
         return { rows: [...bySeason.values()], truncated };
     });
 }
@@ -356,15 +503,23 @@ export async function getCostRollupByField(
                     logEntryCost: 0,
                     stockCost: 0,
                     totalCost: 0,
-                    currency: null,
+                    currencies: [],
+                    currencyMixed: false,
                     plantingCount: 0,
+                    costPerHa: null,
+                    costPerTonne: null,
+                    harvestedAreaHa: null,
+                    producedTonnes: null,
                 };
                 byField.set(key, agg);
             }
             agg.logEntryCost = Math.round((agg.logEntryCost + r.logEntryCost) * 100) / 100;
             agg.stockCost = Math.round((agg.stockCost + r.stockCost) * 100) / 100;
             agg.totalCost = Math.round((agg.totalCost + r.totalCost) * 100) / 100;
-            agg.currency = pickCurrency(agg.currency, r.currency);
+            // Union, not first-wins: a season that mixes currencies must
+            // report BOTH, so the UI can refuse to print one blended total.
+            agg.currencies = [...new Set([...agg.currencies, ...r.currencies])].sort();
+            agg.currencyMixed = agg.currencyMixed || r.currencyMixed || agg.currencies.length > 1;
             agg.plantingCount += 1;
         }
 
@@ -381,6 +536,15 @@ export async function getCostRollupByField(
                 if (agg.locationId) agg.locationName = names.get(agg.locationId) ?? null;
             }
         }
+        const denominators = await loadYieldDenominators(db, ctx);
+        for (const row of byField.values()) {
+            const d = row.locationId ? denominators.byLocation.get(row.locationId) : undefined;
+            row.harvestedAreaHa = d?.areaHa ?? null;
+            row.producedTonnes = d?.tonnes ?? null;
+            row.costPerHa = row.currencyMixed ? null : per(row.totalCost, d?.areaHa ?? null);
+            row.costPerTonne = row.currencyMixed ? null : per(row.totalCost, d?.tonnes ?? null);
+        }
+
         return { rows: [...byField.values()], truncated };
     });
 }
