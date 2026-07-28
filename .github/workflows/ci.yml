@@ -461,6 +461,25 @@ jobs:
       #   events   branches=72 functions=61 lines=78 statements=75
       #   lib      branches=70 functions=66 lines=71 statements=70
       # Measured global at recalibration: B65.5 F67.0 L80.3 S78.7.
+      # HOW TO READ A FAILURE FROM THIS STEP.
+      #
+      # The "Coverage summary" table printed below covers the WHOLE map.
+      # The threshold error does not. Jest drops a file from the `global`
+      # group the moment it matches a PATH threshold, and
+      # jest.thresholds.json declares paths for
+      # ./src/app-layer/{usecases,policies,events}/ and ./src/lib/ — so
+      # `global` is scored over everything else (mostly src/components/**,
+      # src/app/**, and the remainder of src/app-layer/**).
+      #
+      # So a run can legitimately print "Branches: 66.54%" and fail with
+      # "Coverage for branches (59.94%) does not meet global threshold
+      # (63%)". Two populations, both correct.
+      #
+      # To find WHICH files to fix, download the `coverage-report` artifact
+      # and read coverage-summary.json (json-summary reporter, wired in
+      # jest.config.js) — then EXCLUDE the four path-threshold roots above
+      # before ranking, or you will target files that cannot move the number
+      # that is failing.
       - name: "Gate: test coverage thresholds"
         run: |
           node --max-old-space-size=8192 ./node_modules/jest/bin/jest.js --coverage --forceExit --runInBand \
