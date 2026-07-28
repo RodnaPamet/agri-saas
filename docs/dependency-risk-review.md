@@ -49,17 +49,18 @@ package as part of a risk review.
 Scope: `js-yaml`, `jszip`, `pdfkit`, `nodemailer`. All four are
 declared in `dependencies`.
 
-### js-yaml — `^4.1.1`
+### js-yaml — `^5.2.2`
 
 | | |
 |---|---|
 | **Direct?** | Yes (also transitive via `eslint`, `semantic-release`, `ts-jest`). |
-| **Runtime use** | `src/app-layer/libraries/library-loader.ts` and `src/app-layer/services/mapping-set-importer.ts` — both `yaml.load()` the framework-library + mapping-set YAML files. This is `src/app-layer` code that ships in the production build. Also `prisma/catalog-loader.ts` (seed-time) and six `tests/guards/*` workflow-lint tests. |
+| **Runtime use** | `src/app-layer/libraries/library-loader.ts` and `src/app-layer/services/mapping-set-importer.ts` — both `yaml.load()` the framework-library + mapping-set YAML files. This is `src/app-layer` code that ships in the production build. Also `prisma/catalog-loader.ts` (seed-time) and the `tests/guards/*` workflow-lint tests. |
 | **Classification** | `dependencies` — **correct**. `src/app-layer` is shipped code; the library-import service path is reachable at runtime. |
-| **Version** | `4.1.1` is `latest` (`dist-tags.latest = 4.1.1`). The `^4.1.1` caret stays inside the safe major. |
-| **Exposure** | Parses YAML. v4 dropped the unsafe `yaml.load` default that made v3 dangerous — v4's `load` is the old `safeLoad` (no arbitrary type construction). All three call sites use bare `yaml.load()`, which is the safe schema in v4. The transitive `js-yaml@3.14.2` under `ts-jest` is dev-only and never touches request input. |
-| **Maintenance** | Mature, stable, widely used. No open advisories against v4. |
-| **Decision** | **Reviewed — correctly classified, at latest, no action.** |
+| **Version** | Bumped `4.3.0 → 5.2.2` (Dependabot #408, 2026-07). `5.2.2` is `latest`; the v4 line has been demoted to the **`v4-legacy`** dist-tag. This reverses the 2026-05 verdict — that review recorded "`4.1.1` is `latest`", which was true then. Staying on v4 now means staying on a legacy line, so "no action" stopped being the conservative choice. |
+| **Exposure** | Parses YAML. `load` remains the safe loader in v5 — the deprecated `safeLoad`/`safeDump` exports were removed precisely because safe *is* the default. The material break is the **default schema moving from YAML 1.1 to YAML 1.2 `CORE_SCHEMA`, without `!!merge`**; v5 also removed the `DEFAULT_SCHEMA` export and the nested `types` export, replaced the `Type` API with a tags API, renamed `Schema.extend()` → `Schema.withTags()`, and dropped the `onWarning` / `legacy` / `listener` loader options. **None of these are reachable from our code:** all four call sites are bare `yaml.load()` with no options, no custom schema, and no `Type` construction. The 1.2 schema change is inert for our inputs — the 13 shipped library/catalog YAML files contain no merge keys (`<<:`), no YAML-1.1-only booleans (`yes`/`no`/`on`/`off`), and no octal or sexagesimal scalars, so nothing parses differently. 5.2.1 and 5.2.2 additionally fix two algorithmic-complexity bugs (quadratic `!!omap` `addItem`, exponential nested flow-sequence-pair parsing); those are hygiene rather than exposure reduction here, because every input we parse is a **first-party file read off disk** (`fs.readFileSync`) — there is no untrusted-YAML ingress path today. The transitive dev-only copies never touch request input. |
+| **Types** | `@types/js-yaml@^4.0.9` was **removed** in the same change: v5 ships its own declarations (`types: ./dist/js-yaml.d.ts`). Leaving the DefinitelyTyped stub installed would have kept a v4-shaped type surface — one describing exports v5 no longer has — shadowing the real thing. v5 still publishes a CJS entry point (`require: ./dist/js-yaml.cjs.js`), so this is not an ESM-only migration. |
+| **Maintenance** | Mature, stable, widely used. Active release cadence on the v5 line. No open advisories. |
+| **Decision** | **Reviewed — v5 major bump verified safe for our usage; reviewed major raised 4 → 5.** |
 
 ### jszip — `^3.10.1`
 
@@ -101,7 +102,7 @@ declared in `dependencies`.
 
 | Package | Classification | Version vs latest | Decision |
 |---------|----------------|-------------------|----------|
-| `js-yaml` | `dependencies` ✓ | `4.1.1` = latest | No action |
+| `js-yaml` | `dependencies` ✓ | `5.2.2` = latest | Reviewed — v5 bump safe |
 | `jszip` | `dependencies` ✓ | `3.10.1` = latest | No action |
 | `pdfkit` | `dependencies` ✓ | `0.18.0` = latest | No action |
 | `nodemailer` | `dependencies` ✓ | `9.0.0` = latest | Reviewed — v9 bump safe |
@@ -110,13 +111,17 @@ declared in `dependencies`.
 vulnerabilities** in production dependencies. No package is
 deprecated. All four are at the latest published version inside
 their current major and are genuine runtime dependencies — none can
-safely move to `devDependencies`, and no in-major upgrade is
-available or needed.
+safely move to `devDependencies`.
 
-This review made **no `package.json` change** — the four packages
-were already correctly classified and current. That is a valid,
-documented outcome: a risk review's job is to *verify* posture, and
-"verified clean" is as legitimate a result as a remediation.
+**This document is amended in place, not appended to.** The original
+2026-05-22 pass made no `package.json` change — all four packages
+were already correctly classified and current, and "verified clean"
+is as legitimate an outcome as a remediation. Two majors have since
+been re-reviewed and raised against that baseline, each rewriting
+its own row rather than adding a dated section: **nodemailer 8 → 9**
+(2026-06) and **js-yaml 4 → 5** (2026-07). The tables above always
+describe the tree as it stands today; the per-entry **Version** rows
+carry the history of how it got there.
 
 Feature regression coverage was confirmed adequate rather than
 re-added: `tests/unit/mailer.test.ts` (nodemailer transport
@@ -132,7 +137,14 @@ When auditing the next batch of dependencies, copy the per-package
 table shape above. The structural ratchet
 `tests/guards/dependency-risk-review.test.ts` keeps the four
 packages reviewed here pinned where this document says they are — if
-a future change moves one of them to `devDependencies`, downgrades a
-major, or drops it, the guard fails and points back here. Add new
-audited packages to that guard's `REVIEWED` map in the same diff
-that reviews them.
+a future change moves one of them to `devDependencies`, drops it, or
+**changes its major in either direction**, the guard fails and points
+back here. Add new audited packages to that guard's `REVIEWED` map in
+the same diff that reviews them.
+
+The major is a **pin, not a floor**. A dependabot major bump will
+therefore fail CI until someone re-reviews the package and raises
+`REVIEWED` in the same diff — which is the intended workflow, not an
+obstacle to route around. That is exactly how both the nodemailer v9
+and js-yaml v5 entries above came to be written: the guard caught the
+bump, and the bump arrived with a review attached.

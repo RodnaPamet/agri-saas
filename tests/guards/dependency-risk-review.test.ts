@@ -12,16 +12,31 @@
  *     (the `Dockerfile`'s `npm prune --omit=dev` would strip it
  *     from the production image → prod crash CI can't catch), or
  *   - drops a reviewed package entirely, or
- *   - downgrades it below the reviewed major,
+ *   - changes its major in EITHER direction,
  *
  * the guard fails and points the author back at the review doc.
  *
  * It does NOT pin exact versions — in-major patch/minor bumps stay
- * free. It only enforces the section + the major floor, which is
- * the part the review actually reasoned about.
+ * free. It enforces the section + the exact reviewed major, which
+ * is the part the review actually reasoned about.
+ *
+ * The major is a PIN, not a floor, and deliberately so: the review
+ * reasons about a specific major's API and threat surface, so the
+ * next major invalidates the verdict just as surely as a downgrade
+ * does. A dependabot major bump landing silently is the outcome
+ * this guard exists to prevent — the bump must arrive WITH a
+ * re-review, in one diff.
+ *
+ * This docstring used to describe the rule as a "major floor" while
+ * the assertion below was, and remains, an equality check. The
+ * prose was wrong, not the code; it is recorded here because a
+ * rationale that has been wrong once will be reworded into fiction
+ * again unless it carries its own history. (Corrected 2026-07-28,
+ * when the js-yaml v5 review made the contradiction load-bearing.)
  *
  * When a new package is audited, add it to REVIEWED in the same
  * diff that adds its section to docs/dependency-risk-review.md.
+ * When a reviewed package moves major, update BOTH in one diff.
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -41,7 +56,7 @@ const pkg = JSON.parse(
  * any to devDependencies is a production-image regression.
  */
 const REVIEWED: Record<string, { major: number }> = {
-    'js-yaml': { major: 4 },
+    'js-yaml': { major: 5 },
     jszip: { major: 3 },
     pdfkit: { major: 0 },
     nodemailer: { major: 9 },
