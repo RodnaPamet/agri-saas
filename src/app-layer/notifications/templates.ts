@@ -3,6 +3,7 @@
  * Returns { subject, bodyText, bodyHtml } for each type.
  */
 import { env } from '@/env';
+import { escapeHtml } from '@/lib/security/escape-html';
 
 export interface EmailTemplateResult {
     subject: string;
@@ -48,7 +49,7 @@ export function buildTaskAssignedEmail(payload: TaskAssignedPayload): EmailTempl
   <div style="background: #f4f6fa; border-left: 4px solid #4f46e5; padding: 12px 16px; margin: 16px 0; border-radius: 4px;">
     <strong>${escapeHtml(keyLabel)}${escapeHtml(taskTitle)}</strong>
   </div>
-  <a href="${link}" style="display: inline-block; background: #4f46e5; color: #fff; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: 500;">View Tasks</a>
+  <a href="${escapeHtml(link)}" style="display: inline-block; background: #4f46e5; color: #fff; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: 500;">View Tasks</a>
   <p style="color: #999; font-size: 12px; margin-top: 24px;">— Agrent</p>
 </div>`.trim(),
     };
@@ -86,12 +87,12 @@ export function buildEvidenceExpiringEmail(payload: EvidenceExpiringPayload): Em
         ].join('\n'),
         bodyHtml: `
 <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px;">
-  <h2 style="color: #1a1a2e; font-size: 18px; margin-bottom: 16px;">${urgency}Evidence expiring soon</h2>
+  <h2 style="color: #1a1a2e; font-size: 18px; margin-bottom: 16px;">${escapeHtml(urgency)}Evidence expiring soon</h2>
   <p style="color: #444; line-height: 1.5;">Hi ${escapeHtml(recipientName)},</p>
   <p style="color: #444; line-height: 1.5;">Evidence <strong>"${escapeHtml(evidenceTitle)}"</strong> is expiring in <strong>${daysRemaining} day(s)</strong> (${escapeHtml(retentionUntil)}).</p>
   ${controlName ? `<p style="color: #666; line-height: 1.5;">Control: <strong>${escapeHtml(controlName)}</strong></p>` : ''}
   <p style="color: #444; line-height: 1.5;">Please upload refreshed evidence or extend the retention date.</p>
-  <a href="${link}" style="display: inline-block; background: #4f46e5; color: #fff; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: 500;">View Evidence</a>
+  <a href="${escapeHtml(link)}" style="display: inline-block; background: #4f46e5; color: #fff; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: 500;">View Evidence</a>
   <p style="color: #999; font-size: 12px; margin-top: 24px;">— Agrent</p>
 </div>`.trim(),
     };
@@ -135,7 +136,7 @@ export function buildPolicyApprovalRequestedEmail(payload: PolicyApprovalRequest
   <div style="background: #f4f6fa; border-left: 4px solid #f59e0b; padding: 12px 16px; margin: 16px 0; border-radius: 4px;">
     <strong>${escapeHtml(policyTitle)}${escapeHtml(versionLabel)}</strong>
   </div>
-  <a href="${link}" style="display: inline-block; background: #4f46e5; color: #fff; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: 500;">Review Policy</a>
+  <a href="${escapeHtml(link)}" style="display: inline-block; background: #4f46e5; color: #fff; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: 500;">Review Policy</a>
   <p style="color: #999; font-size: 12px; margin-top: 24px;">— Agrent</p>
 </div>`.trim(),
     };
@@ -173,11 +174,11 @@ export function buildPolicyDecisionEmail(payload: PolicyDecisionPayload): EmailT
         ].join('\n'),
         bodyHtml: `
 <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px;">
-  <h2 style="color: #1a1a2e; font-size: 18px; margin-bottom: 16px;">${emoji} Policy ${word}</h2>
+  <h2 style="color: #1a1a2e; font-size: 18px; margin-bottom: 16px;">${escapeHtml(emoji)} Policy ${escapeHtml(word)}</h2>
   <p style="color: #444; line-height: 1.5;">Hi ${escapeHtml(requesterName)},</p>
-  <p style="color: #444; line-height: 1.5;">Your policy <strong>"${escapeHtml(policyTitle)}"</strong> has been <strong>${word}</strong> by ${escapeHtml(deciderName)}.</p>
+  <p style="color: #444; line-height: 1.5;">Your policy <strong>"${escapeHtml(policyTitle)}"</strong> has been <strong>${escapeHtml(word)}</strong> by ${escapeHtml(deciderName)}.</p>
   ${comment ? `<div style="background: #f4f6fa; border-left: 4px solid ${isApproved ? '#10b981' : '#ef4444'}; padding: 12px 16px; margin: 16px 0; border-radius: 4px;"><em>${escapeHtml(comment)}</em></div>` : ''}
-  <a href="${link}" style="display: inline-block; background: #4f46e5; color: #fff; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: 500;">View Policies</a>
+  <a href="${escapeHtml(link)}" style="display: inline-block; background: #4f46e5; color: #fff; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: 500;">View Policies</a>
   <p style="color: #999; font-size: 12px; margin-top: 24px;">— Agrent</p>
 </div>`.trim(),
     };
@@ -667,10 +668,3 @@ function formatIsoDate(iso: string): string {
     }
 }
 
-function escapeHtml(str: string): string {
-    return str
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;');
-}

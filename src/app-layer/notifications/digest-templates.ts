@@ -14,6 +14,7 @@
  */
 
 import type { DueItem, DueItemUrgency, MonitoredEntityType } from '../jobs/types';
+import { escapeHtml } from '@/lib/security/escape-html';
 
 export interface EmailTemplateResult {
     subject: string;
@@ -23,13 +24,6 @@ export interface EmailTemplateResult {
 
 // ─── Shared Helpers ─────────────────────────────────────────────────
 
-function escapeHtml(str: string): string {
-    return str
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;');
-}
 
 const URGENCY_EMOJI: Record<DueItemUrgency, string> = {
     OVERDUE: '🔴',
@@ -91,11 +85,11 @@ function renderItemHtml(item: DueItem, tenantSlug: string): string {
     return `
 <tr>
   <td style="padding: 8px 12px; border-bottom: 1px solid #eee;">
-    <span style="display: inline-block; background: ${color}; color: #fff; font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: 600;">${label}</span>
+    <span style="display: inline-block; background: ${escapeHtml(color)}; color: #fff; font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: 600;">${escapeHtml(label)}</span>
   </td>
   <td style="padding: 8px 12px; border-bottom: 1px solid #eee; color: #666; font-size: 13px;">${escapeHtml(entityLabel)}</td>
   <td style="padding: 8px 12px; border-bottom: 1px solid #eee;">
-    <a href="/t/${escapeHtml(tenantSlug)}/${path}" style="color: #4f46e5; text-decoration: none; font-weight: 500;">${escapeHtml(item.name)}</a>
+    <a href="/t/${escapeHtml(tenantSlug)}/${escapeHtml(path)}" style="color: #4f46e5; text-decoration: none; font-weight: 500;">${escapeHtml(item.name)}</a>
   </td>
   <td style="padding: 8px 12px; border-bottom: 1px solid #eee; color: #666; font-size: 13px;">${escapeHtml(item.reason)}</td>
 </tr>`.trim();
@@ -162,7 +156,7 @@ export function buildDeadlineDigestEmail(payload: DeadlineDigestPayload): EmailT
         ].join('\n'),
         bodyHtml: `
 <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 640px; margin: 0 auto; padding: 24px;">
-  <h2 style="color: #1a1a2e; font-size: 18px; margin-bottom: 8px;">${urgencyMarker}Compliance Deadline Digest</h2>
+  <h2 style="color: #1a1a2e; font-size: 18px; margin-bottom: 8px;">${escapeHtml(urgencyMarker)}Compliance Deadline Digest</h2>
   <p style="color: #666; font-size: 14px; margin-bottom: 16px;">${escapeHtml(summary)}</p>
   <p style="color: #444; line-height: 1.5;">Hi ${escapeHtml(recipientName)},</p>
   <p style="color: #444; line-height: 1.5;">You have <strong>${items.length} item(s)</strong> that need your attention:</p>
@@ -203,7 +197,7 @@ export function buildEvidenceExpiryDigestEmail(payload: EvidenceExpiryDigestPayl
         ].join('\n'),
         bodyHtml: `
 <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 640px; margin: 0 auto; padding: 24px;">
-  <h2 style="color: #1a1a2e; font-size: 18px; margin-bottom: 8px;">${urgencyMarker}Evidence Expiry Alert</h2>
+  <h2 style="color: #1a1a2e; font-size: 18px; margin-bottom: 8px;">${escapeHtml(urgencyMarker)}Evidence Expiry Alert</h2>
   <p style="color: #444; line-height: 1.5;">Hi ${escapeHtml(recipientName)},</p>
   <p style="color: #444; line-height: 1.5;"><strong>${items.length} evidence item(s)</strong> are expiring or have expired:</p>
   ${buildDigestTable(items, tenantSlug)}
@@ -242,7 +236,7 @@ export function buildVendorRenewalDigestEmail(payload: VendorRenewalDigestPayloa
         ].join('\n'),
         bodyHtml: `
 <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 640px; margin: 0 auto; padding: 24px;">
-  <h2 style="color: #1a1a2e; font-size: 18px; margin-bottom: 8px;">${urgencyMarker}Vendor Renewal Alert</h2>
+  <h2 style="color: #1a1a2e; font-size: 18px; margin-bottom: 8px;">${escapeHtml(urgencyMarker)}Vendor Renewal Alert</h2>
   <p style="color: #444; line-height: 1.5;">Hi ${escapeHtml(recipientName)},</p>
   <p style="color: #444; line-height: 1.5;"><strong>${items.length} vendor(s)</strong> have upcoming or overdue reviews/renewals:</p>
   ${buildDigestTable(items, tenantSlug)}
