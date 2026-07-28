@@ -42,11 +42,30 @@ on:
     - cron: "0 6 * * 0"
 
 concurrency:
-  group: ci-${{ github.ref }}
-  # Cancel superseded runs only on PRs — a force-push rebase kills the in-flight
-  # run instead of stacking a second full one. Keep push (to main) + schedule
-  # runs UN-cancellable so a merge always finishes: protects in-flight SARIF
-  # uploads, the coverage gate, and any deploy trigger downstream.
+  # PRs share one group per ref so a force-push rebase kills the in-flight run
+  # instead of stacking a second full one.
+  #
+  # Push (to main) and schedule runs get a group PER COMMIT, so they never
+  # queue behind each other and can never be discarded. `cancel-in-progress:
+  # false` alone does NOT achieve that: it protects only the run that is
+  # already EXECUTING. A run still PENDING in the group is cancelled the
+  # moment a newer one arrives, because GitHub keeps just the newest pending
+  # run per group.
+  #
+  # That is not theoretical. On 2026-07-28 three consecutive main merges
+  # (#440, #437, #441) landed inside ~30 minutes; the CI runs for the first
+  # two were cancelled with ZERO jobs executed, so neither commit got a SARIF
+  # upload or a coverage-gate verdict. The gate had in fact been failing since
+  # #435, and because it is `if: github.event_name == 'push'` and path-filtered
+  # to skip on PRs that do not touch `src/`, a red main went unnoticed across
+  # four merges. Per-commit groups are what the old comment claimed the old
+  # config bought, and did not.
+  #
+  # Cost: rapid merges now run main CI concurrently rather than collapsing to
+  # the tip. That is the point — the coverage gate and SARIF upload are
+  # per-commit signals, and a signal that silently skips is worse than a slow
+  # one.
+  group: ci-${{ github.ref }}${{ github.event_name != 'pull_request' && format('-{0}', github.sha) || '' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
