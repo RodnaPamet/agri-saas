@@ -85,7 +85,9 @@ function findUnescapedInterpolations(files: string[]): Finding[] {
     const out: Finding[] = [];
     for (const file of files) {
         const src = fs.readFileSync(file, 'utf8');
-        for (const literal of src.matchAll(/`(?:[^`\\]|\\.)*`/gs)) {
+        // No `s` flag: the negated class already matches newlines, and the
+        // dotAll flag needs an es2018 target this project does not use.
+        for (const literal of src.matchAll(/`(?:[^`\\]|\\[^])*`/g)) {
             const lit = literal[0];
             if (!/<[a-zA-Z]/.test(lit)) continue; // not an HTML template
             for (const interp of lit.matchAll(/\$\{([^}{]*)\}/g)) {

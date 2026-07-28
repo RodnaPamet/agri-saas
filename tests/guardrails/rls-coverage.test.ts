@@ -71,8 +71,45 @@ const ORG_SCOPED_MODELS: ReadonlyMap<string, string> = new Map([
 // NOT NULL, so there is no nullable-row case needing a permissive USING, and
 // both USING and WITH CHECK are the strict own-tenant predicate.
 // See migration 20260721090000_promotion_lead_consent_rls.
+// `ExchangeInquiry` is the same third axis, with two parties instead of one.
+//
+// It holds private buyer↔seller messages and keys on `inquirerTenantId` — the
+// same plain-FK-not-a-tenantId shape as PromotionLead, and the same
+// consequence: `grep -c "Exchange"` on this file returned 0, so the table sat
+// outside the ratchet while migration 20260323180000 granted `app_user` full
+// DML on every table. One forgotten `where` in a future repository method
+// would have read every tenant's private messages with no DB-side backstop.
+//
+// Where PromotionLead belongs to ONE tenant, an inquiry legitimately has TWO
+// parties — the inquirer who wrote it and the seller whose listing it targets
+// — so the predicate is a disjunction with the seller side resolved through
+// the listing. Still a SINGLE policy: `inquirerTenantId` is NOT NULL, so there
+// is no nullable-row case, and per-command policies would be permissive
+// siblings OR'd together (the Epic D.1 lesson).
+// See migration 20260728120000_exchange_inquiry_rls.
 const CROSS_TENANT_SCOPED_MODELS: ReadonlyMap<string, string> = new Map([
     ['PromotionLead', 'promotion_lead_inquirer_isolation'],
+    ['ExchangeInquiry', 'exchange_inquiry_party_isolation'],
+]);
+
+// Models that are GLOBAL BY DESIGN — deliberately readable across every
+// tenant, so the absence of RLS is a product decision rather than a gap.
+//
+// This list exists so the next reader finds a DECISION, not an omission. A
+// model that simply has no `tenantId` is invisible to this file's inventory;
+// without an explicit entry there is no way to tell "considered and exempted"
+// from "nobody looked". Adding an entry requires a written reason.
+const GLOBAL_BY_DESIGN_MODELS: ReadonlyMap<string, string> = new Map([
+    [
+        'ExchangeListing',
+        'Cross-tenant readability IS the product — a marketplace whose offers ' +
+            'only their author can see is not a marketplace. Listings carry no ' +
+            'private data by construction: `description` and `sellerDisplayName` ' +
+            'are sanitised public plaintext, and a tenant that wants anonymity ' +
+            'omits the display name. Write safety is enforced at the usecase ' +
+            'layer (ctx.tenantId === listing.sellerTenantId), and the PRIVATE ' +
+            'half of the marketplace — ExchangeInquiry — is RLS-protected above.',
+    ],
 ]);
 
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
@@ -362,6 +399,38 @@ describeFn('Guardrail: RLS coverage (pg_policies ↔ schema)', () => {
                     `20260721090000_promotion_lead_consent_rls:\n  ` +
                     problems.join('\n  '),
             );
+        }
+    });
+
+    test('global-by-design models are exempt on purpose, and still exempt', () => {
+        // Two directions, both load-bearing.
+        //
+        // A written reason, because an entry without one is indistinguishable
+        // from an omission — which is the whole failure this list exists to
+        // prevent.
+        //
+        // And a check that the exemption is still TRUE: if someone later adds
+        // RLS to one of these, the entry is stale and saying "global by
+        // design" about a protected table misleads the next reader in the
+        // opposite direction. Delete the entry in the same diff.
+        const problems: string[] = [];
+        for (const [model, reason] of GLOBAL_BY_DESIGN_MODELS) {
+            if (!reason || reason.trim().length < 40) {
+                problems.push(`${model} → exemption needs a written reason`);
+            }
+            const names = policiesFor(model).filter((n) => n !== 'superuser_bypass');
+            if (names.length > 0) {
+                problems.push(
+                    `${model} → listed as global-by-design but now carries ` +
+                        `policies [${names.join(', ')}] — the exemption is stale, remove it`,
+                );
+            }
+            if (CROSS_TENANT_SCOPED_MODELS.has(model)) {
+                problems.push(`${model} → cannot be both global-by-design and cross-tenant scoped`);
+            }
+        }
+        if (problems.length > 0) {
+            throw new Error(`Global-by-design exemption drift:\n  ${problems.join('\n  ')}`);
         }
     });
 
