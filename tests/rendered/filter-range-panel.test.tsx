@@ -13,7 +13,7 @@
  * backwards). The mobile-keyboard case guards `inputMode`, which is
  * load-bearing for a product used one-handed in a field.
  */
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import {
     FilterRangePanel,
@@ -32,7 +32,23 @@ function makeFilter(overrides: Partial<Filter> = {}): Filter {
     };
 }
 
-function renderPanel(props: Partial<FilterRangePanelProps> = {}) {
+/**
+ * Render the panel and wait for its mount-time auto-focus to land.
+ *
+ * `FilterRangeContent` focuses the min input from inside a
+ * `requestAnimationFrame`, so immediately after `render()` it is
+ * unspecified whether that callback has run. Every test here either
+ * depends on where focus is or moves it, so the helper establishes one
+ * known starting state — min focused, no mount work outstanding —
+ * before returning.
+ *
+ * Context: the original version of this file returned synchronously and
+ * flaked on CI (see the blur-commit test below). The precise cause was
+ * never reproduced locally across three attempts, so treat this as
+ * removing an unnecessary ordering assumption rather than as a
+ * confirmed fix for that failure.
+ */
+async function renderPanel(props: Partial<FilterRangePanelProps> = {}) {
     const onApply = jest.fn();
     const onBack = jest.fn();
     const onCloseOuter = jest.fn();
@@ -48,6 +64,10 @@ function renderPanel(props: Partial<FilterRangePanelProps> = {}) {
         />,
     );
 
+    await waitFor(() =>
+        expect(view.getByLabelText('Minimum value')).toHaveFocus(),
+    );
+
     return { onApply, onBack, onCloseOuter, ...view };
 }
 
@@ -61,7 +81,7 @@ describe('FilterRangePanel — commit contract', () => {
         // Break: Enter no longer wired to commitDraft — typing a bound
         // and hitting Enter would silently apply nothing.
         const user = userEvent.setup();
-        const { onApply } = renderPanel();
+        const { onApply } = await renderPanel();
 
         await user.click(minInput());
         await user.keyboard('500{Enter}');
@@ -72,12 +92,19 @@ describe('FilterRangePanel — commit contract', () => {
     it('commits a typed maximum when the field loses focus', async () => {
         // Break: dropping onBlur — a user who clicks straight from the
         // input to another filter loses the bound they just typed.
-        const user = userEvent.setup();
-        const { onApply } = renderPanel();
+        //
+        // Driven with fireEvent rather than userEvent deliberately. The
+        // userEvent form of this test flaked on CI (received "|2" then
+        // "50|": the max field committed after a single keystroke and
+        // the rest of the digits landed in min), which means something
+        // moved focus mid-sequence. Typing character-by-character
+        // across a focus boundary is not what this test is about — the
+        // contract is "blur commits the draft" — so it asserts that
+        // directly and cannot be perturbed by focus timing.
+        const { onApply } = await renderPanel();
 
-        await user.click(maxInput());
-        await user.keyboard('250');
-        await user.tab();
+        fireEvent.change(maxInput(), { target: { value: '250' } });
+        fireEvent.blur(maxInput());
 
         expect(onApply).toHaveBeenCalledWith('|250');
     });
@@ -86,7 +113,7 @@ describe('FilterRangePanel — commit contract', () => {
         // Break: the `raw === ""` -> onCommit(undefined) path. Without
         // it, clearing the min field cannot widen an applied range.
         const user = userEvent.setup();
-        const { onApply } = renderPanel({ activeToken: '100|500' });
+        const { onApply } = await renderPanel({ activeToken: '100|500' });
 
         expect(minInput()).toHaveValue('100');
 
@@ -101,7 +128,7 @@ describe('FilterRangePanel — commit contract', () => {
         // min=500 against an applied max=100 would emit "500|100",
         // which matches no rows at all.
         const user = userEvent.setup();
-        const { onApply } = renderPanel({ activeToken: '|100' });
+        const { onApply } = await renderPanel({ activeToken: '|100' });
 
         await user.click(minInput());
         await user.keyboard('500{Enter}');
@@ -113,7 +140,7 @@ describe('FilterRangePanel — commit contract', () => {
         // Break: dropping the Number.isFinite guard would emit a token
         // built from NaN, poisoning the URL filter state.
         const user = userEvent.setup();
-        const { onApply } = renderPanel({
+        const { onApply } = await renderPanel({
             activeToken: '100|',
             filter: makeFilter({ parseRangeInput: () => Number.NaN }),
         });
@@ -130,7 +157,7 @@ describe('FilterRangePanel — keyboard stepping', () => {
     it('raises the bound one step on ArrowUp and lowers it on ArrowDown', async () => {
         // Break: an inverted delta sign — ArrowUp would decrement.
         const user = userEvent.setup();
-        renderPanel();
+        await renderPanel();
 
         await user.click(minInput());
         await user.keyboard('{ArrowUp}');
@@ -144,7 +171,7 @@ describe('FilterRangePanel — keyboard stepping', () => {
         // Break: dropping Math.max(0, ...) would produce "-1", a
         // negative bound no amount/area filter can mean.
         const user = userEvent.setup();
-        renderPanel();
+        await renderPanel();
 
         await user.click(minInput());
         await user.keyboard('{ArrowDown}');
@@ -156,7 +183,7 @@ describe('FilterRangePanel — keyboard stepping', () => {
         // Break: integer stepping on a money filter (storage in cents)
         // would jump a whole unit per keypress.
         const user = userEvent.setup();
-        renderPanel({ filter: makeFilter({ rangeDisplayScale: 100 }) });
+        await renderPanel({ filter: makeFilter({ rangeDisplayScale: 100 }) });
 
         await user.click(minInput());
         await user.keyboard('{ArrowUp}');
@@ -167,7 +194,7 @@ describe('FilterRangePanel — keyboard stepping', () => {
     it('honours an explicit rangeNumberStep over the scale default', async () => {
         // Break: ignoring the filter's declared step.
         const user = userEvent.setup();
-        renderPanel({ filter: makeFilter({ rangeNumberStep: 25 }) });
+        await renderPanel({ filter: makeFilter({ rangeNumberStep: 25 }) });
 
         await user.click(minInput());
         await user.keyboard('{ArrowUp}');
@@ -181,7 +208,7 @@ describe('FilterRangePanel — navigation contract', () => {
         // Break: dropping onEmptyMinBackspace — the keyboard-only path
         // back to the filter list disappears.
         const user = userEvent.setup();
-        const { onBack } = renderPanel();
+        const { onBack } = await renderPanel();
 
         await user.click(minInput());
         await user.keyboard('{Backspace}');
@@ -193,7 +220,7 @@ describe('FilterRangePanel — navigation contract', () => {
         // Break: dropping the `draft === ""` guard would eject the user
         // out of the panel mid-edit on every deletion.
         const user = userEvent.setup();
-        const { onBack } = renderPanel();
+        const { onBack } = await renderPanel();
 
         await user.click(minInput());
         await user.keyboard('500{Backspace}');
@@ -206,7 +233,7 @@ describe('FilterRangePanel — navigation contract', () => {
         // Break: dropping onFocusNextField / the caret check — the two
         // bounds stop behaving as one continuous control.
         const user = userEvent.setup();
-        renderPanel();
+        await renderPanel();
 
         await user.click(minInput());
         await user.keyboard('500{ArrowRight}');
@@ -217,7 +244,7 @@ describe('FilterRangePanel — navigation contract', () => {
     it('moves focus back to the min field on ArrowLeft at the start of the max field', async () => {
         // Break: dropping onFocusPreviousField — no way back leftward.
         const user = userEvent.setup();
-        renderPanel();
+        await renderPanel();
 
         await user.click(maxInput());
         await user.keyboard('{ArrowLeft}');
@@ -225,24 +252,24 @@ describe('FilterRangePanel — navigation contract', () => {
         expect(minInput()).toHaveFocus();
     });
 
-    it('returns to the filter list on Backspace outside the inputs', () => {
+    it('returns to the filter list on Backspace outside the inputs', async () => {
         // Break: dropping the capture handler entirely. Dispatched
         // directly at the separator so the event ORIGINATES outside an
         // input — the panel auto-focuses the min field on mount, so a
         // user-event keystroke would be swallowed by that field and
         // never reach the branch under test.
-        const { onBack } = renderPanel();
+        const { onBack } = await renderPanel();
 
         fireEvent.keyDown(screen.getByText('to'), { key: 'Backspace' });
 
         expect(onBack).toHaveBeenCalled();
     });
 
-    it('ignores Delete pressed inside an input rather than navigating away', () => {
+    it('ignores Delete pressed inside an input rather than navigating away', async () => {
         // Break: dropping the capture handler's `closest("input, ...")`
         // bail-out would hijack every in-field deletion and eject the
         // user out of the panel mid-edit.
-        const { onBack } = renderPanel({ activeToken: '100|500' });
+        const { onBack } = await renderPanel({ activeToken: '100|500' });
 
         fireEvent.keyDown(minInput(), { key: 'Delete' });
 
@@ -255,7 +282,7 @@ describe('FilterRangePanel — Escape scoping', () => {
         // Break: dropping the rangeFullyApplied conditional would leave
         // a finished range one extra keystroke from dismissal.
         const user = userEvent.setup();
-        const { onCloseOuter } = renderPanel({ activeToken: '100|500' });
+        const { onCloseOuter } = await renderPanel({ activeToken: '100|500' });
 
         await user.click(minInput());
         await user.keyboard('{Escape}');
@@ -267,7 +294,7 @@ describe('FilterRangePanel — Escape scoping', () => {
         // Break: always passing onCloseFilter would dismiss the panel
         // while the user is still half-way through entering a range.
         const user = userEvent.setup();
-        const { onCloseOuter } = renderPanel({ activeToken: '100|' });
+        const { onCloseOuter } = await renderPanel({ activeToken: '100|' });
 
         await user.click(minInput());
         await user.keyboard('{Escape}');
@@ -283,32 +310,32 @@ describe('FilterRangePanel — chrome', () => {
         const user = userEvent.setup();
         const onClear = jest.fn();
 
-        const { unmount } = renderPanel();
+        const { unmount } = await renderPanel();
         expect(
             screen.queryByRole('button', { name: 'Clear' }),
         ).not.toBeInTheDocument();
         unmount();
 
-        renderPanel({ onClear });
+        await renderPanel({ onClear });
         await user.click(screen.getByRole('button', { name: 'Clear' }));
         expect(onClear).toHaveBeenCalled();
     });
 
-    it('requests a numeric keypad for whole-number filters and a decimal one for scaled filters', () => {
+    it('requests a numeric keypad for whole-number filters and a decimal one for scaled filters', async () => {
         // Break: a mobile user gets the wrong on-screen keyboard and
         // cannot type a decimal amount at all.
-        const { unmount } = renderPanel();
+        const { unmount } = await renderPanel();
         expect(minInput()).toHaveAttribute('inputMode', 'numeric');
         unmount();
 
-        renderPanel({ filter: makeFilter({ rangeDisplayScale: 100 }) });
+        await renderPanel({ filter: makeFilter({ rangeDisplayScale: 100 }) });
         expect(minInput()).toHaveAttribute('inputMode', 'decimal');
     });
 
     it('returns to the filter list from the header back button', async () => {
         // Break: the pointer-user path back to the list.
         const user = userEvent.setup();
-        const { onBack } = renderPanel();
+        const { onBack } = await renderPanel();
 
         await user.click(
             screen.getByRole('button', { name: 'Back to filter list' }),
