@@ -43,10 +43,24 @@ function makeFilter(overrides: Partial<Filter> = {}): Filter {
  * before returning.
  *
  * Context: the original version of this file returned synchronously and
- * flaked on CI (see the blur-commit test below). The precise cause was
- * never reproduced locally across three attempts, so treat this as
- * removing an unnecessary ordering assumption rather than as a
- * confirmed fix for that failure.
+ * failed on CI (see the blur-commit test below). #438 shipped this
+ * helper without a reproduction and recorded the cause as unknown; it
+ * has since been reproduced locally, and the cause is this autofocus.
+ *
+ * A test that clicked max and typed was racing the frame. When the
+ * frame landed mid-sequence it pulled focus back to min, so the digits
+ * split across the two fields. Both observed signatures are that one
+ * race at different phases — `onApply` receiving `"|"` then `"250|"`
+ * when the frame beat the first keystroke, and `"|2"` then `"50|"`
+ * (the CI signature in #438) when it landed just after it. Which one
+ * you get depends on machine speed and on what the file has already
+ * run, which is why it reproduces in a full-file run and passes when
+ * the test is run alone with `-t`.
+ *
+ * So awaiting the autofocus IS a confirmed fix for that failure, not
+ * merely the removal of an unnecessary ordering assumption. Keep the
+ * await: without it the suite's starting focus is timing-dependent,
+ * and the two tests that move focus can pass for the wrong reason.
  */
 async function renderPanel(props: Partial<FilterRangePanelProps> = {}) {
     const onApply = jest.fn();
@@ -94,13 +108,15 @@ describe('FilterRangePanel — commit contract', () => {
         // input to another filter loses the bound they just typed.
         //
         // Driven with fireEvent rather than userEvent deliberately. The
-        // userEvent form of this test flaked on CI (received "|2" then
+        // userEvent form of this test failed on CI (received "|2" then
         // "50|": the max field committed after a single keystroke and
-        // the rest of the digits landed in min), which means something
-        // moved focus mid-sequence. Typing character-by-character
-        // across a focus boundary is not what this test is about — the
-        // contract is "blur commits the draft" — so it asserts that
-        // directly and cannot be perturbed by focus timing.
+        // the rest of the digits landed in min). The thing moving focus
+        // mid-sequence is the mount autofocus — see renderPanel above,
+        // where the race is described in full. Typing character-by-
+        // character across a focus boundary is not what this test is
+        // about — the contract is "blur commits the draft" — so it
+        // asserts that directly and cannot be perturbed by focus
+        // timing, which keeps it correct independently of the await.
         const { onApply } = await renderPanel();
 
         fireEvent.change(maxInput(), { target: { value: '250' } });
