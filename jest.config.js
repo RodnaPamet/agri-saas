@@ -82,6 +82,41 @@ const sharedCollectCoverageFrom = [
     '!src/**/*.spec.ts',
 ];
 
+// Pure re-export barrels — excluded from the coverage denominator.
+//
+// TypeScript compiles `export { X } from './m'` into
+//   Object.defineProperty(exports, 'X', { get: function () { return m_1.X; } })
+// and istanbul counts every one of those getters as a FUNCTION. A barrel
+// that contains no logic therefore contributes dozens of permanently
+// uncovered "functions" that exist only in the emitted JavaScript — there
+// is nothing in the source to test. Type-only re-exports are erased and
+// cost nothing, which is why the inflation tracks value exports.
+//
+// Measured on the 2026-07-28 main artifact: 56 uncovered functions and 0
+// branches across the pure barrels in the `global` threshold group — 35%
+// of the then-current function gap, none of it representing untested
+// behaviour. Same reasoning as the colocated-test exclusion above: remove
+// a distortion from the denominator rather than write hollow tests that
+// import a barrel and assert nothing.
+//
+// ONLY files with no executable constructs belong here.
+// `tests/guards/coverage-barrel-exclusion.test.ts` enforces that — a
+// barrel that grows a `const`/`function`/arrow/`class` fails CI rather
+// than quietly hiding real code behind this list.
+const PURE_REEXPORT_BARRELS = [
+    'src/app-layer/integrations/providers/sharepoint/index.ts',
+    'src/app-layer/notifications/index.ts',
+    'src/app-layer/usecases/audit-readiness/index.ts',
+    'src/app-layer/usecases/control/index.ts',
+    'src/app-layer/usecases/framework/index.ts',
+    'src/components/command-palette/index.ts',
+    'src/components/ui/date-picker/index.ts',
+    'src/components/ui/icons/nucleo/index.ts',
+    'src/components/ui/table/index.ts',
+    'src/lib/observability/index.ts',
+];
+sharedCollectCoverageFrom.push(...PURE_REEXPORT_BARRELS.map((p) => `!${p}`));
+
 /** @type {import('jest').Config} */
 const nodeProject = {
     displayName: 'node',
