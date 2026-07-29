@@ -472,14 +472,38 @@ jobs:
       # Empirical evidence + alternative paths considered:
       # docs/implementation-notes/2026-04-27-gap-15-coverage-enforcement.md
       #
-      # Current floors (recalibrated 2026-07-10 from CI's coverage artifact:
-      # measured − 2%, capped at 70, never lowering an already-stricter floor):
-      #   global   branches=63 functions=64 lines=70 statements=70
-      #   usecases branches=67 functions=70 lines=77 statements=75
+      # Current floors (recalibrated 2026-07-29 from CI's coverage artifact
+      # of run 30483470674 / main@f61def62 — post-#458, so the barrel
+      # exclusion is in effect, and post-wave-23. Same convention as the
+      # 2026-07-10 pass: measured − 2, capped at 70, never lowering an
+      # already-stricter floor):
+      #   global   branches=63 functions=65 lines=70 statements=70
+      #   usecases branches=68 functions=70 lines=77 statements=75
       #   policies branches=78 functions=88 lines=88 statements=85
       #   events   branches=72 functions=61 lines=78 statements=75
-      #   lib      branches=70 functions=66 lines=71 statements=70
-      # Measured global at recalibration: B65.5 F67.0 L80.3 S78.7.
+      #   lib      branches=70 functions=70 lines=71 statements=70
+      #
+      # Measured PER THRESHOLD GROUP at this recalibration (NOT the whole-map
+      # summary — see the "HOW TO READ A FAILURE" note below):
+      #   global   B65.36 F67.24 L80.06 S77.75
+      #   usecases B70.99 F78.40 L85.04 S82.82
+      #   policies B87.12 F96.82 L94.38 S93.65
+      #   events   B77.01 F63.41 L81.59 S80.28
+      #   lib      B76.80 F79.66 L87.98 S86.06
+      #
+      # Three floors moved: global functions 64→65, usecases branches 67→68,
+      # lib functions 66→70. measured−2 clears the 70 cap on 16 of the 20
+      # metrics (so the existing, higher, never-lowered floor stands), and on
+      # 2 of the remaining 4 it truncates to exactly the floor already in
+      # force — global branches (65.36−2 = 63.36 → 63) and events functions
+      # (63.41−2 = 61.41 → 61).
+      #
+      # The tightest margin is now global branches (+2.36); it needs measured
+      # ≥ 66.00 before the floor can reach 64. It is the number that will
+      # redden this gate first, and it moves only by covering the REMAINDER
+      # (repositories, route handlers, components) — never by covering
+      # src/lib/ or the usecases layer, which leave `global` untouched.
+      #
       # HOW TO READ A FAILURE FROM THIS STEP.
       #
       # The "Coverage summary" table printed below covers the WHOLE map.

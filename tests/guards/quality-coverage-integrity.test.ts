@@ -134,4 +134,99 @@ describe('quality-coverage integrity — guard the guards', () => {
             expect(ratchet).toContain(literal);
         }
     });
+
+    // ─── VALUE parity, not just key parity ───────────────────────────
+    //
+    // Key parity alone let the two ratchets drift apart. `RATCHET_FLOOR`
+    // stayed at the post-Roadmap-3 seed while PR #233 recalibrated the
+    // ENFORCED floors from CI's artifact; by 2026-07 the mirror was ten
+    // points behind on `global` functions (54 vs 64). The structural
+    // "never lower a floor" guard was therefore guarding a state the
+    // project had left long ago — a PR could have dropped the enforced
+    // global functions floor from 64 back to 55 and `coverage-ratchet`
+    // would have passed it.
+    //
+    // That hole matters more here than it would elsewhere, because the
+    // `Coverage (≥60%)` job runs on push to MAIN ONLY, never on PRs. At
+    // PR time this static guard is the only thing that sees a lowered
+    // floor at all.
+    //
+    // So: the mirror must never lag the enforced floor. Raising a
+    // threshold in `jest.thresholds.json` now means raising its
+    // `RATCHET_FLOOR` twin in the same diff — which is exactly the
+    // "lock the gain in the same PR" rule the policy already states.
+    it('RATCHET_FLOOR never lags the enforced floors in jest.thresholds.json', () => {
+        const enforced = JSON.parse(read('jest.thresholds.json')) as Record<
+            string,
+            Record<string, number>
+        >;
+        const mirror = parseRatchetFloor(read('tests/guards/coverage-ratchet.test.ts'));
+
+        const lagging: string[] = [];
+        for (const [scope, metrics] of Object.entries(enforced)) {
+            for (const [metric, value] of Object.entries(metrics)) {
+                const mirrored = mirror[scope]?.[metric];
+                if (mirrored === undefined) {
+                    lagging.push(`${scope} ${metric}: missing from RATCHET_FLOOR`);
+                } else if (mirrored < value) {
+                    lagging.push(`${scope} ${metric}: RATCHET_FLOOR ${mirrored} < enforced ${value}`);
+                }
+            }
+        }
+
+        if (lagging.length > 0) {
+            throw new Error(
+                'RATCHET_FLOOR in tests/guards/coverage-ratchet.test.ts has fallen behind ' +
+                    'the enforced floors in jest.thresholds.json:\n  ' +
+                    lagging.join('\n  ') +
+                    '\nRaise the RATCHET_FLOOR entries to match. A structural floor below ' +
+                    'the enforced one does not guard the current state.',
+            );
+        }
+    });
+
+    // Regression proof — the detector catches a lagging mirror.
+    it('detects a RATCHET_FLOOR entry that lags its enforced floor', () => {
+        const parsed = parseRatchetFloor(read('tests/guards/coverage-ratchet.test.ts'));
+        const enforced = JSON.parse(read('jest.thresholds.json')) as Record<
+            string,
+            Record<string, number>
+        >;
+        // Sabotage a copy: drop the mirror one point below enforced.
+        const sabotaged = JSON.parse(JSON.stringify(parsed)) as typeof parsed;
+        sabotaged.global.branches = enforced.global.branches - 1;
+        expect(sabotaged.global.branches).toBeLessThan(enforced.global.branches);
+        // …and the healthy value is not below it.
+        expect(parsed.global.branches).toBeGreaterThanOrEqual(enforced.global.branches);
+    });
 });
+
+/**
+ * Parse the `RATCHET_FLOOR` object literal out of
+ * `coverage-ratchet.test.ts`. Source-text parsing rather than an import
+ * because the constant is module-private to that test file — exporting
+ * it would make it look like a shared helper rather than that guard's
+ * own hard minimum.
+ */
+function parseRatchetFloor(src: string): Record<string, Record<string, number>> {
+    const start = src.indexOf('const RATCHET_FLOOR: Record<string, Metrics> = {');
+    expect(start).toBeGreaterThan(-1);
+    const body = src.slice(start).split('\n};')[0];
+
+    const out: Record<string, Record<string, number>> = {};
+    const entry = /(?:'([^']+)'|\b(global)\b)\s*:\s*\{([^}]*)\}/g;
+    let m: RegExpExecArray | null;
+    while ((m = entry.exec(body)) !== null) {
+        const scope = m[1] ?? m[2];
+        const metrics: Record<string, number> = {};
+        for (const [, k, v] of m[3].matchAll(/(\w+)\s*:\s*(\d+)/g)) {
+            metrics[k] = Number(v);
+        }
+        out[scope] = metrics;
+    }
+
+    // The parse must have found every scope — a silent zero-match would
+    // make the parity assertion vacuously green.
+    expect(Object.keys(out).length).toBeGreaterThanOrEqual(5);
+    return out;
+}
