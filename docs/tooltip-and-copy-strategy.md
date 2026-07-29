@@ -68,6 +68,17 @@ Everything else in this doc is the reasoning behind those decisions.
 
 **Z-index.** The tooltip sits at `z-[99]`, above every modal/sheet/popover at `z-40`/`z-50`. Don't override.
 
+**Touch devices — tap to toggle (#449).** Radix gives touch users nothing: its Trigger early-returns from `onPointerMove` for `pointerType === "touch"` and wires `onPointerDown`/`onClick` to CLOSE. On a mobile-first product that made every help icon pure decoration, so the primitive drives `open` itself on a coarse pointer: **tap toggles**, and the tooltip dismisses on the next tap outside, on scroll, or after `TOUCH_AUTO_DISMISS_MS`. Everything else is identical — same content, same surface, same side/align/offset. Only the *gesture* differs, because a phone has no hover to offer.
+
+That second behaviour lives **inside the primitive and nowhere else**:
+
+- **Never re-implement it at a call site.** No `matchMedia('(pointer: coarse)')`, no `'ontouchstart' in window`, no `onTouchStart` on a tooltip trigger. A call site that grows its own touch path is a control that behaves differently from every other tooltip in the app.
+- **Never add a prop to fork it.** `TooltipProps` is a closed interface with no `extends` — a caller cannot inject `onPointerDown`/`onClick` into the trigger, and a `disableTouch`-shaped prop is exactly the divergence the primitive exists to prevent. `disabled` is the sanctioned escape hatch and it short-circuits for *everyone*.
+- **Do not tidy away the `preventDefault()`** in the tap handler. It looks redundant; it is what makes Radix skip its own composed close-handlers. Without it the tooltip opens and closes on the same tap.
+- **Do not drop a dismissal path.** Outside-tap, scroll, and timeout are three separate paths and losing any one lets a tapped-open popup sit over the UI intercepting the next touch — the exact failure that had tooltips switched off app-wide for months (#395).
+
+`tests/guards/tooltip-touch-uniformity.test.ts` asserts all four. Note what it does *not* do: it is a source-text scan with no runtime coverage. The coarse-pointer branch has no executing test yet — jsdom's `matchMedia` stub answers `matches: false` to every query, so `tests/rendered/tooltip.test.tsx` exercises the hover/focus path only.
+
 ### `<InfoTooltip>` — the question-mark help icon
 
 A focusable help button rendered as `?` (help circle), wrapping any `Tooltip` content. Use it when the hint belongs *next to* a label or heading but isn't triggered by hovering the label itself. The common case is the new `hint` prop on `<FormField>` and `<FieldGroup>`.
@@ -243,9 +254,10 @@ Tooltip density is a real cost. Reviewers: treat "add a tooltip here" as a trade
 
 ## Guardrails
 
-Two ratchet tests enforce this strategy:
+Three ratchet tests enforce this strategy:
 
 1. **`tests/guards/no-inline-clipboard.test.ts`** — fails if any file outside `src/components/ui/hooks/use-copy-to-clipboard.tsx` calls `navigator.clipboard.writeText`/`.write`. Forces migration to the hook or `CopyButton`/`CopyText`.
 2. **`tests/guards/no-ad-hoc-tooltip-title.test.ts`** — caps the count of interactive `title=` attributes in `src/app/`. Lower it when you migrate a surface; never raise it.
+3. **`tests/guards/tooltip-touch-uniformity.test.ts`** — keeps the tap-to-toggle path inside the primitive: one Radix Tooltip importer in `src/`, no pointer-class logic in any consumer, the pointer class derived from the internal hook rather than a prop, the `preventDefault()` and all three dismissal paths intact, and the rendered popup identical for both pointer classes. Its consumer sweep is derived, not curated, so a new call site is covered the day it is written.
 
-Both run in the `node` Jest project and are cheap (~100 ms each). When they fire, the error message points at the exact file+line so the fix is obvious.
+All three run in the `node` Jest project and are cheap (~100 ms each). When they fire, the error message points at the exact file+line so the fix is obvious.
