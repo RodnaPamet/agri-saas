@@ -24,12 +24,47 @@
  * This test REQUIRES the live Postgres with migrations applied. In
  * CI it runs against the migrated test DB; locally it runs against
  * the dev DB.
+ *
+ * ─── Why the skip is loud ────────────────────────────────────────
+ *
+ * Being DB-backed used to mean being SILENT. The gate was a bare
+ * `const describeFn = DB_AVAILABLE ? describe : describe.skip`, so an
+ * unreachable database was indistinguishable from a pass: the run got
+ * *greener* the moment the DB went away (the assertions below stopped
+ * executing, nothing said so, and the sweep still reported all-green).
+ * A check that passes by not running reads as verified forever.
+ *
+ * Three things close that, none of which weaken an assertion:
+ *
+ *   1. `Guardrail: RLS coverage — execution status` ALWAYS runs. When
+ *      no database is reachable it prints a banner stating in words
+ *      that RLS is UNVERIFIED in this run. Jest attaches console
+ *      output to the suite, so it lands in the output a reader is
+ *      already scanning.
+ *   2. Both the status test's name and the DB-backed suite's name
+ *      carry the verdict (VERIFIED / NOT VERIFIED), so `--verbose`,
+ *      JSON reporters and CI annotations surface it with no extra
+ *      tooling.
+ *   3. `RLS_GUARDRAIL_REQUIRE_DB=1` upgrades the banner to a hard
+ *      failure — for any environment that guarantees a database and
+ *      wants "did not run" to be a red build.
+ *
+ * It deliberately does NOT fail by default: CI provides the database
+ * (the `test` job's postgres service in `.github/workflows/ci.yml`),
+ * and a developer without a local Postgres must still be able to run
+ * the guardrail sweep.
+ *
+ * The structural half of the contract — the skip must stay derived
+ * from the imported probe and can never decay into a hard
+ * `describe.skip(` — lives in
+ * `tests/guards/rls-coverage-skip-visibility.test.ts`, modelled on
+ * `tests/guards/tooltip-kill-switch-consistency.test.ts`.
  */
 
 import * as fs from 'fs';
 import * as path from 'path';
 
-import { DB_AVAILABLE } from '../integration/db-helper';
+import { DB_AVAILABLE, DB_URL } from '../integration/db-helper';
 import { prismaTestClient } from '../helpers/db';
 import type { PrismaClient } from '@prisma/client';
 import { TENANT_SCOPED_MODELS } from '@/lib/db/rls-middleware';
@@ -112,9 +147,135 @@ const GLOBAL_BY_DESIGN_MODELS: ReadonlyMap<string, string> = new Map([
     ],
 ]);
 
+// ═══════════════════════════════════════════════════════════════════
+// Execution visibility — always runs, with or without a database.
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * Opt-in escalation. Any environment that GUARANTEES a migrated
+ * Postgres (CI, a release gate, a pre-deploy smoke) can set
+ * `RLS_GUARDRAIL_REQUIRE_DB=1` to turn "the RLS assertions did not
+ * run" into a red build instead of a warning.
+ */
+const RLS_REQUIRE_DB = process.env.RLS_GUARDRAIL_REQUIRE_DB === '1';
+
+/** Strip any credentials before the URL is written to the log. */
+function redactDbUrl(url: string): string {
+    return url.replace(/\/\/[^@/]*@/, '//***@');
+}
+
+const NOT_VERIFIED_BANNER = [
+    '',
+    '═══════════════════════════════════════════════════════════════════',
+    '  RLS COVERAGE GUARDRAIL: NOT VERIFIED IN THIS RUN',
+    '═══════════════════════════════════════════════════════════════════',
+    '  No database was reachable, so every pg_policies assertion in',
+    '  tests/guardrails/rls-coverage.test.ts was SKIPPED. Row-level',
+    '  security coverage is UNKNOWN — a green result for this file does',
+    '  NOT mean the tenant-scoped tables are protected.',
+    '',
+    `  Probed: ${redactDbUrl(DB_URL)}`,
+    '',
+    '  To actually verify RLS:',
+    '    docker-compose up -d',
+    '    npx prisma migrate deploy',
+    '    npx jest tests/guardrails/rls-coverage.test.ts',
+    '',
+    '  To make non-execution a hard failure (environments that',
+    '  guarantee a database):',
+    '    RLS_GUARDRAIL_REQUIRE_DB=1 npx jest tests/guardrails/rls-coverage.test.ts',
+    '═══════════════════════════════════════════════════════════════════',
+    '',
+].join('\n');
+
+describe('Guardrail: RLS coverage — execution status', () => {
+    test(
+        DB_AVAILABLE
+            ? 'database reachable — the DB-backed RLS assertions EXECUTED'
+            : 'database UNREACHABLE — the DB-backed RLS assertions DID NOT RUN (RLS is NOT VERIFIED)',
+        () => {
+            // Sanity: the probe still resolves to something this gate can
+            // read. If `DB_AVAILABLE` ever stops being a boolean, the gate
+            // below starts making a truthiness decision instead of an
+            // availability one — and the skip can go quiet again.
+            expect(typeof DB_AVAILABLE).toBe('boolean');
+
+            if (DB_AVAILABLE) return;
+
+            if (RLS_REQUIRE_DB) {
+                throw new Error(
+                    NOT_VERIFIED_BANNER +
+                        '\nRLS_GUARDRAIL_REQUIRE_DB=1 is set, so a run that could ' +
+                        'not verify RLS is a failure rather than a warning.',
+                );
+            }
+
+            // Not a failure — the suite is DB-backed by design and CI
+            // supplies the database. The banner is the signal: it makes a
+            // non-executing check visible to whoever is reading the run.
+            console.warn(NOT_VERIFIED_BANNER);
+        },
+    );
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// Static inventory checks — no database required.
+// ═══════════════════════════════════════════════════════════════════
+//
+// These two assertions read only `TENANT_SCOPED_MODELS` /
+// `ORG_SCOPED_MODELS`, both resolved from the Prisma DMMF at import
+// time. They sat inside the DB-gated block purely by proximity, which
+// meant they stopped running whenever the database was unreachable —
+// two more checks that "passed" by not executing. They belong here.
+
+describe('Guardrail: RLS inventory (no database required)', () => {
+    test('guardrail inventory size is in the expected range', () => {
+        // Defence against the inventory collapsing to zero (e.g. if the
+        // DMMF enumeration breaks or TENANT_SCOPED_MODELS becomes empty).
+        // At the time of writing, the schema has 65 direct + 7 ownership-
+        // chained = 72 tenant-scoped models. Allow for growth and
+        // occasional deprecations by asserting a reasonable floor.
+        expect(TENANT_SCOPED_MODELS.size).toBeGreaterThanOrEqual(60);
+    });
+
+    test('org-scoped and tenant-scoped sets are disjoint', () => {
+        // Two different isolation axes — a model being on both lists
+        // would mean its policies are keyed on both `app.tenant_id`
+        // AND `app.user_id`, which Postgres OR's together permissively
+        // and weakens the guarantee of either. If a future model
+        // legitimately needs both axes, that's a deliberate hybrid
+        // design and should land its own policy strategy + test.
+        const overlap: string[] = [];
+        for (const model of ORG_SCOPED_MODELS.keys()) {
+            if (TENANT_SCOPED_MODELS.has(model)) {
+                overlap.push(model);
+            }
+        }
+        if (overlap.length > 0) {
+            throw new Error(
+                `Isolation-axis overlap — ${overlap.length} model(s) appear in ` +
+                    `BOTH ORG_SCOPED_MODELS and TENANT_SCOPED_MODELS:\n  ` +
+                    overlap.join('\n  ') +
+                    `\n\nThis is almost certainly an accident — the two axes are ` +
+                    `keyed on different session variables (app.user_id vs ` +
+                    `app.tenant_id) and combining them via Postgres's permissive ` +
+                    `OR weakens both. Pick one axis per model.`,
+            );
+        }
+    });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// DB-backed assertions — gated on the availability probe.
+// ═══════════════════════════════════════════════════════════════════
+
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 
-describeFn('Guardrail: RLS coverage (pg_policies ↔ schema)', () => {
+const DB_SUITE_NAME = DB_AVAILABLE
+    ? 'Guardrail: RLS coverage (pg_policies ↔ schema) — VERIFIED against a live database'
+    : 'Guardrail: RLS coverage (pg_policies ↔ schema) — NOT VERIFIED (no database reachable)';
+
+describeFn(DB_SUITE_NAME, () => {
     let prisma: PrismaClient;
     let policies: Array<{
         tablename: string;
@@ -329,15 +490,6 @@ describeFn('Guardrail: RLS coverage (pg_policies ↔ schema)', () => {
         }
     });
 
-    test('guardrail inventory size is in the expected range', () => {
-        // Defence against the inventory collapsing to zero (e.g. if the
-        // DMMF enumeration breaks or TENANT_SCOPED_MODELS becomes empty).
-        // At the time of writing, the schema has 65 direct + 7 ownership-
-        // chained = 72 tenant-scoped models. Allow for growth and
-        // occasional deprecations by asserting a reasonable floor.
-        expect(TENANT_SCOPED_MODELS.size).toBeGreaterThanOrEqual(60);
-    });
-
     test('no tenant-scoped table carries the deprecated allow_all policy', () => {
         // `allow_all` was the USING(true) WITH CHECK(true) stopgap for
         // ownership-chained tables before they got EXISTS policies. It's
@@ -487,32 +639,6 @@ describeFn('Guardrail: RLS coverage (pg_policies ↔ schema)', () => {
                     missing
                         .map((m) => `ALTER TABLE "${m}" FORCE ROW LEVEL SECURITY;`)
                         .join('\n  '),
-            );
-        }
-    });
-
-    test('org-scoped and tenant-scoped sets are disjoint', () => {
-        // Two different isolation axes — a model being on both lists
-        // would mean its policies are keyed on both `app.tenant_id`
-        // AND `app.user_id`, which Postgres OR's together permissively
-        // and weakens the guarantee of either. If a future model
-        // legitimately needs both axes, that's a deliberate hybrid
-        // design and should land its own policy strategy + test.
-        const overlap: string[] = [];
-        for (const model of ORG_SCOPED_MODELS.keys()) {
-            if (TENANT_SCOPED_MODELS.has(model)) {
-                overlap.push(model);
-            }
-        }
-        if (overlap.length > 0) {
-            throw new Error(
-                `Isolation-axis overlap — ${overlap.length} model(s) appear in ` +
-                    `BOTH ORG_SCOPED_MODELS and TENANT_SCOPED_MODELS:\n  ` +
-                    overlap.join('\n  ') +
-                    `\n\nThis is almost certainly an accident — the two axes are ` +
-                    `keyed on different session variables (app.user_id vs ` +
-                    `app.tenant_id) and combining them via Postgres's permissive ` +
-                    `OR weakens both. Pick one axis per model.`,
             );
         }
     });
