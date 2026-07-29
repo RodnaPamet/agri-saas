@@ -1241,13 +1241,31 @@ and nowhere else**: never re-implement it at a call site
 (`matchMedia('(pointer: coarse)')`, `'ontouchstart' in window`,
 `onTouchStart` on a trigger), never add a prop that forks or disables it
 (`disabled` is the sanctioned escape hatch and short-circuits for
-everyone), never tidy away the `preventDefault()` that makes Radix skip
-its composed close-handlers, and never drop one of the three dismissal
-paths. `tests/guards/tooltip-touch-uniformity.test.ts` enforces all
-four — but it is a text scan: the coarse-pointer branch still has **no
-executing test**, because jsdom's `matchMedia` stub answers
-`matches: false`, so `tests/rendered/tooltip.test.tsx` covers
-hover/focus only. See `docs/implementation-notes/2026-07-29-tooltip-touch-uniformity.md`.
+everyone), and never drop one of the four dismissal paths (outside tap,
+scroll, Escape, timeout).
+
+**The tap handler must never call `preventDefault()`.** #449 shipped it on
+the trigger's `onPointerDown` + `onClick` to make Radix's
+`composeEventHandlers` skip its composed close-handlers; it also cancelled
+the default action of whatever the tooltip wrapped, so on touch a
+`<Tooltip>` around a `<Link>` (Next's app-dir Link returns early on
+`e.defaultPrevented`) or an `<a href download>` did nothing but show its
+own tooltip — ~17 inline call sites plus every collapsed-sidebar nav item.
+Radix's close requests are declined in `handleTouchOpenChange` instead:
+because the coarse path already passes `open` + `onOpenChange`, every
+close arrives as a call we own rather than a DOM event we have to
+suppress. Declining a close is invisible to the wrapped element;
+preventing an event is not. Escape became ours for the same reason —
+Radix's DismissableLayer dismissal is declined along with every other
+close — and is wired through the Content's `onEscapeKeyDown`, which runs
+before that dismissal and rides Radix's own document-level listener, so
+Epic 57's ban on raw `keydown` listeners still holds.
+
+`tests/guards/tooltip-touch-uniformity.test.ts` enforces the shape and
+`tests/rendered/tooltip-touch.test.tsx` the behaviour — the latter
+installs a coarse-pointer `matchMedia` per test, because the project-wide
+jsdom stub answers `matches: false` and left the whole branch unexecuted.
+See `docs/implementation-notes/2026-07-29-tooltip-touch-uniformity.md`.
 
 ### Epic 57 — Keyboard Shortcuts & Command Palette
 

@@ -25,15 +25,13 @@
  * It also creates a class of SILENT regression that no existing test would
  * catch:
  *
- *   - Drop the `preventDefault()` in the tap handler and Radix's own
- *     composed close-handlers stop being skipped. The tooltip opens and
- *     closes on the same tap. Nothing fails — `tests/rendered/tooltip.test.tsx`
- *     runs under a jsdom `matchMedia` stub that answers `matches: false` to
- *     every query, so the coarse-pointer branch is never entered there.
- *   - Drop any one of the three dismissal paths (outside pointerdown,
- *     scroll, timeout) and the popup can sit over the UI intercepting the
- *     next touch — the precise failure that got tooltips disabled app-wide
- *     for months (#395).
+ *   - Drop the close filter (`handleTouchOpenChange`) and Radix's own
+ *     composed close-handlers start being honoured again. The tooltip opens
+ *     and closes on the same tap.
+ *   - Drop any one of the four dismissal paths (outside pointerdown,
+ *     scroll, Escape, timeout) and the popup can sit over the UI
+ *     intercepting the next touch — the precise failure that got tooltips
+ *     disabled app-wide for months (#395).
  *
  * So this guard asserts the INVERSE of the defect, the way
  * `tests/guards/tooltip-kill-switch-consistency.test.ts` and
@@ -44,10 +42,12 @@
  *   2. DERIVED, NOT SUPPLIED — the pointer class comes from the internal
  *      hook, never from a prop, and the prop surface is closed so no caller
  *      can inject a competing handler or a fork flag.
- *   3. THE preventDefault() SURVIVES — on both `onPointerDown` and
- *      `onClick`, gated on the pointer class, with the controlled-open
- *      wiring that makes the toggle mean anything.
- *   4. ALL THREE DISMISSALS SURVIVE — each add paired with its remove.
+ *   3. THE TAP TOGGLE SURVIVES, AND STAYS TRANSPARENT — `onPointerDown`
+ *      gated on the pointer class, the controlled-open wiring that makes the
+ *      toggle mean anything, the close filter that keeps it open, and NO
+ *      `preventDefault()` anywhere it could reach the wrapped element.
+ *   4. ALL FOUR DISMISSALS SURVIVE — the three listener-based ones each
+ *      paired with their remove, plus `onEscapeKeyDown` on the Content.
  *   5. ONE APPEARANCE — the rendered popup is not conditioned on pointer
  *      class, so touch and desktop see the identical surface.
  *   6. DELEGATES PASS THROUGH — they render `<Tooltip>`, they do not
@@ -58,43 +58,55 @@
  * Everything here is a TEXT scan of source, like every other file in
  * `tests/guards/` — see "Green is not the same as executed" in CLAUDE.md.
  * It contributes ZERO runtime coverage and proves only that the SHAPE of
- * the code is intact: that the handler exists, that it calls
- * `preventDefault()`, that the listeners are added and removed. It does not
- * prove a tap opens a tooltip on a real phone.
+ * the code is intact: that the handler exists, that the close filter is
+ * wired, that the listeners are added and removed. It does not prove a tap
+ * opens a tooltip on a real phone.
  *
- * The behavioural half is `tests/rendered/tooltip.test.tsx` — and today
- * that half covers the HOVER/FOCUS path only. The coarse-pointer branch
- * added by #449 has no executing test in the repo (jsdom's `matchMedia`
- * stub answers `matches: false`, and no Playwright spec taps a tooltip in
- * the `mobile-android` / `mobile-iphone` projects). This guard is the
- * cheap, immediate lock on the shape; a rendered test that drives the
- * branch with a coarse-pointer `matchMedia` stub is the missing piece and
- * is deliberately NOT in this PR, which is guard-only.
+ * The behavioural half is `tests/rendered/tooltip-touch.test.tsx`, which
+ * installs a coarse-pointer `matchMedia` per test and drives the branch
+ * with real pointer events (tap opens, tap closes, wrapped link navigates,
+ * wrapped download survives, each dismissal fires). `tooltip.test.tsx`
+ * remains the hover/focus half.
  *
  * ─── THIS IS A LOCK, NOT A LAW ───
  *
- * The assertions below describe the touch contract as it shipped in #449.
- * They are deliberately strict so nobody drifts off it by accident — not
- * because the contract is beyond revision. A PR that deliberately changes
- * it updates this guard in the SAME diff, which is the repo convention for
- * every ratchet here.
+ * The assertions below describe the touch contract. They are deliberately
+ * strict so nobody drifts off it by accident — not because the contract is
+ * beyond revision. A PR that deliberately changes it updates this guard in
+ * the SAME diff, which is the repo convention for every ratchet here.
  *
- * One such change is already known to be needed, and is filed as a
- * follow-up rather than fixed here (this PR is guard-only). The `onClick`
- * preventDefault cancels the DEFAULT ACTION of whatever element the
- * tooltip wraps. A rendered probe confirms it: on a fine pointer the click
- * reaching the wrapped element has `defaultPrevented === false`; on a
- * coarse pointer it is `true`. React `onClick` handlers on the child still
- * run (so `IconAction` / `Button` actions are fine), and the Popover
- * `triggerTooltip` path still opens — but `<Tooltip>` around a `<Link>` or
- * an `<a href>` loses BOTH client navigation (Next's app-dir Link returns
- * early when `e.defaultPrevented`) and the native default. On touch those
- * affordances do nothing but show their own tooltip. That is ~17 inline
- * call sites plus `src/components/layout/nav-item.tsx`, i.e. every
- * collapsed-sidebar nav link.
+ * ─── WHAT CHANGED SINCE THIS GUARD WAS FIRST WRITTEN ───
  *
- * When that fix lands, `tapHandlerDefects` below is what has to change with
- * it — edit the detector alongside the fix rather than working around it.
+ * As originally written this file asserted that `preventDefault()` was
+ * present on the trigger's `onPointerDown` AND `onClick` — the mechanism
+ * #449 used to make Radix's `composeEventHandlers` skip its composed close
+ * handlers. Its own header flagged the defect that mechanism caused and
+ * filed it as a follow-up; this is that follow-up, and the invariant is now
+ * INVERTED.
+ *
+ * `preventDefault()` on the trigger cancels the DEFAULT ACTION of whatever
+ * element the tooltip wraps. React `onClick` handlers on the child still
+ * ran (so `IconAction` / `Button` were fine), but `<Tooltip>` around a
+ * `<Link>` or an `<a href download>` lost BOTH client navigation (Next's
+ * app-dir Link does `if (e.defaultPrevented) return` before navigating) and
+ * the native default. On touch — ~17 inline call sites plus
+ * `src/components/layout/nav-item.tsx`, i.e. every collapsed-sidebar nav
+ * link — those affordances did nothing but show their own tooltip.
+ *
+ * The replacement mechanism uses a seam the primitive already had: on a
+ * coarse pointer it passes `open` AND `onOpenChange` to
+ * `TooltipPrimitive.Root`, so Radix's close requests arrive as calls we
+ * own rather than as DOM events we have to suppress. `handleTouchOpenChange`
+ * honours opens and declines closes; the effect owns dismissal outright.
+ * Declining a close is invisible to the wrapped element. Preventing an
+ * event is not.
+ *
+ * So the assertions below now require the INVERSE: no `preventDefault()`
+ * anywhere on the trigger except the `onFocus` `:focus-visible` gate (which
+ * suppresses a Radix OPEN, not a default the wrapped element needs), plus a
+ * live close filter, plus Escape added to the dismissal set — Radix's own
+ * DismissableLayer Escape is declined along with every other close, so
+ * without ours there would be none.
  */
 import * as fs from 'fs';
 import * as path from 'path';
@@ -277,9 +289,15 @@ function tooltipPropNames(src: string): string[] {
 /** The pointer class must be read from the internal hook, not a prop. */
 const DERIVED_POINTER_RE = /const\s+coarsePointer\s*=\s*useCoarsePointer\(\s*\)\s*;/;
 
-/** Controlled-open wiring — without it the tap toggle sets state nothing reads. */
+/**
+ * Controlled-open wiring — without it the tap toggle sets state nothing
+ * reads, AND Radix's close requests stop arriving anywhere we can decline
+ * them. `onOpenChange` must route through the filter, not straight into
+ * `setTouchOpen`: passing the setter directly is exactly "honour every
+ * close", which closes the tooltip on the click that opened it.
+ */
 const CONTROLLED_OPEN_RE =
-    /\{\s*\.\.\.\(\s*coarsePointer\s*\?\s*\{\s*open:\s*touchOpen\s*,\s*onOpenChange:\s*setTouchOpen\s*\}\s*:\s*\{\s*\}\s*\)\s*\}/;
+    /\{\s*\.\.\.\(\s*coarsePointer\s*\?\s*\{\s*open:\s*touchOpen\s*,\s*onOpenChange:\s*handleTouchOpenChange\s*\}\s*:\s*\{\s*\}\s*\)\s*\}/;
 
 /**
  * Comments are stripped first: this is a question about CODE. A file that
@@ -308,46 +326,127 @@ function consumersWithPointerLogic(files: string[]): Array<{ file: string; token
         .filter((r) => r.tokens.length > 0);
 }
 
+/**
+ * The Trigger's opening tag only — everything from `<TooltipPrimitive.Trigger`
+ * up to the `{children}` it renders. Scoping matters: an unscoped
+ * `indexOf('onClick={')` would happily match a handler somewhere else in the
+ * file and report the trigger as clean when it is not (or vice versa).
+ */
+function triggerTag(src: string): string | null {
+    const at = src.indexOf('<TooltipPrimitive.Trigger');
+    if (at < 0) return null;
+    const childrenAt = src.indexOf('{children}', at);
+    return src.slice(at, childrenAt < 0 ? src.length : childrenAt);
+}
+
 /** Missing pieces of the tap handler contract. */
 function tapHandlerDefects(src: string): string[] {
     const defects: string[] = [];
-    const triggerAt = src.indexOf('<TooltipPrimitive.Trigger');
-    if (triggerAt < 0) return ['<TooltipPrimitive.Trigger> not found'];
+    const raw = triggerTag(src);
+    if (raw === null) return ['<TooltipPrimitive.Trigger> not found'];
+    // Comments are prose about the code, not the code — a paragraph
+    // explaining why `preventDefault()` is banned must not read as a call.
+    const trigger = stripComments(raw);
 
-    const down = jsxAttrExpression(src, 'onPointerDown', triggerAt);
-    if (down === null) defects.push('Trigger has no onPointerDown');
+    const down = jsxAttrExpression(trigger, 'onPointerDown');
+    if (down === null)
+        defects.push('Trigger has no onPointerDown — a tap can no longer open a tooltip');
     else {
         if (!/\bcoarsePointer\b/.test(down))
             defects.push('onPointerDown is not gated on coarsePointer');
-        if (!/\.preventDefault\(\s*\)/.test(down))
-            defects.push(
-                'onPointerDown does not call preventDefault() — Radix\'s composed ' +
-                    'close-handlers will run and the tooltip closes on the tap that opened it',
-            );
         if (!/setTouchOpen\s*\(/.test(down))
             defects.push('onPointerDown does not toggle touchOpen');
     }
 
-    const click = jsxAttrExpression(src, 'onClick', triggerAt);
-    if (click === null) defects.push('Trigger has no onClick');
-    else {
-        if (!/\bcoarsePointer\b/.test(click))
-            defects.push('onClick is not gated on coarsePointer');
-        if (!/\.preventDefault\(\s*\)/.test(click))
-            defects.push(
-                'onClick does not call preventDefault() — Radix closes on click after a tap',
-            );
-    }
+    // The ONE preventDefault() the Trigger may carry is the `:focus-visible`
+    // gate on `onFocus`. That one suppresses a Radix OPEN — focus has
+    // already happened by the time it runs, so no default the wrapped
+    // element needs is cancelled. Every other one reaches the child: Next's
+    // app-dir Link returns early on `e.defaultPrevented`, and an
+    // `<a href download>` simply does not download.
+    const focus = jsxAttrExpression(trigger, 'onFocus');
+    const outsideFocus = focus === null ? trigger : trigger.replace(focus, '');
+    if (/\.preventDefault\(\s*\)/.test(outsideFocus))
+        defects.push(
+            'the Trigger calls preventDefault() outside the onFocus :focus-visible gate — ' +
+                'that cancels the default action of whatever the tooltip wraps, which is how ' +
+                '<Tooltip> around a <Link> or an <a href download> stopped working on touch ' +
+                '(#449). Decline Radix\'s close request in handleTouchOpenChange instead; it ' +
+                'never touches the DOM event.',
+        );
 
     if (!CONTROLLED_OPEN_RE.test(src))
-        defects.push('Root is not put under controlled open/onOpenChange for coarse pointers');
+        defects.push(
+            'Root is not put under controlled open/onOpenChange (routed through ' +
+                'handleTouchOpenChange) for coarse pointers',
+        );
+
+    defects.push(...closeFilterDefects(src));
 
     return defects;
 }
 
 /**
- * The three dismissal paths, each with its cleanup. Losing any ONE
+ * The close filter is what replaced `preventDefault()`. It is the reason a
+ * tapped-open tooltip survives the click that opened it, and the reason the
+ * wrapped element's default action is left alone.
+ *
+ * The shape it must keep: honour opens, decline closes. Passing Radix's
+ * value straight through (`setTouchOpen(next)`) restores the original
+ * defect; adding a `setTouchOpen(false)` arm does the same thing more
+ * slowly.
+ */
+function closeFilterDefects(src: string): string[] {
+    const at = src.indexOf('const handleTouchOpenChange');
+    if (at < 0)
+        return [
+            'there is no handleTouchOpenChange — Radix\'s close requests are unfiltered, so ' +
+                'the click that completes a tap closes the tooltip it just opened',
+        ];
+    const body = balancedBlock(src, at);
+    if (body === null) return ['could not read the handleTouchOpenChange body'];
+    const code = stripComments(body);
+
+    const defects: string[] = [];
+    if (!/setTouchOpen\(\s*true\s*\)/.test(code))
+        defects.push('handleTouchOpenChange no longer honours Radix OPEN requests');
+    if (!/\bif\s*\(\s*next\s*\)/.test(code))
+        defects.push('handleTouchOpenChange no longer gates on `next`');
+    if (/setTouchOpen\(\s*(?:next|false)\s*\)/.test(code))
+        defects.push(
+            'handleTouchOpenChange passes a Radix CLOSE through — that is the whole defect: ' +
+                'Radix fires onClose unconditionally from the trigger\'s onClick, so the tap ' +
+                'that opened the tooltip would immediately close it again',
+        );
+    return defects;
+}
+
+/** Balanced `{ … }` block starting at the first `{` at or after `from`. */
+function balancedBlock(src: string, from: number): string | null {
+    const start = src.indexOf('{', from);
+    if (start < 0) return null;
+    let depth = 0;
+    for (let i = start; i < src.length; i++) {
+        if (src[i] === '{') depth++;
+        else if (src[i] === '}') {
+            depth--;
+            if (depth === 0) return src.slice(start + 1, i);
+        }
+    }
+    return null;
+}
+
+/**
+ * The four dismissal paths, each with its cleanup. Losing any ONE
  * reintroduces "the popup sits over the UI intercepting the next touch".
+ *
+ * All four are load-bearing, and Escape became so with the close filter:
+ * `handleTouchOpenChange` declines Radix's DismissableLayer dismissal along
+ * with every other close request, so the Content's `onEscapeKeyDown` — which
+ * runs BEFORE that dismissal and does not go through `onOpenChange` — is the
+ * only thing left that answers Escape on a coarse pointer. It rides Radix's
+ * own document-level `useEscapeKeydown`, so Epic 57's ban on raw `keydown`
+ * listeners is respected.
  */
 function dismissalDefects(src: string): string[] {
     const defects: string[] = [];
@@ -359,6 +458,13 @@ function dismissalDefects(src: string): string[] {
         {
             re: /document\.removeEventListener\(\s*["']pointerdown["']\s*,\s*\w+\s*,\s*true\s*\)/,
             miss: 'outside-tap listener is never removed (leaks across tooltips)',
+        },
+        {
+            re: /onEscapeKeyDown=\{closeTouch\}/,
+            miss:
+                'Escape dismissal is gone — handleTouchOpenChange declines Radix\'s own ' +
+                'DismissableLayer close along with every other, so `onEscapeKeyDown` on the ' +
+                'Content is the only thing left that answers Escape on a coarse pointer',
         },
         {
             re: /window\.addEventListener\(\s*["']scroll["']\s*,\s*\w+\s*,\s*true\s*\)/,
@@ -494,26 +600,25 @@ describe('tooltip touch path — derived, never supplied', () => {
 describe('tooltip touch path — the tap handler survives intact', () => {
     const src = read(TOUCH_OWNER);
 
-    it('taps toggle, and preventDefault() still suppresses Radix\'s close handlers', () => {
+    it('taps toggle, the close filter holds, and no preventDefault() reaches the child', () => {
         const defects = tapHandlerDefects(src);
         if (defects.length > 0) {
             throw new Error(
                 'The coarse-pointer tap handler in ' +
-                    `${TOUCH_OWNER} lost part of its contract. No existing test would ` +
-                    'catch this — the rendered suite runs under a jsdom matchMedia stub ' +
-                    'that never reports a coarse pointer:\n  ' +
-                    defects.join('\n  '),
+                    `${TOUCH_OWNER} lost part of its contract:\n  ` +
+                    defects.join('\n  ') +
+                    '\n\nThe behavioural half is tests/rendered/tooltip-touch.test.tsx.',
             );
         }
         expect(defects).toEqual([]);
     });
 
-    it('says in source why preventDefault() is load-bearing', () => {
+    it('says in source why preventDefault() must not come back', () => {
         // Same reasoning as the `kill-switch (temporary)` assertion in
         // tooltip-kill-switch-consistency: the next reader tidying this
-        // handler has to be told, at the call site, that the line looks
-        // redundant and is not.
-        expect(src).toMatch(/`preventDefault\(\)` is load-bearing/);
+        // handler has to be told, at the call site, that the obvious way to
+        // stop Radix closing is the one that broke every wrapped link.
+        expect(src).toMatch(/It must not call `preventDefault\(\)`/);
     });
 });
 
@@ -619,13 +724,39 @@ describe('mutation regression — every detector fires on known-bad input', () =
         expect(DERIVED_POINTER_RE.test(bad)).toBe(false);
     });
 
-    it('(b) preventDefault() dropped from the tap handler', () => {
+    it('(b) preventDefault() put BACK into the tap handler', () => {
         expect(tapHandlerDefects(src)).toEqual([]);
-        const bad = src.replace(/e\.preventDefault\(\);\s*\n\s*setTouchOpen/, 'setTouchOpen');
+        // The exact regression #449 shipped and this guard now forbids.
+        const bad = src.replace(
+            /coarsePointer \? \(\) => setTouchOpen\(\(v\) => !v\) : undefined/,
+            'coarsePointer ? (e) => { e.preventDefault(); setTouchOpen((v) => !v); } : undefined',
+        );
         expect(bad).not.toBe(src);
         expect(tapHandlerDefects(bad).join(' ')).toMatch(
-            /onPointerDown does not call preventDefault/,
+            /calls preventDefault\(\) outside the onFocus/,
         );
+    });
+
+    it('(b2) an onClick that preventDefaults added back to the Trigger', () => {
+        const bad = src.replace(
+            /(\n\s*onPointerDown=\{)/,
+            '\n                onClick={coarsePointer ? (e) => e.preventDefault() : undefined}$1',
+        );
+        expect(bad).not.toBe(src);
+        expect(tapHandlerDefects(bad).join(' ')).toMatch(
+            /calls preventDefault\(\) outside the onFocus/,
+        );
+    });
+
+    it('(b3) the onFocus :focus-visible gate is NOT mistaken for the defect', () => {
+        // A detector that flagged every preventDefault() on the trigger
+        // would force the a11y focus gate out, which is a different and
+        // legitimate use — it suppresses a Radix OPEN, not a DOM default.
+        expect(triggerTag(src)).toMatch(/onFocus=\{/);
+        expect(jsxAttrExpression(stripComments(triggerTag(src)!), 'onFocus')).toMatch(
+            /preventDefault/,
+        );
+        expect(tapHandlerDefects(src)).toEqual([]);
     });
 
     it('(c) the controlled-open wiring removed', () => {
@@ -634,10 +765,32 @@ describe('mutation regression — every detector fires on known-bad input', () =
         expect(tapHandlerDefects(bad).join(' ')).toMatch(/controlled open/);
     });
 
+    it('(c2) onOpenChange wired straight to the setter, bypassing the filter', () => {
+        const bad = src.replace(
+            /onOpenChange: handleTouchOpenChange/,
+            'onOpenChange: setTouchOpen',
+        );
+        expect(bad).not.toBe(src);
+        expect(tapHandlerDefects(bad).join(' ')).toMatch(/controlled open/);
+    });
+
+    it('(c3) the close filter made to honour closes', () => {
+        expect(closeFilterDefects(src)).toEqual([]);
+        for (const [cut, replacement, expected] of [
+            [/if \(next\) setTouchOpen\(true\);/, 'setTouchOpen(next);', /passes a Radix CLOSE through/],
+            [/const handleTouchOpenChange/, 'const removedTouchOpenChange', /no handleTouchOpenChange/],
+        ] as ReadonlyArray<[RegExp, string, RegExp]>) {
+            const bad = src.replace(cut, replacement);
+            expect(bad).not.toBe(src);
+            expect(closeFilterDefects(bad).join(' ')).toMatch(expected);
+        }
+    });
+
     it('(d) each dismissal path removed in turn', () => {
         expect(dismissalDefects(src)).toEqual([]);
         const removals: ReadonlyArray<[RegExp, RegExp]> = [
             [/document\.addEventListener\(\s*"pointerdown"[^;]*;/, /outside-tap dismissal/],
+            [/onEscapeKeyDown=\{closeTouch\}/, /Escape dismissal is gone/],
             [/window\.addEventListener\(\s*"scroll"[^;]*;/, /scroll dismissal/],
             [/dismissTimer\.current = setTimeout\([^;]*;/, /auto-dismiss timeout/],
             [/window\.removeEventListener\(\s*"scroll"[^;]*;/, /scroll listener is never removed/],

@@ -182,13 +182,30 @@ export const Tooltip = forwardRef<HTMLButtonElement, TooltipProps>(function Tool
     // leaves a phone with no way to ever see a tooltip — which on a
     // mobile-first product means help icons that are pure decoration.
     //
-    // So on coarse pointers we drive `open` ourselves: tap toggles, and the
-    // tap handler calls `preventDefault()` so Radix's own composed
-    // close-handlers are skipped. That is the same `composeEventHandlers`
-    // trick the focus guard below relies on. Pointer devices are left
-    // entirely on Radix's hover behaviour — same primitive, same content,
-    // same appearance; only the gesture that opens it differs, because a
-    // phone has no hover to offer.
+    // So on coarse pointers we own `open` outright: a tap toggles it, and
+    // every way it closes — outside tap, scroll, timeout (the effect below)
+    // and Escape (`onEscapeKeyDown` on the Content) — is ours. Radix keeps
+    // ASKING us to close as well (unconditionally from its `onClick`, from
+    // `onPointerDown` when it believes it is already open, from its
+    // DismissableLayer), and because we pass `onOpenChange`, every one of
+    // those requests arrives somewhere we control. `handleTouchOpenChange`
+    // is where they are filtered.
+    //
+    // Filtering there rather than suppressing the DOM event is the whole
+    // point. #449 originally called `e.preventDefault()` on the trigger's
+    // `onPointerDown` AND `onClick` so that Radix's `composeEventHandlers`
+    // would skip its close handlers. It did — and it also cancelled the
+    // default action of whatever the tooltip wrapped. Next's app-dir `Link`
+    // returns early on `e.defaultPrevented`, and the native anchor default
+    // was prevented too, so on a phone a `<Tooltip>` around a `<Link>` or an
+    // `<a href download>` did nothing but show its own tooltip: ~17 inline
+    // call sites plus every collapsed-sidebar nav item. A close request we
+    // decline to honour is invisible to the wrapped element; a prevented
+    // event is not.
+    //
+    // Pointer devices are left entirely on Radix's hover behaviour — same
+    // primitive, same content, same appearance; only the gesture that opens
+    // it differs, because a phone has no hover to offer.
     const coarsePointer = useCoarsePointer();
     const [touchOpen, setTouchOpen] = useState(false);
     const dismissTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -202,8 +219,28 @@ export const Tooltip = forwardRef<HTMLButtonElement, TooltipProps>(function Tool
         }
     }, []);
 
+    /**
+     * Radix's open/close requests, on the coarse-pointer path only.
+     *
+     * OPENS are honoured — a stylus or a paired mouse on a coarse-pointer
+     * tablet still hovers, and Radix is right about those.
+     *
+     * CLOSES are dropped. Not because they are all wrong, but because the
+     * ones that matter are indistinguishable from the ones that are: the
+     * click that completes the opening tap fires `onClose` unconditionally,
+     * and it arrives after `pointerleave` and before anything the user could
+     * have meant. Rather than guess a gesture window, the primitive keeps
+     * the close decision to itself: outside tap, scroll and timeout in the
+     * effect below, Escape via `onEscapeKeyDown` on the Content.
+     */
+    const handleTouchOpenChange = useCallback((next: boolean) => {
+        if (next) setTouchOpen(true);
+    }, []);
+
     // Dismiss on the next touch anywhere, on scroll, and on a timeout. Any
     // one of these alone leaves a way for the popup to sit over the UI.
+    // (Escape is the fourth path and lives on the Content below — see the
+    // `onEscapeKeyDown` note there.)
     useEffect(() => {
         if (!touchOpen) return;
         const onOutside = (e: Event) => {
@@ -230,7 +267,7 @@ export const Tooltip = forwardRef<HTMLButtonElement, TooltipProps>(function Tool
             delayDuration={delayDuration}
             disableHoverableContent={disableHoverableContent}
             {...(coarsePointer
-                ? { open: touchOpen, onOpenChange: setTouchOpen }
+                ? { open: touchOpen, onOpenChange: handleTouchOpenChange }
                 : {})}
         >
             <TooltipPrimitive.Trigger
@@ -240,20 +277,20 @@ export const Tooltip = forwardRef<HTMLButtonElement, TooltipProps>(function Tool
                     else if (ref) ref.current = node;
                 }}
                 asChild
-                // Touch: tap toggles. `preventDefault()` is load-bearing —
-                // Radix composes its own `onPointerDown`/`onClick` CLOSE
-                // handlers after ours, and skips them when the event is
-                // default-prevented. Without it the tooltip would open and
-                // immediately close on the same tap.
+                // Touch: tap toggles, and that is ALL this handler does.
+                //
+                // It must not call `preventDefault()`. Radix composes its own
+                // `onPointerDown`/`onClick` CLOSE handlers after ours and
+                // skips them when the event is default-prevented, so
+                // preventing it does suppress them — at the cost of also
+                // cancelling the wrapped element's default action, which is
+                // how tooltips around a `<Link>` or an `<a href download>`
+                // stopped working on touch. Radix's close requests are
+                // declined in `handleTouchOpenChange` instead, where the
+                // DOM event is not involved.
                 onPointerDown={
-                    coarsePointer
-                        ? (e) => {
-                              e.preventDefault();
-                              setTouchOpen((v) => !v);
-                          }
-                        : undefined
+                    coarsePointer ? () => setTouchOpen((v) => !v) : undefined
                 }
-                onClick={coarsePointer ? (e) => e.preventDefault() : undefined}
                 // Hover-or-keyboard, never auto. Radix opens the tooltip on
                 // ANY focus, so when a popover/dialog auto-focuses its first
                 // control (e.g. the calendar's prev-month arrow, or the theme
@@ -284,6 +321,20 @@ export const Tooltip = forwardRef<HTMLButtonElement, TooltipProps>(function Tool
                     align={align}
                     sideOffset={sideOffset}
                     collisionPadding={8}
+                    // The fourth dismissal path, and the reason it is here
+                    // rather than in the effect above: `handleTouchOpenChange`
+                    // declines Radix's DismissableLayer close along with every
+                    // other close request, so Escape would otherwise do
+                    // nothing on a coarse pointer. Radix still runs the
+                    // document-level `useEscapeKeydown` for us and hands us the
+                    // event, so no raw `keydown` listener is needed (Epic 57
+                    // reserves those for `useKeyboardShortcut`).
+                    //
+                    // Passed unconditionally, NOT gated on the pointer class:
+                    // on the hover path `touchOpen` is unread, so `closeTouch`
+                    // is inert there — and a `coarsePointer` term inside the
+                    // Portal would be a second appearance to keep in sync.
+                    onEscapeKeyDown={closeTouch}
                     className={cn(
                         // Layering: tooltips must always float above modals,
                         // sheets and popovers (which top out at z-50).

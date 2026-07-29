@@ -131,6 +131,23 @@ const REGISTRY: RegistryEntry[] = [
             'computed node/link counts, both empty branches, and the ' +
             'pin/unpin interaction.',
     },
+    {
+        primitive: 'Tooltip coarse-pointer (tap-to-toggle) path',
+        structuralRatchets: ['guards/tooltip-touch-uniformity.test.ts'],
+        renderedTest: 'rendered/tooltip-touch.test.tsx',
+        guards:
+            'the textbook case for this registry — the structural ' +
+            'ratchet was green while the branch it locks had never ' +
+            'executed, because the project-wide jsdom `matchMedia` ' +
+            'stub answers `matches: false` to every query. #449 ' +
+            'shipped `preventDefault()` on the trigger, which also ' +
+            'cancelled the wrapped element\'s default action and ' +
+            'killed navigation on ~17 tooltip-wrapped links plus every ' +
+            'collapsed-sidebar nav item. The rendered test installs a ' +
+            'coarse-pointer matchMedia per test and asserts a wrapped ' +
+            'link actually navigates on tap, alongside tap-toggle and ' +
+            'each of the four dismissal paths.',
+    },
 ];
 
 function existsUnderTests(relPath: string): boolean {
