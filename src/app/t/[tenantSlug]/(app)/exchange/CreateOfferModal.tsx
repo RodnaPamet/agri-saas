@@ -6,8 +6,14 @@
  * region is chosen by oblast (Combobox from bulgaria-regions); the server
  * derives regionName/lat/lon from the code. commodity is a seeded catalogue
  * that also accepts a free-text entry (Combobox `onCreate`). Free text
- * (description / sellerDisplayName) is sanitized server-side. On success the
- * parent optimistically adds the new listing to the map + list.
+ * (description / sellerDisplayName / sellerContact) is sanitized server-side.
+ * On success the parent optimistically adds the new listing to the map + list.
+ *
+ * `sellerContact` is the odd one out: every other field here is published to
+ * every tenant, that one is published to nobody. It rides along on the listing
+ * so a seller can route different offers to different people, and it leaves
+ * the server only through `toPublicInquiry`'s reveal gate — to the single
+ * buyer whose inquiry this seller accepts.
  */
 import { useMemo, useState, type Dispatch, type SetStateAction } from 'react';
 import { useTranslations } from 'next-intl';
@@ -52,6 +58,7 @@ export function CreateOfferModal({ open, setOpen, defaultSellerName, onCreated }
     const [description, setDescription] = useState('');
     const [expiresAt, setExpiresAt] = useState<Date | null>(null);
     const [displayName, setDisplayName] = useState('');
+    const [sellerContact, setSellerContact] = useState('');
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -72,12 +79,12 @@ export function CreateOfferModal({ open, setOpen, defaultSellerName, onCreated }
 
     const isDirty =
         commodity !== '' || regionCode !== '' || quantity !== '' || price !== '' ||
-        description !== '' || displayName !== '' || expiresAt !== null;
+        description !== '' || displayName !== '' || sellerContact !== '' || expiresAt !== null;
 
     function reset() {
         setSide('SELL'); setKind('CULTURE'); setCommodity(''); setCommodityExtra([]); setQuantity('');
         setPrice(''); setCurrency('BGN'); setRegionCode(''); setDescription('');
-        setExpiresAt(null); setDisplayName(''); setError(null);
+        setExpiresAt(null); setDisplayName(''); setSellerContact(''); setError(null);
     }
 
     async function submit() {
@@ -94,6 +101,10 @@ export function CreateOfferModal({ open, setOpen, defaultSellerName, onCreated }
                 regionCode,
                 description: description.trim() === '' ? null : description.trim(),
                 sellerDisplayName: displayName.trim() === '' ? null : displayName.trim(),
+                // PRIVATE, unlike every other field on this form. It is not in
+                // `ExchangePublicListing`, so the response we get back never
+                // echoes it — it surfaces once, to one buyer, on accept.
+                sellerContact: sellerContact.trim() === '' ? null : sellerContact.trim(),
                 expiresAt: expiresAt ? expiresAt.toISOString() : null,
             });
             onCreated(created);
@@ -217,6 +228,23 @@ export function CreateOfferModal({ open, setOpen, defaultSellerName, onCreated }
                                 <Input id="exchange-seller-name" value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder={defaultSellerName || t('yourFarmName')} maxLength={120} />
                             </FormField>
                         </div>
+
+                        {/* The one PRIVATE field on this form. `description` (not
+                            `hint`) because a consent statement has to be read, not
+                            hovered — the seller is deciding what a stranger will be
+                            able to reach them on. Anonymity survives: leaving the
+                            public name blank and filling this in means reachable
+                            after a deal, invisible before one. */}
+                        <FormField label={t('sellerContact')} description={t('sellerContactConsent')}>
+                            <Input
+                                id="exchange-seller-contact"
+                                autoComplete="off"
+                                value={sellerContact}
+                                onChange={(e) => setSellerContact(e.target.value)}
+                                placeholder={t('sellerContactPlaceholder')}
+                                maxLength={200}
+                            />
+                        </FormField>
                     </fieldset>
                 </Modal.Body>
                 <Modal.Actions>

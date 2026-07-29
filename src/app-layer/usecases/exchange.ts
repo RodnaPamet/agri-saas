@@ -50,12 +50,14 @@ export interface CreateListingInput {
     regionCode: string;
     description?: string | null;
     sellerDisplayName?: string | null;
+    sellerContact?: string | null;
     expiresAt?: Date | null;
 }
 
 export interface CreateInquiryInput {
     listingId: string;
     message: string;
+    inquirerContact?: string | null;
     quantityTonnes?: number | string | null;
 }
 
@@ -127,6 +129,10 @@ export async function createListing(ctx: RequestContext, input: CreateListingInp
             lon: region.lon,
             description: sanitizeOptional(input.description) ?? null,
             sellerDisplayName: sanitizeOptional(input.sellerDisplayName) ?? null,
+            // Sanitised like the public fields even though it is never public:
+            // it is rendered to the counterparty after a deal, and a value that
+            // only one person ever sees is still a value someone typed.
+            sellerContact: sanitizeOptional(input.sellerContact) ?? null,
             expiresAt: input.expiresAt ?? null,
         });
 
@@ -163,10 +169,56 @@ async function loadOwnedListing(db: PrismaTx, ctx: RequestContext, id: string) {
 }
 
 /** Withdraw one of the caller-tenant's own listings. */
+/**
+ * The listing state machine.
+ *
+ * ACTIVE and EXPIRED are the only states a seller can still act on. FULFILLED
+ * and WITHDRAWN are TERMINAL: a listing that has been sold or taken down does
+ * not come back, and without this both were reachable in a loop
+ * (FULFILLED → WITHDRAWN → FULFILLED), while an EXPIRED listing could be
+ * marked FULFILLED months later.
+ *
+ * EXPIRED → WITHDRAWN is allowed on purpose: tidying up a lapsed listing is
+ * housekeeping, not a claim about a sale. EXPIRED → FULFILLED is not, because
+ * it asserts a transaction the marketplace has no evidence for and would
+ * silently feed the "sold" statistics.
+ *
+ * `respondToInquiry` already enforced its own PENDING precondition; these two
+ * were the ones with no guard at all.
+ */
+const TERMINAL_LISTING_STATUSES: readonly ExchangeListingStatus[] = [
+    ExchangeListingStatus.FULFILLED,
+    ExchangeListingStatus.WITHDRAWN,
+];
+
+function assertListingTransition(
+    from: ExchangeListingStatus,
+    to: ExchangeListingStatus,
+    commodity: string,
+) {
+    if (TERMINAL_LISTING_STATUSES.includes(from)) {
+        throw badRequest(
+            'listing_terminal',
+            `"${commodity}" is already ${from.toLowerCase()} and cannot be changed`,
+        );
+    }
+    if (to === ExchangeListingStatus.FULFILLED && from !== ExchangeListingStatus.ACTIVE) {
+        throw badRequest(
+            'listing_not_active',
+            `"${commodity}" has expired — withdraw it instead of marking it fulfilled`,
+        );
+    }
+}
+
 export async function withdrawListing(ctx: RequestContext, id: string) {
     assertCanWrite(ctx);
     return runInTenantContext(ctx, async (db) => {
         const listing = await loadOwnedListing(db, ctx, id);
+        assertListingTransition(
+            listing.status as ExchangeListingStatus,
+            ExchangeListingStatus.WITHDRAWN,
+            listing.commodity,
+        );
         const updated = await ExchangeRepository.updateListingStatus(
             db, id, ExchangeListingStatus.WITHDRAWN,
         );
@@ -192,9 +244,28 @@ export async function fulfillListing(ctx: RequestContext, id: string) {
     assertCanWrite(ctx);
     return runInTenantContext(ctx, async (db) => {
         const listing = await loadOwnedListing(db, ctx, id);
+        assertListingTransition(
+            listing.status as ExchangeListingStatus,
+            ExchangeListingStatus.FULFILLED,
+            listing.commodity,
+        );
         const updated = await ExchangeRepository.updateListingStatus(
             db, id, ExchangeListingStatus.FULFILLED,
         );
+        // Close out the inquiries this listing strands.
+        //
+        // Fulfilling used to leave every PENDING inquiry pending forever — the
+        // confirm dialog admitted as much rather than fixing it — so buyers
+        // waited on an answer that could no longer come. They are declined
+        // here, which is the truthful outcome: the goods went elsewhere.
+        //
+        // No contact is revealed (`contactSharedAt` stays null, and the CHECK
+        // constraint would refuse it anyway), and each buyer is notified, so a
+        // decline arrives as information rather than silence.
+        const stranded = await ExchangeRepository.declinePendingInquiries(db, id);
+        for (const s of stranded) {
+            await notifyBuyerOfResponse(listing, s.inquirerTenantId, 'DECLINED', null);
+        }
         await logEvent(db, ctx, {
             action: 'UPDATE',
             entityType: 'ExchangeListing',
@@ -245,6 +316,7 @@ export async function createInquiry(ctx: RequestContext, input: CreateInquiryInp
                 inquirerTenantId: ctx.tenantId,
                 inquirerUserId: ctx.userId,
                 message: sanitizedMessage,
+                inquirerContact: sanitizePlainText(input.inquirerContact ?? '') || null,
                 quantityTonnes: input.quantityTonnes ?? null,
             });
         } catch (err) {
@@ -392,9 +464,29 @@ export async function respondToInquiry(
         if (inquiry.status !== ExchangeInquiryStatus.PENDING) {
             throw badRequest('inquiry_not_pending', 'This inquiry has already been answered');
         }
+        // A listing that has left ACTIVE can no longer be transacted, so
+        // accepting on it would reveal contacts for a deal that cannot happen.
+        // Declining stays allowed: a seller who fulfils elsewhere should still
+        // be able to close out the inquiries they left hanging.
+        if (
+            action === 'ACCEPTED' &&
+            inquiry.listing.status !== ExchangeListingStatus.ACTIVE
+        ) {
+            throw badRequest(
+                'listing_not_active',
+                'This listing is no longer active — you can decline, but not accept',
+            );
+        }
 
         const updated = await ExchangeRepository.updateInquiryStatus(
-            db, inquiryId, action as ExchangeInquiryStatus,
+            db,
+            inquiryId,
+            action as ExchangeInquiryStatus,
+            // The consent stamp is written in the SAME update as the status, so
+            // there is no window where an inquiry is ACCEPTED but not yet
+            // shared (or the reverse). The DB CHECK constraint refuses the
+            // inconsistent pair outright.
+            action === 'ACCEPTED' ? new Date() : null,
         );
         await logEvent(db, ctx, {
             action: 'UPDATE',
@@ -409,8 +501,87 @@ export async function respondToInquiry(
                 summary: `Inquiry ${action.toLowerCase()} on ${inquiry.listing.commodity}`,
             },
         });
+        return { updated, inquiry };
+    }).then(async ({ updated, inquiry }) => {
+        // Best-effort, fail-open, OUTSIDE the transaction — the response is
+        // already committed, exactly as createInquiry treats the seller's.
+        await notifyBuyerOfResponse(
+            inquiry.listing,
+            inquiry.inquirerTenantId,
+            action,
+            action === 'ACCEPTED' ? inquiry.listing.sellerContact ?? null : null,
+        );
         return updated;
     });
+}
+
+/**
+ * Tell the BUYER their inquiry was answered — on accept AND on decline.
+ *
+ * Before this, `respondToInquiry` flipped a status and returned. The buyer's
+ * only signal was a badge on a page they had to remember to revisit, which for
+ * a decline meant waiting indefinitely for an answer that had already been
+ * given. A decline is information: it frees the buyer to go elsewhere.
+ *
+ * Mirrors `notifySellerOfInquiry` — same bounded fanout, same withTenantDb
+ * shape, same swallow-everything contract so a mailer outage can never undo a
+ * committed response.
+ */
+async function notifyBuyerOfResponse(
+    listing: { id: string; commodity: string; side: string },
+    buyerTenantId: string,
+    action: 'ACCEPTED' | 'DECLINED',
+    sellerContact: string | null,
+) {
+    try {
+        await withTenantDb(buyerTenantId, async (buyerDb) => {
+            const admins = await buyerDb.tenantMembership.findMany({
+                where: {
+                    tenantId: buyerTenantId,
+                    status: 'ACTIVE',
+                    role: { in: ['OWNER', 'ADMIN'] },
+                },
+                select: { userId: true, tenant: { select: { slug: true } } },
+                take: 25,
+            });
+            if (admins.length === 0) return;
+
+            // Deep-link to the buyer's own interests page, anchored on the
+            // inquiry — the same "land on the row you can act on" rule the
+            // seller-side link follows.
+            const interestsUrl = `/t/${admins[0].tenant.slug}/exchange/my-interests#listing-${listing.id}`;
+
+            const accepted = action === 'ACCEPTED';
+            await buyerDb.notification.createMany({
+                data: admins.map((a) => ({
+                    tenantId: buyerTenantId,
+                    userId: a.userId,
+                    type: 'GENERAL' as const,
+                    title: accepted
+                        ? `Your interest in ${listing.commodity} was accepted`
+                        : `Your interest in ${listing.commodity} was declined`,
+                    // The contact goes in the notification body on accept so the
+                    // buyer can act without a round trip. It is only ever
+                    // reached when `contactSharedAt` was just written, and the
+                    // notification lives in the BUYER's tenant — no third party
+                    // can read it.
+                    message: accepted
+                        ? sellerContact
+                            ? `The seller accepted. Contact them on ${sellerContact}.`
+                            : 'The seller accepted. Open the listing to see their contact.'
+                        : 'The seller declined this time. Your other interests are unaffected.',
+                    linkUrl: interestsUrl,
+                })),
+                skipDuplicates: true,
+            });
+        });
+    } catch (err) {
+        logger.warn('exchange.response_notify_failed', {
+            component: 'exchange',
+            action,
+            error: err instanceof Error ? err.message : String(err),
+        });
+    }
 }
 
 /** The caller-tenant's own listings (any status) + their inquiries. */

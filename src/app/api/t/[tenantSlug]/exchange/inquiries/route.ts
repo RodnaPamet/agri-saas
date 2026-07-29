@@ -41,6 +41,11 @@ export const POST = withApiErrorHandling(
             const inquiry = await createInquiry(ctx, {
                 listingId: body.listingId,
                 message: body.message,
+                // PRIVATE — stored with the inquiry, shown to the seller only
+                // once they ACCEPT (the `toPublicInquiry` reveal gate). It is
+                // deliberately NOT in the seller's inquiry email: that email
+                // goes to every seller admin before anyone has consented.
+                inquirerContact: body.inquirerContact ?? null,
                 quantityTonnes: body.quantityTonnes ?? null,
             });
             return jsonResponse({ id: inquiry.id, status: inquiry.status }, { status: 201 });

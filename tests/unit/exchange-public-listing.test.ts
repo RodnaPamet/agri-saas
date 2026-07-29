@@ -8,7 +8,9 @@
  */
 import {
     toPublicListing,
+    toPublicInquiry,
     type ExchangeListingRow,
+    type ExchangeInquiryRow,
 } from '@/lib/exchange/public-listing';
 import { buildExchangeFilters } from '@/app/t/[tenantSlug]/(app)/exchange/filter-defs';
 
@@ -72,6 +74,109 @@ describe('toPublicListing', () => {
         ]) {
             expect(Object.keys(dto)).not.toContain(banned);
         }
+    });
+});
+
+/**
+ * The reveal gate. `toPublicInquiry` is the ONLY place in the codebase that
+ * decides whether a contact leaves the server, so these are not "projection
+ * shape" tests — they are the authorization tests for the whole feature.
+ *
+ * Three axes, and all three must hold simultaneously:
+ *   WHEN   — only once `contactSharedAt` is stamped (i.e. only on ACCEPT).
+ *   WHO    — only the two parties to the inquiry.
+ *   WHICH  — each party gets the OTHER's contact, never their own echoed
+ *            back and never both.
+ */
+const SELLER = 'tenant-seller';
+const BUYER = 'tenant-buyer';
+const THIRD_PARTY = 'tenant-nosy';
+const SELLER_CONTACT = '+359 88 111 1111';
+const BUYER_CONTACT = 'buyer@farm.test';
+
+function inquiryRow(overrides: Partial<ExchangeInquiryRow> = {}): ExchangeInquiryRow {
+    return {
+        id: 'inq-1',
+        message: 'Interested in 50t',
+        quantityTonnes: { toString: () => '50.000' },
+        status: 'ACCEPTED',
+        createdAt: new Date('2026-07-20T00:00:00.000Z'),
+        contactSharedAt: new Date('2026-07-21T09:30:00.000Z'),
+        inquirerContact: BUYER_CONTACT,
+        inquirerTenantId: BUYER,
+        listing: row({ sellerTenantId: SELLER, sellerContact: SELLER_CONTACT }),
+        ...overrides,
+    };
+}
+
+describe('toPublicInquiry — the contact reveal gate', () => {
+    it('ACCEPTED: hands each party the OTHER side’s contact, never their own', () => {
+        const asBuyer = toPublicInquiry(inquiryRow(), BUYER);
+        expect(asBuyer.counterpartyContact).toBe(SELLER_CONTACT);
+        // The buyer never gets their own value echoed back — that would make a
+        // "both contacts" payload one refactor away.
+        expect(JSON.stringify(asBuyer)).not.toContain(BUYER_CONTACT);
+
+        const asSeller = toPublicInquiry(inquiryRow(), SELLER, false);
+        expect(asSeller.counterpartyContact).toBe(BUYER_CONTACT);
+        expect(JSON.stringify(asSeller)).not.toContain(SELLER_CONTACT);
+    });
+
+    it('ACCEPTED: a THIRD party gets nothing, from either side', () => {
+        const dto = toPublicInquiry(inquiryRow(), THIRD_PARTY);
+        expect(dto.counterpartyContact).toBeNull();
+        expect(JSON.stringify(dto)).not.toContain(SELLER_CONTACT);
+        expect(JSON.stringify(dto)).not.toContain(BUYER_CONTACT);
+    });
+
+    it.each(['PENDING', 'DECLINED'])(
+        '%s (no consent stamp): nobody sees anything — not the buyer, the seller, or a stranger',
+        (status) => {
+            const row = inquiryRow({ status, contactSharedAt: null });
+            for (const viewer of [BUYER, SELLER, THIRD_PARTY]) {
+                const dto = toPublicInquiry(row, viewer);
+                expect(dto.counterpartyContact).toBeNull();
+                expect(dto.contactSharedAt).toBeNull();
+                expect(JSON.stringify(dto)).not.toContain(SELLER_CONTACT);
+                expect(JSON.stringify(dto)).not.toContain(BUYER_CONTACT);
+            }
+        },
+    );
+
+    it('the STAMP is the gate, not the status string — an unstamped "ACCEPTED" reveals nothing', () => {
+        // The DB CHECK constraint makes the inverse pair (stamped + not
+        // accepted) unrepresentable; this pins the direction the projection is
+        // responsible for, so a future caller cannot get a reveal by writing a
+        // status alone.
+        const dto = toPublicInquiry(inquiryRow({ contactSharedAt: null }), BUYER);
+        expect(dto.status).toBe('ACCEPTED');
+        expect(dto.counterpartyContact).toBeNull();
+    });
+
+    it('a missing contact on the revealing side yields null, not undefined', () => {
+        const noSellerContact = toPublicInquiry(
+            inquiryRow({ listing: row({ sellerTenantId: SELLER, sellerContact: null }) }),
+            BUYER,
+        );
+        expect(noSellerContact.counterpartyContact).toBeNull();
+        const noBuyerContact = toPublicInquiry(inquiryRow({ inquirerContact: null }), SELLER, false);
+        expect(noBuyerContact.counterpartyContact).toBeNull();
+    });
+
+    it('the nested LISTING projection never carries sellerContact — on any path', () => {
+        const dto = toPublicInquiry(inquiryRow(), BUYER);
+        expect(dto.listing).toBeDefined();
+        expect(Object.keys(dto.listing!)).not.toContain('sellerContact');
+        // …and the inquirer's tenant/user ids never reach the wire either.
+        expect(Object.keys(dto)).not.toContain('inquirerTenantId');
+        expect(Object.keys(dto)).not.toContain('inquirerUserId');
+        expect(Object.keys(dto)).not.toContain('inquirerContact');
+    });
+
+    it('includeListing=false omits the listing entirely (the seller’s nested inbox shape)', () => {
+        const dto = toPublicInquiry(inquiryRow(), SELLER, false);
+        expect(dto.listing).toBeUndefined();
+        expect(dto.contactSharedAt).toBe('2026-07-21T09:30:00.000Z');
     });
 });
 

@@ -150,12 +150,50 @@ export class ExchangeRepository {
         });
     }
 
-    /** Flip an inquiry's status (ACCEPTED / DECLINED). */
+    /**
+     * Flip an inquiry's status (ACCEPTED / DECLINED) and stamp the consent.
+     *
+     * `contactSharedAt` travels with the status in ONE update rather than a
+     * follow-up write: the pair is what the reveal gate reads, and a window
+     * where an inquiry is ACCEPTED but not yet shared would show a buyer an
+     * accepted deal with no way to reach anyone. The DB CHECK constraint
+     * (`contactSharedAt IS NULL OR status = 'ACCEPTED'`) refuses the
+     * inconsistent pair, so this signature cannot be misused into producing a
+     * declined-but-shared row.
+     */
     static async updateInquiryStatus(
         db: PrismaTx,
         id: string,
         status: ExchangeInquiryStatus,
+        contactSharedAt: Date | null,
     ) {
-        return db.exchangeInquiry.update({ where: { id }, data: { status } });
+        return db.exchangeInquiry.update({
+            where: { id },
+            data: { status, contactSharedAt },
+        });
+    }
+
+    /**
+     * Decline every still-PENDING inquiry on a listing, returning who was
+     * affected so they can be told.
+     *
+     * Used when a listing reaches a terminal state: the goods are gone, so the
+     * honest outcome for anyone still waiting is a decline rather than an
+     * inquiry that stays pending forever. The ids are read BEFORE the update
+     * because `updateMany` returns only a count, and a count cannot be
+     * notified.
+     */
+    static async declinePendingInquiries(db: PrismaTx, listingId: string) {
+        const pending = await db.exchangeInquiry.findMany({
+            where: { listingId, status: ExchangeInquiryStatus.PENDING },
+            select: { id: true, inquirerTenantId: true },
+            take: 200,
+        });
+        if (pending.length === 0) return [];
+        await db.exchangeInquiry.updateMany({
+            where: { id: { in: pending.map((p) => p.id) } },
+            data: { status: ExchangeInquiryStatus.DECLINED },
+        });
+        return pending;
     }
 }

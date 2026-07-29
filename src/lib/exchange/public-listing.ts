@@ -25,6 +25,13 @@ export interface ExchangeListingRow {
     lon: number;
     description: string | null;
     sellerDisplayName: string | null;
+    /**
+     * Seller's private contact. Read by `toPublicInquiry`'s reveal gate and
+     * DELIBERATELY absent from `ExchangePublicListing` — a listing projection
+     * must never carry it, however the listing was fetched. Optional so the
+     * feed query can keep selecting a narrower row.
+     */
+    sellerContact?: string | null;
     status: string;
     createdAt: Date | string;
     expiresAt: Date | string | null;
@@ -66,6 +73,12 @@ export interface ExchangeInquiryRow {
     quantityTonnes: { toString(): string } | null;
     status: string;
     createdAt: Date | string;
+    /** Non-null only once the seller has ACCEPTED — the reveal gate. */
+    contactSharedAt?: Date | string | null;
+    /** Buyer's contact. Revealed to the SELLER only, and only after accept. */
+    inquirerContact?: string | null;
+    /** Who wrote it — needed to decide which side of the reveal the viewer is on. */
+    inquirerTenantId?: string;
     listing?: ExchangeListingRow;
 }
 
@@ -75,6 +88,13 @@ export interface ExchangePublicInquiry {
     quantityTonnes: string | null;
     status: string;
     createdAt: string;
+    /**
+     * The COUNTERPARTY's contact — the buyer sees the seller's, the seller sees
+     * the buyer's. Null until the seller accepts, and null forever on decline.
+     */
+    counterpartyContact: string | null;
+    /** When the two-sided consent completed; null until then. */
+    contactSharedAt: string | null;
     /** Present in the buyer's outbox; omitted in the seller's per-listing nest. */
     listing?: ExchangePublicListing;
 }
@@ -89,12 +109,36 @@ export function toPublicInquiry(
     viewerTenantId: string,
     includeListing = true,
 ): ExchangePublicInquiry {
+    // ── The reveal gate ──────────────────────────────────────────────────
+    // Two conditions, both required, and this is the ONLY place they are
+    // evaluated. `contactSharedAt` is set exclusively when the seller accepts,
+    // so a PENDING or DECLINED inquiry yields null for everyone — a decline
+    // must never leak either party's details.
+    //
+    // The viewer then gets the OTHER side's contact, never their own echoed
+    // back and never both: the buyer sees the seller's, the seller sees the
+    // buyer's. Deciding it here rather than at each call site means a new
+    // endpoint cannot forget the check.
+    const shared = row.contactSharedAt != null;
+    const viewerIsInquirer =
+        row.inquirerTenantId != null && row.inquirerTenantId === viewerTenantId;
+    const viewerIsSeller =
+        row.listing != null && row.listing.sellerTenantId === viewerTenantId;
+
+    let counterpartyContact: string | null = null;
+    if (shared) {
+        if (viewerIsInquirer) counterpartyContact = row.listing?.sellerContact ?? null;
+        else if (viewerIsSeller) counterpartyContact = row.inquirerContact ?? null;
+    }
+
     return {
         id: row.id,
         message: row.message,
         quantityTonnes: row.quantityTonnes != null ? row.quantityTonnes.toString() : null,
         status: row.status,
         createdAt: iso(row.createdAt),
+        counterpartyContact,
+        contactSharedAt: row.contactSharedAt != null ? iso(row.contactSharedAt) : null,
         ...(includeListing && row.listing
             ? { listing: toPublicListing(row.listing, viewerTenantId) }
             : {}),

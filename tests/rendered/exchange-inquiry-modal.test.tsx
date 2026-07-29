@@ -64,6 +64,48 @@ it('POSTs an inquiry with the typed message + closes', async () => {
     expect(JSON.parse(init.body as string)).toMatchObject({
         listingId: 'lst-1',
         message: 'Interested in 50t',
+        // Untouched optional field posts null, not '' — the usecase's
+        // three-state contract for optional free text.
+        inquirerContact: null,
     });
     await waitFor(() => expect(onSent).toHaveBeenCalled());
+});
+
+/**
+ * The disclosure has to be readable BEFORE the message box, because it is
+ * what tells the buyer how many strangers will read what they type. The modal
+ * used to say "the seller is notified" — singular — while the message is
+ * emailed off-platform to up to 25 seller admins.
+ */
+it('discloses the real recipients — plural, off-platform, capped — up front', async () => {
+    wrap(<InquiryModal open setOpen={() => {}} listing={listing} onSent={() => {}} />);
+    const disclosure = (await screen.findAllByText(/account owners and administrators/i))[0];
+    expect(disclosure).toBeInTheDocument();
+    expect(disclosure).toHaveTextContent(/email/i);
+    expect(disclosure).toHaveTextContent(/up to 25 people/i);
+});
+
+it('offers an optional contact, states the consent rule at the field, and posts it', async () => {
+    wrap(<InquiryModal open setOpen={() => {}} listing={listing} onSent={() => {}} />);
+
+    // Always-visible `description`, not a hover-only `hint`: a consent
+    // statement the user has to hover to read is not a disclosure.
+    expect(
+        screen.getByText(/shared with this seller only if they accept your interest/i),
+    ).toBeVisible();
+    expect(screen.getByText(/never on a decline/i)).toBeVisible();
+
+    fireEvent.change(await screen.findByPlaceholderText(/introduce yourself/i), {
+        target: { value: 'Interested in 50t' },
+    });
+    fireEvent.change(screen.getByLabelText(/your contact/i), {
+        target: { value: ' +359 88 123 4567 ' },
+    });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /express interest/i })); });
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(init.body as string)).toMatchObject({
+        inquirerContact: '+359 88 123 4567',
+    });
 });

@@ -47,6 +47,7 @@ jest.mock('@/app-layer/repositories/exchange', () => ({
         listInquiriesByInquirer: jest.fn(),
         getInquiry: jest.fn(),
         updateInquiryStatus: jest.fn(),
+        declinePendingInquiries: jest.fn(),
         listListingsBySeller: jest.fn(),
     },
 }));
@@ -116,6 +117,7 @@ beforeEach(() => {
     membershipFindMany.mockResolvedValue([]);
     sendInquiryEmail.mockResolvedValue({ sent: true });
     notificationCreateMany.mockResolvedValue({ count: 0 });
+    repo.declinePendingInquiries.mockResolvedValue([]);
 });
 
 describe('cross-tenant write guard', () => {
@@ -299,19 +301,36 @@ describe('respondToInquiry (seller-only)', () => {
     const inq = (over: Record<string, unknown> = {}) => ({
         id: 'inq-1',
         status: 'PENDING',
-        listing: { sellerTenantId: 'tenant-1', commodity: 'Wheat' },
+        inquirerTenantId: 'tenant-7',
+        listing: {
+            id: 'lst-1',
+            sellerTenantId: 'tenant-1',
+            commodity: 'Wheat',
+            side: 'SELL',
+            status: 'ACTIVE',
+            sellerContact: '+359 88 000 0000',
+        },
         ...over,
     });
 
-    it('the SELLER can accept a PENDING inquiry', async () => {
+    it('the SELLER can accept a PENDING inquiry, and the consent stamp rides the SAME update', async () => {
         repo.getInquiry.mockResolvedValue(inq() as never);
         repo.updateInquiryStatus.mockResolvedValue({ id: 'inq-1', status: 'ACCEPTED' } as never);
         await respondToInquiry(meCtx, 'inq-1', 'ACCEPTED');
-        expect(repo.updateInquiryStatus).toHaveBeenCalledWith(mockDb, 'inq-1', 'ACCEPTED');
+        expect(repo.updateInquiryStatus).toHaveBeenCalledWith(
+            mockDb, 'inq-1', 'ACCEPTED', expect.any(Date),
+        );
+    });
+
+    it('a DECLINE writes a NULL consent stamp — a refusal never shares anything', async () => {
+        repo.getInquiry.mockResolvedValue(inq() as never);
+        repo.updateInquiryStatus.mockResolvedValue({ id: 'inq-1', status: 'DECLINED' } as never);
+        await respondToInquiry(meCtx, 'inq-1', 'DECLINED');
+        expect(repo.updateInquiryStatus).toHaveBeenCalledWith(mockDb, 'inq-1', 'DECLINED', null);
     });
 
     it('a NON-seller cannot respond → forbidden', async () => {
-        repo.getInquiry.mockResolvedValue(inq({ listing: { sellerTenantId: 'tenant-9', commodity: 'Wheat' } }) as never);
+        repo.getInquiry.mockResolvedValue(inq({ listing: { sellerTenantId: 'tenant-9', commodity: 'Wheat', status: 'ACTIVE' } }) as never);
         await expect(respondToInquiry(meCtx, 'inq-1', 'DECLINED')).rejects.toThrow(/your own listings/i);
         expect(repo.updateInquiryStatus).not.toHaveBeenCalled();
     });
@@ -319,6 +338,116 @@ describe('respondToInquiry (seller-only)', () => {
     it('an already-answered inquiry → badRequest', async () => {
         repo.getInquiry.mockResolvedValue(inq({ status: 'ACCEPTED' }) as never);
         await expect(respondToInquiry(meCtx, 'inq-1', 'DECLINED')).rejects.toThrow(/not_pending/i);
+    });
+
+    // ── Accepting is gated on the LISTING, not just the inquiry ──────────
+    // An accept reveals both parties' contacts for a deal that can still
+    // happen. Once the listing has left ACTIVE it cannot, so the accept is
+    // refused — while the decline stays open so a seller who sold elsewhere
+    // can close out the queue they left hanging.
+    it.each(['FULFILLED', 'WITHDRAWN', 'EXPIRED'])(
+        'refuses ACCEPT on a %s listing (no contact may be revealed)',
+        async (status) => {
+            repo.getInquiry.mockResolvedValue(inq({ listing: { ...inq().listing, status } }) as never);
+            await expect(respondToInquiry(meCtx, 'inq-1', 'ACCEPTED')).rejects.toThrow(/listing_not_active/i);
+            expect(repo.updateInquiryStatus).not.toHaveBeenCalled();
+        },
+    );
+
+    it('still allows DECLINE on a non-ACTIVE listing', async () => {
+        repo.getInquiry.mockResolvedValue(inq({ listing: { ...inq().listing, status: 'FULFILLED' } }) as never);
+        repo.updateInquiryStatus.mockResolvedValue({ id: 'inq-1', status: 'DECLINED' } as never);
+        await respondToInquiry(meCtx, 'inq-1', 'DECLINED');
+        expect(repo.updateInquiryStatus).toHaveBeenCalledWith(mockDb, 'inq-1', 'DECLINED', null);
+    });
+
+    it('notifies the BUYER on accept — in the BUYER’s tenant context, contact in the body', async () => {
+        repo.getInquiry.mockResolvedValue(inq() as never);
+        repo.updateInquiryStatus.mockResolvedValue({ id: 'inq-1', status: 'ACCEPTED' } as never);
+        membershipFindMany.mockResolvedValue([{ userId: 'buyer-admin', tenant: { slug: 'buyer' } }]);
+
+        await respondToInquiry(meCtx, 'inq-1', 'ACCEPTED');
+
+        expect(withTenantDbCalls).toEqual(['tenant-7']);
+        const notif = notificationCreateMany.mock.calls[0][0] as { data: Array<Record<string, unknown>> };
+        expect(notif.data[0]).toMatchObject({ tenantId: 'tenant-7', userId: 'buyer-admin' });
+        expect(String(notif.data[0].message)).toContain('+359 88 000 0000');
+    });
+
+    it('notifies the BUYER on decline too — WITHOUT any contact', async () => {
+        repo.getInquiry.mockResolvedValue(inq() as never);
+        repo.updateInquiryStatus.mockResolvedValue({ id: 'inq-1', status: 'DECLINED' } as never);
+        membershipFindMany.mockResolvedValue([{ userId: 'buyer-admin', tenant: { slug: 'buyer' } }]);
+
+        await respondToInquiry(meCtx, 'inq-1', 'DECLINED');
+
+        const notif = notificationCreateMany.mock.calls[0][0] as { data: Array<Record<string, unknown>> };
+        expect(String(notif.data[0].message)).not.toContain('+359 88 000 0000');
+        expect(String(notif.data[0].message)).toMatch(/declined/i);
+    });
+
+    it('is fail-open — a buyer-notification failure does NOT undo the committed response', async () => {
+        repo.getInquiry.mockResolvedValue(inq() as never);
+        repo.updateInquiryStatus.mockResolvedValue({ id: 'inq-1', status: 'ACCEPTED' } as never);
+        membershipFindMany.mockRejectedValue(new Error('db gone'));
+
+        await expect(respondToInquiry(meCtx, 'inq-1', 'ACCEPTED')).resolves.toMatchObject({
+            id: 'inq-1', status: 'ACCEPTED',
+        });
+    });
+});
+
+describe('listing state machine (FULFILLED / WITHDRAWN are terminal)', () => {
+    it.each(['FULFILLED', 'WITHDRAWN'])(
+        'refuses to withdraw an already-%s listing',
+        async (status) => {
+            repo.getListing.mockResolvedValue(listing({ status }));
+            await expect(withdrawListing(meCtx, 'lst-1')).rejects.toThrow(/listing_terminal/i);
+            expect(repo.updateListingStatus).not.toHaveBeenCalled();
+        },
+    );
+
+    it.each(['FULFILLED', 'WITHDRAWN'])(
+        'refuses to fulfil an already-%s listing (closes the FULFILLED→WITHDRAWN→FULFILLED loop)',
+        async (status) => {
+            repo.getListing.mockResolvedValue(listing({ status }));
+            await expect(fulfillListing(meCtx, 'lst-1')).rejects.toThrow(/listing_terminal/i);
+            expect(repo.updateListingStatus).not.toHaveBeenCalled();
+        },
+    );
+
+    it('refuses EXPIRED → FULFILLED — a lapsed listing is no evidence of a sale', async () => {
+        repo.getListing.mockResolvedValue(listing({ status: 'EXPIRED' }));
+        await expect(fulfillListing(meCtx, 'lst-1')).rejects.toThrow(/listing_not_active/i);
+        expect(repo.updateListingStatus).not.toHaveBeenCalled();
+    });
+
+    it('ALLOWS EXPIRED → WITHDRAWN — tidying a lapsed listing is housekeeping', async () => {
+        repo.getListing.mockResolvedValue(listing({ status: 'EXPIRED' }));
+        repo.updateListingStatus.mockResolvedValue(listing({ status: 'WITHDRAWN' }));
+        await withdrawListing(meCtx, 'lst-1');
+        expect(repo.updateListingStatus).toHaveBeenCalledWith(mockDb, 'lst-1', 'WITHDRAWN');
+    });
+
+    it('fulfilling DECLINES the inquiries it strands and notifies each buyer', async () => {
+        repo.getListing.mockResolvedValue(listing({ status: 'ACTIVE' }));
+        repo.updateListingStatus.mockResolvedValue(listing({ status: 'FULFILLED' }));
+        repo.declinePendingInquiries.mockResolvedValue([
+            { id: 'inq-a', inquirerTenantId: 'tenant-7' },
+            { id: 'inq-b', inquirerTenantId: 'tenant-8' },
+        ] as never);
+        membershipFindMany.mockResolvedValue([{ userId: 'buyer-admin', tenant: { slug: 'buyer' } }]);
+
+        await fulfillListing(meCtx, 'lst-1');
+
+        expect(repo.declinePendingInquiries).toHaveBeenCalledWith(mockDb, 'lst-1');
+        // Each stranded buyer is told, in their OWN tenant context.
+        expect(withTenantDbCalls).toEqual(['tenant-7', 'tenant-8']);
+        // …and no contact rides along on that path.
+        for (const call of notificationCreateMany.mock.calls) {
+            const arg = call[0] as { data: Array<Record<string, unknown>> };
+            expect(String(arg.data[0].message)).not.toMatch(/contact them on/i);
+        }
     });
 });
 

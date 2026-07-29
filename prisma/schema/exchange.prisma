@@ -67,6 +67,13 @@ model ExchangeListing {
   description       String?
   /// Opt-in public seller name (a tenant may stay anonymous).
   sellerDisplayName String?
+  /// Seller's chosen contact for THIS listing (phone / email / whatever they
+  /// want a counterparty to use). NEVER public: withheld from every feed and
+  /// detail projection, and revealed to ONE buyer only when the seller accepts
+  /// that buyer's inquiry. Per-listing rather than per-tenant so a seller can
+  /// route different offers to different people, and so an anonymous seller
+  /// can still be reachable after a deal without publishing anything.
+  sellerContact     String?
   status            ExchangeListingStatus @default(ACTIVE)
   expiresAt         DateTime?
   createdAt         DateTime              @default(now())
@@ -103,8 +110,17 @@ model ExchangeInquiry {
   inquirerTenantId String
   inquirerUserId   String
   message          String
+  /// Buyer's chosen contact, supplied when they express interest. Same rule as
+  /// the seller side: never public, revealed to the seller only if they accept.
+  inquirerContact  String?
   quantityTonnes   Decimal?              @db.Decimal(14, 3)
   status           ExchangeInquiryStatus @default(PENDING)
+  /// Set when — and only when — the seller ACCEPTS. This column IS the
+  /// enforcement point for the reveal, not a flag beside it: the projections
+  /// withhold both contacts unless it is non-null, so a DECLINE (or a still
+  /// PENDING inquiry) cannot leak either party's details. It doubles as the
+  /// audit record of when the two-sided consent completed.
+  contactSharedAt  DateTime?
   createdAt        DateTime              @default(now())
 
   listing ExchangeListing @relation(fields: [listingId], references: [id], onDelete: Cascade)

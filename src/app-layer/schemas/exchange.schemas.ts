@@ -65,6 +65,10 @@ export const CreateListingSchema = z
         regionCode: z.string().min(1).max(16),
         description: z.union([z.string().max(2000), z.null()]).optional(),
         sellerDisplayName: z.union([z.string().max(120), z.null()]).optional(),
+        // Private: never projected into a public listing. Revealed to ONE
+        // buyer, only if the seller accepts their inquiry. Short cap because a
+        // contact is a phone number or an email, not a paragraph.
+        sellerContact: z.union([z.string().max(200), z.null()]).optional(),
         // If present, an expiry MUST be in the future — a past expiresAt would
         // create a listing that is dead-on-arrival (hidden by the read filter).
         expiresAt: z
@@ -86,6 +90,10 @@ export const CreateInquirySchema = z
     .object({
         listingId: z.string().min(1),
         message: z.string().min(1).max(2000),
+        // Private, same rule as the seller's side: revealed to the seller only
+        // if they accept. Optional — a buyer may prefer to be reachable only
+        // through whatever the seller shares first.
+        inquirerContact: z.union([z.string().max(200), z.null()]).optional(),
         quantityTonnes: QuantityTonnes.nullable().optional(),
     })
     .strip();

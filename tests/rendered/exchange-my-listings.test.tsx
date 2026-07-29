@@ -5,6 +5,9 @@
  *     the deferred commit PATCHes { action: 'WITHDRAWN' }.
  *   - Mark fulfilled PATCHes { action: 'FULFILLED' }.
  *   - Accept / Reject an inquiry PATCH { action: 'ACCEPTED' | 'DECLINED' }.
+ *   - A REJECTED request surfaces its message and does not wedge the confirm
+ *     dialog open (the accept/reject/fulfil handlers used to have no catch).
+ *   - An accepted inquiry shows the buyer's contact.
  */
 import * as React from 'react';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
@@ -34,6 +37,10 @@ jest.mock('@/lib/hooks/use-tenant-swr', () => ({
 const apiPatch = jest.fn().mockResolvedValue({});
 jest.mock('@/lib/api-client', () => ({ apiPatch: (...a: unknown[]) => apiPatch(...a) }));
 
+// Capture the error toasts — the whole point of the catch blocks is that a
+// failure becomes visible rather than an unhandled rejection.
+const toastError = jest.fn();
+
 // Capture the undo-toast config so we can drive its deferred commit.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let lastToast: any = null;
@@ -43,20 +50,34 @@ jest.mock('@/components/ui/hooks', () => {
         ...actual,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         useToastWithUndo: () => (cfg: any) => { lastToast = cfg; },
+        useToast: () => ({
+            error: (...a: unknown[]) => toastError(...a),
+            success: jest.fn(), info: jest.fn(), warning: jest.fn(), dismiss: jest.fn(),
+        }),
     };
 });
 
 import { MyListingsClient } from '@/app/t/[tenantSlug]/(app)/exchange/my-listings/MyListingsClient';
 
-function listing() {
+const BUYER_CONTACT = 'buyer@farm.test';
+
+function inquiry(over: Record<string, unknown> = {}) {
+    return {
+        id: 'inq-1', message: 'Interested in 50t', quantityTonnes: '50',
+        status: 'PENDING', createdAt: '',
+        counterpartyContact: null, contactSharedAt: null,
+        ...over,
+    };
+}
+
+function listing(over: Record<string, unknown> = {}) {
     return {
         id: 'lst-1', side: 'SELL', commodity: 'Wheat', quantityTonnes: '100',
         pricePerTonne: '320', priceCurrency: 'BGN', regionCode: 'BG-16', regionName: 'Plovdiv',
         lat: 42, lon: 24, description: null, sellerDisplayName: null, status: 'ACTIVE',
         createdAt: '', expiresAt: null, isOwn: true,
-        inquiries: [
-            { id: 'inq-1', message: 'Interested in 50t', quantityTonnes: '50', status: 'PENDING', createdAt: '' },
-        ],
+        inquiries: [inquiry()],
+        ...over,
     };
 }
 
@@ -73,7 +94,9 @@ function renderClient() {
 
 beforeEach(() => {
     mutate.mockClear();
-    apiPatch.mockClear();
+    apiPatch.mockReset();
+    apiPatch.mockResolvedValue({});
+    toastError.mockClear();
     lastToast = null;
     swrData = [listing()];
     swrError = undefined;
@@ -135,4 +158,92 @@ it('surfaces an ErrorState when the fetch fails', async () => {
     expect(screen.getByRole('button', { name: /try again/i })).toBeInTheDocument();
     // The list rows are not rendered under an error.
     expect(screen.queryByText('Wheat')).not.toBeInTheDocument();
+});
+
+// ── Failure surfacing ────────────────────────────────────────────────
+//
+// The three handlers used to be `try/finally` with no `catch`. A rejected
+// PATCH became an unhandled rejection, the row looked untouched, and — when
+// the action came from the confirm dialog — `Modal.Confirm` kept the dialog
+// open on the throw, waiting for an error message no caller ever produced.
+
+it('a failing Accept shows the server’s message instead of failing silently', async () => {
+    apiPatch.mockRejectedValueOnce(new Error('This inquiry has already been answered'));
+    renderClient();
+    fireEvent.click(screen.getByRole('button', { name: /^Accept$/i }));
+    await waitFor(() =>
+        expect(toastError).toHaveBeenCalledWith('This inquiry has already been answered'),
+    );
+});
+
+it('a failing confirm action CLOSES the dialog and surfaces the error', async () => {
+    apiPatch.mockRejectedValueOnce(
+        new Error('"Wheat" has expired — withdraw it instead of marking it fulfilled'),
+    );
+    renderClient();
+    fireEvent.click(screen.getByRole('button', { name: /mark fulfilled/i }));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: /mark fulfilled/i }));
+
+    await waitFor(() => expect(toastError).toHaveBeenCalledWith(expect.stringMatching(/has expired/)));
+    // The dialog is gone: the handler resolved, so onConfirm's `setConfirm(null)`
+    // ran. A re-thrown rejection would have left this dialog on screen forever.
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+});
+
+it('a failing withdraw commit rolls the optimistic flip back AND says so', async () => {
+    apiPatch.mockRejectedValueOnce(new Error('listing_terminal'));
+    renderClient();
+    fireEvent.click(screen.getByRole('button', { name: /^Withdraw$/i }));
+
+    await expect(lastToast.action()).rejects.toThrow(/listing_terminal/);
+    // Drive the hook's own error routing the way the real hook would.
+    lastToast.onError(new Error('listing_terminal'));
+    expect(mutate).toHaveBeenCalledWith(
+        expect.arrayContaining([expect.objectContaining({ id: 'lst-1', status: 'ACTIVE' })]),
+        { revalidate: false },
+    );
+    expect(toastError).toHaveBeenCalledWith('listing_terminal');
+});
+
+// ── The seller's half of the contact exchange ────────────────────────
+
+it('a PENDING inquiry discloses that accepting shares contacts, and shows none yet', () => {
+    renderClient();
+    expect(screen.getByText(/accepting shares this listing's contact/i)).toBeInTheDocument();
+    expect(screen.queryByText(BUYER_CONTACT)).not.toBeInTheDocument();
+});
+
+it('an ACCEPTED inquiry shows the buyer’s contact, copyable', () => {
+    swrData = [listing({
+        inquiries: [inquiry({
+            status: 'ACCEPTED',
+            counterpartyContact: BUYER_CONTACT,
+            contactSharedAt: '2026-07-21T09:30:00.000Z',
+        })],
+    })];
+    renderClient();
+    expect(screen.getByText(/accepted — contact the buyer/i)).toBeInTheDocument();
+    expect(screen.getByText(BUYER_CONTACT)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /copy buyer contact/i })).toBeInTheDocument();
+    // No accept/decline controls remain on an answered inquiry.
+    expect(screen.queryByRole('button', { name: /^Accept$/i })).not.toBeInTheDocument();
+});
+
+it('a DECLINED inquiry reveals nothing', () => {
+    swrData = [listing({ inquiries: [inquiry({ status: 'DECLINED' })] })];
+    renderClient();
+    expect(screen.queryByText(/contact the buyer/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(BUYER_CONTACT)).not.toBeInTheDocument();
+});
+
+it('the fulfil confirm tells the truth about what happens to waiting inquiries', async () => {
+    renderClient();
+    fireEvent.click(screen.getByRole('button', { name: /mark fulfilled/i }));
+    const dialog = await screen.findByRole('dialog');
+    // `fulfillListing` declines every still-PENDING inquiry and notifies those
+    // buyers. The old copy claimed they "stay visible" and left them pending.
+    // The copy renders twice (the visible <p> plus Radix's aria description).
+    expect(within(dialog).getAllByText(/declines every inquiry still waiting/i).length).toBeGreaterThan(0);
+    expect(within(dialog).getAllByText(/those buyers are notified/i).length).toBeGreaterThan(0);
 });
