@@ -84,7 +84,13 @@ const ROOT = path.resolve(__dirname, '../..');
 // state (for both an HTTP failure and a network throw), that stale rows
 // survive a failed background refetch, and that the multi-select facet still
 // goes out comma-joined — plus accumulated rendered gains.
-const RENDERED_TEST_FLOOR = 219;
+// Raised 219 → 223 (coverage wave 23): the `NewCropPlanModal` and
+// `InventoryClient` rendered suites — crop-plan request shaping + inline
+// season/crop-type/variety creation + the parcel picker, and the inventory
+// cursor accumulator + dual-mode product modal + the receive/adjust
+// movement endpoints — plus accumulated rendered gains. Locked to the live
+// count of 223.
+const RENDERED_TEST_FLOOR = 223;
 const E2E_SPEC_FLOOR = 55;
 const REGISTRY_FLOOR = 5;
 
