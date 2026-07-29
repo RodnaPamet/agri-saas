@@ -17,7 +17,7 @@
  * dialog closes and the error is the thing that moved.
  */
 import { useState } from 'react';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { ListPageShell } from '@/components/layout/ListPageShell';
 import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { Heading } from '@/components/ui/typography';
@@ -31,6 +31,9 @@ import { useToast, useToastWithUndo } from '@/components/ui/hooks';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
 import { apiPatch } from '@/lib/api-client';
+import { formatDateTime } from '@/lib/format-date';
+import { localizedRegionName } from '@/lib/geo/bulgaria-regions';
+import { formatPricePerTonne } from '@/lib/exchange/currency';
 import type { ExchangePublicListing } from '@/lib/exchange/public-listing';
 import { ExchangeNav } from '../ExchangeNav';
 
@@ -72,15 +75,36 @@ const INQUIRY_STATUS_KEY: Record<string, string> = {
     DECLINED: 'inquiryStatusDeclined',
 };
 
-export function MyListingsClient() {
+interface MyListingsClientProps {
+    /**
+     * Whether this tenant still has the EXCHANGE module on. Resolved on the
+     * server so the banner is right on first paint.
+     *
+     * This page is deliberately reachable with the module OFF — it is custody
+     * of rows the tenant already published, and the only place they can be
+     * withdrawn. What it must not do is stay silent about it: without the
+     * banner the page reads like an ordinary marketplace view while every
+     * offer on it is hidden from buyers.
+     */
+    exchangeEnabled?: boolean;
+}
+
+export function MyListingsClient({ exchangeEnabled = true }: MyListingsClientProps = {}) {
     const t = useTranslations('exchange.myListings');
+    const locale = useLocale();
+    const tonne = t('unitTonne');
     const buildUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
     const toast = useToast();
     const triggerUndoToast = useToastWithUndo();
     const { data, isLoading, error, mutate } = useTenantSWR<MyListing[]>('/exchange/my-listings');
     const listings = data ?? [];
+    // Keyed by ACTION, not just by row. Accept and Reject on the same inquiry
+    // both read `busy === iq.id`, so clicking one put a spinner on both and
+    // the seller could not tell which answer was in flight — on the one pair
+    // of buttons where the two outcomes are opposite.
     const [busy, setBusy] = useState<string | null>(null);
+    const isBusy = (key: string) => busy === key;
     // A single confirm surface driven by the pending destructive action.
     const [confirm, setConfirm] = useState<
         { title: string; description: string; tone: ConfirmTone; confirmLabel: string; action: () => Promise<void> } | null
@@ -139,7 +163,7 @@ export function MyListingsClient() {
     }
 
     async function respond(inquiryId: string, action: 'ACCEPTED' | 'DECLINED') {
-        setBusy(inquiryId);
+        setBusy(`${inquiryId}:${action}`);
         try {
             await apiPatch(buildUrl(`/exchange/inquiries/${inquiryId}`), { action });
             await mutate();
@@ -166,6 +190,19 @@ export function MyListingsClient() {
                 <ExchangeNav />
             </ListPageShell.Header>
             <ListPageShell.Body>
+                {/* The module is off: these offers are hidden from every buyer
+                    (the browse feed now excludes listings whose seller opted
+                    out) and the only action left on them is Withdraw. Say
+                    that, rather than let the page look like business as
+                    usual. */}
+                {!exchangeEnabled && (
+                    <div
+                        role="status"
+                        className="mb-default rounded-lg border border-border-emphasis bg-bg-subtle p-3 text-sm text-content-secondary"
+                    >
+                        {t('moduleDisabledNotice')}
+                    </div>
+                )}
                 <div className="min-h-0 flex-1 space-y-default overflow-y-auto pr-1">
                     {error ? (
                         <ErrorState
@@ -196,14 +233,24 @@ export function MyListingsClient() {
                                     {LISTING_STATUS_KEY[l.status] ? t(LISTING_STATUS_KEY[l.status]) : l.status}
                                 </StatusBadge>
                                 <span className="text-sm text-content-secondary">
-                                    {l.quantityTonnes} t{l.pricePerTonne ? ` · ${l.pricePerTonne} ${l.priceCurrency}/t` : ''} · {l.regionName}
+                                    {l.quantityTonnes} {tonne}
+                                    {l.pricePerTonne
+                                        ? ` · ${formatPricePerTonne(l.pricePerTonne, l.priceCurrency, tonne)}`
+                                        : ''}
+                                    {' · '}
+                                    {localizedRegionName(l.regionCode, locale, l.regionName)}
                                 </span>
                                 {l.status === 'ACTIVE' && (
                                     <span className="ml-auto flex gap-compact">
+                                        {/* Fulfil needs the module: it is a claim
+                                            about a sale in a market this tenant
+                                            has left. Withdraw does not — it is
+                                            how they clean up. */}
+                                        {exchangeEnabled && (
                                         <Button
                                             variant="secondary"
                                             size="sm"
-                                            loading={busy === l.id}
+                                            loading={isBusy(l.id)}
                                             onClick={() => setConfirm({
                                                 title: t('fulfillTitle'),
                                                 description: t('fulfillDescription'),
@@ -214,6 +261,7 @@ export function MyListingsClient() {
                                         >
                                             {t('markFulfilled')}
                                         </Button>
+                                        )}
                                         <Button variant="secondary" size="sm" onClick={() => withdrawListing(l)}>
                                             {t('withdraw')}
                                         </Button>
@@ -229,17 +277,25 @@ export function MyListingsClient() {
                                                 <StatusBadge variant={statusVariant(iq.status)}>
                                                     {INQUIRY_STATUS_KEY[iq.status] ? t(INQUIRY_STATUS_KEY[iq.status]) : iq.status}
                                                 </StatusBadge>
-                                                {iq.quantityTonnes && <span className="text-content-muted">{iq.quantityTonnes} t</span>}
+                                                {iq.quantityTonnes && <span className="text-content-muted">{iq.quantityTonnes} {tonne}</span>}
+                                                {/* When it arrived. A seller could
+                                                    not tell a two-hour-old inquiry
+                                                    from a two-month-old one, which
+                                                    is most of what decides how
+                                                    urgently to answer it. */}
+                                                <span className="text-xs text-content-muted">
+                                                    {formatDateTime(iq.createdAt)}
+                                                </span>
                                                 <span className="text-content-secondary">{iq.message}</span>
                                                 {iq.status === 'PENDING' && (
                                                     <span className="ml-auto flex gap-compact">
-                                                        <Button variant="secondary" size="sm" onClick={() => respond(iq.id, 'ACCEPTED')} loading={busy === iq.id}>
+                                                        <Button variant="secondary" size="sm" onClick={() => respond(iq.id, 'ACCEPTED')} loading={isBusy(`${iq.id}:ACCEPTED`)}>
                                                             {t('accept')}
                                                         </Button>
                                                         <Button
                                                             variant="ghost"
                                                             size="sm"
-                                                            loading={busy === iq.id}
+                                                            loading={isBusy(`${iq.id}:DECLINED`)}
                                                             onClick={() => setConfirm({
                                                                 title: t('rejectTitle'),
                                                                 description: t('rejectDescription'),

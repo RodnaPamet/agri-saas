@@ -23,7 +23,7 @@ jest.mock('@/lib/tenant-context-provider', () => ({
 }));
 jest.mock('@/lib/hooks/use-tenant-swr', () => ({
     // Empty feed — the deep-linked listing is NOT on the page, forcing the fetch.
-    useTenantSWR: () => ({ data: [], isLoading: false, mutate: jest.fn() }),
+    useTenantSWR: () => ({ data: { rows: [], nextCursor: null }, isLoading: false, mutate: jest.fn() }),
     usePrefetchTenant: () => () => {},
 }));
 

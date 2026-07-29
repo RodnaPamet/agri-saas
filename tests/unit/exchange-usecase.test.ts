@@ -29,6 +29,10 @@ const withTenantDbCalls: string[] = [];
 jest.mock('@/lib/db-context', () => ({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     runInTenantContext: jest.fn(async (_ctx: any, fn: (db: any) => any) => fn(mockDb)),
+    // The RLS-free read of "which tenants switched EXCHANGE off". Same stub db;
+    // the repository call is mocked, so only the wiring matters here.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    runInGlobalContext: jest.fn(async (fn: (db: any) => any) => fn(mockDb)),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     withTenantDb: jest.fn(async (tenantId: string, fn: (db: any) => any) => {
         withTenantDbCalls.push(tenantId);
@@ -39,11 +43,11 @@ jest.mock('@/lib/db-context', () => ({
 jest.mock('@/app-layer/repositories/exchange', () => ({
     ExchangeRepository: {
         listActiveListings: jest.fn(),
+        listTenantIdsWithModuleDisabled: jest.fn().mockResolvedValue([]),
         getListing: jest.fn(),
         createListing: jest.fn(),
         updateListingStatus: jest.fn(),
         createInquiry: jest.fn(),
-        listInquiriesForSeller: jest.fn(),
         listInquiriesByInquirer: jest.fn(),
         getInquiry: jest.fn(),
         updateInquiryStatus: jest.fn(),
@@ -221,7 +225,10 @@ describe('createListing', () => {
                 sellerUserId: 'user-1',
                 regionCode: 'BG-16',
                 regionName: 'Plovdiv',
-                priceCurrency: 'BGN',
+                // Euro-denominated by construction: the usecase stamps the
+                // marketplace currency, so a create cannot introduce a second
+                // one however the caller was written.
+                priceCurrency: 'EUR',
             }),
         );
     });
@@ -233,7 +240,10 @@ describe('createListing', () => {
         await expect(
             createListing(meCtx, { side: 'SELL', kind: 'CULTURE', commodity: 'Wheat', quantityTonnes: 10, regionCode: 'BG-16' }),
         ).rejects.toThrow(/plan_limit_exceeded/);
-        expect(assertWithinLimitMock).toHaveBeenCalledWith(meCtx, 'exchange_listing');
+        // Third argument = the create's OWN transaction. The check and the
+        // insert now share one, so two concurrent creates on a tenant at
+        // limit-1 cannot both read limit-1 and both write.
+        expect(assertWithinLimitMock).toHaveBeenCalledWith(meCtx, 'exchange_listing', mockDb);
         expect(repo.createListing).not.toHaveBeenCalled();
     });
 });
@@ -329,10 +339,18 @@ describe('respondToInquiry (seller-only)', () => {
         expect(repo.updateInquiryStatus).toHaveBeenCalledWith(mockDb, 'inq-1', 'DECLINED', null);
     });
 
-    it('a NON-seller cannot respond → forbidden', async () => {
+    // ONE oracle. A non-seller gets exactly what someone probing a random id
+    // gets — "not found" — so the pair (403 = exists, 404 = doesn't) can no
+    // longer be used to enumerate other tenants' private conversations. The
+    // guard itself is unchanged: the mutation still never runs.
+    it('a NON-seller cannot respond → notFound, indistinguishable from a missing row', async () => {
         repo.getInquiry.mockResolvedValue(inq({ listing: { sellerTenantId: 'tenant-9', commodity: 'Wheat', status: 'ACTIVE' } }) as never);
-        await expect(respondToInquiry(meCtx, 'inq-1', 'DECLINED')).rejects.toThrow(/your own listings/i);
+        await expect(respondToInquiry(meCtx, 'inq-1', 'DECLINED')).rejects.toThrow(/inquiry not found/i);
         expect(repo.updateInquiryStatus).not.toHaveBeenCalled();
+
+        // …and a genuinely missing inquiry throws the SAME error.
+        repo.getInquiry.mockResolvedValue(null as never);
+        await expect(respondToInquiry(meCtx, 'inq-1', 'DECLINED')).rejects.toThrow(/inquiry not found/i);
     });
 
     it('an already-answered inquiry → badRequest', async () => {
@@ -458,16 +476,43 @@ describe('listActiveListings is a GLOBAL read', () => {
             listing({ id: 'b', sellerTenantId: 'tenant-2' }),
             listing({ id: 'c', sellerTenantId: 'tenant-3' }),
         ];
-        repo.listActiveListings.mockResolvedValue(crossTenantRows as never);
+        repo.listTenantIdsWithModuleDisabled.mockResolvedValue([] as never);
+        repo.listActiveListings.mockResolvedValue({
+            rows: crossTenantRows,
+            nextCursor: null,
+        } as never);
 
         const result = await listActiveListings(meCtx, {});
 
         // The usecase passes the caller's filters straight through and never
         // injects a tenantId — so a tenant-1 caller sees tenant-2/3 rows.
-        expect(result).toHaveLength(3);
-        const sellers = new Set(result.map((r) => r.sellerTenantId));
+        expect(result.rows).toHaveLength(3);
+        const sellers = new Set(result.rows.map((r) => r.sellerTenantId));
         expect(sellers).toEqual(new Set(['tenant-1', 'tenant-2', 'tenant-3']));
-        // Repository was called with the db + filters only — no tenant arg.
-        expect(repo.listActiveListings).toHaveBeenCalledWith(mockDb, {});
+        // Repository was called with the db + filters + page — no tenant arg.
+        expect(repo.listActiveListings).toHaveBeenCalledWith(
+            mockDb,
+            { excludeSellerTenantIds: [] },
+            {},
+        );
+    });
+
+    it('EXCLUDES listings whose seller switched the EXCHANGE module off', async () => {
+        repo.listTenantIdsWithModuleDisabled.mockResolvedValue(['tenant-2'] as never);
+        repo.listActiveListings.mockResolvedValue({ rows: [], nextCursor: null } as never);
+
+        await listActiveListings(meCtx, {});
+
+        // The opt-out list is read RLS-FREE (TenantModuleSettings is
+        // tenant-scoped, so the viewer's own context would see one row) and
+        // handed to the query as a seller exclusion. Without this a tenant
+        // that disabled the module kept its offers on the public map while
+        // losing the ability to withdraw them.
+        expect(repo.listTenantIdsWithModuleDisabled).toHaveBeenCalledWith(mockDb, 'EXCHANGE');
+        expect(repo.listActiveListings).toHaveBeenCalledWith(
+            mockDb,
+            expect.objectContaining({ excludeSellerTenantIds: ['tenant-2'] }),
+            {},
+        );
     });
 });

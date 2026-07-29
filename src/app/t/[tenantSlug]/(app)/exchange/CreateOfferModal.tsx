@@ -28,6 +28,7 @@ import { Button } from '@/components/ui/button';
 import { apiPost } from '@/lib/api-client';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 import { BULGARIA_REGION_OPTIONS } from '@/lib/geo/bulgaria-regions';
+import { EXCHANGE_CURRENCY } from '@/lib/exchange/currency';
 import type { ExchangePublicListing } from '@/lib/exchange/public-listing';
 
 const COMMODITY_SEED = [
@@ -38,12 +39,14 @@ const COMMODITY_SEED = [
 interface CreateOfferModalProps {
     open: boolean;
     setOpen: Dispatch<SetStateAction<boolean>>;
-    /** Fallback public display name (the tenant name) shown in the hint. */
-    defaultSellerName?: string;
     onCreated: (listing: ExchangePublicListing) => void;
 }
 
-export function CreateOfferModal({ open, setOpen, defaultSellerName, onCreated }: CreateOfferModalProps) {
+// `defaultSellerName` is gone. It existed only to fill a hint that promised a
+// blank field would publish the farm's own name — behaviour nothing
+// implemented, and no caller ever passed the prop, so the promise was made to
+// every seller and kept for none.
+export function CreateOfferModal({ open, setOpen, onCreated }: CreateOfferModalProps) {
     const t = useTranslations('exchange.offer');
     const buildUrl = useTenantApiUrl();
 
@@ -53,7 +56,6 @@ export function CreateOfferModal({ open, setOpen, defaultSellerName, onCreated }
     const [commodityExtra, setCommodityExtra] = useState<string[]>([]);
     const [quantity, setQuantity] = useState('');
     const [price, setPrice] = useState('');
-    const [currency, setCurrency] = useState('BGN');
     const [regionCode, setRegionCode] = useState('');
     const [description, setDescription] = useState('');
     const [expiresAt, setExpiresAt] = useState<Date | null>(null);
@@ -83,7 +85,7 @@ export function CreateOfferModal({ open, setOpen, defaultSellerName, onCreated }
 
     function reset() {
         setSide('SELL'); setKind('CULTURE'); setCommodity(''); setCommodityExtra([]); setQuantity('');
-        setPrice(''); setCurrency('BGN'); setRegionCode(''); setDescription('');
+        setPrice(''); setRegionCode(''); setDescription('');
         setExpiresAt(null); setDisplayName(''); setSellerContact(''); setError(null);
     }
 
@@ -97,7 +99,10 @@ export function CreateOfferModal({ open, setOpen, defaultSellerName, onCreated }
                 commodity: commodity.trim(),
                 quantityTonnes: quantity.trim(),
                 pricePerTonne: price.trim() === '' ? null : price.trim(),
-                priceCurrency: currency.trim() || 'BGN',
+                // No currency field: the marketplace is euro-denominated, so
+                // there is nothing to choose. Sending it explicitly keeps the
+                // request self-describing for anyone reading the network tab.
+                priceCurrency: EXCHANGE_CURRENCY,
                 regionCode,
                 description: description.trim() === '' ? null : description.trim(),
                 sellerDisplayName: displayName.trim() === '' ? null : displayName.trim(),
@@ -192,15 +197,17 @@ export function CreateOfferModal({ open, setOpen, defaultSellerName, onCreated }
                             />
                         </FormField>
 
-                        <div className="grid grid-cols-1 gap-default sm:grid-cols-3">
+                        {/* No currency picker. The marketplace is
+                            euro-denominated, so offering a choice would only
+                            reintroduce the defect this PR closed: prices that
+                            cannot be compared with the offer next to them. The
+                            unit rides on the price label instead. */}
+                        <div className="grid grid-cols-1 gap-default sm:grid-cols-2">
                             <FormField label={t('quantity')} required>
                                 <Input id="exchange-qty" inputMode="decimal" autoComplete="off" value={quantity} onChange={(e) => setQuantity(e.target.value)} placeholder={t('quantityPlaceholder')} />
                             </FormField>
                             <FormField label={t('price')} hint={side === 'BUY' ? t('priceHintBuy') : t('priceHint')}>
-                                <Input id="exchange-price" inputMode="decimal" autoComplete="off" value={price} onChange={(e) => setPrice(e.target.value)} placeholder="e.g. 320" />
-                            </FormField>
-                            <FormField label={t('currency')}>
-                                <Input id="exchange-currency" value={currency} onChange={(e) => setCurrency(e.target.value.toUpperCase())} placeholder={t('currencyPlaceholder')} maxLength={8} />
+                                <Input id="exchange-price" inputMode="decimal" autoComplete="off" value={price} onChange={(e) => setPrice(e.target.value)} placeholder={t('pricePlaceholder')} />
                             </FormField>
                         </div>
 
@@ -224,8 +231,14 @@ export function CreateOfferModal({ open, setOpen, defaultSellerName, onCreated }
                             <FormField label={t('expires')} hint={t('expiresHint')}>
                                 <DatePicker id="exchange-expires" className="w-full" value={expiresAt} onChange={setExpiresAt} clearable placeholder={t('datePlaceholder')} disabledDays={{ before: new Date() }} />
                             </FormField>
-                            <FormField label={t('sellerName')} hint={t('sellerNameHint', { name: defaultSellerName || t('yourTenantName') })}>
-                                <Input id="exchange-seller-name" value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder={defaultSellerName || t('yourFarmName')} maxLength={120} />
+                            {/* The hint used to promise that a blank name would
+                                publish the farm's own name. It never did — the
+                                server stores null and every surface renders
+                                "Anonymous farm". `description`, not `hint`, so
+                                a statement about what strangers will see is
+                                read rather than hovered. */}
+                            <FormField label={t('sellerName')} description={t('sellerNameConsent')}>
+                                <Input id="exchange-seller-name" value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder={t('sellerNamePlaceholder')} maxLength={120} />
                             </FormField>
                         </div>
 

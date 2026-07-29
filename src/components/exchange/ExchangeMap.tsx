@@ -17,18 +17,35 @@
  *   • One national ★ BEST per crop (cheapest ask, or highest bid for buy-only
  *     crops) gets a gold ring. Price chips de-conflict by priority: a chip that
  *     would overlap a stronger one fades back; hover or tap lifts it forward.
+ *
  *   • Tap a marker to pin its full line (location · crop · tonnage · price);
  *     a single offer also opens a detail popup. +/- buttons zoom (bottom-left).
+ *
+ * ── Prices mean ONE thing here ───────────────────────────────────────────
+ * Every price on this canvas used to be stamped `€/t` from a module constant,
+ * whatever currency the row actually stored, so a 320 BGN listing read
+ * "320€/t" on the map and "320 BGN/t" in the card beside it. Prices now carry
+ * their OWN currency (`formatPricePerTonne`), and — because a number is only
+ * comparable to another number in the same currency — every AGGREGATE
+ * (per-group average, the national ★ best-price ring) is computed over a
+ * single currency or not computed at all. A lone USD offer keeps its own
+ * label on its own marker and takes no part in the comparison.
  *
  * Geometry (projected province paths + outline + the projection params) is the
  * bundled `/geo/bg-map-geometry.json`; live offer lon/lat is projected at
  * runtime with the same params so markers land on the right province.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { Plus, Minus } from '@/components/ui/icons/nucleo';
 import { cn } from '@/lib/cn';
 import { Button } from '@/components/ui/button';
+import {
+    isAggregatable,
+    isAggregatableWith,
+    formatPricePerTonne,
+} from '@/lib/exchange/currency';
+import { localizedRegionName } from '@/lib/geo/bulgaria-regions';
 import { type ExchangeMapListing } from './exchange-map-utils';
 
 /** Side colours — shared by the marker paint AND the page's legend/list so they
@@ -46,10 +63,6 @@ const REGION_ACCENT = '#22c55e';
 /** Zoom (= k / fit) thresholds for progressive disclosure. */
 const SPLIT_Z = 3.4; // below: aggregate per region·crop; above: individual offers + tonnage
 const LOC_Z = 6.5; //  above: chips also carry the region name
-
-/** The exchange is euro-denominated (Bulgaria adopted the euro) — every price
- *  renders as €/t regardless of a listing's stored currency code. */
-const PRICE_UNIT = '€/t';
 
 export type { ExchangeMapListing };
 
@@ -198,7 +211,7 @@ interface Model {
 }
 
 /** Project listings, tag the national best per crop, and pre-aggregate. */
-function buildModel(listings: ExchangeMapListing[], geom: Geometry): Model {
+function buildModel(listings: ExchangeMapListing[], geom: Geometry, locale: string): Model {
     const { proj } = geom;
     const project = (lon: number, lat: number): [number, number] => [
         proj.ox + (lon - proj.minX) * proj.cos * proj.s,
@@ -216,7 +229,10 @@ function buildModel(listings: ExchangeMapListing[], geom: Geometry): Model {
             price: Number(l.pricePerTonne) || 0,
             curr: l.priceCurrency,
             regionCode: l.regionCode,
-            regionName: l.regionName,
+            // Chips render the oblast in the READER's language. The row stores
+            // the English name (a stable, locale-independent record), so a
+            // Bulgarian farmer used to get "Stara Zagora" on a Bulgarian map.
+            regionName: localizedRegionName(l.regionCode, locale, l.regionName),
             px,
             py,
             best: false,
@@ -228,9 +244,15 @@ function buildModel(listings: ExchangeMapListing[], geom: Geometry): Model {
 
     // National best per CROP (side-agnostic): cheapest sell ask, or — for a
     // buy-only crop — the highest bid. Ties broken by larger tonnage.
+    //
+    // ONLY offers in the marketplace currency compete. The ring is a claim
+    // that one offer beats every other, and comparing raw numbers across
+    // currencies makes that claim false: a floating-rate USD price is not
+    // "cheaper" than a euro one because its digits are smaller. Non-EUR rows
+    // keep their own label on their own marker and simply take no part.
     const byCrop: Record<string, POffer[]> = {};
     for (const o of offers) {
-        if (o.price > 0) (byCrop[o.commodity] ??= []).push(o);
+        if (o.price > 0 && isAggregatable(o.curr)) (byCrop[o.commodity] ??= []).push(o);
     }
     for (const arr of Object.values(byCrop)) {
         const sells = arr.filter((o) => o.side === 'SELL');
@@ -281,9 +303,23 @@ function buildModel(listings: ExchangeMapListing[], geom: Geometry): Model {
         g.cy = g.offers.reduce((s, o) => s + o.py, 0) / g.offers.length;
         g.totalT = g.offers.reduce((s, o) => s + o.t, 0);
         g.best = g.offers.some((o) => o.best);
+
+        // A group's chip price is an AVERAGE, so it may only be computed when
+        // every priced member shares one currency. Mixed group → no number at
+        // all: the marker still renders (the tonnage and the crop are true
+        // regardless), it just declines to quote an average that would mean
+        // nothing. After the euro migration a mixed group needs a legacy USD
+        // row to exist at all, so this is the rare path, not the common one.
         const priced = g.offers.filter((o) => o.price > 0);
-        g.avg = priced.length ? Math.round(priced.reduce((s, o) => s + o.price, 0) / priced.length) : null;
-        g.priceStr = g.avg == null ? '' : priced.length > 1 ? `⌀${g.avg}` : `${priced[0].price}`;
+        const shared = isAggregatableWith(priced.map((o) => o.curr));
+        if (shared == null) {
+            g.avg = null;
+            g.priceStr = '';
+        } else {
+            g.curr = shared;
+            g.avg = Math.round(priced.reduce((s, o) => s + o.price, 0) / priced.length);
+            g.priceStr = priced.length > 1 ? `⌀${g.avg}` : `${priced[0].price}`;
+        }
         return g;
     });
 
@@ -312,6 +348,12 @@ export function ExchangeMap({
     className,
 }: ExchangeMapProps) {
     const t = useTranslations('exchangeMap');
+    const locale = useLocale();
+    // The tonne glyph is a TRANSLATED string, not a latin `t`: the Bulgarian
+    // surfaces alternated between `t` and `т` on adjacent chips. Canvas text
+    // can't go through <FormattedMessage>, so it is read once here and threaded
+    // into the draw pass.
+    const tonne = t('unitTonne');
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
     const wrapRef = useRef<HTMLDivElement | null>(null);
     const popupRef = useRef<HTMLDivElement | null>(null);
@@ -367,7 +409,10 @@ export function ExchangeMap({
         [geom],
     );
     const outlinePath = useMemo(() => (geom ? new Path2D(geom.outlinePath) : null), [geom]);
-    const model = useMemo(() => (geom ? buildModel(listings, geom) : null), [geom, listings]);
+    const model = useMemo(
+        () => (geom ? buildModel(listings, geom, locale) : null),
+        [geom, listings, locale],
+    );
 
     const draw = useCallback(() => {
         const canvas = canvasRef.current;
@@ -460,7 +505,8 @@ export function ExchangeMap({
         }
 
         // Compose each chip's text: crop always; +tonnage on split/pin; +region
-        // on deep-zoom/pin; price+currency always (when known).
+        // on deep-zoom/pin; price always (when known) with ITS OWN currency —
+        // never a blanket unit stamped over whatever the row stored.
         const showLocAll = z >= LOC_Z;
         const showTonAll = z >= SPLIT_Z;
         for (const it of items) {
@@ -468,8 +514,8 @@ export function ExchangeMap({
             const parts: string[] = [];
             if ((showLocAll || pin) && it.loc) parts.push(it.loc);
             parts.push(it.crop);
-            if (showTonAll || pin) parts.push(`${it.ton}t`);
-            if (it.priceStr) parts.push(`${it.priceStr}${PRICE_UNIT}`);
+            if (showTonAll || pin) parts.push(`${it.ton}${tonne}`);
+            if (it.priceStr) parts.push(formatPricePerTonne(it.priceStr, it.curr, tonne));
             it.text = parts.join('·');
         }
 
@@ -558,7 +604,7 @@ export function ExchangeMap({
         if (popup && popupRef.current) {
             popupRef.current.style.transform = `translate(-50%, -100%) translate(${popup.wx * k + tx}px, ${popup.wy * k + ty - 14}px)`;
         }
-    }, [geom, model, provincePaths, outlinePath, selectedRegionCodes, highlightedId, pinnedId, popup]);
+    }, [geom, model, provincePaths, outlinePath, selectedRegionCodes, highlightedId, pinnedId, popup, tonne]);
 
     // Keep the ref pointing at the latest draw so once-attached pointer
     // handlers and the ResizeObserver always call the current closure.
@@ -839,11 +885,17 @@ export function ExchangeMap({
                             {popupListing.side === 'SELL' ? t('selling') : t('buying')}
                         </span>
                     </div>
+                    {/* This offer's OWN price in its OWN currency — the popup
+                        used to relabel it with a blanket €/t. */}
                     <div className="text-xs text-content-secondary">
-                        {popupListing.quantityTonnes} t
-                        {popupListing.pricePerTonne ? ` · ${popupListing.pricePerTonne} ${PRICE_UNIT}` : ''}
+                        {popupListing.quantityTonnes} {tonne}
+                        {popupListing.pricePerTonne
+                            ? ` · ${formatPricePerTonne(popupListing.pricePerTonne, popupListing.priceCurrency, tonne)}`
+                            : ''}
                     </div>
-                    <div className="text-xs text-content-muted">{popupListing.regionName}</div>
+                    <div className="text-xs text-content-muted">
+                        {localizedRegionName(popupListing.regionCode, locale, popupListing.regionName)}
+                    </div>
                     <Button
                         variant="secondary"
                         size="sm"

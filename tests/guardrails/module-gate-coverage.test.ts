@@ -203,11 +203,36 @@ const MODULE_GATED_ROUTES: ReadonlyArray<{
         file: 'src/app/api/t/[tenantSlug]/exchange/inquiries/[inquiryId]/route.ts',
         module: 'EXCHANGE',
     },
+    // Future module-gated routes add themselves here.
+];
+
+/**
+ * Routes in a gated domain that are DELIBERATELY not gated, each with the
+ * reason. Recorded — and asserted — rather than simply omitted, so the
+ * exemption is a decision a reader finds instead of an absence they have to
+ * infer.
+ *
+ * The rule these share: the EXCHANGE module toggle governs PARTICIPATION in
+ * the marketplace (browse, post, inquire, mark sold), not CUSTODY of rows the
+ * tenant already posted. Gating custody is what made the module-opt-out defect
+ * unrecoverable — a tenant that switched EXCHANGE off kept its listings public
+ * (the browse query had no seller-side check) while losing every endpoint that
+ * could take them down.
+ */
+const MODULE_GATE_EXEMPT_ROUTES: ReadonlyArray<{
+    file: string;
+    module: string;
+    reason: string;
+}> = [
     {
         file: 'src/app/api/t/[tenantSlug]/exchange/my-listings/route.ts',
         module: 'EXCHANGE',
+        reason:
+            'Custody read: the seller\'s OWN listings, in their own tenant. Gating it ' +
+            'left a tenant that disabled EXCHANGE unable to see the public listings it ' +
+            'could no longer withdraw. The read-side seller-module exclusion hides those ' +
+            'rows from everyone else; this surface is how the owner cleans them up.',
     },
-    // Future module-gated routes add themselves here.
 ];
 
 // ── helpers ────────────────────────────────────────────────────────────────
@@ -285,11 +310,49 @@ describe('module-gate coverage guardrail — registry integrity', () => {
 
 describe('module-gate coverage guardrail — no stale entries', () => {
     it('every registered route file exists (catches renames/refactors)', () => {
-        const missing = MODULE_GATED_ROUTES.filter(
-            (r) => !fs.existsSync(path.join(REPO_ROOT, r.file)),
-        ).map((r) => r.file);
+        const missing = [...MODULE_GATED_ROUTES, ...MODULE_GATE_EXEMPT_ROUTES]
+            .filter((r) => !fs.existsSync(path.join(REPO_ROOT, r.file)))
+            .map((r) => r.file);
         expect(missing).toEqual([]);
     });
+});
+
+// ── Test 2b — exemptions are real, reasoned, and mutually exclusive ────────
+
+describe('module-gate coverage guardrail — declared exemptions', () => {
+    it('no route is both gated and exempt', () => {
+        const gated = new Set(MODULE_GATED_ROUTES.map((r) => r.file));
+        const overlap = MODULE_GATE_EXEMPT_ROUTES.filter((r) => gated.has(r.file)).map(
+            (r) => r.file,
+        );
+        expect(overlap).toEqual([]);
+    });
+
+    it('every exemption carries a written reason', () => {
+        for (const entry of MODULE_GATE_EXEMPT_ROUTES) {
+            expect(entry.reason.trim().length).toBeGreaterThan(40);
+        }
+    });
+
+    test.each(MODULE_GATE_EXEMPT_ROUTES.map((r) => [r.file, r] as const))(
+        '%s really does NOT call the gate (a re-gate must update this list)',
+        (relPath, entry) => {
+            const src = fs.readFileSync(path.join(REPO_ROOT, relPath), 'utf8');
+            if (hasCallFor(src, entry.module)) {
+                throw new Error(
+                    [
+                        `Route is registered as module-gate EXEMPT but now calls`,
+                        `assertModuleEnabled(ctx, '${entry.module}').`,
+                        ``,
+                        `  File: ${relPath}`,
+                        ``,
+                        `If gating it is the intent, move the entry from`,
+                        `MODULE_GATE_EXEMPT_ROUTES to MODULE_GATED_ROUTES in the same diff.`,
+                    ].join('\n'),
+                );
+            }
+        },
+    );
 });
 
 // ── Test 3 — regression proof ──────────────────────────────────────────────

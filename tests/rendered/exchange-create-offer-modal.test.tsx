@@ -84,7 +84,10 @@ it('enables + POSTs the assembled body (region as CODE) on a full submit', async
     await waitFor(() => expect(apiPost).toHaveBeenCalled());
     const [url, body] = apiPost.mock.calls[0] as [string, Record<string, unknown>];
     expect(url).toBe('/api/t/acme/exchange/listings');
-    expect(body).toMatchObject({ commodity: 'Wheat', quantityTonnes: '250', priceCurrency: 'BGN' });
+    // EUR by construction — there is no currency picker on the form any more,
+    // because a second denomination is what made two prices on one map
+    // incomparable.
+    expect(body).toMatchObject({ commodity: 'Wheat', quantityTonnes: '250', priceCurrency: 'EUR' });
     expect(typeof body.regionCode).toBe('string');
     expect((body.regionCode as string).length).toBeGreaterThan(0);
     // The label is never submitted — only the stable code.

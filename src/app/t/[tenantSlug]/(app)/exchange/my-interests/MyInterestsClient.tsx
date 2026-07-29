@@ -17,7 +17,7 @@
  * what the gate handed it. A PENDING or DECLINED inquiry arrives with null and
  * there is nothing here that could reconstruct it.
  */
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { ListPageShell } from '@/components/layout/ListPageShell';
 import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
@@ -26,7 +26,9 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import { CopyText } from '@/components/ui/copy-text';
 import { ErrorState } from '@/components/ui/error-state';
 import { Skeleton } from '@/components/ui/skeleton';
-import { formatDate } from '@/lib/format-date';
+import { formatDate, formatDateTime } from '@/lib/format-date';
+import { localizedRegionName } from '@/lib/geo/bulgaria-regions';
+import { formatPricePerTonne } from '@/lib/exchange/currency';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useTenantHref } from '@/lib/tenant-context-provider';
 import type { ExchangePublicInquiry } from '@/lib/exchange/public-listing';
@@ -47,6 +49,8 @@ const STATUS_KEY: Record<string, string> = {
 
 export function MyInterestsClient() {
     const t = useTranslations('exchange.myInterests');
+    const locale = useLocale();
+    const tonne = t('unitTonne');
     const tenantHref = useTenantHref();
     const { data, isLoading, error, mutate } = useTenantSWR<ExchangePublicInquiry[]>('/exchange/inquiries');
     const inquiries = data ?? [];
@@ -103,7 +107,9 @@ export function MyInterestsClient() {
                                     )}
                                     {l && (
                                         <span className="text-xs text-content-muted">
-                                            {l.side === 'SELL' ? t('selling') : t('buying')} · {l.regionName}
+                                            {l.side === 'SELL' ? t('selling') : t('buying')}
+                                            {' · '}
+                                            {localizedRegionName(l.regionCode, locale, l.regionName)}
                                         </span>
                                     )}
                                     <StatusBadge variant={statusVariant(iq.status)}>
@@ -124,8 +130,8 @@ export function MyInterestsClient() {
                                     them back to the browse page every time. */}
                                 {l && (
                                     <p className="text-sm text-content-secondary">
-                                        {l.quantityTonnes} t · {l.pricePerTonne
-                                            ? `${l.pricePerTonne} ${l.priceCurrency}/t`
+                                        {l.quantityTonnes} {tonne} · {l.pricePerTonne
+                                            ? formatPricePerTonne(l.pricePerTonne, l.priceCurrency, tonne)
                                             : t('marketNegotiable')}
                                         {' · '}
                                         <span className="text-content-muted">
@@ -138,6 +144,12 @@ export function MyInterestsClient() {
                                 {iq.quantityTonnes && (
                                     <p className="text-xs text-content-muted">{t('quantityOfInterest', { qty: iq.quantityTonnes })}</p>
                                 )}
+                                {/* When this went out. "Waiting for the seller"
+                                    reads very differently at two hours and at
+                                    two months, and the page said neither. */}
+                                <p className="text-xs text-content-muted">
+                                    {t('sentOn', { date: formatDateTime(iq.createdAt) })}
+                                </p>
 
                                 {/* The point of the feature. Emphasised border +
                                     success tone because this is the one state on

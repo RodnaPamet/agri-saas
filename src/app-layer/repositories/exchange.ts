@@ -5,6 +5,7 @@ import {
     ExchangeKind,
     ExchangeListingStatus,
     ExchangeInquiryStatus,
+    ModuleKey,
 } from '@prisma/client';
 
 /**
@@ -27,45 +28,158 @@ import {
 /** Bounded read cap (query-shape guardrail D2 forbids unbounded findMany). */
 const LIST_TAKE = 100;
 
+/** Default browse page size, and the ceiling a caller may request. */
+export const LISTING_PAGE_SIZE = 50;
+export const LISTING_PAGE_MAX = 100;
+
+/**
+ * How many module opt-outs the exclusion list will carry. A
+ * `TenantModuleSettings` row exists ONLY for a tenant that customised its
+ * module list, and this reads the subset of those that switched one module
+ * OFF — a small set by construction. If it ever saturates, the honest fix is
+ * a denormalised flag on the listing, not a bigger number here.
+ */
+const MODULE_OPTOUT_TAKE = 1000;
+
+/**
+ * Browse facets. Every field is an ARRAY because the UI's facets are
+ * multi-select: `filterStateToUrlParams` comma-joins them into one param, so
+ * the route parses `?side=SELL,BUY` into a real array and queries with
+ * `{ in: [...] }`. A `string`-typed enum field plus a cast is the shape that
+ * throws `PrismaClientValidationError` on the second selected value — a 500
+ * the list page renders as its EMPTY state.
+ */
 export interface ListingFilters {
-    side?: ExchangeSide;
-    kind?: ExchangeKind;
-    commodity?: string;
-    regionCode?: string;
+    sides?: ExchangeSide[];
+    kinds?: ExchangeKind[];
+    commodities?: string[];
+    regionCodes?: string[];
     minTonnes?: number;
     maxTonnes?: number;
+    /** Free-text search over commodity + region name. */
+    search?: string;
+    /**
+     * Region codes whose (Bulgarian OR English) name matched `search` — the
+     * route resolves them from the oblast catalogue so a Bulgarian farmer
+     * searching "Пловдив" matches a row whose stored `regionName` is the
+     * English "Plovdiv".
+     */
+    searchRegionCodes?: string[];
+    /**
+     * Seller tenants to hide — the tenants that switched the EXCHANGE module
+     * OFF. See `listTenantIdsWithModuleDisabled`.
+     */
+    excludeSellerTenantIds?: string[];
+}
+
+export interface ListingPageParams {
+    /** Page size (clamped to LISTING_PAGE_MAX by the caller). */
+    limit?: number;
+    /** Id of the last row on the previous page. */
+    cursor?: string | null;
 }
 
 export class ExchangeRepository {
     /**
-     * GLOBAL browse of ACTIVE, not-yet-expired listings across ALL tenants,
-     * newest first. Optional facet filters. Bounded to LIST_TAKE.
+     * Tenant ids that have switched `key` OFF.
+     *
+     * MUST be called with an RLS-BYPASSING client (`runInGlobalContext`):
+     * `TenantModuleSettings` is tenant-scoped and RLS-forced, so under the
+     * caller's own `app_user` context this would return at most the caller's
+     * own row and the exclusion would silently do nothing.
+     *
+     * The cross-tenant read is narrow on purpose — `select: { tenantId: true }`
+     * and nothing else. It reads WHICH tenants opted out, never a single byte
+     * of their data, and the Exchange feed is already a deliberately
+     * cross-tenant read; this is the same class of query.
      */
-    static async listActiveListings(db: PrismaTx, filters: ListingFilters = {}) {
-        const where: Prisma.ExchangeListingWhereInput = {
-            status: ExchangeListingStatus.ACTIVE,
+    static async listTenantIdsWithModuleDisabled(
+        db: PrismaTx,
+        key: ModuleKey,
+    ): Promise<string[]> {
+        const rows = await db.tenantModuleSettings.findMany({
+            // A row that does NOT list the key has the module off. Tenants
+            // with no row at all have every module enabled, so they are
+            // correctly absent from this result.
+            where: { NOT: { enabledModules: { has: key } } },
+            select: { tenantId: true },
+            take: MODULE_OPTOUT_TAKE,
+        });
+        return rows.map((r) => r.tenantId);
+    }
+
+    /**
+     * GLOBAL browse of ACTIVE, not-yet-expired listings across ALL tenants,
+     * newest first, with server-side facets and cursor pagination.
+     *
+     * The facets used to exist here and go unused: the route passed nothing
+     * and the client filtered the fetched array, so every filter, every count
+     * and every market statistic described only the newest 100 offers
+     * NATIONWIDE rather than the market the farmer asked about. They are wired
+     * now, so a filtered query is answered by Postgres over the whole table.
+     */
+    static async listActiveListings(
+        db: PrismaTx,
+        filters: ListingFilters = {},
+        page: ListingPageParams = {},
+    ) {
+        // Every extra predicate goes in `AND` rather than onto the object
+        // root: the expiry clause is itself an `OR`, and a second root-level
+        // `OR` (free-text search) would REPLACE it — quietly resurrecting
+        // expired listings the moment someone typed in the search box.
+        const and: Prisma.ExchangeListingWhereInput[] = [
             // An ACTIVE row past its expiry is stale — hide it until the
             // sweep flips it to EXPIRED.
-            OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+            { OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] },
+        ];
+
+        const where: Prisma.ExchangeListingWhereInput = {
+            status: ExchangeListingStatus.ACTIVE,
+            AND: and,
         };
-        if (filters.side) where.side = filters.side;
-        if (filters.kind) where.kind = filters.kind;
-        if (filters.commodity) {
-            where.commodity = { contains: filters.commodity, mode: 'insensitive' };
+        if (filters.sides?.length) where.side = { in: filters.sides };
+        if (filters.kinds?.length) where.kind = { in: filters.kinds };
+        if (filters.commodities?.length) where.commodity = { in: filters.commodities };
+        if (filters.regionCodes?.length) where.regionCode = { in: filters.regionCodes };
+        if (filters.excludeSellerTenantIds?.length) {
+            where.sellerTenantId = { notIn: filters.excludeSellerTenantIds };
         }
-        if (filters.regionCode) where.regionCode = filters.regionCode;
         if (filters.minTonnes != null || filters.maxTonnes != null) {
             where.quantityTonnes = {
                 ...(filters.minTonnes != null ? { gte: filters.minTonnes } : {}),
                 ...(filters.maxTonnes != null ? { lte: filters.maxTonnes } : {}),
             };
         }
+        if (filters.search) {
+            and.push({
+                OR: [
+                    { commodity: { contains: filters.search, mode: 'insensitive' } },
+                    { regionName: { contains: filters.search, mode: 'insensitive' } },
+                    ...(filters.searchRegionCodes?.length
+                        ? [{ regionCode: { in: filters.searchRegionCodes } }]
+                        : []),
+                ],
+            });
+        }
 
-        return db.exchangeListing.findMany({
+        const limit = Math.min(page.limit ?? LISTING_PAGE_SIZE, LISTING_PAGE_MAX);
+        const rows = await db.exchangeListing.findMany({
             where,
-            orderBy: { createdAt: 'desc' },
-            take: LIST_TAKE,
+            // `id` breaks createdAt ties so the cursor cannot skip or repeat a
+            // row when several listings share a timestamp.
+            orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+            // One extra row is the "is there more?" probe — cheaper and more
+            // accurate than a second COUNT over the same predicate.
+            take: limit + 1,
+            ...(page.cursor ? { cursor: { id: page.cursor }, skip: 1 } : {}),
         });
+
+        const hasMore = rows.length > limit;
+        const pageRows = hasMore ? rows.slice(0, limit) : rows;
+        return {
+            rows: pageRows,
+            nextCursor: hasMore ? pageRows[pageRows.length - 1].id : null,
+        };
     }
 
     /** GLOBAL read of a single listing by id (any tenant's). */
@@ -97,20 +211,6 @@ export class ExchangeRepository {
         data: Prisma.ExchangeInquiryUncheckedCreateInput,
     ) {
         return db.exchangeInquiry.create({ data });
-    }
-
-    /**
-     * Inquiries received on listings OWNED by `sellerTenantId` (the seller's
-     * inbox), newest first. Scoped by the seller's own tenant — a "my
-     * inquiries" view, not RLS. Bounded.
-     */
-    static async listInquiriesForSeller(db: PrismaTx, sellerTenantId: string) {
-        return db.exchangeInquiry.findMany({
-            where: { listing: { sellerTenantId } },
-            orderBy: { createdAt: 'desc' },
-            take: LIST_TAKE,
-            include: { listing: true },
-        });
     }
 
     /**

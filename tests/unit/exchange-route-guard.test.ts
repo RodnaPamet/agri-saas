@@ -28,6 +28,8 @@ jest.mock('@/lib/db-context', () => ({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     runInTenantContext: jest.fn(async (_ctx: any, fn: (db: any) => any) => fn(mockDb)),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    runInGlobalContext: jest.fn(async (fn: (db: any) => any) => fn(mockDb)),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     withTenantDb: jest.fn(async (_id: string, fn: (db: any) => any) => fn(mockDb)),
 }));
 
@@ -90,6 +92,12 @@ assertCrossTenantGuard({
         } as any),
     arrangeMissing: () => repo.getInquiry.mockResolvedValue(null),
     mutationSpy: () => repo.updateInquiryStatus,
+    // ONE oracle, deliberately. An inquiry is a private buyer<->seller
+    // conversation, and a 403/404 split let an outsider confirm that a given
+    // inquiry id EXISTS on someone else's listing, one id at a time. The
+    // guard is unchanged (the mutation spy below still has to stay empty) —
+    // only what a non-seller learns from the failure changed.
+    foreignStatus: 404,
 });
 
 // ── Positive control: the owner IS let through (guard isn't just deny-all) ──
