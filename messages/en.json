@@ -5779,20 +5779,26 @@
             "yourTenantName": "your tenant name",
             "yourFarmName": "Your farm name",
             "cancel": "Cancel",
-            "submit": "Create offer"
+            "submit": "Create offer",
+            "sellerContact": "Contact after a deal",
+            "sellerContactPlaceholder": "e.g. +359 88 123 4567",
+            "sellerContactConsent": "Optional — a phone number or email. Never shown publicly. Revealed only to a buyer whose interest you accept."
         },
         "inquiry": {
             "title": "Express interest",
             "titleWithCommodity": "Express interest — {commodity}",
-            "description": "Send a message to the seller. They'll be notified and can respond.",
-            "headerDescription": "The seller is notified and chooses whether to respond.",
+            "description": "Send a message to this seller. It is emailed to their account owners and admins.",
+            "headerDescription": "Your message goes by email and in-app to this seller's account owners and administrators — up to 25 people. They choose whether to respond.",
             "quantity": "Quantity of interest (t)",
             "quantityHint": "Optional.",
             "quantityPlaceholder": "e.g. 100",
             "message": "Message",
             "messagePlaceholder": "Introduce yourself and what you're after…",
             "cancel": "Cancel",
-            "submit": "Express interest"
+            "submit": "Express interest",
+            "contact": "Your contact",
+            "contactPlaceholder": "e.g. +359 88 123 4567",
+            "contactConsent": "Optional — a phone number or email. Shared with this seller only if they accept your interest; never on a decline, and never with anyone else."
         },
         "myInterests": {
             "breadcrumbDashboard": "Dashboard",
@@ -5803,7 +5809,20 @@
             "empty": "You haven't expressed interest in any offers yet.",
             "selling": "Selling",
             "buying": "Buying",
-            "quantityOfInterest": "Quantity of interest: {qty} t"
+            "quantityOfInterest": "Quantity of interest: {qty} t",
+            "statusPending": "Pending",
+            "statusAccepted": "Accepted",
+            "statusDeclined": "Declined",
+            "marketNegotiable": "Market / negotiable",
+            "seller": "Seller",
+            "anonymousFarm": "Anonymous farm",
+            "viewListing": "View offer",
+            "contactHeading": "Accepted — contact the seller",
+            "contactCopyLabel": "Copy seller contact",
+            "contactSharedOn": "Shared {date}",
+            "contactMissing": "The seller accepted but left no contact on this offer.",
+            "declinedNote": "The seller declined. Your other interests are unaffected.",
+            "pendingNote": "Waiting for the seller to respond."
         },
         "myListings": {
             "breadcrumbDashboard": "Dashboard",
@@ -5817,14 +5836,26 @@
             "withdrawnToast": "Listing withdrawn",
             "undo": "Undo",
             "fulfillTitle": "Mark this listing fulfilled?",
-            "fulfillDescription": "This hides the listing from the marketplace. Existing inquiries stay visible.",
+            "fulfillDescription": "This hides the listing from the marketplace and declines every inquiry still waiting — those buyers are notified.",
             "markFulfilled": "Mark fulfilled",
             "withdraw": "Withdraw",
             "rejectTitle": "Reject this inquiry?",
             "rejectDescription": "The buyer will be notified their inquiry was declined.",
             "reject": "Reject",
             "accept": "Accept",
-            "inquiriesEmpty": "No inquiries yet."
+            "inquiriesEmpty": "No inquiries yet.",
+            "inquiryStatusPending": "Pending",
+            "inquiryStatusAccepted": "Accepted",
+            "inquiryStatusDeclined": "Declined",
+            "listingStatusActive": "Active",
+            "listingStatusExpired": "Expired",
+            "listingStatusFulfilled": "Fulfilled",
+            "listingStatusWithdrawn": "Withdrawn",
+            "acceptSharesContact": "Accepting shares this listing's contact with the buyer, and theirs with you.",
+            "contactHeading": "Accepted — contact the buyer",
+            "contactCopyLabel": "Copy buyer contact",
+            "contactMissing": "This buyer left no contact. They can see yours.",
+            "actionFailed": "That didn't work — nothing was changed."
         }
     },
     "grain": {

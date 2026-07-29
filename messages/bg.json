@@ -5779,20 +5779,26 @@
             "yourTenantName": "името на вашата ферма",
             "yourFarmName": "Името на вашата ферма",
             "cancel": "Отказ",
-            "submit": "Създай оферта"
+            "submit": "Създай оферта",
+            "sellerContact": "Контакт след сделка",
+            "sellerContactPlaceholder": "напр. +359 88 123 4567",
+            "sellerContactConsent": "По избор — телефон или имейл. Никога не се показва публично. Разкрива се само на купувач, чиято заявка приемете."
         },
         "inquiry": {
             "title": "Заяви интерес",
             "titleWithCommodity": "Заяви интерес — {commodity}",
-            "description": "Изпратете съобщение до продавача. Той ще бъде уведомен и може да отговори.",
-            "headerDescription": "Продавачът получава уведомление и решава дали да отговори.",
+            "description": "Изпратете съобщение до този продавач. То се изпраща по имейл до собствениците и администраторите на неговия акаунт.",
+            "headerDescription": "Съобщението ви отива по имейл и в приложението до собствениците и администраторите на акаунта на продавача — до 25 души. Те решават дали да отговорят.",
             "quantity": "Количество, което ви интересува (t)",
             "quantityHint": "По избор.",
             "quantityPlaceholder": "напр. 100",
             "message": "Съобщение",
             "messagePlaceholder": "Представете се и какво търсите…",
             "cancel": "Отказ",
-            "submit": "Заяви интерес"
+            "submit": "Заяви интерес",
+            "contact": "Вашият контакт",
+            "contactPlaceholder": "напр. +359 88 123 4567",
+            "contactConsent": "По избор — телефон или имейл. Споделя се с този продавач само ако приеме заявката ви; никога при отказ и никога с друг."
         },
         "myInterests": {
             "breadcrumbDashboard": "Табло",
@@ -5803,7 +5809,20 @@
             "empty": "Все още не сте заявили интерес към оферти.",
             "selling": "Продава",
             "buying": "Купува",
-            "quantityOfInterest": "Заявено количество: {qty} t"
+            "quantityOfInterest": "Заявено количество: {qty} t",
+            "statusPending": "Изчаква",
+            "statusAccepted": "Приета",
+            "statusDeclined": "Отхвърлена",
+            "marketNegotiable": "Пазарна / по договаряне",
+            "seller": "Продавач",
+            "anonymousFarm": "Анонимна ферма",
+            "viewListing": "Виж офертата",
+            "contactHeading": "Приета — свържете се с продавача",
+            "contactCopyLabel": "Копирай контакта на продавача",
+            "contactSharedOn": "Споделен на {date}",
+            "contactMissing": "Продавачът прие, но не е посочил контакт към тази оферта.",
+            "declinedNote": "Продавачът отказа. Останалите ви заявки не са засегнати.",
+            "pendingNote": "Изчаква се отговор от продавача."
         },
         "myListings": {
             "breadcrumbDashboard": "Табло",
@@ -5817,14 +5836,26 @@
             "withdrawnToast": "Обявата е оттеглена",
             "undo": "Отмени",
             "fulfillTitle": "Да се отбележи ли обявата като изпълнена?",
-            "fulfillDescription": "Това скрива обявата от борсата. Съществуващите заявки остават видими.",
+            "fulfillDescription": "Това скрива обявата от борсата и отхвърля всички чакащи заявки — купувачите получават уведомление.",
             "markFulfilled": "Отбележи като изпълнена",
             "withdraw": "Оттегли",
             "rejectTitle": "Да се отхвърли ли тази заявка?",
             "rejectDescription": "Купувачът ще бъде уведомен, че заявката му е отхвърлена.",
             "reject": "Отхвърли",
             "accept": "Приеми",
-            "inquiriesEmpty": "Все още няма заявки."
+            "inquiriesEmpty": "Все още няма заявки.",
+            "inquiryStatusPending": "Изчаква",
+            "inquiryStatusAccepted": "Приета",
+            "inquiryStatusDeclined": "Отхвърлена",
+            "listingStatusActive": "Активна",
+            "listingStatusExpired": "Изтекла",
+            "listingStatusFulfilled": "Изпълнена",
+            "listingStatusWithdrawn": "Оттеглена",
+            "acceptSharesContact": "С приемането споделяте контакта от тази обява с купувача, а неговия — с вас.",
+            "contactHeading": "Приета — свържете се с купувача",
+            "contactCopyLabel": "Копирай контакта на купувача",
+            "contactMissing": "Този купувач не е посочил контакт. Той вижда вашия.",
+            "actionFailed": "Не се получи — нищо не е променено."
         }
     },
     "grain": {

@@ -54,6 +54,8 @@ export async function sendInquiryEmail(
         `Message: ${message}`,
         '',
         `Review it and respond here: ${inquiriesUrl}`,
+        '',
+        'Contact details are exchanged only if you accept — a decline shares nothing, in either direction.',
     ]
         .filter((l) => l !== null)
         .join('\n');
@@ -77,7 +79,12 @@ export async function sendInquiryEmail(
             : '',
         `<p style="color:#475467">Message:</p><blockquote style="margin:0;border-left:3px solid #d0d5dd;padding-left:12px;color:#344054">${escapeHtml(message)}</blockquote>`,
         `<p><a href="${escapeHtml(inquiriesUrl)}">Review the inquiry and respond</a></p>`,
-        `<p style="color:#667085;font-size:13px">Contact details are shared only when you choose to respond.</p>`,
+        // Says what the code does, and no more. Responding is not the trigger
+        // — ACCEPTING is: `respondToInquiry` stamps `contactSharedAt` on ACCEPT
+        // only, and the reveal gate withholds both sides' details on a decline.
+        // The earlier wording ("shared when you choose to respond") described a
+        // decline as sharing, which it never was.
+        `<p style="color:#667085;font-size:13px">Contact details are exchanged only if you accept — a decline shares nothing, in either direction.</p>`,
     ].join('');
 
     try {

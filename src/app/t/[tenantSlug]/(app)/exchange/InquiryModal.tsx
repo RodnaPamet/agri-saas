@@ -7,6 +7,19 @@
  * receives an in-app notification + email and chooses whether to respond.
  * message is sanitized server-side. Only shown for OTHER tenants' listings
  * (the caller hides it on your own).
+ *
+ * Two disclosures, both BEFORE the user types anything:
+ *
+ *   1. WHO reads this. The modal used to say "the seller is notified", which
+ *      reads as one person. `notifySellerOfInquiry` emails the message to
+ *      every ACTIVE OWNER/ADMIN of the seller tenant, up to 25 of them, off
+ *      the platform. Someone deciding how much to put in a free-text message
+ *      is entitled to know that before they write it, not after.
+ *   2. WHAT happens to `inquirerContact`. It is optional, and it is released
+ *      to the seller only if they ACCEPT — the same consent gate the seller's
+ *      own contact passes through. That is stated in the field's always-
+ *      visible `description` (never a hover-only `hint`), so the promise sits
+ *      next to the input that makes it and cannot be missed.
  */
 import { useState, type Dispatch, type SetStateAction } from 'react';
 import { useTranslations } from 'next-intl';
@@ -31,6 +44,7 @@ export function InquiryModal({ open, setOpen, listing, onSent }: InquiryModalPro
     const buildUrl = useTenantApiUrl();
     const [message, setMessage] = useState('');
     const [quantity, setQuantity] = useState('');
+    const [contact, setContact] = useState('');
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -45,10 +59,13 @@ export function InquiryModal({ open, setOpen, listing, onSent }: InquiryModalPro
                 listingId: listing.id,
                 message: message.trim(),
                 quantityTonnes: quantity.trim() === '' ? null : quantity.trim(),
+                // Optional. Held private until the seller accepts.
+                inquirerContact: contact.trim() === '' ? null : contact.trim(),
             });
             setOpen(false);
             setMessage('');
             setQuantity('');
+            setContact('');
             onSent();
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to send inquiry');
@@ -67,7 +84,7 @@ export function InquiryModal({ open, setOpen, listing, onSent }: InquiryModalPro
             title={title}
             description={t('description')}
             preventDefaultClose={submitting}
-            isDirty={message !== '' || quantity !== ''}
+            isDirty={message !== '' || quantity !== '' || contact !== ''}
         >
             <Modal.Header title={title} description={t('headerDescription')} />
             <Modal.Form id="exchange-inquiry-form" onSubmit={(e) => { e.preventDefault(); void submit(); }}>
@@ -83,6 +100,19 @@ export function InquiryModal({ open, setOpen, listing, onSent }: InquiryModalPro
                         </FormField>
                         <FormField label={t('message')} required>
                             <Textarea id="inquiry-message" rows={3} value={message} onChange={(e) => setMessage(e.target.value)} placeholder={t('messagePlaceholder')} />
+                        </FormField>
+                        {/* Optional, and consented: released to the seller only
+                            on ACCEPT. Sits AFTER the message so the recipient
+                            disclosure above has already been read. */}
+                        <FormField label={t('contact')} description={t('contactConsent')}>
+                            <Input
+                                id="inquiry-contact"
+                                autoComplete="off"
+                                value={contact}
+                                onChange={(e) => setContact(e.target.value)}
+                                placeholder={t('contactPlaceholder')}
+                                maxLength={200}
+                            />
                         </FormField>
                     </fieldset>
                 </Modal.Body>

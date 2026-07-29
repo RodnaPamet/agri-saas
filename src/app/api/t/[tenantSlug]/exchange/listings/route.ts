@@ -52,6 +52,11 @@ export const POST = withApiErrorHandling(
                 regionCode: body.regionCode,
                 description: body.description ?? null,
                 sellerDisplayName: body.sellerDisplayName ?? null,
+                // PRIVATE — persisted here, withheld by `toPublicListing` (and
+                // by every other listing projection). It only ever reaches a
+                // browser through `toPublicInquiry`'s reveal gate, i.e. to the
+                // ONE buyer whose inquiry this seller accepted.
+                sellerContact: body.sellerContact ?? null,
                 expiresAt: body.expiresAt ? new Date(body.expiresAt) : null,
             });
             return jsonResponse(toPublicListing(listing, ctx.tenantId), { status: 201 });
