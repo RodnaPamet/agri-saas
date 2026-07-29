@@ -130,6 +130,49 @@ discipline.
   higher-risk folders independently of the global number.
 - The CI job prints the observed-vs-floor table on every PR.
 
+### What is actually in the denominator
+
+Not what `jest.config.js` appears to say. Jest splits a resolved
+config into a **GlobalConfig** and a per-project **ProjectConfig**,
+and coverage options are split across the two. Put one on the wrong
+side and it is silently inert — no warning, no error:
+
+| option | read from | effect if written on the other side |
+| --- | --- | --- |
+| `collectCoverageFrom` | **global** only | inert inside a `projects:` entry |
+| `coveragePathIgnorePatterns` | **project** only | inert at the top level — `readConfigs` normalises each project standalone, inheriting nothing |
+| `coverageThreshold` | **project** (in multi-project mode) | inert at the top level |
+
+This repo carried a project-level `collectCoverageFrom` for a long
+time. All of it — the positive scope AND the `!` negations — did
+nothing. The real denominator is therefore **every file some test
+loads**, minus each project's `coveragePathIgnorePatterns`. That is
+what every floor in `jest.thresholds.json` was calibrated against;
+`src/components/**` and `src/app/**` are in it even though no
+positive pattern ever listed them.
+
+Consequences worth knowing before you change the config:
+
+- **Do not "restore" `collectCoverageFrom` by hoisting it to the top
+  level.** Activating it would drop `src/components/**` + `src/app/**`
+  from the report and force-include never-loaded files at 0% — a
+  wholesale redefinition of the population the floors describe, in
+  which a real regression is indistinguishable from the re-scoping.
+- **To remove something from the denominator, use
+  `coveragePathIgnorePatterns` on every project.** The report is
+  merged across projects; a file excluded in `node` but not `jsdom`
+  is still counted.
+- **Verify with a run that LOADS the file.** "Absent from
+  `coverage-summary.json`" is vacuously true for anything the run
+  never touched. `tests/guards/coverage-barrel-exclusion.test.ts`
+  does this properly: it asserts a sibling of the excluded file IS
+  present, so the absence cannot be vacuous.
+
+The only standing exclusion is `PURE_REEXPORT_BARRELS` — files whose
+compiled form is nothing but `Object.defineProperty(exports, …)`
+getters that istanbul counts as uncovered functions. The same guard
+fails CI if one of them grows executable code.
+
 ### The ratchet guard
 
 `tests/guards/coverage-ratchet.test.ts` makes the **"never lower a

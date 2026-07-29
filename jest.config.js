@@ -60,27 +60,45 @@ const coverageThresholds = require('./jest.thresholds.json');
 // thresholds were documented but NEVER enforced. The Coverage CI gate
 // passed regardless of observed numbers.
 //
-// The fix (GAP-15 step 3 closure): keep `collectCoverageFrom` at the
-// top level (so both projects' test runs feed the same coverage scope)
-// but move the THRESHOLD into the node project's config below — that
-// project owns the file types in the scope (`*.ts` under `src/app-layer/`
-// and `src/lib/`). The jsdom project covers UI primitives in
-// `src/components/**` which are deliberately out of scope today.
-const sharedCollectCoverageFrom = [
-    'src/app-layer/**/*.ts',
-    'src/lib/**/*.ts',
-    '!src/**/*.d.ts',
-    '!src/**/types.ts',
-    // Colocated test files are not production code, but they ARE `.ts` under
-    // the two scoped roots — so they were being scored as 0%-covered source
-    // and dragging the global threshold down. Two files today
-    // (src/lib/controls/__tests__/control-taxonomy.test.ts,
-    // src/app-layer/utils/__tests__/cadence.test.ts); excluded by pattern so a
-    // third cannot reintroduce the distortion.
-    '!src/**/__tests__/**',
-    '!src/**/*.test.ts',
-    '!src/**/*.spec.ts',
-];
+// ── Which coverage option belongs WHERE, and why it matters ──────────
+//
+// Jest splits a resolved config into a GlobalConfig and a per-project
+// ProjectConfig (`groupOptions` in jest-config). Coverage options are
+// split across both, and putting one on the wrong side makes it INERT
+// — silently, with no warning:
+//
+//   • `collectCoverageFrom` is read from the GLOBAL config only.
+//     `jest-runner` passes `globalConfig.collectCoverageFrom` into the
+//     runtime's `shouldInstrument` options, and `@jest/reporters`
+//     reads `globalConfig.collectCoverageFrom` in `_addUntestedFiles`.
+//     A `collectCoverageFrom` written INSIDE a project block does
+//     nothing at all.
+//
+//   • `coveragePathIgnorePatterns` is read from the PROJECT config
+//     only — `shouldInstrument` tests it as
+//     `config.coveragePathIgnorePatterns`, where `config` is the
+//     project. And because `readConfigs` normalises every entry of
+//     `projects:` STANDALONE (nothing at the top level is inherited by
+//     a project), a top-level `coveragePathIgnorePatterns` never
+//     reaches either project either.
+//
+// This repo previously carried a project-level `collectCoverageFrom`
+// (positive scope + `!` negations). All of it was inert. The observable
+// consequence: the emitted report contains every file any test happens
+// to load — including `src/components/**` and `src/app/**`, neither of
+// which the positive scope listed — and none of the `!` negations ever
+// removed anything. That is the denominator every floor in
+// `jest.thresholds.json` was calibrated against.
+//
+// Do NOT "fix" this by hoisting `collectCoverageFrom` to the top level.
+// Activating it would drop `src/components/**` + `src/app/**` from the
+// report entirely and force-include never-loaded files at 0% — i.e. it
+// would redefine the population the floors describe, in one step, with
+// no way to tell a real regression from the re-scoping. It would also
+// revive `!src/**/types.ts`, which today would delete genuinely tested
+// code from the report (`src/lib/errors/types.ts` alone is 26/26
+// functions covered). The scope is what it is; the lever that works
+// without redefining it is `coveragePathIgnorePatterns`, below.
 
 // Pure re-export barrels — excluded from the coverage denominator.
 //
@@ -92,30 +110,64 @@ const sharedCollectCoverageFrom = [
 // is nothing in the source to test. Type-only re-exports are erased and
 // cost nothing, which is why the inflation tracks value exports.
 //
-// Measured on the 2026-07-28 main artifact: 56 uncovered functions and 0
-// branches across the pure barrels in the `global` threshold group — 35%
-// of the then-current function gap, none of it representing untested
-// behaviour. Same reasoning as the colocated-test exclusion above: remove
-// a distortion from the denominator rather than write hollow tests that
-// import a barrel and assert nothing.
+// Measured on the 2026-07-29 main coverage artifact (run 30456542044):
+// 350 functions across these files, 212 of them uncovered, and 0
+// branches — none of it untested behaviour. Removing a distortion from
+// the denominator beats writing hollow tests that import a barrel and
+// assert nothing.
 //
 // ONLY files with no executable constructs belong here.
 // `tests/guards/coverage-barrel-exclusion.test.ts` enforces that — a
 // barrel that grows a `const`/`function`/arrow/`class` fails CI rather
-// than quietly hiding real code behind this list.
+// than quietly hiding real code behind this list. That guard also runs a
+// real instrumented Jest pass and asserts the exclusion still takes
+// EFFECT, because "the pattern is present in the config" and "the file
+// left the report" turned out to be very different claims.
+//
+// Not every barrel qualifies. `src/components/ui/filter/index.ts`
+// (`const Filter = { Select, List }`) and `src/components/ui/card-list/
+// index.ts` (`Object.assign(...)`) hold real runtime values, so they
+// stay in the denominator — the purity rule is the whole safeguard.
 const PURE_REEXPORT_BARRELS = [
+    'src/app-layer/automation/index.ts',
     'src/app-layer/integrations/providers/sharepoint/index.ts',
+    'src/app-layer/libraries/index.ts',
     'src/app-layer/notifications/index.ts',
     'src/app-layer/usecases/audit-readiness/index.ts',
     'src/app-layer/usecases/control/index.ts',
     'src/app-layer/usecases/framework/index.ts',
     'src/components/command-palette/index.ts',
+    'src/components/ui/charts/index.ts',
+    'src/components/ui/dashboard-widgets/index.ts',
     'src/components/ui/date-picker/index.ts',
     'src/components/ui/icons/nucleo/index.ts',
     'src/components/ui/table/index.ts',
+    'src/lib/audit/index.ts',
+    'src/lib/hooks/index.ts',
     'src/lib/observability/index.ts',
 ];
-sharedCollectCoverageFrom.push(...PURE_REEXPORT_BARRELS.map((p) => `!${p}`));
+
+/**
+ * `coveragePathIgnorePatterns` entries are REGEXES tested against the
+ * ABSOLUTE filename. Anchor both ends so `.../table/index.ts` cannot
+ * accidentally match a longer path that merely contains it.
+ */
+const barrelIgnorePattern = (rel) =>
+    `/${rel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`;
+
+// Shared by BOTH projects — a barrel excluded from only one still lands
+// in the merged report via the other (the UI barrels are loaded by the
+// jsdom project, the app-layer ones by node).
+//
+// `/node_modules/` is restated deliberately: setting this key REPLACES
+// jest's default `["/node_modules/"]`, and the ESM transform allowlist
+// above means some node_modules files DO get transformed and would
+// otherwise be instrumented.
+const sharedCoveragePathIgnorePatterns = [
+    '/node_modules/',
+    '/\\.next/',
+    ...PURE_REEXPORT_BARRELS.map(barrelIgnorePattern),
+];
 
 /** @type {import('jest').Config} */
 const nodeProject = {
@@ -166,9 +218,9 @@ const nodeProject = {
         '^.+\\.m?js$': 'ts-jest',
     },
     transformIgnorePatterns: ['node_modules/(?!(' + ESM_TRANSFORM_ALLOW_LIST + ')/)'],
-    // Inherits the shared collection scope so the node + jsdom projects
-    // emit a comparable merged report.
-    collectCoverageFrom: sharedCollectCoverageFrom,
+    // Project-level — this is the ONLY placement jest honours (see the
+    // "which coverage option belongs WHERE" block above).
+    coveragePathIgnorePatterns: sharedCoveragePathIgnorePatterns,
     // ─── Coverage ratchet (GAP-15) ───────────────────────────────────
     //
     // POLICY: `docs/coverage-policy.md` is the risk-tiered coverage
@@ -354,11 +406,11 @@ const jsdomProject = {
             'next-auth|@auth/[^/]+|oauth4webapi|jose|preact|preact-render-to-string' +
             ')/)',
     ],
-    // Same scope as the node project — jsdom-suite tests of UI
-    // primitives don't typically touch `src/app-layer/` or `src/lib/`
-    // directly, but coverage data from any incidental hits still
-    // contributes to the merged report.
-    collectCoverageFrom: sharedCollectCoverageFrom,
+    // Same filter as the node project. Load-bearing here specifically:
+    // the UI barrels (charts, date-picker, table, …) are pulled in by
+    // `tests/rendered/**`, so without this the jsdom project would put
+    // them straight back into the merged report.
+    coveragePathIgnorePatterns: sharedCoveragePathIgnorePatterns,
 };
 
 module.exports = {
@@ -383,13 +435,26 @@ module.exports = {
     // and a real future leak will hang CI immediately, surfacing it
     // for diagnosis instead of getting masked.
     forceExit: false,
-    // Path filter applies across both projects.
-    coveragePathIgnorePatterns: ['/node_modules/', '/.next/', '/tests/'],
-    // NOTE: `coverageThreshold` and `collectCoverageFrom` are
-    // INTENTIONALLY on the node project below, not here. Jest silently
-    // ignores top-level `coverageThreshold` when `projects:` is set —
-    // see the comment block on `nodeProject.coverageThreshold` for the
-    // full GAP-15 enforcement-fix history.
+    // NOTE: there is deliberately NO top-level `coveragePathIgnorePatterns`
+    // here. It reads like a global filter and is not one — `readConfigs`
+    // normalises each `projects:` entry standalone, so a copy at this level
+    // reaches neither project. It lived here for a long time carrying
+    // `['/node_modules/', '/.next/', '/tests/']` and filtered nothing; the
+    // proof is that `tests/helpers/*.ts`, `scripts/*.ts` and `jest.config.js`
+    // itself are all in the published coverage artifact. The real filter is
+    // `sharedCoveragePathIgnorePatterns`, set on BOTH projects above.
+    //
+    // `/tests/` was NOT carried over into the project-level list. Making it
+    // effective is a denominator change, not a bug fix: measured on the
+    // 2026-07-29 artifact it moves `global` functions by -0.32pp (test
+    // helpers are well covered) while leaving `scripts/` and `prisma/` in
+    // the report regardless. That belongs in its own PR against its own
+    // floor recalibration.
+    //
+    // `coverageThreshold` IS intentionally on the node project below —
+    // jest silently ignores a top-level `coverageThreshold` when
+    // `projects:` is set. See the comment block on
+    // `nodeProject.coverageThreshold` for the full GAP-15 history.
     // `json-summary` writes coverage/coverage-summary.json — per-file
     // covered/total for every metric. It is the ONLY output that lets you
     // work out WHICH files a threshold failure came from.
