@@ -84,7 +84,7 @@ const ROOT = path.resolve(__dirname, '../..');
 // state (for both an HTTP failure and a network throw), that stale rows
 // survive a failed background refetch, and that the multi-select facet still
 // goes out comma-joined — plus accumulated rendered gains.
-const RENDERED_TEST_FLOOR = 210;
+const RENDERED_TEST_FLOOR = 219;
 const E2E_SPEC_FLOOR = 55;
 const REGISTRY_FLOOR = 5;
 
