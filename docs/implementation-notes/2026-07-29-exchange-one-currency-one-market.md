@@ -1,6 +1,6 @@
 # 2026-07-29 — Exchange: one currency, one market
 
-**Commit:** `99a1eed3 fix(exchange): make a price mean one thing, and the feed describe the market`
+**Commit:** `91c06bbc fix(exchange): make a price mean one thing, and the feed describe the market`
 
 Six defects, one theme: the Exchange was confidently reporting things it had
 not measured. A price was relabelled rather than converted. Averages mixed
