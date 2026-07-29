@@ -30,7 +30,15 @@
 
 import * as TooltipPrimitive from "@radix-ui/react-tooltip";
 import { HelpCircle } from "lucide-react";
-import { forwardRef, type ReactNode } from "react";
+import {
+    forwardRef,
+    useCallback,
+    useEffect,
+    useRef,
+    useState,
+    useSyncExternalStore,
+    type ReactNode,
+} from "react";
 import { cn } from "@/lib/cn";
 
 export type TooltipSide = "top" | "right" | "bottom" | "left";
@@ -47,7 +55,47 @@ export type TooltipAlign = "start" | "center" | "end";
  * Exported so the behavioural tooltip tests skip themselves while the
  * popup is switched off (they auto-restore when this flips back).
  */
-export const TOOLTIPS_ENABLED = false;
+export const TOOLTIPS_ENABLED = true;
+
+/**
+ * How long a tapped-open tooltip stays up before dismissing itself.
+ * Long enough to read a sentence one-handed, short enough that a
+ * forgotten tooltip never sits over the UI.
+ */
+const TOUCH_AUTO_DISMISS_MS = 6000;
+
+/**
+ * True on devices whose primary pointer cannot hover — phones, tablets.
+ *
+ * Subscribed rather than read once: tablets with a detachable keyboard or
+ * a paired mouse flip this at runtime, and a stale value would leave the
+ * user with the wrong open gesture until remount.
+ *
+ * `useSyncExternalStore` gives an SSR-safe answer (false on the server, so
+ * markup matches the desktop-first render) with no effect-driven flash.
+ */
+function useCoarsePointer(): boolean {
+    const subscribe = useCallback((onChange: () => void) => {
+        if (typeof window === "undefined" || !window.matchMedia) return () => {};
+        const mq = window.matchMedia("(hover: none), (pointer: coarse)");
+        // Safari < 14 only has the deprecated listener API.
+        if (mq.addEventListener) {
+            mq.addEventListener("change", onChange);
+            return () => mq.removeEventListener("change", onChange);
+        }
+        mq.addListener(onChange);
+        return () => mq.removeListener(onChange);
+    }, []);
+
+    return useSyncExternalStore(
+        subscribe,
+        () =>
+            typeof window !== "undefined" &&
+            typeof window.matchMedia === "function" &&
+            window.matchMedia("(hover: none), (pointer: coarse)").matches,
+        () => false,
+    );
+}
 
 /**
  * Global provider. Mount once at the app root so Radix can share the
@@ -125,6 +173,54 @@ export const Tooltip = forwardRef<HTMLButtonElement, TooltipProps>(function Tool
     },
     ref,
 ) {
+    // ── Touch support ────────────────────────────────────────────────
+    //
+    // Radix deliberately gives touch users nothing: its Trigger early-returns
+    // from `onPointerMove` when `pointerType === "touch"`, and separately
+    // wires `onPointerDown` and `onClick` to CLOSE. Together with the
+    // `:focus-visible` gate below (a tap produces no `:focus-visible`), that
+    // leaves a phone with no way to ever see a tooltip — which on a
+    // mobile-first product means help icons that are pure decoration.
+    //
+    // So on coarse pointers we drive `open` ourselves: tap toggles, and the
+    // tap handler calls `preventDefault()` so Radix's own composed
+    // close-handlers are skipped. That is the same `composeEventHandlers`
+    // trick the focus guard below relies on. Pointer devices are left
+    // entirely on Radix's hover behaviour — same primitive, same content,
+    // same appearance; only the gesture that opens it differs, because a
+    // phone has no hover to offer.
+    const coarsePointer = useCoarsePointer();
+    const [touchOpen, setTouchOpen] = useState(false);
+    const dismissTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const triggerNode = useRef<HTMLElement | null>(null);
+
+    const closeTouch = useCallback(() => {
+        setTouchOpen(false);
+        if (dismissTimer.current) {
+            clearTimeout(dismissTimer.current);
+            dismissTimer.current = null;
+        }
+    }, []);
+
+    // Dismiss on the next touch anywhere, on scroll, and on a timeout. Any
+    // one of these alone leaves a way for the popup to sit over the UI.
+    useEffect(() => {
+        if (!touchOpen) return;
+        const onOutside = (e: Event) => {
+            const el = e.target as Node | null;
+            if (el && triggerNode.current?.contains(el)) return;
+            closeTouch();
+        };
+        document.addEventListener("pointerdown", onOutside, true);
+        window.addEventListener("scroll", closeTouch, true);
+        dismissTimer.current = setTimeout(closeTouch, TOUCH_AUTO_DISMISS_MS);
+        return () => {
+            document.removeEventListener("pointerdown", onOutside, true);
+            window.removeEventListener("scroll", closeTouch, true);
+            if (dismissTimer.current) clearTimeout(dismissTimer.current);
+        };
+    }, [touchOpen, closeTouch]);
+
     if (!TOOLTIPS_ENABLED || disabled || (content == null && title == null)) {
         return <>{children}</>;
     }
@@ -133,10 +229,31 @@ export const Tooltip = forwardRef<HTMLButtonElement, TooltipProps>(function Tool
         <TooltipPrimitive.Root
             delayDuration={delayDuration}
             disableHoverableContent={disableHoverableContent}
+            {...(coarsePointer
+                ? { open: touchOpen, onOpenChange: setTouchOpen }
+                : {})}
         >
             <TooltipPrimitive.Trigger
-                ref={ref}
+                ref={(node: HTMLButtonElement | null) => {
+                    triggerNode.current = node;
+                    if (typeof ref === "function") ref(node);
+                    else if (ref) ref.current = node;
+                }}
                 asChild
+                // Touch: tap toggles. `preventDefault()` is load-bearing —
+                // Radix composes its own `onPointerDown`/`onClick` CLOSE
+                // handlers after ours, and skips them when the event is
+                // default-prevented. Without it the tooltip would open and
+                // immediately close on the same tap.
+                onPointerDown={
+                    coarsePointer
+                        ? (e) => {
+                              e.preventDefault();
+                              setTouchOpen((v) => !v);
+                          }
+                        : undefined
+                }
+                onClick={coarsePointer ? (e) => e.preventDefault() : undefined}
                 // Hover-or-keyboard, never auto. Radix opens the tooltip on
                 // ANY focus, so when a popover/dialog auto-focuses its first
                 // control (e.g. the calendar's prev-month arrow, or the theme
