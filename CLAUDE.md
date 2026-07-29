@@ -1230,6 +1230,43 @@ Use `<Tooltip>` for hover/focus hints, `<InfoTooltip>` for help icons,
 Never use raw `navigator.clipboard` or add new `title=` attributes.
 See `docs/tooltip-and-copy-strategy.md`.
 
+**Tooltips carry TWO open gestures and exactly ONE behaviour.** Since
+#449 the primitive drives `open` itself on a coarse pointer — tap
+toggles, dismissing on the next outside tap, on scroll, or after
+`TOUCH_AUTO_DISMISS_MS` — because Radix gives touch users nothing and a
+desktop-only tooltip is decoration on a mobile-first product. Content,
+surface, side/align/offset are identical for both; only the gesture
+differs. That second path lives **inside `src/components/ui/tooltip.tsx`
+and nowhere else**: never re-implement it at a call site
+(`matchMedia('(pointer: coarse)')`, `'ontouchstart' in window`,
+`onTouchStart` on a trigger), never add a prop that forks or disables it
+(`disabled` is the sanctioned escape hatch and short-circuits for
+everyone), and never drop one of the four dismissal paths (outside tap,
+scroll, Escape, timeout).
+
+**The tap handler must never call `preventDefault()`.** #449 shipped it on
+the trigger's `onPointerDown` + `onClick` to make Radix's
+`composeEventHandlers` skip its composed close-handlers; it also cancelled
+the default action of whatever the tooltip wrapped, so on touch a
+`<Tooltip>` around a `<Link>` (Next's app-dir Link returns early on
+`e.defaultPrevented`) or an `<a href download>` did nothing but show its
+own tooltip — ~17 inline call sites plus every collapsed-sidebar nav item.
+Radix's close requests are declined in `handleTouchOpenChange` instead:
+because the coarse path already passes `open` + `onOpenChange`, every
+close arrives as a call we own rather than a DOM event we have to
+suppress. Declining a close is invisible to the wrapped element;
+preventing an event is not. Escape became ours for the same reason —
+Radix's DismissableLayer dismissal is declined along with every other
+close — and is wired through the Content's `onEscapeKeyDown`, which runs
+before that dismissal and rides Radix's own document-level listener, so
+Epic 57's ban on raw `keydown` listeners still holds.
+
+`tests/guards/tooltip-touch-uniformity.test.ts` enforces the shape and
+`tests/rendered/tooltip-touch.test.tsx` the behaviour — the latter
+installs a coarse-pointer `matchMedia` per test, because the project-wide
+jsdom stub answers `matches: false` and left the whole branch unexecuted.
+See `docs/implementation-notes/2026-07-29-tooltip-touch-uniformity.md`.
+
 ### Epic 57 — Keyboard Shortcuts & Command Palette
 
 Register shortcuts via `useKeyboardShortcut` — never
