@@ -730,7 +730,7 @@ duplicating the limits table).
 
 - **Unit tests**: Mock dependencies with `jest.mock()` declared **before** imports. Use `buildRequestContext()` helper from `tests/helpers/make-context.ts` to construct test contexts.
 - **Integration tests**: Use `prismaTestClient()` and `resetDatabase()` from `tests/helpers/db.ts`. Hit a real DB — do not mock Prisma in integration tests.
-- **Guard tests** (`tests/guards/`): Static analysis tests that enforce architectural rules (no `as any`, no unsafe patterns). These are regular Jest tests that scan source files with regex.
+- **Guard tests** (`tests/guards/`): Static analysis tests that enforce architectural rules (no `as any`, no unsafe patterns). These are regular Jest tests that scan source files with regex. They assert on source TEXT and contribute **no runtime coverage** — see "Green is not the same as executed" below before treating one as proof a feature works.
 - **E2E tests**: Playwright in serial mode (`workers: 1`). CI cuts
   wall-clock by CROSS-JOB sharding, not intra-run parallelism: the
   `e2e-shard` matrix in `ci.yml` runs `--shard=i/2` on two runners (each
@@ -765,6 +765,43 @@ duplicating the limits table).
   `tests/e2e/fixtures.ts`.
 - `SKIP_ENV_VALIDATION=1` is set in `jest.setup.js` to prevent env loader crash in unit tests.
 - Coverage thresholds: 60% global (branches, functions, lines, statements); checked on `npm run test:coverage`.
+
+### Green is not the same as executed
+
+Two mechanisms in this repo let a check pass without verifying anything.
+Both read as green forever, so both are named here.
+
+**Guards assert on source text, not behaviour.** Every file under
+`tests/guards/` — and most of `tests/guardrails/` — `readFileSync`s a
+source file and matches a regex. They execute the *test*, never the
+*subject*, so they contribute **zero runtime coverage**: a heavily-guarded
+file can sit at 0%. Two measured examples. `FilterRangePanel` was named by
+eight guards while every decision point inside it was unexercised, until a
+rendered test took it 0% → 88.76% branches
+(`docs/implementation-notes/2026-07-28-coverage-wave-14.md`).
+`tests/guardrails/jwt-membership-bound.test.ts` greps `src/auth.ts` for
+`.slice(0, MAX_JWT_MEMBERSHIPS)` — it proves the JWT membership cap exists
+in source and never once runs it (wave 15). A guard is the right tool for
+"this pattern is present / this banned token is gone". When you need the
+guarantee that the code *behaves*, write an executing test under
+`tests/unit/`, `tests/rendered/`, or `tests/integration/`. The four-tier
+model is `docs/frontend-assurance-model.md`; the curated structural-ratchet
+↔ rendered-test pairing is
+`tests/guards/behavioural-coverage-registry.test.ts`.
+
+**A skipped suite is indistinguishable from a passing one.** The
+`const describeFn = DB_AVAILABLE ? describe : describe.skip` gate used
+across `tests/integration/**` means a run gets *greener* by running less —
+observed live on `tests/guardrails/rls-coverage.test.ts`, which failed six
+assertions against a stale DB and then went silent when that DB became
+unreachable. If you add such a gate, keep the skip derived from a flag (a
+hard `describe.skip(` never re-arms) and make the non-execution visible:
+`rls-coverage.test.ts` carries an always-running execution-status test that
+prints a banner naming what did not run, plus the
+`RLS_GUARDRAIL_REQUIRE_DB=1` escalation for environments that guarantee a
+database. The structural half of that contract lives in
+`tests/guards/rls-coverage-skip-visibility.test.ts`, modelled on
+`tests/guards/tooltip-kill-switch-consistency.test.ts`.
 
 ### Index & query-shape guardrails
 
