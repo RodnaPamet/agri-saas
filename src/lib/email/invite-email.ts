@@ -18,6 +18,7 @@
 import { ConsoleEmailProvider, getEmailProvider, sendEmail } from '@/lib/mailer';
 import { env } from '@/env';
 import { logger } from '@/lib/observability/logger';
+import { escapeHtml } from '@/lib/security/escape-html';
 
 export interface InviteEmailParams {
     /** Recipient address (the invited email). */
@@ -79,9 +80,15 @@ export async function sendInviteEmail(
         `If you weren't expecting this, you can ignore this email.`,
     ].join('\n');
 
+    // Escaped at the sink. `spaceName` and the display name inside `inviter`
+    // are chosen by whoever created the space, and an invitation is delivered
+    // to someone who is not yet a member — so the recipient has no prior trust
+    // relationship with the sender and every reason to click. Escaping the
+    // composed `inviter` also escapes the apostrophe in its own literal, which
+    // renders identically.
     const html = [
-        `<p>${inviter} to join the ${kind} <strong>${spaceName}</strong> on Agrent as <strong>${roleLabel}</strong>.</p>`,
-        `<p><a href="${acceptUrl}">Accept your invitation</a></p>`,
+        `<p>${escapeHtml(inviter)} to join the ${escapeHtml(kind)} <strong>${escapeHtml(spaceName)}</strong> on Agrent as <strong>${escapeHtml(roleLabel)}</strong>.</p>`,
+        `<p><a href="${escapeHtml(acceptUrl)}">Accept your invitation</a></p>`,
         `<p style="color:#667085;font-size:13px">This link expires in ${days} day${days === 1 ? '' : 's'}. If you weren't expecting this, you can ignore this email.</p>`,
     ].join('');
 

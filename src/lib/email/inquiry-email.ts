@@ -13,6 +13,7 @@
 import { ConsoleEmailProvider, getEmailProvider, sendEmail } from '@/lib/mailer';
 import { env } from '@/env';
 import { logger } from '@/lib/observability/logger';
+import { escapeHtml } from '@/lib/security/escape-html';
 
 export interface InquiryEmailParams {
     /** Recipient (a seller-tenant admin/owner email). */
@@ -21,7 +22,13 @@ export interface InquiryEmailParams {
     commodity: string;
     /** SELL or BUY — the side of the seller's own listing. */
     side: string;
-    /** The inquiry's free-text message (already sanitized). */
+    /**
+     * The inquiry's free-text message.
+     *
+     * Sanitised upstream by `sanitizePlainText`, which is NOT sufficient here:
+     * that function decodes entities by design, so `&lt;a&gt;` arrives as a
+     * live `<a>`. Every use below is escaped at the sink — see the HTML block.
+     */
     message: string;
     /** Optional quantity the buyer is after, as a display string. */
     quantityTonnes?: string | null;
@@ -51,13 +58,25 @@ export async function sendInquiryEmail(
         .filter((l) => l !== null)
         .join('\n');
 
+    // EVERY interpolated value is escaped here, including the ones that look
+    // safe. This email crosses the tenant boundary — it is the one Exchange
+    // channel that does — so an unescaped value is markup delivered from the
+    // platform's own signed domain into ANOTHER tenant's owner/admin inbox.
+    // The realistic payloads are a credential-phishing anchor and a remote
+    // image that discloses the reader's IP and read time, neither of which
+    // needs a script tag to work.
+    //
+    // `message` is the attacker-controlled one, but commodity/side/quantity
+    // are escaped too: whether they are attacker-controlled today is a
+    // property of upstream code that can change, and a template with a mix of
+    // escaped and unescaped holes teaches the next editor the wrong rule.
     const html = [
-        `<p>Another farm expressed interest in your <strong>${side}</strong> listing for <strong>${commodity}</strong>.</p>`,
+        `<p>Another farm expressed interest in your <strong>${escapeHtml(side)}</strong> listing for <strong>${escapeHtml(commodity)}</strong>.</p>`,
         quantityTonnes
-            ? `<p style="color:#475467">Quantity of interest: <strong>${quantityTonnes} t</strong></p>`
+            ? `<p style="color:#475467">Quantity of interest: <strong>${escapeHtml(quantityTonnes)} t</strong></p>`
             : '',
-        `<p style="color:#475467">Message:</p><blockquote style="margin:0;border-left:3px solid #d0d5dd;padding-left:12px;color:#344054">${message}</blockquote>`,
-        `<p><a href="${inquiriesUrl}">Review the inquiry and respond</a></p>`,
+        `<p style="color:#475467">Message:</p><blockquote style="margin:0;border-left:3px solid #d0d5dd;padding-left:12px;color:#344054">${escapeHtml(message)}</blockquote>`,
+        `<p><a href="${escapeHtml(inquiriesUrl)}">Review the inquiry and respond</a></p>`,
         `<p style="color:#667085;font-size:13px">Contact details are shared only when you choose to respond.</p>`,
     ].join('');
 

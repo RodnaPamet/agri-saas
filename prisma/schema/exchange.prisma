@@ -9,13 +9,33 @@
 // auto-enroller in src/lib/db/rls-middleware.ts leaves them out of
 // TENANT_SCOPED_MODELS — reads are global, no per-tenant RLS filter.
 //
-// Cross-tenant WRITE safety therefore CANNOT rely on RLS. It is enforced
-// exclusively at the usecase layer (src/app-layer/usecases/exchange.ts):
-// every mutation asserts ctx.tenantId === listing.sellerTenantId. The
-// `sellerTenantId` / `inquirerTenantId` columns are PLAIN foreign keys
+// The `sellerTenantId` / `inquirerTenantId` columns are PLAIN foreign keys
 // (they hold a Tenant.id) — intentionally NOT declared as Prisma
 // `@relation`s, so the tables stay decoupled and global and so the
 // FK-index guardrail (Layer B) doesn't force tenant-composite indexes.
+//
+// ── The two halves are NOT the same ──────────────────────────────────
+// This header used to say the Exchange had no RLS at all. That was true
+// of both tables and correct for only one of them.
+//
+//   * ExchangeListing — GLOBAL, no RLS, by design. Cross-tenant
+//     readability IS the product; it carries no private data
+//     (`description` / `sellerDisplayName` are sanitised public
+//     plaintext). Recorded as an explicit exemption in
+//     tests/guardrails/rls-coverage.test.ts so the next reader finds a
+//     decision rather than an omission.
+//
+//   * ExchangeInquiry — PRIVATE buyer↔seller messages, and now
+//     RLS-protected on a parallel axis keyed on `inquirerTenantId`, the
+//     same footing as PromotionLead and the Organization layer. See
+//     migration 20260728120000_exchange_inquiry_rls. Because an inquiry
+//     has TWO legitimate parties, the policy is a disjunction: the
+//     inquirer, OR the seller resolved through the listing.
+//
+// Usecase-layer write guards (`ctx.tenantId === listing.sellerTenantId`)
+// remain the primary control and are unchanged. RLS is the backstop, so
+// a forgotten `where` in a future repository method cannot expose one
+// tenant's private messages to another.
 // ─────────────────────────────────────────────────────────────────────
 
 /// Global cross-tenant marketplace offer (no tenantId → not tenant-scoped,
@@ -60,10 +80,22 @@ model ExchangeListing {
   @@index([status, expiresAt])
 }
 
-/// Global cross-tenant inquiry against an ExchangeListing (no tenantId →
-/// not tenant-scoped, no RLS). Written by a tenant OTHER than the listing
-/// seller (the usecase forbids inquiring on your own listing). `message`
-/// is sanitized plaintext. `inquirerTenantId` is a plain FK to Tenant.id.
+/// Cross-tenant inquiry against an ExchangeListing. No `tenantId` column, so
+/// the DMMF auto-enroller leaves it out of TENANT_SCOPED_MODELS — but it IS
+/// RLS-protected, on a parallel axis keyed on `inquirerTenantId` with the
+/// seller reached through the listing (migration
+/// 20260728120000_exchange_inquiry_rls). Written by a tenant OTHER than the
+/// listing seller (the usecase forbids inquiring on your own listing).
+///
+/// `message` is sanitized plaintext and deliberately NOT encrypted. Two
+/// reasons, both structural: the Epic B manifest keys by FIELD NAME, and
+/// `message` is carried by Notification / ExchangeInquiry / InsuranceLead /
+/// PromotionLead — adding `PromotionLead: ['message']` once already wrote
+/// ciphertext into this very column (see
+/// tests/unit/encryption-fanout-model-resolution.test.ts, which pins all four
+/// out). And the per-tenant DEK model assumes ONE owning tenant, which a
+/// two-party row does not have. PromotionLead.requestMessage is encryptable
+/// precisely because that name is unique to it.
 model ExchangeInquiry {
   id               String                @id @default(cuid())
   listingId        String
