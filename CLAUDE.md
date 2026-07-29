@@ -1230,6 +1230,25 @@ Use `<Tooltip>` for hover/focus hints, `<InfoTooltip>` for help icons,
 Never use raw `navigator.clipboard` or add new `title=` attributes.
 See `docs/tooltip-and-copy-strategy.md`.
 
+**Tooltips carry TWO open gestures and exactly ONE behaviour.** Since
+#449 the primitive drives `open` itself on a coarse pointer — tap
+toggles, dismissing on the next outside tap, on scroll, or after
+`TOUCH_AUTO_DISMISS_MS` — because Radix gives touch users nothing and a
+desktop-only tooltip is decoration on a mobile-first product. Content,
+surface, side/align/offset are identical for both; only the gesture
+differs. That second path lives **inside `src/components/ui/tooltip.tsx`
+and nowhere else**: never re-implement it at a call site
+(`matchMedia('(pointer: coarse)')`, `'ontouchstart' in window`,
+`onTouchStart` on a trigger), never add a prop that forks or disables it
+(`disabled` is the sanctioned escape hatch and short-circuits for
+everyone), never tidy away the `preventDefault()` that makes Radix skip
+its composed close-handlers, and never drop one of the three dismissal
+paths. `tests/guards/tooltip-touch-uniformity.test.ts` enforces all
+four — but it is a text scan: the coarse-pointer branch still has **no
+executing test**, because jsdom's `matchMedia` stub answers
+`matches: false`, so `tests/rendered/tooltip.test.tsx` covers
+hover/focus only. See `docs/implementation-notes/2026-07-29-tooltip-touch-uniformity.md`.
+
 ### Epic 57 — Keyboard Shortcuts & Command Palette
 
 Register shortcuts via `useKeyboardShortcut` — never
