@@ -111,9 +111,10 @@ const coverageThresholds = require('./jest.thresholds.json');
 // cost nothing, which is why the inflation tracks value exports.
 //
 // Measured on the 2026-07-29 main coverage artifact (run 30456542044):
-// 174 uncovered functions across these files, 0 branches — none of it
-// untested behaviour. Removing a distortion from the denominator beats
-// writing hollow tests that import a barrel and assert nothing.
+// 350 functions across these files, 212 of them uncovered, and 0
+// branches — none of it untested behaviour. Removing a distortion from
+// the denominator beats writing hollow tests that import a barrel and
+// assert nothing.
 //
 // ONLY files with no executable constructs belong here.
 // `tests/guards/coverage-barrel-exclusion.test.ts` enforces that — a
