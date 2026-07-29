@@ -137,6 +137,14 @@ function coveredFiles(options: { keepBarrelPatterns: boolean }): string[] {
                 rootDir: ROOT,
                 globalSetup: undefined,
                 globalTeardown: undefined,
+                // A one-file run sits far below every floor. Today this
+                // would not fail the child — jest ignores a project-level
+                // `coverageThreshold` in multi-project mode, which is the
+                // whole reason CI passes it via `--coverageThreshold`
+                // instead — but depending on that bug to keep this guard
+                // green is not a contract. Drop it: floors are irrelevant
+                // to whether a file is in the report.
+                coverageThreshold: undefined,
                 testMatch: [`<rootDir>/${PROBE}`],
                 coveragePathIgnorePatterns: options.keepBarrelPatterns
                     ? patterns
