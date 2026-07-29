@@ -10,7 +10,7 @@
  *   - An accepted inquiry shows the buyer's contact.
  */
 import * as React from 'react';
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TooltipProvider } from '@/components/ui/tooltip';
 
@@ -64,7 +64,7 @@ const BUYER_CONTACT = 'buyer@farm.test';
 function inquiry(over: Record<string, unknown> = {}) {
     return {
         id: 'inq-1', message: 'Interested in 50t', quantityTonnes: '50',
-        status: 'PENDING', createdAt: '',
+        status: 'PENDING', createdAt: '2026-07-20T09:30:00.000Z',
         counterpartyContact: null, contactSharedAt: null,
         ...over,
     };
@@ -73,7 +73,7 @@ function inquiry(over: Record<string, unknown> = {}) {
 function listing(over: Record<string, unknown> = {}) {
     return {
         id: 'lst-1', side: 'SELL', commodity: 'Wheat', quantityTonnes: '100',
-        pricePerTonne: '320', priceCurrency: 'BGN', regionCode: 'BG-16', regionName: 'Plovdiv',
+        pricePerTonne: '320', priceCurrency: 'EUR', regionCode: 'BG-16', regionName: 'Plovdiv',
         lat: 42, lon: 24, description: null, sellerDisplayName: null, status: 'ACTIVE',
         createdAt: '', expiresAt: null, isOwn: true,
         inquiries: [inquiry()],
@@ -246,4 +246,53 @@ it('the fulfil confirm tells the truth about what happens to waiting inquiries',
     // The copy renders twice (the visible <p> plus Radix's aria description).
     expect(within(dialog).getAllByText(/declines every inquiry still waiting/i).length).toBeGreaterThan(0);
     expect(within(dialog).getAllByText(/those buyers are notified/i).length).toBeGreaterThan(0);
+});
+
+/**
+ * Accept and Reject sit side by side and mean opposite things. They used to
+ * share ONE busy id (`busy === iq.id`), so clicking either put a spinner on
+ * both — the one pair of buttons on which "which one did I press?" actually
+ * matters.
+ */
+it('spins only the button that was pressed', async () => {
+    // Hold the request open so the in-flight state is observable.
+    let release: (() => void) | undefined;
+    apiPatch.mockImplementationOnce(
+        () => new Promise<void>((resolve) => { release = () => resolve(); }),
+    );
+
+    renderClient();
+    const accept = screen.getByRole('button', { name: /^Accept$/i });
+    const reject = screen.getByRole('button', { name: /^Reject$/i });
+
+    fireEvent.click(accept);
+
+    // `loading` renders as `disabled` on the Button primitive.
+    await waitFor(() => expect(accept).toBeDisabled());
+    expect(reject).not.toBeDisabled();
+
+    await act(async () => { release?.(); });
+});
+
+/**
+ * This page is deliberately reachable with the EXCHANGE module OFF — it is
+ * custody of rows the tenant already published, and the only place they can be
+ * withdrawn. What it must not do is look like business as usual while every
+ * offer on it is hidden from buyers.
+ */
+it('says so when the module is off, and drops Fulfil while keeping Withdraw', () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+        <QueryClientProvider client={client}>
+            <TooltipProvider>
+                <main><MyListingsClient exchangeEnabled={false} /></main>
+            </TooltipProvider>
+        </QueryClientProvider>,
+    );
+
+    expect(screen.getByText(/hidden from other farms/i)).toBeInTheDocument();
+    // Withdraw is how you clean up — it stays.
+    expect(screen.getByRole('button', { name: /withdraw/i })).toBeInTheDocument();
+    // Fulfil claims a sale in a market this tenant has left — it does not.
+    expect(screen.queryByRole('button', { name: /mark fulfilled/i })).not.toBeInTheDocument();
 });

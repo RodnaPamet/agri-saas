@@ -28,8 +28,26 @@ jest.mock('@/lib/tenant-context-provider', () => ({
 const mutate = jest.fn(async () => undefined);
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let swrData: any[] = [];
+/** Every path the client asked the feed for, in order. */
+const swrKeys: string[] = [];
+
+/**
+ * Stand-in for the real endpoint. Filtering moved SERVER-side in the
+ * one-currency-one-market PR — the filter state is now part of the SWR key
+ * rather than a predicate the client runs over a fetched array — so the mock
+ * has to answer the query it was asked, not hand back a fixed list.
+ */
 jest.mock('@/lib/hooks/use-tenant-swr', () => ({
-    useTenantSWR: () => ({ data: swrData, isLoading: false, mutate }),
+    useTenantSWR: (path: string) => {
+        swrKeys.push(path);
+        const qs = new URLSearchParams(path.split('?')[1] ?? '');
+        const regions = (qs.get('region') ?? '').split(',').filter(Boolean);
+        const rows = regions.length
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            ? swrData.filter((o: any) => regions.includes(o.regionCode))
+            : swrData;
+        return { data: { rows, nextCursor: null }, isLoading: false, mutate };
+    },
     usePrefetchTenant: () => () => {},
 }));
 
@@ -56,7 +74,7 @@ import { ExchangeClient } from '@/app/t/[tenantSlug]/(app)/exchange/ExchangeClie
 function offer(over: Record<string, any> = {}) {
     return {
         id: 'o1', side: 'SELL', commodity: 'Wheat', quantityTonnes: '100',
-        pricePerTonne: '320', priceCurrency: 'BGN', regionCode: 'BG-16',
+        pricePerTonne: '320', priceCurrency: 'EUR', regionCode: 'BG-16',
         regionName: 'Plovdiv', lat: 42, lon: 24, description: null,
         sellerDisplayName: null, status: 'ACTIVE', createdAt: '', expiresAt: null,
         isOwn: false, ...over,
@@ -82,6 +100,7 @@ function renderClient() {
 
 beforeEach(() => {
     mutate.mockClear();
+    swrKeys.length = 0;
     swrData = OFFERS.map((o) => ({ ...o }));
 });
 
@@ -126,4 +145,37 @@ it('filters the list to the oblast when a map region is clicked', async () => {
     // BG-16 selected → Maize (BG-09) drops out; Wheat/Barley (BG-16) remain.
     await waitFor(() => expect(screen.queryByRole('button', { name: /Maize/i })).not.toBeInTheDocument());
     expect(screen.getByRole('button', { name: /Wheat/i })).toBeInTheDocument();
+});
+
+it('asks the SERVER for the filtered set rather than trimming a fetched page', async () => {
+    renderClient();
+    await screen.findByTestId('exchange-map');
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'region-BG-16' })); });
+
+    // The point of the change: filters used to run client-side over whatever
+    // the feed returned, which was the newest 100 offers NATIONWIDE — so a
+    // region filter searched a sample and reported it as the market.
+    await waitFor(() => expect(swrKeys.some((k) => k.includes('region=BG-16'))).toBe(true));
+    // …and the request is bounded, so the answer is a page, not the table.
+    expect(swrKeys[swrKeys.length - 1]).toContain('limit=');
+});
+
+it('averages prices in ONE currency and discloses the ones it left out', async () => {
+    // A legacy USD row beside two euro rows. Averaging all three would produce
+    // a number that is not a price in any currency, which is what the ticker
+    // used to print — labelled with whichever currency happened to be first.
+    swrData = [
+        offer({ id: 'e1', commodity: 'Wheat', pricePerTonne: '200', priceCurrency: 'EUR' }),
+        offer({ id: 'e2', commodity: 'Wheat', pricePerTonne: '300', priceCurrency: 'EUR' }),
+        offer({ id: 'u1', commodity: 'Maize', pricePerTonne: '900', priceCurrency: 'USD' }),
+    ];
+    renderClient();
+    await screen.findByTestId('exchange-map');
+
+    // (200 + 300) / 2 = 250 EUR — the USD row is not in the mean.
+    expect(screen.getByText(/avg 250 EUR/)).toBeInTheDocument();
+    // And the exclusion is stated rather than silent.
+    expect(screen.getByText(/1 priced in another currency, not averaged/)).toBeInTheDocument();
+    // The USD offer still shows its OWN price on its own card.
+    expect(screen.getByText(/900 \$\/t/)).toBeInTheDocument();
 });

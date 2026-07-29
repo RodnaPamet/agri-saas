@@ -44,7 +44,7 @@ const SELLER_CONTACT = '+359 88 111 1111';
 function listing() {
     return {
         id: 'lst-1', side: 'SELL', kind: 'CULTURE', commodity: 'Wheat',
-        quantityTonnes: '100', pricePerTonne: '320', priceCurrency: 'BGN',
+        quantityTonnes: '100', pricePerTonne: '320', priceCurrency: 'EUR',
         regionCode: 'BG-16', regionName: 'Plovdiv', lat: 42, lon: 24,
         description: null, sellerDisplayName: 'Acme Farm', status: 'ACTIVE',
         createdAt: '2026-07-01T00:00:00.000Z', expiresAt: null, isOwn: false,
@@ -88,7 +88,9 @@ it('shows the commercial terms — price, seller — and a link back to the offe
     expect(screen.getByText('Wheat')).toBeInTheDocument();
     // Quantity + price on one line; the price is the field whose absence sent
     // the buyer back to the browse page.
-    expect(screen.getByText(/100 t · 320 BGN\/t/)).toBeInTheDocument();
+    // The price carries its OWN currency symbol. It used to be printed as the
+    // raw stored code beside a map that stamped every offer "€/t" regardless.
+    expect(screen.getByText(/100 t · 320 €\/t/)).toBeInTheDocument();
     expect(screen.getByText(/Seller: Acme Farm/)).toBeInTheDocument();
 
     const link = screen.getByRole('link', { name: /view offer/i });

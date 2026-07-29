@@ -2,19 +2,28 @@
 
 /**
  * Exchange main page — split view: a map of Bulgaria (left) + a synced,
- * filterable offer list (right). Browse-only.
+ * filterable offer list (right).
  *
- *   - Data: SWR GET /exchange/listings (public projection across all tenants).
- *   - Filters: Epic 53 FilterToolbar (side / commodity / region / quantity +
- *     live search), applied CLIENT-SIDE over the fetched array.
+ *   - Data: SWR GET /exchange/listings (public projection across all tenants),
+ *     returning ONE CURSOR PAGE as `{ rows, nextCursor }`.
+ *   - Filters: Epic 53 FilterToolbar (side / kind / commodity / region /
+ *     quantity + live search), applied SERVER-SIDE. They used to run
+ *     client-side over whatever the feed happened to return, which was the
+ *     newest 100 offers NATIONWIDE — so "Wheat in Dobrich" searched a sample
+ *     and reported the result as the market. The filter state is now the SWR
+ *     key, so Postgres answers the question over the whole table.
+ *   - Pagination: `useCursorPagination` accumulates pages behind a "Load more"
+ *     control. SWR owns page 1 (keyed by the active filters); a filter change
+ *     reseeds the accumulator via `reload`.
+ *   - Market pulse: the ticker aggregates the LOADED rows and says so — see
+ *     the currency + sample notes on `ticker` below.
  *   - Map ↔ list sync: an oblast click toggles the region filter; hovering a
  *     list row highlights its marker; clicking a row (or a marker popup's
- *     "View details") opens the detail Sheet (body stubbed for now).
- *   - Create: header button stubbed — the create modal lands in a follow-up.
+ *     "View details") opens the detail Sheet.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import dynamic from 'next/dynamic';
 import {
     FilterProvider,
@@ -28,10 +37,11 @@ import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { Button } from '@/components/ui/button';
 import { Plus } from '@/components/ui/icons/nucleo';
 import { Fab } from '@/components/ui/fab';
-import { PullToRefresh } from '@/components/ui/hooks';
+import { PullToRefresh, useCursorPagination } from '@/components/ui/hooks';
 import { ScrollToTop } from '@/components/ui/scroll-to-top';
 import { Heading } from '@/components/ui/typography';
 import { Sheet } from '@/components/ui/sheet';
+import { StatusBadge } from '@/components/ui/status-badge';
 import { ErrorState } from '@/components/ui/error-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/cn';
@@ -39,6 +49,12 @@ import { useTenantHref, useTenantApiUrl } from '@/lib/tenant-context-provider';
 import { apiGet } from '@/lib/api-client';
 import { formatDate } from '@/lib/format-date';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
+import { localizedRegionName } from '@/lib/geo/bulgaria-regions';
+import {
+    EXCHANGE_CURRENCY,
+    isAggregatable,
+    formatPricePerTonne,
+} from '@/lib/exchange/currency';
 import type { ExchangePublicListing } from '@/lib/exchange/public-listing';
 import { EXCHANGE_SIDE_COLORS, EXCHANGE_ACCENT_GOLD } from '@/components/exchange/ExchangeMap';
 import { buildExchangeFilters, EXCHANGE_FILTER_KEYS } from './filter-defs';
@@ -51,6 +67,14 @@ const ExchangeMap = dynamic(
     () => import('@/components/exchange/ExchangeMap').then((m) => m.ExchangeMap),
     { ssr: false },
 );
+
+/** Page size requested from the feed; matches the server default. */
+const PAGE_SIZE = 50;
+
+interface ListingPage {
+    rows: ExchangePublicListing[];
+    nextCursor: string | null;
+}
 
 export function ExchangeClient() {
     const filterCtx = useFilterContext([], EXCHANGE_FILTER_KEYS, {});
@@ -69,6 +93,20 @@ const KIND_LABEL_KEY: Record<'CULTURE' | 'FERTILIZER' | 'SEEDS' | 'PRODUCT', str
     PRODUCT: 'kindProduct',
 };
 
+/** Listing lifecycle → i18n key. Unknown values fall back to the raw enum. */
+const LISTING_STATUS_KEY: Record<string, string> = {
+    ACTIVE: 'statusActive',
+    EXPIRED: 'statusExpired',
+    FULFILLED: 'statusFulfilled',
+    WITHDRAWN: 'statusWithdrawn',
+};
+
+function statusVariant(status: string): 'success' | 'neutral' | 'info' {
+    if (status === 'ACTIVE') return 'success';
+    if (status === 'FULFILLED') return 'info';
+    return 'neutral';
+}
+
 function SideDot({ side }: { side: 'SELL' | 'BUY' }) {
     return (
         <span
@@ -82,64 +120,152 @@ function SideDot({ side }: { side: 'SELL' | 'BUY' }) {
 function ExchangeInner() {
     const t = useTranslations('exchange.client');
     const tFilters = useTranslations('exchangeFilters');
+    const locale = useLocale();
+    const tonne = t('unitTonne');
     const tenantHref = useTenantHref();
     const buildApiUrl = useTenantApiUrl();
     const searchParams = useSearchParams();
     const deepLinkId = searchParams.get('listing');
-    const { data, isLoading, error, mutate } = useTenantSWR<ExchangePublicListing[]>('/exchange/listings');
     const { state, search, toggle } = useFilters();
 
-    const offers = useMemo(() => data ?? [], [data]);
-    const selectedRegionCodes = state.region ?? [];
+    // ── The filter state IS the query ───────────────────────────────────
+    // Serialised into the feed URL, which is also the SWR cache key, so a
+    // filter change is a new server query rather than a re-filter of a
+    // stale, truncated sample.
+    const query = useMemo(() => {
+        const p = new URLSearchParams();
+        const push = (key: string, values?: string[]) => {
+            if (values?.length) p.set(key, values.join(','));
+        };
+        push('side', state.side);
+        push('kind', state.kind);
+        push('commodity', state.commodity);
+        push('region', state.region);
+        const range = state.quantity?.[0] ? parseRangeToken(state.quantity[0]) : null;
+        if (range?.min != null) p.set('minTonnes', String(range.min));
+        if (range?.max != null) p.set('maxTonnes', String(range.max));
+        const q = search.trim();
+        if (q) p.set('q', q);
+        p.set('limit', String(PAGE_SIZE));
+        return p.toString();
+    }, [state, search]);
 
-    // Runtime commodity options from the feed.
-    const liveFilters = useMemo(
-        () => buildExchangeFilters(tFilters, offers.map((o) => o.commodity)),
-        [tFilters, offers],
+    const { data, isLoading, error, mutate } = useTenantSWR<ListingPage>(
+        `/exchange/listings?${query}`,
     );
 
-    // Client-side filter (side / commodity / region / quantity + search).
-    const filtered = useMemo(() => {
-        const q = search.trim().toLowerCase();
-        const sides = state.side ?? [];
-        const kinds = state.kind ?? [];
-        const regions = state.region ?? [];
-        const commodities = state.commodity ?? [];
-        const range = state.quantity?.[0] ? parseRangeToken(state.quantity[0]) : null;
-        return offers.filter((o) => {
-            if (q && !`${o.commodity} ${o.regionName}`.toLowerCase().includes(q)) return false;
-            if (sides.length && !sides.includes(o.side)) return false;
-            // Kind filter (#11) — narrows both the list AND the map (which
-            // renders this same `filtered` array).
-            if (kinds.length && !kinds.includes(o.kind)) return false;
-            if (regions.length && !regions.includes(o.regionCode)) return false;
-            if (commodities.length && !commodities.includes(o.commodity)) return false;
-            if (range) {
-                const qt = Number(o.quantityTonnes);
-                if (range.min != null && qt < range.min) return false;
-                if (range.max != null && qt > range.max) return false;
-            }
-            return true;
-        });
-    }, [offers, search, state]);
+    // Page 1 comes from SWR (re-keyed on every filter change); later pages are
+    // accumulated here. `reload` reseeds when SWR hands over a new first page.
+    const feedUrl = useCallback(
+        (cursor: string) => buildApiUrl(`/exchange/listings?${query}&cursor=${encodeURIComponent(cursor)}`),
+        [buildApiUrl, query],
+    );
+    const {
+        rows: offers,
+        hasMore,
+        loading: loadingMore,
+        error: pageError,
+        loadMore,
+        reload,
+    } = useCursorPagination<ExchangePublicListing>({
+        initialRows: [],
+        initialNextCursor: null,
+        fetchUrl: feedUrl,
+    });
+    // Page 1, normalised.
+    //
+    // Tolerate a payload that isn't the current wire shape: the SWR cache is
+    // DISK-BACKED (localStorage + IndexedDB, `persistent-cache.ts`), so the
+    // first load after this deploy can hand back a bare array cached under the
+    // previous contract — and spreading `undefined.rows` would blank the page
+    // rather than degrade it.
+    const firstPage = useMemo(() => {
+        const rows = Array.isArray(data) ? data : data?.rows;
+        return {
+            rows: Array.isArray(rows) ? rows : [],
+            nextCursor: (Array.isArray(data) ? null : data?.nextCursor) ?? null,
+        };
+    }, [data]);
 
-    // Market-pulse stats over the currently-shown offers — the ticker's liveness
-    // + trust signal (volume, breadth, price level).
+    // Reseed the accumulator on CONTENT, not on the `data` reference.
+    //
+    // A reference-keyed effect deadlocks against any SWR-shaped source that
+    // returns a fresh object per render: reseed → re-render → fresh object →
+    // reseed. Real SWR keeps `data` stable between revalidations so it would
+    // not bite in production, which is precisely what makes it a bad thing to
+    // depend on. The signature is O(page size) over ≤50 ids per render.
+    const pageSignature = `${firstPage.rows.map((r) => r.id).join(',')}|${firstPage.nextCursor ?? ''}`;
+    const seededRef = useRef<string | null>(null);
+    useEffect(() => {
+        if (seededRef.current === pageSignature) return;
+        seededRef.current = pageSignature;
+        reload(firstPage.rows, firstPage.nextCursor);
+        // `firstPage` is derived from `pageSignature`'s inputs; keying the
+        // effect on the signature is what makes the reseed idempotent.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [pageSignature, reload]);
+
+    const selectedRegionCodes = state.region ?? [];
+
+    // ── Commodity facet options ─────────────────────────────────────────
+    // Read from an UNFILTERED page, not from `offers`.
+    //
+    // Deriving them from the displayed rows worked while filtering was
+    // client-side over the whole fetched array. Now that the server answers
+    // the filtered query, the displayed rows ARE the selection — so a farmer
+    // who picked "Wheat" would find the dropdown collapsed to "Wheat" and no
+    // way back to the others.
+    //
+    // When no facet is active this key is identical to the feed's, so SWR
+    // dedupes it to zero extra requests; only a filtered view pays for the
+    // second read. Selected values are unioned in so a choice can never
+    // vanish from its own dropdown even if it falls off page 1.
+    const { data: facetPage } = useTenantSWR<ListingPage>(
+        `/exchange/listings?limit=${PAGE_SIZE}`,
+    );
+    const commodityOptions = useMemo(() => {
+        const rows = Array.isArray(facetPage) ? facetPage : facetPage?.rows;
+        const set = new Set<string>(Array.isArray(rows) ? rows.map((o) => o.commodity) : []);
+        for (const c of state.commodity ?? []) set.add(c);
+        return [...set];
+    }, [facetPage, state.commodity]);
+
+    const liveFilters = useMemo(
+        () => buildExchangeFilters(tFilters, commodityOptions),
+        [tFilters, commodityOptions],
+    );
+
+    // ── Market pulse ────────────────────────────────────────────────────
+    // Two honesty rules, both of which this ticker used to break.
+    //
+    // 1. CURRENCY. It averaged `pricePerTonne` across every row and labelled
+    //    the result with `priced[0].priceCurrency` — so one USD listing at the
+    //    head of the array relabelled a euro average as dollars, and a mixed
+    //    feed produced a number that was not a price in any currency. Only
+    //    rows in the marketplace currency are averaged now; anything else is
+    //    counted and disclosed, and still shows its own price on its own card.
+    //
+    // 2. SAMPLE. Tonnage / provinces / offer count describe the rows LOADED,
+    //    which is one page unless the user pages further. When more exist, the
+    //    ticker says so instead of presenting a page as the nation.
     const ticker = useMemo(() => {
-        const tonnes = filtered.reduce((a, o) => a + (Number(o.quantityTonnes) || 0), 0);
-        const provinces = new Set(filtered.map((o) => o.regionCode)).size;
-        const priced = filtered.filter((o) => Number(o.pricePerTonne) > 0);
+        const tonnes = offers.reduce((a, o) => a + (Number(o.quantityTonnes) || 0), 0);
+        const provinces = new Set(offers.map((o) => o.regionCode)).size;
+        const allPriced = offers.filter((o) => Number(o.pricePerTonne) > 0);
+        const priced = allPriced.filter((o) => isAggregatable(o.priceCurrency));
         const avg = priced.length
             ? Math.round(priced.reduce((a, o) => a + Number(o.pricePerTonne), 0) / priced.length)
             : null;
         return {
-            offers: filtered.length,
+            offers: offers.length,
             tonnes: Math.round(tonnes),
             provinces,
             avg,
-            cur: priced[0]?.priceCurrency ?? 'BGN',
+            cur: EXCHANGE_CURRENCY,
+            /** Priced rows left OUT of the average because they float. */
+            excluded: allPriced.length - priced.length,
         };
-    }, [filtered]);
+    }, [offers]);
 
     const [hoveredId, setHoveredId] = useState<string | null>(null);
     // Seed the selection from the deep link (`?listing=<id>`) at mount so a
@@ -163,15 +289,23 @@ function ExchangeInner() {
     // Optimistically add a freshly-created listing to the shared SWR cache so
     // it lands on the map + list instantly, then revalidate to reconcile.
     function handleCreated(created: ExchangePublicListing) {
-        void mutate([created, ...offers], { revalidate: true });
+        void mutate(
+            { rows: [created, ...(data?.rows ?? [])], nextCursor: data?.nextCursor ?? null },
+            { revalidate: true },
+        );
     }
     const selectedOffer = useMemo(
         () =>
-            filtered.find((o) => o.id === selectedId)
-            ?? offers.find((o) => o.id === selectedId)
+            offers.find((o) => o.id === selectedId)
             ?? (fetchedListing?.id === selectedId ? fetchedListing : null),
-        [filtered, offers, selectedId, fetchedListing],
+        [offers, selectedId, fetchedListing],
     );
+    // Interest can only be expressed in an offer that is still live. The Sheet
+    // is reachable by deep link at ANY status (`getListing` returns whatever
+    // the id points at), so a fulfilled or withdrawn offer used to render a
+    // fully enabled "Express interest" button whose only possible outcome was
+    // a 400 from the state machine.
+    const selectedIsOpen = selectedOffer?.status === 'ACTIVE';
 
     return (
         <ListPageShell>
@@ -228,15 +362,29 @@ function ExchangeInner() {
                         <span className="tracking-wide text-content-muted">{t('tickerLive')}</span>
                     </span>
                     {ticker.offers > 0 ? (
-                        <span className="whitespace-nowrap font-mono tabular-nums text-content-secondary">
-                            {t('tickerSummary', {
-                                tonnes: ticker.tonnes.toLocaleString(),
-                                offers: ticker.offers,
-                                provinces: ticker.provinces,
-                                price: ticker.avg ?? '—',
-                                cur: ticker.cur,
-                            })}
-                        </span>
+                        <>
+                            <span className="whitespace-nowrap font-mono tabular-nums text-content-secondary">
+                                {t('tickerSummary', {
+                                    tonnes: ticker.tonnes.toLocaleString(),
+                                    offers: ticker.offers,
+                                    provinces: ticker.provinces,
+                                    price: ticker.avg ?? '—',
+                                    cur: ticker.cur,
+                                })}
+                            </span>
+                            {/* Say what the figures leave out, rather than let a
+                                partial answer pass for a complete one. */}
+                            {ticker.excluded > 0 && (
+                                <span className="whitespace-nowrap text-content-muted">
+                                    {t('tickerOtherCurrencies', { count: ticker.excluded })}
+                                </span>
+                            )}
+                            {hasMore && (
+                                <span className="whitespace-nowrap text-content-muted">
+                                    {t('tickerPartialSample')}
+                                </span>
+                            )}
+                        </>
                     ) : (
                         <span className="whitespace-nowrap text-content-muted">{t('tickerEmpty')}</span>
                     )}
@@ -250,7 +398,7 @@ function ExchangeInner() {
                         Gate flex to md+ so mobile uses the definite h-[46vh]. */}
                     <div className="min-h-0 overflow-hidden md:flex-1 max-md:h-[46vh] max-md:min-h-[18rem]">
                         <ExchangeMap
-                            listings={filtered}
+                            listings={offers}
                             selectedRegionCodes={selectedRegionCodes}
                             onRegionClick={(code) => toggle('region', code)}
                             onListingSelect={(id) => setSelectedId(id)}
@@ -265,10 +413,12 @@ function ExchangeInner() {
                                 ? t('couldntLoad')
                                 : isLoading
                                   ? t('loadingOffers')
-                                  : t('offerCount', { count: filtered.length })}
+                                  : hasMore
+                                    ? t('offerCountPartial', { count: offers.length })
+                                    : t('offerCount', { count: offers.length })}
                         </p>
                         <div className="min-h-0 flex-1 space-y-default overflow-y-auto pr-1">
-                            {error ? (
+                            {error && offers.length === 0 ? (
                                 <ErrorState
                                     description={t('loadError')}
                                     onRetry={() => { void mutate(); }}
@@ -279,12 +429,13 @@ function ExchangeInner() {
                                         <Skeleton key={i} className="h-20 w-full rounded-lg" />
                                     ))}
                                 </div>
-                            ) : filtered.length === 0 ? (
+                            ) : offers.length === 0 ? (
                                 <div className="rounded-lg border border-border-subtle p-4 text-sm text-content-muted">
                                     {t('emptyFiltered')}
                                 </div>
                             ) : (
-                            filtered.map((o) => (
+                            <>
+                            {offers.map((o) => (
                                 <button
                                     key={o.id}
                                     type="button"
@@ -314,21 +465,47 @@ function ExchangeInner() {
                                         )}
                                     </div>
                                     <div className="text-sm text-content-secondary">
-                                        {o.quantityTonnes} t
-                                        {o.pricePerTonne ? ` · ${o.pricePerTonne} ${o.priceCurrency}/t` : ''}
+                                        {o.quantityTonnes} {tonne}
+                                        {o.pricePerTonne
+                                            ? ` · ${formatPricePerTonne(o.pricePerTonne, o.priceCurrency, tonne)}`
+                                            : ''}
                                     </div>
                                     <div className="text-xs text-content-muted">
-                                        {o.regionName}
+                                        {localizedRegionName(o.regionCode, locale, o.regionName)}
                                         {o.sellerDisplayName ? ` · ${o.sellerDisplayName}` : ''}
                                     </div>
                                 </button>
-                            )))}
+                            ))}
+                            {/* Paging forward is what turns "the newest 50" into
+                                the market. Without it the counts, the map's
+                                national best and the ticker all described a
+                                sample while reading like a census. */}
+                            {hasMore && (
+                                <div className="space-y-tight pb-1">
+                                    <Button
+                                        variant="secondary"
+                                        size="sm"
+                                        className="w-full"
+                                        loading={loadingMore}
+                                        onClick={() => { void loadMore(); }}
+                                    >
+                                        {t('loadMore')}
+                                    </Button>
+                                    {pageError && (
+                                        <p role="alert" className="text-xs text-content-error">
+                                            {t('loadMoreError')}
+                                        </p>
+                                    )}
+                                </div>
+                            )}
+                            </>
+                            )}
                         </div>
                     </div>
                 </div>
             </ListPageShell.Body>
 
-            {/* Detail Sheet — open/close wired here; body stubbed (Prompt 3). */}
+            {/* Detail Sheet. */}
             <Sheet
                 open={selectedId != null}
                 onOpenChange={(o) => {
@@ -342,11 +519,21 @@ function ExchangeInner() {
                 <Sheet.Body className="space-y-section">
                     {selectedOffer && (
                         <div className="space-y-default text-sm">
-                            <div className="flex items-center gap-compact">
+                            <div className="flex flex-wrap items-center gap-compact">
                                 <SideDot side={selectedOffer.side} />
                                 <span className="font-medium text-content-emphasis">
                                     {selectedOffer.side === 'SELL' ? t('selling') : t('buying')}
                                 </span>
+                                {/* The Sheet is reachable by deep link at any
+                                    status, so it has to SAY which one — an
+                                    expired offer used to be indistinguishable
+                                    from a live one right up to the failed
+                                    inquiry. */}
+                                <StatusBadge variant={statusVariant(selectedOffer.status)}>
+                                    {LISTING_STATUS_KEY[selectedOffer.status]
+                                        ? t(LISTING_STATUS_KEY[selectedOffer.status])
+                                        : selectedOffer.status}
+                                </StatusBadge>
                                 {selectedOffer.isOwn && (
                                     <span className="rounded bg-bg-subtle px-1.5 py-0.5 text-[10px] font-medium text-content-secondary">
                                         {t('yourOffer')}
@@ -355,15 +542,27 @@ function ExchangeInner() {
                             </div>
                             <dl className="grid grid-cols-[auto_1fr] gap-x-section gap-y-tight text-content-secondary">
                                 <dt className="text-content-muted">{t('detailQuantity')}</dt>
-                                <dd>{selectedOffer.quantityTonnes} t</dd>
+                                <dd>{selectedOffer.quantityTonnes} {tonne}</dd>
                                 <dt className="text-content-muted">{t('detailPrice')}</dt>
                                 <dd>
                                     {selectedOffer.pricePerTonne
-                                        ? `${selectedOffer.pricePerTonne} ${selectedOffer.priceCurrency}/t`
+                                        ? formatPricePerTonne(
+                                              selectedOffer.pricePerTonne,
+                                              selectedOffer.priceCurrency,
+                                              tonne,
+                                          )
                                         : t('marketNegotiable')}
                                 </dd>
                                 <dt className="text-content-muted">{t('detailRegion')}</dt>
-                                <dd>{selectedOffer.regionName}</dd>
+                                <dd>
+                                    {localizedRegionName(
+                                        selectedOffer.regionCode,
+                                        locale,
+                                        selectedOffer.regionName,
+                                    )}
+                                </dd>
+                                <dt className="text-content-muted">{t('detailPosted')}</dt>
+                                <dd>{formatDate(selectedOffer.createdAt)}</dd>
                                 {selectedOffer.expiresAt && (
                                     <>
                                         <dt className="text-content-muted">{t('detailExpires')}</dt>
@@ -379,9 +578,20 @@ function ExchangeInner() {
                             {/* Contact happens only through a mediated inquiry — and never
                                 on your own listing. */}
                             {!selectedOffer.isOwn && (
-                                <Button variant="primary" size="sm" className="w-full" onClick={() => setInquiryOpen(true)}>
-                                    {t('expressInterest')}
-                                </Button>
+                                <div className="space-y-tight">
+                                    <Button
+                                        variant="primary"
+                                        size="sm"
+                                        className="w-full"
+                                        disabled={!selectedIsOpen}
+                                        onClick={() => setInquiryOpen(true)}
+                                    >
+                                        {t('expressInterest')}
+                                    </Button>
+                                    {!selectedIsOpen && (
+                                        <p className="text-xs text-content-muted">{t('closedToInterest')}</p>
+                                    )}
+                                </div>
                             )}
                         </div>
                     )}

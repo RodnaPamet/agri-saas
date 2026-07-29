@@ -51,8 +51,28 @@
  *     user-facing failures.
  */
 import type { RequestContext } from '@/app-layer/types';
-import { runInTenantContext } from '@/lib/db-context';
+import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { forbidden } from '@/lib/errors/types';
+
+/**
+ * Run `cb` inside the caller's OPEN transaction when it supplied one, else
+ * open a fresh tenant-bound transaction.
+ *
+ * The `tx` path exists so a create-site can put the quota COUNT and the
+ * INSERT in a single transaction. Without it the count committed and released
+ * before the insert began, so two concurrent creates on a tenant sitting at
+ * limit-1 both read `current = limit - 1`, both passed, and both wrote — the
+ * cap was advisory under exactly the concurrency it is meant to stop. Passing
+ * the caller's `tx` also avoids the second, nested pool checkout that calling
+ * `runInTenantContext` from inside a transaction would cause.
+ */
+function runIn<T>(
+    ctx: RequestContext,
+    tx: PrismaTx | undefined,
+    cb: (db: PrismaTx) => Promise<T>,
+): Promise<T> {
+    return tx ? cb(tx) : runInTenantContext(ctx, cb);
+}
 
 // ─── Types ───────────────────────────────────────────────────────
 
@@ -148,10 +168,15 @@ export function getBillingMode(): BillingMode {
  * second-guess that here would race with the webhook and produce
  * confusing user-facing failures.
  */
-export async function getEffectivePlan(ctx: RequestContext): Promise<Plan> {
+export async function getEffectivePlan(
+    ctx: RequestContext,
+    /** Reuse an OPEN transaction instead of opening a second one — see
+     *  {@link assertWithinLimit}. */
+    tx?: PrismaTx,
+): Promise<Plan> {
     if (BILLING_MODE === 'SELFHOSTED') return 'ENTERPRISE';
 
-    return runInTenantContext(ctx, async (db) => {
+    return runIn(ctx, tx, async (db) => {
         // BillingAccount is global (not RLS-scoped) so a runtime
         // tenant context is not strictly required — but using
         // runInTenantContext keeps the function signature uniform
@@ -241,8 +266,9 @@ export async function getAiTokensUsedThisMonth(ctx: RequestContext): Promise<num
 async function getCurrentCount(
     ctx: RequestContext,
     resource: GatedResource,
+    tx?: PrismaTx,
 ): Promise<number> {
-    return runInTenantContext(ctx, async (db) => {
+    return runIn(ctx, tx, async (db) => {
         switch (resource) {
             case 'control':
                 return db.control.count({
@@ -310,16 +336,25 @@ async function getCurrentCount(
  * 403 without any new error-type plumbing. The message body
  * embeds `plan_limit_exceeded` + plan + resource + limit + current
  * so the billing UI can parse it into an "Upgrade" CTA.
+ *
+ * Pass `tx` — the transaction the create itself runs in — to close the
+ * check-then-act race. Read/write skew is still possible under READ COMMITTED
+ * (Postgres' default), but the window shrinks from "two round trips and a
+ * commit apart" to "the same statement sequence in one transaction", and a
+ * caller that later needs a hard cap has somewhere to put a `SELECT … FOR
+ * UPDATE`. Omitting `tx` keeps the old behaviour for the call sites that have
+ * no transaction to share.
  */
 export async function assertWithinLimit(
     ctx: RequestContext,
     resource: GatedResource,
+    tx?: PrismaTx,
 ): Promise<void> {
-    const plan = await getEffectivePlan(ctx);
+    const plan = await getEffectivePlan(ctx, tx);
     const limit = getLimit(plan, resource);
     if (limit === null) return; // unlimited
 
-    const current = await getCurrentCount(ctx, resource);
+    const current = await getCurrentCount(ctx, resource, tx);
     if (current >= limit) {
         // Surface as `forbidden` so `withApiErrorHandling` returns
         // 403. The message embeds plan + resource + limit so the

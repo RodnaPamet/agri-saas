@@ -61,15 +61,21 @@ describe('CreateListingSchema — pricePerTonne', () => {
     });
 });
 
-describe('CreateListingSchema — priceCurrency', () => {
-    it('defaults to BGN when omitted', () => {
-        expect(CreateListingSchema.parse({ ...baseListing }).priceCurrency).toBe('BGN');
+describe('CreateListingSchema — priceCurrency is EUR-only', () => {
+    it('defaults to EUR when omitted', () => {
+        expect(CreateListingSchema.parse({ ...baseListing }).priceCurrency).toBe('EUR');
     });
-    it('accepts the known set and rejects anything else', () => {
+    it('accepts EUR', () => {
         expect(CreateListingSchema.parse({ ...baseListing, priceCurrency: 'EUR' }).priceCurrency).toBe('EUR');
-        expect(CreateListingSchema.parse({ ...baseListing, priceCurrency: 'USD' }).priceCurrency).toBe('USD');
-        expect(() => CreateListingSchema.parse({ ...baseListing, priceCurrency: 'GBP' })).toThrow();
-        expect(() => CreateListingSchema.parse({ ...baseListing, priceCurrency: 'btc' })).toThrow();
+    });
+    // The write-side half of the euro migration. BGN rows were CONVERTED once
+    // at the fixed 1.95583; USD floats and cannot be. Either way, a NEW listing
+    // in a second currency would put two incomparable prices side by side on
+    // the same map — which is the defect the migration closed.
+    it('rejects every other currency, including the two the column still holds', () => {
+        for (const cur of ['BGN', 'USD', 'GBP', 'btc', 'eur']) {
+            expect(() => CreateListingSchema.parse({ ...baseListing, priceCurrency: cur })).toThrow();
+        }
     });
 });
 

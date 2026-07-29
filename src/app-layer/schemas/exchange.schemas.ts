@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { ExchangeSide, ExchangeKind } from '@prisma/client';
+import { EXCHANGE_CURRENCY } from '@/lib/exchange/currency';
 
 /**
  * Zod schemas for the Exchange write API. The usecase layer sanitizes all
@@ -51,8 +52,18 @@ function boundedDecimal(opts: { min: number; max: number; minExclusive?: boolean
 const QuantityTonnes = boundedDecimal({ min: 0, max: 1_000_000, minExclusive: true });
 /** Price per tonne: >= 0, capped under the Decimal(12,2) limit; null preserved. */
 const PricePerTonne = boundedDecimal({ min: 0, max: 10_000_000 });
-/** Known trading currencies — anything else is rejected (default BGN). */
-const PriceCurrency = z.enum(['BGN', 'EUR', 'USD']);
+/**
+ * New listings are EUR-ONLY.
+ *
+ * This used to be `z.enum(['BGN','EUR','USD']).default('BGN')`, which is what
+ * let the marketplace hold three denominations at once while the map labelled
+ * all of them "€/t". Narrowing it to a literal is the write-side half of the
+ * euro migration: legacy rows were converted once (see
+ * `…_exchange_euro_denomination`), and the create path can no longer
+ * reintroduce a second currency. The COLUMN still tolerates others — it has to,
+ * to express the USD rows that exist — so this is the only gate that matters.
+ */
+const PriceCurrency = z.literal(EXCHANGE_CURRENCY);
 
 export const CreateListingSchema = z
     .object({
@@ -61,7 +72,7 @@ export const CreateListingSchema = z
         commodity: z.string().min(1).max(120),
         quantityTonnes: QuantityTonnes,
         pricePerTonne: PricePerTonne.nullable().optional(),
-        priceCurrency: PriceCurrency.default('BGN'),
+        priceCurrency: PriceCurrency.default(EXCHANGE_CURRENCY),
         regionCode: z.string().min(1).max(16),
         description: z.union([z.string().max(2000), z.null()]).optional(),
         sellerDisplayName: z.union([z.string().max(120), z.null()]).optional(),

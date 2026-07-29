@@ -1,6 +1,7 @@
 import { PrismaTx } from '@/lib/db-context';
 import { RequestContext } from '../types';
 import { ModuleKey } from '@prisma/client';
+import { ALL_MODULES } from '@/lib/modules';
 
 /**
  * TenantModuleSettings repository — one row per tenant (tenantId unique),
@@ -23,7 +24,21 @@ export class ModuleSettingsRepository {
     static async setMeteobotUrl(db: PrismaTx, ctx: RequestContext, meteobotStationUrl: string | null) {
         return db.tenantModuleSettings.upsert({
             where: { tenantId: ctx.tenantId },
-            create: { tenantId: ctx.tenantId, enabledModules: [], meteobotStationUrl },
+            // ALL modules on the create branch, not `[]`.
+            //
+            // Absence of a row means "everything enabled" (`resolveEnabledModules`),
+            // so a tenant that had never customised its modules and then set a
+            // Meteobot URL was silently switched from all-on to ALL-OFF — the
+            // create branch materialised an empty list as if they had turned
+            // every module off by hand. That was already a page-redirect + 403
+            // across the product; it now also hides that tenant's Exchange
+            // listings from the marketplace (the seller-side module check), so
+            // the write has to preserve the default rather than erase it.
+            create: {
+                tenantId: ctx.tenantId,
+                enabledModules: [...ALL_MODULES],
+                meteobotStationUrl,
+            },
             update: { meteobotStationUrl },
         });
     }

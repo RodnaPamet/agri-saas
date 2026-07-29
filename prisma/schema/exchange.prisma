@@ -56,7 +56,16 @@ model ExchangeListing {
   commodity         String
   quantityTonnes    Decimal               @db.Decimal(14, 3)
   pricePerTonne     Decimal?              @db.Decimal(12, 2)
-  priceCurrency     String                @default("BGN")
+  /// The marketplace is EURO-denominated: every new listing is written as
+  /// "EUR" (the create schema accepts nothing else) and the legacy BGN rows
+  /// were CONVERTED — not relabelled — at the legally fixed 1.95583 BGN/EUR
+  /// in migration `20260729120000_exchange_euro_denomination`.
+  ///
+  /// The column stays because the table must still be able to EXPRESS the
+  /// rows that exist: USD floats, so those rows keep their own amount and
+  /// label and are excluded from every cross-listing aggregate. See
+  /// src/lib/exchange/currency.ts — the one place this policy is decided.
+  priceCurrency     String                @default("EUR")
   /// Bulgaria oblast code (ISO 3166-2 style, e.g. "BG-16") — see
   /// src/lib/geo/bulgaria-regions.ts.
   regionCode        String

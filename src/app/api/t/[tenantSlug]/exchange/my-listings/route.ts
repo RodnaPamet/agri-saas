@@ -1,5 +1,4 @@
 import { getTenantCtx } from '@/app-layer/context';
-import { assertModuleEnabled } from '@/app-layer/usecases/modules';
 import { listMyListings } from '@/app-layer/usecases/exchange';
 import { toPublicListing, toPublicInquiry } from '@/lib/exchange/public-listing';
 import { withApiErrorHandling } from '@/lib/errors/api';
@@ -19,12 +18,21 @@ import type { NextRequest } from 'next/server';
  * null` and the accept would complete nothing. `includeListing: false` keeps
  * it out of the wire shape, so the private `sellerContact` on that row is
  * read by the gate and never projected.
+ *
+ * ── NOT module-gated, on purpose ─────────────────────────────────────────
+ * This is a CUSTODY surface: your own rows, in your own tenant, read under
+ * your own RequestContext. The EXCHANGE toggle governs participation in the
+ * marketplace, not access to what you already posted there — and gating this
+ * read is what made the module-opt-out defect unrecoverable, because the
+ * seller could not even SEE the listings the withdraw exemption now lets them
+ * take down. Registered in `MODULE_GATE_EXEMPT_ROUTES` in
+ * tests/guardrails/module-gate-coverage.test.ts so the exemption is asserted
+ * rather than merely absent.
  */
 export const GET = withApiErrorHandling(
     async (req: NextRequest, { params: paramsPromise }: { params: Promise<{ tenantSlug: string }> }) => {
         const params = await paramsPromise;
         const ctx = await getTenantCtx(params, req);
-        await assertModuleEnabled(ctx, 'EXCHANGE');
         const listings = await listMyListings(ctx);
         return jsonResponse(
             listings.map((l) => ({

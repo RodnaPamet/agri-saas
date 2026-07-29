@@ -1,8 +1,18 @@
 import { RequestContext } from '../types';
-import { ExchangeRepository, ListingFilters } from '../repositories/exchange';
+import {
+    ExchangeRepository,
+    type ListingFilters,
+    type ListingPageParams,
+} from '../repositories/exchange';
 import { assertCanRead, assertCanWrite } from '../policies/common';
 import { logEvent } from '../events/audit';
-import { runInTenantContext, withTenantDb, PrismaTx } from '@/lib/db-context';
+import {
+    runInTenantContext,
+    runInGlobalContext,
+    withTenantDb,
+    PrismaTx,
+} from '@/lib/db-context';
+import { EXCHANGE_CURRENCY } from '@/lib/exchange/currency';
 import { forbidden, notFound, badRequest, conflict } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { regionByCode } from '@/lib/geo/bulgaria-regions';
@@ -45,7 +55,10 @@ export interface CreateListingInput {
     commodity: string;
     quantityTonnes: number | string;
     pricePerTonne?: number | string | null;
-    priceCurrency?: string;
+    // No `priceCurrency`: the marketplace is euro-denominated and a new
+    // listing has no say in the matter (see @/lib/exchange/currency). The
+    // create schema already refuses anything but EUR; leaving a parameter
+    // here would imply a choice the product does not offer.
     /** ISO 3166-2:BG oblast code — regionName/lat/lon are derived from it. */
     regionCode: string;
     description?: string | null;
@@ -63,28 +76,69 @@ export interface CreateInquiryInput {
 
 // ─── Reads (GLOBAL — cross-tenant by design) ─────────────────────────
 
-/** Browse ACTIVE listings across ALL tenants. */
-export async function listActiveListings(ctx: RequestContext, filters: ListingFilters = {}) {
+/**
+ * Seller tenants whose listings must NOT appear in the marketplace: the ones
+ * that switched the EXCHANGE module OFF.
+ *
+ * The browse query had no seller-side module check at all, so disabling the
+ * module hid the marketplace from the tenant while leaving that tenant's own
+ * offers public and — because the withdraw endpoint gated on the caller's
+ * module — un-withdrawable. Every listing they had ever posted stayed on the
+ * map, fielding inquiries they could no longer answer.
+ *
+ * Read RLS-FREE (`runInGlobalContext`), because `TenantModuleSettings` is
+ * tenant-scoped: under the viewer's own context this would see at most the
+ * viewer's row and the exclusion would silently do nothing. It selects
+ * tenant IDS only.
+ *
+ * The PLAN half of module availability is deliberately not consulted:
+ * EXCHANGE is `FREE`-tier for every plan (it is a network-effect product), so
+ * the per-tenant toggle is the only thing that can turn it off.
+ */
+async function sellerTenantsWithExchangeOff(): Promise<string[]> {
+    return runInGlobalContext((db) =>
+        ExchangeRepository.listTenantIdsWithModuleDisabled(db, 'EXCHANGE'),
+    );
+}
+
+/**
+ * Browse ACTIVE listings across ALL tenants — server-side facets + one
+ * cursor page. Returns `{ rows, nextCursor }`.
+ */
+export async function listActiveListings(
+    ctx: RequestContext,
+    filters: ListingFilters = {},
+    page: ListingPageParams = {},
+) {
     assertCanRead(ctx);
-    return runInTenantContext(ctx, (db) => ExchangeRepository.listActiveListings(db, filters));
+    const excludeSellerTenantIds = await sellerTenantsWithExchangeOff();
+    return runInTenantContext(ctx, (db) =>
+        ExchangeRepository.listActiveListings(
+            db,
+            { ...filters, excludeSellerTenantIds },
+            page,
+        ),
+    );
 }
 
 /** Read one listing by id (any tenant's). */
 export async function getListing(ctx: RequestContext, id: string) {
     assertCanRead(ctx);
-    return runInTenantContext(ctx, async (db) => {
-        const listing = await ExchangeRepository.getListing(db, id);
-        if (!listing) throw notFound('Listing not found');
-        return listing;
+    const listing = await runInTenantContext(ctx, async (db) => {
+        const row = await ExchangeRepository.getListing(db, id);
+        if (!row) throw notFound('Listing not found');
+        return row;
     });
-}
-
-/** The seller's inbox — inquiries received on this tenant's listings. */
-export async function listInquiriesForSeller(ctx: RequestContext) {
-    assertCanRead(ctx);
-    return runInTenantContext(ctx, (db) =>
-        ExchangeRepository.listInquiriesForSeller(db, ctx.tenantId),
-    );
+    // The deep-link path has to honour the same seller-module exclusion the
+    // feed does, or a shared link would resurrect a listing the marketplace
+    // has hidden. The OWNER is exempt: they must still be able to open and
+    // withdraw their own row, which is the whole point of the exemption on
+    // the withdraw path.
+    if (listing.sellerTenantId !== ctx.tenantId) {
+        const off = await sellerTenantsWithExchangeOff();
+        if (off.includes(listing.sellerTenantId)) throw notFound('Listing not found');
+    }
+    return listing;
 }
 
 /** The buyer's outbox — inquiries this tenant has sent. */
@@ -101,15 +155,22 @@ export async function listInquiriesByInquirer(ctx: RequestContext) {
 export async function createListing(ctx: RequestContext, input: CreateListingInput) {
     assertCanWrite(ctx);
 
-    // Per-tenant ACTIVE-listing quota — the real spam control, since the
-    // EXCHANGE module is available on the FREE plan. Self-hosted mode resolves
-    // to ENTERPRISE (unlimited) and short-circuits without a DB count.
-    await assertWithinLimit(ctx, 'exchange_listing');
-
     const region = regionByCode(input.regionCode);
     if (!region) throw badRequest('invalid_region', `Unknown region code: ${input.regionCode}`);
 
     return runInTenantContext(ctx, async (db) => {
+        // Per-tenant ACTIVE-listing quota — the real spam control, since the
+        // EXCHANGE module is available on the FREE plan. Self-hosted mode
+        // resolves to ENTERPRISE (unlimited) and short-circuits without a DB
+        // count.
+        //
+        // Run INSIDE the create's own transaction (`db`), not before it. As a
+        // standalone call it committed and released before the insert began,
+        // so two concurrent creates on a tenant at limit-1 both counted
+        // limit-1, both passed, and both wrote — the cap was advisory under
+        // precisely the burst it exists to stop.
+        await assertWithinLimit(ctx, 'exchange_listing', db);
+
         const listing = await ExchangeRepository.createListing(db, {
             // Ownership is fixed to the caller — a tenant can only ever create
             // its OWN listing.
@@ -122,8 +183,14 @@ export async function createListing(ctx: RequestContext, input: CreateListingInp
             commodity: sanitizePlainText(input.commodity),
             quantityTonnes: input.quantityTonnes,
             pricePerTonne: input.pricePerTonne ?? null,
-            priceCurrency: input.priceCurrency ?? 'BGN',
+            priceCurrency: EXCHANGE_CURRENCY,
             regionCode: region.code,
+            // The ENGLISH name is persisted as the stable, locale-independent
+            // record of which oblast this is; every surface renders the name
+            // through `regionCode` in the reader's own language
+            // (`localizedRegionName`), so a Bulgarian farmer never sees
+            // "Stara Zagora". Keeping the column means legacy rows and any
+            // non-UI consumer still have a human-readable region.
             regionName: region.nameEn,
             lat: region.lat,
             lon: region.lon,
@@ -304,6 +371,16 @@ export async function createInquiry(ctx: RequestContext, input: CreateInquiryInp
         if (listing.status !== ExchangeListingStatus.ACTIVE) {
             throw badRequest('listing_not_active', 'This listing is no longer active');
         }
+        // The SAME predicate the browse feed filters on
+        // (`ExchangeRepository.listActiveListings`). Status alone was not
+        // enough: an ACTIVE row past its expiry vanishes from the feed
+        // immediately but stays ACTIVE in the table until the nightly sweep
+        // flips it, so for up to a day a listing nobody could see could still
+        // take inquiries through a deep link — and the seller got notified
+        // about an offer they had already let lapse.
+        if (listing.expiresAt != null && listing.expiresAt <= new Date()) {
+            throw badRequest('listing_expired', 'This listing has expired');
+        }
         // You cannot inquire on your OWN listing.
         if (listing.sellerTenantId === ctx.tenantId) {
             throw forbidden('You cannot inquire on your own listing');
@@ -456,10 +533,17 @@ export async function respondToInquiry(
     assertCanWrite(ctx);
     return runInTenantContext(ctx, async (db) => {
         const inquiry = await ExchangeRepository.getInquiry(db, inquiryId);
-        if (!inquiry) throw notFound('Inquiry not found');
-        // Only the SELLER (owner of the inquiry's listing) may respond.
-        if (inquiry.listing.sellerTenantId !== ctx.tenantId) {
-            throw forbidden('You can only respond to inquiries on your own listings');
+        // ONE oracle for "not yours" and "not there".
+        //
+        // ExchangeInquiry ids are global and guessable-by-enumeration in the
+        // way any id is, and the pair (404 = no such inquiry, 403 = exists but
+        // belongs to someone else) let an outsider confirm the existence of
+        // another tenant's private buyer↔seller conversations one id at a
+        // time. The GUARD is unchanged and still absolute — only the seller
+        // may respond; what changed is that a non-seller learns nothing from
+        // the answer.
+        if (!inquiry || inquiry.listing.sellerTenantId !== ctx.tenantId) {
+            throw notFound('Inquiry not found');
         }
         if (inquiry.status !== ExchangeInquiryStatus.PENDING) {
             throw badRequest('inquiry_not_pending', 'This inquiry has already been answered');

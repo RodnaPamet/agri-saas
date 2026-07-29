@@ -4074,7 +4074,8 @@
         "liquidity": "Liquidity",
         "bestPrice": "Best price",
         "zoomIn": "Zoom in",
-        "zoomOut": "Zoom out"
+        "zoomOut": "Zoom out",
+        "unitTonne": "t"
     },
     "frameworkExplorer": {
         "empty": "This framework has no requirements yet.",
@@ -5739,11 +5740,23 @@
             "expressInterest": "Express interest",
             "tickerLive": "Live",
             "tickerSummary": "{tonnes} t offered · {offers} offers · {provinces} provinces · avg {price} {cur}/t",
-            "tickerEmpty": "No live offers yet"
+            "tickerEmpty": "No live offers yet",
+            "unitTonne": "t",
+            "tickerOtherCurrencies": "· {count} priced in another currency, not averaged",
+            "tickerPartialSample": "· newest offers only — load more to include them",
+            "offerCountPartial": "{count, plural, one {# offer loaded} other {# offers loaded}} — more available",
+            "loadMore": "Load more offers",
+            "loadMoreError": "We couldn't load more offers. Try again.",
+            "detailPosted": "Posted",
+            "statusActive": "Active",
+            "statusExpired": "Expired",
+            "statusFulfilled": "Fulfilled",
+            "statusWithdrawn": "Withdrawn",
+            "closedToInterest": "This offer is closed — you can no longer express interest in it."
         },
         "offer": {
             "title": "New offer",
-            "description": "Publish a sell or buy offer to the cross-tenant marketplace.",
+            "description": "Publish a sell or buy offer to the marketplace, where every other farm can see it.",
             "headerDescription": "Publish a sell or buy offer to the marketplace.",
             "side": "Side",
             "selling": "Selling",
@@ -5759,30 +5772,28 @@
             "commodityCreate": "Use \"{search}\"",
             "quantity": "Quantity (t)",
             "quantityPlaceholder": "e.g. 250",
-            "price": "Price / tonne",
-            "priceHintBuy": "Optional — leave blank for market",
-            "priceHint": "Optional",
-            "currency": "Currency",
-            "currencyPlaceholder": "BGN",
+            "price": "Price / tonne (€)",
+            "priceHintBuy": "Optional — leave blank for market. Euro per tonne.",
+            "priceHint": "Optional. Euro per tonne.",
             "region": "Region",
             "regionDescription": "Bulgarian oblast — the map pin is placed at its centre.",
             "regionPlaceholder": "Select a region",
             "regionSearchPlaceholder": "Search regions…",
             "descriptionLabel": "Description",
-            "descriptionHint": "Shown publicly to every tenant.",
+            "descriptionHint": "Shown publicly to every farm on the marketplace.",
             "descriptionPlaceholder": "Grade, moisture, delivery terms…",
             "expires": "Expires",
             "expiresHint": "Optional — auto-hides after this date.",
             "datePlaceholder": "Select date",
-            "sellerName": "Public seller name",
-            "sellerNameHint": "Optional. Shown publicly. Blank = {name}.",
-            "yourTenantName": "your tenant name",
-            "yourFarmName": "Your farm name",
+            "sellerName": "Public farm name",
             "cancel": "Cancel",
             "submit": "Create offer",
             "sellerContact": "Contact after a deal",
             "sellerContactPlaceholder": "e.g. +359 88 123 4567",
-            "sellerContactConsent": "Optional — a phone number or email. Never shown publicly. Revealed only to a buyer whose interest you accept."
+            "sellerContactConsent": "Optional — a phone number or email. Never shown publicly. Revealed only to a buyer whose interest you accept.",
+            "pricePlaceholder": "e.g. 320",
+            "sellerNamePlaceholder": "Your farm name",
+            "sellerNameConsent": "Optional. Shown publicly on the offer. Leave it blank and the offer appears as \"Anonymous farm\"."
         },
         "inquiry": {
             "title": "Express interest",
@@ -5822,7 +5833,9 @@
             "contactSharedOn": "Shared {date}",
             "contactMissing": "The seller accepted but left no contact on this offer.",
             "declinedNote": "The seller declined. Your other interests are unaffected.",
-            "pendingNote": "Waiting for the seller to respond."
+            "pendingNote": "Waiting for the seller to respond.",
+            "unitTonne": "t",
+            "sentOn": "Sent {date}"
         },
         "myListings": {
             "breadcrumbDashboard": "Dashboard",
@@ -5855,7 +5868,9 @@
             "contactHeading": "Accepted — contact the buyer",
             "contactCopyLabel": "Copy buyer contact",
             "contactMissing": "This buyer left no contact. They can see yours.",
-            "actionFailed": "That didn't work — nothing was changed."
+            "actionFailed": "That didn't work — nothing was changed.",
+            "unitTonne": "t",
+            "moduleDisabledNotice": "The Exchange is switched off for your farm, so these offers are hidden from other farms. You can still withdraw them here."
         }
     },
     "grain": {
@@ -7600,10 +7615,10 @@
         "commodities": "Commodities"
     },
     "exchangeFilters": {
-        "side": "Side",
+        "side": "Offer type",
         "sideSell": "Selling",
         "sideBuy": "Buying",
-        "type": "Type",
+        "type": "Product type",
         "kindCulture": "Culture",
         "kindFertilizer": "Fertilizer",
         "kindSeeds": "Seeds",

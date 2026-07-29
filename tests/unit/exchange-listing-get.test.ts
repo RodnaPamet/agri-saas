@@ -19,10 +19,17 @@ jest.mock('@/lib/db-context', () => ({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     runInTenantContext: jest.fn(async (_ctx: any, fn: (db: any) => any) => fn(mockDb)),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    runInGlobalContext: jest.fn(async (fn: (db: any) => any) => fn(mockDb)),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     withTenantDb: jest.fn(async (_id: string, fn: (db: any) => any) => fn(mockDb)),
 }));
 jest.mock('@/app-layer/repositories/exchange', () => ({
-    ExchangeRepository: { getListing: jest.fn() },
+    ExchangeRepository: {
+        getListing: jest.fn(),
+        // A deep link must honour the same seller-module exclusion the feed
+        // does; default to "nobody opted out".
+        listTenantIdsWithModuleDisabled: jest.fn().mockResolvedValue([]),
+    },
 }));
 
 import { NextRequest } from 'next/server';
@@ -38,6 +45,7 @@ function getReq(): NextRequest {
 
 beforeEach(() => {
     jest.clearAllMocks();
+    repo.listTenantIdsWithModuleDisabled.mockResolvedValue([] as never);
     getTenantCtxMock.mockResolvedValue(makeRequestContext('EDITOR', { tenantId: 'viewer-t', userId: 'u' }));
 });
 

@@ -78,6 +78,39 @@ export function isKnownRegionCode(code: string): boolean {
     return REGION_BY_CODE.has(code);
 }
 
+/**
+ * The oblast name in `locale` — Bulgarian for `bg`, English otherwise, with
+ * `fallback` (usually the row's stored `regionName`) for a code the catalogue
+ * does not know.
+ *
+ * Rows persist the ENGLISH name as a stable, locale-independent record; every
+ * user-facing surface renders through here instead, so a Bulgarian farmer sees
+ * "Стара Загора" rather than "Stara Zagora" on data that was written once and
+ * is read in two languages.
+ */
+export function localizedRegionName(
+    code: string,
+    locale: string,
+    fallback?: string | null,
+): string {
+    const region = REGION_BY_CODE.get(code);
+    if (!region) return fallback ?? code;
+    return locale.startsWith('bg') ? region.nameBg : region.nameEn;
+}
+
+/**
+ * Oblast codes whose Bulgarian OR English name contains `term`
+ * (case-insensitive). Lets a free-text search match a region in either
+ * language even though only one of the two names is stored on the row.
+ */
+export function regionCodesMatchingName(term: string): string[] {
+    const q = term.trim().toLowerCase();
+    if (!q) return [];
+    return BULGARIA_REGIONS.filter(
+        (r) => r.nameBg.toLowerCase().includes(q) || r.nameEn.toLowerCase().includes(q),
+    ).map((r) => r.code);
+}
+
 export interface RegionOption {
     value: string;
     /** Bilingual label, e.g. "Пловдив / Plovdiv". */

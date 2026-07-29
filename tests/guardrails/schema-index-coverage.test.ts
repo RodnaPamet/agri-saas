@@ -399,6 +399,9 @@ const LIST_QUERY_INDEXES: readonly CompositeIndex[] = [
 // curated composite index is needed."
 
 const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
+    // ─── Exchange — the seller-side module opt-out list ───
+    TenantModuleSettings:
+        "ExchangeRepository.listTenantIdsWithModuleDisabled findMany filters `NOT (enabledModules has 'EXCHANGE')` across ALL tenants (deliberately unscoped — it answers \"who opted out?\" for the cross-tenant marketplace feed) and selects only { tenantId }, take:1000. No index helps: a NOT-contains over an enum[] cannot use a GIN index, and the predicate is anti-selective by nature. It stays cheap because a row exists ONLY for a tenant that customised its module list — the table is one row per customising tenant, not one per tenant. If it ever grows past the take, the fix is a denormalised flag on ExchangeListing, not an index here. Every other read on this model is a findUnique on the @unique tenantId.",
     // ─── News "For You" — per-user interest keywords ───
     UserInterest:
         "getUserInterests findMany filters by (tenantId, userId), orders by keyword asc, take:20 — covered by @@index([tenantId, userId]); the keyword sort runs in memory over a user's capped-at-20 self-service interest set. No open-ended filter; PUT-replace clears + createMany on the same (tenantId, userId) scope.",
