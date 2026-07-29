@@ -36,6 +36,7 @@ function makeDb() {
         task: {
             create: jest.fn().mockResolvedValue({ id: 'task-1' }),
             findFirst: jest.fn().mockResolvedValue(null),
+            updateMany: jest.fn().mockResolvedValue({ count: 1 }),
         },
         risk: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
     } as any;
@@ -83,6 +84,39 @@ describe('executeAction', () => {
             where: { id: 'risk-1', tenantId: 't1' },
             data: { status: 'MITIGATED' },
         });
+    });
+
+    it('UPDATE_STATUS keeps a Task completedAt in lockstep with the status it writes', async () => {
+        // This path bypasses WorkItemRepository entirely, so it has to
+        // reproduce the repository's completedAt rule itself. Break:
+        // writing bare `{ status }` — a rule-driven close then counts as
+        // completed work with no timestamp (missing from the dashboard
+        // trend), and a rule-driven re-open leaves the old timestamp on a
+        // visibly-open task (still counted as completed). The allowlist
+        // permits both terminal and active targets, so both are live.
+        const db = makeDb();
+        const taskEvent = { ...baseEvent, entityId: 'task-9' };
+
+        await executeAction(db, {
+            id: 'r1', name: 'Close', actionType: 'UPDATE_STATUS', createdByUserId: 'u1',
+            actionConfigJson: { entityType: 'Task', field: 'status', toStatus: 'CLOSED' },
+        }, taskEvent);
+        await executeAction(db, {
+            id: 'r2', name: 'Reopen', actionType: 'UPDATE_STATUS', createdByUserId: 'u1',
+            actionConfigJson: { entityType: 'Task', field: 'status', toStatus: 'IN_PROGRESS' },
+        }, taskEvent);
+        await executeAction(db, {
+            id: 'r3', name: 'Cancel', actionType: 'UPDATE_STATUS', createdByUserId: 'u1',
+            actionConfigJson: { entityType: 'Task', field: 'status', toStatus: 'CANCELED' },
+        }, taskEvent);
+
+        const dataAt = (i: number) => db.task.updateMany.mock.calls[i][0].data;
+        expect(dataAt(0).status).toBe('CLOSED');
+        expect(dataAt(0).completedAt).toBeInstanceOf(Date);
+        expect(dataAt(1)).toEqual({ status: 'IN_PROGRESS', completedAt: null });
+        // CANCELED is terminal but NOT completed — same rule the
+        // repository applies. See work-item-status.ts.
+        expect(dataAt(2)).toEqual({ status: 'CANCELED', completedAt: null });
     });
 
     it('WEBHOOK fires a real signed HTTP POST', async () => {

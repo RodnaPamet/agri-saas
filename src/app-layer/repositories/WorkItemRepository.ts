@@ -3,7 +3,12 @@ import { RequestContext } from '../types';
 import { Prisma, WorkItemStatus, WorkItemType, WorkItemSeverity, WorkItemPriority, WorkItemSource, TaskLinkEntityType, TaskLinkRelation } from '@prisma/client';
 import { buildCursorWhere, CURSOR_ORDER_BY, computePageInfo, clampLimit } from '@/lib/pagination';
 import type { PaginatedResponse } from '@/lib/dto/pagination';
-import { TERMINAL_WORK_ITEM_STATUSES, isTerminalStatus } from '../domain/work-item-status';
+import {
+    TERMINAL_WORK_ITEM_STATUSES,
+    COMPLETED_WORK_ITEM_STATUSES,
+    isTerminalStatus,
+    isCompletedStatus,
+} from '../domain/work-item-status';
 
 // ─── Filters ───
 
@@ -72,10 +77,12 @@ export class WorkItemRepository {
      * farm task (FARM_TASK + FIELD_OPERATION) CREATED or COMPLETED since
      * `since`; the usecase buckets them into daily counts. Tenant-scoped
      * (RLS + explicit `tenantId`). `completedAt` is only set on RESOLVED /
-     * CLOSED (never CANCELED), so a non-null `completedAt` is exactly
-     * "completed work". Bounded by a hard `take` — a single farm's N-day
-     * task volume sits far below it; the cap only guards the dashboard read
-     * against a pathological tenant.
+     * CLOSED (never CANCELED — see `COMPLETED_WORK_ITEM_STATUSES` and the
+     * `setStatus` write below, which is what makes this true), so a
+     * non-null `completedAt` is exactly "completed work" and this query
+     * needs no status predicate of its own. Bounded by a hard `take` — a
+     * single farm's N-day task volume sits far below it; the cap only
+     * guards the dashboard read against a pathological tenant.
      */
     static async farmTaskTrendRows(db: PrismaTx, ctx: RequestContext, since: Date) {
         return db.task.findMany({
@@ -97,8 +104,9 @@ export class WorkItemRepository {
      * progress so they reflect the table — not the legacy `ControlTask`
      * relation count, which diverged after the work-item unification.
      *
-     * "Completed" is RESOLVED or CLOSED (a CANCELED task is terminal but
-     * not completed work, so it doesn't count toward progress).
+     * "Completed" is `COMPLETED_WORK_ITEM_STATUSES` — RESOLVED or CLOSED.
+     * A CANCELED task is terminal but not completed work, so it doesn't
+     * count toward progress.
      */
     static async countLinkedToControl(
         db: PrismaTx,
@@ -112,7 +120,12 @@ export class WorkItemRepository {
         const [total, done] = await Promise.all([
             db.task.count({ where }),
             db.task.count({
-                where: { AND: [where, { status: { in: ['RESOLVED', 'CLOSED'] } }] },
+                where: {
+                    AND: [
+                        where,
+                        { status: { in: [...COMPLETED_WORK_ITEM_STATUSES] as WorkItemStatus[] } },
+                    ],
+                },
             }),
         ]);
         return { total, done };
@@ -178,7 +191,7 @@ export class WorkItemRepository {
         for (const [controlId, taskMap] of perControl) {
             let done = 0;
             for (const status of taskMap.values()) {
-                if (status === 'RESOLVED' || status === 'CLOSED') done++;
+                if (isCompletedStatus(status)) done++;
             }
             result.set(controlId, { total: taskMap.size, done });
         }
@@ -228,7 +241,7 @@ export class WorkItemRepository {
         for (const [entityId, taskMap] of perEntity) {
             let done = 0;
             for (const status of taskMap.values()) {
-                if (status === 'RESOLVED' || status === 'CLOSED') done++;
+                if (isCompletedStatus(status)) done++;
             }
             result.set(entityId, { total: taskMap.size, done });
         }
@@ -425,12 +438,17 @@ export class WorkItemRepository {
         const existing = await db.task.findFirst({ where: { id, tenantId: ctx.tenantId } });
         if (!existing) return null;
 
-        const updateData: Prisma.TaskUncheckedUpdateInput = { status: status as WorkItemStatus };
-        if (isTerminalStatus(status)) {
-            updateData.completedAt = new Date();
-            if (resolution !== undefined) updateData.resolution = resolution;
-        } else {
-            updateData.completedAt = null;
+        // `completedAt` tracks COMPLETED work, `resolution` tracks any
+        // TERMINAL write — the two predicates are deliberately different.
+        // A CANCELED item is terminal (it still owes the auditor a "why"),
+        // but cancelling a job does not complete it, so it gets a
+        // resolution and no completion timestamp.
+        const updateData: Prisma.TaskUncheckedUpdateInput = {
+            status: status as WorkItemStatus,
+            completedAt: isCompletedStatus(status) ? new Date() : null,
+        };
+        if (isTerminalStatus(status) && resolution !== undefined) {
+            updateData.resolution = resolution;
         }
 
         return db.task.update({ where: { id }, data: updateData });
@@ -467,6 +485,12 @@ export class WorkItemRepository {
             db.task.count({ where: { tenantId, dueAt: { gte: now, lte: in30d }, status: openFilter } }),
             db.task.count({ where: { tenantId } }),
             db.task.count({ where: { tenantId, createdAt: { gte: ago30d } } }),
+            // `resolved30d`. Reads the timestamp rather than the status so a
+            // task resolved in-window and closed later still counts once, on
+            // the day it was finished. Correct ONLY because `setStatus` /
+            // `bulkSetStatus` stamp `completedAt` on COMPLETED statuses and
+            // clear it otherwise — a CANCELED task has no timestamp and so
+            // never lands in this count.
             db.task.count({ where: { tenantId, completedAt: { gte: ago30d } } }),
         ]);
 
@@ -557,11 +581,30 @@ export class WorkItemRepository {
         });
     }
 
+    /**
+     * Bulk sibling of `setStatus`, and deliberately byte-for-byte the same
+     * `completedAt` / `resolution` rule — a task must not end up with a
+     * different timestamp depending on whether it was closed one-at-a-time
+     * or from the list page's checkbox column.
+     *
+     * Clearing `completedAt` on a non-completed target used to look unsafe
+     * here ("updateMany writes one payload to every row, so it would wipe
+     * the real timestamp off a row that is already terminal"). It isn't:
+     * both callers (`bulkSetTaskStatus`, issue `bulkSetStatus`) run the S8
+     * all-or-nothing transition gate FIRST, and CLOSED / CANCELED have no
+     * outgoing transitions at all. The only terminal row that can legally
+     * reach a non-completed target is RESOLVED → IN_PROGRESS — a genuine
+     * re-open, where clearing the stamp is exactly right. Leaving it would
+     * reproduce the single-row bug the sibling `setStatus` test names:
+     * a visibly-open task that keeps counting as completed work.
+     */
     static async bulkSetStatus(db: PrismaTx, ctx: RequestContext, taskIds: string[], status: string, resolution?: string | null) {
-        const updateData: Prisma.TaskUncheckedUpdateManyInput = { status: status as WorkItemStatus };
-        if (isTerminalStatus(status)) {
-            updateData.completedAt = new Date();
-            if (resolution !== undefined) updateData.resolution = resolution;
+        const updateData: Prisma.TaskUncheckedUpdateManyInput = {
+            status: status as WorkItemStatus,
+            completedAt: isCompletedStatus(status) ? new Date() : null,
+        };
+        if (isTerminalStatus(status) && resolution !== undefined) {
+            updateData.resolution = resolution;
         }
         return db.task.updateMany({
             where: { id: { in: taskIds }, tenantId: ctx.tenantId },

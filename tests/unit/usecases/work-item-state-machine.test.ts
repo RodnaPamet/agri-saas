@@ -12,7 +12,10 @@ import {
     formatTransitionError,
     isTerminalStatus,
     isActiveStatus,
+    isCompletedStatus,
     ALL_WORK_ITEM_STATUSES,
+    TERMINAL_WORK_ITEM_STATUSES,
+    COMPLETED_WORK_ITEM_STATUSES,
 } from '@/app-layer/domain/work-item-status';
 
 describe('WORK_ITEM_TRANSITIONS — legal graph', () => {
@@ -115,5 +118,43 @@ describe('isTerminalStatus / isActiveStatus — terminal/active partitioning', (
         expect(isTerminalStatus('RESOLVED')).toBe(true);
         expect(isTerminalStatus('CLOSED')).toBe(true);
         expect(isTerminalStatus('CANCELED')).toBe(true);
+    });
+});
+
+describe('isCompletedStatus — completed is a STRICT subset of terminal', () => {
+    it('accepts exactly RESOLVED and CLOSED', () => {
+        // Break: adding CANCELED here re-merges the two concepts and
+        // puts cancelled work back into every "done" tally in the
+        // product — the dashboard trend, resolved30d, and the
+        // linked-task progress badges.
+        expect(isCompletedStatus('RESOLVED')).toBe(true);
+        expect(isCompletedStatus('CLOSED')).toBe(true);
+        expect(isCompletedStatus('CANCELED')).toBe(false);
+        expect(isCompletedStatus('UNKNOWN')).toBe(false);
+    });
+
+    it('is implied by, but does not imply, isTerminalStatus', () => {
+        // The containment is the invariant worth pinning: every
+        // completed status is terminal, and at least one terminal
+        // status is not completed. A refactor that made the two
+        // predicates equal would satisfy the first half alone.
+        for (const s of ALL_WORK_ITEM_STATUSES) {
+            if (isCompletedStatus(s)) expect(isTerminalStatus(s)).toBe(true);
+        }
+        expect(COMPLETED_WORK_ITEM_STATUSES.length).toBeLessThan(
+            TERMINAL_WORK_ITEM_STATUSES.length,
+        );
+        expect(ALL_WORK_ITEM_STATUSES.filter((s) => isTerminalStatus(s) && !isCompletedStatus(s)))
+            .toEqual(['CANCELED']);
+    });
+
+    it('never classifies an active status as completed', () => {
+        // PENDING_REVIEW is the trap: a field op whose work is
+        // physically finished but not yet approved. It is NOT
+        // completed — the reviewer still has to accept it.
+        for (const s of ALL_WORK_ITEM_STATUSES) {
+            if (isActiveStatus(s)) expect(isCompletedStatus(s)).toBe(false);
+        }
+        expect(isCompletedStatus('PENDING_REVIEW')).toBe(false);
     });
 });
