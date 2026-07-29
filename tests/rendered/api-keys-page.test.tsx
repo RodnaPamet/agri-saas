@@ -12,7 +12,22 @@
  * DOM, screenshots and any session-replay tooling — for anyone behind
  * the admin's shoulder.
  */
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import {
+    fireEvent,
+    render as rtlRender,
+    screen,
+    waitFor,
+} from '@testing-library/react';
+import { TooltipProvider } from '@/components/ui/tooltip';
+
+/**
+ * The page and KeyDisplay both render <Tooltip>s. With TOOLTIPS_ENABLED
+ * on, Radix requires a provider — the app mounts one at the root, so
+ * these renders mirror that rather than relying on the tooltip being a
+ * no-op.
+ */
+const render = (ui: React.ReactElement) =>
+    rtlRender(<TooltipProvider>{ui}</TooltipProvider>);
 import ApiKeysPage, {
     KeyDisplay,
 } from '@/app/t/[tenantSlug]/(app)/admin/api-keys/page';

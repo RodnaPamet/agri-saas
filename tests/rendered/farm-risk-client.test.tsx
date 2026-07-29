@@ -101,6 +101,7 @@ jest.mock('@/lib/hooks/use-tenant-swr', () => ({
 // ─── Import after mocks ──────────────────────────────────────────────────
 
 import { FarmRiskClient } from '@/app/t/[tenantSlug]/(app)/farm-risk/FarmRiskClient';
+import { TooltipProvider } from '@/components/ui/tooltip';
 
 const LOCATIONS = [{ id: 'loc-1', name: 'Home Farm' }];
 
@@ -132,12 +133,17 @@ function setRisk(state: SwrState) {
 }
 
 function renderClient(geeConfigured: boolean) {
+    // FarmRiskClient renders <Tooltip>s. While TOOLTIPS_ENABLED was false
+    // those returned their child bare, so no provider was needed; with
+    // tooltips live, Radix requires one — the app mounts it at the root.
     return render(
-        <FarmRiskClient
-            tenantSlug="acme"
-            locations={LOCATIONS}
-            geeConfigured={geeConfigured}
-        />,
+        <TooltipProvider>
+            <FarmRiskClient
+                tenantSlug="acme"
+                locations={LOCATIONS}
+                geeConfigured={geeConfigured}
+            />
+        </TooltipProvider>,
     );
 }
 
