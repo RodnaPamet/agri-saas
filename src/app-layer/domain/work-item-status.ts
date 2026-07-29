@@ -20,10 +20,34 @@
  */
 
 /**
- * Terminal/completed statuses — items that are done and should be excluded
+ * Terminal statuses — items that have stopped moving and should be excluded
  * from active views, overdue calculations, and notification triggers.
+ *
+ * TERMINAL is not the same thing as COMPLETED — see
+ * `COMPLETED_WORK_ITEM_STATUSES` below. A CANCELED item is terminal
+ * (it will never move again) but it is NOT completed work.
  */
 export const TERMINAL_WORK_ITEM_STATUSES = ['RESOLVED', 'CLOSED', 'CANCELED'] as const;
+
+/**
+ * Completed statuses — the strict subset of terminal statuses that
+ * represent work that was actually DONE.
+ *
+ * The distinction is load-bearing, and conflating the two is a real bug
+ * this module has already produced once (see
+ * `docs/implementation-notes/2026-07-29-canceled-is-not-completed.md`):
+ *
+ *   - TERMINAL answers "should this still appear in active views, count
+ *     as overdue, or fire a notification?" → CANCELED is terminal.
+ *   - COMPLETED answers "did this work get done?" → CANCELED is NOT
+ *     completed. Cancelling a spray job does not spray the field.
+ *
+ * `Task.completedAt` is stamped on COMPLETED, never on merely terminal.
+ * Anything counting finished work — the dashboard "created vs completed"
+ * trend, `metrics().trend.resolved30d`, the linked-task progress badges —
+ * must partition on this constant, not on TERMINAL_WORK_ITEM_STATUSES.
+ */
+export const COMPLETED_WORK_ITEM_STATUSES = ['RESOLVED', 'CLOSED'] as const;
 
 /**
  * Active/open statuses — items that are still in progress and should appear
@@ -46,6 +70,7 @@ export const ALL_WORK_ITEM_STATUSES = [
 
 export type WorkItemStatusValue = (typeof ALL_WORK_ITEM_STATUSES)[number];
 export type TerminalWorkItemStatus = (typeof TERMINAL_WORK_ITEM_STATUSES)[number];
+export type CompletedWorkItemStatus = (typeof COMPLETED_WORK_ITEM_STATUSES)[number];
 export type ActiveWorkItemStatus = (typeof ACTIVE_WORK_ITEM_STATUSES)[number];
 
 /**
@@ -62,10 +87,26 @@ export const ACTIVE_STATUS_FILTER = {
 } as const;
 
 /**
- * Check if a status string represents a terminal/completed state.
+ * Check if a status string represents a terminal (no-longer-moving) state.
+ *
+ * Use this to decide whether an item drops out of active views / overdue
+ * checks / notifications, or whether a closing `resolution` is required.
+ * Do NOT use it to decide whether work was completed — use
+ * `isCompletedStatus` for that.
  */
 export function isTerminalStatus(status: string): status is TerminalWorkItemStatus {
     return (TERMINAL_WORK_ITEM_STATUSES as readonly string[]).includes(status);
+}
+
+/**
+ * Check if a status string represents COMPLETED work (RESOLVED | CLOSED).
+ *
+ * The predicate behind `Task.completedAt` and every "done" tally in the
+ * product. Strictly narrower than `isTerminalStatus`: CANCELED returns
+ * `false` here and `true` there, and that gap is the entire point.
+ */
+export function isCompletedStatus(status: string): status is CompletedWorkItemStatus {
+    return (COMPLETED_WORK_ITEM_STATUSES as readonly string[]).includes(status);
 }
 
 /**

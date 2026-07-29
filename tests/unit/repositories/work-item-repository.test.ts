@@ -891,29 +891,55 @@ describe('WorkItemRepository — setStatus', () => {
         expect(dataOf(db.task.update, 1)).not.toHaveProperty('resolution');
     });
 
-    it('treats CANCELED as completed work — characterises a live inconsistency', async () => {
-        // `isTerminalStatus` includes CANCELED, so cancelling stamps
-        // `completedAt`. But `farmTaskTrendRows` documents the opposite
-        // ("completedAt is only set on RESOLVED / CLOSED (never
-        // CANCELED), so a non-null completedAt is exactly completed
-        // work"), and `metrics().trend.resolved30d` counts on exactly
-        // that assumption — so a cancelled task currently lands in the
-        // "resolved" series. Pinned here deliberately: whichever side is
-        // changed, this test must be updated in the same diff rather
-        // than the divergence drifting on unnoticed.
+    it('does NOT stamp completedAt on CANCELED — terminal is not completed', async () => {
+        // The load-bearing distinction in this file. CANCELED is
+        // terminal (`isTerminalStatus`) but not completed
+        // (`isCompletedStatus`), and `completedAt` tracks the latter.
+        //
+        // Break: gating the stamp on `isTerminalStatus` instead. Every
+        // cancelled task then carries a completion timestamp, and since
+        // `farmTaskTrendRows` and `metrics().trend.resolved30d` both read
+        // the TIMESTAMP rather than the status, a cancelled spray job
+        // silently lands in the dashboard's "completed" series — while
+        // the linked-task badges two methods up, which partition on
+        // status, keep excluding it. The two halves of the same file
+        // would disagree about the same task.
         await WorkItemRepository.setStatus(asTx(db), ctx, 't-1', 'CANCELED');
 
-        expect(dataOf(db.task.update).completedAt).toEqual(NOW);
+        expect(dataOf(db.task.update).completedAt).toBeNull();
+    });
+
+    it('still records the resolution on CANCELED, which is terminal', async () => {
+        // The other half of the split predicate, and the reason the fix
+        // above could not simply narrow `isTerminalStatus`. A cancelled
+        // item owes the auditor a "why" exactly like a closed one — S8
+        // requires a non-empty resolution on every terminal write. Break:
+        // moving the resolution write onto `isCompletedStatus` too would
+        // drop the cancellation reason on the floor.
+        await WorkItemRepository.setStatus(asTx(db), ctx, 't-1', 'CANCELED', 'field re-let to another contractor');
+
+        expect(dataOf(db.task.update)).toEqual({
+            status: 'CANCELED',
+            completedAt: null,
+            resolution: 'field re-let to another contractor',
+        });
     });
 });
 
 describe('WorkItemRepository — bulk writes', () => {
-    it('stamps completedAt on a bulk close but does not clear it on a bulk re-open', async () => {
-        // Characterises the deliberate asymmetry with `setStatus`: the
-        // bulk path has no per-row read, so it cannot tell a re-open
-        // from a no-op. Break: adding `completedAt: null` to the
-        // non-terminal branch here would wipe the real completion
-        // timestamps of any row already terminal in the selection.
+    it('applies the SAME completedAt rule as setStatus — stamped on close, cleared on re-open', async () => {
+        // The bulk path used to leave `completedAt` untouched on a
+        // non-terminal target, so a task's completion timestamp depended
+        // on whether it was re-opened one-at-a-time or from the list
+        // page's checkbox column. Break: dropping the `: null` arm
+        // restores that split, and a bulk-re-opened task stays in the
+        // "completed" trend while showing as IN_PROGRESS.
+        //
+        // Clearing is safe here despite `updateMany` writing one payload
+        // to every row: both callers run the S8 all-or-nothing transition
+        // gate first, and CLOSED/CANCELED have no outgoing transitions, so
+        // the only terminal row that can reach a non-completed target is
+        // RESOLVED → IN_PROGRESS — a real re-open.
         await WorkItemRepository.bulkSetStatus(asTx(db), ctx, ['a'], 'CLOSED', 'batch closed');
         await WorkItemRepository.bulkSetStatus(asTx(db), ctx, ['a'], 'IN_PROGRESS');
 
@@ -922,7 +948,24 @@ describe('WorkItemRepository — bulk writes', () => {
             completedAt: NOW,
             resolution: 'batch closed',
         });
-        expect(dataOf(db.task.updateMany, 1)).toEqual({ status: 'IN_PROGRESS' });
+        expect(dataOf(db.task.updateMany, 1)).toEqual({
+            status: 'IN_PROGRESS',
+            completedAt: null,
+        });
+    });
+
+    it('does NOT stamp completedAt on a bulk cancel either', async () => {
+        // Break: the CANCELED-is-completed bug reintroduced on the bulk
+        // path only. A single cancel would be correct while the list
+        // page's bulk cancel quietly inflated the completed series —
+        // the worst shape of this bug, because the two paths disagree.
+        await WorkItemRepository.bulkSetStatus(asTx(db), ctx, ['a', 'b'], 'CANCELED', 'season abandoned');
+
+        expect(dataOf(db.task.updateMany)).toEqual({
+            status: 'CANCELED',
+            completedAt: null,
+            resolution: 'season abandoned',
+        });
     });
 
     it('parses a bulk due date and clears it when sent as null', async () => {

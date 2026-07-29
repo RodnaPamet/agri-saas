@@ -18,7 +18,7 @@ import { buildOutboundHeaders, computeBatchId } from '../events/webhook-headers'
 import { enqueue } from '../jobs/queue';
 import { checkWebhookUrl, isPrivateAddress } from './webhook-safety';
 import { isNotificationsEnabled } from '../notifications/settings';
-import { TERMINAL_WORK_ITEM_STATUSES } from '../domain/work-item-status';
+import { TERMINAL_WORK_ITEM_STATUSES, isCompletedStatus } from '../domain/work-item-status';
 import type {
     NotifyUserActionConfig,
     CreateTaskActionConfig,
@@ -203,7 +203,22 @@ async function updateStatus(db: Db, rule: ExecutableRule, event: ActionEvent): P
             updated = (await db.risk.updateMany({ where, data })).count;
             break;
         case 'Task':
-            updated = (await db.task.updateMany({ where, data })).count;
+            // A Task's `completedAt` is derived state, not an independent
+            // column: `WorkItemRepository.setStatus` keeps it in lockstep
+            // with the status, and the dashboard trend + `resolved30d` read
+            // the TIMESTAMP with no status predicate of their own. Writing
+            // `status` here without it would let a rule-driven close land as
+            // completed work with no timestamp (undercount), or a rule-driven
+            // re-open leave a stale timestamp on a visibly-open task
+            // (overcount). The allowlist above permits both directions, so
+            // both are reachable. Same rule as the repository, on purpose.
+            updated = (await db.task.updateMany({
+                where,
+                data: {
+                    ...data,
+                    completedAt: isCompletedStatus(cfg.toStatus) ? new Date() : null,
+                },
+            })).count;
             break;
         case 'Control':
             updated = (await db.control.updateMany({ where, data })).count;
