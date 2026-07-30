@@ -731,6 +731,25 @@ duplicating the limits table).
 - **Unit tests**: Mock dependencies with `jest.mock()` declared **before** imports. Use `buildRequestContext()` helper from `tests/helpers/make-context.ts` to construct test contexts.
 - **Integration tests**: Use `prismaTestClient()` and `resetDatabase()` from `tests/helpers/db.ts`. Hit a real DB — do not mock Prisma in integration tests.
 - **Guard tests** (`tests/guards/`): Static analysis tests that enforce architectural rules (no `as any`, no unsafe patterns). These are regular Jest tests that scan source files with regex. They assert on source TEXT and contribute **no runtime coverage** — see "Green is not the same as executed" below before treating one as proof a feature works.
+- **Rendered tests run as a PHONE by default.** `tests/rendered/setup.ts`
+  stubs `matchMedia` to answer `matches: false` to every query, and
+  `useMediaQuery` derives the device from two `min-width` probes — both
+  false resolves to `isMobile: true`. That default is deliberate (this is
+  a mobile-first product), but it decides which branch a test executes:
+  `<DataTable mobileFallback="card">` renders `<MobileCardList>` on a
+  phone, and `MobileCardList` **omits every column without
+  `meta.mobileCard`**. So a test that means to assert the desktop
+  `<table>` MUST call `setViewport('desktop')` from
+  `tests/rendered/viewport.ts` before `render`, with
+  `afterEach(restoreViewport)`. Tests that mean the phone branch should
+  call `setViewport('mobile')` rather than inherit the default silently.
+  Note `useMediaQuery` starts at `device = null`, so DataTable paints the
+  table first and swaps to cards on the mount effect — render *counts*
+  cannot tell you which branch a test saw, only the final DOM can. The
+  mechanism is executed (not just asserted about) by
+  `tests/rendered/viewport-helper.test.tsx`; the audit that found three
+  suites green about a branch they never ran is
+  `docs/implementation-notes/2026-07-30-rendered-suite-viewport-audit.md`.
 - **E2E tests**: Playwright in serial mode (`workers: 1`). CI cuts
   wall-clock by CROSS-JOB sharding, not intra-run parallelism: the
   `e2e-shard` matrix in `ci.yml` runs `--shard=i/2` on two runners (each
@@ -809,14 +828,20 @@ database. The structural half of that contract lives in
 probes, and both false resolves to `isMobile: true`. Two consequences that
 have each cost real time:
 
-- `<DataTable mobileFallback="card">` renders **cards**. The desktop
-  `<table>` branch never mounts, so `getByRole('row')` / `getByRole('table')`
-  finds nothing — and a `queryBy…`-shaped assertion passes while proving
-  nothing. An audit on 2026-07-30 found zero suites currently caught by
-  this (the one file matching a table selector builds its own `<tbody>` in
-  a local harness, and `data-table-virtualize.test.ts` counts
-  `[data-virtual-row-index]` / `[role='cell']`, which hold in either
-  branch) — so this is a forward-looking trap, not a backlog.
+- `<DataTable mobileFallback="card">` renders **cards**, and
+  `MobileCardList` omits every column without `meta.mobileCard`. The
+  desktop `<table>` branch never mounts, so a suite can be green about a
+  branch it has never executed. The 2026-07-30 audit found **three** such
+  suites — `ag-pages-a11y` (the WCAG axe sweep: four of its six surfaces
+  are card-fallback, so the table markup its docblock names had never been
+  through axe), `org-drilldown-load-more`, and `grain-contracts-error-state`
+  — plus one outright broken (`access-reviews-list`, asserting rows against
+  a hidden sidecar of empty `<span>`s). Searching for table SELECTORS finds
+  almost none of this: the damage is in suites whose stated purpose is the
+  table, not in their locators. Only a dynamic probe settles which branch
+  ran, and note `useMediaQuery` starts at `device = null`, so DataTable
+  paints the table first and swaps to cards on the mount effect — render
+  counts are ambiguous, only the final DOM is authoritative.
 - Any component branching on a coarse-pointer or hover media query has
   that branch dead under jsdom. This is how a tooltip touch regression
   shipped: tap-to-toggle was added, `tooltip.test.tsx` passed, and the

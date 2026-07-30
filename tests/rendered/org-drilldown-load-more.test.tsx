@@ -19,6 +19,21 @@
  * The render path goes through the real DataTable platform — these
  * tests double as a smoke check that the wired-up tables render
  * accumulated rows without breaking the platform.
+ *
+ * ── Which DataTable branch these exercise ───────────────────────────
+ *
+ * All three drill-downs are `<DataTable mobileFallback="card">`, and the
+ * jsdom default viewport is a PHONE (see `./viewport`) — so the tests
+ * below that don't pin a viewport render `<MobileCardList>`, NOT a
+ * `<table>`. They still lock the accumulator honestly: every column in
+ * all three tables carries a `meta.mobileCard` slot, so the row content
+ * they assert on is present in either branch, and the load-more button
+ * lives outside the table entirely.
+ *
+ * What that default DID hide is the desktop `<table>` branch — the
+ * claim in the paragraph above was true of the code and false of the
+ * test run. `renders accumulated rows as real table rows on a desktop`
+ * closes that: it is the only test here that reaches the `<table>`.
  */
 
 import { act, render, screen } from '@testing-library/react';
@@ -34,6 +49,8 @@ import type {
     CriticalRiskRow,
     OverdueEvidenceRow,
 } from '@/app-layer/schemas/portfolio';
+
+import { restoreViewport, setViewport } from './viewport';
 
 // ─── Fixtures ────────────────────────────────────────────────────────
 
@@ -103,6 +120,7 @@ function installFetchStub(): jest.Mock {
 
 afterEach(() => {
     jest.restoreAllMocks();
+    restoreViewport();
 });
 
 // ─── Tests ────────────────────────────────────────────────────────────
@@ -172,6 +190,50 @@ describe('Epic E — controls drill-down load-more', () => {
 
         // Last page reached → button gone.
         expect(screen.queryByTestId('org-controls-load-more')).toBeNull();
+    });
+
+    it('renders accumulated rows as real table rows on a desktop', async () => {
+        // The branch every other test in this file misses. On a desktop the
+        // drill-down is a `<table>`, so the accumulator has to append TanStack
+        // rows that render as `<tr>`s under one `<tbody>` — and the columns
+        // the card branch drops (there are none today, but the card slots are
+        // opt-in) come back as real `<th>` column headers.
+        //
+        // Break: a `data={...}` identity bug that re-seeds the table instead
+        // of appending shows up here as a row COUNT that never grows, which
+        // the testid-presence assertions elsewhere cannot see.
+        setViewport('desktop');
+        const fetchImpl = installFetchStub();
+        const page1 = [controlRow(1, 'alpha'), controlRow(2, 'beta')];
+        const page2 = [controlRow(3, 'alpha'), controlRow(4, 'beta')];
+        fetchImpl.mockResolvedValueOnce(canned({ rows: page2, nextCursor: null }));
+
+        const { container } = render(
+            <ControlsTable rows={page1} nextCursor="cursor-page-2" orgSlug={ORG} />,
+        );
+
+        // Desktop really is the table branch, not the card list.
+        expect(screen.getByRole('table')).toBeInTheDocument();
+        expect(document.getElementById('mobile-card-list')).toBeNull();
+        expect(container.querySelectorAll('tbody tr')).toHaveLength(2);
+
+        const user = userEvent.setup();
+        await act(async () => {
+            await user.click(screen.getByTestId('org-controls-load-more'));
+        });
+        await screen.findByTestId(`org-control-link-${page2[0].controlId}`);
+
+        // Appended, not replaced — four rows in ONE tbody.
+        expect(container.querySelectorAll('tbody tr')).toHaveLength(4);
+        // Every row's tenant attribution cell survives the merge.
+        const tenantCells = container.querySelectorAll(
+            'tbody tr [data-testid^="org-control-tenant-"]',
+        );
+        expect(tenantCells).toHaveLength(4);
+        // The header row the card branch has no equivalent for.
+        expect(
+            screen.getByRole('columnheader', { name: /Code/i }),
+        ).toBeInTheDocument();
     });
 
     it('hides the Load more button when nextCursor is null on initial render', () => {
