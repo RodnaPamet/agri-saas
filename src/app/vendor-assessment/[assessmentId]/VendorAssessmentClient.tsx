@@ -236,7 +236,7 @@ export function VendorAssessmentClient({
 
                 {submitErrors.length > 0 && (
                     <div
-                        className="border border-border-error bg-bg-error-emphasis text-content-error text-sm p-4 rounded mb-4"
+                        className="border border-border-error bg-bg-error text-content-error text-sm p-4 rounded mb-4"
                         role="alert"
                         data-testid="vendor-assessment-submit-errors"
                     >

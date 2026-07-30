@@ -18,11 +18,22 @@
  */
 
 /* ═══════════════════════════════════════════════════════════════════
-   DARK THEME (default) — METRO Cash & Carry palette.
+   DARK THEME (default) — Bulgarian tricolour, one hue per job.
 
-   METRO yellow (#FFCD11) on deep navy blue surfaces. Status colors
-   kept as conventional emerald/amber/red/blue so semantic meaning is
-   preserved across themes.
+   Agrent gold (#D4AF37) on deep desaturated-green surfaces. The role
+   hierarchy is the whole design and every token below answers to it:
+
+     green = the GROUND    — surfaces only, never a signal
+     white = the CONTENT   — what you read (green-tinted, not grey)
+     GOLD  = the BRAND     — links, primary actions, focus, nav glow
+     red   = DANGER ONLY   — nothing else on the page competes for alarm
+
+   Success is pushed brighter than stock emerald so a positive badge
+   out-luminates the green ground instead of dissolving into it. The
+   remaining functional tones (amber warning, blue info/secondary) are
+   deliberately NON-flag hues: the tricolour has claimed ground,
+   content and danger, so every other signal needs a colour the theme
+   is not already using for something else.
    ═══════════════════════════════════════════════════════════════════ */
 :root {
   /* ── Surfaces ──────────────────────────────────────────────────── */
@@ -84,15 +95,22 @@
    * canvas plane is the DEEPEST surface — a recessed "work pit"; the
    * frame chrome sits above it; nodes are the brightest, most elevated
    * objects. Tonal separation does the work, not hue noise — every
-   * value stays inside the METRO navy family.
-   *   depth ramp (dark → light): surface < page < frame < node. */
-  --canvas-surface:    #05121F;                   /* recessed work plane — deepest */
-  --canvas-frame:      #0A2138;                   /* workspace frame + chrome strips */
-  --canvas-grid:       rgba(127, 167, 215, 0.10); /* dot grid — faint cool light */
-  --canvas-edge:       #335E86;                   /* default connection stroke (R27-PR-B) */
-  --canvas-node:       #123A60;                   /* node fill — elevated flow card */
-  --canvas-node-muted: #0D2A45;                   /* node fill — context (quieter) */
-  --canvas-border:     rgba(127, 167, 215, 0.20); /* hairline inside the workspace */
+   * value stays inside the ground's own green family.
+   *   depth ramp (dark → light): surface < page < frame < node.
+   *
+   * 2026-07-30 — re-tuned from the navy original. The ramp is defined
+   * by its LUMINANCE RATIOS to `--bg-page`, not by absolute values, so
+   * the recessed/elevated relationships the editor depends on survive
+   * a ground change intact: surface 0.65x, frame 1.6x, node-muted
+   * 2.5x, node 4.7x, edge 11.9x. Those are the navy ladder's own
+   * ratios, re-expressed in green. */
+  --canvas-surface:    #041B14;                   /* recessed work plane — deepest */
+  --canvas-frame:      #082E22;                   /* workspace frame + chrome strips */
+  --canvas-grid:       rgba(150, 205, 178, 0.10); /* dot grid — faint sage light */
+  --canvas-edge:       #327B5E;                   /* default connection stroke (R27-PR-B) */
+  --canvas-node:       #135038;                   /* node fill — elevated flow card */
+  --canvas-node-muted: #0C3A29;                   /* node fill — context (quieter) */
+  --canvas-border:     rgba(150, 205, 178, 0.20); /* hairline inside the workspace */
   --canvas-shadow:     0 8px 20px -10px rgba(0, 0, 0, 0.70), 0 1px 2px rgba(0, 0, 0, 0.45); /* elevated-node lift */
   --canvas-recess:     inset 0 11px 20px -16px rgba(0, 0, 0, 0.90); /* top inner shadow — plane reads sunk below the chrome */
 
@@ -119,7 +137,7 @@
   --brand-muted:    #E4C55C;                /* lighter gold — hover accent */
   --brand-subtle:   rgba(212, 175, 55, 0.16); /* gold @ 16% — brand tint backgrounds */
   /* Metallic-gold text gradient for featured dashboard numbers (.metric-gradient).
-     Light-to-deep polished-gold sheen; reads bright on the navy ground. */
+     Light-to-deep polished-gold sheen; reads bright on the green ground. */
   --grad-gold: linear-gradient(142deg, #F6E7AC 0%, #E4C55C 22%, #D4AF37 52%, #A9760B 100%);
   /* Display face — Bricolage Grotesque for the big numbers (Latin digits only;
      Bricolage has no Cyrillic, so it is NEVER used on text). */
@@ -200,8 +218,15 @@
   --primary:                #D4AF37;
 
   /* ── Glass ─────────────────────────────────────────────────────── */
-  --glass-bg:     rgba(0, 47, 95, 0.82);     /* navy glass-card background */
-  --glass-border: rgba(0, 83, 140, 0.50);    /* navy glass-card border */
+  /* `.glass-card` is the surface under EVERY KPI tile, metric card,
+   * dashboard widget and loading skeleton in the app, so it has to be
+   * the same material as `--bg-default` — a translucent card, not a
+   * differently-coloured one. Composited at α 0.82 over the page
+   * gradient it lands on #0A3629, a hair above `--bg-default`
+   * (#0A3327), which is exactly the "solid card, faintly lifted"
+   * read the navy original had against the navy page. */
+  --glass-bg:     rgba(11, 58, 44, 0.82);    /* green glass-card background */
+  --glass-border: rgba(23, 85, 63, 0.50);    /* --border-default @ 50% — glass-card border */
   --glass-blur:   12px;                      /* backdrop blur radius */
 
   /* ── Radius ────────────────────────────────────────────────────── */
@@ -440,10 +465,23 @@
   /* B10 (2026-06-07): deepened from rgba(255,205,17,0.55). The brighter,
    * more translucent yellow read as a pale wash in dark theme — a deeper,
    * more saturated gold at higher alpha gives the create button real
-   * presence and pairs with the navy `text-content-inverted` label. */
+   * presence and pairs with the deep `text-content-inverted` label. */
   --btn-glass-fill-primary: rgba(232, 185, 4, 0.85);
-  --btn-glass-fill-secondary: rgba(0, 60, 122, 0.55);
-  --btn-glass-fill-destructive: rgba(220, 38, 38, 0.55);
+  /* 2026-07-30 — secondary was the old page navy (rgba(0,60,122,0.55)),
+   * which survived the ground change as a literal blue pill: every
+   * Cancel button, every `<Combobox>` trigger and every list-header
+   * icon button rendered navy on green. It is now the ELEVATED green
+   * at the same alpha — composites to #0D4030 over a card, i.e. a
+   * quiet raised surface in the ground's own family. */
+  --btn-glass-fill-secondary: rgba(16, 74, 56, 0.55);
+  /* 2026-07-30 — destructive re-pointed to the theme's alarm red
+   * (`--bg-error-emphasis` #F04438) and its alpha raised 0.55 → 0.88.
+   * At 0.55 over a GREEN card the old red-600 composited to #893C30 —
+   * a brick brown that did not read as danger beside the gold primary.
+   * The old navy card happened to flatter it; green does not. 0.88
+   * composites to #D44236 (unmistakably red) and still clears WCAG AA
+   * with the `text-white` label at 4.52:1. */
+  --btn-glass-fill-destructive: rgba(240, 68, 56, 0.88);
   --btn-glass-shadow: 0 1px 3px rgba(0, 0, 0, 0.28), 0 6px 14px rgba(0, 0, 0, 0.18);
 
   /* ── Transitions ───────────────────────────────────────────────── */
@@ -459,8 +497,8 @@
    * via Tailwind's arbitrary-value syntax without `color-mix()`,
    * which would inflate the class string for one token.
    *
-   * METRO: METRO yellow @ 35% — visible against the deep navy bg
-   * without screaming. 6px blur is the sweet spot — wider feels
+   * Dark theme: Agrent gold @ 35% — visible against the deep green
+   * ground without screaming. 6px blur is the sweet spot — wider feels
    * smoky, narrower disappears at non-Retina rendering.
    */
   --nav-band-glow: 0 0 6px rgba(255, 205, 17, 0.35);
@@ -481,7 +519,7 @@
    * A 1-px wide top-edge `::after` line on `<NavItem>` rows reveals
    * on hover + active. Simulates light catching the top edge of a
    * raised button — the "glossy" cue the user asked for. On the
-   * deep-navy METRO surface a faint white at 8% is enough to read;
+   * deep-green surface a faint white at 8% is enough to read;
    * the row appears to lift slightly toward the cursor without any
    * actual geometry change.
    */
@@ -495,7 +533,7 @@
    * "slightly recessed", which is what gives clicks the "I'm
    * pressing on a real button" feel.
    *
-   * On METRO's deep-navy surface a dark-tinted inset (0.25 black)
+   * On the deep-green surface a dark-tinted inset (0.25 black)
    * lands as a near-invisible bottom edge that the eye reads as
    * subtle concavity. Heavier alpha would make the row look bruised;
    * lighter would disappear entirely.
@@ -507,7 +545,7 @@
    * gradient (`transparent → tint → transparent`) that sweeps
    * across the row body once when hover engages. The tint at 14%
    * alpha is muted enough to read as "a wash of light", not "a
-   * solid colour block". METRO uses the brand yellow at low
+   * solid colour block". The dark theme uses the brand gold at low
    * opacity; PwC uses the brand orange at a marginally higher
    * opacity to compensate for the cream surface's lower
    * contrast. Same alpha would make the orange disappear
@@ -518,7 +556,7 @@
   /* R15-PR9 — outer brand-coloured aura around the ACTIVE row.
    * The active row's band already glows (R13-PR2 `--nav-band-
    * glow`); this token extends a halo of the SECONDARY brand
-   * (navy on METRO) around the row's full perimeter at low
+   * (cool blue on dark) around the row's full perimeter at low
    * alpha + soft blur. Semantically a brand-presence signal,
    * NOT a depth shadow — it doesn't lift the row off the
    * sidebar, it bathes the row in brand light.
@@ -547,8 +585,8 @@
    * series-3 (violet) and series-4 (coral) runs through warm-
    * pink. Not adjacent-rainbow — adjacent-tonal.
    *
-   * METRO palette emphasises saturated jewel tones against the
-   * deep-navy surface. PwC counterparts (below) are restrained
+   * The dark palette emphasises saturated jewel tones against the
+   * deep-green surface. PwC counterparts (below) are restrained
    * earth tones against cream. Same six families — different
    * brightness curves.
    * ─────────────────────────────────────────────────────────── */

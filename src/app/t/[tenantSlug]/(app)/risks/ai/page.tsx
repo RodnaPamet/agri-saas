@@ -559,7 +559,7 @@ export default function AIRiskAssessmentPage() {
                                                 <Button
                                                     variant={dec === 'accept' ? 'primary' : 'secondary'}
                                                     size="xs"
-                                                    className={dec === 'accept' ? 'bg-bg-success-emphasis text-content-emphasis' : ''}
+                                                    className={dec === 'accept' ? 'bg-bg-success-emphasis text-content-inverted' : ''}
                                                     onClick={() => setDecision(item.id, 'accept')}
                                                     id={`accept-${idx}`}
                                                 >
@@ -568,7 +568,7 @@ export default function AIRiskAssessmentPage() {
                                                 <Button
                                                     variant={dec === 'reject' ? 'destructive' : 'secondary'}
                                                     size="xs"
-                                                    className={dec === 'reject' ? 'bg-bg-error-emphasis text-content-emphasis' : ''}
+                                                    className={dec === 'reject' ? 'bg-bg-error-emphasis text-content-inverted' : ''}
                                                     onClick={() => setDecision(item.id, 'reject')}
                                                     id={`reject-${idx}`}
                                                 >
