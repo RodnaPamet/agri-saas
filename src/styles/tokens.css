@@ -161,30 +161,26 @@
      Bulgarian); a cool modern grotesque that pairs with the Bricolage numbers. */
   --font-heading: 'Onest', 'Inter', system-ui, sans-serif;
 
-  /* ── Brand / Secondary (cool blue — complementary counterpoint) ──────
+  /* ── Brand / Secondary (the flag's white — neutral counterpoint) ─────
    *
-   * Roadmap-13 introduced a SECONDARY brand colour so the sidebar (and any
-   * future chrome wanting a two-tone state vocabulary) can express ACTIVE
-   * in a tone distinct from HOVER. That still holds: HOVER reads gold,
-   * ACTIVE reads cool, and the eye takes the pair as deliberate state
-   * vocabulary rather than drift between brand tones.
+   * Roadmap-13 introduced a SECONDARY brand colour so chrome can express
+   * ACTIVE in a tone distinct from HOVER, rather than the same gold at two
+   * opacities. That intent is unchanged; the HUE is not.
    *
-   * The tones were LIFTED when the ground went green (2026-07-30). The
-   * original rationale was written for a navy page — "a navy accent would
-   * dissolve into the background" — and claimed blue-500 (#3B82F6) cleared
-   * 4.5:1 on both dark surfaces. On the green ground it no longer does:
-   * blue-500 measures 3.70:1 on `--bg-default` and 4.40:1 on `--bg-page`,
-   * both under AA. Lifting the default to blue-400 restores it — 5.52:1 on
-   * `--bg-default`, 6.58:1 on `--bg-page`.
+   * It was electric blue, chosen against a navy page on the reasoning that
+   * "a navy accent would dissolve into the background". On the green ground
+   * that reasoning is void, and blue became the one foreign hue in a theme
+   * built from a three-colour flag — most visibly in the sidebar, which is
+   * on screen on every page.
    *
-   * Blue is deliberately kept as a NON-FLAG functional tone, the same call
-   * as amber `warning` and blue `info`: the tricolour owns ground, content
-   * and danger, and the remaining signals need hues the theme is not
-   * already using for something else. */
-  --brand-secondary-default:  #60A5FA;                /* cool blue — secondary brand, complementary to gold (AA on green) */
-  --brand-secondary-emphasis: #3B82F6;                /* deeper blue — primary band stop, active surfaces */
-  --brand-secondary-muted:    #93C5FD;                /* lighter blue — band highlight midstop, hover accent (R13-PR4) */
-  --brand-secondary-subtle:   rgba(96, 165, 250, 0.18); /* blue @ 18% — secondary tint backgrounds */
+   * White is the counterpoint now: maximally distinct from warm gold, it is
+   * a flag colour, and it reads as "current" without borrowing meaning from
+   * `info`. Tier order is muted (lightest) > default > emphasis (deepest),
+   * tinted toward the ground so it belongs to the surface. */
+  --brand-secondary-default:  #DCEBE4;                  /* the flag's white, ground-tinted — secondary brand */
+  --brand-secondary-emphasis: #A9C7BB;                  /* deepest rung — bottom band stop, active surface tint */
+  --brand-secondary-muted:    #FFFFFF;                  /* lightest rung — band highlight midstop, hover accent */
+  --brand-secondary-subtle:   rgba(220, 235, 228, 0.18); /* @ 18% — secondary tint backgrounds */
 
   /* ── Status: Success ───────────────────────────────────────────── */
   /* Success has to out-LUMINATE the ground, not merely differ in hue from
@@ -211,7 +207,14 @@
   --content-error:     #FF8A7A;                      /* bright coral-red — reads hotter than brand */
   --border-error:      rgba(255, 91, 74, 0.34);
 
-  /* ── Status: Info ──────────────────────────────────────────────── */
+  /* ── Status: Info ──────────────────────────────────────────────────
+   * The LAST blue in the dark theme, and it stays on purpose. Blue is the
+   * universal information hue; recolouring it would cost comprehension to
+   * buy palette purity. Same call as amber `warning`: the tricolour owns
+   * ground, content, brand and danger, and the remaining SIGNALS need hues
+   * the theme is not already using for something else. Chrome is a
+   * different matter — the sidebar, button fills and edges carried blue for
+   * no semantic reason and have been swept to white/gold. */
   --bg-info:          rgba(59, 130, 246, 0.15);      /* blue-500 @ 15% — badge tint */
   --bg-info-emphasis: #2563EB;                       /* blue-600 — solid actionable surface */
   --content-info:     #60a5fa;                       /* blue-400 */
@@ -351,7 +354,7 @@
    * the edge reads as iridescent on close inspection, NEVER as a
    * gradient outline. Static (no animation) — the iridescence is a
    * material property, not a motion gimmick. */
-  --btn-iridescent-gradient: linear-gradient(135deg, rgba(255, 205, 17, 0.55) 0%, rgba(255, 205, 17, 0.18) 35%, rgba(59, 130, 246, 0.18) 65%, rgba(59, 130, 246, 0.55) 100%);
+  --btn-iridescent-gradient: linear-gradient(135deg, rgba(255, 205, 17, 0.55) 0%, rgba(255, 205, 17, 0.18) 35%, rgba(255, 255, 255, 0.18) 65%, rgba(255, 255, 255, 0.55) 100%);
 
   /* ── Primary action-button FILL gradient (DARK theme) ───────────────
    * 2026-06-01. OPAQUE brand→secondary diagonal fill (135°): brand is
@@ -364,7 +367,11 @@
   /* UI-11: create-button gradient — brand holds the first half, then a SUBTLE
      cool tail (softer/lighter blue, was the darker #3b82f6) so the far corner
      isn't too dark. Transition starts at 50% ("after 1/2"), not 60%. */
-  --btn-gradient-primary: linear-gradient(135deg, var(--brand-default) 0%, var(--brand-default) 50%, #6ea6ea 100%);
+  /* The far corner was #6ea6ea. On navy a cool tail read as the brand
+     dissolving into the page; on green it put `info` blue on the one
+     surface meant to be pure brand. Now a LIGHTER GOLD — same "subtler
+     gradient" intent UI-11 asked for, no foreign hue. */
+  --btn-gradient-primary: linear-gradient(135deg, var(--brand-default) 0%, var(--brand-default) 50%, #F0D98A 100%);
 
   /* ── R20 aura wash (DARK theme) ─────────────────────────────────────
    * The soft brand-tinted halo a primary button casts on hover, as a
@@ -526,7 +533,7 @@
    * its stops. A mismatched glow (yellow around a blue band) would
    * read as accidental colour bleed.
    */
-  --nav-band-glow-active: 0 0 6px rgba(59, 130, 246, 0.35);
+  --nav-band-glow-active: 0 0 6px rgba(255, 255, 255, 0.35);
 
   /* ── Sidebar gloss highlight (R13-PR6) ─────────────────────────── */
   /*
@@ -579,7 +586,7 @@
    * rather than as an outline. Blur is 12px so the edges
    * dissipate softly into the sidebar surface, no hard ring.
    */
-  --nav-row-aura-color: rgba(59, 130, 246, 0.18);
+  --nav-row-aura-color: rgba(255, 255, 255, 0.18);
 
   /* ───────────────────────────────────────────────────────────────
    * R16-PR1 — Lickable Chart palette + motion (METRO theme).

@@ -109,7 +109,7 @@ export type ProcessNodeKind =
  */
 export type NodeAccent =
     | 'brand'           // process step (default — quiet, primary surface)
-    | 'brand-secondary' // control (navy/blue family)
+    | 'brand-secondary' // control (the flag's white family — was navy/blue)
     | 'warning'         // risk (amber — caution without alarm)
     | 'success'         // asset (calm green — "here is data")
     | 'neutral'         // decision (graphite — structural)
