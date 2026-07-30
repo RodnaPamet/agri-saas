@@ -768,8 +768,8 @@ duplicating the limits table).
 
 ### Green is not the same as executed
 
-Two mechanisms in this repo let a check pass without verifying anything.
-Both read as green forever, so both are named here.
+Three mechanisms in this repo let a check pass without verifying anything.
+All read as green forever, so all are named here.
 
 **Guards assert on source text, not behaviour.** Every file under
 `tests/guards/` — and most of `tests/guardrails/` — `readFileSync`s a
@@ -802,6 +802,34 @@ prints a banner naming what did not run, plus the
 database. The structural half of that contract lives in
 `tests/guards/rls-coverage-skip-visibility.test.ts`, modelled on
 `tests/guards/tooltip-kill-switch-consistency.test.ts`.
+
+**Under jsdom the app is a PHONE, so a whole branch may be unreachable.**
+`tests/rendered/setup.ts` stubs `matchMedia` to answer `matches: false` to
+*every* query. `useMediaQuery` derives the device from two `min-width`
+probes, and both false resolves to `isMobile: true`. Two consequences that
+have each cost real time:
+
+- `<DataTable mobileFallback="card">` renders **cards**. The desktop
+  `<table>` branch never mounts, so `getByRole('row')` / `getByRole('table')`
+  finds nothing — and a `queryBy…`-shaped assertion passes while proving
+  nothing. An audit on 2026-07-30 found zero suites currently caught by
+  this (the one file matching a table selector builds its own `<tbody>` in
+  a local harness, and `data-table-virtualize.test.ts` counts
+  `[data-virtual-row-index]` / `[role='cell']`, which hold in either
+  branch) — so this is a forward-looking trap, not a backlog.
+- Any component branching on a coarse-pointer or hover media query has
+  that branch dead under jsdom. This is how a tooltip touch regression
+  shipped: tap-to-toggle was added, `tooltip.test.tsx` passed, and the
+  coarse-pointer path it added had never executed
+  (`docs/implementation-notes/2026-07-29-tooltip-touch-uniformity.md`).
+
+The phone default is deliberate — a phone is the operator's real device on
+this product — so do not flip it globally. When a test genuinely means to
+assert the desktop branch, override the stub for that test and restore it
+in `afterEach`; the established `setViewport('desktop')` helper is in
+`tests/rendered/inventory-client.test.tsx`. If you assert on a media-query
+branch, say in the test which viewport it is asserting, or the next reader
+cannot tell whether the pass was earned.
 
 ### Index & query-shape guardrails
 
