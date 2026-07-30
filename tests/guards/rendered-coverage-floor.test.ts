@@ -90,17 +90,27 @@ const ROOT = path.resolve(__dirname, '../..');
 // cursor accumulator + dual-mode product modal + the receive/adjust
 // movement endpoints — plus accumulated rendered gains. Locked to the live
 // count of 223.
-// Raised 223 → 224 (rendered-suite viewport audit): `viewport-helper` locks
-// the jsdom viewport mechanism by EXECUTING it — the `matchMedia` stub in
-// `tests/rendered/setup.ts` answers `matches: false` to every query, which
+// Raised 223 → 224 (#464, rendered-suite viewport audit): `viewport-helper`
+// locks the jsdom viewport mechanism by EXECUTING it — the `matchMedia` stub
+// in `tests/rendered/setup.ts` answers `matches: false` to every query, which
 // makes `useMediaQuery` resolve to `mobile`, which makes every
 // `<DataTable mobileFallback="card">` render cards and leaves the desktop
 // `<table>` branch unreachable. That coupling spans two directories and was
 // silently deciding which branch ~223 tests exercised; the suite asserts the
 // default resolves to a phone, that each `setViewport` band resolves to its
 // device, that `restoreViewport` restores, and that the DataTable branch
-// follows. Locked to the live count of 224.
-const RENDERED_TEST_FLOOR = 224;
+// follows.
+//
+// Raised 224 → 225 (#465, combobox stable accessible name): the
+// `combobox-stable-accessible-name` rendered suite locks the trigger's
+// accessible NAME to the FormField label — stable across a selection
+// change — plus the aria-label > aria-labelledby > selected-text/
+// placeholder precedence chain and the axe `button-name` fallback that
+// must survive it.
+//
+// Both landed the same day and each independently raised the floor to 224;
+// the conflict resolution is 225, the live count with both suites present.
+const RENDERED_TEST_FLOOR = 225;
 const E2E_SPEC_FLOOR = 55;
 const REGISTRY_FLOOR = 5;
 

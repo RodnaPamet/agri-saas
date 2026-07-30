@@ -67,6 +67,13 @@ interface AsyncBaseProps<TMeta> {
     disabled?: boolean;
     required?: boolean;
     invalid?: boolean;
+    /**
+     * Id of the element holding the visible label. `<FormField>`
+     * injects its `<Label>` id here; Combobox prefers it over its
+     * selected-text fallback so the trigger's accessible name stays
+     * stable across a selection change.
+     */
+    "aria-labelledby"?: string;
     "aria-describedby"?: string;
     placeholder?: React.ReactNode;
     searchPlaceholder?: string;
@@ -186,6 +193,7 @@ export function AsyncCombobox<TMeta = unknown>(
         onCreate,
         createLabel,
     } = props;
+    const ariaLabelledBy = props["aria-labelledby"];
     const ariaDescribedBy = props["aria-describedby"];
 
     // ── Selected-option cache ────────────────────────────────────────
@@ -248,6 +256,7 @@ export function AsyncCombobox<TMeta = unknown>(
                 disabled={disabled}
                 required={required}
                 invalid={invalid}
+                aria-labelledby={ariaLabelledBy}
                 aria-describedby={ariaDescribedBy}
                 options={options}
                 shouldFilter={false}
@@ -284,6 +293,7 @@ export function AsyncCombobox<TMeta = unknown>(
             disabled={disabled}
             required={required}
             invalid={invalid}
+            aria-labelledby={ariaLabelledBy}
             aria-describedby={ariaDescribedBy}
             options={options}
             shouldFilter={false}

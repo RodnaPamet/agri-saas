@@ -24,17 +24,23 @@
  *   - `<Combobox invalid>` — paints the trigger on error-border tokens
  *     and forwards `aria-invalid` so `<FormField>` drives styling
  *     without a bespoke branch.
- *   - `id` / `name` / `aria-describedby` / `aria-required` passthrough
- *     so this is a drop-in replacement for native `<select>` inside
- *     `<FormField>`-wrapped forms. When `name` is set we render a
- *     hidden input carrying the selected value(s) for native
- *     `<form onSubmit>` consumers.
+ *   - `id` / `name` / `aria-labelledby` / `aria-describedby` /
+ *     `aria-required` passthrough so this is a drop-in replacement for
+ *     native `<select>` inside `<FormField>`-wrapped forms. When `name`
+ *     is set we render a hidden input carrying the selected value(s)
+ *     for native `<form onSubmit>` consumers.
  *
  * Accessibility:
  *   - The default trigger is a `<Button>` that Radix Popover.Trigger
  *     augments with `aria-expanded` / `aria-controls`. We additionally
  *     set `aria-haspopup="listbox"` so screen readers announce the
  *     select-like affordance correctly.
+ *   - The trigger's accessible NAME comes from `aria-labelledby` when
+ *     one is available — `<FormField>` injects the id of its visible
+ *     `<Label>`. WAI-ARIA puts the name on the label and conveys the
+ *     VALUE separately (trigger content + `aria-expanded`), so the name
+ *     stays stable while the user changes the selection. Only when no
+ *     label is reachable does the `aria-label` fallback take over.
  *   - The popover body uses cmdk's `Command` + `Command.List` (role
  *     `listbox`) and `Command.Item` (role `option`, aria-selected).
  *   - `Escape` / `Backspace`-on-empty-search close the popover.
@@ -117,6 +123,14 @@ type A11yProps = {
     invalid?: boolean;
     /** Explicit override; usually inferred from `invalid`. */
     "aria-invalid"?: boolean | "true" | "false";
+    /**
+     * Id of the element holding this control's visible label.
+     * `<FormField>` injects the id of its own `<Label>`, which is what
+     * gives the trigger a STABLE accessible name (see the precedence
+     * comment on `triggerAriaLabel` below). Set it by hand only when
+     * the label lives outside a `<FormField>`.
+     */
+    "aria-labelledby"?: string;
     "aria-describedby"?: string;
     "aria-required"?: boolean;
 };
@@ -228,6 +242,7 @@ export function Combobox<
     required,
     invalid,
     "aria-invalid": ariaInvalid,
+    "aria-labelledby": ariaLabelledBy,
     "aria-describedby": ariaDescribedBy,
     "aria-required": ariaRequired,
     children,
@@ -382,24 +397,52 @@ export function Combobox<
     // same a11y + form props injected. For the default Button we pass
     // them directly; for a custom trigger we cloneElement and inject.
 
-    // Compute an accessible name for the trigger. We prefer the
-    // explicit `aria-label` already on `buttonProps`, then the
-    // collapsed-selection label (from selected options), and finally
-    // the placeholder. This guarantees axe's `button-name` rule is
-    // satisfied even when the Button's children render as a ReactNode
-    // tree that assistive tech doesn't flatten into text.
+    // Compute an accessible name for the trigger. Three sources, in
+    // strict precedence order:
+    //
+    //   1. `buttonProps["aria-label"]` — the caller named the control
+    //      outright, so nothing outranks it.
+    //   2. `aria-labelledby` — normally injected by `<FormField>`,
+    //      pointing at the field's visible `<Label>`. WAI-ARIA is
+    //      explicit that a combobox's NAME comes from its label while
+    //      its VALUE is conveyed separately (the trigger's own text
+    //      content plus `aria-expanded`). This is the branch that keeps
+    //      the name STABLE across a selection change.
+    //   3. the collapsed-selection label, then the placeholder — the
+    //      LAST-RESORT fallback. It exists so axe's `button-name` rule
+    //      can never fail even when the Button's children render as a
+    //      ReactNode tree that assistive tech doesn't flatten into
+    //      text. Do not remove it; it is what covers every combobox
+    //      that is neither hand-labelled nor inside a `<FormField>`.
+    //
+    // Historically (3) was the only fallback, so an unlabelled
+    // combobox was named after whatever the user had just selected —
+    // a name that changed as they used the control, and one that made
+    // `getByRole('combobox', { name })` useless as a locator.
+    //
+    // Exactly ONE of `aria-label` / `aria-labelledby` is ever emitted.
+    // An element carrying both, pointing at different text, is
+    // ambiguous for assistive tech (aria-labelledby wins, so the
+    // aria-label silently does nothing) and makes the computed name
+    // hard to predict.
+    const explicitAriaLabel = (
+        buttonProps as { "aria-label"?: string } | undefined
+    )?.["aria-label"];
     const selectedTriggerText =
         selected.map((option) =>
             typeof option.label === "string" ? option.label : option.value,
         ).join(", ");
+    const fallbackAriaLabel =
+        selectedTriggerText ||
+        (typeof placeholder === "string"
+            ? placeholder
+            : t("combobox.selectAriaFallback"));
+    const triggerAriaLabelledBy = explicitAriaLabel
+        ? undefined
+        : ariaLabelledBy;
     const triggerAriaLabel =
-        (buttonProps as { "aria-label"?: string } | undefined)?.[
-            "aria-label"
-        ] ??
-        (selectedTriggerText ||
-            (typeof placeholder === "string"
-                ? placeholder
-                : t("combobox.selectAriaFallback")));
+        explicitAriaLabel ??
+        (triggerAriaLabelledBy ? undefined : fallbackAriaLabel);
 
     const triggerA11yProps = {
         id,
@@ -412,6 +455,7 @@ export function Combobox<
         role: "combobox" as const,
         "aria-haspopup": "listbox" as const,
         "aria-label": triggerAriaLabel,
+        "aria-labelledby": triggerAriaLabelledBy,
         "aria-invalid": effectiveInvalid || undefined,
         "aria-describedby": ariaDescribedBy,
         "aria-required": required || ariaRequired || undefined,

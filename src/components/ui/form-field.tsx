@@ -76,6 +76,7 @@ export interface FormFieldProps {
 
 interface InjectedControlProps {
     id?: string;
+    "aria-labelledby"?: string;
     "aria-describedby"?: string;
     "aria-invalid"?: boolean | "true" | "false";
     "aria-required"?: boolean;
@@ -109,6 +110,32 @@ const FormField = React.forwardRef<HTMLDivElement, FormFieldProps>(
             description && !hasError ? `${controlId}-description` : undefined;
         const errorId = hasError ? `${controlId}-error` : undefined;
 
+        // The visible <Label> carries an id so controls that cannot
+        // take their accessible NAME from `htmlFor` alone can point at
+        // it with `aria-labelledby`.
+        //
+        // `htmlFor` is enough for a native labelable control (<input>,
+        // <textarea>, <select>) — the accname algorithm reads the
+        // associated <label>. It is NOT enough for a control that also
+        // sets its own `aria-label`, because `aria-label` outranks the
+        // host-language label. <Combobox> is exactly that case: it
+        // computes a last-resort `aria-label` so axe's `button-name`
+        // rule can never fail on its ReactNode trigger children, and
+        // that fallback used to shadow the field's own label — leaving
+        // the trigger named after the SELECTED OPTION, a name that
+        // drifts every time the user picks something.
+        //
+        // Exposing the label id lets such a control prefer
+        // `aria-labelledby` and drop its fallback, so its name is
+        // stable and matches the label the user can see.
+        //
+        // NOTE this is an override, not a merge (unlike the additive
+        // `aria-describedby` chain below): `aria-labelledby` IS the
+        // accessible name, so a caller who sets one explicitly means to
+        // replace the field label, not to append to it.
+        const labelId = label ? `${controlId}-label` : undefined;
+        const labelledBy = childProps["aria-labelledby"] ?? labelId;
+
         const describedBy =
             [childProps["aria-describedby"], descriptionId, errorId]
                 .filter(Boolean)
@@ -122,6 +149,7 @@ const FormField = React.forwardRef<HTMLDivElement, FormFieldProps>(
             children as React.ReactElement<InjectedControlProps>,
             {
                 id: controlId,
+                "aria-labelledby": labelledBy,
                 "aria-describedby": describedBy,
                 "aria-invalid": hasError ? true : childProps["aria-invalid"],
                 "aria-required": required || childProps["aria-required"],
@@ -153,7 +181,7 @@ const FormField = React.forwardRef<HTMLDivElement, FormFieldProps>(
                             isHorizontal && "shrink-0",
                         )}
                     >
-                        <Label htmlFor={controlId}>
+                        <Label id={labelId} htmlFor={controlId}>
                             {label}
                             {required && <RequiredMarker />}
                         </Label>
