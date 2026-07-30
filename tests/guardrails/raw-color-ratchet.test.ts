@@ -45,7 +45,20 @@ const RAW_COLOR_RE = /\b(?:text|bg|border)-(?:slate|gray|neutral|zinc)-\d{2,3}\b
 // these occurrences are defensible for their paths but should have
 // bumped the baseline at merge-time. Lower again when those files
 // get a future theme-aware re-render pass.
-const BASELINE = 95;
+//
+// Lowered 95 → 14 on 2026-07-30 (Bulgarian-tricolour dark theme). The
+// navy→green re-ground swept the last route-level components that were
+// painting raw slate/navy instead of reading a token, and the 95 had
+// carried ~81 of stale slack since April — a ratchet with that much
+// give is not a ratchet. 14 is the exact current count, and every one
+// of them is in the ONE file the cheatsheet says should keep raw
+// colours: `audit/shared/[token]/page.tsx`, the public audit-pack
+// viewer, which renders outside the tenant shell with no ThemeProvider
+// in scope. `login/page.tsx`, `error.tsx` and `SoAPrintView.tsx` are
+// now clean and no longer contribute. Lower again only if the public
+// viewer ever gets a theme-aware pass; do not raise it to absorb drift
+// in an authenticated route — those owe semantic tokens.
+const BASELINE = 14;
 
 // Directories that are intentionally outside the internal design
 // system. Adding entries here is allowed when the surface is a

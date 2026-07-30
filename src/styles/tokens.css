@@ -83,7 +83,21 @@
   --content-default:  #DCEBE4;   /* green-tinted white — body text, table cells, default content */
   --content-muted:    #A9C7BB;   /* pale sage — secondary text, placeholders, captions (AA, 7.7:1 on bg-default) */
   --content-subtle:   #8AB0A1;   /* deeper sage — disabled text, hints, tertiary info (AA, 5.4:1 on bg-default) */
-  --content-inverted: #05231B;   /* deepest forest — text on inverted (gold) surfaces */
+  /* The ink that rides every BRIGHT surface — the gold primary button, and
+   * the solid status chips (`--bg-*-emphasis`). Its floor is set by the
+   * WORST of those pairings, which is solid red: `EnvironmentBadge`
+   * (DEV/STAGING) and the notification unread count both print
+   * `text-content-inverted` at 10px bold on `--bg-error-emphasis`, and 10px
+   * bold is NORMAL text to WCAG (bold only counts as large from 18.66px), so
+   * it owes the full 4.5:1. At the ground's own #05231B that pairing lands
+   * at 4.43:1 — the tricolour re-ground had already lifted it from the navy
+   * theme's 3.71:1, but not quite over the line. Dropped a further notch to
+   * close it, which also buys headroom on every other bright surface:
+   *   red #F04438 4.73:1 · gold #D4AF37 8.45:1 · green #14B866 6.83:1 ·
+   *   amber #D97706 5.58:1.
+   * Still the deepest forest — it sits between `--canvas-surface` (#041B14)
+   * and `--bg-page` (#05231B), so it reads as the same ink, just denser. */
+  --content-inverted: #041C15;   /* deepest forest — ink on inverted (gold) + solid-status surfaces */
 
   /* ── Borders / Dividers ────────────────────────────────────────── */
   --border-default:  #17553F;                /* green border — standard borders */
