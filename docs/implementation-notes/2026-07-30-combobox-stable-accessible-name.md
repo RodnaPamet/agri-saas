@@ -1,6 +1,6 @@
 # 2026-07-30 — Combobox: a stable accessible name from the FormField label
 
-**Commit:** `<pending>` fix(a11y): name the Combobox trigger from its FormField label
+**Commit:** `ac675047` fix(a11y): name the Combobox trigger from its FormField label
 
 ## Design
 
