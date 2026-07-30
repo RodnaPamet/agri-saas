@@ -14,12 +14,17 @@
  * exactly the regression (GAP-02: "lower a floor to make CI green")
  * this guard exists to catch.
  *
- * When a PR RAISES a threshold (the ratchet moving up), a value
- * above the floor already passes — bumping the matching
- * `RATCHET_FLOOR` entry to lock the gain harder is encouraged but
- * not required. `RATCHET_FLOOR` is only ever edited UPWARD: a
- * downward edit here is itself the reviewed, deliberate act of
- * retiring a floor, never a drive-by.
+ * When a PR RAISES a threshold (the ratchet moving up), the matching
+ * `RATCHET_FLOOR` entry MUST be raised in the same diff. That used to
+ * be "encouraged but not required", and the two drifted apart: this
+ * mirror stayed at its post-Roadmap-3 seed while #233 recalibrated the
+ * enforced floors, leaving it ten points low on `global` functions.
+ * `quality-coverage-integrity.test.ts` now fails CI on any entry here
+ * that sits below its `jest.thresholds.json` counterpart.
+ *
+ * `RATCHET_FLOOR` is only ever edited UPWARD: a downward edit here is
+ * itself the reviewed, deliberate act of retiring a floor, never a
+ * drive-by.
  *
  * Pure static analysis — reads `jest.thresholds.json`, no coverage
  * run, no DB.
@@ -33,12 +38,26 @@ const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 type Metrics = { branches: number; functions: number; lines: number; statements: number };
 
 /**
- * The hard minimum coverage floor — the post-roadmap-3 state
- * (P1 policy, P2 `usecases/` uplift, P3 `lib/` uplift). No value in
- * `jest.thresholds.json` may drop below this. Edit UPWARD only.
+ * The hard minimum coverage floor. No value in `jest.thresholds.json`
+ * may drop below this. Edit UPWARD only.
+ *
+ * Brought to PARITY with the enforced floors on 2026-07-29 (see the
+ * header note). It had been seeded at the post-roadmap-3 state (P1
+ * policy, P2 `usecases/` uplift, P3 `lib/` uplift) and left there
+ * through #233's recalibration and every coverage wave since, so it
+ * was guarding a state the project had long left behind. The
+ * per-scope history below is retained because it records HOW each
+ * number was earned.
  */
 const RATCHET_FLOOR: Record<string, Metrics> = {
-    global: { branches: 56, functions: 54, lines: 70, statements: 69 },
+    // Recalibrated by #233 from CI's measured artifact
+    // (measured − 2, capped at 70); the mirror is now at parity.
+    // 2026-07-29 (run 30483470674, main@f61def62): functions 64 → 65,
+    // the headroom wave 23's +114 covered functions opened up
+    // (measured 67.24). Branches measures 65.36 and stays at 63 —
+    // measured−2 truncates to exactly the floor already in force, so
+    // there is nothing to raise until measured reaches 66.
+    global: { branches: 63, functions: 65, lines: 70, statements: 70 },
     // `usecases/` — quality roadmap + stage-3a/3b/3c/3d waves.
     // Post-Roadmap-3 floor was 42 (branches); measured branch
     // coverage had climbed to ~58 without the floor following.
@@ -124,16 +143,26 @@ const RATCHET_FLOOR: Record<string, Metrics> = {
     //   - functions: 62 → 63 (+1, < 65.55)
     //   - statements: 74 → 75 (+1, < 76.32)
     //   - lines: 77 (held — already near the 77.99 ceiling)
-    './src/app-layer/usecases/': { branches: 67, functions: 63, lines: 77, statements: 75 },
+    // #233 then took functions to the 70 cap from its measured value.
+    // 2026-07-29 recalibration (run 30483470674, main@f61def62):
+    // measured branches 70.99 → 68 (+1). The other three are pinned:
+    // functions/lines/statements measure 78.40 / 85.04 / 82.82, whose
+    // measured−2 lands above the 70 cap, so the existing (higher,
+    // never-lowered) floors stand.
+    './src/app-layer/usecases/': { branches: 68, functions: 70, lines: 77, statements: 75 },
     // `policies/` — quality roadmap P3. Authorization decisions —
     // a wrong branch is a security hole. Measured ≈82 branches /
     // 91 funcs / 91 lines; seeded a few points below.
     './src/app-layer/policies/': { branches: 78, functions: 88, lines: 88, statements: 85 },
     // `events/` — quality roadmap P3. The hash-chained audit
     // trail — integrity-critical. Measured ≈75 branches / 63 funcs
-    // / 80 lines.
-    './src/app-layer/events/': { branches: 72, functions: 60, lines: 78, statements: 75 },
-    './src/lib/': { branches: 66, functions: 61, lines: 71, statements: 69 },
+    // / 80 lines; #233 took functions 60 → 61.
+    './src/app-layer/events/': { branches: 72, functions: 61, lines: 78, statements: 75 },
+    // `lib/` — #233 took branches 66 → 70 (the cap), functions
+    // 61 → 66, statements 69 → 70. The 2026-07-29 recalibration takes
+    // functions 66 → 70 as well: measured 79.67, so measured−2 clears
+    // the cap outright.
+    './src/lib/': { branches: 70, functions: 70, lines: 71, statements: 70 },
 };
 
 const METRICS: Array<keyof Metrics> = ['branches', 'functions', 'lines', 'statements'];

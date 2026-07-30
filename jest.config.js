@@ -243,12 +243,23 @@ const nodeProject = {
     //  that lost it.
     //
     //  How to raise.
-    //  Run `npx jest --coverage --runInBand` locally (or wait for
-    //  the CI coverage job to print the summary on your PR) and set
-    //  each per-path floor to ~3% below the freshly observed number.
-    //  The 3% buffer absorbs run-to-run jitter from parallel-worker
-    //  scheduling and the occasional skipped suite. Pick the same
-    //  buffer across metrics so the ratchet moves uniformly.
+    //  The calibration convention is PR #233's, and it is the one
+    //  `.github/workflows/ci.yml` records next to the gate step:
+    //  **measured − 2, capped at 70, never lowering an
+    //  already-stricter floor.** The 2-point buffer absorbs
+    //  run-to-run jitter and ordinary churn; the cap at 70 is a
+    //  brittleness ceiling — a hard gate above 70% blocks merges on
+    //  any normal untested-feature dip. A floor already above 70
+    //  (`policies/`, `usecases/` lines, …) stays where it is: the
+    //  cap prevents RAISING past 70, it never licenses a drop.
+    //
+    //  Measure, do not guess. This box OOMs on the instrumented
+    //  suite, so take the numbers from CI: `gh run download <id> -n
+    //  coverage-report` on the newest completed main run and read
+    //  `coverage-summary.json`. And compute PER THRESHOLD GROUP —
+    //  jest removes a file from `global` the moment it matches a
+    //  PATH threshold, so the whole-map `total` in that file is NOT
+    //  the number the gate checks against `global`.
     //
     //  How to add a new gated path.
     //  Drop a new key (`'./src/<area>/'`) and run coverage to seed
@@ -256,18 +267,20 @@ const nodeProject = {
     //  matters. Only add a path if the area has reached a coverage
     //  worth defending — otherwise the floor is noise.
     //
-    //  Why the global is below 60.
-    //  The audit's GAP-15 originally asked for 60/60 globally. The
-    //  current numbers (br=50/fn=50/ln=62/st=59) say that target is
-    //  not realistic with the current scope: `src/lib/**` includes
-    //  one-shot scripts, instrumentation helpers, and CLI entry
-    //  points shipped intentionally without unit tests. Tightening
-    //  the global to match raw averages would penalise legitimate
-    //  utility code; the durable lever is per-path tightening on
-    //  areas that matter (e.g. `usecases/`) PLUS the structural
-    //  enforcement fix above. When a future hardening pass either
-    //  trims the scope (excludes scripts) or invests in src/lib/
-    //  test coverage, raise the global toward 60.
+    //  The global floor, and why it is the one that fails.
+    //  GAP-15 originally asked for 60/60 globally against measured
+    //  br=50/fn=50/ln=62/st=59 — not reachable at the time. It is
+    //  now: every global metric clears 60, and the enforced floors
+    //  sit at the cap (lines/statements) or just under it
+    //  (branches/functions). `global` is nonetheless the group that
+    //  reddens the gate, because it is scored over the REMAINDER —
+    //  `src/components/**`, `src/app/**` and the parts of
+    //  `src/app-layer/**` outside the four path thresholds — which
+    //  is where the untested surface concentrates. The durable lever
+    //  is unchanged: cover files in that remainder (repositories,
+    //  route handlers, components), then lift the floor in the same
+    //  PR. Covering something under `src/lib/` moves `./src/lib/`
+    //  and leaves `global` exactly where it was.
     //
     //  What kinds of usecase tests count for the floor.
     //  The Wave 1-4 tests (`docs/implementation-notes/2026-04-25-

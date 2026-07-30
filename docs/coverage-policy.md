@@ -48,24 +48,55 @@ filled by quality-roadmap P3.
 value CI can enforce today without failing. It is a ratchet: never
 lowered, raised whenever a PR earns it.
 
-| Scope | Branches now → target | Functions now → target | Lines now → target |
-|-------|----------------------|------------------------|--------------------|
-| `usecases/` | **66** → **70** | **62** → **70** | **77** → **80** |
-| `policies/` | **78** → 75† | **88** → 75 | **88** → 80 |
-| `events/` | **72** → 65† | **60** → 65 | **78** → 75 |
-| `lib/` | **66** → 65 | **61** → 65 | **71** → 75 |
-| global | **56** → 65 | **54** → 65 | **70** → 78 |
+Floors as of the 2026-07-29 recalibration, with the coverage measured
+**per threshold group** on the artifact of main run `30483470674`
+(`main@f61def62`) beside each one:
 
-†`policies/` and `events/` already SURPASS their tier targets on
-branches — the tier target stays as written for parity with the
-other dimensions; the ratchet enforces the higher measured floor.
+| Scope | Branches floor / measured | Functions floor / measured | Lines floor / measured | Statements floor / measured |
+|-------|--------------------------|----------------------------|------------------------|-----------------------------|
+| `usecases/` | **68** / 70.99 | **70** / 78.40 | **77** / 85.04 | **75** / 82.82 |
+| `policies/` | **78** / 87.12 | **88** / 96.82 | **88** / 94.38 | **85** / 93.65 |
+| `events/` | **72** / 77.01 | **61** / 63.41 | **78** / 81.59 | **75** / 80.28 |
+| `lib/` | **70** / 76.80 | **70** / 79.66 | **71** / 87.98 | **70** / 86.06 |
+| global | **63** / 65.36 | **65** / 67.24 | **70** / 80.06 | **70** / 77.75 |
 
-After stage 3h, `usecases/` measured branch coverage is **67.78%**
-with the floor at 66 holding it. From the original "sub-50% branches"
-framing (Roadmap-3 P2 baseline) we have climbed ~18 percentage points
-across stages 3a-3h. The remaining work is the climb from 66 to the
-end-state 70 — accumulated drift across small file additions plus
-one more focused wave should close it.
+Against the tier targets in the table above (branches / functions /
+lines) — `usecases/` 70/70/80, `policies/` 75/75/80, `lib/` 65/65/75,
+`events/` 65/65/75, global 65/65/78 — measured coverage now clears
+every target except one: **`events/` functions (63.41 vs 65)**.
+`policies/` and `lib/` surpass theirs by a wide margin, which is why
+their enforced floors sit above the targets: the ratchet never lowers
+what an earlier pass earned.
+
+**Why so few floors move any more.** The calibration rule is
+`measured − 2`, **capped at 70** — a brittleness ceiling, because a
+hard gate above 70% reddens on any ordinary untested-feature dip. On
+the 2026-07-29 artifact `measured − 2` clears the cap on **16 of the 20
+metrics**, so the existing, higher, never-lowered floor stands. On two
+of the remaining four it truncates to exactly the floor already in
+force. So the recalibration moved three numbers: global functions
+64 → 65, `usecases/` branches 67 → 68, and `lib/` functions 66 → 70.
+
+`usecases/` branch coverage — the priority metric — now measures
+**70.99%**, having crossed its end-state target of 70 for the first
+time. The enforced floor is 68: the 2-point buffer is what keeps
+ordinary churn from reddening a gate that only runs post-merge.
+
+**Global branches is the number to watch.** It measures 65.36 against a
+floor of 63 — a margin of +2.36, so it now clears the 2-point buffer,
+but the floor still cannot move: `measured − 2` is 63.36, which
+truncates to the 63 already enforced. It takes measured **≥ 66.00**
+before the floor can reach 64. That, and `events/` functions (63.41,
+the one remaining tier-target miss), are where this gate will redden
+first.
+
+The only lever on `global` is measured coverage in the *remainder*:
+`src/app-layer/repositories/`, `src/app/api/**` route handlers, and
+`src/components/**`. Covering anything under `src/lib/` or
+`src/app-layer/usecases/` moves *that* group's number and leaves
+`global` untouched — which is why the wave that lifted global functions
+past its buffer (wave 23) targeted three React client components, not
+the business-logic layer.
 
 ## The staged ratchet plan
 
@@ -180,17 +211,35 @@ floor"** rule structural, not just a convention. It carries a
 `RATCHET_FLOOR` — the hard minimum for every threshold — and fails
 CI if any value in `jest.thresholds.json` drops below it.
 
-- **Raising** a threshold always passes (a value above the floor is
-  fine) — that is the ratchet moving up.
+- **Raising** a threshold requires raising its `RATCHET_FLOOR` twin
+  in the same diff — see the parity rule below.
 - **Lowering** one below the floor fails CI loudly. To genuinely
   retire a floor you must edit `RATCHET_FLOOR` downward too — a
   visible, reviewed act, never a drive-by "make CI green" change.
-- `RATCHET_FLOOR` is seeded at the post-Roadmap-3 state and is only
-  ever edited upward as the staged plan advances.
+- `RATCHET_FLOOR` is only ever edited upward as the plan advances.
 
 This is the structural backstop for the policy: the
 `Coverage (≥60%)` job enforces the *current* numbers; the ratchet
 guard enforces that those numbers can only travel one direction.
+
+**The mirror must not lag.** For a long stretch it did. `RATCHET_FLOOR`
+was seeded at the post-Roadmap-3 state and never lifted when #233
+recalibrated the enforced floors from CI's artifact, so by mid-2026 it
+sat ten points below on `global` functions (54 vs an enforced 64) and
+four to seven points below on `lib/` and `usecases/`. A PR could have
+dropped the enforced floor most of the way back to its 2026-05 value
+and the "never lowered" guard would have waved it through.
+
+That is not a theoretical hole here, because **the `Coverage (≥60%)`
+job runs on push to main only — never on PRs**. At PR time the static
+guard is the *only* thing that sees a lowered floor at all.
+
+`tests/guards/quality-coverage-integrity.test.ts` now asserts VALUE
+parity, not just key parity: no `RATCHET_FLOOR` entry may sit below its
+`jest.thresholds.json` counterpart. Raising a floor therefore means
+editing both files together, which is the same "lock the gain in the
+same PR" rule the policy already states — now enforced rather than
+encouraged.
 
 ### Next ratchet steps
 
@@ -198,9 +247,23 @@ guard enforces that those numbers can only travel one direction.
   ✅ done in quality-roadmap P3 — keys seeded at the measured values
   (`policies/` 78/88/88/85, `events/` 72/60/78/75) and added to
   `RATCHET_FLOOR`.
-- Advance the `usecases/` branch floor through the remaining stages:
-  **stage 3 (≈65)** next — branch tests for the lowest-covered
-  files (`audit-readiness/packs`, `framework/*`, `control/*`,
-  `evidence-maintenance`, …), each currently at 0% branch
-  coverage despite carrying substantial business logic — then
-  **stage 4 (70)** as the end state held by the ratchet.
+- ~~Advance the `usecases/` branch floor through the staged plan to
+  the end-state 70.~~ ✅ measured branch coverage crossed 70 in
+  2026-07 (70.99% on run `30483470674`). The enforced floor is 68 —
+  `measured − 2` — and it cannot go higher without spending the
+  buffer that keeps a post-merge-only gate from flapping.
+- **The remaining work is `global`, not the tiered layers.** Its
+  binding metric is branches: 65.36 measured, floor 63, and
+  `measured − 2` truncates to the floor already in force. It needs
+  measured ≥ 66.00 before the floor can reach 64. Raising it means
+  raising *measured* coverage in the `global` remainder —
+  `src/app-layer/repositories/`, `src/app/api/**`,
+  `src/components/**` — since jest removes anything under the four
+  path-threshold roots from that group.
+- **`events/` functions (63.41) is the last tier-target miss** (its
+  tier asks 65). It is a 41-function group, so a single well-chosen
+  test moves it several points.
+- **Keep the two ratchets in step.** Any floor raise edits
+  `jest.thresholds.json` *and* `RATCHET_FLOOR` in the same diff; the
+  parity assertion in `quality-coverage-integrity.test.ts` fails CI
+  otherwise.
