@@ -45,7 +45,7 @@
   --bg-muted:     #07291F;                  /* darker green — hover surfaces, pressed/active states */
   --bg-subtle:    rgba(21, 94, 72, 0.30);   /* green @ 30% — selection bg, disabled surfaces, faint tints */
   --bg-elevated:  #0E4232;                  /* lifted green — tooltips, dropdowns sitting above default */
-  --bg-inverted:  #FFFFFF;                  /* the flag's white — inverted surface (primary button bg) */
+  --bg-inverted:  #D4AF37;                  /* Agrent gold — inverted surface (primary button bg) */
   --bg-overlay:   rgba(2, 18, 13, 0.72);    /* deep green backdrop behind modals/drawers */
 
   /* The page ground as a gradient — deep at the edges, marginally lifted
@@ -57,7 +57,7 @@
   /* ── Content / Text ────────────────────────────────────────────── */
   /*
    * GAP-CI-77: bumped `--content-muted` and `--content-subtle` so
-   * small text on `--bg-default` (#003C7A navy cards) clears WCAG AA
+   * small text on `--bg-default` (now #0A3327 green cards) clears WCAG AA
    * 4.5:1. The previous values (#95B0C9, #6B85A0) gave 4.31:1 and
    * 2.80:1 respectively — small body text (`text-xs`, 12px) at those
    * tiers fails axe-core's color-contrast rule. The new values
@@ -72,7 +72,7 @@
   --content-default:  #DCEBE4;   /* green-tinted white — body text, table cells, default content */
   --content-muted:    #A9C7BB;   /* pale sage — secondary text, placeholders, captions (AA, 7.7:1 on bg-default) */
   --content-subtle:   #8AB0A1;   /* deeper sage — disabled text, hints, tertiary info (AA, 5.4:1 on bg-default) */
-  --content-inverted: #05231B;   /* deepest forest — text on inverted (white) surfaces */
+  --content-inverted: #05231B;   /* deepest forest — text on inverted (gold) surfaces */
 
   /* ── Borders / Dividers ────────────────────────────────────────── */
   --border-default:  #17553F;                /* green border — standard borders */
@@ -96,29 +96,28 @@
   --canvas-shadow:     0 8px 20px -10px rgba(0, 0, 0, 0.70), 0 1px 2px rgba(0, 0, 0, 0.45); /* elevated-node lift */
   --canvas-recess:     inset 0 11px 20px -16px rgba(0, 0, 0, 0.90); /* top inner shadow — plane reads sunk below the chrome */
 
-  /* ── Brand / Primary (the flag's red) ──────────────────────────────
+  /* ── Brand / Primary (Agrent gold) ─────────────────────────────────
    *
-   * Red is the flag's base band and it is used here as CONSEQUENCE: brand
-   * identity, links, focus, and the danger family. It is deliberately NOT
-   * the routine primary-action fill.
+   * Gold is kept as the brand accent on the new green ground, and that is
+   * what resolves the palette's one real conflict.
    *
-   * That is the one place this palette forced a real decision. Green is the
-   * ground AND `--status-success`; red is the obvious brand accent AND
-   * `--status-error`. Map both naively and two things break: a success badge
-   * disappears into a success-coloured page, and every primary button looks
-   * exactly like a destructive one — in a product with a formal
-   * destructive-action vocabulary and 5-second undo toasts, that is a
-   * hazard, not a preference. Red/green is also the most common
-   * colour-vision-deficiency axis, and this product's audience skews the way
-   * that statistic does.
+   * A tricolour theme wants red for the brand — but red is also
+   * `--status-error`, and green is also `--status-success`. Map both
+   * naively and two things break: a success badge disappears into a
+   * success-coloured page, and every primary button looks exactly like a
+   * destructive one. In a product with a formal destructive-action
+   * vocabulary and 5-second undo toasts, the second is a hazard rather
+   * than a preference; red/green is also the most common
+   * colour-vision-deficiency axis.
    *
-   * So the PRIMARY ACTION is the flag's white (`--bg-inverted`): on a deep
-   * green ground it is the highest-contrast affordance available, and it is
-   * still a flag colour. Red keeps meaning "careful". */
-  --brand-default:  #D62612;                  /* Bulgarian flag red — brand accent, links */
-  --brand-emphasis: #A81B0C;                  /* deeper red — active brand, pressed accent */
-  --brand-muted:    #EE5A46;                  /* lifted red — hover accent */
-  --brand-subtle:   rgba(214, 38, 18, 0.16);  /* red @ 16% — brand tint backgrounds */
+   * Keeping gold gives every hue exactly one job:
+   *   green = ground, white = content, GOLD = brand, red = DANGER ONLY.
+   * Gold on deep green is legible (6.6:1 as link text on --bg-default,
+   * 7.9:1 on --bg-page) and it is the identity the product already had. */
+  --brand-default:  #D4AF37;                /* Agrent metallic gold — brand accent, links */
+  --brand-emphasis: #B8860B;                /* dark goldenrod — primary buttons, active brand */
+  --brand-muted:    #E4C55C;                /* lighter gold — hover accent */
+  --brand-subtle:   rgba(212, 175, 55, 0.16); /* gold @ 16% — brand tint backgrounds */
   /* Metallic-gold text gradient for featured dashboard numbers (.metric-gradient).
      Light-to-deep polished-gold sheen; reads bright on the navy ground. */
   --grad-gold: linear-gradient(142deg, #F6E7AC 0%, #E4C55C 22%, #D4AF37 52%, #A9760B 100%);
@@ -130,28 +129,30 @@
      Bulgarian); a cool modern grotesque that pairs with the Bricolage numbers. */
   --font-heading: 'Onest', 'Inter', system-ui, sans-serif;
 
-  /* ── Brand / Secondary (electric blue — complementary cool counterpoint) ──
+  /* ── Brand / Secondary (cool blue — complementary counterpoint) ──────
    *
-   * Roadmap-13 introduces a SECONDARY brand colour so the sidebar
-   * (and any future chrome that wants a two-tone state vocabulary)
-   * can express ACTIVE in a tone distinct from HOVER. On METRO the
-   * page surface is itself deep navy (#001830 / #003C7A), so a navy
-   * accent would dissolve into the background. The cool counterpoint
-   * to METRO's warm yellow is therefore a vivid electric blue —
-   * `#3B82F6` (Tailwind blue-500). It clears 4.5:1 against both
-   * `--bg-default` (#003C7A) and `--bg-page` (#001830), so any
-   * primitive that paints a band, ring, or text in this token reads
-   * clearly on every dark surface in the app.
+   * Roadmap-13 introduced a SECONDARY brand colour so the sidebar (and any
+   * future chrome wanting a two-tone state vocabulary) can express ACTIVE
+   * in a tone distinct from HOVER. That still holds: HOVER reads gold,
+   * ACTIVE reads cool, and the eye takes the pair as deliberate state
+   * vocabulary rather than drift between brand tones.
    *
-   * Hue choice: blue-500 sits 180° opposite METRO yellow on the
-   * colour wheel — true complementary contrast, not "another warm".
-   * The eye reads HOVER (yellow) vs ACTIVE (blue) as deliberate
-   * state vocabulary, not accidental drift between brand tones.
-   */
-  --brand-secondary-default:  #3B82F6;                /* electric blue — secondary brand, complementary to yellow */
-  --brand-secondary-emphasis: #2563EB;                /* deeper blue — primary band stop, active surfaces */
-  --brand-secondary-muted:    #60A5FA;                /* lighter blue — band highlight midstop, hover accent (R13-PR4) */
-  --brand-secondary-subtle:   rgba(59, 130, 246, 0.18); /* blue @ 18% — secondary tint backgrounds */
+   * The tones were LIFTED when the ground went green (2026-07-30). The
+   * original rationale was written for a navy page — "a navy accent would
+   * dissolve into the background" — and claimed blue-500 (#3B82F6) cleared
+   * 4.5:1 on both dark surfaces. On the green ground it no longer does:
+   * blue-500 measures 3.70:1 on `--bg-default` and 4.40:1 on `--bg-page`,
+   * both under AA. Lifting the default to blue-400 restores it — 5.52:1 on
+   * `--bg-default`, 6.58:1 on `--bg-page`.
+   *
+   * Blue is deliberately kept as a NON-FLAG functional tone, the same call
+   * as amber `warning` and blue `info`: the tricolour owns ground, content
+   * and danger, and the remaining signals need hues the theme is not
+   * already using for something else. */
+  --brand-secondary-default:  #60A5FA;                /* cool blue — secondary brand, complementary to gold (AA on green) */
+  --brand-secondary-emphasis: #3B82F6;                /* deeper blue — primary band stop, active surfaces */
+  --brand-secondary-muted:    #93C5FD;                /* lighter blue — band highlight midstop, hover accent (R13-PR4) */
+  --brand-secondary-subtle:   rgba(96, 165, 250, 0.18); /* blue @ 18% — secondary tint backgrounds */
 
   /* ── Status: Success ───────────────────────────────────────────── */
   /* Success has to out-LUMINATE the ground, not merely differ in hue from
@@ -169,11 +170,10 @@
   --border-warning:      rgba(245, 158, 11, 0.30);  /* amber-500 @ 30% */
 
   /* ── Status: Error / Danger ────────────────────────────────────── */
-  /* Danger runs HOTTER and LIGHTER than `--brand-default` (#D62612) on
-   * purpose. Both are red — the brief's palette makes that unavoidable — so
-   * the separation is carried by luminance and saturation instead of hue.
-   * Keep it that way: collapsing danger onto the brand red is what makes a
-   * delete button indistinguishable from a save button. */
+  /* Red is reserved for DANGER — it is not the brand accent (gold is), so
+   * there is nothing else on the page competing for "alarm". Kept slightly
+   * hotter and lighter than stock red-500 so it still separates cleanly
+   * from the deep green ground. */
   --bg-error:          rgba(255, 91, 74, 0.16);     /* alarm red @ 16% — badge tint */
   --bg-error-emphasis: #F04438;                      /* solid actionable surface (danger buttons, indicator dots) */
   --content-error:     #FF8A7A;                      /* bright coral-red — reads hotter than brand */
@@ -196,7 +196,7 @@
 
   /* shadcn / Radix compatibility tokens */
   --ring:                   rgba(255, 205, 17, 0.55);
-  --ring-offset-background: #001830;
+  --ring-offset-background: #05231B;
   --primary:                #D4AF37;
 
   /* ── Glass ─────────────────────────────────────────────────────── */

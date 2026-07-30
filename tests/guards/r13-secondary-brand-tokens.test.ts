@@ -62,23 +62,37 @@ const LIGHT_BLOCK = extractBlock(
 
 describe('Roadmap-13 PR-1 — secondary-brand token foundation', () => {
     describe('METRO (dark) theme — :root block', () => {
-        it('declares --brand-secondary-default', () => {
+        // These three assertions used to pin the EXACT hexes (#3B82F6,
+        // #2563EB, rgba(59,130,246,0.18)) — directly contradicting this
+        // file's own docstring, which says the ratchet "does NOT police
+        // the exact hex values. Future palette tuning is allowed — the
+        // structure (three-tier, two-theme, complementary to primary) is
+        // what's locked here."
+        //
+        // The contradiction became load-bearing on 2026-07-30, when the
+        // dark ground moved from navy to green. The pinned blue-500
+        // measures 3.70:1 on the new `--bg-default` and 4.40:1 on
+        // `--bg-page` — both under WCAG AA — so honouring the pin meant
+        // shipping an accessibility failure to satisfy a check that
+        // claimed not to care. The tones were lifted a rung; the pin is
+        // now the STRUCTURE the docstring describes.
+        it('declares --brand-secondary-default as a hex', () => {
             // The DEFAULT tier is the canonical token — the one a band's
             // top gradient stop or a piece of active-state chrome reaches
-            // for. On METRO this is electric blue (#3B82F6) — vivid
-            // enough to clear the navy bg, complementary to yellow.
+            // for. Must be a cool counterpoint to the warm primary and
+            // legible on the dark ground, whatever that ground currently is.
             expect(DARK_BLOCK).toMatch(
-                /--brand-secondary-default:\s*#3B82F6\b/i,
+                /--brand-secondary-default:\s*#[0-9a-f]{6}\b/i,
             );
         });
 
-        it('declares --brand-secondary-emphasis', () => {
+        it('declares --brand-secondary-emphasis as a hex', () => {
             // The EMPHASIS tier is one rung deeper than default —
             // mirrors how `--brand-emphasis` deepens `--brand-default`.
             // Used as the bottom gradient stop on bands and as the
             // active surface tint on solid buttons.
             expect(DARK_BLOCK).toMatch(
-                /--brand-secondary-emphasis:\s*#2563EB\b/i,
+                /--brand-secondary-emphasis:\s*#[0-9a-f]{6}\b/i,
             );
         });
 
@@ -88,8 +102,10 @@ describe('Roadmap-13 PR-1 — secondary-brand token foundation', () => {
             // alpha-blended (see `--brand-subtle`, `--bg-success`).
             // A solid colour here would defeat the layering with the
             // surface beneath.
+            // Alpha is the structural property here, not the channel
+            // values — a solid colour is the regression this catches.
             expect(DARK_BLOCK).toMatch(
-                /--brand-secondary-subtle:\s*rgba\(59,\s*130,\s*246,\s*0\.18\)/,
+                /--brand-secondary-subtle:\s*rgba\(\s*\d+,\s*\d+,\s*\d+,\s*0?\.\d+\s*\)/,
             );
         });
     });
