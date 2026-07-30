@@ -26,13 +26,33 @@
    ═══════════════════════════════════════════════════════════════════ */
 :root {
   /* ── Surfaces ──────────────────────────────────────────────────── */
-  --bg-page:      #001830;                  /* very deep METRO navy — app/page background */
-  --bg-default:   #003C7A;                  /* METRO navy (lighter) — cards, panels, tables, modals, popovers */
-  --bg-muted:     #002F5F;                  /* darker navy — hover surfaces, pressed/active states */
-  --bg-subtle:    rgba(0, 83, 140, 0.30);   /* navy @ 30% — selection bg, disabled surfaces, faint tints */
-  --bg-elevated:  #004B96;                  /* medium navy — tooltips, dropdowns sitting above default */
-  --bg-inverted:  #D4AF37;                  /* Agrent metallic gold — inverted surface (primary button bg) */
-  --bg-overlay:   rgba(0, 12, 26, 0.70);    /* dark navy backdrop behind modals/drawers */
+  /* Bulgarian tricolour, read as a ROLE HIERARCHY rather than a palette.
+   *
+   * The flag stacks white / green / red, and that order is the system:
+   *   green = the ground        (a place, never a signal)
+   *   white = the content layer (what you read, and what you press)
+   *   red   = consequence       (danger, and brand identity accents)
+   *
+   * Why the ground is a DESATURATED green and not the flag's #00966E: a
+   * marketplace and records app is stared at for whole working days, and
+   * saturated green at full-viewport scale is exhausting. It would also
+   * destroy every green SIGNAL in the product — a success badge on a
+   * success-coloured page says nothing. So the ground is the flag green
+   * pulled down in saturation and lightness until it recedes, and the
+   * vivid green is spent only where it has to carry meaning. */
+  --bg-page:      #05231B;                  /* deepest forest — page ground (gradient base, see --grad-page) */
+  --bg-default:   #0A3327;                  /* deep green — cards, panels, tables, modals, popovers */
+  --bg-muted:     #07291F;                  /* darker green — hover surfaces, pressed/active states */
+  --bg-subtle:    rgba(21, 94, 72, 0.30);   /* green @ 30% — selection bg, disabled surfaces, faint tints */
+  --bg-elevated:  #0E4232;                  /* lifted green — tooltips, dropdowns sitting above default */
+  --bg-inverted:  #FFFFFF;                  /* the flag's white — inverted surface (primary button bg) */
+  --bg-overlay:   rgba(2, 18, 13, 0.72);    /* deep green backdrop behind modals/drawers */
+
+  /* The page ground as a gradient — deep at the edges, marginally lifted
+   * through the upper middle so a full-height page has somewhere to look.
+   * Kept to ~3% luminance travel: any more and every card boundary starts
+   * fighting the wash behind it. */
+  --grad-page: linear-gradient(168deg, #0A3327 0%, #06261D 46%, #041C15 100%);
 
   /* ── Content / Text ────────────────────────────────────────────── */
   /*
@@ -44,16 +64,20 @@
    * preserve the tier hierarchy (muted > subtle) while sitting above
    * the AA threshold on every dark surface in use.
    */
-  --content-emphasis: #ECF1F7;   /* soft off-white (very subtle blue tint) — headings, selected items, bold labels */
-  --content-default:  #D9E5F2;   /* light blue-tinted — body text, table cells, default content */
-  --content-muted:    #B5CADD;   /* mid blue-gray — secondary text, placeholders, captions (AA, 6.45:1 on bg-default) */
-  --content-subtle:   #93AFCC;   /* lighter blue-gray — disabled text, hints, tertiary info (AA, 4.81:1 on bg-default) */
-  --content-inverted: #001830;   /* deep navy — text on inverted (yellow) surfaces */
+  /* Green-tinted whites, not neutral greys: text in the ground's own family
+   * sits IN the surface instead of looking pasted onto it. The tier ratios
+   * against `--bg-default` (#0A3327) are held above the GAP-CI-77 floor —
+   * 12px body text at `--content-subtle` still clears WCAG AA 4.5:1. */
+  --content-emphasis: #FFFFFF;   /* the flag's white — headings, selected items, bold labels */
+  --content-default:  #DCEBE4;   /* green-tinted white — body text, table cells, default content */
+  --content-muted:    #A9C7BB;   /* pale sage — secondary text, placeholders, captions (AA, 7.7:1 on bg-default) */
+  --content-subtle:   #8AB0A1;   /* deeper sage — disabled text, hints, tertiary info (AA, 5.4:1 on bg-default) */
+  --content-inverted: #05231B;   /* deepest forest — text on inverted (white) surfaces */
 
   /* ── Borders / Dividers ────────────────────────────────────────── */
-  --border-default:  #00538C;               /* navy border — standard borders */
-  --border-subtle:   rgba(0, 83, 140, 0.50); /* navy @ 50% — soft dividers, card edges */
-  --border-emphasis: #007BCC;               /* brighter navy — focused inputs, emphasized outlines */
+  --border-default:  #17553F;                /* green border — standard borders */
+  --border-subtle:   rgba(23, 85, 63, 0.55); /* green @ 55% — soft dividers, card edges */
+  --border-emphasis: #2A7F5E;                /* brighter green — focused inputs, emphasized outlines */
 
   /* ── Process canvas (Roadmap-27) ───────────────────────────────────
    * A dedicated surface ramp for the node-based Processes editor. The
@@ -72,11 +96,29 @@
   --canvas-shadow:     0 8px 20px -10px rgba(0, 0, 0, 0.70), 0 1px 2px rgba(0, 0, 0, 0.45); /* elevated-node lift */
   --canvas-recess:     inset 0 11px 20px -16px rgba(0, 0, 0, 0.90); /* top inner shadow — plane reads sunk below the chrome */
 
-  /* ── Brand / Primary (METRO yellow) ────────────────────────────── */
-  --brand-default:  #D4AF37;                /* Agrent metallic gold — brand accent, links */
-  --brand-emphasis: #B8860B;                /* dark goldenrod — primary buttons, active brand */
-  --brand-muted:    #E4C55C;                /* lighter gold — hover accent */
-  --brand-subtle:   rgba(212, 175, 55, 0.16); /* gold @ 16% — brand tint backgrounds */
+  /* ── Brand / Primary (the flag's red) ──────────────────────────────
+   *
+   * Red is the flag's base band and it is used here as CONSEQUENCE: brand
+   * identity, links, focus, and the danger family. It is deliberately NOT
+   * the routine primary-action fill.
+   *
+   * That is the one place this palette forced a real decision. Green is the
+   * ground AND `--status-success`; red is the obvious brand accent AND
+   * `--status-error`. Map both naively and two things break: a success badge
+   * disappears into a success-coloured page, and every primary button looks
+   * exactly like a destructive one — in a product with a formal
+   * destructive-action vocabulary and 5-second undo toasts, that is a
+   * hazard, not a preference. Red/green is also the most common
+   * colour-vision-deficiency axis, and this product's audience skews the way
+   * that statistic does.
+   *
+   * So the PRIMARY ACTION is the flag's white (`--bg-inverted`): on a deep
+   * green ground it is the highest-contrast affordance available, and it is
+   * still a flag colour. Red keeps meaning "careful". */
+  --brand-default:  #D62612;                  /* Bulgarian flag red — brand accent, links */
+  --brand-emphasis: #A81B0C;                  /* deeper red — active brand, pressed accent */
+  --brand-muted:    #EE5A46;                  /* lifted red — hover accent */
+  --brand-subtle:   rgba(214, 38, 18, 0.16);  /* red @ 16% — brand tint backgrounds */
   /* Metallic-gold text gradient for featured dashboard numbers (.metric-gradient).
      Light-to-deep polished-gold sheen; reads bright on the navy ground. */
   --grad-gold: linear-gradient(142deg, #F6E7AC 0%, #E4C55C 22%, #D4AF37 52%, #A9760B 100%);
@@ -112,10 +154,13 @@
   --brand-secondary-subtle:   rgba(59, 130, 246, 0.18); /* blue @ 18% — secondary tint backgrounds */
 
   /* ── Status: Success ───────────────────────────────────────────── */
-  --bg-success:          rgba(16, 185, 129, 0.15);  /* emerald-500 @ 15% — badge tint */
-  --bg-success-emphasis: #059669;                    /* emerald-600 — solid actionable surface (success buttons, indicator dots) */
-  --content-success:     #34d399;                    /* emerald-400 */
-  --border-success:      rgba(16, 185, 129, 0.30);  /* emerald-500 @ 30% */
+  /* Success has to out-LUMINATE the ground, not merely differ in hue from
+   * it: on a green page, emerald-400 reads as "page", so the whole tier is
+   * pushed brighter until a badge separates at a glance. */
+  --bg-success:          rgba(95, 227, 155, 0.16);  /* spring green @ 16% — badge tint */
+  --bg-success-emphasis: #14B866;                    /* solid actionable surface (success buttons, indicator dots) */
+  --content-success:     #5FE39B;                    /* bright spring green — separates from the ground */
+  --border-success:      rgba(95, 227, 155, 0.32);
 
   /* ── Status: Warning ───────────────────────────────────────────── */
   --bg-warning:          rgba(245, 158, 11, 0.15);  /* amber-500 @ 15% — badge tint */
@@ -124,10 +169,15 @@
   --border-warning:      rgba(245, 158, 11, 0.30);  /* amber-500 @ 30% */
 
   /* ── Status: Error / Danger ────────────────────────────────────── */
-  --bg-error:          rgba(239, 68, 68, 0.15);     /* red-500 @ 15% — badge tint */
-  --bg-error-emphasis: #DC2626;                      /* red-600 — solid actionable surface (danger buttons, indicator dots) */
-  --content-error:     #f87171;                      /* red-400 */
-  --border-error:      rgba(239, 68, 68, 0.30);      /* red-500 @ 30% */
+  /* Danger runs HOTTER and LIGHTER than `--brand-default` (#D62612) on
+   * purpose. Both are red — the brief's palette makes that unavoidable — so
+   * the separation is carried by luminance and saturation instead of hue.
+   * Keep it that way: collapsing danger onto the brand red is what makes a
+   * delete button indistinguishable from a save button. */
+  --bg-error:          rgba(255, 91, 74, 0.16);     /* alarm red @ 16% — badge tint */
+  --bg-error-emphasis: #F04438;                      /* solid actionable surface (danger buttons, indicator dots) */
+  --content-error:     #FF8A7A;                      /* bright coral-red — reads hotter than brand */
+  --border-error:      rgba(255, 91, 74, 0.34);
 
   /* ── Status: Info ──────────────────────────────────────────────── */
   --bg-info:          rgba(59, 130, 246, 0.15);      /* blue-500 @ 15% — badge tint */

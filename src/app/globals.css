@@ -36,7 +36,15 @@
 
 body {
   font-family: 'Inter', system-ui, sans-serif;
-  background: var(--bg-page);
+  /* The deep-green gradient ground. `background-color` is set FIRST as the
+   * fallback so any surface that samples `--bg-page` (scrollbar track, the
+   * color-mix header wash) still resolves to a solid colour, and so a failed
+   * gradient never leaves the page white. `fixed` attachment keeps the wash
+   * anchored to the viewport rather than scrolling with content — the ground
+   * should read as one continuous field, not repeat per screenful. */
+  background-color: var(--bg-page);
+  background-image: var(--grad-page);
+  background-attachment: fixed;
   color: var(--content-emphasis);
 }
 
