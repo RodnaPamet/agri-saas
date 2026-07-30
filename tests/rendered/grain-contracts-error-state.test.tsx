@@ -27,12 +27,26 @@
  * Copy comes from the REAL `messages/en.json` via the project-wide
  * next-intl mock in `tests/rendered/setup.ts`, so these assertions are
  * byte-identical to production output.
+ *
+ * ── Which DataTable branch these exercise ───────────────────────────
+ *
+ * `ContractsClient` is a `<DataTable mobileFallback="card">` and the
+ * jsdom default viewport is a PHONE (see `./viewport`), so the
+ * unpinned tests below assert against `<MobileCardList>`'s error /
+ * empty / row branches — NOT the `<table>`'s. That matters here
+ * because the whole point of the file is "error INSTEAD of empty", and
+ * `MobileCardList` and `Table` implement that choice in two separate
+ * places: a fix applied to one is not a fix applied to the other. Each
+ * test therefore names its viewport, and the error-not-empty invariant
+ * — the actual regression — is asserted at BOTH.
  */
 
 import * as React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import enMessages from '../../messages/en.json';
+
+import { restoreViewport, setViewport } from './viewport';
 
 jest.mock('next/navigation', () => ({
     useRouter: () => ({
@@ -127,13 +141,20 @@ const originalFetch = global.fetch;
 afterEach(() => {
     global.fetch = originalFetch;
     setUrl('');
+    restoreViewport();
     jest.clearAllMocks();
 });
 
 describe('grain contracts — failed read', () => {
-    it('renders the error copy, not the empty state, when the list read fails', async () => {
+    // `MobileCardList` (phone) and `Table` (desktop) each carry their own
+    // error / empty branch, so the regression is asserted at both. Before
+    // this was parameterised only the phone branch ran.
+    it.each(['mobile', 'desktop'] as const)(
+        'renders the error copy, not the empty state, when the list read fails (%s)',
+        async (viewport) => {
         // An ACTIVE facet means no SSR hydration (`initialData` is
         // undefined when a facet is on), so the query really runs.
+        setViewport(viewport);
         setUrl('?status=DRAFT,ACTIVE');
         global.fetch = jest.fn(async () => httpStatus(500)) as unknown as typeof fetch;
 
@@ -145,6 +166,30 @@ describe('grain contracts — failed read', () => {
         // assert zero rows, which is not what happened.
         expect(screen.queryByText(COPY.emptyNoResultsTitle)).not.toBeInTheDocument();
         expect(screen.queryByText(COPY.emptyTitle)).not.toBeInTheDocument();
+        // …and the error replaced the data surface rather than sitting
+        // above a table/card list that still claims zero rows.
+        expect(screen.queryByRole('table')).toBeNull();
+        expect(document.getElementById('mobile-card-list')).toBeNull();
+    },
+    );
+
+    it('renders rows as real table rows on a desktop', async () => {
+        // The successful-read branch at the viewport the other tests miss:
+        // proves the desktop `<table>` renders the row, with the column
+        // headers the card branch has no equivalent for.
+        setViewport('desktop');
+        setUrl('?status=ACTIVE');
+        global.fetch = jest.fn(async () =>
+            okJson({ rows: [row()], totals: [] }),
+        ) as unknown as typeof fetch;
+
+        mount();
+
+        expect(await screen.findByText('Acme Grain Co')).toBeInTheDocument();
+        expect(screen.getByRole('table')).toBeInTheDocument();
+        expect(document.getElementById('mobile-card-list')).toBeNull();
+        expect(screen.getByText('Acme Grain Co').closest('tr')).not.toBeNull();
+        expect(document.querySelectorAll('tbody tr')).toHaveLength(1);
     });
 
     it('surfaces the error for a network failure too, not just an HTTP error', async () => {

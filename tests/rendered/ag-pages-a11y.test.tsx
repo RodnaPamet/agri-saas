@@ -15,6 +15,18 @@
  *   4. YieldClient            — grain yield records (EntityListPage)
  *   5. ContractsClient        — grain marketing contracts (EntityListPage)
  *   6. OfflineFieldPanel      — phones-with-gloves field-op client
+ *
+ * ── Both viewports, deliberately ────────────────────────────────────
+ *
+ * Four of these six surfaces render `<DataTable mobileFallback="card">`,
+ * which swaps the `<table>` for `<MobileCardList>` on a phone. The jsdom
+ * default viewport IS a phone (see `./viewport`), so before this sweep
+ * was parameterised it audited the CARD branch only — the `<table>`
+ * markup named in the list above had never been through axe at all.
+ * Table a11y (column-header semantics, `scope`, row structure,
+ * `aria-sort` on sortable headers) is precisely what an axe sweep is
+ * for, so the sweep now runs at both viewports. Both branches ship;
+ * both get audited.
  */
 
 import * as React from 'react';
@@ -24,6 +36,8 @@ import { SWRConfig } from 'swr';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 import { TooltipProvider } from '@/components/ui/tooltip';
+
+import { restoreViewport, setViewport, type Viewport } from './viewport';
 
 // ─── Shared module mocks ─────────────────────────────────────────────
 
@@ -370,7 +384,12 @@ const YIELD_RECORDS = [
 
 // ─── Tests ───────────────────────────────────────────────────────────
 
-describe('Ag pages — WCAG 2.1 AA (jest-axe)', () => {
+describe.each<Viewport>(['mobile', 'desktop'])(
+    'Ag pages — WCAG 2.1 AA (jest-axe) — %s',
+    (viewport) => {
+    beforeEach(() => setViewport(viewport));
+    afterEach(restoreViewport);
+
     it('LocationsClient has no accessibility violations', async () => {
         const { container } = renderWithProviders(
             <LocationsClient tenantSlug="acme" />,
@@ -431,4 +450,5 @@ describe('Ag pages — WCAG 2.1 AA (jest-axe)', () => {
         );
         expect(await axe(container)).toHaveNoViolations();
     });
-});
+    },
+);

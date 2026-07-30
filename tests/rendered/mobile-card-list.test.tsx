@@ -3,10 +3,18 @@
  *
  * DataTable `mobileFallback="card"` — the phone (<sm) fallback.
  *
- * jsdom ignores CSS, so BOTH the `sm:hidden` card list AND the
- * `hidden sm:contents` table render into the DOM; queries are scoped to
- * the `#mobile-card-list` <ul> (role="list") to read the card branch
- * unambiguously.
+ * The card branch is reached because the jsdom default viewport is a
+ * PHONE — `tests/rendered/setup.ts` answers `matches: false` to every
+ * media query and `useMediaQuery` falls through to `'mobile'` (see
+ * `./viewport`). DataTable branches on that in JS and renders exactly
+ * ONE of the card list / the table, so `#mobile-card-list` being
+ * present is itself evidence of the phone branch.
+ *
+ * (An earlier revision of this docblock described the two rendering
+ * behind CSS — `sm:hidden` card list plus `hidden sm:contents` table,
+ * both in the DOM. That is no longer how DataTable works: a hidden card
+ * copy duplicated every row's text and broke `getByText` strict mode,
+ * so the CSS swap was replaced by the `isMobile` branch.)
  *
  * Proves:
  *   1. Each row renders as a card built from `column.meta.mobileCard`
@@ -17,6 +25,8 @@
  */
 import { render, screen, fireEvent, within } from '@testing-library/react';
 import { DataTable, createColumns } from '@/components/ui/table';
+
+import { restoreViewport, setViewport } from './viewport';
 
 interface TaskRow {
     id: string;
@@ -57,6 +67,11 @@ const columns = createColumns<TaskRow>([
 ]);
 
 describe('DataTable mobileFallback="card"', () => {
+    // Pin the phone rather than inherit it, so this suite keeps testing
+    // the card branch if the jsdom default ever changes.
+    beforeEach(() => setViewport('mobile'));
+    afterEach(restoreViewport);
+
     it('renders each row as a card from column meta, excluding untagged columns', () => {
         render(
             <DataTable<TaskRow>

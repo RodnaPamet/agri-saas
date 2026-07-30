@@ -19,6 +19,7 @@ import { render, screen, fireEvent, waitFor, within } from '@testing-library/rea
 import userEvent from '@testing-library/user-event';
 import * as React from 'react';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { restoreViewport, setViewport } from './viewport';
 
 let searchParams = new URLSearchParams();
 jest.mock('next/navigation', () => ({
@@ -150,28 +151,12 @@ const user = () => userEvent.setup({ delay: null, pointerEventsCheck: 0 });
 
 // ─── Viewport control ────────────────────────────────────────────────
 //
-// `tests/rendered/setup.ts` stubs matchMedia to `matches: false` for EVERY
-// query, and `useMediaQuery` derives its device from two `min-width` probes
-// — so the default jsdom viewport reads as a PHONE. That is the right
-// default for this product (the operator is in a field), but it means the
-// desktop `<DataTable>` branch is unreachable unless a test says otherwise.
-const REAL_MATCH_MEDIA = window.matchMedia;
-function setViewport(kind: 'mobile' | 'desktop') {
-    window.matchMedia = ((query: string) =>
-        ({
-            matches: kind === 'desktop' && /min-width:\s*(640|1024)px/.test(query),
-            media: query,
-            onchange: null,
-            addListener: jest.fn(),
-            removeListener: jest.fn(),
-            addEventListener: jest.fn(),
-            removeEventListener: jest.fn(),
-            dispatchEvent: jest.fn(),
-        }) as unknown as MediaQueryList) as unknown as typeof window.matchMedia;
-}
-afterEach(() => {
-    window.matchMedia = REAL_MATCH_MEDIA;
-});
+// The default jsdom viewport reads as a PHONE, so the desktop
+// `<DataTable>` branch is unreachable unless a test says otherwise. The
+// mechanism (and why the phone default is the right one for this
+// product) is documented in `./viewport`, which also carries the
+// executing test for the helper itself.
+afterEach(restoreViewport);
 
 function renderPage() {
     return render(
@@ -246,9 +231,11 @@ describe('InventoryClient — lot table', () => {
     it('swaps the table for cards on a phone, keeping the on-hand + Low pill', async () => {
         // Break: dropping `mobileFallback="card"` (or the per-column
         // `meta.mobileCard` slots) leaves the field operator scrolling a
-        // five-column table sideways on a 375px screen. jsdom reads as a
-        // phone by default, so this is the branch the app actually ships to
-        // the people who use it most.
+        // five-column table sideways on a 375px screen. This is the branch
+        // the app actually ships to the people who use it most — pinned
+        // explicitly rather than inherited from the jsdom default, so the
+        // test keeps testing a phone if that default ever changes.
+        setViewport('mobile');
         renderPage();
         await waitFor(() => expect(screen.getByText('BATCH-A')).toBeInTheDocument());
 
