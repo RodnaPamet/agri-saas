@@ -951,7 +951,7 @@ export default function ControlDetailPage() {
 
             {/* Success toast */}
             {editSuccess && (
-                <div className="fixed bottom-6 right-6 z-50 bg-bg-success-emphasis text-content-emphasis px-4 py-2 rounded-lg shadow-lg animate-fadeIn text-sm" id="edit-success-toast">
+                <div className="fixed bottom-6 right-6 z-50 bg-bg-success-emphasis text-content-inverted px-4 py-2 rounded-lg shadow-lg animate-fadeIn text-sm" id="edit-success-toast">
                     {t('detail.controlUpdated')}
                 </div>
             )}

@@ -18,67 +18,140 @@
  */
 
 /* ═══════════════════════════════════════════════════════════════════
-   DARK THEME (default) — METRO Cash & Carry palette.
+   DARK THEME (default) — Bulgarian tricolour, one hue per job.
 
-   METRO yellow (#FFCD11) on deep navy blue surfaces. Status colors
-   kept as conventional emerald/amber/red/blue so semantic meaning is
-   preserved across themes.
+   Agrent gold (#D4AF37) on deep desaturated-green surfaces. The role
+   hierarchy is the whole design and every token below answers to it:
+
+     green = the GROUND    — surfaces only, never a signal
+     white = the CONTENT   — what you read (green-tinted, not grey)
+     GOLD  = the BRAND     — links, primary actions, focus, nav glow
+     red   = DANGER ONLY   — nothing else on the page competes for alarm
+
+   Success is pushed brighter than stock emerald so a positive badge
+   out-luminates the green ground instead of dissolving into it. The
+   remaining functional tones (amber warning, blue info/secondary) are
+   deliberately NON-flag hues: the tricolour has claimed ground,
+   content and danger, so every other signal needs a colour the theme
+   is not already using for something else.
    ═══════════════════════════════════════════════════════════════════ */
 :root {
   /* ── Surfaces ──────────────────────────────────────────────────── */
-  --bg-page:      #001830;                  /* very deep METRO navy — app/page background */
-  --bg-default:   #003C7A;                  /* METRO navy (lighter) — cards, panels, tables, modals, popovers */
-  --bg-muted:     #002F5F;                  /* darker navy — hover surfaces, pressed/active states */
-  --bg-subtle:    rgba(0, 83, 140, 0.30);   /* navy @ 30% — selection bg, disabled surfaces, faint tints */
-  --bg-elevated:  #004B96;                  /* medium navy — tooltips, dropdowns sitting above default */
-  --bg-inverted:  #D4AF37;                  /* Agrent metallic gold — inverted surface (primary button bg) */
-  --bg-overlay:   rgba(0, 12, 26, 0.70);    /* dark navy backdrop behind modals/drawers */
+  /* Bulgarian tricolour, read as a ROLE HIERARCHY rather than a palette.
+   *
+   * The flag stacks white / green / red, and that order is the system:
+   *   green = the ground        (a place, never a signal)
+   *   white = the content layer (what you read, and what you press)
+   *   red   = consequence       (danger, and brand identity accents)
+   *
+   * Why the ground is a DESATURATED green and not the flag's #00966E: a
+   * marketplace and records app is stared at for whole working days, and
+   * saturated green at full-viewport scale is exhausting. It would also
+   * destroy every green SIGNAL in the product — a success badge on a
+   * success-coloured page says nothing. So the ground is the flag green
+   * pulled down in saturation and lightness until it recedes, and the
+   * vivid green is spent only where it has to carry meaning. */
+  --bg-page:      #05231B;                  /* deepest forest — page ground (gradient base, see --grad-page) */
+  --bg-default:   #0A3327;                  /* deep green — cards, panels, tables, modals, popovers */
+  --bg-muted:     #07291F;                  /* darker green — hover surfaces, pressed/active states */
+  --bg-subtle:    rgba(21, 94, 72, 0.30);   /* green @ 30% — selection bg, disabled surfaces, faint tints */
+  --bg-elevated:  #0E4232;                  /* lifted green — tooltips, dropdowns sitting above default */
+  --bg-inverted:  #D4AF37;                  /* Agrent gold — inverted surface (primary button bg) */
+  --bg-overlay:   rgba(2, 18, 13, 0.72);    /* deep green backdrop behind modals/drawers */
+
+  /* The page ground as a gradient — deep at the edges, marginally lifted
+   * through the upper middle so a full-height page has somewhere to look.
+   * Kept to ~3% luminance travel: any more and every card boundary starts
+   * fighting the wash behind it. */
+  --grad-page: linear-gradient(168deg, #0A3327 0%, #06261D 46%, #041C15 100%);
 
   /* ── Content / Text ────────────────────────────────────────────── */
   /*
    * GAP-CI-77: bumped `--content-muted` and `--content-subtle` so
-   * small text on `--bg-default` (#003C7A navy cards) clears WCAG AA
+   * small text on `--bg-default` (now #0A3327 green cards) clears WCAG AA
    * 4.5:1. The previous values (#95B0C9, #6B85A0) gave 4.31:1 and
    * 2.80:1 respectively — small body text (`text-xs`, 12px) at those
    * tiers fails axe-core's color-contrast rule. The new values
    * preserve the tier hierarchy (muted > subtle) while sitting above
    * the AA threshold on every dark surface in use.
    */
-  --content-emphasis: #ECF1F7;   /* soft off-white (very subtle blue tint) — headings, selected items, bold labels */
-  --content-default:  #D9E5F2;   /* light blue-tinted — body text, table cells, default content */
-  --content-muted:    #B5CADD;   /* mid blue-gray — secondary text, placeholders, captions (AA, 6.45:1 on bg-default) */
-  --content-subtle:   #93AFCC;   /* lighter blue-gray — disabled text, hints, tertiary info (AA, 4.81:1 on bg-default) */
-  --content-inverted: #001830;   /* deep navy — text on inverted (yellow) surfaces */
+  /* Green-tinted whites, not neutral greys: text in the ground's own family
+   * sits IN the surface instead of looking pasted onto it. The tier ratios
+   * against `--bg-default` (#0A3327) are held above the GAP-CI-77 floor —
+   * 12px body text at `--content-subtle` still clears WCAG AA 4.5:1. */
+  --content-emphasis: #FFFFFF;   /* the flag's white — headings, selected items, bold labels */
+  --content-default:  #DCEBE4;   /* green-tinted white — body text, table cells, default content */
+  --content-muted:    #A9C7BB;   /* pale sage — secondary text, placeholders, captions (AA, 7.7:1 on bg-default) */
+  --content-subtle:   #8AB0A1;   /* deeper sage — disabled text, hints, tertiary info (AA, 5.4:1 on bg-default) */
+  /* The ink that rides every BRIGHT surface — the gold primary button, and
+   * the solid status chips (`--bg-*-emphasis`). Its floor is set by the
+   * WORST of those pairings, which is solid red: `EnvironmentBadge`
+   * (DEV/STAGING) and the notification unread count both print
+   * `text-content-inverted` at 10px bold on `--bg-error-emphasis`, and 10px
+   * bold is NORMAL text to WCAG (bold only counts as large from 18.66px), so
+   * it owes the full 4.5:1. At the ground's own #05231B that pairing lands
+   * at 4.43:1 — the tricolour re-ground had already lifted it from the navy
+   * theme's 3.71:1, but not quite over the line. Dropped a further notch to
+   * close it, which also buys headroom on every other bright surface:
+   *   red #F04438 4.73:1 · gold #D4AF37 8.45:1 · green #14B866 6.83:1 ·
+   *   amber #D97706 5.58:1.
+   * Still the deepest forest — it sits between `--canvas-surface` (#041B14)
+   * and `--bg-page` (#05231B), so it reads as the same ink, just denser. */
+  --content-inverted: #041C15;   /* deepest forest — ink on inverted (gold) + solid-status surfaces */
 
   /* ── Borders / Dividers ────────────────────────────────────────── */
-  --border-default:  #00538C;               /* navy border — standard borders */
-  --border-subtle:   rgba(0, 83, 140, 0.50); /* navy @ 50% — soft dividers, card edges */
-  --border-emphasis: #007BCC;               /* brighter navy — focused inputs, emphasized outlines */
+  --border-default:  #17553F;                /* green border — standard borders */
+  --border-subtle:   rgba(23, 85, 63, 0.55); /* green @ 55% — soft dividers, card edges */
+  --border-emphasis: #2A7F5E;                /* brighter green — focused inputs, emphasized outlines */
 
   /* ── Process canvas (Roadmap-27) ───────────────────────────────────
    * A dedicated surface ramp for the node-based Processes editor. The
    * canvas plane is the DEEPEST surface — a recessed "work pit"; the
    * frame chrome sits above it; nodes are the brightest, most elevated
    * objects. Tonal separation does the work, not hue noise — every
-   * value stays inside the METRO navy family.
-   *   depth ramp (dark → light): surface < page < frame < node. */
-  --canvas-surface:    #05121F;                   /* recessed work plane — deepest */
-  --canvas-frame:      #0A2138;                   /* workspace frame + chrome strips */
-  --canvas-grid:       rgba(127, 167, 215, 0.10); /* dot grid — faint cool light */
-  --canvas-edge:       #335E86;                   /* default connection stroke (R27-PR-B) */
-  --canvas-node:       #123A60;                   /* node fill — elevated flow card */
-  --canvas-node-muted: #0D2A45;                   /* node fill — context (quieter) */
-  --canvas-border:     rgba(127, 167, 215, 0.20); /* hairline inside the workspace */
+   * value stays inside the ground's own green family.
+   *   depth ramp (dark → light): surface < page < frame < node.
+   *
+   * 2026-07-30 — re-tuned from the navy original. The ramp is defined
+   * by its LUMINANCE RATIOS to `--bg-page`, not by absolute values, so
+   * the recessed/elevated relationships the editor depends on survive
+   * a ground change intact: surface 0.65x, frame 1.6x, node-muted
+   * 2.5x, node 4.7x, edge 11.9x. Those are the navy ladder's own
+   * ratios, re-expressed in green. */
+  --canvas-surface:    #041B14;                   /* recessed work plane — deepest */
+  --canvas-frame:      #082E22;                   /* workspace frame + chrome strips */
+  --canvas-grid:       rgba(150, 205, 178, 0.10); /* dot grid — faint sage light */
+  --canvas-edge:       #327B5E;                   /* default connection stroke (R27-PR-B) */
+  --canvas-node:       #135038;                   /* node fill — elevated flow card */
+  --canvas-node-muted: #0C3A29;                   /* node fill — context (quieter) */
+  --canvas-border:     rgba(150, 205, 178, 0.20); /* hairline inside the workspace */
   --canvas-shadow:     0 8px 20px -10px rgba(0, 0, 0, 0.70), 0 1px 2px rgba(0, 0, 0, 0.45); /* elevated-node lift */
   --canvas-recess:     inset 0 11px 20px -16px rgba(0, 0, 0, 0.90); /* top inner shadow — plane reads sunk below the chrome */
 
-  /* ── Brand / Primary (METRO yellow) ────────────────────────────── */
+  /* ── Brand / Primary (Agrent gold) ─────────────────────────────────
+   *
+   * Gold is kept as the brand accent on the new green ground, and that is
+   * what resolves the palette's one real conflict.
+   *
+   * A tricolour theme wants red for the brand — but red is also
+   * `--status-error`, and green is also `--status-success`. Map both
+   * naively and two things break: a success badge disappears into a
+   * success-coloured page, and every primary button looks exactly like a
+   * destructive one. In a product with a formal destructive-action
+   * vocabulary and 5-second undo toasts, the second is a hazard rather
+   * than a preference; red/green is also the most common
+   * colour-vision-deficiency axis.
+   *
+   * Keeping gold gives every hue exactly one job:
+   *   green = ground, white = content, GOLD = brand, red = DANGER ONLY.
+   * Gold on deep green is legible (6.6:1 as link text on --bg-default,
+   * 7.9:1 on --bg-page) and it is the identity the product already had. */
   --brand-default:  #D4AF37;                /* Agrent metallic gold — brand accent, links */
   --brand-emphasis: #B8860B;                /* dark goldenrod — primary buttons, active brand */
   --brand-muted:    #E4C55C;                /* lighter gold — hover accent */
   --brand-subtle:   rgba(212, 175, 55, 0.16); /* gold @ 16% — brand tint backgrounds */
   /* Metallic-gold text gradient for featured dashboard numbers (.metric-gradient).
-     Light-to-deep polished-gold sheen; reads bright on the navy ground. */
+     Light-to-deep polished-gold sheen; reads bright on the green ground. */
   --grad-gold: linear-gradient(142deg, #F6E7AC 0%, #E4C55C 22%, #D4AF37 52%, #A9760B 100%);
   /* Display face — Bricolage Grotesque for the big numbers (Latin digits only;
      Bricolage has no Cyrillic, so it is NEVER used on text). */
@@ -88,34 +161,35 @@
      Bulgarian); a cool modern grotesque that pairs with the Bricolage numbers. */
   --font-heading: 'Onest', 'Inter', system-ui, sans-serif;
 
-  /* ── Brand / Secondary (electric blue — complementary cool counterpoint) ──
+  /* ── Brand / Secondary (the flag's white — neutral counterpoint) ─────
    *
-   * Roadmap-13 introduces a SECONDARY brand colour so the sidebar
-   * (and any future chrome that wants a two-tone state vocabulary)
-   * can express ACTIVE in a tone distinct from HOVER. On METRO the
-   * page surface is itself deep navy (#001830 / #003C7A), so a navy
-   * accent would dissolve into the background. The cool counterpoint
-   * to METRO's warm yellow is therefore a vivid electric blue —
-   * `#3B82F6` (Tailwind blue-500). It clears 4.5:1 against both
-   * `--bg-default` (#003C7A) and `--bg-page` (#001830), so any
-   * primitive that paints a band, ring, or text in this token reads
-   * clearly on every dark surface in the app.
+   * Roadmap-13 introduced a SECONDARY brand colour so chrome can express
+   * ACTIVE in a tone distinct from HOVER, rather than the same gold at two
+   * opacities. That intent is unchanged; the HUE is not.
    *
-   * Hue choice: blue-500 sits 180° opposite METRO yellow on the
-   * colour wheel — true complementary contrast, not "another warm".
-   * The eye reads HOVER (yellow) vs ACTIVE (blue) as deliberate
-   * state vocabulary, not accidental drift between brand tones.
-   */
-  --brand-secondary-default:  #3B82F6;                /* electric blue — secondary brand, complementary to yellow */
-  --brand-secondary-emphasis: #2563EB;                /* deeper blue — primary band stop, active surfaces */
-  --brand-secondary-muted:    #60A5FA;                /* lighter blue — band highlight midstop, hover accent (R13-PR4) */
-  --brand-secondary-subtle:   rgba(59, 130, 246, 0.18); /* blue @ 18% — secondary tint backgrounds */
+   * It was electric blue, chosen against a navy page on the reasoning that
+   * "a navy accent would dissolve into the background". On the green ground
+   * that reasoning is void, and blue became the one foreign hue in a theme
+   * built from a three-colour flag — most visibly in the sidebar, which is
+   * on screen on every page.
+   *
+   * White is the counterpoint now: maximally distinct from warm gold, it is
+   * a flag colour, and it reads as "current" without borrowing meaning from
+   * `info`. Tier order is muted (lightest) > default > emphasis (deepest),
+   * tinted toward the ground so it belongs to the surface. */
+  --brand-secondary-default:  #DCEBE4;                  /* the flag's white, ground-tinted — secondary brand */
+  --brand-secondary-emphasis: #A9C7BB;                  /* deepest rung — bottom band stop, active surface tint */
+  --brand-secondary-muted:    #FFFFFF;                  /* lightest rung — band highlight midstop, hover accent */
+  --brand-secondary-subtle:   rgba(220, 235, 228, 0.18); /* @ 18% — secondary tint backgrounds */
 
   /* ── Status: Success ───────────────────────────────────────────── */
-  --bg-success:          rgba(16, 185, 129, 0.15);  /* emerald-500 @ 15% — badge tint */
-  --bg-success-emphasis: #059669;                    /* emerald-600 — solid actionable surface (success buttons, indicator dots) */
-  --content-success:     #34d399;                    /* emerald-400 */
-  --border-success:      rgba(16, 185, 129, 0.30);  /* emerald-500 @ 30% */
+  /* Success has to out-LUMINATE the ground, not merely differ in hue from
+   * it: on a green page, emerald-400 reads as "page", so the whole tier is
+   * pushed brighter until a badge separates at a glance. */
+  --bg-success:          rgba(95, 227, 155, 0.16);  /* spring green @ 16% — badge tint */
+  --bg-success-emphasis: #14B866;                    /* solid actionable surface (success buttons, indicator dots) */
+  --content-success:     #5FE39B;                    /* bright spring green — separates from the ground */
+  --border-success:      rgba(95, 227, 155, 0.32);
 
   /* ── Status: Warning ───────────────────────────────────────────── */
   --bg-warning:          rgba(245, 158, 11, 0.15);  /* amber-500 @ 15% — badge tint */
@@ -124,12 +198,23 @@
   --border-warning:      rgba(245, 158, 11, 0.30);  /* amber-500 @ 30% */
 
   /* ── Status: Error / Danger ────────────────────────────────────── */
-  --bg-error:          rgba(239, 68, 68, 0.15);     /* red-500 @ 15% — badge tint */
-  --bg-error-emphasis: #DC2626;                      /* red-600 — solid actionable surface (danger buttons, indicator dots) */
-  --content-error:     #f87171;                      /* red-400 */
-  --border-error:      rgba(239, 68, 68, 0.30);      /* red-500 @ 30% */
+  /* Red is reserved for DANGER — it is not the brand accent (gold is), so
+   * there is nothing else on the page competing for "alarm". Kept slightly
+   * hotter and lighter than stock red-500 so it still separates cleanly
+   * from the deep green ground. */
+  --bg-error:          rgba(255, 91, 74, 0.16);     /* alarm red @ 16% — badge tint */
+  --bg-error-emphasis: #F04438;                      /* solid actionable surface (danger buttons, indicator dots) */
+  --content-error:     #FF8A7A;                      /* bright coral-red — reads hotter than brand */
+  --border-error:      rgba(255, 91, 74, 0.34);
 
-  /* ── Status: Info ──────────────────────────────────────────────── */
+  /* ── Status: Info ──────────────────────────────────────────────────
+   * The LAST blue in the dark theme, and it stays on purpose. Blue is the
+   * universal information hue; recolouring it would cost comprehension to
+   * buy palette purity. Same call as amber `warning`: the tricolour owns
+   * ground, content, brand and danger, and the remaining SIGNALS need hues
+   * the theme is not already using for something else. Chrome is a
+   * different matter — the sidebar, button fills and edges carried blue for
+   * no semantic reason and have been swept to white/gold. */
   --bg-info:          rgba(59, 130, 246, 0.15);      /* blue-500 @ 15% — badge tint */
   --bg-info-emphasis: #2563EB;                       /* blue-600 — solid actionable surface */
   --content-info:     #60a5fa;                       /* blue-400 */
@@ -146,12 +231,19 @@
 
   /* shadcn / Radix compatibility tokens */
   --ring:                   rgba(255, 205, 17, 0.55);
-  --ring-offset-background: #001830;
+  --ring-offset-background: #05231B;
   --primary:                #D4AF37;
 
   /* ── Glass ─────────────────────────────────────────────────────── */
-  --glass-bg:     rgba(0, 47, 95, 0.82);     /* navy glass-card background */
-  --glass-border: rgba(0, 83, 140, 0.50);    /* navy glass-card border */
+  /* `.glass-card` is the surface under EVERY KPI tile, metric card,
+   * dashboard widget and loading skeleton in the app, so it has to be
+   * the same material as `--bg-default` — a translucent card, not a
+   * differently-coloured one. Composited at α 0.82 over the page
+   * gradient it lands on #0A3629, a hair above `--bg-default`
+   * (#0A3327), which is exactly the "solid card, faintly lifted"
+   * read the navy original had against the navy page. */
+  --glass-bg:     rgba(11, 58, 44, 0.82);    /* green glass-card background */
+  --glass-border: rgba(23, 85, 63, 0.50);    /* --border-default @ 50% — glass-card border */
   --glass-blur:   12px;                      /* backdrop blur radius */
 
   /* ── Radius ────────────────────────────────────────────────────── */
@@ -262,7 +354,7 @@
    * the edge reads as iridescent on close inspection, NEVER as a
    * gradient outline. Static (no animation) — the iridescence is a
    * material property, not a motion gimmick. */
-  --btn-iridescent-gradient: linear-gradient(135deg, rgba(255, 205, 17, 0.55) 0%, rgba(255, 205, 17, 0.18) 35%, rgba(59, 130, 246, 0.18) 65%, rgba(59, 130, 246, 0.55) 100%);
+  --btn-iridescent-gradient: linear-gradient(135deg, rgba(255, 205, 17, 0.55) 0%, rgba(255, 205, 17, 0.18) 35%, rgba(255, 255, 255, 0.18) 65%, rgba(255, 255, 255, 0.55) 100%);
 
   /* ── Primary action-button FILL gradient (DARK theme) ───────────────
    * 2026-06-01. OPAQUE brand→secondary diagonal fill (135°): brand is
@@ -275,7 +367,11 @@
   /* UI-11: create-button gradient — brand holds the first half, then a SUBTLE
      cool tail (softer/lighter blue, was the darker #3b82f6) so the far corner
      isn't too dark. Transition starts at 50% ("after 1/2"), not 60%. */
-  --btn-gradient-primary: linear-gradient(135deg, var(--brand-default) 0%, var(--brand-default) 50%, #6ea6ea 100%);
+  /* The far corner was #6ea6ea. On navy a cool tail read as the brand
+     dissolving into the page; on green it put `info` blue on the one
+     surface meant to be pure brand. Now a LIGHTER GOLD — same "subtler
+     gradient" intent UI-11 asked for, no foreign hue. */
+  --btn-gradient-primary: linear-gradient(135deg, var(--brand-default) 0%, var(--brand-default) 50%, #F0D98A 100%);
 
   /* ── R20 aura wash (DARK theme) ─────────────────────────────────────
    * The soft brand-tinted halo a primary button casts on hover, as a
@@ -390,10 +486,23 @@
   /* B10 (2026-06-07): deepened from rgba(255,205,17,0.55). The brighter,
    * more translucent yellow read as a pale wash in dark theme — a deeper,
    * more saturated gold at higher alpha gives the create button real
-   * presence and pairs with the navy `text-content-inverted` label. */
+   * presence and pairs with the deep `text-content-inverted` label. */
   --btn-glass-fill-primary: rgba(232, 185, 4, 0.85);
-  --btn-glass-fill-secondary: rgba(0, 60, 122, 0.55);
-  --btn-glass-fill-destructive: rgba(220, 38, 38, 0.55);
+  /* 2026-07-30 — secondary was the old page navy (rgba(0,60,122,0.55)),
+   * which survived the ground change as a literal blue pill: every
+   * Cancel button, every `<Combobox>` trigger and every list-header
+   * icon button rendered navy on green. It is now the ELEVATED green
+   * at the same alpha — composites to #0D4030 over a card, i.e. a
+   * quiet raised surface in the ground's own family. */
+  --btn-glass-fill-secondary: rgba(16, 74, 56, 0.55);
+  /* 2026-07-30 — destructive re-pointed to the theme's alarm red
+   * (`--bg-error-emphasis` #F04438) and its alpha raised 0.55 → 0.88.
+   * At 0.55 over a GREEN card the old red-600 composited to #893C30 —
+   * a brick brown that did not read as danger beside the gold primary.
+   * The old navy card happened to flatter it; green does not. 0.88
+   * composites to #D44236 (unmistakably red) and still clears WCAG AA
+   * with the `text-white` label at 4.52:1. */
+  --btn-glass-fill-destructive: rgba(240, 68, 56, 0.88);
   --btn-glass-shadow: 0 1px 3px rgba(0, 0, 0, 0.28), 0 6px 14px rgba(0, 0, 0, 0.18);
 
   /* ── Transitions ───────────────────────────────────────────────── */
@@ -409,8 +518,8 @@
    * via Tailwind's arbitrary-value syntax without `color-mix()`,
    * which would inflate the class string for one token.
    *
-   * METRO: METRO yellow @ 35% — visible against the deep navy bg
-   * without screaming. 6px blur is the sweet spot — wider feels
+   * Dark theme: Agrent gold @ 35% — visible against the deep green
+   * ground without screaming. 6px blur is the sweet spot — wider feels
    * smoky, narrower disappears at non-Retina rendering.
    */
   --nav-band-glow: 0 0 6px rgba(255, 205, 17, 0.35);
@@ -424,14 +533,14 @@
    * its stops. A mismatched glow (yellow around a blue band) would
    * read as accidental colour bleed.
    */
-  --nav-band-glow-active: 0 0 6px rgba(59, 130, 246, 0.35);
+  --nav-band-glow-active: 0 0 6px rgba(255, 255, 255, 0.35);
 
   /* ── Sidebar gloss highlight (R13-PR6) ─────────────────────────── */
   /*
    * A 1-px wide top-edge `::after` line on `<NavItem>` rows reveals
    * on hover + active. Simulates light catching the top edge of a
    * raised button — the "glossy" cue the user asked for. On the
-   * deep-navy METRO surface a faint white at 8% is enough to read;
+   * deep-green surface a faint white at 8% is enough to read;
    * the row appears to lift slightly toward the cursor without any
    * actual geometry change.
    */
@@ -445,7 +554,7 @@
    * "slightly recessed", which is what gives clicks the "I'm
    * pressing on a real button" feel.
    *
-   * On METRO's deep-navy surface a dark-tinted inset (0.25 black)
+   * On the deep-green surface a dark-tinted inset (0.25 black)
    * lands as a near-invisible bottom edge that the eye reads as
    * subtle concavity. Heavier alpha would make the row look bruised;
    * lighter would disappear entirely.
@@ -457,7 +566,7 @@
    * gradient (`transparent → tint → transparent`) that sweeps
    * across the row body once when hover engages. The tint at 14%
    * alpha is muted enough to read as "a wash of light", not "a
-   * solid colour block". METRO uses the brand yellow at low
+   * solid colour block". The dark theme uses the brand gold at low
    * opacity; PwC uses the brand orange at a marginally higher
    * opacity to compensate for the cream surface's lower
    * contrast. Same alpha would make the orange disappear
@@ -468,7 +577,7 @@
   /* R15-PR9 — outer brand-coloured aura around the ACTIVE row.
    * The active row's band already glows (R13-PR2 `--nav-band-
    * glow`); this token extends a halo of the SECONDARY brand
-   * (navy on METRO) around the row's full perimeter at low
+   * (cool blue on dark) around the row's full perimeter at low
    * alpha + soft blur. Semantically a brand-presence signal,
    * NOT a depth shadow — it doesn't lift the row off the
    * sidebar, it bathes the row in brand light.
@@ -477,7 +586,7 @@
    * rather than as an outline. Blur is 12px so the edges
    * dissipate softly into the sidebar surface, no hard ring.
    */
-  --nav-row-aura-color: rgba(59, 130, 246, 0.18);
+  --nav-row-aura-color: rgba(255, 255, 255, 0.18);
 
   /* ───────────────────────────────────────────────────────────────
    * R16-PR1 — Lickable Chart palette + motion (METRO theme).
@@ -497,8 +606,8 @@
    * series-3 (violet) and series-4 (coral) runs through warm-
    * pink. Not adjacent-rainbow — adjacent-tonal.
    *
-   * METRO palette emphasises saturated jewel tones against the
-   * deep-navy surface. PwC counterparts (below) are restrained
+   * The dark palette emphasises saturated jewel tones against the
+   * deep-green surface. PwC counterparts (below) are restrained
    * earth tones against cream. Same six families — different
    * brightness curves.
    * ─────────────────────────────────────────────────────────── */

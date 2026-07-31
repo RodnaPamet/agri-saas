@@ -118,7 +118,7 @@ export default function InstallWizardPage() {
                     <div key={s} className="flex items-center gap-tight">
                         <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${i === 0 && step === 'select' ? 'bg-brand-600 text-content-emphasis' :
                                 i === 1 && step === 'preview' ? 'bg-brand-600 text-content-emphasis' :
-                                    i === 2 && step === 'done' ? 'bg-bg-success-emphasis text-content-emphasis' :
+                                    i === 2 && step === 'done' ? 'bg-bg-success-emphasis text-content-inverted' :
                                         step === 'done' || (step === 'preview' && i === 0) ? 'bg-bg-success text-content-success' :
                                             'bg-bg-elevated text-content-subtle'
                             }`}>{i + 1}</div>

@@ -39,11 +39,13 @@ export const viewport: Viewport = {
     // Installed-PWA chrome (status bar) tracks the active theme so the
     // browser/OS chrome matches the app surface instead of a fixed accent.
     // The colours are the two `--bg-page` token values: warm off-white in
-    // light, deep METRO navy in dark (src/styles/tokens.css). `media` lets
-    // the platform pick per the OS colour-scheme preference.
+    // light, deepest forest green in dark (src/styles/tokens.css). `media`
+    // lets the platform pick per the OS colour-scheme preference. Keep
+    // these in lockstep with `--bg-page` — a stale value here paints the
+    // OS status bar a colour the app no longer uses.
     themeColor: [
         { media: '(prefers-color-scheme: light)', color: '#F4F2ED' },
-        { media: '(prefers-color-scheme: dark)', color: '#001830' },
+        { media: '(prefers-color-scheme: dark)', color: '#05231B' },
     ],
 };
 

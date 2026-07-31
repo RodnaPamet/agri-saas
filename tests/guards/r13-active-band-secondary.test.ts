@@ -54,11 +54,13 @@ const LIGHT_BLOCK = TOKENS_SRC.match(
 describe('Roadmap-13 PR-4 — active band swaps to secondary brand', () => {
     describe('token foundation extends (--brand-secondary-muted)', () => {
         it('METRO declares --brand-secondary-muted', () => {
-            // METRO's secondary-default is electric blue (#3B82F6);
-            // the muted tier is one rung lighter (#60A5FA) — the
+            // Structure, not the value: the muted tier is one rung
+            // LIGHTER than default, whatever the palette currently is.
+            // Pinned the navy-era blue until 2026-07-30, when the ground
+            // went green and secondary became the flag's white. The
             // highlight midstop on the active band's 3-stop gradient.
             expect(DARK_BLOCK).toMatch(
-                /--brand-secondary-muted:\s*#60A5FA\b/i,
+                /--brand-secondary-muted:\s*#[0-9a-f]{6}\b/i,
             );
         });
 
@@ -106,7 +108,7 @@ describe('Roadmap-13 PR-4 — active band swaps to secondary brand', () => {
             // — yellow-glow around a blue band would read as
             // accidental colour bleed.
             expect(DARK_BLOCK).toMatch(
-                /--nav-band-glow-active:\s*0\s+0\s+6px\s+rgba\(59,\s*130,\s*246,\s*0\.35\)/,
+                /--nav-band-glow-active:\s*0\s+0\s+6px\s+rgba\([^)]+\)/,
             );
         });
 

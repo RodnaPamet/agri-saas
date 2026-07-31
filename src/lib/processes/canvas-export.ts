@@ -40,8 +40,11 @@ import { getNodesBounds, getViewportForBounds, type Node } from "@xyflow/react";
 const EXPORT_PADDING = 24;
 const EXPORT_MIN_ZOOM = 0.25;
 const EXPORT_MAX_ZOOM = 2.0;
+// Mirrors of the `--canvas-frame` token in each theme (src/styles/tokens.css).
+// html-to-image cannot resolve CSS custom properties, so the value is
+// duplicated here — keep both in lockstep with the token.
 const EXPORT_BG_LIGHT = "#FBFAF8";
-const EXPORT_BG_DARK = "#0A2138";
+const EXPORT_BG_DARK = "#082E22";
 
 export interface CanvasExportOptions {
     /**

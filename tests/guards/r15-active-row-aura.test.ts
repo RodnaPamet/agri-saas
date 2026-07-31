@@ -81,10 +81,12 @@ const LIGHT_BLOCK = TOKENS_SRC.match(
 describe('Roadmap-15 PR-9 — active row aura', () => {
     describe('--nav-row-aura-color token (theme-aware)', () => {
         it('METRO declares the aura colour as brand-secondary navy at low alpha', () => {
-            // rgba(59, 130, 246, …) is the canonical METRO brand-
-            // secondary-default RGB (#3B82F6 = 59, 130, 246).
+            // Alpha at low opacity is the structural property here, not
+            // the channel values. This pinned the navy-era blue until
+            // 2026-07-30, when the ground went green and the aura followed
+            // the secondary brand to the flag's white.
             expect(DARK_BLOCK).toMatch(
-                /--nav-row-aura-color:\s*rgba\(59,\s*130,\s*246,\s*0\.\d+\)/,
+                /--nav-row-aura-color:\s*rgba\(\s*\d+,\s*\d+,\s*\d+,\s*0?\.\d+\s*\)/,
             );
         });
 

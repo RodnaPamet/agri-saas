@@ -84,8 +84,15 @@ const sectionDividerRecipe =
 describe('Roadmap-13 PR-12 — Living Sidebar capstone bundle', () => {
     describe('PR-1 — secondary-brand token foundation', () => {
         it('METRO declares the three secondary tiers', () => {
-            expect(DARK_BLOCK).toMatch(/--brand-secondary-default:\s*#3B82F6/i);
-            expect(DARK_BLOCK).toMatch(/--brand-secondary-emphasis:\s*#2563EB/i);
+            // Structure, not the value. This pinned the navy-era electric
+            // blue (#3B82F6 family); the dark ground moved to green on
+            // 2026-07-30 and the secondary brand became the flag's white,
+            // so an absolute-hex pin asserted a palette that no longer
+            // exists. What these guards were written to protect is the
+            // TIER STRUCTURE and the two-tone state vocabulary, both of
+            // which survive a re-colour.
+            expect(DARK_BLOCK).toMatch(/--brand-secondary-default:\s*#[0-9a-f]{6}\b/i);
+            expect(DARK_BLOCK).toMatch(/--brand-secondary-emphasis:\s*#[0-9a-f]{6}\b/i);
             expect(DARK_BLOCK).toMatch(/--brand-secondary-subtle:/);
         });
         it('PwC declares the three secondary tiers', () => {

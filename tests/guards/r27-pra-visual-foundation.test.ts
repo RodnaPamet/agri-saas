@@ -62,9 +62,36 @@ describe("R27-PR-A — Processes visual foundation", () => {
         }
 
         it("the canvas plane is darker than the page (dark theme recess)", () => {
-            // The recessed work plane MUST resolve to its own token,
-            // not reuse --bg-page. Drift here flattens the depth.
-            expect(TOKENS).toMatch(/--canvas-surface:\s*#05121F/i);
+            // The recessed work plane MUST resolve to its own token, not
+            // reuse --bg-page. Drift here flattens the depth.
+            //
+            // This asserted a literal #05121F — the navy-era value — while
+            // its own name and comment describe a RELATIONSHIP. When the
+            // dark ground moved to green on 2026-07-30 the pin failed even
+            // though the recess it exists to protect was intact, and
+            // "fixing" it by swapping in the new hex would just reset the
+            // same trap for the next re-theme. It now measures the property
+            // directly: own token, and genuinely darker than the page.
+            const hex = (name: string) => {
+                const m = TOKENS.match(
+                    new RegExp(`${name}:\\s*#([0-9a-f]{6})`, "i"),
+                );
+                if (!m) throw new Error(`${name} is not declared as a hex`);
+                return m[1];
+            };
+            // WCAG relative luminance — the same measure the contrast
+            // guards use, so "darker" means the same thing everywhere.
+            const luminance = (h: string) => {
+                const ch = [0, 2, 4].map((i) => {
+                    const v = parseInt(h.slice(i, i + 2), 16) / 255;
+                    return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+                });
+                return 0.2126 * ch[0] + 0.7152 * ch[1] + 0.0722 * ch[2];
+            };
+            const surface = hex("--canvas-surface");
+            const page = hex("--bg-page");
+            expect(surface.toLowerCase()).not.toBe(page.toLowerCase());
+            expect(luminance(surface)).toBeLessThan(luminance(page));
         });
     });
 
