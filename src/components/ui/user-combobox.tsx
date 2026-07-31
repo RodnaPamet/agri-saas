@@ -65,6 +65,13 @@ interface BaseUserComboboxProps {
     invalid?: boolean;
     placeholder?: string;
     searchPlaceholder?: string;
+    /**
+     * Id of the element holding the visible label. `<FormField>`
+     * injects its `<Label>` id here; Combobox prefers it over its
+     * selected-text fallback so the trigger's accessible name stays
+     * stable across a selection change.
+     */
+    "aria-labelledby"?: string;
     /** Preserved for FormField-driven layouts. */
     "aria-describedby"?: string;
     /** Force the desktop popover (needed inside Modal/Sheet). */
@@ -218,6 +225,7 @@ export function UserCombobox(props: UserComboboxProps) {
         invalid,
         placeholder: placeholderProp,
         searchPlaceholder: searchPlaceholderProp,
+        "aria-labelledby": ariaLabelledBy,
         "aria-describedby": ariaDescribedBy,
         forceDropdown = true,
         matchTriggerWidth = true,
@@ -252,6 +260,7 @@ export function UserCombobox(props: UserComboboxProps) {
                 disabled={disabled}
                 required={required}
                 invalid={invalid}
+                aria-labelledby={ariaLabelledBy}
                 aria-describedby={ariaDescribedBy}
                 options={options}
                 selected={selectedOptions}
@@ -283,6 +292,7 @@ export function UserCombobox(props: UserComboboxProps) {
             disabled={disabled}
             required={required}
             invalid={invalid}
+            aria-labelledby={ariaLabelledBy}
             aria-describedby={ariaDescribedBy}
             options={options}
             selected={selected}

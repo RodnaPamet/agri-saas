@@ -126,7 +126,23 @@ Searchable single/multi-select picker. Replaces native `<select>` across CRUD fo
 | `hideSearch` | `boolean` | Drop cmdk's search input — compact 4–7 option menus. |
 | `trigger` | `ReactNode` | Custom trigger. Pass-through `id`/`aria-*`/`invalid` via cloneElement. |
 
-Accessible name comes from `aria-label` (caller-provided > collapsed selection labels > placeholder). Trigger gets `role="combobox"` + `aria-haspopup="listbox"`.
+Accessible name precedence, highest first:
+
+1. `buttonProps["aria-label"]` — an explicit caller-supplied name.
+2. `aria-labelledby` — the id of the element holding the visible label.
+   `<FormField>` injects its own `<Label>` id, so a combobox inside a
+   field is named after that label. This is the branch you want: the
+   name stays **stable** while the selection changes (WAI-ARIA puts the
+   name on the label and conveys the value separately, via the trigger's
+   text content + `aria-expanded`), which also makes
+   `getByRole('combobox', { name })` usable as a test locator.
+3. Collapsed selection labels, then the placeholder — the last-resort
+   `aria-label` fallback that guarantees axe's `button-name` rule passes
+   even when the trigger's children are a ReactNode tree assistive tech
+   won't flatten. Do not remove it.
+
+Exactly one of `aria-label` / `aria-labelledby` is emitted — never both.
+Trigger gets `role="combobox"` + `aria-haspopup="listbox"`.
 
 Messages module: `import { COMBOBOX_DEFAULT_MESSAGES, getComboboxMessages } from "@/components/ui/combobox"` — pass through next-intl translator.
 
