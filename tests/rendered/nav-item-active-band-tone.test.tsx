@@ -179,10 +179,18 @@ describe('<NavItem> active band tone — behavioural (Tier 2)', () => {
 
         const resolved = resolveVars(bandValue, METRO);
 
-        // The page-background colour MUST appear in the resolved band.
-        // METRO --bg-page is #001830.
-        expect(METRO['--bg-page']).toBe('#001830');
-        expect(resolved).toContain('#001830');
+        // The page-background colour MUST appear in the resolved band —
+        // that IS the property, and it is what this test's name describes.
+        //
+        // This used to assert the literal #001830, the navy-era value. When
+        // the dark ground moved to green on 2026-07-30 it failed while the
+        // relationship it exists to protect was completely intact, and
+        // hard-coding the new green would only reset the same trap for the
+        // next re-theme. It now reads --bg-page from the parsed theme, so
+        // the assertion tracks the token instead of shadowing it.
+        const pageBg = METRO['--bg-page'];
+        expect(pageBg).toMatch(/^#[0-9a-f]{6}$/i);
+        expect(resolved).toContain(pageBg);
         // Nothing should be left unresolved.
         expect(resolved).not.toContain('__UNRESOLVED');
     });
