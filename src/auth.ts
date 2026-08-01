@@ -317,8 +317,9 @@ const providers: NextAuthOptions['providers'] = [
             });
             // NextAuth surfaces any non-null return as a successful sign-in
             // and dispatches the `signIn` + `jwt` callbacks. Returning null
-            // collapses every failure reason into the same client-facing
+            // collapses every OTHER failure reason into the same client-facing
             // `CredentialsSignin` error — the account-enumeration-safe shape.
+            // (The one surfaced exception is handled just below.)
             if (!result.ok) {
                 // ONE reason is surfaced: the only one the user can act
                 // on. It is reachable only AFTER the password verified
