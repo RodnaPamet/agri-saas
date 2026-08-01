@@ -58,7 +58,7 @@ const ALLOWLISTED_MEMBERSHIP_SITES: ReadonlyArray<AllowlistedSite> = [
         reason:
             'Credentials self-service signup (AUTH_TEST_MODE-gated). The ' +
             'signing-up user creates their own tenant and becomes its ' +
-            'sole ADMIN — this is the "I am my own tenant" path, separate ' +
+            'sole OWNER — this is the "I am my own tenant" path, separate ' +
             'from platform-admin-mediated tenant creation.',
     },
     {
