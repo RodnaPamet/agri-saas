@@ -32,6 +32,23 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # Merge queue. GitHub builds a temporary ref of `main` + every PR already
+  # queued + this one, and merges only if the required checks pass against
+  # THAT combination. This is the only stage that tests the combination —
+  # a `pull_request` run tests the PR against main as it was when the run
+  # started, so two PRs that each pass can still break main together. That
+  # happened on 2026-07-29: #454's tests were written against the exchange
+  # API that #456 reshaped in parallel; both merged clean (no textual
+  # conflict) and main went red on Typecheck + Test shard 4/4, needing #459
+  # to fix. See `docs/implementation-notes/2026-07-31-merge-queue.md`.
+  #
+  # The queue runs the LEAN set deliberately: Lint, Typecheck, Test, Build,
+  # Security, CodeQL. E2E and Docker skip here (see their `if:`) because a
+  # skipped required check satisfies branch protection, and because they are
+  # the two jobs least likely to catch a MERGE collision — that class shows
+  # up as a type or unit failure, which Typecheck catches in ~3 minutes.
+  # Both still run twice per change: on the PR, and on main after landing.
+  merge_group:
   # Weekly scheduled scan — GitHub's Code Scanning UI expects a
   # periodic refresh of CodeQL + Trivy results on the default branch,
   # independent of PR cadence. Without this the Security tab can
@@ -116,10 +133,20 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
-      code: ${{ steps.filter.outputs.code }}
+      # `|| 'true'` is the merge-queue path: the filter step below does not run
+      # there, so the output is empty and defaults to "code changed". That is
+      # the conservative direction (it can only cause MORE to run, never less),
+      # and in practice nothing reads it in the queue — all three consumers
+      # (e2e-shard, load-smoke, docker) are excluded from `merge_group`.
+      code: ${{ steps.filter.outputs.code || 'true' }}
     steps:
       - uses: actions/checkout@v7
+      # Skipped on `merge_group`: a merge-queue event carries no base/head pair
+      # for paths-filter to diff, and this job is a REQUIRED check — letting the
+      # action guess a base risks blocking every queued merge on an error that
+      # has nothing to do with the change.
       - uses: dorny/paths-filter@v3
+        if: github.event_name != 'merge_group'
         id: filter
         with:
           # gitignore-style: match everything, then subtract the content-only
@@ -607,9 +634,11 @@ jobs:
   e2e-shard:
     name: E2E (shard ${{ matrix.shard }}/2)
     needs: [build, changes]
-    # Skip on content-only changes (docs/messages/md) and on the weekly scan.
-    # A skipped job leaves the aggregating `e2e` gate to pass (see below).
-    if: ${{ github.event_name != 'schedule' && needs.changes.outputs.code == 'true' }}
+    # Skip on content-only changes (docs/messages/md), on the weekly scan, and
+    # in the merge queue. A skipped job leaves the aggregating `e2e` gate to
+    # pass (see below), which is what keeps the queue lean without dropping
+    # E2E as a required check — it still runs on the PR and again on main.
+    if: ${{ github.event_name != 'schedule' && github.event_name != 'merge_group' && needs.changes.outputs.code == 'true' }}
     runs-on: ${{ vars.LARGE_RUNNER || 'ubuntu-latest' }}
     # ── E2E parallelism: cross-JOB sharding, NOT intra-job workers ──
     #
@@ -1201,7 +1230,10 @@ jobs:
     # Runs on the weekly scan (Trivy SARIF refresh) OR whenever code changed.
     # A content-only PR (docs/messages/md) leaves the image unchanged, so skip
     # it — the last Trivy result stands and the cron refreshes it weekly.
-    if: ${{ github.event_name == 'schedule' || needs.changes.outputs.code == 'true' }}
+    # Also skipped in the merge queue: a ~21-minute image build and scan is the
+    # single most expensive check, and a merge collision does not manifest as a
+    # container-scan finding. It still runs on the PR and again on main.
+    if: ${{ github.event_name != 'merge_group' && (github.event_name == 'schedule' || needs.changes.outputs.code == 'true') }}
     runs-on: ${{ vars.LARGE_RUNNER || 'ubuntu-latest' }}
     # Roadmap-27 CI hardening — bumped 15 → 25. semantic-release
     # bumps the package.json version on every release, which
