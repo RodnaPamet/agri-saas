@@ -108,12 +108,21 @@ async function handleRegister(body: any) {
         },
     });
 
-    // Create TenantMembership (sole source of role + tenant binding)
+    // Create TenantMembership (sole source of role + tenant binding).
+    //
+    // OWNER, not ADMIN. Epic 1 made OWNER strictly superior — it alone
+    // carries `admin.tenant_lifecycle` and `admin.owner_management`
+    // (see src/lib/permissions.ts). A self-service tenant created with
+    // an ADMIN-only member would be born with ZERO owners, so nobody
+    // could ever transfer ownership, rotate the tenant DEK, or delete
+    // the workspace. The `tenant_membership_last_owner_guard` trigger
+    // cannot catch this: it fires on UPDATE/DELETE that would drop a
+    // tenant to zero owners, and is blind to one that starts there.
     const membership = await prisma.tenantMembership.create({
         data: {
             tenantId: tenant.id,
             userId: user.id,
-            role: 'ADMIN',
+            role: 'OWNER',
         },
     });
 
