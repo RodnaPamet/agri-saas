@@ -145,7 +145,7 @@ jobs:
       # for paths-filter to diff, and this job is a REQUIRED check — letting the
       # action guess a base risks blocking every queued merge on an error that
       # has nothing to do with the change.
-      - uses: dorny/paths-filter@v3
+      - uses: dorny/paths-filter@v4
         if: github.event_name != 'merge_group'
         id: filter
         with:
