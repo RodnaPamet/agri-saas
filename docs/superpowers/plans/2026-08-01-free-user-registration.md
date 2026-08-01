@@ -8,6 +8,53 @@
 
 **Tech Stack:** Next.js 16 App Router, NextAuth v4.24.14 (credentials provider), Prisma 7, Jest, Playwright, next-intl.
 
+## Corrections — read before trusting any code block below
+
+This plan was executed on 2026-08-01. Execution proved four of its code
+blocks wrong. **The committed code is the source of truth; the snippets below
+are the original draft and are preserved only so the record is honest.**
+
+1. **Task 2's integration test does not work as written.** `jest.spyOn(prisma.tenantOnboarding, 'create')` does NOT intercept writes inside an
+   interactive transaction — Prisma passes the callback a distinct `tx`
+   client, so the spy never fires and the route returned 200 instead of
+   failing. Verified empirically during execution. The shipped test wraps
+   `prisma.$transaction` itself, letting the real callback run and throwing
+   inside it so Postgres issues a genuine ROLLBACK. That is a strictly
+   stronger proof than the original.
+
+2. **Task 1/2's unit-test mock could not fail.** The `mockTransaction`
+   implementation handed the callback a `tx` object whose `create` functions
+   were the *same jest.fn instances* as the singleton prisma mock's. A route
+   bypassing the transaction entirely would still have passed. The shipped
+   version gives the tx client distinct spies and makes the singleton's
+   `create` methods throw.
+
+3. **Task 3's test targeted a no-op stub.** `Credentials(options)` returns a
+   shell whose top-level `authorize` is a permanent `() => null`; the real
+   callback lives under `.options` and is merged back at request time by
+   `parseProviders`. Reading `provider.authorize` would have exercised the
+   stub and passed meaninglessly. The shipped test reads
+   `provider.options.authorize`.
+
+4. **Task 3's Step 5 uncertainty is resolved — the fallback is unnecessary.**
+   next-auth 4.24.15 propagates a thrown `Error('EmailNotVerified')` verbatim
+   to `signIn(..., {redirect:false}).error`; it is NOT collapsed to
+   `CredentialsSignin`. Confirmed against installed source
+   (`core/routes/callback.js:344-350` → `core/index.js:261-283` →
+   `next/index.js:70-82` → `react/index.js:267`). The documented fallback
+   branch was never needed; the login page keeps the generic-error path as a
+   defensive backstop only.
+
+One further deviation was a deliberate ruling, not a defect: Task 2's
+`appendAuditEntry(...).catch(() => undefined)` was kept (the transaction has
+already committed, so propagating would hand the user a workspace plus a 500)
+but now **logs** the failure rather than swallowing it silently.
+
+Task 6's production steps (mailer health check, editing the VM's `.env`,
+recreating containers, verifying against the live host) were deliberately NOT
+executed. They are an operator decision and require this branch merged and
+green first.
+
 ## Global Constraints
 
 - **Spec:** `docs/superpowers/specs/2026-08-01-free-user-registration-design.md` — read it before starting.
