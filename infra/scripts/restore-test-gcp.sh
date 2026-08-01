@@ -6,11 +6,20 @@
 #  A snapshot nobody has ever restored is a hypothesis, not a backup.
 #
 #  What production actually is (see CLAUDE.md → "Production VM"):
-#  a single GCE instance `agrent` running a Docker Compose stack whose
-#  Postgres keeps its data in the local `agrent-pgdata` volume, i.e. on
-#  the instance's boot disk. The backup is a daily GCE snapshot
-#  schedule attached to that disk (resource policy
-#  `agrent-daily-snapshot`, 14-day retention).
+#  a GCE instance running a Docker Compose stack whose Postgres keeps
+#  its data in a local Docker volume, i.e. on the instance's boot disk.
+#  The backup is a daily GCE snapshot schedule attached to that disk.
+#
+#  The project runs TWO such stacks, and this drill targets either:
+#
+#    disk                 stack dir      pg volume        pg image
+#    agrent               /opt/agrent    agrent-pgdata    (built: postgis+pgvector)
+#    inflect-compliance   /opt/inflect   inflect_pgdata   postgres:16-alpine
+#
+#  `agrent` runs THIS repo's image (ghcr.io/…/agri-saas);
+#  `inflect-compliance` runs a different product from a different repo.
+#  They share this drill because they share the project and the backup
+#  mechanism — not because they share code.
 #
 #  This script:
 #    1. asserts the snapshot SCHEDULE is still attached to the disk
@@ -38,15 +47,25 @@
 #  OPTIONAL ENV
 #    SNAPSHOT_SCHEDULE        resource policy name  (default agrent-daily-snapshot)
 #    MAX_SNAPSHOT_AGE_HOURS   freshness bound       (default 26)
-#    DB_NAME / DB_USER        fallbacks only — the drill reads the
-#                             RESTORED /opt/agrent/.env first, so it
-#                             authenticates the way the stack does
-#                             (defaults inflect_production / postgres)
+#    PGDATA_VOLUME            Docker volume holding PGDATA (default agrent-pgdata)
+#    STACK_DIR                compose + env dir     (default /opt/agrent)
+#    PG_IMAGE                 image to run over the restored dir; empty
+#                             builds agrent's postgis+pgvector image
+#    DB_NAME / DB_USER        first candidates only — the drill asks the
+#                             RESTORED CLUSTER which role and database
+#                             actually exist and uses those
 #    RESTORE_MACHINE_TYPE     (default e2-medium)
 #
 #  Run it from any authenticated shell:
+#    # agrent (defaults)
 #    GCP_PROJECT=hazel-design-419410 GCP_ZONE=europe-west1-b \
 #    SOURCE_DISK=agrent ./infra/scripts/restore-test-gcp.sh
+#
+#    # inflect-compliance
+#    GCP_PROJECT=hazel-design-419410 GCP_ZONE=europe-west1-b \
+#    SOURCE_DISK=inflect-compliance SNAPSHOT_SCHEDULE=inflect-daily-snapshot \
+#    PGDATA_VOLUME=inflect_pgdata STACK_DIR=/opt/inflect \
+#    PG_IMAGE=postgres:16-alpine ./infra/scripts/restore-test-gcp.sh
 # ───────────────────────────────────────────────────────────────
 set -euo pipefail
 
@@ -56,9 +75,16 @@ set -euo pipefail
 
 SNAPSHOT_SCHEDULE="${SNAPSHOT_SCHEDULE:-agrent-daily-snapshot}"
 MAX_SNAPSHOT_AGE_HOURS="${MAX_SNAPSHOT_AGE_HOURS:-26}"
-# Fallbacks only. The drill prefers the values in the RESTORED
-# /opt/agrent/.env, so it authenticates the way the stack itself does
-# and keeps working if the credentials change.
+PGDATA_VOLUME="${PGDATA_VOLUME:-agrent-pgdata}"
+STACK_DIR="${STACK_DIR:-/opt/agrent}"
+# Empty ⇒ build agrent's postgis+pgvector image, which the restored
+# cluster's extensions need. Other stacks name a stock image to pull.
+PG_IMAGE="${PG_IMAGE:-}"
+# First candidates only. The drill asks the RESTORED CLUSTER which role
+# and database exist and uses those — parsing them out of the stack's
+# config is unreliable across stacks (env file vs compose keys, with
+# ${VAR:-default} interpolation in the latter), and a mis-parsed role
+# reports "role does not exist", which reads like a corrupt backup.
 DB_NAME="${DB_NAME:-inflect_production}"
 DB_USER="${DB_USER:-postgres}"
 RESTORE_MACHINE_TYPE="${RESTORE_MACHINE_TYPE:-e2-medium}"
@@ -174,40 +200,43 @@ for i in \$(seq 1 60); do [ -f /var/log/restore-drill-ready ] && break; sleep 5;
 sudo mkdir -p /mnt/restored
 # Partition 1 is the Ubuntu root filesystem on GCE images.
 sudo mount -o rw /dev/disk/by-id/google-restored-part1 /mnt/restored
-PGDATA_HOST=/mnt/restored/var/lib/docker/volumes/agrent-pgdata/_data
+PGDATA_HOST=/mnt/restored/var/lib/docker/volumes/${PGDATA_VOLUME}/_data
 # NOTE the sudo on both probes. /var/lib/docker is mode 0710, so an
 # unprivileged \`test -d\` on anything beneath it returns FALSE for a
 # path that exists — which reads identically to "the backup has no
 # database in it". Found by running the drill.
-sudo test -d "\$PGDATA_HOST" || { echo "restored disk has no agrent-pgdata volume at \$PGDATA_HOST"; exit 1; }
+sudo test -d "\$PGDATA_HOST" || { echo "restored disk has no ${PGDATA_VOLUME} volume at \$PGDATA_HOST"; exit 1; }
 sudo test -f "\$PGDATA_HOST/PG_VERSION" || { echo "\$PGDATA_HOST is not a Postgres data directory"; exit 1; }
 echo "  data directory found, PG_VERSION=\$(sudo cat \$PGDATA_HOST/PG_VERSION)"
 
-# The stack's env file must be in the backup too. It carries
-# DATA_ENCRYPTION_KEY, and a database restored WITHOUT that key is a
-# pile of unreadable ciphertext (see docs/epic-b-encryption.md). This
-# asserts PRESENCE ONLY and never prints a value.
-ENV_FILE=/mnt/restored/opt/agrent/.env
-sudo test -f "\$ENV_FILE" || { echo "restored disk has no /opt/agrent/.env — the encryption key is NOT in this backup"; exit 1; }
-sudo grep -q '^DATA_ENCRYPTION_KEY=.\+' "\$ENV_FILE" || { echo "/opt/agrent/.env has no DATA_ENCRYPTION_KEY — encrypted columns would be unrecoverable"; exit 1; }
-echo "  ✓ /opt/agrent/.env present and carries DATA_ENCRYPTION_KEY"
+# The encryption key must be in the backup too: a database restored
+# WITHOUT it is a pile of unreadable ciphertext (docs/epic-b-encryption.md).
+# SEARCH the stack dir rather than naming one file — the two stacks in
+# this project keep it in different places (agrent: .env, inflect:
+# .env.prod), and pinning a filename made this check fail on a disk
+# where the key was in fact perfectly recoverable. Asserts PRESENCE
+# ONLY and never prints a value.
+STACK_HOST=/mnt/restored${STACK_DIR}
+sudo test -d "\$STACK_HOST" || { echo "restored disk has no ${STACK_DIR} — wrong disk, or the stack moved"; exit 1; }
+sudo grep -rlq 'DATA_ENCRYPTION_KEY=.\+' "\$STACK_HOST" 2>/dev/null \
+    || { echo "no DATA_ENCRYPTION_KEY anywhere under ${STACK_DIR} — encrypted columns would be unrecoverable from this backup"; exit 1; }
+echo "  ✓ ${STACK_DIR} present and carries DATA_ENCRYPTION_KEY"
 
-# Authenticate the way the stack does. Read into variables and never
-# echo them; the fallbacks match the compose defaults.
-DB_USER="\$(sudo grep -E '^POSTGRES_USER=' "\$ENV_FILE" | head -1 | cut -d= -f2- | tr -d '\"'"'"' ' || true)"
-DB_NAME="\$(sudo grep -E '^POSTGRES_DB=' "\$ENV_FILE" | head -1 | cut -d= -f2- | tr -d '\"'"'"' ' || true)"
-DB_USER="\${DB_USER:-${DB_USER}}"
-DB_NAME="\${DB_NAME:-${DB_NAME}}"
-
-# Same image production runs, so the restored cluster's extensions
-# (postgis, vector) resolve. Built here rather than pulled: it is two
-# layers over the official postgis image.
-sudo docker build -t agrent-db:local - <<'DOCKERFILE'
+# The Postgres image production runs. agrent needs postgis+pgvector so
+# the restored cluster's extensions resolve, and builds it (two layers
+# over the official image); other stacks name a stock image to pull.
+if [ -n "${PG_IMAGE}" ]; then
+    RESTORE_IMAGE="${PG_IMAGE}"
+    sudo docker pull "\$RESTORE_IMAGE" >/dev/null
+else
+    RESTORE_IMAGE=agrent-db:local
+    sudo docker build -t "\$RESTORE_IMAGE" - <<'DOCKERFILE'
 FROM postgis/postgis:16-3.4
 RUN apt-get update \
     && apt-get install -y --no-install-recommends postgresql-16-pgvector \
     && rm -rf /var/lib/apt/lists/*
 DOCKERFILE
+fi
 
 # Start Postgres directly on the restored directory. A crash-consistent
 # snapshot lands mid-transaction by design; Postgres replays WAL on
@@ -215,16 +244,39 @@ DOCKERFILE
 sudo docker run -d --name restore-pg \\
     -v "\$PGDATA_HOST":/var/lib/postgresql/data \\
     -e POSTGRES_PASSWORD=drill-only-never-persisted \\
-    agrent-db:local >/dev/null
+    "\$RESTORE_IMAGE" >/dev/null
 
 for i in \$(seq 1 60); do
-    if sudo docker exec restore-pg pg_isready -U \${DB_USER} -d \${DB_NAME} >/dev/null 2>&1; then
+    if sudo docker exec restore-pg pg_isready >/dev/null 2>&1; then
         echo "  ✓ Postgres accepted connections after WAL recovery (\${i}s)"; break
     fi
     sleep 2
 done
-sudo docker exec restore-pg pg_isready -U \${DB_USER} -d \${DB_NAME} >/dev/null 2>&1 || {
+sudo docker exec restore-pg pg_isready >/dev/null 2>&1 || {
     echo "restored cluster never became ready — recovery log:"; sudo docker logs --tail 50 restore-pg; exit 1; }
+
+# Discover the superuser and the application database FROM THE RESTORED
+# CLUSTER, rather than parsing them out of the stack's config. The two
+# stacks spell their config differently (env file vs compose keys, with
+# \${VAR:-default} interpolation in the latter), and a drill that
+# mis-parses the role reports "role does not exist" — which reads like a
+# corrupt backup when the backup is fine. The cluster is the authority.
+DB_USER=""
+for cand in "${DB_USER}" postgres inflect; do
+    [ -n "\$cand" ] || continue
+    if sudo docker exec restore-pg psql -U "\$cand" -d postgres -tAc 'SELECT 1' >/dev/null 2>&1; then
+        DB_USER="\$cand"; break
+    fi
+done
+[ -n "\$DB_USER" ] || { echo "no usable superuser on the restored cluster (tried ${DB_USER}, postgres, inflect)"; exit 1; }
+
+DB_NAME="${DB_NAME}"
+if ! sudo docker exec restore-pg psql -U "\$DB_USER" -d "\$DB_NAME" -tAc 'SELECT 1' >/dev/null 2>&1; then
+    DB_NAME="\$(sudo docker exec restore-pg psql -U "\$DB_USER" -d postgres -tAc \
+        "SELECT datname FROM pg_database WHERE datname NOT IN ('postgres','template0','template1') ORDER BY datname LIMIT 1")"
+fi
+[ -n "\$DB_NAME" ] || { echo "restored cluster has no application database"; exit 1; }
+echo "  ✓ restored cluster exposes database '\$DB_NAME'"
 
 psql() { sudo docker exec restore-pg psql -U \${DB_USER} -d \${DB_NAME} -tAc "\$1"; }
 

@@ -133,6 +133,37 @@ describe('OI-3 — restore-test-gcp.sh shape', () => {
         expect(src).toMatch(/pg_isready/);
     });
 
+    it('is parameterised per target — one drill, two stacks', () => {
+        // The project runs two independent stacks whose only shared
+        // property is the backup mechanism. Hardcoding either one's
+        // volume / stack dir / image would silently make the drill
+        // test the wrong disk, or fail on a disk that is in fact fine.
+        const src = read(SCRIPT);
+        for (const v of ['PGDATA_VOLUME', 'STACK_DIR', 'PG_IMAGE']) {
+            expect(src).toMatch(new RegExp(`${v}="\\$\\{${v}:-`));
+        }
+    });
+
+    it('finds the encryption key by SEARCHING the stack dir, not by naming a file', () => {
+        // agrent keeps it in .env, inflect-compliance in .env.prod.
+        // Pinning a filename made this check fail on a disk where the
+        // key was perfectly recoverable — a false "unrecoverable
+        // backup" verdict, which is the worst kind of wrong here.
+        const src = read(SCRIPT);
+        expect(src).toMatch(/grep -rlq 'DATA_ENCRYPTION_KEY/);
+        expect(src).not.toMatch(/ENV_FILE=\/mnt\/restored\/opt\/agrent\/\.env/);
+    });
+
+    it('asks the RESTORED CLUSTER which role and database exist', () => {
+        // Parsing credentials out of stack config is unreliable across
+        // stacks (env file vs compose keys with ${VAR:-default}), and a
+        // mis-parsed role reports "role does not exist" — which reads
+        // like a corrupt backup when the backup is fine.
+        const src = read(SCRIPT);
+        expect(src).toMatch(/for cand in/);
+        expect(src).toMatch(/FROM pg_database WHERE datname NOT IN/);
+    });
+
     it('validates schema + migrations + recent rows + RLS via psql', () => {
         const src = read(SCRIPT);
         // Schema reachability
@@ -186,6 +217,24 @@ describe('OI-3 — restore-test.yml wiring', () => {
 
     it('actually invokes the drill script', () => {
         expect(read(WORKFLOW)).toMatch(/infra\/scripts\/restore-test-gcp\.sh/);
+    });
+
+    it('drills EVERY stack in the project, not just this repo\'s own', () => {
+        // Both stacks sat with zero backups until 2026-08-01, and only
+        // one of them is built from this repo. Dropping a target here
+        // leaves a live database whose backup nobody ever restores.
+        const targets = wf.jobs['restore-test'].strategy.matrix.include.map(
+            (m: { target: string }) => m.target,
+        );
+        expect(targets).toEqual(expect.arrayContaining(['agrent', 'inflect-compliance']));
+    });
+
+    it('does not fail-fast — one broken backup must not hide the other', () => {
+        expect(wf.jobs['restore-test'].strategy['fail-fast']).toBe(false);
+    });
+
+    it('serialises the matrix (the drill names resources from a per-second timestamp)', () => {
+        expect(wf.jobs['restore-test'].strategy['max-parallel']).toBe(1);
     });
 
     it('preflights its configuration and NAMES what is missing', () => {

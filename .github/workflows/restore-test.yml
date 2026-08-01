@@ -1,12 +1,23 @@
 # ───────────────────────────────────────────────────────────────
 #  Restore Test — monthly restore drill against the REAL backup
 #
-#  Proves the production backup is restorable, not merely present.
-#  Runs infra/scripts/restore-test-gcp.sh, which restores the newest
-#  GCE snapshot of the `agrent` boot disk onto a throwaway VM, boots a
-#  real Postgres over the recovered data directory, runs a validation
-#  battery (migrations / RLS policies / app_user / recent audit rows),
-#  and deletes everything from a trap.
+#  Proves the production backups are restorable, not merely present.
+#  Runs infra/scripts/restore-test-gcp.sh once per target, restoring
+#  the newest GCE snapshot of that target's boot disk onto a throwaway
+#  VM, booting a real Postgres over the recovered data directory,
+#  running a validation battery (migrations / RLS policies / app_user /
+#  recent audit rows), and deleting everything from a trap.
+#
+#  ## Two targets
+#
+#  The project runs two independent stacks in one GCP project:
+#
+#    agrent              THIS repo's deployment (ghcr.io/…/agri-saas)
+#    inflect-compliance  a DIFFERENT product, from a different repo
+#
+#  Both are drilled here because the tooling and the backup mechanism
+#  live here — not because the code is shared. Both had zero backups
+#  until 2026-08-01.
 #
 #  ## Why this replaced the AWS version
 #
@@ -22,8 +33,9 @@
 #  broken" when it meant "this drills infrastructure we do not have".
 #  What it actually masked was that production had NO automated
 #  backups at all — no cron, no systemd timer, no snapshot schedule,
-#  zero snapshots. That is fixed (resource policy
-#  `agrent-daily-snapshot`, daily 02:00 UTC, 14-day retention), and
+#  zero snapshots. Neither stack had any. That is fixed (resource
+#  policies `agrent-daily-snapshot` at 02:00 UTC and
+#  `inflect-daily-snapshot` at 02:30 UTC, both 14-day retention), and
 #  this workflow is what keeps it honest.
 #
 #  ## Required configuration
@@ -35,17 +47,16 @@
 #      GCP_SERVICE_ACCOUNT            — service account email the
 #        workflow impersonates. Needs compute.instances.*,
 #        compute.disks.*, compute.snapshots.get/list on the project.
-#  Repo Variables:
+#  Repo Variables (optional):
 #    GCP_PROJECT (default hazel-design-419410)
 #    GCP_ZONE    (default europe-west1-b)
-#    SOURCE_DISK (default agrent)
+#  Per-target settings are in the job matrix below, not in variables —
+#  a single SOURCE_DISK variable cannot describe two targets.
 #
 #  Until those secrets exist the drill CANNOT run from CI, and this
 #  workflow says so explicitly rather than failing somewhere opaque.
-#  The script is not CI-only — run it from any authenticated shell:
-#
-#    GCP_PROJECT=hazel-design-419410 GCP_ZONE=europe-west1-b \
-#    SOURCE_DISK=agrent ./infra/scripts/restore-test-gcp.sh
+#  The script is not CI-only — the per-target invocation is printed in
+#  that failure summary, and documented in docs/backup-restore.md.
 # ───────────────────────────────────────────────────────────────
 name: Restore Test
 
@@ -74,12 +85,42 @@ concurrency:
 
 jobs:
   restore-test:
-    name: "Restore Test (production)"
+    name: "Restore Test (${{ matrix.target }})"
     runs-on: ubuntu-latest
     # Snapshot → disk → VM boot → image build → WAL recovery. Normal
     # runtime is ~10 min; this is a runaway backstop, not a budget.
     timeout-minutes: 45
     environment: production # gates the GCP identity secrets
+
+    strategy:
+      # Both targets must report. fail-fast would cancel the second
+      # drill the moment the first failed, which is precisely when you
+      # most want to know whether the other backup is also broken.
+      fail-fast: false
+      # Serialised: the drill names its temporary disk and VM from a
+      # to-the-second timestamp, so two legs starting in the same
+      # second would collide. It also halves the peak quota draw.
+      max-parallel: 1
+      matrix:
+        include:
+          # This repo's own deployment (ghcr.io/…/agri-saas).
+          - target: agrent
+            disk: agrent
+            schedule: agrent-daily-snapshot
+            pgdata_volume: agrent-pgdata
+            stack_dir: /opt/agrent
+            # empty ⇒ build postgis+pgvector, which this cluster needs
+            pg_image: ""
+          # A DIFFERENT product, from a different repo, sharing this
+          # GCP project and this backup mechanism. It is drilled here
+          # because the tooling lives here — not because the code is
+          # shared. If that repo grows its own drill, drop this entry.
+          - target: inflect-compliance
+            disk: inflect-compliance
+            schedule: inflect-daily-snapshot
+            pgdata_volume: inflect_pgdata
+            stack_dir: /opt/inflect
+            pg_image: postgres:16-alpine
 
     steps:
       - uses: actions/checkout@v7
@@ -114,7 +155,9 @@ jobs:
               echo '```'
               echo "GCP_PROJECT=${{ vars.GCP_PROJECT || 'hazel-design-419410' }} \\"
               echo "GCP_ZONE=${{ vars.GCP_ZONE || 'europe-west1-b' }} \\"
-              echo "SOURCE_DISK=${{ vars.SOURCE_DISK || 'agrent' }} \\"
+              echo "SOURCE_DISK=${{ matrix.disk }} SNAPSHOT_SCHEDULE=${{ matrix.schedule }} \\"
+              echo "PGDATA_VOLUME=${{ matrix.pgdata_volume }} STACK_DIR=${{ matrix.stack_dir }} \\"
+              echo "PG_IMAGE=${{ matrix.pg_image }} \\"
               echo "  ./infra/scripts/restore-test-gcp.sh"
               echo '```'
             } >> "$GITHUB_STEP_SUMMARY"
@@ -135,8 +178,11 @@ jobs:
         env:
           GCP_PROJECT: ${{ vars.GCP_PROJECT || 'hazel-design-419410' }}
           GCP_ZONE: ${{ vars.GCP_ZONE || 'europe-west1-b' }}
-          SOURCE_DISK: ${{ vars.SOURCE_DISK || 'agrent' }}
-          SNAPSHOT_SCHEDULE: ${{ vars.SNAPSHOT_SCHEDULE || 'agrent-daily-snapshot' }}
+          SOURCE_DISK: ${{ matrix.disk }}
+          SNAPSHOT_SCHEDULE: ${{ matrix.schedule }}
+          PGDATA_VOLUME: ${{ matrix.pgdata_volume }}
+          STACK_DIR: ${{ matrix.stack_dir }}
+          PG_IMAGE: ${{ matrix.pg_image }}
         run: ./infra/scripts/restore-test-gcp.sh
 
       - name: Workflow summary
@@ -147,7 +193,7 @@ jobs:
             echo ""
             echo "- **Triggered by:** ${{ github.event_name }}"
             echo "- **Reason:** ${{ github.event.inputs.reason || 'scheduled' }}"
-            echo "- **Source disk:** ${{ vars.SOURCE_DISK || 'agrent' }} (${{ vars.GCP_ZONE || 'europe-west1-b' }})"
+            echo "- **Target:** ${{ matrix.target }} — disk \`${{ matrix.disk }}\`, schedule \`${{ matrix.schedule }}\` (${{ vars.GCP_ZONE || 'europe-west1-b' }})"
             echo "- **Result:** ${{ job.status }}"
             echo "- **Run:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
             echo ""

@@ -1,4 +1,4 @@
-# Backup & restore — the agrent production VM
+# Backup & restore — the production VMs
 
 **Owner:** whoever is on call. **Last reviewed:** 2026-08-01.
 
@@ -11,35 +11,51 @@ see [What changed](#what-changed-on-2026-08-01) at the bottom.
 
 ## What production actually is
 
-A single GCE instance, `agrent`, in `europe-west1-b` of project
-`hazel-design-419410`, running the Docker Compose stack at
-`/opt/agrent/`. Postgres keeps its data in the local Docker volume
-`agrent-pgdata`, which lives on the instance's 80 GB `pd-balanced`
-boot disk. Uploaded files are in `agrent-uploads` on the same disk.
+**Two independent stacks**, both in `europe-west1-b` of project
+`hazel-design-419410`, each a single GCE instance running Docker
+Compose with Postgres in a local Docker volume on the instance's boot
+disk:
 
-There is no managed database. There is no replica. **Everything is on
-one disk in one zone.**
+| | `agrent` | `inflect-compliance` |
+|---|---|---|
+| Image | `ghcr.io/inflect-compliance/**agri-saas**` | `ghcr.io/inflect-compliance/**inflect-compliance**` |
+| Built by | **this repo** | a different repo |
+| Host | `35-187-80-26.sslip.io` | `inflect.34-140-180-255.sslip.io` |
+| Stack dir | `/opt/agrent` | `/opt/inflect` |
+| PG volume | `agrent-pgdata` | `inflect_pgdata` |
+| PG image | `agrent-db:local` (postgis+pgvector) | `postgres:16-alpine` |
+| Encryption key in | `/opt/agrent/.env` | `/opt/inflect/.env.prod` |
+| Disk | 80 GB `pd-balanced` | 50 GB `pd-balanced` |
 
-## The backup
+They are **separate products that happen to share a GCP project**, not
+two deployments of one codebase. This repo cannot affect the
+`inflect-compliance` stack — its Watchtower watches an image this repo
+never pushes to. It is documented and drilled here only because the
+backup tooling lives here.
 
-A GCE **snapshot schedule** attached to that disk:
+Neither has a managed database or a replica. For each, **everything is
+on one disk in one zone.**
 
-| Property | Value |
-|---|---|
-| Resource policy | `agrent-daily-snapshot` (regional, `europe-west1`) |
-| Cadence | Daily, 02:00 UTC |
-| Retention | 14 days |
-| Storage location | `eu` (multi-region — survives a zone loss) |
-| On source-disk delete | `keep-auto-snapshots` — deleting the disk does **not** delete the backups |
+## The backups
+
+A GCE **snapshot schedule** attached to each disk:
+
+| Property | `agrent` | `inflect-compliance` |
+|---|---|---|
+| Resource policy | `agrent-daily-snapshot` | `inflect-daily-snapshot` |
+| Cadence | Daily, 02:00 UTC | Daily, 02:30 UTC (staggered) |
+| Retention | 14 days | 14 days |
+| Storage location | `eu` (multi-region — survives a zone loss) | same |
+| On source-disk delete | `keep-auto-snapshots` — deleting the disk does **not** delete the backups | same |
 
 ```bash
-# Is the schedule attached?
+# Is the schedule attached? (repeat for inflect-compliance)
 gcloud compute disks describe agrent --zone europe-west1-b \
   --format='value(resourcePolicies)'
 
 # What snapshots exist?
-gcloud compute snapshots list --filter='sourceDisk~/agrent$' \
-  --sort-by=~creationTimestamp
+gcloud compute snapshots list --sort-by=~creationTimestamp \
+  --format='table(name,status,storageBytes,sourceDisk.basename())'
 ```
 
 ### What this buys, and what it does not
@@ -52,25 +68,44 @@ gcloud compute snapshots list --filter='sourceDisk~/agrent$' \
   captures the volume mid-transaction; Postgres replays WAL when it
   starts. This is a supported recovery mode, and the drill below
   exercises it deliberately rather than assuming it.
-- **The encryption key rides along.** `DATA_ENCRYPTION_KEY` lives in
-  `/opt/agrent/.env`, on the same disk, so a whole-disk restore
-  recovers key and ciphertext together. Restoring the *database* alone
-  somewhere else without that key yields unreadable ciphertext. Never
-  treat a pgdata copy as a complete backup.
+- **The encryption key rides along.** `DATA_ENCRYPTION_KEY` lives on
+  the same disk as the data — `/opt/agrent/.env` for agrent,
+  `/opt/inflect/.env.prod` for inflect-compliance — so a whole-disk
+  restore recovers key and ciphertext together. Restoring the
+  *database* alone somewhere else without that key yields unreadable
+  ciphertext. Never treat a pgdata copy as a complete backup. The
+  drill asserts the key is present on the restored disk, searching the
+  stack directory rather than naming one file, precisely because the
+  two stacks put it in differently-named files.
 
 ---
 
 ## The restore drill
 
 `infra/scripts/restore-test-gcp.sh`. Monthly via
-`.github/workflows/restore-test.yml`, and runnable by hand any time:
+`.github/workflows/restore-test.yml` — which runs it **once per target
+from a job matrix** — and runnable by hand any time:
 
 ```bash
-GCP_PROJECT=hazel-design-419410 \
-GCP_ZONE=europe-west1-b \
+# agrent (the defaults)
+GCP_PROJECT=hazel-design-419410 GCP_ZONE=europe-west1-b \
 SOURCE_DISK=agrent \
   ./infra/scripts/restore-test-gcp.sh
+
+# inflect-compliance
+GCP_PROJECT=hazel-design-419410 GCP_ZONE=europe-west1-b \
+SOURCE_DISK=inflect-compliance SNAPSHOT_SCHEDULE=inflect-daily-snapshot \
+PGDATA_VOLUME=inflect_pgdata STACK_DIR=/opt/inflect \
+PG_IMAGE=postgres:16-alpine \
+  ./infra/scripts/restore-test-gcp.sh
 ```
+
+The drill deliberately does **not** parse credentials out of the
+stack's config — the two stacks spell them differently (env file vs
+compose keys with `${VAR:-default}` interpolation). It asks the
+restored cluster which role and database actually exist. A mis-parsed
+role reports `role does not exist`, which reads like a corrupt backup
+when the backup is fine.
 
 It takes ~10 minutes and costs a few cents. What it does:
 
@@ -80,9 +115,10 @@ It takes ~10 minutes and costs a few cents. What it does:
 3. Creates a disk from that snapshot.
 4. Boots a throwaway VM with **no service account and no scopes** — it
    briefly holds a copy of production data, so it gets no GCP identity.
-5. Mounts the disk, builds the production Postgres image
-   (`postgis` + `pgvector`), and starts a real Postgres over the
-   recovered data directory so WAL recovery actually runs.
+5. Mounts the disk and starts a real Postgres over the recovered data
+   directory so WAL recovery actually runs — building agrent's
+   `postgis` + `pgvector` image, or pulling whatever `PG_IMAGE` names,
+   so the restored cluster's extensions resolve.
 6. Runs the validation battery: `SELECT 1`; `Tenant` and `User`
    readable; `_prisma_migrations` non-empty; recent `AuditLog` rows;
    `tenant_isolation` policies present in `pg_policies`; `app_user`
@@ -140,10 +176,18 @@ Then verify the stack: `/api/readyz`, `/manifest.webmanifest`, `/sw.js`
 
 ## What changed on 2026-08-01
 
-Production had **no automated backup of any kind**: no cron, no systemd
-timer, no snapshot schedule, zero snapshots. The only dumps on the box
-were four ad-hoc pre-deploy `pg_dump`s from 1–4 July, sitting on the
-same disk as the database they were backing up.
+**Neither** production stack had an automated backup of any kind: no
+cron, no systemd timer, no snapshot schedule, zero snapshots. The only
+dumps anywhere were four ad-hoc pre-deploy `pg_dump`s on agrent from
+1–4 July, sitting on the same disk as the database they were backing
+up. `inflect-compliance` — 7 tenants, 18 users, audit rows written
+that same day — had nothing at all.
+
+It was nearly missed a second time: `CLAUDE.md` describes the
+`inflect-compliance` VM as "being retired", and that was read as a
+statement of fact rather than of intent. It is a live, separate
+product still receiving auto-deploys. **Check what a VM is running
+before believing a doc that says it is on its way out.**
 
 Meanwhile a monthly "Restore Test" workflow had been failing since it
 was written, and a guard test (`tests/guards/oi-3-backup-restore.test.ts`)
@@ -159,5 +203,4 @@ posture actually deployed. The AWS scripts (`restore-test.sh`,
 `pg-dump-to-s3.sh`) were retired.
 
 **Still open:** RPO is 24h against a 1h target — closing it needs
-continuous WAL archiving or a managed Postgres. And the drill cannot
-run from CI until Workload Identity Federation is configured.
+continuous WAL archiving or a managed Postgres.
