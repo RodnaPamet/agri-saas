@@ -22,21 +22,25 @@ import { withApiErrorHandling } from '@/lib/errors/api';
 import { logger } from '@/lib/observability/logger';
 import { jsonResponse } from '@/lib/api-response';
 import { appendAuditEntry } from '@/lib/audit/audit-writer';
+import { SIGNUP_LIMIT } from '@/lib/security/rate-limit';
 import type { PrismaClient, Role } from '@prisma/client';
 
-export const POST = withApiErrorHandling(withValidatedBody(AuthActionSchema, async (_req, _ctx, body) => {
-    try {
-        // Zod discriminated-union already rejects anything but `register`
-        // — no else branches needed. Keep the try/catch as a final safety
-        // net so a DB error during registration returns JSON instead of
-        // bubbling as an HTML 500 page.
-        return await handleRegister(body);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } catch (error: any) {
-        logger.error('Auth error', { component: 'auth', error: error instanceof Error ? error.message : String(error) });
-        return jsonResponse({ error: error.message || 'Auth failed' }, { status: 500 });
-    }
-}));
+export const POST = withApiErrorHandling(
+    withValidatedBody(AuthActionSchema, async (_req, _ctx, body) => {
+        try {
+            // Zod discriminated-union already rejects anything but `register`
+            // — no else branches needed. Keep the try/catch as a final safety
+            // net so a DB error during registration returns JSON instead of
+            // bubbling as an HTML 500 page.
+            return await handleRegister(body);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        } catch (error: any) {
+            logger.error('Auth error', { component: 'auth', error: error instanceof Error ? error.message : String(error) });
+            return jsonResponse({ error: error.message || 'Auth failed' }, { status: 500 });
+        }
+    }),
+    { rateLimit: { config: SIGNUP_LIMIT, scope: 'self-service-signup' } },
+);
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function handleRegister(body: any) {
