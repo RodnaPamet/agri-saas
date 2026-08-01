@@ -74,6 +74,23 @@ inspecting container logs, a manual restart — execute it directly via
 NOT a hand-edit on the VM. Back up any file before editing it (the
 `<file>.bak.<timestamp>` convention).
 
+**Backups: one disk, one daily snapshot.** Postgres lives in the local
+`agrent-pgdata` Docker volume on the instance's boot disk — there is no
+managed database and no replica. The backup is the GCE snapshot
+schedule `agrent-daily-snapshot` (02:00 UTC, 14-day retention, `eu`
+storage, `keep-auto-snapshots`) attached to that disk. So **RPO is up
+to 24 hours**, not the 1 hour `docs/slos.md` targets, and the snapshot
+is crash-consistent (Postgres replays WAL on restore). Restores are
+drilled monthly by `infra/scripts/restore-test-gcp.sh` via
+`.github/workflows/restore-test.yml` — it boots a real Postgres over
+the restored data directory rather than just checking a snapshot
+exists. `DATA_ENCRYPTION_KEY` is in `/opt/agrent/.env` on the same
+disk, so a whole-disk restore recovers key and ciphertext together; a
+pgdata-only copy is NOT a complete backup. **See
+`docs/backup-restore.md`** for the operator runbook. Before 2026-08-01
+there were no backups at all, and the monthly restore test drilled AWS
+RDS — infrastructure this product does not run.
+
 > Migration note: the legacy `inflect-compliance` VM / `/opt/inflect/`
 > paths (and the `inflect-compliance` GHCR org) are being retired as part
 > of the Agrent rebrand. VM/instance renames are operator-side — not

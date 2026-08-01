@@ -29,5 +29,42 @@ export function loadConfig() {
         // dominated by steady-state samples, not the ramp).
         rampUp: __ENV.RAMP_UP || '30s',
         rampDown: __ENV.RAMP_DOWN || '15s',
+
+        // The same three durations as integer seconds. Scenarios that
+        // need to do arithmetic on the profile — schedule a second
+        // scenario to start after the first ends, or derive a
+        // throughput floor from the window length — cannot do it with
+        // the '30s' / '2m' strings k6 wants in its executor config.
+        durationSec: toSeconds(__ENV.DURATION || '2m'),
+        rampUpSec: toSeconds(__ENV.RAMP_UP || '30s'),
+        rampDownSec: toSeconds(__ENV.RAMP_DOWN || '15s'),
+
+        // Uncontended-latency regime (auth.js). A small fixed VU count
+        // with no think-time, so there is never more than `latencyVus`
+        // logins in flight and http_req_duration measures service time
+        // rather than queue depth. See the auth.js docblock.
+        latencyVus: parseInt(__ENV.LATENCY_VUS || '1', 10),
+        latencySeconds: parseInt(__ENV.LATENCY_SECONDS || '60', 10),
     };
+}
+
+/**
+ * Parse a k6 duration string ('30s', '2m', '1h') to whole seconds.
+ * k6's own parser isn't exposed to scripts, and these values have to
+ * be added together to schedule sequential scenarios.
+ */
+export function toSeconds(spec) {
+    const m = String(spec).match(/^(\d+)\s*(ms|s|m|h)?$/);
+    if (!m) return 0;
+    const n = parseInt(m[1], 10);
+    switch (m[2]) {
+        case 'ms':
+            return Math.ceil(n / 1000);
+        case 'm':
+            return n * 60;
+        case 'h':
+            return n * 3600;
+        default:
+            return n;
+    }
 }

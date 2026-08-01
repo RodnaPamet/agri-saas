@@ -1,46 +1,59 @@
 # ───────────────────────────────────────────────────────────────
-#  Restore Test — monthly automated RDS restore validation
+#  Restore Test — monthly restore drill against the REAL backup
 #
-#  Epic OI-3 source-of-truth: monthly automated restore test that
-#  restores the latest backup to a temporary instance, runs smoke
-#  tests, and tears it down.
+#  Proves the production backup is restorable, not merely present.
+#  Runs infra/scripts/restore-test-gcp.sh, which restores the newest
+#  GCE snapshot of the `agrent` boot disk onto a throwaway VM, boots a
+#  real Postgres over the recovered data directory, runs a validation
+#  battery (migrations / RLS policies / app_user / recent audit rows),
+#  and deletes everything from a trap.
 #
-#  Schedule: 04:00 UTC on the 1st of every month. Also triggerable
-#  manually via workflow_dispatch (e.g. after a major schema
-#  migration that warrants a fresh restore-validation cycle).
+#  ## Why this replaced the AWS version
 #
-#  REQUIRED GITHUB CONFIGURATION:
-#    Repo Settings → Environments → production:
-#      Secrets:
-#        AWS_ROLE_TO_ASSUME           — IAM role with rds:* + secretsmanager:GetSecretValue
-#        SOURCE_DB_INSTANCE_ID        — e.g. inflect-compliance-production-db
-#        DB_PASSWORD_SECRET_ID        — RDS-managed secret ARN (from terraform output)
-#        RESTORE_DB_SUBNET_GROUP      — e.g. inflect-compliance-production-db-subnet-group
-#        RESTORE_VPC_SECURITY_GROUP_IDS — comma-separated SG IDs
-#                                          allowing ingress from the
-#                                          self-hosted runner's IP
-#  REQUIRED VARS:
-#        AWS_REGION                   — e.g. us-east-1
+#  Until 2026-08-01 this workflow drilled AWS RDS point-in-time
+#  recovery. The product does not run on RDS — production is a single
+#  GCE VM (project hazel-design-419410, instance `agrent`) with
+#  Postgres in a local Docker volume. The workflow died at
+#  "Configure AWS credentials (OIDC)" in 12 seconds on every run,
+#  because the AWS account it assumed does not exist, and so the
+#  restore script it existed to run was never executed once.
 #
-#  Network prerequisite: this workflow MUST run on a self-hosted
-#  runner inside the production VPC (or with a Session Manager port
-#  forwarder set up to reach the temporary RDS). The chart's DB
-#  module hardcodes publicly_accessible=false; we don't relax that
-#  for the test instance. If you don't have a self-hosted runner,
-#  trigger restore-test.sh manually from an in-VPC bastion EC2.
+#  Worse, the failure was uninformative: it read as "restore is
+#  broken" when it meant "this drills infrastructure we do not have".
+#  What it actually masked was that production had NO automated
+#  backups at all — no cron, no systemd timer, no snapshot schedule,
+#  zero snapshots. That is fixed (resource policy
+#  `agrent-daily-snapshot`, daily 02:00 UTC, 14-day retention), and
+#  this workflow is what keeps it honest.
 #
-#  On failure: fires a Slack/PagerDuty alert via the alerting
-#  pipeline (the script's exit code propagates; the workflow run's
-#  failure is the canonical signal).
+#  ## Required configuration
+#
+#  Repo Settings → Environments → production:
+#    Secrets:
+#      GCP_WORKLOAD_IDENTITY_PROVIDER — full provider resource name,
+#        projects/<num>/locations/global/workloadIdentityPools/<pool>/providers/<provider>
+#      GCP_SERVICE_ACCOUNT            — service account email the
+#        workflow impersonates. Needs compute.instances.*,
+#        compute.disks.*, compute.snapshots.get/list on the project.
+#  Repo Variables:
+#    GCP_PROJECT (default hazel-design-419410)
+#    GCP_ZONE    (default europe-west1-b)
+#    SOURCE_DISK (default agrent)
+#
+#  Until those secrets exist the drill CANNOT run from CI, and this
+#  workflow says so explicitly rather than failing somewhere opaque.
+#  The script is not CI-only — run it from any authenticated shell:
+#
+#    GCP_PROJECT=hazel-design-419410 GCP_ZONE=europe-west1-b \
+#    SOURCE_DISK=agrent ./infra/scripts/restore-test-gcp.sh
 # ───────────────────────────────────────────────────────────────
 name: Restore Test
 
 on:
   schedule:
-    # 04:00 UTC on the 1st of every month — well outside the
-    # production maintenance window (Sun 04:30-05:30 UTC per the
-    # Terraform DB module default), and outside business hours
-    # for most timezones we operate in.
+    # 04:00 UTC on the 1st of every month — two hours after the daily
+    # snapshot window (02:00 UTC), so the newest snapshot is settled
+    # and comfortably inside the 26h freshness bound.
     - cron: "0 4 1 * *"
   workflow_dispatch:
     inputs:
@@ -51,48 +64,80 @@ on:
 
 permissions:
   contents: read
-  id-token: write   # OIDC
+  id-token: write # OIDC → Workload Identity Federation
 
 concurrency:
-  # Only one restore test runs at a time — collisions would burn
-  # AWS quota and clutter the snapshot list.
+  # One drill at a time — concurrent runs would burn quota and clutter
+  # the disk/instance list.
   group: restore-test
   cancel-in-progress: false
 
 jobs:
   restore-test:
     name: "Restore Test (production)"
-    runs-on: ubuntu-latest   # ⚠ replace with [self-hosted, vpc-prod] in production
-    timeout-minutes: 90      # restore alone can take 60+ minutes
-    environment: production  # gates AWS_ROLE_TO_ASSUME + the in-VPC SG secrets
+    runs-on: ubuntu-latest
+    # Snapshot → disk → VM boot → image build → WAL recovery. Normal
+    # runtime is ~10 min; this is a runaway backstop, not a budget.
+    timeout-minutes: 45
+    environment: production # gates the GCP identity secrets
 
     steps:
       - uses: actions/checkout@v7
 
-      - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v6
-        with:
-          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
-          aws-region: ${{ vars.AWS_REGION }}
-          role-session-name: gh-restore-test-${{ github.run_id }}
-
-      - name: Install psql + jq
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq postgresql-client jq
-
-      - name: Run restore-test.sh
+      # Fail with a NAMED diagnosis rather than dying inside the auth
+      # action. The previous workflow's whole problem was that its
+      # failure did not say what was wrong.
+      - name: Preflight — is the drill configured for CI?
         env:
-          AWS_REGION: ${{ vars.AWS_REGION }}
-          SOURCE_DB_INSTANCE_ID: ${{ secrets.SOURCE_DB_INSTANCE_ID }}
-          RESTORE_DB_INSTANCE_CLASS: db.t4g.small
-          RESTORE_VPC_SECURITY_GROUP_IDS: ${{ secrets.RESTORE_VPC_SECURITY_GROUP_IDS }}
-          RESTORE_DB_SUBNET_GROUP: ${{ secrets.RESTORE_DB_SUBNET_GROUP }}
-          DB_NAME: inflect_compliance
-          DB_USER: postgres
-          DB_PASSWORD_SECRET_ID: ${{ secrets.DB_PASSWORD_SECRET_ID }}
+          WIF_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          WIF_SA: ${{ secrets.GCP_SERVICE_ACCOUNT }}
         run: |
-          ./infra/scripts/restore-test.sh
+          missing=""
+          [ -n "$WIF_PROVIDER" ] || missing="$missing GCP_WORKLOAD_IDENTITY_PROVIDER"
+          [ -n "$WIF_SA" ]       || missing="$missing GCP_SERVICE_ACCOUNT"
+          if [ -n "$missing" ]; then
+            echo "::error title=Restore drill not configured::Missing production environment secret(s):$missing"
+            {
+              echo "## ⚠ Restore drill did not run"
+              echo ""
+              echo "Missing production environment secret(s):**$missing**"
+              echo ""
+              echo "CI has no credentials for the production GCP project, so the"
+              echo "monthly restore drill could not execute. **This is not a"
+              echo "statement that the backup is good — it is a statement that"
+              echo "nobody checked.**"
+              echo ""
+              echo "Either configure Workload Identity Federation (see the header"
+              echo "of \`.github/workflows/restore-test.yml\`), or run the drill"
+              echo "manually from an authenticated shell:"
+              echo ""
+              echo '```'
+              echo "GCP_PROJECT=${{ vars.GCP_PROJECT || 'hazel-design-419410' }} \\"
+              echo "GCP_ZONE=${{ vars.GCP_ZONE || 'europe-west1-b' }} \\"
+              echo "SOURCE_DISK=${{ vars.SOURCE_DISK || 'agrent' }} \\"
+              echo "  ./infra/scripts/restore-test-gcp.sh"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          echo "✓ GCP identity secrets present"
+
+      - name: Authenticate to GCP (Workload Identity Federation)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Run the restore drill
+        env:
+          GCP_PROJECT: ${{ vars.GCP_PROJECT || 'hazel-design-419410' }}
+          GCP_ZONE: ${{ vars.GCP_ZONE || 'europe-west1-b' }}
+          SOURCE_DISK: ${{ vars.SOURCE_DISK || 'agrent' }}
+          SNAPSHOT_SCHEDULE: ${{ vars.SNAPSHOT_SCHEDULE || 'agrent-daily-snapshot' }}
+        run: ./infra/scripts/restore-test-gcp.sh
 
       - name: Workflow summary
         if: always()
@@ -102,20 +147,23 @@ jobs:
             echo ""
             echo "- **Triggered by:** ${{ github.event_name }}"
             echo "- **Reason:** ${{ github.event.inputs.reason || 'scheduled' }}"
-            echo "- **Source DB:** ${{ secrets.SOURCE_DB_INSTANCE_ID }}"
-            echo "- **Region:** ${{ vars.AWS_REGION }}"
+            echo "- **Source disk:** ${{ vars.SOURCE_DISK || 'agrent' }} (${{ vars.GCP_ZONE || 'europe-west1-b' }})"
             echo "- **Result:** ${{ job.status }}"
             echo "- **Run:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
             echo ""
             if [ "${{ job.status }}" != "success" ]; then
               echo "### ⚠ Action required"
               echo ""
-              echo "Restore test failed. Investigate before the next maintenance window."
-              echo "The temporary RDS instance was deleted by the script's cleanup trap."
-              echo "If the script crashed before reaching cleanup, check for orphaned"
-              echo "instances:"
+              echo "The production backup did not restore cleanly. Investigate before"
+              echo "the next maintenance window — this is the only signal that stands"
+              echo "between a snapshot schedule and an unrecoverable database."
               echo ""
-              echo "  aws rds describe-db-instances \\"
-              echo "    --query 'DBInstances[?contains(DBInstanceIdentifier, \`restore-test\`)]'"
+              echo "The drill's cleanup trap deletes the throwaway VM and disk on every"
+              echo "exit path. If it was killed hard, check for leaked resources:"
+              echo ""
+              echo '```'
+              echo "gcloud compute instances list --filter='name~restore-test-'"
+              echo "gcloud compute disks list --filter='name~restore-test-'"
+              echo '```'
             fi
           } >> "$GITHUB_STEP_SUMMARY"

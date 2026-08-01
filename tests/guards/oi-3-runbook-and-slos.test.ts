@@ -246,8 +246,12 @@ describe('OI-3 — Incident response runbook (docs/incident-response.md)', () =>
         expect(src).toMatch(/Epic OI-1/);
         expect(src).toMatch(/Epic OI-2/);
         expect(src).toMatch(/Epic OI-3/);
-        // Specific deliverables
-        expect(src).toMatch(/restore-test\.sh/);
+        // Specific deliverables. The restore drill is
+        // `restore-test-gcp.sh` since 2026-08-01 — the AWS RDS script
+        // it replaced named infrastructure this product never ran (see
+        // tests/guards/oi-3-backup-restore.test.ts and
+        // docs/backup-restore.md).
+        expect(src).toMatch(/restore-test-gcp\.sh/);
         expect(src).toMatch(/manage_master_user_password/);
         expect(src).toMatch(/external-uptime\.yml/);
     });

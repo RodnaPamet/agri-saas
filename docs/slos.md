@@ -320,25 +320,60 @@ All methods wrapped with `traceRepository(...)` from `src/lib/observability/repo
 
 Tighter (e.g. 5 minutes) requires synchronous cross-region replication — meaningful infrastructure cost increase + write-latency penalty. Looser (e.g. 24 hours) is unacceptable for a compliance SaaS where audit logs + evidence reviews are the work product. 1 hour reflects the AWS RDS automated-snapshot frequency floor + transaction-log shipping cadence; achievable within the existing OI-1 module without architectural changes.
 
-### How it's met
+> **⚠ NOT CURRENTLY MET — the target below is aspirational.**
+> The 1-hour figure was written against an AWS RDS deployment with
+> continuous transaction-log shipping. **The product does not run on
+> RDS.** Production is a single GCE VM (`agrent`) with Postgres in a
+> local Docker volume, and its backup is a **daily disk snapshot**.
+> The achieved RPO is therefore **up to 24 hours**, not 1 hour.
+>
+> This was discovered on 2026-08-01, when production was found to have
+> no automated backup of any kind — no cron, no timer, no snapshot
+> schedule, zero snapshots. The daily schedule below closed that hole;
+> closing the gap from 24h to 1h needs continuous archiving (WAL
+> shipping to object storage, or a managed Postgres), which is not
+> deployed. Treat 1 hour as the target to build toward and 24 hours as
+> what the system delivers today.
+
+### How it's met (as deployed, 2026-08-01)
 
 | Layer | Mechanism | Recoverable to |
 |---|---|---|
-| RDS Postgres | Continuous transaction log shipping + 5-minute granularity restore | Any second within `backup_retention_days` window (production: 14 days) |
-| RDS automated snapshots | Daily during the `backup_window` (03:00-04:00 UTC) | The snapshot moment, < 24h freshness |
-| Encrypted column data | Same RDS recovery path | Same |
-| File storage (S3) | Versioning enabled on the bucket | Any prior version (until lifecycle expiry) |
-| AWS Secrets Manager | 30-day recovery window on the master KEK; 7-day on rotatable secrets | Up to recovery-window deletion ceiling |
+| Postgres (GCE VM `agrent`) | Daily GCE snapshot of the boot disk — resource policy `agrent-daily-snapshot`, 02:00 UTC, 14-day retention, `keep-auto-snapshots` on disk delete | The snapshot moment — **up to 24h of loss** |
+| Encrypted column data | Same disk snapshot (ciphertext is in the same volume) | Same |
+| Uploaded files | Same disk snapshot (`agrent-uploads` Docker volume, same disk) | Same |
+| `DATA_ENCRYPTION_KEY` | **Not in the snapshot** — it lives in `/opt/agrent/.env`, which IS on the same disk. A snapshot restore recovers both together; an operator restoring elsewhere must carry the key separately or the restored ciphertext is unreadable. |
+
+The snapshot is **crash-consistent**, not application-consistent: it
+captures the volume mid-transaction and Postgres replays WAL on start.
+That is a supported recovery mode, and the restore drill exercises it
+on purpose — it boots a real Postgres over the restored directory
+rather than merely checking the snapshot exists.
 
 ### Measurement / Verification
 
-- **`infra/scripts/restore-test.sh`** (Epic OI-3 part 4) runs **monthly** against the latest automated snapshot and verifies the snapshot is no older than 14 days (psql check 4: `AuditLog has rows from within 14d of snapshot`).
-- A failed restore-test fails the GitHub Actions monthly workflow; production rotation kicks in via PagerDuty if the workflow has been failing for more than 14 days running.
-- The 1-hour objective is implicit: PITR's continuous transaction log shipping means the recoverable point is always within the latest log ship cycle, which AWS guarantees at <5 minutes typical (well inside the 1-hour SLA).
+- **`infra/scripts/restore-test-gcp.sh`** runs **monthly** (and on
+  demand) via `.github/workflows/restore-test.yml`. It restores the
+  newest snapshot to a throwaway VM, boots the production Postgres
+  image over the recovered data directory, and asserts: migrations
+  applied, `Tenant`/`User` readable, `tenant_isolation` RLS policies
+  present, `app_user` role present, recent `AuditLog` rows.
+- It also asserts the snapshot **schedule is still attached to the
+  disk** and that the newest snapshot is **< 26h old** — a detached
+  resource policy stops backups silently, with no error anywhere.
+- A failed drill fails the workflow. **An unconfigured drill also
+  fails it**, loudly, rather than skipping: a restore test that did
+  not run is indistinguishable from one that passed.
 
 ### Risk
 
-The 1-hour RPO assumes the RDS instance + the regional log archive are both reachable. A regional AWS outage that takes both down is recoverable only from the daily snapshot (RPO degrades to <24h). Cross-region read replica deployment is the mitigation; not in scope for OI-3.
+Single disk, single zone. The snapshot is stored regionally (`eu`), so
+a zone loss is survivable, but there is no cross-region copy and no
+continuous archiving — a failure between two daily snapshots loses up
+to a day of work. For a product whose work product is audit logs and
+evidence reviews, that is a real gap, and it is the reason the 1-hour
+target above is retained rather than quietly rewritten down to match
+what is deployed.
 
 ---
 
@@ -369,7 +404,7 @@ Aligns with our compliance customers' standard SLAs (most enterprise SaaS contra
 
 - **Detection**: covered by the alert pipeline (Epic OI-3 part 3). Critical alerts page within ~10 seconds of trigger via PagerDuty.
 - **Decision tree + runbook**: `docs/incident-response.md` walks operators through each scenario above.
-- **Restore mechanism validation**: the monthly `restore-test.sh` exercises the RDS-restore path (60-120 min RTO scenario) end-to-end.
+- **Restore mechanism validation**: the monthly `restore-test-gcp.sh` exercises the snapshot-restore path end-to-end — disk from snapshot, VM, real Postgres, validation battery, teardown.
 - The 4-hour SLA is the SUM of detection + triage + recovery time; the budget allocation per stage is documented in `docs/incident-response.md` § "Severity definitions".
 
 ### Risk
@@ -388,8 +423,8 @@ The RTO assumes operator availability at the time of the incident. Out-of-hours 
 | API Error Rate | < 1% | 30 days | `api_request_count` |
 | Health Check Availability | ≥ 99.95% | 7 days | Synthetic probe of `/api/livez` |
 | Repository Latency (P95) | < 100ms | 7 days | `repo_method_duration` (OI-3 part 2) |
-| RPO (Recovery Point) | ≤ 1 hour | continuous | RDS PITR + monthly `restore-test.sh` |
-| RTO (Recovery Time) | ≤ 4 hours | per incident | `helm rollback` / `restore-db-instance` / runbook |
+| RPO (Recovery Point) | ≤ 1 hour *(target; **24h achieved** — see SLO 6)* | continuous | Daily GCE disk snapshot + monthly `restore-test-gcp.sh` |
+| RTO (Recovery Time) | ≤ 4 hours | per incident | `deploy/apply.sh` rollback / disk-from-snapshot / runbook |
 
 ---
 
@@ -486,14 +521,65 @@ they are tighter than the CI smoke because the sample size is larger.
 
 | Scenario     | Profile          | Tightest threshold                              | Closest production SLO                |
 |--------------|------------------|-------------------------------------------------|---------------------------------------|
-| auth.js      | 50 / 100 / 200 VUs × 2m | `http_req_duration{step:login}` p95 < 1500ms | SLO 2 (write — bcrypt is the floor)   |
-| auth.js      | "                | `auth_full_login_ms` p95 < 2000ms                | SLO 2 (E2E)                           |
+| auth.js      | 50 / 100 / 200 VUs × 2m | `http_req_duration{regime:latency,step:login}` p95 < 1500ms | SLO 2 (write — bcrypt is the floor)   |
+| auth.js      | "                | `auth_full_login_ms{regime:latency}` p95 < 2000ms | SLO 2 (E2E)                          |
 | auth.js      | "                | `http_req_failed{step:*}` rate < 1%              | SLO 1 + 3                             |
-| lists.js     | 50 / 100 / 200 VUs × 2m | `http_req_duration{endpoint:*}` p95 < 800ms   | SLO 2 (read — looser than 500ms ceiling because of cold-cache + tenant RLS overhead in test env) |
+| auth.js      | "                | `auth_success_count{regime:saturation}` count floor | capacity collapse detector — see below |
+| lists.js     | 50 / 100 / 200 VUs × 2m | `http_req_duration{regime:latency,endpoint:*}` p95 < 800ms | SLO 2 (read — looser than 500ms ceiling because of cold-cache + tenant RLS overhead in test env) |
 | lists.js     | "                | `http_req_failed{type:list}` rate < 1%          | SLO 1 + 3                             |
+| lists.js     | "                | `list_iterations{regime:saturation}` count floor | capacity collapse detector — see below |
 | mutations.js | 50 / 100 / 200 VUs × 2m | `http_req_duration{op:create_control}` p95 < 1500ms | SLO 2 (write)                  |
 | mutations.js | "                | `http_req_duration{op:upload_evidence}` p95 < 2000ms | SLO 2 (write — multipart + storage) |
 | mutations.js | "                | `http_req_failed{op:*}` rate < 2%                | SLO 1 + 3                             |
+
+### Calibrating the auth budgets — why latency is gated at ONE VU
+
+Note the `regime:latency` tag on every latency threshold above. It is
+load-bearing, and it is the reason the nightly load test spent 40
+consecutive runs red while every functional check passed.
+
+`auth.js` and `lists.js` each run **two scenarios, sequentially**:
+
+| Regime       | Profile                    | What it can measure            | What it gates |
+|--------------|----------------------------|--------------------------------|---------------|
+| `latency`    | 1 VU, no think-time        | service time — nothing queues  | the p95/p99 budgets |
+| `saturation` | ramping VUs + think-time   | capacity + behaviour under overload | error rate, check rate, a throughput floor |
+
+The split exists because **a latency threshold on a saturated system
+measures the arrival rate you chose, not the code.** A login is
+bcrypt-bound, and `bcryptjs` is pure JavaScript on the Node main
+thread, so one process serves one compare at a time and extra cores do
+not help:
+
+| Measurement                                   | Value        |
+|-----------------------------------------------|--------------|
+| serial `bcrypt.compare`, `BCRYPT_COST=12`     | ~405 ms      |
+| single-process login capacity                 | ~2.4 logins/s |
+| offered load at the nightly's 25 VUs          | ~25 logins/s |
+
+At ~10x capacity, Little's Law puts p95 at ≈ VUs / capacity ≈ 10s
+regardless of how fast the login path is — and the old single-scenario
+file asserted p95 < 1500ms against exactly that queue. Measured on CI:
+**p95 8.62s, 1554/1554 checks passing, zero HTTP failures.** The gate
+was ~7x outside the implementation's physical capacity and could never
+have gone green.
+
+Uncontended, the same login measures **p95 ~794ms** — comfortably
+inside the published budget. Same code, same build; the only
+difference is whether anything was queued in front of it.
+
+**Capacity floors are collapse detectors, not precision gates.**
+Throughput on a shared runner is not a precise instrument: two
+back-to-back runs on one dev box returned 176 then 113 completed
+logins purely because the host's load average climbed. A 2x throughput
+drop from a noisy neighbour is indistinguishable from a 2x code
+regression, so the floors sit at ~30% of the observed line and fire
+only on an unambiguous collapse. Precision belongs to the trend — the
+per-run figures land in the summary artifact.
+
+**When you add a latency threshold to a load scenario, tag it
+`regime:latency`.** An untagged latency threshold silently spans both
+regimes and re-creates this bug.
 
 Run cadence:
 - **PR**: CI smoke (mutations only, 10 VUs × 30s) — automatic.
