@@ -319,7 +319,24 @@ const providers: NextAuthOptions['providers'] = [
             // and dispatches the `signIn` + `jwt` callbacks. Returning null
             // collapses every failure reason into the same client-facing
             // `CredentialsSignin` error — the account-enumeration-safe shape.
-            if (!result.ok) return null;
+            if (!result.ok) {
+                // ONE reason is surfaced: the only one the user can act
+                // on. It is reachable only AFTER the password verified
+                // (credentials.ts:300 → :320), so it tells an attacker
+                // nothing they did not already know, and the login page
+                // can point the user at the resend-verification form
+                // instead of claiming their password is wrong.
+                //
+                // Everything else — unknown email, wrong password, rate
+                // limited — stays collapsed into NextAuth's generic
+                // CredentialsSignin, which is the account-enumeration-safe
+                // shape. Do not add reasons here without re-reading that
+                // argument.
+                if (result.reason === 'email_not_verified') {
+                    throw new Error('EmailNotVerified');
+                }
+                return null;
+            }
             return {
                 id: result.userId,
                 email: result.email,
