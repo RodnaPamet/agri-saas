@@ -61,6 +61,7 @@ function LoginForm() {
     const [loading, setLoading] = useState(false);
     const [resendEmail, setResendEmail] = useState('');
     const [resendState, setResendState] = useState<'idle' | 'sending' | 'sent'>('idle');
+    const [awaitingVerification, setAwaitingVerification] = useState<string | null>(null);
     // `null` = still resolving the provider list (nothing credentials-shaped
     // renders yet). `false` = server is OAuth-only, hide the form + divider
     // + register toggle. `true` = credentials is registered (dev, or prod
@@ -112,7 +113,16 @@ function LoginForm() {
                 });
                 const data = await res.json().catch(() => ({}));
                 if (!res.ok) throw new Error(extractErrorMessage(data?.error, t('registrationFailed')));
-                // After registration, sign in with credentials
+
+                // When verification is enforced, signing in here would fail
+                // with EmailNotVerified and show a login error to someone
+                // who just registered successfully. Stop and tell them to
+                // check their inbox instead.
+                if (data?.emailVerificationRequired) {
+                    setAwaitingVerification(email);
+                    return;
+                }
+                // Otherwise verification isn't enforced — sign in with credentials
             }
 
             // Sign in via NextAuth credentials provider
@@ -125,6 +135,7 @@ function LoginForm() {
 
             if (result?.error) {
                 const raw = extractErrorMessage(result.error, t('loginFailed'));
+                if (raw === 'EmailNotVerified') throw new Error(t('emailNotVerified'));
                 throw new Error(raw === 'CredentialsSignin' ? t('invalidCredentials') : raw);
             }
 
@@ -207,6 +218,26 @@ function LoginForm() {
                         </InlineNotice>
                     )}
 
+                    {awaitingVerification ? (
+                        <div className="space-y-default">
+                            <Heading level={3}>{t('checkInboxTitle')}</Heading>
+                            <p className="text-sm text-content-muted">
+                                {t('checkInboxBody', { email: awaitingVerification })}
+                            </p>
+                            <Button
+                                type="button"
+                                variant="secondary"
+                                className="w-full"
+                                onClick={() => {
+                                    setAwaitingVerification(null);
+                                    setMode('login');
+                                }}
+                            >
+                                {t('signInLink')}
+                            </Button>
+                        </div>
+                    ) : null}
+
                     {verifyStatus === 'verified' && (
                         <InlineNotice variant="success" className="mb-4" icon={null}>
                             {t('verifyVerified')}
@@ -275,7 +306,7 @@ function LoginForm() {
                     {/* null = provider list still resolving → reserve the
                         form's space (CLS fix); true = show it; false =
                         OAuth-only server, render nothing. */}
-                    {credentialsEnabled === null ? (
+                    {awaitingVerification ? null : credentialsEnabled === null ? (
                         <CredentialsFormSkeleton />
                     ) : credentialsEnabled ? (
                         <>
