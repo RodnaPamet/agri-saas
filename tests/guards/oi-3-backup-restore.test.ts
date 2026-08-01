@@ -162,8 +162,11 @@ describe('OI-3 — restore-test.yml wiring', () => {
     const wf = yaml.load(read(WORKFLOW)) as any;
 
     it('schedules monthly via cron', () => {
-        // `on:` parses as boolean true in YAML 1.1 — read both spellings.
-        const on = wf.on ?? wf[true];
+        // `on:` is a YAML 1.1 boolean, so some parsers key it as `true`
+        // rather than `'on'`. Object keys are strings at runtime, so the
+        // boolean key lands under `'true'` — which is also the only
+        // spelling tsc accepts as an index (TS2538 on a literal `true`).
+        const on = wf.on ?? (wf as Record<string, unknown>)['true'];
         const crons = (on.schedule ?? []).map((s: { cron: string }) => s.cron);
         expect(crons).toContain('0 4 1 * *');
     });
