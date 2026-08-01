@@ -15,13 +15,14 @@ import { issueEmailVerification } from '@/lib/auth/email-verification';
 import { hashPassword, validatePasswordPolicy } from '@/lib/auth/passwords';
 import { checkPasswordAgainstHIBP } from '@/lib/security/password-check';
 import { hashForLookup } from '@/lib/security/encryption';
-import { createTenantWithDek } from '@/lib/security/tenant-key-manager';
 import { withValidatedBody } from '@/lib/validation/route';
 import { AuthActionSchema } from '@/lib/schemas';
 import { env } from '@/env';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { logger } from '@/lib/observability/logger';
 import { jsonResponse } from '@/lib/api-response';
+import { appendAuditEntry } from '@/lib/audit/audit-writer';
+import type { PrismaClient, Role } from '@prisma/client';
 
 export const POST = withApiErrorHandling(withValidatedBody(AuthActionSchema, async (_req, _ctx, body) => {
     try {
@@ -89,49 +90,116 @@ async function handleRegister(body: any) {
         return jsonResponse({ error: 'Email already registered' }, { status: 409 });
     }
 
-    // Create tenant (Epic B.2: with a wrapped per-tenant DEK primed
-    // into the manager's cache — no unwrap round-trip on first use).
-    const slug = String(orgName).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') + '-' + Date.now().toString(36);
-    const tenant = await createTenantWithDek({
-        name: orgName,
-        slug,
-    });
+    // Slug is derived from the org name plus a base36 timestamp so two
+    // orgs with the same name don't collide.
+    const slug =
+        String(orgName)
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '-')
+            .replace(/(^-|-$)/g, '') +
+        '-' +
+        Date.now().toString(36);
 
-    // Create user (no role/tenantId — membership is sole authority)
+    // Hash BEFORE the transaction. bcrypt at cost 12 costs hundreds of
+    // milliseconds; holding a transaction open across it pins a pooled
+    // connection, and DATABASE_URL points at PgBouncer in transaction
+    // mode where that is expensive.
     const passwordHash = await hashPassword(password);
-    const user = await prisma.user.create({
-        data: {
-            email,
-            emailHash: hashForLookup(email),
-            passwordHash,
-            name,
-        },
-    });
 
-    // Create TenantMembership (sole source of role + tenant binding).
+    // One transaction for all four rows. Previously these were four
+    // unguarded sequential writes: a failure between the user insert and
+    // the membership insert left a real User with no membership —
+    // stranded on /no-tenant forever, and unable to retry because the
+    // email was now taken (the duplicate check above returns 409).
     //
-    // OWNER, not ADMIN. Epic 1 made OWNER strictly superior — it alone
-    // carries `admin.tenant_lifecycle` and `admin.owner_management`
-    // (see src/lib/permissions.ts). A self-service tenant created with
-    // an ADMIN-only member would be born with ZERO owners, so nobody
-    // could ever transfer ownership, rotate the tenant DEK, or delete
-    // the workspace. The `tenant_membership_last_owner_guard` trigger
-    // cannot catch this: it fires on UPDATE/DELETE that would drop a
-    // tenant to zero owners, and is blind to one that starts there.
-    const membership = await prisma.tenantMembership.create({
-        data: {
+    // createTenantWithDek cannot join a transaction (it uses the
+    // singleton client), so we create the tenant row on `tx` with a
+    // freshly wrapped DEK — the same approach createTenantWithOwner
+    // takes in src/app-layer/usecases/tenant-lifecycle.ts. The DEK cache
+    // is not primed; it unwraps on first use.
+    const { generateAndWrapDek } = await import('@/lib/security/tenant-keys');
+    const { wrapped } = generateAndWrapDek();
+
+    let created!: {
+        tenantId: string;
+        tenantSlug: string;
+        tenantName: string;
+        userId: string;
+        userEmail: string;
+        userName: string | null;
+        role: Role;
+    };
+
+    await (prisma as PrismaClient).$transaction(async (tx) => {
+        // OWNER, not ADMIN. Epic 1 made OWNER strictly superior — it alone
+        // carries `admin.tenant_lifecycle` and `admin.owner_management`
+        // (see src/lib/permissions.ts). A self-service tenant created with
+        // an ADMIN-only member would be born with ZERO owners, so nobody
+        // could ever transfer ownership, rotate the tenant DEK, or delete
+        // the workspace. The `tenant_membership_last_owner_guard` trigger
+        // cannot catch this: it fires on UPDATE/DELETE that would drop a
+        // tenant to zero owners, and is blind to one that starts there.
+        const tenant = await tx.tenant.create({
+            data: { name: orgName, slug, encryptedDek: wrapped },
+            select: { id: true, slug: true, name: true },
+        });
+
+        const user = await tx.user.create({
+            data: {
+                email,
+                emailHash: hashForLookup(email),
+                passwordHash,
+                name,
+            },
+            select: { id: true, email: true, name: true },
+        });
+
+        const membership = await tx.tenantMembership.create({
+            data: {
+                tenantId: tenant.id,
+                userId: user.id,
+                role: 'OWNER',
+                status: 'ACTIVE',
+            },
+            select: { role: true },
+        });
+
+        await tx.tenantOnboarding.create({ data: { tenantId: tenant.id } });
+
+        created = {
             tenantId: tenant.id,
+            tenantSlug: tenant.slug,
+            tenantName: tenant.name,
             userId: user.id,
-            role: 'OWNER',
-        },
+            userEmail: user.email,
+            userName: user.name,
+            role: membership.role,
+        };
     });
 
-    // Fire the verification email. Non-blocking in intent — the issue
-    // path writes the token row in a transaction and then attempts to
-    // send the email; mailer failures are swallowed inside
-    // issueEmailVerification so the register response is not held up
-    // by SMTP latency or outages.
-    await issueEmailVerification(email, { userId: user.id }).catch(() => undefined);
+    // Audit AFTER commit so the data is durable before the hash chain
+    // extends. actorType is USER, not PLATFORM_ADMIN — this is
+    // self-service, and conflating the two would corrupt the audit story
+    // for anyone reviewing tenant provenance.
+    await appendAuditEntry({
+        tenantId: created.tenantId,
+        userId: created.userId,
+        actorType: 'USER',
+        entity: 'Tenant',
+        entityId: created.tenantId,
+        action: 'TENANT_CREATED',
+        detailsJson: {
+            category: 'tenant',
+            slug: created.tenantSlug,
+            name: created.tenantName,
+            ownerUserId: created.userId,
+            source: 'self_service_registration',
+        },
+    }).catch(() => undefined);
+
+    // Fire the verification email. Mailer failures are swallowed inside
+    // issueEmailVerification so SMTP latency never holds up the response.
+    await issueEmailVerification(email, { userId: created.userId }).catch(() => undefined);
 
     // ── DEPRECATED: legacy `token` cookie (see docs/auth.md → "Legacy
     //    `token` cookie — deprecated") ────────────────────────────────
@@ -150,20 +218,25 @@ async function handleRegister(body: any) {
     // If you find a real external consumer DURING this window: open
     // an issue with the consumer details before the delete lands.
     const token = signToken({
-        userId: user.id,
-        tenantId: tenant.id,
-        email: user.email,
-        role: membership.role,
+        userId: created.userId,
+        tenantId: created.tenantId,
+        email: created.userEmail,
+        role: created.role,
     });
 
     const response = jsonResponse({
-        user: { id: user.id, email: user.email, name: user.name, role: membership.role },
+        user: {
+            id: created.userId,
+            email: created.userEmail,
+            name: created.userName,
+            role: created.role,
+        },
         // GAP-23: slug exposed alongside id/name so callers (notably
         // E2E test fixtures via `createIsolatedTenant`) can navigate
         // to `/t/<slug>/...` without having to look the slug up
         // post-registration. Slug is a public routing identifier,
         // not sensitive — it appears in every authenticated URL.
-        tenant: { id: tenant.id, name: tenant.name, slug: tenant.slug },
+        tenant: { id: created.tenantId, name: created.tenantName, slug: created.tenantSlug },
         emailVerificationRequired: env.AUTH_REQUIRE_EMAIL_VERIFICATION === '1',
     });
 

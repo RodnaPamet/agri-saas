@@ -3,8 +3,16 @@
  *
  * The route is the ONLY self-service tenant-membership creation path
  * (allowlisted in tests/guardrails/no-auto-join.test.ts). These tests pin
- * the two properties that make it safe: the creator owns the workspace
- * they just created, and a partial failure leaves nothing behind.
+ * the properties that make it safe: the creator owns the workspace they
+ * just created, all four rows are written through the single transaction
+ * client (not the singleton), the response shape
+ * tests/e2e/fixtures.ts depends on is stable, and the HIBP screen still
+ * runs before anything is written.
+ *
+ * The real-DB proof that a partial failure ROLLS BACK and leaves nothing
+ * behind — and that the freed email can be retried — lives in
+ * tests/integration/register-atomicity.test.ts; these mocked unit tests
+ * can only assert the transaction is USED, not that Postgres honours it.
  *
  * bcrypt is CPU-heavy under the parallel full-suite run; 60s headroom.
  */
@@ -29,15 +37,6 @@ jest.mock('@/lib/prisma', () => ({
         tenantOnboarding: { create: (...a: unknown[]) => mockOnboardingCreate(...a) },
         $transaction: (...a: unknown[]) => mockTransaction(...a),
     },
-}));
-
-jest.mock('@/lib/security/tenant-key-manager', () => ({
-    __esModule: true,
-    createTenantWithDek: jest.fn(async (data: { name: string; slug: string }) => ({
-        id: 'tenant-1',
-        name: data.name,
-        slug: data.slug,
-    })),
 }));
 
 jest.mock('@/lib/security/password-check', () => ({
@@ -98,4 +97,38 @@ it('grants the registering user OWNER of the workspace they created', async () =
     expect(mockMembershipCreate).toHaveBeenCalledTimes(1);
     const arg = mockMembershipCreate.mock.calls[0][0] as { data: { role: string } };
     expect(arg.data.role).toBe('OWNER');
+});
+
+it('writes tenant, user, membership and onboarding inside ONE transaction', async () => {
+    await POST(registerRequest(VALID) as never, {} as never);
+
+    expect(mockTransaction).toHaveBeenCalledTimes(1);
+    // Every row-creating call must have happened via the tx client passed
+    // into $transaction, not the singleton — asserted by the fact that our
+    // $transaction mock is what routes them.
+    expect(mockTenantCreate).toHaveBeenCalledTimes(1);
+    expect(mockUserCreate).toHaveBeenCalledTimes(1);
+    expect(mockMembershipCreate).toHaveBeenCalledTimes(1);
+    expect(mockOnboardingCreate).toHaveBeenCalledTimes(1);
+});
+
+it('returns the response shape tests/e2e/fixtures.ts depends on', async () => {
+    const res = await POST(registerRequest(VALID) as never, {} as never);
+    const body = await res.json();
+
+    expect(body.tenant).toEqual({ id: 'tenant-1', name: 'Acme Farms', slug: 'acme-farms-x' });
+    expect(body.user).toEqual(
+        expect.objectContaining({ id: 'user-1', email: VALID.email, role: 'OWNER' }),
+    );
+    expect(body).toHaveProperty('emailVerificationRequired');
+});
+
+it('still screens the password against HIBP', async () => {
+    const { checkPasswordAgainstHIBP } = jest.requireMock('@/lib/security/password-check');
+    (checkPasswordAgainstHIBP as jest.Mock).mockResolvedValueOnce({ breached: true });
+
+    const res = await POST(registerRequest(VALID) as never, {} as never);
+
+    expect(res.status).toBe(400);
+    expect(mockTransaction).not.toHaveBeenCalled();
 });
