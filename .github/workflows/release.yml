@@ -78,13 +78,29 @@ jobs:
         # CI hardening — retry npm ci so a flaky postinstall binary
         # download (e.g. onnxruntime-node ETIMEDOUT from an external
         # CDN) doesn't fail the job.
+        #
+        # `timeout` is load-bearing, not decoration. Without a
+        # per-attempt cap this loop only re-enters when npm ci RETURNS,
+        # so it defends against a fast failure but not against a hang.
+        # On 2026-07-31 npm ci stalled silently for ~8 min here, ate the
+        # whole `timeout-minutes` budget, and attempts 2 and 3 never ran
+        # — the release for #463 was simply never cut. 150s is ~3x the
+        # observed normal install (41-60s); -k KILLs a child that
+        # ignores TERM (postinstall scripts do). Guarded by
+        # tests/guardrails/ci-retry-loop-timeout.test.ts.
         run: |
           npm config set fetch-retries 5
           npm config set fetch-retry-maxtimeout 120000
           npm config set fetch-timeout 300000
           for attempt in 1 2 3; do
-            if npm ci; then exit 0; fi
-            echo "::warning::npm ci failed (attempt ${attempt}/3) — retrying"
+            status=0
+            timeout -k 10 150 npm ci || status=$?
+            if [ "$status" -eq 0 ]; then exit 0; fi
+            if [ "$status" -eq 124 ]; then
+              echo "::warning::npm ci TIMED OUT after 150s (attempt ${attempt}/3) — retrying"
+            else
+              echo "::warning::npm ci failed with exit ${status} (attempt ${attempt}/3) — retrying"
+            fi
             sleep 15
           done
           exit 1

@@ -1043,7 +1043,12 @@ jobs:
   security:
     name: Security
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    # 10, not 5: the install step retries up to 3x at 150s each, so the
+    # worst case is ~8 min of install + ~40s of scanning. At 5 the job
+    # died before the second attempt could finish, which defeated the
+    # retry it was meant to backstop. Normal runtime is 1.4-1.7 min —
+    # this bound is a runaway backstop, not a performance budget.
+    timeout-minutes: 10
 
     steps:
       - uses: actions/checkout@v7
@@ -1066,13 +1071,30 @@ jobs:
         # download (e.g. onnxruntime-node ETIMEDOUT from an external
         # CDN) doesn't fail the job. npm ci wipes node_modules each run,
         # so retrying is clean.
+        #
+        # `timeout` is load-bearing, not decoration. Without a
+        # per-attempt cap this loop only re-enters when npm ci RETURNS,
+        # so it defends against a fast failure but not against a hang —
+        # which is what actually happened in release.yml on 2026-07-31
+        # (npm ci stalled ~8 min, ate the job budget, attempts 2 and 3
+        # never ran). Security is a REQUIRED check, so the same stall
+        # here fails every PR. 150s is ~3x the observed normal install
+        # (41-60s); -k KILLs a child that ignores TERM (postinstall
+        # scripts do). Guarded by
+        # tests/guardrails/ci-retry-loop-timeout.test.ts.
         run: |
           npm config set fetch-retries 5
           npm config set fetch-retry-maxtimeout 120000
           npm config set fetch-timeout 300000
           for attempt in 1 2 3; do
-            if npm ci; then exit 0; fi
-            echo "::warning::npm ci failed (attempt ${attempt}/3) — retrying"
+            status=0
+            timeout -k 10 150 npm ci || status=$?
+            if [ "$status" -eq 0 ]; then exit 0; fi
+            if [ "$status" -eq 124 ]; then
+              echo "::warning::npm ci TIMED OUT after 150s (attempt ${attempt}/3) — retrying"
+            else
+              echo "::warning::npm ci failed with exit ${status} (attempt ${attempt}/3) — retrying"
+            fi
             sleep 15
           done
           exit 1
