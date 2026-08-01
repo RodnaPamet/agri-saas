@@ -18,6 +18,11 @@
  */
 jest.setTimeout(60_000);
 
+// tx-scoped spies: these stand in for the transaction client's model
+// delegates, and are DISTINCT jest.fn() instances from the singleton's
+// (see below) — that distinctness is what lets "writes ... inside ONE
+// transaction" actually prove which client did the writing, instead of
+// two call sites sharing one spy and looking identical either way.
 const mockUserCreate = jest.fn();
 const mockUserFindUnique = jest.fn();
 const mockMembershipCreate = jest.fn();
@@ -25,16 +30,36 @@ const mockOnboardingCreate = jest.fn();
 const mockTenantCreate = jest.fn();
 const mockTransaction = jest.fn();
 
+// Singleton-scoped `create` spies. Each throws unconditionally: the route
+// must never create Tenant/User/TenantMembership/TenantOnboarding rows
+// directly on the singleton client — those four rows belong inside the
+// transaction. A route that (by bug or regression) wrote one of them via
+// `prisma.<model>.create` instead of `tx.<model>.create` throws here,
+// which the route's own try/catch turns into a 500 — so the "ONE
+// transaction" test's `res.status` assertion catches the bypass instead
+// of silently passing because the same spy would have recorded the call
+// either way.
+const throwIfCalledOnSingleton = (model: string) =>
+    jest.fn((..._args: unknown[]): never => {
+        throw new Error(
+            `${model}.create was called on the SINGLETON prisma client, not the transaction's tx client`,
+        );
+    });
+const mockSingletonTenantCreate = throwIfCalledOnSingleton('tenant');
+const mockSingletonUserCreate = throwIfCalledOnSingleton('user');
+const mockSingletonMembershipCreate = throwIfCalledOnSingleton('tenantMembership');
+const mockSingletonOnboardingCreate = throwIfCalledOnSingleton('tenantOnboarding');
+
 jest.mock('@/lib/prisma', () => ({
     __esModule: true,
     default: {
         user: {
             findUnique: (...a: unknown[]) => mockUserFindUnique(...a),
-            create: (...a: unknown[]) => mockUserCreate(...a),
+            create: (...a: unknown[]) => mockSingletonUserCreate(...a),
         },
-        tenant: { create: (...a: unknown[]) => mockTenantCreate(...a) },
-        tenantMembership: { create: (...a: unknown[]) => mockMembershipCreate(...a) },
-        tenantOnboarding: { create: (...a: unknown[]) => mockOnboardingCreate(...a) },
+        tenant: { create: (...a: unknown[]) => mockSingletonTenantCreate(...a) },
+        tenantMembership: { create: (...a: unknown[]) => mockSingletonMembershipCreate(...a) },
+        tenantOnboarding: { create: (...a: unknown[]) => mockSingletonOnboardingCreate(...a) },
         $transaction: (...a: unknown[]) => mockTransaction(...a),
     },
 }));
@@ -79,7 +104,9 @@ beforeEach(() => {
     mockMembershipCreate.mockResolvedValue({ role: 'OWNER' });
     mockTenantCreate.mockResolvedValue({ id: 'tenant-1', slug: 'acme-farms-x', name: 'Acme Farms' });
     mockOnboardingCreate.mockResolvedValue({});
-    // Default: run the transaction callback against the mocked client.
+    // Default: run the transaction callback against a tx client built
+    // from the tx-scoped spies above (distinct from the singleton's,
+    // which throw — see the mock setup at the top of this file).
     mockTransaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) =>
         fn({
             user: { create: mockUserCreate },
@@ -100,12 +127,19 @@ it('grants the registering user OWNER of the workspace they created', async () =
 });
 
 it('writes tenant, user, membership and onboarding inside ONE transaction', async () => {
-    await POST(registerRequest(VALID) as never, {} as never);
+    const res = await POST(registerRequest(VALID) as never, {} as never);
 
+    // A route that bypassed the transaction and wrote a row via the
+    // singleton client would hit `throwIfCalledOnSingleton`, which the
+    // route's own try/catch turns into a 500 — so this assertion is what
+    // actually catches a bypass; the call-count assertions below would
+    // stay green even on a 500 (zero tx calls also satisfies "not >1").
+    expect(res.status).toBe(200);
     expect(mockTransaction).toHaveBeenCalledTimes(1);
     // Every row-creating call must have happened via the tx client passed
-    // into $transaction, not the singleton — asserted by the fact that our
-    // $transaction mock is what routes them.
+    // into $transaction: these are DISTINCT jest.fn()s from the
+    // singleton's create spies (which throw), so a stray direct write
+    // would surface as the 500 above, not a passing count here.
     expect(mockTenantCreate).toHaveBeenCalledTimes(1);
     expect(mockUserCreate).toHaveBeenCalledTimes(1);
     expect(mockMembershipCreate).toHaveBeenCalledTimes(1);

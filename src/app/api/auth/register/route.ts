@@ -181,6 +181,15 @@ async function handleRegister(body: any) {
     // extends. actorType is USER, not PLATFORM_ADMIN — this is
     // self-service, and conflating the two would corrupt the audit story
     // for anyone reviewing tenant provenance.
+    //
+    // The `.catch` here is deliberate, not an oversight: the transaction
+    // has already committed and the user now has a real workspace, so
+    // failing the response over a lost audit write would strand them
+    // with an unusable UI for a problem they can't fix. But the audit
+    // trail is hash-chained and security-relevant — a TENANT_CREATED
+    // entry that silently never lands breaks the provenance story for
+    // this tenant with no operator visibility. Log it loudly instead of
+    // swallowing it.
     await appendAuditEntry({
         tenantId: created.tenantId,
         userId: created.userId,
@@ -195,7 +204,14 @@ async function handleRegister(body: any) {
             ownerUserId: created.userId,
             source: 'self_service_registration',
         },
-    }).catch(() => undefined);
+    }).catch((error) => {
+        logger.error('register.audit_append_failed', {
+            component: 'auth',
+            tenantId: created.tenantId,
+            userId: created.userId,
+            error: error instanceof Error ? error.message : String(error),
+        });
+    });
 
     // Fire the verification email. Mailer failures are swallowed inside
     // issueEmailVerification so SMTP latency never holds up the response.
