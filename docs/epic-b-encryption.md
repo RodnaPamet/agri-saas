@@ -81,7 +81,17 @@ The system tolerates mixed state at every stage. A given environment can sit at 
 
   3. Ship the tenant-DEK layer (Epic B.2):
         Tenant.encryptedDek column, tenant-keys.ts, tenant-key-manager.ts
-        createTenantWithDek wired into the register route
+        `/api/auth/register` generates + wraps a DEK inline via
+        `generateAndWrapDek()` and writes it on the same `tx.tenant.create`
+        call that opens the atomic registration transaction — it cannot
+        call `createTenantWithDek` directly because that helper uses the
+        singleton Prisma client and can't join a transaction. (This
+        mirrors `createTenantWithOwner` in
+        `src/app-layer/usecases/tenant-lifecycle.ts`, the platform-admin
+        bootstrap path, which replicates the same `generateAndWrapDek()` +
+        `tx.tenant.create` pattern for the same reason.) The DEK cache is
+        not primed at signup; it unwraps lazily on first use, same as any
+        other tenant.
         middleware emits v2 once a tenant context carries a DEK.
 
   4. Backfill tenant DEKs for any tenants that existed before step 3:

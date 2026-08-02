@@ -14,7 +14,7 @@ import { authOptions } from '@/auth';
 type AuthorizeFn = (creds: Record<string, string>) => Promise<unknown>;
 
 function getAuthorize(): AuthorizeFn {
-    const provider = (authOptions.providers as Array<Record<string, unknown>>).find(
+    const provider = (authOptions.providers as unknown as Array<Record<string, unknown>>).find(
         (p) => p.id === 'credentials',
     );
     if (!provider) throw new Error('credentials provider not registered');

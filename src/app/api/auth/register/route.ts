@@ -226,23 +226,27 @@ async function handleRegister(body: any) {
     //
     // This cookie predates the NextAuth migration. Today's product
     // login flow uses the NextAuth `__Secure-authjs.session-token`
-    // cookie exclusively; nothing in the codebase reads `token` (zero
-    // consumers of `verifyToken`, no `cookies.get('token')` anywhere).
-    // It's kept here for one more release in case an external
-    // integration still relies on it. The next-release PR will:
+    // cookie exclusively. It is NOT unread, though: `getSession()` in
+    // `src/lib/auth.ts` falls back to `cookies().get('token')` when no
+    // Auth.js session is present, so this remains a live legacy
+    // authentication path, not dead code. It's kept here for one more
+    // release in case an external integration still relies on it. The
+    // next-release PR will:
     //   1. Drop this block.
     //   2. Drop `signToken` + `verifyToken` exports from `@/lib/auth`.
-    //   3. Drop the cookie-clear in `src/app/api/auth/logout/route.ts`.
-    //   4. Add a structural ratchet rejecting reintroduction.
+    //   3. Drop the `getSession()` legacy-cookie fallback.
+    //   4. Drop the cookie-clear in `src/app/api/auth/logout/route.ts`.
+    //   5. Add a structural ratchet rejecting reintroduction.
     //
     // If you find a real external consumer DURING this window: open
     // an issue with the consumer details before the delete lands.
-    const token = signToken({
-        userId: created.userId,
-        tenantId: created.tenantId,
-        email: created.userEmail,
-        role: created.role,
-    });
+    //
+    // Skip minting it at all when email verification is required: this
+    // cookie is a 7-day OWNER credential, and handing one to a registrant
+    // who hasn't confirmed their address yet would undercut the whole
+    // point of gating sign-in on `EmailNotVerified`. Same condition the
+    // response's `emailVerificationRequired` field already uses.
+    const requireEmailVerification = env.AUTH_REQUIRE_EMAIL_VERIFICATION === '1';
 
     const response = jsonResponse({
         user: {
@@ -257,16 +261,25 @@ async function handleRegister(body: any) {
         // post-registration. Slug is a public routing identifier,
         // not sensitive — it appears in every authenticated URL.
         tenant: { id: created.tenantId, name: created.tenantName, slug: created.tenantSlug },
-        emailVerificationRequired: env.AUTH_REQUIRE_EMAIL_VERIFICATION === '1',
+        emailVerificationRequired: requireEmailVerification,
     });
 
-    response.cookies.set('token', token, {
-        httpOnly: true,
-        secure: env.NODE_ENV === 'production',
-        sameSite: 'lax',
-        maxAge: 60 * 60 * 24 * 7, // 7 days
-        path: '/',
-    });
+    if (!requireEmailVerification) {
+        const token = signToken({
+            userId: created.userId,
+            tenantId: created.tenantId,
+            email: created.userEmail,
+            role: created.role,
+        });
+
+        response.cookies.set('token', token, {
+            httpOnly: true,
+            secure: env.NODE_ENV === 'production',
+            sameSite: 'lax',
+            maxAge: 60 * 60 * 24 * 7, // 7 days
+            path: '/',
+        });
+    }
 
     return response;
 }

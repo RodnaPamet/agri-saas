@@ -627,7 +627,13 @@ token is burnt on email mismatch.
 (b) `createTenantWithOwner` in `src/app-layer/usecases/tenant-lifecycle.ts` —
 platform-admin tenant bootstrap, gated by `PLATFORM_ADMIN_API_KEY`
 (constant-time compared via `verifyPlatformApiKey`).
-(c) `/api/auth/register` — credentials self-service signup (AUTH_TEST_MODE-gated).
+(c) `/api/auth/register` — credentials self-service signup. The
+`Credentials()` provider is registered unconditionally in `src/auth.ts`
+and the route itself has no test-mode gate; what actually hides the
+signup UI in production is `AUTH_CREDENTIALS_UI_HIDDEN`, a request-time
+flag read by `src/app/api/auth/ui-config/route.ts` that the login page
+uses to hide the email/password form while leaving the backend route
+reachable for API / tests / future admin tooling.
 Plus the legitimate SSO + SCIM provisioning paths. Every site is
 allowlisted in `tests/guardrails/no-auto-join.test.ts` with a
 one-line reason; a fourth-not-listed site fails CI.
