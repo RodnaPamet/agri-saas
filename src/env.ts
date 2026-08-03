@@ -233,6 +233,15 @@ export const env = createEnv({
         EC_AGRIFOOD_BASE_URL: z.string().url().optional(),
         ALPHA_VANTAGE_API_KEY: z.string().optional(),
 
+        // ── Trends → News tab (feat/trends-news) ──
+        // Comma-separated RSS/Atom feed URLs the `news-pull` job aggregates
+        // into the GLOBAL MarketNewsItem cache. OPTIONAL + SERVER-ONLY: when
+        // UNSET the whole News tab is hidden (the page computes a
+        // `newsConfigured` boolean server-side; the URLs are NEVER exposed to
+        // the client). Verified working BG feeds: https://www.agro.bg/rss and
+        // https://agrozona.bg/feed. Mirrors the SOIL_BASE_URL pattern.
+        MARKET_NEWS_FEEDS: z.string().optional(),
+
         // ── КАИС cadastre OpenData import (feat/cadastre-opendata-import) ──
         // Base URL of the Bulgarian cadastre (АГКК) OpenData portal
         // (https://kais.cadastre.bg). SERVER-ONLY + OPTIONAL: when unset the
@@ -559,6 +568,7 @@ export const env = createEnv({
         SOIL_BASE_URL: process.env.SOIL_BASE_URL,
         EC_AGRIFOOD_BASE_URL: process.env.EC_AGRIFOOD_BASE_URL,
         ALPHA_VANTAGE_API_KEY: process.env.ALPHA_VANTAGE_API_KEY,
+        MARKET_NEWS_FEEDS: process.env.MARKET_NEWS_FEEDS,
         CADASTRE_OPENDATA_INDEX_URL: process.env.CADASTRE_OPENDATA_INDEX_URL,
         CADASTRE_WMS_URL: process.env.CADASTRE_WMS_URL,
         CADASTRE_WMS_LAYERS: process.env.CADASTRE_WMS_LAYERS,

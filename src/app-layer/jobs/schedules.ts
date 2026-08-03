@@ -140,6 +140,15 @@ export const SCHEDULED_JOBS: ScheduleDefinition[] = [
         defaultPayload: {},
     },
     {
+        // Every 2 hours — news moves faster than prices but capping the
+        // cadence keeps polite pressure on the source feeds (per-feed error
+        // isolation + urlHash-idempotent upserts make a re-run cheap).
+        name: 'news-pull',
+        pattern: '15 */2 * * *',   // every 2 hours, at :15
+        description: 'Aggregate agri-news headlines from the configured RSS/Atom feeds (MARKET_NEWS_FEEDS) into the global market-news cache',
+        defaultPayload: {},
+    },
+    {
         name: 'daily-evidence-expiry',
         pattern: '0 6 * * *',     // daily at 06:00 UTC
         description: 'Sweep expiring evidence at 30/7/1 day thresholds + flush outbox',

@@ -75,7 +75,7 @@ describe('Infrastructure Regression Guards', () => {
         });
 
         test('exactly 25 scheduled jobs exist', () => {
-            expect(SCHEDULED_JOBS).toHaveLength(26);
+            expect(SCHEDULED_JOBS).toHaveLength(27);
         });
 
         test('scheduled job names match expected set', () => {
@@ -112,6 +112,9 @@ describe('Infrastructure Regression Guards', () => {
                 // Trends — weekly market-price backbone pull (EC AGRI-food +
                 // Alpha Vantage + own-listings median) into the global cache.
                 'market-prices-pull',
+                // Trends → News tab — ~2h agri-news RSS/Atom pull into the
+                // global MarketNewsItem cache (env-gated by MARKET_NEWS_FEEDS).
+                'news-pull',
                 'notification-dispatch',
                 'policy-review-reminder',
                 // Data-integrity — daily cross-tenant stock-ledger

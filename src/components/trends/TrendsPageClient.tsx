@@ -19,7 +19,12 @@ import { NewsTab } from './NewsTab';
 
 type TrendsTab = 'prices' | 'news';
 
-export function TrendsPageClient() {
+export function TrendsPageClient({
+    newsConfigured = false,
+}: {
+    /** Server-computed: is MARKET_NEWS_FEEDS set? Drives the News unconfigured hint. */
+    newsConfigured?: boolean;
+}) {
     const t = useTranslations('trends');
     const [tab, setTab] = useState<TrendsTab>('prices');
 
@@ -41,7 +46,7 @@ export function TrendsPageClient() {
                 />
             </div>
 
-            {tab === 'prices' ? <PricesTab /> : <NewsTab />}
+            {tab === 'prices' ? <PricesTab /> : <NewsTab newsConfigured={newsConfigured} />}
         </div>
     );
 }

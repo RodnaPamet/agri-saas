@@ -74,3 +74,35 @@ model MarketPricePoint {
   /// FK index (schema-index Layer B).
   @@index([seriesId])
 }
+
+/// GLOBAL cache of one aggregated agri-news item (NO tenantId — public
+/// news headlines pulled from third-party RSS/Atom feeds, identical for
+/// every tenant, exactly like `MarketPriceSeries` / `SoilSample`). The
+/// `news-pull` job fetches each configured feed, sanitises title + snippet
+/// (Epic C.5), and upserts on `urlHash` so a re-run never duplicates a row.
+///
+/// LEGAL: we store + render ONLY title + short snippet (capped ~300 chars)
+/// + source + link, and always link OUT to the publisher. NO full-text
+/// republication, NO scraping of paywalled/partner content.
+model MarketNewsItem {
+  id          String   @id @default(cuid())
+  /// Source attribution — the feed channel title (e.g. "АГРО.БГ"), else host.
+  feedSource  String
+  /// Sanitised headline (plain text — tags/entities stripped on write).
+  title       String
+  /// Sanitised short excerpt, capped ~300 chars. May be empty (feeds omit it).
+  snippet     String
+  /// Absolute article URL at the publisher (link-out target).
+  url         String
+  /// SHA-256 of `url` — the idempotent dedupe key for upsert.
+  urlHash     String   @unique
+  /// Optional thumbnail URL (RSS <enclosure>/media, Atom link rel=enclosure).
+  imageUrl    String?
+  /// Publication timestamp parsed from the feed (RFC-822 / ISO-8601).
+  publishedAt DateTime
+  /// When this row was last (re)fetched.
+  fetchedAt   DateTime @default(now())
+
+  /// Newest-first list read + retention prune both sort by publishedAt.
+  @@index([publishedAt])
+}

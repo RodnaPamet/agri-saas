@@ -158,6 +158,10 @@ export const CACHE_KEYS = {
     trends: {
         prices: (commodity: string, range: string) =>
             `/trends/prices?commodity=${commodity}&range=${range}` as const,
+        // Newest-first agri-news feed. `head` is the first page; `loadMore`
+        // pages forward via the raw `?cursor=` path directly (not through the
+        // registry), so only the head key lives here.
+        news: () => '/trends/news' as const,
     },
 
     // ─── Workflow automation (Automation Epics 1–10) ─────────────

@@ -48,4 +48,27 @@ test.describe('Trends page @mobile', () => {
 
         await expectNoDrift(page);
     });
+
+    test('switches to the News tab and renders a tappable article card', async ({ page }) => {
+        const slug = await loginAndGetTenant(page);
+        await safeGoto(page, `/t/${slug}/trends`);
+        await settle(page);
+
+        // Switch to the News tab.
+        const newsTab = page.getByRole('tab', { name: /news|новини/i });
+        await newsTab.click();
+        await expect(newsTab).toHaveAttribute('aria-selected', 'true');
+        await settle(page);
+
+        // The seed provides a few global MarketNewsItem rows, so the feed
+        // renders. A card links OUT to the publisher in a new tab.
+        const main = page.getByRole('main');
+        const firstCard = main.locator('[data-testid="news-card"]').first();
+        await expect(firstCard).toBeVisible();
+        const link = firstCard.getByRole('link').first();
+        await expect(link).toHaveAttribute('target', '_blank');
+        await expect(link).toHaveAttribute('rel', /noopener/);
+
+        await expectNoDrift(page);
+    });
 });

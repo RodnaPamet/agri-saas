@@ -574,6 +574,14 @@ export interface MarketPricesPullPayload {
 }
 
 /**
+ * Agri-news backbone — periodic pull of the configured RSS/Atom feeds
+ * (`MARKET_NEWS_FEEDS`) into the GLOBAL MarketNewsItem cache. No payload
+ * fields: the whole run is env-driven (feed list) and the News tab is
+ * hidden when the env is unset. Idempotent (upsert on urlHash).
+ */
+export type NewsPullPayload = Record<string, never>;
+
+/**
  * Spatial-upload abuse hardening — off-thread parcel-boundary import.
  *
  * The HTTP layer stages the uploaded shapefile/KML/GeoJSON to storage
@@ -734,6 +742,7 @@ export interface JobPayloadMap {
     'exchange-expiry-sweep': ExchangeExpirySweepPayload;
     'soil-fetch': SoilFetchPayload;
     'market-prices-pull': MarketPricesPullPayload;
+    'news-pull': NewsPullPayload;
 }
 
 /** Union of all valid job names */
@@ -936,6 +945,15 @@ export const JOB_DEFAULTS: Record<JobName, {
         // Weekly/daily market-price pull. One retry on a transient network/DB
         // blip; the Series/Point upserts are keyed on their natural unique
         // constraints so a re-run is fully idempotent.
+        attempts: 2,
+        backoff: { type: 'exponential', delay: 10000 },
+        removeOnComplete: 50,
+        removeOnFail: 100,
+    },
+    'news-pull': {
+        // ~2h agri-news RSS/Atom pull. One retry on a transient network/DB
+        // blip; upserts keyed on urlHash so a re-run is fully idempotent and
+        // per-feed error isolation means one dead feed never fails the job.
         attempts: 2,
         backoff: { type: 'exponential', delay: 10000 },
         removeOnComplete: 50,

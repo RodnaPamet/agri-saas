@@ -69,7 +69,10 @@ describe('Executor Registry — tenantId propagation audit', () => {
             // market-prices-pull writes GLOBAL, tenant-agnostic price cache
             // tables (no tenantId, like SoilSample) + reads global Exchange
             // listings — no tenant axis by design.
-            if (['health-check', 'sync-pull', 'schedule-trigger-sweep', 'sharepoint-delta-sync-dispatch', 'sharepoint-subscription-renew', 'risk-appetite-monitor', 'risk-snapshot', 'report-delivery', 'exchange-expiry-sweep', 'market-prices-pull'].includes(jobName)) continue;
+            // news-pull writes the GLOBAL, tenant-agnostic MarketNewsItem cache
+            // (no tenantId, like MarketPriceSeries/SoilSample) from env-configured
+            // RSS/Atom feeds — no tenant axis by design.
+            if (['health-check', 'sync-pull', 'schedule-trigger-sweep', 'sharepoint-delta-sync-dispatch', 'sharepoint-subscription-renew', 'risk-appetite-monitor', 'risk-snapshot', 'report-delivery', 'exchange-expiry-sweep', 'market-prices-pull', 'news-pull'].includes(jobName)) continue;
 
             // If the parameter is named _payload, it means tenantId is being ignored
             if (paramName.startsWith('_')) {

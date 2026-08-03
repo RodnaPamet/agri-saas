@@ -1,7 +1,7 @@
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import bcrypt from 'bcryptjs';
-import { randomUUID } from 'crypto';
+import { randomUUID, createHash } from 'crypto';
 import { createTenantWithOwner } from '@/app-layer/usecases/tenant-lifecycle';
 import { hashForLookup } from '@/lib/security/encryption';
 import { seedDefaultOrgDashboard } from '@/app-layer/usecases/org-dashboard-presets';
@@ -1030,6 +1030,51 @@ async function main() {
         }
     } catch (err) {
         console.warn('⚠️  Agriculture demo seed skipped:', err instanceof Error ? err.message : err);
+    }
+
+    // ─── Trends → News tab (global MarketNewsItem cache) ───
+    // A few demo agri-news headlines so the News feed renders in dev + e2e.
+    // GLOBAL table (no tenantId) — idempotent upsert on urlHash. In prod the
+    // `news-pull` job populates this from MARKET_NEWS_FEEDS.
+    try {
+        const now = Date.now();
+        const demoNews = [
+            {
+                feedSource: 'АГРО.БГ',
+                title: 'Пшеницата поскъпва на международните пазари',
+                snippet: 'Цените на хлебната пшеница се повишиха тази седмица на фона на по-слаба реколта в основни износителки.',
+                url: 'https://www.agro.bg/news/demo-wheat-prices',
+                imageUrl: null,
+                publishedAt: new Date(now - 2 * 60 * 60 * 1000),
+            },
+            {
+                feedSource: 'Agrozona.bg',
+                title: 'Субсидиите за директни плащания стартират през ноември',
+                snippet: 'Фонд „Земеделие“ обяви графика за кампанията по директните плащания за настоящата стопанска година.',
+                url: 'https://agrozona.bg/news/demo-subsidies',
+                imageUrl: null,
+                publishedAt: new Date(now - 26 * 60 * 60 * 1000),
+            },
+            {
+                feedSource: 'АГРО.БГ',
+                title: 'Слънчогледът с добри изкупни цени в Добруджа',
+                snippet: 'Изкупвачите отчитат стабилно търсене на маслодаен слънчоглед в началото на новия сезон.',
+                url: 'https://www.agro.bg/news/demo-sunflower',
+                imageUrl: null,
+                publishedAt: new Date(now - 50 * 60 * 60 * 1000),
+            },
+        ];
+        for (const item of demoNews) {
+            const urlHash = createHash('sha256').update(item.url).digest('hex');
+            await prisma.marketNewsItem.upsert({
+                where: { urlHash },
+                create: { urlHash, ...item },
+                update: { ...item },
+            });
+        }
+        console.log(`✅ Trends: ${demoNews.length} demo market-news items seeded`);
+    } catch (err) {
+        console.warn('⚠️  Market-news demo seed skipped:', err instanceof Error ? err.message : err);
     }
 
     console.log('\n🎉 Seed complete! Login as admin@acme.com — password set via SEED_PASSWORD (default in prisma/seed.ts)');

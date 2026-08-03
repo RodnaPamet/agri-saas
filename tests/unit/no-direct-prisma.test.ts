@@ -216,6 +216,14 @@ describe('CI Guard: No direct prisma in tenant-scoped code', () => {
         // getTenantCtx to enforce tenant membership before serving; the payload
         // is public reference data (no business data leak).
         'trends.ts',
+        // Trends → News tab (feat/trends-news) — `MarketNewsItem` is a GLOBAL
+        // agri-news cache table (no tenantId / no RLS, like MarketPriceSeries /
+        // SoilSample), shared identically across every tenant. `getMarketNews`
+        // reads it with the global prisma client because there is no tenantId
+        // to filter on. Access is still gated: the route
+        // (src/app/api/t/[tenantSlug]/trends/news/route.ts) calls getTenantCtx
+        // to enforce tenant membership; only public headline metadata is served.
+        'trends-news.ts',
     ];
 
     const usecases = readFilesInDir(path.join(SRC_ROOT, 'app-layer/usecases'));

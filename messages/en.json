@@ -7251,8 +7251,17 @@
             "noData": "—"
         },
         "news": {
-            "comingSoonTitle": "Market news coming soon",
-            "comingSoonBody": "Market news and analysis will appear here."
+            "feedAriaLabel": "Agri-news feed",
+            "emptyTitle": "No news yet",
+            "emptyBody": "Aggregated agri-news headlines will appear here as soon as they are published.",
+            "operatorTitle": "For operators",
+            "operatorBody": "The News tab is populated by a scheduled job. Set {feeds} to a comma-separated list of RSS feeds to enable it.",
+            "loadMore": "Load more",
+            "errorTitle": "Couldn't load news",
+            "errorBody": "The news feed failed to load. Check your connection and try again.",
+            "retry": "Retry",
+            "openArticleAria": "Open article at {source} (opens in a new tab)",
+            "attribution": "Sources: {list}"
         },
         "widget": {
             "title": "Market trends",

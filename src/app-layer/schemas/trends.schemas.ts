@@ -27,3 +27,16 @@ export const RANGE_LOOKBACK_DAYS: Record<TrendRange, number | null> = {
     '1y': 366,
     all: null,
 };
+
+/**
+ * Query params for GET /api/t/[tenantSlug]/trends/news.
+ * `cursor` is the id of the last item on the previous page (opaque to the
+ * client) — newest-first keyset pagination. Bounded/optional.
+ */
+export const TrendNewsQuerySchema = z.object({
+    cursor: z.string().min(1).max(64).optional(),
+});
+export type TrendNewsQuery = z.infer<typeof TrendNewsQuerySchema>;
+
+/** Page size for the news feed read. */
+export const NEWS_PAGE_SIZE = 20;
