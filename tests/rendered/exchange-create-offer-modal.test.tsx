@@ -12,6 +12,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TooltipProvider } from '@/components/ui/tooltip';
 
+jest.mock('next-intl', () => require('../helpers/next-intl-en-mock'));
 jest.mock('next/navigation', () => ({
     useRouter: () => ({ push: jest.fn(), replace: jest.fn(), refresh: jest.fn(), prefetch: jest.fn() }),
     usePathname: () => '/t/acme/exchange',
@@ -84,7 +85,8 @@ it('enables + POSTs the assembled body (region as CODE) on a full submit', async
     await waitFor(() => expect(apiPost).toHaveBeenCalled());
     const [url, body] = apiPost.mock.calls[0] as [string, Record<string, unknown>];
     expect(url).toBe('/api/t/acme/exchange/listings');
-    expect(body).toMatchObject({ commodity: 'Wheat', quantityTonnes: '250', priceCurrency: 'BGN' });
+    // Localized label chosen → submits the stable KEY (+ English label as commodity).
+    expect(body).toMatchObject({ commodity: 'Wheat', commodityKey: 'WHEAT', quantityTonnes: '250', priceCurrency: 'BGN' });
     expect(typeof body.regionCode).toBe('string');
     expect((body.regionCode as string).length).toBeGreaterThan(0);
     // The label is never submitted — only the stable code.

@@ -7,6 +7,7 @@ export interface ExchangeMapListing {
     id: string;
     side: 'SELL' | 'BUY';
     commodity: string;
+    commodityKey: string | null;
     quantityTonnes: string;
     pricePerTonne: string | null;
     priceCurrency: string;
@@ -27,6 +28,7 @@ export function featureToMapListing(p: Record<string, unknown>): ExchangeMapList
         id: String(p.id),
         side: p.side as 'SELL' | 'BUY',
         commodity: String(p.commodity),
+        commodityKey: p.commodityKey != null ? String(p.commodityKey) : null,
         quantityTonnes: String(p.quantityTonnes),
         pricePerTonne: p.pricePerTonne ? String(p.pricePerTonne) : null,
         priceCurrency: String(p.priceCurrency),

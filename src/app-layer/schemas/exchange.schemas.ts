@@ -58,6 +58,9 @@ export const CreateListingSchema = z
     .object({
         side: z.nativeEnum(ExchangeSide),
         commodity: z.string().min(1).max(120),
+        // Canonical taxonomy key hint from the client; the usecase re-derives
+        // from `commodity` when it isn't a known key, so this is advisory.
+        commodityKey: z.string().min(1).max(40).optional(),
         quantityTonnes: QuantityTonnes,
         pricePerTonne: PricePerTonne.nullable().optional(),
         priceCurrency: PriceCurrency.default('BGN'),

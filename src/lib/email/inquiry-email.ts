@@ -8,11 +8,42 @@
  * this runs, so a mailer outage (or the dev/console sink when no SMTP is
  * configured) never fails the inquiry. Returns `{ sent }`, never throws.
  *
+ * Localized: copy comes from the `exchange.email` message namespace so a
+ * Bulgarian seller gets a Bulgarian email. Default locale is **Bulgarian**
+ * — this is a Bulgarian product and the seller-tenant's admins are Bulgarian
+ * farms; per-seller locale preference wiring is a follow-up (pass `locale`).
+ *
  * Mirrors the send shape of `src/lib/email/invite-email.ts`.
  */
 import { ConsoleEmailProvider, getEmailProvider, sendEmail } from '@/lib/mailer';
 import { env } from '@/env';
 import { logger } from '@/lib/observability/logger';
+import enMessages from '../../../messages/en.json';
+import bgMessages from '../../../messages/bg.json';
+
+type EmailLocale = 'en' | 'bg';
+
+interface EmailCopy {
+    subject: string;
+    intro: string;
+    quantity: string;
+    messageLabel: string;
+    reviewText: string;
+    reviewLink: string;
+    privacy: string;
+    sideSell: string;
+    sideBuy: string;
+}
+
+const COPY: Record<EmailLocale, EmailCopy> = {
+    en: enMessages.exchange.email,
+    bg: bgMessages.exchange.email,
+};
+
+/** Minimal `{var}` interpolation — the email copy uses next-intl placeholders. */
+function fmt(tpl: string, vars: Record<string, string>): string {
+    return tpl.replace(/\{(\w+)\}/g, (_, k) => vars[k] ?? '');
+}
 
 export interface InquiryEmailParams {
     /** Recipient (a seller-tenant admin/owner email). */
@@ -27,6 +58,8 @@ export interface InquiryEmailParams {
     quantityTonnes?: string | null;
     /** Absolute link to the seller's inquiries page. */
     inquiriesUrl: string;
+    /** Seller-facing locale — defaults to Bulgarian (the product's primary language). */
+    locale?: EmailLocale;
 }
 
 /**
@@ -36,29 +69,31 @@ export interface InquiryEmailParams {
 export async function sendInquiryEmail(
     params: InquiryEmailParams,
 ): Promise<{ sent: boolean }> {
-    const { to, commodity, side, message, quantityTonnes, inquiriesUrl } = params;
+    const { to, commodity, side, message, quantityTonnes, inquiriesUrl, locale = 'bg' } = params;
+    const c = COPY[locale];
+    const sideWord = side === 'SELL' ? c.sideSell : c.sideBuy;
 
-    const subject = `New interest in your ${commodity} listing`;
-    const qtyLine = quantityTonnes ? `Quantity of interest: ${quantityTonnes} t\n` : '';
+    const subject = fmt(c.subject, { commodity });
+    const qtyLine = quantityTonnes ? fmt(c.quantity, { quantity: quantityTonnes }) : '';
     const text = [
-        `Another farm expressed interest in your ${side} listing for ${commodity}.`,
+        fmt(c.intro, { side: sideWord, commodity }),
         '',
-        qtyLine ? qtyLine.trimEnd() : null,
-        `Message: ${message}`,
+        qtyLine || null,
+        `${c.messageLabel} ${message}`,
         '',
-        `Review it and respond here: ${inquiriesUrl}`,
+        fmt(c.reviewText, { url: inquiriesUrl }),
     ]
         .filter((l) => l !== null)
         .join('\n');
 
     const html = [
-        `<p>Another farm expressed interest in your <strong>${side}</strong> listing for <strong>${commodity}</strong>.</p>`,
+        `<p>${fmt(c.intro, { side: `<strong>${sideWord}</strong>`, commodity: `<strong>${commodity}</strong>` })}</p>`,
         quantityTonnes
-            ? `<p style="color:#475467">Quantity of interest: <strong>${quantityTonnes} t</strong></p>`
+            ? `<p style="color:#475467">${fmt(c.quantity, { quantity: `<strong>${quantityTonnes}</strong>` })}</p>`
             : '',
-        `<p style="color:#475467">Message:</p><blockquote style="margin:0;border-left:3px solid #d0d5dd;padding-left:12px;color:#344054">${message}</blockquote>`,
-        `<p><a href="${inquiriesUrl}">Review the inquiry and respond</a></p>`,
-        `<p style="color:#667085;font-size:13px">Contact details are shared only when you choose to respond.</p>`,
+        `<p style="color:#475467">${c.messageLabel}</p><blockquote style="margin:0;border-left:3px solid #d0d5dd;padding-left:12px;color:#344054">${message}</blockquote>`,
+        `<p><a href="${inquiriesUrl}">${c.reviewLink}</a></p>`,
+        `<p style="color:#667085;font-size:13px">${c.privacy}</p>`,
     ].join('');
 
     try {

@@ -8,16 +8,18 @@
  */
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useTranslations } from 'next-intl';
 import { useTenantHref } from '@/lib/tenant-context-provider';
 import { cn } from '@/lib/cn';
 
 const ITEMS = [
-    { path: '/exchange', label: 'Browse', exact: true },
-    { path: '/exchange/my-listings', label: 'My listings', exact: false },
-    { path: '/exchange/my-interests', label: 'My interests', exact: false },
+    { path: '/exchange', labelKey: 'nav.browse', exact: true },
+    { path: '/exchange/my-listings', labelKey: 'nav.myListings', exact: false },
+    { path: '/exchange/my-interests', labelKey: 'nav.myInterests', exact: false },
 ] as const;
 
 export function ExchangeNav() {
+    const t = useTranslations('exchange');
     const tenantHref = useTenantHref();
     const pathname = usePathname() ?? '';
 
@@ -38,7 +40,7 @@ export function ExchangeNav() {
                                 : 'border-transparent text-content-muted hover:text-content-emphasis',
                         )}
                     >
-                        {it.label}
+                        {t(it.labelKey)}
                     </Link>
                 );
             })}

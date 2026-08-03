@@ -44,6 +44,7 @@ export const POST = withApiErrorHandling(
             const listing = await createListing(ctx, {
                 side: body.side,
                 commodity: body.commodity,
+                commodityKey: body.commodityKey,
                 quantityTonnes: body.quantityTonnes,
                 pricePerTonne: body.pricePerTonne ?? null,
                 priceCurrency: body.priceCurrency,

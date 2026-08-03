@@ -30,7 +30,11 @@ model ExchangeListing {
   /// User within the seller tenant who created the listing.
   sellerUserId      String
   side              ExchangeSide
+  /// Free-text commodity (kept for the OTHER long tail + display fallback).
   commodity         String
+  /// Canonical taxonomy key (src/lib/exchange/commodities.ts) so listings
+  /// unify + group across spellings/languages; 'OTHER' for the free-text tail.
+  commodityKey      String?
   quantityTonnes    Decimal               @db.Decimal(14, 3)
   pricePerTonne     Decimal?              @db.Decimal(12, 2)
   priceCurrency     String                @default("BGN")

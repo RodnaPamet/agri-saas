@@ -59,7 +59,7 @@ describe('toPublicListing', () => {
         // The complete, exact public surface. lat/lon are the REGION centroid
         // (a coarse map pin), never exact parcel geometry.
         expect(Object.keys(dto).sort()).toEqual([
-            'commodity', 'createdAt', 'description', 'expiresAt', 'id', 'isOwn',
+            'commodity', 'commodityKey', 'createdAt', 'description', 'expiresAt', 'id', 'isOwn',
             'lat', 'lon', 'priceCurrency', 'pricePerTonne', 'quantityTonnes',
             'regionCode', 'regionName', 'sellerDisplayName', 'side', 'status',
         ]);

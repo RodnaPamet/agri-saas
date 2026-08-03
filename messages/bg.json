@@ -565,5 +565,126 @@
                 "PURCHASE": "Покупка"
             }
         }
+    },
+    "exchange": {
+        "header": "Борса",
+        "side": {
+            "selling": "Продава",
+            "buying": "Купува"
+        },
+        "browse": {
+            "searchPlaceholder": "Търсене на оферти…",
+            "count": "{count, plural, one {# оферта} other {# оферти}}",
+            "loading": "Зареждане на офертите…",
+            "loadError": "Офертите не се заредиха",
+            "errorDescription": "Не успяхме да заредим офертите от борсата.",
+            "empty": "Няма оферти, отговарящи на филтрите."
+        },
+        "detail": {
+            "quantity": "Количество",
+            "price": "Цена",
+            "region": "Регион",
+            "seller": "Продавач",
+            "expires": "Изтича",
+            "marketNegotiable": "Пазарна / по договаряне",
+            "anonymous": "Анонимна ферма",
+            "yourOffer": "Ваша оферта",
+            "expressInterest": "Заявете интерес"
+        },
+        "map": {
+            "viewDetails": "Детайли"
+        },
+        "nav": {
+            "browse": "Разглеждане",
+            "myListings": "Моите оферти",
+            "myInterests": "Моите заявки"
+        },
+        "breadcrumb": {
+            "dashboard": "Табло",
+            "exchange": "Борса"
+        },
+        "units": {
+            "tonnes": "{value} т",
+            "pricePerTonne": "{price} {currency}/т"
+        },
+        "create": {
+            "trigger": "Оферта",
+            "title": "Нова оферта",
+            "subtitle": "Публикувайте оферта за продажба или покупка в борсата.",
+            "side": "Тип",
+            "commodity": "Култура",
+            "commodityPlaceholder": "Изберете или въведете култура",
+            "commoditySearch": "Търсене на култури…",
+            "commodityCreate": "Използвай „{search}“",
+            "quantity": "Количество (т)",
+            "quantityPlaceholder": "напр. 250",
+            "price": "Цена / тон",
+            "priceHint": "По избор",
+            "priceHintBuy": "По избор — оставете празно за пазарна цена",
+            "pricePlaceholder": "напр. 320",
+            "currency": "Валута",
+            "region": "Регион",
+            "regionDescription": "Български окръг — маркерът на картата се поставя в центъра му.",
+            "regionPlaceholder": "Изберете регион",
+            "regionSearch": "Търсене на региони…",
+            "description": "Описание",
+            "descriptionHint": "Показва се публично на всички ферми.",
+            "descriptionPlaceholder": "Клас, влажност, условия на доставка…",
+            "expires": "Изтича",
+            "expiresHint": "По избор — скрива се автоматично след тази дата.",
+            "expiresPlaceholder": "Изберете дата",
+            "sellerName": "Публично име на продавача",
+            "sellerNameHint": "По избор. Празно се показва като „Анонимна ферма“.",
+            "sellerNamePlaceholder": "Име на вашата ферма",
+            "cancel": "Отказ",
+            "submit": "Създай оферта",
+            "error": "Неуспешно създаване на оферта"
+        },
+        "inquiry": {
+            "title": "Заявете интерес — {commodity}",
+            "titleBare": "Заявете интерес",
+            "subtitle": "Изпратете съобщение до продавача. Той ще бъде уведомен и може да отговори.",
+            "quantity": "Количество, което търсите (т)",
+            "quantityHint": "По избор.",
+            "quantityPlaceholder": "напр. 100",
+            "message": "Съобщение",
+            "messagePlaceholder": "Представете се и какво търсите…",
+            "cancel": "Отказ",
+            "submit": "Заявете интерес",
+            "error": "Неуспешно изпращане на заявката"
+        },
+        "listings": {
+            "title": "Моите оферти",
+            "empty": "Все още не сте публикували оферти.",
+            "errorDescription": "Не успяхме да заредим вашите оферти.",
+            "markFulfilled": "Отбележи като изпълнена",
+            "withdraw": "Оттегли",
+            "accept": "Приеми",
+            "reject": "Отхвърли",
+            "withdrawn": "Офертата е оттеглена",
+            "undo": "Отмени",
+            "noInquiries": "Все още няма заявки.",
+            "confirmFulfillTitle": "Да отбележим ли офертата като изпълнена?",
+            "confirmFulfillDescription": "Това скрива офертата от борсата. Съществуващите заявки остават видими.",
+            "confirmRejectTitle": "Да отхвърлим ли тази заявка?",
+            "confirmRejectDescription": "Купувачът ще бъде уведомен, че заявката му е отхвърлена."
+        },
+        "interests": {
+            "title": "Моите заявки",
+            "empty": "Все още не сте заявили интерес към оферти.",
+            "errorDescription": "Не успяхме да заредим вашите заявки.",
+            "quantityOfInterest": "Количество, което търсите: {quantity} т"
+        },
+        "email": {
+            "subject": "Нов интерес към вашата оферта за {commodity}",
+            "intro": "Друга ферма прояви интерес към вашата оферта за {side} на {commodity}.",
+            "quantity": "Количество, което търсят: {quantity} т",
+            "messageLabel": "Съобщение:",
+            "reviewText": "Прегледайте и отговорете тук: {url}",
+            "reviewLink": "Прегледайте заявката и отговорете",
+            "privacy": "Данните за контакт се споделят само когато решите да отговорите.",
+            "sideSell": "продажба",
+            "sideBuy": "покупка"
+        }
     }
 }

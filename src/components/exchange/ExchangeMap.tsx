@@ -29,9 +29,11 @@ import Map, {
 } from 'react-map-gl/maplibre';
 import type { FeatureCollection } from 'geojson';
 import type { GeoJSONSource } from 'maplibre-gl';
+import { useTranslations, useLocale } from 'next-intl';
 import { env } from '@/env';
 import { cn } from '@/lib/cn';
 import { Button } from '@/components/ui/button';
+import { localizedCommodityLabel, asExchangeLocale } from '@/lib/exchange/commodities';
 import { featureToMapListing, type ExchangeMapListing } from './exchange-map-utils';
 
 /** Side colours — shared by the marker paint AND the page's legend so they
@@ -85,6 +87,8 @@ export function ExchangeMap({
     basemapStyle = 'streets-v2',
     className,
 }: ExchangeMapProps) {
+    const t = useTranslations('exchange');
+    const locale = asExchangeLocale(useLocale());
     const mapRef = useRef<MapRef | null>(null);
     const [popup, setPopup] = useState<PopupState | null>(null);
 
@@ -101,6 +105,7 @@ export function ExchangeMap({
                     id: l.id,
                     side: l.side,
                     commodity: l.commodity,
+                    commodityKey: l.commodityKey ?? '',
                     quantityTonnes: l.quantityTonnes,
                     pricePerTonne: l.pricePerTonne ?? '',
                     priceCurrency: l.priceCurrency,
@@ -299,10 +304,10 @@ export function ExchangeMap({
                                     style={{ backgroundColor: EXCHANGE_SIDE_COLORS[popup.listing.side] }}
                                 />
                                 <span className="text-sm font-medium text-content-emphasis">
-                                    {popup.listing.commodity}
+                                    {localizedCommodityLabel(popup.listing.commodityKey, popup.listing.commodity, locale)}
                                 </span>
                                 <span className="text-xs text-content-muted">
-                                    {popup.listing.side === 'SELL' ? 'Selling' : 'Buying'}
+                                    {popup.listing.side === 'SELL' ? t('side.selling') : t('side.buying')}
                                 </span>
                             </div>
                             <div className="text-xs text-content-secondary">
@@ -318,7 +323,7 @@ export function ExchangeMap({
                                 className="mt-1 w-full"
                                 onClick={() => onListingSelect(popup.listing.id)}
                             >
-                                View details
+                                {t('map.viewDetails')}
                             </Button>
                         </div>
                     </Popup>

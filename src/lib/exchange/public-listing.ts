@@ -15,6 +15,7 @@ export interface ExchangeListingRow {
     sellerTenantId: string;
     side: string;
     commodity: string;
+    commodityKey: string | null;
     quantityTonnes: { toString(): string };
     pricePerTonne: { toString(): string } | null;
     priceCurrency: string;
@@ -32,7 +33,10 @@ export interface ExchangeListingRow {
 export interface ExchangePublicListing {
     id: string;
     side: 'SELL' | 'BUY';
+    /** Free-text commodity (display fallback for the OTHER long tail). */
     commodity: string;
+    /** Canonical taxonomy key — unify/group/localize by this. Null on legacy rows. */
+    commodityKey: string | null;
     /** Tonnes, as a decimal string. */
     quantityTonnes: string;
     /** Price per tonne, decimal string, or null when the seller omitted it. */
@@ -106,6 +110,7 @@ export function toPublicListing(
         id: row.id,
         side: row.side as 'SELL' | 'BUY',
         commodity: row.commodity,
+        commodityKey: row.commodityKey ?? null,
         quantityTonnes: row.quantityTonnes.toString(),
         pricePerTonne: row.pricePerTonne != null ? row.pricePerTonne.toString() : null,
         priceCurrency: row.priceCurrency,

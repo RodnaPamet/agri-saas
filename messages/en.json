@@ -565,5 +565,126 @@
                 "PURCHASE": "Purchase"
             }
         }
+    },
+    "exchange": {
+        "header": "Exchange",
+        "side": {
+            "selling": "Selling",
+            "buying": "Buying"
+        },
+        "browse": {
+            "searchPlaceholder": "Search offers…",
+            "count": "{count, plural, one {# offer} other {# offers}}",
+            "loading": "Loading offers…",
+            "loadError": "Couldn't load offers",
+            "errorDescription": "We couldn't load the marketplace offers.",
+            "empty": "No offers match your filters."
+        },
+        "detail": {
+            "quantity": "Quantity",
+            "price": "Price",
+            "region": "Region",
+            "seller": "Seller",
+            "expires": "Expires",
+            "marketNegotiable": "Market / negotiable",
+            "anonymous": "Anonymous farm",
+            "yourOffer": "Your offer",
+            "expressInterest": "Express interest"
+        },
+        "map": {
+            "viewDetails": "View details"
+        },
+        "nav": {
+            "browse": "Browse",
+            "myListings": "My listings",
+            "myInterests": "My interests"
+        },
+        "breadcrumb": {
+            "dashboard": "Dashboard",
+            "exchange": "Exchange"
+        },
+        "units": {
+            "tonnes": "{value} t",
+            "pricePerTonne": "{price} {currency}/t"
+        },
+        "create": {
+            "trigger": "Offer",
+            "title": "New offer",
+            "subtitle": "Publish a sell or buy offer to the marketplace.",
+            "side": "Side",
+            "commodity": "Commodity",
+            "commodityPlaceholder": "Select or type a commodity",
+            "commoditySearch": "Search commodities…",
+            "commodityCreate": "Use \"{search}\"",
+            "quantity": "Quantity (t)",
+            "quantityPlaceholder": "e.g. 250",
+            "price": "Price / tonne",
+            "priceHint": "Optional",
+            "priceHintBuy": "Optional — leave blank for market",
+            "pricePlaceholder": "e.g. 320",
+            "currency": "Currency",
+            "region": "Region",
+            "regionDescription": "Bulgarian oblast — the map pin is placed at its centre.",
+            "regionPlaceholder": "Select a region",
+            "regionSearch": "Search regions…",
+            "description": "Description",
+            "descriptionHint": "Shown publicly to every tenant.",
+            "descriptionPlaceholder": "Grade, moisture, delivery terms…",
+            "expires": "Expires",
+            "expiresHint": "Optional — auto-hides after this date.",
+            "expiresPlaceholder": "Select date",
+            "sellerName": "Public seller name",
+            "sellerNameHint": "Optional. Blank shows publicly as \"Anonymous farm\".",
+            "sellerNamePlaceholder": "Your farm name",
+            "cancel": "Cancel",
+            "submit": "Create offer",
+            "error": "Failed to create offer"
+        },
+        "inquiry": {
+            "title": "Express interest — {commodity}",
+            "titleBare": "Express interest",
+            "subtitle": "Send a message to the seller. They'll be notified and can respond.",
+            "quantity": "Quantity of interest (t)",
+            "quantityHint": "Optional.",
+            "quantityPlaceholder": "e.g. 100",
+            "message": "Message",
+            "messagePlaceholder": "Introduce yourself and what you're after…",
+            "cancel": "Cancel",
+            "submit": "Express interest",
+            "error": "Failed to send inquiry"
+        },
+        "listings": {
+            "title": "My listings",
+            "empty": "You haven't posted any offers yet.",
+            "errorDescription": "We couldn't load your listings.",
+            "markFulfilled": "Mark fulfilled",
+            "withdraw": "Withdraw",
+            "accept": "Accept",
+            "reject": "Reject",
+            "withdrawn": "Listing withdrawn",
+            "undo": "Undo",
+            "noInquiries": "No inquiries yet.",
+            "confirmFulfillTitle": "Mark this listing fulfilled?",
+            "confirmFulfillDescription": "This hides the listing from the marketplace. Existing inquiries stay visible.",
+            "confirmRejectTitle": "Reject this inquiry?",
+            "confirmRejectDescription": "The buyer will be notified their inquiry was declined."
+        },
+        "interests": {
+            "title": "My interests",
+            "empty": "You haven't expressed interest in any offers yet.",
+            "errorDescription": "We couldn't load your interests.",
+            "quantityOfInterest": "Quantity of interest: {quantity} t"
+        },
+        "email": {
+            "subject": "New interest in your {commodity} listing",
+            "intro": "Another farm expressed interest in your {side} listing for {commodity}.",
+            "quantity": "Quantity of interest: {quantity} t",
+            "messageLabel": "Message:",
+            "reviewText": "Review it and respond here: {url}",
+            "reviewLink": "Review the inquiry and respond",
+            "privacy": "Contact details are shared only when you choose to respond.",
+            "sideSell": "sell",
+            "sideBuy": "buy"
+        }
     }
 }

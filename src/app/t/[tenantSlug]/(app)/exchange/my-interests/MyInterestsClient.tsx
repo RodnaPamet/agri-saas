@@ -12,6 +12,8 @@ import { ErrorState } from '@/components/ui/error-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useTenantHref } from '@/lib/tenant-context-provider';
+import { useTranslations, useLocale } from 'next-intl';
+import { localizedCommodityLabel, asExchangeLocale } from '@/lib/exchange/commodities';
 import type { ExchangePublicInquiry } from '@/lib/exchange/public-listing';
 import { ExchangeNav } from '../ExchangeNav';
 
@@ -22,6 +24,8 @@ function statusVariant(status: string): 'success' | 'neutral' | 'warning' {
 }
 
 export function MyInterestsClient() {
+    const t = useTranslations('exchange');
+    const locale = asExchangeLocale(useLocale());
     const tenantHref = useTenantHref();
     const { data, isLoading, error, mutate } = useTenantSWR<ExchangePublicInquiry[]>('/exchange/inquiries');
     const inquiries = data ?? [];
@@ -31,20 +35,20 @@ export function MyInterestsClient() {
             <ListPageShell.Header>
                 <PageBreadcrumbs
                     items={[
-                        { label: 'Dashboard', href: tenantHref('/dashboard') },
-                        { label: 'Exchange', href: tenantHref('/exchange') },
-                        { label: 'My interests' },
+                        { label: t('breadcrumb.dashboard'), href: tenantHref('/dashboard') },
+                        { label: t('breadcrumb.exchange'), href: tenantHref('/exchange') },
+                        { label: t('interests.title') },
                     ]}
                     className="mb-1"
                 />
-                <Heading level={1}>My interests</Heading>
+                <Heading level={1}>{t('interests.title')}</Heading>
                 <ExchangeNav />
             </ListPageShell.Header>
             <ListPageShell.Body>
                 <div className="min-h-0 flex-1 space-y-default overflow-y-auto pr-1">
                     {error ? (
                         <ErrorState
-                            description="We couldn't load your interests."
+                            description={t('interests.errorDescription')}
                             onRetry={() => { void mutate(); }}
                         />
                     ) : isLoading ? (
@@ -55,25 +59,27 @@ export function MyInterestsClient() {
                         </div>
                     ) : inquiries.length === 0 ? (
                         <div className="rounded-lg border border-border-subtle p-4 text-sm text-content-muted">
-                            You haven&apos;t expressed interest in any offers yet.
+                            {t('interests.empty')}
                         </div>
                     ) : (
                     inquiries.map((iq) => (
                         <div key={iq.id} className="space-y-tight rounded-lg border border-border-subtle p-4">
                             <div className="flex flex-wrap items-center gap-compact">
                                 {iq.listing && (
-                                    <span className="font-medium text-content-emphasis">{iq.listing.commodity}</span>
+                                    <span className="font-medium text-content-emphasis">
+                                        {localizedCommodityLabel(iq.listing.commodityKey, iq.listing.commodity, locale)}
+                                    </span>
                                 )}
                                 {iq.listing && (
                                     <span className="text-xs text-content-muted">
-                                        {iq.listing.side === 'SELL' ? 'Selling' : 'Buying'} · {iq.listing.regionName}
+                                        {iq.listing.side === 'SELL' ? t('side.selling') : t('side.buying')} · {iq.listing.regionName}
                                     </span>
                                 )}
                                 <StatusBadge variant={statusVariant(iq.status)}>{iq.status}</StatusBadge>
                             </div>
                             <p className="text-sm text-content-secondary">{iq.message}</p>
                             {iq.quantityTonnes && (
-                                <p className="text-xs text-content-muted">Quantity of interest: {iq.quantityTonnes} t</p>
+                                <p className="text-xs text-content-muted">{t('interests.quantityOfInterest', { quantity: iq.quantityTonnes })}</p>
                             )}
                         </div>
                     )))}

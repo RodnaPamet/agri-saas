@@ -9,6 +9,7 @@ import { regionByCode } from '@/lib/geo/bulgaria-regions';
 import { logger } from '@/lib/observability/logger';
 import { sendInquiryEmail } from '@/lib/email/inquiry-email';
 import { assertWithinLimit } from '@/lib/billing/entitlements';
+import { commodityKeyFor, isCommodityKey } from '@/lib/exchange/commodities';
 import {
     Prisma,
     ExchangeSide,
@@ -41,6 +42,8 @@ function sanitizeOptional(v: string | null | undefined): string | null | undefin
 export interface CreateListingInput {
     side: ExchangeSide;
     commodity: string;
+    /** Canonical taxonomy key hint; re-derived server-side when not a known key. */
+    commodityKey?: string;
     quantityTonnes: number | string;
     pricePerTonne?: number | string | null;
     priceCurrency?: string;
@@ -105,6 +108,13 @@ export async function createListing(ctx: RequestContext, input: CreateListingInp
     const region = regionByCode(input.regionCode);
     if (!region) throw badRequest('invalid_region', `Unknown region code: ${input.regionCode}`);
 
+    const commodity = sanitizePlainText(input.commodity);
+    // Trust a known canonical key from the client; otherwise derive it from the
+    // (localized) free text so "wheat"/"Wheat"/"пшеница" all unify to one key.
+    const commodityKey = isCommodityKey(input.commodityKey)
+        ? input.commodityKey
+        : commodityKeyFor(commodity);
+
     return runInTenantContext(ctx, async (db) => {
         const listing = await ExchangeRepository.createListing(db, {
             // Ownership is fixed to the caller — a tenant can only ever create
@@ -114,7 +124,8 @@ export async function createListing(ctx: RequestContext, input: CreateListingInp
             side: input.side,
             // commodity + description + sellerDisplayName are PUBLIC free text
             // (every tenant reads them) → sanitize before persisting.
-            commodity: sanitizePlainText(input.commodity),
+            commodity,
+            commodityKey,
             quantityTonnes: input.quantityTonnes,
             pricePerTonne: input.pricePerTonne ?? null,
             priceCurrency: input.priceCurrency ?? 'BGN',

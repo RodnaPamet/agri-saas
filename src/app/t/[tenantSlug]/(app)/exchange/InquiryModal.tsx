@@ -16,6 +16,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { apiPost } from '@/lib/api-client';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
+import { useTranslations, useLocale } from 'next-intl';
+import { localizedCommodityLabel, asExchangeLocale } from '@/lib/exchange/commodities';
 import type { ExchangePublicListing } from '@/lib/exchange/public-listing';
 
 interface InquiryModalProps {
@@ -26,6 +28,8 @@ interface InquiryModalProps {
 }
 
 export function InquiryModal({ open, setOpen, listing, onSent }: InquiryModalProps) {
+    const t = useTranslations('exchange');
+    const locale = asExchangeLocale(useLocale());
     const buildUrl = useTenantApiUrl();
     const [message, setMessage] = useState('');
     const [quantity, setQuantity] = useState('');
@@ -49,13 +53,15 @@ export function InquiryModal({ open, setOpen, listing, onSent }: InquiryModalPro
             setQuantity('');
             onSent();
         } catch (err) {
-            setError(err instanceof Error ? err.message : 'Failed to send inquiry');
+            setError(err instanceof Error ? err.message : t('inquiry.error'));
         } finally {
             setSubmitting(false);
         }
     }
 
-    const title = listing ? `Express interest — ${listing.commodity}` : 'Express interest';
+    const title = listing
+        ? t('inquiry.title', { commodity: localizedCommodityLabel(listing.commodityKey, listing.commodity, locale) })
+        : t('inquiry.titleBare');
 
     return (
         <Modal
@@ -63,11 +69,11 @@ export function InquiryModal({ open, setOpen, listing, onSent }: InquiryModalPro
             setShowModal={setOpen}
             size="md"
             title={title}
-            description="Send a message to the seller. They'll be notified and can respond."
+            description={t('inquiry.subtitle')}
             preventDefaultClose={submitting}
             isDirty={message !== '' || quantity !== ''}
         >
-            <Modal.Header title={title} description="The seller is notified and chooses whether to respond." />
+            <Modal.Header title={title} description={t('inquiry.subtitle')} />
             <Modal.Form id="exchange-inquiry-form" onSubmit={(e) => { e.preventDefault(); void submit(); }}>
                 <Modal.Body>
                     {error && (
@@ -76,20 +82,20 @@ export function InquiryModal({ open, setOpen, listing, onSent }: InquiryModalPro
                         </div>
                     )}
                     <fieldset disabled={submitting} className="m-0 space-y-default border-0 p-0">
-                        <FormField label="Quantity of interest (t)" hint="Optional.">
-                            <Input id="inquiry-qty" inputMode="decimal" autoComplete="off" value={quantity} onChange={(e) => setQuantity(e.target.value)} placeholder="e.g. 100" />
+                        <FormField label={t('inquiry.quantity')} hint={t('inquiry.quantityHint')}>
+                            <Input id="inquiry-qty" inputMode="decimal" autoComplete="off" value={quantity} onChange={(e) => setQuantity(e.target.value)} placeholder={t('inquiry.quantityPlaceholder')} />
                         </FormField>
-                        <FormField label="Message" required>
-                            <Textarea id="inquiry-message" rows={3} value={message} onChange={(e) => setMessage(e.target.value)} placeholder="Introduce yourself and what you're after…" />
+                        <FormField label={t('inquiry.message')} required>
+                            <Textarea id="inquiry-message" rows={3} value={message} onChange={(e) => setMessage(e.target.value)} placeholder={t('inquiry.messagePlaceholder')} />
                         </FormField>
                     </fieldset>
                 </Modal.Body>
                 <Modal.Actions>
                     <Button variant="secondary" size="sm" type="button" onClick={() => setOpen(false)} disabled={submitting}>
-                        Cancel
+                        {t('inquiry.cancel')}
                     </Button>
                     <Button variant="primary" size="sm" type="submit" loading={submitting} disabled={!canSubmit}>
-                        Express interest
+                        {t('inquiry.submit')}
                     </Button>
                 </Modal.Actions>
             </Modal.Form>
