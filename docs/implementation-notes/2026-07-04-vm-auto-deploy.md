@@ -2,6 +2,16 @@
 
 **Commit:** `<this PR>` ci(ghcr): bake NEXT_PUBLIC_MAPTILER_KEY into the published image
 
+> **Path changed 2026-08-03.** The image paths written below
+> (`ghcr.io/inflect-compliance/agri-saas`) are historical. The repo moved to
+> the `RodnaPamet` org, and because the publish workflow derives its target
+> from `${{ github.repository }}`, images now go to
+> **`ghcr.io/rodnapamet/agri-saas`**. The compose file kept pointing at the old
+> path, so Watchtower polled a location that no longer received pushes and
+> silently stopped deploying — `Session done … Updated=0` on every cycle, which
+> reads exactly like "nothing to do". The mechanism described here is unchanged;
+> only the registry path moved.
+
 ## Design
 
 The single-VM `agrent` deployment (GCP `hazel-design-419410`, zone

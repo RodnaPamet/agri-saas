@@ -92,7 +92,7 @@ services:
     # block above is retained as a manual escape hatch — `docker compose
     # build app` still rebuilds locally under this same tag if GHCR is
     # unavailable.
-    image: ghcr.io/inflect-compliance/agri-saas:latest
+    image: ghcr.io/rodnapamet/agri-saas:latest
     container_name: agrent-app
     restart: always
     # Watchtower only touches containers carrying this label.
@@ -134,7 +134,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: ghcr.io/inflect-compliance/agri-saas:latest
+    image: ghcr.io/rodnapamet/agri-saas:latest
     container_name: agrent-worker
     restart: always
     labels:
@@ -165,7 +165,7 @@ services:
       - internal
 
   # ── Watchtower — auto-deploy from GHCR ──
-  # Polls ghcr.io/inflect-compliance/agri-saas:latest every 5 min and, on a
+  # Polls ghcr.io/rodnapamet/agri-saas:latest every 5 min and, on a
   # new digest, pulls + recreates ONLY the labelled containers (app + worker).
   # GHCR pull creds come from the host docker config, mounted read-only. On
   # recreate the app entrypoint runs `prisma migrate deploy`, so schema
