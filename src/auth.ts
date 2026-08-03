@@ -492,6 +492,12 @@ export const authOptions: NextAuthOptions = {
                         userEmail: inviteEmail,
                         tenantToken: inviteTokens.tenantToken,
                         orgToken: inviteTokens.orgToken,
+                        // OAuth only. The credentials provider's email is
+                        // self-asserted, so it must never satisfy an
+                        // invite by address alone; signIn above has
+                        // already rejected any provider reporting
+                        // email_verified === false.
+                        emailVerifiedByIdp: account.provider !== 'credentials',
                     });
                 }
 

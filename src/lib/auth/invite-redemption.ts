@@ -37,6 +37,29 @@ export interface RedeemPendingInvitesInput {
     tenantToken: string | null;
     /** Raw org-invite token from the `inflect_org_invite_token` cookie, or null. */
     orgToken: string | null;
+    /**
+     * True when the sign-in came from an OAuth IdP, so `userEmail` is
+     * PROVIDER-VERIFIED. Gates the token-free, email-matched provisioning
+     * below.
+     *
+     * MUST be false for the credentials provider. Self-service
+     * registration lets anyone submit any address, and email
+     * verification is OPTIONAL there — `AUTH_REQUIRE_EMAIL_VERIFICATION`
+     * defaults to "0" (see src/lib/auth/credentials.ts), so a credentials
+     * sign-in proves possession of a password, not of an address.
+     * Honouring an invite on that basis would hand a tenant to whoever
+     * guessed an invited email.
+     *
+     * `src/auth.ts` gives the other half of the guarantee: its signIn
+     * callback rejects `email_verified === false`, so an OAuth provider
+     * that reports the address as unverified never reaches here either.
+     *
+     * If credentials sign-ins ever need this, the condition is a VERIFIED
+     * email — not merely the credentials provider — so the caller would
+     * pass `AUTH_REQUIRE_EMAIL_VERIFICATION === '1' && user.emailVerified`,
+     * never a bare `true`.
+     */
+    emailVerifiedByIdp: boolean;
 }
 
 /**
@@ -47,8 +70,10 @@ export interface RedeemPendingInvitesInput {
 export async function redeemPendingInvites(
     input: RedeemPendingInvitesInput,
 ): Promise<void> {
-    const { userEmail, tenantToken, orgToken } = input;
-    if (!tenantToken && !orgToken) return; // the common case — no invite in flight
+    const { userEmail, tenantToken, orgToken, emailVerifiedByIdp } = input;
+    // Nothing to do only when there is no token AND no verified email to
+    // match pending invites against.
+    if (!tenantToken && !orgToken && !emailVerifiedByIdp) return;
 
     // Resolve the PERSISTED user id by email. From the jwt callback this
     // row always exists (created by the adapter before jwt runs), even for
@@ -66,6 +91,35 @@ export async function redeemPendingInvites(
             await redeemInvite({ token: tenantToken, userId: dbUser.id, userEmail });
         } catch (err) {
             edgeLogger.warn('signIn: tenant invite redemption failed', {
+                component: 'auth',
+                userId: dbUser.id,
+                error: err instanceof Error ? err.message : String(err),
+            });
+        }
+    }
+
+    // Token-free provisioning: redeem any pending invite addressed to this
+    // verified email. This is what makes the emailed link OPTIONAL — an
+    // admin adds the member, the member signs in, they are in. It is not
+    // auto-join: with no pending invite for the address it is a no-op.
+    if (emailVerifiedByIdp) {
+        try {
+            const { redeemPendingInvitesByEmail } = await import(
+                '@/app-layer/usecases/tenant-invites'
+            );
+            const redeemed = await redeemPendingInvitesByEmail({
+                userId: dbUser.id,
+                userEmail,
+            });
+            if (redeemed.length > 0) {
+                edgeLogger.info('signIn: provisioned membership from pending invite', {
+                    component: 'auth',
+                    userId: dbUser.id,
+                    tenantCount: redeemed.length,
+                });
+            }
+        } catch (err) {
+            edgeLogger.warn('signIn: verified-email invite provisioning failed', {
                 component: 'auth',
                 userId: dbUser.id,
                 error: err instanceof Error ? err.message : String(err),

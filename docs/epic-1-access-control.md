@@ -16,12 +16,17 @@
 │    NextAuth OAuth / credentials. Produces User row. No tenant.        │
 │                                                                       │
 │  Layer 2 — Tenant membership (NEW — explicit, opt-in)                 │
-│    Only THREE creation paths exist:                                   │
+│    Only THREE creation modules exist:                                 │
 │                                                                       │
-│    a. redeemInvite (tenant-invites.ts)                                │
-│         Token-bound. Email-bound. Atomic claim via updateMany         │
-│         with (acceptedAt IS NULL AND expiresAt > now()) predicate.    │
-│         Leaked token → burnt on email mismatch.                       │
+│    a. tenant-invites.ts — TWO entry points, both requiring an         │
+│       admin-created TenantInvite:                                     │
+│         redeemInvite — token-bound, email-bound. Atomic claim via     │
+│           updateMany with (acceptedAt IS NULL AND expiresAt > now()). │
+│           Leaked token → burnt on email mismatch.                     │
+│         redeemPendingInvitesByEmail — matches a pending invite to an  │
+│           IdP-VERIFIED sign-in email, so the emailed link is          │
+│           optional. OAuth-only (credentials email is self-asserted).  │
+│           Same atomic claim. No invite ⇒ no membership.               │
 │                                                                       │
 │    b. createTenantWithOwner (tenant-lifecycle.ts)                     │
 │         Platform-admin. Atomic: Tenant + DEK + OWNER membership +     │
@@ -82,7 +87,15 @@ Admin clicks "Invite" in /admin/members
                            invitedById, acceptedAt:null, revokedAt:null }
     → Audit: MEMBER_INVITED
 
-Invitee opens email, clicks /invite/<token>
+PATH 1 — the invitee just signs in (no link needed, the common case)
+    → User completes OAuth with the invited address
+    → jwt callback → redeemPendingInvites(emailVerifiedByIdp: true)
+    → redeemPendingInvitesByEmail finds every pending invite for that
+      verified address, claims each atomically, upserts membership.
+      No pending invite → no-op. Audit MEMBER_INVITE_ACCEPTED.
+    → User lands at /t/<slug>/dashboard on that same sign-in.
+
+PATH 2 — the invitee opens the email and clicks /invite/<token>
     → preview page (tenant name, role, expiry) — NO consumption yet
 
 Clicks "Sign in to accept"
@@ -91,8 +104,8 @@ Clicks "Sign in to accept"
     → 302 to /login
 
 User completes OAuth
-    → NextAuth signIn callback
-    → ensureTenantMembershipFromInvite reads cookie
+    → NextAuth jwt callback (NOT signIn — see below)
+    → redeemPendingInvites reads cookie
     → redeemInvite runs in two steps:
          Step 1 (standalone commit): atomic claim —
            UPDATE TenantInvite SET acceptedAt = now()

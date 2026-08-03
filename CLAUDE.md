@@ -648,12 +648,21 @@ resolution in `src/lib/permissions.ts` enforces the distinction at
 compile time; `getPermissionsForRole('ADMIN').admin.tenant_lifecycle`
 is `false` by type.
 
-**Membership creation is explicit.** Only three paths can write a
-`TenantMembership` row today:
-(a) `redeemInvite` in `src/app-layer/usecases/tenant-invites.ts` —
-token-bound, email-bound, atomically consumed via an `updateMany`
-with `acceptedAt IS NULL AND expiresAt > now()` predicate. A leaked
-token is burnt on email mismatch.
+**Membership creation is explicit.** Only three modules can write a
+`TenantMembership` row today (the first of them via two entry points):
+(a) `src/app-layer/usecases/tenant-invites.ts`, which has TWO entry
+points, both requiring an admin-created `TenantInvite`:
+`redeemInvite` is token-bound and email-bound, atomically consumed
+via an `updateMany` with `acceptedAt IS NULL AND expiresAt > now()`
+predicate (a leaked token is burnt on email mismatch); and
+`redeemPendingInvitesByEmail` matches a pending invite against an
+**IdP-verified** sign-in email, which is what makes the emailed link
+optional. The second is **OAuth-only** — `src/auth.ts` passes
+`emailVerifiedByIdp: account.provider !== 'credentials'`, because the
+credentials provider's email is self-asserted and honouring an invite
+there would hand a tenant to whoever guessed an invited address. It is
+still not auto-join: no invite ⇒ no membership. Both share
+`finalizeInviteRedemption`.
 (b) `createTenantWithOwner` in `src/app-layer/usecases/tenant-lifecycle.ts` —
 platform-admin tenant bootstrap, gated by `PLATFORM_ADMIN_API_KEY`
 (constant-time compared via `verifyPlatformApiKey`).
@@ -685,10 +694,23 @@ leave a tenant with zero ACTIVE OWNERs, catching bypass attempts
 `transferTenantOwnership` flow uses this: promote the new OWNER
 first (count=2), then demote the old (count=1, trigger satisfied).
 
-**Invitation flow.** Admin POSTs to `/api/t/:slug/admin/invites` →
-`createInviteToken` creates a 256-bit base64url token with 7-day
-expiry. User clicks `/invite/<token>` → preview page → "Sign in to
-accept" sets a 10-min HttpOnly cookie and redirects to `/login`.
+**Invitation flow — the link is OPTIONAL.** Admin POSTs to
+`/api/t/:slug/admin/invites` → `createInviteToken` creates a 256-bit
+base64url token with 7-day expiry. There are then two ways in, and
+neither is privileged over the other:
+
+  1. **Just sign in.** An OAuth sign-in whose IdP-verified email
+     matches a pending invite provisions the membership on the spot
+     (`redeemPendingInvitesByEmail`). This is the path most invitees
+     actually take — email delivery is unreliable, and a user who
+     clicks "Sign in with Microsoft" should not be stranded on
+     `/no-tenant` because an SMTP relay dropped a message.
+  2. **Follow the link.** User clicks `/invite/<token>` → preview page
+     → "Sign in to accept" sets a 10-min HttpOnly cookie and redirects
+     to `/login`.
+
+Both are claimed atomically against the same row, so a link-click
+racing a login cannot double-redeem; the loser skips.
 After OAuth, redemption runs in the **`jwt` callback** (NOT `signIn`)
 via `redeemPendingInvites` in `src/lib/auth/invite-redemption.ts`,
 which reads the cookie and resolves the persisted `User.id` **by
