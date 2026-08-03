@@ -23,8 +23,18 @@ highest-traffic authenticated paths against documented SLOs.
 
 - `auth.js` opens a fresh cookie jar per iteration so every iteration is
   a real cold login (csrf → callback/credentials → session).
-- `lists.js` logs in once per VU and reuses the per-VU jar so we measure
-  the list-read path, not the auth path again.
+- `lists.js` logs in once in `setup()` and shares the session cookie via
+  the setup→default data channel, re-attaching it on every request, so
+  we measure the list-read path and not the auth path again. **Do not
+  "simplify" this to a per-VU login that trusts the jar — k6 resets the
+  cookie jar between iterations while module state survives them, which
+  is how this file spent its whole life 401-ing on every iteration
+  after the first.**
+
+`auth.js` and `lists.js` each run TWO scenarios sequentially — a 1-VU
+`latency` regime that gates the p95 budgets, and a ramping `saturation`
+regime that gates error rate and a throughput floor. See
+[Two regimes](#two-regimes) below.
 - `mutations.js` does a single global login in `setup()` and shares the
   session cookie across all VUs via the data channel; bcrypt is paid
   once, the iteration loop is purely write-path work. Every created
@@ -119,6 +129,43 @@ k6 run \
   tests/load/lists.js
 ```
 
+## Two regimes
+
+`auth.js` and `lists.js` each run two scenarios, **sequentially** — the
+saturation one has a `startTime` past the end of the latency one, so
+they never overlap:
+
+| Regime       | Profile                  | Measures                       | Gates |
+|--------------|--------------------------|--------------------------------|-------|
+| `latency`    | 1 VU, no think-time      | service time — nothing queues  | the p95/p99 budgets |
+| `saturation` | ramping VUs + think-time | capacity, behaviour under overload | error rate, check rate, throughput floor |
+
+**Why:** a latency threshold on a saturated system measures the arrival
+rate the script chose, not the code. `bcryptjs` is pure JS on the Node
+main thread, so a login costs ~405ms of single-thread CPU and one
+process tops out at ~2.4 logins/s no matter how many cores it has. The
+nightly's 25 VUs offer ~25 logins/s — ~10x capacity — so p95 settles at
+≈ VUs / capacity ≈ 10s however fast the login path is.
+
+That is not hypothetical. `auth.js` asserted `p95 < 1500ms` across the
+whole ramp and failed **40 consecutive nightly runs** with 100% of
+checks passing and zero HTTP failures; CI measured p95 8.62s. The gate
+was ~7x outside the implementation's physical capacity. Uncontended,
+the same login measures p95 ~794ms.
+
+Two rules follow:
+
+1. **Tag every latency threshold `regime:latency`.** An untagged one
+   spans both scenarios and re-creates the bug.
+2. **Never gate latency on `regime:saturation`.** Gate throughput
+   (a `count` over the fixed window) and error rate there instead.
+
+Capacity floors are **collapse detectors, not precision gates** — two
+back-to-back runs on one dev box returned 176 then 113 completed logins
+purely because the host's load average climbed, so a tight floor would
+just be a new flaky red. They sit at ~30% of the observed line;
+precision lives in the summary artifact.
+
 ## Thresholds
 
 A run **fails** (non-zero exit) if any of these are crossed.
@@ -130,15 +177,19 @@ A run **fails** (non-zero exit) if any of these are crossed.
 | `http_req_failed{step:csrf}`          | `rate < 1%`     | CSRF is a flat read; should never 5xx.      |
 | `http_req_failed{step:login}`         | `rate < 1%`     | Login SLO ceiling.                          |
 | `http_req_failed{step:session}`       | `rate < 1%`     | Session check must be reliable.             |
-| `http_req_duration{step:csrf}`        | `p95 < 500ms`   | Flat read.                                  |
-| `http_req_duration{step:login}`       | `p95 < 1500ms`  | Bcrypt bound — wider budget.                |
-| `http_req_duration{step:login}`       | `p99 < 3000ms`  | Tail latency under contention.              |
-| `http_req_duration{step:session}`     | `p95 < 500ms`   | JWT verify only.                            |
-| `auth_full_login_ms`                  | `p95 < 2000ms`  | E2E login transaction.                      |
-| `auth_full_login_ms`                  | `p99 < 4000ms`  | Tail latency for the full transaction.      |
+| `http_req_duration{regime:latency,step:csrf}`    | `p95 < 500ms`  | Flat read. Measured: 13.8ms.     |
+| `http_req_duration{regime:latency,step:login}`   | `p95 < 1500ms` | Bcrypt bound. Measured: 794ms.   |
+| `http_req_duration{regime:latency,step:login}`   | `p99 < 2500ms` | Tail of the uncontended login.   |
+| `http_req_duration{regime:latency,step:session}` | `p95 < 500ms`  | JWT verify only. Measured: 21.8ms. |
+| `auth_full_login_ms{regime:latency}`             | `p95 < 2000ms` | E2E login. Measured: 839ms.      |
+| `auth_full_login_ms{regime:latency}`             | `p99 < 3000ms` | Tail of the full transaction.    |
+| `auth_success_count{regime:saturation}`          | `count > floor`| Capacity collapse detector.      |
 | `checks{check:csrf_ok}`               | `rate > 99%`    |                                             |
 | `checks{check:login_ok}`              | `rate > 99%`    |                                             |
 | `checks{check:session_ok}`            | `rate > 99%`    |                                             |
+
+Every latency budget carries `regime:latency`. That tag is load-bearing
+— see [Two regimes](#two-regimes).
 
 ### `mutations.js`
 
@@ -164,12 +215,13 @@ the rate noticeably.
 | Metric                                       | Budget          | Why                                  |
 | -------------------------------------------- | --------------- | ------------------------------------ |
 | `http_req_failed{type:list}`                 | `rate < 1%`     | Read-path error budget.              |
-| `http_req_duration{endpoint:controls}`       | `p95 < 800ms`   | Paginated list w/ auth + RLS.        |
-| `http_req_duration{endpoint:controls}`       | `p99 < 2000ms`  |                                      |
-| `http_req_duration{endpoint:risks}`          | `p95 < 800ms`   |                                      |
-| `http_req_duration{endpoint:risks}`          | `p99 < 2000ms`  |                                      |
-| `http_req_duration{endpoint:evidence}`       | `p95 < 800ms`   |                                      |
-| `http_req_duration{endpoint:evidence}`       | `p99 < 2000ms`  |                                      |
+| `http_req_duration{regime:latency,endpoint:controls}` | `p95 < 800ms`  | Paginated list w/ auth + RLS. Measured: 94.6ms. |
+| `http_req_duration{regime:latency,endpoint:controls}` | `p99 < 2000ms` |                             |
+| `http_req_duration{regime:latency,endpoint:risks}`    | `p95 < 800ms`  | Measured: 68.3ms.           |
+| `http_req_duration{regime:latency,endpoint:risks}`    | `p99 < 2000ms` |                             |
+| `http_req_duration{regime:latency,endpoint:evidence}` | `p95 < 800ms`  | Measured: 49.0ms.           |
+| `http_req_duration{regime:latency,endpoint:evidence}` | `p99 < 2000ms` |                             |
+| `list_iterations{regime:saturation}`         | `count > floor` | Capacity collapse detector.         |
 | `list_success_rate`                          | `rate > 99%`    | Aggregate.                           |
 | `checks{check:controls_ok}`                  | `rate > 99%`    |                                      |
 | `checks{check:risks_ok}`                     | `rate > 99%`    |                                      |

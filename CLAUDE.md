@@ -74,10 +74,40 @@ inspecting container logs, a manual restart — execute it directly via
 NOT a hand-edit on the VM. Back up any file before editing it (the
 `<file>.bak.<timestamp>` convention).
 
-> Migration note: the legacy `inflect-compliance` VM / `/opt/inflect/`
-> paths (and the `inflect-compliance` GHCR org) are being retired as part
-> of the Agrent rebrand. VM/instance renames are operator-side — not
-> scripted here. `deploy/docker-compose.prod.yml` is the older
+**Backups: one disk, one daily snapshot — per stack.** Postgres lives
+in a local Docker volume on each instance's boot disk (`agrent-pgdata`
+on agrent, `inflect_pgdata` on inflect-compliance) — no managed
+database, no replica. Each disk carries a GCE snapshot schedule
+(`agrent-daily-snapshot` 02:00 UTC, `inflect-daily-snapshot` 02:30 UTC;
+both 14-day retention, `eu` storage, `keep-auto-snapshots`). So **RPO
+is up to 24 hours**, not the 1 hour `docs/slos.md` targets, and the
+snapshots are crash-consistent (Postgres replays WAL on restore).
+Restores are drilled monthly by `infra/scripts/restore-test-gcp.sh`
+via `.github/workflows/restore-test.yml`, which runs it once per
+target from a job matrix — it boots a real Postgres over the restored
+data directory rather than just checking a snapshot exists. The
+`DATA_ENCRYPTION_KEY` sits on the same disk as the data it protects
+(`/opt/agrent/.env`; `/opt/inflect/.env.prod`), so a whole-disk restore
+recovers key and ciphertext together; a pgdata-only copy is NOT a
+complete backup. **See `docs/backup-restore.md`** for the operator
+runbook. Before 2026-08-01 NEITHER stack had any backup at all, and the
+monthly restore test drilled AWS RDS — infrastructure neither product
+runs.
+
+> **The `inflect-compliance` VM is NOT this product and is NOT idle.**
+> The same GCP project runs a second GCE instance, `inflect-compliance`
+> (`/opt/inflect/`, host `inflect.34-140-180-255.sslip.io`), serving a
+> DIFFERENT product from a DIFFERENT repo — its image is
+> `ghcr.io/inflect-compliance/inflect-compliance`, which this repo never
+> pushes to (we publish `…/agri-saas`). It is live: Watchtower still
+> auto-deploys to it, and as of 2026-08-01 its database held 7 tenants,
+> 18 users and audit rows written that day. Earlier wording here said
+> the VM was "being retired as part of the Agrent rebrand"; that was
+> intent, not fact, and reading it as fact nearly led to deleting a VM
+> with live users on it. **Check what an instance is actually running
+> before acting on a doc that says it is on its way out.** The only
+> thing this repo shares with it is the GCP project and the backup
+> tooling (see `docs/backup-restore.md`). `deploy/docker-compose.prod.yml` is the older
 > inflect-branded manifest, retained because the GAP-03 encryption-key
 > guardrail asserts its `:?`-fail-fast syntax; the live agrent stack uses
 > `docker-compose.vm.yml`.
