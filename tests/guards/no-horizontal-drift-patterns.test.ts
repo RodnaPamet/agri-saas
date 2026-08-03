@@ -140,54 +140,35 @@ function scanNegativeMargins(rel: string, content: string): MarginHit[] {
 /**
  * Known compensated layout-negative-margin sites — each verified to carry
  * a compensating `px-`/`pl-`/`pr-` OR `overflow-x-hidden`/`overflow-hidden`
- * on the SAME element.
- *
- * CONTENT-ANCHORED (not line-pinned): each entry is `{ file, contains }`,
- * where `contains` is a distinctive substring of the compensated element's
- * class list. A site is matched when a compensated hit in `file` has text
- * that includes `contains`. This is deliberately robust to LINE MOVES — an
- * unrelated edit above the site (or a concurrent PR touching the same file)
- * must not fail this guard. The completeness ratchet still fires when a NEW
- * compensated site appears (no entry matches it), and the no-stale check
- * still fires when the markup is removed or its compensation stripped. Keep
- * `contains` narrow enough to stay unique within its file.
+ * on the SAME element. Keyed `file:line`. A new compensated site must be
+ * added here (completeness); a stale/uncompensated one fails.
  */
 const COMPENSATED_SITES: ReadonlyArray<{
-    file: string;
-    contains: string;
+    key: string;
     reason: string;
 }> = [
     {
-        file: 'src/app/org/[orgSlug]/(app)/widget-dispatcher.tsx',
-        contains: 'h-full -mx-2 px-2',
+        key: 'src/app/org/[orgSlug]/(app)/widget-dispatcher.tsx:284',
         reason: 'Scroll-container (overflow-y-auto) full-bleed coverage list; -mx-2 bleeds the rows to the card edge and is compensated by px-2.',
     },
     {
-        file: 'src/components/frameworks/FrameworkExplorer.tsx',
-        contains: 'overflow-x-hidden -mx-2 px-1',
+        key: 'src/components/frameworks/FrameworkExplorer.tsx:277',
         reason: 'Scroll-container (overflow-y-auto) tree pane; -mx-2 is compensated by px-1 AND clipped by overflow-x-hidden.',
     },
     {
-        file: 'src/app/org/[orgSlug]/(app)/dashboard-sections.tsx',
-        contains: '-mx-3 px-3 py-2',
+        key: 'src/app/org/[orgSlug]/(app)/dashboard-sections.tsx:81',
         reason: 'Full-bleed hover row; -mx-3 widens the tap target to the card edge and is compensated by px-3.',
     },
     {
-        file: 'src/app/t/[tenantSlug]/(app)/locations/[locationId]/page.tsx',
-        contains: '-mx-4 h-[calc(100dvh-15rem)]',
+        key: 'src/app/t/[tenantSlug]/(app)/locations/[locationId]/page.tsx:658',
         reason: 'Full-bleed phone map; -mx-4 cancels the page px-4 for an edge-to-edge canvas and is clipped by overflow-hidden.',
     },
     {
-        file: 'src/components/offline/OfflineFieldPanel.tsx',
-        contains: '-mx-4 h-[60vh]',
+        key: 'src/components/offline/OfflineFieldPanel.tsx:236',
         reason: 'Full-bleed phone map; -mx-4 gives an edge-to-edge canvas and is clipped by overflow-hidden.',
     },
 ];
-
-/** A compensated hit matches a baseline entry when same file + text carries the signature. */
-function matchesEntry(hit: MarginHit, entry: { file: string; contains: string }): boolean {
-    return hit.file === entry.file && hit.text.includes(entry.contains);
-}
+const COMPENSATED_KEYS = new Set(COMPENSATED_SITES.map((s) => s.key));
 
 describe('No horizontal drift — layout-scale negative margins (a)', () => {
     const allHits: MarginHit[] = [];
@@ -214,31 +195,31 @@ describe('No horizontal drift — layout-scale negative margins (a)', () => {
 
     it('every compensated site is documented in COMPENSATED_SITES (completeness)', () => {
         const compensated = allHits.filter((h) => h.compensated);
-        // A hit is documented when SOME baseline entry matches it by content.
-        const undocumented = compensated.filter(
-            (h) => !COMPENSATED_SITES.some((e) => matchesEntry(h, e)),
-        );
-        // De-dupe by file:line for a readable message (a line may carry two tokens).
-        const uniq = [...new Set(undocumented.map((h) => `${h.file}:${h.line}\n    ${h.text}`))];
+        const undocumented = compensated
+            .map((h) => `${h.file}:${h.line}`)
+            .filter((k) => !COMPENSATED_KEYS.has(k));
+        // De-dupe (a line may carry two margin tokens).
+        const uniq = [...new Set(undocumented)];
         if (uniq.length > 0) {
             throw new Error(
                 `Found compensated layout-negative-margin site(s) not in COMPENSATED_SITES.\n` +
-                    `Add each to the baseline as { file, contains, reason } in the same diff:\n  ${uniq.join('\n  ')}`,
+                    `Add each to the baseline with a written reason in the same diff:\n  ${uniq.join('\n  ')}`,
             );
         }
         expect(uniq).toEqual([]);
     });
 
     it('every COMPENSATED_SITES entry still exists and is still compensated (no stale entries)', () => {
-        const compensated = allHits.filter((h) => h.compensated);
-        // An entry is stale when NO compensated hit matches its content signature.
-        const stale = COMPENSATED_SITES.filter(
-            (e) => !compensated.some((h) => matchesEntry(h, e)),
-        ).map((e) => `${e.file}  (contains: "${e.contains}")`);
+        const present = new Set(
+            allHits.filter((h) => h.compensated).map((h) => `${h.file}:${h.line}`),
+        );
+        const stale = COMPENSATED_SITES.filter((s) => !present.has(s.key)).map(
+            (s) => s.key,
+        );
         if (stale.length > 0) {
             throw new Error(
-                `Stale COMPENSATED_SITES entr${stale.length === 1 ? 'y' : 'ies'} — the site was removed or lost its compensation ` +
-                    `(NOT a line move — this guard is content-anchored). Update the \`contains\` signature or drop the entry:\n  ${stale.join('\n  ')}`,
+                `Stale COMPENSATED_SITES entr${stale.length === 1 ? 'y' : 'ies'} — the site moved, was removed, or lost its compensation.\n` +
+                    `Update the key/line or drop the entry in the same diff:\n  ${stale.join('\n  ')}`,
             );
         }
         expect(stale).toEqual([]);

@@ -83,7 +83,7 @@ export function ParcelCadastralInfo({
         return (
             <div className={className}>
                 <dt className="text-content-secondary">{t('cadastralId')}</dt>
-                <dd className="flex flex-wrap items-center gap-tight font-medium">
+                <dd className="flex flex-wrap items-center gap-2 font-medium">
                     {link}
                     {mismatchBadge}
                 </dd>
@@ -92,7 +92,7 @@ export function ParcelCadastralInfo({
     }
 
     return (
-        <span className={`inline-flex items-center gap-tight ${className ?? ''}`}>
+        <span className={`inline-flex items-center gap-2 ${className ?? ''}`}>
             {link}
             {mismatchBadge}
         </span>
