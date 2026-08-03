@@ -163,7 +163,7 @@
         "next-intl": "^4.13.4",
         "nodemailer": "^9.0.3",
         "onnxruntime-node": "^1.27.0",
-        "openai": "^6.49.0",
+        "openai": "^7.2.0",
         "pdfkit": "^0.19.1",
         "pino": "^10.3.1",
         "pptxgenjs": "^4.0.1",
