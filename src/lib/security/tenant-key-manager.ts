@@ -6,8 +6,12 @@
  * tenant-lifecycle surface the rest of the app talks to:
  *
  *   - `createTenantWithDek(data)` — atomic "create a tenant with
- *     its wrapped DEK already populated". The one call every
- *     tenant-creation path should use.
+ *     its wrapped DEK already populated" against the singleton
+ *     client. The call every tenant-creation path should use UNLESS
+ *     the tenant row must be created inside a caller-owned
+ *     transaction (it cannot join one — see the function's doc
+ *     comment for the two call sites that replicate its body against
+ *     a `tx` client instead).
  *
  *   - `ensureTenantDek(tenantId)` — idempotent backfill for a single
  *     tenant. Writes a DEK iff the column is currently NULL. Used
@@ -182,11 +186,19 @@ function getCachedPrevious(tenantId: string): TenantDek | undefined {
  * cache so the first request against the new tenant doesn't pay
  * an unwrap round-trip.
  *
- * Use this EVERYWHERE a new tenant is created:
- *   - register route
+ * Use this whenever a new tenant is created OUTSIDE a transaction:
  *   - SSO auto-onboarding (when it lands)
  *   - seed scripts
  *   - test fixtures that need a DEK from the start
+ *
+ * This function cannot join a caller's transaction — it always runs
+ * against the singleton `prisma` client. Callers that need the tenant
+ * row created atomically alongside other writes (the self-service
+ * register route at `src/app/api/auth/register/route.ts`, and
+ * `createTenantWithOwner` in `src/app-layer/usecases/tenant-lifecycle.ts`)
+ * replicate this function's body — `generateAndWrapDek()` + `tx.tenant.create`
+ * — directly against the transaction client instead. The DEK cache is
+ * not primed on that path; it unwraps on first use.
  *
  * Direct `prisma.tenant.create` still works (nullable column) but
  * leaves the tenant dependent on backfill to get a DEK.

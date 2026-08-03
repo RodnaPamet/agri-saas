@@ -267,6 +267,32 @@ export const TENANT_CREATE_LIMIT: RateLimitConfig = {
 };
 
 /**
+ * Public self-service signup: 15 per hour per IP.
+ *
+ * Threat model: an unauthenticated caller farming workspaces. Every
+ * successful call provisions a Tenant AND generates + wraps a per-tenant
+ * DEK, so this is the most expensive unauthenticated write in the product
+ * — the generic API_MUTATION_LIMIT (60/min) would permit 3600 tenants an
+ * hour from one IP. 15/hour is still useless to a tenant-farming attacker
+ * while leaving real headroom for the actual user base.
+ *
+ * The limiter runs pre-handler and counts ATTEMPTS, not successful
+ * workspace creations — a password-policy or HIBP rejection burns budget
+ * the same as a real signup. Our users are farmers on rural mobile
+ * networks, frequently behind carrier-grade NAT, so a single IP can be
+ * shared by many unrelated people signing up independently; 15/hour gives
+ * that shared IP room for several distinct signups plus a few fumbled
+ * password attempts each, without opening the door to bulk provisioning.
+ *
+ * Bypassed automatically in tests and under AUTH_TEST_MODE=1, so the E2E
+ * per-test isolated-tenant fixture is unaffected.
+ */
+export const SIGNUP_LIMIT: RateLimitConfig = {
+    maxAttempts: 15,
+    windowMs: 60 * 60 * 1000,
+};
+
+/**
  * Tenant invite creation: 20 per hour per tenant.
  *
  * Threat model: a compromised ADMIN account flooding the TenantInvite
