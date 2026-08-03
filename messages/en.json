@@ -2240,7 +2240,7 @@
             "removeMembersFailed": "Failed to remove members",
             "inviteFailed": "Invite failed",
             "inviteEmailed": "Invitation emailed to {email}",
-            "inviteCreatedNoEmail": "Invite created for {email}, but the email could not be sent (check SMTP config). Share this link: {link}",
+            "inviteCreatedNoEmail": "Invite created for {email}, but the email could not be sent (check SMTP config). They can sign in with that address to get access, or you can share this link: {link}",
             "roleChangeFailed": "Role change failed",
             "roleUpdated": "Role updated successfully",
             "confirmDeactivate": "Deactivate {email}? They will lose access to this tenant.",
@@ -7338,7 +7338,7 @@
         "title": "No access yet",
         "yourAccount": "your account",
         "signedInAs": "You are signed in as <b>{email}</b>.",
-        "body": "You do not have access to any workspace yet. Ask your admin to invite you, then follow the link in the invitation email.",
+        "body": "You do not have access to any workspace yet. Ask your admin to invite you, then sign in again with the same email address — the invitation email is optional.",
         "signOut": "Sign out"
     },
     "notFound": {

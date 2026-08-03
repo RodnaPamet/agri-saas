@@ -123,10 +123,16 @@ describeFn('invite redemption — first-time (new) user', () => {
         //    persists their User row. `redeemPendingInvites` is what the
         //    jwt callback calls, with ONLY the email + cookie token (no id).
         const inviteeUser = await adapterCreatesUser(inviteeEmail);
+        // emailVerifiedByIdp:false throughout this suite so these tests
+        // keep proving what they claim — that the TOKEN path redeemed the
+        // invite. With it true, the verified-email path could redeem the
+        // same invite and the assertions would no longer distinguish the
+        // two. That path has its own suite (invite-redemption-by-email).
         await redeemPendingInvites({
             userEmail: inviteeEmail,
             tenantToken: invite.token,
             orgToken: null,
+            emailVerifiedByIdp: false,
         });
 
         // 3. Membership must exist for the real, persisted user id.
@@ -150,7 +156,12 @@ describeFn('invite redemption — first-time (new) user', () => {
         const email = emailFor('noop-user');
         const user = await adapterCreatesUser(email);
 
-        await redeemPendingInvites({ userEmail: email, tenantToken: null, orgToken: null });
+        await redeemPendingInvites({
+            userEmail: email,
+            tenantToken: null,
+            orgToken: null,
+            emailVerifiedByIdp: false,
+        });
 
         const membership = await prisma.tenantMembership.findUnique({
             where: { tenantId_userId: { tenantId, userId: user.id } },
@@ -176,6 +187,7 @@ describeFn('invite redemption — first-time (new) user', () => {
                 userEmail: otherEmail,
                 tenantToken: invite.token,
                 orgToken: null,
+                emailVerifiedByIdp: false,
             }),
         ).resolves.toBeUndefined();
     });

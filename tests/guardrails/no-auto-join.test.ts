@@ -38,11 +38,17 @@ const ALLOWLISTED_MEMBERSHIP_SITES: ReadonlyArray<AllowlistedSite> = [
     {
         file: 'src/app-layer/usecases/tenant-invites.ts',
         reason:
-            'Epic 1 canonical path. redeemInvite consumes a TenantInvite ' +
-            'token atomically (updateMany with expiresAt + acceptedAt + ' +
-            'revokedAt predicates) and email-binds to the signed-in user ' +
-            'before creating the membership. Audit-chained via ' +
-            'appendAuditEntry MEMBER_INVITE_ACCEPTED.',
+            'Epic 1 canonical path. TWO entry points, both requiring an ' +
+            'admin-created TenantInvite: redeemInvite consumes a token ' +
+            'atomically (updateMany with expiresAt + acceptedAt + ' +
+            'revokedAt predicates) and email-binds to the signed-in user; ' +
+            'redeemPendingInvitesByEmail matches a pending invite against ' +
+            'an IdP-VERIFIED sign-in email, making the emailed link ' +
+            'optional. The latter is OAuth-only — src/auth.ts passes ' +
+            'emailVerifiedByIdp=false for credentials, whose email is ' +
+            'self-asserted — and is still not auto-join: no invite means ' +
+            'no membership. Both share finalizeInviteRedemption and are ' +
+            'audit-chained via appendAuditEntry MEMBER_INVITE_ACCEPTED.',
     },
     {
         file: 'src/app-layer/usecases/tenant-lifecycle.ts',
