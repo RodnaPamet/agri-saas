@@ -29,8 +29,13 @@ test.describe('Exchange — two-sided inquiry', () => {
         request,
     }) => {
         const slugA = isolatedTenant.tenantSlug;
-        // Unique commodity so B can find exactly this row in the shared feed.
-        const commodity = `Wheat-${Date.now()}`;
+        // The commodity can no longer be a unique free-text string: it is
+        // constrained to the canonical vocabulary, so `Wheat-${Date.now()}` is
+        // now a 400. The row is disambiguated by a unique QUANTITY instead —
+        // still one-of-a-kind in the shared cross-tenant feed, and it does not
+        // depend on inventing a commodity nobody trades.
+        const commodity = 'wheat';
+        const uniqueTonnes = String(200 + (Date.now() % 8000));
         // Unique contacts so an assertion cannot pass on seed data.
         const sellerContact = `+359 88 ${Date.now() % 1_000_000}`;
         const buyerContact = `buyer-${Date.now()}@farm.test`;
@@ -41,7 +46,7 @@ test.describe('Exchange — two-sided inquiry', () => {
             {
                 data: {
                     side: 'SELL', kind: 'CULTURE', commodity,
-                    quantityTonnes: '250', regionCode: 'BG-16',
+                    quantityTonnes: uniqueTonnes, regionCode: 'BG-16',
                     sellerContact,
                 },
             },
@@ -62,7 +67,9 @@ test.describe('Exchange — two-sided inquiry', () => {
             await pageB.reload({ waitUntil: 'domcontentloaded' });
 
             // A's listing is visible cross-tenant — open its detail Sheet.
-            const row = pageB.getByRole('main').getByRole('button', { name: new RegExp(commodity) });
+            const row = pageB
+                .getByRole('main')
+                .getByRole('button', { name: new RegExp(uniqueTonnes) });
             await row.first().waitFor({ state: 'visible', timeout: 30_000 });
             await row.first().click();
 
