@@ -47,7 +47,7 @@
 import crypto from 'node:crypto';
 
 import prisma from '@/lib/prisma';
-import { env } from '@/env';
+import { getAppBaseUrl } from './app-base-url';
 import { sendEmail } from '@/lib/mailer';
 import { logger } from '@/lib/observability/logger';
 import { hashForLookup } from '@/lib/security/encryption';
@@ -143,9 +143,11 @@ export async function issuePasswordReset(
         requestId: opts.requestId,
     });
 
-    // APP_URL is optional in env; a relative URL won't render as a
-    // clickable link in mail clients but at least won't crash issuance.
-    const base = env.APP_URL ?? '';
+    // Must be ABSOLUTE. A mail client has no base document, so a relative
+    // href renders as dead text and the user has no way to reset. See
+    // getAppBaseUrl — APP_URL is optional in env, so this previously fell
+    // back to '' and produced exactly that.
+    const base = getAppBaseUrl();
     const resetUrl = `${base}/reset-password?token=${encodeURIComponent(raw)}`;
 
     try {
