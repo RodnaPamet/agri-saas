@@ -51,10 +51,14 @@ jest.mock('@/lib/hooks/use-tenant-swr', () => ({
 }));
 
 import { PricesTab } from '@/components/trends/PricesTab';
+import { TooltipProvider } from '@/components/ui/tooltip';
 
 const READY = {
     commodity: 'wheat',
     range: '3m',
+    // Server-side reference for staleness. Both fixture series report close to
+    // it, so neither is flagged stale and the tiles read "as of".
+    generatedAt: '2026-01-12T00:00:00.000Z',
     series: [
         {
             source: 'ec-agrifood',
@@ -63,6 +67,7 @@ const READY = {
             unit: 'EUR/t',
             currency: 'EUR',
             label: 'Wheat',
+            lastObservedAt: '2026-01-10',
             points: [
                 { date: '2026-01-01', price: 200 },
                 { date: '2026-01-10', price: 212 },
@@ -75,17 +80,33 @@ const READY = {
             unit: 'BGN/t',
             currency: 'BGN',
             label: 'Own-listings median',
+            lastObservedAt: '2026-01-10',
             points: [{ date: '2026-01-10', price: 400, count: 9 }],
         },
     ],
 };
+
+/**
+ * The tiles now carry provenance (source, stage, age) with InfoTooltip
+ * disclosures, so the tree needs the TooltipProvider the app mounts once in
+ * providers.tsx. Wrapped here rather than nested inside the component so
+ * Radix's shared delay timer — documented as mount-once-at-root — stays
+ * intact.
+ */
+function renderTab() {
+    return render(
+        <TooltipProvider>
+            <PricesTab />
+        </TooltipProvider>,
+    );
+}
 
 describe('PricesTab', () => {
     beforeEach(() => useTenantSWR.mockReset());
 
     it('renders a loading skeleton while the read is in flight', () => {
         useTenantSWR.mockReturnValue({ data: undefined, error: undefined });
-        render(<PricesTab />);
+        renderTab();
         expect(screen.getByTestId('trends-loading')).toBeInTheDocument();
         expect(screen.queryByTestId('ts-chart')).not.toBeInTheDocument();
     });
@@ -95,7 +116,7 @@ describe('PricesTab', () => {
             data: { commodity: 'wheat', range: '3m', series: [] },
             error: undefined,
         });
-        render(<PricesTab />);
+        renderTab();
         expect(screen.getByTestId('trends-empty')).toBeInTheDocument();
         expect(screen.getByTestId('trends-operator-hint')).toBeInTheDocument();
         expect(screen.queryByTestId('ts-chart')).not.toBeInTheDocument();
@@ -103,7 +124,7 @@ describe('PricesTab', () => {
 
     it('renders source-tagged legend labels + charts when data is ready', () => {
         useTenantSWR.mockReturnValue({ data: READY, error: undefined });
-        render(<PricesTab />);
+        renderTab();
         // One chart per unit-group (EUR/t + BGN/t = 2).
         expect(screen.getAllByTestId('ts-chart')).toHaveLength(2);
         // Source legend labels (mocked intl → the i18n key path renders).
@@ -113,7 +134,7 @@ describe('PricesTab', () => {
 
     it('refetches when the range selector changes', () => {
         useTenantSWR.mockReturnValue({ data: READY, error: undefined });
-        const { container } = render(<PricesTab />);
+        const { container } = renderTab();
         expect(useTenantSWR).toHaveBeenCalledWith(
             '/trends/prices?commodity=wheat&range=3m',
         );
@@ -126,7 +147,7 @@ describe('PricesTab', () => {
 
     it('refetches when the commodity picker changes', () => {
         useTenantSWR.mockReturnValue({ data: READY, error: undefined });
-        render(<PricesTab />);
+        renderTab();
         fireEvent.click(screen.getByTestId('cmbx-maize'));
         expect(useTenantSWR).toHaveBeenCalledWith(
             '/trends/prices?commodity=maize&range=3m',

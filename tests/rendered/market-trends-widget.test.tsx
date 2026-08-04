@@ -27,11 +27,15 @@ jest.mock('@/lib/hooks/use-tenant-swr', () => ({
 }));
 
 import { MarketTrendsWidget } from '@/components/trends/MarketTrendsWidget';
+import { TooltipProvider } from '@/components/ui/tooltip';
 
 const DATA = {
     data: {
         commodity: 'wheat',
         range: '3m',
+        // Server-side reference for staleness — the widget renders "as of" and
+        // the stale warning against this, never against the browser clock.
+        generatedAt: '2026-01-12T00:00:00.000Z',
         series: [
             {
                 source: 'ec-agrifood',
@@ -40,6 +44,7 @@ const DATA = {
                 unit: 'EUR/t',
                 currency: 'EUR',
                 label: 'Crop',
+                lastObservedAt: '2026-01-10',
                 points: [
                     { date: '2026-01-01', price: 200 },
                     { date: '2026-01-10', price: 212 },
@@ -49,6 +54,21 @@ const DATA = {
     },
 };
 
+/**
+ * The widget now renders provenance (source, stage, age) with InfoTooltip
+ * disclosures, so its tree needs the TooltipProvider the app mounts once in
+ * providers.tsx. Wrapping here rather than nesting a provider inside the
+ * component keeps Radix's shared delay timer intact — the provider is
+ * documented as mount-once-at-root.
+ */
+function renderWidget() {
+    return render(
+        <TooltipProvider>
+            <MarketTrendsWidget />
+        </TooltipProvider>,
+    );
+}
+
 /** The SWR key the widget reads for a given crop. */
 const keyFor = (c: string) => `/trends/prices?commodity=${c}&range=3m`;
 
@@ -57,8 +77,10 @@ beforeEach(() => useTenantSWR.mockReset());
 describe('MarketTrendsWidget slideshow', () => {
     it('starts on wheat — headline price, sparkline, tap-through to /trends', () => {
         useTenantSWR.mockReturnValue(DATA);
-        render(<MarketTrendsWidget />);
-        expect(screen.getByText('212')).toBeInTheDocument();
+        renderWidget();
+        // Currency is part of the headline now — a bare number next to a
+        // EUR/t unit line was the ambiguity this roadmap removes.
+        expect(screen.getByText('212 EUR')).toBeInTheDocument();
         expect(screen.getByTestId('sparkline')).toBeInTheDocument();
         expect(screen.getByText('commodities.wheat')).toBeInTheDocument();
         expect(useTenantSWR).toHaveBeenCalledWith(keyFor('wheat'));
@@ -67,7 +89,7 @@ describe('MarketTrendsWidget slideshow', () => {
 
     it('renders one dot per crop, the first selected', () => {
         useTenantSWR.mockReturnValue(DATA);
-        render(<MarketTrendsWidget />);
+        renderWidget();
         const dots = screen.getAllByRole('tab');
         expect(dots).toHaveLength(4);
         expect(dots[0]).toHaveAttribute('aria-selected', 'true');
@@ -76,7 +98,7 @@ describe('MarketTrendsWidget slideshow', () => {
 
     it('Next advances to the following crop (reads its series)', () => {
         useTenantSWR.mockReturnValue(DATA);
-        render(<MarketTrendsWidget />);
+        renderWidget();
         fireEvent.click(screen.getByRole('button', { name: 'widget.next' }));
         expect(screen.getByText('commodities.maize')).toBeInTheDocument();
         expect(useTenantSWR).toHaveBeenLastCalledWith(keyFor('maize'));
@@ -84,7 +106,7 @@ describe('MarketTrendsWidget slideshow', () => {
 
     it('Prev from the first crop wraps to the last (sunflower)', () => {
         useTenantSWR.mockReturnValue(DATA);
-        render(<MarketTrendsWidget />);
+        renderWidget();
         fireEvent.click(screen.getByRole('button', { name: 'widget.prev' }));
         expect(screen.getByText('commodities.sunflower')).toBeInTheDocument();
         expect(useTenantSWR).toHaveBeenLastCalledWith(keyFor('sunflower'));
@@ -92,7 +114,7 @@ describe('MarketTrendsWidget slideshow', () => {
 
     it('a dot jumps directly to its crop', () => {
         useTenantSWR.mockReturnValue(DATA);
-        render(<MarketTrendsWidget />);
+        renderWidget();
         fireEvent.click(screen.getAllByRole('tab')[2]); // barley
         expect(screen.getByText('commodities.barley')).toBeInTheDocument();
         expect(useTenantSWR).toHaveBeenLastCalledWith(keyFor('barley'));
@@ -102,7 +124,7 @@ describe('MarketTrendsWidget slideshow', () => {
         jest.useFakeTimers();
         try {
             useTenantSWR.mockReturnValue(DATA);
-            render(<MarketTrendsWidget />);
+            renderWidget();
             expect(screen.getByText('commodities.wheat')).toBeInTheDocument();
             act(() => {
                 jest.advanceTimersByTime(10_000);
@@ -115,7 +137,7 @@ describe('MarketTrendsWidget slideshow', () => {
 
     it('still renders a muted empty state (tap-through intact) with no data', () => {
         useTenantSWR.mockReturnValue({ data: { commodity: 'wheat', range: '3m', series: [] } });
-        render(<MarketTrendsWidget />);
+        renderWidget();
         expect(screen.getByText('widget.empty')).toBeInTheDocument();
         expect(screen.getByRole('link')).toHaveAttribute('href', '/t/acme/trends');
     });
