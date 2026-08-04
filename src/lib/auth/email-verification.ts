@@ -35,7 +35,7 @@
 import crypto from 'node:crypto';
 
 import prisma from '@/lib/prisma';
-import { env } from '@/env';
+import { getAppBaseUrl } from './app-base-url';
 import { sendEmail } from '@/lib/mailer';
 import { logger } from '@/lib/observability/logger';
 import { recordVerificationEmailDelivery } from '@/lib/observability/metrics';
@@ -140,10 +140,11 @@ export async function issueEmailVerification(
         requestId: opts.requestId,
     });
 
-    // Build the verification URL. APP_URL is optional in env — if unset
-    // we fall back to a relative URL, which email clients won't render
-    // as a clickable link but at least doesn't crash the issuance flow.
-    const base = env.APP_URL ?? '';
+    // Build the verification URL. Must be ABSOLUTE: a mail client has no
+    // base document to resolve against, so a relative href renders as dead
+    // text and the link is unusable. APP_URL is optional in env, so this
+    // previously fell back to '' and shipped exactly that.
+    const base = getAppBaseUrl();
     const verifyUrl = `${base}/api/auth/verify-email?token=${encodeURIComponent(raw)}`;
 
     const flow = opts.flow ?? 'register';

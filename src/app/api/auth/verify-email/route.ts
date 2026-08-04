@@ -20,11 +20,15 @@
 
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { env } from '@/env';
+import { getAppBaseUrl } from '@/lib/auth/app-base-url';
 import { consumeEmailVerification } from '@/lib/auth/email-verification';
 
 function redirectTo(status: 'verified' | 'invalid' | 'expired'): NextResponse {
-    const base = env.APP_URL ?? '';
+    // NextResponse.redirect REQUIRES an absolute URL — it throws on a
+    // relative one, which surfaces as a 500 on every click of a verification
+    // link. APP_URL is optional in env, so `env.APP_URL ?? ''` used to do
+    // exactly that whenever APP_URL was unset.
+    const base = getAppBaseUrl();
     const target = `${base}/login?verifyStatus=${status}`;
     return NextResponse.redirect(target, { status: 302 });
 }
