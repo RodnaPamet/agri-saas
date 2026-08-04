@@ -53,13 +53,33 @@ it('populates the region Combobox from the Bulgarian oblast catalogue', async ()
     expect(options.length).toBeGreaterThan(20);
 });
 
-it('accepts a free-text commodity via the Combobox onCreate path', async () => {
+it('does NOT offer to invent a commodity — the vocabulary is closed', async () => {
+    // This used to accept free text via the Combobox onCreate path, and that
+    // is what killed the own-listings index: every spelling became its own
+    // group, fragmenting real groups below the k-anonymity floor until they
+    // vanished, and none of them could join to the lowercase
+    // MarketPriceSeries slug the trends read matches on.
+    //
+    // The write schema now normalises to CANONICAL_COMMODITIES, so a create
+    // affordance would only produce a 400 after the form was filled in.
+    // BEHAVIOUR CHANGE: a commodity outside the vocabulary can no longer be
+    // listed; adding one is a deliberate edit to CANONICAL_COMMODITIES.
     renderModal();
     fireEvent.click(document.querySelector('#exchange-commodity')!);
     const search = await screen.findByPlaceholderText(/search commodities/i);
     fireEvent.change(search, { target: { value: 'Triticale' } });
-    fireEvent.click(await screen.findByText(/Use "Triticale"/i));
-    expect(await screen.findByText('Triticale')).toBeInTheDocument();
+
+    await waitFor(() =>
+        expect(screen.queryByText(/Use "Triticale"/i)).not.toBeInTheDocument(),
+    );
+});
+
+it('offers the canonical vocabulary, so every option the API accepts is listed', async () => {
+    renderModal();
+    fireEvent.click(document.querySelector('#exchange-commodity')!);
+    // Derived from CANONICAL_COMMODITIES, Title-Cased for display.
+    expect(await screen.findByRole('option', { name: 'Wheat' })).toBeInTheDocument();
+    expect(await screen.findByRole('option', { name: 'Rapeseed' })).toBeInTheDocument();
 });
 
 it('enables + POSTs the assembled body (region as CODE) on a full submit', async () => {
@@ -87,7 +107,11 @@ it('enables + POSTs the assembled body (region as CODE) on a full submit', async
     // EUR by construction — there is no currency picker on the form any more,
     // because a second denomination is what made two prices on one map
     // incomparable.
-    expect(body).toMatchObject({ commodity: 'Wheat', quantityTonnes: '250', priceCurrency: 'EUR' });
+    // The CANONICAL SLUG is submitted, not the Title-Case label shown in the
+    // picker. This is the join key: MarketPriceSeries.commodity is lowercase
+    // and getPriceTrends matches it exactly, so a listing stored as 'Wheat'
+    // could never contribute to a price series the UI can read back.
+    expect(body).toMatchObject({ commodity: 'wheat', quantityTonnes: '250', priceCurrency: 'EUR' });
     expect(typeof body.regionCode).toBe('string');
     expect((body.regionCode as string).length).toBeGreaterThan(0);
     // The label is never submitted — only the stable code.

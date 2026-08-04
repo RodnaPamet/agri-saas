@@ -49,6 +49,7 @@ import {
     BARCHART_CONTRACTS,
 } from '@/lib/market/barchart-client';
 import { computeListingsMedianIndex, type ListingPriceRow } from '@/lib/market/listings-index';
+import { normalizeCommodity } from '@/lib/market/commodity-vocabulary';
 import type { MarketPricesPullPayload } from './types';
 
 const COMPONENT = 'market-prices-pull';
@@ -400,9 +401,37 @@ async function pullListings(
 ): Promise<{ items: UpsertItem[]; scanned: number; suppressed: number }> {
     // Cross-tenant read: ExchangeListing is a GLOBAL table (no tenantId / no
     // RLS), so the ordinary superuser client sees every tenant's ACTIVE rows.
+    //
+    // The predicate is narrow on purpose. It used to be `status: 'ACTIVE'` plus
+    // a non-null price and nothing else, which pooled three incompatible bases
+    // into one "market price":
+    //
+    //   - side:  SELL and BUY share the model and the pricePerTonne column, so
+    //            asks and BIDS were averaged together. They are opposite sides
+    //            of a spread; their mean is a number describing nothing. Only
+    //            asks are published, and the tile says "asking prices".
+    //   - kind:  wheat SEED and feed wheat are both commodity 'Wheat'. Seed
+    //            trades at a large multiple, so admitting non-CULTURE rows
+    //            silently inflated the grain index.
+    //   - expiry: the canonical browse read (repositories/exchange.ts) excludes
+    //            past-expiry rows, so the index was computed from a SUPERSET of
+    //            what the marketplace shows — a farmer could not reconcile the
+    //            published median against any listing visible on the board.
     const listings = await db.exchangeListing.findMany({
-        where: { status: 'ACTIVE', pricePerTonne: { not: null } },
+        where: {
+            status: 'ACTIVE',
+            pricePerTonne: { not: null },
+            side: 'SELL',
+            kind: 'CULTURE',
+            OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+        },
         select: { commodity: true, pricePerTonne: true, priceCurrency: true, sellerTenantId: true },
+        // Deterministic sample. With no orderBy, `take` handed back whatever
+        // Postgres happened to scan first, so past MAX_LISTINGS the published
+        // median was computed over an ARBITRARY sample that resampled week to
+        // week — the index moved with nothing in the market changing. Ordering
+        // by id makes the cut reproducible run-to-run.
+        orderBy: { id: 'asc' },
         take: MAX_LISTINGS,
     });
 
@@ -415,8 +444,29 @@ async function pullListings(
 
     const groups = computeListingsMedianIndex(rows);
     // Suppressed = distinct (commodity,currency) groups that failed k-anon.
-    const totalGroups = new Set(rows.map((r) => `${r.commodity}||${r.priceCurrency || 'BGN'}`)).size;
+    // Counted over NORMALISED commodities so the figure matches what the
+    // estimator actually grouped; counting raw spellings would report
+    // 'Wheat' and 'wheat' as two suppressed groups that never existed.
+    const totalGroups = new Set(
+        rows
+            .map((r) => {
+                const c = normalizeCommodity(r.commodity);
+                return c ? `${c}||${r.priceCurrency || 'BGN'}` : null;
+            })
+            .filter((k): k is string => k !== null),
+    ).size;
     const suppressed = totalGroups - groups.length;
+
+    // No silent caps: hitting MAX_LISTINGS means the median is computed over a
+    // deterministic PREFIX of the market rather than all of it, and that has to
+    // be visible rather than inferred from a suspiciously round scan count.
+    if (listings.length === MAX_LISTINGS) {
+        logger.warn('market-prices-pull: listings scan hit the cap', {
+            component: COMPONENT,
+            cap: MAX_LISTINGS,
+            detail: 'index computed over the first MAX_LISTINGS rows by id — raise the cap or aggregate DB-side',
+        });
+    }
 
     const week = startOfIsoWeek(new Date());
     const items: UpsertItem[] = groups.map((g) => ({

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { ExchangeSide, ExchangeKind } from '@prisma/client';
 import { EXCHANGE_CURRENCY } from '@/lib/exchange/currency';
+import { CANONICAL_COMMODITIES, normalizeCommodity } from '@/lib/market/commodity-vocabulary';
 
 /**
  * Zod schemas for the Exchange write API. The usecase layer sanitizes all
@@ -65,11 +66,44 @@ const PricePerTonne = boundedDecimal({ min: 0, max: 10_000_000 });
  */
 const PriceCurrency = z.literal(EXCHANGE_CURRENCY);
 
+/**
+ * Commodity, NORMALISED to the canonical vocabulary on the way in.
+ *
+ * This was `z.string().min(1).max(120)` — unvalidated free text. Every
+ * spelling of the same grain therefore created its own group in the
+ * own-listings index, fragmenting real groups below the k-anonymity floor
+ * until they vanished, and letting a writer pick which bucket their price
+ * landed in. It also guaranteed the index could never join to
+ * `MarketPriceSeries.commodity`, which is a lowercase enum.
+ *
+ * Accepting-then-normalising rather than rejecting anything non-canonical is
+ * deliberate: `Wheat`, `wheat` and `пшеница` are the same intent typed by
+ * three different users, and all three should succeed and store `'wheat'`.
+ * A genuinely unknown commodity is refused, because storing it would recreate
+ * the free-text problem one row at a time — adding one is a deliberate,
+ * reviewable edit to CANONICAL_COMMODITIES.
+ */
+const CommodityField = z
+    .string()
+    .min(1)
+    .max(120)
+    .transform((raw, ctx) => {
+        const canonical = normalizeCommodity(raw);
+        if (!canonical) {
+            ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                message: `Unknown commodity. Expected one of: ${CANONICAL_COMMODITIES.join(', ')}`,
+            });
+            return z.NEVER;
+        }
+        return canonical;
+    });
+
 export const CreateListingSchema = z
     .object({
         side: z.nativeEnum(ExchangeSide),
         kind: z.nativeEnum(ExchangeKind),
-        commodity: z.string().min(1).max(120),
+        commodity: CommodityField,
         quantityTonnes: QuantityTonnes,
         pricePerTonne: PricePerTonne.nullable().optional(),
         priceCurrency: PriceCurrency.default(EXCHANGE_CURRENCY),

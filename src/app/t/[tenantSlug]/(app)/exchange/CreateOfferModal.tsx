@@ -28,13 +28,26 @@ import { Button } from '@/components/ui/button';
 import { apiPost } from '@/lib/api-client';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 import { BULGARIA_REGION_OPTIONS } from '@/lib/geo/bulgaria-regions';
+import { CANONICAL_COMMODITIES } from '@/lib/market/commodity-vocabulary';
 import { EXCHANGE_CURRENCY } from '@/lib/exchange/currency';
 import type { ExchangePublicListing } from '@/lib/exchange/public-listing';
 
-const COMMODITY_SEED = [
-    'Wheat', 'Maize', 'Sunflower', 'Barley', 'Rapeseed',
-    'Oats', 'Rye', 'Soybean', 'Peas', 'Lentils',
-];
+/**
+ * Offered commodities, DERIVED from the canonical vocabulary.
+ *
+ * This used to be a hand-maintained Title-Case list. The write schema now
+ * normalises to the canonical slugs, so a hardcoded list could drift into
+ * offering an option the API rejects — the worst kind of form, one that
+ * fails only after the user has filled everything in. Deriving makes the
+ * two agree by construction.
+ *
+ * The submitted VALUE is the canonical slug; the label is Title-Cased for
+ * display, which is what the hardcoded list rendered anyway.
+ */
+const COMMODITY_OPTIONS: ComboboxOption[] = CANONICAL_COMMODITIES.map((slug) => ({
+    value: slug,
+    label: slug.charAt(0).toUpperCase() + slug.slice(1),
+}));
 
 interface CreateOfferModalProps {
     open: boolean;
@@ -53,7 +66,6 @@ export function CreateOfferModal({ open, setOpen, onCreated }: CreateOfferModalP
     const [side, setSide] = useState<'SELL' | 'BUY'>('SELL');
     const [kind, setKind] = useState<'CULTURE' | 'FERTILIZER' | 'SEEDS' | 'PRODUCT'>('CULTURE');
     const [commodity, setCommodity] = useState('');
-    const [commodityExtra, setCommodityExtra] = useState<string[]>([]);
     const [quantity, setQuantity] = useState('');
     const [price, setPrice] = useState('');
     const [regionCode, setRegionCode] = useState('');
@@ -64,10 +76,7 @@ export function CreateOfferModal({ open, setOpen, onCreated }: CreateOfferModalP
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    const commodityOptions = useMemo<ComboboxOption[]>(
-        () => [...COMMODITY_SEED, ...commodityExtra].map((c) => ({ value: c, label: c })),
-        [commodityExtra],
-    );
+    const commodityOptions = COMMODITY_OPTIONS;
     const regionOptions = useMemo<ComboboxOption[]>(() => [...BULGARIA_REGION_OPTIONS], []);
 
     const qtyNum = Number(quantity);
@@ -84,7 +93,7 @@ export function CreateOfferModal({ open, setOpen, onCreated }: CreateOfferModalP
         description !== '' || displayName !== '' || sellerContact !== '' || expiresAt !== null;
 
     function reset() {
-        setSide('SELL'); setKind('CULTURE'); setCommodity(''); setCommodityExtra([]); setQuantity('');
+        setSide('SELL'); setKind('CULTURE'); setCommodity(''); setQuantity('');
         setPrice(''); setRegionCode(''); setDescription('');
         setExpiresAt(null); setDisplayName(''); setSellerContact(''); setError(null);
     }
@@ -177,6 +186,17 @@ export function CreateOfferModal({ open, setOpen, onCreated }: CreateOfferModalP
                             </RadioGroup>
                         </FormField>
 
+                        {/* No `onCreate`. It used to let a seller invent a
+                            commodity, and free text is exactly what killed the
+                            own-listings index: every spelling became its own
+                            group, fragmenting real groups below the k-anonymity
+                            floor until they vanished, and none of them could
+                            ever join to the lowercase MarketPriceSeries slug.
+                            The write schema now normalises to the canonical
+                            vocabulary, so offering a create affordance would
+                            only produce a 400 after the form is filled in.
+                            Adding a commodity is a deliberate edit to
+                            CANONICAL_COMMODITIES. */}
                         <FormField label={t('commodity')} required>
                             <Combobox
                                 id="exchange-commodity"
@@ -186,14 +206,6 @@ export function CreateOfferModal({ open, setOpen, onCreated }: CreateOfferModalP
                                 placeholder={t('commodityPlaceholder')}
                                 searchPlaceholder={t('searchPlaceholder')}
                                 matchTriggerWidth
-                                onCreate={async (search) => {
-                                    const v = search.trim();
-                                    if (!v) return false;
-                                    setCommodityExtra((prev) => (prev.includes(v) ? prev : [...prev, v]));
-                                    setCommodity(v);
-                                    return true;
-                                }}
-                                createLabel={(search) => t('commodityCreate', { search: search.trim() })}
                             />
                         </FormField>
 
