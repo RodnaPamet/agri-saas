@@ -10,12 +10,18 @@
 
 // jest.mock factories may reference vars prefixed with `mock` (hoisting rule).
 const mockFindMany = jest.fn();
+const mockGroupBy = jest.fn();
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- test double, swapped per case
 let mockRedis: any = null;
 
 jest.mock('@/lib/prisma', () => ({
     __esModule: true,
-    default: { marketPriceSeries: { findMany: (...args: unknown[]) => mockFindMany(...args) } },
+    default: {
+        marketPriceSeries: { findMany: (...args: unknown[]) => mockFindMany(...args) },
+        // `lastObservedAt` cannot ride on the `points` include — that relation
+        // is filtered to the range window — so it comes from a grouped max.
+        marketPricePoint: { groupBy: (...args: unknown[]) => mockGroupBy(...args) },
+    },
 }));
 jest.mock('@/lib/redis', () => ({ getRedis: () => mockRedis }));
 jest.mock('@/lib/observability/logger', () => ({
@@ -28,6 +34,8 @@ const d = (iso: string) => new Date(`${iso}T00:00:00.000Z`);
 
 beforeEach(() => {
     mockFindMany.mockReset();
+    mockGroupBy.mockReset();
+    mockGroupBy.mockResolvedValue([]);
     mockRedis = null;
 });
 
@@ -35,7 +43,8 @@ describe('getPriceTrends', () => {
     it('returns the empty-result shape when no series exist (Redis off)', async () => {
         mockFindMany.mockResolvedValue([]);
         const res = await getPriceTrends('wheat', '1y');
-        expect(res).toEqual({ commodity: 'wheat', range: '1y', series: [] });
+        expect(res).toMatchObject({ commodity: 'wheat', range: '1y', series: [] });
+        expect(typeof res.generatedAt).toBe('string');
         expect(mockFindMany).toHaveBeenCalledTimes(1);
     });
 
@@ -99,7 +108,7 @@ describe('getPriceTrends', () => {
         const res = await getPriceTrends('barley', 'all');
 
         expect(res).toEqual(cached);
-        expect(mockRedis.get).toHaveBeenCalledWith('trends:prices:v1:barley:all');
+        expect(mockRedis.get).toHaveBeenCalledWith('trends:prices:v2:barley:all');
         expect(mockFindMany).not.toHaveBeenCalled();
         expect(mockRedis.set).not.toHaveBeenCalled();
     });
@@ -113,7 +122,7 @@ describe('getPriceTrends', () => {
         expect(mockFindMany).toHaveBeenCalledTimes(1);
         expect(mockRedis.set).toHaveBeenCalledTimes(1);
         const [key, , exFlag, ttl] = mockRedis.set.mock.calls[0];
-        expect(key).toBe('trends:prices:v1:sunflower:1y');
+        expect(key).toBe('trends:prices:v2:sunflower:1y');
         expect(exFlag).toBe('EX');
         expect(ttl).toBe(21600); // 6h
     });
@@ -123,7 +132,53 @@ describe('getPriceTrends', () => {
         mockFindMany.mockResolvedValue([]);
 
         const res = await getPriceTrends('wheat', '1y');
-        expect(res).toEqual({ commodity: 'wheat', range: '1y', series: [] });
+        expect(res).toMatchObject({ commodity: 'wheat', range: '1y', series: [] });
         expect(mockFindMany).toHaveBeenCalledTimes(1);
+    });
+
+    it('reports lastObservedAt from OUTSIDE the range window', async () => {
+        // The whole point of the separate aggregate: on a short range the last
+        // IN-WINDOW point would masquerade as the series' latest observation,
+        // and a series that has since gone quiet would look current.
+        mockFindMany.mockResolvedValue([
+            {
+                id: 'series-1',
+                source: 'ec-agrifood',
+                region: 'BG',
+                stage: null,
+                unit: 'EUR/t',
+                currency: 'EUR',
+                label: null,
+                points: [{ date: d('2025-01-06'), price: 178, meta: null }],
+            },
+        ]);
+        mockGroupBy.mockResolvedValue([
+            { seriesId: 'series-1', _max: { date: d('2025-03-31') } },
+        ]);
+
+        const res = await getPriceTrends('wheat', '1m');
+
+        expect(res.series[0].points).toHaveLength(1);
+        // Newer than any point in the returned window.
+        expect(res.series[0].lastObservedAt).toBe('2025-03-31');
+    });
+
+    it('reports lastObservedAt as null when the aggregate knows nothing', async () => {
+        mockFindMany.mockResolvedValue([
+            {
+                id: 'series-9',
+                source: 'listings',
+                region: 'BG',
+                stage: null,
+                unit: 'BGN/t',
+                currency: 'BGN',
+                label: null,
+                points: [{ date: d('2025-01-06'), price: 350, meta: null }],
+            },
+        ]);
+        mockGroupBy.mockResolvedValue([]);
+
+        const res = await getPriceTrends('wheat', 'all');
+        expect(res.series[0].lastObservedAt).toBeNull();
     });
 });

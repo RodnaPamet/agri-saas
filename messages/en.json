@@ -7806,7 +7806,8 @@
             "official": "Official prices (EC)",
             "reference": "Reference benchmark",
             "listings": "Listings index",
-            "other": "Other source"
+            "other": "Other source",
+            "futures": "Futures (delayed)"
         },
         "chartAria": "{commodity} price trend ({unit})",
         "empty": {
@@ -7879,6 +7880,16 @@
             "tapThrough": "Open market trends",
             "ariaSparkline": "{commodity} price sparkline",
             "empty": "No market data yet"
+        },
+        "provenance": {
+            "asOf": "as of {date}",
+            "stale": "Not updated since {date}",
+            "staleAria": "This price has not been updated since {date} and may no longer reflect the market.",
+            "delayed": "Delayed quote",
+            "delayedHint": "Exchange data shown on a delay, as required by the data licence. Not a live market price.",
+            "ownListings": "Asking prices on Agrent",
+            "ownListingsHint": "The median price sellers are ASKING on our own noticeboard — not a market quote, and not a price anyone has paid.",
+            "stageLabel": "Stage: {stage}"
         }
     },
     "privacy": {

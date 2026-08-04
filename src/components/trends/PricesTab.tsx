@@ -50,10 +50,10 @@ import {
     latestPoint,
     weekOverWeekDelta,
     isEmptyPayload,
-    formatPrice,
     formatPriceWithCurrency,
     formatDelta,
 } from './trends-helpers';
+import { SeriesProvenance } from './SeriesProvenance';
 
 const COMMODITIES = ['wheat', 'maize', 'barley', 'sunflower'] as const;
 const RANGES = ['1m', '3m', '1y', 'all'] as const;
@@ -87,11 +87,14 @@ function StatTile({
     value,
     sub,
     tone,
+    footer,
 }: {
     label: string;
     value: string;
     sub?: string;
     tone?: 'up' | 'down' | 'flat';
+    /** Provenance line — source, stage and observation date. */
+    footer?: React.ReactNode;
 }) {
     const toneClass =
         tone === 'up'
@@ -108,6 +111,7 @@ function StatTile({
             {sub !== undefined && (
                 <p className={`text-xs tabular-nums ${toneClass}`}>{sub}</p>
             )}
+            {footer}
         </Card>
     );
 }
@@ -329,12 +333,25 @@ export function PricesTab() {
                                           : 'flat'
                                     : undefined
                             }
+                            footer={
+                                tiles?.ec && data ? (
+                                    <SeriesProvenance
+                                        series={tiles.ec}
+                                        generatedAt={data.generatedAt}
+                                        hideSource
+                                        className="mt-1"
+                                    />
+                                ) : undefined
+                            }
                         />
                         <StatTile
                             label={t('tiles.listings')}
                             value={
                                 tiles?.listings && latestPoint(tiles.listings)
-                                    ? formatPrice(latestPoint(tiles.listings)!.price)
+                                    ? formatPriceWithCurrency(
+                                          latestPoint(tiles.listings)!.price,
+                                          tiles.listings.currency,
+                                      )
                                     : t('tiles.noData')
                             }
                             sub={
@@ -344,12 +361,25 @@ export function PricesTab() {
                                       })
                                     : undefined
                             }
+                            footer={
+                                tiles?.listings && data ? (
+                                    <SeriesProvenance
+                                        series={tiles.listings}
+                                        generatedAt={data.generatedAt}
+                                        hideSource
+                                        className="mt-1"
+                                    />
+                                ) : undefined
+                            }
                         />
                         <StatTile
                             label={t('tiles.reference')}
                             value={
                                 tiles?.reference && latestPoint(tiles.reference)
-                                    ? formatPrice(latestPoint(tiles.reference)!.price)
+                                    ? formatPriceWithCurrency(
+                                          latestPoint(tiles.reference)!.price,
+                                          tiles.reference.currency,
+                                      )
                                     : t('tiles.noData')
                             }
                             sub={
@@ -365,6 +395,16 @@ export function PricesTab() {
                                           ? 'down'
                                           : 'flat'
                                     : undefined
+                            }
+                            footer={
+                                tiles?.reference && data ? (
+                                    <SeriesProvenance
+                                        series={tiles.reference}
+                                        generatedAt={data.generatedAt}
+                                        hideSource
+                                        className="mt-1"
+                                    />
+                                ) : undefined
                             }
                         />
                     </div>
