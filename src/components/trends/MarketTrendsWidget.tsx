@@ -38,9 +38,10 @@ import {
     findReferenceSeries,
     latestPoint,
     weekOverWeekDelta,
-    formatPrice,
+    formatPriceWithCurrency,
     formatDelta,
 } from './trends-helpers';
+import { SeriesProvenance } from './SeriesProvenance';
 
 /** Crops the slideshow cycles through (matches the MarketPriceSeries slugs). */
 const WIDGET_COMMODITIES = ['wheat', 'maize', 'barley', 'sunflower'] as const;
@@ -101,6 +102,14 @@ export function MarketTrendsWidget() {
         if (!latest) return null;
         const delta = weekOverWeekDelta(s);
         return {
+            // The widget used to surface only price + unit, so an official EU
+            // quote and the median asking price on our own noticeboard were
+            // pixel-identical — and adjacent carousel slides could differ in
+            // source with no cue at all. Carry the provenance through.
+            source: s.source,
+            stage: s.stage,
+            lastObservedAt: s.lastObservedAt,
+            currency: s.currency,
             unit: s.unit,
             price: latest.price,
             delta,
@@ -175,13 +184,20 @@ export function MarketTrendsWidget() {
                     <div className="flex items-center gap-default">
                         <div className="min-w-0">
                             <p className="metric-gradient font-display text-2xl font-semibold tabular-nums">
-                                {formatPrice(headline.price)}
+                                {formatPriceWithCurrency(headline.price, headline.currency)}
                             </p>
                             <p className="text-xs text-content-muted tabular-nums">{headline.unit}</p>
                             {headline.delta != null && (
                                 <p className={`text-xs tabular-nums ${deltaTone}`}>
                                     {formatDelta(headline.delta)}
                                 </p>
+                            )}
+                            {data && (
+                                <SeriesProvenance
+                                    series={headline}
+                                    generatedAt={data.generatedAt}
+                                    className="mt-0.5"
+                                />
                             )}
                         </div>
                         <div className="h-12 flex-1">

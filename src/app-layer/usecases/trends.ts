@@ -43,12 +43,29 @@ export interface TrendSeries {
     unit: string;
     currency: string;
     label: string | null;
+    /**
+     * Date of the series' most recent observation ANYWHERE (yyyy-mm-dd), not
+     * merely the newest point inside the requested range. Without it the
+     * client cannot tell a series that reported this week from one that
+     * stopped reporting in March: both hand back a `points` array whose last
+     * entry looks equally current. The UI needs it for "as of {date}" and for
+     * the stale warning.
+     */
+    lastObservedAt: string | null;
     points: TrendPoint[];
 }
 
 export interface TrendPricesResponse {
     commodity: TrendCommodity;
     range: TrendRange;
+    /**
+     * When this payload was computed (ISO instant). Staleness is
+     * `generatedAt − lastObservedAt`, and it must be computed against the
+     * SERVER's clock: the response is Redis-cached for 6h and a rural device
+     * can be hours off, so deriving "how old is this" from the browser clock
+     * would silently mis-state it.
+     */
+    generatedAt: string;
     series: TrendSeries[];
 }
 
@@ -79,6 +96,25 @@ async function readFromDb(
         },
     });
 
+    // Newest observation per series REGARDLESS of the range window. It cannot
+    // ride along on the `points` include — that relation is already filtered to
+    // the window, so on range='1m' the last in-window point would masquerade as
+    // the series' latest. One grouped aggregate over the same bounded id set
+    // instead of a per-series read (query-shape guardrail D1: no reads in a
+    // loop).
+    const seriesIds = series.map((s) => s.id);
+    const lastDates = new Map<string, Date>();
+    if (seriesIds.length > 0) {
+        const grouped = await prisma.marketPricePoint.groupBy({
+            by: ['seriesId'],
+            where: { seriesId: { in: seriesIds } },
+            _max: { date: true },
+        });
+        for (const g of grouped) {
+            if (g._max.date) lastDates.set(g.seriesId, g._max.date);
+        }
+    }
+
     const mapped: TrendSeries[] = series
         .map((s) => ({
             source: s.source,
@@ -87,6 +123,7 @@ async function readFromDb(
             unit: s.unit,
             currency: s.currency,
             label: s.label,
+            lastObservedAt: lastDates.get(s.id)?.toISOString().slice(0, 10) ?? null,
             points: s.points.map((p) => {
                 const count =
                     p.meta && typeof p.meta === 'object' && !Array.isArray(p.meta)
@@ -101,7 +138,7 @@ async function readFromDb(
         }))
         .filter((s) => s.points.length > 0);
 
-    return { commodity, range, series: mapped };
+    return { commodity, range, generatedAt: new Date().toISOString(), series: mapped };
 }
 
 /** Read the price trends for one commodity + range, Redis-cached (6h). */
@@ -109,7 +146,11 @@ export async function getPriceTrends(
     commodity: TrendCommodity,
     range: TrendRange,
 ): Promise<TrendPricesResponse> {
-    const cacheKey = `trends:prices:v1:${commodity}:${range}`;
+    // v2: the payload gained `generatedAt` + per-series `lastObservedAt`. A
+    // v1 entry deserialises without them, so the UI would render "as of
+    // undefined" and treat every series as unjudgeable for up to the 6h TTL.
+    // Bumping the version retires those entries instantly.
+    const cacheKey = `trends:prices:v2:${commodity}:${range}`;
     const redis = getRedis();
 
     if (redis) {
