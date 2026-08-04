@@ -5772,7 +5772,6 @@
             "commodity": "Commodity",
             "commodityPlaceholder": "Select or type a commodity",
             "searchPlaceholder": "Search commodities…",
-            "commodityCreate": "Use \"{search}\"",
             "quantity": "Quantity (t)",
             "quantityPlaceholder": "e.g. 250",
             "price": "Price / tonne (€)",

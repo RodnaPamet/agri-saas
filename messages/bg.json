@@ -5772,7 +5772,6 @@
             "commodity": "Стока",
             "commodityPlaceholder": "Изберете или въведете стока",
             "searchPlaceholder": "Търсене на стоки…",
-            "commodityCreate": "Използвай „{search}“",
             "quantity": "Количество (т)",
             "quantityPlaceholder": "напр. 250",
             "price": "Цена / тон (€)",
