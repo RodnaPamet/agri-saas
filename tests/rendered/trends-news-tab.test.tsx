@@ -18,6 +18,15 @@ jest.mock('@/components/trends/InterestsModal', () => ({
 }));
 
 const useTenantSWR = jest.fn();
+// The operator-configuration hint names environment variables, so it is
+// gated on an admin permission. Mocked per the house pattern (see
+// market-trends-widget.test.tsx) — these tabs always render inside a
+// TenantProvider in production, but they are mounted bare here.
+let mockIsAdmin = true;
+jest.mock('@/lib/tenant-context-provider', () => ({
+    usePermissions: () => ({ admin: { manage: mockIsAdmin } }),
+}));
+
 jest.mock('@/lib/hooks/use-tenant-swr', () => ({
     useTenantSWR: (...args: unknown[]) => useTenantSWR(...args),
 }));

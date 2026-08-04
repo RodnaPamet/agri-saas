@@ -28,7 +28,7 @@ jest.mock('@/lib/observability/logger', () => ({
     logger: { warn: jest.fn(), info: jest.fn(), error: jest.fn() },
 }));
 
-import { getPriceTrends } from '@/app-layer/usecases/trends';
+import { getPriceTrends, invalidatePriceTrendsCache } from '@/app-layer/usecases/trends';
 
 const d = (iso: string) => new Date(`${iso}T00:00:00.000Z`);
 
@@ -57,9 +57,14 @@ describe('getPriceTrends', () => {
                 unit: 'EUR/t',
                 currency: 'EUR',
                 label: 'Common wheat',
+                // DESCENDING, because that is what the query now asks for:
+                // ascending + `take` returns the OLDEST points, which froze a
+                // long series' headline in the past. The usecase reverses back
+                // to chronological order, and this fixture has to mimic the DB
+                // or the test proves nothing about the real ordering.
                 points: [
-                    { date: d('2025-01-06'), price: 178, meta: null },
                     { date: d('2025-01-13'), price: 181.5, meta: null },
+                    { date: d('2025-01-06'), price: 178, meta: null },
                 ],
             },
             {
@@ -136,6 +141,35 @@ describe('getPriceTrends', () => {
         expect(mockFindMany).toHaveBeenCalledTimes(1);
     });
 
+    it('returns the NEWEST points, in chronological order', async () => {
+        // The query orders desc + takes; the usecase reverses. Together that
+        // keeps the most recent MAX_POINTS_PER_SERIES rather than the oldest,
+        // which is what the headline tiles read as "latest".
+        mockFindMany.mockResolvedValue([
+            {
+                id: 's1',
+                source: 'ec-agrifood',
+                region: 'BG',
+                stage: null,
+                unit: 'EUR/t',
+                currency: 'EUR',
+                label: null,
+                points: [
+                    { date: d('2025-03-01'), price: 3, meta: null },
+                    { date: d('2025-02-01'), price: 2, meta: null },
+                    { date: d('2025-01-01'), price: 1, meta: null },
+                ],
+            },
+        ]);
+
+        const res = await getPriceTrends('wheat', 'all');
+        expect(res.series[0].points.map((p) => p.date)).toEqual([
+            '2025-01-01',
+            '2025-02-01',
+            '2025-03-01',
+        ]);
+    });
+
     it('reports lastObservedAt from OUTSIDE the range window', async () => {
         // The whole point of the separate aggregate: on a short range the last
         // IN-WINDOW point would masquerade as the series' latest observation,
@@ -180,5 +214,39 @@ describe('getPriceTrends', () => {
 
         const res = await getPriceTrends('wheat', 'all');
         expect(res.series[0].lastObservedAt).toBeNull();
+    });
+});
+
+describe('invalidatePriceTrendsCache', () => {
+    it('drops every cached range for the commodities just written', () => {
+        // Without this the 20-minute Barchart cron was pure waste: licensed
+        // requests spent writing rows no reader would see for up to 6h.
+        const del = jest.fn().mockResolvedValue(1);
+        mockRedis = { get: jest.fn(), set: jest.fn(), del };
+
+        return invalidatePriceTrendsCache(['wheat', 'maize']).then((n) => {
+            expect(n).toBe(8); // 2 commodities x 4 ranges
+            const keys = del.mock.calls[0] as string[];
+            expect(keys).toContain('trends:prices:v2:wheat:1m');
+            expect(keys).toContain('trends:prices:v2:maize:all');
+        });
+    });
+
+    it('is a no-op without Redis, and never throws when Redis does', async () => {
+        // A pull whose rows are already committed must not fail because a
+        // cache could not be cleared — the reader just sees data one TTL old,
+        // which is exactly the status quo.
+        mockRedis = null;
+        expect(await invalidatePriceTrendsCache(['wheat'])).toBe(0);
+
+        mockRedis = { del: jest.fn().mockRejectedValue(new Error('redis down')) };
+        expect(await invalidatePriceTrendsCache(['wheat'])).toBe(0);
+    });
+
+    it('does nothing when no commodities were touched', async () => {
+        const del = jest.fn();
+        mockRedis = { del };
+        expect(await invalidatePriceTrendsCache([])).toBe(0);
+        expect(del).not.toHaveBeenCalled();
     });
 });

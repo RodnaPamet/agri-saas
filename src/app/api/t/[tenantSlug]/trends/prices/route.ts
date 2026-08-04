@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { getTenantCtx } from '@/app-layer/context';
 import { withApiErrorHandling } from '@/lib/errors/api';
-import { jsonResponse } from '@/lib/api-response';
+import { jsonWithETag } from '@/lib/http/etag';
 import { getPriceTrends } from '@/app-layer/usecases/trends';
 import { TrendPricesQuerySchema } from '@/app-layer/schemas/trends.schemas';
 
@@ -26,6 +26,9 @@ export const GET = withApiErrorHandling(
             Object.fromEntries(req.nextUrl.searchParams.entries()),
         );
         const payload = await getPriceTrends(query.commodity, query.range);
-        return jsonResponse(payload);
+        // Weak ETag + If-None-Match → 304. Both trends GETs are hot
+        // list-reads on a mobile-first product over rural LTE, which is
+        // exactly the cold-start data-cost convention's target.
+        return jsonWithETag(req, payload);
     },
 );

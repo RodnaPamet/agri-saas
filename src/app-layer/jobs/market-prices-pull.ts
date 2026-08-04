@@ -50,6 +50,7 @@ import {
 } from '@/lib/market/barchart-client';
 import { computeListingsMedianIndex, type ListingPriceRow } from '@/lib/market/listings-index';
 import { normalizeCommodity } from '@/lib/market/commodity-vocabulary';
+import { invalidatePriceTrendsCache } from '@/app-layer/usecases/trends';
 import type { MarketPricesPullPayload } from './types';
 
 const COMPONENT = 'market-prices-pull';
@@ -129,9 +130,32 @@ function startOfIsoWeek(date: Date): Date {
     return d;
 }
 
-function seriesKey(source: string, commodity: string, region: string, stage: string | null): string {
+/**
+ * Series identity — INCLUDING currency and unit.
+ *
+ * They used to be excluded, and `unit`/`currency` were written only on
+ * create. So when an upstream feed changed denomination, the new values
+ * landed as points on the OLD series, under the old label, with no error
+ * anywhere: a BGN price displayed as EUR, mixed into a EUR history, on one
+ * axis. That is not hypothetical — it happened, and was remediated by
+ * hand-written SQL (docs/implementation-notes/2026-07-15-…flat-series.md).
+ *
+ * Putting them in the key means a denomination change MINTS A NEW SERIES
+ * instead. The old points keep their old currency and their old label, which
+ * is what they are; the new ones start a clean line. The alternative —
+ * updating the series in place — would relabel history as something it never
+ * was, which is the same defect wearing a warning log.
+ */
+function seriesKey(
+    source: string,
+    commodity: string,
+    region: string,
+    stage: string | null,
+    currency: string,
+    unit: string,
+): string {
     // A JSON array keeps a genuine null stage distinct from an empty string.
-    return JSON.stringify([source, commodity, region, stage]);
+    return JSON.stringify([source, commodity, region, stage, currency, unit]);
 }
 
 const dayKey = (d: Date): string => d.toISOString().slice(0, 10);
@@ -155,7 +179,7 @@ async function persistItems(
     }
     const byPoint = new Map<string, Agg>();
     for (const it of items) {
-        const k = `${seriesKey(it.source, it.commodity, it.region, it.stage)}|${dayKey(it.date)}`;
+        const k = `${seriesKey(it.source, it.commodity, it.region, it.stage, it.currency, it.unit)}|${dayKey(it.date)}`;
         const existing = byPoint.get(k);
         if (existing) {
             existing.prices.push(it.price);
@@ -168,7 +192,7 @@ async function persistItems(
     let pointsUpserted = 0;
 
     for (const agg of byPoint.values()) {
-        const key = seriesKey(agg.source, agg.commodity, agg.region, agg.stage);
+        const key = seriesKey(agg.source, agg.commodity, agg.region, agg.stage, agg.currency, agg.unit);
         let seriesId = seriesMap.get(key);
         if (!seriesId) {
             // Create the series (a WRITE — not a read-in-loop; N+1 rule is
@@ -526,15 +550,27 @@ export async function runMarketPricesPull(
     // Pre-load the series catalog ONCE (bounded) so persistItems never reads
     // per-item — keeps the write loop N+1-free.
     const existing = await db.marketPriceSeries.findMany({
-        select: { id: true, source: true, commodity: true, region: true, stage: true },
+        select: {
+            id: true, source: true, commodity: true, region: true, stage: true,
+            currency: true, unit: true,
+        },
         take: MAX_SERIES,
     });
     const seriesMap = new Map<string, string>();
     for (const s of existing) {
-        seriesMap.set(seriesKey(s.source, s.commodity, s.region, s.stage), s.id);
+        seriesMap.set(
+            seriesKey(s.source, s.commodity, s.region, s.stage, s.currency, s.unit),
+            s.id,
+        );
     }
 
     const { seriesTouched, pointsUpserted } = await persistItems(items, seriesMap, db);
+
+    // Drop the cached read payloads for whatever we just wrote. The 20-minute
+    // Barchart cron was otherwise nullified by the 6h read cache: licensed
+    // requests spent on rows no reader would see for hours.
+    const touchedCommodities = [...new Set(items.map((i) => i.commodity))];
+    const invalidated = await invalidatePriceTrendsCache(touchedCommodities);
 
     logger.info('market-prices-pull: complete', {
         component: COMPONENT,
@@ -543,6 +579,7 @@ export async function runMarketPricesPull(
         pointsUpserted,
         listingsScanned,
         suppressed,
+        cacheKeysInvalidated: invalidated,
     });
 
     return { sources, seriesTouched, pointsUpserted, listingsScanned, suppressed };

@@ -25,6 +25,8 @@ import { CACHE_KEYS } from '@/lib/swr-keys';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/ui/empty-state';
+import { ErrorState } from '@/components/ui/error-state';
+import { usePermissions } from '@/lib/tenant-context-provider';
 import { FormField } from '@/components/ui/form-field';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { TabSelect } from '@/components/ui/tab-select';
@@ -52,6 +54,7 @@ import {
     isEmptyPayload,
     formatPriceWithCurrency,
     formatDelta,
+    firstInterestedCommodity,
 } from './trends-helpers';
 import { SeriesProvenance } from './SeriesProvenance';
 
@@ -200,11 +203,32 @@ function UnitGroupChart({
 
 export function PricesTab() {
     const t = useTranslations('trends');
-    const [commodity, setCommodity] = useState<Commodity>('wheat');
+    // Operator hints name environment variables; only admins should see them.
+    const permissions = usePermissions();
+    const isAdmin = permissions.admin.manage;
+    // The stated interest drives which price opens first.
+    //
+    // UserInterest persisted and synced across devices, but its ONLY consumer
+    // was the news For-You filter — so a farmer who told us they grow
+    // sunflower still landed on wheat every single time they opened Prices.
+    // The preference existed and the product ignored it.
+    const { data: interestsData } = useTenantSWR<{ keywords: string[] }>(
+        CACHE_KEYS.me.interests(),
+    );
+    const preferred = useMemo(
+        () => firstInterestedCommodity(interestsData?.keywords),
+        [interestsData],
+    );
+    const [commodity, setCommodity] = useState<Commodity | null>(null);
     const [range, setRange] = useState<Range>('3m');
 
+    // `null` until interests load, then the preferred one — but ONLY while the
+    // user has not chosen. An interests fetch resolving late must never yank
+    // the picker out from under someone who already selected a commodity.
+    const effectiveCommodity: Commodity = commodity ?? preferred ?? 'wheat';
+
     const { data, error } = useTenantSWR<TrendPricesResponse>(
-        CACHE_KEYS.trends.prices(commodity, range),
+        CACHE_KEYS.trends.prices(effectiveCommodity, range),
     );
 
     const commodityOptions = useMemo<ComboboxOption[]>(
@@ -212,8 +236,8 @@ export function PricesTab() {
         [t],
     );
     const selectedCommodity = useMemo<ComboboxOption>(
-        () => ({ value: commodity, label: t(`commodities.${commodity}`) }),
-        [commodity, t],
+        () => ({ value: effectiveCommodity, label: t(`commodities.${effectiveCommodity}`) }),
+        [effectiveCommodity, t],
     );
     const rangeOptions = useMemo(
         () => RANGES.map((r) => ({ id: r, label: t(`ranges.${r}`) })),
@@ -266,7 +290,14 @@ export function PricesTab() {
     );
 
     const isLoading = !data && !error;
-    const empty = error != null || (data != null && isEmptyPayload(data));
+    // ERROR and EMPTY are different facts and must not share a rendering.
+    // They used to be collapsed (`error != null || isEmptyPayload(data)`), so a
+    // 500, a 429 from the read limiter, and a dropped rural connection all read
+    // as "No data for this period" — a confident claim that the market was
+    // quiet — followed by a lecture about environment variables the reader
+    // cannot set. A farmer on a bad signal was told the market had no prices.
+    const isError = error != null;
+    const empty = !isError && data != null && isEmptyPayload(data);
 
     return (
         <div className="space-y-section" id="trends-prices-panel">
@@ -281,6 +312,12 @@ export function PricesTab() {
                     </div>
                     <Skeleton className="h-72 w-full" />
                 </div>
+            ) : isError ? (
+                <ErrorState
+                    title={t('error.title')}
+                    description={t('error.description')}
+                    data-testid="trends-error"
+                />
             ) : empty ? (
                 <EmptyState
                     variant="no-records"
@@ -288,22 +325,29 @@ export function PricesTab() {
                     description={t('empty.description')}
                     data-testid="trends-empty"
                 >
-                    {/* Operator-configuration explainer — market data is
-                        populated by a scheduled job that reads these env vars. */}
-                    <div
-                        className="mt-default rounded-lg border border-border-subtle bg-bg-muted px-4 py-3 text-left"
-                        data-testid="trends-operator-hint"
-                    >
-                        <p className="text-xs font-semibold text-content-emphasis">
-                            {t('operator.title')}
-                        </p>
-                        <p className="mt-1 text-xs text-content-muted">
-                            {t('operator.body', {
-                                ec: 'EC_AGRIFOOD_BASE_URL',
-                                av: 'ALPHA_VANTAGE_API_KEY',
-                            })}
-                        </p>
-                    </div>
+                    {/* Operator-configuration explainer, ADMINS ONLY.
+                        It names environment variables — EC_AGRIFOOD_BASE_URL,
+                        ALPHA_VANTAGE_API_KEY — which is an instruction a
+                        farmer cannot act on and should not have to read. It
+                        also leaks a little of our deployment shape to every
+                        user of every tenant. Operators still see it; everyone
+                        else gets the plain empty state. */}
+                    {isAdmin && (
+                        <div
+                            className="mt-default rounded-lg border border-border-subtle bg-bg-muted px-4 py-3 text-left"
+                            data-testid="trends-operator-hint"
+                        >
+                            <p className="text-xs font-semibold text-content-emphasis">
+                                {t('operator.title')}
+                            </p>
+                            <p className="mt-1 text-xs text-content-muted">
+                                {t('operator.body', {
+                                    ec: 'EC_AGRIFOOD_BASE_URL',
+                                    av: 'ALPHA_VANTAGE_API_KEY',
+                                })}
+                            </p>
+                        </div>
+                    )}
                 </EmptyState>
             ) : (
                 <>
@@ -417,7 +461,7 @@ export function PricesTab() {
                             merged={buildMergedData(g)}
                             series={g.series}
                             colorIndex={colorIndex}
-                            commodityLabel={t(`commodities.${commodity}`)}
+                            commodityLabel={t(`commodities.${effectiveCommodity}`)}
                         />
                     ))}
                 </>

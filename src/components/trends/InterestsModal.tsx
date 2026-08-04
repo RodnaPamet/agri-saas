@@ -37,12 +37,14 @@ export function InterestsModal({
     const [draft, setDraft] = useState<string[]>(initial);
     const [input, setInput] = useState('');
     const [saving, setSaving] = useState(false);
+    const [error, setError] = useState<string | null>(null);
 
     // Reseed the draft from the latest saved set each time the modal opens.
     useEffect(() => {
         if (open) {
             setDraft(initial);
             setInput('');
+            setError(null);
         }
     }, [open, initial]);
 
@@ -56,17 +58,28 @@ export function InterestsModal({
 
     const save = async () => {
         setSaving(true);
+        setError(null);
         try {
             const res = await fetch(buildApiUrl('/me/interests'), {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ keywords: draft }),
             });
-            if (res.ok) {
-                const json = (await res.json().catch(() => ({}))) as { keywords?: string[] };
-                onSaved(json.keywords ?? draft);
+            // `onClose()` used to sit OUTSIDE this branch, with no catch: a
+            // failed save closed the modal exactly like a success, and the
+            // user's edits vanished with no way to tell. On a rural
+            // connection that is the common case, not the edge case.
+            if (!res.ok) {
+                setError(t('news.forYou.saveFailed'));
+                return;
             }
+            const json = (await res.json().catch(() => ({}))) as { keywords?: string[] };
+            onSaved(json.keywords ?? draft);
             onClose();
+        } catch {
+            // Network failure — the modal STAYS OPEN holding the draft, so
+            // retrying costs a click rather than retyping everything.
+            setError(t('news.forYou.saveFailed'));
         } finally {
             setSaving(false);
         }
@@ -132,6 +145,11 @@ export function InterestsModal({
                         </ul>
                     )}
                 </div>
+                {error && (
+                    <p role="alert" className="mt-default text-xs text-content-error">
+                        {error}
+                    </p>
+                )}
             </Modal.Body>
             <Modal.Actions>
                 <Button type="button" variant="secondary" onClick={onClose}>

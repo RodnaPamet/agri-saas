@@ -35,6 +35,12 @@ model CropType {
   tenantId        String
   key             String?
   name            String
+  /// Canonical commodity slug derived from `name` via `normalizeCommodity`,
+  /// or null when the crop is not a traded commodity — most of the catalogue,
+  /// since Tomato and Lettuce have no grain market. Present so a farm growing
+  /// wheat can be joined to the wheat price series; the catalogue itself stays
+  /// free text, because a tenant curates it.
+  commodityCanonical String?
   family          String? // botanical family, e.g. "Solanaceae"
   category        String? // loose grouping, e.g. "fruiting", "leafy green"
   notes           String?
@@ -51,6 +57,7 @@ model CropType {
   @@unique([id, tenantId])
   @@unique([tenantId, key])
   @@index([tenantId, name])
+  @@index([tenantId, commodityCanonical])
 }
 
 /// A variety of a CropType — carries the succession-engine defaults
