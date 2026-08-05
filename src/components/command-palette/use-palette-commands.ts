@@ -124,21 +124,6 @@ export function usePaletteCommands(tenantSlug: string | null): PaletteCommand[] 
                 icon: Truck,
                 href: href('/vendors'),
             },
-            // Agriculture events (#15) — the global fairs / trainings /
-            // subsidy-deadline catalogue. The sidebar HIDES its entry when the
-            // catalogue is empty; this one is unconditional, matching the
-            // palette's documented model (it lists admin for every user and
-            // leans on server-side gates). The palette derives its tenant from
-            // the pathname precisely so it can render outside TenantProvider,
-            // so it has no access to the emptiness flag — and the page's own
-            // empty state makes the worst case honest rather than misleading.
-            {
-                id: 'nav:events',
-                group: 'Navigation',
-                label: t('navEvents'),
-                icon: CalendarClock,
-                href: href('/events'),
-            },
             {
                 id: 'nav:admin',
                 group: 'Navigation',
