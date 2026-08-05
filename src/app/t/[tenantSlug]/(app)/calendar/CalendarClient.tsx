@@ -1,35 +1,39 @@
 'use client';
 
 /**
- * Epic 49 — Compliance Calendar client island.
+ * Calendar client island.
  *
- * Three views: Heatmap (12 months back), Month (single month grid),
- * Gantt (12 months centred on today, audit-cycle/range-bearing
- * events only). View toggle drives both the rendered component AND
- * the query range (heatmap fetches 12 months back, Gantt fetches
- * a 12-month centred window, Month fetches just the visible month +
- * adjacent padding for the 6×7 grid).
+ * A single month view. The heatmap and timeline views were removed: the
+ * timeline could only ever draw events carrying an `end`, and `AuditCycle`
+ * was the sole source that set one, so it rendered empty for every farm;
+ * the heatmap showed density for a workload nobody was tracking. Both cost
+ * a wider query range than the month actually needs. `GanttTimeline` itself
+ * survives — `PlantingBoard` mounts it for crop successions.
  *
- * Selected day populates a side panel listing every event that day,
- * each linked to its entity detail page.
+ * Selecting a day populates a side panel listing that day's events, each
+ * linked to its entity detail page. The header carries the create
+ * affordance; double-clicking a day still opens the same modal seeded with
+ * that date, but it is no longer the only way in.
  */
 
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as React from 'react';
-import { ChevronLeft, ChevronRight, Calendar as CalIcon } from 'lucide-react';
+import {
+    ChevronLeft,
+    ChevronRight,
+    Calendar as CalIcon,
+    Plus,
+} from 'lucide-react';
 import Link from 'next/link';
 import { cardVariants } from '@/components/ui/card';
 import { cn } from '@/lib/cn';
 
 import { Button } from '@/components/ui/button';
-import { CalendarHeatmap } from '@/components/ui/CalendarHeatmap';
 import { CalendarMonth } from '@/components/ui/CalendarMonth';
-import { GanttTimeline } from '@/components/ui/GanttTimeline';
-import { ToggleGroup } from '@/components/ui/toggle-group';
+import { Skeleton } from '@/components/ui/skeleton';
 import { queryKeys } from '@/lib/queryKeys';
 import { formatDate } from '@/lib/format-date';
 import { NewTaskModal } from '@/components/tasks/NewTaskModal';
-import { useQueryClient } from '@tanstack/react-query';
 import type {
     CalendarEvent,
     CalendarResponse,
@@ -37,10 +41,7 @@ import type {
 import { Heading } from '@/components/ui/typography';
 import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { useTranslations } from 'next-intl';
-
-const DAY_MS = 86_400_000;
-
-type View = 'heatmap' | 'month' | 'gantt';
+import { monthGridRange, startOfUtcMonth } from './range';
 
 interface CalendarClientProps {
     tenantSlug: string;
@@ -48,57 +49,53 @@ interface CalendarClientProps {
     initialRange: { from: string; to: string };
 }
 
-function startOfUtcMonth(d: Date): Date {
-    return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1));
-}
-
-function endOfUtcMonth(d: Date): Date {
-    return new Date(
-        Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0, 23, 59, 59, 999),
-    );
-}
-
-function rangeForView(view: View, monthCursor: Date): { from: Date; to: Date } {
-    const today = new Date();
-    if (view === 'heatmap') {
-        return {
-            from: new Date(today.getTime() - 365 * DAY_MS),
-            to: today,
-        };
-    }
-    if (view === 'gantt') {
-        return {
-            from: new Date(today.getTime() - 180 * DAY_MS),
-            to: new Date(today.getTime() + 180 * DAY_MS),
-        };
-    }
-    // month — pad to cover the 6-row grid
-    const start = startOfUtcMonth(monthCursor);
-    const end = endOfUtcMonth(monthCursor);
-    return {
-        from: new Date(start.getTime() - 7 * DAY_MS),
-        to: new Date(end.getTime() + 7 * DAY_MS),
-    };
-}
-
 const MONTH_NAMES = [
     'January', 'February', 'March', 'April', 'May', 'June',
     'July', 'August', 'September', 'October', 'November', 'December',
 ];
+
+/** Today as YMD, for seeding the create modal when no day is selected. */
+function todayYmd(): string {
+    return new Date().toISOString().slice(0, 10);
+}
+
+/**
+ * Placeholder grid shown while a month's events are still loading.
+ *
+ * Without this the first paint of an uncached month is a fully-drawn but
+ * EMPTY calendar — which reads as "you have nothing scheduled" rather than
+ * "still loading", i.e. a confident wrong answer.
+ */
+function CalendarMonthSkeleton() {
+    return (
+        <div className="space-y-tight" aria-hidden="true">
+            <div className="grid grid-cols-7 gap-tight">
+                {Array.from({ length: 7 }).map((_, i) => (
+                    <Skeleton key={`h-${i}`} className="h-4" />
+                ))}
+            </div>
+            {Array.from({ length: 6 }).map((_, row) => (
+                <div key={`r-${row}`} className="grid grid-cols-7 gap-tight">
+                    {Array.from({ length: 7 }).map((_, col) => (
+                        <Skeleton key={`c-${row}-${col}`} className="h-20" />
+                    ))}
+                </div>
+            ))}
+        </div>
+    );
+}
 
 export function CalendarClient({
     tenantSlug,
     initial,
     initialRange,
 }: CalendarClientProps) {
-    const [view, setView] = React.useState<View>('month');
     const [monthCursor, setMonthCursor] = React.useState<Date>(
         () => startOfUtcMonth(new Date()),
     );
     const [selectedDate, setSelectedDate] = React.useState<string | null>(null);
-    // PR-C — double-click on a day cell opens the New Task modal
-    // with that date pre-filled as the due date. `taskCreateDate`
-    // is the YMD seeding the modal; `null` keeps the modal closed.
+    // Double-click on a day cell, or the header create button, opens the New
+    // Task modal with a date pre-filled. `null` keeps the modal closed.
     const [taskCreateDate, setTaskCreateDate] = React.useState<string | null>(
         null,
     );
@@ -107,19 +104,19 @@ export function CalendarClient({
 
     // Pull `getTime()` into a stable primitive so the dep array is
     // statically checkable. We deliberately depend on `monthCursorMs`
-    // rather than the live `monthCursor` Date instance — the lint
-    // rule sees the missing `monthCursor` dep but the runtime is
-    // stable because the timestamp captures the only field
-    // `rangeForView` reads off the Date.
+    // rather than the live `monthCursor` Date instance — the lint rule sees
+    // the missing `monthCursor` dep but the runtime is stable because the
+    // timestamp captures the only field `monthGridRange` reads off the Date.
     const monthCursorMs = monthCursor.getTime();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    const range = React.useMemo(() => rangeForView(view, monthCursor), [view, monthCursorMs]);
+    const range = React.useMemo(() => monthGridRange(monthCursor), [monthCursorMs]);
 
     const fromKey = range.from.toISOString();
     const toKey = range.to.toISOString();
 
-    // Initial server-rendered range happens to overlap with the default
-    // (month) view — feed that as initialData when the keys match.
+    // The server shell prefetches this exact range via the same helper, so
+    // on first paint these keys match and the RSC payload seeds the cache
+    // instead of being discarded and immediately refetched.
     const initialMatches =
         initialRange.from === fromKey && initialRange.to === toKey;
 
@@ -135,22 +132,11 @@ export function CalendarClient({
         staleTime: 60_000,
     });
 
-    // Stabilise the array identity — the `?? []` produces a fresh
-    // empty array each render, which destabilises the useMemos
-    // below that depend on `events`.
+    // Stabilise the array identity — the `?? []` produces a fresh empty
+    // array each render, which destabilises the useMemo below.
     const events: CalendarEvent[] = React.useMemo(
         () => calQuery.data?.events ?? [],
         [calQuery.data],
-    );
-
-    // Filter: Gantt only shows events that have a meaningful range OR
-    // are audit cycles (where `start === end` may be intentional).
-    const ganttEvents = React.useMemo(
-        () =>
-            events.filter(
-                (e) => e.end !== undefined || e.category === 'audit',
-            ),
-        [events],
     );
 
     const selectedEvents = React.useMemo(() => {
@@ -159,14 +145,12 @@ export function CalendarClient({
     }, [events, selectedDate]);
 
     const handlePrev = () => {
-        if (view !== 'month') return;
         setMonthCursor(
             (prev) =>
                 new Date(Date.UTC(prev.getUTCFullYear(), prev.getUTCMonth() - 1, 1)),
         );
     };
     const handleNext = () => {
-        if (view !== 'month') return;
         setMonthCursor(
             (prev) =>
                 new Date(Date.UTC(prev.getUTCFullYear(), prev.getUTCMonth() + 1, 1)),
@@ -194,93 +178,77 @@ export function CalendarClient({
                     </p>
                 </div>
                 <div className="flex items-center gap-tight flex-wrap">
-                    <ToggleGroup
-                        selected={view}
-                        selectAction={(v) => setView(v as View)}
-                        options={[
-                            { value: 'month', label: t('viewMonth') },
-                            { value: 'heatmap', label: t('viewHeatmap') },
-                            { value: 'gantt', label: t('viewTimeline') },
-                        ]}
-                        size="sm"
-                        ariaLabel={t('viewAriaLabel')}
-                    />
+                    {/* The only create affordance used to be an undiscoverable
+                        double-click on a day cell, which also had no keyboard
+                        path. A real button is focusable and Enter-activatable. */}
+                    <Button
+                        type="button"
+                        variant="primary"
+                        icon={<Plus />}
+                        onClick={() => setTaskCreateDate(selectedDate ?? todayYmd())}
+                    >
+                        {t('addTask')}
+                    </Button>
                 </div>
             </header>
 
-            {/* Range navigation (month view only) */}
-            {view === 'month' && (
-                <div
-                    className={cn(cardVariants({ density: 'none' }), 'flex items-center justify-between px-4 py-2')}
-                    data-testid="calendar-month-nav"
+            {/* Range navigation */}
+            <div
+                className={cn(cardVariants({ density: 'none' }), 'flex items-center justify-between px-4 py-2')}
+                data-testid="calendar-month-nav"
+            >
+                <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={handlePrev}
+                    aria-label={t('prevMonth')}
                 >
-                    <Button
-                        type="button"
-                        variant="ghost"
-                        onClick={handlePrev}
-                        aria-label={t('prevMonth')}
-                    >
-                        <ChevronLeft className="size-4" />
-                    </Button>
-                    <span
-                        className="text-sm font-semibold text-content-emphasis"
-                        data-testid="calendar-current-month"
-                    >
-                        {MONTH_NAMES[monthCursor.getUTCMonth()]}{' '}
-                        {monthCursor.getUTCFullYear()}
-                    </span>
-                    <Button
-                        type="button"
-                        variant="ghost"
-                        onClick={handleNext}
-                        aria-label={t('nextMonth')}
-                    >
-                        <ChevronRight className="size-4" />
-                    </Button>
-                </div>
-            )}
+                    <ChevronLeft className="size-4" />
+                </Button>
+                <span
+                    className="text-sm font-semibold text-content-emphasis"
+                    data-testid="calendar-current-month"
+                >
+                    {MONTH_NAMES[monthCursor.getUTCMonth()]}{' '}
+                    {monthCursor.getUTCFullYear()}
+                </span>
+                <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={handleNext}
+                    aria-label={t('nextMonth')}
+                >
+                    <ChevronRight className="size-4" />
+                </Button>
+            </div>
 
-            {/* Loading + error states */}
+            {/* Error state */}
             {calQuery.isError && (
                 <div className="rounded-lg border border-border-error bg-bg-error px-4 py-3 text-sm text-content-error">
                     {t('loadError')}
                 </div>
             )}
 
-            {/* Body — view switch */}
+            {/* Body */}
             <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-section">
                 <div className={cardVariants({ density: 'compact' })}>
-                    {/* The calendar/heatmap/timeline always renders — even
-                        with zero events — so an empty month still shows its
-                        full grid (no "No deadlines in this range" takeover).
-                        Each view handles the empty case itself (empty cells /
-                        empty heatmap / the timeline's own empty message). */}
-                    {view === 'heatmap' ? (
-                        <CalendarHeatmap
-                            events={events}
-                            from={range.from}
-                            to={range.to}
-                            onSelectDate={setSelectedDate}
-                        />
-                    ) : view === 'month' ? (
+                    {/* The grid always renders — even with zero events — so an
+                        empty month still shows its full shape rather than a
+                        "no deadlines" takeover. While the month is still
+                        loading we show the skeleton instead, so an empty grid
+                        never stands in for an unanswered question. */}
+                    {calQuery.isPending ? (
+                        <CalendarMonthSkeleton />
+                    ) : (
                         <CalendarMonth
                             month={monthCursor}
                             events={events}
                             onSelectDate={setSelectedDate}
-                            // PR-C — double-click → New Task modal
-                            // seeded with the clicked day's date.
                             onDoubleClickDate={(ymd) => {
                                 setSelectedDate(ymd);
                                 setTaskCreateDate(ymd);
                             }}
                             selectedYmd={selectedDate}
-                        />
-                    ) : (
-                        <GanttTimeline
-                            from={range.from}
-                            to={range.to}
-                            events={ganttEvents}
-                            emptyMessage={t('ganttEmpty')}
                         />
                     )}
                 </div>
@@ -335,13 +303,10 @@ export function CalendarClient({
                 </aside>
             </div>
 
-            {/* PR-C — New Task modal driven by calendar double-click.
-                Mounted unconditionally; the `open` prop controls
-                visibility. `initialDueAt` seeds the form's dueAt
-                field with the YMD of the clicked day. After create,
-                we stay on the calendar (the queryClient
-                invalidation surfaces the new task immediately on
-                the affected day cell). */}
+            {/* New Task modal — driven by the header button or a day
+                double-click. Mounted unconditionally; `open` controls
+                visibility. After create we stay on the calendar, and the
+                query invalidation surfaces the new task on its day cell. */}
             <NewTaskModal
                 open={taskCreateDate !== null}
                 setOpen={(next) => {

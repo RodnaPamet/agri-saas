@@ -4974,18 +4974,13 @@
         "breadcrumb": "Calendar",
         "title": "Compliance Calendar",
         "description": "Track every compliance deadline — evidence reviews, policy renewals, vendor renewals, audit cycles, control tests — in one place.",
-        "viewMonth": "Month",
-        "viewHeatmap": "Heatmap",
-        "viewTimeline": "Timeline",
-        "viewAriaLabel": "Calendar view",
         "prevMonth": "Previous month",
         "nextMonth": "Next month",
         "loadError": "Failed to load calendar events. Try refreshing.",
-        "ganttEmpty": "No duration-based events in this range. Create an audit cycle to see it here.",
         "noEventsDay": "No events on this day.",
         "clickDay": "Click a day to see events on that date.",
         "moreEvents": "+{count} more",
-        "activityLegend": "Activity"
+        "addTask": "Task"
     },
     "farmTasks": {
         "dashboard": "Dashboard",
