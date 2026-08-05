@@ -27,6 +27,13 @@ let _initialized = false;
 const SENSITIVE_PARAMS = new Set([
     'code', 'state', 'token', 'access_token', 'refresh_token',
     'id_token', 'client_secret', 'secret', 'SAMLResponse', 'RelayState',
+    // Market-data API keys ride in the QUERY STRING, not a header —
+    // alpha-vantage-client.ts and barchart-client.ts both build
+    // `...?apikey=<key>`. Sentry's default HTTP breadcrumbs capture outbound
+    // URLs, and rate-limit throws from those clients are the EXPECTED steady
+    // state rather than a rare event, so without these the keys would be
+    // shipped to a third party on a routine schedule.
+    'apikey', 'api_key', 'apiKey', 'key',
 ]);
 
 // ── Errors to ignore (expected / handled) ──

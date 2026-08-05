@@ -1,4 +1,7 @@
 import { Prisma, type ContractStatus, type ContractType } from '@prisma/client';
+import { normalizeCommodity } from '@/lib/market/commodity-vocabulary';
+import { benchmarkContract } from '@/lib/market/contract-benchmark';
+import { getMarketReferences } from '@/app-layer/usecases/trends';
 import { RequestContext } from '../types';
 import { runInTenantContext } from '@/lib/db-context';
 import { assertCanRead, assertCanWrite } from '../policies/common';
@@ -75,6 +78,7 @@ const LIST_SELECT = {
     key: true,
     counterparty: true,
     commodity: true,
+    commodityCanonical: true,
     type: true,
     status: true,
     volumeTonnes: true,
@@ -190,6 +194,14 @@ export async function listContracts(
         // Decimal-exact value. Both are derived, not stored: value is
         // volume × price (the schema has claimed this since the module
         // landed), and fulfilment comes from the delivery ledger.
+        // Market references for the commodities ON THIS PAGE only — one
+        // extra query for the whole page, never one per row (query-shape
+        // guardrail D1). Global data, so it sits outside the tenant context.
+        const references = await getMarketReferences(
+            rows.map((r) => r.commodityCanonical).filter((c): c is string => c !== null),
+        );
+        const asOf = new Date().toISOString();
+
         const decorated = rows.map((row) => {
             const agg = delivered.get(row.id);
             return {
@@ -201,6 +213,17 @@ export async function listContracts(
                     row.volumeTonnes,
                 ),
                 valueAmount: computeContractValue(row.volumeTonnes, row.pricePerTonne),
+                // "Am I selling above or below market?" — the question the
+                // product could not answer until these two vocabularies met.
+                benchmark: benchmarkContract(
+                    {
+                        commodityCanonical: row.commodityCanonical,
+                        pricePerTonne: row.pricePerTonne == null ? null : Number(row.pricePerTonne),
+                        priceCurrency: row.priceCurrency,
+                    },
+                    references,
+                    asOf,
+                ),
             };
         });
 
@@ -253,6 +276,9 @@ export async function createContract(ctx: RequestContext, input: CreateContractI
     // legal; two `key: ""` rows would 409).
     const key = cleanOptionalText(input.key);
     const commodity = cleanOptionalText(input.commodity);
+    // Derived, never user-supplied. The free text is what the farmer read off
+    // the paper; this is the key that lets it meet a market price.
+    const commodityCanonical = normalizeCommodity(commodity);
     const terms = input.terms != null ? sanitizePlainText(input.terms) : null;
     const pricingNotes = input.pricingNotes != null ? sanitizePlainText(input.pricingNotes) : null;
 
@@ -284,6 +310,7 @@ export async function createContract(ctx: RequestContext, input: CreateContractI
                 key,
                 counterparty,
                 commodity,
+                commodityCanonical,
                 type: input.type ?? 'SALE',
                 status: input.status ?? 'DRAFT',
                 volumeTonnes: input.volumeTonnes ?? null,
@@ -327,7 +354,14 @@ export async function updateContract(ctx: RequestContext, id: string, input: Upd
         data.counterparty = counterparty;
     }
     if (input.key !== undefined) data.key = cleanOptionalText(input.key);
-    if (input.commodity !== undefined) data.commodity = cleanOptionalText(input.commodity);
+    if (input.commodity !== undefined) {
+        const nextCommodity = cleanOptionalText(input.commodity);
+        data.commodity = nextCommodity;
+        // Recomputed on EVERY commodity edit, including clearing it. Leaving a
+        // stale canonical behind would silently keep comparing a contract
+        // against the wrong market.
+        data.commodityCanonical = normalizeCommodity(nextCommodity);
+    }
     if (input.terms !== undefined) data.terms = input.terms != null ? sanitizePlainText(input.terms) : null;
     if (input.pricingNotes !== undefined) {
         data.pricingNotes = input.pricingNotes != null ? sanitizePlainText(input.pricingNotes) : null;

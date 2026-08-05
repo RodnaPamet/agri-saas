@@ -26,6 +26,7 @@ import {
     stalenessDays,
     STALE_AFTER_DAYS,
     SOURCE_BARCHART,
+    firstInterestedCommodity,
 } from '@/components/trends/trends-helpers';
 
 const GENERATED_AT = '2026-03-20T09:00:00.000Z';
@@ -349,5 +350,40 @@ describe('findEcSeries stage pinning', () => {
         ];
         expect(findEcSeries(input)?.stage).toBe('ALPHA');
         expect(findEcSeries([...input].reverse())?.stage).toBe('ALPHA');
+    });
+});
+
+describe('firstInterestedCommodity', () => {
+    it('resolves a stated interest to the commodity Prices should open on', () => {
+        // UserInterest persisted and synced across devices, but its only
+        // consumer was the news For-You filter — so a farmer who told us they
+        // grow sunflower still landed on wheat every time.
+        expect(firstInterestedCommodity(['sunflower'])).toBe('sunflower');
+        expect(firstInterestedCommodity(['Barley'])).toBe('barley');
+    });
+
+    it('reuses the canonical vocabulary, so Bulgarian keywords work', () => {
+        // The keywords are free text typed for news filtering; someone who
+        // typed пшеница means the wheat series.
+        expect(firstInterestedCommodity(['пшеница'])).toBe('wheat');
+        expect(firstInterestedCommodity(['царевица'])).toBe('maize');
+    });
+
+    it('skips interests that are real but not tradeable commodities', () => {
+        // "subsidies" is a legitimate news interest and not something the
+        // Prices tab can open on.
+        expect(firstInterestedCommodity(['subsidies', 'weather', 'maize'])).toBe('maize');
+    });
+
+    it('ignores commodities with no price series', () => {
+        // Lentils are in the exchange vocabulary but have no TrendCommodity
+        // series — opening on them would show an empty chart.
+        expect(firstInterestedCommodity(['lentils'])).toBeNull();
+    });
+
+    it('returns null for no interests, so the caller keeps its default', () => {
+        expect(firstInterestedCommodity([])).toBeNull();
+        expect(firstInterestedCommodity(undefined)).toBeNull();
+        expect(firstInterestedCommodity(['nonsense'])).toBeNull();
     });
 });

@@ -7854,7 +7854,8 @@
                 "chipsAria": "Your interest keywords",
                 "removeChip": "Remove {keyword}",
                 "cancel": "Cancel",
-                "save": "Save"
+                "save": "Save",
+                "saveFailed": "Could not save your interests. Check your connection and try again — your changes are still here."
             },
             "categories": {
                 "market": "Market",
@@ -7868,6 +7869,10 @@
             "operator": {
                 "title": "For operators",
                 "body": "News is aggregated from public agri RSS feeds by a daily job. Configure or override the feeds with {env}."
+            },
+            "error": {
+                "title": "Could not load the news feed",
+                "description": "Something went wrong fetching the feed. This is a problem on our side or with your connection — not a quiet news day. Try again shortly."
             }
         },
         "widget": {
@@ -7889,6 +7894,10 @@
             "ownListings": "Asking prices on Agrent",
             "ownListingsHint": "The median price sellers are ASKING on our own noticeboard — not a market quote, and not a price anyone has paid.",
             "stageLabel": "Stage: {stage}"
+        },
+        "error": {
+            "title": "Could not load prices",
+            "description": "Something went wrong fetching market prices. This is a problem on our side or with your connection — not a sign that the market is quiet. Try again shortly."
         }
     },
     "privacy": {

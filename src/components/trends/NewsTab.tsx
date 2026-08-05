@@ -31,6 +31,8 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/ui/empty-state';
+import { ErrorState } from '@/components/ui/error-state';
+import { usePermissions } from '@/lib/tenant-context-provider';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { TabSelect } from '@/components/ui/tab-select';
 import { formatRelativeTime } from '@/lib/format-date';
@@ -92,6 +94,9 @@ function NewsCard({ item, now }: { item: NewsItem; now: Date }) {
 
 export function NewsTab() {
     const t = useTranslations('trends');
+    // Operator hints name environment variables; only admins should see them.
+    const permissions = usePermissions();
+    const isAdmin = permissions.admin.manage;
     // Default to the full feed (content-first); For You is the opt-in first tab.
     const [filter, setFilter] = useState<Filter>('all');
     const [query, setQuery] = useState('');
@@ -134,7 +139,10 @@ export function NewsTab() {
     const interestsLoading = forYou && interestsData === undefined && !interestsError;
     const isLoading = newsLoading || interestsLoading;
     const noInterests = forYou && !interestsLoading && interests.length === 0;
-    const feedEmpty = error != null || (data != null && items.length === 0);
+    // ERROR and EMPTY are different facts — see the same split in PricesTab.
+    // Collapsed, a 500 or a dropped connection read as "no news today".
+    const isError = error != null;
+    const feedEmpty = !isError && data != null && items.length === 0;
     const noMatches = !feedEmpty && items.length > 0 && visibleItems.length === 0;
 
     return (
@@ -189,6 +197,12 @@ export function NewsTab() {
                         {t('news.forYou.addFirst')}
                     </Button>
                 </EmptyState>
+            ) : isError ? (
+                <ErrorState
+                    title={t('news.error.title')}
+                    description={t('news.error.description')}
+                    data-testid="trends-news-error"
+                />
             ) : feedEmpty ? (
                 <EmptyState
                     variant="no-records"
@@ -196,17 +210,21 @@ export function NewsTab() {
                     description={t('news.empty.description')}
                     data-testid="trends-news-empty"
                 >
-                    <div
-                        className="mt-default rounded-lg border border-border-subtle bg-bg-muted px-4 py-3 text-left"
-                        data-testid="trends-news-operator-hint"
-                    >
-                        <p className="text-xs font-semibold text-content-emphasis">
-                            {t('news.operator.title')}
-                        </p>
-                        <p className="mt-1 text-xs text-content-muted">
-                            {t('news.operator.body', { env: 'MARKET_NEWS_FEEDS' })}
-                        </p>
-                    </div>
+                    {/* Names MARKET_NEWS_FEEDS — an operator instruction, not
+                        something a farmer can act on. Admins only. */}
+                    {isAdmin && (
+                        <div
+                            className="mt-default rounded-lg border border-border-subtle bg-bg-muted px-4 py-3 text-left"
+                            data-testid="trends-news-operator-hint"
+                        >
+                            <p className="text-xs font-semibold text-content-emphasis">
+                                {t('news.operator.title')}
+                            </p>
+                            <p className="mt-1 text-xs text-content-muted">
+                                {t('news.operator.body', { env: 'MARKET_NEWS_FEEDS' })}
+                            </p>
+                        </div>
+                    )}
                 </EmptyState>
             ) : noMatches ? (
                 <EmptyState

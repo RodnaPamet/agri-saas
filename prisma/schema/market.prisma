@@ -49,9 +49,17 @@ model MarketPriceSeries {
 
   points MarketPricePoint[]
 
-  /// Natural key — one series per (source, commodity, region, stage) so
-  /// the pull job upserts idempotently.
-  @@unique([source, commodity, region, stage])
+  /// Natural key — one series per (source, commodity, region, stage,
+  /// currency, unit) so the pull job upserts idempotently.
+  ///
+  /// currency + unit are PART OF IDENTITY, not attributes of it. They used to
+  /// be outside the key and written only on create, so an upstream
+  /// denomination change appended new-currency points to the old series under
+  /// the old label — a BGN price rendered as EUR, mixed into a EUR history,
+  /// on one axis, with no error anywhere. It happened, and was remediated by
+  /// hand-written SQL. Now a change mints a NEW series and the old points
+  /// keep the denomination they were actually quoted in.
+  @@unique([source, commodity, region, stage, currency, unit])
 }
 
 /// GLOBAL dated observation on a MarketPriceSeries (NO tenantId — see the

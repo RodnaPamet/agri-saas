@@ -91,3 +91,37 @@ describe('InterestsModal', () => {
         expect(global.fetch).not.toHaveBeenCalled();
     });
 });
+
+describe('InterestsModal — a failed save must not look like a successful one', () => {
+    it('keeps the modal OPEN and reports the failure on a non-ok response', async () => {
+        // `onClose()` used to sit outside the `if (res.ok)` with no catch, so
+        // a rejected save closed the modal exactly like a success and the
+        // user's edits vanished with no signal at all. On a rural connection
+        // that is the common case.
+        const onClose = jest.fn();
+        const onSaved = jest.fn();
+        global.fetch = jest.fn().mockResolvedValue({ ok: false, status: 500, json: () => Promise.resolve({}) });
+
+        render(<InterestsModal open initial={['wheat']} onClose={onClose} onSaved={onSaved} />);
+        fireEvent.click(screen.getByRole('button', { name: /save/i }));
+
+        await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+        await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument());
+
+        expect(onClose).not.toHaveBeenCalled();
+        expect(onSaved).not.toHaveBeenCalled();
+        // The draft survives, so retrying costs a click rather than retyping.
+        expect(screen.getByText('wheat')).toBeInTheDocument();
+    });
+
+    it('keeps the modal open when the network throws outright', async () => {
+        const onClose = jest.fn();
+        global.fetch = jest.fn().mockRejectedValue(new Error('offline'));
+
+        render(<InterestsModal open initial={['wheat']} onClose={onClose} onSaved={jest.fn()} />);
+        fireEvent.click(screen.getByRole('button', { name: /save/i }));
+
+        await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument());
+        expect(onClose).not.toHaveBeenCalled();
+    });
+});

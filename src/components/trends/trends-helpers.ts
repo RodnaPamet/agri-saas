@@ -11,6 +11,8 @@
  *
  * @module components/trends/trends-helpers
  */
+import { normalizeCommodity } from '@/lib/market/commodity-vocabulary';
+import { TrendCommodity } from '@/app-layer/schemas/trends.schemas';
 import type {
     TrendPricesResponse,
     TrendSeries,
@@ -24,6 +26,9 @@ export const SOURCE_EC = 'ec-agrifood';
 export const SOURCE_AV = 'alpha-vantage';
 export const SOURCE_LISTINGS = 'listings';
 export const SOURCE_BARCHART = 'barchart';
+
+/** Commodities that actually have a price series to open on. */
+const TREND_COMMODITIES = TrendCommodity.options;
 
 /**
  * Map a backend `source` slug to its i18n key under `trends.sources`. Unknown
@@ -316,4 +321,26 @@ export function formatPriceWithCurrency(value: number, currency: string): string
 export function formatDelta(value: number): string {
     const sign = value > 0 ? '+' : value < 0 ? '−' : '';
     return `${sign}${Math.abs(value).toFixed(2)}`;
+}
+
+/**
+ * The first commodity a user's stated interests name, or null.
+ *
+ * `UserInterest` is free-text keywords typed for the news For-You filter, so
+ * this reuses the canonical vocabulary rather than string-matching: a farmer
+ * who typed "пшеница" or "Wheat" means the wheat price series either way.
+ * Only commodities with an actual price series qualify — an interest in
+ * "subsidies" is real but not something Prices can open on.
+ */
+export function firstInterestedCommodity(
+    keywords: readonly string[] | undefined,
+): TrendCommodity | null {
+    if (!keywords?.length) return null;
+    for (const kw of keywords) {
+        const canonical = normalizeCommodity(kw);
+        if (canonical && (TREND_COMMODITIES as readonly string[]).includes(canonical)) {
+            return canonical as TrendCommodity;
+        }
+    }
+    return null;
 }

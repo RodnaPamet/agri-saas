@@ -69,7 +69,21 @@ model Contract {
   /// Buyer (SALE) or supplier (PURCHASE) name — plaintext, filterable.
   counterparty    String
   /// Commodity traded, e.g. "Wheat", "Malting Barley" — plaintext.
+  ///
+  /// This stays FREE TEXT on purpose: it is what the farmer typed off the
+  /// paper contract in their hand, and "Malting Barley" is not "Barley" —
+  /// the distinction is commercially real, and destroying it to gain a join
+  /// key would be a bad trade. The canonical slug lives beside it instead.
   commodity       String?
+  /// Canonical commodity slug derived from `commodity` via
+  /// `normalizeCommodity` (src/lib/market/commodity-vocabulary.ts), or null
+  /// when the free text names something the vocabulary does not cover.
+  ///
+  /// THE JOIN KEY. Trends was a read-only island precisely because no two of
+  /// the four commodity vocabularies could be joined — this column is what
+  /// makes "am I selling above or below market?" expressible at all. Written
+  /// on every create/update, backfilled by 20260805090000_commodity_canonical.
+  commodityCanonical String?
   type            ContractType   @default(SALE)
   status          ContractStatus @default(DRAFT)
   /// Contracted volume in metric tonnes — plaintext (SUM'd by rollups).
@@ -110,6 +124,8 @@ model Contract {
   /// Backs the delivery-window sweep's `deliveryEnd` range scan, which
   /// is filtered on status — hence the status column in the composite.
   @@index([tenantId, status, deliveryEnd])
+  /// Join key to MarketPriceSeries — drives the contract-vs-market read.
+  @@index([tenantId, commodityCanonical])
 }
 
 /// One physical DELIVERY of tonnage against a Contract — a weighbridge
@@ -185,8 +201,12 @@ model YieldRecord {
   /// UNIQUE (with tenantId, below) — one harvest entry mints at most one
   /// yield record, which is what makes the journal→yield effect idempotent.
   logEntryId      String?
-  /// Commodity harvested, e.g. "Wheat" — plaintext.
+  /// Commodity harvested, e.g. "Wheat" — plaintext. Free text, as on
+  /// Contract: it is what was recorded at the weighbridge.
   commodity       String?
+  /// Canonical commodity slug derived from `commodity` — the join key to
+  /// MarketPriceSeries. See Contract.commodityCanonical.
+  commodityCanonical String?
   harvestedAt     DateTime?
   /// Gross harvested mass in metric tonnes — plaintext (SUM'd by rollups).
   grossTonnes     Decimal?  @db.Decimal(14, 3)
@@ -236,4 +256,6 @@ model YieldRecord {
   @@index([tenantId, locationId])
   @@index([tenantId, seasonId])
   @@index([tenantId, harvestedAt])
+  /// Join key to MarketPriceSeries.
+  @@index([tenantId, commodityCanonical])
 }

@@ -46,6 +46,15 @@ jest.mock('@/components/ui/combobox', () => ({
 }));
 
 const useTenantSWR = jest.fn();
+// The operator-configuration hint names environment variables, so it is
+// gated on an admin permission. Mocked per the house pattern (see
+// market-trends-widget.test.tsx) — these tabs always render inside a
+// TenantProvider in production, but they are mounted bare here.
+let mockIsAdmin = true;
+jest.mock('@/lib/tenant-context-provider', () => ({
+    usePermissions: () => ({ admin: { manage: mockIsAdmin } }),
+}));
+
 jest.mock('@/lib/hooks/use-tenant-swr', () => ({
     useTenantSWR: (...args: unknown[]) => useTenantSWR(...args),
 }));
@@ -152,5 +161,36 @@ describe('PricesTab', () => {
         expect(useTenantSWR).toHaveBeenCalledWith(
             '/trends/prices?commodity=maize&range=3m',
         );
+    });
+});
+
+describe('PricesTab — an error is not an empty market', () => {
+    afterEach(() => { mockIsAdmin = true; });
+
+    it('shows an ERROR state, never "no data for this period"', () => {
+        // These were collapsed (`error != null || isEmptyPayload(data)`), so a
+        // 500, a 429 from the read limiter, and a dropped rural connection all
+        // told the farmer the market had no prices — and then lectured them
+        // about environment variables.
+        useTenantSWR.mockReturnValue({ data: undefined, error: new Error('boom') });
+        renderTab();
+
+        expect(screen.getByTestId('trends-error')).toBeInTheDocument();
+        expect(screen.queryByTestId('trends-empty')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('trends-operator-hint')).not.toBeInTheDocument();
+    });
+
+    it('hides the env-var hint from non-admins on a genuinely empty payload', () => {
+        // EC_AGRIFOOD_BASE_URL is an instruction a farmer cannot act on, and
+        // it leaks a little of our deployment shape to every user.
+        mockIsAdmin = false;
+        useTenantSWR.mockReturnValue({
+            data: { commodity: 'wheat', range: '3m', generatedAt: '2026-01-12T00:00:00.000Z', series: [] },
+            error: undefined,
+        });
+        renderTab();
+
+        expect(screen.getByTestId('trends-empty')).toBeInTheDocument();
+        expect(screen.queryByTestId('trends-operator-hint')).not.toBeInTheDocument();
     });
 });
