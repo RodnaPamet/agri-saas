@@ -58,11 +58,11 @@ const PAGES: ReadonlyArray<{ label: string; path: (slug: string) => string }> = 
     // News — aggregated agri-news feed (its own destination now). Renders the
     // empty/operator state when no items are cached, so no seed dependency.
     { label: 'news', path: (s) => `/t/${s}/news` },
-    // Events — global agriculture-events catalogue (#15). Card feed with long
-    // titles + external links, the shape most prone to drift. `prisma/seed.ts`
-    // populates the catalogue, and the page renders a first-class empty state
-    // regardless, so there is no hard seed dependency either way.
-    { label: 'events', path: (s) => `/t/${s}/events` },
+    // Calendar — month grid + side panel. Long event titles inside fixed-width
+    // day cells make it the shape most prone to drift, and it was absent from
+    // this ratchet entirely until the agriculture catalogue merged into it
+    // (replacing the retired /events row).
+    { label: 'calendar', path: (s) => `/t/${s}/calendar` },
     { label: 'my-listings', path: (s) => `/t/${s}/exchange/my-listings` },
     { label: 'my-interests', path: (s) => `/t/${s}/exchange/my-interests` },
     { label: 'farm-tasks', path: (s) => `/t/${s}/farm-tasks` },
