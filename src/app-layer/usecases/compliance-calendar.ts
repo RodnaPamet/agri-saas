@@ -213,6 +213,7 @@ async function loadEvidenceEvents(
     const rows = await db.evidence.findMany({
         where: {
             tenantId: ctx.tenantId,
+            deletedAt: null,
             nextReviewDate: { not: null, gte: range.from, lte: range.to },
         },
         select: {
@@ -254,6 +255,7 @@ async function loadPolicyEvents(
     const rows = await db.policy.findMany({
         where: {
             tenantId: ctx.tenantId,
+            deletedAt: null,
             nextReviewAt: { not: null, gte: range.from, lte: range.to },
         },
         select: {
@@ -293,6 +295,7 @@ async function loadVendorEvents(
     const rows = await db.vendor.findMany({
         where: {
             tenantId: ctx.tenantId,
+            deletedAt: null,
             OR: [
                 { nextReviewAt: { not: null, gte: range.from, lte: range.to } },
                 {
@@ -557,6 +560,7 @@ async function loadTaskEvents(
     const rows = await db.task.findMany({
         where: {
             tenantId: ctx.tenantId,
+            deletedAt: null,
             dueAt: { not: null, gte: range.from, lte: range.to },
         },
         select: {
@@ -601,6 +605,7 @@ async function loadRiskEvents(
     const rows = await db.risk.findMany({
         where: {
             tenantId: ctx.tenantId,
+            deletedAt: null,
             OR: [
                 { nextReviewAt: { not: null, gte: range.from, lte: range.to } },
                 { targetDate: { not: null, gte: range.from, lte: range.to } },
@@ -666,6 +671,7 @@ async function loadFindingEvents(
     const rows = await db.finding.findMany({
         where: {
             tenantId: ctx.tenantId,
+            deletedAt: null,
             dueDate: { not: null, gte: range.from, lte: range.to },
         },
         select: {
@@ -728,6 +734,7 @@ export async function getUpcomingDeadlineCount(
                 db.task.count({
                     where: {
                         tenantId: ctx.tenantId,
+                        deletedAt: null,
                         dueAt: { not: null, lte: horizon },
                         status: {
                             // Cast through readonly → mutable WorkItemStatus[]
@@ -756,6 +763,7 @@ export async function getUpcomingDeadlineCount(
                 db.evidence.count({
                     where: {
                         tenantId: ctx.tenantId,
+                        deletedAt: null,
                         nextReviewDate: { not: null, lte: horizon },
                         status: { not: 'APPROVED' },
                     },
@@ -764,6 +772,7 @@ export async function getUpcomingDeadlineCount(
                 db.policy.count({
                     where: {
                         tenantId: ctx.tenantId,
+                        deletedAt: null,
                         nextReviewAt: { not: null, lte: horizon },
                         status: { not: 'ARCHIVED' },
                     },
@@ -772,6 +781,7 @@ export async function getUpcomingDeadlineCount(
                 db.vendor.count({
                     where: {
                         tenantId: ctx.tenantId,
+                        deletedAt: null,
                         status: { not: 'OFFBOARDED' },
                         OR: [
                             { nextReviewAt: { not: null, lte: horizon } },
