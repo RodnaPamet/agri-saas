@@ -267,7 +267,13 @@ const MIN_SECONDARY_TO_PRIMARY_RATIO = 0.9;
 // 172 (was 171): the grain blend modal's confirm button. A modal's confirm
 // IS the canonical primary per docs/ui-buttons.md — the surface exists to
 // commit one action — so this is an earned primary, not budget drift.
-const MAX_PRIMARY_COUNT = 172;
+// 173 (was 172): the calendar's create button. The page previously had NO
+// create affordance at all — only an undiscoverable double-click on a day
+// cell, with no keyboard path — and an entity page's header create action is
+// the canonical primary per docs/ui-buttons.md. Earned, not drift. No
+// compensating demotion was available: the /events page retired in the same
+// PR contained zero primaries.
+const MAX_PRIMARY_COUNT = 173;
 
 describe("primary:secondary ratio direction", () => {
     const counts = (() => {
