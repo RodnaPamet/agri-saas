@@ -5,6 +5,7 @@
  * Avoids duplication across entity-specific usecase files.
  */
 import { RequestContext } from '../types';
+import { purgeEvidenceBytes } from './evidence-bytes';
 import { assertCanAdmin } from '../policies/common';
 import { logEvent } from '../events/audit';
 import { runInTenantContext } from '@/lib/db-context';
@@ -101,6 +102,13 @@ export async function purgeEntity(
         if (!record) throw notFound(`${model} not found`);
         if (!record.deletedAt) {
             throw notFound(`${model} must be soft-deleted before purging`);
+        }
+
+        // Evidence carries BYTES. Release the stored object before the row —
+        // deleting the row first loses the only pointer to the file, leaving
+        // it readable on disk while the product reports it purged.
+        if (model === 'Evidence') {
+            await purgeEvidenceBytes(db, ctx.tenantId, [id]);
         }
 
         // Hard delete: use $executeRawUnsafe to bypass the soft-delete middleware

@@ -33,7 +33,7 @@ jest.mock('@/lib/db-context', () => ({
 
 jest.mock('@/app-layer/repositories/FileRepository', () => ({
     FileRepository: {
-        isFileOwnedByTenant: jest.fn(),
+        findOwnedByTenant: jest.fn(),
     },
 }));
 
@@ -76,14 +76,23 @@ const readerCtx = makeRequestContext('READER');
 // ─── Forbidden + notFound ──────────────────────────────────────────
 
 describe('downloadFile — gate + missing', () => {
-    it('throws forbidden when the file does not belong to the tenant', async () => {
-        (FileRepository.isFileOwnedByTenant as jest.Mock).mockResolvedValue(false);
-        await expect(downloadFile(readerCtx, 'foreign/file.pdf')).rejects.toThrow(/permission/i);
+    it('404s (not 403s) when the file does not belong to the tenant', async () => {
+        // A 403 confirms the object exists — an existence oracle across
+        // tenants. notFound is indistinguishable from "no such file".
+        (FileRepository.findOwnedByTenant as jest.Mock).mockResolvedValue(null);
+        await expect(downloadFile(readerCtx, 'foreign/file.pdf')).rejects.toThrow(/File not found/i);
         expect(mockStorage.readStream).not.toHaveBeenCalled();
     });
 
     it('throws notFound when the provider stream errors (file gone)', async () => {
-        (FileRepository.isFileOwnedByTenant as jest.Mock).mockResolvedValue(true);
+        (FileRepository.findOwnedByTenant as jest.Mock).mockResolvedValue({
+            id: 'file-1',
+            pathKey: 'tenants/tenant-1/general/doc.pdf',
+            originalName: 'note.pdf',
+            mimeType: 'application/pdf',
+            status: 'STORED',
+            scanStatus: 'CLEAN',
+        });
         mockStorage.readStream.mockImplementation(() => { throw new Error('ENOENT'); });
         await expect(downloadFile(readerCtx, 'gone.pdf')).rejects.toThrow(/File not found on disk/i);
     });
@@ -93,7 +102,14 @@ describe('downloadFile — gate + missing', () => {
 
 describe('downloadFile — local provider stream mode', () => {
     it('concatenates the stream into a single buffer with the right MIME', async () => {
-        (FileRepository.isFileOwnedByTenant as jest.Mock).mockResolvedValue(true);
+        (FileRepository.findOwnedByTenant as jest.Mock).mockResolvedValue({
+            id: 'file-1',
+            pathKey: 'tenants/tenant-1/general/doc.pdf',
+            originalName: 'note.pdf',
+            mimeType: 'application/pdf',
+            status: 'STORED',
+            scanStatus: 'CLEAN',
+        });
         mockStorage.readStream.mockReturnValue(streamFrom([Buffer.from('hello '), Buffer.from('world')]));
 
         const res = await downloadFile(readerCtx, 'docs/note.pdf');
@@ -104,23 +120,56 @@ describe('downloadFile — local provider stream mode', () => {
         expect(res.name).toBe('note.pdf');
     });
 
-    it('strips the directory prefix from the safeName', async () => {
-        (FileRepository.isFileOwnedByTenant as jest.Mock).mockResolvedValue(true);
+    it('reads the RESOLVED pathKey, never the caller string', async () => {
+        // The whole bug in one assertion. The caller asks for one key; the
+        // bytes must come from the key on the tenant-owned record.
+        (FileRepository.findOwnedByTenant as jest.Mock).mockResolvedValue({
+            id: 'file-1',
+            pathKey: 'tenants/tenant-1/general/doc.pdf',
+            originalName: 'note.pdf',
+            mimeType: 'application/pdf',
+            status: 'STORED',
+            scanStatus: 'CLEAN',
+        });
         mockStorage.readStream.mockReturnValue(streamFrom([Buffer.from('x')]));
-        const res = await downloadFile(readerCtx, 'a/b/c/report.csv');
-        expect(res.name).toBe('report.csv');
-        expect(res.mimeType).toBe('text/csv');
+
+        await downloadFile(readerCtx, 'tenants/OTHER-TENANT/general/secret.pdf');
+
+        expect(mockStorage.readStream).toHaveBeenCalledWith('tenants/tenant-1/general/doc.pdf');
+        expect(mockStorage.readStream).not.toHaveBeenCalledWith(
+            'tenants/OTHER-TENANT/general/secret.pdf',
+        );
     });
 
-    it('falls back to application/octet-stream for unknown extensions', async () => {
-        (FileRepository.isFileOwnedByTenant as jest.Mock).mockResolvedValue(true);
+    it('takes name and MIME from the record, not from the requested extension', async () => {
+        // MIME used to be guessed from the caller's extension and replayed as
+        // the download Content-Type — i.e. the caller chose what the browser
+        // would treat the bytes as.
+        (FileRepository.findOwnedByTenant as jest.Mock).mockResolvedValue({
+            id: 'file-1',
+            pathKey: 'tenants/tenant-1/general/doc.pdf',
+            originalName: 'note.pdf',
+            mimeType: 'application/pdf',
+            status: 'STORED',
+            scanStatus: 'CLEAN',
+        });
         mockStorage.readStream.mockReturnValue(streamFrom([Buffer.from('x')]));
-        const res = await downloadFile(readerCtx, 'archive.tar.xz');
-        expect(res.mimeType).toBe('application/octet-stream');
+
+        const res = await downloadFile(readerCtx, 'a/b/c/report.csv');
+
+        expect(res.name).toBe('note.pdf');
+        expect(res.mimeType).toBe('application/pdf');
     });
 
     it('emits READ audit on success', async () => {
-        (FileRepository.isFileOwnedByTenant as jest.Mock).mockResolvedValue(true);
+        (FileRepository.findOwnedByTenant as jest.Mock).mockResolvedValue({
+            id: 'file-1',
+            pathKey: 'tenants/tenant-1/general/doc.pdf',
+            originalName: 'note.pdf',
+            mimeType: 'application/pdf',
+            status: 'STORED',
+            scanStatus: 'CLEAN',
+        });
         mockStorage.readStream.mockReturnValue(streamFrom([Buffer.from('x')]));
         await downloadFile(readerCtx, 'note.pdf');
         const payload = (logEvent as jest.Mock).mock.calls[0][2];
@@ -129,7 +178,14 @@ describe('downloadFile — local provider stream mode', () => {
     });
 
     it('handles string chunks in the stream (non-Buffer)', async () => {
-        (FileRepository.isFileOwnedByTenant as jest.Mock).mockResolvedValue(true);
+        (FileRepository.findOwnedByTenant as jest.Mock).mockResolvedValue({
+            id: 'file-1',
+            pathKey: 'tenants/tenant-1/general/doc.pdf',
+            originalName: 'note.pdf',
+            mimeType: 'application/pdf',
+            status: 'STORED',
+            scanStatus: 'CLEAN',
+        });
         // Stream yields strings; the usecase normalises via Buffer.from
         mockStorage.readStream.mockReturnValue(streamFrom([Buffer.from('') ]));
         const customStream = (async function* () { yield 'string-chunk'; })();
@@ -147,32 +203,45 @@ describe('downloadFile — S3 provider', () => {
     });
 
     it('returns redirect mode with a presigned URL when the FileRecord matches', async () => {
-        (FileRepository.isFileOwnedByTenant as jest.Mock).mockResolvedValue(true);
-        (mockDb.fileRecord.findFirst as jest.Mock).mockResolvedValue({
-            tenantId: readerCtx.tenantId, pathKey: 'tenant-1/file-1.pdf', originalName: 'Doc.pdf', mimeType: 'application/pdf',
+        (FileRepository.findOwnedByTenant as jest.Mock).mockResolvedValue({
+            id: 'file-1',
+            pathKey: 'tenants/tenant-1/general/doc.pdf',
+            originalName: 'note.pdf',
+            mimeType: 'application/pdf',
+            status: 'STORED',
+            scanStatus: 'CLEAN',
         });
         mockStorage.createSignedDownloadUrl.mockResolvedValue('https://s3.example.com/signed-url');
 
-        const res = await downloadFile(readerCtx, 'tenant-1/file-1.pdf');
+        const res = await downloadFile(readerCtx, 'anything-the-caller-typed');
 
         expect(res).toEqual({
             mode: 'redirect',
             downloadUrl: 'https://s3.example.com/signed-url',
-            name: 'Doc.pdf',
+            name: 'note.pdf',
             mimeType: 'application/pdf',
         });
-        expect(assertTenantKey).toHaveBeenCalledWith('tenant-1/file-1.pdf', readerCtx.tenantId);
-        expect(mockStorage.createSignedDownloadUrl).toHaveBeenCalledWith('tenant-1/file-1.pdf', {
-            expiresIn: 300,
-            downloadFilename: 'Doc.pdf',
-        });
+        // Signed against the RESOLVED key, and asserted before signing.
+        expect(assertTenantKey).toHaveBeenCalledWith(
+            'tenants/tenant-1/general/doc.pdf',
+            readerCtx.tenantId,
+        );
+        expect(mockStorage.createSignedDownloadUrl).toHaveBeenCalledWith(
+            'tenants/tenant-1/general/doc.pdf',
+            { expiresIn: 300, downloadFilename: 'note.pdf' },
+        );
     });
 
     it('emits READ audit with the file original name', async () => {
-        (FileRepository.isFileOwnedByTenant as jest.Mock).mockResolvedValue(true);
-        (mockDb.fileRecord.findFirst as jest.Mock).mockResolvedValue({
-            pathKey: 'tenant-1/x.pdf', originalName: 'Doc.pdf', mimeType: 'application/pdf',
+        (FileRepository.findOwnedByTenant as jest.Mock).mockResolvedValue({
+            id: 'file-1',
+            pathKey: 'tenants/tenant-1/general/doc.pdf',
+            originalName: 'note.pdf',
+            mimeType: 'application/pdf',
+            status: 'STORED',
+            scanStatus: 'CLEAN',
         });
+
         mockStorage.createSignedDownloadUrl.mockResolvedValue('https://x');
 
         await downloadFile(readerCtx, 'tenant-1/x.pdf');
@@ -182,14 +251,16 @@ describe('downloadFile — S3 provider', () => {
         expect(payload.details).toMatch(/presigned URL/);
     });
 
-    it('falls through to the local-stream path when no FileRecord matches the key (S3 legacy path)', async () => {
-        (FileRepository.isFileOwnedByTenant as jest.Mock).mockResolvedValue(true);
-        (mockDb.fileRecord.findFirst as jest.Mock).mockResolvedValue(null);
-        mockStorage.readStream.mockReturnValue(streamFrom([Buffer.from('local-fallback')]));
+    it('does NOT fall through to a local read when no record matches (S3)', async () => {
+        // This fallthrough WAS the vulnerability: an unmatched key on S3 fell
+        // to `storage.readStream(fileName)` with the caller's raw string. An
+        // unresolvable key is now simply not found.
+        (FileRepository.findOwnedByTenant as jest.Mock).mockResolvedValue(null);
 
-        const res = await downloadFile(readerCtx, 'orphan-key/legacy.pdf');
-
-        expect(res.mode).toBe('stream');
-        expect((res as any).buffer.toString()).toBe('local-fallback');
+        await expect(downloadFile(readerCtx, 'tenants/OTHER/secret.pdf')).rejects.toThrow(
+            /File not found/i,
+        );
+        expect(mockStorage.readStream).not.toHaveBeenCalled();
+        expect(mockStorage.createSignedDownloadUrl).not.toHaveBeenCalled();
     });
 });

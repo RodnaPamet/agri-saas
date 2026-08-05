@@ -4,6 +4,14 @@ import { verifyFileIntegrity } from '@/app-layer/usecases/audit-hardening';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
 
+/**
+ * The `[fileName]` segment now carries a FileRecord ID, not a path.
+ *
+ * It was a raw storage path, and Next decodes %2F inside dynamic segments —
+ * so the segment could express any key on the shared local volume. The
+ * usecase resolves the id tenant-filtered and asserts the tenant key, so the
+ * value here is an opaque identifier and nothing is derived from its shape.
+ */
 export const GET = withApiErrorHandling(async (req: NextRequest, { params: paramsPromise }: { params: Promise<{ tenantSlug: string; fileName: string }> }) => {
     const params = await paramsPromise;
     const ctx = await getTenantCtx(params, req);

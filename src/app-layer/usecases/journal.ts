@@ -27,6 +27,7 @@ import {
     isAllowedSize,
     FILE_MAX_SIZE_BYTES,
 } from '@/lib/storage';
+import { scanUploadedBuffer } from '@/lib/storage/av-scan';
 import { env } from '@/env';
 import { traceAgUsecase, logger } from '@/lib/observability';
 import { enqueue } from '../jobs/queue';
@@ -598,6 +599,9 @@ export async function uploadLogEntryPhoto(
     const readable = Readable.from(buffer);
     const writeResult = await storage.write(pathKey, readable, { mimeType });
 
+    // Terminal scan status before the record is usable — see evidence.ts.
+    const scanStatus = await scanUploadedBuffer(buffer);
+
     const cleanCaption = caption != null ? sanitizePlainText(caption) || null : null;
 
     const { link, fileRecordId, isImage, alreadyLinked } = await runInTenantContext(ctx, async (db) => {
@@ -643,7 +647,9 @@ export async function uploadLogEntryPhoto(
                 bucket: env.S3_BUCKET || null,
                 domain: 'general',
             });
-            await FileRepository.markStored(db, ctx, fileRecord.id);
+            // Scan before the file is treated as usable, and persist a TERMINAL
+            // status. Leaving it PENDING was a trap: nothing advances that state.
+            await FileRepository.markStored(db, ctx, fileRecord.id, scanStatus);
             fileRecordId = fileRecord.id;
         }
 

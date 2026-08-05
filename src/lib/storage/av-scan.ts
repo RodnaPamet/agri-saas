@@ -285,3 +285,52 @@ export async function isClamavAvailable(): Promise<boolean> {
         });
     });
 }
+
+/**
+ * Scan an uploaded buffer and return the status to persist.
+ *
+ * This is the seam that closes the dead-man switch. Every upload now resolves
+ * to a TERMINAL status before the FileRecord is marked stored:
+ *
+ *   scanning configured + clean   → CLEAN
+ *   scanning configured + hit     → INFECTED   (download blocked in every mode)
+ *   scanning not configured       → SKIPPED    (downloadable; honest — nothing scanned it)
+ *   scanner configured but erroring → depends on mode (see below)
+ *
+ * Nothing is left PENDING, because nothing in this system ever moves a file
+ * OFF pending — there is no async scan worker. A status that only one process
+ * can write and no process can advance is not a workflow state, it is a trap.
+ *
+ * On scanner ERROR the mode decides: `strict` keeps the file PENDING (and so
+ * unreadable) because a deployment that asked for strict scanning should fail
+ * closed; anything else records SKIPPED and logs, because failing open on an
+ * unreachable optional scanner is what the operator asked for.
+ */
+export async function scanUploadedBuffer(
+    buffer: Buffer,
+): Promise<'CLEAN' | 'INFECTED' | 'SKIPPED' | 'PENDING'> {
+    const mode = env.AV_SCAN_MODE;
+    if (mode === 'disabled' || !env.CLAMAV_HOST) {
+        // No scanner deployed. SKIPPED says so; PENDING would imply a scan is
+        // coming, and none is.
+        return 'SKIPPED';
+    }
+
+    const result = await scanBuffer(buffer);
+    if (result.status === 'CLEAN') return 'CLEAN';
+    if (result.status === 'INFECTED') {
+        logger.warn('av-scan: upload rejected as infected', {
+            component: 'av-scan',
+            threat: result.threat,
+            engine: result.engine,
+        });
+        return 'INFECTED';
+    }
+
+    logger.error('av-scan: scanner error on upload', {
+        component: 'av-scan',
+        engine: result.engine,
+        mode,
+    });
+    return mode === 'strict' ? 'PENDING' : 'SKIPPED';
+}

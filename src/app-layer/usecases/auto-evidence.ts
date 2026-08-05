@@ -151,23 +151,23 @@ export async function attachAutoEvidenceFromLogEntry(
             select: { id: true },
         });
 
-        // Mirror createEvidence's control↔evidence bridge so the row shows
-        // in the control's Evidence tab. Duplicate-link is tolerated.
-        try {
-            await db.controlEvidenceLink.create({
-                data: {
-                    tenantId: ctx.tenantId,
-                    controlId,
-                    kind: 'LINK',
-                    url: content,
-                    note: title,
-                    createdByUserId: ctx.userId,
-                },
-            });
-        } catch {
-            // Duplicate link (same control + kind + url) is acceptable —
-            // don't fail the whole attach.
-        }
+        // Mirror createEvidence's control↔evidence bridge so the row shows in
+        // the control's Evidence tab. Duplicate-link is tolerated — but by
+        // ON CONFLICT DO NOTHING, not by a try/catch. A caught 23505 leaves
+        // the enclosing Postgres transaction aborted, so the very next
+        // statement (the audit write below) fails with 25P02 and takes the
+        // attach down. See the longer note in `evidence.ts`.
+        await db.controlEvidenceLink.createMany({
+            data: [{
+                tenantId: ctx.tenantId,
+                controlId,
+                kind: 'LINK',
+                url: content,
+                note: title,
+                createdByUserId: ctx.userId,
+            }],
+            skipDuplicates: true,
+        });
 
         await logEvent(db, ctx, {
             action: 'AUTO_EVIDENCE_ATTACHED',

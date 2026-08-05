@@ -81,6 +81,19 @@ describe('Soft-Delete CI Guardrails', () => {
         expect(violations).toEqual([]);
     });
 
+    /** Remove block and line comments so the scan reads code, not commentary. */
+    function stripComments(src: string): string {
+        return src
+            .replace(/\/\*[\s\S]*?\*\//g, '')
+            .replace(/(^|[^:])\/\/.*$/gm, '$1');
+    }
+
+    test('the comment stripper leaves code and removes commentary (self-check)', () => {
+        expect(stripComments('/** DELETE FROM "Evidence" */\nconst a = 1;')).not.toContain('DELETE');
+        expect(stripComments('// DELETE FROM "Evidence"\nconst a = 1;')).not.toContain('DELETE');
+        expect(stripComments('const q = `DELETE FROM "Evidence"`;')).toContain('DELETE FROM');
+    });
+
     test('no raw SQL DELETE against soft-delete tables outside of approved files', () => {
         // Approved files that may contain raw DELETE:
         const APPROVED_RAW_DELETE_FILES = new Set([
@@ -96,7 +109,12 @@ describe('Soft-Delete CI Guardrails', () => {
             const basename = path.basename(file);
             if (APPROVED_RAW_DELETE_FILES.has(basename)) continue;
 
-            const content = fs.readFileSync(file, 'utf-8');
+            // Strip comments first. This scans for a SQL string, and a
+            // comment explaining why a raw DELETE is dangerous necessarily
+            // contains that string — `evidence-bytes.ts` was flagged for a
+            // docstring while containing no SQL at all. A guard that fires on
+            // prose teaches people to stop writing the prose.
+            const content = stripComments(fs.readFileSync(file, 'utf-8'));
             const relPath = path.relative(SRC_DIR, file);
 
             for (const model of SOFT_DELETE_MODELS) {

@@ -3,6 +3,7 @@ import { EvidenceRepository, EvidenceListFilters } from '../repositories/Evidenc
 import { assertCanRead, assertCanWrite, assertCanAdmin } from '../policies/common';
 import { logEvent } from '../events/audit';
 import { validateFile, uploadFile } from '@/lib/storage';
+import { scanUploadedBuffer } from '@/lib/storage/av-scan';
 import { notFound, badRequest, forbidden } from '@/lib/errors/types';
 import { runInTenantContext } from '@/lib/db-context';
 import { cachedListRead, bumpEntityCacheVersion } from '@/lib/cache/list-cache';
@@ -136,22 +137,22 @@ export async function createEvidence(
 
         // Bridge: create ControlEvidenceLink so evidence shows in the control evidence tab
         if (controlId) {
+            // ON CONFLICT DO NOTHING, not try/catch — see the note on the
+            // same bridge in `uploadEvidenceFile` below. Catching a 23505 in
+            // JS does not un-abort the surrounding Postgres transaction.
             const linkKind = data.type === 'LINK' ? 'LINK' : 'FILE';
-            try {
-                await db.controlEvidenceLink.create({
-                    data: {
-                        tenantId: ctx.tenantId,
-                        controlId,
-                        kind: linkKind,
-                        fileId: evidence.fileRecordId || null,
-                        url: data.type === 'LINK' ? (content || null) : null,
-                        note: evidence.title,
-                        createdByUserId: ctx.userId,
-                    },
-                });
-            } catch {
-                // Duplicate link is acceptable — don't fail the whole creation
-            }
+            await db.controlEvidenceLink.createMany({
+                data: [{
+                    tenantId: ctx.tenantId,
+                    controlId,
+                    kind: linkKind,
+                    fileId: evidence.fileRecordId || null,
+                    url: data.type === 'LINK' ? (content || null) : null,
+                    note: evidence.title,
+                    createdByUserId: ctx.userId,
+                }],
+                skipDuplicates: true,
+            });
         }
 
         await logEvent(db, ctx, {
@@ -531,6 +532,11 @@ export async function uploadEvidenceFile(
 
     const writeResult = await storage.write(pathKey, readable, { mimeType });
 
+    // AV scan on the buffer we already hold, BEFORE the record is marked
+    // stored. Resolves to a terminal status — never PENDING unless a
+    // configured scanner erred under strict mode.
+    const scanStatus = await scanUploadedBuffer(buffer);
+
     // Create FileRecord + Evidence in a transaction
     const result = await runInTenantContext(ctx, async (db) => {
         const controlId = metadata.controlId || null;
@@ -596,7 +602,9 @@ export async function uploadEvidenceFile(
                 bucket: env.S3_BUCKET || null,
                 domain,
             });
-            await FileRepository.markStored(db, ctx, fileRecord.id);
+            // Scan before the file is treated as usable, and persist a TERMINAL
+            // status. Leaving it PENDING was a trap: nothing advances that state.
+            await FileRepository.markStored(db, ctx, fileRecord.id, scanStatus);
             fileRecordId = fileRecord.id;
         }
 
@@ -622,22 +630,38 @@ export async function uploadEvidenceFile(
             status: 'DRAFT',
         });
 
-        // Bridge: create ControlEvidenceLink so evidence shows in the control evidence tab
+        // Bridge: create ControlEvidenceLink so evidence shows in the control
+        // evidence tab.
+        //
+        // This used to be a `create` inside `try { } catch { }`, with the
+        // comment "duplicate link is acceptable". The catch caught the JS
+        // exception; it did not undo anything. `db` here is an INTERACTIVE
+        // Postgres transaction, and a unique violation (23505) aborts the
+        // whole transaction at the database — every subsequent statement then
+        // fails with 25P02 "current transaction is aborted". So the swallow
+        // did the opposite of what it claimed: instead of tolerating a
+        // duplicate link, it poisoned the transaction, and the audit write
+        // immediately below it took the upload down with it. Uploading the
+        // same file to a control twice — the ordinary case this catch existed
+        // to permit — was exactly what broke.
+        //
+        // `createMany({ skipDuplicates })` compiles to ON CONFLICT DO NOTHING,
+        // so the conflict is resolved inside the statement and 23505 is never
+        // raised. Nothing is swallowed either: a real failure (bad FK, RLS
+        // denial) still throws and still rolls the upload back, which is what
+        // should happen.
         if (controlId) {
-            try {
-                await db.controlEvidenceLink.create({
-                    data: {
-                        tenantId: ctx.tenantId,
-                        controlId,
-                        kind: 'FILE',
-                        fileId: fileRecordId,
-                        note: evidence.title,
-                        createdByUserId: ctx.userId,
-                    },
-                });
-            } catch {
-                // Duplicate link is acceptable — don't fail the whole creation
-            }
+            await db.controlEvidenceLink.createMany({
+                data: [{
+                    tenantId: ctx.tenantId,
+                    controlId,
+                    kind: 'FILE',
+                    fileId: fileRecordId,
+                    note: evidence.title,
+                    createdByUserId: ctx.userId,
+                }],
+                skipDuplicates: true,
+            });
         }
 
         const eventAction = deduplicated ? 'FILE_DEDUP_REUSED' : 'EVIDENCE_FILE_UPLOADED';

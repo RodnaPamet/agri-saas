@@ -111,19 +111,30 @@ describe('FileRepository.createPending', () => {
 });
 
 describe('FileRepository — status transitions', () => {
-    it('arms the AV scan when a file becomes STORED', async () => {
-        // Break: dropping `scanStatus: 'PENDING'`. The scan sweep selects
-        // on that column, so an unscanned file would never be queued and
-        // would sit in the tenant's evidence library forever un-scanned —
-        // a green "STORED" badge on a file nothing ever looked at.
+    it('records a TERMINAL scan status when a file becomes STORED', async () => {
+        // This used to hardcode PENDING, justified by a comment claiming "the
+        // scan sweep selects on that column". There is no such sweep — grep
+        // for anything queueing on PENDING returns nothing, and nothing in
+        // the codebase ever advances the column. Combined with AV_SCAN_MODE
+        // defaulting to "strict" and the download gate 403-ing PENDING, that
+        // made a dead-man switch: every evidence download blocked forever in
+        // any deployment that didn't override the env var.
+        //
+        // The default is SKIPPED — honest about the fact that nothing scanned
+        // it — rather than PENDING, which promises a scan that is not coming.
         await FileRepository.markStored(asTx(db), ctx, 'f-1');
 
         expect(argOf(db.fileRecord.update).where).toEqual({ id: 'f-1' });
         expect(dataOf(db.fileRecord.update)).toMatchObject({
             status: 'STORED',
-            scanStatus: 'PENDING',
+            scanStatus: 'SKIPPED',
         });
         expect(dataOf(db.fileRecord.update).storedAt).toBeInstanceOf(Date);
+    });
+
+    it('persists the scan outcome the caller resolved', async () => {
+        await FileRepository.markStored(asTx(db), ctx, 'f-1', 'INFECTED');
+        expect(dataOf(db.fileRecord.update)).toMatchObject({ scanStatus: 'INFECTED' });
     });
 
     it('marks a failed upload without touching the scan lifecycle', async () => {
@@ -217,16 +228,18 @@ describe('FileRepository — reads', () => {
         });
     });
 
-    it('looks a file up by path key WITHOUT a tenant filter', async () => {
-        // Pinned deliberately: this lookup is global. The tenant lives
-        // inside the key itself (see `assertTenantKey` / `parseTenantKey`
-        // in src/lib/storage), so any future caller MUST validate the key
-        // before trusting the row. A change that starts filtering here is
-        // fine; a change that adds a caller without that validation is not.
-        await FileRepository.getByPathKey(asTx(db), 'tenant-1/general/abc.pdf');
+    it('looks a file up by path key SCOPED TO A TENANT', async () => {
+        // This used to be a deliberately global lookup, justified on the
+        // grounds that "the tenant lives inside the key" and every caller
+        // would validate it. That is the argument that fails the moment
+        // someone adds a caller who doesn't — which is precisely what
+        // happened in downloadFile. The scope is now a required argument, so
+        // it cannot be omitted by accident.
+        await FileRepository.getByPathKey(asTx(db), 'tenant-1/general/abc.pdf', 'tenant-1');
 
         expect(whereOf(db.fileRecord.findFirst)).toEqual({
             pathKey: 'tenant-1/general/abc.pdf',
+            tenantId: 'tenant-1',
         });
     });
 });
@@ -292,45 +305,40 @@ describe('FileRepository — AV scan lifecycle', () => {
     });
 });
 
-describe('FileRepository.isFileOwnedByTenant', () => {
-    it('accepts a legacy filename recorded on an Evidence row, without a second query', async () => {
-        // Break: dropping the early return. Harmless functionally, but the
-        // legacy download path calls this per request — the FileRecord
-        // query is pure waste once ownership is already proven.
-        db.evidence.findFirst.mockResolvedValue({ id: 'e-1' });
+describe('FileRepository.findOwnedByTenant', () => {
+    it('NEVER derives ownership from Evidence.content', async () => {
+        // The vulnerability. `content` is caller-supplied free text, so a user
+        // could create an evidence row whose content was another tenant's
+        // storage key and have the old boolean gate return true for it. The
+        // Evidence table must not be consulted at all.
+        db.fileRecord.findFirst.mockResolvedValue(null);
 
-        expect(await FileRepository.isFileOwnedByTenant(asTx(db), ctx, 'report.pdf')).toBe(true);
-        expect(whereOf(db.evidence.findFirst)).toEqual({
-            tenantId: 'tenant-1',
-            content: 'report.pdf',
-        });
-        expect(db.fileRecord.findFirst).not.toHaveBeenCalled();
+        expect(await FileRepository.findOwnedByTenant(asTx(db), ctx, 'report.pdf')).toBeNull();
+        expect(db.evidence.findFirst).not.toHaveBeenCalled();
     });
 
-    it('falls back to matching either the path key or the original name', async () => {
-        // Break: matching `pathKey` only. Files uploaded through the newer
-        // route are referenced by original name in older evidence rows, so
-        // the OR arm is what keeps those downloads working.
-        db.fileRecord.findFirst.mockResolvedValue({ id: 'f-1' });
+    it('resolves through a tenant-filtered FileRecord and returns the RECORD', async () => {
+        // Returning the record, not a boolean, is the point: the caller must
+        // read `pathKey` off it rather than reusing the string it passed in.
+        // A boolean invites "check one value, read another" — which is
+        // exactly how the byte-disclosure bug worked.
+        db.fileRecord.findFirst.mockResolvedValue({
+            id: 'f-1', pathKey: 'tenants/tenant-1/general/a.pdf',
+            originalName: 'report.pdf', mimeType: 'application/pdf',
+            status: 'STORED', scanStatus: 'CLEAN',
+        });
 
-        expect(await FileRepository.isFileOwnedByTenant(asTx(db), ctx, 'report.pdf')).toBe(true);
+        const rec = await FileRepository.findOwnedByTenant(asTx(db), ctx, 'report.pdf');
+
+        expect(rec?.pathKey).toBe('tenants/tenant-1/general/a.pdf');
         expect(whereOf(db.fileRecord.findFirst)).toEqual({
             tenantId: 'tenant-1',
             OR: [{ pathKey: 'report.pdf' }, { originalName: 'report.pdf' }],
         });
     });
 
-    it('denies a filename that belongs to no row of the calling tenant', async () => {
-        // Break: returning the row object instead of a boolean, or `!row`
-        // inverted. This value gates a raw file download — a truthy
-        // default is a cross-tenant file read.
-        expect(await FileRepository.isFileOwnedByTenant(asTx(db), ctx, 'someone-elses.pdf')).toBe(false);
-    });
-
-    it('asks both questions about the CALLING tenant, not a fixed one', async () => {
-        await FileRepository.isFileOwnedByTenant(asTx(db), OTHER_TENANT, 'report.pdf');
-
-        expect(whereOf(db.evidence.findFirst)).toMatchObject({ tenantId: 'tenant-2' });
+    it('scopes to the CALLING tenant, not a fixed one', async () => {
+        await FileRepository.findOwnedByTenant(asTx(db), OTHER_TENANT, 'report.pdf');
         expect(whereOf(db.fileRecord.findFirst)).toMatchObject({ tenantId: 'tenant-2' });
     });
 });

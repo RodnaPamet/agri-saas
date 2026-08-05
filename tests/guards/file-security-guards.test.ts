@@ -61,22 +61,82 @@ describe('File Security Guardrails', () => {
         expect(violations).toEqual([]);
     });
 
-    test('download endpoints use fileId not pathKey as URL parameter', () => {
-        const downloadRoutes = allFiles.filter(
-            f => f.path.includes('download') && f.path.includes('route.ts'),
-        );
+    test('every storage read uses a RESOLVED record key, never a caller string', () => {
+        // THE GUARD THAT DID NOT FIRE.
+        //
+        // The previous version filtered to files whose path contained
+        // "download" and then grepped for `params.pathKey`. Neither of the two
+        // routes that actually had this bug qualified: /files/[fileName] and
+        // /files/[fileName]/verify have no "download" in their path, and both
+        // name the param `fileName`. So it passed, permanently, over a
+        // cross-tenant byte read and a cross-tenant hash oracle.
+        //
+        // It now checks the property that matters rather than a spelling:
+        // the argument to a storage read must be a RESOLVED record's key
+        // (`something.pathKey`), not a bare identifier that could be a
+        // caller-supplied string. "Check one value, read another" is the
+        // shape of both original bugs.
+        const READ_CALL = /\b(?:storage|provider)\s*\.\s*(readStream|createSignedDownloadUrl|delete)\s*\(\s*([^,)]+)/g;
+
+        // A storage key is CALLER-SUPPLIED when it comes straight off the
+        // request — a route param, a query string, or a bare identifier with a
+        // request-shaped name. Those must never reach a read. Everything else
+        // is a resolved record's field (`fileRecord.pathKey`,
+        // `existing.storageKey`, `payload.stagingPathKey`) or a key this code
+        // built itself with buildTenantObjectKey.
+        const CALLER_SUPPLIED =
+            /^(?:params|req|request|searchParams)\b|^(?:fileName|filename|name|path|objectKey)$/;
+
+        const ALLOWLIST: ReadonlyArray<{ file: string; reason: string }> = [
+            {
+                file: 'src/lib/storage/local-provider.ts',
+                reason: 'The provider itself — it receives the key its callers resolved.',
+            },
+            {
+                file: 'src/lib/storage/s3-provider.ts',
+                reason: 'Same: provider implementation, not a call site.',
+            },
+        ];
+
         const violations: string[] = [];
-        for (const file of downloadRoutes) {
-            // Check URL params: should use fileId, evidenceId, etc. — not pathKey
-            if (/params\.pathKey/i.test(file.content) || /searchParams.*pathKey/i.test(file.content)) {
-                violations.push(`${file.path}: accepts pathKey directly`);
-            }
-            // Should reference fileId or similar identifier, not raw path
-            if (/req\.nextUrl\.searchParams\.get\(['"]path/i.test(file.content)) {
-                violations.push(`${file.path}: accepts path parameter`);
+        let callsInspected = 0;
+
+        for (const file of allFiles) {
+            if (ALLOWLIST.some((a) => file.path.endsWith(a.file))) continue;
+            for (const m of file.content.matchAll(READ_CALL)) {
+                callsInspected += 1;
+                const arg = m[2].trim();
+                if (CALLER_SUPPLIED.test(arg)) {
+                    violations.push(`${file.path}: storage.${m[1]}(${arg}) — caller-supplied key reaches storage`);
+                }
             }
         }
+
+        // Detector self-check: a guard that matches nothing passes forever.
+        // If the storage API is renamed, this fails loudly instead of going
+        // quietly green — which is exactly how the old version survived.
+        expect(callsInspected).toBeGreaterThan(0);
         expect(violations).toEqual([]);
+    });
+
+    test('the read-guard detector actually catches the original bug', () => {
+        // Mutation proof, against the real pre-fix source shape.
+        const READ_CALL = /\b(?:storage|provider)\s*\.\s*(readStream|createSignedDownloadUrl|delete)\s*\(\s*([^,)]+)/g;
+        const CALLER_SUPPLIED =
+            /^(?:params|req|request|searchParams)\b|^(?:fileName|filename|name|path|objectKey)$/;
+
+        // The exact pre-fix line from file.ts, and the exact post-fix one.
+        const vulnerable = `const stream = storage.readStream(fileName);`;
+        const fixed = `const stream = storage.readStream(fileRecord.pathKey);`;
+        // A legitimate site that must NOT be flagged.
+        const legitimate = `await storage.delete(payload.stagingPathKey);`;
+
+        const check = (src: string) =>
+            [...src.matchAll(READ_CALL)].filter((m) => CALLER_SUPPLIED.test(m[2].trim())).length;
+
+        expect(check(vulnerable)).toBe(1);
+        expect(check(fixed)).toBe(0);
+        expect(check(legitimate)).toBe(0);
     });
 
     test('FILE_STORAGE_ROOT is validated via env.ts', () => {

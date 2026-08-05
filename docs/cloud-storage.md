@@ -28,7 +28,7 @@ MUST set `STORAGE_PROVIDER=s3`.
 | `S3_SECRET_ACCESS_KEY` | Yes (s3) | — | AWS secret key |
 | `FILE_STORAGE_ROOT` | Yes (local) | — | Local storage root path |
 | `AV_WEBHOOK_SECRET` | Yes (prod) | — | HMAC key for AV webhook |
-| `AV_SCAN_MODE` | No | `permissive` | `strict`, `permissive`, `disabled` |
+| `AV_SCAN_MODE` | No | `strict` | `strict`, `permissive`, `disabled` — only meaningful with `CLAMAV_HOST` set; with no scanner every upload is recorded `SKIPPED` regardless |
 
 ## Object Key Format
 

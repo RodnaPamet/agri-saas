@@ -17,6 +17,7 @@
  *       from '@/app-layer/jobs/data-lifecycle';
  */
 import { Prisma } from '@prisma/client';
+import { purgeEvidenceBytes } from '@/app-layer/usecases/evidence-bytes';
 import { prisma as defaultPrisma } from '@/lib/prisma';
 import { SOFT_DELETE_MODELS, withDeleted } from '@/lib/soft-delete';
 import { runJob } from '@/lib/observability/job-runner';
@@ -128,6 +129,21 @@ export async function purgeSoftDeletedOlderThan(
             let purged = 0;
 
             if (!dryRun) {
+                // Evidence carries BYTES — release the stored objects before
+                // the rows go. Batched per tenant so the reference count is
+                // one pair of queries per tenant rather than per record.
+                if (model === 'Evidence') {
+                    const byTenant = new Map<string, string[]>();
+                    for (const record of candidates) {
+                        const list = byTenant.get(record.tenantId);
+                        if (list) list.push(record.id);
+                        else byTenant.set(record.tenantId, [record.id]);
+                    }
+                    for (const [tenantId, ids] of byTenant) {
+                        await purgeEvidenceBytes(db, tenantId, ids);
+                    }
+                }
+
                 for (const record of candidates) {
                     await db.$executeRawUnsafe(
                         `DELETE FROM "${model}" WHERE "id" = $1`,
@@ -202,13 +218,28 @@ export async function purgeExpiredEvidenceOlderThan(
 
         const candidates = await db.evidence.findMany(withDeleted({
             where,
-            select: { id: true, tenantId: true, title: true },
+            select: { id: true, tenantId: true, title: true, fileRecordId: true },
         }));
 
         const scanned = candidates.length;
         let purged = 0;
 
         if (!dryRun) {
+            // Release the BYTES before the rows. This purge used to delete the
+            // Evidence row and leave the stored object on disk forever — while
+            // emitting a DATA_PURGED audit entry saying the evidence was gone.
+            // Grouped per tenant so the reference count is one query per
+            // tenant, not one per row.
+            const byTenant = new Map<string, string[]>();
+            for (const ev of candidates) {
+                const list = byTenant.get(ev.tenantId);
+                if (list) list.push(ev.id);
+                else byTenant.set(ev.tenantId, [ev.id]);
+            }
+            for (const [tenantId, ids] of byTenant) {
+                await purgeEvidenceBytes(db, tenantId, ids);
+            }
+
             for (const ev of candidates) {
                 await db.$executeRawUnsafe(
                     'DELETE FROM "Evidence" WHERE "id" = $1',

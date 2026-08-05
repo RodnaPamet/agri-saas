@@ -41,6 +41,21 @@ export function assertCanViewPack(ctx: RequestContext) {
     }
 }
 
+/**
+ * Integrity verification — OWNER, ADMIN or AUDITOR.
+ *
+ * Deliberately narrower than `assertCanViewPack`, which admits every role.
+ * Verifying a hash is an audit action, and the endpoint reports a file's
+ * SHA-256 and byte size; letting READER and EDITOR enumerate that is a
+ * capability nobody asked for and the thing that made the old raw-path
+ * version an oracle for anyone with any seat.
+ */
+export function assertCanVerifyIntegrity(ctx: RequestContext) {
+    if (!['OWNER', 'ADMIN', 'AUDITOR'].includes(ctx.role)) {
+        throw forbidden('Only OWNER, ADMIN or AUDITOR can verify file integrity');
+    }
+}
+
 export function assertCanManageAuditors(ctx: RequestContext) {
     if (ctx.role !== 'OWNER' && ctx.role !== 'ADMIN') {
         throw forbidden('Only OWNER or ADMIN can manage auditor accounts');

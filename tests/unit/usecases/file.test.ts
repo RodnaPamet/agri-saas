@@ -21,7 +21,7 @@ jest.mock('@/lib/db-context', () => ({
 
 jest.mock('@/app-layer/repositories/FileRepository', () => ({
     FileRepository: {
-        isFileOwnedByTenant: jest.fn(),
+        findOwnedByTenant: jest.fn(),
     },
 }));
 
@@ -42,7 +42,7 @@ import { logEvent } from '@/app-layer/events/audit';
 import { makeRequestContext } from '../../helpers/make-context';
 
 const mockRunInTx = runInTenantContext as jest.MockedFunction<typeof runInTenantContext>;
-const mockOwnedBy = FileRepository.isFileOwnedByTenant as jest.MockedFunction<typeof FileRepository.isFileOwnedByTenant>;
+const mockOwnedBy = FileRepository.findOwnedByTenant as jest.MockedFunction<typeof FileRepository.findOwnedByTenant>;
 const mockGetStorage = getStorageProvider as jest.MockedFunction<typeof getStorageProvider>;
 const mockAssertKey = assertTenantKey as jest.MockedFunction<typeof assertTenantKey>;
 const mockLog = logEvent as jest.MockedFunction<typeof logEvent>;
@@ -66,12 +66,12 @@ describe('downloadFile — gate ordering', () => {
         expect(mockOwnedBy).not.toHaveBeenCalled();
     });
 
-    it('rejects with forbidden when the file does not belong to the caller tenant', async () => {
-        mockOwnedBy.mockResolvedValueOnce(false);
+    it('rejects with notFound when the file does not belong to the caller tenant', async () => {
+        mockOwnedBy.mockResolvedValueOnce(null);
 
         await expect(
             downloadFile(makeRequestContext('EDITOR'), 'tenant-B/secret.pdf'),
-        ).rejects.toThrow(/permission to access this file/);
+        ).rejects.toThrow(/File not found/);
         // Regression: a refactor that skipped this check would let any
         // logged-in user pass an arbitrary path key and exfiltrate
         // another tenant's evidence files.
@@ -81,7 +81,14 @@ describe('downloadFile — gate ordering', () => {
 
 describe('downloadFile — S3 path', () => {
     it('asserts tenantKey on the FileRecord pathKey before minting the presigned URL', async () => {
-        mockOwnedBy.mockResolvedValueOnce(true);
+        mockOwnedBy.mockResolvedValueOnce({
+        id: 'file-1',
+        pathKey: 'tenants/tenant-1/general/doc.pdf',
+        originalName: 'note.pdf',
+        mimeType: 'application/pdf',
+        status: 'STORED',
+        scanStatus: 'CLEAN',
+    });
         const createSignedDownloadUrl = jest.fn().mockResolvedValue('https://signed.example.com/foo');
         mockGetStorage.mockReturnValue({
             name: 's3',
@@ -91,7 +98,7 @@ describe('downloadFile — S3 path', () => {
         const fakeDb = {
             fileRecord: {
                 findFirst: jest.fn().mockResolvedValue({
-                    pathKey: 'tenant-1/evidence/file.pdf',
+                    pathKey: 'tenants/tenant-1/general/doc.pdf',
                     originalName: 'file.pdf',
                     mimeType: 'application/pdf',
                 }),
@@ -99,13 +106,13 @@ describe('downloadFile — S3 path', () => {
         };
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(fakeDb as never));
 
-        const result = await downloadFile(makeRequestContext('EDITOR'), 'tenant-1/evidence/file.pdf');
+        const result = await downloadFile(makeRequestContext('EDITOR'), 'tenants/tenant-1/general/doc.pdf');
 
         // Regression: a refactor that skipped assertTenantKey could
         // hand out a URL keyed on another tenant's prefix, even after
         // the ownership check passed.
         expect(mockAssertKey).toHaveBeenCalledWith(
-            'tenant-1/evidence/file.pdf',
+            'tenants/tenant-1/general/doc.pdf',
             'tenant-1',
         );
         expect(result.mode).toBe('redirect');
@@ -113,7 +120,14 @@ describe('downloadFile — S3 path', () => {
     });
 
     it('emits a READ audit on S3 download', async () => {
-        mockOwnedBy.mockResolvedValueOnce(true);
+        mockOwnedBy.mockResolvedValueOnce({
+        id: 'file-1',
+        pathKey: 'tenants/tenant-1/general/doc.pdf',
+        originalName: 'note.pdf',
+        mimeType: 'application/pdf',
+        status: 'STORED',
+        scanStatus: 'CLEAN',
+    });
         mockGetStorage.mockReturnValue({
             name: 's3',
             createSignedDownloadUrl: jest.fn().mockResolvedValue('https://x'),
@@ -142,7 +156,14 @@ describe('downloadFile — S3 path', () => {
 
 describe('downloadFile — local fallback', () => {
     it('returns a stream-mode buffer with the inferred mimeType', async () => {
-        mockOwnedBy.mockResolvedValueOnce(true);
+        mockOwnedBy.mockResolvedValueOnce({
+        id: 'file-1',
+        pathKey: 'tenants/tenant-1/general/doc.pdf',
+        originalName: 'note.pdf',
+        mimeType: 'application/pdf',
+        status: 'STORED',
+        scanStatus: 'CLEAN',
+    });
 
         async function* fakeStream() {
             yield Buffer.from('hello');
@@ -160,13 +181,22 @@ describe('downloadFile — local fallback', () => {
 
         expect(result.mode).toBe('stream');
         const r = result as { mimeType: string; buffer: Buffer; name: string };
-        expect(r.mimeType).toBe('text/csv');
+        // From the RECORD, not the requested extension — the caller does not
+        // get to choose the Content-Type the browser will act on.
+        expect(r.mimeType).toBe('application/pdf');
         expect(r.buffer.toString()).toBe('hello world');
-        expect(r.name).toBe('report.csv');
+        expect(r.name).toBe('note.pdf');
     });
 
     it('throws notFound when the storage stream throws', async () => {
-        mockOwnedBy.mockResolvedValueOnce(true);
+        mockOwnedBy.mockResolvedValueOnce({
+        id: 'file-1',
+        pathKey: 'tenants/tenant-1/general/doc.pdf',
+        originalName: 'note.pdf',
+        mimeType: 'application/pdf',
+        status: 'STORED',
+        scanStatus: 'CLEAN',
+    });
         mockGetStorage.mockReturnValue({
             name: 'local',
             readStream: jest.fn(() => {
@@ -180,7 +210,14 @@ describe('downloadFile — local fallback', () => {
     });
 
     it('falls back to application/octet-stream for unknown extensions', async () => {
-        mockOwnedBy.mockResolvedValueOnce(true);
+        mockOwnedBy.mockResolvedValueOnce({
+        id: 'file-1',
+        pathKey: 'tenants/tenant-1/general/doc.pdf',
+        originalName: 'note.pdf',
+        mimeType: 'application/pdf',
+        status: 'STORED',
+        scanStatus: 'CLEAN',
+    });
         async function* s() {
             yield Buffer.from('blob');
         }
@@ -195,6 +232,6 @@ describe('downloadFile — local fallback', () => {
         );
 
         const r = result as { mimeType: string };
-        expect(r.mimeType).toBe('application/octet-stream');
+        expect(r.mimeType).toBe('application/pdf');
     });
 });
