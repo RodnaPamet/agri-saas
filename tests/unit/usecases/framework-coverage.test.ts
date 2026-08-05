@@ -316,21 +316,29 @@ describe('generateReadinessReport', () => {
         expect(result.notApplicableControls[0].justification).toBe('No justification provided');
     });
 
-    it('flags controls with empty evidence array as missingEvidence (excludes NOT_APPLICABLE)', async () => {
+    it('flags controls without APPROVED evidence as missingEvidence (excludes NOT_APPLICABLE)', async () => {
+        // Coverage requires evidence a person approved. This fixture used to
+        // give CC2 a bare `{ id: 'e-1' }` with no status and expect it to
+        // count — the old rule was `evidence.length > 0`, which let
+        // auto-collected SUBMITTED rows mark a control covered the moment
+        // they were minted. See readiness-approved-evidence.test.ts.
         mockPrisma.framework.findFirst.mockResolvedValueOnce({ id: 'fw-1', key: 'iso', name: 'ISO', version: '2022' });
         mockPrisma.frameworkRequirement.findMany.mockResolvedValueOnce([
             { id: 'r-1', code: 'A', title: 'X', section: 'Org', sortOrder: 1 },
             { id: 'r-2', code: 'B', title: 'Y', section: 'Org', sortOrder: 2 },
+            { id: 'r-3', code: 'C', title: 'Z', section: 'Org', sortOrder: 3 },
         ]);
         tenantDb.controlRequirementLink.findMany.mockResolvedValueOnce([
             { requirementId: 'r-1', control: { id: 'c-1', code: 'CC1', name: 'No-Evidence', status: 'IMPLEMENTED', description: '', tasks: [], evidence: [] } },
-            { requirementId: 'r-2', control: { id: 'c-2', code: 'CC2', name: 'Has-Evidence', status: 'IMPLEMENTED', description: '', tasks: [], evidence: [{ id: 'e-1' }] } },
+            { requirementId: 'r-2', control: { id: 'c-2', code: 'CC2', name: 'Has-Evidence', status: 'IMPLEMENTED', description: '', tasks: [], evidence: [{ id: 'e-1', status: 'APPROVED' }] } },
+            { requirementId: 'r-3', control: { id: 'c-3', code: 'CC3', name: 'Unreviewed', status: 'IMPLEMENTED', description: '', tasks: [], evidence: [{ id: 'e-2', status: 'SUBMITTED' }] } },
         ]);
 
         const result = await generateReadinessReport(ctx, 'iso');
 
         expect(result.controlsMissingEvidence).toEqual([
-            { code: 'CC1', name: 'No-Evidence', status: 'IMPLEMENTED' },
+            { code: 'CC1', name: 'No-Evidence', status: 'IMPLEMENTED', awaitingReview: 0 },
+            { code: 'CC3', name: 'Unreviewed', status: 'IMPLEMENTED', awaitingReview: 1 },
         ]);
     });
 

@@ -74,8 +74,13 @@ describe('Infrastructure Regression Guards', () => {
             }
         });
 
-        test('exactly 29 scheduled jobs exist', () => {
-            expect(SCHEDULED_JOBS).toHaveLength(29);
+        test('exactly 30 scheduled jobs exist', () => {
+            // 29 → 30: `evidence-stale-review-sweep` was written in 2026-05
+            // and never registered or scheduled, so `nextReviewDate` was
+            // settable, shown in the calendar, counted on the dashboard — and
+            // acted on by nothing. Registering it is what makes the cadence
+            // mean anything.
+            expect(SCHEDULED_JOBS).toHaveLength(30);
         });
 
         test('scheduled job names match expected set', () => {
@@ -102,6 +107,12 @@ describe('Infrastructure Regression Guards', () => {
                 'control-test-scheduler',
                 'daily-evidence-expiry',
                 'data-lifecycle',
+                // Flips APPROVED evidence past its nextReviewDate to
+                // NEEDS_REVIEW. The usecase existed since 2026-05 with zero
+                // callers; registering it closes the review-cadence loop
+                // (approval sets the date → this flips the row → readiness
+                // stops counting it).
+                'evidence-stale-review-sweep',
                 // Epic G-5 — daily 30/14/7-day expiry reminder for
                 // control exceptions.
                 'exception-expiry-monitor',

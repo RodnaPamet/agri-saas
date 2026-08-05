@@ -8,6 +8,7 @@ import {
     computeRequirementsDiff, exportReadinessReport,
     upsertRequirements,
 } from '@/app-layer/usecases/framework';
+import { listFarmRecordsBackingFramework } from '@/app-layer/usecases/farm-record-traceability';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { z } from 'zod';
 import { jsonResponse } from '@/lib/api-response';
@@ -93,6 +94,12 @@ export const GET = withApiErrorHandling(async (req: NextRequest, { params: param
         const from = url.searchParams.get('from');
         if (!from) return jsonResponse({ error: 'from required' }, { status: 400 });
         return jsonResponse(await computeRequirementsDiff(ctx, from, params.frameworkKey));
+    }
+    if (action === 'farm-records') {
+        // The reverse of auto-evidence: which journal entries back this
+        // scheme's control points. `Evidence.sourceLogEntryId` and its index
+        // were added for this query and had no caller until now.
+        return jsonResponse(await listFarmRecordsBackingFramework(ctx, params.frameworkKey));
     }
     if (action === 'readiness') {
         const format = (url.searchParams.get('format') as 'json' | 'csv') || 'json';

@@ -740,6 +740,28 @@ executorRegistry.register('evidence-expiry-monitor', async (payload) => {
     return result;
 });
 
+// ── evidence-stale-review-sweep ──────────────────────────────────────
+//
+// Written 2026-05-22, registered 2026-08-05. In between it had zero callers:
+// `nextReviewDate` was settable, shown in the compliance calendar, and counted
+// by the dashboard's overdue tile, while nothing ever acted on it. Evidence
+// aged past its review date holding status APPROVED, and readiness counted it
+// as fresh — the precise failure the usecase's own docblock describes.
+
+executorRegistry.register('evidence-stale-review-sweep', async (payload) => {
+    const startedAt = new Date().toISOString();
+    const startMs = performance.now();
+    const { runEvidenceStaleReviewSweep } = await import(
+        '../usecases/evidence-stale-review-sweep'
+    );
+    const r = await runEvidenceStaleReviewSweep({ tenantId: payload.tenantId });
+    return makeResult(
+        'evidence-stale-review-sweep', startedAt, startMs,
+        r.transitioned, r.transitioned, 0,
+        { transitioned: r.transitioned },
+    );
+});
+
 // ── notification-dispatch ────────────────────────────────────────────
 
 executorRegistry.register('notification-dispatch', async (payload) => {

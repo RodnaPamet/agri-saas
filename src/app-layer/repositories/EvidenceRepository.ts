@@ -52,6 +52,19 @@ const evidenceListSelect = {
     updatedAt: true,
     dateCollected: true,
     fileRecordId: true,
+    // `content` holds the URL for LINK evidence — including the deep link
+    // back to the journal entry that auto-evidence was derived from. It was
+    // never selected, so that link existed in the database and was
+    // unreachable from every list surface, and the list-row edit affordance
+    // seeded its description field from `ev.content` and therefore always
+    // opened empty.
+    content: true,
+    // Distinguishes AUTO_FARM_RECORD rows from hand-filed evidence.
+    category: true,
+    // The FK the deep link is built FROM. Deriving the href from the
+    // relation rather than parsing the stored `content` string means a row
+    // written before the tenant slug changed still resolves.
+    sourceLogEntryId: true,
     // `createdAt` is required by the cursor-pagination helper
     // (`computePageInfo`) — it's not rendered in the table.
     createdAt: true,

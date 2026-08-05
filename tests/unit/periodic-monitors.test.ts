@@ -496,9 +496,12 @@ describe('Evidence Expiry Monitor', () => {
                 controlId: null,
             },
         ];
+        // Three reads per run since the monitor gained a review-due scan
+        // alongside the two retention ones: expiring, already-expired,
+        // due-for-review.
         mockPrisma.evidence.findMany
-            .mockResolvedValueOnce(evData).mockResolvedValueOnce([])
-            .mockResolvedValueOnce(evData).mockResolvedValueOnce([]);
+            .mockResolvedValueOnce(evData).mockResolvedValueOnce([]).mockResolvedValueOnce([])
+            .mockResolvedValueOnce(evData).mockResolvedValueOnce([]).mockResolvedValueOnce([]);
 
         const { runEvidenceExpiryMonitor } = await import('../../src/app-layer/jobs/evidence-expiry-monitor');
 
