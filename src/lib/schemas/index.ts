@@ -327,7 +327,17 @@ export const CreateEvidenceFormSchema = _CreateEvidenceBase.extend({
 
 export const UpdateEvidenceSchema = z.object({
     title: z.string().min(1).optional(),
+    // The free-text body. The UI LABELS this "description", and the edit modal
+    // used to send it under that name — which `.strip()` silently discarded,
+    // so editing an evidence description saved nothing and reported success.
+    // The wire name matches the column; the user-facing label is a translation
+    // string and can say whatever reads best.
     content: z.string().optional(),
+    // Re-assigning evidence to a different control. The modal has always had
+    // the picker and always sent the value; without a field here `.strip()`
+    // dropped it, so the picker moved and nothing changed. Nullable: clearing
+    // it detaches the evidence.
+    controlId: z.string().optional().nullable(),
     category: z.string().optional().nullable(),
     // B8 follow-up — folder is editable post-create so a tenant
     // can re-organise their evidence library after the fact.

@@ -16,7 +16,7 @@
  * layer.
  */
 
-import type { z } from 'zod';
+import { z } from 'zod';
 import { badRequest } from '@/lib/errors/types';
 
 /**
@@ -114,4 +114,82 @@ export function parseCsvIdParam(
         if (!out.includes(part)) out.push(part);
     }
     return out;
+}
+
+// ─── Composable schema fields ───────────────────────────────────────
+//
+// The two parsers above are called imperatively, after `schema.parse(sp)`.
+// That works, but it leaves the multi-select contract OUTSIDE the query
+// schema — which is exactly where it went wrong across the app.
+//
+// `filterStateToUrlParams` comma-joins every `multiple: true` facet into ONE
+// param (`?status=DRAFT,APPROVED`). A route whose schema declares that param
+// as `z.enum([...])` rejects the comma-joined value and returns 400. A route
+// that declares it `z.string()` is worse: the literal `"DRAFT,APPROVED"`
+// reaches Prisma as an equality and matches nothing, so the list page renders
+// its EMPTY state — a confident "no evidence matches" in response to a filter
+// that never ran. A wrong answer that looks like an answer.
+//
+// The helpers below put the contract in the schema, where the facet's shape is
+// declared and where the next person writing a route will see it.
+
+/**
+ * A multi-select enum facet, as one comma-joined query param.
+ *
+ * ```ts
+ * const QuerySchema = z.object({
+ *     status: csvEnumField(z.nativeEnum(EvidenceStatus)),   // → EvidenceStatus[] | undefined
+ * });
+ * ```
+ *
+ * Yields `undefined` for an absent or empty param — the caller must then OMIT
+ * the filter rather than emitting `{ in: [] }`, which matches nothing and
+ * turns a CLEARED facet into an empty table.
+ */
+export function csvEnumField<T extends string>(member: z.ZodType<T>) {
+    return z.string().optional().transform((raw, ctx): T[] | undefined => {
+        if (raw == null || raw.trim() === '') return undefined;
+        const out: T[] = [];
+        for (const part of raw.split(',').map((s) => s.trim()).filter(Boolean)) {
+            const parsed = member.safeParse(part);
+            if (!parsed.success) {
+                ctx.addIssue({ code: z.ZodIssueCode.custom, message: `Invalid filter value: "${part}"` });
+                return z.NEVER;
+            }
+            if (!out.includes(parsed.data)) out.push(parsed.data);
+        }
+        return out.length > 0 ? out : undefined;
+    });
+}
+
+/**
+ * The opaque-ID sibling of {@link csvEnumField} — a season, a field, a user.
+ *
+ * IDs cannot be checked against a known value set, so the validation is
+ * structural: non-empty, bounded length, bounded count. That is enough to keep
+ * a malformed param out of the query layer without pretending to know which
+ * ids exist; the tenant-scoped `where` already stops one tenant reading
+ * another's rows by guessing.
+ */
+export function csvIdField(opts: { maxValues?: number; maxLength?: number } = {}) {
+    const maxValues = opts.maxValues ?? 100;
+    const maxLength = opts.maxLength ?? 200;
+    return z.string().optional().transform((raw, ctx): string[] | undefined => {
+        if (raw == null || raw.trim() === '') return undefined;
+        const parts = raw.split(',').map((s) => s.trim()).filter(Boolean);
+        if (parts.length === 0) return undefined;
+        if (parts.length > maxValues) {
+            ctx.addIssue({ code: z.ZodIssueCode.custom, message: `Too many filter values (max ${maxValues})` });
+            return z.NEVER;
+        }
+        const out: string[] = [];
+        for (const part of parts) {
+            if (part.length > maxLength) {
+                ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Invalid filter value: too long' });
+                return z.NEVER;
+            }
+            if (!out.includes(part)) out.push(part);
+        }
+        return out;
+    });
 }

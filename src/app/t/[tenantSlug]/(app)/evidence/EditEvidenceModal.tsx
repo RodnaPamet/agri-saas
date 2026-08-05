@@ -106,7 +106,13 @@ export function EditEvidenceModal({
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     title,
-                    description: description || null,
+                    // `content`, not `description`. The column is `content`;
+                    // "description" is the UI label. Sending the label name
+                    // meant UpdateEvidenceSchema's `.strip()` dropped the
+                    // field and the save reported success having changed
+                    // nothing — the same for `controlId`, which had no field
+                    // in the schema at all.
+                    content: description || undefined,
                     ownerUserId: ownerUserId || null,
                     controlId: controlId || null,
                     // B8 follow-up — empty string clears the folder

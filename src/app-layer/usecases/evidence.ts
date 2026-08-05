@@ -35,7 +35,10 @@ export async function listEvidence(
 
 export async function listEvidencePaginated(ctx: RequestContext, params: {
     limit?: number; cursor?: string;
-    filters?: { type?: string; controlId?: string; q?: string; archived?: boolean; expiring?: boolean };
+    // Multi-select facets travel as arrays the whole way down. The usecase
+    // used to declare them `string`, which is what allowed a comma-joined
+    // "FILE,LINK" to reach the repository and be cast into an enum filter.
+    filters?: EvidenceListFilters;
 }) {
     assertCanRead(ctx);
     return cachedListRead({
@@ -80,6 +83,26 @@ export async function getEvidence(ctx: RequestContext, id: string) {
     });
 }
 
+/**
+ * Sanitise an optional free-text field, preserving the three-state contract.
+ *
+ * `undefined` (no change) and `null` (clear) must survive untouched — coercing
+ * either into `''` would turn "leave this alone" into "blank this out" on
+ * every partial update.
+ *
+ * Evidence free text was persisted raw. Encryption is not the control here
+ * (these columns are not in the manifest, because the repository searches them
+ * with `contains`), and neither is render-time escaping: the row is read
+ * verbatim by the PDF export, the audit-pack share link, and any SDK consumer.
+ * Epic C.5 puts sanitisation at the usecase layer for exactly that reason, and
+ * evidence — the table whose whole job is being handed to an auditor — was
+ * missing from the eight usecases the D.2 ratchet covers.
+ */
+function sanitizeOptional<T extends string | null | undefined>(value: T): T {
+    if (value === undefined || value === null) return value;
+    return sanitizePlainText(value as string) as T;
+}
+
 export async function createEvidence(
     ctx: RequestContext,
     data: z.infer<typeof CreateEvidenceSchema> & { file?: File },
@@ -119,15 +142,18 @@ export async function createEvidence(
             controlId,
 
             type: data.type as EvidenceType,
-            title: data.title,
-            content,
+            title: sanitizePlainText(data.title),
+            // `content` is a URL for LINK evidence and a storage key for FILE
+            // evidence, but free text for TEXT evidence — and the row is read
+            // verbatim downstream, so it is sanitised for all three.
+            content: sanitizeOptional(content),
             fileName,
             fileSize,
-            category: data.category,
+            category: sanitizeOptional(data.category),
             // B8 follow-up — trim + null-coerce so empty input
             // maps to "no folder" (the UI group-by keys on null).
-            folder: data.folder?.trim() || null,
-            owner: data.owner,
+            folder: data.folder?.trim() ? sanitizePlainText(data.folder.trim()) : null,
+            owner: sanitizeOptional(data.owner),
             ownerUserId: data.ownerUserId || null,
 
             reviewCycle: (data.reviewCycle || null) as ReviewCadence | null,
@@ -182,18 +208,32 @@ export async function updateEvidence(ctx: RequestContext, id: string, data: z.in
     assertCanWrite(ctx);
 
     const updated = await runInTenantContext(ctx, async (db) => {
+        // Same tenant check `createEvidence` does. Re-assignment is a write
+        // that crosses entities, so it gets the same gate — otherwise a
+        // caller could attach their evidence to another tenant's control by
+        // id, which the create path has always refused.
+        if (data.controlId) {
+            const control = await db.control.findFirst({
+                where: { id: data.controlId, tenantId: ctx.tenantId },
+                select: { id: true },
+            });
+            if (!control) throw badRequest('INVALID_CONTROL', 'Control not found or belongs to a different tenant');
+        }
+
         const evidence = await EvidenceRepository.update(db, ctx, id, {
-            title: data.title,
-            content: data.content,
-            category: data.category,
+            title: sanitizeOptional(data.title),
+            content: sanitizeOptional(data.content),
+            // Three-state: undefined = no change, null = detach, id = re-assign.
+            controlId: data.controlId === undefined ? undefined : (data.controlId || null),
+            category: sanitizeOptional(data.category),
             // B8 follow-up — folder is editable post-create. The
             // three-state contract is preserved (undefined = no
             // change; null = clear; string = set).
             folder:
                 data.folder === undefined
                     ? undefined
-                    : (data.folder?.trim() || null),
-            owner: data.owner,
+                    : (data.folder?.trim() ? sanitizePlainText(data.folder.trim()) : null),
+            owner: sanitizeOptional(data.owner),
             ownerUserId: data.ownerUserId,
 
             reviewCycle: data.reviewCycle as ReviewCadence | undefined,
@@ -497,6 +537,9 @@ import type { StorageDomain } from '@/lib/storage';
 import { Readable } from 'stream';
 import { env } from '@/env';
 import { nextReviewDateAfter } from '@/lib/evidence/review-cadence';
+import { reconcileMimeType } from '@/lib/storage/mime-sniff';
+import { sanitizePlainText } from '@/lib/security/sanitize';
+import { logger } from '@/lib/observability/logger';
 
 /**
  * Upload a file and create an Evidence record of type FILE in one flow.
@@ -527,10 +570,19 @@ export async function uploadEvidenceFile(
 ) {
     assertCanWrite(ctx);
 
-    // Validate before writing
-    const mimeType = file.type || 'application/octet-stream';
-    if (!isAllowedMime(mimeType)) {
-        throw badRequest('FILE_TYPE_NOT_ALLOWED', `MIME type "${mimeType}" is not allowed`);
+    // Validate before writing.
+    //
+    // `file.type` is the CLIENT's claim — the browser's guess, or on a
+    // hand-built multipart request simply a string the caller chose. Checking
+    // only the claim means the allowlist gates on a value the uploader
+    // controls, and since the type is persisted and replayed as the download
+    // `Content-Type`, it also let the uploader choose what a future browser
+    // would treat the bytes as. The claim is checked here to reject the
+    // obvious cases early and cheaply, and the BYTES are checked below, once
+    // we hold them.
+    const declaredMime = file.type || 'application/octet-stream';
+    if (!isAllowedMime(declaredMime)) {
+        throw badRequest('FILE_TYPE_NOT_ALLOWED', `MIME type "${declaredMime}" is not allowed`);
     }
     if (!isAllowedSize(file.size)) {
         throw badRequest('FILE_TOO_LARGE', `File exceeds maximum size of ${FILE_MAX_SIZE_BYTES} bytes`);
@@ -541,11 +593,31 @@ export async function uploadEvidenceFile(
     const domain = metadata.domain || 'evidence';
     const pathKey = buildTenantObjectKey(ctx.tenantId, domain, originalName);
 
-    // Write through the storage abstraction (local or S3)
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
-    const readable = Readable.from(buffer);
 
+    // What the bytes actually are. A recognisable signature that contradicts
+    // the claim wins, and the resolved type is re-checked against the
+    // allowlist — so a file that declared `text/plain` to get past the gate is
+    // stored and served as whatever it really is, and is rejected outright if
+    // that is not admissible.
+    const { resolved: mimeType, detected, corrected } = reconcileMimeType(declaredMime, buffer);
+    if (corrected) {
+        if (!isAllowedMime(mimeType)) {
+            throw badRequest(
+                'FILE_TYPE_NOT_ALLOWED',
+                `File content is "${mimeType}", which is not allowed`,
+            );
+        }
+        logger.warn('upload declared a MIME type its bytes contradict', {
+            component: 'evidence',
+            tenantId: ctx.tenantId,
+            declaredMime,
+            detected,
+        });
+    }
+
+    const readable = Readable.from(buffer);
     const writeResult = await storage.write(pathKey, readable, { mimeType });
 
     // AV scan on the buffer we already hold, BEFORE the record is marked
@@ -627,7 +699,12 @@ export async function uploadEvidenceFile(
         // Create Evidence linked to FileRecord
         const evidence = await EvidenceRepository.create(db, ctx, {
             type: 'FILE' as EvidenceType,
-            title: metadata.title || originalName,
+            // Title defaults to the uploaded filename, which is user-supplied
+            // too — a file can be named anything.
+            title: sanitizePlainText(metadata.title || originalName),
+            // `content` is the storage key we built, not caller text; it is
+            // left alone deliberately (sanitising a path key would be a way to
+            // corrupt it, and buildTenantObjectKey already constrains it).
             content: pathKey,
             fileName: originalName,
             fileSize: writeResult.sizeBytes,
@@ -636,10 +713,10 @@ export async function uploadEvidenceFile(
             taskId,
             riskId,
             assetId,
-            category: metadata.category || undefined,
+            category: metadata.category ? sanitizePlainText(metadata.category) : undefined,
             // B8 follow-up — same null-coercion as the TEXT path.
-            folder: metadata.folder?.trim() || null,
-            owner: metadata.owner || undefined,
+            folder: metadata.folder?.trim() ? sanitizePlainText(metadata.folder.trim()) : null,
+            owner: metadata.owner ? sanitizePlainText(metadata.owner) : undefined,
             ownerUserId: metadata.ownerUserId || null,
             reviewCycle: (metadata.reviewCycle || null) as ReviewCadence | null,
             nextReviewDate: metadata.nextReviewDate ? new Date(metadata.nextReviewDate) : null,

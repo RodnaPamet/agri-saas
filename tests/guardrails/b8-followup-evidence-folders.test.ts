@@ -80,30 +80,50 @@ describe('B8 follow-up — evidence folders', () => {
         });
 
         it('UpdateEvidenceSchema accepts folder', () => {
-            expect(
-                /UpdateEvidenceSchema[\s\S]{0,800}folder:\s*z\.string\(\)\.max\(120\)/.test(
-                    schema,
-                ),
-            ).toBe(true);
+            // Sliced from the declaration to its closing `})`, not matched
+            // within a fixed character window. The window was 800 chars, and
+            // a comment added above `folder` pushed it out of range — the
+            // assertion then failed for a field that was still there, which
+            // is a test measuring distance rather than the invariant.
+            const block = schema.slice(schema.indexOf('export const UpdateEvidenceSchema'));
+            const decl = block.slice(0, block.indexOf('})'));
+            expect(decl).toMatch(/folder:\s*z\.string\(\)\.max\(120\)/);
         });
     });
 
     describe('Usecase wiring', () => {
         const usecase = read('src/app-layer/usecases/evidence.ts');
 
+        // Folder values are trimmed, null-coerced when empty, AND sanitised
+        // (Epic C.5 — evidence free text reaches the PDF export and the
+        // audit-pack share link verbatim). The assertions below allow the
+        // sanitiser wrapper rather than pinning the exact pre-sanitisation
+        // expression, so adding a second wrapper does not fail a rule that
+        // still holds.
         it('createEvidence trims + null-coerces folder', () => {
-            expect(usecase).toMatch(/folder:\s*data\.folder\?\.trim\(\)\s*\|\|\s*null/);
+            expect(usecase).toMatch(
+                /folder:\s*data\.folder\?\.trim\(\)\s*\?[\s\S]{0,120}data\.folder\.trim\(\)[\s\S]{0,40}:\s*null/,
+            );
         });
 
         it('updateEvidence honours the three-state contract', () => {
             // undefined = no change, null = clear, string = set.
             expect(usecase).toMatch(
-                /folder:[\s\S]{0,200}data\.folder === undefined[\s\S]{0,200}data\.folder\?\.trim\(\)\s*\|\|\s*null/,
+                /folder:[\s\S]{0,80}data\.folder === undefined[\s\S]{0,80}undefined[\s\S]{0,200}:\s*null\)/,
             );
         });
 
         it('uploadEvidenceFile threads folder onto the new row', () => {
-            expect(usecase).toMatch(/folder:\s*metadata\.folder\?\.trim\(\)\s*\|\|\s*null/);
+            expect(usecase).toMatch(
+                /folder:\s*metadata\.folder\?\.trim\(\)\s*\?[\s\S]{0,120}metadata\.folder\.trim\(\)[\s\S]{0,40}:\s*null/,
+            );
+        });
+
+        it('folder is sanitised on every write path', () => {
+            // The reason the shapes above changed. Three call sites, each
+            // routing the trimmed value through the sanitiser.
+            const sanitisedFolders = usecase.match(/sanitizePlainText\((?:data|metadata)\.folder\.trim\(\)\)/g) ?? [];
+            expect(sanitisedFolders.length).toBeGreaterThanOrEqual(3);
         });
     });
 
@@ -111,9 +131,12 @@ describe('B8 follow-up — evidence folders', () => {
         const src = read('src/app-layer/repositories/EvidenceRepository.ts');
 
         it('declares folder on EvidenceListFilters', () => {
-            expect(src).toMatch(
-                /interface EvidenceListFilters[\s\S]{0,500}folder\?:\s*string/,
-            );
+            // Interface block, not a character window — the multi-select
+            // facets above `folder` grew a comment explaining why they are
+            // arrays, and a 500-char window then missed a field that had not
+            // moved.
+            const block = src.slice(src.indexOf('export interface EvidenceListFilters'));
+            expect(block.slice(0, block.indexOf('\n}'))).toMatch(/folder\?:\s*string/);
         });
 
         it('selects the folder column for the list shape', () => {

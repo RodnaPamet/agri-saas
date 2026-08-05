@@ -37,6 +37,7 @@ import { traceAgUsecase, logger } from '@/lib/observability';
 import { enqueue } from '../jobs/queue';
 import { trace } from '@opentelemetry/api';
 import { Prisma } from '@prisma/client';
+import { reconcileMimeType } from '@/lib/storage/mime-sniff';
 
 /** Prisma's unique-constraint violation — the idempotency-race backstop. */
 function isUniqueViolation(err: unknown): boolean {
@@ -604,9 +605,11 @@ export async function uploadLogEntryPhoto(
 ) {
     assertCanWrite(ctx);
 
-    const mimeType = file.type || 'application/octet-stream';
-    if (!isAllowedMime(mimeType)) {
-        throw badRequest('FILE_TYPE_NOT_ALLOWED', `MIME type "${mimeType}" is not allowed`);
+    // `file.type` is the CLIENT's claim; the bytes are checked below. Same
+    // contract as the evidence upload — see the note there.
+    const declaredMime = file.type || 'application/octet-stream';
+    if (!isAllowedMime(declaredMime)) {
+        throw badRequest('FILE_TYPE_NOT_ALLOWED', `MIME type "${declaredMime}" is not allowed`);
     }
     if (!isAllowedSize(file.size)) {
         throw badRequest('FILE_TOO_LARGE', `File exceeds maximum size of ${FILE_MAX_SIZE_BYTES} bytes`);
@@ -618,6 +621,23 @@ export async function uploadLogEntryPhoto(
 
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
+
+    const { resolved: mimeType, detected, corrected } = reconcileMimeType(declaredMime, buffer);
+    if (corrected) {
+        if (!isAllowedMime(mimeType)) {
+            throw badRequest(
+                'FILE_TYPE_NOT_ALLOWED',
+                `File content is "${mimeType}", which is not allowed`,
+            );
+        }
+        logger.warn('journal upload declared a MIME type its bytes contradict', {
+            component: 'journal',
+            tenantId: ctx.tenantId,
+            declaredMime,
+            detected,
+        });
+    }
+
     const readable = Readable.from(buffer);
     const writeResult = await storage.write(pathKey, readable, { mimeType });
 
