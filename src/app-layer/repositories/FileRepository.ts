@@ -34,10 +34,29 @@ export class FileRepository {
         });
     }
 
-    static async markStored(db: PrismaTx, _ctx: RequestContext, id: string) {
+    /**
+     * Mark a file stored, and record the outcome of its AV scan.
+     *
+     * `scanStatus` used to be hardcoded to PENDING here, and NOTHING in the
+     * codebase ever advanced it — grep for markScanClean / markScanInfected
+     * outside this file returned zero. Combined with `AV_SCAN_MODE` defaulting
+     * to "strict" and the download gate 403-ing every PENDING file, that made
+     * a dead-man switch: any deployment that did not override the env var
+     * blocked every evidence download, permanently. Production escaped only
+     * because the compose file hardcodes `disabled` — i.e. by turning
+     * scanning off entirely.
+     *
+     * The caller now passes the real outcome. See `scanUploadedBuffer`.
+     */
+    static async markStored(
+        db: PrismaTx,
+        _ctx: RequestContext,
+        id: string,
+        scanStatus: 'CLEAN' | 'INFECTED' | 'SKIPPED' | 'PENDING' = 'SKIPPED',
+    ) {
         return db.fileRecord.update({
             where: { id },
-            data: { status: 'STORED', storedAt: new Date(), scanStatus: 'PENDING' },
+            data: { status: 'STORED', storedAt: new Date(), scanStatus },
         });
     }
 
@@ -141,35 +160,54 @@ export class FileRepository {
         });
     }
 
-    static async getByPathKey(db: PrismaTx, pathKey: string) {
+    /**
+     * Look up a FileRecord by storage key, SCOPED TO A TENANT.
+     *
+     * The tenantId parameter is required rather than optional: this used to be
+     * a bare `where: { pathKey }`, which would return another tenant's record
+     * to any caller that guessed a key. Making the scope a required argument
+     * means a future caller cannot omit it by accident.
+     */
+    static async getByPathKey(db: PrismaTx, pathKey: string, tenantId: string) {
         return db.fileRecord.findFirst({
-            where: { pathKey },
+            where: { pathKey, tenantId },
         });
     }
 
     /**
-     * Legacy method: checks if a file (by stored filename in Evidence.content) belongs to the tenant.
-     * Used by the old download flow in file.ts.
+     * Resolve a caller-supplied name to a FileRecord THIS TENANT owns, or null.
+     *
+     * Replaces `isFileOwnedByTenant`, which was a cross-tenant read primitive:
+     * it returned true when `Evidence.content === fileName`, and `content` is
+     * caller-supplied free text (evidence.ts sets it from `data.content` and
+     * only overwrites it for type==='FILE' WITH a file). So a user could
+     * create an evidence record whose content was another tenant's storage
+     * key, pass the ownership check, and have `downloadFile` stream the bytes
+     * — the local branch read the raw name with no `assertTenantKey` at all.
+     *
+     * Ownership is now derived from ONE place, the tenant-filtered FileRecord,
+     * and the RECORD is returned rather than a boolean. That matters: the
+     * caller must read `fileRecord.pathKey`, never the string the caller
+     * supplied. A boolean invites exactly the pattern that caused this bug —
+     * check one value, then use another.
      */
-    static async isFileOwnedByTenant(db: PrismaTx, ctx: RequestContext, fileName: string): Promise<boolean> {
-        // Check via Evidence records (legacy: fileName stored in Evidence.content)
-        const evidence = await db.evidence.findFirst({
-            where: { tenantId: ctx.tenantId, content: fileName },
-            select: { id: true },
-        });
-        if (evidence) return true;
-
-        // Check via FileRecord (new: pathKey or originalName match)
-        const fileRecord = await db.fileRecord.findFirst({
+    static async findOwnedByTenant(
+        db: PrismaTx,
+        ctx: RequestContext,
+        fileName: string,
+    ): Promise<{ id: string; pathKey: string; originalName: string; mimeType: string; status: string; scanStatus: string | null } | null> {
+        return db.fileRecord.findFirst({
             where: {
                 tenantId: ctx.tenantId,
-                OR: [
-                    { pathKey: fileName },
-                    { originalName: fileName },
-                ],
+                // originalName is kept for the legacy flow, which addressed
+                // files by display name. It is still tenant-scoped, and the
+                // pathKey it resolves to is asserted by the caller.
+                OR: [{ pathKey: fileName }, { originalName: fileName }],
             },
-            select: { id: true },
+            select: {
+                id: true, pathKey: true, originalName: true,
+                mimeType: true, status: true, scanStatus: true,
+            },
         });
-        return !!fileRecord;
     }
 }

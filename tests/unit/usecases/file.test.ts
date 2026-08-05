@@ -21,7 +21,7 @@ jest.mock('@/lib/db-context', () => ({
 
 jest.mock('@/app-layer/repositories/FileRepository', () => ({
     FileRepository: {
-        isFileOwnedByTenant: jest.fn(),
+        findOwnedByTenant: jest.fn(),
     },
 }));
 
@@ -42,7 +42,7 @@ import { logEvent } from '@/app-layer/events/audit';
 import { makeRequestContext } from '../../helpers/make-context';
 
 const mockRunInTx = runInTenantContext as jest.MockedFunction<typeof runInTenantContext>;
-const mockOwnedBy = FileRepository.isFileOwnedByTenant as jest.MockedFunction<typeof FileRepository.isFileOwnedByTenant>;
+const mockOwnedBy = FileRepository.findOwnedByTenant as jest.MockedFunction<typeof FileRepository.findOwnedByTenant>;
 const mockGetStorage = getStorageProvider as jest.MockedFunction<typeof getStorageProvider>;
 const mockAssertKey = assertTenantKey as jest.MockedFunction<typeof assertTenantKey>;
 const mockLog = logEvent as jest.MockedFunction<typeof logEvent>;
@@ -67,7 +67,7 @@ describe('downloadFile — gate ordering', () => {
     });
 
     it('rejects with forbidden when the file does not belong to the caller tenant', async () => {
-        mockOwnedBy.mockResolvedValueOnce(false);
+        mockOwnedBy.mockResolvedValueOnce(null);
 
         await expect(
             downloadFile(makeRequestContext('EDITOR'), 'tenant-B/secret.pdf'),
@@ -81,7 +81,14 @@ describe('downloadFile — gate ordering', () => {
 
 describe('downloadFile — S3 path', () => {
     it('asserts tenantKey on the FileRecord pathKey before minting the presigned URL', async () => {
-        mockOwnedBy.mockResolvedValueOnce(true);
+        mockOwnedBy.mockResolvedValueOnce({
+        id: 'file-1',
+        pathKey: 'tenants/tenant-1/general/doc.pdf',
+        originalName: 'note.pdf',
+        mimeType: 'application/pdf',
+        status: 'STORED',
+        scanStatus: 'CLEAN',
+    });
         const createSignedDownloadUrl = jest.fn().mockResolvedValue('https://signed.example.com/foo');
         mockGetStorage.mockReturnValue({
             name: 's3',
@@ -113,7 +120,14 @@ describe('downloadFile — S3 path', () => {
     });
 
     it('emits a READ audit on S3 download', async () => {
-        mockOwnedBy.mockResolvedValueOnce(true);
+        mockOwnedBy.mockResolvedValueOnce({
+        id: 'file-1',
+        pathKey: 'tenants/tenant-1/general/doc.pdf',
+        originalName: 'note.pdf',
+        mimeType: 'application/pdf',
+        status: 'STORED',
+        scanStatus: 'CLEAN',
+    });
         mockGetStorage.mockReturnValue({
             name: 's3',
             createSignedDownloadUrl: jest.fn().mockResolvedValue('https://x'),
@@ -142,7 +156,14 @@ describe('downloadFile — S3 path', () => {
 
 describe('downloadFile — local fallback', () => {
     it('returns a stream-mode buffer with the inferred mimeType', async () => {
-        mockOwnedBy.mockResolvedValueOnce(true);
+        mockOwnedBy.mockResolvedValueOnce({
+        id: 'file-1',
+        pathKey: 'tenants/tenant-1/general/doc.pdf',
+        originalName: 'note.pdf',
+        mimeType: 'application/pdf',
+        status: 'STORED',
+        scanStatus: 'CLEAN',
+    });
 
         async function* fakeStream() {
             yield Buffer.from('hello');
@@ -166,7 +187,14 @@ describe('downloadFile — local fallback', () => {
     });
 
     it('throws notFound when the storage stream throws', async () => {
-        mockOwnedBy.mockResolvedValueOnce(true);
+        mockOwnedBy.mockResolvedValueOnce({
+        id: 'file-1',
+        pathKey: 'tenants/tenant-1/general/doc.pdf',
+        originalName: 'note.pdf',
+        mimeType: 'application/pdf',
+        status: 'STORED',
+        scanStatus: 'CLEAN',
+    });
         mockGetStorage.mockReturnValue({
             name: 'local',
             readStream: jest.fn(() => {
@@ -180,7 +208,14 @@ describe('downloadFile — local fallback', () => {
     });
 
     it('falls back to application/octet-stream for unknown extensions', async () => {
-        mockOwnedBy.mockResolvedValueOnce(true);
+        mockOwnedBy.mockResolvedValueOnce({
+        id: 'file-1',
+        pathKey: 'tenants/tenant-1/general/doc.pdf',
+        originalName: 'note.pdf',
+        mimeType: 'application/pdf',
+        status: 'STORED',
+        scanStatus: 'CLEAN',
+    });
         async function* s() {
             yield Buffer.from('blob');
         }

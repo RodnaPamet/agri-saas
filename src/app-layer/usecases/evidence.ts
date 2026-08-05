@@ -3,6 +3,7 @@ import { EvidenceRepository, EvidenceListFilters } from '../repositories/Evidenc
 import { assertCanRead, assertCanWrite, assertCanAdmin } from '../policies/common';
 import { logEvent } from '../events/audit';
 import { validateFile, uploadFile } from '@/lib/storage';
+import { scanUploadedBuffer } from '@/lib/storage/av-scan';
 import { notFound, badRequest, forbidden } from '@/lib/errors/types';
 import { runInTenantContext } from '@/lib/db-context';
 import { cachedListRead, bumpEntityCacheVersion } from '@/lib/cache/list-cache';
@@ -531,6 +532,11 @@ export async function uploadEvidenceFile(
 
     const writeResult = await storage.write(pathKey, readable, { mimeType });
 
+    // AV scan on the buffer we already hold, BEFORE the record is marked
+    // stored. Resolves to a terminal status — never PENDING unless a
+    // configured scanner erred under strict mode.
+    const scanStatus = await scanUploadedBuffer(buffer);
+
     // Create FileRecord + Evidence in a transaction
     const result = await runInTenantContext(ctx, async (db) => {
         const controlId = metadata.controlId || null;
@@ -596,7 +602,9 @@ export async function uploadEvidenceFile(
                 bucket: env.S3_BUCKET || null,
                 domain,
             });
-            await FileRepository.markStored(db, ctx, fileRecord.id);
+            // Scan before the file is treated as usable, and persist a TERMINAL
+            // status. Leaving it PENDING was a trap: nothing advances that state.
+            await FileRepository.markStored(db, ctx, fileRecord.id, scanStatus);
             fileRecordId = fileRecord.id;
         }
 

@@ -223,7 +223,7 @@ describe('FileRepository — reads', () => {
         // in src/lib/storage), so any future caller MUST validate the key
         // before trusting the row. A change that starts filtering here is
         // fine; a change that adds a caller without that validation is not.
-        await FileRepository.getByPathKey(asTx(db), 'tenant-1/general/abc.pdf');
+        await FileRepository.getByPathKey(asTx(db), 'tenant-1/general/abc.pdf', 'tenant-1');
 
         expect(whereOf(db.fileRecord.findFirst)).toEqual({
             pathKey: 'tenant-1/general/abc.pdf',
@@ -292,45 +292,40 @@ describe('FileRepository — AV scan lifecycle', () => {
     });
 });
 
-describe('FileRepository.isFileOwnedByTenant', () => {
-    it('accepts a legacy filename recorded on an Evidence row, without a second query', async () => {
-        // Break: dropping the early return. Harmless functionally, but the
-        // legacy download path calls this per request — the FileRecord
-        // query is pure waste once ownership is already proven.
-        db.evidence.findFirst.mockResolvedValue({ id: 'e-1' });
+describe('FileRepository.findOwnedByTenant', () => {
+    it('NEVER derives ownership from Evidence.content', async () => {
+        // The vulnerability. `content` is caller-supplied free text, so a user
+        // could create an evidence row whose content was another tenant's
+        // storage key and have the old boolean gate return true for it. The
+        // Evidence table must not be consulted at all.
+        db.fileRecord.findFirst.mockResolvedValue(null);
 
-        expect(await FileRepository.isFileOwnedByTenant(asTx(db), ctx, 'report.pdf')).toBe(true);
-        expect(whereOf(db.evidence.findFirst)).toEqual({
-            tenantId: 'tenant-1',
-            content: 'report.pdf',
-        });
-        expect(db.fileRecord.findFirst).not.toHaveBeenCalled();
+        expect(await FileRepository.findOwnedByTenant(asTx(db), ctx, 'report.pdf')).toBeNull();
+        expect(db.evidence.findFirst).not.toHaveBeenCalled();
     });
 
-    it('falls back to matching either the path key or the original name', async () => {
-        // Break: matching `pathKey` only. Files uploaded through the newer
-        // route are referenced by original name in older evidence rows, so
-        // the OR arm is what keeps those downloads working.
-        db.fileRecord.findFirst.mockResolvedValue({ id: 'f-1' });
+    it('resolves through a tenant-filtered FileRecord and returns the RECORD', async () => {
+        // Returning the record, not a boolean, is the point: the caller must
+        // read `pathKey` off it rather than reusing the string it passed in.
+        // A boolean invites "check one value, read another" — which is
+        // exactly how the byte-disclosure bug worked.
+        db.fileRecord.findFirst.mockResolvedValue({
+            id: 'f-1', pathKey: 'tenants/tenant-1/general/a.pdf',
+            originalName: 'report.pdf', mimeType: 'application/pdf',
+            status: 'STORED', scanStatus: 'CLEAN',
+        });
 
-        expect(await FileRepository.isFileOwnedByTenant(asTx(db), ctx, 'report.pdf')).toBe(true);
+        const rec = await FileRepository.findOwnedByTenant(asTx(db), ctx, 'report.pdf');
+
+        expect(rec?.pathKey).toBe('tenants/tenant-1/general/a.pdf');
         expect(whereOf(db.fileRecord.findFirst)).toEqual({
             tenantId: 'tenant-1',
             OR: [{ pathKey: 'report.pdf' }, { originalName: 'report.pdf' }],
         });
     });
 
-    it('denies a filename that belongs to no row of the calling tenant', async () => {
-        // Break: returning the row object instead of a boolean, or `!row`
-        // inverted. This value gates a raw file download — a truthy
-        // default is a cross-tenant file read.
-        expect(await FileRepository.isFileOwnedByTenant(asTx(db), ctx, 'someone-elses.pdf')).toBe(false);
-    });
-
-    it('asks both questions about the CALLING tenant, not a fixed one', async () => {
-        await FileRepository.isFileOwnedByTenant(asTx(db), OTHER_TENANT, 'report.pdf');
-
-        expect(whereOf(db.evidence.findFirst)).toMatchObject({ tenantId: 'tenant-2' });
+    it('scopes to the CALLING tenant, not a fixed one', async () => {
+        await FileRepository.findOwnedByTenant(asTx(db), OTHER_TENANT, 'report.pdf');
         expect(whereOf(db.fileRecord.findFirst)).toMatchObject({ tenantId: 'tenant-2' });
     });
 });
