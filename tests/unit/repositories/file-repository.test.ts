@@ -111,19 +111,30 @@ describe('FileRepository.createPending', () => {
 });
 
 describe('FileRepository — status transitions', () => {
-    it('arms the AV scan when a file becomes STORED', async () => {
-        // Break: dropping `scanStatus: 'PENDING'`. The scan sweep selects
-        // on that column, so an unscanned file would never be queued and
-        // would sit in the tenant's evidence library forever un-scanned —
-        // a green "STORED" badge on a file nothing ever looked at.
+    it('records a TERMINAL scan status when a file becomes STORED', async () => {
+        // This used to hardcode PENDING, justified by a comment claiming "the
+        // scan sweep selects on that column". There is no such sweep — grep
+        // for anything queueing on PENDING returns nothing, and nothing in
+        // the codebase ever advances the column. Combined with AV_SCAN_MODE
+        // defaulting to "strict" and the download gate 403-ing PENDING, that
+        // made a dead-man switch: every evidence download blocked forever in
+        // any deployment that didn't override the env var.
+        //
+        // The default is SKIPPED — honest about the fact that nothing scanned
+        // it — rather than PENDING, which promises a scan that is not coming.
         await FileRepository.markStored(asTx(db), ctx, 'f-1');
 
         expect(argOf(db.fileRecord.update).where).toEqual({ id: 'f-1' });
         expect(dataOf(db.fileRecord.update)).toMatchObject({
             status: 'STORED',
-            scanStatus: 'PENDING',
+            scanStatus: 'SKIPPED',
         });
         expect(dataOf(db.fileRecord.update).storedAt).toBeInstanceOf(Date);
+    });
+
+    it('persists the scan outcome the caller resolved', async () => {
+        await FileRepository.markStored(asTx(db), ctx, 'f-1', 'INFECTED');
+        expect(dataOf(db.fileRecord.update)).toMatchObject({ scanStatus: 'INFECTED' });
     });
 
     it('marks a failed upload without touching the scan lifecycle', async () => {
@@ -217,16 +228,18 @@ describe('FileRepository — reads', () => {
         });
     });
 
-    it('looks a file up by path key WITHOUT a tenant filter', async () => {
-        // Pinned deliberately: this lookup is global. The tenant lives
-        // inside the key itself (see `assertTenantKey` / `parseTenantKey`
-        // in src/lib/storage), so any future caller MUST validate the key
-        // before trusting the row. A change that starts filtering here is
-        // fine; a change that adds a caller without that validation is not.
+    it('looks a file up by path key SCOPED TO A TENANT', async () => {
+        // This used to be a deliberately global lookup, justified on the
+        // grounds that "the tenant lives inside the key" and every caller
+        // would validate it. That is the argument that fails the moment
+        // someone adds a caller who doesn't — which is precisely what
+        // happened in downloadFile. The scope is now a required argument, so
+        // it cannot be omitted by accident.
         await FileRepository.getByPathKey(asTx(db), 'tenant-1/general/abc.pdf', 'tenant-1');
 
         expect(whereOf(db.fileRecord.findFirst)).toEqual({
             pathKey: 'tenant-1/general/abc.pdf',
+            tenantId: 'tenant-1',
         });
     });
 });

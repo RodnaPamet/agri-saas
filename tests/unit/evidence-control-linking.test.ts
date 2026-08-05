@@ -25,23 +25,42 @@ describe('Evidence → Control linking — structural', () => {
     });
 
     test('createEvidence creates ControlEvidenceLink when controlId is provided', () => {
-        expect(usecaseContent).toContain('controlEvidenceLink.create');
+        expect(usecaseContent).toContain('controlEvidenceLink.createMany');
+    });
+
+    // Slice from the DECLARATION, not the bare name. Splitting on the bare
+    // string put this section wherever the identifier last appeared — which
+    // included a cross-reference inside a comment, so an unrelated comment
+    // edit silently moved what these tests were reading.
+    const uploadSection =
+        usecaseContent.split('export async function uploadEvidenceFile')[1] || '';
+
+    test('the upload section was actually located (self-check)', () => {
+        expect(uploadSection.length).toBeGreaterThan(500);
     });
 
     test('uploadEvidenceFile also validates controlId tenant', () => {
-        // uploadEvidenceFile has the same validation
-        const uploadSection = usecaseContent.split('uploadEvidenceFile')[1] || '';
         expect(uploadSection).toContain('INVALID_CONTROL');
     });
 
     test('uploadEvidenceFile creates ControlEvidenceLink for file evidence', () => {
-        const uploadSection = usecaseContent.split('uploadEvidenceFile')[1] || '';
-        expect(uploadSection).toContain('controlEvidenceLink.create');
+        expect(uploadSection).toContain('controlEvidenceLink.createMany');
     });
 
-    test('duplicate link does not crash evidence creation', () => {
-        // The try/catch around controlEvidenceLink.create should swallow duplicates
-        expect(usecaseContent).toMatch(/catch\s*\{/);
+    test('a duplicate link is absorbed by the statement, not by a catch', () => {
+        // This test used to assert `usecaseContent` matched /catch\s*\{/ —
+        // i.e. it REQUIRED the defect. The catch it demanded caught the JS
+        // exception from a 23505 while leaving the Postgres transaction
+        // aborted, so the audit write on the next line failed with 25P02 and
+        // took the whole upload down. The correct shape resolves the conflict
+        // inside the statement.
+        const bridges = [...usecaseContent.matchAll(
+            /controlEvidenceLink\.createMany\(\{[\s\S]{0,600}?\}\);/g,
+        )];
+        expect(bridges.length).toBeGreaterThanOrEqual(2);
+        for (const [block] of bridges) {
+            expect(block).toContain('skipDuplicates: true');
+        }
     });
 });
 

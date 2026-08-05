@@ -94,7 +94,15 @@ function checkDbAvailable(url: string | undefined): boolean {
             '.catch(()=>{p.$disconnect().catch(()=>{});process.exit(1)})',
         ].join('');
         const result = spawnSync('node', ['-e', script], {
-            timeout: 5000,
+            // 30s, not 5s. This probe pays a cold Node start plus the Prisma
+            // client's own load before it can even attempt a connection —
+            // measured at ~7s on an ordinary dev machine, i.e. reliably over
+            // the old budget. A timeout here reads as "no database", which
+            // turns every integration suite into `describe.skip` and makes
+            // the run GREENER by running less. An absent database still fails
+            // fast (ECONNREFUSED returns in milliseconds), so the larger
+            // budget costs nothing in the case it was guarding against.
+            timeout: 30_000,
             stdio: 'ignore',
             cwd: ROOT,
             env: { ...process.env, __DB_CHECK_URL: url },

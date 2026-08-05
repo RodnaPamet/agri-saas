@@ -69,7 +69,10 @@ function makeDb(overrides: {
             ),
         },
         controlEvidenceLink: {
-            create: jest.fn().mockResolvedValue({ id: 'cel-1' }),
+            // createMany, not create — the bridge resolves duplicates with
+            // ON CONFLICT DO NOTHING rather than by catching a 23505 that
+            // would already have aborted the enclosing transaction.
+            createMany: jest.fn().mockResolvedValue({ count: 1 }),
         },
     } as any;
 }
@@ -124,13 +127,15 @@ describe('attachAutoEvidenceFromLogEntry', () => {
     it('mirrors the control↔evidence bridge link', async () => {
         const db = makeDb();
         await attachAutoEvidenceFromLogEntry(db, ctx, 'log-1');
-        expect(db.controlEvidenceLink.create).toHaveBeenCalledTimes(2);
-        expect(db.controlEvidenceLink.create.mock.calls[0][0].data).toMatchObject({
+        expect(db.controlEvidenceLink.createMany).toHaveBeenCalledTimes(2);
+        const first = db.controlEvidenceLink.createMany.mock.calls[0][0];
+        expect(first.data[0]).toMatchObject({
             tenantId: 'tenant-1',
             controlId: 'ctrl-1',
             kind: 'LINK',
             url: '/t/acme/journal/log-1',
         });
+        expect(first.skipDuplicates).toBe(true);
     });
 
     it('emits a logEvent per evidence created with the entity-lifecycle shape', async () => {
@@ -194,12 +199,32 @@ describe('attachAutoEvidenceFromLogEntry', () => {
         expect(db.evidence.create.mock.calls[0][0].data.controlId).toBe('ctrl-2');
     });
 
-    it('tolerates a duplicate control↔evidence link without failing the attach', async () => {
+    it('tolerates a duplicate control↔evidence link — in the statement, not in a catch', async () => {
+        // The old version of this test mocked the create as REJECTING and
+        // asserted the attach survived, which is the behaviour a mock can
+        // produce and a real transaction cannot: a 23505 aborts the
+        // transaction at the database, so the audit write on the next line
+        // died with 25P02. The duplicate is now absorbed by ON CONFLICT DO
+        // NOTHING — the statement succeeds and inserts zero rows.
         const db = makeDb();
-        db.controlEvidenceLink.create.mockRejectedValue(new Error('unique constraint'));
+        db.controlEvidenceLink.createMany.mockResolvedValue({ count: 0 });
         const result = await attachAutoEvidenceFromLogEntry(db, ctx, 'log-1');
-        // Evidence still created even though the bridge link threw.
         expect(result).toEqual({ created: 2 });
         expect(db.evidence.create).toHaveBeenCalledTimes(2);
+        for (const call of db.controlEvidenceLink.createMany.mock.calls) {
+            expect(call[0].skipDuplicates).toBe(true);
+        }
+    });
+
+    it('does NOT swallow a real bridge failure', async () => {
+        // The other half of the contract. `skipDuplicates` absorbs exactly
+        // one thing — a unique collision. A bad FK or an RLS denial must
+        // still take the attach down rather than leave evidence rows behind
+        // that the control tab will never show.
+        const db = makeDb();
+        db.controlEvidenceLink.createMany.mockRejectedValue(new Error('FK violation'));
+        await expect(attachAutoEvidenceFromLogEntry(db, ctx, 'log-1')).rejects.toThrow(
+            /FK violation/,
+        );
     });
 });

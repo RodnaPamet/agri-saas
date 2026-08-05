@@ -66,12 +66,12 @@ describe('downloadFile — gate ordering', () => {
         expect(mockOwnedBy).not.toHaveBeenCalled();
     });
 
-    it('rejects with forbidden when the file does not belong to the caller tenant', async () => {
+    it('rejects with notFound when the file does not belong to the caller tenant', async () => {
         mockOwnedBy.mockResolvedValueOnce(null);
 
         await expect(
             downloadFile(makeRequestContext('EDITOR'), 'tenant-B/secret.pdf'),
-        ).rejects.toThrow(/permission to access this file/);
+        ).rejects.toThrow(/File not found/);
         // Regression: a refactor that skipped this check would let any
         // logged-in user pass an arbitrary path key and exfiltrate
         // another tenant's evidence files.
@@ -98,7 +98,7 @@ describe('downloadFile — S3 path', () => {
         const fakeDb = {
             fileRecord: {
                 findFirst: jest.fn().mockResolvedValue({
-                    pathKey: 'tenant-1/evidence/file.pdf',
+                    pathKey: 'tenants/tenant-1/general/doc.pdf',
                     originalName: 'file.pdf',
                     mimeType: 'application/pdf',
                 }),
@@ -106,13 +106,13 @@ describe('downloadFile — S3 path', () => {
         };
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(fakeDb as never));
 
-        const result = await downloadFile(makeRequestContext('EDITOR'), 'tenant-1/evidence/file.pdf');
+        const result = await downloadFile(makeRequestContext('EDITOR'), 'tenants/tenant-1/general/doc.pdf');
 
         // Regression: a refactor that skipped assertTenantKey could
         // hand out a URL keyed on another tenant's prefix, even after
         // the ownership check passed.
         expect(mockAssertKey).toHaveBeenCalledWith(
-            'tenant-1/evidence/file.pdf',
+            'tenants/tenant-1/general/doc.pdf',
             'tenant-1',
         );
         expect(result.mode).toBe('redirect');
@@ -181,9 +181,11 @@ describe('downloadFile — local fallback', () => {
 
         expect(result.mode).toBe('stream');
         const r = result as { mimeType: string; buffer: Buffer; name: string };
-        expect(r.mimeType).toBe('text/csv');
+        // From the RECORD, not the requested extension — the caller does not
+        // get to choose the Content-Type the browser will act on.
+        expect(r.mimeType).toBe('application/pdf');
         expect(r.buffer.toString()).toBe('hello world');
-        expect(r.name).toBe('report.csv');
+        expect(r.name).toBe('note.pdf');
     });
 
     it('throws notFound when the storage stream throws', async () => {
@@ -230,6 +232,6 @@ describe('downloadFile — local fallback', () => {
         );
 
         const r = result as { mimeType: string };
-        expect(r.mimeType).toBe('application/octet-stream');
+        expect(r.mimeType).toBe('application/pdf');
     });
 });
