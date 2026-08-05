@@ -24,7 +24,7 @@ import {
     Calendar as CalIcon,
     Plus,
 } from 'lucide-react';
-import Link from 'next/link';
+import { CalendarEventLink } from '@/components/ui/CalendarEventLink';
 import { cardVariants } from '@/components/ui/card';
 import { cn } from '@/lib/cn';
 
@@ -274,8 +274,9 @@ export function CalendarClient({
                                             key={ev.id}
                                             data-event-id={ev.id}
                                         >
-                                            <Link
+                                            <CalendarEventLink
                                                 href={ev.href}
+                                                external={ev.external}
                                                 className="block rounded p-2 text-xs hover:bg-bg-muted transition-colors"
                                             >
                                                 <div className="font-medium text-content-emphasis truncate">
@@ -289,7 +290,7 @@ export function CalendarClient({
                                                 <div className="text-[10px] text-content-subtle uppercase tracking-wider mt-0.5">
                                                     {ev.category} · {ev.status}
                                                 </div>
-                                            </Link>
+                                            </CalendarEventLink>
                                         </li>
                                     ))}
                                 </ul>

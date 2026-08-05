@@ -18,13 +18,13 @@
  */
 
 import * as React from 'react';
-import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/cn';
 import type {
     CalendarEvent,
 } from '@/app-layer/schemas/calendar.schemas';
 import { getCategoryTone } from '@/lib/design/status-tone';
+import { CalendarEventLink } from '@/components/ui/CalendarEventLink';
 
 // ─── Public props ─────────────────────────────────────────────────────
 
@@ -258,8 +258,9 @@ export function CalendarMonth({
                                             data-event-id={ev.id}
                                             data-event-category={ev.category}
                                         >
-                                            <Link
+                                            <CalendarEventLink
                                                 href={ev.href}
+                                                external={ev.external}
                                                 title={`${ev.title}${ev.detail ? ` — ${ev.detail}` : ''}`}
                                                 className={cn(
                                                     'flex items-center gap-1 px-1 py-0.5 rounded text-[10px] truncate',
@@ -278,7 +279,7 @@ export function CalendarMonth({
                                                     aria-hidden="true"
                                                 />
                                                 <span className="truncate">{ev.title}</span>
-                                            </Link>
+                                            </CalendarEventLink>
                                         </li>
                                     ))}
                                 </ul>
