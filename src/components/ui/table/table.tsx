@@ -522,6 +522,35 @@ const ResizableTableRow = memo(
                 }
               : undefined
         }
+        // ── Keyboard ──────────────────────────────────────────────
+        //
+        // A clickable row was reachable by mouse only. `onClick` on a `<tr>`
+        // gives no focus and no key handling, so every list page that opens a
+        // detail sheet or navigates on row click was unusable without a
+        // pointer — and on the evidence page that meant the whole review
+        // workflow, since the row is how you open a record.
+        //
+        // `tabIndex` + Enter/Space is the data-grid convention. Deliberately
+        // NO `role="button"`: that would replace the row's table semantics,
+        // and a screen-reader user would lose the column associations that
+        // make the row readable at all. The row stays a row; it just gains a
+        // focus stop and a key that activates it.
+        //
+        // Space is prevented BEFORE activating — the default would scroll the
+        // page out from under whatever the activation opens.
+        tabIndex={onRowClick ? 0 : undefined}
+        onKeyDown={
+          onRowClick
+            ? (e) => {
+                if (e.key !== "Enter" && e.key !== " ") return;
+                // A key pressed inside a nested button/link belongs to that
+                // control, not to the row.
+                if (e.target !== e.currentTarget) return;
+                e.preventDefault();
+                onRowClick(row, e as unknown as MouseEvent<HTMLTableRowElement>);
+              }
+            : undefined
+        }
         onDoubleClick={
           // Only when selection owns the single click does the row
           // action need a double-click. With selection off it already
@@ -1151,6 +1180,26 @@ export function Table<T>({
                                 onRowClick(row, e);
                               }
                             : undefined
+                      }
+                      // Keyboard — same contract as ResizableTableRow above.
+                      // BOTH row renderers need it: `applyFixedLayout` picks
+                      // between them, and this non-resizable branch is the one
+                      // most list pages actually take, so wiring only the
+                      // other would have left the fix invisible everywhere it
+                      // mattered. (It did — the rendered test caught it.)
+                      tabIndex={onRowClick ? 0 : undefined}
+                      onKeyDown={
+                        onRowClick
+                          ? (e) => {
+                              if (e.key !== "Enter" && e.key !== " ") return;
+                              if (e.target !== e.currentTarget) return;
+                              e.preventDefault();
+                              onRowClick(
+                                row,
+                                e as unknown as MouseEvent<HTMLTableRowElement>,
+                              );
+                            }
+                          : undefined
                       }
                       onDoubleClick={
                         selectionEnabled && onRowClick

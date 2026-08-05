@@ -6,6 +6,7 @@ import { CreateEvidenceSchema } from '@/lib/schemas';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { z } from 'zod';
 import { normalizeQ } from '@/lib/filters/query-helpers';
+import { csvEnumField } from '@/lib/validation/query-params';
 import { jsonResponse } from '@/lib/api-response';
 import { LIST_BACKFILL_CAP, applyBackfillCap } from '@/lib/list-backfill-cap';
 import { recordListPageRowCount } from '@/lib/observability/list-page-metrics';
@@ -13,8 +14,14 @@ import { recordListPageRowCount } from '@/lib/observability/list-page-metrics';
 const EvidenceQuerySchema = z.object({
     limit: z.coerce.number().int().min(1).max(100).optional(),
     cursor: z.string().optional(),
-    type: z.string().optional(),
-    status: z.enum(['DRAFT', 'SUBMITTED', 'APPROVED', 'REJECTED']).optional(),
+    // Both are `multiple: true` facets, so `filterStateToUrlParams` sends them
+    // comma-joined (`?status=DRAFT,APPROVED`). `status` was `z.enum([...])`,
+    // which REJECTED the joined value outright — selecting two statuses
+    // returned 400. `type` was `z.string()`, which is quieter and worse: the
+    // literal "FILE,LINK" reached Prisma as an equality and matched nothing,
+    // so the page rendered "no evidence" for a filter that never ran.
+    type: csvEnumField(z.enum(['FILE', 'LINK', 'TEXT'])),
+    status: csvEnumField(z.enum(['DRAFT', 'SUBMITTED', 'APPROVED', 'REJECTED'])),
     controlId: z.string().optional(),
     q: z.string().optional().transform(normalizeQ),
     archived: z.enum(['true', 'false']).optional(),

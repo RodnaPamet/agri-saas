@@ -55,7 +55,13 @@ describe('Action-button canonical entity label', () => {
         const HEADER_ACTION_KEYS: Array<[string, string, string]> = [
             ['assets', 'addAsset', 'Asset'],
             ['risks', 'addRisk', 'Risk'],
-            ['evidence', 'addEvidence', 'Evidence'],
+            // "Record", not "Evidence": the page, its nav entry, its title,
+            // its counts and this button now all say the same word, in the
+            // register a farmer uses. It previously said "Records" in the
+            // sidebar and "Evidence" on the button — and in Bulgarian,
+            // "Документи" in the sidebar and "Библиотека с доказателства" on
+            // the page, which is two different names for one place.
+            ['evidence', 'addEvidence', 'Record'],
             ['audits', 'newAudit', 'Audit'],
             ['findings', 'newFinding', 'Finding'],
         ];

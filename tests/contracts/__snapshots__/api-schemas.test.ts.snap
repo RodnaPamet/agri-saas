@@ -2361,6 +2361,12 @@ exports[`API contract — per-schema snapshots schema: EvidenceUpdateRequest 1`]
     "content": {
       "type": "string"
     },
+    "controlId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "category": {
       "type": [
         "string",

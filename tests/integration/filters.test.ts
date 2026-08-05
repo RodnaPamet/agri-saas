@@ -201,10 +201,38 @@ describe('EvidenceRepository._buildWhere', () => {
         const mockDb = { evidence: { findMany: mockFindMany } } as unknown as PrismaTx;
         const ctx = { tenantId: 'tenant-1', userId: 'user-1' } as unknown as RequestContext;
 
-        await EvidenceRepository.list(mockDb, ctx, { type: 'FILE' });
+        await EvidenceRepository.list(mockDb, ctx, { type: ['FILE'] });
 
         const where = mockFindMany.mock.calls[0][0].where;
-        expect(where.type).toBe('FILE');
+        // `{ in: [...] }`, not equality — the facet is multi-select, so the
+        // URL carries a comma-joined list and the where-clause has to accept
+        // more than one member. A scalar equality here is what made selecting
+        // two types match nothing.
+        expect(where.type).toEqual({ in: ['FILE'] });
+    });
+
+    it('filters by SEVERAL types at once', async () => {
+        const { EvidenceRepository } = await import('@/app-layer/repositories/EvidenceRepository');
+        const mockFindMany = jest.fn().mockResolvedValue([]);
+        const mockDb = { evidence: { findMany: mockFindMany } } as unknown as PrismaTx;
+        const ctx = { tenantId: 'tenant-1', userId: 'user-1' } as unknown as RequestContext;
+
+        await EvidenceRepository.list(mockDb, ctx, { type: ['FILE', 'LINK'] });
+
+        expect(mockFindMany.mock.calls[0][0].where.type).toEqual({ in: ['FILE', 'LINK'] });
+    });
+
+    it('OMITS the filter for a cleared facet rather than emitting an empty IN', async () => {
+        // `{ in: [] }` matches nothing, so clearing a filter would empty the
+        // table — the opposite of what clearing a filter means.
+        const { EvidenceRepository } = await import('@/app-layer/repositories/EvidenceRepository');
+        const mockFindMany = jest.fn().mockResolvedValue([]);
+        const mockDb = { evidence: { findMany: mockFindMany } } as unknown as PrismaTx;
+        const ctx = { tenantId: 'tenant-1', userId: 'user-1' } as unknown as RequestContext;
+
+        await EvidenceRepository.list(mockDb, ctx, { type: [] });
+
+        expect(mockFindMany.mock.calls[0][0].where.type).toBeUndefined();
     });
 
     it('filters by controlId', async () => {

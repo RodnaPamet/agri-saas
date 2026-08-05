@@ -389,14 +389,6 @@ function EvidencePageInner({ initialEvidence, initialControls, tenantSlug, permi
     // the tab-bar above the filter toolbar — KPIs cover status only
     // so the two affordances stay independent.
     type EvidenceKpiId = 'total' | 'draft' | 'submitted' | 'approved';
-    // guardrail-ignore: KPI counts across the loaded page, not a refilter.
-    const totalEvidence = evidence.length;
-    // guardrail-ignore: KPI count, not a refilter.
-    const draftEvidence = evidence.filter((ev: any) => ev.status === 'DRAFT').length;
-    // guardrail-ignore: KPI count, not a refilter.
-    const submittedEvidence = evidence.filter((ev: any) => ev.status === 'SUBMITTED').length;
-    // guardrail-ignore: KPI count, not a refilter.
-    const approvedEvidence = evidence.filter((ev: any) => ev.status === 'APPROVED').length;
     const evidenceKpiDefs: ReadonlyArray<KpiFilterDef<EvidenceKpiId>> = useMemo(
         () => [
             {
@@ -444,6 +436,29 @@ function EvidencePageInner({ initialEvidence, initialControls, tenantSlug, permi
         : retentionFilter === 'expiring'
             ? expiringEvidence
             : activeEvidence;
+
+    // ─── KPI counts — over the rows the table is SHOWING ───
+    //
+    // These counted the whole loaded `evidence` array, including archived,
+    // expired and soft-deleted rows, while the table below renders
+    // `displayEvidence` — the current retention tab, which on load excludes
+    // exactly those. So the page opened saying "Total 40" above a table of 32,
+    // and "Draft 6" counting drafts that were archived months ago and are not
+    // on screen. Clicking a card then filtered the table to a number that had
+    // never matched the card.
+    //
+    // Counting over `displayEvidence` makes each card a true statement about
+    // what is in front of the user: within THIS tab, this many are drafts. The
+    // retention tab and the status KPI stay independent dimensions — the KPI
+    // narrows the tab's population, it does not reach past it.
+    // guardrail-ignore: KPI counts over the displayed rows, not a refilter.
+    const totalEvidence = displayEvidence.length;
+    // guardrail-ignore: KPI count, not a refilter.
+    const draftEvidence = displayEvidence.filter((ev: any) => ev.status === 'DRAFT').length;
+    // guardrail-ignore: KPI count, not a refilter.
+    const submittedEvidence = displayEvidence.filter((ev: any) => ev.status === 'SUBMITTED').length;
+    // guardrail-ignore: KPI count, not a refilter.
+    const approvedEvidence = displayEvidence.filter((ev: any) => ev.status === 'APPROVED').length;
 
     // ─── PR-1: org-parity sortable headers + progressive disclosure ───
     const [sortBy, setSortBy] = useState<string | undefined>(undefined);
@@ -730,7 +745,10 @@ function EvidencePageInner({ initialEvidence, initialControls, tenantSlug, permi
                     </div>
                 );
             },
-            meta: { disableTruncate: true },
+            // Retention is the axis this page's own tabs are organised on, and
+            // the card omitted it — so on a phone the operator could see the
+            // Expiring tab's count but not which record was expiring.
+            meta: { disableTruncate: true, mobileCard: { slot: 'meta', label: tr('client.colRetention') } },
         },
         {
             id: 'freshness',
@@ -895,7 +913,12 @@ function EvidencePageInner({ initialEvidence, initialControls, tenantSlug, permi
                     </div>
                 );
             },
-            meta: { disableTruncate: true },
+            // Submit / Approve / Reject IS the page's workflow, and under
+            // jsdom-and-on-a-real-phone the card fallback dropped every column
+            // without `mobileCard` — so the workflow simply did not exist on
+            // the device the operator actually carries. The `actions` slot
+            // renders it as the card's footer.
+            meta: { disableTruncate: true, mobileCard: { slot: 'actions' } },
         },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     ]), [t, tr, permissions, apiUrl, tenantSlug]);

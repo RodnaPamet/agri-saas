@@ -1,14 +1,23 @@
 import { PrismaTx } from '@/lib/db-context';
 import { RequestContext } from '../types';
-import { Prisma } from '@prisma/client';
+import { Prisma, type EvidenceType, type EvidenceStatus } from '@prisma/client';
 import { buildCursorWhere, CURSOR_ORDER_BY, computePageInfo, clampLimit } from '@/lib/pagination';
 import type { PaginatedResponse } from '@/lib/dto/pagination';
 import { traceRepository } from '@/lib/observability/repository-tracing';
 
 export interface EvidenceListFilters {
-    type?: string;
+    /**
+     * Multi-select facets, so ARRAYS — not `string` plus a cast.
+     *
+     * These were typed `string` and cast to a Prisma enum filter at the
+     * where-builder. That cast is what let a comma-joined "FILE,LINK" through
+     * to the query, where it matched nothing and the page reported an empty
+     * library. The array type makes the shape the URL actually carries
+     * impossible to get wrong at the boundary.
+     */
+    type?: EvidenceType[];
     /** EvidenceStatus: DRAFT | SUBMITTED | APPROVED | REJECTED */
-    status?: string;
+    status?: EvidenceStatus[];
     controlId?: string;
     /**
      * B8 follow-up — folder filter. `__none__` is the sentinel for
@@ -121,11 +130,14 @@ export class EvidenceRepository {
         const where: Prisma.EvidenceWhereInput = { tenantId: ctx.tenantId };
         const andConditions: Prisma.EvidenceWhereInput[] = [];
 
-        if (filters?.type) {
-            where.type = filters.type as Prisma.EnumEvidenceTypeFilter;
+        // `.length` guards are load-bearing: a CLEARED facet must OMIT the
+        // filter, not emit `{ in: [] }`, which matches nothing and empties the
+        // table in response to the user removing a filter.
+        if (filters?.type && filters.type.length > 0) {
+            where.type = { in: filters.type };
         }
-        if (filters?.status) {
-            where.status = filters.status as Prisma.EnumEvidenceStatusFilter;
+        if (filters?.status && filters.status.length > 0) {
+            where.status = { in: filters.status };
         }
         if (filters?.controlId) {
             where.controlId = filters.controlId;
