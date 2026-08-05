@@ -784,6 +784,7 @@
         "client": {
             "crumbDashboard": "Табло",
             "colFolder": "Папка",
+            "typeFarmRecord": "Земеделски запис",
             "colRetention": "Задържане",
             "colFreshness": "Актуалност",
             "uploadingStatus": "Качване...",

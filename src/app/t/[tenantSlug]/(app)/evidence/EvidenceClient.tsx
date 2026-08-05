@@ -62,7 +62,11 @@ import {
 } from './filter-defs';
 import { Heading } from '@/components/ui/typography';
 import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
-import { Plus, Pen2, Download, BoxArchive } from '@/components/ui/icons/nucleo';
+// `Note` reads as "a written record" — the marker for a row whose evidence
+// IS a farm journal entry. (Iconography is nucleo across app pages; the
+// Roadmap-2 PR-8 guard bans new lucide imports outside its migration list.)
+import { Plus, Pen2, Download, BoxArchive, Note } from '@/components/ui/icons/nucleo';
+import { AUTO_FARM_RECORD_CATEGORY } from '@/lib/evidence/auto-evidence-constants';
 
 interface Permissions {
     canRead: boolean;
@@ -601,14 +605,31 @@ function EvidencePageInner({ initialEvidence, initialControls, tenantSlug, permi
             // page's baseline. File type information is still in the
             // dedicated Type column.
 
-            cell: ({ row }: { row: any }) => (
+            cell: ({ row }: { row: any }) => {
                 // Evidence has no dedicated detail page yet — the
                 // record opens via the master/detail pattern from
                 // this list page. Wiring a navigation href here is
                 // part of B5 (Evidence workflow completion), which
                 // also introduces the detail surface.
-                <TableTitleCell>{row.original.title}</TableTitleCell>
-            ),
+                //
+                // The exception is auto-evidence: the farm record IS the
+                // evidence, and it already has a page. The href is built
+                // from `sourceLogEntryId` rather than from the stored
+                // `content` string so a row written under a previous tenant
+                // slug still resolves.
+                const ev = row.original;
+                return (
+                    <TableTitleCell
+                        href={
+                            ev.sourceLogEntryId
+                                ? `/t/${tenantSlug}/journal/${ev.sourceLogEntryId}`
+                                : undefined
+                        }
+                    >
+                        {ev.title}
+                    </TableTitleCell>
+                );
+            },
             meta: { mobileCard: { slot: 'title' } },
         },
         {
@@ -618,6 +639,21 @@ function EvidencePageInner({ initialEvidence, initialControls, tenantSlug, permi
 
             cell: ({ row }: { row: any }) => {
                 const ev = row.original;
+                // Auto-collected farm records are LINK rows, so the generic
+                // resolver called every one of them "Link" — indistinguishable
+                // from a hand-filed URL, which is the difference that matters
+                // when deciding whether a row needs review.
+                if (ev.category === AUTO_FARM_RECORD_CATEGORY) {
+                    return (
+                        <span
+                            className="inline-flex items-center gap-1.5 text-xs text-content-muted"
+                            data-file-kind="farm-record"
+                        >
+                            <Note className="size-3.5 text-content-success" aria-hidden />
+                            <span>{tr('client.typeFarmRecord')}</span>
+                        </span>
+                    );
+                }
                 // Mixed-file aware: pick the actual file kind by
                 // extension/MIME when this row is a file; fall back to
                 // the domain kind (LINK / TEXT) for non-file rows.
@@ -862,7 +898,7 @@ function EvidencePageInner({ initialEvidence, initialControls, tenantSlug, permi
             meta: { disableTruncate: true },
         },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    ]), [t, tr, permissions, apiUrl]);
+    ]), [t, tr, permissions, apiUrl, tenantSlug]);
 
     return (
         <ListPageShell className="animate-fadeIn gap-section">

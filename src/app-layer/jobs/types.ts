@@ -129,6 +129,20 @@ export interface AutomationRunnerPayload {
     dryRun?: boolean;
 }
 
+/**
+ * Evidence stale-review sweep — flips APPROVED rows whose `nextReviewDate`
+ * has passed to NEEDS_REVIEW.
+ *
+ * The usecase was written in 2026-05 and never registered, so it had zero
+ * callers: evidence aged past its review date while still reading APPROVED,
+ * and readiness went on counting it as fresh. Registering it is what makes
+ * `nextReviewDate` mean anything.
+ */
+export interface EvidenceStaleReviewSweepPayload {
+    /** Scope to one tenant. Omit to sweep all. */
+    tenantId?: string;
+}
+
 /** Daily evidence expiry — sweeps and notifies */
 export interface DailyEvidenceExpiryPayload {
     tenantId?: string;
@@ -715,6 +729,7 @@ export interface JobPayloadMap {
     'vendor-renewal-check': VendorRenewalCheckPayload;
     'deadline-monitor': DeadlineMonitorPayload;
     'evidence-expiry-monitor': EvidenceExpiryMonitorPayload;
+    'evidence-stale-review-sweep': EvidenceStaleReviewSweepPayload;
     'notification-dispatch': NotificationDispatchPayload;
     'sync-pull': SyncPullPayload;
     'compliance-snapshot': ComplianceSnapshotPayload;
@@ -1015,6 +1030,12 @@ export const JOB_DEFAULTS: Record<JobName, {
         removeOnFail: 500,
     },
     'evidence-expiry-monitor': {
+        attempts: 2,
+        backoff: { type: 'exponential', delay: 10000 },
+        removeOnComplete: 200,
+        removeOnFail: 500,
+    },
+    'evidence-stale-review-sweep': {
         attempts: 2,
         backoff: { type: 'exponential', delay: 10000 },
         removeOnComplete: 200,

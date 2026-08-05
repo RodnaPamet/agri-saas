@@ -275,7 +275,22 @@ export async function reviewEvidence(ctx: RequestContext, id: string, data: { ac
 
         const newStatus = action as 'SUBMITTED' | 'APPROVED' | 'REJECTED';
 
-        await EvidenceRepository.update(db, ctx, id, { status: newStatus });
+        // An APPROVED review restarts the clock. `reviewCycle` had no reader
+        // anywhere in the codebase: setting "review quarterly" scheduled
+        // nothing, and once a date passed it stayed passed, so the dashboard's
+        // overdue tile went red permanently. Approving is the event that means
+        // "a person has looked at this", which is exactly what the interval
+        // measures from.
+        const nextReviewDate = newStatus === 'APPROVED'
+            ? nextReviewDateAfter(evidence.reviewCycle, new Date())
+            : undefined;
+
+        await EvidenceRepository.update(db, ctx, id, {
+            status: newStatus,
+            // `undefined` leaves the column alone (no cadence, or not an
+            // approval); a Date advances it.
+            ...(nextReviewDate ? { nextReviewDate } : {}),
+        });
         await EvidenceRepository.addReview(db, ctx, id, newStatus, comment);
 
         // Audit S3 — notification routes via `ownerUserId` only. The
@@ -481,6 +496,7 @@ import {
 import type { StorageDomain } from '@/lib/storage';
 import { Readable } from 'stream';
 import { env } from '@/env';
+import { nextReviewDateAfter } from '@/lib/evidence/review-cadence';
 
 /**
  * Upload a file and create an Evidence record of type FILE in one flow.

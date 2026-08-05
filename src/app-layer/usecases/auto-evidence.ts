@@ -3,6 +3,7 @@ import type { PrismaTx } from '@/lib/db-context';
 import { RequestContext } from '../types';
 import { logEvent } from '../events/audit';
 import { sanitizePlainText } from '@/lib/security/sanitize';
+import { AUTO_FARM_RECORD_CATEGORY } from '@/lib/evidence/auto-evidence-constants';
 
 /**
  * Auto-evidence — turning farm records into certification-scheme evidence.
@@ -127,63 +128,158 @@ export async function attachAutoEvidenceFromLogEntry(
     });
     const alreadyAttached = new Set(existing.map((e) => e.controlId));
 
-    const title = sanitizePlainText(`Farm record — ${logEntry.title}`);
+    // The title is the journal entry's own. It used to be persisted as
+    // `Farm record — {title}`, which baked an English string into the database
+    // where next-intl can never reach it: a Bulgarian operator's evidence list
+    // read "Farm record — " on every auto-collected row. The marker is now
+    // rendered from `category` in the reader's locale.
+    const title = sanitizePlainText(logEntry.title);
     const content = `/t/${ctx.tenantSlug ?? ''}/journal/${logEntryId}`;
 
-    let created = 0;
-    for (const controlId of controlIds) {
-        if (alreadyAttached.has(controlId)) continue;
+    const toCreate = controlIds.filter((id) => !alreadyAttached.has(id));
+    if (toCreate.length === 0) return { created: 0 };
 
-        const evidence = await db.evidence.create({
-            data: {
-                tenantId: ctx.tenantId,
-                controlId,
-                sourceLogEntryId: logEntryId,
-                type: 'LINK',
-                title,
-                // Deep-link back to the journal entry that is the evidence.
-                content,
-                category: 'AUTO_FARM_RECORD',
-                dateCollected: logEntry.occurredAt,
-                // Auto-collected, pending human approval (see header note).
-                status: 'SUBMITTED',
-            },
-            select: { id: true },
-        });
+    // 5 — Insert every row in ONE statement, and let the database be the
+    //     authority on idempotency.
+    //
+    //     The step-4 read is a fast path, not a guarantee: read-then-write is
+    //     TOCTOU, and this runs inside a transaction opened by a journal write
+    //     that a retry or a concurrent field-operation save can repeat. Two
+    //     callers could each read "not attached" and each insert, leaving the
+    //     same farm record attached to the same control twice — one control
+    //     point apparently backed by two records, and a duplicate row a
+    //     reviewer has to approve twice. The
+    //     `(tenantId, sourceLogEntryId, controlId)` unique index closes that,
+    //     and `skipDuplicates` means a loser resolves its conflict inside the
+    //     statement rather than raising a 23505 that would abort the caller's
+    //     transaction.
+    const inserted = await db.evidence.createMany({
+        data: toCreate.map((controlId) => ({
+            tenantId: ctx.tenantId,
+            controlId,
+            sourceLogEntryId: logEntryId,
+            type: 'LINK' as const,
+            title,
+            // Deep-link back to the journal entry that is the evidence.
+            content,
+            category: AUTO_FARM_RECORD_CATEGORY,
+            dateCollected: logEntry.occurredAt,
+            // Auto-collected, pending human approval (see header note).
+            status: 'SUBMITTED' as const,
+        })),
+        skipDuplicates: true,
+    });
 
-        // Mirror createEvidence's control↔evidence bridge so the row shows in
-        // the control's Evidence tab. Duplicate-link is tolerated — but by
-        // ON CONFLICT DO NOTHING, not by a try/catch. A caught 23505 leaves
-        // the enclosing Postgres transaction aborted, so the very next
-        // statement (the audit write below) fails with 25P02 and takes the
-        // attach down. See the longer note in `evidence.ts`.
-        await db.controlEvidenceLink.createMany({
-            data: [{
-                tenantId: ctx.tenantId,
-                controlId,
-                kind: 'LINK',
-                url: content,
-                note: title,
-                createdByUserId: ctx.userId,
-            }],
-            skipDuplicates: true,
-        });
+    // Resolve the ids for the bridge links + audit rows. One query for the
+    // batch — `createMany` cannot return them.
+    const rows = await db.evidence.findMany({
+        where: {
+            tenantId: ctx.tenantId,
+            sourceLogEntryId: logEntryId,
+            controlId: { in: toCreate },
+        },
+        select: { id: true, controlId: true },
+    });
 
+    // Mirror createEvidence's control↔evidence bridge so the rows show in the
+    // control's Evidence tab. Duplicate-link is tolerated — but by ON CONFLICT
+    // DO NOTHING, not by a try/catch. A caught 23505 leaves the enclosing
+    // Postgres transaction aborted, so the very next statement (the audit
+    // write below) fails with 25P02 and takes the attach down. See the longer
+    // note in `evidence.ts`.
+    await db.controlEvidenceLink.createMany({
+        data: rows.map((row) => ({
+            tenantId: ctx.tenantId,
+            controlId: row.controlId as string,
+            kind: 'LINK' as const,
+            url: content,
+            note: title,
+            createdByUserId: ctx.userId,
+        })),
+        skipDuplicates: true,
+    });
+
+    // Audit stays one row per evidence row — the chain is hash-linked and
+    // sequential by construction.
+    for (const row of rows) {
         await logEvent(db, ctx, {
             action: 'AUTO_EVIDENCE_ATTACHED',
             entityType: 'Evidence',
-            entityId: evidence.id,
-            details: `Farm record auto-attached as scheme evidence (control ${controlId})`,
+            entityId: row.id,
+            details: `Farm record auto-attached as scheme evidence (control ${row.controlId})`,
             detailsJson: {
                 category: 'entity_lifecycle',
                 entityName: 'Evidence',
                 operation: 'created',
-                after: { sourceLogEntryId: logEntryId, controlId, status: 'SUBMITTED' },
+                after: { sourceLogEntryId: logEntryId, controlId: row.controlId, status: 'SUBMITTED' },
                 summary: 'Farm record auto-attached as scheme evidence',
             },
         });
-        created++;
     }
 
-    return { created };
+    return { created: inserted.count };
+}
+
+// ─── Keeping derived evidence truthful ─────────────────────────────
+//
+// Auto-evidence is a CLAIM about a farm record: "control point CB.7.6 is met,
+// and here is the spray record that proves it". A claim derived from a row
+// that has since changed, or has since been deleted, is not evidence — it is
+// a stale assertion sitting in an auditor's pack. Neither of the two ways the
+// source can move used to reach the derived rows.
+
+/**
+ * Re-title the evidence derived from a journal entry.
+ *
+ * The evidence's title is a copy of the entry's, taken at attach time. Editing
+ * the entry left the copy behind, so the evidence library showed the old
+ * wording for a record whose page showed the new one — the same record under
+ * two names, with no indication which was current.
+ */
+export async function syncDerivedEvidenceTitle(
+    db: PrismaTx,
+    ctx: RequestContext,
+    logEntryId: string,
+    newTitle: string,
+): Promise<{ updated: number }> {
+    const result = await db.evidence.updateMany({
+        where: {
+            tenantId: ctx.tenantId,
+            sourceLogEntryId: logEntryId,
+            category: AUTO_FARM_RECORD_CATEGORY,
+        },
+        data: { title: sanitizePlainText(newTitle) },
+    });
+    return { updated: result.count };
+}
+
+/**
+ * Withdraw (or reinstate) the evidence derived from a journal entry.
+ *
+ * Soft-deleting the entry left its derived evidence in place, still counted by
+ * the control's evidence tab and still deep-linking to a page that now 404s.
+ * The scheme kept reporting itself backed by a record the operator had
+ * removed. Withdrawal is a soft delete for the same reason the entry's is:
+ * restoring the entry has to restore the claim with it, and a hard delete
+ * cannot be undone.
+ */
+export async function setDerivedEvidenceWithdrawn(
+    db: PrismaTx,
+    ctx: RequestContext,
+    logEntryId: string,
+    withdrawn: boolean,
+): Promise<{ affected: number }> {
+    const result = await db.evidence.updateMany({
+        where: {
+            tenantId: ctx.tenantId,
+            sourceLogEntryId: logEntryId,
+            category: AUTO_FARM_RECORD_CATEGORY,
+            // Only flip rows that are on the wrong side of the switch, so the
+            // count reports work actually done and a restore never resurrects
+            // evidence a person deleted on its own merits.
+            ...(withdrawn ? { deletedAt: null } : { deletedAt: { not: null } }),
+        },
+        data: { deletedAt: withdrawn ? new Date() : null },
+    });
+    return { affected: result.count };
 }

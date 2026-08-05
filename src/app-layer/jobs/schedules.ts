@@ -12,6 +12,7 @@
  *   - policy-review-reminder:  daily at 08:00 UTC (overdue review audit)
  *   - task-due-notification:   daily at 08:00 local (NOTIFICATIONS_TZ) (in-app task deadline reminders)
  *   - retention-sweep:         daily at 04:00 UTC (evidence archival)
+ *   - evidence-stale-review-sweep: daily at 04:30 UTC (APPROVED → NEEDS_REVIEW)
  *   - notification-dispatch:   daily at 07:00 UTC (single-pass: monitors + digest dispatch)
  *
  * IMPORTANT: deadline-monitor, evidence-expiry-monitor, and vendor-renewal-check
@@ -253,6 +254,15 @@ export const SCHEDULED_JOBS: ScheduleDefinition[] = [
         name: 'retention-sweep',
         pattern: '0 4 * * *',     // daily at 04:00 UTC
         description: 'Archive evidence with elapsed retention periods',
+        defaultPayload: {},
+    },
+    {
+        name: 'evidence-stale-review-sweep',
+        // 04:30 UTC — after retention-sweep (04:00) so an archived row is
+        // already out of scope, and before notification-dispatch (07:00) so
+        // the same day's digest reports the rows this sweep just flipped.
+        pattern: '30 4 * * *',
+        description: 'Flip APPROVED evidence past its nextReviewDate to NEEDS_REVIEW',
         defaultPayload: {},
     },
     {
