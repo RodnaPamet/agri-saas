@@ -1313,6 +1313,13 @@ model Evidence {
   // Phase-8 — auto-evidence idempotency + "farm records backing this
   // scheme" lookup (FK-shaped scalar; Layer-B index coverage).
   @@index([tenantId, sourceLogEntryId])
+  // One auto-evidence row per (farm record, control). The attach job used to
+  // rely solely on a read-then-write check, which is TOCTOU: it runs inside a
+  // transaction opened by a journal write, and a retry or a concurrent
+  // field-operation save could have two callers each read "not attached" and
+  // each insert. NULLs do not collide in Postgres, so hand-filed evidence
+  // (sourceLogEntryId IS NULL) is unaffected.
+  @@unique([tenantId, sourceLogEntryId, controlId])
 }
 
 model FileRecord {

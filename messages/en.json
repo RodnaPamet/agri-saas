@@ -784,6 +784,7 @@
         "client": {
             "crumbDashboard": "Dashboard",
             "colFolder": "Folder",
+            "typeFarmRecord": "Farm record",
             "colRetention": "Retention",
             "colFreshness": "Freshness",
             "uploadingStatus": "Uploading...",

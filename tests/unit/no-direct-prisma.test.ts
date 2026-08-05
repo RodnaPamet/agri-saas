@@ -229,6 +229,15 @@ describe('CI Guard: No direct prisma in tenant-scoped code', () => {
         // getTenantCtx to enforce tenant membership before serving; the payload
         // is public reference data (no business data leak).
         'trends.ts',
+        // Farm-record traceability — `Framework` / `FrameworkRequirement` are
+        // GLOBAL catalog tables (no tenantId / no RLS, like Clause and
+        // ControlTemplate): the scheme definition is identical for every
+        // tenant. The two reads against the global client resolve the
+        // framework and its requirement codes; EVERY tenant-scoped read in the
+        // file (controlRequirementLink / evidence / logEntry) runs inside
+        // `runInTenantContext` and filters on ctx.tenantId. Access is gated by
+        // `assertCanViewFrameworks` before either read.
+        'farm-record-traceability.ts',
     ];
 
     const usecases = readFilesInDir(path.join(SRC_ROOT, 'app-layer/usecases'));

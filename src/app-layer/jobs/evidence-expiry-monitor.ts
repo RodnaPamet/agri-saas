@@ -177,6 +177,89 @@ async function scanExpiringEvidence(
     return items;
 }
 
+/**
+ * Scan evidence whose periodic REVIEW is due.
+ *
+ * `Evidence.reviewCycle` (MONTHLY / QUARTERLY / SEMI_ANNUALLY / ANNUALLY) and
+ * `Evidence.nextReviewDate` are settable in the edit modal, are counted by the
+ * dashboard's overdue / due-soon tiles, and have their own notification types
+ * (`EVIDENCE_DUE_SOON`, `EVIDENCE_OVERDUE`). All of that existed; the sweep
+ * that would have made any of it happen did not. Setting a cadence produced
+ * nothing at all — no notification when the date arrived, and a dashboard tile
+ * that either stayed at zero forever or, once a date passed, stayed red
+ * forever, because nothing advanced the date either (see `reviewEvidence`).
+ *
+ * Deliberately a SEPARATE scan from the retention one above. Retention asks
+ * "may we still keep this?"; review asks "is this still true?" — different
+ * dates, different remedies, and a control point can be well inside its
+ * retention window while its proof has gone a year unlooked-at.
+ */
+async function scanEvidenceDueForReview(
+    now: Date,
+    maxWindow: number,
+    tenantId?: string,
+): Promise<DueItem[]> {
+    const horizon = new Date(now.getTime() + maxWindow * 86_400_000);
+
+    const where: Prisma.EvidenceWhereInput = {
+        deletedAt: null,
+        isArchived: false,
+        // A rejected row is not awaiting review; it has had one.
+        status: { notIn: ['REJECTED'] },
+        nextReviewDate: { not: null, lte: horizon },
+    };
+    if (tenantId) where.tenantId = tenantId;
+
+    const due = await prisma.evidence.findMany({
+        where,
+        select: {
+            id: true,
+            tenantId: true,
+            title: true,
+            nextReviewDate: true,
+            owner: true,
+            ownerUserId: true,
+            controlId: true,
+        },
+        orderBy: { nextReviewDate: 'asc' },
+        take: 1000,
+    });
+
+    // The where-clause guarantees a non-null date; the filter is a seatbelt.
+    // This runs nightly and unattended, and `new Date(undefined)` throws on
+    // `.toISOString()` — one malformed row should not take the sweep down for
+    // every tenant.
+    return due.filter((ev) => ev.nextReviewDate).map((ev) => {
+        const reviewDate = new Date(ev.nextReviewDate!);
+        const daysRemaining = Math.ceil((reviewDate.getTime() - now.getTime()) / 86_400_000);
+
+        let urgency: DueItemUrgency;
+        let reason: string;
+        if (daysRemaining < 0) {
+            urgency = 'OVERDUE';
+            reason = `Evidence review overdue by ${Math.abs(daysRemaining)} day(s)`;
+        } else if (daysRemaining <= 7) {
+            urgency = 'URGENT';
+            reason = `Evidence review due in ${daysRemaining} day(s)`;
+        } else {
+            urgency = 'UPCOMING';
+            reason = `Evidence review due in ${daysRemaining} day(s)`;
+        }
+
+        return {
+            entityType: 'EVIDENCE' as const,
+            entityId: ev.id,
+            tenantId: ev.tenantId,
+            name: ev.title,
+            reason,
+            urgency,
+            dueDate: reviewDate.toISOString(),
+            daysRemaining,
+            ownerUserId: resolveDueItemOwner('EVIDENCE', ev),
+        };
+    });
+}
+
 // ─── Main Entry Point ───────────────────────────────────────────────
 
 /**
@@ -202,7 +285,21 @@ export async function runEvidenceExpiryMonitor(
         const windows = options.windows ?? [30, 7, 1];
         const maxWindow = Math.max(...windows);
 
-        const items = await scanExpiringEvidence(now, maxWindow, options.tenantId);
+        // Sequential, not Promise.all. Three cheap indexed reads gain nothing
+        // measurable from overlapping, and concurrency here costs real
+        // reasoning: the retention scan issues two queries and the review scan
+        // a third, so running them together makes the order they hit the
+        // database non-deterministic — which is exactly the kind of thing that
+        // is invisible until something depends on it.
+        const expiryItems = await scanExpiringEvidence(now, maxWindow, options.tenantId);
+        const reviewItems = await scanEvidenceDueForReview(now, maxWindow, options.tenantId);
+
+        // One row can be both expiring and due for review. The retention date
+        // wins: it is the harder deadline (the row is about to leave), and two
+        // notifications about one piece of evidence in the same digest is how
+        // people learn to skim the digest.
+        const seen = new Set(expiryItems.map((i) => i.entityId));
+        const items = [...expiryItems, ...reviewItems.filter((i) => !seen.has(i.entityId))];
 
         // Sort by urgency (OVERDUE first)
         items.sort((a, b) => {

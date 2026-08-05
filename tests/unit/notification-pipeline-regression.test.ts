@@ -138,7 +138,14 @@ describe('REGRESSION: query budget per notification-dispatch run', () => {
      *   - task:            1 (deadline-monitor)
      *   - risk:            1 (deadline-monitor)
      *   - controlTestPlan: 1 (deadline-monitor)
-     *   - evidence:        2 (evidence-expiry-monitor: retentionUntil + expired)
+     *   - evidence:        3 (evidence-expiry-monitor: retentionUntil + expired
+     *                          + nextReviewDate). The third is a deliberate
+     *                          budget raise, not drift: retention asks "may we
+     *                          still keep this?" and review asks "is this still
+     *                          true?" — different columns, different remedies,
+     *                          and the review axis previously had NO sweep at
+     *                          all, so a cadence an operator set produced
+     *                          nothing. One more bounded, indexed scan.
      *   - vendor:          4 (vendor-renewal: overdue reviews, due reviews, overdue renewals, due renewals)
      *   - auditCycle:      1 (Epic 49 calendar-deadlines monitor — periodEndAt scan)
      *   - vendorDocument:  1 (Epic 49 calendar-deadlines monitor — validTo scan)
@@ -152,7 +159,7 @@ describe('REGRESSION: query budget per notification-dispatch run', () => {
         task:            { spy: 'task',            maxCalls: 1, source: 'deadline-monitor' },
         risk:            { spy: 'risk',            maxCalls: 1, source: 'deadline-monitor' },
         controlTestPlan: { spy: 'controlTestPlan', maxCalls: 1, source: 'deadline-monitor' },
-        evidence:        { spy: 'evidence',        maxCalls: 2, source: 'evidence-expiry-monitor' },
+        evidence:        { spy: 'evidence',        maxCalls: 3, source: 'evidence-expiry-monitor' },
         vendor:          { spy: 'vendor',          maxCalls: 4, source: 'vendor-renewal-check' },
         auditCycle:      { spy: 'auditCycle',      maxCalls: 1, source: 'calendar-deadlines' },
         vendorDocument:  { spy: 'vendorDocument',  maxCalls: 1, source: 'calendar-deadlines' },
@@ -186,7 +193,7 @@ describe('REGRESSION: query budget per notification-dispatch run', () => {
         task:            { spy: 'task' as const,            maxCalls: 1 },
         risk:            { spy: 'risk' as const,            maxCalls: 1 },
         controlTestPlan: { spy: 'controlTestPlan' as const, maxCalls: 1 },
-        evidence:        { spy: 'evidence' as const,        maxCalls: 2 },
+        evidence:        { spy: 'evidence' as const,        maxCalls: 3 },
         vendor:          { spy: 'vendor' as const,          maxCalls: 4 },
         auditCycle:      { spy: 'auditCycle' as const,      maxCalls: 1 },
         vendorDocument:  { spy: 'vendorDocument' as const,  maxCalls: 1 },

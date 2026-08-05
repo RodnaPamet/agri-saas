@@ -194,7 +194,14 @@ export async function generateReadinessReport(ctx: RequestContext, frameworkKey:
                 control: {
                     include: {
                         tasks: { select: { id: true, status: true, dueAt: true, title: true } },
-                        evidence: { select: { id: true, status: true, title: true } },
+                        // `status` is load-bearing, not decorative — see the
+                        // APPROVED filter below.
+                        evidence: {
+                            select: {
+                                id: true, status: true, title: true,
+                                category: true, sourceLogEntryId: true,
+                            },
+                        },
                     },
                 },
             },
@@ -224,10 +231,31 @@ export async function generateReadinessReport(ctx: RequestContext, frameworkKey:
         justification: c.description || 'No justification provided',
     }));
 
-    // Controls missing evidence
+    // Controls missing evidence.
+    //
+    // "Has evidence" means has evidence a person APPROVED. This used to count
+    // any row at all, which made the auto-evidence header's central promise
+    // false: it says readiness "only counts APPROVED evidence, so nothing
+    // unreviewed silently inflates a scheme's readiness — a person still signs
+    // off", and auto-evidence is minted SUBMITTED precisely so a human gates
+    // it. Counting it on creation meant filing a spray record moved the
+    // certification score on the farm dashboard before anyone had looked at
+    // it — the score reported a sign-off that had not happened.
+    //
+    // REJECTED is the sharper case: a reviewer explicitly refused the evidence
+    // and the control still read as covered.
+    const hasApprovedEvidence = (c: LinkControl) =>
+        (c.evidence || []).some((e) => e.status === 'APPROVED');
     const missingEvidence = controls.filter((c) =>
-        c.status !== 'NOT_APPLICABLE' && (!c.evidence || c.evidence.length === 0)
-    ).map((c) => ({ code: c.code, name: c.name, status: c.status }));
+        c.status !== 'NOT_APPLICABLE' && !hasApprovedEvidence(c)
+    ).map((c) => ({
+        code: c.code,
+        name: c.name,
+        status: c.status,
+        // Distinguishes "nobody has filed anything" from "something is filed
+        // and waiting on a reviewer" — the same number, two different jobs.
+        awaitingReview: (c.evidence || []).filter((e) => e.status === 'SUBMITTED').length,
+    }));
 
     // Overdue tasks
     const now = new Date();

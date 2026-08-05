@@ -63,9 +63,19 @@ function makeDb(overrides: {
             findMany: jest.fn().mockResolvedValue(overrides.links ?? [{ controlId: 'ctrl-1' }, { controlId: 'ctrl-1' }, { controlId: 'ctrl-2' }]),
         },
         evidence: {
-            findMany: jest.fn().mockResolvedValue(overrides.existingEvidence ?? []),
-            create: jest.fn().mockImplementation((args: any) =>
-                Promise.resolve({ id: `ev-${args.data.controlId}` }),
+            // Two reads now: the idempotency fast-path, then the id
+            // resolution after the batch insert (createMany cannot return
+            // ids). First call answers the fast path; the rest resolve ids.
+            findMany: jest.fn()
+                .mockResolvedValueOnce(overrides.existingEvidence ?? [])
+                .mockImplementation(({ where }: any) => {
+                    const ids: string[] = where.controlId?.in ?? [];
+                    return Promise.resolve(ids.map((controlId) => ({ id: `ev-${controlId}`, controlId })));
+                }),
+            // One statement for the whole batch — the database, not a
+            // read-then-write check, is the authority on idempotency.
+            createMany: jest.fn().mockImplementation((args: any) =>
+                Promise.resolve({ count: args.data.length }),
             ),
         },
         controlEvidenceLink: {
@@ -99,24 +109,31 @@ describe('attachAutoEvidenceFromLogEntry', () => {
         const result = await attachAutoEvidenceFromLogEntry(db, ctx, 'log-1');
 
         // Two distinct controls (ctrl-1 deduped) → two evidence rows.
+        // Two distinct controls (ctrl-1 deduped) → two rows, ONE statement.
         expect(result).toEqual({ created: 2 });
-        expect(db.evidence.create).toHaveBeenCalledTimes(2);
+        expect(db.evidence.createMany).toHaveBeenCalledTimes(1);
+        const batch = db.evidence.createMany.mock.calls[0][0];
+        expect(batch.data).toHaveLength(2);
+        expect(batch.skipDuplicates).toBe(true);
 
-        const firstData = db.evidence.create.mock.calls[0][0].data;
+        const firstData = batch.data[0];
         expect(firstData).toMatchObject({
             tenantId: 'tenant-1',
             controlId: 'ctrl-1',
             sourceLogEntryId: 'log-1',
             type: 'LINK',
-            title: 'SAN::Farm record — Sprayed Field A',
+            // The title is the entry's own. It used to be persisted as
+            // `Farm record — {title}`, an English string written into a
+            // column where next-intl can never reach it.
+            title: 'SAN::Sprayed Field A',
             content: '/t/acme/journal/log-1',
             category: 'AUTO_FARM_RECORD',
             status: 'SUBMITTED',
         });
         expect(firstData.dateCollected).toEqual(new Date('2026-06-15T00:00:00Z'));
 
-        // Title ran through the sanitiser.
-        expect(sanitizePlainText).toHaveBeenCalledWith('Farm record — Sprayed Field A');
+        // Title ran through the sanitiser, with no baked-in prefix.
+        expect(sanitizePlainText).toHaveBeenCalledWith('Sprayed Field A');
 
         // Requirement resolution is a single findMany (no per-requirement loop).
         expect(db.frameworkRequirement.findMany).toHaveBeenCalledTimes(1);
@@ -127,8 +144,10 @@ describe('attachAutoEvidenceFromLogEntry', () => {
     it('mirrors the control↔evidence bridge link', async () => {
         const db = makeDb();
         await attachAutoEvidenceFromLogEntry(db, ctx, 'log-1');
-        expect(db.controlEvidenceLink.createMany).toHaveBeenCalledTimes(2);
+        // ONE statement for both links, matching the evidence batch above.
+        expect(db.controlEvidenceLink.createMany).toHaveBeenCalledTimes(1);
         const first = db.controlEvidenceLink.createMany.mock.calls[0][0];
+        expect(first.data).toHaveLength(2);
         expect(first.data[0]).toMatchObject({
             tenantId: 'tenant-1',
             controlId: 'ctrl-1',
@@ -161,7 +180,7 @@ describe('attachAutoEvidenceFromLogEntry', () => {
         expect(result).toEqual({ created: 0 });
         // Never even queries requirements for an unmapped type.
         expect(db.frameworkRequirement.findMany).not.toHaveBeenCalled();
-        expect(db.evidence.create).not.toHaveBeenCalled();
+        expect(db.evidence.createMany).not.toHaveBeenCalled();
         expect(logEvent).not.toHaveBeenCalled();
     });
 
@@ -179,7 +198,7 @@ describe('attachAutoEvidenceFromLogEntry', () => {
         // Resolved requirements but found no mapped controls → never creates.
         expect(db.frameworkRequirement.findMany).toHaveBeenCalledTimes(1);
         expect(db.evidence.findMany).not.toHaveBeenCalled();
-        expect(db.evidence.create).not.toHaveBeenCalled();
+        expect(db.evidence.createMany).not.toHaveBeenCalled();
     });
 
     it('is a no-op when requirement codes resolve to no rows', async () => {
@@ -195,8 +214,10 @@ describe('attachAutoEvidenceFromLogEntry', () => {
 
         // ctrl-1 already attached → only ctrl-2 gets new evidence.
         expect(result).toEqual({ created: 1 });
-        expect(db.evidence.create).toHaveBeenCalledTimes(1);
-        expect(db.evidence.create.mock.calls[0][0].data.controlId).toBe('ctrl-2');
+        expect(db.evidence.createMany).toHaveBeenCalledTimes(1);
+        const batch = db.evidence.createMany.mock.calls[0][0];
+        expect(batch.data).toHaveLength(1);
+        expect(batch.data[0].controlId).toBe('ctrl-2');
     });
 
     it('tolerates a duplicate control↔evidence link — in the statement, not in a catch', async () => {
@@ -210,7 +231,7 @@ describe('attachAutoEvidenceFromLogEntry', () => {
         db.controlEvidenceLink.createMany.mockResolvedValue({ count: 0 });
         const result = await attachAutoEvidenceFromLogEntry(db, ctx, 'log-1');
         expect(result).toEqual({ created: 2 });
-        expect(db.evidence.create).toHaveBeenCalledTimes(2);
+        expect(db.evidence.createMany).toHaveBeenCalledTimes(1);
         for (const call of db.controlEvidenceLink.createMany.mock.calls) {
             expect(call[0].skipDuplicates).toBe(true);
         }
