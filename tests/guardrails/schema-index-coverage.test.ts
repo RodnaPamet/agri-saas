@@ -433,12 +433,15 @@ const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
         'listDataStreams filters by tenantId (deletedAt:null), orders by createdAt DESC — covered by @@index([tenantId, locationId]) / @@index([tenantId, status]); the per-tenant stream set is small and take:200-bounded. Ingestion looks up a single stream by PK (findUnique).',
     DataStreamReading:
         'listReadings filters by tenantId + dataStreamId, orders by recordedAt DESC — covered exactly by @@index([tenantId, dataStreamId, recordedAt]); take:500-bounded. Writes are createMany only.',
-    // NOTE: AgroSignal is NOT findMany-queried — agro-signals claims/updates
-    // rows via createMany(skipDuplicates) + updateMany on the
-    // @@unique([tenantId, locationId, kind, signalDate]) key. So it is
-    // intentionally absent from this map (Layer C-completeness only triages
-    // findMany'd models). Its listing index @@index([tenantId, signalDate])
-    // exists for any future date-ordered read.
+    // AgroSignal's first findMany: loadAgroSignalEvents (compliance-calendar,
+    // PR 2 of the calendar roadmap) filters by (tenantId, signalDate range),
+    // orders by signalDate asc — covered exactly by @@index([tenantId,
+    // signalDate]); take-bounded (perSourceLimit + 1). Previously the model
+    // was claimed/updated only via createMany(skipDuplicates) + updateMany
+    // on the @@unique([tenantId, locationId, kind, signalDate]) key, so it
+    // had no findMany at all.
+    AgroSignal:
+        'loadAgroSignalEvents findMany filters by (tenantId, signalDate range), orders by signalDate asc — covered by @@index([tenantId, signalDate]); take-bounded (perSourceLimit + 1, see the calendar\'s truncated-response contract).',
     // ─── Inventory ledger (Phase 1) ───
     InventoryLot:
         'listLots filters by tenantId (+ optional itemId), orders by createdAt DESC — covered by @@index([tenantId, itemId]); listLotsPaginated cursor-walks tenantId ordered by (createdAt, id) — covered by the perf-scale @@index([tenantId, createdAt]); getFefoLot filters tenantId+itemId+quantityOnHand>0 ordered by expiresAt — covered by @@index([tenantId, expiresAt]); bounded take.',
