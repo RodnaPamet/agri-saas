@@ -41,6 +41,12 @@
  * now carries an `orderBy`, so a capped source drops its LATEST rows in
  * a stable, deterministic order rather than an arbitrary DB-order slice.
  * `CalendarResponse.truncated` is true when any source hit its cap.
+ *
+ * Transaction budget: all 17 loaders run on ONE `runInTenantContext`
+ * interactive transaction (one PgBouncer connection, held for the whole
+ * fan-out) with a raised `timeout`/`maxWait` — see `CALENDAR_TX_TIMEOUT_MS`
+ * below for why that beat splitting the fan-out into per-source
+ * transactions.
  */
 
 import { runInTenantContext } from '@/lib/db-context';
@@ -111,6 +117,35 @@ const CALENDAR_SOURCE_NAMES = [
     'agriEvent',
 ] as const;
 
+/**
+ * Interactive-transaction budget for the calendar fan-out.
+ *
+ * `runInTenantContext` opens ONE Prisma interactive transaction — one
+ * PgBouncer (transaction-mode) connection held for the transaction's
+ * full duration. Prisma's default `timeout`/`maxWait` (5s / 2s) was
+ * sized for a handful of loaders; this PR grew the fan-out from 12 to
+ * 17. The per-query cost is what the new indexes above (see the
+ * calendar-agri-source-date-indexes migration) fix — each loader is
+ * now a bounded, index-backed point/range read — but the DEFAULT ceiling
+ * is still shared across all 17 sequential statements on that one
+ * connection (SET LOCAL ROLE + SET LOCAL app.tenant_id/app.request_id +
+ * 17 queries), so a slow one (cold cache, a large tenant, a brief lock
+ * wait) has no headroom before Prisma kills the whole transaction and
+ * blanks the calendar for every source, not just the slow one.
+ *
+ * We raise the ceiling rather than splitting the fan-out into 17
+ * separate `runInTenantContext` transactions: that would trade one
+ * held connection for up to 17 concurrent ones per calendar page load,
+ * which is worse for a shared PgBouncer pool under real traffic than
+ * one connection held a few seconds longer, and it would also lose the
+ * single consistent read snapshot the sources currently share. Values
+ * mirror the precedent in `audit-readiness/packs.ts` and
+ * `framework/install.ts` (60s/10s) scaled down for a read-only fan-out
+ * instead of a multi-step write.
+ */
+const CALENDAR_TX_TIMEOUT_MS = 15_000;
+const CALENDAR_TX_MAX_WAIT_MS = 10_000;
+
 export async function getComplianceCalendarEvents(
     ctx: RequestContext,
     input: GetCalendarEventsInput,
@@ -130,31 +165,37 @@ export async function getComplianceCalendarEvents(
     // `Promise.allSettled`, NOT `Promise.all`: with 17 sources fanning
     // out, one throwing loader must not blank the other 16. A rejected
     // source is logged and dropped; the rest still render.
-    const settled = await runInTenantContext(ctx, (db) =>
-        Promise.allSettled<SourceResult>([
-            loadEvidenceEvents(db, ctx, range, now, limit),
-            loadPolicyEvents(db, ctx, range, now, limit),
-            loadVendorEvents(db, ctx, range, now, limit),
-            loadVendorDocumentEvents(db, ctx, range, now, limit),
-            loadAuditCycleEvents(db, ctx, range, now, limit),
-            loadControlEvents(db, ctx, range, now, limit),
-            loadTestPlanEvents(db, ctx, range, now, limit),
-            loadTaskEvents(db, ctx, range, now, limit),
-            loadRiskEvents(db, ctx, range, now, limit),
-            loadFindingEvents(db, ctx, range, now, limit),
-            // Epic G-7 — milestones contribute one event per milestone;
-            // plans contribute one per non-completed plan target.
-            loadTreatmentMilestoneEvents(db, ctx, range, now, limit),
-            loadTreatmentPlanEvents(db, ctx, range, now, limit),
-            // Agriculture data sources (PR 2 of the calendar roadmap).
-            loadParcelLeaseEvents(db, ctx, range, now, limit),
-            loadContractEvents(db, ctx, range, now, limit),
-            loadPlantingEvents(db, ctx, range, now, limit),
-            loadAgroSignalEvents(db, ctx, range, now, limit),
-            // Global curated catalogue — see loadAgriEventEvents on why
-            // this one carries no tenantId predicate.
-            loadAgriEventEvents(db, ctx, range, now, limit),
-        ]),
+    //
+    // Timeout raised, transaction NOT split — see
+    // `CALENDAR_TX_TIMEOUT_MS` above for why.
+    const settled = await runInTenantContext(
+        ctx,
+        (db) =>
+            Promise.allSettled<SourceResult>([
+                loadEvidenceEvents(db, ctx, range, now, limit),
+                loadPolicyEvents(db, ctx, range, now, limit),
+                loadVendorEvents(db, ctx, range, now, limit),
+                loadVendorDocumentEvents(db, ctx, range, now, limit),
+                loadAuditCycleEvents(db, ctx, range, now, limit),
+                loadControlEvents(db, ctx, range, now, limit),
+                loadTestPlanEvents(db, ctx, range, now, limit),
+                loadTaskEvents(db, ctx, range, now, limit),
+                loadRiskEvents(db, ctx, range, now, limit),
+                loadFindingEvents(db, ctx, range, now, limit),
+                // Epic G-7 — milestones contribute one event per milestone;
+                // plans contribute one per non-completed plan target.
+                loadTreatmentMilestoneEvents(db, ctx, range, now, limit),
+                loadTreatmentPlanEvents(db, ctx, range, now, limit),
+                // Agriculture data sources (PR 2 of the calendar roadmap).
+                loadParcelLeaseEvents(db, ctx, range, now, limit),
+                loadContractEvents(db, ctx, range, now, limit),
+                loadPlantingEvents(db, ctx, range, now, limit),
+                loadAgroSignalEvents(db, ctx, range, now, limit),
+                // Global curated catalogue — see loadAgriEventEvents on why
+                // this one carries no tenantId predicate.
+                loadAgriEventEvents(db, ctx, range, now, limit),
+            ]),
+        { timeout: CALENDAR_TX_TIMEOUT_MS, maxWait: CALENDAR_TX_MAX_WAIT_MS },
     );
 
     let all: CalendarEvent[] = [];
