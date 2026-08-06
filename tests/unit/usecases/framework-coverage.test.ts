@@ -45,7 +45,7 @@ jest.mock('@/lib/prisma', () => ({
 
 const tenantDb: any = {
     controlRequirementLink: { findMany: jest.fn() },
-    control: { findMany: jest.fn() },
+    control: { findMany: jest.fn(), evidence: [] },
 };
 jest.mock('@/lib/db-context', () => {
     const actual = jest.requireActual('@/lib/db-context');
@@ -132,7 +132,7 @@ describe('computeCoverage', () => {
             { id: 'r-3', code: 'C', title: 'Z', section: null, category: null, sortOrder: 3 },
         ]);
         tenantDb.controlRequirementLink.findMany.mockResolvedValueOnce([
-            { requirementId: 'r-1', requirement: { code: 'A', title: 'X' }, control: { code: 'CC1', name: 'M', status: 'ACTIVE' } },
+            { requirementId: 'r-1', requirement: { code: 'A', title: 'X' }, control: { code: 'CC1', name: 'M', status: 'ACTIVE', evidence: [] } },
         ]);
 
         const result = await computeCoverage(ctx, 'iso');
@@ -231,7 +231,7 @@ describe('exportCoverageData', () => {
             { id: 'r-2', code: 'A.5.2', title: 'Unmapped Y', section: 'Org', sortOrder: 2 },
         ]);
         tenantDb.controlRequirementLink.findMany.mockResolvedValueOnce([
-            { requirementId: 'r-1', requirement: { code: 'A.5.1', title: 'Control X' }, control: { code: 'CC1', name: 'My Ctrl', status: 'ACTIVE' } },
+            { requirementId: 'r-1', requirement: { code: 'A.5.1', title: 'Control X' }, control: { code: 'CC1', name: 'My Ctrl', status: 'ACTIVE', evidence: [] } },
         ]);
     }
 
@@ -369,9 +369,16 @@ describe('generateReadinessReport', () => {
         expect(titles).toEqual(['In-Progress Overdue', 'Open Overdue']);
     });
 
-    it('readinessScore formula: coveragePercent - missing×2 - overdue×3 (floored at 0)', async () => {
-        // 1 of 1 mapped → coveragePercent = 100. 1 missing-evidence,
-        // 2 overdue → score = 100 - 2 - 6 = 92.
+    it('readinessScore is satisfied ÷ applicable, NOT coverage minus penalties', async () => {
+        // This test used to assert 92 for a control point with NO approved
+        // evidence — the old formula started from mapping coverage (100 after
+        // any pack install) and subtracted raw counts from it. 92 on a farm
+        // that has recorded nothing is the exact number that reached a
+        // farmer-facing PDF with a "%" suffix.
+        //
+        // The score now answers the question its label asks: of the control
+        // points this farm can satisfy, how many are backed by approved
+        // records. One point, nothing approved → 0.
         const past = new Date('2020-01-01');
         mockPrisma.framework.findFirst.mockResolvedValueOnce({ id: 'fw-1', key: 'iso', name: 'ISO', version: '2022' });
         mockPrisma.frameworkRequirement.findMany.mockResolvedValueOnce([
@@ -387,8 +394,8 @@ describe('generateReadinessReport', () => {
 
         const result = await generateReadinessReport(ctx, 'iso');
 
-        // 100 (coverage) - 2 (1 missing × 2) - 6 (2 overdue × 3) = 92
-        expect(result.summary.readinessScore).toBe(92);
+        expect(result.summary.coveragePercent).toBe(100);
+        expect(result.summary.readinessScore).toBe(0);
     });
 
     it('readinessScore floors at 0 (Math.max guard)', async () => {

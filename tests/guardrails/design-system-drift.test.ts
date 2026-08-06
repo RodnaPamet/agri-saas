@@ -375,7 +375,12 @@ describe('New page token discipline', () => {
         //     NewsPageClient, which lives under src/components/ so it isn't
         //     scanned); in the tally only because the route surface is new and
         //     not yet promoted to MIGRATED_PAGES.
-        expect(unmigrated.length).toBeLessThanOrEqual(151);
+        // 151 → 152: the new scheme detail page. It is a genuinely NEW route
+        // (there was no [schemeKey] page at all — /schemes was a dead end), so
+        // it enters the tally the same way every unpromoted route does. It is
+        // not drift: the page uses semantic tokens throughout and adopts
+        // EntityDetailLayout + MetaStrip + breadcrumbs.
+        expect(unmigrated.length).toBeLessThanOrEqual(152);
     });
 
     it('migrated page count is at least 4', () => {

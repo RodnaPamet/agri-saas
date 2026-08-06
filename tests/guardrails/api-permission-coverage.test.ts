@@ -121,6 +121,13 @@ const EXCLUDED_ROUTES: ReadonlyArray<{ relPath: string; reason: string }> = [
             'role; no write reachable here.',
     },
     {
+        relPath: 'api/t/[tenantSlug]/schemes/[schemeKey]/route.ts',
+        reason:
+            'GET only — one scheme plus this farm\'s progress against it. ' +
+            'Catalogue reads are open to every role; the farm-specific half ' +
+            'is tenant-scoped inside computeCoverage.',
+    },
+    {
         relPath: 'api/t/[tenantSlug]/schemes/[schemeKey]/applicability.csv/route.ts',
         reason:
             'GET only — the applicability CSV a farm hands its certifier. ' +

@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { CACHE_KEYS } from '@/lib/swr-keys';
@@ -54,6 +55,7 @@ export function SchemesClient(props: SchemesClientProps) {
 
 function SchemesPageInner({ initialSchemes, tenantSlug, permissions }: SchemesClientProps) {
     const t = useTranslations('schemes');
+    const router = useRouter();
     const tenantHref = (path: string) => `/t/${tenantSlug}${path}`;
     const [isCreateOpen, setIsCreateOpen] = useState(false);
 
@@ -63,7 +65,19 @@ function SchemesPageInner({ initialSchemes, tenantSlug, permissions }: SchemesCl
         fallbackData: initialSchemes,
     });
     const allSchemes = schemesQuery.data ?? [];
-    const loading = schemesQuery.isLoading && !schemesQuery.data;
+    // `fallbackData` is always supplied by the server component, so
+    // `schemesQuery.data` is never undefined and the old
+    // `isLoading && !data` was permanently false — the table could never
+    // show a loading state. With server-rendered initial data there is
+    // nothing to wait for on first paint; a REVALIDATION is the only real
+    // loading, and only when it has nothing to show yet.
+    const loading = schemesQuery.isValidating && allSchemes.length === 0;
+    // A failed refetch must not fall through to the empty state — that reads
+    // as "this platform has no certification schemes", which is a very
+    // different claim from "the request failed".
+    const error = schemesQuery.error && allSchemes.length === 0
+        ? t('loadFailed')
+        : undefined;
 
     // Live, case-insensitive search over name + key.
     const schemes = useMemo(() => {
@@ -142,7 +156,13 @@ function SchemesPageInner({ initialSchemes, tenantSlug, permissions }: SchemesCl
                 data: schemes,
                 columns,
                 loading,
+                error,
                 getRowId: (s) => s.id,
+                // The row style has always promised a click
+                // (`hover:bg-bg-muted`) and there was nothing to click
+                // through to — no onRowClick, no [schemeKey] route. Both now
+                // exist.
+                onRowClick: (row) => router.push(tenantHref(`/schemes/${row.original.key}`)),
                 mobileFallback: 'card',
                 emptyState: hasActive ? (
                     <EmptyState

@@ -39,6 +39,10 @@ const SCAN_DIR = 'src/app/t/[tenantSlug]/(app)';
  * absence of a gear; PRs that mount a gear should REMOVE the entry.
  */
 const EXEMPTIONS: Record<string, string> = {
+    // Certification scheme detail (schemes roadmap PR2).
+    "schemes/[schemeKey]/SchemeDetailClient.tsx":
+        "(a) detail-page sub-table — the control points OF one standard, not a list page. The set is fixed by the standard (a scheme publishes its control points; a farm cannot add or remove them), already ordered by the catalogue's own sortOrder, and read top-to-bottom against the status column. Faceted filtering, a column gear and viewport-clamping all add chrome without adding reach.",
+
     // Grain bin detail (bins roadmap PR2).
     "grain/bins/[binId]/BinDetailClient.tsx":
         "(a) detail-page sub-table — the lots INSIDE one bin, not a list page. The set is one bin's contents (bounded, already sorted soonest-expiry first), so faceted filtering, a column gear and viewport-clamping all add chrome without adding reach.",

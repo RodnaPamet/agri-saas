@@ -1,8 +1,8 @@
 import { RequestContext } from '../types';
 import { assertCanViewFrameworks, assertCanWriteCatalogue } from '../policies/framework.policies';
 import { logEvent } from '../events/audit';
-import { getFramework, getFrameworkRequirements } from './framework/catalog';
-import { generateReadinessReport } from './framework/coverage';
+import { getFramework, getFrameworkRequirements, listFrameworkPacks } from './framework/catalog';
+import { generateReadinessReport, computeCoverage } from './framework/coverage';
 import { notFound, badRequest } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { prisma } from '@/lib/prisma';
@@ -165,13 +165,65 @@ export async function createScheme(ctx: RequestContext, input: CreateSchemeInput
 }
 
 // ─── Readiness ─────────────────────────────────────────────────────
+//
+// `getSchemeReadiness` lived here as a one-line wrapper over
+// `generateReadinessReport` with ZERO callers — no route, no page, no test —
+// alongside a `CACHE_KEYS.schemes.readiness` key pointing at
+// `/schemes/:key/readiness`, a route that has never existed. Both are gone.
+// Readiness reaches the UI through `getSchemeDetail`'s coverage block and
+// through the framework readiness export, which are real.
 
 /**
- * Readiness report for a scheme — a thin wrapper over the framework
- * readiness report (which already computes coverage, missing evidence,
- * overdue tasks, and a readiness score against the tenant's mapped
- * controls).
+ * Everything the scheme detail page needs, in one call.
+ *
+ * `/schemes` was a dead end: rows had no `onRowClick`, there was no
+ * `[schemeKey]` route, and the only working adoption path — `installPack`,
+ * which genuinely creates controls and requirement links — lived at
+ * `/frameworks/[key]/install`, reachable only through the command palette. A
+ * farmer looking at a list of standards could not open one.
+ *
+ * The shape answers the three questions someone actually has in front of a
+ * standard: what does it require, how much of it have I got, and what next.
  */
-export async function getSchemeReadiness(ctx: RequestContext, key: string) {
-    return generateReadinessReport(ctx, key);
+export async function getSchemeDetail(ctx: RequestContext, key: string) {
+    assertCanViewFrameworks(ctx);
+
+    const { framework, requirements } = await getScheme(ctx, key);
+    const [coverage, packs] = await Promise.all([
+        computeCoverage(ctx, key),
+        listFrameworkPacks(ctx, key),
+    ]);
+
+    const satisfiedCodes = new Set(coverage.satisfiedRequirementCodes);
+    const mappedCodes = new Set(coverage.controlMappings.map((m) => m.requirementCode));
+
+    return {
+        framework,
+        packs,
+        coverage: {
+            total: coverage.total,
+            mapped: coverage.mapped,
+            unmapped: coverage.unmapped,
+            coveragePercent: coverage.coveragePercent,
+            satisfiedRequirements: coverage.satisfiedRequirements,
+            applicableRequirements: coverage.applicableRequirements,
+            satisfiedPercent: coverage.satisfiedPercent,
+        },
+        requirements: requirements.map((r) => ({
+            code: r.code,
+            title: r.title,
+            description: r.description ?? null,
+            section: r.section ?? r.category ?? null,
+            // Three states, not two: MAPPED is a promise that a control
+            // exists, SATISFIED is approved evidence against it. Collapsing
+            // them is what made a fresh pack install read as fully covered.
+            mapped: mappedCodes.has(r.code),
+            satisfied: satisfiedCodes.has(r.code),
+            controls: coverage.controlMappings
+                .filter((m) => m.requirementCode === r.code)
+                .map((m) => ({ code: m.controlCode, name: m.controlName, status: m.controlStatus })),
+        })),
+        /** Has this farm adopted the scheme at all? Drives adopt vs. re-apply. */
+        adopted: coverage.mapped > 0,
+    };
 }

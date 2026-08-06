@@ -778,6 +778,12 @@ enum AuditPackItemEntityType {
   READINESS_REPORT
   FRAMEWORK_COVERAGE
   TEST_RUN
+  /// A generated document attached to a frozen pack rather than a row
+  /// snapshot — today the Statement of Applicability. `packs.ts` inserted
+  /// this value for months while it was absent from the enum, so the write
+  /// threw every time and was swallowed by a bare `catch {}`: the certifier's
+  /// pack shipped without its SoA and nobody was told.
+  EXPORT_ARTIFACT
 }
 
 enum BillingPlan {

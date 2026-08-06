@@ -40,6 +40,11 @@ interface Adopter {
  *   2. references `<EntityDetailLayout` somewhere (rendered tag).
  */
 const ADOPTED_PAGES: ReadonlyArray<Adopter> = [
+  // Certification scheme detail (schemes roadmap PR2) — a NEW detail page;
+  // /schemes previously had no [schemeKey] route at all. Registered against
+  // the CLIENT, which is where the shell is mounted; the server page only
+  // fetches (same shape as the grain-bin and access-review entries).
+  { page: "src/app/t/[tenantSlug]/(app)/schemes/[schemeKey]/SchemeDetailClient.tsx", entity: "Certification scheme" },
   // Grain bins roadmap PR2 — new detail pages adopt the shell at creation.
   // Registered against the CLIENT, which is where the shell is mounted (same
   // shape as the access-review entry below) — the server page only fetches.

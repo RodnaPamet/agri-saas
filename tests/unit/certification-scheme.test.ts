@@ -18,7 +18,6 @@
  *     titles, duplicate-code + missing-requirement + duplicate-key
  *     rejections, framework + requirement (createMany) writes, audit
  *     shape.
- *   - getSchemeReadiness — delegates to the readiness report.
  */
 
 const mockPrisma = {
@@ -64,7 +63,6 @@ import {
     listSchemes,
     getScheme,
     createScheme,
-    getSchemeReadiness,
 } from '@/app-layer/usecases/certification-scheme';
 import { makeRequestContext } from '../helpers/make-context';
 
@@ -236,13 +234,3 @@ describe('createScheme', () => {
     });
 });
 
-// ─── getSchemeReadiness ────────────────────────────────────────────
-
-describe('getSchemeReadiness', () => {
-    it('delegates to the framework readiness report', async () => {
-        (generateReadinessReport as jest.Mock).mockResolvedValue({ summary: { readinessScore: 73 } });
-        const report = await getSchemeReadiness(readerCtx, 'ORG');
-        expect(report).toEqual({ summary: { readinessScore: 73 } });
-        expect(generateReadinessReport).toHaveBeenCalledWith(readerCtx, 'ORG');
-    });
-});
