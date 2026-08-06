@@ -176,9 +176,12 @@ export function SchemeDetailClient({ tenantSlug, schemeKey, initialDetail, permi
                             label: t('metaReadiness'),
                             value: `${coverage.satisfiedPercent}%`,
                             // Green only when it is genuinely done. A partly-
-                            // complete standard reading "success" is the same
-                            // overstatement the score itself used to make.
-                            tone: coverage.satisfiedPercent === 100 ? 'positive' : 'neutral',
+                            // complete standard rendered as "success" is the
+                            // same overstatement the score itself used to make,
+                            // so anything short of 100 gets no tone at all.
+                            ...(coverage.satisfiedPercent === 100
+                                ? { tone: 'success' as const }
+                                : {}),
                             id: 'scheme-readiness-percent',
                         },
                         ...(detail.framework.version
