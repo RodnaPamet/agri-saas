@@ -162,6 +162,118 @@ model NewsDerivedEvent {
   @@index([status, eventDate])
 }
 
+/// GOVERNMENT SUPPORT SCHEME — a ДФЗ / МЗХ / EC measure a farm APPLIES FOR.
+///
+/// DELIBERATELY NOT A `Framework`. `/schemes` is CERTIFICATION: voluntary
+/// standards a farm is AUDITED AGAINST, modelled as `Framework{kind:'AG_SCHEME'}`
+/// with requirements, controls and evidence. A subsidy is a different domain
+/// object — it has an application window, eligibility criteria and a payment,
+/// and there is no checklist you are audited against. Modelling it as a
+/// Framework would put "apply by 30 Sep" rows next to "control point CB.7.1" in
+/// the same table and make both harder to read.
+///
+/// GLOBAL, like `AgriEvent` / `MarketNewsItem` / `NewsDerivedEvent` — a
+/// national subsidy measure is the same fact for every tenant, so there is no
+/// tenantId.
+///
+/// ── One pipeline, several typed consumers ─────────────────────────────────
+///
+/// This is the SECOND consumer of the news→policy-extraction pipeline, not a
+/// second pipeline. `NewsDerivedEvent` (calendar date-points) was the first.
+/// Both read the same input — policy-category `MarketNewsItem` rows since the
+/// last run — through the same safety helpers (`sanitizeUntrusted`, forced
+/// tool use, Zod bounds, null-on-every-failure), and both land as PROPOSED
+/// requiring the same platform-admin approval. What differs is the OUTPUT
+/// SHAPE: a calendar event is a date, a support scheme is a window plus
+/// eligibility plus money.
+///
+/// The alternative — extending `NewsDerivedEvent` with authority, measureCode,
+/// budget and two dates — would have made a date-point row and a scheme row
+/// the same table with half its columns null in each case.
+///
+/// ── Never present a guess as a deadline ───────────────────────────────────
+///
+/// A farmer who misses a real ДФЗ window because an AI-extracted date was
+/// three days off suffers direct financial harm. Hence: `sourceExcerpt` holds
+/// the VERBATIM sentence each date came from (re-verified as a substring of
+/// the source text before persisting), `confidence` is bounded and thresholded,
+/// dates are Zod-bounded to [today, today+18mo], and NOTHING reaches a tenant
+/// until a platform admin approves it. `source` says where the row came from,
+/// so an official-feed entry and an AI reading of a news article are never
+/// indistinguishable on screen.
+model SupportScheme {
+  id      String @id @default(cuid())
+  title   String
+  summary String?
+
+  /// Issuing body: "ДФЗ" | "МЗХ" | "EC" — free String validated at the write
+  /// boundary against SUPPORT_SCHEME_AUTHORITIES, the same
+  /// String-column-plus-Zod-enum shape as AgriEvent.category.
+  authority String
+
+  /// The measure's official code where one exists (e.g. "4.1", "SIE-2026").
+  measureCode String?
+
+  /// announced | open | closing-soon | closed. Derived from the window on
+  /// read where dates exist; stored so a curated entry can state it directly.
+  status String @default("announced")
+
+  applicationOpensAt  DateTime? @db.Date
+  applicationClosesAt DateTime? @db.Date
+
+  eligibilitySummary String?
+
+  budgetAmount   Decimal? @db.Decimal(14, 2)
+  budgetCurrency String?
+
+  sourceUrl String?
+
+  // ── Provenance (mandatory) ──────────────────────────────────────────────
+
+  /// 'curated' | 'official-feed' | 'ai-news'. An AI reading of a news article
+  /// and an official ДФЗ announcement must never look the same on screen.
+  source String @default("curated")
+
+  /// Identity of the source MarketNewsItem for `ai-news` rows — a plain
+  /// column, NOT a @relation, for the same reason as NewsDerivedEvent:
+  /// MarketNewsItem is pruned after 60 days while an application window can
+  /// be 18 months out, so an FK would either dangle or block the prune.
+  sourceNewsItemId String?
+
+  /// Denormalised snapshot of the source article's title, so "Source: <link>"
+  /// keeps working after the article is pruned.
+  sourceTitle String?
+
+  /// Model confidence (0..1) that the extracted window is explicit and
+  /// unambiguous. Null for curated / official-feed rows.
+  confidence Float?
+
+  /// The VERBATIM sentence the dates were extracted from — the
+  /// anti-hallucination backstop a reviewer can check against the source.
+  sourceExcerpt String?
+
+  extractedAt DateTime?
+
+  reviewStatus SupportSchemeStatus @default(PROPOSED)
+  reviewedAt   DateTime?
+  /// Free-text platform-admin identifier (requestId), not a User FK — these
+  /// routes are PLATFORM_ADMIN_API_KEY-gated with no user session.
+  reviewedBy String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// Idempotency: a weekly re-run over an overlapping lookback window never
+  /// creates a second row for the same (article, measure) pair. Curated rows
+  /// carry a null sourceNewsItemId and NULLs do not collide in Postgres, so
+  /// hand-entered schemes are unconstrained by this.
+  @@unique([sourceNewsItemId, measureCode])
+  /// Backs both reads: the admin review queue (PROPOSED) and the farmer-facing
+  /// list (APPROVED), each ordered by closing date.
+  @@index([reviewStatus, applicationClosesAt])
+  @@index([authority, applicationClosesAt])
+}
+
 /// Tenant-scoped input-product catalog (the structured spray product).
 /// Feature 1 exercises PESTICIDE/FERTILIZER; other categories are the
 /// seed of the full inventory module. attributesJson carries

@@ -244,6 +244,13 @@ describe('CI Guard: No direct prisma in tenant-scoped code', () => {
         // `runInTenantContext` and filters on ctx.tenantId. Access is gated by
         // `assertCanViewFrameworks` before either read.
         'farm-record-traceability.ts',
+        // Support schemes — `SupportScheme` is a GLOBAL table (no tenantId / no
+        // RLS, like MarketNewsItem / AgriEvent / NewsDerivedEvent): a national
+        // ДФЗ or EC measure is the same fact for every tenant, so there is no
+        // tenantId to bind. The read is still access-gated — the tenant route
+        // calls getTenantCtx before serving — and the payload is public
+        // reference data. The review queue is PLATFORM_ADMIN_API_KEY-gated.
+        'support-schemes.ts',
     ];
 
     const usecases = readFilesInDir(path.join(SRC_ROOT, 'app-layer/usecases'));

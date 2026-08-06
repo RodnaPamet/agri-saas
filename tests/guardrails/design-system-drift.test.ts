@@ -380,7 +380,10 @@ describe('New page token discipline', () => {
         // it enters the tally the same way every unpromoted route does. It is
         // not drift: the page uses semantic tokens throughout and adopts
         // EntityDetailLayout + MetaStrip + breadcrumbs.
-        expect(unmigrated.length).toBeLessThanOrEqual(152);
+        // 152 → 153: the new /support-schemes page. A genuinely NEW route, so
+        // it enters the tally the way every unpromoted route does. Not drift:
+        // semantic tokens throughout, EntityListPage, bilingual copy.
+        expect(unmigrated.length).toBeLessThanOrEqual(153);
     });
 
     it('migrated page count is at least 4', () => {

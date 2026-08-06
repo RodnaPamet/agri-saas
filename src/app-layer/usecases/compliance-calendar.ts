@@ -202,6 +202,7 @@ export async function getComplianceCalendarEvents(
                 // no-tenantId shape as loadAgriEventEvents; ONLY reads
                 // status: 'APPROVED' rows.
                 loadNewsDerivedEventEvents(db, ctx, range, now, limit),
+                loadSupportSchemeEvents(db, ctx, range, now, limit),
             ]),
         { timeout: CALENDAR_TX_TIMEOUT_MS, maxWait: CALENDAR_TX_MAX_WAIT_MS },
     );
@@ -1264,6 +1265,82 @@ const NEWS_DERIVED_EVENT_KIND_TO_TYPE: Record<NewsDerivedEventKind, CalendarEven
  * `confidence` + `sourceUrl` so the renderer can never confuse this with a
  * database fact — see `CalendarEvent.provenance`'s docblock.
  */
+/**
+ * APPROVED support-scheme application windows, as calendar deadlines.
+ *
+ * Reuses the EXISTING subsidy-deadline calendar types rather than inventing a
+ * parallel deadline concept — a subsidy deadline is a subsidy deadline whether
+ * it came from a curated AgriEvent, a news-derived date-point, or a support
+ * scheme's window. Three features wanted this upstream; three calendar types
+ * would have been three ways to say the same thing.
+ *
+ * A scheme yields up to TWO events (opens, closes): both are dates a farmer
+ * plans around, and collapsing them would drop whichever was not chosen.
+ *
+ * Only APPROVED rows appear, for the same reason the tenant-facing list filters
+ * on it — an unreviewed AI extraction is a guess, and a guessed ДФЗ deadline on
+ * a farmer's calendar is the failure this whole feature is shaped to avoid.
+ */
+async function loadSupportSchemeEvents(
+    db: PrismaTx,
+    ctx: RequestContext,
+    range: DateRange,
+    now: Date,
+    limit: number,
+): Promise<SourceResult> {
+    const rawSchemeRows = await db.supportScheme.findMany({
+        where: {
+            reviewStatus: 'APPROVED',
+            OR: [
+                { applicationOpensAt: { gte: range.from, lte: range.to } },
+                { applicationClosesAt: { gte: range.from, lte: range.to } },
+            ],
+        },
+        select: {
+            id: true, title: true, authority: true,
+            applicationOpensAt: true, applicationClosesAt: true,
+            sourceUrl: true, source: true, confidence: true,
+        },
+        orderBy: { applicationClosesAt: 'asc' },
+        take: limit + 1,
+    });
+    const { rows: schemeRows, truncated } = capRows(rawSchemeRows, limit);
+
+    const schemeEvents: CalendarEvent[] = [];
+    for (const scheme of schemeRows) {
+        const isAi = scheme.source === 'ai-news';
+        const type = isAi ? 'ai-news-subsidy-deadline' : 'agri-subsidy-deadline';
+        for (const [phase, date] of [
+            ['opens', scheme.applicationOpensAt],
+            ['closes', scheme.applicationClosesAt],
+        ] as const) {
+            if (!date || date < range.from || date > range.to) continue;
+            schemeEvents.push({
+                id: `SUPPORT_SCHEME:${scheme.id}:${phase}`,
+                type,
+                category: 'ai-news',
+                titleKey: 'raw',
+                titleParams: { name: `${scheme.authority} · ${scheme.title}` },
+                date: date.toISOString(),
+                status: date < now ? 'done' : 'scheduled',
+                entityType: 'SUPPORT_SCHEME',
+                entityId: scheme.id,
+                // Click-through goes to the support-schemes page, NOT the
+                // source article: a farmer clicking a deadline wants the
+                // measure's window and eligibility, and the article is one
+                // field on that row. `sourceUrl` still travels so the side
+                // panel can show "Source: <link>" beside the provenance chip.
+                href: `/t/${ctx.tenantSlug ?? ''}/support-schemes`,
+                external: false,
+                ...(isAi ? { provenance: 'ai-news' as const } : {}),
+                ...(scheme.confidence != null ? { confidence: scheme.confidence } : {}),
+                ...(scheme.sourceUrl ? { sourceUrl: scheme.sourceUrl } : {}),
+            });
+        }
+    }
+    return { events: schemeEvents, truncated };
+}
+
 async function loadNewsDerivedEventEvents(
     db: PrismaTx,
     ctx: RequestContext,

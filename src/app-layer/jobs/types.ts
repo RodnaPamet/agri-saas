@@ -617,6 +617,20 @@ export interface NewsEventExtractionPayload {
 }
 
 /**
+ * WEEKLY extraction of government SUPPORT SCHEMES (ДФЗ / МЗХ / EC measures a
+ * farm applies for) from the same policy-category news slice, written as
+ * PROPOSED `SupportScheme` rows.
+ *
+ * Weekly rather than daily because an application window is announced weeks or
+ * months ahead — the subject does not change between Tuesday and Wednesday,
+ * and the daily news-event job already covers the date-points that do.
+ * `lookbackHours` overrides the rolling window, mainly for backfill runs.
+ */
+export interface SupportSchemeExtractionPayload {
+    lookbackHours?: number;
+}
+
+/**
  * Spatial-upload abuse hardening — off-thread parcel-boundary import.
  *
  * The HTTP layer stages the uploaded shapefile/KML/GeoJSON to storage
@@ -788,6 +802,7 @@ export interface JobPayloadMap {
     // dates from the global policy-news cache. Scheduled ONLY when
     // ANTHROPIC_API_KEY is set (see schedules.ts).
     'news-event-extraction': NewsEventExtractionPayload;
+    'support-scheme-extraction': SupportSchemeExtractionPayload;
 }
 
 /** Union of all valid job names */
@@ -1018,6 +1033,18 @@ export const JOB_DEFAULTS: Record<JobName, {
         // transient network/DB/Anthropic blip; writes claim via
         // createMany({ skipDuplicates }) on the (sourceNewsItemId, kind)
         // unique key, so a re-run is fully idempotent.
+        attempts: 2,
+        backoff: { type: 'exponential', delay: 10000 },
+        removeOnComplete: 50,
+        removeOnFail: 100,
+    },
+    'support-scheme-extraction': {
+        // WEEKLY AI extraction over the same policy-news slice. Same retry
+        // posture: writes claim via createMany({ skipDuplicates }) on the
+        // (sourceNewsItemId, measureCode) unique key, so a re-run is fully
+        // idempotent. JOB_DEFAULTS is exhaustive over JobName — omitting this
+        // entry does not "default", it fails to compile, which is exactly the
+        // trap calendar-deadlines fell into and left unreachable dead code.
         attempts: 2,
         backoff: { type: 'exponential', delay: 10000 },
         removeOnComplete: 50,

@@ -1280,3 +1280,14 @@ enum NewsDerivedEventStatus {
   APPROVED
   REJECTED
 }
+
+/// Review state of a government support scheme. Same three states as
+/// NewsDerivedEventStatus and deliberately a separate enum: the two are
+/// reviewed in different queues by different criteria, and sharing one enum
+/// would make a future state that means something for one of them (say
+/// SUPERSEDED for a measure whose window reopened) appear in the other.
+enum SupportSchemeStatus {
+  PROPOSED
+  APPROVED
+  REJECTED
+}

@@ -72,6 +72,10 @@ describe('Executor Registry — tenantId propagation audit', () => {
             // market-news-pull writes the GLOBAL, tenant-agnostic MarketNewsItem
             // cache (no tenantId, like MarketPriceSeries) from public RSS feeds —
             // no tenant axis by design.
+            // support-scheme-extraction is the WEEKLY sibling of the above: same
+            // GLOBAL policy-news input, writing the GLOBAL SupportScheme table (a
+            // national ДФЗ measure is the same fact for every tenant). No tenant
+            // axis by design — a tenantId on this payload would be meaningless.
             // news-event-extraction (calendar roadmap PR 3) reads the GLOBAL
             // policy-news slice of MarketNewsItem and writes GLOBAL
             // NewsDerivedEvent rows — no tenantId on either model, same shape
@@ -83,7 +87,7 @@ describe('Executor Registry — tenantId propagation audit', () => {
             // encrypted message, so it needs neither a tenant axis nor a DEK.
             // Row-level isolation is still enforced — it runs as a non-app_user
             // role and passes promotion_lead_inquirer_isolation's superuser_bypass.
-            if (['health-check', 'sync-pull', 'schedule-trigger-sweep', 'sharepoint-delta-sync-dispatch', 'sharepoint-subscription-renew', 'risk-appetite-monitor', 'risk-snapshot', 'report-delivery', 'exchange-expiry-sweep', 'market-prices-pull', 'market-prices-barchart', 'market-news-pull', 'news-event-extraction', 'promotion-lead-retention'].includes(jobName)) continue;
+            if (['health-check', 'sync-pull', 'schedule-trigger-sweep', 'sharepoint-delta-sync-dispatch', 'sharepoint-subscription-renew', 'risk-appetite-monitor', 'risk-snapshot', 'report-delivery', 'exchange-expiry-sweep', 'market-prices-pull', 'market-prices-barchart', 'market-news-pull', 'news-event-extraction', 'support-scheme-extraction', 'promotion-lead-retention'].includes(jobName)) continue;
 
             // If the parameter is named _payload, it means tenantId is being ignored
             if (paramName.startsWith('_')) {
