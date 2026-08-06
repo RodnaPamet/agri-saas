@@ -232,6 +232,18 @@ export function getCategoryTone(category: CalendarEventCategory): ToneBundle {
                 content: 'text-content-info',
                 border: 'border-border-info',
             };
+        // AI news-derived proposals (calendar roadmap PR 3). Same info
+        // family as `agri-event` — both are announcements, not
+        // obligations — but the DOT ITSELF is rendered hollow/dashed by
+        // CalendarMonth (keyed off `CalendarEvent.provenance`, not this
+        // tone) so an AI-sourced entry is never visually indistinguishable
+        // from a curated fact even though they share a colour family.
+        case 'ai-news':
+            return {
+                bg: 'bg-status-info',
+                content: 'text-content-info',
+                border: 'border-border-info',
+            };
     }
 }
 

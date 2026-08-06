@@ -179,6 +179,26 @@ export const SCHEDULED_JOBS: ScheduleDefinition[] = [
         description: 'Aggregate free agri RSS/Atom feeds into the global market-news cache (Trends → News tab)',
         defaultPayload: {},
     },
+    // Calendar roadmap PR 3 — daily AI extraction of subsidy/regulation
+    // dates from the policy-category slice of the news cache above,
+    // registered ONLY when ANTHROPIC_API_KEY is set, so a key-less
+    // deployment never schedules an empty cron (mirrors the
+    // market-prices-barchart / BARCHART_API_KEY carve-out above — and is
+    // why 'news-event-extraction' is absent from the "exactly N scheduled
+    // jobs" / "scheduled job names" assertions in
+    // tests/regression/infrastructure-guards.test.ts, whose test env is
+    // key-less). 06:15 UTC — 25 minutes after market-news-pull, so the
+    // policy items it just aggregated are already in the cache.
+    ...(env.ANTHROPIC_API_KEY
+        ? [
+              {
+                  name: 'news-event-extraction' as JobName,
+                  pattern: '15 6 * * *',     // daily at 06:15 UTC
+                  description: 'Extract subsidy/regulation calendar-event proposals from policy news via Claude Haiku (proposed, never auto-published)',
+                  defaultPayload: {},
+              },
+          ]
+        : []),
     {
         name: 'daily-evidence-expiry',
         pattern: '0 6 * * *',     // daily at 06:00 UTC

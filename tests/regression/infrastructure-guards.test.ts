@@ -128,6 +128,10 @@ describe('Infrastructure Regression Guards', () => {
                 'low-stock-monitor',
                 // Trends → News — daily aggregation of free agri RSS/Atom feeds
                 // into the global market-news cache.
+                // (Calendar roadmap PR 3's 'news-event-extraction' schedule is
+                // CONDITIONAL on ANTHROPIC_API_KEY — absent in this key-less
+                // test env, same carve-out shape as market-prices-barchart
+                // below — so it is deliberately not in this always-on set.)
                 'market-news-pull',
                 // Trends — weekly market-price backbone pull (EC AGRI-food +
                 // Alpha Vantage + own-listings median) into the global cache.

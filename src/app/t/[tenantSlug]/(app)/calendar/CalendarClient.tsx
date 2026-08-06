@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { CalendarEventLink } from '@/components/ui/CalendarEventLink';
 import { cardVariants } from '@/components/ui/card';
+import { StatusBadge } from '@/components/ui/status-badge';
 import { cn } from '@/lib/cn';
 
 import { Button } from '@/components/ui/button';
@@ -63,6 +64,20 @@ interface CalendarClientProps {
 /** Today as YMD, for seeding the create modal when no day is selected. */
 function todayYmd(): string {
     return new Date().toISOString().slice(0, 10);
+}
+
+/**
+ * Short, human-readable citation label for an AI-news source link — the
+ * bare hostname (e.g. "dfz.bg") rather than the full URL. Falls back to
+ * the raw string on a malformed URL rather than throwing — this renders
+ * inside the side panel, not a validation boundary.
+ */
+function sourceHostname(url: string): string {
+    try {
+        return new URL(url).hostname.replace(/^www\./, '');
+    } catch {
+        return url;
+    }
 }
 
 /**
@@ -139,6 +154,7 @@ export function CalendarClient({
         planting: tCategory('planting'),
         'agro-signal': tCategory('agroSignal'),
         'agri-event': tCategory('agriEvent'),
+        'ai-news': tCategory('aiNews'),
     };
     const statusLabels: Record<CalendarEventStatus, string> = {
         scheduled: tStatus('scheduled'),
@@ -328,30 +344,79 @@ export function CalendarClient({
                                 </p>
                             ) : (
                                 <ul className="space-y-tight">
-                                    {selectedEvents.map((ev) => (
-                                        <li
-                                            key={ev.id}
-                                            data-event-id={ev.id}
-                                        >
-                                            <CalendarEventLink
-                                                href={ev.href}
-                                                external={ev.external}
-                                                className="block rounded p-2 text-xs hover:bg-bg-muted transition-colors"
+                                    {selectedEvents.map((ev) =>
+                                        ev.provenance === 'ai-news' ? (
+                                            // AI-derived proposal — deliberately NOT the same
+                                            // whole-card-is-a-link shape as every other event
+                                            // below: a distinct dashed-border card, a
+                                            // confidence badge, and a MANDATORY "Source:"
+                                            // citation link, so this never reads as a
+                                            // database fact. See CalendarEvent.provenance.
+                                            <li
+                                                key={ev.id}
+                                                data-event-id={ev.id}
+                                                data-event-provenance={ev.provenance}
+                                                className="rounded border border-dashed border-border-emphasis bg-bg-muted/30 p-2 text-xs space-y-1"
                                             >
-                                                <div className="font-medium text-content-emphasis truncate">
-                                                    {te(ev.titleKey, ev.titleParams)}
-                                                </div>
-                                                {ev.detail && (
-                                                    <div className="text-content-muted truncate">
-                                                        {ev.detail}
-                                                    </div>
-                                                )}
-                                                <div className="text-[10px] text-content-subtle uppercase tracking-wider mt-0.5">
+                                                <div className="text-[10px] text-content-subtle uppercase tracking-wider">
                                                     {categoryLabels[ev.category]} · {statusLabels[ev.status]}
                                                 </div>
-                                            </CalendarEventLink>
-                                        </li>
-                                    ))}
+                                                <div className="flex items-start justify-between gap-tight">
+                                                    <div className="font-medium text-content-emphasis truncate">
+                                                        {te(ev.titleKey, ev.titleParams)}
+                                                    </div>
+                                                    <StatusBadge variant="info" size="sm">
+                                                        {t('aiNews.badge')}
+                                                    </StatusBadge>
+                                                </div>
+                                                {ev.confidence != null && (
+                                                    <div className="text-content-muted">
+                                                        {t('aiNews.confidence', { pct: Math.round(ev.confidence * 100) })}
+                                                    </div>
+                                                )}
+                                                {ev.sourceUrl && (
+                                                    <div className="flex items-center gap-1">
+                                                        <span className="text-content-subtle">
+                                                            {t('aiNews.sourceLabel')}
+                                                        </span>
+                                                        <CalendarEventLink
+                                                            href={ev.sourceUrl}
+                                                            external
+                                                            className="text-[var(--brand-default)] underline underline-offset-2 hover:no-underline truncate"
+                                                        >
+                                                            {sourceHostname(ev.sourceUrl)}
+                                                        </CalendarEventLink>
+                                                    </div>
+                                                )}
+                                                <p className="text-[10px] text-content-subtle border-t border-border-subtle pt-1">
+                                                    {t('aiNews.disclaimer')}
+                                                </p>
+                                            </li>
+                                        ) : (
+                                            <li
+                                                key={ev.id}
+                                                data-event-id={ev.id}
+                                            >
+                                                <CalendarEventLink
+                                                    href={ev.href}
+                                                    external={ev.external}
+                                                    className="block rounded p-2 text-xs hover:bg-bg-muted transition-colors"
+                                                >
+                                                    <div className="font-medium text-content-emphasis truncate">
+                                                        {te(ev.titleKey, ev.titleParams)}
+                                                    </div>
+                                                    {ev.detail && (
+                                                        <div className="text-content-muted truncate">
+                                                            {ev.detail}
+                                                        </div>
+                                                    )}
+                                                    <div className="text-[10px] text-content-subtle uppercase tracking-wider mt-0.5">
+                                                        {categoryLabels[ev.category]} · {statusLabels[ev.status]}
+                                                    </div>
+                                                </CalendarEventLink>
+                                            </li>
+                                        ),
+                                    )}
                                 </ul>
                             )}
                         </>

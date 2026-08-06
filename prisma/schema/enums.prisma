@@ -1262,3 +1262,15 @@ enum LotLinkType {
   SPLIT
   MERGE
 }
+
+/// Review lifecycle for a `NewsDerivedEvent` (calendar roadmap PR 3 — AI
+/// news-derived calendar events). PROPOSED is the only status the daily
+/// extraction job ever writes; APPROVED/REJECTED are exclusively set by a
+/// platform admin via POST /api/admin/news-derived-events/[id]/approve|
+/// reject. The calendar loader reads ONLY APPROVED rows — a PROPOSED row
+/// is invisible to every tenant until a human reviews it.
+enum NewsDerivedEventStatus {
+  PROPOSED
+  APPROVED
+  REJECTED
+}

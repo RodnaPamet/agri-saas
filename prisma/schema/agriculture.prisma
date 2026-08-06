@@ -81,6 +81,87 @@ model AgriEvent {
   @@index([startsAt])
 }
 
+/// AI-derived calendar-event proposal (calendar roadmap PR 3) — extracted
+/// from a GLOBAL policy-category `MarketNewsItem` headline by the daily
+/// `news-event-extraction` job (Claude Haiku, forced tool use). Modelled
+/// on `AgroSignal`'s job-derived-event shape: a unique idempotency key so
+/// a daily re-run never duplicates, plus dedicated provenance columns
+/// (every extraction has the same shape, so no `detailsJson` blob is
+/// needed here). NO tenantId, like `AgriEvent`/`MarketNewsItem` — a
+/// subsidy deadline or regulation date is the same fact for every tenant.
+///
+/// UNLIKE `AgriEvent`, a row here is NEVER immediately visible: `status`
+/// starts at PROPOSED and the calendar loader (`loadNewsDerivedEventEvents`
+/// in compliance-calendar.ts) reads ONLY `APPROVED` rows. Promotion is a
+/// platform-admin action (`POST /api/admin/news-derived-events/[id]/
+/// approve|reject`, PLATFORM_ADMIN_API_KEY-gated) — never automatic. This
+/// is the load-bearing distinction between "the system found this in a
+/// news article" and "the system asserts this as fact" — see the
+/// provenance discussion in
+/// docs/implementation-notes/2026-08-06-ai-news-calendar-events.md.
+///
+/// `sourceNewsItemId` is a plain identity column, NOT a Prisma
+/// `@relation`: `MarketNewsItem` is pruned after 60 days
+/// (`market-news-pull`'s retention sweep) but a subsidy deadline can be
+/// 18 months out, so a hard FK would either dangle (`SetNull`, losing the
+/// dedupe key) or block the prune (`Restrict`, Prisma's default).
+/// `sourceUrl`/`sourceTitle` are denormalised snapshots taken at
+/// extraction time so the calendar side panel's "Source: <link>" keeps
+/// working after the underlying article is pruned.
+model NewsDerivedEvent {
+  id    String @id @default(cuid())
+  title String
+
+  /// 'subsidy-deadline' | 'regulation-effective' — validated at the
+  /// extractor boundary against NEWS_DERIVED_EVENT_KINDS in
+  /// src/app-layer/schemas/news-derived-event.schemas.ts. Same
+  /// free-String-column-plus-Zod-enum shape as `AgriEvent.category`.
+  kind String
+
+  eventDate DateTime @db.Date
+
+  /// Model confidence (0..1) the date is explicit and unambiguous —
+  /// surfaced in the calendar side panel next to "Source:".
+  confidence Float
+
+  /// The verbatim sentence the model extracted the date from — the
+  /// anti-hallucination backstop a reviewer (or a curious farmer) can
+  /// check against the source article. The extractor itself re-verifies
+  /// this is an actual substring of the source text before persisting.
+  sourceExcerpt String
+
+  /// Identity of the source MarketNewsItem — see the model doc above for
+  /// why this is NOT a `@relation`. Paired with `kind` as the dedupe key.
+  sourceNewsItemId String
+
+  /// Denormalised snapshot of MarketNewsItem.url at extraction time.
+  sourceUrl String
+
+  /// Denormalised snapshot of MarketNewsItem.title at extraction time.
+  sourceTitle String
+
+  status NewsDerivedEventStatus @default(PROPOSED)
+
+  reviewedAt DateTime?
+
+  /// Free-text platform-admin identifier (requestId), NOT a User FK —
+  /// these routes are PLATFORM_ADMIN_API_KEY-gated with no user session,
+  /// same shape as agri-events.ts's `PlatformActor`.
+  reviewedBy String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// Idempotent-claim / dedupe key — a daily re-run of the extraction job
+  /// over an overlapping lookback window never creates a second row for
+  /// the same (article, kind) pair. Mirrors AgroSignal's per-(location,
+  /// kind, day) uniqueness.
+  @@unique([sourceNewsItemId, kind])
+  /// Backs both reads: the admin review queue (status = PROPOSED) and the
+  /// calendar loader (status = APPROVED), each ordered by date.
+  @@index([status, eventDate])
+}
+
 /// Tenant-scoped input-product catalog (the structured spray product).
 /// Feature 1 exercises PESTICIDE/FERTILIZER; other categories are the
 /// seed of the full inventory module. attributesJson carries

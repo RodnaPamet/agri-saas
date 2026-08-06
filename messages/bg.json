@@ -4997,7 +4997,8 @@
             "contract": "Договор",
             "planting": "Засаждане",
             "agroSignal": "Агро сигнал",
-            "agriEvent": "Земеделско събитие"
+            "agriEvent": "Земеделско събитие",
+            "aiNews": "Новина (ИИ)"
         },
         "status": {
             "scheduled": "Планирано",
@@ -5027,7 +5028,15 @@
             "contractDelivery": "Прозорец за доставка: {name}",
             "plantingCycle": "Засаждане: {name}",
             "agroSignalSprayWindow": "Предупреждение за прозорец за пръскане: {name}",
-            "agroSignalDiseaseRisk": "Сигнал за риск от болест: {name}"
+            "agroSignalDiseaseRisk": "Сигнал за риск от болест: {name}",
+            "aiNewsSubsidyDeadline": "Предложен срок за субсидия: {name}",
+            "aiNewsRegulationEffective": "Предложена дата на регламент: {name}"
+        },
+        "aiNews": {
+            "badge": "Предложено от ИИ",
+            "confidence": "Увереност: {pct}%",
+            "sourceLabel": "Източник:",
+            "disclaimer": "Извлечено от новина от ИИ и все още непроверено от човек. Проверете датата, преди да разчитате на нея."
         }
     },
     "farmTasks": {

@@ -54,6 +54,13 @@ export const CALENDAR_EVENT_CATEGORIES = [
     // deadlines. Unlike every other category these are GLOBAL rows, not
     // tenant facts, and they link off-site.
     'agri-event',
+    // AI news-derived calendar events (calendar roadmap PR 3) — GLOBAL,
+    // like `agri-event`, but with a fundamentally different provenance:
+    // an `agri-event` is a human curator's assertion; this is a machine
+    // extraction from a news article, surfaced only once a platform admin
+    // approves it. See `CalendarEvent.provenance` below — every event in
+    // this category carries `provenance: 'ai-news'`.
+    'ai-news',
 ] as const;
 
 export type CalendarEventCategory =
@@ -116,6 +123,13 @@ export const CALENDAR_EVENT_TYPES = [
     'agri-training',
     'agri-webinar',
     'agri-subsidy-deadline',
+    // ai-news — mirrors NewsDerivedEvent.kind, a free string on the model
+    // validated against NEWS_DERIVED_EVENT_KINDS at the extractor boundary.
+    // Enumerating both values here is deliberate: a third kind added to
+    // that tuple is a compile error at the mapper, not a silently
+    // mis-toned dot.
+    'ai-news-subsidy-deadline',
+    'ai-news-regulation-effective',
 ] as const;
 
 export type CalendarEventType = (typeof CALENDAR_EVENT_TYPES)[number];
@@ -202,7 +216,8 @@ export interface CalendarEvent {
         | 'CONTRACT'
         | 'PLANTING'
         | 'AGRO_SIGNAL'
-        | 'AGRI_EVENT';
+        | 'AGRI_EVENT'
+        | 'NEWS_DERIVED_EVENT';
     entityId: string;
     /**
      * Tenant-relative href for click-through. The route handler builds
@@ -224,6 +239,29 @@ export interface CalendarEvent {
      * deadline monitor's notification routing).
      */
     ownerUserId?: string;
+    /**
+     * AI-derived provenance marker (calendar roadmap PR 3). ABSENT for
+     * every other event on the calendar — those are DATABASE FACTS a
+     * human entered or a tenant's own data produced. Present (always
+     * `'ai-news'` today) ONLY for a `NewsDerivedEvent` the extraction job
+     * proposed and a platform admin approved. A renderer MUST treat this
+     * field's presence as the signal to show a distinct style and a
+     * mandatory source citation — never render an `ai-news` event
+     * identically to a system-of-record one.
+     */
+    provenance?: 'ai-news';
+    /**
+     * Model confidence (0..1) the extracted date is correct. Set ONLY
+     * alongside `provenance: 'ai-news'`.
+     */
+    confidence?: number;
+    /**
+     * Citation for `provenance: 'ai-news'` — the source news article.
+     * Duplicates `href` when the event also links off-site (it does
+     * today), kept as its own field so a renderer's "Source:" line has a
+     * stable, unambiguous read regardless of what `href` is doing.
+     */
+    sourceUrl?: string;
 }
 
 // ─── Zod schemas ─────────────────────────────────────────────────────

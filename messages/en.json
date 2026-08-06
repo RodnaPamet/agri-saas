@@ -4997,7 +4997,8 @@
             "contract": "Contract",
             "planting": "Planting",
             "agroSignal": "Agro signal",
-            "agriEvent": "Agriculture event"
+            "agriEvent": "Agriculture event",
+            "aiNews": "AI news event"
         },
         "status": {
             "scheduled": "Scheduled",
@@ -5027,7 +5028,15 @@
             "contractDelivery": "Delivery window: {name}",
             "plantingCycle": "Planting: {name}",
             "agroSignalSprayWindow": "Spray window warning: {name}",
-            "agroSignalDiseaseRisk": "Disease risk alert: {name}"
+            "agroSignalDiseaseRisk": "Disease risk alert: {name}",
+            "aiNewsSubsidyDeadline": "Proposed subsidy deadline: {name}",
+            "aiNewsRegulationEffective": "Proposed regulation date: {name}"
+        },
+        "aiNews": {
+            "badge": "AI proposed",
+            "confidence": "Confidence: {pct}%",
+            "sourceLabel": "Source:",
+            "disclaimer": "Extracted from a news article by AI and not yet verified by a human. Confirm the date before relying on it."
         }
     },
     "farmTasks": {

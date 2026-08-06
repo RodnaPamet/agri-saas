@@ -718,6 +718,24 @@ executorRegistry.register('market-news-pull', async (payload) => {
     );
 });
 
+// ── news-event-extraction (calendar roadmap PR 3 — AI news calendar events) ──
+// Daily extraction of subsidy/regulation dates from the GLOBAL policy-news
+// cache via Claude Haiku. Scheduled ONLY when ANTHROPIC_API_KEY is set (see
+// schedules.ts); without the key the run no-ops
+// (isNewsEventExtractionConfigured() gate inside the job), so this
+// executor is a cheap guard either way.
+executorRegistry.register('news-event-extraction', async (payload) => {
+    const startedAt = new Date().toISOString();
+    const startMs = performance.now();
+    const { runNewsEventExtraction } = await import('./news-event-extraction');
+    const r = await runNewsEventExtraction({ lookbackHours: payload.lookbackHours });
+    return makeResult(
+        'news-event-extraction', startedAt, startMs,
+        r.scanned, r.created, r.skipped,
+        { scanned: r.scanned, extracted: r.extracted, created: r.created, skipped: r.skipped },
+    );
+});
+
 // ── deadline-monitor ─────────────────────────────────────────────────
 
 executorRegistry.register('deadline-monitor', async (payload) => {

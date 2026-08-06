@@ -18,6 +18,7 @@
  *   - Contract       (deliveryStart → deliveryEnd — duration)
  *   - Planting       (sowDate → harvestEndDate — duration)
  *   - AgroSignal     (signalDate)
+ *   - NewsDerivedEvent (eventDate — AI-proposed, APPROVED rows only)
  *
  * Tenant isolation: every Prisma query starts with `tenantId: ctx.tenantId`
  * (AgroSignal has no `deletedAt` column — see its loader for why).
@@ -51,6 +52,7 @@
 
 import { runInTenantContext } from '@/lib/db-context';
 import type { AgriEventCategory } from '@/app-layer/schemas/agri-event.schemas';
+import type { NewsDerivedEventKind } from '@/app-layer/schemas/news-derived-event.schemas';
 import type { PrismaTx } from '@/lib/db-context';
 import { assertCanRead } from '../policies/common';
 import { TERMINAL_WORK_ITEM_STATUSES } from '../domain/work-item-status';
@@ -115,6 +117,7 @@ const CALENDAR_SOURCE_NAMES = [
     'planting',
     'agroSignal',
     'agriEvent',
+    'newsDerivedEvent',
 ] as const;
 
 /**
@@ -123,19 +126,20 @@ const CALENDAR_SOURCE_NAMES = [
  * `runInTenantContext` opens ONE Prisma interactive transaction — one
  * PgBouncer (transaction-mode) connection held for the transaction's
  * full duration. Prisma's default `timeout`/`maxWait` (5s / 2s) was
- * sized for a handful of loaders; this PR grew the fan-out from 12 to
- * 17. The per-query cost is what the new indexes above (see the
- * calendar-agri-source-date-indexes migration) fix — each loader is
- * now a bounded, index-backed point/range read — but the DEFAULT ceiling
- * is still shared across all 17 sequential statements on that one
+ * sized for a handful of loaders; the fan-out grew from 12 to 17 in the
+ * agriculture-sources PR and now sits at 18 with the AI news-derived
+ * source. The per-query cost is what the indexes added in the
+ * calendar-agri-source-date-indexes migration fix — each loader is a
+ * bounded, index-backed point/range read — but the DEFAULT ceiling is
+ * still shared across all 18 sequential statements on that one
  * connection (SET LOCAL ROLE + SET LOCAL app.tenant_id/app.request_id +
- * 17 queries), so a slow one (cold cache, a large tenant, a brief lock
+ * 18 queries), so a slow one (cold cache, a large tenant, a brief lock
  * wait) has no headroom before Prisma kills the whole transaction and
  * blanks the calendar for every source, not just the slow one.
  *
- * We raise the ceiling rather than splitting the fan-out into 17
+ * We raise the ceiling rather than splitting the fan-out into 18
  * separate `runInTenantContext` transactions: that would trade one
- * held connection for up to 17 concurrent ones per calendar page load,
+ * held connection for up to 18 concurrent ones per calendar page load,
  * which is worse for a shared PgBouncer pool under real traffic than
  * one connection held a few seconds longer, and it would also lose the
  * single consistent read snapshot the sources currently share. Values
@@ -162,8 +166,8 @@ export async function getComplianceCalendarEvents(
     // RLS policies — that's belt-and-braces with the explicit
     // `tenantId: ctx.tenantId` filter inside each loader.
     //
-    // `Promise.allSettled`, NOT `Promise.all`: with 17 sources fanning
-    // out, one throwing loader must not blank the other 16. A rejected
+    // `Promise.allSettled`, NOT `Promise.all`: with 18 sources fanning
+    // out, one throwing loader must not blank the other 17. A rejected
     // source is logged and dropped; the rest still render.
     //
     // Timeout raised, transaction NOT split — see
@@ -194,6 +198,10 @@ export async function getComplianceCalendarEvents(
                 // Global curated catalogue — see loadAgriEventEvents on why
                 // this one carries no tenantId predicate.
                 loadAgriEventEvents(db, ctx, range, now, limit),
+                // Calendar roadmap PR 3 — AI news-derived proposals. Same
+                // no-tenantId shape as loadAgriEventEvents; ONLY reads
+                // status: 'APPROVED' rows.
+                loadNewsDerivedEventEvents(db, ctx, range, now, limit),
             ]),
         { timeout: CALENDAR_TX_TIMEOUT_MS, maxWait: CALENDAR_TX_MAX_WAIT_MS },
     );
@@ -1218,6 +1226,90 @@ async function loadAgriEventEvents(
             // destination or emitting a broken link.
             href: r.url ?? tenantHrefFromCtx(ctx, '/calendar'),
             external: r.url != null,
+        };
+    });
+    return { events, truncated };
+}
+
+/**
+ * NewsDerivedEvent.kind (subsidy-deadline/regulation-effective) -> calendar
+ * event type + category. Exhaustive Record ON PURPOSE, mirroring
+ * AGRI_CATEGORY_TO_TYPE above: a third kind added to
+ * NEWS_DERIVED_EVENT_KINDS is a compile error here rather than a silently
+ * mis-labeled dot.
+ */
+const NEWS_DERIVED_EVENT_KIND_TO_TYPE: Record<NewsDerivedEventKind, CalendarEventType> = {
+    'subsidy-deadline': 'ai-news-subsidy-deadline',
+    'regulation-effective': 'ai-news-regulation-effective',
+};
+
+/**
+ * AI news-derived calendar-event proposals (calendar roadmap PR 3) —
+ * extracted from GLOBAL policy-category MarketNewsItem headlines by the
+ * daily `news-event-extraction` job. See `NewsDerivedEvent`'s model doc in
+ * prisma/schema/agriculture.prisma for the full provenance story.
+ *
+ * TENANCY: like `loadAgriEventEvents`, NO tenantId predicate — the model
+ * has none, every tenant reads the same rows.
+ *
+ * VISIBILITY: UNLIKE `loadAgriEventEvents`, only `status: 'APPROVED'` rows
+ * are ever read here. A PROPOSED row is an unreviewed AI guess and stays
+ * invisible to every tenant until a platform admin promotes it via
+ * `POST /api/admin/news-derived-events/[id]/approve`. This is the one
+ * loader in the whole fan-out that filters by anything other than the
+ * date range — that filter IS the "proposed, never auto-published"
+ * guarantee, not a policy check layered on top of it.
+ *
+ * PROVENANCE: every event here carries `provenance: 'ai-news'` +
+ * `confidence` + `sourceUrl` so the renderer can never confuse this with a
+ * database fact — see `CalendarEvent.provenance`'s docblock.
+ */
+async function loadNewsDerivedEventEvents(
+    db: PrismaTx,
+    ctx: RequestContext,
+    range: DateRange,
+    now: Date,
+    limit: number,
+): Promise<SourceResult> {
+    const rawRows = await db.newsDerivedEvent.findMany({
+        where: {
+            status: 'APPROVED',
+            eventDate: { gte: range.from, lte: range.to },
+        },
+        select: {
+            id: true,
+            title: true,
+            kind: true,
+            eventDate: true,
+            confidence: true,
+            sourceUrl: true,
+        },
+        orderBy: { eventDate: 'asc' },
+        take: limit + 1,
+    });
+    const { rows, truncated } = capRows(rawRows, limit);
+
+    const events = rows.map((r): CalendarEvent => {
+        const type = NEWS_DERIVED_EVENT_KIND_TO_TYPE[
+            r.kind as NewsDerivedEventKind
+        ] ?? 'ai-news-subsidy-deadline';
+        return {
+            id: `NEWS_DERIVED_EVENT:${r.id}:${type}`,
+            type,
+            category: 'ai-news',
+            titleKey: 'raw',
+            titleParams: { name: r.title },
+            date: r.eventDate.toISOString(),
+            // An APPROVED proposal reads the same as a curated
+            // announcement: never overdue, done once it has passed.
+            status: r.eventDate < now ? 'done' : 'scheduled',
+            entityType: 'NEWS_DERIVED_EVENT',
+            entityId: r.id,
+            href: r.sourceUrl,
+            external: true,
+            provenance: 'ai-news',
+            confidence: r.confidence,
+            sourceUrl: r.sourceUrl,
         };
     });
     return { events, truncated };
