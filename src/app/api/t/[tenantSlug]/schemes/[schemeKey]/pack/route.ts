@@ -1,10 +1,8 @@
-import { NextRequest } from 'next/server';
 import { z } from 'zod';
-import { getTenantCtx } from '@/app-layer/context';
 import { assertModuleEnabled } from '@/app-layer/usecases/modules';
 import { assembleSchemePack } from '@/app-layer/usecases/scheme-pack';
-import { withValidatedBody } from '@/lib/validation/route';
 import { withApiErrorHandling } from '@/lib/errors/api';
+import { requirePermission } from '@/lib/security/permission-middleware';
 import { jsonResponse } from '@/lib/api-response';
 
 /**
@@ -25,15 +23,10 @@ const AssembleSchemePackSchema = z
     .strip();
 
 export const POST = withApiErrorHandling(
-    withValidatedBody(
-        AssembleSchemePackSchema,
-        async (
-            req: NextRequest,
-            { params: paramsPromise }: { params: Promise<{ tenantSlug: string; schemeKey: string }> },
-            body,
-        ) => {
-            const params = await paramsPromise;
-            const ctx = await getTenantCtx(params, req);
+    requirePermission<{ tenantSlug: string; schemeKey: string }>(
+        'audits.manage',
+        async (req, { params }, ctx) => {
+            const body = AssembleSchemePackSchema.parse(await req.json());
             await assertModuleEnabled(ctx, 'CERTIFICATION');
             const result = await assembleSchemePack(ctx, {
                 schemeKey: params.schemeKey,

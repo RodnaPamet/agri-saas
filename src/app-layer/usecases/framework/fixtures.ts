@@ -1,5 +1,6 @@
 ﻿import { RequestContext } from '../../types';
-import { assertCanViewFrameworks, assertCanInstallFrameworkPack } from '../../policies/framework.policies';
+import { assertCanViewFrameworks, assertCanWriteCatalogue } from '../../policies/framework.policies';
+import { logEvent } from '../../events/audit';
 import { runInTenantContext } from '@/lib/db-context';
 import { notFound, badRequest } from '@/lib/errors/types';
 import { prisma } from '@/lib/prisma';
@@ -23,7 +24,14 @@ export async function upsertRequirements(
     requirements: RequirementFixture[],
     options: { deprecateMissing?: boolean } = {}
 ) {
-    assertCanInstallFrameworkPack(ctx);
+    // PLATFORM gate, not a tenant one. This writes the GLOBAL catalogue: with
+    // `deprecateMissing` it stamps `deprecatedAt` across every requirement of
+    // the framework, and deprecated requirements are excluded from coverage
+    // (coverage.ts) and from the Statement of Applicability (soa.ts). Under
+    // the previous `assertCanInstallFrameworkPack` gate — OWNER or ADMIN of
+    // ANY tenant — one farm could zero every other farm's readiness and SoA
+    // with a single call, silently.
+    assertCanWriteCatalogue(ctx);
     const db = prisma;
 
     const fw = await db.framework.findFirst({ where: { key: frameworkKey } });
@@ -94,6 +102,32 @@ export async function upsertRequirements(
         });
         deprecated = result.count;
     }
+
+    // Audit. There was NO audit anywhere in this file, so the most
+    // destructive operation in the catalogue left no trace of who ran it or
+    // what it removed. `deprecated` is the number that matters: it is the
+    // count of control points that just stopped counting for every tenant.
+    await logEvent(prisma, ctx, {
+        action: 'FRAMEWORK_REQUIREMENTS_UPSERTED',
+        entityType: 'Framework',
+        entityId: fw.id,
+        details: `Catalogue requirements upserted for "${frameworkKey}"`,
+        detailsJson: {
+            category: 'entity_lifecycle',
+            entityName: 'Framework',
+            operation: 'updated',
+            after: {
+                frameworkKey,
+                created,
+                updated,
+                deprecated,
+                deprecateMissing: options.deprecateMissing === true,
+            },
+            summary:
+                `Catalogue "${frameworkKey}": ${created} created, ${updated} updated, ` +
+                `${deprecated} deprecated`,
+        },
+    });
 
     return { frameworkKey, created, updated, deprecated };
 }

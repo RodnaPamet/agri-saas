@@ -6,7 +6,10 @@
  *
  *   - `upsertRequirements` — framework-bulk import/update with
  *     optional deprecation of missing rows. Branches:
- *       • policy gate (assertCanInstallFrameworkPack)
+ *       • policy gate (assertCanWriteCatalogue — the PLATFORM gate;
+ *         this used to be assertCanInstallFrameworkPack, which admits
+ *         OWNER/ADMIN of ANY tenant and let one farm deprecate a whole
+ *         standard for every other farm)
  *       • framework not found
  *       • empty fixture array
  *       • duplicate codes within the fixture
@@ -31,7 +34,10 @@
 
 const policyCalls: string[] = [];
 
+jest.mock('@/app-layer/events/audit', () => ({ logEvent: jest.fn() }));
+
 jest.mock('@/app-layer/policies/framework.policies', () => ({
+    assertCanWriteCatalogue: jest.fn(() => policyCalls.push('catalogue')),
     assertCanInstallFrameworkPack: jest.fn(() => policyCalls.push('install')),
     assertCanViewFrameworks: jest.fn(() => policyCalls.push('view')),
 }));
@@ -80,14 +86,19 @@ beforeEach(() => {
 const ctx = makeRequestContext('ADMIN');
 
 describe('upsertRequirements — guard rails', () => {
-    it('invokes assertCanInstallFrameworkPack before any read', async () => {
+    it('invokes the CATALOGUE gate before any read', async () => {
+        // Was `assertCanInstallFrameworkPack`, which admits the OWNER or ADMIN
+        // of any tenant — this assertion required the vulnerability. The gate
+        // is now the platform one; "before any read" still matters, because a
+        // denial that first tells the caller whether a framework key exists is
+        // an enumeration oracle over the catalogue.
         prismaMock.framework.findFirst.mockResolvedValue({ id: 'fw-1', key: 'iso' });
         prismaMock.frameworkRequirement.findUnique.mockResolvedValue(null);
         prismaMock.frameworkRequirement.create.mockResolvedValue({ id: 'r-1' });
         await upsertRequirements(ctx, 'iso', [
             { code: 'A.5.1', title: 'Access control' },
         ]);
-        expect(policyCalls[0]).toBe('install');
+        expect(policyCalls[0]).toBe('catalogue');
     });
 
     it('throws notFound when the framework key does not resolve', async () => {

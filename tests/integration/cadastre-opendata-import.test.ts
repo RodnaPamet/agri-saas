@@ -108,6 +108,17 @@ describeFn('Part B — КАИС cadastre import job (cache-seeded)', () => {
         const storage = getStorageProvider();
         const storageKey = `cadastre-opendata/${EKATTE}/test-${Date.now()}.zip`;
         const wr = await storage.write(storageKey, zip, { mimeType: 'application/zip' });
+        // `CadastreArchive.ekatte` is UNIQUE and the table is GLOBAL (no
+        // tenantId), so `resetDatabase`'s tenant-scoped truncation never
+        // touches it. The afterAll below deletes the row, but it deletes
+        // several things inside ONE try/catch — an earlier statement throwing
+        // skips the rest — and a run that crashes outright never reaches it at
+        // all. Either way the next run collided on this create and the suite
+        // failed for a reason that had nothing to do with what it tests.
+        //
+        // Self-healing setup rather than trusted teardown: a test that only
+        // passes on a pristine database is a test that fails eventually.
+        await testPrisma.cadastreArchive.deleteMany({ where: { ekatte: EKATTE } });
         await testPrisma.cadastreArchive.create({
             data: {
                 ekatte: EKATTE,

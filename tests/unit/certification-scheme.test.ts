@@ -73,7 +73,21 @@ beforeEach(() => {
     (sanitizePlainText as jest.Mock).mockImplementation((s: string) => `SAN::${s}`);
 });
 
-const adminCtx = makeRequestContext('ADMIN', { userId: 'user-admin' });
+/**
+ * Scheme AUTHORING is now a PLATFORM operation, not a tenant one: it writes a
+ * row into the global Framework table that every tenant reads, and burns a
+ * globally-unique key with no delete path. The admin context therefore has to
+ * be an admin OF THE PLATFORM TENANT — a farm admin is refused, which is the
+ * whole point of the change and is covered in
+ * tests/unit/security/catalogue-write-isolation.test.ts.
+ */
+const PLATFORM_SLUG = 'platform-support';
+process.env.PLATFORM_TENANT_SLUG = PLATFORM_SLUG;
+
+const adminCtx = makeRequestContext('ADMIN', {
+    userId: 'user-admin',
+    tenantSlug: PLATFORM_SLUG,
+});
 const editorCtx = makeRequestContext('EDITOR', { userId: 'user-editor' });
 const readerCtx = makeRequestContext('READER');
 

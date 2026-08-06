@@ -1,6 +1,7 @@
 import { getTenantCtx } from '@/app-layer/context';
 import { listSchemes } from '@/app-layer/usecases/certification-scheme';
 import { SchemesClient } from './SchemesClient';
+import { isPlatformTenant } from '@/lib/auth/platform-support';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,7 +24,15 @@ export default async function SchemesPage({
         <SchemesClient
             initialSchemes={JSON.parse(JSON.stringify(schemes))}
             tenantSlug={tenantSlug}
-            permissions={{ canAdmin: ctx.permissions.canAdmin }}
+            permissions={{
+                // Authoring a scheme writes the GLOBAL catalogue every tenant
+                // reads, so the API now refuses it outside the platform
+                // tenant. Gating the button on `canAdmin` alone would offer
+                // every farm's owner a form whose submit 404s — the UI has to
+                // agree with the gate, not just decorate around it.
+                canAuthorScheme:
+                    ctx.permissions.canAdmin && isPlatformTenant(ctx.tenantSlug),
+            }}
         />
     );
 }

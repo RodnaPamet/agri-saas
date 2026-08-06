@@ -193,6 +193,30 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'Platform-tenant gated in-handler; admin.manage is the audited ' +
             'role floor, not the isolation control.',
     },
+    {
+        path: new RegExp(`^${T}\\/schemes(\\/.*)?$`),
+        permission: 'admin.manage',
+        methods: ['POST', 'PUT', 'PATCH', 'DELETE'],
+        note:
+            'Certification-scheme AUTHORING writes the global Framework ' +
+            'catalogue every tenant reads. Reads stay open to all roles ' +
+            '(browsing the catalogue is not privileged), hence the method ' +
+            'list. Platform-tenant gated in-handler via ' +
+            'assertCanWriteCatalogue; admin.manage is the audited role ' +
+            'floor, not the isolation control.',
+    },
+    {
+        path: new RegExp(`^${T}\\/frameworks(\\/.*)?$`),
+        permission: 'admin.manage',
+        methods: ['POST', 'PUT', 'PATCH', 'DELETE'],
+        note:
+            'Framework writes span two classes: pack install / bulk-map ' +
+            'create TENANT rows, while upsert-requirements rewrites the ' +
+            'GLOBAL catalogue (and can deprecate every requirement of a ' +
+            'standard, zeroing coverage for all tenants). The catalogue arm ' +
+            'is platform-tenant gated in-handler; this rule is what makes a ' +
+            'denial on any arm an audited AUTHZ_DENIED row.',
+    },
 
     // ── Master-KEK rotation (Epic B.3) ──────────────────────────────
     {

@@ -17,11 +17,10 @@
  * frameworks subtree ever moves into the privileged-roots list.
  */
 
-import { NextRequest } from 'next/server';
 import { z } from 'zod';
-import { getTenantCtx } from '@/app-layer/context';
 import { reorderFrameworkRequirements } from '@/app-layer/usecases/framework';
 import { withApiErrorHandling } from '@/lib/errors/api';
+import { requirePermission } from '@/lib/security/permission-middleware';
 import { jsonResponse } from '@/lib/api-response';
 
 const ReorderSchema = z
@@ -39,12 +38,9 @@ const ReorderSchema = z
     .strip();
 
 export const POST = withApiErrorHandling(
-    async (
-        req: NextRequest,
-        { params: paramsPromise }: { params: Promise<{ tenantSlug: string; frameworkKey: string }> },
-    ) => {
-        const params = await paramsPromise;
-        const ctx = await getTenantCtx(params, req);
+    requirePermission<{ tenantSlug: string; frameworkKey: string }>(
+        'admin.manage',
+        async (req, { params }, ctx) => {
         const raw = await req.json();
         const body = ReorderSchema.parse(raw);
         const result = await reorderFrameworkRequirements(
@@ -53,5 +49,6 @@ export const POST = withApiErrorHandling(
             body.sections,
         );
         return jsonResponse(result, { status: 200 });
-    },
+        },
+    ),
 );
