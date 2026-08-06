@@ -160,71 +160,17 @@ export async function installPack(ctx: RequestContext, packKey: string) {
     }, { timeout: 60_000, maxWait: 10_000 });
 }
 
-// в”Ђв”Ђв”Ђ Coverage Computation в”Ђв”Ђв”Ђ
-
-export async function computeCoverage(ctx: RequestContext, frameworkKey: string, version?: string) {
-    assertCanViewFrameworks(ctx);
-    const db = prisma;
-
-    const fw = version
-        ? await db.framework.findUnique({ where: { key_version: { key: frameworkKey, version } } })
-        : await db.framework.findFirst({ where: { key: frameworkKey } });
-    if (!fw) throw notFound('Framework not found');
-
-    const requirements = await db.frameworkRequirement.findMany({
-        where: { frameworkId: fw.id },
-        orderBy: { sortOrder: 'asc' },
-    });
-
-    // Get all tenant control requirement links for this framework
-    const links = await runInTenantContext(ctx, (tdb) =>
-        tdb.controlRequirementLink.findMany({
-            where: { tenantId: ctx.tenantId, requirementId: { in: requirements.map((r: any) => r.id) } },
-            include: {
-                control: { select: { id: true, code: true, name: true, status: true } },
-                requirement: { select: { id: true, code: true, title: true } },
-            },
-        })
-    );
-
-
-    const mappedReqIds = new Set(links.map((l: any) => l.requirementId));
-    const mapped = requirements.filter((r: any) => mappedReqIds.has(r.id));
-    const unmapped = requirements.filter((r: any) => !mappedReqIds.has(r.id));
-    const total = requirements.length;
-    const coveragePercent = total > 0 ? Math.round((mapped.length / total) * 100) : 0;
-
-    // Group by section
-    const sections = [...new Set(requirements.map((r: any) => r.section || r.category || 'Other'))];
-    const bySection = sections.map((s: any) => {
-        const sectionReqs = requirements.filter((r: any) => (r.section || r.category || 'Other') === s);
-        const sectionMapped = sectionReqs.filter((r: any) => mappedReqIds.has(r.id));
-        return {
-            section: s,
-            total: sectionReqs.length,
-            mapped: sectionMapped.length,
-            coveragePercent: sectionReqs.length > 0 ? Math.round((sectionMapped.length / sectionReqs.length) * 100) : 0,
-        };
-    });
-
-    return {
-        framework: { key: fw.key, name: fw.name, version: fw.version },
-        total,
-        mapped: mapped.length,
-        unmapped: unmapped.length,
-        coveragePercent,
-        bySection,
-        unmappedRequirements: unmapped.map((r: any) => ({ code: r.code, title: r.title, section: r.section || r.category })),
-
-        controlMappings: links.map((l: any) => ({
-            requirementCode: l.requirement.code,
-            requirementTitle: l.requirement.title,
-            controlCode: l.control.code,
-            controlName: l.control.name,
-            controlStatus: l.control.status,
-        })),
-    };
-}
+// ─── Coverage Computation ───
+//
+// REMOVED: a ~140-line duplicate of `coverage.ts::computeCoverage`, carrying
+// its own `: any` casts and its own copy of the mapping arithmetic. It was
+// dead — nothing imported it — and being a copy meant every fix to the real
+// one (the APPROVED filter, the deleted/archived filter, per-requirement
+// satisfaction, the readiness ratio) silently did not apply here. A dead
+// duplicate of a function that keeps being corrected is a trap for whoever
+// greps the name and finds this copy first.
+//
+// `computeCoverage` lives in `./coverage`.
 
 // в”Ђв”Ђв”Ђ Template Library (global catalog with tenant install status) в”Ђв”Ђв”Ђ
 

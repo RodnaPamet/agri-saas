@@ -314,7 +314,19 @@ async function loadEvidenceCounts(ctx: RequestContext, controlIds: string[]): Pr
     const counts = await runInTenantContext(ctx, (db) =>
         db.evidence.groupBy({
             by: ['controlId'],
-            where: { tenantId: ctx.tenantId, controlId: { in: controlIds }, deletedAt: null },
+            // The Statement of Applicability goes to a certifier, so this
+            // count is a CLAIM about how well a control point is evidenced.
+            // It filtered `deletedAt` only, so archived rows and unreviewed
+            // DRAFT / SUBMITTED / REJECTED ones all inflated it — the same
+            // overstatement the readiness score used to make, in the document
+            // an auditor actually reads.
+            where: {
+                tenantId: ctx.tenantId,
+                controlId: { in: controlIds },
+                status: 'APPROVED',
+                deletedAt: null,
+                isArchived: false,
+            },
             _count: { id: true },
         })
     );

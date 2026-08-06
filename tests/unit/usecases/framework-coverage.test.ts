@@ -246,9 +246,14 @@ describe('exportCoverageData', () => {
         stubCoverage();
         const result = await exportCoverageData(ctx, 'iso', 'csv') as any;
 
-        expect(result.csv).toContain('"Status","Requirement Code"');
-        expect(result.csv).toContain('"Mapped","A.5.1"');
-        expect(result.csv).toContain('"Unmapped","A.5.2"');
+        // The two hand-rolled CSV joins here quoted EVERY cell; they now route
+        // through the shared `escapeCSV`, which quotes only when a value needs
+        // it (comma, quote, newline) and formula-guards a leading =, +, -, @.
+        // One escaper, one behaviour — having two was how the formula guard
+        // reached the SoA export and not this one.
+        expect(result.csv).toContain('Status,Requirement Code');
+        expect(result.csv).toContain('Mapped,A.5.1');
+        expect(result.csv).toContain('Unmapped,A.5.2');
         expect(result.filename).toBe('iso-coverage.csv');
     });
 
@@ -479,10 +484,10 @@ describe('exportReadinessReport', () => {
         stubReport();
         const result = await exportReadinessReport(ctx, 'iso', 'csv') as any;
 
-        expect(result.csv).toContain('"Unmapped Requirement"');
-        expect(result.csv).toContain('"Not Applicable Control"');
-        expect(result.csv).toContain('"Missing Evidence"');
-        expect(result.csv).toContain('"Overdue Task"');
+        expect(result.csv).toContain('Unmapped Requirement');
+        expect(result.csv).toContain('Not Applicable Control');
+        expect(result.csv).toContain('Missing Evidence');
+        expect(result.csv).toContain('Overdue Task');
         expect(result.filename).toBe('iso-readiness-report.csv');
         expect(result.summary).toBeDefined();
     });

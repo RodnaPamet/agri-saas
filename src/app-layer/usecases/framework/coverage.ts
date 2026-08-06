@@ -4,6 +4,12 @@ import { assertCanViewFrameworks } from '../../policies/framework.policies';
 import { runInTenantContext } from '@/lib/db-context';
 import { notFound } from '@/lib/errors/types';
 import { prisma } from '@/lib/prisma';
+// Formula-guarded CSV escaping. These two exports hand a file to a certifier
+// to open in Excel, and a tenant-authored control name or applicability
+// justification beginning `=`, `+`, `-` or `@` executes on open. The
+// hand-rolled `"${c.replace(/"/g,'""')}"` here quoted correctly and guarded
+// nothing — quoting is about parsing, formula injection is about evaluation.
+import { escapeCSV } from '@/lib/reports/soa-csv';
 
 // в”Ђв”Ђв”Ђ Coverage Computation в”Ђв”Ђв”Ђ
 
@@ -220,7 +226,7 @@ export async function exportCoverageData(
         rows.push(['Unmapped', r.code, r.title, r.section || '', '', '', '']);
     }
 
-    const csv = rows.map((r) => r.map((c) => `"${(c || '').replace(/"/g, '""')}"`).join(',')).join('\n');
+    const csv = rows.map((r) => r.map((c) => escapeCSV(c)).join(',')).join('\n');
     return { csv, filename: `${frameworkKey}-coverage.csv` };
 }
 
@@ -491,6 +497,6 @@ export async function exportReadinessReport(
         rows.push(['', 'Overdue Task', t.controlCode || '', `${t.taskTitle} (${t.controlName})`, t.taskStatus, t.dueDate?.toString() || '']);
     }
 
-    const csv = rows.map((r) => r.map((c) => `"${(c || '').replace(/"/g, '""')}"`).join(',')).join('\n');
+    const csv = rows.map((r) => r.map((c) => escapeCSV(c)).join(',')).join('\n');
     return { csv, filename: `${frameworkKey}-readiness-report.csv`, summary: report.summary };
 }

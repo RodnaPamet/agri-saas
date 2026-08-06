@@ -350,11 +350,13 @@ async function main() {
     }>;
 
     // ISO 27001:2022
-    const iso27001 = await prisma.framework.upsert({
-        where: { key: 'ISO27001' },
-        update: { name: 'ISO/IEC 27001', version: '2022', description: 'ISO/IEC 27001:2022 Information Security Management' },
-        create: { key: 'ISO27001', name: 'ISO/IEC 27001', version: '2022', description: 'ISO/IEC 27001:2022 Information Security Management' },
-    });
+    // `key` lost its single-column unique so two revisions of a standard
+    // can coexist, which means Prisma will no longer accept it as an
+    // upsert `where`. Find-then-write keeps the seeder idempotent.
+    const iso27001Existing = await prisma.framework.findFirst({ where: { key: 'ISO27001' } });
+    const iso27001 = iso27001Existing
+        ? await prisma.framework.update({ where: { id: iso27001Existing.id }, data: { name: 'ISO/IEC 27001', version: '2022', description: 'ISO/IEC 27001:2022 Information Security Management' } })
+        : await prisma.framework.create({ data: { key: 'ISO27001', name: 'ISO/IEC 27001', version: '2022', description: 'ISO/IEC 27001:2022 Information Security Management' } });
 
     // Upsert all 93 Annex A requirements
     const requirementMap: Record<string, string> = {};
@@ -369,11 +371,13 @@ async function main() {
     console.log(`✅ ISO 27001:2022 framework + ${annexAData.length} Annex A requirements seeded`);
 
     // SOC2
-    const soc2 = await prisma.framework.upsert({
-        where: { key: 'SOC2' },
-        update: { name: 'SOC 2', description: 'SOC 2 Trust Services Criteria' },
-        create: { key: 'SOC2', name: 'SOC 2', description: 'SOC 2 Trust Services Criteria' },
-    });
+    // `key` lost its single-column unique so two revisions of a standard
+    // can coexist, which means Prisma will no longer accept it as an
+    // upsert `where`. Find-then-write keeps the seeder idempotent.
+    const soc2Existing = await prisma.framework.findFirst({ where: { key: 'SOC2' } });
+    const soc2 = soc2Existing
+        ? await prisma.framework.update({ where: { id: soc2Existing.id }, data: { name: 'SOC 2', description: 'SOC 2 Trust Services Criteria' } })
+        : await prisma.framework.create({ data: { key: 'SOC2', name: 'SOC 2', description: 'SOC 2 Trust Services Criteria' } });
     const soc2Reqs = [
         { code: 'CC1.1', title: 'COSO principle 1 — Integrity and ethical values', category: 'Control Environment' },
         { code: 'CC2.1', title: 'Information for internal controls', category: 'Communication' },

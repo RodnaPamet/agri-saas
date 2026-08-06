@@ -50,7 +50,14 @@ export async function listSchemes(ctx: RequestContext) {
     assertCanViewFrameworks(ctx);
     return prisma.framework.findMany({
         where: { kind: 'AG_SCHEME' },
-        include: { _count: { select: { requirements: true, packs: true } } },
+        select: {
+            id: true, key: true, name: true, description: true, version: true,
+            // The disclosure. Without these the list can only show a name, and
+            // a name is exactly what makes a 7-point demo look like
+            // GlobalG.A.P.
+            isDemo: true, coverageNote: true,
+            _count: { select: { requirements: true, packs: true } },
+        },
         orderBy: { key: 'asc' },
     });
 }

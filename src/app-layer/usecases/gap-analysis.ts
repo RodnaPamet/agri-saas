@@ -306,12 +306,22 @@ export async function getFrameworkPairMappings(
 
     const run = async (dbCtx: PrismaTx) => {
         // Resolve framework IDs from keys (key has @unique constraint)
-        const sourceFw = await dbCtx.framework.findUnique({
+        const sourceFw = await dbCtx.framework.findFirst({
+            // `findFirst`, not `findUnique`: the single-column unique on
+            // `key` was dropped so two revisions of a standard can coexist.
+            // Newest version first — a caller that names no version means
+            // "the current one".
             where: { key: sourceFrameworkKey },
+            orderBy: { version: 'desc' },
             select: { id: true, key: true, name: true },
         });
-        const targetFw = await dbCtx.framework.findUnique({
+        const targetFw = await dbCtx.framework.findFirst({
+            // `findFirst`, not `findUnique`: the single-column unique on
+            // `key` was dropped so two revisions of a standard can coexist.
+            // Newest version first — a caller that names no version means
+            // "the current one".
             where: { key: targetFrameworkKey },
+            orderBy: { version: 'desc' },
             select: { id: true, key: true, name: true },
         });
 
@@ -433,12 +443,18 @@ export async function performGapAnalysis(
 
     const run = async (dbCtx: PrismaTx) => {
         // 1. Resolve framework IDs (key has @unique constraint)
-        const sourceFw = await dbCtx.framework.findUnique({
+        const sourceFw = await dbCtx.framework.findFirst({
+            // `findFirst`: `key` is no longer singly-unique (two
+            // revisions of a standard may coexist). Newest first.
             where: { key: input.sourceFrameworkKey },
+            orderBy: { version: 'desc' },
             select: { id: true, key: true, name: true },
         });
-        const targetFw = await dbCtx.framework.findUnique({
+        const targetFw = await dbCtx.framework.findFirst({
+            // `findFirst`: `key` is no longer singly-unique (two
+            // revisions of a standard may coexist). Newest first.
             where: { key: input.targetFrameworkKey },
+            orderBy: { version: 'desc' },
             select: { id: true, key: true, name: true },
         });
 

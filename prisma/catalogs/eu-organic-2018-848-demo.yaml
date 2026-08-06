@@ -13,6 +13,13 @@ framework:
   name: EU Organic (Reg. 2018/848) — illustrative demo
   version: "2018-848-demo"
   kind: AG_SCHEME
+  # Declared as DATA, not just as a header comment — a comment reaches no
+  # user. `isDemo` badges the scheme in the UI and `coverageNote` says how
+  # partial it is, so a farmer mapping practices to a handful of control
+  # points is told those points are not the standard.
+  isDemo: true
+  coverageNote: "5 of a 61-article regulation"
+  sourceUrn: "urn:demo:eu-organic-2018-848:illustrative-subset"
   description: >-
     Illustrative concept-only subset referencing EU Reg. 2018/848
     (public EU law) — paraphrased, not verbatim. Demonstrates

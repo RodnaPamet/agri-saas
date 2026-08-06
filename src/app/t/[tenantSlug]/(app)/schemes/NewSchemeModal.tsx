@@ -214,10 +214,16 @@ export function NewSchemeModal({ open, setOpen, onSaved }: NewSchemeModalProps) 
                                 {requirements.map((r, i) => (
                                     <div
                                         key={i}
-                                        className="grid grid-cols-12 gap-tight items-end"
+                                        // Stacks on a phone. The fixed
+                                        // `grid-cols-12` never collapsed, so
+                                        // three inputs shared a phone's width
+                                        // and each got roughly a third of it —
+                                        // unusable on the device this product
+                                        // is built for.
+                                        className="grid grid-cols-1 sm:grid-cols-12 gap-tight sm:items-end"
                                         data-testid={`scheme-requirement-row-${i}`}
                                     >
-                                        <div className="col-span-3">
+                                        <div className="sm:col-span-3">
                                             <Input
                                                 value={r.code}
                                                 onChange={(e) => updateRequirement(i, { code: e.target.value })}
@@ -225,7 +231,7 @@ export function NewSchemeModal({ open, setOpen, onSaved }: NewSchemeModalProps) 
                                                 aria-label={t('reqCodeAria', { n: i + 1 })}
                                             />
                                         </div>
-                                        <div className="col-span-8">
+                                        <div className="sm:col-span-8">
                                             <Input
                                                 value={r.title}
                                                 onChange={(e) => updateRequirement(i, { title: e.target.value })}
@@ -233,7 +239,7 @@ export function NewSchemeModal({ open, setOpen, onSaved }: NewSchemeModalProps) 
                                                 aria-label={t('reqTitleAria', { n: i + 1 })}
                                             />
                                         </div>
-                                        <div className="col-span-1 flex justify-end">
+                                        <div className="sm:col-span-1 flex justify-end">
                                             <Button
                                                 type="button"
                                                 variant="ghost"

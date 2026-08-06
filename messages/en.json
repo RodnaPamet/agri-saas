@@ -1815,7 +1815,18 @@
             "description": "Turn modules off to hide the parts of the product your team doesn't use. A disabled module's pages and APIs return a permission error until you turn it back on. Leaving everything on is the default.",
             "toggleModule": "Toggle {name}",
             "everyModuleOff": "Every module is off — only core admin and settings remain available.",
-            "modulesEnabled": "{enabled} of {total} modules enabled."
+            "modulesEnabled": "{enabled} of {total} modules enabled.",
+            "desc_JOURNAL": "Field operations, spray jobs, and the parcel map.",
+            "desc_INVENTORY": "Input stock, lots, and stock-deduction on job completion.",
+            "desc_PLANNING": "Crop plans, rotations, and the season calendar.",
+            "desc_CERTIFICATION": "Certification schemes, the records that prove them, and readiness for an inspection.",
+            "desc_RISK": "The farm risk register and treatment tracking.",
+            "desc_VENDORS": "Suppliers, buyers, and their assessments.",
+            "desc_AUTOMATION": "Rules that react to events and run actions.",
+            "desc_PROCESSES": "Process maps and standard operating procedures.",
+            "desc_AI": "AI-assisted drafting and suggestions across the product.",
+            "desc_GRAIN": "Grain storage bins, marketing contracts, yield, and activity costing.",
+            "desc_EXCHANGE": "Cross-tenant marketplace to buy and sell commodities with other farms."
         },
         "notificationSettings": {
             "confirmRunJob": "Are you sure you want to run the {job} job now?",
@@ -5646,7 +5657,7 @@
         "noResultsDescription": "Try a different term or clear the search.",
         "clearSearch": "Clear search",
         "emptyTitle": "No certification schemes yet",
-        "emptyDescription": "Create a scheme — its requirements become the checklist your practices are mapped against.",
+        "emptyDescription": "Adopt a scheme to turn its control points into a checklist your records are mapped against",
         "addScheme": "Add scheme",
         "schemeSingular": "scheme",
         "schemePlural": "schemes",
@@ -5668,7 +5679,11 @@
         "reqTitleAria": "Requirement {n} title",
         "removeReqAria": "Remove requirement {n}",
         "cancel": "Cancel",
-        "createScheme": "Create scheme"
+        "createScheme": "Create scheme",
+        "colScope": "Scope",
+        "demoBadge": "Demo subset",
+        "demoNoticeTitle": "This is an illustrative subset, not the full standard",
+        "demoNoticeBody": "It covers {note}. Satisfying every control point here does NOT mean you are certified — use it to see how your records map to a scheme, not as proof of compliance."
     },
     "frameworks": {
         "loadingAria": "Loading frameworks",

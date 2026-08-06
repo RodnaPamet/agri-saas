@@ -63,20 +63,17 @@ export const MODULE_LABELS: Record<ModuleKey, string> = {
     EXCHANGE: 'Exchange',
 };
 
-/** One-line "what this module does" copy for the settings page. */
-export const MODULE_DESCRIPTIONS: Record<ModuleKey, string> = {
-    JOURNAL: 'Field operations, spray jobs, and the parcel map.',
-    INVENTORY: 'Input stock, lots, and stock-deduction on job completion.',
-    PLANNING: 'Crop plans, rotations, and the season calendar.',
-    CERTIFICATION: 'Audit frameworks, controls, evidence, and policies.',
-    RISK: 'The farm risk register and treatment tracking.',
-    VENDORS: 'Suppliers, buyers, and their assessments.',
-    AUTOMATION: 'Rules that react to events and run actions.',
-    PROCESSES: 'Process maps and standard operating procedures.',
-    AI: 'AI-assisted drafting and suggestions across the product.',
-    GRAIN: 'Grain storage bins, marketing contracts, yield, and activity costing.',
-    EXCHANGE: 'Cross-tenant marketplace to buy and sell commodities with other farms.',
-};
+// MODULE_DESCRIPTIONS removed — every one of the eleven strings was
+// English-only, hardcoded in a lib module a server component imports, so a
+// Bulgarian operator read English on the module settings page regardless of
+// locale. The copy now lives in next-intl under `admin.modules.desc_<KEY>`,
+// where it is translated and where a reviewer can see both languages side by
+// side.
+//
+// The CERTIFICATION line also described the machinery rather than the point:
+// "Audit frameworks, controls, evidence, and policies" is what the module is
+// built from. What a farmer is buying is "certification schemes, the records
+// that prove them, and readiness for an inspection".
 
 /**
  * Resolve a tenant's enabled modules from its settings row.
