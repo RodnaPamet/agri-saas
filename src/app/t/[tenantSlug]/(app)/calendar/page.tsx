@@ -1,19 +1,23 @@
 /**
- * Epic 49 — Compliance Calendar page (server component shell).
+ * Calendar page (server component shell).
  *
- * Server side resolves tenant context, fetches the initial 12-month
- * window, and hands off to the client island for view-switching +
- * range navigation. Subsequent fetches go through React Query so the
- * server payload is purely the warm-cache.
+ * Resolves tenant context, fetches the range the client will actually
+ * render first, and hands off to the client island for range navigation.
+ * Subsequent fetches go through React Query, so the server payload is
+ * purely a warm cache.
+ *
+ * The range comes from the shared `monthGridRange` helper rather than being
+ * computed here: the client seeds its cache only when the server's range
+ * matches its own, and two independent calculations could never be relied on
+ * to agree. See ./range.ts for the failure this replaced.
  */
 
 import { getTenantCtx } from '@/app-layer/context';
 import { getComplianceCalendarEvents } from '@/app-layer/usecases/compliance-calendar';
 import { CalendarClient } from './CalendarClient';
+import { monthGridRange, startOfUtcMonth } from './range';
 
 export const dynamic = 'force-dynamic';
-
-const DAY_MS = 86_400_000;
 
 export default async function CalendarPage({
     params,
@@ -23,12 +27,11 @@ export default async function CalendarPage({
     const { tenantSlug } = await params;
     const ctx = await getTenantCtx({ tenantSlug });
 
-    // Default range: 6 months back, 6 months forward — covers heatmap
-    // (12 months back), monthly (current view), and Gantt (12-month
-    // window centred on today). The client refines from here.
+    // Match the client's first render exactly: it opens on the current
+    // month, so prefetch that month's grid range and nothing more. This is
+    // also ~45 days of aggregation instead of the previous 360.
     const now = new Date();
-    const from = new Date(now.getTime() - 180 * DAY_MS);
-    const to = new Date(now.getTime() + 180 * DAY_MS);
+    const { from, to } = monthGridRange(startOfUtcMonth(now));
 
     const initial = await getComplianceCalendarEvents(ctx, {
         from,

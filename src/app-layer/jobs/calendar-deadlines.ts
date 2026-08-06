@@ -61,6 +61,20 @@ export interface CalendarDeadlineMonitorResult {
 
 // ─── Per-source scanners ─────────────────────────────────────────────
 
+/**
+ * Every scan below is BOUNDED and ORDERED.
+ *
+ * The scheduled run passes no tenantId (schedules.ts defaultPayload is {}),
+ * and `...(tenantId && { tenantId })` then contributes no predicate at all —
+ * so an unbounded findMany here is a whole-table read across EVERY tenant,
+ * pulled into one process's memory at 07:00 UTC. `take` caps that; `orderBy`
+ * makes the cap deterministic, so the rows that survive truncation are the
+ * most urgent ones rather than whatever the planner happened to emit.
+ *
+ * Mirrors deadline-monitor.ts, which already does exactly this.
+ */
+const SCAN_LIMIT = 1000;
+
 async function scanAuditCycles(
     now: Date,
     maxWindow: number,
@@ -85,6 +99,8 @@ async function scanAuditCycles(
             periodEndAt: true,
             createdByUserId: true,
         },
+        orderBy: { periodEndAt: 'asc' },
+        take: SCAN_LIMIT,
     });
 
     const items: DueItem[] = [];
@@ -141,6 +157,8 @@ async function scanVendorDocuments(
                 },
             },
         },
+        orderBy: { validTo: 'asc' },
+        take: SCAN_LIMIT,
     });
 
     const items: DueItem[] = [];
@@ -176,6 +194,9 @@ async function scanFindings(
     const rows = await prisma.finding.findMany({
         where: {
             ...(tenantId && { tenantId }),
+            // A soft-deleted finding is not a finding. Without this the job
+            // EMAILS people about records they already deleted.
+            deletedAt: null,
             // Don't notify on closed findings.
             status: { not: 'CLOSED' },
             dueDate: { not: null, lte: horizon },
@@ -187,6 +208,8 @@ async function scanFindings(
             dueDate: true,
             owner: true,
         },
+        orderBy: { dueDate: 'asc' },
+        take: SCAN_LIMIT,
     });
 
     const items: DueItem[] = [];

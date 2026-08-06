@@ -35,6 +35,7 @@ const mockFindingFindMany = jest.fn();
 
 const mockTreatmentMilestoneFindMany = jest.fn();
 const mockTreatmentPlanFindMany = jest.fn();
+const mockAgriEventFindMany = jest.fn();
 
 const mockTaskCount = jest.fn().mockResolvedValue(0);
 const mockControlCount = jest.fn().mockResolvedValue(0);
@@ -58,6 +59,7 @@ beforeEach(() => {
         mockFindingFindMany,
         mockTreatmentMilestoneFindMany,
         mockTreatmentPlanFindMany,
+        mockAgriEventFindMany,
     ].forEach((m) => m.mockReset().mockResolvedValue([]));
     [
         mockTaskCount,
@@ -106,6 +108,10 @@ beforeEach(() => {
         },
         finding: {
             findMany: (...a: unknown[]) => mockFindingFindMany(...a),
+        },
+        // Global agriculture catalogue — no tenantId on the model.
+        agriEvent: {
+            findMany: (...a: unknown[]) => mockAgriEventFindMany(...a),
         },
         // Epic G-7
         treatmentMilestone: {
@@ -186,6 +192,12 @@ describe('getComplianceCalendarEvents — aggregation', () => {
             mockFindingFindMany,
             mockTreatmentMilestoneFindMany,
             mockTreatmentPlanFindMany,
+            // mockAgriEventFindMany is DELIBERATELY absent from this list.
+            // AgriEvent is a global, platform-curated catalogue with no
+            // tenantId column at all, so a tenantId predicate could not be
+            // written even if it were wanted. Adding it here would not
+            // tighten anything — it would just fail. The positive assertion
+            // below pins that intent so this stays a decision, not a gap.
         ]) {
             expect(m).toHaveBeenCalled();
             const call = m.mock.calls[0][0] as { where: { tenantId: string } };

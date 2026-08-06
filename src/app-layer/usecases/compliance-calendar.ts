@@ -27,6 +27,7 @@
  */
 
 import { runInTenantContext } from '@/lib/db-context';
+import type { AgriEventCategory } from '@/app-layer/schemas/agri-event.schemas';
 import type { PrismaTx } from '@/lib/db-context';
 import { assertCanRead } from '../policies/common';
 import { TERMINAL_WORK_ITEM_STATUSES } from '../domain/work-item-status';
@@ -88,6 +89,7 @@ export async function getComplianceCalendarEvents(
         findingEvents,
         treatmentMilestoneEvents,
         treatmentPlanEvents,
+        agriEventEvents,
     ] = await runInTenantContext(ctx, (db) =>
         Promise.all([
             loadEvidenceEvents(db, ctx, range, now, limit),
@@ -104,6 +106,9 @@ export async function getComplianceCalendarEvents(
             // plans contribute one per non-completed plan target.
             loadTreatmentMilestoneEvents(db, ctx, range, now, limit),
             loadTreatmentPlanEvents(db, ctx, range, now, limit),
+            // Global curated catalogue — see loadAgriEventEvents on why
+            // this one carries no tenantId predicate.
+            loadAgriEventEvents(db, ctx, range, now, limit),
         ]),
     );
 
@@ -120,6 +125,7 @@ export async function getComplianceCalendarEvents(
         ...findingEvents,
         ...treatmentMilestoneEvents,
         ...treatmentPlanEvents,
+        ...agriEventEvents,
     ];
 
     // Apply the type / category filter post-aggregation. The per-source
@@ -207,6 +213,7 @@ async function loadEvidenceEvents(
     const rows = await db.evidence.findMany({
         where: {
             tenantId: ctx.tenantId,
+            deletedAt: null,
             nextReviewDate: { not: null, gte: range.from, lte: range.to },
         },
         select: {
@@ -248,6 +255,7 @@ async function loadPolicyEvents(
     const rows = await db.policy.findMany({
         where: {
             tenantId: ctx.tenantId,
+            deletedAt: null,
             nextReviewAt: { not: null, gte: range.from, lte: range.to },
         },
         select: {
@@ -287,6 +295,7 @@ async function loadVendorEvents(
     const rows = await db.vendor.findMany({
         where: {
             tenantId: ctx.tenantId,
+            deletedAt: null,
             OR: [
                 { nextReviewAt: { not: null, gte: range.from, lte: range.to } },
                 {
@@ -551,6 +560,7 @@ async function loadTaskEvents(
     const rows = await db.task.findMany({
         where: {
             tenantId: ctx.tenantId,
+            deletedAt: null,
             dueAt: { not: null, gte: range.from, lte: range.to },
         },
         select: {
@@ -595,6 +605,7 @@ async function loadRiskEvents(
     const rows = await db.risk.findMany({
         where: {
             tenantId: ctx.tenantId,
+            deletedAt: null,
             OR: [
                 { nextReviewAt: { not: null, gte: range.from, lte: range.to } },
                 { targetDate: { not: null, gte: range.from, lte: range.to } },
@@ -660,6 +671,7 @@ async function loadFindingEvents(
     const rows = await db.finding.findMany({
         where: {
             tenantId: ctx.tenantId,
+            deletedAt: null,
             dueDate: { not: null, gte: range.from, lte: range.to },
         },
         select: {
@@ -722,6 +734,7 @@ export async function getUpcomingDeadlineCount(
                 db.task.count({
                     where: {
                         tenantId: ctx.tenantId,
+                        deletedAt: null,
                         dueAt: { not: null, lte: horizon },
                         status: {
                             // Cast through readonly → mutable WorkItemStatus[]
@@ -750,6 +763,7 @@ export async function getUpcomingDeadlineCount(
                 db.evidence.count({
                     where: {
                         tenantId: ctx.tenantId,
+                        deletedAt: null,
                         nextReviewDate: { not: null, lte: horizon },
                         status: { not: 'APPROVED' },
                     },
@@ -758,6 +772,7 @@ export async function getUpcomingDeadlineCount(
                 db.policy.count({
                     where: {
                         tenantId: ctx.tenantId,
+                        deletedAt: null,
                         nextReviewAt: { not: null, lte: horizon },
                         status: { not: 'ARCHIVED' },
                     },
@@ -766,6 +781,7 @@ export async function getUpcomingDeadlineCount(
                 db.vendor.count({
                     where: {
                         tenantId: ctx.tenantId,
+                        deletedAt: null,
                         status: { not: 'OFFBOARDED' },
                         OR: [
                             { nextReviewAt: { not: null, lte: horizon } },
@@ -888,6 +904,108 @@ async function loadTreatmentPlanEvents(
             entityId: r.id,
             href: tenantHrefFromCtx(ctx, `/risks/${r.riskId}`),
             detail: `${r.strategy} strategy`,
+        };
+    });
+}
+
+// ─── Agriculture catalogue ───────────────────────────────────────────
+
+/**
+ * AgriEvent.category (a free String on the model) -> calendar event type.
+ *
+ * Typed as an exhaustive Record over AgriEventCategory ON PURPOSE: a new
+ * curated category becomes a COMPILE ERROR here rather than silently
+ * falling through to a wrong label. The /events page carried the same
+ * device, and it is what caught a subsidy deadline rendering as Fair.
+ */
+const AGRI_CATEGORY_TO_TYPE: Record<AgriEventCategory, CalendarEventType> = {
+    fair: 'agri-fair',
+    training: 'agri-training',
+    webinar: 'agri-webinar',
+    'subsidy-deadline': 'agri-subsidy-deadline',
+};
+
+/**
+ * Curated agriculture events — fairs, trainings, webinars, subsidy
+ * deadlines — merged into the schedule so a farmer sees them alongside
+ * their own work rather than on a separate page.
+ *
+ * TENANCY: `AgriEvent` deliberately carries NO tenantId. It is a global,
+ * platform-curated catalogue, written only through the
+ * PLATFORM_ADMIN_API_KEY admin route and read identically by every
+ * tenant. The absence of the usual `tenantId: ctx.tenantId` predicate
+ * here is intentional, not an omission — adding one would not compile,
+ * because the column does not exist.
+ *
+ * RANGE: matches events that START inside the window, plus multi-day
+ * events that merely SPAN it (a three-day fair should appear on a month
+ * that contains none of its start). `listUpcomingAgriEvents` cannot be
+ * reused: it is upcoming-only and ignores `from`, so it would silently
+ * drop everything in a month the user navigated back to.
+ */
+async function loadAgriEventEvents(
+    db: PrismaTx,
+    ctx: RequestContext,
+    range: DateRange,
+    now: Date,
+    limit: number,
+): Promise<CalendarEvent[]> {
+    const rows = await db.agriEvent.findMany({
+        where: {
+            OR: [
+                { startsAt: { gte: range.from, lte: range.to } },
+                {
+                    AND: [
+                        { startsAt: { lte: range.from } },
+                        { endsAt: { gte: range.from } },
+                    ],
+                },
+            ],
+        },
+        select: {
+            id: true,
+            title: true,
+            description: true,
+            category: true,
+            startsAt: true,
+            endsAt: true,
+            place: true,
+            url: true,
+        },
+        orderBy: { startsAt: 'asc' },
+        take: limit,
+    });
+
+    return rows.map((r): CalendarEvent => {
+        const type = AGRI_CATEGORY_TO_TYPE[
+            r.category as AgriEventCategory
+        ] ?? 'agri-fair';
+        return {
+            id: `AGRI_EVENT:${r.id}:${type}`,
+            type,
+            category: 'agri-event',
+            title: r.title,
+            detail: r.place ?? r.description ?? undefined,
+            date: r.startsAt.toISOString(),
+            end: r.endsAt ? r.endsAt.toISOString() : undefined,
+            // A catalogue entry is an announcement, not an obligation the
+            // tenant is measured against, so it is never overdue: it is
+            // `done` once it has passed and `scheduled` before that.
+            status: r.endsAt
+                ? r.endsAt < now
+                    ? 'done'
+                    : 'scheduled'
+                : r.startsAt < now
+                  ? 'done'
+                  : 'scheduled',
+            entityType: 'AGRI_EVENT',
+            entityId: r.id,
+            // Off-site organiser page when we have one. Where the curator
+            // recorded no URL the entry is purely informational, so it
+            // points back at the calendar rather than fabricating a
+            // destination or emitting a broken link.
+            href: r.url ?? tenantHrefFromCtx(ctx, '/calendar'),
+            external: r.url != null,
         };
     });
 }

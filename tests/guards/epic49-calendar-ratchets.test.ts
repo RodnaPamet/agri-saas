@@ -70,6 +70,7 @@ describe('Epic 49 — calendar feature wiring', () => {
             'loadTaskEvents',
             'loadRiskEvents',
             'loadFindingEvents',
+            'loadAgriEventEvents',
         ]) {
             expect(src).toMatch(new RegExp(`function\\s+${fn}\\b`));
         }

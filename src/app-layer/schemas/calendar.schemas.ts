@@ -40,6 +40,10 @@ export const CALENDAR_EVENT_CATEGORIES = [
     'task',
     'risk',
     'finding',
+    // Curated agriculture catalogue — fairs, trainings, webinars, subsidy
+    // deadlines. Unlike every other category these are GLOBAL rows, not
+    // tenant facts, and they link off-site.
+    'agri-event',
 ] as const;
 
 export type CalendarEventCategory =
@@ -77,6 +81,14 @@ export const CALENDAR_EVENT_TYPES = [
     'treatment-plan-target',
     // finding
     'finding-due',
+    // agri-event — mirrors AgriEvent.category, which is a free string on
+    // the model. Enumerating the four curated values here is deliberate:
+    // an unmapped value becomes a compile error at the mapper rather than
+    // a silently mis-toned dot.
+    'agri-fair',
+    'agri-training',
+    'agri-webinar',
+    'agri-subsidy-deadline',
 ] as const;
 
 export type CalendarEventType = (typeof CALENDAR_EVENT_TYPES)[number];
@@ -132,7 +144,8 @@ export interface CalendarEvent {
         | 'RISK'
         | 'RISK_TREATMENT_PLAN'
         | 'TREATMENT_MILESTONE'
-        | 'FINDING';
+        | 'FINDING'
+        | 'AGRI_EVENT';
     entityId: string;
     /**
      * Tenant-relative href for click-through. The route handler builds
@@ -140,6 +153,13 @@ export interface CalendarEvent {
      * concatenate slugs themselves.
      */
     href: string;
+    /**
+     * True when `href` points OFF-SITE (an AgriEvent's organiser page).
+     * Consumers must render these with a plain anchor: next/link cannot
+     * take an external URL. Absent/false means the tenant-relative
+     * default, which stays on next/link for client-side navigation.
+     */
+    external?: boolean;
     /** Optional extra context for tooltips (assignee, framework, …). */
     detail?: string;
     /**

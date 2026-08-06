@@ -182,6 +182,16 @@ export function getCategoryTone(category: CalendarEventCategory): ToneBundle {
                 content: 'text-content-warning',
                 border: 'border-border-warning',
             };
+        // Curated agriculture catalogue. Deliberately the info tone rather
+        // than a status tone: these are announcements, not obligations the
+        // tenant is being measured against, and toning them like a deadline
+        // would overstate them.
+        case 'agri-event':
+            return {
+                bg: 'bg-status-info',
+                content: 'text-content-info',
+                border: 'border-border-info',
+            };
     }
 }
 

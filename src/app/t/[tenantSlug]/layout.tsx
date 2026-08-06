@@ -4,7 +4,6 @@ import { auth } from '@/auth';
 import { getTenantServerContext } from '@/lib/server/tenant-context.server';
 import { TenantProvider } from '@/lib/tenant-context-provider';
 import { getTenantPlan, getAvailableModulesForTenant } from '@/lib/entitlements-server';
-import { hasUpcomingAgriEvents } from '@/app-layer/usecases/agri-events';
 import { hasVisiblePromotions } from '@/app-layer/usecases/promotions';
 import { isPlatformTenant } from '@/lib/auth/platform-support';
 
@@ -54,15 +53,10 @@ export default async function TenantLayout({
     } catch {
         notFound();
     }
-
-    // #15 — the agri-events probe joins the existing Promise.all so it costs no
-    // extra latency. It is memoised in-process (the answer is identical for
-    // every tenant), so this is not a per-navigation query.
-    const [planRaw, availableModules, agriEventsAvailable, promotionsAvailable] =
+    const [planRaw, availableModules, promotionsAvailable] =
         await Promise.all([
             getTenantPlan(serverCtx.tenant.id),
             getAvailableModulesForTenant(serverCtx.tenant.id),
-            hasUpcomingAgriEvents(),
             // #12 — same deal for the promotions catalogue: memoised in-process,
             // identical for every tenant, joins the existing Promise.all so it
             // costs no extra latency.
@@ -79,7 +73,6 @@ export default async function TenantLayout({
             role: serverCtx.role,
             plan,
             availableModules,
-            agriEventsAvailable,
             promotionsAvailable,
             isPlatformTenant: isPlatformTenant(tenantSlug),
             permissions: serverCtx.permissions,

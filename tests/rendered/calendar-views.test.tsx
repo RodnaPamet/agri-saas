@@ -2,7 +2,7 @@
  * Epic 49 — render tests for the calendar UI surfaces.
  *
  * Covers:
- *   - CalendarHeatmap — bucketing, click-through, sparse data
+ *   - CalendarMonth — grid shape, selection, double-click
  *   - CalendarMonth — event dots, multi-event days, +N more, today ring
  *   - GanttTimeline — duration bars, today marker, empty state
  */
@@ -25,7 +25,6 @@ jest.mock('next/navigation', () => ({
     useParams: () => ({ tenantSlug: 'acme' }),
 }));
 
-import { CalendarHeatmap } from '@/components/ui/CalendarHeatmap';
 import { CalendarMonth } from '@/components/ui/CalendarMonth';
 import { GanttTimeline } from '@/components/ui/GanttTimeline';
 import type { CalendarEvent } from '@/app-layer/schemas/calendar.schemas';
@@ -44,76 +43,6 @@ function makeEvent(overrides: Partial<CalendarEvent> = {}): CalendarEvent {
         ...overrides,
     };
 }
-
-// ─── CalendarHeatmap ─────────────────────────────────────────────────
-
-describe('<CalendarHeatmap />', () => {
-    const FROM = new Date('2026-01-01T00:00:00Z');
-    const TO = new Date('2026-03-31T00:00:00Z');
-
-    it('renders a cell for every day in the range with intensity buckets', () => {
-        const events = [
-            makeEvent({ id: '1', date: '2026-02-15T00:00:00.000Z' }),
-            makeEvent({ id: '2', date: '2026-02-15T12:00:00.000Z' }),
-            makeEvent({ id: '3', date: '2026-02-15T18:00:00.000Z' }),
-            makeEvent({ id: '4', date: '2026-03-01T00:00:00.000Z' }),
-        ];
-        const { container } = render(
-            <CalendarHeatmap from={FROM} to={TO} events={events} />,
-        );
-        // 4 events distributed across 2 days. The day with 3 events
-        // should bucket at intensity 4 (max-density).
-        const cell0215 = container.querySelector(
-            'button[data-ymd="2026-02-15"]',
-        ) as HTMLElement;
-        expect(cell0215).toBeInTheDocument();
-        expect(cell0215.dataset.count).toBe('3');
-        // R21-PR-C — `data-intensity` is now the continuous OKLAB
-        // intensity (0..1, default floor 0.15) instead of the
-        // discrete bucket (0..4). count=max maps to the ceiling.
-        expect(cell0215.dataset.intensity).toBe('1.00');
-        const cell0301 = container.querySelector(
-            'button[data-ymd="2026-03-01"]',
-        ) as HTMLElement;
-        expect(cell0301.dataset.count).toBe('1');
-    });
-
-    it('handles a fully sparse range without errors (zero events)', () => {
-        const { container } = render(
-            <CalendarHeatmap from={FROM} to={TO} events={[]} />,
-        );
-        expect(
-            container.querySelector('[data-testid="calendar-heatmap"]'),
-        ).toBeInTheDocument();
-        // R21-PR-C — every cell should paint at the heat-scale's
-        // floor intensity (0.15 default) — not bucket 0. The
-        // floor keeps "no events" days FAINTLY visible rather
-        // than vanishing into the bg.
-        const cells = container.querySelectorAll('button[data-ymd]');
-        expect(cells.length).toBeGreaterThan(80); // ~90 days
-        cells.forEach((c) => {
-            expect((c as HTMLElement).dataset.intensity).toBe('0.15');
-        });
-    });
-
-    it('fires onSelectDate with YYYY-MM-DD when a cell is clicked', async () => {
-        const user = userEvent.setup();
-        const onSelectDate = jest.fn();
-        render(
-            <CalendarHeatmap
-                from={FROM}
-                to={TO}
-                events={[makeEvent({ date: '2026-02-15T00:00:00.000Z' })]}
-                onSelectDate={onSelectDate}
-            />,
-        );
-        const cell = document.querySelector(
-            'button[data-ymd="2026-02-15"]',
-        ) as HTMLElement;
-        await user.click(cell);
-        expect(onSelectDate).toHaveBeenCalledWith('2026-02-15');
-    });
-});
 
 // ─── CalendarMonth ───────────────────────────────────────────────────
 

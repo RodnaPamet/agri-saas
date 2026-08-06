@@ -37,7 +37,6 @@ const ROOT = path.resolve(__dirname, '../..');
 
 // Files scanned. Keep tight to the surfaces this PR governs.
 const SCAN_FILES: string[] = [
-    'src/components/ui/CalendarHeatmap.tsx',
     'src/components/ui/CalendarMonth.tsx',
     'src/components/ui/GanttTimeline.tsx',
     // Elevation PR-7 — DonutChart now uses CSS-var tokens directly
