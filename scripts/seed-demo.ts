@@ -24,6 +24,7 @@ import { PrismaClient, Role } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import bcrypt from 'bcryptjs';
 import { randomUUID } from 'crypto';
+import * as fs from 'fs';
 import type { RequestContext } from '@/app-layer/types';
 import { getPermissionsForRole } from '@/lib/permissions';
 import { createTenantWithOwner } from '@/app-layer/usecases/tenant-lifecycle';
@@ -512,7 +513,16 @@ async function main() {
     // proprietary scheme wording (LICENSE hygiene; each file is marked
     // illustrative).
     const CATALOG_DIR = path.resolve(__dirname, '..', 'prisma', 'catalogs');
-    const schemeCatalogs = ['globalgap-ifa-demo.yaml', 'eu-organic-2018-848-demo.yaml'];
+    // EVERY catalogue in the directory, not a hardcoded pair. Two of the four
+    // shipped YAMLs were never loaded by anything automated — the list here
+    // named two, and `schemes:import` is a manual CLI absent from db:seed, CI
+    // and deploy/ — so a catalogue could be added to the repo and simply never
+    // exist in any database. Reading the directory means adding a YAML is the
+    // whole change.
+    const schemeCatalogs = fs
+        .readdirSync(CATALOG_DIR)
+        .filter((f) => f.endsWith('.yaml') || f.endsWith('.yml'))
+        .sort();
     for (const fileName of schemeCatalogs) {
         try {
             const file = loadAndValidateCatalogFile(path.join(CATALOG_DIR, fileName));

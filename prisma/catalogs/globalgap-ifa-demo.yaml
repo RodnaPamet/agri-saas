@@ -14,6 +14,13 @@ framework:
   name: GlobalG.A.P. IFA (illustrative demo)
   version: "2024-demo"
   kind: AG_SCHEME
+  # Declared as DATA, not just as a header comment — a comment reaches no
+  # user. `isDemo` badges the scheme in the UI and `coverageNote` says how
+  # partial it is, so a farmer mapping practices to a handful of control
+  # points is told those points are not the standard.
+  isDemo: true
+  coverageNote: "7 of ~200+ control points"
+  sourceUrn: "urn:demo:globalgap-ifa:illustrative-subset"
   description: >-
     Illustrative concept-only subset — not the official GLOBALG.A.P.
     checklist. Paraphrased generic control points for an Integrated Farm

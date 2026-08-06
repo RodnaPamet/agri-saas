@@ -1,3 +1,4 @@
+import { createHash } from 'crypto';
 /**
  * Catalog applier — the write-side of the YAML/JSON ingestion
  * boundary in `prisma/catalog-loader.ts`.
@@ -70,6 +71,29 @@ export interface ApplyCatalogResult {
  * @param filePath Original source path, used in error messages from
  *                 the consistency check.
  */
+/**
+ * A stable fingerprint of a catalogue's CONTENT.
+ *
+ * Hashes the framework identity plus every requirement's code, title and
+ * ordering — not the raw file — so reformatting a YAML or reordering its
+ * comments does not look like a revision, while adding, removing or retitling
+ * a control point does.
+ *
+ * `Framework.contentHash` has existed since the model was created and nothing
+ * ever set it. With it, "has this catalogue changed since we ingested it" is
+ * one comparison rather than a diff nobody runs.
+ */
+function contentHashOf(file: CatalogFile): string {
+    const canonical = JSON.stringify({
+        key: file.framework.key,
+        version: file.framework.version ?? null,
+        requirements: [...file.requirements]
+            .map((r) => ({ code: r.code, title: r.title, sortOrder: r.sortOrder ?? null }))
+            .sort((a, b) => a.code.localeCompare(b.code)),
+    });
+    return createHash('sha256').update(canonical).digest('hex');
+}
+
 export async function applyCatalogFile(
     prisma: PrismaClient,
     file: CatalogFile,
@@ -87,10 +111,22 @@ export async function applyCatalogFile(
         where: fwUpsertWhere as any,
         update: {
             name: file.framework.name,
+            // `version` is written on UPDATE too. It was create-only, so a
+            // catalogue whose version changed left the row's version stale —
+            // and combined with the key-only unique (now dropped) the upsert
+            // could not reach the new version at all.
+            ...(file.framework.version ? { version: file.framework.version } : {}),
             ...(file.framework.kind ? { kind: file.framework.kind } : {}),
             ...(file.framework.description !== undefined
                 ? { description: file.framework.description }
                 : {}),
+            isDemo: file.framework.isDemo ?? false,
+            coverageNote: file.framework.coverageNote ?? null,
+            // Provenance. Both columns have existed since the model was
+            // created and nothing ever wrote them, so no catalogue could say
+            // which revision it was or where it came from.
+            contentHash: contentHashOf(file),
+            ...(file.framework.sourceUrn ? { sourceUrn: file.framework.sourceUrn } : {}),
         },
         create: {
             key: file.framework.key,
@@ -100,6 +136,10 @@ export async function applyCatalogFile(
             ...(file.framework.description !== undefined
                 ? { description: file.framework.description }
                 : {}),
+            isDemo: file.framework.isDemo ?? false,
+            coverageNote: file.framework.coverageNote ?? null,
+            contentHash: contentHashOf(file),
+            ...(file.framework.sourceUrn ? { sourceUrn: file.framework.sourceUrn } : {}),
         },
     });
 

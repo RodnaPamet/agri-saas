@@ -26,6 +26,11 @@ function makeDb() {
     const model = () => ({
         findMany: jest.fn().mockResolvedValue([]),
         findUnique: jest.fn().mockResolvedValue(null),
+        // `Framework.key` lost its single-column unique so two revisions of a
+        // standard can coexist, which means a lookup by key alone is a
+        // `findFirst` (newest version first) rather than a `findUnique`.
+        // FrameworkPack.key is still unique and still uses findUnique.
+        findFirst: jest.fn().mockResolvedValue(null),
         count: jest.fn().mockResolvedValue(0),
     });
     return {
@@ -74,8 +79,8 @@ describe('FrameworkRepository — catalogue reads', () => {
         // published sequence.
         await FrameworkRepository.getFrameworkByKey(asTx(db), 'iso27001');
 
-        expect(whereOf(db.framework.findUnique)).toEqual({ key: 'iso27001' });
-        expect(argOf(db.framework.findUnique).include.requirements.orderBy).toEqual({
+        expect(whereOf(db.framework.findFirst)).toEqual({ key: 'iso27001' });
+        expect(argOf(db.framework.findFirst).include.requirements.orderBy).toEqual({
             sortOrder: 'asc',
         });
     });
@@ -93,7 +98,7 @@ describe('FrameworkRepository.listRequirements', () => {
         // Break: filtering requirements on the KEY string. `frameworkId`
         // is the FK column; a key-shaped value matches nothing, so the
         // requirement list silently comes back empty.
-        db.framework.findUnique.mockResolvedValue({ id: 'fw-1' });
+        db.framework.findFirst.mockResolvedValue({ id: 'fw-1' });
 
         await FrameworkRepository.listRequirements(asTx(db), 'iso27001');
 
@@ -112,7 +117,7 @@ describe('FrameworkRepository.listRequirements', () => {
 
 describe('FrameworkRepository.getCoverage', () => {
     beforeEach(() => {
-        db.framework.findUnique.mockResolvedValue({ id: 'fw-1' });
+        db.framework.findFirst.mockResolvedValue({ id: 'fw-1' });
     });
 
     it('counts only mappings whose control belongs to the asking tenant', async () => {
@@ -177,7 +182,7 @@ describe('FrameworkRepository.getCoverage', () => {
     });
 
     it('returns null for an unknown framework without touching the requirement table', async () => {
-        db.framework.findUnique.mockResolvedValue(null);
+        db.framework.findFirst.mockResolvedValue(null);
 
         expect(await FrameworkRepository.getCoverage(asTx(db), 'nope', 'tenant-1')).toBeNull();
         expect(db.frameworkRequirement.findMany).not.toHaveBeenCalled();

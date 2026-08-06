@@ -1635,10 +1635,29 @@ model FindingEvidence {
 
 model Framework {
   id                  String                  @id @default(cuid())
-  key                 String                  @unique
+  /// NOT `@unique` — see `@@unique([key, version])` below. The single-column
+  /// unique used to win, so two versions of a standard could not coexist and
+  /// bumping `version:` in a catalogue YAML hard-failed the importer with
+  /// P2002: catalog-applier upserts on `key_version`, misses, tries to create,
+  /// and violates the key-only constraint. Standards revise annually.
+  key                 String
   description         String?
   name                String
   version             String?
+  /// Is this catalogue a DEMO/PARTIAL subset rather than the full standard?
+  ///
+  /// The shipped catalogues are 3–8% stubs — GlobalG.A.P. carries 7 control
+  /// points against ~200+, EU Organic 5 against a 61-article regulation — and
+  /// the YAMLs say so honestly in their headers. Nothing surfaced it: the
+  /// scheme list fetched `description` and never rendered it, so the only
+  /// in-UI signal was a parenthetical in the name. A farmer who maps their
+  /// practices to 7 control points and sees "GlobalG.A.P." will believe they
+  /// are covered.
+  isDemo              Boolean                 @default(false)
+  /// How complete this catalogue is, when known — e.g. "7 of ~200 control
+  /// points". Free text so a catalogue can be honest about its own shape
+  /// without the schema having to model completeness.
+  coverageNote        String?
   metadataJson        String?
   contentHash         String?
   sourceUrn           String?

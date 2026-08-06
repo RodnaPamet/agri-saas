@@ -1,0 +1,138 @@
+# Bulgarian plant-protection record-keeping (БАБХ / ЗЗР).
+#
+# WHY THIS EXISTS. The shipped catalogue was GlobalG.A.P., EU Organic and two
+# UK-ONLY schemes — Red Tractor requires UK production, LEAF Marque is UK — that
+# a Bulgarian producer cannot be certified against at all. Meanwhile the product
+# already implements the real regime a Bulgarian farm faces every season: the
+# ДНЕВНИК за проведените растителнозащитни мероприятия (generated at
+# `/api/t/:slug/locations/:id/farm-record`), the БАБХ identity block on the farm
+# profile, and the season diary. None of it connected to /schemes.
+#
+# This catalogue is the connection. Its control points are the record-keeping
+# obligations the ДНЕВНИК exists to satisfy, so a farm that is already keeping
+# its spray diary in this product can see that work counted — via the same
+# auto-evidence path GlobalG.A.P. and EU Organic use.
+#
+# SCOPE, STATED PLAINLY. This is NOT the full body of Bulgarian and EU
+# plant-protection law, and it is not legal advice. It is the record-keeping
+# subset the product can genuinely evidence from farm data, paraphrased. The
+# underlying obligations derive from public EU law (Reg. (EC) 1107/2009 on plant
+# protection products, Dir. 2009/128/EC on sustainable use, Reg. (EU) 2017/625
+# on official controls) as applied in Bulgaria through the Закон за защита на
+# растенията and БАБХ practice. Referencing public law is fine; claiming to BE
+# the regulation is not, hence `isDemo: true` and the coverage note.
+
+framework:
+  key: BG-BABH-PPP
+  name: Растителна защита — записи по БАБХ (демонстрационен обхват)
+  version: "2026-demo"
+  kind: AG_SCHEME
+  isDemo: true
+  coverageNote: "6 записни задължения — не пълната нормативна уредба"
+  sourceUrn: "urn:demo:bg-babh-ppp:record-keeping-subset"
+  description: >-
+    Записните задължения при третиране с продукти за растителна защита,
+    които българското стопанство доказва пред БАБХ. Обхватът е
+    демонстрационен: покрива воденето на ДНЕВНИКА за проведените
+    растителнозащитни мероприятия и свързаните с него записи, а не
+    цялата нормативна уредба.
+
+requirements:
+  - code: BG.PPP.1
+    title: Води се дневник за проведените растителнозащитни мероприятия
+    summary: >-
+      За всеки парцел се води дневник с датата на третиране, културата,
+      използвания продукт, дозата и третираната площ. Това е записът,
+      който инспекторът на БАБХ иска пръв.
+    theme: Дневник
+    themeNumber: 1
+    section: BG.PPP.1
+    sortOrder: 1
+  - code: BG.PPP.2
+    title: Използват се само разрешени за употреба продукти
+    summary: >-
+      Прилаганите продукти за растителна защита са включени в регистъра
+      на разрешените за употреба в България продукти, за съответната
+      култура и вредител.
+    theme: Разрешени продукти
+    themeNumber: 2
+    section: BG.PPP.2
+    sortOrder: 2
+  - code: BG.PPP.3
+    title: Спазват се карантинните срокове преди прибиране на реколтата
+    summary: >-
+      Между последното третиране и прибирането на реколтата изминава
+      карантинният срок на продукта. Датите на третиране и на прибиране
+      се записват, за да може срокът да бъде доказан.
+    theme: Карантинни срокове
+    themeNumber: 3
+    section: BG.PPP.3
+    sortOrder: 3
+  - code: BG.PPP.4
+    title: Операторът притежава валидно удостоверение за работа с ПРЗ
+    summary: >-
+      Лицето, което прилага продукти за растителна защита от професионална
+      категория, притежава валидно удостоверение, а копие от него се
+      съхранява в стопанството.
+    theme: Квалификация
+    themeNumber: 4
+    section: BG.PPP.4
+    sortOrder: 4
+  - code: BG.PPP.5
+    title: Техниката за прилагане преминава периодична проверка
+    summary: >-
+      Пръскачките и другата техника за прилагане на ПРЗ преминават
+      периодична техническа проверка и протоколите се съхраняват.
+    theme: Техника
+    themeNumber: 5
+    section: BG.PPP.5
+    sortOrder: 5
+  - code: BG.PPP.6
+    title: Съхранението на ПРЗ и третирането на остатъците са документирани
+    summary: >-
+      Продуктите се съхраняват в обособено, заключено помещение, а
+      празните опаковки и остатъчните количества се предават по реда,
+      предвиден за опасни отпадъци, със съхранени документи.
+    theme: Съхранение
+    themeNumber: 6
+    section: BG.PPP.6
+    sortOrder: 6
+
+templates:
+  - code: BG-PPP.DIARY
+    title: Дневник за растителнозащитни мероприятия
+    category: Дневник
+    defaultFrequency: AD_HOC
+    requirementCodes: [BG.PPP.1, BG.PPP.3]
+  - code: BG-PPP.AUTHORISED
+    title: Проверка на разрешените за употреба продукти
+    category: Разрешени продукти
+    defaultFrequency: AD_HOC
+    requirementCodes: [BG.PPP.2]
+  - code: BG-PPP.OPERATOR
+    title: Удостоверения на операторите
+    category: Квалификация
+    defaultFrequency: ANNUALLY
+    requirementCodes: [BG.PPP.4]
+  - code: BG-PPP.EQUIPMENT
+    title: Периодична проверка на техниката
+    category: Техника
+    defaultFrequency: ANNUALLY
+    requirementCodes: [BG.PPP.5]
+  - code: BG-PPP.STORAGE
+    title: Съхранение на ПРЗ и третиране на остатъците
+    category: Съхранение
+    defaultFrequency: ANNUALLY
+    requirementCodes: [BG.PPP.6]
+
+pack:
+  key: BG-BABH-PPP-BASE
+  name: Растителна защита — стартов пакет
+  version: "2026-demo"
+  description: >-
+    Стартов пакет за записните задължения по растителна защита: създава
+    контроли за дневника, разрешените продукти, карантинните срокове,
+    квалификацията на операторите, проверката на техниката и
+    съхранението.
+  templateCodes:
+    [BG-PPP.DIARY, BG-PPP.AUTHORISED, BG-PPP.OPERATOR, BG-PPP.EQUIPMENT, BG-PPP.STORAGE]

@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { EmptyState } from '@/components/ui/empty-state';
 import { MetaStrip } from '@/components/ui/meta-strip';
+import { InlineNotice } from '@/components/ui/inline-notice';
 import { Download } from '@/components/ui/icons/nucleo';
 
 interface RequirementRow {
@@ -24,7 +25,11 @@ interface RequirementRow {
 }
 
 interface SchemeDetail {
-    framework: { key: string; name: string; description?: string | null; version?: string | null };
+    framework: {
+        key: string; name: string;
+        description?: string | null; version?: string | null;
+        isDemo?: boolean; coverageNote?: string | null;
+    };
     packs: Array<{ key: string; name: string; _count?: { templateLinks: number } }>;
     coverage: {
         total: number;
@@ -222,6 +227,18 @@ export function SchemeDetailClient({ tenantSlug, schemeKey, initialDetail, permi
             }
             error={error}
         >
+            {detail.framework.isDemo && (
+                // Prominent, not a footnote. This page is where a farmer
+                // decides to adopt a standard — the moment they most need to
+                // know these are 7 illustrative control points and not
+                // GlobalG.A.P.
+                <InlineNotice variant="warning" title={t('demoNoticeTitle')}>
+                    {t('demoNoticeBody', {
+                        note: detail.framework.coverageNote ?? '',
+                    })}
+                </InlineNotice>
+            )}
+
             {detail.framework.description && (
                 <p className="text-sm text-content-muted">{detail.framework.description}</p>
             )}

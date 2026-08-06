@@ -41,7 +41,6 @@ jest.mock('../../../src/app-layer/events/audit', () => ({
 import {
     previewPackInstall,
     installPack,
-    computeCoverage,
     listTemplates,
     installSingleTemplate,
     bulkMapControls,
@@ -387,116 +386,14 @@ describe('bulkInstallTemplates', () => {
 // branches the existing wave-4 left uncovered.
 // ──────────────────────────────────────────────────────────────────────
 
-describe('computeCoverage', () => {
-    it('uses findUnique by (key, version) when version is given', async () => {
-        mockFrameworkFindUnique.mockResolvedValueOnce({
-            id: 'fw-1', key: 'iso', name: 'X', version: '2022',
-        } as never);
-        mockReqFindMany.mockResolvedValueOnce([]);
-        mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
-            fn({
-                controlRequirementLink: { findMany: jest.fn().mockResolvedValue([]) },
-            } as never),
-        );
-
-        await computeCoverage(makeRequestContext('ADMIN'), 'iso', '2022');
-
-        expect(mockFrameworkFindUnique).toHaveBeenCalledWith({
-            where: { key_version: { key: 'iso', version: '2022' } },
-        });
-        expect(mockFrameworkFindFirst).not.toHaveBeenCalled();
-    });
-
-    it('uses findFirst (latest) when no version is given', async () => {
-        mockFrameworkFindFirst.mockResolvedValueOnce({ id: 'fw-1', key: 'iso', name: 'X', version: '2022' } as never);
-        mockReqFindMany.mockResolvedValueOnce([]);
-        mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
-            fn({
-                controlRequirementLink: { findMany: jest.fn().mockResolvedValue([]) },
-            } as never),
-        );
-
-        await computeCoverage(makeRequestContext('ADMIN'), 'iso');
-
-        expect(mockFrameworkFindFirst).toHaveBeenCalled();
-        expect(mockFrameworkFindUnique).not.toHaveBeenCalled();
-    });
-
-    it('throws notFound when the framework lookup fails', async () => {
-        mockFrameworkFindFirst.mockResolvedValueOnce(null);
-        await expect(
-            computeCoverage(makeRequestContext('ADMIN'), 'bogus'),
-        ).rejects.toThrow(/framework not found/i);
-    });
-
-    it('handles total=0 — coveragePercent is 0, not NaN', async () => {
-        // The /0 guard is load-bearing; without it the UI renders
-        // "NaN%" on a brand-new tenant with no requirements yet.
-        mockFrameworkFindFirst.mockResolvedValueOnce({ id: 'fw-1', key: 'iso', name: 'X', version: '2022' } as never);
-        mockReqFindMany.mockResolvedValueOnce([]);
-        mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
-            fn({
-                controlRequirementLink: { findMany: jest.fn().mockResolvedValue([]) },
-            } as never),
-        );
-
-        const result = await computeCoverage(makeRequestContext('ADMIN'), 'iso');
-
-        expect(result.total).toBe(0);
-        expect(result.coveragePercent).toBe(0);
-        expect(result.bySection).toEqual([]);
-    });
-
-    it('groups by section with per-section coverage percentages', async () => {
-        mockFrameworkFindFirst.mockResolvedValueOnce({ id: 'fw-1', key: 'iso', name: 'X', version: '2022' } as never);
-        mockReqFindMany.mockResolvedValueOnce([
-            { id: 'r-1', code: 'A.5.1', title: 'X', section: 'Organisational', sortOrder: 1 },
-            { id: 'r-2', code: 'A.5.2', title: 'Y', section: 'Organisational', sortOrder: 2 },
-            { id: 'r-3', code: 'A.6.1', title: 'Z', section: 'People', sortOrder: 3 },
-        ] as never);
-        mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
-            fn({
-                controlRequirementLink: {
-                    findMany: jest.fn().mockResolvedValue([
-                        { requirementId: 'r-1', requirement: { code: 'A.5.1', title: 'X' }, control: { code: 'CC1', name: 'M', status: 'ACTIVE' } },
-                    ]),
-                },
-            } as never),
-        );
-
-        const result = await computeCoverage(makeRequestContext('ADMIN'), 'iso');
-
-        expect(result.total).toBe(3);
-        expect(result.mapped).toBe(1);
-        expect(result.unmapped).toBe(2);
-        expect(result.coveragePercent).toBe(33);
-        const org = result.bySection.find((s: any) => s.section === 'Organisational');
-        expect(org).toMatchObject({ total: 2, mapped: 1, coveragePercent: 50 });
-        const people = result.bySection.find((s: any) => s.section === 'People');
-        expect(people).toMatchObject({ total: 1, mapped: 0, coveragePercent: 0 });
-    });
-
-    it('falls back from null section → category → "Other"', async () => {
-        // Compliance UI uses category-or-section as the row group.
-        // The fallback chain is load-bearing for frameworks that
-        // only populate one of the two fields.
-        mockFrameworkFindFirst.mockResolvedValueOnce({ id: 'fw-1', key: 'iso', name: 'X', version: '2022' } as never);
-        mockReqFindMany.mockResolvedValueOnce([
-            { id: 'r-1', code: 'A', title: 'X', section: null, category: 'CatA', sortOrder: 1 },
-            { id: 'r-2', code: 'B', title: 'Y', section: null, category: null, sortOrder: 2 },
-        ] as never);
-        mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
-            fn({
-                controlRequirementLink: { findMany: jest.fn().mockResolvedValue([]) },
-            } as never),
-        );
-
-        const result = await computeCoverage(makeRequestContext('ADMIN'), 'iso');
-        const sections = result.bySection.map((s: any) => s.section);
-        expect(sections).toContain('CatA');
-        expect(sections).toContain('Other');
-    });
-});
+// `computeCoverage` used to be re-exported from `install.ts` — a ~140-line
+// duplicate of the real one in `coverage.ts`, with its own `: any` casts and
+// its own copy of the mapping arithmetic. Nothing imported it, and being a
+// copy meant every correction to the real one (the APPROVED filter, the
+// deleted/archived filter, per-requirement satisfaction, the readiness ratio)
+// silently did not apply here. The duplicate is deleted; these tests moved to
+// the real implementation's suite (`framework-coverage.test.ts`), which is
+// where the behaviour they describe actually lives.
 
 describe('listTemplates', () => {
     it('applies no filter clauses when none provided', async () => {

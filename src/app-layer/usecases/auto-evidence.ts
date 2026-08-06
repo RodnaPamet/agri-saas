@@ -61,6 +61,17 @@ export const AUTO_EVIDENCE_RULES: Partial<Record<LogEntryType, readonly AutoEvid
             frameworkKey: 'EU-ORGANIC-2018-848-DEMO',
             requirementCodes: ['EUO.2', 'EUO.3'],
         },
+        {
+            // The Bulgarian regime a local farm actually faces. A spray record
+            // in this product IS the ДНЕВНИК entry — it carries the date, the
+            // parcel, the product and the dose — so the record-keeping and
+            // pre-harvest-interval control points are satisfied by the same
+            // farm data GlobalG.A.P. and EU Organic already draw on. The
+            // product implemented the ДНЕВНИК and the БАБХ identity block long
+            // before this, and none of it reached /schemes.
+            frameworkKey: 'BG-BABH-PPP',
+            requirementCodes: ['BG.PPP.1', 'BG.PPP.3'],
+        },
     ],
 };
 

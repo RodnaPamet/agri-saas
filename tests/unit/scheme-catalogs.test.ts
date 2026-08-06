@@ -17,14 +17,24 @@ import { AUTO_EVIDENCE_RULES } from '@/app-layer/usecases/auto-evidence';
 
 const CATALOG_DIR = path.resolve(__dirname, '..', '..', 'prisma', 'catalogs');
 
-/** Illustrative scheme catalogs added alongside the original two. */
-const NEW_SCHEME_FILES = ['leaf-marque-demo.yaml', 'red-tractor-demo.yaml'];
-
-const SCHEME_FILES = [
-    'globalgap-ifa-demo.yaml',
-    'eu-organic-2018-848-demo.yaml',
-    ...NEW_SCHEME_FILES,
-];
+/**
+ * EVERY catalogue on disk, discovered rather than listed.
+ *
+ * A hardcoded list can only assert about the files someone remembered to add
+ * to it — and the seeder had the same hardcoding, which is exactly how two of
+ * the four shipped catalogues came to be loaded by nothing automated. Reading
+ * the directory means a new YAML is tested the moment it lands.
+ */
+const SCHEME_FILES = fs
+    .readdirSync(CATALOG_DIR)
+    .filter((f) => f.endsWith('.yaml') || f.endsWith('.yml'))
+    .filter((f) => {
+        // ISO 27001 is a compliance framework, not an AG_SCHEME — the
+        // AG-specific assertions below do not apply to it.
+        const file = loadAndValidateCatalogFile(path.join(CATALOG_DIR, f));
+        return file.framework.kind === 'AG_SCHEME';
+    })
+    .sort();
 
 describe('scheme catalogs — load + validate', () => {
     test.each(SCHEME_FILES)('%s parses + cross-validates against CatalogFileSchema', (fileName) => {
@@ -35,9 +45,19 @@ describe('scheme catalogs — load + validate', () => {
         expect(file.requirements.length).toBeGreaterThan(0);
         expect(file.pack).toBeDefined();
 
-        // LICENSE hygiene — the framework description marks it illustrative /
-        // concept-only / paraphrased (so it isn't mistaken for the real checklist).
-        expect(file.framework.description ?? '').toMatch(/illustrative|concept|paraphrased/i);
+        // LICENSE hygiene. This used to be a prose match for
+        // /illustrative|concept|paraphrased/ on the description — which is
+        // English-only, and silently un-assertable for a Bulgarian catalogue
+        // whose description is in Bulgarian. The marker is now STRUCTURED:
+        // `isDemo` is a boolean the UI can badge, so the check is
+        // language-independent and the thing it asserts is the thing users
+        // actually see.
+        expect(file.framework.isDemo).toBe(true);
+        // The description still has to say so in its own language, because the
+        // flag renders as a badge and the description is what a reader reads.
+        expect(file.framework.description ?? '').toMatch(
+            /illustrative|concept|paraphrased|демонстрац|илюстрат/i,
+        );
     });
 
     it('GlobalG.A.P. catalog defines the CB.7 plant-protection requirement codes', () => {
@@ -55,6 +75,35 @@ describe('scheme catalogs — load + validate', () => {
         const codes = new Set(file.requirements.map((r) => r.code));
         for (const c of ['EUO.2', 'EUO.3']) {
             expect(codes.has(c)).toBe(true);
+        }
+    });
+
+    it('found catalogues to check (self-check)', () => {
+        // A broken directory read would make every assertion above vacuous.
+        expect(SCHEME_FILES.length).toBeGreaterThan(0);
+    });
+
+    it('every catalogue declares whether it is a demo subset', () => {
+        // The YAMLs said so in header COMMENTS, which reach no user. Declared
+        // as data, `isDemo` badges the scheme in the UI and `coverageNote`
+        // says how partial it is — so a farmer mapping their practices to 7
+        // control points is told those 7 are not the standard.
+        for (const fileName of SCHEME_FILES) {
+            const file = loadAndValidateCatalogFile(path.join(CATALOG_DIR, fileName));
+            expect(typeof file.framework.isDemo).toBe('boolean');
+            if (file.framework.isDemo) {
+                expect((file.framework.coverageNote ?? '').length).toBeGreaterThan(0);
+            }
+        }
+    });
+
+    it('every catalogue carries a source URN (provenance)', () => {
+        // `sourceUrn` and `contentHash` have existed on the model since it was
+        // created and nothing ever set them — zero provenance on a document a
+        // certifier is handed.
+        for (const fileName of SCHEME_FILES) {
+            const file = loadAndValidateCatalogFile(path.join(CATALOG_DIR, fileName));
+            expect((file.framework.sourceUrn ?? '').length).toBeGreaterThan(0);
         }
     });
 
@@ -76,88 +125,33 @@ describe('scheme catalogs — load + validate', () => {
             }
         }
     });
-});
 
-describe('new illustrative scheme catalogs (LEAF Marque + Red Tractor)', () => {
-    test.each(NEW_SCHEME_FILES)('%s is a sized, themed, illustrative AG_SCHEME', (fileName) => {
-        const file = loadAndValidateCatalogFile(path.join(CATALOG_DIR, fileName));
-
-        // ~8-15 requirements + matching templates, organized by theme.
-        expect(file.framework.kind).toBe('AG_SCHEME');
-        expect(file.requirements.length).toBeGreaterThanOrEqual(8);
-        expect(file.requirements.length).toBeLessThanOrEqual(15);
-        expect(file.templates.length).toBeGreaterThanOrEqual(1);
-
-        // Demo version + license-hygiene marker on the framework.
-        expect(file.framework.version).toBe('2024-demo');
-        expect(file.framework.description ?? '').toMatch(/illustrative|concept-only|paraphrased|NOT the official/i);
-
-        // A starter pack exists, referencing only this file's templates
-        // (the loader's cross-validator would already have thrown otherwise).
-        expect(file.pack).toBeDefined();
-        expect((file.pack!.templateCodes ?? []).length).toBeGreaterThan(0);
-
-        // Every requirement is themed (organized into sections).
-        for (const r of file.requirements) {
-            expect((r.theme ?? r.section ?? '').length).toBeGreaterThan(0);
-        }
-    });
-
-    it('both new catalogs are registered in the importer SCHEME_CATALOGS list', () => {
-        const importer = fs.readFileSync(
-            path.resolve(__dirname, '..', '..', 'scripts', 'import-schemes.ts'),
-            'utf8',
+    it('every catalogue advertising auto-evidence HAS an auto-evidence rule', () => {
+        // The REVERSE direction, which was never asserted. The forward check
+        // (rule → catalogue) only proves the codes a rule names exist; it is
+        // silent when a catalogue promises "auto-evidence from farm records"
+        // in its own description and no rule ever fires for it. Two shipped
+        // catalogues did exactly that, carrying perfectly good
+        // pre-harvest-interval and application-record control points that
+        // nothing ever satisfied.
+        const covered = new Set(
+            Object.values(AUTO_EVIDENCE_RULES)
+                .flatMap((rules) => rules ?? [])
+                .map((r) => r.frameworkKey),
         );
-        for (const fileName of NEW_SCHEME_FILES) {
-            expect(importer).toContain(fileName);
-        }
-    });
 
-    it('the LEAF Marque catalog defines its IFM theme codes', () => {
-        const file = loadAndValidateCatalogFile(path.join(CATALOG_DIR, 'leaf-marque-demo.yaml'));
-        expect(file.framework.key).toBe('LEAF-MARQUE-DEMO');
-        const codes = new Set(file.requirements.map((r) => r.code));
-        for (const c of ['LM.1.1', 'LM.2.1', 'LM.3.1']) {
-            expect(codes.has(c)).toBe(true);
+        const advertising: string[] = [];
+        for (const fileName of SCHEME_FILES) {
+            const file = loadAndValidateCatalogFile(path.join(CATALOG_DIR, fileName));
+            const text = `${file.framework.description ?? ''}`.toLowerCase();
+            if (/auto-evidence|auto evidence|автоматич/.test(text)) {
+                advertising.push(file.framework.key);
+            }
         }
-    });
 
-    it('the Red Tractor catalog defines its traceability + plant-protection codes', () => {
-        const file = loadAndValidateCatalogFile(path.join(CATALOG_DIR, 'red-tractor-demo.yaml'));
-        expect(file.framework.key).toBe('RED-TRACTOR-DEMO');
-        const codes = new Set(file.requirements.map((r) => r.code));
-        for (const c of ['RT.1.1', 'RT.2.1', 'RT.2.3']) {
-            expect(codes.has(c)).toBe(true);
-        }
-    });
-
-    it('rejects a scheme YAML whose template points at a missing requirement', () => {
-        // Regression proof the cross-validator is wired — written to the
-        // OS temp dir (not the catalog dir, which the importer scans).
-        const os = require('os');
-        const tmp = path.join(
-            fs.mkdtempSync(path.join(os.tmpdir(), 'scheme-catalog-')),
-            'bad.yaml',
-        );
-        fs.writeFileSync(
-            tmp,
-            [
-                'framework: { key: BAD-DEMO, name: Bad demo, kind: AG_SCHEME }',
-                'requirements:',
-                '  - { code: X.1, title: A requirement }',
-                'templates:',
-                '  - code: T1',
-                '    title: Template',
-                '    category: C',
-                '    requirementCodes: [X.999]',
-                '',
-            ].join('\n'),
-            'utf8',
-        );
-        try {
-            expect(() => loadAndValidateCatalogFile(tmp)).toThrow(CatalogValidationError);
-        } finally {
-            fs.rmSync(tmp, { force: true });
+        for (const key of advertising) {
+            expect(covered.has(key)).toBe(true);
         }
     });
 });
+

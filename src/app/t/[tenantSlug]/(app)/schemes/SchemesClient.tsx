@@ -16,6 +16,7 @@ import {
 import { EntityListPage } from '@/components/layout/EntityListPage';
 import { EmptyState } from '@/components/ui/empty-state';
 import { TableTitleCell } from '@/components/ui/table-title-cell';
+import { StatusBadge } from '@/components/ui/status-badge';
 import { NewSchemeModal } from './NewSchemeModal';
 
 /** List-row shape returned by GET /schemes (a global AG_SCHEME framework). */
@@ -24,6 +25,10 @@ export interface SchemeRow {
     key: string;
     name: string;
     description: string | null;
+    /** Demo/partial catalogue rather than the full standard. */
+    isDemo?: boolean;
+    /** e.g. "7 of ~200+ control points". */
+    coverageNote?: string | null;
     _count?: { requirements?: number; packs?: number };
 }
 
@@ -102,6 +107,38 @@ function SchemesPageInner({ initialSchemes, tenantSlug, permissions }: SchemesCl
                     meta: { mobileCard: { slot: 'title' } },
                 },
                 {
+                    id: 'scope',
+                    header: t('colScope'),
+                    // The disclosure. The catalogues are 3-8% stubs and the
+                    // YAMLs say so, but the list fetched `description` and
+                    // never rendered it — the only in-UI signal was a
+                    // parenthetical in the name. A farmer who maps their
+                    // practices to 7 control points and sees "GlobalG.A.P."
+                    // will believe they are covered.
+                    cell: ({ row }) =>
+                        row.original.isDemo ? (
+                            <div className="flex flex-col gap-0.5">
+                                <StatusBadge
+                                    variant="warning"
+                                    id={`scheme-demo-${row.original.id}`}
+                                >
+                                    {t('demoBadge')}
+                                </StatusBadge>
+                                {row.original.coverageNote && (
+                                    <span className="text-xs text-content-subtle">
+                                        {row.original.coverageNote}
+                                    </span>
+                                )}
+                            </div>
+                        ) : (
+                            <span className="text-content-subtle">—</span>
+                        ),
+                    meta: {
+                        disableTruncate: true,
+                        mobileCard: { slot: 'status', label: t('colScope') },
+                    },
+                },
+                {
                     accessorKey: 'key',
                     header: t('colKey'),
                     cell: ({ getValue }) => (
@@ -163,6 +200,13 @@ function SchemesPageInner({ initialSchemes, tenantSlug, permissions }: SchemesCl
                 // through to — no onRowClick, no [schemeKey] route. Both now
                 // exist.
                 onRowClick: (row) => router.push(tenantHref(`/schemes/${row.original.key}`)),
+                // Load-bearing. DataTable defaults selection ON, and with
+                // selection on a SINGLE click toggles it while the row action
+                // moves to double-click. This list has no batch actions, so
+                // selection would cost a click and give nothing — and the row
+                // renders `cursor-pointer`, promising that one click opens the
+                // scheme. It now does.
+                selectionEnabled: false,
                 mobileFallback: 'card',
                 emptyState: hasActive ? (
                     <EmptyState

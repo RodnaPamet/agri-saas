@@ -104,9 +104,22 @@ describe('getAgDashboard', () => {
         // Tasks sliced 6 → 5.
         expect(out.myTasks).toHaveLength(5);
         expect(out.myTasks[0]).toEqual({ id: 't0', title: 'Task 0', status: 'TODO', dueAt: '2026-06-10T00:00:00.000Z' });
-        // Certification — top scheme's readiness score.
-        expect(out.certification).toEqual({ schemeKey: 'ORGANIC', schemeName: 'Organic', score: 64 });
-        expect(generateReadinessReport).toHaveBeenCalledWith(ctx, 'ORGANIC');
+        // Certification is deliberately NULL. This used to run `listSchemes`
+        // plus a full `generateReadinessReport` on every dashboard load — and
+        // `AgDashboardStrip`, the only consumer of this payload, never
+        // rendered the value. Two queries per load, one of them the whole
+        // coverage walk, for a field nothing displayed.
+        //
+        // It also picked the "top" scheme ALPHABETICALLY, so a farm certified
+        // against GlobalG.A.P. would have seen a figure for whatever key
+        // sorted first — the same wrong-scheme selection the certifier pack
+        // had. Readiness now lives where it can be attributed to a scheme the
+        // reader chose: the scheme detail page.
+        expect(out.certification).toBeNull();
+        // And the queries are not made at all — the point is not just that the
+        // value is null, it is that the dashboard stopped paying for it.
+        expect(generateReadinessReport).not.toHaveBeenCalled();
+        expect(listSchemes).not.toHaveBeenCalled();
     });
 
     it('CERTIFICATION on but no scheme exists → certification is null', async () => {

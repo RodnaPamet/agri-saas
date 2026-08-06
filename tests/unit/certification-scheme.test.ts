@@ -92,15 +92,20 @@ const readerCtx = makeRequestContext('READER');
 // ─── listSchemes ───────────────────────────────────────────────────
 
 describe('listSchemes', () => {
-    it('queries only AG_SCHEME frameworks with the count include, key-asc', async () => {
+    it('selects the demo-disclosure fields, AG_SCHEME only, key-asc', async () => {
+        // `include` became `select` so `isDemo` and `coverageNote` reach the
+        // list. Without them it can only show a name — and a name is exactly
+        // what makes a 7-control-point demo look like GlobalG.A.P.
         mockPrisma.framework.findMany.mockResolvedValue([{ id: 'fw-1', key: 'ORG', kind: 'AG_SCHEME' }]);
         const rows = await listSchemes(readerCtx);
         expect(rows).toEqual([{ id: 'fw-1', key: 'ORG', kind: 'AG_SCHEME' }]);
-        expect(mockPrisma.framework.findMany).toHaveBeenCalledWith({
-            where: { kind: 'AG_SCHEME' },
-            include: { _count: { select: { requirements: true, packs: true } } },
-            orderBy: { key: 'asc' },
-        });
+
+        const args = mockPrisma.framework.findMany.mock.calls[0][0];
+        expect(args.where).toEqual({ kind: 'AG_SCHEME' });
+        expect(args.orderBy).toEqual({ key: 'asc' });
+        expect(args.select.isDemo).toBe(true);
+        expect(args.select.coverageNote).toBe(true);
+        expect(args.select._count).toEqual({ select: { requirements: true, packs: true } });
     });
 });
 

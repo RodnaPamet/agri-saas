@@ -141,22 +141,18 @@ export async function getAgDashboard(ctx: RequestContext): Promise<AgDashboardPa
             dueAt: toIso(t.dueAt),
         }));
 
-    // Certification readiness — top scheme only, gated on the module so a
-    // pure-farm tenant never pays the readiness query. `listSchemes`
-    // already orders AG_SCHEMEs by key asc, so the first is the "top".
-    let certification: AgDashboardCertification | null = null;
-    if (certificationOn) {
-        const schemes = await listSchemes(ctx);
-        const top = schemes[0];
-        if (top) {
-            const report = await generateReadinessReport(ctx, top.key);
-            certification = {
-                schemeKey: top.key,
-                schemeName: top.name,
-                score: report.summary.readinessScore,
-            };
-        }
-    }
+    // Certification readiness is NOT computed here.
+    //
+    // It used to be: `listSchemes` + a full `generateReadinessReport` on every
+    // dashboard load for a CERTIFICATION tenant — and `AgDashboardStrip`, the
+    // only consumer of this payload, never rendered the value. Two queries per
+    // load, one of them the whole coverage walk, for a field nothing displayed.
+    //
+    // It was also the "top" scheme by ALPHABETICAL key, which is the same
+    // wrong-scheme selection the certifier pack had: a farm certified against
+    // GlobalG.A.P. would have seen a readiness figure for whatever sorted
+    // first. Readiness now lives where it can be attributed to a scheme the
+    // reader chose — the scheme detail page.
 
-    return { enabledModules, recentJournal, lowStock, myTasks, certification, achievements };
+    return { enabledModules, recentJournal, lowStock, myTasks, certification: null, achievements };
 }

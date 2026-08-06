@@ -50,7 +50,6 @@ import { logEvent } from '@/app-layer/events/audit';
 import {
     ALL_MODULES,
     MODULE_LABELS,
-    MODULE_DESCRIPTIONS,
     resolveEnabledModules,
     isModuleEnabledIn,
     coerceModuleKeys,
@@ -103,11 +102,22 @@ describe('pure helpers', () => {
         expect(Object.keys(MODULE_LABELS).sort()).toEqual([...ALL_MODULES].sort());
     });
 
-    it('MODULE_DESCRIPTIONS has copy for every module key', () => {
+    it('every module key has description copy IN BOTH LOCALES', () => {
+        // `MODULE_DESCRIPTIONS` was a hardcoded English map in `lib/modules.ts`,
+        // so a Bulgarian operator read English on the settings page whatever
+        // their locale. The copy moved to next-intl; this assertion moved with
+        // it, and gained the half that matters — the invariant is not "a
+        // description exists" but "a description exists in every language the
+        // product ships".
+        const en = require('../../messages/en.json').admin.modules;
+        const bg = require('../../messages/bg.json').admin.modules;
         for (const key of ALL_MODULES) {
-            expect(MODULE_DESCRIPTIONS[key]).toBeTruthy();
+            expect(en[`desc_${key}`]).toBeTruthy();
+            expect(bg[`desc_${key}`]).toBeTruthy();
+            // A Bulgarian value identical to the English one is an
+            // untranslated string wearing a translation's clothes.
+            expect(bg[`desc_${key}`]).not.toBe(en[`desc_${key}`]);
         }
-        expect(Object.keys(MODULE_DESCRIPTIONS).sort()).toEqual([...ALL_MODULES].sort());
     });
 
     it('resolveEnabledModules(null) returns ALL modules (default-on contract)', () => {

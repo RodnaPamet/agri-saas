@@ -14,6 +14,13 @@ framework:
   name: ISO/IEC 27001 (demo subset)
   version: "2022-demo"
   kind: ISO_STANDARD
+  # Declared as DATA, not just as a header comment — a comment reaches no
+  # user. `isDemo` badges the scheme in the UI and `coverageNote` says how
+  # partial it is, so a farmer mapping practices to a handful of control
+  # points is told those points are not the standard.
+  isDemo: true
+  coverageNote: "8 of 93 Annex A controls"
+  sourceUrn: "urn:demo:iso27001-2022:illustrative-subset"
   description: |
     Four-control demo subset for exercising the YAML catalog
     ingestion path. Distinct framework key from the production

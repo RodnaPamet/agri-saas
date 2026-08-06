@@ -156,6 +156,14 @@ export type EntityListPageTable<TRow> = Pick<
     | 'onRowClick'
     | 'onRowPrefetch'
     | 'getRowId'
+    // Selection defaults ON in DataTable, and when it is on the row's SINGLE
+    // click toggles selection while the row ACTION moves to double-click. A
+    // list with no batch actions therefore charges the user a click and gives
+    // nothing back — and the row still renders `cursor-pointer`, so it looks
+    // like a single click should open it. Pages without batch actions can now
+    // turn it off (the precedent is EvidenceSubTable, which does exactly this
+    // and calls it load-bearing).
+    | 'selectionEnabled'
     | 'onRowSelectionChange'
     | 'selectedRows'
     | 'selectionControls'

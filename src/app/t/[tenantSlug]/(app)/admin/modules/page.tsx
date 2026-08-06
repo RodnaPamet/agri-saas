@@ -25,7 +25,7 @@ import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { cardVariants } from '@/components/ui/card';
 import { cn } from '@/lib/cn';
 import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
-import { ALL_MODULES, MODULE_LABELS, MODULE_DESCRIPTIONS } from '@/lib/modules';
+import { ALL_MODULES, MODULE_LABELS } from '@/lib/modules';
 import type { ModuleKey } from '@prisma/client';
 
 interface ModuleSettings {
@@ -143,7 +143,7 @@ export default function ModuleSettingsPage() {
                             <div className="min-w-0">
                                 <div className="text-sm font-medium">{MODULE_LABELS[key]}</div>
                                 <p className="text-xs text-content-subtle mt-0.5">
-                                    {MODULE_DESCRIPTIONS[key]}
+                                    {t(`desc_${key}`)}
                                 </p>
                             </div>
                             <Switch

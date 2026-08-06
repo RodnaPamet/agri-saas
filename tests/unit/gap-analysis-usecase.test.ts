@@ -88,7 +88,10 @@ const mockRequirements = new Map<string, any[]>();
 
 const mockDb = {
     framework: {
-        findUnique: jest.fn(async ({ where }: any) => {
+        // `findFirst`, not `findUnique`: Framework.key lost its single-column
+        // unique so two revisions of a standard can coexist, and a lookup by
+        // key alone now asks for the newest.
+        findFirst: jest.fn(async ({ where }: any) => {
             if (where.key) return mockFrameworks.get(where.key) ?? null;
             return null;
         }),

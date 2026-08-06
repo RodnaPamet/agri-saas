@@ -129,6 +129,25 @@ export const CatalogFrameworkSchema = z.object({
     version: z.string().min(1).optional(),
     kind: z.enum(FRAMEWORK_KINDS).optional(),
     description: z.string().optional(),
+    /**
+     * Is this catalogue a DEMO/PARTIAL subset rather than the full standard?
+     *
+     * Every YAML shipped today says so honestly in its header comment — and a
+     * header comment reaches no user. Declaring it as DATA is what lets the
+     * scheme list badge it, so a farmer who maps their practices to 7 control
+     * points is told those 7 are not GlobalG.A.P.
+     */
+    isDemo: z.boolean().optional(),
+    /** e.g. "7 of ~200 control points" — free text, rendered verbatim. */
+    coverageNote: z.string().optional(),
+    /**
+     * Where this catalogue came from. `contentHash` and `sourceUrn` have
+     * existed on the model since it was created and NOTHING ever set them, so
+     * there was zero provenance on any catalogue — no way to answer "which
+     * revision of the standard is this, and where did it come from" about a
+     * document a certifier is being handed.
+     */
+    sourceUrn: z.string().optional(),
 });
 
 export const CatalogRequirementSchema = z.object({
