@@ -33,26 +33,32 @@ import { CalendarMonth } from '@/components/ui/CalendarMonth';
 import { Skeleton } from '@/components/ui/skeleton';
 import { queryKeys } from '@/lib/queryKeys';
 import { formatDate } from '@/lib/format-date';
+import { dayKeyInTz } from '@/lib/calendar-day-key';
+import { getLocalizedMonthNames } from '@/lib/calendar-locale-names';
 import { NewTaskModal } from '@/components/tasks/NewTaskModal';
 import type {
     CalendarEvent,
+    CalendarEventCategory,
+    CalendarEventStatus,
     CalendarResponse,
 } from '@/app-layer/schemas/calendar.schemas';
 import { Heading } from '@/components/ui/typography';
 import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { monthGridRange, startOfUtcMonth } from './range';
 
 interface CalendarClientProps {
     tenantSlug: string;
     initial: CalendarResponse;
     initialRange: { from: string; to: string };
+    /**
+     * IANA timezone events are bucketed into day cells with — the
+     * tenant's `NOTIFICATIONS_TZ`. See calendar-day-key.ts: bucketing
+     * by a UTC string slice puts a task due near local midnight on
+     * the wrong day for a Bulgaria-based farm.
+     */
+    tz: string;
 }
-
-const MONTH_NAMES = [
-    'January', 'February', 'March', 'April', 'May', 'June',
-    'July', 'August', 'September', 'October', 'November', 'December',
-];
 
 /** Today as YMD, for seeding the create modal when no day is selected. */
 function todayYmd(): string {
@@ -89,6 +95,7 @@ export function CalendarClient({
     tenantSlug,
     initial,
     initialRange,
+    tz,
 }: CalendarClientProps) {
     const [monthCursor, setMonthCursor] = React.useState<Date>(
         () => startOfUtcMonth(new Date()),
@@ -102,6 +109,44 @@ export function CalendarClient({
     const queryClient = useQueryClient();
     const t = useTranslations('calendar');
     const te = useTranslations('calendar.event');
+    const tCategory = useTranslations('calendar.category');
+    const tStatus = useTranslations('calendar.status');
+    const locale = useLocale();
+
+    // Month names in the active UI locale — see calendar-locale-names.ts.
+    const monthNames = React.useMemo(
+        () => getLocalizedMonthNames(locale, 'long'),
+        [locale],
+    );
+
+    // Exhaustive over CalendarEventCategory / CalendarEventStatus — a new
+    // category or status added to calendar.schemas.ts is a COMPILE ERROR
+    // here rather than a raw enum value leaking into the side panel (the
+    // same device compliance-calendar.ts uses for AgriEvent categories,
+    // which once caught a subsidy deadline rendering as "Fair").
+    const categoryLabels: Record<CalendarEventCategory, string> = {
+        evidence: tCategory('evidence'),
+        policy: tCategory('policy'),
+        vendor: tCategory('vendor'),
+        audit: tCategory('audit'),
+        control: tCategory('control'),
+        task: tCategory('task'),
+        risk: tCategory('risk'),
+        finding: tCategory('finding'),
+        'farm-task': tCategory('farmTask'),
+        lease: tCategory('lease'),
+        contract: tCategory('contract'),
+        planting: tCategory('planting'),
+        'agro-signal': tCategory('agroSignal'),
+        'agri-event': tCategory('agriEvent'),
+    };
+    const statusLabels: Record<CalendarEventStatus, string> = {
+        scheduled: tStatus('scheduled'),
+        due_soon: tStatus('dueSoon'),
+        overdue: tStatus('overdue'),
+        done: tStatus('done'),
+        unknown: tStatus('unknown'),
+    };
 
     // Pull `getTime()` into a stable primitive so the dep array is
     // statically checkable. We deliberately depend on `monthCursorMs`
@@ -142,8 +187,11 @@ export function CalendarClient({
 
     const selectedEvents = React.useMemo(() => {
         if (!selectedDate) return [];
-        return events.filter((e) => e.date.slice(0, 10) === selectedDate);
-    }, [events, selectedDate]);
+        // `tz`-aware bucketing — must agree with CalendarMonth's own
+        // `dayKeyInTz` bucketing (same `tz` prop, passed below) or the
+        // grid and this panel disagree about which day an event falls on.
+        return events.filter((e) => dayKeyInTz(e.date, tz) === selectedDate);
+    }, [events, selectedDate, tz]);
 
     const handlePrev = () => {
         setMonthCursor(
@@ -210,7 +258,7 @@ export function CalendarClient({
                     className="text-sm font-semibold text-content-emphasis"
                     data-testid="calendar-current-month"
                 >
-                    {MONTH_NAMES[monthCursor.getUTCMonth()]}{' '}
+                    {monthNames[monthCursor.getUTCMonth()]}{' '}
                     {monthCursor.getUTCFullYear()}
                 </span>
                 <Button
@@ -259,6 +307,7 @@ export function CalendarClient({
                                 setTaskCreateDate(ymd);
                             }}
                             selectedYmd={selectedDate}
+                            tz={tz}
                         />
                     )}
                 </div>
@@ -298,7 +347,7 @@ export function CalendarClient({
                                                     </div>
                                                 )}
                                                 <div className="text-[10px] text-content-subtle uppercase tracking-wider mt-0.5">
-                                                    {ev.category} · {ev.status}
+                                                    {categoryLabels[ev.category]} · {statusLabels[ev.status]}
                                                 </div>
                                             </CalendarEventLink>
                                         </li>

@@ -18,13 +18,18 @@
  */
 
 import * as React from 'react';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { cn } from '@/lib/cn';
 import type {
     CalendarEvent,
 } from '@/app-layer/schemas/calendar.schemas';
 import { getCategoryTone } from '@/lib/design/status-tone';
 import { CalendarEventLink } from '@/components/ui/CalendarEventLink';
+import { dayKeyInTz } from '@/lib/calendar-day-key';
+import {
+    getLocalizedMonthNames,
+    getLocalizedWeekdayNames,
+} from '@/lib/calendar-locale-names';
 
 // ─── Public props ─────────────────────────────────────────────────────
 
@@ -54,6 +59,14 @@ export interface CalendarMonthProps {
     selectedYmd?: string | null;
     /** Today override (for tests). Default: new Date(). */
     today?: Date;
+    /**
+     * IANA timezone events are bucketed into day cells with. Defaults
+     * to `'UTC'` so existing callers that omit it keep prior
+     * behaviour — the calendar page passes the tenant's
+     * `NOTIFICATIONS_TZ` so an event due near local midnight lands on
+     * the same day the side panel lists it under.
+     */
+    tz?: string;
     className?: string;
     'data-testid'?: string;
 }
@@ -90,13 +103,6 @@ function isSameUtcDay(a: Date, b: Date): boolean {
     );
 }
 
-const MONTH_NAMES = [
-    'January', 'February', 'March', 'April', 'May', 'June',
-    'July', 'August', 'September', 'October', 'November', 'December',
-];
-
-const WEEKDAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-
 // ─── Component ───────────────────────────────────────────────────────
 
 export function CalendarMonth({
@@ -107,6 +113,7 @@ export function CalendarMonth({
     onDoubleClickDate,
     selectedYmd,
     today,
+    tz = 'UTC',
     className,
     'data-testid': dataTestId = 'calendar-month',
 }: CalendarMonthProps) {
@@ -114,15 +121,30 @@ export function CalendarMonth({
     // Event titles are i18n keys resolved here, not English built in the
     // usecase — see CalendarEvent.titleKey.
     const te = useTranslations('calendar.event');
+    const locale = useLocale();
+    // Month/weekday NAMES in the active UI locale — see
+    // calendar-locale-names.ts for why this doesn't go through
+    // format-date.ts.
+    const monthNames = React.useMemo(
+        () => getLocalizedMonthNames(locale, 'long'),
+        [locale],
+    );
+    const weekdayNames = React.useMemo(
+        () => getLocalizedWeekdayNames(locale, 'short'),
+        [locale],
+    );
     const todayDate = today ?? new Date();
     const monthStart = startOfUtcMonth(month);
     const monthEnd = endOfUtcMonth(month);
 
-    // Bucket events by YYYY-MM-DD.
+    // Bucket events by YYYY-MM-DD, in `tz` — NOT a UTC string slice. An
+    // event carrying a real time-of-day (e.g. a farm task due at
+    // 01:00 Europe/Sofia) would otherwise land on the previous UTC
+    // day. See calendar-day-key.ts.
     const eventsByDay = React.useMemo(() => {
         const m = new Map<string, CalendarEvent[]>();
         for (const e of events) {
-            const ymd = e.date.slice(0, 10);
+            const ymd = dayKeyInTz(e.date, tz);
             const list = m.get(ymd) ?? [];
             list.push(e);
             m.set(ymd, list);
@@ -139,7 +161,7 @@ export function CalendarMonth({
             );
         }
         return m;
-    }, [events]);
+    }, [events, tz]);
 
     // Build the 6×7 grid. Pad with leading/trailing days from adjacent
     // months so the grid is always rectangular.
@@ -157,13 +179,13 @@ export function CalendarMonth({
         <section
             className={cn('flex flex-col gap-tight', className)}
             data-testid={dataTestId}
-            aria-label={`${MONTH_NAMES[monthStart.getUTCMonth()]} ${monthStart.getUTCFullYear()}`}
+            aria-label={`${monthNames[monthStart.getUTCMonth()]} ${monthStart.getUTCFullYear()}`}
         >
             {/* Weekday header */}
             <div className="grid grid-cols-7 gap-px text-xs font-medium text-content-muted">
-                {WEEKDAY_NAMES.map((label) => (
+                {weekdayNames.map((label, i) => (
                     <div
-                        key={label}
+                        key={i}
                         className="text-center py-1"
                     >
                         {label}
