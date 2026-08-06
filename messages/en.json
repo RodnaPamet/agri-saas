@@ -4973,8 +4973,8 @@
     "calendar": {
         "dashboard": "Dashboard",
         "breadcrumb": "Calendar",
-        "title": "Compliance Calendar",
-        "description": "Track every compliance deadline — evidence reviews, policy renewals, vendor renewals, audit cycles, control tests — in one place.",
+        "title": "Farm Calendar",
+        "description": "Track every date that matters on the farm — field tasks, lease terms, delivery windows, sow and harvest cycles, spray-window alerts — alongside your compliance deadlines, all in one place.",
         "prevMonth": "Previous month",
         "nextMonth": "Next month",
         "loadError": "Failed to load calendar events. Try refreshing.",
