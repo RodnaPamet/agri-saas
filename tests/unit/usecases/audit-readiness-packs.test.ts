@@ -55,9 +55,25 @@ jest.mock('@/app-layer/usecases/soa', () => ({
     getSoA: (...args: any[]) => mockGetSoA(...args),
 }));
 
+// `freezeAuditPack` reads the GLOBAL Framework table to turn the pack's
+// FRAMEWORK_COVERAGE item into the scheme key its SoA should be generated for.
+const mockPrisma: any = { framework: { findUnique: jest.fn() } };
+jest.mock('@/lib/prisma', () => ({ prisma: mockPrisma }));
+
+// A pack that cannot attach its SoA now LOGS instead of swallowing.
+const loggerMock = { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() };
+jest.mock('@/lib/observability/logger', () => ({ logger: loggerMock }));
+
 const mockTdb: any = {
     auditPack: { findFirst: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn() },
-    auditPackItem: { createMany: jest.fn(), update: jest.fn(), create: jest.fn() },
+    auditPackItem: {
+        createMany: jest.fn(), update: jest.fn(), create: jest.fn(),
+        // `findFirst` resolves the pack's FRAMEWORK_COVERAGE item so the SoA
+        // is generated for the RIGHT standard. Without it, getSoA fell back to
+        // the alphabetically-first installed key and a GlobalG.A.P. pack
+        // shipped an EU-Organic SoA.
+        findFirst: jest.fn(),
+    },
     auditCycle: { findFirst: jest.fn() },
     framework: { findFirst: jest.fn() },
     controlRequirementLink: { findMany: jest.fn() },
@@ -104,7 +120,7 @@ beforeEach(() => {
         mockTdb.auditPack.findFirst, mockTdb.auditPack.findMany,
         mockTdb.auditPack.create, mockTdb.auditPack.update,
         mockTdb.auditPackItem.createMany, mockTdb.auditPackItem.update,
-        mockTdb.auditPackItem.create,
+        mockTdb.auditPackItem.create, mockTdb.auditPackItem.findFirst,
         mockTdb.auditCycle.findFirst,
         mockTdb.framework.findFirst,
         mockTdb.controlRequirementLink.findMany,
@@ -479,6 +495,62 @@ describe('freezeAuditPack', () => {
         expect(result.status).toBe('FROZEN');
         // No EXPORT_ARTIFACT item got attached.
         expect(mockTdb.auditPackItem.create).not.toHaveBeenCalled();
+    });
+
+    it('generates the SoA for the pack\'s OWN framework, not the alphabetical first', async () => {
+        // `getSoA` with no frameworkKey falls back to
+        // `resolveInstalledFrameworkKey`, which returns the
+        // alphabetically-first installed key — so a GlobalG.A.P. pack shipped
+        // an EU-Organic Statement of Applicability, correctly formatted and
+        // about the wrong standard. An auditor cannot tell that from a
+        // document they did not ask for.
+        mockTdb.auditPack.findFirst.mockResolvedValueOnce({
+            id: 'p-1', status: 'DRAFT',
+            items: [{ id: 'i-1', entityType: 'POLICY', entityId: 'pol-1', snapshotJson: '{}' }],
+        });
+        mockTdb.policy.findFirst.mockResolvedValueOnce({
+            id: 'pol-1', title: 'X', status: 'APPROVED', category: 'Security', versions: [],
+        });
+        mockTdb.auditPack.update.mockResolvedValueOnce({ id: 'p-1', status: 'FROZEN' });
+        mockGetSoA.mockResolvedValueOnce({
+            framework: 'globalgap', generatedAt: new Date(), summary: {}, entries: [],
+        });
+        mockTdb.auditPackItem.findFirst.mockResolvedValue({ entityId: 'fw-gg' });
+        mockPrisma.framework.findUnique.mockResolvedValue({ key: 'GLOBALGAP-IFA-DEMO' });
+
+        await freezeAuditPack(ctx, 'p-1');
+
+        expect(mockGetSoA).toHaveBeenCalledWith(
+            ctx,
+            expect.objectContaining({ frameworkKey: 'GLOBALGAP-IFA-DEMO' }),
+        );
+    });
+
+    it('logs rather than swallows when the SoA cannot be attached', async () => {
+        // The insert used an enum member that did not exist in the database,
+        // so it threw on EVERY freeze — and a bare `catch {}` discarded it.
+        // Packs shipped without their SoA, silently, for months. It stays
+        // non-fatal (the freeze already committed and unwinding would lose the
+        // snapshots) but it must never again be invisible.
+        mockTdb.auditPack.findFirst.mockResolvedValueOnce({
+            id: 'p-1', status: 'DRAFT',
+            items: [{ id: 'i-1', entityType: 'POLICY', entityId: 'pol-1', snapshotJson: '{}' }],
+        });
+        mockTdb.policy.findFirst.mockResolvedValueOnce({
+            id: 'pol-1', title: 'X', status: 'APPROVED', category: 'Security', versions: [],
+        });
+        mockTdb.auditPack.update.mockResolvedValueOnce({ id: 'p-1', status: 'FROZEN' });
+        mockGetSoA.mockResolvedValueOnce({
+            framework: 'globalgap', generatedAt: new Date(), summary: {}, entries: [],
+        });
+        mockTdb.auditPackItem.findFirst.mockResolvedValue(null);
+        mockTdb.auditPackItem.create.mockRejectedValueOnce(new Error('enum constraint'));
+
+        await expect(freezeAuditPack(ctx, 'p-1')).resolves.toBeDefined();
+        expect(loggerMock.error).toHaveBeenCalledWith(
+            expect.stringContaining('WITHOUT its Statement of Applicability'),
+            expect.objectContaining({ packId: 'p-1' }),
+        );
     });
 
     it('attaches the SoA EXPORT_ARTIFACT row on happy-path', async () => {

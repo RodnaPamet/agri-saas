@@ -8,6 +8,8 @@ import {
     assertCanManageAuditPacks, assertCanFreezePack, assertCanViewPack,
 } from '../../policies/audit-readiness.policies';
 import { logEvent } from '../../events/audit';
+import { logger } from '@/lib/observability/logger';
+import { prisma } from '@/lib/prisma';
 import { runInTenantContext } from '@/lib/db-context';
 import { notFound, badRequest } from '@/lib/errors/types';
 import { TERMINAL_WORK_ITEM_STATUSES } from '../../domain/work-item-status';
@@ -106,6 +108,84 @@ export async function addAuditPackItems(
 
 // РІвЂќР‚РІвЂќР‚РІвЂќР‚ Snapshot Creation РІвЂќР‚РІвЂќР‚РІвЂќР‚
 
+/**
+ * Which framework does this pack cover?
+ *
+ * `getSoA` with no `frameworkKey` falls back to
+ * `resolveInstalledFrameworkKey`, which returns the alphabetically-first
+ * installed key — so a GlobalG.A.P. pack shipped an EU-Organic Statement of
+ * Applicability, correctly formatted and about the wrong standard. An auditor
+ * has no way to tell that from a document they did not ask for.
+ *
+ * The pack already knows: `scheme-pack.ts` adds exactly one FRAMEWORK_COVERAGE
+ * item whose `entityId` is the framework's id. Falling back to `getSoA`'s own
+ * default when there is no such item keeps generic audit packs working
+ * unchanged.
+ */
+async function resolvePackFrameworkKey(
+    ctx: RequestContext,
+    packId: string,
+): Promise<string | undefined> {
+    const item = await runInTenantContext(ctx, (tdb) =>
+        tdb.auditPackItem.findFirst({
+            where: { tenantId: ctx.tenantId, auditPackId: packId, entityType: 'FRAMEWORK_COVERAGE' },
+            select: { entityId: true },
+        }),
+    );
+    if (!item) return undefined;
+    const fw = await prisma.framework.findUnique({
+        where: { id: item.entityId },
+        select: { key: true },
+    });
+    return fw?.key;
+}
+
+/**
+ * Snapshot a framework's coverage for a frozen pack.
+ *
+ * The freeze switch had no case for FRAMEWORK_COVERAGE, so it fell through to
+ * the `default` arm and froze `{ entityType, entityId, snapshotAt }` — a stub
+ * naming an id. The coverage the certifier's pack exists to carry was absent,
+ * while `scheme-pack.ts` documented the opposite ("the existing freeze flow
+ * fills it from the live entity at freeze time").
+ */
+async function createFrameworkCoverageSnapshot(
+    ctx: RequestContext,
+    frameworkId: string,
+): Promise<string> {
+    const fw = await prisma.framework.findUnique({
+        where: { id: frameworkId },
+        select: { key: true, name: true, version: true },
+    });
+    if (!fw) {
+        // Keep the id so the gap is traceable rather than silently empty.
+        return JSON.stringify({
+            type: 'FRAMEWORK_COVERAGE',
+            frameworkId,
+            error: 'framework not found at freeze time',
+            snapshotAt: new Date().toISOString(),
+        });
+    }
+    const { computeCoverage } = await import('../framework/coverage');
+    const coverage = await computeCoverage(ctx, fw.key);
+    return JSON.stringify({
+        type: 'FRAMEWORK_COVERAGE',
+        framework: { key: fw.key, name: fw.name, version: fw.version },
+        total: coverage.total,
+        mapped: coverage.mapped,
+        unmapped: coverage.unmapped,
+        coveragePercent: coverage.coveragePercent,
+        // The number that means "backed by approved evidence", as opposed to
+        // "a control row links to it".
+        satisfiedRequirements: coverage.satisfiedRequirements,
+        applicableRequirements: coverage.applicableRequirements,
+        satisfiedPercent: coverage.satisfiedPercent,
+        bySection: coverage.bySection,
+        unmappedRequirements: coverage.unmappedRequirements,
+        snapshotAt: new Date().toISOString(),
+    });
+}
+
 async function createControlSnapshot(tdb: PrismaTx, controlId: string, tenantId: string): Promise<string> {
     const ctrl = await tdb.control.findFirst({
         where: { id: controlId, tenantId },
@@ -190,6 +270,17 @@ export async function freezeAuditPack(ctx: RequestContext, packId: string) {
                             case 'POLICY': snapshot = await createPolicySnapshot(tdb, item.entityId, ctx.tenantId); break;
                             case 'EVIDENCE': snapshot = await createEvidenceSnapshot(tdb, item.entityId, ctx.tenantId); break;
                             case 'ISSUE': snapshot = await createIssueSnapshot(tdb, item.entityId, ctx.tenantId); break;
+                            // `scheme-pack.ts` adds exactly one of these per
+                            // pack and leaves snapshotJson '{}' because its
+                            // comment says "the existing freeze flow fills it
+                            // from the live entity at freeze time". There was
+                            // no case for it, so it fell to `default` and froze
+                            // a stub naming an entity id and nothing else — the
+                            // coverage the certifier's pack exists to carry was
+                            // simply absent.
+                            case 'FRAMEWORK_COVERAGE':
+                                snapshot = await createFrameworkCoverageSnapshot(ctx, item.entityId);
+                                break;
                             default: snapshot = JSON.stringify({ entityType: item.entityType, entityId: item.entityId, snapshotAt: new Date().toISOString() });
                         }
                         await tdb.auditPackItem.update({ where: { id: item.id }, data: { snapshotJson: snapshot } });
@@ -208,12 +299,28 @@ export async function freezeAuditPack(ctx: RequestContext, packId: string) {
         return { frozenPack: result, itemCount: pack.items.length };
     }, { timeout: 60000, maxWait: 10000 });
 
-    // Phase 2: Attach SoA snapshot as EXPORT_ARTIFACT (best-effort, separate transaction)
-    // This runs outside the freeze transaction because getSoA opens its own
-    // runInTenantContext calls, and Prisma interactive transactions cannot be nested.
+    // Phase 2: Attach the SoA snapshot as an EXPORT_ARTIFACT item.
+    //
+    // Runs outside the freeze transaction because getSoA opens its own
+    // runInTenantContext calls, and Prisma interactive transactions cannot be
+    // nested.
+    //
+    // Two defects lived here. The insert used an `EXPORT_ARTIFACT` enum member
+    // that did not exist in the database, so it threw every time — and the
+    // throw was swallowed by a bare `catch {}`, so a pack frozen for a
+    // certifier shipped with no Statement of Applicability and nobody was
+    // told. And `getSoA` was called with no framework, so `soa.ts` fell back to
+    // the alphabetically-first installed key: a GlobalG.A.P. pack shipped an
+    // EU-Organic SoA.
+    //
+    // The framework now comes from the pack's own FRAMEWORK_COVERAGE item, and
+    // a failure is logged rather than discarded. It stays non-fatal on purpose
+    // — the freeze itself already committed, and unwinding it would lose the
+    // snapshots — but "non-fatal" must not mean "invisible".
     try {
         const { getSoA } = await import('../soa');
         const soaReport = await getSoA(ctx, {
+            frameworkKey: await resolvePackFrameworkKey(ctx, packId),
             includeEvidence: true,
             includeTasks: true,
             includeTests: true,
@@ -248,7 +355,16 @@ export async function freezeAuditPack(ctx: RequestContext, packId: string) {
                 },
             })
         );
-    } catch { /* SoA attachment is best-effort */ }
+    } catch (err) {
+        // Non-fatal, but never silent: a certifier pack missing its SoA is a
+        // defect the operator has to be able to see.
+        logger.error('audit pack frozen WITHOUT its Statement of Applicability', {
+            component: 'audit-packs',
+            tenantId: ctx.tenantId,
+            packId,
+            detail: err instanceof Error ? err.message : String(err),
+        });
+    }
 
     return frozenPack.frozenPack;
 }

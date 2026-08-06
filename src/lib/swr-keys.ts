@@ -146,7 +146,13 @@ export const CACHE_KEYS = {
     // tenant via /schemes. `detail(key)` keys on the scheme key.
     schemes: {
         ...makeResource('schemes'),
-        readiness: (key: string) => `/schemes/${key}/readiness` as const,
+        // One scheme + this farm's progress against it. There was no such
+        // route and no detail page at all: `/schemes` rows had no onRowClick
+        // while the row style promised one.
+        detail: (key: string) => `/schemes/${key}` as const,
+        // `readiness` removed — it pointed at `/schemes/:key/readiness`, a
+        // route that has never existed. Nothing fetched it, so nothing broke;
+        // it just sat in the registry describing a surface that was not there.
     },
     issues: makeResource('issues'),
     // ─── Market-price trends (global, tenant-agnostic payload) ───

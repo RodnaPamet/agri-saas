@@ -37,14 +37,20 @@ export default function FrameworkDetailPage() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
-    // Epic 62 — celebrate when this framework hits 100% coverage.
+    // Epic 62 — celebrate when this framework is fully SATISFIED.
+    //
+    // This fired on `coveragePercent`, which counts requirements a control row
+    // links to — so installing a starter pack set off the confetti on a farm
+    // with zero records, congratulating a farmer for pressing Install. The
+    // milestone now waits for approved evidence against every applicable
+    // control point, which is the thing actually worth celebrating.
     // `scopedMilestone` namespaces the dedupe key per framework so
     // each framework's first reach earns its own moment in the same
     // session (otherwise a single global `framework-100` key would
     // mean only the first framework ever celebrates).
     const { celebrate } = useCelebration();
     useEffect(() => {
-        if (coverage?.coveragePercent !== 100) return;
+        if (coverage?.satisfiedPercent !== 100) return;
         const baseDescription = MILESTONES['framework-100'].description ?? '';
         celebrate(
             scopedMilestone('framework-100', frameworkKey, {
@@ -53,7 +59,7 @@ export default function FrameworkDetailPage() {
                     : undefined,
             }),
         );
-    }, [coverage?.coveragePercent, frameworkKey, framework?.name, celebrate]);
+    }, [coverage?.satisfiedPercent, frameworkKey, framework?.name, celebrate]);
 
     useEffect(() => {
         // Epic 46 — fetch the new `/tree` endpoint instead of the
