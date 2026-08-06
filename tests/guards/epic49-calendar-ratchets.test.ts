@@ -109,11 +109,19 @@ describe('Epic 49 — calendar feature wiring', () => {
         expect(src).toMatch(/href\(['"]\/calendar['"]\)/);
     });
 
-    it('the calendar-deadlines monitor exists and exports both helpers', () => {
+    it('the calendar-deadlines monitor exists and exports the shared helper', () => {
         expect(exists('src/app-layer/jobs/calendar-deadlines.ts')).toBe(true);
         const src = read('src/app-layer/jobs/calendar-deadlines.ts');
         expect(src).toMatch(/export\s+async\s+function\s+runCalendarDeadlineMonitor/);
-        expect(src).toMatch(/export\s+async\s+function\s+runCalendarDeadlineJob/);
+        // `runCalendarDeadlineJob` (a standalone BullMQ-registrable
+        // wrapper) was removed 2026-08-06: it was never a `JobName`,
+        // never registered in the executor registry, never scheduled,
+        // and had zero callers — the real production path is
+        // `notification-dispatch.ts` calling `runCalendarDeadlineMonitor`
+        // directly inside the DEADLINE_DIGEST category. Don't re-add the
+        // wrapper without also registering it (JobPayloadMap +
+        // JOB_DEFAULTS + executor-registry + schedules.ts).
+        //
         // It must scan the three NEW sources the base deadline monitor
         // doesn't cover. If a future PR drops one of these, deadline
         // notifications for that source disappear silently.
