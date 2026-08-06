@@ -130,7 +130,11 @@ describeFn('farm tasks (DB)', () => {
         const res = await getComplianceCalendarEvents(ctx, { from, to });
         const hit = res.events.find((e) => e.entityType === 'TASK' && e.entityId === taskId);
         expect(hit).toBeDefined();
-        expect(hit!.type).toBe('task-due');
+        // A FARM_TASK now carries its own event type and category rather than
+        // impersonating a compliance task — that distinction is the point of
+        // the farm-work vocabulary change, so assert the new value.
+        expect(hit!.type).toBe('farm-task-due');
+        expect(hit!.category).toBe('farm-task');
     });
 
     test('listMyFarmTasks returns the operator’s queue', async () => {

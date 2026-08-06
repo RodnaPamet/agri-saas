@@ -38,7 +38,10 @@ async function settle(page: Page): Promise<void> {
 
 interface CalendarEventLike {
     category: string;
-    title: string;
+    // Titles are i18n KEYS resolved by the renderer — the payload is
+    // locale-independent, so there is no rendered string to assert on here.
+    titleKey: string;
+    titleParams?: Record<string, string>;
     href: string;
     external?: boolean;
 }
@@ -68,9 +71,11 @@ test.describe('Agriculture catalogue on the calendar @mobile', () => {
         // the original events page shipped with.
         expect(agri.length).toBeGreaterThan(0);
 
-        // Every catalogue entry carries a title.
+        // Every catalogue entry carries a title. Curator-supplied text uses
+        // the passthrough key, so the readable part is in titleParams.name.
         for (const ev of agri) {
-            expect(ev.title.trim().length).toBeGreaterThan(0);
+            expect(ev.titleKey.length).toBeGreaterThan(0);
+            expect((ev.titleParams?.name ?? '').trim().length).toBeGreaterThan(0);
         }
 
         // Entries with an off-site organiser page must be flagged external, so
