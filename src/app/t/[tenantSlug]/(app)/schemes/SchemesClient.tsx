@@ -29,7 +29,16 @@ export interface SchemeRow {
 interface SchemesClientProps {
     initialSchemes: SchemeRow[];
     tenantSlug: string;
-    permissions: { canAdmin: boolean };
+    permissions: {
+        /**
+         * May this session AUTHOR a scheme?
+         *
+         * Not the same as "is an admin". Authoring writes the global catalogue
+         * every tenant reads, so it is platform-tenant work — `canAdmin` alone
+         * would show every farm's owner a form the API refuses.
+         */
+        canAuthorScheme: boolean;
+    };
 }
 
 export function SchemesClient(props: SchemesClientProps) {
@@ -113,7 +122,7 @@ function SchemesPageInner({ initialSchemes, tenantSlug, permissions }: SchemesCl
                 ],
                 title: t('title'),
                 description: t('listDescription'),
-                actions: permissions.canAdmin ? (
+                actions: permissions.canAuthorScheme ? (
                     <Button
                         variant="primary"
                         icon={<Plus className="-ml-0.5 -mr-2.5" />}
@@ -150,7 +159,7 @@ function SchemesPageInner({ initialSchemes, tenantSlug, permissions }: SchemesCl
                         title={t('emptyTitle')}
                         description={t('emptyDescription')}
                         primaryAction={
-                            permissions.canAdmin
+                            permissions.canAuthorScheme
                                 ? { label: t('addScheme'), onClick: () => setIsCreateOpen(true) }
                                 : undefined
                         }
@@ -161,7 +170,7 @@ function SchemesPageInner({ initialSchemes, tenantSlug, permissions }: SchemesCl
                 className: 'hover:bg-bg-muted',
             }}
         >
-            {permissions.canAdmin && (
+            {permissions.canAuthorScheme && (
                 <NewSchemeModal
                     open={isCreateOpen}
                     setOpen={setIsCreateOpen}

@@ -1,6 +1,5 @@
 import { RequestContext } from '../types';
-import { assertCanViewFrameworks } from '../policies/framework.policies';
-import { assertCanAdmin } from '../policies/common';
+import { assertCanViewFrameworks, assertCanWriteCatalogue } from '../policies/framework.policies';
 import { logEvent } from '../events/audit';
 import { getFramework, getFrameworkRequirements } from './framework/catalog';
 import { generateReadinessReport } from './framework/coverage';
@@ -21,8 +20,11 @@ import { prisma } from '@/lib/prisma';
  * new link endpoints.
  *
  * Reads gate with `assertCanViewFrameworks` (every role may browse the
- * catalog, mirroring `listFrameworks`). Creating a scheme writes a
- * global catalog entry, so it gates with `assertCanAdmin`.
+ * catalog, mirroring `listFrameworks`). Creating a scheme writes a GLOBAL
+ * catalog entry every tenant reads, so it gates with
+ * `assertCanWriteCatalogue` — the platform-tenant gate, not a per-tenant
+ * admin check. `assertCanAdmin` was the original gate and was not sufficient:
+ * it resolves from Role, so every farm's owner held it.
  */
 
 // ─── Sanitisation helper (Epic D three-state) ──────────────────────
@@ -88,7 +90,17 @@ export interface CreateSchemeInput {
  * renderer (UI, PDF, audit pack, SDK) inherits the safety.
  */
 export async function createScheme(ctx: RequestContext, input: CreateSchemeInput) {
-    assertCanAdmin(ctx);
+    // PLATFORM gate, not a tenant one. This writes a row into the GLOBAL
+    // Framework table that `listSchemes` reads with no tenant filter, so under
+    // the previous per-tenant `assertCanAdmin` one farm's scheme — its name,
+    // description and every requirement title — appeared on every other farm's
+    // /schemes page, and the globally-unique `key` was burned platform-wide
+    // with no delete path to recover it.
+    //
+    // Farms adopt standards; they do not author them. Authoring stays, behind
+    // the platform gate, because the catalogue still has to come from
+    // somewhere — see docs/implementation-notes for the fork decision.
+    assertCanWriteCatalogue(ctx);
 
     const key = input.key?.trim();
     if (!key) throw badRequest('Scheme key required');

@@ -71,6 +71,25 @@ const PRIVILEGED_ROOTS: ReadonlyArray<{
         relPath: 'src/app/api/t/[tenantSlug]/security',
         why: 'Tenant security surface — MFA policy mutations + admin-driven session revocation.',
     },
+    // Global framework catalogue. Both roots were absent, so a denial on
+    // either emitted NO AUTHZ_DENIED row and neither was visible to this
+    // guardrail — which is how a tenant-scoped route that can deprecate every
+    // requirement of a standard, for every tenant, went unnoticed.
+    {
+        relPath: 'src/app/api/t/[tenantSlug]/frameworks',
+        why:
+            'Framework writes reach the GLOBAL catalogue (upsert-requirements ' +
+            'can deprecate every requirement of a standard, zeroing coverage ' +
+            'for all tenants). Catalogue arms are platform-tenant gated in the ' +
+            'usecase; the permission is the audited role floor.',
+    },
+    {
+        relPath: 'src/app/api/t/[tenantSlug]/schemes',
+        why:
+            'Scheme authoring writes the GLOBAL Framework table that every ' +
+            'tenant reads, and burns a globally-unique key with no delete ' +
+            'path. Platform-tenant gated in the usecase.',
+    },
 ];
 
 /**
@@ -81,6 +100,33 @@ const PRIVILEGED_ROOTS: ReadonlyArray<{
  * uses), e.g. `api/t/[tenantSlug]/admin/foo/route.ts`.
  */
 const EXCLUDED_ROUTES: ReadonlyArray<{ relPath: string; reason: string }> = [
+    // ── Catalogue READS (#P1) ───────────────────────────────────────
+    // The frameworks + schemes roots are in scope because their WRITES reach
+    // the global catalogue. These three are read-only: browsing a standard's
+    // control points is not a privileged act, and every role may do it
+    // (`assertCanViewFrameworks` admits any authenticated member). Gating them
+    // on `admin.manage` would hide the catalogue from the readers it exists
+    // for. Each handler still resolves ctx via `getTenantCtx`, so tenant
+    // membership is enforced.
+    {
+        relPath: 'api/t/[tenantSlug]/frameworks/route.ts',
+        reason:
+            'GET only — lists the global catalogue. Read-open to every role ' +
+            'via assertCanViewFrameworks; no write reachable here.',
+    },
+    {
+        relPath: 'api/t/[tenantSlug]/frameworks/[frameworkKey]/tree/route.ts',
+        reason:
+            'GET only — requirement tree for display. Read-open to every ' +
+            'role; no write reachable here.',
+    },
+    {
+        relPath: 'api/t/[tenantSlug]/schemes/[schemeKey]/applicability.csv/route.ts',
+        reason:
+            'GET only — the applicability CSV a farm hands its certifier. ' +
+            'Read-open to every role; the export is of the caller\'s OWN ' +
+            'tenant data (scoped in the usecase), not the catalogue.',
+    },
     // Epic D.3 — self-service security routes that are intentionally
     // NOT admin-gated. Any authenticated tenant member may operate on
     // their own MFA enrolment / challenge / current session. The

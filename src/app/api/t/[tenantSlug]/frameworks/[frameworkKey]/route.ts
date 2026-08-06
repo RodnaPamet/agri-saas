@@ -10,6 +10,7 @@ import {
 } from '@/app-layer/usecases/framework';
 import { listFarmRecordsBackingFramework } from '@/app-layer/usecases/farm-record-traceability';
 import { withApiErrorHandling } from '@/lib/errors/api';
+import { requirePermission } from '@/lib/security/permission-middleware';
 import { z } from 'zod';
 import { jsonResponse } from '@/lib/api-response';
 
@@ -119,9 +120,22 @@ export const GET = withApiErrorHandling(async (req: NextRequest, { params: param
 });
 
 // POST /api/t/[tenantSlug]/frameworks/[frameworkKey]
-export const POST = withApiErrorHandling(async (req: NextRequest, { params: paramsPromise }: { params: Promise<{ tenantSlug: string; frameworkKey: string }> }) => {
-    const params = await paramsPromise;
-    const ctx = await getTenantCtx(params, req);
+//
+// Two classes of write share this handler and they are NOT equivalent:
+//
+//   - install-template / bulk-map / bulk-install / install-pack write
+//     TENANT rows (Control, ControlRequirementLink). Tenant admin is the right
+//     gate, and each usecase applies it.
+//   - upsert-requirements writes the GLOBAL catalogue. It is gated inside the
+//     usecase by `assertCanWriteCatalogue` (the platform-tenant gate).
+//
+// `requirePermission('admin.manage')` wraps the whole handler so a denial on
+// any arm emits an audited AUTHZ_DENIED row and the route stays inside the
+// Epic C.1 coverage guardrail. It is the audited role floor, NOT the isolation
+// control — permissions resolve from Role, so every farm's admin holds it.
+export const POST = withApiErrorHandling(requirePermission<{ tenantSlug: string; frameworkKey: string }>('admin.manage', async (req, { params }, ctx) => {
+    // `requirePermission` resolves the params Promise once and forwards the
+    // RESOLVED params, so this reads `params.frameworkKey` directly.
     const url = new URL(req.url);
     const action = url.searchParams.get('action');
     const raw = await req.json();
@@ -146,4 +160,4 @@ export const POST = withApiErrorHandling(async (req: NextRequest, { params: para
     // Default: install full pack
     const body = InstallSchema.parse(raw);
     return jsonResponse(await installPack(ctx, body.packKey), { status: 201 });
-});
+}));
