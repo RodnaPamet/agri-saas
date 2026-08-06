@@ -154,6 +154,10 @@ export const CACHE_KEYS = {
         // route that has never existed. Nothing fetched it, so nothing broke;
         // it just sat in the registry describing a surface that was not there.
     },
+    // Government support schemes (ДФЗ / МЗХ / EC measures a farm applies for).
+    // A DIFFERENT domain object from `schemes` above, which is certification —
+    // separate key so the two never share a cache bucket.
+    supportSchemes: makeResource('support-schemes'),
     issues: makeResource('issues'),
     // ─── Market-price trends (global, tenant-agnostic payload) ───
     // `/trends/prices?commodity=&range=` — the query string IS part of the

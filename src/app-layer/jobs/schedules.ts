@@ -197,6 +197,22 @@ export const SCHEDULED_JOBS: ScheduleDefinition[] = [
                   description: 'Extract subsidy/regulation calendar-event proposals from policy news via Claude Haiku (proposed, never auto-published)',
                   defaultPayload: {},
               },
+              {
+                  // WEEKLY sibling: government SUPPORT SCHEMES (ДФЗ / МЗХ / EC
+                  // measures a farm applies for) from the same policy slice.
+                  // Weekly because an application window is announced weeks or
+                  // months ahead — the daily job already covers the date-points
+                  // that move. Monday 06:30 UTC, after both market-news-pull
+                  // (05:50) and the daily extraction (06:15), so it reads a
+                  // cache that is already current.
+                  //
+                  // Key-gated with its sibling: a key-less deployment must
+                  // never schedule a cron that can only no-op.
+                  name: 'support-scheme-extraction' as JobName,
+                  pattern: '30 6 * * 1',    // weekly, Monday 06:30 UTC
+                  description: 'Extract government support-scheme proposals (ДФЗ/МЗХ/EC) from policy news via Claude Haiku (proposed, never auto-published)',
+                  defaultPayload: {},
+              },
           ]
         : []),
     {

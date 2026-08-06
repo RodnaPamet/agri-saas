@@ -736,6 +736,24 @@ executorRegistry.register('news-event-extraction', async (payload) => {
     );
 });
 
+// ── support-scheme-extraction ────────────────────────────────────────
+//
+// The schedule only registers when ANTHROPIC_API_KEY is set, but an ad-hoc /
+// CLI / API-triggered run reaches this executor regardless — the job's own
+// `isSupportSchemeExtractionConfigured()` gate makes that a clean no-op.
+
+executorRegistry.register('support-scheme-extraction', async (payload) => {
+    const startedAt = new Date().toISOString();
+    const startMs = performance.now();
+    const { runSupportSchemeExtraction } = await import('./support-scheme-extraction');
+    const r = await runSupportSchemeExtraction({ lookbackHours: payload.lookbackHours });
+    return makeResult(
+        'support-scheme-extraction', startedAt, startMs,
+        r.scanned, r.created, r.skipped,
+        { scanned: r.scanned, extracted: r.extracted, created: r.created, skipped: r.skipped },
+    );
+});
+
 // ── deadline-monitor ─────────────────────────────────────────────────
 
 executorRegistry.register('deadline-monitor', async (payload) => {

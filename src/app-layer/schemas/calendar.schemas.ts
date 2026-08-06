@@ -217,7 +217,12 @@ export interface CalendarEvent {
         | 'PLANTING'
         | 'AGRO_SIGNAL'
         | 'AGRI_EVENT'
-        | 'NEWS_DERIVED_EVENT';
+        | 'NEWS_DERIVED_EVENT'
+        // A government support-scheme application window. Reuses the existing
+        // subsidy-deadline calendar TYPES (a deadline is a deadline whatever
+        // produced it) but needs its own entityType so the side panel can link
+        // back to /support-schemes rather than to a news article.
+        | 'SUPPORT_SCHEME';
     entityId: string;
     /**
      * Tenant-relative href for click-through. The route handler builds

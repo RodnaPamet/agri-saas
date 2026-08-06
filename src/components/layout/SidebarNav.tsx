@@ -223,6 +223,13 @@ export function useNavSections(): NavSectionDef[] {
                 // News (#news) — aggregated agricultural news feed, decoupled
                 // from Trends into its own destination. Visible to every tenant.
                 { href: tenantHref('/news'), label: t('news'), icon: Newspaper },
+                // Support schemes (ДФЗ / МЗХ / EC measures a farm APPLIES FOR).
+                // Sits beside News and Trends, NOT beside Schemes: a subsidy is
+                // something you apply for, a certification scheme is something
+                // you are audited against, and putting them together would make
+                // "apply by 30 Sep" and "control point CB.7.1" look like the
+                // same kind of thing.
+                { href: tenantHref('/support-schemes'), label: t('supportSchemes'), icon: Coins },
             ]),
         },
         {

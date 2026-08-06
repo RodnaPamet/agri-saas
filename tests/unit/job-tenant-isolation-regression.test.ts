@@ -297,11 +297,15 @@ describe('Executor Registry — structural tenant-scope guards', () => {
     // market-prices-pull writes GLOBAL, tenant-agnostic price cache tables
     // (MarketPriceSeries/Point, no tenantId — like SoilSample) and reads the
     // global Exchange listings; it has no tenant axis by design.
+    // support-scheme-extraction is the WEEKLY sibling of the above: same
+    // GLOBAL policy-news input, writing the GLOBAL SupportScheme table (a
+    // national ДФЗ measure is the same fact for every tenant). No tenant
+    // axis by design — a tenantId on this payload would be meaningless.
     // news-event-extraction (calendar roadmap PR 3) reads the GLOBAL
     // policy-news slice of MarketNewsItem and writes GLOBAL NewsDerivedEvent
     // rows (no tenantId on either model, like market-news-pull above) — a
     // subsidy deadline or regulation date is the same fact for every tenant.
-    const EXEMPT_JOBS = ['health-check', 'sync-pull', 'schedule-trigger-sweep', 'sharepoint-delta-sync-dispatch', 'sharepoint-subscription-renew', 'risk-appetite-monitor', 'risk-snapshot', 'report-delivery', 'exchange-expiry-sweep', 'market-prices-pull', 'market-prices-barchart', 'market-news-pull', 'news-event-extraction',
+    const EXEMPT_JOBS = ['health-check', 'sync-pull', 'schedule-trigger-sweep', 'sharepoint-delta-sync-dispatch', 'sharepoint-subscription-renew', 'risk-appetite-monitor', 'risk-snapshot', 'report-delivery', 'exchange-expiry-sweep', 'market-prices-pull', 'market-prices-barchart', 'market-news-pull', 'news-event-extraction', 'support-scheme-extraction',
         // PromotionLead is CROSS-tenant (inquirerTenantId, not tenantId) and is
         // swept globally in one pass — see job-scope-audit for the full reason.
         'promotion-lead-retention'];
@@ -379,7 +383,11 @@ describe('Payload Type Contract — tenantId field audit', () => {
         'PromotionLeadRetentionPayload',
         // Calendar roadmap PR 3 — same GLOBAL shape as MarketNewsPullPayload
         // above; NewsDerivedEvent/MarketNewsItem carry no tenantId.
-        'NewsEventExtractionPayload'];
+        'NewsEventExtractionPayload',
+        // Same reason as its sibling above: a GLOBAL job over a GLOBAL table
+        // has no tenant axis, so a tenantId field here would be a lie the type
+        // system enforced.
+        'SupportSchemeExtractionPayload'];
 
     test('every non-exempt payload interface has tenantId field', () => {
         // Extract all payload interfaces

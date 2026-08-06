@@ -125,7 +125,8 @@
         "mapping": "Scheme Mapping",
         "reports": "Report",
         "notifications": "Notify",
-        "admin": "Admin"
+        "admin": "Admin",
+        "supportSchemes": "Support schemes"
     },
     "dashboard": {
         "title": "Compliance Dashboard",
@@ -8010,5 +8011,34 @@
         "controllerContact": "Contact:",
         "keepTitle": "How long we keep it",
         "keepRequests": "An offer request is kept for {months} months from the day you send it, then marked for deletion and permanently removed {graceDays} days later. Farm records and account details are kept while your account is active."
+    },
+    "supportSchemes": {
+        "title": "Support schemes",
+        "listDescription": "Government measures you can apply for — application windows, who qualifies, and where the announcement came from.",
+        "searchPlaceholder": "Search support schemes…",
+        "colTitle": "Measure",
+        "colAuthority": "Authority",
+        "colStatus": "Status",
+        "colWindow": "Application window",
+        "colSource": "Source",
+        "status_announced": "Announced",
+        "status_open": "Open",
+        "status_closing_soon": "Closing soon",
+        "status_closed": "Closed",
+        "source_curated": "Curated",
+        "source_official_feed": "Official source",
+        "source_ai_news": "From news (AI-read, reviewed)",
+        "sourceLink": "Source",
+        "extractedOn": "Read on {date}",
+        "filterAuthority": "Authority",
+        "filterStatus": "Status",
+        "clearFilters": "Clear filters",
+        "noResultsTitle": "No support schemes match",
+        "noResultsDescription": "Try a different authority or status",
+        "emptyTitle": "No support schemes yet",
+        "emptyDescription": "Open application windows will appear here as they are announced",
+        "schemeSingular": "support scheme",
+        "schemePlural": "support schemes",
+        "loadFailed": "Couldn't load support schemes. Reload the page to try again."
     }
 }
