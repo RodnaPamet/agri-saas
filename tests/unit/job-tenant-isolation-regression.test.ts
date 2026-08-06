@@ -297,7 +297,11 @@ describe('Executor Registry — structural tenant-scope guards', () => {
     // market-prices-pull writes GLOBAL, tenant-agnostic price cache tables
     // (MarketPriceSeries/Point, no tenantId — like SoilSample) and reads the
     // global Exchange listings; it has no tenant axis by design.
-    const EXEMPT_JOBS = ['health-check', 'sync-pull', 'schedule-trigger-sweep', 'sharepoint-delta-sync-dispatch', 'sharepoint-subscription-renew', 'risk-appetite-monitor', 'risk-snapshot', 'report-delivery', 'exchange-expiry-sweep', 'market-prices-pull', 'market-prices-barchart', 'market-news-pull',
+    // news-event-extraction (calendar roadmap PR 3) reads the GLOBAL
+    // policy-news slice of MarketNewsItem and writes GLOBAL NewsDerivedEvent
+    // rows (no tenantId on either model, like market-news-pull above) — a
+    // subsidy deadline or regulation date is the same fact for every tenant.
+    const EXEMPT_JOBS = ['health-check', 'sync-pull', 'schedule-trigger-sweep', 'sharepoint-delta-sync-dispatch', 'sharepoint-subscription-renew', 'risk-appetite-monitor', 'risk-snapshot', 'report-delivery', 'exchange-expiry-sweep', 'market-prices-pull', 'market-prices-barchart', 'market-news-pull', 'news-event-extraction',
         // PromotionLead is CROSS-tenant (inquirerTenantId, not tenantId) and is
         // swept globally in one pass — see job-scope-audit for the full reason.
         'promotion-lead-retention'];
@@ -372,7 +376,10 @@ describe('Payload Type Contract — tenantId field audit', () => {
     // single tenantId; it enqueues per-tenant SharePointDeltaSyncPayload jobs.
     const EXEMPT_PAYLOADS = ['HealthCheckPayload', 'SyncPullPayload', 'ScheduleTriggerSweepPayload', 'SharePointDeltaSyncDispatchPayload', 'SharePointSubscriptionRenewPayload', 'RiskAppetiteMonitorPayload', 'RiskSnapshotPayload', 'ReportDeliveryPayload', 'ExchangeExpirySweepPayload', 'MarketPricesPullPayload', 'MarketNewsPullPayload',
         // Global sweep over a cross-tenant table — no payload tenant axis.
-        'PromotionLeadRetentionPayload'];
+        'PromotionLeadRetentionPayload',
+        // Calendar roadmap PR 3 — same GLOBAL shape as MarketNewsPullPayload
+        // above; NewsDerivedEvent/MarketNewsItem carry no tenantId.
+        'NewsEventExtractionPayload'];
 
     test('every non-exempt payload interface has tenantId field', () => {
         // Extract all payload interfaces

@@ -134,6 +134,27 @@ const EXCLUDED_ROUTES: ReadonlyArray<{ relPath: string; reason: string }> = [
             'Platform-admin-key-gated: PATCH/DELETE /api/admin/agri-events/[id] — global ' +
             'catalogue, tenant-scope does not apply.',
     },
+    // Calendar roadmap PR 3 — the NewsDerivedEvent review surface. Same
+    // shape as the agri-events entries above (GLOBAL catalogue, no
+    // tenantId, platform-admin-key-gated).
+    {
+        relPath: 'api/admin/news-derived-events/route.ts',
+        reason:
+            'Platform-admin-key-gated: GET /api/admin/news-derived-events — global ' +
+            'catalogue, tenant-scope does not apply.',
+    },
+    {
+        relPath: 'api/admin/news-derived-events/[id]/approve/route.ts',
+        reason:
+            'Platform-admin-key-gated: POST .../approve — global catalogue, tenant-scope ' +
+            'does not apply.',
+    },
+    {
+        relPath: 'api/admin/news-derived-events/[id]/reject/route.ts',
+        reason:
+            'Platform-admin-key-gated: POST .../reject — global catalogue, tenant-scope ' +
+            'does not apply.',
+    },
 ];
 
 const REPO_ROOT = path.resolve(__dirname, '../..');

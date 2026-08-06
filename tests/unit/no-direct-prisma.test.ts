@@ -83,6 +83,12 @@ describe('CI Guard: No direct prisma in tenant-scoped code', () => {
         // There is no tenantId to filter on, so the global handle carries no
         // RLS risk.
         'agri-events.ts',
+        // Calendar roadmap PR 3 — `NewsDerivedEvent` is the identical GLOBAL-
+        // catalogue shape as `AgriEvent` above (no tenantId / no RLS). Every
+        // caller here is the PLATFORM_ADMIN_API_KEY-gated review surface
+        // (list/approve/reject), invoked with no user session and therefore
+        // no RequestContext — same rationale as agri-events.ts.
+        'news-derived-events.ts',
         'sso.ts', 'mfa.ts', 'mfa-enrollment.ts', 'mfa-challenge.ts',
         'session-security.ts', 'webhook-processor.ts', 'scim-users.ts',
         // EI-3 — scim-groups resolves SCIM externalIds → IC users via a global

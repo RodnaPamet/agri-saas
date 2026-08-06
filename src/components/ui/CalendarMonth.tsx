@@ -284,11 +284,12 @@ export function CalendarMonth({
                                             key={ev.id}
                                             data-event-id={ev.id}
                                             data-event-category={ev.category}
+                                            data-event-provenance={ev.provenance}
                                         >
                                             <CalendarEventLink
                                                 href={ev.href}
                                                 external={ev.external}
-                                                title={`${te(ev.titleKey, ev.titleParams)}${ev.detail ? ` — ${ev.detail}` : ''}`}
+                                                title={`${te(ev.titleKey, ev.titleParams)}${ev.detail ? ` — ${ev.detail}` : ''}${ev.provenance === 'ai-news' ? ` (${t('aiNews.badge')})` : ''}`}
                                                 className={cn(
                                                     'flex items-center gap-1 px-1 py-0.5 rounded text-[10px] truncate',
                                                     'hover:bg-bg-muted transition-colors',
@@ -300,7 +301,13 @@ export function CalendarMonth({
                                                 <span
                                                     className={cn(
                                                         'inline-block size-2 rounded-full shrink-0',
-                                                        getCategoryTone(ev.category).bg,
+                                                        // AI-derived proposals get a HOLLOW, dashed-ring dot instead
+                                                        // of the usual solid fill — a distinct visual shape, not
+                                                        // just a colour, so it never reads as a database fact even
+                                                        // at a glance. See CalendarEvent.provenance's docblock.
+                                                        ev.provenance === 'ai-news'
+                                                            ? cn('border-2 border-dashed bg-transparent', getCategoryTone(ev.category).border)
+                                                            : getCategoryTone(ev.category).bg,
                                                         ev.status === 'done' && 'opacity-40',
                                                     )}
                                                     aria-hidden="true"

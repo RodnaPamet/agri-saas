@@ -36,6 +36,8 @@ const mockFindingFindMany = jest.fn();
 const mockTreatmentMilestoneFindMany = jest.fn();
 const mockTreatmentPlanFindMany = jest.fn();
 const mockAgriEventFindMany = jest.fn();
+// Calendar roadmap PR 3 — AI news-derived proposals. Global, like agriEvent.
+const mockNewsDerivedEventFindMany = jest.fn();
 
 // Agriculture data sources (PR 2 of the calendar roadmap).
 const mockParcelLeaseFindMany = jest.fn();
@@ -69,6 +71,7 @@ beforeEach(() => {
         mockTreatmentMilestoneFindMany,
         mockTreatmentPlanFindMany,
         mockAgriEventFindMany,
+        mockNewsDerivedEventFindMany,
         mockParcelLeaseFindMany,
         mockContractFindMany,
         mockPlantingFindMany,
@@ -127,6 +130,10 @@ beforeEach(() => {
         // Global agriculture catalogue — no tenantId on the model.
         agriEvent: {
             findMany: (...a: unknown[]) => mockAgriEventFindMany(...a),
+        },
+        // Calendar roadmap PR 3 — global, like agriEvent above.
+        newsDerivedEvent: {
+            findMany: (...a: unknown[]) => mockNewsDerivedEventFindMany(...a),
         },
         // Epic G-7
         treatmentMilestone: {
@@ -240,6 +247,10 @@ describe('getComplianceCalendarEvents — aggregation', () => {
             // written even if it were wanted. Adding it here would not
             // tighten anything — it would just fail. The positive assertion
             // below pins that intent so this stays a decision, not a gap.
+            //
+            // mockNewsDerivedEventFindMany (calendar roadmap PR 3) is
+            // absent for the identical reason — NewsDerivedEvent is also a
+            // global table with no tenantId column.
         ]) {
             expect(m).toHaveBeenCalled();
             const call = m.mock.calls[0][0] as { where: { tenantId: string } };
@@ -620,6 +631,60 @@ describe('getComplianceCalendarEvents — aggregation', () => {
         expect(byId['signal-2'].type).toBe('agro-signal-disease-risk');
         expect(byId['signal-2'].titleKey).toBe('agroSignalDiseaseRisk');
         expect(byId['signal-2'].status).toBe('scheduled');
+    });
+
+    it('AI news-derived events carry provenance/confidence/sourceUrl and link off-site (calendar roadmap PR 3)', async () => {
+        mockNewsDerivedEventFindMany.mockResolvedValue([
+            {
+                id: 'news-1',
+                title: 'ДФЗ subsidy window opens',
+                kind: 'subsidy-deadline',
+                eventDate: new Date('2026-05-20T00:00:00Z'), // before NOW
+                confidence: 0.9,
+                sourceUrl: 'https://dfz.bg/article-1',
+            },
+            {
+                id: 'news-2',
+                title: 'Regulation takes effect',
+                kind: 'regulation-effective',
+                eventDate: new Date('2026-07-01T00:00:00Z'), // after NOW
+                confidence: 0.75,
+                sourceUrl: 'https://dfz.bg/article-2',
+            },
+        ]);
+        const { getComplianceCalendarEvents } = await import(
+            '@/app-layer/usecases/compliance-calendar'
+        );
+        const result = await getComplianceCalendarEvents(makeCtx() as never, {
+            from: FROM,
+            to: TO,
+            now: NOW,
+        });
+
+        // Only status: 'APPROVED' is ever requested — a PROPOSED row must
+        // never reach a tenant's calendar.
+        const call = mockNewsDerivedEventFindMany.mock.calls[0][0] as {
+            where: { status: string };
+        };
+        expect(call.where.status).toBe('APPROVED');
+
+        const byId = Object.fromEntries(result.events.map((e) => [e.entityId, e]));
+        expect(byId['news-1'].type).toBe('ai-news-subsidy-deadline');
+        expect(byId['news-1'].category).toBe('ai-news');
+        expect(byId['news-1'].provenance).toBe('ai-news');
+        expect(byId['news-1'].confidence).toBe(0.9);
+        expect(byId['news-1'].sourceUrl).toBe('https://dfz.bg/article-1');
+        expect(byId['news-1'].href).toBe('https://dfz.bg/article-1');
+        expect(byId['news-1'].external).toBe(true);
+        expect(byId['news-1'].status).toBe('done');
+        expect(byId['news-2'].type).toBe('ai-news-regulation-effective');
+        expect(byId['news-2'].status).toBe('scheduled');
+
+        // Every non-ai-news event in this suite must NOT carry provenance —
+        // the field is the load-bearing "this is a database fact" signal.
+        for (const e of result.events) {
+            if (e.category !== 'ai-news') expect(e.provenance).toBeUndefined();
+        }
     });
 
     it('surfaces `truncated: true` when a source hits its perSourceLimit cap', async () => {

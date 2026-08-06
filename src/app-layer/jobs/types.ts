@@ -605,6 +605,18 @@ export interface MarketNewsPullPayload {
 }
 
 /**
+ * News-derived calendar events (calendar roadmap PR 3) — daily extraction
+ * of subsidy/regulation dates from GLOBAL policy-category MarketNewsItem
+ * headlines via Claude Haiku, written as PROPOSED `NewsDerivedEvent` rows.
+ * `lookbackHours` overrides the default rolling window (see
+ * `src/app-layer/jobs/news-event-extraction.ts` for why this is a window,
+ * not a persisted cursor) — mainly for manual/backfill runs.
+ */
+export interface NewsEventExtractionPayload {
+    lookbackHours?: number;
+}
+
+/**
  * Spatial-upload abuse hardening — off-thread parcel-boundary import.
  *
  * The HTTP layer stages the uploaded shapefile/KML/GeoJSON to storage
@@ -772,6 +784,10 @@ export interface JobPayloadMap {
     // weekdays ONLY when BARCHART_API_KEY is set (see schedules.ts).
     'market-prices-barchart': MarketPricesPullPayload;
     'market-news-pull': MarketNewsPullPayload;
+    // Calendar roadmap PR 3 — daily AI extraction of subsidy/regulation
+    // dates from the global policy-news cache. Scheduled ONLY when
+    // ANTHROPIC_API_KEY is set (see schedules.ts).
+    'news-event-extraction': NewsEventExtractionPayload;
 }
 
 /** Union of all valid job names */
@@ -992,6 +1008,16 @@ export const JOB_DEFAULTS: Record<JobName, {
         // Daily agri-news aggregation. One retry on a transient network/DB blip;
         // items upsert on their natural `guidHash` unique key so a re-run is
         // fully idempotent.
+        attempts: 2,
+        backoff: { type: 'exponential', delay: 10000 },
+        removeOnComplete: 50,
+        removeOnFail: 100,
+    },
+    'news-event-extraction': {
+        // Daily AI extraction over the policy-news slice. One retry on a
+        // transient network/DB/Anthropic blip; writes claim via
+        // createMany({ skipDuplicates }) on the (sourceNewsItemId, kind)
+        // unique key, so a re-run is fully idempotent.
         attempts: 2,
         backoff: { type: 'exponential', delay: 10000 },
         removeOnComplete: 50,
