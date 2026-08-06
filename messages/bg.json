@@ -4993,6 +4993,7 @@
             "controlReview": "Преглед на контрола: {name}",
             "testDue": "Краен срок за тест: {name}",
             "taskDue": "Краен срок за задача: {name}",
+            "farmTaskDue": "Краен срок за полска задача: {name}",
             "riskReview": "Преглед на риск: {name}",
             "riskTarget": "Целева дата за третиране на риск: {name}",
             "findingDue": "Краен срок за констатация: {name}",

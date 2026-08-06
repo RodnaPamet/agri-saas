@@ -42,6 +42,10 @@ export const CALENDAR_EVENT_CATEGORIES = [
     'finding',
     // Agriculture data sources (PR 2 of the calendar roadmap) — the
     // 13 date-bearing ag models this product actually runs on.
+    // `farm-task` splits off from `task`: a Task with
+    // `type: 'FARM_TASK'` is field work, not a compliance to-do, and
+    // deserves its own colour + vocabulary.
+    'farm-task',
     'lease',
     'contract',
     'planting',
@@ -77,6 +81,10 @@ export const CALENDAR_EVENT_TYPES = [
     'control-test-due',
     // task
     'task-due',
+    // farm-task — Task rows with type: 'FARM_TASK'. Same source model as
+    // `task-due`, split by `Task.type` at the loader so field work reads
+    // "Farm task due" instead of "Task due" and dots a different colour.
+    'farm-task-due',
     // risk
     'risk-review',
     'risk-target',

@@ -11,7 +11,7 @@
  *   - AuditCycle     (periodStartAt → periodEndAt — the only duration source today)
  *   - Control        (nextDueAt)
  *   - ControlTestPlan(nextDueAt)
- *   - Task           (dueAt)
+ *   - Task           (dueAt — FARM_TASK rows split into their own category)
  *   - Risk           (nextReviewAt, targetDate)
  *   - Finding        (dueDate)
  *   - ParcelLease    (startDate → endDate — duration)
@@ -643,6 +643,21 @@ async function loadTestPlanEvents(
     return { events, truncated };
 }
 
+/**
+ * Task — both compliance to-dos and farm work share this model.
+ * `type: 'FARM_TASK'` rows are field work, not a compliance deadline, and
+ * get their own category/type/title (`farm-task-due` vs `task-due`) so
+ * they read as "your farm's own to-do" rather than a GRC obligation.
+ *
+ * Farm tasks link WHICH field via `TaskLink` (LOCATION/PARCEL) — a
+ * polymorphic join table with no typed Prisma relation to either target
+ * model, so it can't be resolved with a single nested `include`. The
+ * `links` nested select below IS a real Task -> TaskLink relation
+ * (one batched query, not per-row); resolving LOCATION/PARCEL names off
+ * of it is a second pair of batched `id IN (...)` lookups — the same
+ * "hoist to one findMany + in-memory map" shape the N+1 guardrail
+ * prescribes, never a read inside the per-row loop.
+ */
 async function loadTaskEvents(
     db: PrismaTx,
     ctx: RequestContext,
@@ -661,12 +676,44 @@ async function loadTaskEvents(
             title: true,
             dueAt: true,
             status: true,
+            type: true,
             assigneeUserId: true,
+            links: {
+                where: { entityType: { in: ['LOCATION', 'PARCEL'] } },
+                select: { entityType: true, entityId: true },
+            },
         },
         orderBy: { dueAt: 'asc' },
         take: limit + 1,
     });
     const { rows, truncated } = capRows(rawRows, limit);
+
+    const locationIds = new Set<string>();
+    const parcelIds = new Set<string>();
+    for (const r of rows) {
+        if (r.type !== 'FARM_TASK') continue;
+        for (const link of r.links) {
+            if (link.entityType === 'LOCATION') locationIds.add(link.entityId);
+            if (link.entityType === 'PARCEL') parcelIds.add(link.entityId);
+        }
+    }
+    const [locations, parcels] = await Promise.all([
+        locationIds.size
+            ? db.location.findMany({
+                  where: { tenantId: ctx.tenantId, id: { in: [...locationIds] } },
+                  select: { id: true, name: true },
+              })
+            : Promise.resolve([]),
+        parcelIds.size
+            ? db.parcel.findMany({
+                  where: { tenantId: ctx.tenantId, id: { in: [...parcelIds] } },
+                  select: { id: true, name: true },
+              })
+            : Promise.resolve([]),
+    ]);
+    const locationNameById = new Map(locations.map((l) => [l.id, l.name]));
+    const parcelNameById = new Map(parcels.map((p) => [p.id, p.name]));
+
     const events = rows
         .filter((r) => r.dueAt)
         .map((r): CalendarEvent => {
@@ -675,11 +722,21 @@ async function loadTaskEvents(
                 r.status === 'RESOLVED' ||
                 r.status === 'CLOSED' ||
                 r.status === 'CANCELED';
+            const isFarmTask = r.type === 'FARM_TASK';
+            const fieldNames = isFarmTask
+                ? r.links
+                      .map((link) =>
+                          link.entityType === 'LOCATION'
+                              ? locationNameById.get(link.entityId)
+                              : parcelNameById.get(link.entityId),
+                      )
+                      .filter((name): name is string => Boolean(name))
+                : [];
             return {
-                id: `TASK:${r.id}:task-due`,
-                type: 'task-due',
-                category: 'task',
-                titleKey: 'taskDue',
+                id: `TASK:${r.id}:${isFarmTask ? 'farm-task-due' : 'task-due'}`,
+                type: isFarmTask ? 'farm-task-due' : 'task-due',
+                category: isFarmTask ? 'farm-task' : 'task',
+                titleKey: isFarmTask ? 'farmTaskDue' : 'taskDue',
                 titleParams: { name: r.title },
                 date: date.toISOString(),
                 status: classifyStatus(date, now, isDone),
@@ -687,6 +744,7 @@ async function loadTaskEvents(
                 entityId: r.id,
                 href: tenantHrefFromCtx(ctx, `/farm-tasks/${r.id}`),
                 ownerUserId: r.assigneeUserId ?? undefined,
+                detail: fieldNames.length ? fieldNames.join(', ') : undefined,
             };
         });
     return { events, truncated };

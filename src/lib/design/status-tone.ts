@@ -182,6 +182,14 @@ export function getCategoryTone(category: CalendarEventCategory): ToneBundle {
                 content: 'text-content-warning',
                 border: 'border-border-warning',
             };
+        // Field work — split off from `task` so it reads as "your farm's
+        // own to-do" rather than a compliance deadline.
+        case 'farm-task':
+            return {
+                bg: 'bg-status-success',
+                content: 'text-content-success',
+                border: 'border-border-success',
+            };
         // A land-lease term ending is a renewal decision, same urgency
         // register as a policy review.
         case 'lease':

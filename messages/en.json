@@ -4993,6 +4993,7 @@
             "controlReview": "Control review: {name}",
             "testDue": "Test due: {name}",
             "taskDue": "Task due: {name}",
+            "farmTaskDue": "Farm task due: {name}",
             "riskReview": "Risk review: {name}",
             "riskTarget": "Risk mitigation target: {name}",
             "findingDue": "Finding due: {name}",

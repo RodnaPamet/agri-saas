@@ -42,6 +42,9 @@ const mockParcelLeaseFindMany = jest.fn();
 const mockContractFindMany = jest.fn();
 const mockPlantingFindMany = jest.fn();
 const mockAgroSignalFindMany = jest.fn();
+// Farm-task field-name resolution (loadTaskEvents' TaskLink join).
+const mockLocationFindMany = jest.fn();
+const mockParcelFindMany = jest.fn();
 
 const mockTaskCount = jest.fn().mockResolvedValue(0);
 const mockControlCount = jest.fn().mockResolvedValue(0);
@@ -70,6 +73,8 @@ beforeEach(() => {
         mockContractFindMany,
         mockPlantingFindMany,
         mockAgroSignalFindMany,
+        mockLocationFindMany,
+        mockParcelFindMany,
     ].forEach((m) => m.mockReset().mockResolvedValue([]));
     [
         mockTaskCount,
@@ -143,6 +148,14 @@ beforeEach(() => {
         },
         agroSignal: {
             findMany: (...a: unknown[]) => mockAgroSignalFindMany(...a),
+        },
+        // loadTaskEvents' batched FARM_TASK -> Location/Parcel name
+        // resolution (only invoked when a FARM_TASK row carries links).
+        location: {
+            findMany: (...a: unknown[]) => mockLocationFindMany(...a),
+        },
+        parcel: {
+            findMany: (...a: unknown[]) => mockParcelFindMany(...a),
         },
     };
     jest.mock('@/lib/db-context', () => ({
@@ -436,6 +449,45 @@ describe('getComplianceCalendarEvents — aggregation', () => {
             now: NOW,
         });
         expect(result.events[0].href).toBe('/t/acme/farm-tasks/t-1');
+    });
+
+    it('splits FARM_TASK rows into their own category/type and surfaces the linked field via TaskLink', async () => {
+        mockTaskFindMany.mockResolvedValue([
+            {
+                id: 'ft-1',
+                title: 'Irrigate north block',
+                dueAt: new Date('2026-06-10T00:00:00Z'),
+                status: 'OPEN',
+                type: 'FARM_TASK',
+                assigneeUserId: null,
+                links: [{ entityType: 'LOCATION', entityId: 'loc-1' }],
+            },
+        ]);
+        mockLocationFindMany.mockResolvedValue([
+            { id: 'loc-1', name: 'North Block' },
+        ]);
+        const { getComplianceCalendarEvents } = await import(
+            '@/app-layer/usecases/compliance-calendar'
+        );
+        const result = await getComplianceCalendarEvents(makeCtx() as never, {
+            from: FROM,
+            to: TO,
+            now: NOW,
+        });
+        expect(result.events).toHaveLength(1);
+        const ev = result.events[0];
+        expect(ev.type).toBe('farm-task-due');
+        expect(ev.category).toBe('farm-task');
+        expect(ev.titleKey).toBe('farmTaskDue');
+        expect(ev.detail).toBe('North Block');
+        expect(mockLocationFindMany).toHaveBeenCalledWith(
+            expect.objectContaining({
+                where: { tenantId: TENANT_ID, id: { in: ['loc-1'] } },
+            }),
+        );
+        // The batched resolution never touches Parcel — no PARCEL link
+        // was returned, so the guarded fetch is skipped entirely.
+        expect(mockParcelFindMany).not.toHaveBeenCalled();
     });
 
     it('parcel leases, contracts, and plantings emit duration events (date + end) with tenant hrefs', async () => {
