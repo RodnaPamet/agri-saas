@@ -4982,6 +4982,7 @@
         "clickDay": "Кликнете върху ден, за да видите събитията за тази дата.",
         "moreEvents": "+{count} още",
         "addTask": "Задача",
+        "truncatedNotice": "Някои източници върнаха повече събития, отколкото могат да бъдат показани. Стеснете периода, за да видите всичко.",
         "event": {
             "evidenceReview": "Преглед на доказателство: {name}",
             "policyReview": "Преглед на политика: {name}",
@@ -4997,7 +4998,12 @@
             "findingDue": "Краен срок за констатация: {name}",
             "milestone": "Етап: {name}",
             "planTarget": "Целева дата на плана: {name}",
-            "raw": "{name}"
+            "raw": "{name}",
+            "parcelLease": "Наем на парцел: {name}",
+            "contractDelivery": "Прозорец за доставка: {name}",
+            "plantingCycle": "Засаждане: {name}",
+            "agroSignalSprayWindow": "Предупреждение за прозорец за пръскане: {name}",
+            "agroSignalDiseaseRisk": "Сигнал за риск от болест: {name}"
         }
     },
     "farmTasks": {

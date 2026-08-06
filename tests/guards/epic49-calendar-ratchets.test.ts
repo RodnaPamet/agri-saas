@@ -70,6 +70,11 @@ describe('Epic 49 — calendar feature wiring', () => {
             'loadTaskEvents',
             'loadRiskEvents',
             'loadFindingEvents',
+            // Agriculture data sources (PR 2 of the calendar roadmap).
+            'loadParcelLeaseEvents',
+            'loadContractEvents',
+            'loadPlantingEvents',
+            'loadAgroSignalEvents',
             'loadAgriEventEvents',
         ]) {
             expect(src).toMatch(new RegExp(`function\\s+${fn}\\b`));

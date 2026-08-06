@@ -230,6 +230,15 @@ export function CalendarClient({
                 </div>
             )}
 
+            {/* Truncation notice — at least one source hit its per-source
+                cap server-side. A partial schedule should say so rather
+                than silently rendering as complete. */}
+            {!calQuery.isError && calQuery.data?.truncated && (
+                <div className="rounded-lg border border-border-warning bg-bg-warning px-4 py-3 text-sm text-content-warning">
+                    {t('truncatedNotice')}
+                </div>
+            )}
+
             {/* Body */}
             <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-section">
                 <div className={cardVariants({ density: 'compact' })}>

@@ -182,6 +182,38 @@ export function getCategoryTone(category: CalendarEventCategory): ToneBundle {
                 content: 'text-content-warning',
                 border: 'border-border-warning',
             };
+        // A land-lease term ending is a renewal decision, same urgency
+        // register as a policy review.
+        case 'lease':
+            return {
+                bg: 'bg-status-warning',
+                content: 'text-content-warning',
+                border: 'border-border-warning',
+            };
+        // A marketing contract's delivery window — brand tone, mirroring
+        // `vendor`: both are a commercial counterparty relationship.
+        case 'contract':
+            return {
+                bg: 'bg-[var(--brand-default)]',
+                content: 'text-[var(--brand-default)]',
+                border: 'border-[var(--brand-default)]',
+            };
+        // A planting cycle is agronomic information, not an obligation —
+        // same tone family as `evidence`/`agri-event`.
+        case 'planting':
+            return {
+                bg: 'bg-status-info',
+                content: 'text-content-info',
+                border: 'border-border-info',
+            };
+        // Agro-signals ARE alerts (spray-window unsuitable, disease risk
+        // escalation) — the danger tone matches `risk`.
+        case 'agro-signal':
+            return {
+                bg: 'bg-status-danger',
+                content: 'text-content-error',
+                border: 'border-border-error',
+            };
         // Curated agriculture catalogue. Deliberately the info tone rather
         // than a status tone: these are announcements, not obligations the
         // tenant is being measured against, and toning them like a deadline

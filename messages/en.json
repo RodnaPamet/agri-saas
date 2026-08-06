@@ -4982,6 +4982,7 @@
         "clickDay": "Click a day to see events on that date.",
         "moreEvents": "+{count} more",
         "addTask": "Task",
+        "truncatedNotice": "Some sources returned more events than could be shown. Narrow the date range to see everything.",
         "event": {
             "evidenceReview": "Evidence review: {name}",
             "policyReview": "Policy review: {name}",
@@ -4997,7 +4998,12 @@
             "findingDue": "Finding due: {name}",
             "milestone": "Milestone: {name}",
             "planTarget": "Plan target: {name}",
-            "raw": "{name}"
+            "raw": "{name}",
+            "parcelLease": "Land lease: {name}",
+            "contractDelivery": "Delivery window: {name}",
+            "plantingCycle": "Planting: {name}",
+            "agroSignalSprayWindow": "Spray window warning: {name}",
+            "agroSignalDiseaseRisk": "Disease risk alert: {name}"
         }
     },
     "farmTasks": {

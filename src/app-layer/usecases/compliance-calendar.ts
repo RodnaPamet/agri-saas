@@ -14,8 +14,13 @@
  *   - Task           (dueAt)
  *   - Risk           (nextReviewAt, targetDate)
  *   - Finding        (dueDate)
+ *   - ParcelLease    (startDate → endDate — duration)
+ *   - Contract       (deliveryStart → deliveryEnd — duration)
+ *   - Planting       (sowDate → harvestEndDate — duration)
+ *   - AgroSignal     (signalDate)
  *
- * Tenant isolation: every Prisma query starts with `tenantId: ctx.tenantId`.
+ * Tenant isolation: every Prisma query starts with `tenantId: ctx.tenantId`
+ * (AgroSignal has no `deletedAt` column — see its loader for why).
  *
  * Range bounding: the schema guarantees `from <= to <= from + 2y`. Inside
  * the usecase we issue parallel point queries with date predicates so the
@@ -24,6 +29,18 @@
  * Status mapping: each source maps its lifecycle status into one of
  * `scheduled | due_soon | overdue | done | unknown`. The map is local
  * to the source (one place to look when a new entity is added).
+ *
+ * Resilience: the fan-out is `Promise.allSettled`, not `Promise.all` — a
+ * NEW source is a NEW way for the whole calendar to go blank if a query
+ * throws (a bad index, an RLS edge case, a null the mapper doesn't
+ * expect). A rejected source is logged and the survivors still render;
+ * see `logRejectedSources` below.
+ *
+ * Truncation: every loader requests one row past its `perSourceLimit`
+ * (the same +1 trick `getUpcomingDeadlineCount` uses for the badge) and
+ * now carries an `orderBy`, so a capped source drops its LATEST rows in
+ * a stable, deterministic order rather than an arbitrary DB-order slice.
+ * `CalendarResponse.truncated` is true when any source hit its cap.
  */
 
 import { runInTenantContext } from '@/lib/db-context';
@@ -31,7 +48,8 @@ import type { AgriEventCategory } from '@/app-layer/schemas/agri-event.schemas';
 import type { PrismaTx } from '@/lib/db-context';
 import { assertCanRead } from '../policies/common';
 import { TERMINAL_WORK_ITEM_STATUSES } from '../domain/work-item-status';
-import type { WorkItemStatus } from '@prisma/client';
+import type { WorkItemStatus, AgroSignalKind } from '@prisma/client';
+import { logger } from '@/lib/observability/logger';
 import type { RequestContext } from '../types';
 import {
     type CalendarEvent,
@@ -61,6 +79,38 @@ export interface GetCalendarEventsInput {
     perSourceLimit?: number;
 }
 
+/** One source loader's normalised output. */
+interface SourceResult {
+    events: CalendarEvent[];
+    /** True when the loader's query hit `perSourceLimit` and had to cap. */
+    truncated: boolean;
+}
+
+/**
+ * 1:1, in order, with the `Promise.allSettled` array in
+ * `getComplianceCalendarEvents`. Used only to name a rejected source in
+ * the log line below — keep it in sync when a source is added/removed.
+ */
+const CALENDAR_SOURCE_NAMES = [
+    'evidence',
+    'policy',
+    'vendor',
+    'vendorDocument',
+    'auditCycle',
+    'control',
+    'testPlan',
+    'task',
+    'risk',
+    'finding',
+    'treatmentMilestone',
+    'treatmentPlan',
+    'parcelLease',
+    'contract',
+    'planting',
+    'agroSignal',
+    'agriEvent',
+] as const;
+
 export async function getComplianceCalendarEvents(
     ctx: RequestContext,
     input: GetCalendarEventsInput,
@@ -76,22 +126,12 @@ export async function getComplianceCalendarEvents(
     // role + sets `app.tenant_id` so every read goes through the
     // RLS policies — that's belt-and-braces with the explicit
     // `tenantId: ctx.tenantId` filter inside each loader.
-    const [
-        evidenceEvents,
-        policyEvents,
-        vendorEvents,
-        vendorDocEvents,
-        auditCycleEvents,
-        controlEvents,
-        testPlanEvents,
-        taskEvents,
-        riskEvents,
-        findingEvents,
-        treatmentMilestoneEvents,
-        treatmentPlanEvents,
-        agriEventEvents,
-    ] = await runInTenantContext(ctx, (db) =>
-        Promise.all([
+    //
+    // `Promise.allSettled`, NOT `Promise.all`: with 17 sources fanning
+    // out, one throwing loader must not blank the other 16. A rejected
+    // source is logged and dropped; the rest still render.
+    const settled = await runInTenantContext(ctx, (db) =>
+        Promise.allSettled<SourceResult>([
             loadEvidenceEvents(db, ctx, range, now, limit),
             loadPolicyEvents(db, ctx, range, now, limit),
             loadVendorEvents(db, ctx, range, now, limit),
@@ -106,27 +146,37 @@ export async function getComplianceCalendarEvents(
             // plans contribute one per non-completed plan target.
             loadTreatmentMilestoneEvents(db, ctx, range, now, limit),
             loadTreatmentPlanEvents(db, ctx, range, now, limit),
+            // Agriculture data sources (PR 2 of the calendar roadmap).
+            loadParcelLeaseEvents(db, ctx, range, now, limit),
+            loadContractEvents(db, ctx, range, now, limit),
+            loadPlantingEvents(db, ctx, range, now, limit),
+            loadAgroSignalEvents(db, ctx, range, now, limit),
             // Global curated catalogue — see loadAgriEventEvents on why
             // this one carries no tenantId predicate.
             loadAgriEventEvents(db, ctx, range, now, limit),
         ]),
     );
 
-    let all: CalendarEvent[] = [
-        ...evidenceEvents,
-        ...policyEvents,
-        ...vendorEvents,
-        ...vendorDocEvents,
-        ...auditCycleEvents,
-        ...controlEvents,
-        ...testPlanEvents,
-        ...taskEvents,
-        ...riskEvents,
-        ...findingEvents,
-        ...treatmentMilestoneEvents,
-        ...treatmentPlanEvents,
-        ...agriEventEvents,
-    ];
+    let all: CalendarEvent[] = [];
+    let truncated = false;
+    settled.forEach((result, i) => {
+        if (result.status === 'fulfilled') {
+            all.push(...result.value.events);
+            if (result.value.truncated) truncated = true;
+            return;
+        }
+        // A partial calendar beats no calendar — log the failure and let
+        // the surviving sources render rather than rethrowing.
+        logger.error('compliance-calendar: source failed, serving a partial calendar', {
+            component: 'compliance-calendar',
+            tenantId: ctx.tenantId,
+            source: CALENDAR_SOURCE_NAMES[i],
+            error:
+                result.reason instanceof Error
+                    ? result.reason.message
+                    : String(result.reason),
+        });
+    });
 
     // Apply the type / category filter post-aggregation. The per-source
     // queries don't filter by type because most sources contribute one
@@ -151,10 +201,25 @@ export async function getComplianceCalendarEvents(
             from: range.from.toISOString(),
             to: range.to.toISOString(),
         },
+        truncated,
     };
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────
+
+/**
+ * Shared truncation-detection helper. Every loader below requests
+ * `limit + 1` rows; if the extra row came back, the source was
+ * truncated. Mirrors the `MAX_BADGE_COUNT + 1` trick in
+ * `getUpcomingDeadlineCount` — cheaper than a second COUNT query, and it
+ * tells the caller the truth instead of silently dropping rows.
+ */
+function capRows<T>(rows: T[], limit: number): { rows: T[]; truncated: boolean } {
+    if (rows.length > limit) {
+        return { rows: rows.slice(0, limit), truncated: true };
+    }
+    return { rows, truncated: false };
+}
 
 interface DateRange {
     from: Date;
@@ -209,8 +274,8 @@ async function loadEvidenceEvents(
     range: DateRange,
     now: Date,
     limit: number,
-): Promise<CalendarEvent[]> {
-    const rows = await db.evidence.findMany({
+): Promise<SourceResult> {
+    const rawRows = await db.evidence.findMany({
         where: {
             tenantId: ctx.tenantId,
             deletedAt: null,
@@ -223,9 +288,11 @@ async function loadEvidenceEvents(
             status: true,
             ownerUserId: true,
         },
-        take: limit,
+        orderBy: { nextReviewDate: 'asc' },
+        take: limit + 1,
     });
-    return rows
+    const { rows, truncated } = capRows(rawRows, limit);
+    const events = rows
         .filter((r) => r.nextReviewDate)
         .map((r): CalendarEvent => {
             const date = r.nextReviewDate as Date;
@@ -244,6 +311,7 @@ async function loadEvidenceEvents(
                 ownerUserId: r.ownerUserId ?? undefined,
             };
         });
+    return { events, truncated };
 }
 
 async function loadPolicyEvents(
@@ -252,8 +320,8 @@ async function loadPolicyEvents(
     range: DateRange,
     now: Date,
     limit: number,
-): Promise<CalendarEvent[]> {
-    const rows = await db.policy.findMany({
+): Promise<SourceResult> {
+    const rawRows = await db.policy.findMany({
         where: {
             tenantId: ctx.tenantId,
             deletedAt: null,
@@ -265,9 +333,11 @@ async function loadPolicyEvents(
             nextReviewAt: true,
             status: true,
         },
-        take: limit,
+        orderBy: { nextReviewAt: 'asc' },
+        take: limit + 1,
     });
-    return rows
+    const { rows, truncated } = capRows(rawRows, limit);
+    const events = rows
         .filter((r) => r.nextReviewAt)
         .map((r): CalendarEvent => {
             const date = r.nextReviewAt as Date;
@@ -285,6 +355,7 @@ async function loadPolicyEvents(
                 href: tenantHrefFromCtx(ctx, `/policies/${r.id}`),
             };
         });
+    return { events, truncated };
 }
 
 async function loadVendorEvents(
@@ -293,8 +364,8 @@ async function loadVendorEvents(
     range: DateRange,
     now: Date,
     limit: number,
-): Promise<CalendarEvent[]> {
-    const rows = await db.vendor.findMany({
+): Promise<SourceResult> {
+    const rawRows = await db.vendor.findMany({
         where: {
             tenantId: ctx.tenantId,
             deletedAt: null,
@@ -317,8 +388,10 @@ async function loadVendorEvents(
             status: true,
             ownerUserId: true,
         },
-        take: limit,
+        orderBy: { nextReviewAt: 'asc' },
+        take: limit + 1,
     });
+    const { rows, truncated } = capRows(rawRows, limit);
     const events: CalendarEvent[] = [];
     for (const r of rows) {
         const isOffboarded = r.status === 'OFFBOARDED';
@@ -365,7 +438,7 @@ async function loadVendorEvents(
             });
         }
     }
-    return events;
+    return { events, truncated };
 }
 
 async function loadVendorDocumentEvents(
@@ -374,8 +447,8 @@ async function loadVendorDocumentEvents(
     range: DateRange,
     now: Date,
     limit: number,
-): Promise<CalendarEvent[]> {
-    const rows = await db.vendorDocument.findMany({
+): Promise<SourceResult> {
+    const rawRows = await db.vendorDocument.findMany({
         where: {
             tenantId: ctx.tenantId,
             validTo: { not: null, gte: range.from, lte: range.to },
@@ -387,9 +460,11 @@ async function loadVendorDocumentEvents(
             vendorId: true,
             vendor: { select: { name: true } },
         },
-        take: limit,
+        orderBy: { validTo: 'asc' },
+        take: limit + 1,
     });
-    return rows
+    const { rows, truncated } = capRows(rawRows, limit);
+    const events = rows
         .filter((r) => r.validTo)
         .map((r): CalendarEvent => {
             const date = r.validTo as Date;
@@ -406,6 +481,7 @@ async function loadVendorDocumentEvents(
                 href: tenantHrefFromCtx(ctx, `/vendors/${r.vendorId}`),
             };
         });
+    return { events, truncated };
 }
 
 async function loadAuditCycleEvents(
@@ -414,11 +490,11 @@ async function loadAuditCycleEvents(
     range: DateRange,
     now: Date,
     limit: number,
-): Promise<CalendarEvent[]> {
+): Promise<SourceResult> {
     // AuditCycle is the only duration source today: emits an event with
     // `start` (periodStartAt) and `end` (periodEndAt). Either bound
     // intersecting the queried range surfaces the cycle.
-    const rows = await db.auditCycle.findMany({
+    const rawRows = await db.auditCycle.findMany({
         where: {
             tenantId: ctx.tenantId,
             deletedAt: null,
@@ -441,9 +517,11 @@ async function loadAuditCycleEvents(
             periodEndAt: true,
             status: true,
         },
-        take: limit,
+        orderBy: { periodStartAt: 'asc' },
+        take: limit + 1,
     });
-    return rows
+    const { rows, truncated } = capRows(rawRows, limit);
+    const events = rows
         .filter((r) => r.periodStartAt || r.periodEndAt)
         .map((r): CalendarEvent => {
             const start = r.periodStartAt ?? r.periodEndAt!;
@@ -467,6 +545,7 @@ async function loadAuditCycleEvents(
                 detail: r.frameworkKey,
             };
         });
+    return { events, truncated };
 }
 
 async function loadControlEvents(
@@ -475,8 +554,8 @@ async function loadControlEvents(
     range: DateRange,
     now: Date,
     limit: number,
-): Promise<CalendarEvent[]> {
-    const rows = await db.control.findMany({
+): Promise<SourceResult> {
+    const rawRows = await db.control.findMany({
         where: {
             tenantId: ctx.tenantId,
             deletedAt: null,
@@ -490,9 +569,11 @@ async function loadControlEvents(
             status: true,
             ownerUserId: true,
         },
-        take: limit,
+        orderBy: { nextDueAt: 'asc' },
+        take: limit + 1,
     });
-    return rows
+    const { rows, truncated } = capRows(rawRows, limit);
+    const events = rows
         .filter((r) => r.nextDueAt)
         .map((r): CalendarEvent => {
             const date = r.nextDueAt as Date;
@@ -511,6 +592,7 @@ async function loadControlEvents(
                 ownerUserId: r.ownerUserId ?? undefined,
             };
         });
+    return { events, truncated };
 }
 
 async function loadTestPlanEvents(
@@ -519,8 +601,8 @@ async function loadTestPlanEvents(
     range: DateRange,
     now: Date,
     limit: number,
-): Promise<CalendarEvent[]> {
-    const rows = await db.controlTestPlan.findMany({
+): Promise<SourceResult> {
+    const rawRows = await db.controlTestPlan.findMany({
         where: {
             tenantId: ctx.tenantId,
             status: 'ACTIVE',
@@ -533,9 +615,11 @@ async function loadTestPlanEvents(
             controlId: true,
             control: { select: { name: true } },
         },
-        take: limit,
+        orderBy: { nextDueAt: 'asc' },
+        take: limit + 1,
     });
-    return rows
+    const { rows, truncated } = capRows(rawRows, limit);
+    const events = rows
         .filter((r) => r.nextDueAt)
         .map((r): CalendarEvent => {
             const date = r.nextDueAt as Date;
@@ -556,6 +640,7 @@ async function loadTestPlanEvents(
                 detail: r.control.name,
             };
         });
+    return { events, truncated };
 }
 
 async function loadTaskEvents(
@@ -564,8 +649,8 @@ async function loadTaskEvents(
     range: DateRange,
     now: Date,
     limit: number,
-): Promise<CalendarEvent[]> {
-    const rows = await db.task.findMany({
+): Promise<SourceResult> {
+    const rawRows = await db.task.findMany({
         where: {
             tenantId: ctx.tenantId,
             deletedAt: null,
@@ -578,9 +663,11 @@ async function loadTaskEvents(
             status: true,
             assigneeUserId: true,
         },
-        take: limit,
+        orderBy: { dueAt: 'asc' },
+        take: limit + 1,
     });
-    return rows
+    const { rows, truncated } = capRows(rawRows, limit);
+    const events = rows
         .filter((r) => r.dueAt)
         .map((r): CalendarEvent => {
             const date = r.dueAt as Date;
@@ -602,6 +689,7 @@ async function loadTaskEvents(
                 ownerUserId: r.assigneeUserId ?? undefined,
             };
         });
+    return { events, truncated };
 }
 
 async function loadRiskEvents(
@@ -610,8 +698,8 @@ async function loadRiskEvents(
     range: DateRange,
     now: Date,
     limit: number,
-): Promise<CalendarEvent[]> {
-    const rows = await db.risk.findMany({
+): Promise<SourceResult> {
+    const rawRows = await db.risk.findMany({
         where: {
             tenantId: ctx.tenantId,
             deletedAt: null,
@@ -627,8 +715,10 @@ async function loadRiskEvents(
             targetDate: true,
             status: true,
         },
-        take: limit,
+        orderBy: { nextReviewAt: 'asc' },
+        take: limit + 1,
     });
+    const { rows, truncated } = capRows(rawRows, limit);
     const events: CalendarEvent[] = [];
     for (const r of rows) {
         const isClosed = r.status === 'CLOSED' || r.status === 'ACCEPTED';
@@ -669,7 +759,7 @@ async function loadRiskEvents(
             });
         }
     }
-    return events;
+    return { events, truncated };
 }
 
 async function loadFindingEvents(
@@ -678,8 +768,8 @@ async function loadFindingEvents(
     range: DateRange,
     now: Date,
     limit: number,
-): Promise<CalendarEvent[]> {
-    const rows = await db.finding.findMany({
+): Promise<SourceResult> {
+    const rawRows = await db.finding.findMany({
         where: {
             tenantId: ctx.tenantId,
             deletedAt: null,
@@ -692,9 +782,11 @@ async function loadFindingEvents(
             status: true,
             owner: true,
         },
-        take: limit,
+        orderBy: { dueDate: 'asc' },
+        take: limit + 1,
     });
-    return rows
+    const { rows, truncated } = capRows(rawRows, limit);
+    const events = rows
         .filter((r) => r.dueDate)
         .map((r): CalendarEvent => {
             const date = r.dueDate as Date;
@@ -713,6 +805,7 @@ async function loadFindingEvents(
                 ownerUserId: r.owner ?? undefined,
             };
         });
+    return { events, truncated };
 }
 
 // ─── Lightweight badge query ─────────────────────────────────────────
@@ -826,8 +919,8 @@ async function loadTreatmentMilestoneEvents(
     range: DateRange,
     now: Date,
     limit: number,
-): Promise<CalendarEvent[]> {
-    const rows = await db.treatmentMilestone.findMany({
+): Promise<SourceResult> {
+    const rawRows = await db.treatmentMilestone.findMany({
         where: {
             tenantId: ctx.tenantId,
             dueDate: { gte: range.from, lte: range.to },
@@ -850,9 +943,10 @@ async function loadTreatmentMilestoneEvents(
             },
         },
         orderBy: { dueDate: 'asc' },
-        take: limit,
+        take: limit + 1,
     });
-    return rows.map((r): CalendarEvent => {
+    const { rows, truncated } = capRows(rawRows, limit);
+    const events = rows.map((r): CalendarEvent => {
         const date = r.dueDate;
         const isDone = r.completedAt !== null;
         const riskTitle = r.treatmentPlan?.risk?.title ?? 'Risk';
@@ -873,6 +967,7 @@ async function loadTreatmentMilestoneEvents(
             detail: riskTitle,
         };
     });
+    return { events, truncated };
 }
 
 /**
@@ -886,8 +981,8 @@ async function loadTreatmentPlanEvents(
     range: DateRange,
     now: Date,
     limit: number,
-): Promise<CalendarEvent[]> {
-    const rows = await db.riskTreatmentPlan.findMany({
+): Promise<SourceResult> {
+    const rawRows = await db.riskTreatmentPlan.findMany({
         where: {
             tenantId: ctx.tenantId,
             deletedAt: null,
@@ -902,9 +997,10 @@ async function loadTreatmentPlanEvents(
             risk: { select: { title: true } },
         },
         orderBy: { targetDate: 'asc' },
-        take: limit,
+        take: limit + 1,
     });
-    return rows.map((r): CalendarEvent => {
+    const { rows, truncated } = capRows(rawRows, limit);
+    const events = rows.map((r): CalendarEvent => {
         const date = r.targetDate;
         return {
             id: `RISK_TREATMENT_PLAN:${r.id}:treatment-plan-target`,
@@ -920,6 +1016,7 @@ async function loadTreatmentPlanEvents(
             detail: `${r.strategy} strategy`,
         };
     });
+    return { events, truncated };
 }
 
 // ─── Agriculture catalogue ───────────────────────────────────────────
@@ -963,8 +1060,8 @@ async function loadAgriEventEvents(
     range: DateRange,
     now: Date,
     limit: number,
-): Promise<CalendarEvent[]> {
-    const rows = await db.agriEvent.findMany({
+): Promise<SourceResult> {
+    const rawRows = await db.agriEvent.findMany({
         where: {
             OR: [
                 { startsAt: { gte: range.from, lte: range.to } },
@@ -987,10 +1084,11 @@ async function loadAgriEventEvents(
             url: true,
         },
         orderBy: { startsAt: 'asc' },
-        take: limit,
+        take: limit + 1,
     });
+    const { rows, truncated } = capRows(rawRows, limit);
 
-    return rows.map((r): CalendarEvent => {
+    const events = rows.map((r): CalendarEvent => {
         const type = AGRI_CATEGORY_TO_TYPE[
             r.category as AgriEventCategory
         ] ?? 'agri-fair';
@@ -1023,4 +1121,294 @@ async function loadAgriEventEvents(
             external: r.url != null,
         };
     });
+    return { events, truncated };
+}
+
+// ─── Agriculture data sources (PR 2 of the calendar roadmap) ────────
+//
+// Thirteen date-bearing agriculture models existed with zero calendar
+// presence before this PR. Four are wired up here, chosen for having a
+// clear "this belongs on a schedule a farmer checks" shape: land
+// obligations (lease), commercial commitments (contract), crop cycles
+// (planting), and time-sensitive advisories (agro-signal). Each follows
+// `loadAgriEventEvents`'s shape above: tenant predicate (or documented
+// absence), a range predicate that also matches rows SPANNING the
+// window, `orderBy` + the `limit + 1`/`capRows` truncation trick, and a
+// `titleKey`/`titleParams` pair — never an English string built here.
+
+/**
+ * A land-use agreement (ParcelLease) — duration event from `startDate`
+ * to `endDate`. Both bounds are nullable (a lease can be recorded
+ * before a start/end date is agreed); `capRows`'s slice runs after the
+ * null-bound rows are already excluded so `truncated` still reflects
+ * the real query, not the post-filter count.
+ */
+async function loadParcelLeaseEvents(
+    db: PrismaTx,
+    ctx: RequestContext,
+    range: DateRange,
+    now: Date,
+    limit: number,
+): Promise<SourceResult> {
+    const rawRows = await db.parcelLease.findMany({
+        where: {
+            tenantId: ctx.tenantId,
+            deletedAt: null,
+            OR: [
+                { startDate: { gte: range.from, lte: range.to } },
+                { endDate: { gte: range.from, lte: range.to } },
+                {
+                    AND: [
+                        { startDate: { lte: range.from } },
+                        { endDate: { gte: range.to } },
+                    ],
+                },
+            ],
+        },
+        select: {
+            id: true,
+            lessorName: true,
+            startDate: true,
+            endDate: true,
+            parcel: { select: { name: true } },
+        },
+        orderBy: { startDate: 'asc' },
+        take: limit + 1,
+    });
+    const { rows, truncated } = capRows(rawRows, limit);
+    const events = rows
+        .filter((r) => r.startDate || r.endDate)
+        .map((r): CalendarEvent => {
+            const start = r.startDate ?? r.endDate!;
+            const end =
+                r.endDate && r.startDate && r.endDate !== r.startDate
+                    ? r.endDate
+                    : undefined;
+            return {
+                id: `PARCEL_LEASE:${r.id}:parcel-lease-term`,
+                type: 'parcel-lease-term',
+                category: 'lease',
+                titleKey: 'parcelLease',
+                titleParams: { name: r.parcel.name },
+                date: start.toISOString(),
+                end: end?.toISOString(),
+                // No lifecycle status on ParcelLease — an ended term with
+                // no renewal recorded genuinely IS overdue attention.
+                status: classifyStatus(end ?? start, now, false),
+                entityType: 'PARCEL_LEASE',
+                entityId: r.id,
+                href: tenantHrefFromCtx(ctx, '/rent'),
+                detail: r.lessorName,
+            };
+        });
+    return { events, truncated };
+}
+
+/** Terminal Contract statuses — no further delivery-window action needed. */
+const CONTRACT_DONE_STATUSES = new Set(['DELIVERED', 'SETTLED', 'CANCELLED']);
+
+/**
+ * A grain marketing/supply contract — duration event from
+ * `deliveryStart` to `deliveryEnd`.
+ */
+async function loadContractEvents(
+    db: PrismaTx,
+    ctx: RequestContext,
+    range: DateRange,
+    now: Date,
+    limit: number,
+): Promise<SourceResult> {
+    const rawRows = await db.contract.findMany({
+        where: {
+            tenantId: ctx.tenantId,
+            deletedAt: null,
+            OR: [
+                { deliveryStart: { gte: range.from, lte: range.to } },
+                { deliveryEnd: { gte: range.from, lte: range.to } },
+                {
+                    AND: [
+                        { deliveryStart: { lte: range.from } },
+                        { deliveryEnd: { gte: range.to } },
+                    ],
+                },
+            ],
+        },
+        select: {
+            id: true,
+            counterparty: true,
+            commodity: true,
+            deliveryStart: true,
+            deliveryEnd: true,
+            status: true,
+        },
+        orderBy: { deliveryStart: 'asc' },
+        take: limit + 1,
+    });
+    const { rows, truncated } = capRows(rawRows, limit);
+    const events = rows
+        .filter((r) => r.deliveryStart || r.deliveryEnd)
+        .map((r): CalendarEvent => {
+            const start = r.deliveryStart ?? r.deliveryEnd!;
+            const end =
+                r.deliveryEnd && r.deliveryStart && r.deliveryEnd !== r.deliveryStart
+                    ? r.deliveryEnd
+                    : undefined;
+            const isDone = CONTRACT_DONE_STATUSES.has(r.status);
+            return {
+                id: `CONTRACT:${r.id}:contract-delivery-window`,
+                type: 'contract-delivery-window',
+                category: 'contract',
+                titleKey: 'contractDelivery',
+                titleParams: { name: r.counterparty },
+                date: start.toISOString(),
+                end: end?.toISOString(),
+                status: classifyStatus(end ?? start, now, isDone),
+                entityType: 'CONTRACT',
+                entityId: r.id,
+                href: tenantHrefFromCtx(ctx, '/grain/contracts'),
+                detail: r.commodity ?? undefined,
+            };
+        });
+    return { events, truncated };
+}
+
+/** Terminal Planting statuses — the succession finished its life cycle. */
+const PLANTING_DONE_STATUSES = new Set(['HARVESTED', 'TERMINATED']);
+
+/**
+ * One succession instance (Planting) — duration event from `sowDate` to
+ * `harvestEndDate`. Labeled by variety when the succession has one,
+ * falling back to the parent crop plan's crop type (both nullable on a
+ * DIRECT_SOW or not-yet-varietal plan); the field it's growing in
+ * (parcel, else location) rides in `detail`.
+ */
+async function loadPlantingEvents(
+    db: PrismaTx,
+    ctx: RequestContext,
+    range: DateRange,
+    now: Date,
+    limit: number,
+): Promise<SourceResult> {
+    const rawRows = await db.planting.findMany({
+        where: {
+            tenantId: ctx.tenantId,
+            deletedAt: null,
+            OR: [
+                { sowDate: { gte: range.from, lte: range.to } },
+                { harvestEndDate: { gte: range.from, lte: range.to } },
+                {
+                    AND: [
+                        { sowDate: { lte: range.from } },
+                        { harvestEndDate: { gte: range.to } },
+                    ],
+                },
+            ],
+        },
+        select: {
+            id: true,
+            cropPlanId: true,
+            sowDate: true,
+            harvestEndDate: true,
+            status: true,
+            variety: { select: { name: true } },
+            location: { select: { name: true } },
+            parcel: { select: { name: true } },
+            cropPlan: { select: { cropType: { select: { name: true } } } },
+        },
+        orderBy: { sowDate: 'asc' },
+        take: limit + 1,
+    });
+    const { rows, truncated } = capRows(rawRows, limit);
+    const events = rows
+        .filter((r) => r.sowDate || r.harvestEndDate)
+        .map((r): CalendarEvent => {
+            const start = r.sowDate ?? r.harvestEndDate!;
+            const end =
+                r.harvestEndDate && r.sowDate && r.harvestEndDate !== r.sowDate
+                    ? r.harvestEndDate
+                    : undefined;
+            const isDone = PLANTING_DONE_STATUSES.has(r.status);
+            const fieldLabel = r.parcel?.name ?? r.location?.name;
+            return {
+                id: `PLANTING:${r.id}:planting-cycle`,
+                type: 'planting-cycle',
+                category: 'planting',
+                titleKey: 'plantingCycle',
+                titleParams: { name: r.variety?.name ?? r.cropPlan.cropType.name },
+                date: start.toISOString(),
+                end: end?.toISOString(),
+                status: classifyStatus(end ?? start, now, isDone),
+                entityType: 'PLANTING',
+                entityId: r.id,
+                href: tenantHrefFromCtx(ctx, `/planning/${r.cropPlanId}`),
+                detail: fieldLabel,
+            };
+        });
+    return { events, truncated };
+}
+
+/**
+ * AgroSignal.kind (SPRAY_WINDOW/DISEASE_RISK) -> calendar event type +
+ * titleKey. Exhaustive Record ON PURPOSE, mirroring AGRI_CATEGORY_TO_TYPE
+ * above: a third kind added to the enum is a compile error here rather
+ * than a silently mis-labeled point.
+ */
+const AGRO_SIGNAL_KIND_TO_TYPE: Record<AgroSignalKind, CalendarEventType> = {
+    SPRAY_WINDOW: 'agro-signal-spray-window',
+    DISEASE_RISK: 'agro-signal-disease-risk',
+};
+const AGRO_SIGNAL_KIND_TO_TITLE_KEY: Record<AgroSignalKind, string> = {
+    SPRAY_WINDOW: 'agroSignalSprayWindow',
+    DISEASE_RISK: 'agroSignalDiseaseRisk',
+};
+
+/**
+ * AgroSignal — point event on `signalDate`. NO `deletedAt` filter: the
+ * model has no such column (it's an idempotency/provenance ledger the
+ * daily weather job claims rows into, not a user-editable record — see
+ * the model doc in agro.prisma). A signal is already a fired, historical
+ * reading rather than an obligation, so it is never `due_soon`/`overdue`:
+ * `done` once its date has passed, `scheduled` for the (rare) same-day
+ * case where `now` lands before end-of-day.
+ */
+async function loadAgroSignalEvents(
+    db: PrismaTx,
+    ctx: RequestContext,
+    range: DateRange,
+    now: Date,
+    limit: number,
+): Promise<SourceResult> {
+    const rawRows = await db.agroSignal.findMany({
+        where: {
+            tenantId: ctx.tenantId,
+            signalDate: { gte: range.from, lte: range.to },
+        },
+        select: {
+            id: true,
+            kind: true,
+            signalDate: true,
+            locationId: true,
+            location: { select: { name: true } },
+        },
+        orderBy: { signalDate: 'asc' },
+        take: limit + 1,
+    });
+    const { rows, truncated } = capRows(rawRows, limit);
+    const events = rows.map((r): CalendarEvent => {
+        const date = r.signalDate;
+        const type = AGRO_SIGNAL_KIND_TO_TYPE[r.kind];
+        return {
+            id: `AGRO_SIGNAL:${r.id}:${type}`,
+            type,
+            category: 'agro-signal',
+            titleKey: AGRO_SIGNAL_KIND_TO_TITLE_KEY[r.kind],
+            titleParams: { name: r.location.name },
+            date: date.toISOString(),
+            status: date.getTime() <= now.getTime() ? 'done' : 'scheduled',
+            entityType: 'AGRO_SIGNAL',
+            entityId: r.id,
+            href: tenantHrefFromCtx(ctx, `/locations/${r.locationId}`),
+        };
+    });
+    return { events, truncated };
 }
