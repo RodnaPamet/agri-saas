@@ -182,6 +182,16 @@ model AuditCycle {
 
   @@index([tenantId, frameworkKey, status])
   @@index([tenantId, deletedAt])
+  // Calendar (compliance-calendar loadAuditCycleEvents) — the
+  // audit-cycle range predicate (either bound intersecting the
+  // queried window) had no index on either date column; every
+  // calendar load was a per-tenant seq scan of AuditCycle. Two
+  // separate composites, same rationale as Risk.nextReviewAt /
+  // Risk.targetDate in compliance.prisma — the loader's `OR` matches
+  // each column independently, so a single multi-column index would
+  // only serve the leading field.
+  @@index([tenantId, periodStartAt])
+  @@index([tenantId, periodEndAt])
 }
 
 model AuditPack {

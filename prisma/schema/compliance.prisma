@@ -430,6 +430,15 @@ model Risk {
   // `inherentScore desc`. Without this Postgres sorts the full
   // tenant result set per call.
   @@index([tenantId, inherentScore])
+  // Calendar (compliance-calendar loadRiskEvents) — the risk-review /
+  // risk-target range predicates on these two columns had no index
+  // backing them; every calendar load was a per-tenant seq scan of
+  // Risk. Two separate composites (not one), mirroring
+  // Vendor.[nextReviewAt]/[contractRenewalAt] — the loader's `OR`
+  // filters each column independently, so a single multi-column index
+  // would only serve the leading field.
+  @@index([tenantId, nextReviewAt])
+  @@index([tenantId, targetDate])
 }
 
 /// Per-tenant monotonic counter for minting `RSK-N` risk keys.
@@ -1313,6 +1322,10 @@ model Evidence {
   // Phase-8 — auto-evidence idempotency + "farm records backing this
   // scheme" lookup (FK-shaped scalar; Layer-B index coverage).
   @@index([tenantId, sourceLogEntryId])
+  // Calendar (compliance-calendar loadEvidenceEvents) — the
+  // evidence-review range predicate had no index; every calendar load
+  // was a per-tenant seq scan of Evidence.
+  @@index([tenantId, nextReviewDate])
   // One auto-evidence row per (farm record, control). The attach job used to
   // rely solely on a read-then-write check, which is TOCTOU: it runs inside a
   // transaction opened by a journal write, and a retry or a concurrent
@@ -1574,6 +1587,10 @@ model Finding {
   @@index([tenantId, assigneeUserId])
   @@index([tenantId, controlId])
   @@index([tenantId, compensatingControlId])
+  // Calendar (compliance-calendar loadFindingEvents) — the
+  // finding-due range predicate had no index; every calendar load was
+  // a per-tenant seq scan of Finding.
+  @@index([tenantId, dueDate])
 }
 
 // Many-to-many: a finding can implicate several risks. Composite parent

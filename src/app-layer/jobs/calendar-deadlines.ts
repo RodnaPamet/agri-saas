@@ -30,9 +30,8 @@
  */
 
 import { prisma } from '@/lib/prisma';
-import { runJob } from '@/lib/observability/job-runner';
 import { logger } from '@/lib/observability/logger';
-import type { DueItem, JobRunResult } from './types';
+import type { DueItem } from './types';
 import { classifyUrgency } from './deadline-monitor';
 
 // ─── Public types ────────────────────────────────────────────────────
@@ -280,44 +279,15 @@ export async function runCalendarDeadlineMonitor(
     return { items, counts, byEntity };
 }
 
-/**
- * BullMQ-friendly wrapper. Allows the monitor to be enqueued + run on
- * its own (e.g., for ad-hoc scans), even though the production path is
- * via the `notification-dispatch` orchestrator.
- */
-export interface CalendarDeadlinePayload {
-    tenantId?: string;
-    windows?: number[];
-}
-
-export async function runCalendarDeadlineJob(
-    payload: CalendarDeadlinePayload,
-): Promise<{ result: JobRunResult; monitor: CalendarDeadlineMonitorResult }> {
-    const jobRunId = crypto.randomUUID();
-    const startedAt = new Date().toISOString();
-    const startMs = performance.now();
-
-    return runJob('calendar-deadlines', async () => {
-        const monitor = await runCalendarDeadlineMonitor(payload);
-        const durationMs = Math.round(performance.now() - startMs);
-        const result: JobRunResult = {
-            jobName: 'calendar-deadlines',
-            jobRunId,
-            success: true,
-            startedAt,
-            completedAt: new Date().toISOString(),
-            durationMs,
-            itemsScanned:
-                monitor.byEntity.AUDIT_CYCLE +
-                monitor.byEntity.VENDOR_DOCUMENT +
-                monitor.byEntity.FINDING,
-            itemsActioned: monitor.items.length,
-            itemsSkipped: 0,
-            details: {
-                counts: monitor.counts,
-                byEntity: monitor.byEntity,
-            },
-        };
-        return { result, monitor };
-    }, { tenantId: payload.tenantId });
-}
+// NOTE: a `runCalendarDeadlineJob` BullMQ-registrable wrapper (+
+// `CalendarDeadlinePayload`) used to live here. Removed 2026-08-06: it
+// was never a `JobName`, never registered in the executor registry,
+// never scheduled, and had zero callers. The real production path is
+// `notification-dispatch.ts`, which imports `runCalendarDeadlineMonitor`
+// directly and merges its output into the DEADLINE_DIGEST stream
+// alongside the base `deadline-monitor` — see the `DEADLINE_DIGEST`
+// branch there. A second, standalone way to trigger the same scan
+// would just be a redundant path with no caller and no product need;
+// if a genuine standalone/ad-hoc trigger is needed later, register it
+// properly (JobPayloadMap + JOB_DEFAULTS + executor-registry +
+// schedules.ts) rather than resurrecting an unreachable wrapper.

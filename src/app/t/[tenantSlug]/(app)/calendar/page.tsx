@@ -14,6 +14,7 @@
 
 import { getTenantCtx } from '@/app-layer/context';
 import { getComplianceCalendarEvents } from '@/app-layer/usecases/compliance-calendar';
+import { env } from '@/env';
 import { CalendarClient } from './CalendarClient';
 import { monthGridRange, startOfUtcMonth } from './range';
 
@@ -47,6 +48,10 @@ export default async function CalendarPage({
                 from: from.toISOString(),
                 to: to.toISOString(),
             }}
+            // Events are bucketed into day cells in this zone, not UTC —
+            // see calendar-day-key.ts. Same value the task-due cron uses
+            // for its own "due today" classification.
+            tz={env.NOTIFICATIONS_TZ}
         />
     );
 }

@@ -40,6 +40,16 @@ export const CALENDAR_EVENT_CATEGORIES = [
     'task',
     'risk',
     'finding',
+    // Agriculture data sources (PR 2 of the calendar roadmap) — the
+    // 13 date-bearing ag models this product actually runs on.
+    // `farm-task` splits off from `task`: a Task with
+    // `type: 'FARM_TASK'` is field work, not a compliance to-do, and
+    // deserves its own colour + vocabulary.
+    'farm-task',
+    'lease',
+    'contract',
+    'planting',
+    'agro-signal',
     // Curated agriculture catalogue — fairs, trainings, webinars, subsidy
     // deadlines. Unlike every other category these are GLOBAL rows, not
     // tenant facts, and they link off-site.
@@ -71,6 +81,10 @@ export const CALENDAR_EVENT_TYPES = [
     'control-test-due',
     // task
     'task-due',
+    // farm-task — Task rows with type: 'FARM_TASK'. Same source model as
+    // `task-due`, split by `Task.type` at the loader so field work reads
+    // "Farm task due" instead of "Task due" and dots a different colour.
+    'farm-task-due',
     // risk
     'risk-review',
     'risk-target',
@@ -81,6 +95,19 @@ export const CALENDAR_EVENT_TYPES = [
     'treatment-plan-target',
     // finding
     'finding-due',
+    // lease — ParcelLease.startDate -> endDate (duration).
+    'parcel-lease-term',
+    // contract — Contract.deliveryStart -> deliveryEnd (duration).
+    'contract-delivery-window',
+    // planting — Planting.sowDate -> harvestEndDate (duration).
+    'planting-cycle',
+    // agro-signal — AgroSignal.signalDate (point). Two types, not one:
+    // mirrors the AgriEvent category map below — enumerating both
+    // AgroSignalKind values here is deliberate, so a third kind added to
+    // the enum is a compile error at the mapper rather than a silently
+    // mis-toned dot.
+    'agro-signal-spray-window',
+    'agro-signal-disease-risk',
     // agri-event — mirrors AgriEvent.category, which is a free string on
     // the model. Enumerating the four curated values here is deliberate:
     // an unmapped value becomes a compile error at the mapper rather than
@@ -121,7 +148,33 @@ export interface CalendarEvent {
     id: string;
     type: CalendarEventType;
     category: CalendarEventCategory;
-    title: string;
+    /**
+
+     * i18n key under `calendar.event.*`, resolved by the RENDERER.
+
+     *
+
+     * Titles used to be built here as English strings ("Evidence review: X"),
+
+     * which shipped English to a Bulgarian-first product — and the
+
+     * hardcoded-string ratchet never caught them because it scans only
+
+     * src/app and src/components, not the app layer.
+
+     *
+
+     * Curator-supplied text (the agriculture catalogue) uses the passthrough
+
+     * key whose message is just "{name}", so every event has one shape.
+
+     */
+
+    titleKey: string;
+
+    /** Interpolation values for `titleKey`. */
+
+    titleParams?: Record<string, string>;
     /**
      * Point-in-time date for events without a duration. ISO 8601 date
      * string (UTC midnight) for day-resolution events; ISO datetime is
@@ -145,6 +198,10 @@ export interface CalendarEvent {
         | 'RISK_TREATMENT_PLAN'
         | 'TREATMENT_MILESTONE'
         | 'FINDING'
+        | 'PARCEL_LEASE'
+        | 'CONTRACT'
+        | 'PLANTING'
+        | 'AGRO_SIGNAL'
         | 'AGRI_EVENT';
     entityId: string;
     /**
@@ -256,4 +313,15 @@ export interface CalendarResponse {
         from: string;
         to: string;
     };
+    /**
+     * True when AT LEAST ONE source hit its `perSourceLimit` cap. Every
+     * loader requests `limit + 1` rows and reports truncation if it got
+     * the extra one back (the same +1 trick `getUpcomingDeadlineCount`
+     * uses for the badge) — cheaper than a second COUNT query. A
+     * truncated response still contains every source's first `limit`
+     * rows in a stable, date-ordered set (never an arbitrary slice), so
+     * the UI can say "this schedule is partial" rather than silently
+     * rendering it as complete.
+     */
+    truncated: boolean;
 }

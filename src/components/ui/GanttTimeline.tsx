@@ -18,13 +18,14 @@
  */
 
 import * as React from 'react';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { cn } from '@/lib/cn';
 import type {
     CalendarEvent,
 } from '@/app-layer/schemas/calendar.schemas';
 import { getCategoryTone } from '@/lib/design/status-tone';
+import { getLocalizedMonthNames } from '@/lib/calendar-locale-names';
 
 // ─── Public props ─────────────────────────────────────────────────────
 
@@ -65,14 +66,20 @@ function pctBetween(t: number, from: number, to: number): number {
     return ((t - from) / (to - from)) * 100;
 }
 
-const SHORT_MONTH = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
 /**
  * Pick ~6-12 axis ticks across the range. Dynamically chooses month
  * boundaries (when range >= 60 days) or weekly markers for tighter
  * windows. Keeps the axis readable without a chart library.
+ *
+ * `shortMonthNames` is locale-derived (see calendar-locale-names.ts)
+ * rather than a hardcoded English array — passed in so this stays a
+ * pure function callers memoize on.
  */
-function buildTicks(from: Date, to: Date): { date: Date; label: string }[] {
+function buildTicks(
+    from: Date,
+    to: Date,
+    shortMonthNames: readonly string[],
+): { date: Date; label: string }[] {
     const days = (to.getTime() - from.getTime()) / DAY_MS;
     const ticks: { date: Date; label: string }[] = [];
 
@@ -87,8 +94,8 @@ function buildTicks(from: Date, to: Date): { date: Date; label: string }[] {
                     date: new Date(cursor),
                     label:
                         cursor.getUTCMonth() === 0
-                            ? `${SHORT_MONTH[cursor.getUTCMonth()]} ${cursor.getUTCFullYear()}`
-                            : SHORT_MONTH[cursor.getUTCMonth()],
+                            ? `${shortMonthNames[cursor.getUTCMonth()]} ${cursor.getUTCFullYear()}`
+                            : shortMonthNames[cursor.getUTCMonth()],
                 });
             }
             cursor.setUTCMonth(cursor.getUTCMonth() + 1);
@@ -100,7 +107,7 @@ function buildTicks(from: Date, to: Date): { date: Date; label: string }[] {
             const d = new Date(t);
             ticks.push({
                 date: d,
-                label: `${SHORT_MONTH[d.getUTCMonth()]} ${d.getUTCDate()}`,
+                label: `${shortMonthNames[d.getUTCMonth()]} ${d.getUTCDate()}`,
             });
         }
     }
@@ -119,14 +126,24 @@ export function GanttTimeline({
     'data-testid': dataTestId = 'gantt-timeline',
 }: GanttTimelineProps) {
     const t = useTranslations('ui');
+    // Event titles are i18n keys resolved here — see CalendarEvent.titleKey.
+    const te = useTranslations('calendar.event');
+    const locale = useLocale();
     const resolvedEmptyMessage =
         emptyMessage ?? t('ganttTimeline.emptyMessage');
     const todayDate = today ?? new Date();
     const fromMs = from.getTime();
     const toMs = to.getTime();
 
+    // Short month names in the active UI locale — see
+    // calendar-locale-names.ts for the bg-locale numeric fallback.
+    const shortMonthNames = React.useMemo(
+        () => getLocalizedMonthNames(locale, 'short'),
+        [locale],
+    );
+
     // eslint-disable-next-line react-hooks/exhaustive-deps -- using ms-since-epoch as stable identity
-    const ticks = React.useMemo(() => buildTicks(from, to), [fromMs, toMs]);
+    const ticks = React.useMemo(() => buildTicks(from, to, shortMonthNames), [fromMs, toMs, shortMonthNames]);
 
     // Sort events: by start ascending, then by duration descending.
     const sorted = React.useMemo(() => {
@@ -216,7 +233,7 @@ export function GanttTimeline({
                         >
                             <Link
                                 href={ev.href}
-                                title={`${ev.title}${ev.detail ? ` — ${ev.detail}` : ''}`}
+                                title={`${te(ev.titleKey, ev.titleParams)}${ev.detail ? ` — ${ev.detail}` : ''}`}
                                 className={cn(
                                     'absolute top-1 bottom-1 rounded border px-1 flex items-center text-[10px] font-medium text-content-emphasis truncate min-w-[8px]',
                                     'hover:ring-1 hover:ring-content-emphasis/40 transition-colors duration-150 ease-out',
@@ -235,7 +252,7 @@ export function GanttTimeline({
                                     width: `${width}%`,
                                 }}
                             >
-                                <span className="truncate">{ev.title}</span>
+                                <span className="truncate">{te(ev.titleKey, ev.titleParams)}</span>
                             </Link>
                         </div>
                     );
