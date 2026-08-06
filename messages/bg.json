@@ -4981,7 +4981,24 @@
         "noEventsDay": "Няма събития за този ден.",
         "clickDay": "Кликнете върху ден, за да видите събитията за тази дата.",
         "moreEvents": "+{count} още",
-        "addTask": "Задача"
+        "addTask": "Задача",
+        "event": {
+            "evidenceReview": "Преглед на доказателство: {name}",
+            "policyReview": "Преглед на политика: {name}",
+            "vendorReview": "Преглед на доставчик: {name}",
+            "vendorRenewal": "Подновяване на договор: {name}",
+            "vendorDocExpiry": "{type} изтича: {name}",
+            "auditCycle": "Одитен цикъл: {name}",
+            "controlReview": "Преглед на контрола: {name}",
+            "testDue": "Краен срок за тест: {name}",
+            "taskDue": "Краен срок за задача: {name}",
+            "riskReview": "Преглед на риск: {name}",
+            "riskTarget": "Целева дата за третиране на риск: {name}",
+            "findingDue": "Краен срок за констатация: {name}",
+            "milestone": "Етап: {name}",
+            "planTarget": "Целева дата на плана: {name}",
+            "raw": "{name}"
+        }
     },
     "farmTasks": {
         "dashboard": "Табло",

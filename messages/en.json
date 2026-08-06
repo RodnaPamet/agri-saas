@@ -4981,7 +4981,24 @@
         "noEventsDay": "No events on this day.",
         "clickDay": "Click a day to see events on that date.",
         "moreEvents": "+{count} more",
-        "addTask": "Task"
+        "addTask": "Task",
+        "event": {
+            "evidenceReview": "Evidence review: {name}",
+            "policyReview": "Policy review: {name}",
+            "vendorReview": "Vendor review: {name}",
+            "vendorRenewal": "Contract renewal: {name}",
+            "vendorDocExpiry": "{type} expires: {name}",
+            "auditCycle": "Audit cycle: {name}",
+            "controlReview": "Control review: {name}",
+            "testDue": "Test due: {name}",
+            "taskDue": "Task due: {name}",
+            "riskReview": "Risk review: {name}",
+            "riskTarget": "Risk mitigation target: {name}",
+            "findingDue": "Finding due: {name}",
+            "milestone": "Milestone: {name}",
+            "planTarget": "Plan target: {name}",
+            "raw": "{name}"
+        }
     },
     "farmTasks": {
         "dashboard": "Dashboard",

@@ -313,7 +313,8 @@ export function PlantingBoard({
                 // tone bundle applies. `href` stays on this plan's page.
                 type: 'task-due',
                 category: 'task',
-                title: `#${r.successionNumber}`,
+                titleKey: 'raw',
+                titleParams: { name: `#${r.successionNumber}` },
                 date: r.planned.sowDate!,
                 end: r.planned.harvestEndDate!,
                 status: r.actual.HARVEST ? 'done' : 'scheduled',

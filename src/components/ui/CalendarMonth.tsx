@@ -111,6 +111,9 @@ export function CalendarMonth({
     'data-testid': dataTestId = 'calendar-month',
 }: CalendarMonthProps) {
     const t = useTranslations('calendar');
+    // Event titles are i18n keys resolved here, not English built in the
+    // usecase — see CalendarEvent.titleKey.
+    const te = useTranslations('calendar.event');
     const todayDate = today ?? new Date();
     const monthStart = startOfUtcMonth(month);
     const monthEnd = endOfUtcMonth(month);
@@ -130,7 +133,9 @@ export function CalendarMonth({
             list.sort(
                 (a, b) =>
                     a.category.localeCompare(b.category) ||
-                    a.title.localeCompare(b.title),
+                    (a.titleParams?.name ?? a.titleKey).localeCompare(
+                        b.titleParams?.name ?? b.titleKey,
+                    ),
             );
         }
         return m;
@@ -261,7 +266,7 @@ export function CalendarMonth({
                                             <CalendarEventLink
                                                 href={ev.href}
                                                 external={ev.external}
-                                                title={`${ev.title}${ev.detail ? ` — ${ev.detail}` : ''}`}
+                                                title={`${te(ev.titleKey, ev.titleParams)}${ev.detail ? ` — ${ev.detail}` : ''}`}
                                                 className={cn(
                                                     'flex items-center gap-1 px-1 py-0.5 rounded text-[10px] truncate',
                                                     'hover:bg-bg-muted transition-colors',
@@ -278,7 +283,7 @@ export function CalendarMonth({
                                                     )}
                                                     aria-hidden="true"
                                                 />
-                                                <span className="truncate">{ev.title}</span>
+                                                <span className="truncate">{te(ev.titleKey, ev.titleParams)}</span>
                                             </CalendarEventLink>
                                         </li>
                                     ))}

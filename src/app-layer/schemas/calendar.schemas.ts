@@ -121,7 +121,33 @@ export interface CalendarEvent {
     id: string;
     type: CalendarEventType;
     category: CalendarEventCategory;
-    title: string;
+    /**
+
+     * i18n key under `calendar.event.*`, resolved by the RENDERER.
+
+     *
+
+     * Titles used to be built here as English strings ("Evidence review: X"),
+
+     * which shipped English to a Bulgarian-first product — and the
+
+     * hardcoded-string ratchet never caught them because it scans only
+
+     * src/app and src/components, not the app layer.
+
+     *
+
+     * Curator-supplied text (the agriculture catalogue) uses the passthrough
+
+     * key whose message is just "{name}", so every event has one shape.
+
+     */
+
+    titleKey: string;
+
+    /** Interpolation values for `titleKey`. */
+
+    titleParams?: Record<string, string>;
     /**
      * Point-in-time date for events without a duration. ISO 8601 date
      * string (UTC midnight) for day-resolution events; ISO datetime is

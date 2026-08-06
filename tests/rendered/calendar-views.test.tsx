@@ -34,7 +34,8 @@ function makeEvent(overrides: Partial<CalendarEvent> = {}): CalendarEvent {
         id: 'TASK:t-1:task-due',
         type: 'task-due',
         category: 'task',
-        title: 'Task due',
+        titleKey: 'taskDue',
+        titleParams: { name: 'Task' },
         date: '2026-06-15T00:00:00.000Z',
         status: 'scheduled',
         entityType: 'TASK',
@@ -65,7 +66,7 @@ describe('<CalendarMonth />', () => {
             makeEvent({
                 id: `t-${i}`,
                 date: '2026-06-15T00:00:00.000Z',
-                title: `Event ${i}`,
+                titleKey: 'raw', titleParams: { name: `Event ${i}` },
             }),
         );
         const { container } = render(
@@ -145,7 +146,7 @@ describe('<CalendarMonth />', () => {
                 events={[
                     makeEvent({
                         id: 'TASK:t-1:task',
-                        title: 'Pay invoice',
+                        titleKey: 'raw', titleParams: { name: 'Pay invoice' },
                         category: 'task',
                         date: '2026-06-15T00:00:00.000Z',
                     }),
@@ -195,7 +196,7 @@ describe('<GanttTimeline />', () => {
             makeEvent({
                 id: 'AUDIT_CYCLE:c-1:audit-cycle',
                 category: 'audit',
-                title: 'Q3 SOC2',
+                titleKey: 'raw', titleParams: { name: 'Q3 SOC2' },
                 date: '2026-06-01T00:00:00.000Z',
                 end: '2026-08-31T00:00:00.000Z',
                 entityType: 'AUDIT_CYCLE',
@@ -225,7 +226,7 @@ describe('<GanttTimeline />', () => {
                     makeEvent({
                         id: 'AUDIT_CYCLE:c-1:audit-cycle',
                         category: 'audit',
-                        title: 'A',
+                        titleKey: 'raw', titleParams: { name: 'A' },
                         date: '2026-06-01T00:00:00.000Z',
                         end: '2026-08-31T00:00:00.000Z',
                     }),

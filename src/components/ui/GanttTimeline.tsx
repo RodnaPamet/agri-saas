@@ -119,6 +119,8 @@ export function GanttTimeline({
     'data-testid': dataTestId = 'gantt-timeline',
 }: GanttTimelineProps) {
     const t = useTranslations('ui');
+    // Event titles are i18n keys resolved here — see CalendarEvent.titleKey.
+    const te = useTranslations('calendar.event');
     const resolvedEmptyMessage =
         emptyMessage ?? t('ganttTimeline.emptyMessage');
     const todayDate = today ?? new Date();
@@ -216,7 +218,7 @@ export function GanttTimeline({
                         >
                             <Link
                                 href={ev.href}
-                                title={`${ev.title}${ev.detail ? ` — ${ev.detail}` : ''}`}
+                                title={`${te(ev.titleKey, ev.titleParams)}${ev.detail ? ` — ${ev.detail}` : ''}`}
                                 className={cn(
                                     'absolute top-1 bottom-1 rounded border px-1 flex items-center text-[10px] font-medium text-content-emphasis truncate min-w-[8px]',
                                     'hover:ring-1 hover:ring-content-emphasis/40 transition-colors duration-150 ease-out',
@@ -235,7 +237,7 @@ export function GanttTimeline({
                                     width: `${width}%`,
                                 }}
                             >
-                                <span className="truncate">{ev.title}</span>
+                                <span className="truncate">{te(ev.titleKey, ev.titleParams)}</span>
                             </Link>
                         </div>
                     );

@@ -101,6 +101,7 @@ export function CalendarClient({
     );
     const queryClient = useQueryClient();
     const t = useTranslations('calendar');
+    const te = useTranslations('calendar.event');
 
     // Pull `getTime()` into a stable primitive so the dep array is
     // statically checkable. We deliberately depend on `monthCursorMs`
@@ -280,7 +281,7 @@ export function CalendarClient({
                                                 className="block rounded p-2 text-xs hover:bg-bg-muted transition-colors"
                                             >
                                                 <div className="font-medium text-content-emphasis truncate">
-                                                    {ev.title}
+                                                    {te(ev.titleKey, ev.titleParams)}
                                                 </div>
                                                 {ev.detail && (
                                                     <div className="text-content-muted truncate">
