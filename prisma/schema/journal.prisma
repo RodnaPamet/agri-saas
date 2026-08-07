@@ -114,36 +114,15 @@ model LogQuantity {
   @@index([tenantId, unitId])
 }
 
-/// Tenant-scoped farm equipment (tractor, sprayer, drill, …) that field
-/// work is logged against. Generalised from the Asset pattern — the AG
-/// equipment register, distinct from the compliance Asset (a Prisma
-/// model rename is deliberately deferred). RLS trio in the migration.
-model Equipment {
-  id              String    @id @default(cuid())
-  tenantId        String
-  name            String
-  category        String?
-  make            String?
-  model           String?
-  serialNumber    String?
-  year            Int?
-  meterValue      Decimal?  @db.Decimal(12, 1)
-  attributesJson  Json?
-  createdByUserId String?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-  deletedAt       DateTime?
-  deletedByUserId String?
-  retentionUntil  DateTime?
-
-  tenant    Tenant         @relation(fields: [tenantId], references: [id])
-  createdBy User?          @relation("EquipmentCreator", fields: [createdByUserId], references: [id])
-  logLinks  LogEquipment[]
-
-  @@unique([id, tenantId])
-  @@index([tenantId, category])
-  @@index([tenantId, name])
-}
+// The `Equipment` model was retired here — it had ZERO write paths
+// anywhere in the repo (no create/createMany/upsert in src/, prisma/,
+// or scripts/, seeds included), so its pickers were permanently empty
+// and the tractor on /assets could never be the tractor on a field
+// operation. Machines now live in `Asset` (compliance.prisma), which
+// already carries the AST-N keys, soft-delete/trash/restore/purge, the
+// audit trail, RLS, assignment notifications and a detail page. Its two
+// useful columns (`meterValue`, `attributesJson`) moved with it.
+// See the migration for the fail-loud COUNT guard.
 
 /// Link: a LogEntry happened at a Location (the Feature-1 field block).
 model LogLocation {
@@ -160,19 +139,21 @@ model LogLocation {
   @@index([tenantId, locationId])
 }
 
-/// Link: a LogEntry used a piece of Equipment.
+/// Link: a LogEntry used a machine. Points at `Asset` since the
+/// `Equipment` merge — same `[id, tenantId]` composite-FK style as
+/// `LogLocation`, so a link can never cross tenants.
 model LogEquipment {
-  id          String @id @default(cuid())
-  tenantId    String
-  logEntryId  String
-  equipmentId String
+  id         String @id @default(cuid())
+  tenantId   String
+  logEntryId String
+  assetId    String
 
-  logEntry  LogEntry  @relation(fields: [logEntryId, tenantId], references: [id, tenantId], onDelete: Cascade)
-  equipment Equipment @relation(fields: [equipmentId, tenantId], references: [id, tenantId])
-  tenant    Tenant    @relation(fields: [tenantId], references: [id])
+  logEntry LogEntry @relation(fields: [logEntryId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  asset    Asset    @relation(fields: [assetId, tenantId], references: [id, tenantId])
+  tenant   Tenant   @relation(fields: [tenantId], references: [id])
 
-  @@unique([logEntryId, equipmentId])
-  @@index([tenantId, equipmentId])
+  @@unique([logEntryId, assetId])
+  @@index([tenantId, assetId])
 }
 
 /// Link: a photo / document attached to a LogEntry via the existing

@@ -3,6 +3,7 @@ import { RequestContext } from '../types';
 import { Prisma, AssetType, AssetStatus, Criticality } from '@prisma/client';
 import { buildCursorWhere, CURSOR_ORDER_BY, computePageInfo, clampLimit } from '@/lib/pagination';
 import type { PaginatedResponse } from '@/lib/dto/pagination';
+import { MACHINE_ASSET_WHERE } from '@/lib/agriculture/machine-asset-types';
 
 export interface AssetFilters {
     type?: string;
@@ -125,5 +126,52 @@ export class AssetRepository {
 
         await db.asset.delete({ where: { id } });
         return true;
+    }
+
+    // ─── Machine register (the retired `Equipment` model's job) ───────
+    //
+    // `Equipment` was merged into `Asset`; these two reads are what the
+    // journal-modal and farm-task equipment pickers resolve through.
+    // The projected shape is deliberately the OLD equipment row shape
+    // (`category` / `make`) so `/api/t/:slug/equipment` keeps its
+    // contract and neither picker needed a client change — the rows are
+    // simply no longer empty. `type` maps to `category`, `manufacturer`
+    // to `make`.
+
+    /**
+     * The tenant's machine-shaped, non-retired assets for a picker.
+     * Bounded by `take` — pickers are a bounded surface, not a report.
+     */
+    static async listMachines(db: PrismaTx, ctx: RequestContext, take = 200) {
+        const rows = await db.asset.findMany({
+            where: { tenantId: ctx.tenantId, ...MACHINE_ASSET_WHERE },
+            select: { id: true, name: true, type: true, manufacturer: true, model: true },
+            orderBy: [{ createdAt: 'desc' }],
+            take,
+        });
+        return rows.map((r) => ({
+            id: r.id,
+            name: r.name,
+            category: r.type as string,
+            make: r.manufacturer,
+            model: r.model,
+        }));
+    }
+
+    /**
+     * The subset of `ids` that are machine-shaped assets in this tenant.
+     * Used to validate `equipmentIds` before writing link rows, so a
+     * caller cannot attach a barn — or another tenant's tractor — to a
+     * journal entry.
+     */
+    static async validMachineIds(db: PrismaTx, ctx: RequestContext, ids: string[]): Promise<Set<string>> {
+        if (!ids.length) return new Set();
+        // Bounded by the caller's id set (the Zod schemas cap it at 100).
+        const rows = await db.asset.findMany({
+            where: { id: { in: ids }, tenantId: ctx.tenantId, ...MACHINE_ASSET_WHERE },
+            select: { id: true },
+            take: ids.length,
+        });
+        return new Set(rows.map((r) => r.id));
     }
 }
