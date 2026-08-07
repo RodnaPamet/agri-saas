@@ -30,7 +30,16 @@ function sanitizeContent(contentType: 'HTML' | 'MARKDOWN', text: string | null |
 
 export async function listArticles(ctx: RequestContext, filters?: KnowledgeFilters) {
     assertCanRead(ctx);
-    return runInTenantContext(ctx, (db) => KnowledgeRepository.list(db, ctx, filters));
+    // Status floor: a reader (no write permission) can only ever receive
+    // PUBLISHED articles — DRAFT and ARCHIVED content is unreviewed /
+    // retired and must never present as "the current procedure" to
+    // someone who cannot tell it apart from an approved one. This
+    // OVERRIDES whatever status filter the caller requested (including a
+    // hand-crafted ?status=DRAFT query), it does not merely default it.
+    const effectiveFilters: KnowledgeFilters = ctx.permissions.canWrite
+        ? { ...filters }
+        : { ...filters, status: ['PUBLISHED'] };
+    return runInTenantContext(ctx, (db) => KnowledgeRepository.list(db, ctx, effectiveFilters));
 }
 
 export async function listCategories(ctx: RequestContext) {

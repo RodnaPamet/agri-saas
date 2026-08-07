@@ -293,7 +293,12 @@ export default function KnowledgeArticleDetailPage() {
         );
     }
 
-    const currentVersion = article.currentVersion || article.versions?.[0];
+    // NO fallback to `versions?.[0]` — an article with no PUBLISHED
+    // version must show the "not yet published" empty state, never the
+    // newest DRAFT. Falling back here would present an unapproved
+    // procedure as "Current" to every reader (a real-world safety
+    // issue on an SOP surface — see the 2026-08-07 implementation note).
+    const currentVersion = article.currentVersion;
     const versions = article.versions || [];
     const canWrite = tenant.permissions.canWrite;
     const canAdmin = tenant.permissions.canAdmin;
