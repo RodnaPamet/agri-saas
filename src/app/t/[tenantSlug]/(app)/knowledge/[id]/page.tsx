@@ -27,6 +27,7 @@ import { Input } from '@/components/ui/input';
 import { FormField } from '@/components/ui/form-field';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { cn } from '@/lib/cn';
+import { EditArticleModal } from './EditArticleModal';
 
 // Lazy-load Tiptap — the editor + ProseMirror chunks land at ~200KB
 // gzipped; deferring the import keeps the static parts of the detail
@@ -113,6 +114,9 @@ export default function KnowledgeArticleDetailPage() {
 
     // Per-action loading key (publish-<id>, acknowledge, …)
     const [actionLoading, setActionLoading] = useState('');
+
+    // Edit-metadata modal (title / summary / category / owner / language).
+    const [editOpen, setEditOpen] = useState(false);
 
     const fetchArticle = useCallback(async () => {
         setLoading(true);
@@ -226,6 +230,25 @@ export default function KnowledgeArticleDetailPage() {
         }
     };
 
+    const unarchiveArticle = async () => {
+        setActionLoading('unarchive');
+        try {
+            const res = await fetch(apiUrl(`/knowledge/${articleId}/unarchive`), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+            });
+            if (!res.ok) {
+                const d = await res.json().catch(() => ({}));
+                throw new Error(d.error?.message || d.error || 'Failed to unarchive');
+            }
+            await fetchArticle();
+        } catch (err: unknown) {
+            setError(err instanceof Error ? err.message : 'Unknown error');
+        } finally {
+            setActionLoading('');
+        }
+    };
+
     // ── Helpers ──
 
     // COPY of the Policy detail page's version-content rendering: HTML
@@ -293,11 +316,19 @@ export default function KnowledgeArticleDetailPage() {
         );
     }
 
-    const currentVersion = article.currentVersion || article.versions?.[0];
+    // NO fallback to `versions?.[0]` — an article with no PUBLISHED
+    // version must show the "not yet published" empty state, never the
+    // newest DRAFT. Falling back here would present an unapproved
+    // procedure as "Current" to every reader (a real-world safety
+    // issue on an SOP surface — see the 2026-08-07 implementation note).
+    const currentVersion = article.currentVersion;
     const versions = article.versions || [];
     const canWrite = tenant.permissions.canWrite;
     const canAdmin = tenant.permissions.canAdmin;
     const isPublished = article.status === 'PUBLISHED';
+    // Publish is the only thing that moves `currentVersionId` — every
+    // OTHER version is pending work that hasn't gone live yet.
+    const unpublishedCount = versions.filter((v) => v.id !== article.currentVersionId).length;
 
     const tabs: ReadonlyArray<{ key: KnowledgeTab; label: string }> = [
         { key: 'current', label: t('tabCurrent') },
@@ -351,11 +382,34 @@ export default function KnowledgeArticleDetailPage() {
                                   } as const,
                               ]
                             : []),
+                        // Publish semantics (2026-08-07): a new version no
+                        // longer retracts the live PUBLISHED content, so
+                        // pending edits can silently pile up underneath it.
+                        // Surface the count here so they stay visible.
+                        ...(unpublishedCount > 0
+                            ? [
+                                  {
+                                      kind: 'metric',
+                                      label: t('metaPendingVersions'),
+                                      value: unpublishedCount,
+                                  } as const,
+                              ]
+                            : []),
                     ]}
                 />
             }
             actions={
                 <>
+                    {canWrite && (
+                        <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => setEditOpen(true)}
+                            id="edit-article-btn"
+                        >
+                            {t('editMetadata')}
+                        </Button>
+                    )}
                     {canWrite && article.status !== 'ARCHIVED' && (
                         <Button
                             variant="secondary"
@@ -384,6 +438,17 @@ export default function KnowledgeArticleDetailPage() {
                             id="archive-btn"
                         >
                             {actionLoading === 'archive' ? '…' : t('archive')}
+                        </Button>
+                    )}
+                    {canAdmin && article.status === 'ARCHIVED' && (
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={unarchiveArticle}
+                            disabled={actionLoading === 'unarchive'}
+                            id="unarchive-btn"
+                        >
+                            {actionLoading === 'unarchive' ? '…' : t('unarchive')}
                         </Button>
                     )}
                 </>
@@ -501,9 +566,13 @@ export default function KnowledgeArticleDetailPage() {
                                             <span className="text-sm font-semibold text-[var(--brand-default)]">
                                                 v{v.versionNumber}
                                             </span>
-                                            {isCurrentPublished && (
+                                            {isCurrentPublished ? (
                                                 <StatusBadge variant="success">
                                                     {t('publishedBadge')}
+                                                </StatusBadge>
+                                            ) : (
+                                                <StatusBadge variant="neutral">
+                                                    {t('draftBadge')}
                                                 </StatusBadge>
                                             )}
                                             <span className="text-xs text-content-subtle">
@@ -590,6 +659,21 @@ export default function KnowledgeArticleDetailPage() {
                     </Button>
                 </div>
             )}
+
+            <EditArticleModal
+                open={editOpen}
+                setOpen={setEditOpen}
+                tenantSlug={tenant.tenantSlug}
+                initial={{
+                    id: article.id,
+                    title: article.title,
+                    summary: article.summary,
+                    category: article.category,
+                    ownerUserId: article.owner?.id ?? null,
+                    language: article.language,
+                }}
+                onSaved={fetchArticle}
+            />
         </EntityDetailLayout>
     );
 }

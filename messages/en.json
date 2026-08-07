@@ -6974,7 +6974,39 @@
             "changeSummaryHint": "Optional.",
             "changeSummaryPlaceholder": "What changed in this version?",
             "saving": "Saving…",
-            "saveVersion": "Save version"
+            "saveVersion": "Save version",
+            "editMetadata": "Edit",
+            "unarchive": "Unarchive",
+            "metaPendingVersions": "Unpublished versions",
+            "draftBadge": "Draft"
+        },
+        "editModal": {
+            "title": "Edit article",
+            "description": "Update the article's metadata.",
+            "updateFailed": "Failed to update article",
+            "discardConfirm": "Discard changes? Any edits you made will be lost.",
+            "fieldTitle": "Title",
+            "fieldCategory": "Category",
+            "categoryPlaceholder": "e.g. Equipment, Safety, Compliance",
+            "fieldSummary": "Summary",
+            "summaryPlaceholder": "What does this article cover?",
+            "fieldOwner": "Owner",
+            "ownerPlaceholder": "Assign an owner",
+            "fieldLanguage": "Language",
+            "languagePlaceholder": "e.g. en",
+            "saving": "Saving…",
+            "saveChanges": "Save changes"
+        },
+        "filters": {
+            "statusLabel": "Status",
+            "statusDescription": "Lifecycle stage of the article.",
+            "categoryLabel": "Category",
+            "categoryDescription": "Knowledge domain / taxonomy bucket."
+        },
+        "status": {
+            "DRAFT": "Draft",
+            "PUBLISHED": "Published",
+            "ARCHIVED": "Archived"
         }
     },
     "locations": {

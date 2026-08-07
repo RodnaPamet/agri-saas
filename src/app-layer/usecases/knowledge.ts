@@ -26,11 +26,27 @@ function sanitizeContent(contentType: 'HTML' | 'MARKDOWN', text: string | null |
     return contentType === 'HTML' ? sanitizeRichTextHtml(text) : sanitizePlainText(text);
 }
 
+// Three-state contract (Epic C.5 / D.2 convention, mirrors evidence.ts):
+// undefined = no change, null = clear, string = sanitised-and-set.
+function sanitizeOptional<T extends string | null | undefined>(value: T): T {
+    if (value === undefined || value === null) return value;
+    return sanitizePlainText(value as string) as T;
+}
+
 // ─── Reads ───
 
 export async function listArticles(ctx: RequestContext, filters?: KnowledgeFilters) {
     assertCanRead(ctx);
-    return runInTenantContext(ctx, (db) => KnowledgeRepository.list(db, ctx, filters));
+    // Status floor: a reader (no write permission) can only ever receive
+    // PUBLISHED articles — DRAFT and ARCHIVED content is unreviewed /
+    // retired and must never present as "the current procedure" to
+    // someone who cannot tell it apart from an approved one. This
+    // OVERRIDES whatever status filter the caller requested (including a
+    // hand-crafted ?status=DRAFT query), it does not merely default it.
+    const effectiveFilters: KnowledgeFilters = ctx.permissions.canWrite
+        ? { ...filters }
+        : { ...filters, status: ['PUBLISHED'] };
+    return runInTenantContext(ctx, (db) => KnowledgeRepository.list(db, ctx, effectiveFilters));
 }
 
 export async function listCategories(ctx: RequestContext) {
@@ -123,6 +139,64 @@ export async function createArticle(ctx: RequestContext, data: CreateArticleInpu
     });
 }
 
+export interface UpdateArticleMetadataInput {
+    title?: string;
+    summary?: string | null;
+    category?: string | null;
+    ownerUserId?: string | null;
+    language?: string | null;
+}
+
+/**
+ * Edit an article's metadata (title / summary / category / owner /
+ * language). Content lives on versions, not here — this never touches
+ * `currentVersionId` or `status`. WRITE-gated: any editor may correct
+ * metadata, the same floor as drafting a new version; publish/archive
+ * stay ADMIN-gated separately.
+ */
+export async function updateArticleMetadata(
+    ctx: RequestContext,
+    articleId: string,
+    data: UpdateArticleMetadataInput,
+) {
+    assertCanWrite(ctx);
+    return runInTenantContext(ctx, async (db) => {
+        const article = await KnowledgeRepository.getById(db, ctx, articleId);
+        if (!article) throw notFound('Article not found');
+
+        const title = data.title !== undefined ? sanitizePlainText(data.title) : undefined;
+        if (title !== undefined && !title) throw badRequest('Title is required');
+
+        const changedFields = (Object.keys(data) as (keyof UpdateArticleMetadataInput)[]).filter(
+            (k) => data[k] !== undefined,
+        );
+
+        await KnowledgeRepository.updateMetadata(db, ctx, articleId, {
+            title,
+            summary: sanitizeOptional(data.summary),
+            category: sanitizeOptional(data.category),
+            ownerUserId: data.ownerUserId,
+            language: data.language,
+        });
+
+        await logEvent(db, ctx, {
+            action: 'KNOWLEDGE_ARTICLE_UPDATED',
+            entityType: 'KnowledgeArticle',
+            entityId: articleId,
+            details: `Updated article: ${article.title}`,
+            detailsJson: {
+                category: 'entity_lifecycle',
+                entityName: 'KnowledgeArticle',
+                operation: 'updated',
+                changedFields,
+                summary: `Updated article: ${article.title}`,
+            },
+        });
+
+        return KnowledgeRepository.getById(db, ctx, articleId);
+    });
+}
+
 export interface CreateArticleVersionInput {
     contentType: 'HTML' | 'MARKDOWN';
     contentText: string;
@@ -143,11 +217,14 @@ export async function createArticleVersion(ctx: RequestContext, articleId: strin
             changeSummary: data.changeSummary != null ? sanitizePlainText(data.changeSummary) : null,
         });
 
-        // A new edit un-publishes the live content until re-published
-        // (mirrors createPolicyVersion's PUBLISHED→DRAFT rollback).
-        if (article.status === 'PUBLISHED') {
-            await KnowledgeRepository.updateStatus(db, ctx, articleId, 'DRAFT');
-        }
+        // Deliberately NOT mirroring createPolicyVersion's PUBLISHED→DRAFT
+        // rollback: this is an SOP surface, and unpublishing the live
+        // procedure the instant someone starts drafting an edit would
+        // retract the spray/safety instructions a worker is following
+        // mid-task. A PUBLISHED article keeps serving `currentVersion`
+        // while newer versions accumulate as drafts underneath it — only
+        // `publishArticle` ever moves `currentVersionId` / flips status.
+        // See docs/implementation-notes/2026-08-07-knowledge-crud-defects.md.
 
         await logEvent(db, ctx, {
             action: 'KNOWLEDGE_VERSION_CREATED',
@@ -221,6 +298,49 @@ export async function archiveArticle(ctx: RequestContext, articleId: string) {
             },
         });
         return { success: true };
+    });
+}
+
+/**
+ * Restore an ARCHIVED article. Mirrors `unarchiveEvidence`: ADMIN-gated,
+ * idempotent (a no-op on an article that isn't ARCHIVED).
+ *
+ * The restored status is derived from `lifecycleVersion`, NOT
+ * `currentVersionId` — `currentVersionId` gets set at CREATE time too
+ * (`createArticle` points it at the initial version for preview), so an
+ * article that was never explicitly published still has a non-null
+ * `currentVersionId`. Using that as the signal would silently promote an
+ * unreviewed DRAFT to PUBLISHED on unarchive, bypassing the admin-gated
+ * `publishArticle` step entirely — the exact "draft shown as approved"
+ * failure mode this whole fix pass exists to close. `lifecycleVersion`
+ * only increments inside `publishArticle` (`setCurrentVersion(...,
+ * bumpLifecycle: true)`), so `> 1` is a reliable "has been published at
+ * least once" signal; archiving never touches either field.
+ */
+export async function unarchiveArticle(ctx: RequestContext, articleId: string) {
+    assertCanAdmin(ctx);
+    return runInTenantContext(ctx, async (db) => {
+        const article = await KnowledgeRepository.getById(db, ctx, articleId);
+        if (!article) throw notFound('Article not found');
+        if (article.status !== 'ARCHIVED') return article; // idempotent
+
+        const restoredStatus = article.lifecycleVersion > 1 ? 'PUBLISHED' : 'DRAFT';
+        await KnowledgeRepository.updateStatus(db, ctx, articleId, restoredStatus);
+
+        await logEvent(db, ctx, {
+            action: 'KNOWLEDGE_ARTICLE_UNARCHIVED',
+            entityType: 'KnowledgeArticle',
+            entityId: articleId,
+            details: `Unarchived article: ${article.title}`,
+            detailsJson: {
+                category: 'status_change',
+                entityName: 'KnowledgeArticle',
+                fromStatus: 'ARCHIVED',
+                toStatus: restoredStatus,
+            },
+        });
+
+        return KnowledgeRepository.getById(db, ctx, articleId);
     });
 }
 

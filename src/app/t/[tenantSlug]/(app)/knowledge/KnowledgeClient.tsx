@@ -19,11 +19,7 @@ import { EntityListPage } from '@/components/layout/EntityListPage';
 import { EmptyState } from '@/components/ui/empty-state';
 import { TableTitleCell } from '@/components/ui/table-title-cell';
 import { toApiSearchParams } from '@/lib/filters/url-sync';
-import {
-    buildKnowledgeFilters,
-    KNOWLEDGE_FILTER_KEYS,
-    KNOWLEDGE_STATUS_LABELS,
-} from './filter-defs';
+import { buildKnowledgeFilters, KNOWLEDGE_FILTER_KEYS } from './filter-defs';
 import { NewArticleModal } from './NewArticleModal';
 import {
     StatusBadge,
@@ -92,6 +88,8 @@ function KnowledgePageInner({
     permissions,
 }: KnowledgeClientProps) {
     const t = useTranslations('knowledge');
+    const tFilters = useTranslations('knowledge.filters');
+    const tStatus = useTranslations('knowledge.status');
     const tenantHref = (path: string) => `/t/${tenantSlug}${path}`;
     const router = useRouter();
 
@@ -141,8 +139,8 @@ function KnowledgePageInner({
     const loading = articlesQuery.isLoading && !articlesQuery.data;
 
     const liveFilters = useMemo(
-        () => buildKnowledgeFilters(articles),
-        [articles],
+        () => buildKnowledgeFilters(tFilters, tStatus, articles),
+        [tFilters, tStatus, articles],
     );
     const filterCards = useMemo(() => filtersToCards(liveFilters), [liveFilters]);
     const { visibleCards, dropdown: filtersDropdown } = useFilterCardVisibility({
@@ -186,10 +184,7 @@ function KnowledgePageInner({
                     cell: ({ row }) => {
                         const status = row.original.status;
                         const variant = STATUS_BADGE[status] ?? 'neutral';
-                        const label =
-                            (KNOWLEDGE_STATUS_LABELS as Record<string, string>)[
-                                status
-                            ] ?? status;
+                        const label = tStatus(status);
                         return (
                             <StatusBadge
                                 variant={variant}
@@ -225,7 +220,7 @@ function KnowledgePageInner({
                     meta: { mobileCard: { slot: 'meta', label: t('colUpdated') } },
                 },
             ]),
-        [tenantHref, t],
+        [tenantHref, t, tStatus],
     );
 
     return (
