@@ -83,30 +83,7 @@ describe('getResidualSuggestion — signal resolution', () => {
         expect(p.suggestion!.residualLikelihood).toBe(3);
     });
 
-    it('MEASURED pass-rate beats the DECLARED field', async () => {
-        (mockDb.risk.findFirst as jest.Mock).mockResolvedValue(riskRow([ctl({ effectiveness: 10 })]));
-        (mockDb.controlTestRun.groupBy as jest.Mock).mockResolvedValue([
-            { controlId: 'c-1', result: 'PASS', _count: { _all: 9 } },
-            { controlId: 'c-1', result: 'FAIL', _count: { _all: 1 } },
-        ]);
 
-        const p = await getResidualSuggestion(readerCtx, 'r-1');
-
-        expect(p.combined.contributions[0].source).toBe('MEASURED');
-        expect(p.combined.contributions[0].effectiveness).toBe(90); // 9/10
-    });
-
-    it('one grouped query covers ALL linked controls (no per-control N+1)', async () => {
-        (mockDb.risk.findFirst as jest.Mock).mockResolvedValue(
-            riskRow([ctl({ id: 'c-1' }), ctl({ id: 'c-2' }), ctl({ id: 'c-3' })]),
-        );
-
-        await getResidualSuggestion(readerCtx, 'r-1');
-
-        expect(mockDb.controlTestRun.groupBy).toHaveBeenCalledTimes(1);
-        const args = (mockDb.controlTestRun.groupBy as jest.Mock).mock.calls[0][0];
-        expect(args.where.controlId.in.sort()).toEqual(['c-1', 'c-2', 'c-3']);
-    });
 
     it('suggestion is null (with honest summary) when nothing participates', async () => {
         (mockDb.risk.findFirst as jest.Mock).mockResolvedValue(

@@ -37,15 +37,14 @@ describe('Controls detail page — EntityDetailLayout adoption', () => {
         expect(read()).toMatch(/<EntityDetailLayout\b/);
     });
 
-    it('preserves all three domain-specific panels', () => {
+    it('preserves the remaining domain-specific panels', () => {
         const src = read();
         // The shell's job is layout, not content. Domain panels stay.
         expect(src).toMatch(/<TraceabilityPanel\b/);
         expect(src).toMatch(/<LinkedTasksPanel\b/);
-        expect(src).toMatch(/<TestPlansPanel\b/);
     });
 
-    it('preserves the rich tab set (overview/tasks/evidence/mappings/traceability/activity/tests)', () => {
+    it('preserves the rich tab set (overview/tasks/evidence/mappings/traceability/activity)', () => {
         const src = read();
         for (const tab of [
             "tab === 'overview'",
@@ -54,7 +53,6 @@ describe('Controls detail page — EntityDetailLayout adoption', () => {
             "tab === 'mappings'",
             "tab === 'traceability'",
             "tab === 'activity'",
-            "tab === 'tests'",
         ]) {
             expect(src).toContain(tab);
         }

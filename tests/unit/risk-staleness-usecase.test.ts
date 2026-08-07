@@ -44,7 +44,12 @@ describe('getRiskStaleness', () => {
         expect(mockDb.riskScoreEvent.groupBy).not.toHaveBeenCalled();
     });
 
-    it('joins the three signal sources per risk and flags only the rotten rows', async () => {
+    // The CONTROLS_MOVED_SINCE signal was derived from ControlTestRun
+    // executions. Test runs went with the compliance uproot, so staleness now
+    // joins TWO sources — review-overdue and score-event age — and a risk
+    // whose only claim to staleness was a re-tested control is no longer
+    // flagged. The fixture keeps that risk so the change is visible.
+    it('joins the two remaining signal sources and flags only the rotten rows', async () => {
         (mockDb.risk.findMany as jest.Mock).mockResolvedValue([
             { id: 'fresh', title: 'Fresh', nextReviewAt: daysAgo(-30), residualScoreSetAt: daysAgo(2) },
             { id: 'overdue', title: 'Overdue', nextReviewAt: daysAgo(10), residualScoreSetAt: null },
@@ -58,34 +63,20 @@ describe('getRiskStaleness', () => {
         (mockDb.riskControl.findMany as jest.Mock).mockResolvedValue([
             { riskId: 'moved', controlId: 'c-1' },
         ]);
-        (mockDb.controlTestRun.groupBy as jest.Mock).mockResolvedValue([
-            { controlId: 'c-1', _max: { executedAt: daysAgo(3) } },
-        ]);
 
         const report = await getRiskStaleness(readerCtx);
 
         expect(report.totalCount).toBe(3);
-        expect(report.staleCount).toBe(2);
+        expect(report.staleCount).toBe(1);
         const ids = report.staleRisks.map((r) => r.riskId);
         expect(ids).toContain('overdue');
-        expect(ids).toContain('moved');
         expect(ids).not.toContain('fresh');
-        const moved = report.staleRisks.find((r) => r.riskId === 'moved')!;
-        expect(moved.reasons).toEqual(['CONTROLS_MOVED_SINCE']);
-        expect(moved.description).toMatch(/control test results changed/);
+        // 'moved' was stale ONLY via CONTROLS_MOVED_SINCE, which no longer
+        // has a source. It stays in the fixture so this stops being true the
+        // moment an equivalent signal is reintroduced.
+        expect(ids).not.toContain('moved');
     });
 
-    it('only COMPLETED test runs participate in the evidence signal', async () => {
-        (mockDb.risk.findMany as jest.Mock).mockResolvedValue([
-            { id: 'r1', title: 'R', nextReviewAt: null, residualScoreSetAt: daysAgo(90) },
-        ]);
-        (mockDb.riskControl.findMany as jest.Mock).mockResolvedValue([
-            { riskId: 'r1', controlId: 'c-1' },
-        ]);
-        await getRiskStaleness(readerCtx);
-        const q = (mockDb.controlTestRun.groupBy as jest.Mock).mock.calls[0][0];
-        expect(q.where.status).toBe('COMPLETED');
-    });
 
     it('a RED-latest KRI reading newer than the last assessment flags SIGNAL_MOVED (RQ3-7)', async () => {
         (mockDb.risk.findMany as jest.Mock).mockResolvedValue([

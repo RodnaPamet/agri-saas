@@ -84,13 +84,6 @@ describe('FrameworkRepository — catalogue reads', () => {
             sortOrder: 'asc',
         });
     });
-
-    it('loads a pack by key with its template links resolved', async () => {
-        await FrameworkRepository.getPackByKey(asTx(db), 'iso27001-core');
-
-        expect(whereOf(db.frameworkPack.findUnique)).toEqual({ key: 'iso27001-core' });
-        expect(argOf(db.frameworkPack.findUnique).include.templateLinks).toBeDefined();
-    });
 });
 
 describe('FrameworkRepository.listRequirements', () => {
@@ -189,45 +182,3 @@ describe('FrameworkRepository.getCoverage', () => {
     });
 });
 
-describe('FrameworkRepository.isPackInstalled', () => {
-    it('counts the ASKING tenant’s controls matching the pack’s template codes', async () => {
-        // Break: dropping `tenantId` from the count. Every tenant would
-        // then see every pack as already installed the moment one customer
-        // installed it — the install button disappears for everyone else.
-        db.frameworkPack.findUnique.mockResolvedValue({
-            templateLinks: [{ template: { code: 'A.5.1' } }, { template: { code: 'A.5.2' } }],
-        });
-        db.control.count.mockResolvedValue(2);
-
-        expect(await FrameworkRepository.isPackInstalled(asTx(db), 'iso-core', 'tenant-1')).toBe(true);
-        expect(whereOf(db.control.count)).toEqual({
-            tenantId: 'tenant-1',
-            code: { in: ['A.5.1', 'A.5.2'] },
-        });
-    });
-
-    it('reports not-installed when no control matches', async () => {
-        db.frameworkPack.findUnique.mockResolvedValue({
-            templateLinks: [{ template: { code: 'A.5.1' } }],
-        });
-        db.control.count.mockResolvedValue(0);
-
-        expect(await FrameworkRepository.isPackInstalled(asTx(db), 'iso-core', 'tenant-1')).toBe(false);
-    });
-
-    it('short-circuits an empty pack instead of counting on an empty `in`', async () => {
-        // Break: dropping the `templateCodes.length === 0` guard.
-        // `code: { in: [] }` matches nothing, so this happens to return
-        // false anyway — but it costs a table scan on every render of the
-        // pack list, once per pack.
-        db.frameworkPack.findUnique.mockResolvedValue({ templateLinks: [] });
-
-        expect(await FrameworkRepository.isPackInstalled(asTx(db), 'empty-pack', 'tenant-1')).toBe(false);
-        expect(db.control.count).not.toHaveBeenCalled();
-    });
-
-    it('reports not-installed for a pack key that does not exist', async () => {
-        expect(await FrameworkRepository.isPackInstalled(asTx(db), 'nope', 'tenant-1')).toBe(false);
-        expect(db.control.count).not.toHaveBeenCalled();
-    });
-});

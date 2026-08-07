@@ -145,25 +145,8 @@ jest.mock('@/app-layer/repositories/AuditRepository', () => ({
     },
 }));
 
-jest.mock('@/app-layer/repositories/TestPlanRepository', () => ({
-    TestPlanRepository: {
-        create: (...a: unknown[]) => mockTestPlanCreate(...a),
-        update: (...a: unknown[]) => mockTestPlanUpdate(...a),
-        updateNextDueAt: (...a: unknown[]) => mockTestPlanUpdateNextDueAt(...a),
-        getById: (...a: unknown[]) => mockTestPlanGetById(...a),
-    },
-}));
 
-jest.mock('@/app-layer/repositories/TestRunRepository', () => ({
-    TestRunRepository: {
-        complete: (...a: unknown[]) => mockTestRunComplete(...a),
-        getById: (...a: unknown[]) => mockTestRunGetById(...a),
-    },
-}));
 
-jest.mock('@/app-layer/repositories/TestEvidenceRepository', () => ({
-    TestEvidenceRepository: {},
-}));
 
 // `runInTenantContext` returns a stub Prisma tx. Risk usecase uses
 // `tenant.findUnique` against it for maxScale lookup.

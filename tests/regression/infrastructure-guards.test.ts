@@ -74,13 +74,13 @@ describe('Infrastructure Regression Guards', () => {
             }
         });
 
-        test('exactly 30 scheduled jobs exist', () => {
+        test('exactly 28 scheduled jobs exist', () => {
             // 29 → 30: `evidence-stale-review-sweep` was written in 2026-05
             // and never registered or scheduled, so `nextReviewDate` was
             // settable, shown in the calendar, counted on the dashboard — and
             // acted on by nothing. Registering it is what makes the cadence
             // mean anything.
-            expect(SCHEDULED_JOBS).toHaveLength(30);
+            expect(SCHEDULED_JOBS).toHaveLength(28);
         });
 
         test('scheduled job names match expected set', () => {
@@ -104,7 +104,6 @@ describe('Infrastructure Regression Guards', () => {
                 'contract-delivery-window-sweep',
                 // Epic G-2 — every-5-min repeatable scanning
                 // ControlTestPlan and enqueuing runner jobs.
-                'control-test-scheduler',
                 'daily-evidence-expiry',
                 'data-lifecycle',
                 // Flips APPROVED evidence past its nextReviewDate to
@@ -115,7 +114,6 @@ describe('Infrastructure Regression Guards', () => {
                 'evidence-stale-review-sweep',
                 // Epic G-5 — daily 30/14/7-day expiry reminder for
                 // control exceptions.
-                'exception-expiry-monitor',
                 // Exchange — daily global sweep flipping ACTIVE listings past
                 // their expiresAt to EXPIRED (+ audit row per transition).
                 'exchange-expiry-sweep',

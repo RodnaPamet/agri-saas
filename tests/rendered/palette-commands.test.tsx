@@ -121,7 +121,6 @@ describe('Command Palette — navigation commands', () => {
             'nav:dashboard',
             'nav:risks',
             'nav:evidence',
-            'nav:frameworks',
             'nav:vendors',
             'nav:admin',
         ];

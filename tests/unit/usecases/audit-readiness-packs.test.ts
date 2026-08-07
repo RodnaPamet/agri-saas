@@ -51,9 +51,6 @@ jest.mock('@/app-layer/events/audit', () => ({
 // SoA module is dynamically imported in freezeAuditPack — stub it
 // so the best-effort attachment path is deterministic.
 const mockGetSoA = jest.fn();
-jest.mock('@/app-layer/usecases/soa', () => ({
-    getSoA: (...args: any[]) => mockGetSoA(...args),
-}));
 
 // `freezeAuditPack` reads the GLOBAL Framework table to turn the pack's
 // FRAMEWORK_COVERAGE item into the scheme key its SoA should be generated for.

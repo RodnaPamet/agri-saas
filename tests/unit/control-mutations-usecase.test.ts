@@ -323,54 +323,6 @@ describe('setControlOwner', () => {
 
 // ─── markControlTestCompleted ──────────────────────────────────────
 
-describe('markControlTestCompleted', () => {
-    it('computes nextDueAt from the cadence helper and writes both fields', async () => {
-        (ControlRepository.getById as jest.Mock).mockResolvedValue({
-            id: 'c-1', tenantId: editorCtx.tenantId, frequency: 'MONTHLY', applicability: 'APPLICABLE',
-        });
-        const nextDue = new Date('2026-07-01T00:00:00Z');
-        (computeNextDueAt as jest.Mock).mockReturnValue(nextDue);
-        (ControlRepository.update as jest.Mock).mockResolvedValue({ id: 'c-1' });
-
-        await markControlTestCompleted(editorCtx, 'c-1');
-
-        const updateData = (ControlRepository.update as jest.Mock).mock.calls[0][3];
-        expect(updateData.nextDueAt).toBe(nextDue);
-        expect(updateData.lastTested).toBeInstanceOf(Date);
-    });
-
-    it('handles ad-hoc cadence (computeNextDueAt returns null)', async () => {
-        (ControlRepository.getById as jest.Mock).mockResolvedValue({
-            id: 'c-1', tenantId: editorCtx.tenantId, frequency: 'AD_HOC', applicability: 'APPLICABLE',
-        });
-        (computeNextDueAt as jest.Mock).mockReturnValue(null);
-        (ControlRepository.update as jest.Mock).mockResolvedValue({ id: 'c-1' });
-
-        await markControlTestCompleted(editorCtx, 'c-1');
-
-        const updateData = (ControlRepository.update as jest.Mock).mock.calls[0][3];
-        expect(updateData.nextDueAt).toBeNull();
-    });
-
-    it('rejects when the control is NOT_APPLICABLE', async () => {
-        (ControlRepository.getById as jest.Mock).mockResolvedValue({
-            id: 'c-1', tenantId: editorCtx.tenantId, applicability: 'NOT_APPLICABLE',
-        });
-
-        await expect(markControlTestCompleted(editorCtx, 'c-1')).rejects.toThrow(/NOT_APPLICABLE/);
-        expect(ControlRepository.update).not.toHaveBeenCalled();
-    });
-
-    it('throws notFound when control is missing', async () => {
-        (ControlRepository.getById as jest.Mock).mockResolvedValue(null);
-        await expect(markControlTestCompleted(editorCtx, 'missing')).rejects.toThrow(/Control not found/i);
-    });
-
-    it('throws forbidden for global library controls', async () => {
-        (ControlRepository.getById as jest.Mock).mockResolvedValue({ id: 'c-1', tenantId: null });
-        await expect(markControlTestCompleted(editorCtx, 'c-1')).rejects.toThrow(/global library/i);
-    });
-});
 
 // ─── deleteControl / restoreControl / purgeControl ─────────────────
 

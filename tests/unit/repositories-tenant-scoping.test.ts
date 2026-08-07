@@ -316,9 +316,9 @@ describe('global-or-tenant Control reads', () => {
         expect(args.include.evidence.where).toEqual({ tenantId: 'tenant-1' });
     });
 
-    it('orders the SOA by annex id', async () => {
+    it('orders the SOA by control code', async () => {
         await ReportRepository.getSOAData(db, ctx);
-        expect(db.control.findMany.mock.calls[0][0].orderBy).toEqual({ annexId: 'asc' });
+        expect(db.control.findMany.mock.calls[0][0].orderBy).toEqual({ code: 'asc' });
     });
 
     it('asks for the evidence count alongside the rows in the mapping view', async () => {
@@ -334,7 +334,7 @@ describe('global-or-tenant Control reads', () => {
         const args = db.risk.findMany.mock.calls[0][0];
         expect(args.where).toEqual({ tenantId: 'tenant-1' });
         expect(args.orderBy).toEqual({ inherentScore: 'desc' });
-        expect(args.include.controls.include.control.select).toEqual({ name: true, annexId: true });
+        expect(args.include.controls.include.control.select).toEqual({ name: true, code: true });
     });
 });
 
