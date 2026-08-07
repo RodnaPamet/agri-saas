@@ -17,6 +17,7 @@ export async function getReports(ctx: RequestContext) {
             name: c.name,
             applicable: c.applicability === 'APPLICABLE',
             status: c.status,
+            effectiveness: c.effectiveness,
             evidenceCount: c.evidence.length,
             approvedEvidence: c.evidence.filter((e) => e.status === 'APPROVED').length,
             hasOverdue: c.evidence.some((e) => e.nextReviewDate && new Date(e.nextReviewDate) < new Date()),

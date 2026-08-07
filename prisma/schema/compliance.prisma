@@ -1003,6 +1003,9 @@ model Control {
   intent                       String?
   category                     String?
   status                       ControlStatus            @default(NOT_STARTED)
+  /// 0-100 declared control effectiveness. Read by the bow-tie
+  /// barrier projection and the residual-risk suggestion.
+  effectiveness                Int?
   reviewCadence                ReviewCadence?
   isCustom                     Boolean                  @default(false)
   ownerUserId                  String?
@@ -1013,6 +1016,8 @@ model Control {
   /// Integration binding — `<provider>.<check>` (e.g. `sharepoint.policy_doc`).
   /// Drives the scheduled integration checks that produce auto-evidence.
   automationKey                String?
+  /// Barrier classification for the bow-tie projection.
+  mitigationType               ControlMitigationType?
   applicability                Applicability            @default(APPLICABLE)
   applicabilityJustification   String?
   applicabilityDecidedByUserId String?

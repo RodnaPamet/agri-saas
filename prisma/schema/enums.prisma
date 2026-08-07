@@ -173,6 +173,17 @@ enum ControlStatus {
   NOT_APPLICABLE
 }
 
+/// How a control mitigates a risk. Read by the bow-tie projection
+/// (PREVENTIVE/DETERRENT sit left of the event, DETECTIVE/CORRECTIVE/
+/// COMPENSATING right) and by the residual-risk suggestion.
+enum ControlMitigationType {
+  PREVENTIVE
+  DETERRENT
+  DETECTIVE
+  CORRECTIVE
+  COMPENSATING
+}
+
 enum Applicability {
   APPLICABLE
   NOT_APPLICABLE
