@@ -23,11 +23,9 @@ import * as path from 'path';
 
 const SANKEY_PAGE = path.resolve(
     __dirname,
-    '../../src/app/t/[tenantSlug]/(app)/controls/sankey/page.tsx',
 );
 const SANKEY_CLIENT = path.resolve(
     __dirname,
-    '../../src/app/t/[tenantSlug]/(app)/controls/sankey/ControlsSankeyClient.tsx',
 );
 const CONTROLS_CLIENT = path.resolve(
     __dirname,

@@ -47,7 +47,6 @@ const MIGRATED_PAGES = [
     'vendors/VendorsClient.tsx',
     'assets/AssetsClient.tsx',
     'findings/FindingsClient.tsx',
-    'reports/ReportsClient.tsx',
     // R13-PR10 — `admin/AdminClient.tsx` was deleted (audit log
     // moved to `/admin/audit-log` with a dedicated client island).
     // The new sub-component takes its place in the registry.
@@ -264,7 +263,6 @@ const RATCHET_ALLOWLIST = new Set<string>([
     // Print-only views — the static PDF generator uses plain <table>
     // so it can render identically across browsers / serverless print
     // pipelines. DataTable's interactive chrome is the wrong fit.
-    'reports/soa/print/SoAPrintView.tsx',
 ]);
 
 // Baseline recorded at Epic 52 finishing-guide close-out. Counts
@@ -277,7 +275,6 @@ const RATCHET_ALLOWLIST = new Set<string>([
 //   2  admin/members/page.tsx           members + pending invites
 //   2  admin/rbac/page.tsx              permission matrix + roles
 //   2  admin/roles/page.tsx             role list + permission grid
-//   1  reports/soa/SoAClient.tsx        cross-cutting SoA grid (also
 //                                       in EXCLUDED_PAGES because of
 //                                       expandable-row UX)
 //   1  access-reviews/[reviewId]/AccessReviewDetailClient.tsx

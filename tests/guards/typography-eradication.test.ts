@@ -47,7 +47,6 @@ const EXEMPT_FILES = new Set<string>([
   // they can graduate to <Heading>. Tracking outside PR-3 scope.
   "src/app/not-found.tsx",
   "src/app/vendor-assessment/[assessmentId]/VendorAssessmentClient.tsx",
-  "src/app/t/[tenantSlug]/(app)/reports/soa/print/SoAPrintView.tsx",
   "src/components/onboarding/OnboardingWizard.tsx",
 ]);
 

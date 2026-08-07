@@ -51,7 +51,6 @@ const MIGRATED_PAGES = [
     // RQ-8 — correlation matrix; semantic tokens + Card/Button/Input + heat bands.
     'risks/correlations/page.tsx',
     // RQ-10 — reports; semantic tokens + Card/Button/StatusBadge only.
-    'risks/reports/page.tsx',
     // Field Journal — design-system-native from birth. Server shell +
     // EntityListPage client + EntityDetailLayout detail page; semantic
     // tokens + Card/Button/StatusBadge/Modal/EntityListPage only, no
@@ -201,7 +200,6 @@ describe('New page token discipline', () => {
         //     /calendar/CalendarClient.tsx, both leaning on legacy
         //     `btn btn-*` + `glass-card` classes for header chrome.
         //   - 88 (+1): Epic 66 added the frameworks client island
-        //     `frameworks/FrameworksClient.tsx` for the table/cards
         //     view toggle. Uses one `glass-card` class for the empty
         //     state — bounded follow-up to migrate alongside the
         //     other Epic 66 polish surfaces.

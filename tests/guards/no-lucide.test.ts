@@ -74,7 +74,6 @@ const LEGACY_LUCIDE_USERS = new Set<string>([
     // filter-defs file has no Nucleo option until the filter platform
     // migrates. Same precedent as every other *filter-defs.ts entry here.
     'src/app/t/[tenantSlug]/(app)/knowledge/filter-defs.ts',
-    'src/app/t/[tenantSlug]/(app)/tests/filter-defs.ts',
     // Automation Epic 1 — Rules-tab filter defs. `FilterDefInput.icon` is
     // typed `LucideIcon` (the entire filter system is lucide-based), so a
     // new filter-defs file has no Nucleo option until the filter platform
@@ -87,15 +86,12 @@ const LEGACY_LUCIDE_USERS = new Set<string>([
     'src/app/t/[tenantSlug]/(app)/calendar/CalendarClient.tsx',
     'src/app/t/[tenantSlug]/(app)/controls/ControlsClient.tsx',
     'src/app/t/[tenantSlug]/(app)/controls/filter-defs.ts',
-    'src/app/t/[tenantSlug]/(app)/controls/sankey/ControlsSankeyClient.tsx',
     'src/app/t/[tenantSlug]/(app)/evidence/filter-defs.ts',
     'src/app/t/[tenantSlug]/(app)/policies/filter-defs.ts',
     // Roadmap-2 PR-12 — moved a single `Download` icon import
     // from SoAClient to ReportsClient when lifting the SoA
     // export-buttons cluster up into the Reports header. Net
     // change: one new lucide consumer on the allowlist.
-    'src/app/t/[tenantSlug]/(app)/reports/ReportsClient.tsx',
-    'src/app/t/[tenantSlug]/(app)/reports/soa/SoAClient.tsx',
     'src/app/t/[tenantSlug]/(app)/farm-tasks/filter-defs.ts',
     'src/app/t/[tenantSlug]/(app)/risks/filter-defs.ts',
     'src/app/t/[tenantSlug]/(app)/security/mfa/page.tsx',

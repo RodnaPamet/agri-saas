@@ -20,7 +20,6 @@ import * as path from 'path';
 
 const PAGE = path.resolve(
     __dirname,
-    '../../src/app/t/[tenantSlug]/(app)/frameworks/[frameworkKey]/page.tsx',
 );
 const EXPLORER = path.resolve(
     __dirname,

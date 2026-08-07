@@ -27,7 +27,6 @@ import * as path from 'path';
 
 const DETAIL_PAGE = path.resolve(
     __dirname,
-    '../../src/app/t/[tenantSlug]/(app)/frameworks/[frameworkKey]/page.tsx',
 );
 
 function read(p: string): string {

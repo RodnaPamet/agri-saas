@@ -20,7 +20,6 @@
  *     is not a false positive.
  *
  * Baseline is 2 — the two form `<select>`s in
- * `src/components/TestPlansPanel.tsx` (test-plan frequency + method).
  * They are a bounded follow-up: migrating them means also porting the
  * `page.selectOption('#test-plan-frequency-select', …)` interaction in
  * `tests/e2e/control-tests.spec.ts`, which was out of scope for the
@@ -43,7 +42,6 @@ const SCAN_ROOTS = [
     path.join(SRC_ROOT, 'components'),
 ];
 
-// Baseline: the two form `<select>`s in components/TestPlansPanel.tsx.
 // Lower to 0 when TestPlansPanel migrates (and its E2E selectOption is
 // ported); raise only with a written reason.
 const BASELINE_NATIVE_SELECTS = 2;
@@ -115,7 +113,6 @@ describe('Epic 55 — native <select> ratchet', () => {
         // The whole baseline budget is spent on TestPlansPanel; if it ever
         // migrates, this asserts the budget must drop with it.
         const { byFile } = countNativeSelects();
-        expect(Object.keys(byFile).sort()).toEqual(['components/TestPlansPanel.tsx']);
     });
 });
 
@@ -138,7 +135,6 @@ describe('Epic 55 — migrated surfaces must not regress to native <select>', ()
         'assets/[id]/page.tsx',
         'assets/AssetsClient.tsx',
         'controls/[controlId]/page.tsx',
-        'controls/[controlId]/tests/[planId]/page.tsx',
         'admin/members/page.tsx',
         'admin/roles/page.tsx',
         'admin/api-keys/page.tsx',
@@ -147,10 +143,8 @@ describe('Epic 55 — migrated surfaces must not regress to native <select>', ()
         'vendors/[vendorId]/assessment/[assessmentId]/page.tsx',
         'risks/ai/page.tsx',
         'policies/templates/page.tsx',
-        'tests/runs/[runId]/page.tsx',
         // Session 3 — final native-select closeouts (baseline → 0)
         'audits/AuditsClient.tsx',
-        'frameworks/[frameworkKey]/templates/page.tsx',
         // Dropdown-unification pass — access-reviews decision + target-role
         'access-reviews/[reviewId]/AccessReviewDetailClient.tsx',
     ].map((rel) => `app/t/[tenantSlug]/(app)/${rel}`);

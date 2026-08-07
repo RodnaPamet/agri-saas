@@ -43,7 +43,6 @@ const SCAN_FILES: string[] = [
     // product with auditors. They were a different design system
     // (bg-slate-100, text-gray-900). Migrated to semantic tokens;
     // ratchet covers print files now to prevent drift back.
-    'src/app/t/[tenantSlug]/(app)/reports/soa/print/SoAPrintView.tsx',
 ];
 
 const SLATE_RE = /\b(bg|text|border|ring|shadow)-slate-/;

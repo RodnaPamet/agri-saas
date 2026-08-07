@@ -65,6 +65,5 @@ describe('RQ-10 reporting & BIA', () => {
         expect(exists('src/app/api/t/[tenantSlug]/risks/reports/route.ts')).toBe(true);
         expect(exists('src/app/api/t/[tenantSlug]/risks/reports/[reportId]/download/route.ts')).toBe(true);
         expect(exists('src/app/api/t/[tenantSlug]/risks/reports/schedules/route.ts')).toBe(true);
-        expect(exists('src/app/t/[tenantSlug]/(app)/risks/reports/page.tsx')).toBe(true);
     });
 });

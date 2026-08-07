@@ -146,9 +146,7 @@ const PRIMARY_BUDGET: Record<string, number> = {
     // keeps a 1-budget — its create modal is a separate file.)
     "src/app/t/[tenantSlug]/(app)/planning/seasons/SeasonsClient.tsx": 2,
     // 3-primary tier — page CTA + inline form + 1 contextual region
-    "src/app/t/[tenantSlug]/(app)/tests/runs/[runId]/page.tsx": 3,
     "src/app/t/[tenantSlug]/(app)/risks/ai/page.tsx": 3,
-    "src/app/t/[tenantSlug]/(app)/controls/[controlId]/tests/[planId]/page.tsx": 3,
     "src/app/t/[tenantSlug]/(app)/admin/members/page.tsx": 3,
     "src/app/t/[tenantSlug]/(app)/admin/api-keys/page.tsx": 3,
 
@@ -160,12 +158,8 @@ const PRIMARY_BUDGET: Record<string, number> = {
 
     // 2-primary tier — page CTA + inline form (R5-PR7 pattern)
     "src/components/ui/HeroMetric.tsx": 2,
-    "src/components/TestPlansPanel.tsx": 2,
     "src/app/t/[tenantSlug]/(app)/vendors/[vendorId]/assessment/[assessmentId]/page.tsx": 2,
-    "src/app/t/[tenantSlug]/(app)/tests/due/page.tsx": 2,
     "src/app/t/[tenantSlug]/(app)/security/mfa/page.tsx": 2,
-    "src/app/t/[tenantSlug]/(app)/reports/soa/SoAClient.tsx": 2,
-    "src/app/t/[tenantSlug]/(app)/frameworks/[frameworkKey]/templates/page.tsx": 2,
     "src/app/t/[tenantSlug]/(app)/findings/FindingsClient.tsx": 2,
     "src/app/t/[tenantSlug]/(app)/evidence/EvidenceClient.tsx": 2,
     "src/app/t/[tenantSlug]/(app)/audits/packs/[packId]/page.tsx": 2,
@@ -190,7 +184,6 @@ const PRIMARY_BUDGET: Record<string, number> = {
     // framework directly; the modal CTA is the "after you read this
     // explanation" follow-through. Modal only mounts when the user
     // clicks the Create-framework secondary trigger.
-    "src/app/t/[tenantSlug]/(app)/frameworks/FrameworksClient.tsx": 2,
 
     // R26-PR-A — the Processes canvas wrapper carries two primaries
     // for two genuinely separate regions: the toolbar Save action
