@@ -164,16 +164,6 @@ jest.mock('@/app-layer/events/audit', () => ({
     logEvent: jest.fn(async () => undefined),
 }));
 
-jest.mock('@/app-layer/events/test.events', () => ({
-    emitTestPlanCreated: jest.fn(async () => undefined),
-    emitTestPlanUpdated: jest.fn(async () => undefined),
-    emitTestPlanStatusChanged: jest.fn(async () => undefined),
-    emitTestRunCreated: jest.fn(async () => undefined),
-    emitTestRunCompleted: jest.fn(async () => undefined),
-    emitTestRunFailed: jest.fn(async () => undefined),
-    emitTestEvidenceLinked: jest.fn(async () => undefined),
-    emitTestEvidenceUnlinked: jest.fn(async () => undefined),
-}));
 
 jest.mock('@/app-layer/policies/common', () => ({
     assertCanRead: jest.fn(),
