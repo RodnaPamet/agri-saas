@@ -70,7 +70,7 @@ const CURRENT_BASELINE = 20;
  * the repo applies to `as any` — a large existing debt makes a hard
  * error infeasible, so the ratchet is the enforcement.
  */
-const CONFIG_PROP_BASELINE = 391;
+const CONFIG_PROP_BASELINE = 380;
 
 /** A string counts as user-facing copy if — after stripping HTML entities —
  *  it has a real word (≥2 latin letters) and is not an ALL-CAPS enum/acronym

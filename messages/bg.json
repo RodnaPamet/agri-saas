@@ -6974,7 +6974,39 @@
             "changeSummaryHint": "Незадължително.",
             "changeSummaryPlaceholder": "Какво се промени в тази версия?",
             "saving": "Записване…",
-            "saveVersion": "Запиши версията"
+            "saveVersion": "Запиши версията",
+            "editMetadata": "Редактирай",
+            "unarchive": "Възстанови от архива",
+            "metaPendingVersions": "Непубликувани версии",
+            "draftBadge": "Чернова"
+        },
+        "editModal": {
+            "title": "Редактиране на статия",
+            "description": "Актуализирайте метаданните на статията.",
+            "updateFailed": "Неуспешно актуализиране на статията",
+            "discardConfirm": "Да се отхвърлят ли промените? Всички направени промени ще бъдат загубени.",
+            "fieldTitle": "Заглавие",
+            "fieldCategory": "Категория",
+            "categoryPlaceholder": "напр. Техника, Безопасност, Съответствие",
+            "fieldSummary": "Резюме",
+            "summaryPlaceholder": "Какво покрива тази статия?",
+            "fieldOwner": "Собственик",
+            "ownerPlaceholder": "Задайте собственик",
+            "fieldLanguage": "Език",
+            "languagePlaceholder": "напр. en",
+            "saving": "Записване…",
+            "saveChanges": "Запази промените"
+        },
+        "filters": {
+            "statusLabel": "Състояние",
+            "statusDescription": "Етап от жизнения цикъл на статията.",
+            "categoryLabel": "Категория",
+            "categoryDescription": "Област на знанието / категория."
+        },
+        "status": {
+            "DRAFT": "Чернова",
+            "PUBLISHED": "Публикувана",
+            "ARCHIVED": "Архивирана"
         }
     },
     "locations": {
