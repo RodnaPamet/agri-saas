@@ -273,7 +273,15 @@ const MIN_SECONDARY_TO_PRIMARY_RATIO = 0.9;
 // the canonical primary per docs/ui-buttons.md. Earned, not drift. No
 // compensating demotion was available: the /events page retired in the same
 // PR contained zero primaries.
-const MAX_PRIMARY_COUNT = 173;
+// 174 (was 173): EditArticleModal's "Save changes" CTA — the knowledge
+// article edit modal's confirm button (PATCH /knowledge/[id] finally got a
+// UI surface; the usecase + repository methods existed as dead code before
+// this fix). A modal's confirm is the canonical primary per
+// docs/ui-buttons.md, matching EditCropPlanModal / EditEvidenceModal. The
+// modal's own Cancel is secondary and the detail page's new "Edit"
+// header trigger + "Unarchive" action are secondary/ghost, so the
+// secondary:primary ratio direction still holds.
+const MAX_PRIMARY_COUNT = 174;
 
 describe("primary:secondary ratio direction", () => {
     const counts = (() => {

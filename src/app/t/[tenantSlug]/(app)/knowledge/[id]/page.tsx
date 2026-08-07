@@ -27,6 +27,7 @@ import { Input } from '@/components/ui/input';
 import { FormField } from '@/components/ui/form-field';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { cn } from '@/lib/cn';
+import { EditArticleModal } from './EditArticleModal';
 
 // Lazy-load Tiptap — the editor + ProseMirror chunks land at ~200KB
 // gzipped; deferring the import keeps the static parts of the detail
@@ -113,6 +114,9 @@ export default function KnowledgeArticleDetailPage() {
 
     // Per-action loading key (publish-<id>, acknowledge, …)
     const [actionLoading, setActionLoading] = useState('');
+
+    // Edit-metadata modal (title / summary / category / owner / language).
+    const [editOpen, setEditOpen] = useState(false);
 
     const fetchArticle = useCallback(async () => {
         setLoading(true);
@@ -217,6 +221,25 @@ export default function KnowledgeArticleDetailPage() {
             if (!res.ok) {
                 const d = await res.json().catch(() => ({}));
                 throw new Error(d.error?.message || d.error || 'Failed to archive');
+            }
+            await fetchArticle();
+        } catch (err: unknown) {
+            setError(err instanceof Error ? err.message : 'Unknown error');
+        } finally {
+            setActionLoading('');
+        }
+    };
+
+    const unarchiveArticle = async () => {
+        setActionLoading('unarchive');
+        try {
+            const res = await fetch(apiUrl(`/knowledge/${articleId}/unarchive`), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+            });
+            if (!res.ok) {
+                const d = await res.json().catch(() => ({}));
+                throw new Error(d.error?.message || d.error || 'Failed to unarchive');
             }
             await fetchArticle();
         } catch (err: unknown) {
@@ -377,6 +400,16 @@ export default function KnowledgeArticleDetailPage() {
             }
             actions={
                 <>
+                    {canWrite && (
+                        <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => setEditOpen(true)}
+                            id="edit-article-btn"
+                        >
+                            {t('editMetadata')}
+                        </Button>
+                    )}
                     {canWrite && article.status !== 'ARCHIVED' && (
                         <Button
                             variant="secondary"
@@ -405,6 +438,17 @@ export default function KnowledgeArticleDetailPage() {
                             id="archive-btn"
                         >
                             {actionLoading === 'archive' ? '…' : t('archive')}
+                        </Button>
+                    )}
+                    {canAdmin && article.status === 'ARCHIVED' && (
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={unarchiveArticle}
+                            disabled={actionLoading === 'unarchive'}
+                            id="unarchive-btn"
+                        >
+                            {actionLoading === 'unarchive' ? '…' : t('unarchive')}
                         </Button>
                     )}
                 </>
@@ -615,6 +659,21 @@ export default function KnowledgeArticleDetailPage() {
                     </Button>
                 </div>
             )}
+
+            <EditArticleModal
+                open={editOpen}
+                setOpen={setEditOpen}
+                tenantSlug={tenant.tenantSlug}
+                initial={{
+                    id: article.id,
+                    title: article.title,
+                    summary: article.summary,
+                    category: article.category,
+                    ownerUserId: article.owner?.id ?? null,
+                    language: article.language,
+                }}
+                onSaved={fetchArticle}
+            />
         </EntityDetailLayout>
     );
 }
