@@ -42,13 +42,6 @@ and are not re-listed here.
   calendar/observation patterns behind the journal entry + photo surfaces
   (`src/app/t/[tenantSlug]/(app)/journal/`).
 
-### OpenFarm — CC0 1.0 (Public Domain)
-- **Project:** https://openfarm.cc — "all data is released under CC0".
-- **Used for:** The seeded growing-guide crop data (sowing method, spacing,
-  sun, days to maturity) in `scripts/import-knowledge.ts`. CC0 data is public
-  domain and may be embedded + redistributed freely; this attribution is
-  courtesy. Each seeded article also records `source = "OpenFarm (CC0)"`.
-
 ### ISRIC SoilGrids 2.0 — CC-BY 4.0
 - **Project:** https://soilgrids.org (ISRIC — World Soil Information).
 - **Used for:** Per-parcel soil profiles (#37) — texture (sand/silt/clay),
@@ -66,45 +59,100 @@ and are not re-listed here.
 ## RAG knowledge corpora (feat/ai-rag — ingested as retrievable text)
 
 The retrieval-augmented-generation layer (`src/app-layer/ai/rag/`,
-`scripts/rag/`) ingests third-party agricultural knowledge into the GLOBAL
+`scripts/rag/`) ingests agricultural knowledge into the GLOBAL
 `KnowledgeChunk` catalog so the general model can give grounded, cited
 answers. **Only the corpora below are permitted for TEXT ingestion** — the
 allowlist `LICENSED_SOURCES` in `scripts/rag/corpus.ts` is the single source
 of truth and `assertLicensedSource()` refuses anything else. Each ingested
 chunk records its corpus + licence in its `source` field.
 
+### Agri-SaaS agronomy desk — original content (PR 4/5, no third-party text)
+- **Project:** Authored in this repository — the Bulgarian-first agronomy
+  corpus (`scripts/rag/corpus.ts`'s `GLOBAL_CORPUS`) and the per-tenant demo
+  growing-guide seed (`scripts/import-knowledge.ts`'s `GROWING_GUIDES`).
+- **Licence:** N/A — 100% original work, not derived from any third-party
+  corpus or copyrighted document. Mirrors the "AI eval golden datasets"
+  precedent below: no external text is ingested under this label, so no
+  third-party licence obligation attaches; the product holds full rights.
+- **Used for:** GLOBAL agronomy chunks — BBCH growth stages, scouting
+  thresholds, cultural/preventive practice, nutrition timing WITHOUT
+  product rates, and harvest readiness — for Bulgaria's four major arable
+  crops (wheat, barley, maize, sunflower), plus a shared entry on checking
+  the official БАБХ register before any treatment. **No dose rate, PHI, or
+  re-entry interval appears anywhere in this content** — enforced at
+  ingest time by `assertNoUnregisteredRegulatedContent()`
+  (`scripts/rag/dose-phi-guard.ts`), the structural gate for the product's
+  hard rule that such content may only appear alongside a real БАБХ
+  registration number, which this product does not have a licensed
+  dataset of.
+- **Attribution:** Chunks/articles record
+  `source = "Agri-SaaS agronomy desk (original)"`.
+- **Superseded:** this replaces the previous OpenFarm-modelled home-garden
+  vegetable guides (tomato/lettuce/carrot/potato/beans/squash) in
+  `scripts/import-knowledge.ts`, which were irrelevant to Bulgarian arable
+  farming; the OpenFarm CC0 attribution above has been removed accordingly.
+
 ### KCC (Kisan Call Centre) — Government Open Data Licence – India (GODL)
 - **Project:** Kisan Call Centre transcripts, data.gov.in.
 - **Licence:** GODL-India — permits reuse + redistribution with attribution.
-- **Used for:** GLOBAL agronomy Q&A chunks (pest/disease + nutrient advice).
-- **Attribution:** Chunks record `source = "KCC (GODL)"`.
+- **Used for:** remains on the `LICENSED_SOURCES` allowlist as a verified
+  licence, but as of PR 4/5 no chunk in `GLOBAL_CORPUS` uses it — the
+  Indian tomato/paddy Q&A samples it backed were irrelevant to Bulgarian
+  arable farming and were replaced. Kept allowlisted (not removed) since
+  the licence itself remains valid for any future use.
+- **Attribution:** a chunk using this source records `source = "KCC (GODL)"`.
 
 ### FAIR Forward / Digital Green — open agricultural advisory Q&A
 - **Project:** FAIR Forward (GIZ) / Digital Green open datasets.
 - **Licence:** Open / permissive (CC-BY-class) — redistribution with credit.
-- **Used for:** GLOBAL crop-advisory Q&A chunks.
-- **Attribution:** Chunks record `source = "FAIR-Forward / Digital Green QA"`.
+- **Used for:** remains on the `LICENSED_SOURCES` allowlist as a verified
+  licence; as of PR 4/5 unused for the same reason as KCC above.
+- **Attribution:** a chunk using this source records
+  `source = "FAIR-Forward / Digital Green QA"`.
 
 ### EU Regulation 2018/848 — organic production rules
 - **Project:** Official Journal of the European Union.
 - **Licence:** EU legislation — reusable (CELEX/EUR-Lex reuse policy).
-- **Used for:** GLOBAL organic-compliance chunks (conversion, GMO ban, …).
-- **Attribution:** Chunks record `source = "EU 2018/848"`.
+- **Used for:** remains on the `LICENSED_SOURCES` allowlist as a verified
+  licence; as of PR 4/5 unused by `GLOBAL_CORPUS` (not organic-specific).
+- **Attribution:** a chunk using this source records `source = "EU 2018/848"`.
 
 ### USDA National Organic Program — 7 CFR Part 205
 - **Project:** US Code of Federal Regulations.
 - **Licence:** US Government work — public domain.
-- **Used for:** GLOBAL organic-compliance chunks (buffer zones, records, …).
-- **Attribution:** Chunks record `source = "USDA 7 CFR 205"`.
+- **Used for:** remains on the `LICENSED_SOURCES` allowlist as a verified
+  licence; as of PR 4/5 unused by `GLOBAL_CORPUS` (not organic-specific).
+- **Attribution:** a chunk using this source records `source = "USDA 7 CFR 205"`.
 
-### ⛔ GlobalG.A.P. — PROHIBITED (proprietary; cite-only, NEVER ingested)
-GlobalG.A.P. standards, checklists, and control points are **proprietary
-and copyrighted**. They are **CITE-ONLY**: the product may reference that a
-GlobalG.A.P. requirement exists and direct the user to the official
-document, but it **MUST NEVER ingest GlobalG.A.P. text** into a RAG chunk.
-`assertLicensedSource()` in `scripts/rag/corpus.ts` **hard-refuses** any
-source matching GlobalG.A.P. regardless of the allowlist. No GlobalG.A.P.
-text is bundled, sampled, or ingested anywhere in this repository.
+### ⛔ Tier 4 — PROHIBITED (never ingested as text, regardless of allowlist)
+Five sources are HARD-blocked by `assertLicensedSource()` in
+`scripts/rag/corpus.ts` — proprietary, copyrighted, or commercially
+motivated content this product has no redistribution rights to. The
+product may still CITE that a requirement or article exists and direct
+the user to the original, but must never ingest its text into a RAG chunk.
+
+**GlobalG.A.P.** — GlobalG.A.P. standards, checklists, and control points
+are **proprietary and copyrighted**. They are **CITE-ONLY**: the product
+may reference that a GlobalG.A.P. requirement exists and direct the user
+to the official document, but it **MUST NEVER ingest GlobalG.A.P. text**
+into a RAG chunk. No GlobalG.A.P. text is bundled, sampled, or ingested
+anywhere in this repository.
+
+**AHDB** (Agriculture and Horticulture Development Board) — publications
+are copyrighted and cite-only.
+
+**Canola Council** (of Canada) — publications are copyrighted and
+cite-only.
+
+**agri.bg** and **sinor.bg** — copyrighted commercial editorial sites;
+their articles are cite-only.
+
+**Agrochemical vendor portals** — product/label pages from commercial
+agrochemical vendors are copyrighted and commercially motivated.
+`assertLicensedSource()` names the dominant global vendors
+(Bayer CropScience, Syngenta, BASF Agricultural Solutions, Corteva, UPL,
+Nufarm) illustratively; the allowlist model (`LICENSED_SOURCES`) is the
+primary defence against ingesting any other vendor's text.
 
 ---
 
