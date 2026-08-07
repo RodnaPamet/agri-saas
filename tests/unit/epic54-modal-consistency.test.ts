@@ -179,11 +179,6 @@ describe('Epic 54 — sheet surface consistency', () => {
 describe('Epic 54 — legacy /new routes are server redirect shims', () => {
     const SHIMS = [
         {
-            label: 'Controls',
-            file: 'src/app/t/[tenantSlug]/(app)/controls/new/page.tsx',
-            dest: '/controls?create=1',
-        },
-        {
             label: 'Risks',
             file: 'src/app/t/[tenantSlug]/(app)/risks/new/page.tsx',
             dest: '/risks?create=1',

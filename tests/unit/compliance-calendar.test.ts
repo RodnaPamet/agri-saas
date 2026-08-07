@@ -28,7 +28,6 @@ const mockVendorFindMany = jest.fn();
 const mockVendorDocFindMany = jest.fn();
 const mockAuditCycleFindMany = jest.fn();
 const mockControlFindMany = jest.fn();
-const mockTestPlanFindMany = jest.fn();
 const mockTaskFindMany = jest.fn();
 const mockRiskFindMany = jest.fn();
 const mockFindingFindMany = jest.fn();
@@ -64,7 +63,6 @@ beforeEach(() => {
         mockVendorDocFindMany,
         mockAuditCycleFindMany,
         mockControlFindMany,
-        mockTestPlanFindMany,
         mockTaskFindMany,
         mockRiskFindMany,
         mockFindingFindMany,
@@ -113,9 +111,6 @@ beforeEach(() => {
         control: {
             findMany: (...a: unknown[]) => mockControlFindMany(...a),
             count: (...a: unknown[]) => mockControlCount(...a),
-        },
-        controlTestPlan: {
-            findMany: (...a: unknown[]) => mockTestPlanFindMany(...a),
         },
         task: {
             findMany: (...a: unknown[]) => mockTaskFindMany(...a),
@@ -230,7 +225,6 @@ describe('getComplianceCalendarEvents — aggregation', () => {
             mockVendorDocFindMany,
             mockAuditCycleFindMany,
             mockControlFindMany,
-            mockTestPlanFindMany,
             mockTaskFindMany,
             mockRiskFindMany,
             mockFindingFindMany,

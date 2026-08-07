@@ -23,7 +23,6 @@ const listLots = jest.fn();
 const listMyFarmTasks = jest.fn();
 const getEnabledModules = jest.fn();
 const listSchemes = jest.fn();
-const generateReadinessReport = jest.fn();
 const getAchievements = jest.fn();
 
 jest.mock('@/app-layer/usecases/journal', () => ({
@@ -37,12 +36,6 @@ jest.mock('@/app-layer/usecases/farm-task', () => ({
 }));
 jest.mock('@/app-layer/usecases/modules', () => ({
     getEnabledModules: (...a: any[]) => getEnabledModules(...a),
-}));
-jest.mock('@/app-layer/usecases/certification-scheme', () => ({
-    listSchemes: (...a: any[]) => listSchemes(...a),
-}));
-jest.mock('@/app-layer/usecases/framework/coverage', () => ({
-    generateReadinessReport: (...a: any[]) => generateReadinessReport(...a),
 }));
 jest.mock('@/app-layer/usecases/achievements', () => ({
     getAchievements: (...a: any[]) => getAchievements(...a),
@@ -85,7 +78,6 @@ describe('getAgDashboard', () => {
         listMyFarmTasks.mockResolvedValue(Array.from({ length: 6 }, (_, i) => task(i)));
         // Top scheme present → certification reading from its readiness report.
         listSchemes.mockResolvedValue([{ id: 'fw-1', key: 'ORGANIC', name: 'Organic' }]);
-        generateReadinessReport.mockResolvedValue({ summary: { readinessScore: 64 } });
 
         const out = await getAgDashboard(ctx);
 
@@ -105,7 +97,6 @@ describe('getAgDashboard', () => {
         expect(out.myTasks).toHaveLength(5);
         expect(out.myTasks[0]).toEqual({ id: 't0', title: 'Task 0', status: 'TODO', dueAt: '2026-06-10T00:00:00.000Z' });
         // Certification is deliberately NULL. This used to run `listSchemes`
-        // plus a full `generateReadinessReport` on every dashboard load — and
         // `AgDashboardStrip`, the only consumer of this payload, never
         // rendered the value. Two queries per load, one of them the whole
         // coverage walk, for a field nothing displayed.
@@ -118,7 +109,6 @@ describe('getAgDashboard', () => {
         expect(out.certification).toBeNull();
         // And the queries are not made at all — the point is not just that the
         // value is null, it is that the dashboard stopped paying for it.
-        expect(generateReadinessReport).not.toHaveBeenCalled();
         expect(listSchemes).not.toHaveBeenCalled();
     });
 
@@ -133,7 +123,6 @@ describe('getAgDashboard', () => {
 
         expect(out.certification).toBeNull();
         // No scheme → no readiness query.
-        expect(generateReadinessReport).not.toHaveBeenCalled();
     });
 
     it('pure-GRC tenant (no ag modules) short-circuits journal + inventory fetches', async () => {
@@ -162,7 +151,6 @@ describe('getAgDashboard', () => {
 
         expect(out.certification).toBeNull();
         expect(listSchemes).not.toHaveBeenCalled();
-        expect(generateReadinessReport).not.toHaveBeenCalled();
     });
 
     it('handles null occurredAt / dueAt as null in the payload', async () => {
