@@ -36,6 +36,10 @@ export interface ArticleRow {
     status: 'DRAFT' | 'PUBLISHED' | 'ARCHIVED';
     source: string | null;
     language: string | null;
+    cropTags: string[];
+    regions: string[];
+    bbchStageMin: number | null;
+    bbchStageMax: number | null;
     currentVersionId: string | null;
     updatedAt: string;
     createdAt: string;
@@ -195,6 +199,17 @@ function KnowledgePageInner({
                         );
                     },
                     meta: { mobileCard: { slot: 'status', label: t('colStatus') } },
+                },
+                {
+                    id: 'crop',
+                    header: t('colCrop'),
+                    accessorFn: (a) => (a.cropTags.length > 0 ? a.cropTags.join(', ') : '—'),
+                    cell: ({ getValue }) => (
+                        <span className="text-xs text-content-muted">
+                            {getValue<string>()}
+                        </span>
+                    ),
+                    meta: { mobileCard: { slot: 'meta', label: t('colCrop') } },
                 },
                 {
                     id: 'source',

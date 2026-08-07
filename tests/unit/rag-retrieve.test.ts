@@ -122,6 +122,64 @@ describe('retrieve — hybrid merge', () => {
     });
 });
 
+// ─── Language-aware ranking (S7, KB agronomy structure PR) ───
+
+describe('retrieve — language-aware ranking', () => {
+    it('defaults to preferring Bulgarian (bg) when no language is given', async () => {
+        fakeDb.$queryRaw.mockResolvedValueOnce([
+            { id: 'en', source: 's', sourceType: 'EXTERNAL', text: 'en', language: 'en', similarity: 0.6 },
+            { id: 'bg', source: 's', sourceType: 'EXTERNAL', text: 'bg', language: 'bg', similarity: 0.6 },
+        ]);
+        const out = await retrieve(ctx, { query: 'x', topK: 2 });
+        // Equal similarity, but the bg chunk gets the language bonus.
+        expect(out.map((c) => c.id)).toEqual(['bg', 'en']);
+        expect(out[0].score).toBeGreaterThan(out[1].score);
+    });
+
+    it('never excludes another-language chunk — falls back instead of returning nothing', async () => {
+        fakeDb.$queryRaw.mockResolvedValueOnce([
+            { id: 'en', source: 's', sourceType: 'EXTERNAL', text: 'en only', language: 'en', similarity: 0.7 },
+        ]);
+        const out = await retrieve(ctx, { query: 'x', topK: 5 });
+        expect(out.map((c) => c.id)).toEqual(['en']);
+    });
+
+    it('an explicit language preference overrides the bg default', async () => {
+        fakeDb.$queryRaw.mockResolvedValueOnce([
+            { id: 'en', source: 's', sourceType: 'EXTERNAL', text: 'en', language: 'en', similarity: 0.6 },
+            { id: 'bg', source: 's', sourceType: 'EXTERNAL', text: 'bg', language: 'bg', similarity: 0.6 },
+        ]);
+        const out = await retrieve(ctx, { query: 'x', topK: 2, language: 'en' });
+        expect(out.map((c) => c.id)).toEqual(['en', 'bg']);
+    });
+
+    it('language: null disables the preference — equal similarity ties stay in similarity order', async () => {
+        fakeDb.$queryRaw.mockResolvedValueOnce([
+            { id: 'en', source: 's', sourceType: 'EXTERNAL', text: 'en', language: 'en', similarity: 0.6 },
+            { id: 'bg', source: 's', sourceType: 'EXTERNAL', text: 'bg', language: 'bg', similarity: 0.6 },
+        ]);
+        const out = await retrieve(ctx, { query: 'x', topK: 2, language: null });
+        expect(out[0].score).toBeCloseTo(out[1].score, 5);
+    });
+
+    it('a chunk with no stamped language gets no bonus but is never excluded', async () => {
+        fakeDb.$queryRaw.mockResolvedValueOnce([
+            { id: 'unk', source: 's', sourceType: 'EXTERNAL', text: 'unknown language', language: null, similarity: 0.6 },
+        ]);
+        const out = await retrieve(ctx, { query: 'x', topK: 5 });
+        expect(out.map((c) => c.id)).toEqual(['unk']);
+        expect(out[0].score).toBeCloseTo(0.6, 5);
+    });
+
+    it('exposes the stamped language on every returned chunk', async () => {
+        fakeDb.$queryRaw.mockResolvedValueOnce([
+            { id: 'bg', source: 's', sourceType: 'EXTERNAL', text: 'bg', language: 'bg', similarity: 0.6 },
+        ]);
+        const out = await retrieve(ctx, { query: 'x' });
+        expect(out[0].language).toBe('bg');
+    });
+});
+
 // ─── Graceful degradation — embeddings unavailable ───
 //
 // fix/rag-embedding-provider-split: when the embedding provider is
@@ -139,7 +197,7 @@ describe('retrieve — degrades to keyword-only when embeddings are unavailable'
         const out = await retrieve(ctx, { query: 'blight' });
 
         expect(out).toEqual([
-            { id: 'k1', source: 'Field journal', sourceType: 'JOURNAL', text: 'keyword hit', score: 0.2 },
+            { id: 'k1', source: 'Field journal', sourceType: 'JOURNAL', text: 'keyword hit', language: null, score: 0.2 },
         ]);
         // The vector branch never ran a raw query.
         expect(fakeDb.$queryRaw).not.toHaveBeenCalled();

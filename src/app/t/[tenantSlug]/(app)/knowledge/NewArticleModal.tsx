@@ -35,6 +35,15 @@ import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { SkeletonCard } from '@/components/ui/skeleton';
 import type { RichTextContentType } from '@/components/ui/RichTextEditor';
+import { AgronomyFieldsSection } from './AgronomyFieldsSection';
+
+/** Parse a comma-separated field into a trimmed, non-empty array. Real
+ *  sanitisation (dedupe, HTML strip, cap) happens server-side
+ *  (`sanitizeTagArray` in `usecases/knowledge.ts`) — this only shapes the
+ *  wire payload. */
+function parseTagList(raw: string): string[] {
+    return raw.split(',').map((s) => s.trim()).filter(Boolean);
+}
 
 const RichTextEditor = dynamic(
     () => import('@/components/ui/RichTextEditor').then((m) => m.RichTextEditor),
@@ -66,6 +75,11 @@ export function NewArticleModal({ trigger, onCreated }: NewArticleModalProps) {
     const [summary, setSummary] = useState('');
     const [content, setContent] = useState('');
     const [contentType, setContentType] = useState<RichTextContentType>('HTML');
+    const [cropTags, setCropTags] = useState('');
+    const [regions, setRegions] = useState('');
+    const [bbchEnabled, setBbchEnabled] = useState(false);
+    const [bbchMin, setBbchMin] = useState(0);
+    const [bbchMax, setBbchMax] = useState(99);
     const [dirty, setDirty] = useState(false);
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -78,6 +92,11 @@ export function NewArticleModal({ trigger, onCreated }: NewArticleModalProps) {
         setSummary('');
         setContent('');
         setContentType('HTML');
+        setCropTags('');
+        setRegions('');
+        setBbchEnabled(false);
+        setBbchMin(0);
+        setBbchMax(99);
         setDirty(false);
         setError(null);
     };
@@ -94,6 +113,10 @@ export function NewArticleModal({ trigger, onCreated }: NewArticleModalProps) {
                 category: category.trim() || null,
                 contentType,
                 content: content.trim() || null,
+                cropTags: parseTagList(cropTags),
+                regions: parseTagList(regions),
+                bbchStageMin: bbchEnabled ? bbchMin : null,
+                bbchStageMax: bbchEnabled ? bbchMax : null,
             };
             const created = await apiPost<CreatedArticle>(
                 buildUrl('/knowledge'),
@@ -227,6 +250,21 @@ export function NewArticleModal({ trigger, onCreated }: NewArticleModalProps) {
                                     minHeightPx={200}
                                 />
                             </FormField>
+
+                            <AgronomyFieldsSection
+                                idPrefix="new-article"
+                                disabled={submitting}
+                                cropTags={cropTags}
+                                onCropTagsChange={(v) => { setCropTags(v); markDirty(); }}
+                                regions={regions}
+                                onRegionsChange={(v) => { setRegions(v); markDirty(); }}
+                                bbchEnabled={bbchEnabled}
+                                onBbchEnabledChange={(v) => { setBbchEnabled(v); markDirty(); }}
+                                bbchMin={bbchMin}
+                                onBbchMinChange={(v) => { setBbchMin(v); markDirty(); }}
+                                bbchMax={bbchMax}
+                                onBbchMaxChange={(v) => { setBbchMax(v); markDirty(); }}
+                            />
                         </fieldset>
                     </Modal.Body>
                     <Modal.Actions>

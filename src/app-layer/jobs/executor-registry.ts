@@ -307,6 +307,24 @@ executorRegistry.register('embed-chunks', async (payload) => {
     );
 });
 
+// ── reindex-knowledge-article (KB agronomy structure PR) ─────────────
+//
+// Enqueued by publishArticle/archiveArticle/unarchiveArticle. Re-reads
+// the article's current state and either paragraph-chunks + replaces its
+// KB chunk set (PUBLISHED with content) or removes it (everything else).
+
+executorRegistry.register('reindex-knowledge-article', async (payload) => {
+    const startedAt = new Date().toISOString();
+    const startMs = performance.now();
+    const { runReindexKnowledgeArticle } = await import('./reindex-knowledge-article');
+    const r = await runReindexKnowledgeArticle({ tenantId: payload.tenantId, articleId: payload.articleId });
+    return makeResult(
+        'reindex-knowledge-article', startedAt, startMs,
+        r.chunksWritten + r.chunksRemoved, r.chunksWritten, r.chunksRemoved,
+        { tenantId: r.tenantId, articleId: r.articleId, action: r.action },
+    );
+});
+
 // ── automation-runner ────────────────────────────────────────────────
 
 executorRegistry.register('automation-runner', async (payload) => {

@@ -29,6 +29,7 @@ function chunk(over: Partial<RetrievedChunk> = {}): RetrievedChunk {
         source: over.source ?? 'KCC (GODL)',
         sourceType: over.sourceType ?? 'EXTERNAL',
         text: over.text ?? 'Apply nitrogen in split doses.',
+        language: over.language ?? null,
         score: over.score ?? 0.9,
     };
 }

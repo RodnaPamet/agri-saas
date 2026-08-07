@@ -18,6 +18,30 @@
 //                           knowledgeAcknowledgements
 //    • auth.prisma  User:   KnowledgeArticleOwner / KnowledgeVersionCreator /
 //                           knowledgeAcknowledgements
+//
+//  ─── Agronomy structure (`cropTags` / `regions` / `bbchStageMin+Max`) ───
+//
+//  `String[]` columns, not join tables. A join table (`KnowledgeArticleCrop`
+//  FK'd to a canonical crop catalog) would need that catalog to be GLOBAL —
+//  `KnowledgeChunk.tenantId` is nullable precisely because the GLOBAL
+//  licensed catalog has no owning tenant, so a per-tenant `CropType` table
+//  (the crop-planning module's model) cannot be the FK target without
+//  re-introducing a tenant coupling the chunk model deliberately has none
+//  of. A free-text join table would buy zero relational integrity over an
+//  array column while adding a join to every retrieval query — and
+//  retrieval (`ai/rag/retrieve.ts`) is latency-sensitive and already a
+//  hybrid keyword+vector query with no article join today. Postgres native
+//  arrays support `hasSome` filtering directly with no join. Empty array is
+//  the documented sentinel for "applies to every crop / region" (avoids a
+//  nullable-vs-empty ambiguity). `bbchStageMin/Max` is a min/max Int PAIR,
+//  not an array of stages, because BBCH (00-99) is a continuous ordinal
+//  scale and a SOP applies to a *range* of stages, not a discrete set.
+//
+//  Mirrored onto `KnowledgeChunk` below (denormalized, incl. `language`
+//  which the chunk didn't otherwise carry): retrieval must filter a chunk
+//  directly, never by joining back to `KnowledgeArticle` — see the
+//  KnowledgeChunk header for why the retrieval query shape is a flat,
+//  no-join predicate.
 // ═══════════════════════════════════════════════════════════════════
 
 /// A knowledge-base article — a versioned SOP or growing guide. The
@@ -38,6 +62,20 @@ model KnowledgeArticle {
   language         String?                @default("en")
   /// Provenance for seeded content (e.g. "OpenFarm" for CC0 growing guides).
   source           String?
+  /// Crops this SOP/guide applies to (free-text slugs, e.g. "wheat",
+  /// "sunflower"). Empty array = applies to every crop. `String[]`, not a
+  /// join table — see the "Agronomy structure" note below.
+  cropTags         String[]               @default([])
+  /// Regions this SOP applies to (free-text, e.g. oblast names). Empty
+  /// array = applies to every region. Same array-vs-join-table reasoning
+  /// as `cropTags`.
+  regions          String[]               @default([])
+  /// BBCH growth-stage applicability range (00-99 ordinal scale), e.g.
+  /// 30-39 = stem elongation. Both null = not stage-specific. A min/max
+  /// pair (not an array of stages) because BBCH is a continuous ordinal
+  /// scale and SOPs apply to a *range*, not a discrete set.
+  bbchStageMin     Int?
+  bbchStageMax     Int?
   /// Lifecycle counter (mirrors Policy.lifecycleVersion): 1 = initial,
   /// incremented on each publish.
   lifecycleVersion Int                    @default(1)
@@ -153,6 +191,20 @@ model KnowledgeChunk {
   sourceRef  String?
   text       String                   @db.Text
   chunkIndex Int                      @default(0)
+  /// BCP-47-ish language tag (e.g. "bg", "en") mirrored from the owning
+  /// KnowledgeArticle at chunk-creation time — KB chunks always carry it;
+  /// external/journal/crop-plan chunks may be null (language unknown).
+  /// Lets retrieval prefer the caller's language WITHOUT a join back to
+  /// KnowledgeArticle (see ai/rag/retrieve.ts).
+  language   String?
+  /// Mirrored from KnowledgeArticle at chunk-creation time — see the
+  /// "Agronomy structure" note on KnowledgeArticle above for why these
+  /// are arrays/a range rather than a join table. Empty array = applies
+  /// to every crop/region; both null = not stage-specific.
+  cropTags     String[] @default([])
+  regions      String[] @default([])
+  bbchStageMin Int?
+  bbchStageMax Int?
   /// pgvector `vector(768)` (nomic-embed-text dims). Prisma can't model
   /// it — real column + ivfflat index live in the migration; writes/reads
   /// go through src/lib/db/embeddings.ts raw SQL.
@@ -165,4 +217,9 @@ model KnowledgeChunk {
 
   // Layer A (tenantId-leading) + the articleId FK in the 2nd slot.
   @@index([tenantId, articleId])
+  // Backs the language-aware retrieval WHERE clause (ai/rag/retrieve.ts) —
+  // a real equality predicate, unlike the array/text filters above which
+  // stay unindexed (see the KnowledgeChunk LIST_MODELS_TENANT_INDEX_SUFFICIENT
+  // entry in tests/guardrails/schema-index-coverage.test.ts).
+  @@index([tenantId, language])
 }
