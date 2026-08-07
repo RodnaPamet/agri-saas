@@ -303,6 +303,9 @@ export default function KnowledgeArticleDetailPage() {
     const canWrite = tenant.permissions.canWrite;
     const canAdmin = tenant.permissions.canAdmin;
     const isPublished = article.status === 'PUBLISHED';
+    // Publish is the only thing that moves `currentVersionId` — every
+    // OTHER version is pending work that hasn't gone live yet.
+    const unpublishedCount = versions.filter((v) => v.id !== article.currentVersionId).length;
 
     const tabs: ReadonlyArray<{ key: KnowledgeTab; label: string }> = [
         { key: 'current', label: t('tabCurrent') },
@@ -353,6 +356,19 @@ export default function KnowledgeArticleDetailPage() {
                                   {
                                       label: t('metaOwner'),
                                       value: article.owner.name ?? '—',
+                                  } as const,
+                              ]
+                            : []),
+                        // Publish semantics (2026-08-07): a new version no
+                        // longer retracts the live PUBLISHED content, so
+                        // pending edits can silently pile up underneath it.
+                        // Surface the count here so they stay visible.
+                        ...(unpublishedCount > 0
+                            ? [
+                                  {
+                                      kind: 'metric',
+                                      label: t('metaPendingVersions'),
+                                      value: unpublishedCount,
                                   } as const,
                               ]
                             : []),
@@ -506,9 +522,13 @@ export default function KnowledgeArticleDetailPage() {
                                             <span className="text-sm font-semibold text-[var(--brand-default)]">
                                                 v{v.versionNumber}
                                             </span>
-                                            {isCurrentPublished && (
+                                            {isCurrentPublished ? (
                                                 <StatusBadge variant="success">
                                                     {t('publishedBadge')}
+                                                </StatusBadge>
+                                            ) : (
+                                                <StatusBadge variant="neutral">
+                                                    {t('draftBadge')}
                                                 </StatusBadge>
                                             )}
                                             <span className="text-xs text-content-subtle">

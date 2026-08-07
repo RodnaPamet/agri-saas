@@ -152,11 +152,14 @@ export async function createArticleVersion(ctx: RequestContext, articleId: strin
             changeSummary: data.changeSummary != null ? sanitizePlainText(data.changeSummary) : null,
         });
 
-        // A new edit un-publishes the live content until re-published
-        // (mirrors createPolicyVersion's PUBLISHED→DRAFT rollback).
-        if (article.status === 'PUBLISHED') {
-            await KnowledgeRepository.updateStatus(db, ctx, articleId, 'DRAFT');
-        }
+        // Deliberately NOT mirroring createPolicyVersion's PUBLISHED→DRAFT
+        // rollback: this is an SOP surface, and unpublishing the live
+        // procedure the instant someone starts drafting an edit would
+        // retract the spray/safety instructions a worker is following
+        // mid-task. A PUBLISHED article keeps serving `currentVersion`
+        // while newer versions accumulate as drafts underneath it — only
+        // `publishArticle` ever moves `currentVersionId` / flips status.
+        // See docs/implementation-notes/2026-08-07-knowledge-crud-defects.md.
 
         await logEvent(db, ctx, {
             action: 'KNOWLEDGE_VERSION_CREATED',
