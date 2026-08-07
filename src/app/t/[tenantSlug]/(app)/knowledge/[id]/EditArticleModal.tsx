@@ -23,6 +23,15 @@ import { Input } from '@/components/ui/input';
 import { UserCombobox } from '@/components/ui/user-combobox';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 import { apiPatch } from '@/lib/api-client';
+import { AgronomyFieldsSection } from '../AgronomyFieldsSection';
+
+/** Parse a comma-separated field into a trimmed, non-empty array. Real
+ *  sanitisation (dedupe, HTML strip, cap) happens server-side
+ *  (`sanitizeTagArray` in `usecases/knowledge.ts`) — this only shapes the
+ *  wire payload. */
+function parseTagList(raw: string): string[] {
+    return raw.split(',').map((s) => s.trim()).filter(Boolean);
+}
 
 export interface EditArticleModalProps {
     open: boolean;
@@ -35,6 +44,10 @@ export interface EditArticleModalProps {
         category: string | null;
         ownerUserId: string | null;
         language: string | null;
+        cropTags: string[];
+        regions: string[];
+        bbchStageMin: number | null;
+        bbchStageMax: number | null;
     } | null;
     onSaved?: () => void;
 }
@@ -60,6 +73,11 @@ export function EditArticleModal({
     const [summary, setSummary] = useState('');
     const [ownerUserId, setOwnerUserId] = useState<string | null>(null);
     const [language, setLanguage] = useState('');
+    const [cropTags, setCropTags] = useState('');
+    const [regions, setRegions] = useState('');
+    const [bbchEnabled, setBbchEnabled] = useState(false);
+    const [bbchMin, setBbchMin] = useState(0);
+    const [bbchMax, setBbchMax] = useState(99);
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [isDirty, setIsDirty] = useState(false);
@@ -74,6 +92,11 @@ export function EditArticleModal({
             setSummary(initial.summary ?? '');
             setOwnerUserId(initial.ownerUserId);
             setLanguage(initial.language ?? '');
+            setCropTags(initial.cropTags.join(', '));
+            setRegions(initial.regions.join(', '));
+            setBbchEnabled(initial.bbchStageMin != null && initial.bbchStageMax != null);
+            setBbchMin(initial.bbchStageMin ?? 0);
+            setBbchMax(initial.bbchStageMax ?? 99);
             setSubmitting(false);
             setError(null);
             setIsDirty(false);
@@ -94,6 +117,10 @@ export function EditArticleModal({
                 category: category.trim() || null,
                 ownerUserId: ownerUserId || null,
                 language: language.trim() || null,
+                cropTags: parseTagList(cropTags),
+                regions: parseTagList(regions),
+                bbchStageMin: bbchEnabled ? bbchMin : null,
+                bbchStageMax: bbchEnabled ? bbchMax : null,
             });
             setIsDirty(false);
             setOpen(false);
@@ -210,6 +237,21 @@ export function EditArticleModal({
                                 />
                             </FormField>
                         </div>
+
+                        <AgronomyFieldsSection
+                            idPrefix="edit-article"
+                            disabled={submitting}
+                            cropTags={cropTags}
+                            onCropTagsChange={(v) => { setCropTags(v); markDirty(); }}
+                            regions={regions}
+                            onRegionsChange={(v) => { setRegions(v); markDirty(); }}
+                            bbchEnabled={bbchEnabled}
+                            onBbchEnabledChange={(v) => { setBbchEnabled(v); markDirty(); }}
+                            bbchMin={bbchMin}
+                            onBbchMinChange={(v) => { setBbchMin(v); markDirty(); }}
+                            bbchMax={bbchMax}
+                            onBbchMaxChange={(v) => { setBbchMax(v); markDirty(); }}
+                        />
                     </fieldset>
                 </Modal.Body>
                 <Modal.Actions>

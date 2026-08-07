@@ -22,6 +22,10 @@ export interface AskKnowledgeBaseOptions {
     includeGlobal?: boolean;
     /** Max sources to ground on. Default uses retrieve()'s default. */
     topK?: number;
+    /** Preferred language for ranking — see `retrieve()`'s doc comment.
+     *  Omit for the Bulgarian-first product default; pass `null` to rank
+     *  every language equally. */
+    language?: string | null;
 }
 
 export interface AskKnowledgeBaseResult {
@@ -46,6 +50,7 @@ export async function askKnowledgeBase(
         query,
         includeGlobal: opts.includeGlobal,
         topK: opts.topK,
+        language: opts.language,
     });
 
     if (sources.length === 0) {

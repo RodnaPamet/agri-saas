@@ -13,6 +13,17 @@ export interface KnowledgeFilters {
     status?: KnowledgeArticleStatus[];
     /** Multi-select category facet — see `status` above. */
     category?: string[];
+    /**
+     * Multi-select crop-tag facet — "matches ANY of these crops"
+     * (`hasSome`), mirroring `category` above. An article with an empty
+     * `cropTags` array ("applies to every crop") is not force-matched by
+     * this filter — the filter answers "articles tagged for crop X", not
+     * "articles applicable to crop X" (that broader question belongs to
+     * retrieval, not this list filter).
+     */
+    cropTags?: string[];
+    /** Multi-select region facet — see `cropTags` above. */
+    regions?: string[];
     /** Free-text match on title / summary. */
     q?: string;
 }
@@ -26,6 +37,10 @@ const articleListSelect = {
     status: true,
     source: true,
     language: true,
+    cropTags: true,
+    regions: true,
+    bbchStageMin: true,
+    bbchStageMax: true,
     currentVersionId: true,
     updatedAt: true,
     createdAt: true,
@@ -45,6 +60,8 @@ export class KnowledgeRepository {
         // than emitting `{ in: [] }`, which matches nothing.
         if (filters.status?.length) where.status = { in: filters.status };
         if (filters.category?.length) where.category = { in: filters.category };
+        if (filters.cropTags?.length) where.cropTags = { hasSome: filters.cropTags };
+        if (filters.regions?.length) where.regions = { hasSome: filters.regions };
         if (filters.q) {
             where.OR = [
                 { title: { contains: filters.q, mode: 'insensitive' } },
@@ -100,6 +117,10 @@ export class KnowledgeRepository {
             ownerUserId?: string | null;
             language?: string | null;
             source?: string | null;
+            cropTags?: string[];
+            regions?: string[];
+            bbchStageMin?: number | null;
+            bbchStageMax?: number | null;
         },
     ) {
         return db.knowledgeArticle.create({
@@ -112,6 +133,10 @@ export class KnowledgeRepository {
                 ownerUserId: data.ownerUserId ?? null,
                 language: data.language ?? 'en',
                 source: data.source ?? null,
+                cropTags: data.cropTags ?? [],
+                regions: data.regions ?? [],
+                bbchStageMin: data.bbchStageMin ?? null,
+                bbchStageMax: data.bbchStageMax ?? null,
             },
             select: { id: true, slug: true, title: true },
         });
@@ -121,7 +146,17 @@ export class KnowledgeRepository {
         db: PrismaTx,
         ctx: RequestContext,
         id: string,
-        data: { title?: string; summary?: string | null; category?: string | null; ownerUserId?: string | null; language?: string | null },
+        data: {
+            title?: string;
+            summary?: string | null;
+            category?: string | null;
+            ownerUserId?: string | null;
+            language?: string | null;
+            cropTags?: string[];
+            regions?: string[];
+            bbchStageMin?: number | null;
+            bbchStageMax?: number | null;
+        },
     ) {
         return db.knowledgeArticle.updateMany({
             where: { id, tenantId: ctx.tenantId },

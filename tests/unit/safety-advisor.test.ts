@@ -37,7 +37,7 @@ const VALID_SPEC = {
 };
 
 function chunk(source: string, text: string, i = 0): RetrievedChunk {
-    return { id: `c${i}`, source, sourceType: 'EXTERNAL', text, score: 1 };
+    return { id: `c${i}`, source, sourceType: 'EXTERNAL', text, language: null, score: 1 };
 }
 
 /** Build deps with overridable behaviour. */

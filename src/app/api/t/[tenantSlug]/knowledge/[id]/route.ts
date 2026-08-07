@@ -15,6 +15,11 @@ export const GET = withApiErrorHandling(
     },
 );
 
+/** BBCH is a 00-99 ordinal growth-stage scale — both-or-neither, in
+ *  range, min <= max is enforced at the usecase layer (`knowledge.ts`'s
+ *  `assertValidBbchRange`); this schema only bounds the wire shape. */
+const BbchStage = z.number().int().min(0).max(99).nullable().optional();
+
 const UpdateKnowledgeArticleSchema = z
     .object({
         title: z.string().min(1, 'Title is required').max(500).optional(),
@@ -22,6 +27,10 @@ const UpdateKnowledgeArticleSchema = z
         category: z.string().max(120).nullable().optional(),
         ownerUserId: z.string().nullable().optional(),
         language: z.string().max(8).nullable().optional(),
+        cropTags: z.array(z.string().max(60)).max(20).optional(),
+        regions: z.array(z.string().max(60)).max(20).optional(),
+        bbchStageMin: BbchStage,
+        bbchStageMax: BbchStage,
     })
     .strip();
 

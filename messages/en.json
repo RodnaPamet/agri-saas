@@ -6919,6 +6919,7 @@
         "colTitle": "Title",
         "colCategory": "Category",
         "colStatus": "Status",
+        "colCrop": "Crop",
         "colSource": "Source",
         "colUpdated": "Updated",
         "emptyFilteredTitle": "No articles match your filters",
@@ -6953,6 +6954,8 @@
             "metaStatus": "Status",
             "metaCategory": "Category",
             "metaSource": "Source",
+            "metaCrop": "Crop",
+            "metaBbch": "BBCH stage",
             "metaOwner": "Owner",
             "acknowledgedBadge": "You acknowledged this",
             "acknowledge": "Acknowledge",
@@ -6997,11 +7000,28 @@
             "saving": "Saving…",
             "saveChanges": "Save changes"
         },
+        "agronomyFields": {
+            "fieldCropTags": "Crop tags",
+            "cropTagsHint": "Comma-separated. Leave blank to apply to every crop.",
+            "cropTagsPlaceholder": "e.g. wheat, sunflower",
+            "fieldRegions": "Regions",
+            "regionsHint": "Comma-separated. Leave blank to apply to every region.",
+            "regionsPlaceholder": "e.g. Northern Bulgaria",
+            "fieldBbchRange": "BBCH growth-stage range",
+            "bbchHint": "Restrict this article to a BBCH growth-stage range (0-99).",
+            "bbchMinAria": "Minimum BBCH stage",
+            "bbchMaxAria": "Maximum BBCH stage",
+            "bbchRangeSeparator": "to"
+        },
         "filters": {
             "statusLabel": "Status",
             "statusDescription": "Lifecycle stage of the article.",
             "categoryLabel": "Category",
-            "categoryDescription": "Knowledge domain / taxonomy bucket."
+            "categoryDescription": "Knowledge domain / taxonomy bucket.",
+            "cropLabel": "Crop",
+            "cropDescription": "Crops this article applies to.",
+            "regionLabel": "Region",
+            "regionDescription": "Regions this article applies to."
         },
         "status": {
             "DRAFT": "Draft",

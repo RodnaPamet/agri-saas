@@ -6919,6 +6919,7 @@
         "colTitle": "Заглавие",
         "colCategory": "Категория",
         "colStatus": "Състояние",
+        "colCrop": "Култура",
         "colSource": "Източник",
         "colUpdated": "Обновено",
         "emptyFilteredTitle": "Няма статии, отговарящи на филтрите",
@@ -6953,6 +6954,8 @@
             "metaStatus": "Състояние",
             "metaCategory": "Категория",
             "metaSource": "Източник",
+            "metaCrop": "Култура",
+            "metaBbch": "BBCH стадий",
             "metaOwner": "Собственик",
             "acknowledgedBadge": "Потвърдихте това",
             "acknowledge": "Потвърди",
@@ -6997,11 +7000,28 @@
             "saving": "Записване…",
             "saveChanges": "Запази промените"
         },
+        "agronomyFields": {
+            "fieldCropTags": "Култури",
+            "cropTagsHint": "Разделени със запетая. Оставете празно, за да важи за всички култури.",
+            "cropTagsPlaceholder": "напр. пшеница, слънчоглед",
+            "fieldRegions": "Региони",
+            "regionsHint": "Разделени със запетая. Оставете празно, за да важи за всички региони.",
+            "regionsPlaceholder": "напр. Северна България",
+            "fieldBbchRange": "BBCH диапазон на растежен стадий",
+            "bbchHint": "Ограничете тази статия до диапазон от BBCH стадии на растеж (0-99).",
+            "bbchMinAria": "Минимален BBCH стадий",
+            "bbchMaxAria": "Максимален BBCH стадий",
+            "bbchRangeSeparator": "до"
+        },
         "filters": {
             "statusLabel": "Състояние",
             "statusDescription": "Етап от жизнения цикъл на статията.",
             "categoryLabel": "Категория",
-            "categoryDescription": "Област на знанието / категория."
+            "categoryDescription": "Област на знанието / категория.",
+            "cropLabel": "Култура",
+            "cropDescription": "Култури, за които се отнася тази статия.",
+            "regionLabel": "Регион",
+            "regionDescription": "Региони, за които се отнася тази статия."
         },
         "status": {
             "DRAFT": "Чернова",

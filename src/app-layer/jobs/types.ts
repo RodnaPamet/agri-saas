@@ -680,6 +680,21 @@ export interface EmbedChunksPayload {
 }
 
 /**
+ * KB agronomy structure PR — keep `KnowledgeChunk` in sync with a
+ * `KnowledgeArticle`'s publish lifecycle. Enqueued by `publishArticle` /
+ * `archiveArticle` / `unarchiveArticle` (never scheduled — purely
+ * event-triggered, same shape as `classify-photo` / `soil-fetch`). The
+ * executor re-reads the article's CURRENT state: PUBLISHED with content →
+ * paragraph-chunk + replace; anything else → remove the article's chunks
+ * (archive must make its SOP stop being retrievable). See
+ * `jobs/reindex-knowledge-article.ts`.
+ */
+export interface ReindexKnowledgeArticlePayload {
+    tenantId: string;
+    articleId: string;
+}
+
+/**
  * БАБХ farm-record — regenerate a location's current-season ДНЕВНИК into its
  * Farm-records register when a field task auto-resolves. Enqueued
  * fire-and-forget (jobId `farm-record:<taskId>` for dedup); the worker
@@ -745,6 +760,7 @@ export interface CadastreImportJobPayload {
 export interface JobPayloadMap {
     'health-check': HealthCheckPayload;
     'embed-chunks': EmbedChunksPayload;
+    'reindex-knowledge-article': ReindexKnowledgeArticlePayload;
     'automation-runner': AutomationRunnerPayload;
     'daily-evidence-expiry': DailyEvidenceExpiryPayload;
     'data-lifecycle': DataLifecyclePayload;
@@ -834,6 +850,16 @@ export const JOB_DEFAULTS: Record<JobName, {
         backoff: { type: 'exponential', delay: 10000 },
         removeOnComplete: 100,
         removeOnFail: 200,
+    },
+    'reindex-knowledge-article': {
+        // Idempotent (delete-then-insert / delete-only), so a retry on a
+        // transient DB blip is safe. Re-publishing (or re-archiving) the
+        // same article re-enqueues anyway, so a lost job is self-healing
+        // on the next lifecycle transition — modest retry budget.
+        attempts: 2,
+        backoff: { type: 'exponential', delay: 5000 },
+        removeOnComplete: 200,
+        removeOnFail: 500,
     },
     'automation-runner': {
         attempts: 3,
