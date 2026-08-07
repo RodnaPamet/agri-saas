@@ -324,6 +324,28 @@ export const env = createEnv({
         // gateway (Anthropic's default host when unset).
         ANTHROPIC_API_KEY: z.string().optional(),
         ANTHROPIC_BASE_URL: z.string().url().optional(),
+        // ── Embedding provider — resolved INDEPENDENTLY of AI_BACKEND ──
+        // (fix/rag-embedding-provider-split). Anthropic exposes no
+        // embeddings endpoint, so `getAiProvider().embed()` throws
+        // whenever AI_BACKEND='claude' — that used to silently disable
+        // RAG ingestion + retrieval. `getEmbeddingProvider()` (see
+        // src/app-layer/ai/provider/index.ts) resolves a SEPARATE
+        // OpenAiCompatibleProvider from these three vars, all optional:
+        // unset, they fall back to AI_EMBED_BACKEND → inferred from
+        // AI_EMBED_BASE_URL ?? AI_BASE_URL, and AI_EMBED_API_KEY ??
+        // AI_API_KEY — i.e. local dev's Ollama-serves-both default keeps
+        // working with zero extra config. In production (Option B —
+        // see deploy/env.prod.example), point these at a hosted
+        // OpenAI-compatible embedding API (e.g. OpenAI, OpenRouter, or
+        // a self-hosted TEI endpoint) so retrieval works independently
+        // of whichever backend serves completions. Left unset, RAG
+        // retrieval degrades to keyword-only (never throws — see
+        // src/app-layer/ai/rag/retrieve.ts) rather than 500ing.
+        AI_EMBED_BACKEND: z
+            .enum(['ollama', 'openrouter', 'groq', 'together', 'openai-compatible'])
+            .optional(),
+        AI_EMBED_BASE_URL: z.string().url().optional(),
+        AI_EMBED_API_KEY: z.string().min(1).optional(),
 
         // ── Vision subsystem (feat/ai-vision) — leaf/crop photo → pest/disease ──
         //   VISION_BACKEND    — orchestrator policy. 'auto' (default) tries the
@@ -606,6 +628,9 @@ export const env = createEnv({
         AI_EMBED_MODEL: process.env.AI_EMBED_MODEL,
         ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
         ANTHROPIC_BASE_URL: process.env.ANTHROPIC_BASE_URL,
+        AI_EMBED_BACKEND: process.env.AI_EMBED_BACKEND,
+        AI_EMBED_BASE_URL: process.env.AI_EMBED_BASE_URL,
+        AI_EMBED_API_KEY: process.env.AI_EMBED_API_KEY,
         VISION_BACKEND: process.env.VISION_BACKEND,
         VISION_MODEL_PATH: process.env.VISION_MODEL_PATH,
         VISION_LABELS_PATH: process.env.VISION_LABELS_PATH,

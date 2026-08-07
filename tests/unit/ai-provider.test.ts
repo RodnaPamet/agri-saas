@@ -500,3 +500,98 @@ describe('getAiProvider factory + backend inference', () => {
         expect(inferBackend('https://unknown.example.com/v1')).toBe('openai-compatible');
     });
 });
+
+// ─── getEmbeddingProvider — resolved INDEPENDENTLY of AI_BACKEND ───
+//
+// (fix/rag-embedding-provider-split) Anthropic has no embeddings
+// endpoint, so choosing AI_BACKEND='claude' for completions must never
+// disable RAG embeddings. getEmbeddingProvider() is a SEPARATE seam
+// that never returns ClaudeProvider and never reads AI_BACKEND.
+
+describe('getEmbeddingProvider — independent of AI_BACKEND', () => {
+    function loadFactory(envOverrides: Record<string, string | undefined>) {
+        jest.resetModules();
+        jest.doMock('@/env', () => ({
+            env: {
+                AI_BACKEND: 'ollama',
+                AI_BASE_URL: 'http://localhost:11434/v1',
+                AI_API_KEY: 'ollama',
+                AI_MODEL: 'qwen3:1.7b',
+                AI_EMBED_MODEL: 'nomic-embed-text',
+                AI_EMBED_BACKEND: undefined,
+                AI_EMBED_BASE_URL: undefined,
+                AI_EMBED_API_KEY: undefined,
+                ANTHROPIC_API_KEY: undefined,
+                ...envOverrides,
+            },
+        }));
+        return require('@/app-layer/ai/provider/index');
+    }
+
+    afterEach(() => {
+        jest.dontMock('@/env');
+        jest.resetModules();
+    });
+
+    it('still resolves an OpenAI-compatible embedding provider when AI_BACKEND=claude', () => {
+        constructorCalls.length = 0;
+        const { getEmbeddingProvider } = loadFactory({
+            AI_BACKEND: 'claude',
+            ANTHROPIC_API_KEY: 'sk-ant-test',
+        });
+
+        const embedProvider = getEmbeddingProvider();
+
+        // NOT the ClaudeProvider — an OpenAiCompatibleProvider, so embed()
+        // actually works instead of throwing. Proven two ways: the
+        // backend tag, AND that construction went through the mocked
+        // `openai` SDK (ClaudeProvider constructs `@anthropic-ai/sdk`,
+        // which never touches `constructorCalls`).
+        expect(embedProvider.backend).not.toBe('claude');
+        expect(constructorCalls).toHaveLength(1);
+        // Falls back to the completion path's base URL/key when no
+        // AI_EMBED_* override is set.
+        expect(constructorCalls[0].baseURL).toBe('http://localhost:11434/v1');
+        expect(constructorCalls[0].apiKey).toBe('ollama');
+    });
+
+    it('AI_EMBED_BACKEND/BASE_URL/API_KEY point embeddings at a dedicated host, independent of AI_BACKEND=claude', () => {
+        constructorCalls.length = 0;
+        const { getEmbeddingProvider } = loadFactory({
+            AI_BACKEND: 'claude',
+            ANTHROPIC_API_KEY: 'sk-ant-test',
+            AI_EMBED_BACKEND: 'openrouter',
+            AI_EMBED_BASE_URL: 'https://openrouter.ai/api/v1',
+            AI_EMBED_API_KEY: 'or-embed-key',
+        });
+
+        const embedProvider = getEmbeddingProvider();
+
+        expect(embedProvider.backend).toBe('openrouter');
+        expect(constructorCalls[0].baseURL).toBe('https://openrouter.ai/api/v1');
+        expect(constructorCalls[0].apiKey).toBe('or-embed-key');
+    });
+
+    it('getAiProvider() (completions) and getEmbeddingProvider() disagree on backend when AI_BACKEND=claude', () => {
+        const { getAiProvider, getEmbeddingProvider } = loadFactory({
+            AI_BACKEND: 'claude',
+            ANTHROPIC_API_KEY: 'sk-ant-test',
+        });
+
+        expect(getAiProvider().backend).toBe('claude');
+        expect(getEmbeddingProvider().backend).not.toBe('claude');
+    });
+
+    it('falls back to the completion AI_BASE_URL/AI_API_KEY when embed-specific vars are unset (non-claude backend)', () => {
+        constructorCalls.length = 0;
+        const { getEmbeddingProvider } = loadFactory({
+            AI_BASE_URL: 'https://openrouter.ai/api/v1',
+            AI_API_KEY: 'or-key',
+        });
+
+        const embedProvider = getEmbeddingProvider();
+        expect(embedProvider.backend).toBe('openrouter');
+        expect(constructorCalls[0].baseURL).toBe('https://openrouter.ai/api/v1');
+        expect(constructorCalls[0].apiKey).toBe('or-key');
+    });
+});

@@ -3,10 +3,18 @@
  *
  * Embeds tenant-scoped `KnowledgeChunk` rows whose `embedding` is still
  * NULL: load a bounded batch of un-embedded chunks, call
- * `getAiProvider().embed()` on their text, and write the vectors back
- * via raw `$executeRaw` (the `embedding` column is a Prisma
+ * `getEmbeddingProvider().embed()` on their text, and write the vectors
+ * back via raw `$executeRaw` (the `embedding` column is a Prisma
  * `Unsupported("vector(768)")`, so it can only be written through raw
  * SQL — see src/lib/db/embeddings.ts).
+ *
+ * Uses `getEmbeddingProvider()`, NOT `getAiProvider()`
+ * (fix/rag-embedding-provider-split) — ingestion has the same "the
+ * completion backend may be Claude, which has no embeddings endpoint"
+ * hazard as retrieval, so it resolves the embedding backend
+ * independently too. Unlike retrieval, this job does NOT degrade —
+ * a failed embed throws so the BullMQ job fails loudly and retries,
+ * rather than silently leaving chunks permanently un-embedded.
  *
  * Tenant isolation: the whole run executes inside `runInTenantContext`,
  * so RLS scopes both the candidate read and the vector writes to the
@@ -20,7 +28,7 @@
  * `batchSize` (default 128) so a tenant with a huge backlog drains over
  * several runs rather than one unbounded sweep.
  */
-import { getAiProvider } from '@/app-layer/ai/provider';
+import { getEmbeddingProvider } from '@/app-layer/ai/provider';
 import { runInTenantContext } from '@/lib/db-context';
 import { toVectorLiteral } from '@/lib/db/embeddings';
 import { logger } from '@/lib/observability/logger';
@@ -78,7 +86,7 @@ export async function runEmbedChunks(opts: {
         }
 
         // One batched embed call for the whole batch.
-        const embeddings = await getAiProvider().embed({
+        const embeddings = await getEmbeddingProvider().embed({
             texts: candidates.map((c) => c.text),
         });
 

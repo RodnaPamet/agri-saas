@@ -16,12 +16,23 @@
  *
  * Prisma `in` cannot carry NULL, so the GLOBAL-or-own filter is an OR:
  *   { OR: [{ tenantId: ctx.tenantId }, { tenantId: null }] }
+ *
+ * Embedding provider: this MUST call `getEmbeddingProvider()`, never
+ * `getAiProvider()` (fix/rag-embedding-provider-split) — the completion
+ * backend (AI_BACKEND, which may be 'claude' — Anthropic has no
+ * embeddings endpoint) is orthogonal to which backend serves
+ * embeddings. When the embedding call fails (unconfigured/unreachable
+ * backend, e.g. the AI_BASE_URL default with nothing listening), we
+ * degrade to the KEYWORD branch alone rather than throwing — a
+ * lexical-only answer beats a 500, and `safety/advisor.ts` already
+ * refuses on empty retrieval, so the degraded path stays safe.
  */
 import { Prisma } from '@prisma/client';
-import { getAiProvider } from '@/app-layer/ai/provider';
+import { getEmbeddingProvider } from '@/app-layer/ai/provider';
 import { runInTenantContext } from '@/lib/db-context';
 import { toVectorLiteral } from '@/lib/db/embeddings';
 import { getCachedEmbedding, setCachedEmbedding } from '@/lib/cache/ai-cache';
+import { logger } from '@/lib/observability/logger';
 import { env } from '@/env';
 import type { RequestContext } from '@/app-layer/types';
 import type { KnowledgeChunkSourceType } from '@prisma/client';
@@ -69,14 +80,27 @@ export async function retrieve(
     // Embed the query up front (one call) for the vector branch. Repeated
     // identical queries are served from the Redis embedding cache (long
     // TTL — embeddings are deterministic). Graceful when Redis is absent.
+    // If the embedding provider itself is unavailable (unconfigured /
+    // unreachable backend), degrade to the keyword branch alone instead
+    // of throwing — see the module doc comment above.
     const embedModel = env.AI_EMBED_MODEL;
-    let queryVector = await getCachedEmbedding(embedModel, query);
-    if (!queryVector) {
-        const [embedding] = await getAiProvider().embed({ texts: [query] });
-        queryVector = embedding.vector;
-        await setCachedEmbedding(embedModel, query, queryVector);
+    let queryVector: number[] | null = null;
+    try {
+        queryVector = await getCachedEmbedding(embedModel, query);
+        if (!queryVector) {
+            const [embedding] = await getEmbeddingProvider().embed({ texts: [query] });
+            queryVector = embedding.vector;
+            await setCachedEmbedding(embedModel, query, queryVector);
+        }
+    } catch (err) {
+        logger.warn('rag retrieve: embedding provider unavailable, degrading to keyword-only search', {
+            component: 'rag',
+            tenantId: ctx.tenantId,
+            error: err instanceof Error ? err.message : String(err),
+        });
+        queryVector = null;
     }
-    const queryLiteral = toVectorLiteral(queryVector);
+    const queryLiteral = queryVector ? toVectorLiteral(queryVector) : null;
 
     return runInTenantContext(ctx, async (db) => {
         // ── (a) Keyword branch ──
@@ -98,19 +122,22 @@ export async function retrieve(
         // Raw cosine-distance NN scan — the `embedding` column is
         // Unsupported in Prisma so it can only be queried via raw SQL.
         // The tenant filter is inlined for defence-in-depth + index use.
+        // Skipped entirely when the embedding provider degraded above
+        // (queryLiteral === null) — the keyword branch alone still runs.
         const tenantSql = includeGlobal
             ? Prisma.sql`("tenantId" = ${ctx.tenantId} OR "tenantId" IS NULL)`
             : Prisma.sql`"tenantId" = ${ctx.tenantId}`;
 
-        const vectorHits = await db.$queryRaw<
-            Array<{
-                id: string;
-                source: string;
-                sourceType: KnowledgeChunkSourceType;
-                text: string;
-                similarity: number;
-            }>
-        >(Prisma.sql`
+        const vectorHits = queryLiteral
+            ? await db.$queryRaw<
+                  Array<{
+                      id: string;
+                      source: string;
+                      sourceType: KnowledgeChunkSourceType;
+                      text: string;
+                      similarity: number;
+                  }>
+              >(Prisma.sql`
             SELECT "id", "source", "sourceType", "text",
                    (1 - ("embedding" <=> ${queryLiteral}::vector)) AS "similarity"
             FROM "KnowledgeChunk"
@@ -118,7 +145,8 @@ export async function retrieve(
               AND "embedding" IS NOT NULL
             ORDER BY "embedding" <=> ${queryLiteral}::vector ASC
             LIMIT ${branchTake}
-        `);
+        `)
+            : [];
 
         // ── Merge + dedupe by id + rank ──
         const byId = new Map<string, RetrievedChunk>();
