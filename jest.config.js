@@ -310,8 +310,12 @@ const jsdomProject = {
     displayName: 'jsdom',
     preset: 'ts-jest',
     testEnvironment: 'jsdom',
-    // Default test timeout set via `jest.setTimeout()` in
-    // tests/rendered/setup.ts (project-level testTimeout is ignored).
+    // Default test timeout is set via `jest.setTimeout()` in
+    // tests/rendered/setup.ts (a project-level `testTimeout` here is
+    // ignored). That call went missing for a long time, so this project
+    // silently ran at Jest's 5s default and produced load-dependent
+    // flakes — if you move or delete the setup file, move the timeout
+    // with it.
     setupFiles: ['<rootDir>/jest.setup.js'],
     setupFilesAfterEnv: ['<rootDir>/tests/rendered/setup.ts'],
     moduleNameMapper: {

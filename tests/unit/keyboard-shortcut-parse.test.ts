@@ -4,16 +4,19 @@
  * These exercise `parseShortcut` / `matchShortcut` in isolation so
  * shortcut-grammar regressions are caught without spinning up React.
  *
- * Runs under the jsdom Jest project because `KeyboardEvent` needs DOM.
+ * Runs under the NODE project. It used to live in `tests/rendered/`
+ * (jsdom) solely so `new KeyboardEvent(...)` would resolve, and carried
+ * a 90s per-test timeout because jsdom boot-up under full-suite memory
+ * pressure pushed individual tests past 30s — a pure string-parsing
+ * test taking 30s is a symptom, and the timeout was treating it.
  *
- * Per-test timeout bump: under the full-suite parallel run, jsdom
- * boot-up + KeyboardEvent construction can push individual tests past
- * Jest's 5s default. Isolated runs land in ~1.5s/test; full-suite
- * pressure with bcrypt + chart-renderer suites running in parallel
- * pushes some tests past 30s. 90s gives headroom without masking
- * real regressions.
+ * Nothing here needs a DOM. `matchShortcut` and `describePressedKey`
+ * read exactly five plain properties off the event — metaKey, ctrlKey,
+ * altKey, shiftKey, key — and never call a DOM method. The factory
+ * below builds that shape directly, which is both faster and a more
+ * honest statement of what the functions actually require. If either
+ * ever starts calling a real DOM API, this stops compiling.
  */
-jest.setTimeout(90_000);
 
 import {
     __setIsMacForTests,
@@ -21,6 +24,26 @@ import {
     matchShortcut,
     parseShortcut,
 } from '@/lib/hooks/keyboard-shortcut-internals';
+
+/**
+ * The exact slice of KeyboardEvent the shortcut layer reads. Building a
+ * plain object keeps this suite in the node project — no jsdom, no
+ * 90-second timeout, no flake under parallel load.
+ */
+type KeyEventShape = Pick<
+    KeyboardEvent,
+    'key' | 'metaKey' | 'ctrlKey' | 'altKey' | 'shiftKey'
+>;
+
+function keyEvent(shape: Partial<KeyEventShape> & Pick<KeyEventShape, 'key'>): KeyboardEvent {
+    return {
+        metaKey: false,
+        ctrlKey: false,
+        altKey: false,
+        shiftKey: false,
+        ...shape,
+    } as KeyboardEvent;
+}
 
 afterEach(() => {
     __setIsMacForTests(null);
@@ -87,7 +110,7 @@ describe('parseShortcut', () => {
 
 describe('matchShortcut', () => {
     function evt(key: string, mods: Partial<Record<'meta' | 'ctrl' | 'alt' | 'shift', boolean>> = {}): KeyboardEvent {
-        return new KeyboardEvent('keydown', {
+        return keyEvent({
             key,
             metaKey: !!mods.meta,
             ctrlKey: !!mods.ctrl,
@@ -151,11 +174,7 @@ describe('matchShortcut', () => {
 
 describe('describePressedKey', () => {
     it('serialises modifiers in canonical order', () => {
-        const e = new KeyboardEvent('keydown', {
-            key: 'K',
-            metaKey: true,
-            shiftKey: true,
-        });
+        const e = keyEvent({ key: 'K', metaKey: true, shiftKey: true });
         expect(describePressedKey(e)).toBe('meta+shift+k');
     });
 });
