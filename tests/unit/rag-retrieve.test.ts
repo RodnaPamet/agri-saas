@@ -9,10 +9,20 @@
  *   - results are ranked by score desc and trimmed to topK
  *   - includeGlobal toggles the NULL-tenant OR filter
  *   - an empty query short-circuits
+ *   - retrieval calls getEmbeddingProvider() (NOT getAiProvider()) —
+ *     fix/rag-embedding-provider-split
+ *   - a failing embed degrades to keyword-only instead of throwing
  */
 const mockEmbed = jest.fn();
+const mockGetAiProvider = jest.fn();
 jest.mock('@/app-layer/ai/provider', () => ({
-    getAiProvider: () => ({ embed: mockEmbed }),
+    getEmbeddingProvider: () => ({ embed: mockEmbed }),
+    getAiProvider: mockGetAiProvider,
+}));
+
+const mockLoggerWarn = jest.fn();
+jest.mock('@/lib/observability/logger', () => ({
+    logger: { warn: (...a: unknown[]) => mockLoggerWarn(...a), info: jest.fn(), error: jest.fn(), debug: jest.fn() },
 }));
 
 // runInTenantContext(ctx, cb) just calls cb with our fake db.
@@ -35,6 +45,8 @@ import { makeRequestContext } from '../helpers/make-context';
 
 beforeEach(() => {
     mockEmbed.mockReset();
+    mockGetAiProvider.mockReset();
+    mockLoggerWarn.mockReset();
     mockEmbed.mockResolvedValue([{ text: 'q', vector: [0.1, 0.2] }]);
     fakeDb = {
         knowledgeChunk: { findMany: jest.fn().mockResolvedValue([]) },
@@ -102,5 +114,49 @@ describe('retrieve — hybrid merge', () => {
         const where = fakeDb.knowledgeChunk.findMany.mock.calls[0][0].where;
         expect(where.tenantId).toBe('tenant-1');
         expect(where.OR).toBeUndefined();
+    });
+
+    it('never calls getAiProvider() — embeddings resolve via getEmbeddingProvider() only', async () => {
+        await retrieve(ctx, { query: 'x' });
+        expect(mockGetAiProvider).not.toHaveBeenCalled();
+    });
+});
+
+// ─── Graceful degradation — embeddings unavailable ───
+//
+// fix/rag-embedding-provider-split: when the embedding provider is
+// unreachable/unconfigured (e.g. AI_BASE_URL default with nothing
+// listening), retrieve() must degrade to the keyword branch alone
+// rather than throwing — a lexical-only answer beats a 500.
+
+describe('retrieve — degrades to keyword-only when embeddings are unavailable', () => {
+    it('does not throw when embed() rejects, and still returns keyword hits', async () => {
+        mockEmbed.mockRejectedValueOnce(new Error('connect ECONNREFUSED 127.0.0.1:11434'));
+        fakeDb.knowledgeChunk.findMany.mockResolvedValueOnce([
+            { id: 'k1', source: 'Field journal', sourceType: 'JOURNAL', text: 'keyword hit' },
+        ]);
+
+        const out = await retrieve(ctx, { query: 'blight' });
+
+        expect(out).toEqual([
+            { id: 'k1', source: 'Field journal', sourceType: 'JOURNAL', text: 'keyword hit', score: 0.2 },
+        ]);
+        // The vector branch never ran a raw query.
+        expect(fakeDb.$queryRaw).not.toHaveBeenCalled();
+    });
+
+    it('logs the degradation via logger.warn (never console)', async () => {
+        mockEmbed.mockRejectedValueOnce(new Error('connect ECONNREFUSED 127.0.0.1:11434'));
+
+        await retrieve(ctx, { query: 'blight' });
+
+        expect(mockLoggerWarn).toHaveBeenCalledTimes(1);
+        expect(mockLoggerWarn.mock.calls[0][0]).toMatch(/keyword-only/i);
+    });
+
+    it('returns [] (not a throw) when embeddings fail AND there is no keyword hit either', async () => {
+        mockEmbed.mockRejectedValueOnce(new Error('timeout'));
+        const out = await retrieve(ctx, { query: 'no matches anywhere' });
+        expect(out).toEqual([]);
     });
 });

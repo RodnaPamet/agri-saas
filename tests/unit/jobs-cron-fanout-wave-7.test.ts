@@ -58,7 +58,7 @@ jest.mock('@/app-layer/usecases/risk-report', () => ({
 }));
 
 const mockEmbed = jest.fn();
-jest.mock('@/app-layer/ai/provider', () => ({ getAiProvider: () => ({ embed: mockEmbed }) }));
+jest.mock('@/app-layer/ai/provider', () => ({ getEmbeddingProvider: () => ({ embed: mockEmbed }) }));
 
 const mockQueryRaw = jest.fn();
 const mockExecuteRaw = jest.fn();
