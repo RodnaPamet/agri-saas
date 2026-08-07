@@ -3,6 +3,7 @@ import { PrismaTx } from '@/lib/db-context';
 import { RequestContext } from '../types';
 import { buildCursorWhere, CURSOR_ORDER_BY, computePageInfo, clampLimit } from '@/lib/pagination';
 import type { PaginatedResponse } from '@/lib/dto/pagination';
+import { AssetRepository } from './AssetRepository';
 
 export interface LogQuantityInput {
     measure:
@@ -105,7 +106,9 @@ export interface LogEntryListParams {
 const ENTRY_DETAIL_INCLUDE = {
     quantities: { include: { unit: { select: { id: true, symbol: true, name: true } } } },
     locations: { include: { location: { select: { id: true, name: true } } } },
-    equipment: { include: { equipment: { select: { id: true, name: true, category: true } } } },
+    // `LogEquipment.asset` since the Equipment merge. Projected as the
+    // old equipment shape (`category`) so the detail page renders unchanged.
+    equipment: { include: { asset: { select: { id: true, name: true, type: true } } } },
 } satisfies Prisma.LogEntryInclude;
 
 /**
@@ -272,17 +275,14 @@ export class JournalRepository {
         return new Set(rows.map((r) => r.id));
     }
 
-    /** Returns the subset of the given equipment ids that belong to the tenant. */
+    /**
+     * Returns the subset of the given equipment ids that belong to the
+     * tenant. Since the `Equipment` merge these are `Asset` ids, and the
+     * check also enforces machine-SHAPED — a caller cannot attach a barn
+     * or a retired tractor to a journal entry.
+     */
     static async validEquipmentIds(db: PrismaTx, ctx: RequestContext, ids: string[]): Promise<Set<string>> {
-        if (!ids.length) return new Set();
-        // Bounded by the caller's id set (Create/UpdateLogEntry Zod caps
-        // equipmentIds at 100) — `take` makes the bound explicit.
-        const rows = await db.equipment.findMany({
-            where: { id: { in: ids }, tenantId: ctx.tenantId, deletedAt: null },
-            select: { id: true },
-            take: ids.length,
-        });
-        return new Set(rows.map((r) => r.id));
+        return AssetRepository.validMachineIds(db, ctx, ids);
     }
 
     /** Returns the subset of the given parcel ids that belong to the tenant. */
@@ -297,14 +297,13 @@ export class JournalRepository {
         return new Set(rows.map((r) => r.id));
     }
 
-    /** List the tenant's active equipment (newest first) for pickers. */
+    /**
+     * List the tenant's active machines (newest first) for pickers.
+     * Delegates to the asset register since the `Equipment` merge — kept
+     * here so existing journal call sites don't all have to move.
+     */
     static async listEquipment(db: PrismaTx, ctx: RequestContext, take = 200) {
-        return db.equipment.findMany({
-            where: { tenantId: ctx.tenantId, deletedAt: null },
-            select: { id: true, name: true, category: true, make: true, model: true },
-            orderBy: [{ createdAt: 'desc' }],
-            take: take,
-        });
+        return AssetRepository.listMachines(db, ctx, take);
     }
 
     // ─── Mutations ───────────────────────────────────────────────────
@@ -352,9 +351,9 @@ export class JournalRepository {
                 ...(input.equipmentIds && input.equipmentIds.length
                     ? {
                           equipment: {
-                              create: input.equipmentIds.map((equipmentId) => ({
+                              create: input.equipmentIds.map((assetId) => ({
                                   tenantId: ctx.tenantId,
-                                  equipmentId,
+                                  assetId,
                               })),
                           },
                       }
@@ -440,9 +439,9 @@ export class JournalRepository {
         if (input.equipmentIds !== undefined) {
             data.equipment = {
                 deleteMany: {},
-                create: input.equipmentIds.map((equipmentId) => ({
+                create: input.equipmentIds.map((assetId) => ({
                     tenantId: ctx.tenantId,
-                    equipmentId,
+                    assetId,
                 })),
             };
         }

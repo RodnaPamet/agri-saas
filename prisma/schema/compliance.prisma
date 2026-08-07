@@ -211,6 +211,13 @@ model Asset {
   /// Purchase price in the tenant's currency (2dp). Mapped to a
   /// plain `number` at the DTO boundary.
   purchaseCost        Decimal?             @db.Decimal(12, 2)
+  /// Engine hours / odometer reading. Merged in from the retired
+  /// `Equipment` model (which had zero rows and no write path) —
+  /// machines now live in `Asset` so the tractor on the /assets page
+  /// is the same row as the tractor on a field operation.
+  meterValue          Decimal?             @db.Decimal(12, 1)
+  /// Free-form machine attributes carried over from `Equipment`.
+  attributesJson      Json?
   createdAt           DateTime             @default(now())
   updatedAt           DateTime             @updatedAt
   ownerUserId         String?
@@ -227,10 +234,17 @@ model Asset {
   // Evidence attached directly to this asset (Evidence Library tag +
   // the asset Evidence tab). Mirrors Control/Task.
   evidence            Evidence[]
+  /// Journal entries this machine was used on. Repointed from the
+  /// retired `Equipment` model.
+  logLinks            LogEquipment[]
 
   /// Unique within a tenant — `AST-N` collisions are race-free
   /// via the AssetKeySequence counter.
   @@unique([tenantId, key])
+  /// Composite target for the journal link tables' `[id, tenantId]`
+  /// FK style — the same barrier `Location` / `Parcel` / the retired
+  /// `Equipment` carry, so a link can never cross tenants.
+  @@unique([id, tenantId])
   @@index([tenantId, name])
   @@index([tenantId])
   @@index([tenantId, createdAt])
@@ -238,6 +252,9 @@ model Asset {
   @@index([tenantId, criticality])
   @@index([tenantId, status])
   @@index([tenantId, deletedAt])
+  /// Backs the machine-register query (`listEquipment`): filter by
+  /// tenant + machine-shaped `type`, excluding RETIRED `status`.
+  @@index([tenantId, type, status])
 }
 
 /// Per-tenant monotonic counter for minting `AST-N` asset keys.

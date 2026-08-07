@@ -62,10 +62,11 @@ beforeAll(async () => {
     locationId = location.id;
     const parcel = await prisma.parcel.create({ data: { tenantId: TENANT_ID, locationId, name: `P-${TAG}`, areaHa: 3 } });
     parcelId = parcel.id;
-    const equip = await prisma.equipment.create({ data: { tenantId: TENANT_ID, name: `Tractor ${TAG}`, category: 'TRACTOR' } });
+    // Machines live in `Asset` since the Equipment merge.
+    const equip = await prisma.asset.create({ data: { tenantId: TENANT_ID, name: `Tractor ${TAG}`, type: 'TRACTOR' } });
     equipmentId = equip.id;
     // An equipment row in ANOTHER tenant — must be rejected as a link target.
-    const foreign = await prisma.equipment.create({ data: { tenantId: OTHER_TENANT_ID, name: `Foreign ${TAG}` } });
+    const foreign = await prisma.asset.create({ data: { tenantId: OTHER_TENANT_ID, name: `Foreign ${TAG}`, type: 'TRACTOR' } });
     foreignEquipmentId = foreign.id;
 });
 
