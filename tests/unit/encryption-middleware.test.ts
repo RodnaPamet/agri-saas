@@ -52,7 +52,8 @@ describe('ENCRYPTED_FIELDS manifest', () => {
             'TaskComment',
             'Audit',
             'AuditChecklistItem',
-            'ControlTestRun',
+            // ControlTestRun was in this list until the compliance uproot
+            // dropped the model; its manifest entry went with it.
         ]) {
             expect(isEncryptedModel(m)).toBe(true);
         }
