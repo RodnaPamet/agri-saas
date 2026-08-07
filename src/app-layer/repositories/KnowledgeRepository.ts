@@ -1,10 +1,18 @@
-import { Prisma } from '@prisma/client';
+import { Prisma, KnowledgeArticleStatus } from '@prisma/client';
 import { PrismaTx } from '@/lib/db-context';
 import { RequestContext } from '../types';
 
 export interface KnowledgeFilters {
-    status?: string;
-    category?: string;
+    /**
+     * Multi-select status facet — the enterprise filter system
+     * (Epic 53) comma-joins a `multiple: true` facet into one URL
+     * param; the route parses it into an array via `parseCsvEnumParam`
+     * BEFORE it reaches the repository, so this is always a validated
+     * array, never a raw comma-joined string.
+     */
+    status?: KnowledgeArticleStatus[];
+    /** Multi-select category facet — see `status` above. */
+    category?: string[];
     /** Free-text match on title / summary. */
     q?: string;
 }
@@ -33,8 +41,10 @@ const articleListSelect = {
 export class KnowledgeRepository {
     static async list(db: PrismaTx, ctx: RequestContext, filters: KnowledgeFilters = {}, options: { take?: number } = {}) {
         const where: Prisma.KnowledgeArticleWhereInput = { tenantId: ctx.tenantId, deletedAt: null };
-        if (filters.status) where.status = filters.status as Prisma.EnumKnowledgeArticleStatusFilter;
-        if (filters.category) where.category = filters.category;
+        // Guarded on `.length` so a cleared facet OMITS the filter rather
+        // than emitting `{ in: [] }`, which matches nothing.
+        if (filters.status?.length) where.status = { in: filters.status };
+        if (filters.category?.length) where.category = { in: filters.category };
         if (filters.q) {
             where.OR = [
                 { title: { contains: filters.q, mode: 'insensitive' } },
