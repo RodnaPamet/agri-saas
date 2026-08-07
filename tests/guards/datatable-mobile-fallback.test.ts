@@ -146,14 +146,10 @@ const EXEMPTIONS: Record<string, string> = {
         'detail page — parcels sub-table (opts into card mode itself, but not a list page)',
 
     // ── Wizards / browsers ──
-    't/[tenantSlug]/(app)/controls/templates/page.tsx':
-        'install-from-templates browser (multi-section, not a single list)',
     't/[tenantSlug]/(app)/risks/import/page.tsx':
         'risk-import wizard — result table appears mid-flow inside a wizard step',
 
     // ── Responsive view-toggle ──
-    't/[tenantSlug]/(app)/frameworks/FrameworksClient.tsx':
-        'Epic 66 cards/table toggle — the cards view is already a responsive grid on mobile',
 };
 
 // ── File walk ───────────────────────────────────────────────────────

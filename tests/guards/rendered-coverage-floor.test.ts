@@ -110,7 +110,13 @@ const ROOT = path.resolve(__dirname, '../..');
 //
 // Both landed the same day and each independently raised the floor to 224;
 // the conflict resolution is 225, the live count with both suites present.
-const RENDERED_TEST_FLOOR = 225;
+// Lowered 225 → 223 in the compliance uproot (2026-08-07): four rendered
+// suites were deleted alongside the components they verify —
+// control-roi-card, control-exceptions-panel, test-plan-schedule-section and
+// test-dashboard-g2-section. This is the documented exception the ratchet
+// contemplates ("if a test was legitimately merged or renamed, account for
+// it"); the floor resumes its upward-only ratchet from 223.
+const RENDERED_TEST_FLOOR = 223;
 const E2E_SPEC_FLOOR = 55;
 const REGISTRY_FLOOR = 5;
 

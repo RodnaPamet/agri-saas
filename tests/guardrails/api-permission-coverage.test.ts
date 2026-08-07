@@ -109,6 +109,15 @@ const EXCLUDED_ROUTES: ReadonlyArray<{ relPath: string; reason: string }> = [
     // for. Each handler still resolves ctx via `getTenantCtx`, so tenant
     // membership is enforced.
     {
+        relPath: 'api/t/[tenantSlug]/schemes/route.ts',
+        reason:
+            'GET only — lists government support measures (ДФЗ / МЗХ / EC). ' +
+            'National open calls are public reference data, not one farm\'s ' +
+            'business, so the route is read-open to every role exactly as ' +
+            'AgriEvent and the news feed are. `getTenantCtx` still runs, so ' +
+            'tenant membership is enforced and the route is not anonymous.',
+    },
+    {
         relPath: 'api/t/[tenantSlug]/frameworks/route.ts',
         reason:
             'GET only — lists the global catalogue. Read-open to every role ' +

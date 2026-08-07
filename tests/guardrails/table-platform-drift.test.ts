@@ -22,7 +22,6 @@ const CLIENT_DIR = path.resolve(__dirname, '../../src/app/t/[tenantSlug]/(app)')
  * Each must have a documented reason.
  */
 const EXCLUDED_PAGES: Record<string, string> = {
-    'SoAClient.tsx': 'Expandable row sub-components, not a flat list',
     'AuditsClient.tsx': 'Master/detail panel UX, not a list page',
     // Epic G-4 — list-of-decisions inside a campaign detail page.
     // Per-row inline dropdown + decision dialog sit on the row;
@@ -237,7 +236,9 @@ describe('Migration progress', () => {
         const existing = MIGRATED_PAGES.filter(rel => {
             try { readClientFile(rel); return true; } catch { return false; }
         });
-        expect(existing.length).toBeGreaterThanOrEqual(10);
+        // Compliance uproot (2026-08-07): SoAClient was deleted with the
+        // Statement of Applicability, taking the migrated-page count to 9.
+        expect(existing.length).toBeGreaterThanOrEqual(9);
     });
 
     it('migrated pages collectively cover all entity types', () => {

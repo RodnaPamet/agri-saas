@@ -207,9 +207,6 @@ export const ENCRYPTED_FIELDS: Readonly<Record<string, readonly string[]>> = {
     ],
     AuditChecklistItem: ['prompt', 'notes', 'evidenceRef'],
 
-    // ─── Control test runs ─────────────────────────────
-    ControlTestRun: ['notes', 'findingSummary'],
-
     // ─── Epic G-4 access review campaigns ──────────────
     //  Both columns can carry sensitive reviewer rationale that
     //  should be encrypted at rest:
@@ -226,14 +223,6 @@ export const ENCRYPTED_FIELDS: Readonly<Record<string, readonly string[]>> = {
     AccessReview: ['description'],
     AccessReviewDecision: ['notes'],
 
-    // ─── Epic G-5 control exception register ───────────
-    //  `justification` carries the rationale for accepting risk;
-    //  surfaces in audit packs alongside the approver. The
-    //  `rejectionReason` field is the parallel free-text capture
-    //  on REJECTED rows. Both contain narrative that may name
-    //  internal users / systems, so they're encrypted at rest.
-    ControlException: ['justification', 'rejectionReason'],
-
     // ─── RQ2-1 risk score provenance ───────────────────
     //  `justification` carries the assessor's narrative for a score
     //  change ("transferred via cyber insurance", "pen-test found
@@ -241,9 +230,9 @@ export const ENCRYPTED_FIELDS: Readonly<Record<string, readonly string[]>> = {
     //  internal systems / vendors / people. Encrypted at rest like
     //  every other rationale column. The explicit entry also keeps
     //  the manifest aligned with the fan-out write path, which
-    //  already encrypts any field NAMED `justification` (it appears
-    //  on ControlException) — without this entry the encryption
-    //  would be incidental rather than declared.
+    //  already encrypts any field NAMED `justification` — without
+    //  this entry the encryption would be incidental rather than
+    //  declared.
     RiskScoreEvent: ['justification'],
 
     // ─── Epic G-7 risk treatment plans ─────────────────

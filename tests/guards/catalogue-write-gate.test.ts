@@ -130,17 +130,12 @@ describe('global catalogue writes are platform-gated', () => {
 
 describe('the weaker gates cannot come back', () => {
     const fixtures = readFileSync(join(USECASES, 'framework/fixtures.ts'), 'utf8');
-    const scheme = readFileSync(join(USECASES, 'certification-scheme.ts'), 'utf8');
 
     it('upsertRequirements does not gate on assertCanInstallFrameworkPack', () => {
         // That gate is correct for INSTALLING a pack into your own tenant (it
         // writes Control + ControlRequirementLink rows, both tenant-scoped)
         // and wrong for writing the catalogue every tenant reads.
         expect(stripComments(fixtures)).not.toContain('assertCanInstallFrameworkPack');
-    });
-
-    it('createScheme does not gate on the per-tenant admin check', () => {
-        expect(stripComments(scheme)).not.toContain('assertCanAdmin(');
     });
 
     it('the destructive sweep is audited', () => {

@@ -21,56 +21,6 @@ const ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 
 describe('PR-B — table & button hygiene', () => {
-    describe('Tests rollup: Name + Status as separate columns', () => {
-        const src = read('src/app/t/[tenantSlug]/(app)/tests/page.tsx');
-
-        it('first column is `id: "name"` (canonical Name)', () => {
-            // Locate the planColumns construction and confirm the
-            // FIRST id key inside that block is "name". Comments
-            // between the array open and the first object literal
-            // make a positional regex brittle; instead the first
-            // `id: ...` after `createColumns<TestPlanSummary>([` is
-            // the leading column.
-            const start = src.indexOf('createColumns<TestPlanSummary>([');
-            expect(start).toBeGreaterThan(0);
-            const slice = src.slice(start, start + 2000);
-            const firstIdMatch = slice.match(/id:\s*['"]([^'"]+)['"]/);
-            expect(firstIdMatch).not.toBeNull();
-            expect(firstIdMatch![1]).toBe('name');
-        });
-
-        it('Status is its own column with `id: "status"`', () => {
-            // i18n batch T13 — the header copy now routes through next-intl
-            // (`header: t('colStatus')` on the `controlTests.rollup`
-            // namespace). Accept either the legacy literal or the t() form.
-            expect(src).toMatch(
-                /id:\s*['"]status['"],\s*header:\s*(?:['"]Status['"]|t\('colStatus'\))/,
-            );
-            // eslint-disable-next-line @typescript-eslint/no-var-requires
-            expect(require('../../messages/en.json').controlTests.rollup.colStatus).toBe('Status');
-        });
-
-        it('Status is positioned immediately after Name (not at end)', () => {
-            // Find both column ids and confirm Name comes before Status
-            // AND Status comes before Control.
-            const nameIdx = src.indexOf("id: 'name'");
-            const statusIdx = src.indexOf("id: 'status'");
-            const controlIdx = src.indexOf("id: 'control'");
-            expect(nameIdx).toBeGreaterThan(0);
-            expect(statusIdx).toBeGreaterThan(nameIdx);
-            expect(controlIdx).toBeGreaterThan(statusIdx);
-        });
-
-        it('Name cell no longer stacks the status badge underneath', () => {
-            // Pre-PR-B the Name cell rendered the status badge in a
-            // sibling `<div className="mt-0.5">` — that's gone.
-            const nameBlockStart = src.indexOf("id: 'name'");
-            const nameBlockEnd = src.indexOf("id: 'status'", nameBlockStart);
-            const nameBlock = src.slice(nameBlockStart, nameBlockEnd);
-            // The Status badge is NOT inside the Name cell anymore.
-            expect(nameBlock).not.toMatch(/<StatusBadge\b/);
-        });
-    });
 
     describe('Risk Code column + RSK-N key generation', () => {
         const schema = read('prisma/schema/compliance.prisma');

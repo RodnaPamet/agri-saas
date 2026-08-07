@@ -106,11 +106,6 @@ const DETAIL_PAGES: DetailPageEntry[] = [
         note: "Nested vendor assessment review detail. Pending migration — sub-route of vendor detail; needs breadcrumb stacking.",
     },
     {
-        file: "src/app/t/[tenantSlug]/(app)/controls/[controlId]/tests/[planId]/page.tsx",
-        adopted: false,
-        note: "Nested control test plan detail. Pending migration — sub-route of control detail; needs breadcrumb stacking.",
-    },
-    {
         file: "src/app/t/[tenantSlug]/(app)/admin/vendor-assessment-reviews/[assessmentId]/page.tsx",
         adopted: false,
         note: "Admin-side vendor assessment review. Pending migration — admin-area sub-route.",

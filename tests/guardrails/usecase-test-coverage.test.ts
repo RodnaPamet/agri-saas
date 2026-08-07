@@ -77,8 +77,6 @@ const EXEMPTIONS: Record<string, string> = {
         'Roadmap Q1 — graph builder, exercised via traceability integration test; pending direct unit tests.',
 
     // Test-internal hardening — last priority, low blast radius.
-    'src/app-layer/usecases/test-hardening.ts':
-        'Roadmap Q3 — test plan hardening utility, low blast radius; pending direct tests.',
 };
 
 const EXEMPTION_COUNT = Object.keys(EXEMPTIONS).length;

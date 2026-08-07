@@ -97,16 +97,6 @@ const DETAIL_PAGES: DetailPageEntry[] = [
         note: "Audit pack detail — uses <MetaStrip> for state / auditor / due-date / item-count.",
     },
     {
-        file: "src/app/t/[tenantSlug]/(app)/tests/runs/[runId]/page.tsx",
-        adopted: true,
-        note: "Test run detail — uses <MetaStrip> for plan / status / executor / completed-at.",
-    },
-    {
-        file: "src/app/t/[tenantSlug]/(app)/frameworks/[frameworkKey]/page.tsx",
-        adopted: true,
-        note: "Framework detail — uses <MetaStrip> for code / version / installed-at / coverage.",
-    },
-    {
         file: "src/app/t/[tenantSlug]/(app)/access-reviews/[reviewId]/AccessReviewDetailClient.tsx",
         adopted: true,
         note: "Access review detail — uses <MetaStrip> in the Client component (page.tsx is a server shell).",
@@ -163,7 +153,11 @@ describe("MetaStrip detail-page coverage", () => {
         // entity types (e.g., a new audit-cycle-readiness sub-detail
         // that needs its own metadata strip) should add an entry
         // here — the ≥10 floor catches an emptied registry.
-        expect(DETAIL_PAGES.length).toBeGreaterThanOrEqual(10);
+        // Compliance uproot (2026-08-07): the test-run and framework detail
+        // pages were deleted, taking the registry from 11 to 9. The floor is a
+        // drift detector — it exists so someone cannot quietly empty the
+        // registry — so it tracks the new reality rather than a stale number.
+        expect(DETAIL_PAGES.length).toBeGreaterThanOrEqual(9);
     });
 
     it("MetadataBar (the deprecated sibling primitive) has zero production adopters", () => {

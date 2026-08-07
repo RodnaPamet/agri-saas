@@ -48,7 +48,6 @@ describe('RQ2-8 — staleness engine', () => {
 
     test('the loader stays batched — groupBy + in-memory maps, no per-risk reads', () => {
         expect(usecase).toMatch(/riskScoreEvent\.groupBy/);
-        expect(usecase).toMatch(/controlTestRun\.groupBy/);
         expect(usecase).toMatch(/kriReading\.groupBy/); // RQ3-7 batched KRI read
         expect(usecase).toMatch(/_max/);
         // The only loops are over in-memory arrays; no awaited query

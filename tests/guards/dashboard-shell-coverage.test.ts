@@ -56,16 +56,6 @@ const DASHBOARDS: DashboardEntry[] = [
         note: "Risks portfolio dashboard with severity breakdown + trend cards.",
     },
     {
-        file: "src/app/t/[tenantSlug]/(app)/controls/dashboard/page.tsx",
-        adopted: true,
-        note: "Controls performance dashboard with status breakdown + owner workload tiles.",
-    },
-    {
-        file: "src/app/t/[tenantSlug]/(app)/tests/dashboard/page.tsx",
-        adopted: true,
-        note: "Tests pipeline dashboard with run cadence + result distribution.",
-    },
-    {
         file: "src/app/t/[tenantSlug]/(app)/vendors/dashboard/page.tsx",
         adopted: true,
         note: "Vendors portfolio dashboard with risk-rating breakdown + assessment status.",

@@ -80,7 +80,6 @@ describe('Loading-state guardrails', () => {
             'controls',
             'evidence',
             'policies',
-            'frameworks',
             'audits',
             'risks',
             'vendors',

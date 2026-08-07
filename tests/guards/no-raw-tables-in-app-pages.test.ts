@@ -74,13 +74,9 @@ const EXEMPTIONS: Record<string, string> = {
     // SoA (Statement of Applicability) report — interactive UI
     // version. Bespoke layout matched to the auditor's mental model;
     // not a list-page experience.
-    'reports/soa/SoAClient.tsx':
-        '(c) report layout — bespoke SoA reading order',
 
     // SoA print view — wkhtmltopdf-style consumer. Needs explicit
     // dense HTML; DataTable's JS-driven sizing doesn't survive print.
-    'reports/soa/print/SoAPrintView.tsx':
-        '(c) print/PDF layout — JS-driven sizing breaks under print',
 
     // ─── (a) Cross-tab / comparison tables ───────────────────────────
     // RQ-4 — baseline-vs-scenario VaR comparison: a fixed 4-row × 4-col

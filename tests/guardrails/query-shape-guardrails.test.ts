@@ -320,7 +320,8 @@ function scanNPlusOne(): NPlusOneFinding[] {
 // +2 (Feature 1): LocationRepository.list (mirrors the unbounded
 // AssetRepository.list) + ParcelRepository.validIdsForLocation (bounded
 // in practice by the input id set). Both tenant-scoped.
-const UNBOUNDED_FINDMANY_BUDGET = 56;
+// Compliance uproot (2026-08-07): compliance uproot removed 7 unbounded findMany call sites.
+const UNBOUNDED_FINDMANY_BUDGET = 49;
 
 /** How far the budget may sit ABOVE the live count before it is stale. */
 const UNBOUNDED_BUDGET_SLACK = 5;

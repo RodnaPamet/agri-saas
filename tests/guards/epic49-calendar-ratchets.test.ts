@@ -66,7 +66,6 @@ describe('Epic 49 — calendar feature wiring', () => {
             'loadVendorDocumentEvents',
             'loadAuditCycleEvents',
             'loadControlEvents',
-            'loadTestPlanEvents',
             'loadTaskEvents',
             'loadRiskEvents',
             'loadFindingEvents',

@@ -55,13 +55,14 @@ describe('RQ2-4 — risk detail IA', () => {
         expect(page).toMatch(/onLinkControls=\{\(\) => setActiveTab\('traceability'\)\}/);
     });
 
-    test('inherited mappings + test plans live under Traceability now', () => {
+    test('inherited mappings live under Traceability now', () => {
         const trace = page.slice(
             page.indexOf("activeTab === 'traceability'"),
             page.indexOf("activeTab === 'assessment'"),
         );
         expect(trace).toMatch(/InheritedMappingsPanel/);
-        expect(trace).toMatch(/InheritedTestPlansPanel/);
+        // InheritedTestPlansPanel went with the test-plan feature in the
+        // compliance uproot; mappings are what Traceability still inherits.
     });
 
     test('the panel speaks the tenant matrix language', () => {

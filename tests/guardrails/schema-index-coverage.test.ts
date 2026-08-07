@@ -180,11 +180,8 @@ const FK_INDEX_EXEMPT: Record<string, string> = {
     'RiskControl.createdByUserId': R_ACTOR,
     'ControlAsset.createdByUserId': R_ACTOR,
     'AssetRiskLink.createdByUserId': R_ACTOR,
-    'ControlContributor.userId': R_ACTOR,
     'ControlTask.assigneeUserId': R_ACTOR,
     'ControlEvidenceLink.createdByUserId': R_ACTOR,
-    'ControlTemplateTask.templateId': R_LIBRARY_TABLE,
-    'ControlTemplateRequirementLink.requirementId': R_LIBRARY_TABLE,
     'Evidence.fileRecordId': R_ONE_TO_ONE,
     'FileRecord.uploadedByUserId': R_ACTOR,
     'EvidenceReview.reviewerId': R_ACTOR,
@@ -194,21 +191,8 @@ const FK_INDEX_EXEMPT: Record<string, string> = {
     'PolicyApproval.requestedByUserId': R_ACTOR,
     'PolicyAcknowledgement.userId': R_ACTOR,
     'FrameworkPack.frameworkId': R_LIBRARY_TABLE,
-    'PackTemplateLink.templateId': R_LIBRARY_TABLE,
     'FrameworkMapping.toControlId': R_REVERSE_RARE,
     'FrameworkMapping.toRequirementId': R_REVERSE_RARE,
-    'ControlTestPlan.createdByUserId': R_ACTOR,
-    'ControlTestPlan.ownerUserId': R_ACTOR,
-    'ControlTestRun.createdByUserId': R_ACTOR,
-    'ControlTestRun.executedByUserId': R_ACTOR,
-    'ControlTestEvidenceLink.createdByUserId': R_ACTOR,
-    'ControlTestEvidenceLink.evidenceId': R_REVERSE_RARE,
-    'ControlException.compensatingControlId': R_ONE_TO_ONE,
-    'ControlException.createdByUserId': R_ACTOR,
-    'ControlException.riskAcceptedByUserId': R_ACTOR,
-    'ControlException.approvedByUserId': R_ACTOR,
-    'ControlException.rejectedByUserId': R_ACTOR,
-    'ControlException.deletedByUserId': R_ACTOR,
     'RiskTreatmentPlan.createdByUserId': R_ACTOR,
     'RiskTreatmentPlan.completedByUserId': R_ACTOR,
     'RiskTreatmentPlan.deletedByUserId': R_ACTOR,
@@ -553,20 +537,10 @@ const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
         'time-series snapshot rows — read tenant-scoped and time-ordered; Layers A/B cover it; no curated composite index needed today.',
     ControlAsset:
         'join table — fetched by tenantId plus a leading-indexed FK; Layers A/B cover its query shapes; no curated composite index needed.',
-    ControlContributor:
-        'join table — fetched by tenantId plus a leading-indexed FK; Layers A/B cover its query shapes; no curated composite index needed.',
     ControlEvidenceLink:
         'join table — fetched by tenantId plus a leading-indexed FK; Layers A/B cover its query shapes; no curated composite index needed.',
-    ControlException:
-        'filtered only by tenantId plus leading-indexed FK / status columns — Layers A/B cover its query shapes; no curated composite index needed today.',
     ControlRequirementLink:
         'join table — fetched by tenantId plus a leading-indexed FK; Layers A/B cover its query shapes; no curated composite index needed.',
-    ControlTestEvidenceLink:
-        'join table — fetched by tenantId plus a leading-indexed FK; Layers A/B cover its query shapes; no curated composite index needed.',
-    ControlTestPlan:
-        'filtered only by tenantId plus leading-indexed FK / status columns — Layers A/B cover its query shapes; no curated composite index needed today.',
-    ControlTestRun:
-        'filtered only by tenantId plus leading-indexed FK / status columns — Layers A/B cover its query shapes; no curated composite index needed today.',
     FileRecord:
         'filtered only by tenantId plus leading-indexed FK / status columns — Layers A/B cover its query shapes; no curated composite index needed today.',
     Finding:
