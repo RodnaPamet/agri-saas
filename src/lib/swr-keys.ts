@@ -142,22 +142,12 @@ export const CACHE_KEYS = {
     units: () => '/units' as const,
     findings: makeResource('findings'),
     frameworks: makeResource('frameworks'),
-    // Certification schemes — global AG_SCHEME frameworks, surfaced per
-    // tenant via /schemes. `detail(key)` keys on the scheme key.
-    schemes: {
-        ...makeResource('schemes'),
-        // One scheme + this farm's progress against it. There was no such
-        // route and no detail page at all: `/schemes` rows had no onRowClick
-        // while the row style promised one.
-        detail: (key: string) => `/schemes/${key}` as const,
-        // `readiness` removed — it pointed at `/schemes/:key/readiness`, a
-        // route that has never existed. Nothing fetched it, so nothing broke;
-        // it just sat in the registry describing a surface that was not there.
-    },
-    // Government support schemes (ДФЗ / МЗХ / EC measures a farm applies for).
-    // A DIFFERENT domain object from `schemes` above, which is certification —
-    // separate key so the two never share a cache bucket.
-    supportSchemes: makeResource('support-schemes'),
+    // Схеми — government support schemes (ДФЗ / МЗХ / EC measures a farm
+    // applies for), served from `/schemes`. This key used to address the
+    // CERTIFICATION scheme catalog; that surface was removed with the
+    // compliance uproot and support measures took over the route, so there
+    // is now exactly ONE `schemes` resource and no second cache bucket.
+    schemes: makeResource('schemes'),
     issues: makeResource('issues'),
     // ─── Market-price trends (global, tenant-agnostic payload) ───
     // `/trends/prices?commodity=&range=` — the query string IS part of the

@@ -3,9 +3,7 @@
  */
 
 export enum ReportType {
-    AUDIT_READINESS = 'AUDIT_READINESS',
     RISK_REGISTER = 'RISK_REGISTER',
-    GAP_ANALYSIS = 'GAP_ANALYSIS',
 }
 
 export type WatermarkMode = 'DRAFT' | 'FINAL' | 'NONE';

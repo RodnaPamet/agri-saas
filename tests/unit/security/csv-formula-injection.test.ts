@@ -16,7 +16,7 @@
  * hand-rolled `"${c.replace(/"/g,'""')}"` joins in `coverage.ts`, which now
  * route through the same escaper rather than reimplementing half of it.
  */
-import { escapeCSV } from '@/lib/reports/soa-csv';
+import { escapeCSV } from '@/lib/reports/csv-escape';
 
 describe('escapeCSV neutralises formulas', () => {
     it.each([
@@ -81,25 +81,5 @@ describe('escapeCSV still escapes correctly', () => {
         // Guard first, then quote — otherwise the apostrophe lands outside
         // the quotes and the cell parses as `'` followed by a quoted string.
         expect(escapeCSV('=A1,B2')).toBe('"\'=A1,B2"');
-    });
-});
-
-describe('the coverage exports use the shared escaper', () => {
-    it('coverage.ts does not hand-roll its own CSV quoting', () => {
-        // Two `"${(c || '').replace(/"/g, '""')}"` joins lived here. They
-        // quoted correctly and guarded nothing, and being separate from
-        // `escapeCSV` meant fixing one would never fix the other.
-        const raw = require('fs').readFileSync(
-            require('path').join(__dirname, '../../../src/app-layer/usecases/framework/coverage.ts'),
-            'utf8',
-        );
-        // Strip comments — the docblock explaining this fix necessarily
-        // QUOTES the old pattern, and a guard that fires on its own
-        // explanation teaches people to delete the explanation.
-        const source = raw
-            .replace(/\/\*[\s\S]*?\*\//g, '')
-            .replace(/(^|[^:])\/\/.*$/gm, '$1');
-        expect(source).not.toMatch(/replace\(\/"\/g,\s*'""'\)/);
-        expect(source).toContain('escapeCSV');
     });
 });

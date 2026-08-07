@@ -76,7 +76,7 @@ export async function getUnifiedSearch(
     const allHits: SearchHit[] = [];
 
     await runInTenantContext(ctx, async (db) => {
-        const [controls, risks, policies, evidence, assets, tasks, tests, knowledge] = await Promise.all([
+        const [controls, risks, policies, evidence, assets, tasks, knowledge] = await Promise.all([
             db.control.findMany({
                 where: {
                     tenantId,
@@ -166,29 +166,6 @@ export async function getUnifiedSearch(
                 },
                 take: dbLimit,
             }),
-            // Test search — ControlTestPlan, not ControlTestRun.
-            // Plans have a `name` field (runs don't); users looking
-            // for "a test" typically mean "the plan that tests
-            // control X". Each plan is tied to a control via
-            // `controlId` (we fetch the control's code for the href
-            // and subtitle).
-            db.controlTestPlan.findMany({
-                where: {
-                    tenantId,
-                    OR: [
-                        { name: { contains, mode: 'insensitive' } },
-                        { description: { contains, mode: 'insensitive' } },
-                    ],
-                },
-                select: {
-                    id: true,
-                    name: true,
-                    status: true,
-                    controlId: true,
-                    control: { select: { code: true, name: true } },
-                },
-                take: dbLimit,
-            }),
             // Knowledge Base — SOPs + growing guides. Matches title +
             // summary; not status-filtered (authors find their own drafts).
             db.knowledgeArticle.findMany({
@@ -241,14 +218,6 @@ export async function getUnifiedSearch(
             key: string | null;
         }>[]) {
             allHits.push(buildTaskHit(t, trimmed, tenantSlug));
-        }
-        for (const t of tests as Row<{
-            name: string;
-            status: string;
-            controlId: string;
-            control: { code: string | null; name: string };
-        }>[]) {
-            allHits.push(buildTestHit(t, trimmed, tenantSlug));
         }
         for (const k of knowledge as Row<{
             title: string;
@@ -460,42 +429,6 @@ function buildTaskHit(
             type: 'task',
             title: row.title,
             code: row.key,
-        }),
-        ...meta,
-    };
-}
-
-function buildTestHit(
-    row: {
-        id: string;
-        name: string;
-        status: string;
-        controlId: string;
-        control: { code: string | null; name: string };
-    },
-    query: string,
-    slug: string,
-): SearchHit {
-    const meta = SEARCH_TYPE_DEFAULTS.test;
-    // Subtitle: the control this test plan covers (code first if
-    // present so the eye can match "test for AC-2" intuitively).
-    const controlLabel = row.control.code
-        ? `${row.control.code} · ${row.control.name}`
-        : row.control.name;
-    return {
-        type: 'test',
-        id: row.id,
-        title: row.name,
-        subtitle: controlLabel,
-        badge: row.status,
-        // Test plans live inside the control detail page — no
-        // standalone test-plan detail route. Hit lands on the
-        // control's `tests` tab.
-        href: `/t/${slug}/controls/${row.controlId}/tests`,
-        score: computeRankScore(query, {
-            type: 'test',
-            title: row.name,
-            subtitle: row.control.name,
         }),
         ...meta,
     };

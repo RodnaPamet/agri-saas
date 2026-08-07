@@ -12,9 +12,7 @@ import type { ReportMeta, DataSourceNote } from '@/lib/pdf/types';
 
 describe('ReportType enum', () => {
     it('has the three expected report types', () => {
-        expect(ReportType.AUDIT_READINESS).toBe('AUDIT_READINESS');
         expect(ReportType.RISK_REGISTER).toBe('RISK_REGISTER');
-        expect(ReportType.GAP_ANALYSIS).toBe('GAP_ANALYSIS');
     });
 });
 

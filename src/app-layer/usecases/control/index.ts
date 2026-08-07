@@ -42,20 +42,15 @@ export {
     unlinkEvidence,
     linkAssetToControl,
     unlinkAssetFromControl,
-    listContributors,
-    addContributor,
-    removeContributor,
 } from './evidence';
 
+// Page-data orchestration (collapses control + sync waterfall on detail page)
+export { getControlPageData, type ControlPageDataPayload, type SyncStatusPayload } from './page-data';
+
+// Requirement ↔ control mapping (survivor of the removed template library)
 export {
-    listControlTemplates,
-    installControlsFromTemplate,
-    listFrameworks,
     listFrameworkRequirements,
     mapRequirementToControl,
     unmapRequirementFromControl,
     listControlMappings,
-} from './templates';
-
-// Page-data orchestration (collapses control + sync waterfall on detail page)
-export { getControlPageData, type ControlPageDataPayload, type SyncStatusPayload } from './page-data';
+} from './requirements';

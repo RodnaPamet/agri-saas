@@ -115,16 +115,11 @@ model Tenant {
   billingEvents                     BillingEvent[]
   clauseProgress                    ClauseProgress[]
   controls                          Control[]
-  controlAssets                     ControlAsset[]
-  controlContributors               ControlContributor[]
   controlEvidenceLinks              ControlEvidenceLink[]
+  controlAssets                     ControlAsset[]
   controlRequirementLinks           ControlRequirementLink[]
   frameworkRequirementOrders        FrameworkRequirementOrder[]
   controlTasks                      ControlTask[]
-  controlTestEvidenceLinks          ControlTestEvidenceLink[]
-  controlTestPlans                  ControlTestPlan[]
-  controlTestRuns                   ControlTestRun[]
-  controlTestSteps                  ControlTestStep[]
   evidence                          Evidence[]
   fileRecords                       FileRecord[]
   findings                          Finding[]
@@ -208,8 +203,6 @@ model Tenant {
   accessReviews                     AccessReview[]
   accessReviewDecisions             AccessReviewDecision[]
   // Epic G-5 — control exception register.
-  controlExceptions                 ControlException[]
-  // Epic G-7 — risk treatment plans.
   riskTreatmentPlans                RiskTreatmentPlan[]
   treatmentMilestones               TreatmentMilestone[]
   // Roadmap-26 PR-A — persisted process maps (xyflow canvases).
@@ -720,16 +713,10 @@ model User {
   controlApplicabilityDecisions Control[]                    @relation("ControlApplicabilityDecider")
   createdControls               Control[]                    @relation("ControlCreator")
   ownedControls                 Control[]                    @relation("ControlOwner")
+  controlEvidenceLinksCreated   ControlEvidenceLink[]        @relation("ControlEvidenceCreator")
   assignedFindings              Finding[]                    @relation("FindingAssignee")
   controlAssetsCreated          ControlAsset[]               @relation("ControlAssetCreator")
-  controlContributions          ControlContributor[]
-  controlEvidenceLinksCreated   ControlEvidenceLink[]        @relation("ControlEvidenceCreator")
   controlTaskAssignments        ControlTask[]                @relation("ControlTaskAssignee")
-  testEvidenceLinksCreated      ControlTestEvidenceLink[]    @relation("TestEvidenceCreator")
-  createdTestPlans              ControlTestPlan[]            @relation("TestPlanCreator")
-  ownedTestPlans                ControlTestPlan[]            @relation("TestPlanOwner")
-  createdTestRuns               ControlTestRun[]             @relation("TestRunCreator")
-  executedTestRuns              ControlTestRun[]             @relation("TestRunExecutor")
   evidenceReviews               EvidenceReview[]
   ownedEvidence                 Evidence[]                   @relation("EvidenceOwner")
   uploadedFiles                 FileRecord[]                 @relation("FileUploader")
@@ -785,11 +772,6 @@ model User {
   // Epic G-5 — control exceptions involve up to five distinct
   // user-roles per row (creator, risk-acceptor, approver, rejecter,
   // deleter). Distinct relation names so Prisma can disambiguate.
-  controlExceptionsCreated      ControlException[]           @relation("ControlExceptionCreatedBy")
-  controlExceptionsRiskAccepted ControlException[]           @relation("ControlExceptionRiskAcceptedBy")
-  controlExceptionsApproved     ControlException[]           @relation("ControlExceptionApprovedBy")
-  controlExceptionsRejected     ControlException[]           @relation("ControlExceptionRejectedBy")
-  controlExceptionsDeleted      ControlException[]           @relation("ControlExceptionDeletedBy")
   // Epic G-7 — risk treatment plans. Up to four distinct user-roles
   // per plan (owner, creator, completer, deleter) plus the
   // milestone completer. Distinct relation names so Prisma can

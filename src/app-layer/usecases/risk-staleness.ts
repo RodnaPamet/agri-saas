@@ -146,22 +146,10 @@ export async function getRiskStaleness(
         // in-memory assembly loop (the helper returns a ready map).
         const latestKriBreachByRisk = await loadLatestKriBreaches(db, ctx.tenantId, riskIds);
 
-        const controlIds = [...new Set(links.map((l) => l.controlId))];
+        // Control test runs were removed with the compliance uproot, so a
+        // risk's staleness no longer factors in "when was the mitigating
+        // control last tested".
         const latestTestByControl = new Map<string, Date>();
-        if (controlIds.length > 0) {
-            const grouped = await db.controlTestRun.groupBy({
-                by: ['controlId'],
-                where: {
-                    tenantId: ctx.tenantId,
-                    controlId: { in: controlIds },
-                    status: 'COMPLETED',
-                },
-                _max: { executedAt: true },
-            });
-            for (const g of grouped) {
-                if (g._max.executedAt) latestTestByControl.set(g.controlId, g._max.executedAt);
-            }
-        }
         const latestTestByRisk = new Map<string, Date>();
         for (const l of links) {
             const t = latestTestByControl.get(l.controlId);

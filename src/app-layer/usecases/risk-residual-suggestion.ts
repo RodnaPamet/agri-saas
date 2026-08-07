@@ -107,29 +107,10 @@ export async function loadResidualSuggestion(
     const controls = risk.controls.map((l) => l.control);
     const controlIds = controls.map((c) => c.id);
 
-    // MEASURED signal — one grouped query for ALL linked controls
-    // (not per-control; mirrors getControlEffectiveness's window).
+    // The MEASURED signal came from ControlTestRun pass rates. Test runs
+    // were removed with the compliance uproot, so every control now falls
+    // through to its DECLARED effectiveness.
     const measured = new Map<string, { passes: number; total: number }>();
-    if (controlIds.length > 0) {
-        const cutoff = new Date();
-        cutoff.setDate(cutoff.getDate() - MEASURED_WINDOW_DAYS);
-        const grouped = await db.controlTestRun.groupBy({
-            by: ['controlId', 'result'],
-            where: {
-                tenantId,
-                controlId: { in: controlIds },
-                status: 'COMPLETED',
-                executedAt: { gte: cutoff },
-            },
-            _count: { _all: true },
-        });
-        for (const g of grouped) {
-            const slot = measured.get(g.controlId) ?? { passes: 0, total: 0 };
-            slot.total += g._count._all;
-            if (g.result === 'PASS') slot.passes += g._count._all;
-            measured.set(g.controlId, slot);
-        }
-    }
 
     const inputs: ControlEffectivenessInput[] = controls.map((c) => {
         const m = measured.get(c.id);

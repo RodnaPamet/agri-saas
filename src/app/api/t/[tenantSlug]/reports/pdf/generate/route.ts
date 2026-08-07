@@ -13,9 +13,7 @@ import { withApiErrorHandling } from '@/lib/errors/api';
 import { z } from 'zod';
 import { ReportType } from '@/lib/pdf/types';
 import type { WatermarkMode } from '@/lib/pdf/types';
-import { generateAuditReadinessPdf } from '@/app-layer/reports/pdf/auditReadiness';
 import { generateRiskRegisterPdf } from '@/app-layer/reports/pdf/riskRegister';
-import { generateGapAnalysisPdf } from '@/app-layer/reports/pdf/gapAnalysis';
 import { logEvent } from '@/app-layer/events/audit';
 import { runInTenantContext } from '@/lib/db-context';
 import { getStorageProvider, buildTenantObjectKey } from '@/lib/storage';
@@ -31,9 +29,7 @@ const GenerateSchema = z.object({
 }).strip();
 
 const REPORT_TITLES: Record<ReportType, string> = {
-    [ReportType.AUDIT_READINESS]: 'Audit_Readiness_Report',
     [ReportType.RISK_REGISTER]: 'Risk_Register',
-    [ReportType.GAP_ANALYSIS]: 'Gap_Analysis_Report',
 };
 
 /**
@@ -71,14 +67,8 @@ export const POST = withApiErrorHandling(async (req: NextRequest, { params: para
 
     try {
         switch (body.type) {
-            case ReportType.AUDIT_READINESS:
-                pdfDoc = await generateAuditReadinessPdf(ctx, { watermark });
-                break;
             case ReportType.RISK_REGISTER:
                 pdfDoc = await generateRiskRegisterPdf(ctx, { watermark });
-                break;
-            case ReportType.GAP_ANALYSIS:
-                pdfDoc = await generateGapAnalysisPdf(ctx, { watermark });
                 break;
             default:
                 return jsonResponse({ error: 'Unknown report type' }, { status: 400 });

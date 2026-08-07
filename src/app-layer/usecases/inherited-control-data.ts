@@ -66,28 +66,6 @@ async function evidenceForControls(
     return evidence.map((e) => ({ ...e, control: e.controlId ? byId.get(e.controlId) ?? null : null }));
 }
 
-async function testPlansForControls(
-    db: PrismaTx,
-    tenantId: string,
-    controlIds: string[],
-    byId: Map<string, ControlRef>,
-) {
-    if (controlIds.length === 0) return [];
-    const plans = await db.controlTestPlan.findMany({
-        where: { tenantId, controlId: { in: controlIds } },
-        include: {
-            runs: {
-                orderBy: { executedAt: 'desc' },
-                take: 1,
-                select: { id: true, result: true, status: true, executedAt: true },
-            },
-        },
-        orderBy: { createdAt: 'desc' },
-        take: AGG_TAKE,
-    });
-    return plans.map((p) => ({ ...p, control: byId.get(p.controlId) ?? null }));
-}
-
 async function mappingsForControls(
     db: PrismaTx,
     tenantId: string,
@@ -136,20 +114,6 @@ export function getRiskInheritedEvidence(ctx: RequestContext, riskId: string) {
     return runInTenantContext(ctx, async (db) => {
         const { controlIds, byId } = await controlsForRisk(db, ctx.tenantId, riskId);
         return evidenceForControls(db, ctx.tenantId, controlIds, byId);
-    });
-}
-
-export function getAssetInheritedTestPlans(ctx: RequestContext, assetId: string) {
-    return runInTenantContext(ctx, async (db) => {
-        const { controlIds, byId } = await controlsForAsset(db, ctx.tenantId, assetId);
-        return testPlansForControls(db, ctx.tenantId, controlIds, byId);
-    });
-}
-
-export function getRiskInheritedTestPlans(ctx: RequestContext, riskId: string) {
-    return runInTenantContext(ctx, async (db) => {
-        const { controlIds, byId } = await controlsForRisk(db, ctx.tenantId, riskId);
-        return testPlansForControls(db, ctx.tenantId, controlIds, byId);
     });
 }
 

@@ -454,33 +454,6 @@ executorRegistry.register('access-review-overdue-escalation', async (payload) =>
     );
 });
 
-// ── exception-expiry-monitor (Epic G-5) ─────────────────────────────
-
-executorRegistry.register('exception-expiry-monitor', async (payload) => {
-    const startedAt = new Date().toISOString();
-    const startMs = performance.now();
-    const { runExceptionExpiryMonitor } = await import(
-        './exception-expiry-monitor'
-    );
-    const { prisma } = await import('@/lib/prisma');
-    const r = await runExceptionExpiryMonitor(prisma, {
-        tenantId: payload.tenantId,
-    });
-    return makeResult(
-        'exception-expiry-monitor',
-        startedAt,
-        startMs,
-        r.scanned,
-        r.enqueued,
-        0,
-        {
-            skippedDuplicate: r.skippedDuplicate,
-            skippedNoEmail: r.skippedNoEmail,
-            skippedNoRecipient: r.skippedNoRecipient,
-        },
-    );
-});
-
 // ── exchange-expiry-sweep ───────────────────────────────────────────
 
 executorRegistry.register('exchange-expiry-sweep', async (payload) => {
@@ -975,55 +948,6 @@ executorRegistry.register('automation-event-dispatch', async (payload) => {
             jobRunId: r.jobRunId,
         }
     );
-});
-
-// ── control-test-scheduler + control-test-runner (Epic G-2) ──────────
-//
-// Scheduler claims due ControlTestPlan rows and enqueues per-plan
-// runner jobs (deduplicated by `ctr:{planId}:{scheduledForIso}`).
-// The runner materializes each into a ControlTestRun + auto-evidence
-// + (on automated FAIL) a Finding linked to the control via the
-// FindingEvidence → Evidence → controlId chain.
-
-executorRegistry.register('control-test-scheduler', async (payload) => {
-    const startedAt = new Date().toISOString();
-    const startMs = performance.now();
-    const { runControlTestScheduler } = await import('./control-test-scheduler');
-    const r = await runControlTestScheduler({
-        tenantId: payload.tenantId,
-        now: payload.nowIso ? new Date(payload.nowIso) : undefined,
-        dryRun: payload.dryRun,
-    });
-    return makeResult(
-        'control-test-scheduler',
-        startedAt,
-        startMs,
-        r.totalDue,
-        r.enqueued,
-        r.skippedClaimRace +
-            r.skippedInvalidSchedule +
-            r.bootstrapped,
-        {
-            bootstrapped: r.bootstrapped,
-            enqueued: r.enqueued,
-            skippedClaimRace: r.skippedClaimRace,
-            skippedInvalidSchedule: r.skippedInvalidSchedule,
-            enqueueFailures: r.enqueueFailures,
-            dryRun: r.dryRun,
-            jobRunId: r.jobRunId,
-        },
-    );
-});
-
-executorRegistry.register('control-test-runner', async (payload) => {
-    // tenantId scoping happens one frame down in `runControlTestRunner`:
-    // it loads the plan via
-    //   prisma.controlTestPlan.findFirst({ where: { id, tenantId: payload.tenantId } })
-    // and every subsequent write goes through `runInTenantContext`
-    // bound to that same tenantId. Referencing `payload.tenantId`
-    // here documents the contract for the scope-audit ratchet.
-    const { controlTestRunnerExecutor } = await import('./control-test-runner');
-    return controlTestRunnerExecutor(payload);
 });
 
 // ── evidence-import (Epic 43.3) ──────────────────────────────────────

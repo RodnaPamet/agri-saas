@@ -457,61 +457,6 @@ describe('ControlRepository.setOwner', () => {
 // Contributors
 // ─────────────────────────────────────────────────────────────────────
 
-describe('ControlRepository — contributors', () => {
-    it('scopes the contributor list to the control AND the tenant', async () => {
-        await ControlRepository.listContributors(asTx(db), ctx, 'c-1');
-
-        expect(whereOf(db.controlContributor.findMany)).toEqual({
-            controlId: 'c-1',
-            tenantId: 'tenant-1',
-        });
-    });
-
-    it('verifies the parent control before adding a contributor, then stamps the tenant', async () => {
-        // Break: creating the join row without the parent check lets a
-        // caller attach themselves to another tenant's control by id.
-        db.control.findFirst.mockResolvedValue({ id: 'c-1' });
-
-        await ControlRepository.addContributor(asTx(db), ctx, 'c-1', 'user-3');
-
-        expect(whereOf(db.control.findFirst)).toEqual({ id: 'c-1', tenantId: 'tenant-1' });
-        expect(dataOf(db.controlContributor.create)).toEqual({
-            tenantId: 'tenant-1',
-            controlId: 'c-1',
-            userId: 'user-3',
-        });
-    });
-
-    it('refuses to add a contributor to a foreign control', async () => {
-        expect(await ControlRepository.addContributor(asTx(db), ctx, 'c-1', 'user-3')).toBeNull();
-        expect(db.controlContributor.create).not.toHaveBeenCalled();
-    });
-
-    it('deletes the located link row by its own id', async () => {
-        db.control.findFirst.mockResolvedValue({ id: 'c-1' });
-        db.controlContributor.findFirst.mockResolvedValue({ id: 'cc-9' });
-
-        expect(await ControlRepository.removeContributor(asTx(db), ctx, 'c-1', 'user-3')).toBe(true);
-        expect(whereOf(db.controlContributor.delete)).toEqual({ id: 'cc-9' });
-    });
-
-    it('is a no-op when the contributor link does not exist', async () => {
-        // Break: deleting unconditionally. `delete` on a missing row throws
-        // P2025, so an idempotent "remove twice" from a double-click would
-        // surface as a 500 instead of a second success.
-        db.control.findFirst.mockResolvedValue({ id: 'c-1' });
-        db.controlContributor.findFirst.mockResolvedValue(null);
-
-        expect(await ControlRepository.removeContributor(asTx(db), ctx, 'c-1', 'user-3')).toBeNull();
-        expect(db.controlContributor.delete).not.toHaveBeenCalled();
-    });
-
-    it('refuses to remove a contributor from a foreign control', async () => {
-        expect(await ControlRepository.removeContributor(asTx(db), ctx, 'c-1', 'user-3')).toBeNull();
-        expect(db.controlContributor.findFirst).not.toHaveBeenCalled();
-    });
-});
-
 // ─────────────────────────────────────────────────────────────────────
 // Tasks
 // ─────────────────────────────────────────────────────────────────────

@@ -54,7 +54,6 @@ import { RiskHistoryPanel } from './RiskHistoryPanel';
 import { InheritedEvidencePanel } from '@/components/InheritedEvidencePanel';
 import { AttachedEvidencePanel } from '@/components/AttachedEvidencePanel';
 import { Heading } from '@/components/ui/typography';
-import { InheritedTestPlansPanel } from '@/components/InheritedTestPlansPanel';
 import { InheritedMappingsPanel } from '@/components/InheritedMappingsPanel';
 
 const TraceabilityPanel = dynamic(() => import('@/components/TraceabilityPanel'), {
@@ -487,14 +486,6 @@ export default function RiskDetailPage() {
                         <Heading level={3}>{td('inheritedMappings')}</Heading>
                         <InheritedMappingsPanel
                             endpoint={apiUrl(`/risks/${riskId}/mappings`)}
-                            tenantHref={href}
-                            entityLabel="risk"
-                        />
-                    </div>
-                    <div className="space-y-default border-t border-border-subtle pt-default">
-                        <Heading level={3}>{td('inheritedTestPlans')}</Heading>
-                        <InheritedTestPlansPanel
-                            endpoint={apiUrl(`/risks/${riskId}/test-plans`)}
                             tenantHref={href}
                             entityLabel="risk"
                         />

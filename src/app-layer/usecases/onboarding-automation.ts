@@ -5,13 +5,12 @@
  * All actions are idempotent — re-running a step never duplicates data.
  *
  * Strategy:
- * - Framework install → calls existing `installPack()` (already idempotent by code check)
+ * - Framework install → retired with the control-template library
  * - Asset creation → upserts by name (idempotent by tenant+name uniqueness)
  * - Risk generation → deterministic rules, checks existing risks by title before creating
  * - Task/team setup → creates starter tasks only if none exist for onboarding
  */
 import { RequestContext } from '../types';
-import { installPack } from './framework';
 import { runInTenantContext } from '@/lib/db-context';
 import { logEvent } from '../events/audit';
 import { OnboardingRepository } from '../repositories/OnboardingRepository';
@@ -21,11 +20,6 @@ import type { AssetType, WorkItemType } from '@prisma/client';
 type StepData = Record<string, any>;
 
 // ─── Pack key mapping ───
-
-const FRAMEWORK_PACK_KEYS: Record<string, string> = {
-    iso27001: 'iso27001-2022-baseline',
-    nis2: 'nis2-baseline',
-};
 
 // ─── Asset type inference ───
 
@@ -129,32 +123,19 @@ export async function runStepAction(
 // ─── Framework Install ───
 
 async function executeFrameworkInstall(ctx: RequestContext, allData: StepData): Promise<StepActionResult> {
+    // `installPack` materialised a framework's control templates into tenant
+    // Control rows. The template library was removed with the compliance
+    // uproot, so there is nothing to install — the step reports every
+    // selection as skipped rather than pretending to have done work.
     const selectedFrameworks: string[] = allData['FRAMEWORK_SELECTION']?.selectedFrameworks || [];
-    let created = 0;
-    let skipped = 0;
-    const details: string[] = [];
-
-    for (const fw of selectedFrameworks) {
-        const packKey = FRAMEWORK_PACK_KEYS[fw];
-        if (!packKey) {
-            details.push(`No pack found for framework: ${fw}`);
-            skipped++;
-            continue;
-        }
-
-        try {
-            // installPack is already idempotent — skips existing controls
-            const result = await installPack(ctx, packKey);
-            created += result.controlsCreated;
-            details.push(`${fw}: ${result.controlsCreated} controls, ${result.tasksCreated} tasks`);
-        } catch (e) {
-            // Pack may not exist in catalog yet — that's OK
-            details.push(`${fw}: pack "${packKey}" not found in catalog`);
-            skipped++;
-        }
-    }
-
-    return { action: 'FRAMEWORK_INSTALL', created, skipped, details: details.join('; ') };
+    return {
+        action: 'FRAMEWORK_INSTALL',
+        created: 0,
+        skipped: selectedFrameworks.length,
+        details: selectedFrameworks.length
+            ? `Framework install retired: ${selectedFrameworks.join(', ')}`
+            : '',
+    };
 }
 
 // ─── Asset Creation (idempotent by name) ───

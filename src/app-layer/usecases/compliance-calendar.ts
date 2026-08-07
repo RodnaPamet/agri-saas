@@ -182,7 +182,6 @@ export async function getComplianceCalendarEvents(
                 loadVendorDocumentEvents(db, ctx, range, now, limit),
                 loadAuditCycleEvents(db, ctx, range, now, limit),
                 loadControlEvents(db, ctx, range, now, limit),
-                loadTestPlanEvents(db, ctx, range, now, limit),
                 loadTaskEvents(db, ctx, range, now, limit),
                 loadRiskEvents(db, ctx, range, now, limit),
                 loadFindingEvents(db, ctx, range, now, limit),
@@ -640,54 +639,6 @@ async function loadControlEvents(
                 entityId: r.id,
                 href: tenantHrefFromCtx(ctx, `/controls/${r.id}`),
                 ownerUserId: r.ownerUserId ?? undefined,
-            };
-        });
-    return { events, truncated };
-}
-
-async function loadTestPlanEvents(
-    db: PrismaTx,
-    ctx: RequestContext,
-    range: DateRange,
-    now: Date,
-    limit: number,
-): Promise<SourceResult> {
-    const rawRows = await db.controlTestPlan.findMany({
-        where: {
-            tenantId: ctx.tenantId,
-            status: 'ACTIVE',
-            nextDueAt: { not: null, gte: range.from, lte: range.to },
-        },
-        select: {
-            id: true,
-            name: true,
-            nextDueAt: true,
-            controlId: true,
-            control: { select: { name: true } },
-        },
-        orderBy: { nextDueAt: 'asc' },
-        take: limit + 1,
-    });
-    const { rows, truncated } = capRows(rawRows, limit);
-    const events = rows
-        .filter((r) => r.nextDueAt)
-        .map((r): CalendarEvent => {
-            const date = r.nextDueAt as Date;
-            return {
-                id: `CONTROL_TEST_PLAN:${r.id}:control-test-due`,
-                type: 'control-test-due',
-                category: 'control',
-                titleKey: 'testDue',
-                titleParams: { name: r.name },
-                date: date.toISOString(),
-                status: classifyStatus(date, now, false),
-                entityType: 'CONTROL_TEST_PLAN',
-                entityId: r.id,
-                href: tenantHrefFromCtx(
-                    ctx,
-                    `/controls/${r.controlId}/tests/${r.id}`,
-                ),
-                detail: r.control.name,
             };
         });
     return { events, truncated };
@@ -1325,12 +1276,12 @@ async function loadSupportSchemeEvents(
                 status: date < now ? 'done' : 'scheduled',
                 entityType: 'SUPPORT_SCHEME',
                 entityId: scheme.id,
-                // Click-through goes to the support-schemes page, NOT the
+                // Click-through goes to the Схеми (support measures) page, NOT the
                 // source article: a farmer clicking a deadline wants the
                 // measure's window and eligibility, and the article is one
                 // field on that row. `sourceUrl` still travels so the side
                 // panel can show "Source: <link>" beside the provenance chip.
-                href: `/t/${ctx.tenantSlug ?? ''}/support-schemes`,
+                href: `/t/${ctx.tenantSlug ?? ''}/schemes`,
                 external: false,
                 ...(isAi ? { provenance: 'ai-news' as const } : {}),
                 ...(scheme.confidence != null ? { confidence: scheme.confidence } : {}),

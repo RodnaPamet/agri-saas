@@ -5,7 +5,7 @@ export class ReportRepository {
     static async getSOAData(db: PrismaTx, ctx: RequestContext) {
         return db.control.findMany({
             where: { OR: [{ tenantId: ctx.tenantId }, { tenantId: null }] },
-            orderBy: { annexId: 'asc' },
+            orderBy: { code: 'asc' },
             include: {
                 evidence: { where: { tenantId: ctx.tenantId } },
             },
@@ -17,7 +17,7 @@ export class ReportRepository {
             where: { tenantId: ctx.tenantId },
             orderBy: { inherentScore: 'desc' },
             include: {
-                controls: { include: { control: { select: { name: true, annexId: true } } } },
+                controls: { include: { control: { select: { name: true, code: true } } } },
             },
         });
     }

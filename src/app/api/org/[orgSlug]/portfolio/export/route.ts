@@ -30,6 +30,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getOrgCtx } from '@/app-layer/context';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { forbidden } from '@/lib/errors/types';
+import { escapeCSV } from '@/lib/reports/csv-escape';
 import {
     getPortfolioSummary,
     getPortfolioTenantHealth,
@@ -43,14 +44,6 @@ interface RouteContext {
 }
 
 // ── CSV helpers ────────────────────────────────────────────────────────
-
-function escapeCSV(value: string | number | null | undefined): string {
-    const s = String(value ?? '');
-    if (s.includes(',') || s.includes('"') || s.includes('\n') || s.includes('\r')) {
-        return `"${s.replace(/"/g, '""')}"`;
-    }
-    return s;
-}
 
 function sectionHeader(title: string, columnCount: number): string {
     // Repeat empty cells so the section banner spans the widest table.

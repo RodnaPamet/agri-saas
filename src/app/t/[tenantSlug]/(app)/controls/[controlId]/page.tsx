@@ -41,28 +41,7 @@ import { Sparkle3 } from '@/components/ui/icons/nucleo/sparkle3';
 import { cardVariants } from '@/components/ui/card';
 import { cn } from '@/lib/cn';
 
-import { ControlRoiCard } from './_components/ControlRoiCard';
-
 const TraceabilityPanel = dynamic(() => import('@/components/TraceabilityPanel'), {
-    loading: () => <SkeletonCard lines={3} />,
-    ssr: false,
-});
-// Epic G-5 — exceptions panel + header badge. The badge alone is
-// loaded eagerly via a tiny named import so the control header can
-// surface "Exception: APPROVED" without waiting for the modal
-// machinery in the panel chunk.
-const ControlExceptionsPanel = dynamic(
-    () => import('@/components/ControlExceptionsPanel').then((m) => m.ControlExceptionsPanel),
-    {
-        loading: () => <SkeletonCard lines={3} />,
-        ssr: false,
-    },
-);
-const ControlExceptionHeaderBadge = dynamic(
-    () => import('@/components/ControlExceptionsPanel').then((m) => m.ControlExceptionHeaderBadge),
-    { ssr: false },
-);
-const TestPlansPanel = dynamic(() => import('@/components/TestPlansPanel'), {
     loading: () => <SkeletonCard lines={3} />,
     ssr: false,
 });
@@ -102,7 +81,7 @@ const CATEGORY_LABELS: Record<string, string> = {
 const CATEGORY_CB_OPTIONS: ComboboxOption[] = CATEGORY_OPTIONS.filter(Boolean).map(c => ({ value: c, label: CATEGORY_LABELS[c] || c }));
 const STATUS_CB_OPTIONS: ComboboxOption[] = Object.entries(STATUS_LABELS).map(([val, lbl]) => ({ value: val, label: lbl }));
 
-type Tab = 'overview' | 'tasks' | 'evidence' | 'mappings' | 'traceability' | 'activity' | 'tests';
+type Tab = 'overview' | 'tasks' | 'evidence' | 'mappings' | 'traceability' | 'activity';
 
 /**
  * Evidence-tab payload — `GET /controls/{id}/evidence` (#102 item 1).
@@ -656,7 +635,6 @@ export default function ControlDetailPage() {
         { key: 'mappings', label: t('detail.tabMappings'), count: control._count?.frameworkMappings ?? 0 },
         { key: 'traceability', label: t('detail.tabTraceability') },
         { key: 'activity', label: t('detail.tabActivity') },
-        { key: 'tests', label: t('detail.tabTests') },
     ];
 
     // ── Header meta strip (Polish PR-1) ──
@@ -747,10 +725,6 @@ export default function ControlDetailPage() {
                     </StatusBadge>
                 </Tooltip>
             )}
-            <ControlExceptionHeaderBadge
-                tenantSlug={tenantSlug}
-                controlId={control.id}
-            />
         </>
     );
 
@@ -843,7 +817,6 @@ export default function ControlDetailPage() {
             )}
 
             {/* Tab content — tab bar is rendered by EntityDetailLayout */}
-            {tab === 'overview' && <ControlRoiCard controlId={controlId} />}
 
             {tab === 'overview' && (
                 <div className={cn(cardVariants(), 'space-y-default')}>
@@ -1067,29 +1040,6 @@ export default function ControlDetailPage() {
                             ))}
                         </div>
                     )}
-                </div>
-            )}
-
-            {tab === 'tests' && (
-                <div className={cardVariants({ density: 'compact' })}>
-                    <TestPlansPanel controlId={controlId} />
-                </div>
-            )}
-
-            {/* Epic G-5 — Control exceptions section. Scoped to the
-              * Overview tab only: the request-exception workflow is
-              * control-level metadata, not per-sub-tab, so it would
-              * read as noise repeated under Tasks / Evidence / etc. */}
-            {tab === 'overview' && (
-                <div className={cn(cardVariants({ density: 'compact' }), 'mt-6')}>
-                    <ControlExceptionsPanel
-                        tenantSlug={tenantSlug}
-                        controlId={controlId}
-                        compensatingControlChoices={[]}
-                        defaultRiskAcceptedByUserId={control.ownerUserId ?? ''}
-                        canWrite={permissions.canWrite}
-                        canAdmin={permissions.canAdmin}
-                    />
                 </div>
             )}
         </EntityDetailLayout>

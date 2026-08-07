@@ -23,7 +23,6 @@
  *     · vendor.createVendor / updateVendor / addVendorDocument
  *                / decideVendorAssessment
  *     · audit.createAudit / updateAudit (incl. checklist notes)
- *     · controlTest.createTestPlan / updateTestPlan / completeTestRun
  *
  * Adding a new sanitised write path: append a `describe(...)` block
  * below AND extend the static guardrail's `RICH_TEXT_USECASES` table.
@@ -242,11 +241,6 @@ import {
     decideVendorAssessment,
 } from '@/app-layer/usecases/vendor';
 import { createAudit, updateAudit } from '@/app-layer/usecases/audit';
-import {
-    createTestPlan,
-    updateTestPlan,
-    completeTestRun,
-} from '@/app-layer/usecases/control-test';
 import { makeRequestContext } from '../../helpers/make-context';
 
 const ctx = makeRequestContext('ADMIN');
@@ -553,66 +547,5 @@ describe('audit.updateAudit sanitises top-level fields and per-checklist notes',
         const item2 = mockAuditChecklistUpdate.mock.calls[1][3];
         expect(item2.notes).toBeUndefined();
         expect(item2.result).toBe('FAIL');
-    });
-});
-
-// ── control-test.ts ───────────────────────────────────────────────
-
-describe('controlTest.createTestPlan sanitises name, description, and steps[]', () => {
-    it('strips <script> from name + description + every step instruction/expectedOutput', async () => {
-        mockTestPlanCreate.mockResolvedValue({
-            id: 'plan-1', name: 'X', controlId: 'c1',
-        });
-        mockTestPlanUpdateNextDueAt.mockResolvedValue(undefined);
-        await createTestPlan(ctx, 'c1', {
-            name: `Plan ${XSS}`,
-            description: `Desc ${XSS}`,
-            method: 'MANUAL',
-            frequency: 'MONTHLY',
-            steps: [
-                { instruction: `do thing ${XSS}`, expectedOutput: `output ${XSS}` },
-                { instruction: 'safe', expectedOutput: null },
-            ],
-        });
-        const data = mockTestPlanCreate.mock.calls[0][3];
-        expect(data.name).not.toMatch(/<script/);
-        expect(data.description).not.toMatch(/<script/);
-        expect(data.steps[0].instruction).not.toMatch(/<script/);
-        expect(data.steps[0].expectedOutput).not.toMatch(/<script/);
-        expect(data.steps[1].expectedOutput).toBeNull();
-    });
-});
-
-describe('controlTest.updateTestPlan sanitises only the provided fields', () => {
-    it('sanitises description on update; leaves untouched columns undefined', async () => {
-        mockTestPlanGetById.mockResolvedValue({
-            id: 'plan-1', status: 'ACTIVE', frequency: 'MONTHLY',
-        });
-        mockTestPlanUpdate.mockResolvedValue({ id: 'plan-1' });
-        await updateTestPlan(ctx, 'plan-1', { description: `bad ${XSS}` });
-        const patch = mockTestPlanUpdate.mock.calls[0][3];
-        expect(patch.description).not.toMatch(/<script/);
-        expect(patch.name).toBeUndefined();
-    });
-});
-
-describe('controlTest.completeTestRun sanitises notes + findingSummary', () => {
-    it('strips <script> from both encrypted columns', async () => {
-        mockTestRunGetById.mockResolvedValue({
-            id: 'run-1', status: 'IN_PROGRESS', testPlanId: 'plan-1', controlId: 'c1',
-            testPlan: {
-                id: 'plan-1', name: 'plan', frequency: 'MONTHLY', ownerUserId: null,
-            },
-        });
-        mockTestRunComplete.mockResolvedValue({ id: 'run-1' });
-        mockTestPlanUpdateNextDueAt.mockResolvedValue(undefined);
-        await completeTestRun(ctx, 'run-1', {
-            result: 'PASS',
-            notes: `notes ${XSS}`,
-            findingSummary: `summary ${XSS}`,
-        });
-        const data = mockTestRunComplete.mock.calls[0][3];
-        expect(data.notes).not.toMatch(/<script/);
-        expect(data.findingSummary).not.toMatch(/<script/);
     });
 });

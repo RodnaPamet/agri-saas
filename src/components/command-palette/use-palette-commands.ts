@@ -111,13 +111,6 @@ export function usePaletteCommands(tenantSlug: string | null): PaletteCommand[] 
                 href: href('/calendar'),
             },
             {
-                id: 'nav:frameworks',
-                group: 'Navigation',
-                label: t('navFrameworks'),
-                icon: Layers,
-                href: href('/frameworks'),
-            },
-            {
                 id: 'nav:vendors',
                 group: 'Navigation',
                 label: t('navVendors'),

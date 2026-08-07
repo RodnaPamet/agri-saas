@@ -62,7 +62,6 @@ export async function createControl(ctx: RequestContext, data: {
         }
         const control = await ControlRepository.create(db, ctx, {
             code,
-            annexId: data.annexId || null,
             name: data.name,
             description: data.description || null,
             intent: data.intent || null,
@@ -73,8 +72,6 @@ export async function createControl(ctx: RequestContext, data: {
             createdByUserId: ctx.userId,
             evidenceSource: (data.evidenceSource as 'MANUAL') || null,
             automationKey: data.automationKey || null,
-            automationType: (data.automationType as 'AUTOMATED') || null,
-            mitigationType: (data.mitigationType as 'PREVENTIVE') || null,
             isCustom,
         });
 
@@ -295,7 +292,6 @@ export async function markControlTestCompleted(ctx: RequestContext, controlId: s
         const nextDue = computeNextDueAt(existing.frequency, now);
 
         const updated = await ControlRepository.update(db, ctx, controlId, {
-            lastTested: now,
             nextDueAt: nextDue,
         });
 

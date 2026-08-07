@@ -80,10 +80,6 @@ const PARENT_MAP: Record<string, CanonicalParent> = {
     '/controls/templates': { href: '/controls', label: 'controls' },
 
     // ── Frameworks ────────────────────────────────────────────────────
-    '/frameworks/[frameworkKey]': { href: '/frameworks', label: 'frameworks' },
-    '/frameworks/[frameworkKey]/diff': { href: '/frameworks/[frameworkKey]', label: 'framework' },
-    '/frameworks/[frameworkKey]/install': { href: '/frameworks/[frameworkKey]', label: 'framework' },
-    '/frameworks/[frameworkKey]/templates': { href: '/frameworks/[frameworkKey]', label: 'framework' },
 
     // ── Issues (legacy) ───────────────────────────────────────────────
     '/issues/[issueId]': { href: '/issues', label: 'issues' },
@@ -99,7 +95,6 @@ const PARENT_MAP: Record<string, CanonicalParent> = {
     '/processes/governance': { href: '/processes', label: 'processes' },
 
     // ── Reports ───────────────────────────────────────────────────────
-    '/reports/soa': { href: '/reports', label: 'reports' },
     '/reports/soa/print': { href: '/reports/soa', label: 'soa' },
 
     // ── Risks ─────────────────────────────────────────────────────────

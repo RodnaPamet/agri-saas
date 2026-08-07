@@ -165,27 +165,6 @@ export interface EvidenceExpiryItem {
 }
 
 /**
- * Epic G-5 — control exception inventory + expiry-soon counts for
- * the dashboard. Surfaces the same data the operator wants to act
- * on: how many exceptions are live + how many cross the 30-day line
- * in the next month.
- */
-export interface ExceptionSummary {
-    /** Approved exceptions with no expiry date yet, or with an
-     *  expiry in the future. */
-    activeApproved: number;
-    /** REQUESTED rows still awaiting an approver action. */
-    pendingRequest: number;
-    /** Approved exceptions whose expiry is within the next 30 days. */
-    expiringWithin30: number;
-    /** Approved exceptions whose expiry is within the next 7 days
-     *  (subset of the 30-day count — operators want the urgent slice). */
-    expiringWithin7: number;
-    /** Already-EXPIRED rows that haven't been renewed or cleaned up. */
-    expired: number;
-}
-
-/**
  * Epic G-7 — risk treatment plan inventory + overdue counts for the
  * dashboard. Five COUNTs against the `(tenantId, status)` and
  * `(tenantId, targetDate)` indexes from prompt 1.
@@ -218,8 +197,6 @@ export interface ExecutiveDashboardPayload {
     taskSummary: TaskSummary;
     vendorSummary: VendorSummary;
     upcomingExpirations: EvidenceExpiryItem[];
-    /** Epic G-5 — control exception health card. */
-    exceptions: ExceptionSummary;
     /** Epic G-7 — risk treatment plan health card. */
     treatmentPlans: TreatmentPlanSummary;
     /** ISO 8601 timestamp of when the payload was computed */
@@ -636,68 +613,6 @@ export class DashboardRepository {
                     daysUntil,
                 };
             });
-    }
-
-    /**
-     * Epic G-5 — exception inventory + expiry-soon counts for the
-     * dashboard card. Five parallel COUNTs against the
-     * `(tenantId, status)` and `(tenantId, expiresAt)` indexes.
-     */
-    static async getExceptionSummary(
-        db: PrismaTx,
-        ctx: RequestContext,
-    ): Promise<ExceptionSummary> {
-        const tenantId = ctx.tenantId;
-        const now = new Date();
-        const in30 = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
-        const in7 = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-
-        const [
-            activeApproved,
-            pendingRequest,
-            expiringWithin30,
-            expiringWithin7,
-            expired,
-        ] = await Promise.all([
-            db.controlException.count({
-                where: {
-                    tenantId,
-                    status: 'APPROVED',
-                    deletedAt: null,
-                    OR: [{ expiresAt: null }, { expiresAt: { gte: now } }],
-                },
-            }),
-            db.controlException.count({
-                where: { tenantId, status: 'REQUESTED', deletedAt: null },
-            }),
-            db.controlException.count({
-                where: {
-                    tenantId,
-                    status: 'APPROVED',
-                    deletedAt: null,
-                    expiresAt: { not: null, gte: now, lte: in30 },
-                },
-            }),
-            db.controlException.count({
-                where: {
-                    tenantId,
-                    status: 'APPROVED',
-                    deletedAt: null,
-                    expiresAt: { not: null, gte: now, lte: in7 },
-                },
-            }),
-            db.controlException.count({
-                where: { tenantId, status: 'EXPIRED', deletedAt: null },
-            }),
-        ]);
-
-        return {
-            activeApproved,
-            pendingRequest,
-            expiringWithin30,
-            expiringWithin7,
-            expired,
-        };
     }
 
     /**

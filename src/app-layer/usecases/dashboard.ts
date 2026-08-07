@@ -70,7 +70,6 @@ export async function getExecutiveDashboard(ctx: RequestContext): Promise<Execut
             taskSummary,
             vendorSummary,
             upcomingExpirations,
-            exceptions,
             treatmentPlans,
         ] = await Promise.all([
             DashboardRepository.getStats(db, ctx),
@@ -83,7 +82,6 @@ export async function getExecutiveDashboard(ctx: RequestContext): Promise<Execut
             DashboardRepository.getTaskSummary(db, ctx),
             DashboardRepository.getVendorSummary(db, ctx),
             DashboardRepository.getUpcomingExpirations(db, ctx),
-            DashboardRepository.getExceptionSummary(db, ctx),
             DashboardRepository.getTreatmentPlanSummary(db, ctx),
         ]);
 
@@ -98,7 +96,6 @@ export async function getExecutiveDashboard(ctx: RequestContext): Promise<Execut
             taskSummary,
             vendorSummary,
             upcomingExpirations,
-            exceptions,
             treatmentPlans,
             computedAt: new Date().toISOString(),
         };

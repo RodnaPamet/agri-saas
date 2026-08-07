@@ -48,6 +48,5 @@ export async function listFrameworkPacks(ctx: RequestContext, frameworkKey: stri
     if (!fw) throw notFound('Framework not found');
     return db.frameworkPack.findMany({
         where: { frameworkId: fw.id },
-        include: { _count: { select: { templateLinks: true } } },
     });
 }

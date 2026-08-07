@@ -301,60 +301,6 @@ async function scanRisks(
     return items;
 }
 
-/**
- * Scan test plans with nextDueAt approaching or overdue.
- */
-async function scanTestPlans(
-    now: Date,
-    maxWindow: number,
-    tenantId?: string,
-): Promise<DueItem[]> {
-    const horizon = new Date(now.getTime() + maxWindow * 86_400_000);
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const where: any = {
-        status: 'ACTIVE',
-        nextDueAt: { not: null, lte: horizon },
-    };
-    if (tenantId) where.tenantId = tenantId;
-
-    const plans = await prisma.controlTestPlan.findMany({
-        where,
-        select: {
-            id: true,
-            tenantId: true,
-            name: true,
-            nextDueAt: true,
-            ownerUserId: true,
-            controlId: true,
-        },
-        orderBy: { nextDueAt: 'asc' },
-        take: 1000,
-    });
-
-    const items: DueItem[] = [];
-    for (const p of plans) {
-        if (!p.nextDueAt) continue;
-        const classification = classifyUrgency(p.nextDueAt, now);
-        if (!classification) continue;
-
-        items.push({
-            entityType: 'TEST_PLAN',
-            entityId: p.id,
-            tenantId: p.tenantId,
-            name: p.name,
-            reason: classification.urgency === 'OVERDUE'
-                ? `Test plan overdue by ${Math.abs(classification.daysRemaining)} day(s)`
-                : `Test plan due in ${classification.daysRemaining} day(s)`,
-            urgency: classification.urgency,
-            dueDate: p.nextDueAt.toISOString(),
-            daysRemaining: classification.daysRemaining,
-            ownerUserId: p.ownerUserId ?? undefined,
-        });
-    }
-    return items;
-}
-
 // ─── Epic G-7 — treatment-plan + milestone scanners ────────────────
 
 /**
@@ -582,7 +528,6 @@ export async function runDeadlineMonitor(
             policies,
             tasks,
             risks,
-            testPlans,
             treatmentPlans,
             treatmentMilestones,
         ] = await Promise.all([
@@ -590,7 +535,6 @@ export async function runDeadlineMonitor(
             scanPolicies(now, maxWindow, options.tenantId),
             scanTasks(now, maxWindow, options.tenantId),
             scanRisks(now, maxWindow, options.tenantId),
-            scanTestPlans(now, maxWindow, options.tenantId),
             scanTreatmentPlans(now, maxWindow, options.tenantId),
             scanTreatmentMilestones(now, maxWindow, options.tenantId),
         ]);
@@ -600,7 +544,6 @@ export async function runDeadlineMonitor(
             ...policies,
             ...tasks,
             ...risks,
-            ...testPlans,
             ...treatmentPlans,
             ...treatmentMilestones,
         ];

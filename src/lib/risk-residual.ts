@@ -31,7 +31,15 @@
  */
 
 import { calculateRiskScore } from '@/lib/risk-scoring';
-import type { ControlMitigationType } from '@prisma/client';
+/** How a control mitigates a risk. Was a Prisma enum until the compliance
+ *  uproot dropped `ControlMitigationType`; the formula still needs the
+ *  distinction, so it lives here as a local union. */
+export type ControlMitigationType =
+    | 'PREVENTIVE'
+    | 'DETERRENT'
+    | 'DETECTIVE'
+    | 'CORRECTIVE'
+    | 'COMPENSATING';
 
 /** No control stack eliminates a dimension — cap combined reduction. */
 export const MAX_REDUCTION = 0.8;

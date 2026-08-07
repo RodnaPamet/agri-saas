@@ -6,7 +6,7 @@ import { Download, Loader2, Save } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tooltip } from '@/components/ui/tooltip';
 
-export type PdfReportType = 'AUDIT_READINESS' | 'RISK_REGISTER' | 'GAP_ANALYSIS';
+export type PdfReportType = 'RISK_REGISTER';
 
 interface PdfExportButtonProps {
     tenantSlug: string;

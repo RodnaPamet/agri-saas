@@ -13,15 +13,13 @@ export async function getReports(ctx: RequestContext) {
         const controls = await ReportRepository.getSOAData(db, ctx);
 
         const soa = controls.map((c) => ({
-            controlId: c.annexId || c.id,
+            controlId: c.id,
             name: c.name,
             applicable: c.applicability === 'APPLICABLE',
             status: c.status,
-            effectiveness: c.effectiveness,
             evidenceCount: c.evidence.length,
             approvedEvidence: c.evidence.filter((e) => e.status === 'APPROVED').length,
             hasOverdue: c.evidence.some((e) => e.nextReviewDate && new Date(e.nextReviewDate) < new Date()),
-            lastTested: c.lastTested,
             reviewCadence: c.reviewCadence,
         }));
 
@@ -38,7 +36,7 @@ export async function getReports(ctx: RequestContext) {
             treatment: r.treatment || 'Untreated',
             owner: r.treatmentOwner || 'Unassigned',
             targetDate: r.targetDate,
-            controls: r.controls.map((rc: { control: { annexId: string | null; name: string } }) => rc.control.annexId || rc.control.name).join(', '),
+            controls: r.controls.map((rc: { control: { code: string | null; name: string } }) => rc.control.code || rc.control.name).join(', '),
         }));
 
         logger.info('report generation completed', {
