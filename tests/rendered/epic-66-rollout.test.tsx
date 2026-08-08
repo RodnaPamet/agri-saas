@@ -218,9 +218,9 @@ describe('TenantCoverageCards — Epic 66 rollout', () => {
         const card = container.querySelector(
             '[data-testid="org-tenant-card-acme"]',
         );
+        // The openRisks (12) + criticalRisks (3) stats went with the
+        // risk register; coverage + overdue-evidence remain.
         expect(card?.textContent).toContain('88.2%');
-        expect(card?.textContent).toContain('12');
-        expect(card?.textContent).toContain('3');
         expect(card?.textContent).toContain('4');
     });
 

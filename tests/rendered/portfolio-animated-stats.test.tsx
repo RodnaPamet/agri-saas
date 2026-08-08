@@ -5,7 +5,7 @@
  * values on data refetch:
  *
  *   1. PortfolioDashboard header — total tenants + pending count
- *   2. DrillDownCtas — non-performing controls / critical risks /
+ *   2. DrillDownCtas — non-performing controls /
  *      overdue evidence headline counters
  *   3. TenantCoverageList — per-row coveragePercent
  *
@@ -177,7 +177,7 @@ describe('PortfolioDashboard — header stats animate', () => {
 // ─── DrillDownCtas ──────────────────────────────────────────────────
 
 describe('DrillDownCtas — counters animate', () => {
-    it('renders all three CTA counters through AnimatedNumber', () => {
+    it('renders all CTA counters through AnimatedNumber', () => {
         const summary = makeSummary({
             controls: { applicable: 200, implemented: 150, coveragePercent: 75 },
             evidence: { total: 120, overdue: 9, dueSoon7d: 3 },
@@ -185,12 +185,13 @@ describe('DrillDownCtas — counters animate', () => {
         const { container } = render(
             <DrillDownCtas summary={summary} orgSlug="acme-org" />,
         );
-        // Three CTAs, one animated number each.
+        // Two CTAs, one animated number each — the risks CTA went with
+        // the register.
         expect(
             container.querySelectorAll(
                 '[data-testid="org-drilldown-ctas"] [data-animated-number]',
             ).length,
-        ).toBe(3);
+        ).toBe(2);
     });
 
     it('counters reflect the summary values exactly', () => {
@@ -202,11 +203,9 @@ describe('DrillDownCtas — counters animate', () => {
             <DrillDownCtas summary={summary} orgSlug="acme-org" />,
         );
         const controls = container.querySelector('[data-testid="org-drilldown-controls"]');
-        const risks = container.querySelector('[data-testid="org-drilldown-risks"]');
         const evidence = container.querySelector('[data-testid="org-drilldown-evidence"]');
         // applicable - implemented = 50
         expect(controls?.textContent).toContain('50');
-        expect(risks?.textContent).toContain('4');
         expect(evidence?.textContent).toContain('9');
     });
 
@@ -229,9 +228,8 @@ describe('DrillDownCtas — counters animate', () => {
             />,
         );
         expect(container.textContent).not.toBe(before);
-        // applicable - implemented = 50 → 50; new run has 300 - 250 = 50.
-        // Use a clearly different number to assert the re-render path.
-        expect(container.textContent).toContain('7');  // new critical
+        // The critical-risks counter went with the register; overdue
+        // evidence is the value that visibly changes on re-render.
         expect(container.textContent).toContain('14'); // new overdue
     });
 });
