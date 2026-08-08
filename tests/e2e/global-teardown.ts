@@ -63,6 +63,20 @@ interface TenantTrackerEntry {
  * future test runs (each test tenant gets a fresh, unique id) and
  * the cost is just storage we ignore. Add a table here when a new
  * spec writes to it and you want truly clean teardown.
+ *
+ * A STALE name is not free, even though the per-statement SAVEPOINT
+ * below swallows the error. Every dropped table costs a failed round
+ * trip on EVERY isolated-tenant teardown, and the run's Postgres log
+ * fills with `relation "X" does not exist`. Eleven names had gone
+ * stale: the ten risk / control-exoskeleton tables removed by this
+ * branch, plus `IntegrationEvent`, which had already been dropped
+ * before it. `PolicyAcknowledgement` went too — it has no `tenantId`
+ * (it hangs off `policyVersion`), so `WHERE "tenantId" = $1` could
+ * never have matched a row; it falls under the orphan carve-out above.
+ *
+ * `tests/guards/e2e-teardown-tables.test.ts` holds the invariant now:
+ * every name must resolve to a real Prisma model that actually has a
+ * `tenantId` field.
  */
 const TENANT_CHILD_TABLES: readonly string[] = [
     // Audit + identity
@@ -88,24 +102,13 @@ const TENANT_CHILD_TABLES: readonly string[] = [
     'Evidence',
     'FindingEvidence',
     'Finding',
-    'PolicyAcknowledgement',
     'PolicyApproval',
     'PolicyControlLink',
     'PolicyVersion',
     'Policy',
     'ControlAsset',
     'ControlEvidenceLink',
-    'ControlContributor',
-    'ControlTestEvidenceLink',
-    'ControlTestStep',
-    'ControlTestRun',
-    'ControlTestPlan',
     'ControlTask',
-    'AssetRiskLink',
-    'RiskControl',
-    'Risk',
-    'RiskSuggestionItem',
-    'RiskSuggestionSession',
     'Control',
     'Asset',
     'ClauseProgress',
@@ -135,7 +138,6 @@ const TENANT_CHILD_TABLES: readonly string[] = [
     'AutomationRule',
     'IntegrationSyncMapping',
     'IntegrationConnection',
-    'IntegrationEvent',
     // Billing
     'BillingEvent',
     'BillingAccount',

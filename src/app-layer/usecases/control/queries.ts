@@ -83,7 +83,7 @@ export async function getControl(ctx: RequestContext, id: string) {
 /**
  * Header-only control read (#102 item 1 — tab-lazy refactor).
  *
- * Returns the control scalars + user refs + `contributors` + a
+ * Returns the control scalars + user refs + a
  * `_count` of the four tabbed relations, without their arrays. The
  * detail page renders the Overview tab + header from this; the
  * Tasks / Evidence / Mappings tabs fetch their own data on demand.
