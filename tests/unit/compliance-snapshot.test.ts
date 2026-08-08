@@ -197,17 +197,6 @@ describe('Snapshot Job', () => {
         expect(upsertCall.create.controlsImplemented).toBe(10);
     });
 
-    it('stores risk severity buckets', async () => {
-        setupDashboardMocks();
-        mockUpsert.mockResolvedValue({});
-
-        await runSnapshotJob({ tenantId: 'tenant-1' });
-
-        const upsertCall = mockUpsert.mock.calls[0][0];
-        expect(upsertCall.create).toHaveProperty('risksOpen');
-        expect(upsertCall.create).toHaveProperty('risksCritical');
-    });
-
     it('stores the asset KPI buckets', async () => {
         setupDashboardMocks();
         mockUpsert.mockResolvedValue({});

@@ -83,12 +83,10 @@ describe('GAP-10 step 3 — generated OpenAPI 3.1 spec', () => {
 
     // ─── Schema coverage ────────────────────────────────────────────
 
-    it('registers all canonical request schemas (CRUD across 9 domains)', () => {
+    it('registers all canonical request schemas (CRUD across the domains)', () => {
         const expectedRequests = [
             // Asset
             'AssetCreateRequest', 'AssetUpdateRequest',
-            // Risk
-            'RiskCreateRequest', 'RiskUpdateRequest', 'RiskSetStatusRequest',
             // Control
             'ControlCreateRequest', 'ControlUpdateRequest',
             'ControlSetStatusRequest', 'ControlSetApplicabilityRequest',
@@ -122,7 +120,6 @@ describe('GAP-10 step 3 — generated OpenAPI 3.1 spec', () => {
             'UserRef', 'UserRefShort', 'ErrorResponse', 'AuditLogEntry', 'SuccessResponse',
             // Domain DTOs
             'ControlListItem', 'ControlDetail', 'ControlDashboard',
-            'RiskListItem', 'RiskDetail',
             'EvidenceListItem', 'EvidenceDetail', 'EvidenceReview',
             'PolicyListItem', 'PolicyDetail',
             'Audit',

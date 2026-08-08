@@ -7,7 +7,7 @@
  * boundaries by design and the rows being read are aggregate
  * snapshots + tenant metadata, NOT per-tenant business data.
  *
- * Drill-down into actual tenant tables (controls, risks, evidence)
+ * Drill-down into actual tenant tables (controls, evidence)
  * MUST go through the standard `runInTenantContext` path with the
  * CISO's auto-provisioned AUDITOR membership. That's a separate
  * Epic O-3 step (cross-tenant lists). This repository covers only
@@ -38,10 +38,6 @@ export interface SnapshotTrendRow {
     snapshotDate: Date;
     controlsApplicable: number;
     controlsImplemented: number;
-    risksTotal: number;
-    risksOpen: number;
-    risksCritical: number;
-    risksHigh: number;
     evidenceOverdue: number;
     evidenceDueSoon7d: number;
     evidenceCurrent: number;
@@ -156,10 +152,6 @@ export class PortfolioRepository {
                 _sum: {
                     controlsApplicable: true,
                     controlsImplemented: true,
-                    risksTotal: true,
-                    risksOpen: true,
-                    risksCritical: true,
-                    risksHigh: true,
                     evidenceOverdue: true,
                     evidenceDueSoon7d: true,
                     evidenceCurrent: true,
@@ -179,10 +171,6 @@ export class PortfolioRepository {
                 snapshotDate: g.snapshotDate,
                 controlsApplicable: g._sum.controlsApplicable ?? 0,
                 controlsImplemented: g._sum.controlsImplemented ?? 0,
-                risksTotal: g._sum.risksTotal ?? 0,
-                risksOpen: g._sum.risksOpen ?? 0,
-                risksCritical: g._sum.risksCritical ?? 0,
-                risksHigh: g._sum.risksHigh ?? 0,
                 evidenceOverdue: g._sum.evidenceOverdue ?? 0,
                 evidenceDueSoon7d: g._sum.evidenceDueSoon7d ?? 0,
                 evidenceCurrent: g._sum.evidenceCurrent ?? 0,

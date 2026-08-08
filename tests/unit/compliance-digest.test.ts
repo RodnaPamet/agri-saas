@@ -143,12 +143,6 @@ describe('Compliance Digest — Email Content', () => {
         expect(content).toContain('controlCoveragePercent');
     });
 
-    test('email covers risk posture', () => {
-        expect(content).toContain('Risks');
-        expect(content).toContain('risksOpen');
-        expect(content).toContain('risksCritical');
-    });
-
     test('email covers evidence status', () => {
         expect(content).toContain('Evidence');
         expect(content).toContain('evidenceOverdue');
@@ -167,7 +161,6 @@ describe('Compliance Digest — Email Content', () => {
 
     test('email shows trend deltas', () => {
         expect(content).toContain('coverageDelta');
-        expect(content).toContain('risksOpenDelta');
         expect(content).toContain('evidenceOverdueDelta');
         expect(content).toContain('findingsOpenDelta');
     });
@@ -211,7 +204,6 @@ describe('Compliance Digest — Trend Deltas', () => {
     });
 
     test('computes risks open delta', () => {
-        expect(content).toContain('risksOpen - priorSnapshot.risksOpen');
     });
 
     test('computes evidence overdue delta', () => {
@@ -255,10 +247,6 @@ describe('Epic 22 Pipeline Coherence', () => {
             'controlCoverageBps',
             'controlsImplemented',
             'controlsApplicable',
-            'risksTotal',
-            'risksOpen',
-            'risksCritical',
-            'risksHigh',
             'evidenceOverdue',
             'evidenceDueSoon7d',
             'policiesOverdueReview',

@@ -110,8 +110,6 @@ function tenantRow(over: Partial<TenantHealthRow> = {}): TenantHealthRow {
         hasSnapshot: true,
         snapshotDate: '2026-05-01',
         coveragePercent: 75.3,
-        openRisks: 5,
-        criticalRisks: 1,
         overdueEvidence: 2,
         rag: 'GREEN',
         ...over,
@@ -212,8 +210,6 @@ describe('TenantCoverageCards — Epic 66 rollout', () => {
                         tenantId: 't1',
                         slug: 'acme',
                         coveragePercent: 88.2,
-                        openRisks: 12,
-                        criticalRisks: 3,
                         overdueEvidence: 4,
                     }),
                 ]}

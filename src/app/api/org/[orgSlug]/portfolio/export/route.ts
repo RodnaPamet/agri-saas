@@ -52,9 +52,8 @@ function sectionHeader(title: string, columnCount: number): string {
 }
 
 const SUMMARY_COLUMNS = 2;
-const HEALTH_COLUMNS = 7;
+const HEALTH_COLUMNS = 6;
 const CONTROLS_COLUMNS = 6;
-const RISKS_COLUMNS = 6;
 const EVIDENCE_COLUMNS = 6;
 
 // ── Route ──────────────────────────────────────────────────────────────
@@ -80,10 +79,6 @@ export const GET = withApiErrorHandling(
             ['Controls Applicable', summary.controls.applicable],
             ['Controls Implemented', summary.controls.implemented],
             ['Coverage %', summary.controls.coveragePercent.toFixed(1)],
-            ['Risks Total', summary.risks.total],
-            ['Risks Open', summary.risks.open],
-            ['Risks Critical', summary.risks.critical],
-            ['Risks High', summary.risks.high],
             ['Evidence Overdue', summary.evidence.overdue],
             ['Evidence Due Soon (7d)', summary.evidence.dueSoon7d],
             ['Policies Overdue Review', summary.policies.overdueReview],
@@ -102,7 +97,7 @@ export const GET = withApiErrorHandling(
         sections.push('');
         sections.push(sectionHeader('Tenant Health', HEALTH_COLUMNS));
         sections.push(
-            ['Tenant', 'Slug', 'Snapshot Date', 'Coverage %', 'Open Risks', 'Critical Risks', 'Overdue Evidence', 'RAG']
+            ['Tenant', 'Slug', 'Snapshot Date', 'Coverage %', 'Overdue Evidence', 'RAG']
                 .map(escapeCSV)
                 .join(','),
         );

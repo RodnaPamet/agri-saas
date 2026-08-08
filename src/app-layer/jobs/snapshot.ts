@@ -159,15 +159,6 @@ export async function generateSnapshotForTenant(
             // The snapshot columns stay (historical rows still carry real
             // values and the trend charts read them); new snapshots record
             // zero rather than a fabricated number.
-            risksTotal: 0,
-            risksOpen: 0,
-            risksMitigating: 0,
-            risksAccepted: 0,
-            risksClosed: 0,
-            risksLow: 0,
-            risksMedium: 0,
-            risksHigh: 0,
-            risksCritical: 0,
 
             // Evidence
             evidenceTotal: evidenceExpiry.overdue + evidenceExpiry.dueSoon30d + evidenceExpiry.noReviewDate + evidenceExpiry.current,

@@ -258,25 +258,6 @@ model ControlKeySequence {
 
 /// RQ-9 — daily aggregate snapshot of the whole portfolio (one per
 /// tenant per day) for portfolio trend charts.
-model PortfolioSnapshot {
-  id               String   @id @default(cuid())
-  tenantId         String
-  totalRiskCount   Int
-  openRiskCount    Int
-  quantifiedCount  Int
-  totalAle         Float?
-  avgAle           Float?
-  maxSingleAle     Float?
-  totalScore       Int
-  avgScore         Float
-  appetiteBreached Boolean  @default(false)
-  snapshotAt       DateTime @default(now())
-  tenant           Tenant   @relation(fields: [tenantId], references: [id])
-
-  @@unique([tenantId, snapshotAt])
-  @@index([tenantId, snapshotAt])
-}
-
 model Control {
   id                           String                   @id @default(cuid())
   tenantId                     String?
@@ -990,17 +971,6 @@ model ComplianceSnapshot {
   controlsNotStarted  Int @default(0)
   /// Cached coverage % × 10 (e.g. 753 = 75.3%). Int avoids float precision issues.
   controlCoverageBps  Int @default(0)
-
-  // ── Risks ──
-  risksTotal      Int @default(0)
-  risksOpen       Int @default(0)
-  risksMitigating Int @default(0)
-  risksAccepted   Int @default(0)
-  risksClosed     Int @default(0)
-  risksLow        Int @default(0)
-  risksMedium     Int @default(0)
-  risksHigh       Int @default(0)
-  risksCritical   Int @default(0)
 
   // ── Evidence ──
   evidenceTotal      Int @default(0)

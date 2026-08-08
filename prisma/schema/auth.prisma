@@ -133,7 +133,6 @@ model Tenant {
   policyVersions                    PolicyVersion[]
   policyApprovals                   PolicyApproval[]
   reminderHistories                 ReminderHistory[]
-  portfolioSnapshots                PortfolioSnapshot[]
   tasks                             Task[]
   taskComments                      TaskComment[]
   taskLinks                         TaskLink[]

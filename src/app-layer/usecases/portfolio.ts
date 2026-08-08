@@ -80,10 +80,6 @@ function trendRowToDataPoint(row: SnapshotTrendRow): PortfolioTrendDataPoint {
         ),
         controlsImplemented: row.controlsImplemented,
         controlsApplicable: row.controlsApplicable,
-        risksTotal: row.risksTotal,
-        risksOpen: row.risksOpen,
-        risksCritical: row.risksCritical,
-        risksHigh: row.risksHigh,
         evidenceOverdue: row.evidenceOverdue,
         evidenceDueSoon7d: row.evidenceDueSoon7d,
         evidenceCurrent: row.evidenceCurrent,
@@ -134,10 +130,6 @@ function projectPortfolioSummary(
 
     let controlsApplicable = 0;
     let controlsImplemented = 0;
-    let risksTotal = 0;
-    let risksOpen = 0;
-    let risksCritical = 0;
-    let risksHigh = 0;
     let evidenceTotal = 0;
     let evidenceOverdue = 0;
     let evidenceDueSoon7d = 0;
@@ -160,10 +152,6 @@ function projectPortfolioSummary(
         }
         controlsApplicable += s.controlsApplicable;
         controlsImplemented += s.controlsImplemented;
-        risksTotal += s.risksTotal;
-        risksOpen += s.risksOpen;
-        risksCritical += s.risksCritical;
-        risksHigh += s.risksHigh;
         evidenceTotal += s.evidenceTotal;
         evidenceOverdue += s.evidenceOverdue;
         evidenceDueSoon7d += s.evidenceDueSoon7d;
@@ -175,7 +163,6 @@ function projectPortfolioSummary(
 
         const rag = computeRag({
             coveragePercent: bpsToPercent(s.controlCoverageBps),
-            criticalRisks: s.risksCritical,
             overdueEvidence: s.evidenceOverdue,
         });
         if (rag === 'GREEN') green++;
@@ -199,12 +186,6 @@ function projectPortfolioSummary(
                 controlsImplemented,
                 controlsApplicable,
             ),
-        },
-        risks: {
-            total: risksTotal,
-            open: risksOpen,
-            critical: risksCritical,
-            high: risksHigh,
         },
         evidence: {
             total: evidenceTotal,
@@ -239,8 +220,6 @@ function projectPortfolioTenantHealth(base: PortfolioBaseData): TenantHealthRow[
                 hasSnapshot: false,
                 snapshotDate: null,
                 coveragePercent: null,
-                openRisks: null,
-                criticalRisks: null,
                 overdueEvidence: null,
                 rag: null,
             };
@@ -254,12 +233,9 @@ function projectPortfolioTenantHealth(base: PortfolioBaseData): TenantHealthRow[
             hasSnapshot: true,
             snapshotDate: toIsoDate(s.snapshotDate),
             coveragePercent,
-            openRisks: s.risksOpen,
-            criticalRisks: s.risksCritical,
             overdueEvidence: s.evidenceOverdue,
             rag: computeRag({
                 coveragePercent,
-                criticalRisks: s.risksCritical,
                 overdueEvidence: s.evidenceOverdue,
             }),
         };

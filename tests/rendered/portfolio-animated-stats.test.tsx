@@ -56,7 +56,6 @@ function makeSummary(overrides: Partial<PortfolioSummary> = {}): PortfolioSummar
         generatedAt: '2026-05-03T00:00:00Z',
         tenants: { total: 7, snapshotted: 5, pending: 2 },
         controls: { applicable: 200, implemented: 150, coveragePercent: 75 },
-        risks: { total: 40, open: 18, critical: 4, high: 8 },
         evidence: { total: 120, overdue: 9, dueSoon7d: 3 },
         policies: { total: 12, overdueReview: 1 },
         tasks: { open: 22, overdue: 4 },
@@ -92,8 +91,6 @@ function makeTenantRow(over: Partial<TenantHealthRow> = {}): TenantHealthRow {
         hasSnapshot: true,
         snapshotDate: '2026-05-01',
         coveragePercent: 75.3,
-        openRisks: 5,
-        criticalRisks: 1,
         overdueEvidence: 2,
         rag: 'GREEN',
         ...over,
@@ -183,7 +180,6 @@ describe('DrillDownCtas — counters animate', () => {
     it('renders all three CTA counters through AnimatedNumber', () => {
         const summary = makeSummary({
             controls: { applicable: 200, implemented: 150, coveragePercent: 75 },
-            risks: { total: 40, open: 18, critical: 4, high: 8 },
             evidence: { total: 120, overdue: 9, dueSoon7d: 3 },
         });
         const { container } = render(
@@ -200,7 +196,6 @@ describe('DrillDownCtas — counters animate', () => {
     it('counters reflect the summary values exactly', () => {
         const summary = makeSummary({
             controls: { applicable: 200, implemented: 150, coveragePercent: 75 },
-            risks: { total: 40, open: 18, critical: 4, high: 8 },
             evidence: { total: 120, overdue: 9, dueSoon7d: 3 },
         });
         const { container } = render(
@@ -228,7 +223,6 @@ describe('DrillDownCtas — counters animate', () => {
                         implemented: 250,
                         coveragePercent: 83,
                     },
-                    risks: { total: 50, open: 22, critical: 7, high: 10 },
                     evidence: { total: 140, overdue: 14, dueSoon7d: 5 },
                 })}
                 orgSlug="acme-org"

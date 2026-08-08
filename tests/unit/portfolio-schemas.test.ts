@@ -24,7 +24,6 @@ describe('Epic O-3 — Portfolio DTO schemas', () => {
             generatedAt: new Date().toISOString(),
             tenants: { total: 3, snapshotted: 2, pending: 1 },
             controls: { applicable: 100, implemented: 75, coveragePercent: 75 },
-            risks: { total: 50, open: 30, critical: 2, high: 5 },
             evidence: { total: 200, overdue: 4, dueSoon7d: 10 },
             policies: { total: 12, overdueReview: 1 },
             tasks: { open: 25, overdue: 3 },
@@ -41,7 +40,6 @@ describe('Epic O-3 — Portfolio DTO schemas', () => {
             generatedAt: new Date().toISOString(),
             tenants: { total: -1, snapshotted: 0, pending: 0 },
             controls: { applicable: 0, implemented: 0, coveragePercent: 0 },
-            risks: { total: 0, open: 0, critical: 0, high: 0 },
             evidence: { total: 0, overdue: 0, dueSoon7d: 0 },
             policies: { total: 0, overdueReview: 0 },
             tasks: { open: 0, overdue: 0 },
@@ -58,7 +56,6 @@ describe('Epic O-3 — Portfolio DTO schemas', () => {
             generatedAt: new Date().toISOString(),
             tenants: { total: 0, snapshotted: 0, pending: 0 },
             controls: { applicable: 100, implemented: 100, coveragePercent: 105 },
-            risks: { total: 0, open: 0, critical: 0, high: 0 },
             evidence: { total: 0, overdue: 0, dueSoon7d: 0 },
             policies: { total: 0, overdueReview: 0 },
             tasks: { open: 0, overdue: 0 },
@@ -79,8 +76,6 @@ describe('Epic O-3 — Portfolio DTO schemas', () => {
             hasSnapshot: true,
             snapshotDate: '2026-04-26',
             coveragePercent: 82.5,
-            openRisks: 12,
-            criticalRisks: 0,
             overdueEvidence: 0,
             rag: 'GREEN',
         };
@@ -96,8 +91,6 @@ describe('Epic O-3 — Portfolio DTO schemas', () => {
             hasSnapshot: false,
             snapshotDate: null,
             coveragePercent: null,
-            openRisks: null,
-            criticalRisks: null,
             overdueEvidence: null,
             rag: null,
         };
@@ -113,8 +106,6 @@ describe('Epic O-3 — Portfolio DTO schemas', () => {
             hasSnapshot: true,
             snapshotDate: '2026-04-26',
             coveragePercent: 82.5,
-            openRisks: 12,
-            criticalRisks: 0,
             overdueEvidence: 0,
             rag: 'PURPLE', // not a valid enum value
         };
@@ -161,43 +152,36 @@ describe('Epic O-3 — Portfolio DTO schemas', () => {
     // ── computeRag thresholds ────────────────────────────────────────
 
     describe('computeRag', () => {
-        it('returns GREEN when coverage ≥ 80% AND no criticals AND no overdue', () => {
-            expect(computeRag({ coveragePercent: 80, criticalRisks: 0, overdueEvidence: 0 })).toBe('GREEN');
-            expect(computeRag({ coveragePercent: 95, criticalRisks: 0, overdueEvidence: 0 })).toBe('GREEN');
+        // The `criticalRisks` axis went with the risk register; coverage
+        // and overdue-evidence are the two remaining inputs and their
+        // thresholds are unchanged.
+        it('returns GREEN when coverage ≥ 80% AND no overdue evidence', () => {
+            expect(computeRag({ coveragePercent: 80, overdueEvidence: 0 })).toBe('GREEN');
+            expect(computeRag({ coveragePercent: 95, overdueEvidence: 0 })).toBe('GREEN');
         });
 
         it('returns AMBER when coverage is 60–79.9% (no other reds)', () => {
-            expect(computeRag({ coveragePercent: 79, criticalRisks: 0, overdueEvidence: 0 })).toBe('AMBER');
-            expect(computeRag({ coveragePercent: 60, criticalRisks: 0, overdueEvidence: 0 })).toBe('AMBER');
-        });
-
-        it('returns AMBER when there is exactly 1 critical risk (coverage ok)', () => {
-            expect(computeRag({ coveragePercent: 95, criticalRisks: 1, overdueEvidence: 0 })).toBe('AMBER');
-            expect(computeRag({ coveragePercent: 95, criticalRisks: 2, overdueEvidence: 0 })).toBe('AMBER');
+            expect(computeRag({ coveragePercent: 79, overdueEvidence: 0 })).toBe('AMBER');
+            expect(computeRag({ coveragePercent: 60, overdueEvidence: 0 })).toBe('AMBER');
         });
 
         it('returns AMBER when there is overdue evidence (1–9, coverage ok)', () => {
-            expect(computeRag({ coveragePercent: 95, criticalRisks: 0, overdueEvidence: 1 })).toBe('AMBER');
-            expect(computeRag({ coveragePercent: 95, criticalRisks: 0, overdueEvidence: 9 })).toBe('AMBER');
+            expect(computeRag({ coveragePercent: 95, overdueEvidence: 1 })).toBe('AMBER');
+            expect(computeRag({ coveragePercent: 95, overdueEvidence: 9 })).toBe('AMBER');
         });
 
         it('returns RED when coverage < 60%', () => {
-            expect(computeRag({ coveragePercent: 59.9, criticalRisks: 0, overdueEvidence: 0 })).toBe('RED');
-            expect(computeRag({ coveragePercent: 0, criticalRisks: 0, overdueEvidence: 0 })).toBe('RED');
-        });
-
-        it('returns RED when criticalRisks ≥ 3', () => {
-            expect(computeRag({ coveragePercent: 95, criticalRisks: 3, overdueEvidence: 0 })).toBe('RED');
-            expect(computeRag({ coveragePercent: 95, criticalRisks: 100, overdueEvidence: 0 })).toBe('RED');
+            expect(computeRag({ coveragePercent: 59.9, overdueEvidence: 0 })).toBe('RED');
+            expect(computeRag({ coveragePercent: 0, overdueEvidence: 0 })).toBe('RED');
         });
 
         it('returns RED when overdueEvidence ≥ 10', () => {
-            expect(computeRag({ coveragePercent: 95, criticalRisks: 0, overdueEvidence: 10 })).toBe('RED');
+            expect(computeRag({ coveragePercent: 95, overdueEvidence: 10 })).toBe('RED');
         });
 
         it('RED dominates AMBER (single-axis worst case wins)', () => {
-            // Coverage borderline-AMBER + criticalRisks worth-RED → RED.
-            expect(computeRag({ coveragePercent: 70, criticalRisks: 5, overdueEvidence: 0 })).toBe('RED');
+            // Coverage borderline-AMBER + overdue-evidence worth-RED → RED.
+            expect(computeRag({ coveragePercent: 70, overdueEvidence: 12 })).toBe('RED');
         });
     });
 });
