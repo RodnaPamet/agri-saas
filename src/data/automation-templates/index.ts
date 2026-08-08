@@ -13,7 +13,7 @@
  */
 import type { AutomationActionType } from '@prisma/client';
 
-export type TemplateTag = 'risk' | 'control' | 'task' | 'issue' | 'notify' | 'webhook';
+export type TemplateTag = 'control' | 'task' | 'issue' | 'notify' | 'webhook';
 
 export interface AutomationTemplate {
     id: string;
@@ -28,16 +28,6 @@ export interface AutomationTemplate {
 }
 
 export const AUTOMATION_TEMPLATES: ReadonlyArray<AutomationTemplate> = [
-    {
-        id: 'tpl_risk_owner_notify',
-        name: 'Notify owner when a risk is escalated',
-        description: 'Fires on RISK_STATUS_CHANGED to HIGH and notifies the risk owner.',
-        trigger: 'RISK_STATUS_CHANGED',
-        filter: { logic: 'AND', conditions: [{ field: 'toStatus', operator: 'eq', value: 'HIGH' }] },
-        actionType: 'NOTIFY_USER',
-        actionConfig: { userIds: ['{{risk.ownerId}}'], message: 'Risk {{risk.title}} escalated to HIGH.' },
-        tags: ['risk', 'notify'],
-    },
     {
         id: 'tpl_failed_test_task',
         name: 'Create remediation task on failed test run',
@@ -87,26 +77,6 @@ export const AUTOMATION_TEMPLATES: ReadonlyArray<AutomationTemplate> = [
         actionType: 'WEBHOOK',
         actionConfig: { url: 'https://hooks.slack.com/services/REPLACE/ME', method: 'POST' },
         tags: ['issue', 'webhook'],
-    },
-    {
-        id: 'tpl_risk_created_task',
-        name: 'Open assessment task on new risk',
-        description: 'Fires on RISK_CREATED and opens an assessment task.',
-        trigger: 'RISK_CREATED',
-        filter: null,
-        actionType: 'CREATE_TASK',
-        actionConfig: { title: 'Assess risk {{risk.title}}', priority: 'P3' },
-        tags: ['risk', 'task'],
-    },
-    {
-        id: 'tpl_high_risk_notify_webhook',
-        name: 'Webhook on high-score risk',
-        description: 'Fires on RISK_CREATED with score > 15 and calls a webhook.',
-        trigger: 'RISK_CREATED',
-        filter: { logic: 'AND', conditions: [{ field: 'score', operator: 'gt', value: 15 }] },
-        actionType: 'WEBHOOK',
-        actionConfig: { url: 'https://example.com/hooks/high-risk', method: 'POST' },
-        tags: ['risk', 'webhook'],
     },
 ];
 

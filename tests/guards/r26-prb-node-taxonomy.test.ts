@@ -1,11 +1,11 @@
 /**
  * R26-PR-B — Process Canvas node taxonomy ratchet.
  *
- * Locks the seven canonical node kinds + the three-level visual
+ * Locks the six canonical node kinds + the three-level visual
  * vocabulary (shape × accent × icon) introduced by PR-B. Each
  * invariant the rest of R26 depends on is asserted here:
  *
- *   1. The taxonomy carries EXACTLY the seven canonical kinds.
+ *   1. The taxonomy carries EXACTLY the six canonical kinds.
  *      Adding an eighth needs a justification + a written reason
  *      in the doc comment AND an update to this ratchet's
  *      `CANONICAL_KINDS` array. The bar for new kinds is high —
@@ -18,13 +18,13 @@
  *      crash at runtime instead of failing CI.
  *
  *   3. The palette renders one stamp per canonical kind, in the
- *      canonical order. A future PR that hides one of the seven
+ *      canonical order. A future PR that hides one of the six
  *      kinds from the palette (e.g. "let's drop annotation, no
  *      one uses it") must edit this ratchet too.
  *
  *   4. The typed-node renderer registers EXACTLY one xyflow node-
  *      type per canonical kind on the canvas. The renderer
- *      component is the SAME instance across all seven (chassis-
+ *      component is the SAME instance across all six (chassis-
  *      shared); the registry value matters less than the key set.
  */
 import * as fs from "node:fs";
@@ -46,7 +46,6 @@ const CANONICAL_KINDS = [
     "processStep",
     "decision",
     "control",
-    "risk",
     "asset",
     "external",
     "annotation",
@@ -71,7 +70,7 @@ const CANONICAL_KINDS = [
 describe("R26-PR-B — node taxonomy", () => {
     const taxonomySrc = read(TAXONOMY_PATH);
 
-    it("declares exactly the seven canonical kinds in the ProcessNodeKind union", () => {
+    it("declares exactly the six canonical kinds in the ProcessNodeKind union", () => {
         // The union is the source-of-truth string-literal contract.
         // A drift here without a ratchet update would let unknown
         // kinds slip past the type system.
@@ -103,7 +102,7 @@ describe("R26-PR-B — node taxonomy", () => {
         // R26-PR-D dropped `control` from the palette (edge-first
         // canonical surface) while keeping the taxonomy entry for
         // legacy-map rehydration. The palette order = canonical
-        // seven MINUS control. The dedicated R26-PR-D ratchet
+        // six MINUS control. The dedicated R26-PR-D ratchet
         // (r26-prd-edge-controls-semantics) locks the exclusion.
         const orderMatch = taxonomySrc.match(
             /NODE_TAXONOMY_ORDER:\s*ProcessNodeKind\[\]\s*=\s*\[([\s\S]*?)\]/,
@@ -186,7 +185,7 @@ describe("R26-PR-B — canvas consumer", () => {
     const canvasSrc = read(CANVAS_PATH);
 
     it("registers every canonical kind in NODE_TYPES", () => {
-        // The canvas must map ALL seven kinds → ProcessTypedNode.
+        // The canvas must map ALL six kinds → ProcessTypedNode.
         // A drop emitting an unregistered kind would render with
         // the xyflow default node (a plain grey box), bypassing
         // the per-kind chrome.

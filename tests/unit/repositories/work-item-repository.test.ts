@@ -1125,7 +1125,7 @@ describe('WorkItemRepository — metrics', () => {
         expect(args.take).toBe(5);
         expect(args.where).toEqual({
             tenantId: 'tenant-1',
-            entityType: { in: ['ASSET', 'RISK'] },
+            entityType: { in: ['ASSET'] },
             task: { status: { notIn: ['RESOLVED', 'CLOSED', 'CANCELED'] } },
         });
         expect(m.topLinkedEntities).toEqual([
@@ -1157,7 +1157,7 @@ describe('TaskLinkRepository', () => {
     it('honours an explicit relation', async () => {
         // Break: a `??` that ignores the argument would flatten every
         // link to RELATES_TO, losing the BLOCKS/DUPLICATES semantics.
-        await TaskLinkRepository.link(asTx(db), ctx, 't-1', 'RISK', 'r-1', 'BLOCKS');
+        await TaskLinkRepository.link(asTx(db), ctx, 't-1', 'ASSET', 'r-1', 'BLOCKS');
 
         expect(dataOf(db.taskLink.create).relation).toBe('BLOCKS');
     });

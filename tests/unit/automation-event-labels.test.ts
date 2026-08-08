@@ -23,7 +23,6 @@ describe('event-labels', () => {
     it('groups events by domain', () => {
         const groups = eventOptionsByDomain();
         const domains = groups.map((g) => g.domain);
-        expect(domains).toContain('Risk');
         expect(domains).toContain('Task');
         // every event lands in exactly one group
         const total = groups.reduce((n, g) => n + g.events.length, 0);
@@ -31,13 +30,13 @@ describe('event-labels', () => {
     });
 
     it('returns filter fields for an event that has them, [] otherwise', () => {
-        const riskFields = filterFieldsForEvent('RISK_CREATED');
-        expect(riskFields.some((f) => f.field === 'severity')).toBe(true);
+        const issueFields = filterFieldsForEvent('ISSUE_CREATED');
+        expect(issueFields.some((f) => f.field === 'severity')).toBe(true);
         expect(filterFieldsForEvent('NONEXISTENT_EVENT')).toEqual([]);
     });
 
     it('enum filter fields carry options', () => {
-        const sev = filterFieldsForEvent('RISK_CREATED').find((f) => f.field === 'severity');
+        const sev = filterFieldsForEvent('ISSUE_CREATED').find((f) => f.field === 'severity');
         expect(sev?.type).toBe('enum');
         expect(sev?.options?.length).toBeGreaterThan(0);
     });
