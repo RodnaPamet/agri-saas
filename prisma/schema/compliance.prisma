@@ -200,7 +200,15 @@ model Asset {
   /// Free-text operator/keeper name (legacy owner column). The
   /// structured assignee is `ownerUserId`.
   owner               String?
+  /// Free-text location note. Retained alongside the structured
+  /// `locationId` for unstructured detail ("north shed, back bay") that
+  /// a Location row does not model. Structured lookups use `locationId`.
   location            String?
+  /// Structured location — where this machine physically lives.
+  /// `[id, tenantId]` composite FK, the same barrier Parcel uses, so a
+  /// machine can never reference another tenant's yard. Makes "which
+  /// machines are at the Dobrich yard" a query instead of a string match.
+  locationId          String?
   /// Agricultural asset attributes (machines, buildings, equipment).
   manufacturer        String?
   model               String?
@@ -218,6 +226,11 @@ model Asset {
   meterValue          Decimal?             @db.Decimal(12, 1)
   /// Free-form machine attributes carried over from `Equipment`.
   attributesJson      Json?
+  /// Useful life in years, the denominator of straight-line
+  /// depreciation. Null means "not depreciated" — the /costs machinery
+  /// basis reports such an asset as UNALLOCATED rather than charging
+  /// zero, because a silent zero is indistinguishable from "free".
+  usefulLifeYears     Int?
   createdAt           DateTime             @default(now())
   updatedAt           DateTime             @updatedAt
   ownerUserId         String?
@@ -237,6 +250,10 @@ model Asset {
   /// Journal entries this machine was used on. Repointed from the
   /// retired `Equipment` model.
   logLinks            LogEquipment[]
+  /// Service / repair / inspection / breakdown history.
+  maintenance         AssetMaintenance[]
+  /// Where the machine lives (structured).
+  locationRef         Location?            @relation(fields: [locationId, tenantId], references: [id, tenantId])
 
   /// Unique within a tenant — `AST-N` collisions are race-free
   /// via the AssetKeySequence counter.
@@ -255,6 +272,58 @@ model Asset {
   /// Backs the machine-register query (`listEquipment`): filter by
   /// tenant + machine-shaped `type`, excluding RETIRED `status`.
   @@index([tenantId, type, status])
+  /// "Which machines are at this yard" — the query the free-text
+  /// `location` column could never answer.
+  @@index([tenantId, locationId])
+}
+
+/// Service / repair / inspection / breakdown history for a machine.
+///
+/// `AssetStatus.IN_MAINTENANCE` existed as a status with nothing behind
+/// it — no record of what was done, when, at what meter reading, or what
+/// it cost. This is that record, and it is the tab a farm actually wants
+/// on an asset: Evidence / Mappings / Traceability are compliance-era
+/// surfaces that a plain-farm tenant has gated off entirely.
+model AssetMaintenance {
+  id             String               @id @default(cuid())
+  tenantId       String
+  assetId        String
+  kind           AssetMaintenanceKind
+  openedAt       DateTime             @default(now())
+  /// Null while the work is still open. Closing the LAST open record is
+  /// what offers to put the asset back to ACTIVE.
+  closedAt       DateTime?
+  /// Engine hours / odometer at the time of service, so "hours since
+  /// last service" is answerable independently of the asset's current
+  /// `meterValue`.
+  meterAtService Decimal?             @db.Decimal(12, 1)
+  /// Sanitised at the usecase layer (Epic C.5) — this is decrypted and
+  /// re-rendered by the detail page, PDF export and any future SDK
+  /// consumer, so sanitising at render time alone would not be enough.
+  description    String?
+  cost           Decimal?             @db.Decimal(12, 2)
+  /// Who did the work, when it was a third party.
+  vendorId       String?
+  /// Next service due — by DATE and/or by METER. Modelled now even
+  /// though nothing reads them yet: they are what makes a service-due
+  /// signal possible later, and back-filling them onto history is far
+  /// worse than carrying two nullable columns.
+  nextDueAt      DateTime?
+  nextDueMeter   Decimal?             @db.Decimal(12, 1)
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+  createdByUserId String?
+
+  tenant    Tenant  @relation(fields: [tenantId], references: [id])
+  asset     Asset   @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  vendor    Vendor? @relation(fields: [vendorId], references: [id])
+  createdBy User?   @relation("AssetMaintenanceCreator", fields: [createdByUserId], references: [id])
+
+  @@index([tenantId, assetId])
+  @@index([tenantId, assetId, openedAt])
+  /// Open-record lookup: "does this asset still have work in progress?"
+  @@index([tenantId, closedAt])
+  @@index([tenantId, vendorId])
 }
 
 /// Per-tenant monotonic counter for minting `AST-N` asset keys.
