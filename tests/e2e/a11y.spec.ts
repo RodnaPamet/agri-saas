@@ -19,10 +19,8 @@
  * Authenticated (admin@acme.com → acme-corp):
  *   • /t/{slug}/dashboard    — landing page, dense KPI grid
  *   • /t/{slug}/controls     — list page (DataTable + filter shell)
- *   • /t/{slug}/risks        — list page (filter + heatmap)
  *   • /t/{slug}/evidence     — list page + uploads
  *   • /t/{slug}/farm-tasks   — list page (field work)
- *   • /t/{slug}/coverage     — dashboard-style page
  *
  * Modal / interactive surfaces:
  *   • Create-control modal opened from /controls
@@ -264,11 +262,6 @@ test.describe('a11y — authenticated tenant pages', () => {
         await runA11yScan(page, 'controls list');
     });
 
-    test('risks list has no critical/serious WCAG violations', async ({ page }) => {
-        await safeGoto(page, `/t/${tenantSlug}/risks`);
-        await page.waitForSelector('table, h1', { timeout: 30_000 });
-        await runA11yScan(page, 'risks list');
-    });
 
     test('evidence list has no critical/serious WCAG violations', async ({ page }) => {
         await safeGoto(page, `/t/${tenantSlug}/evidence`);
@@ -282,11 +275,6 @@ test.describe('a11y — authenticated tenant pages', () => {
         await runA11yScan(page, 'farm tasks list');
     });
 
-    test('coverage page has no critical/serious WCAG violations', async ({ page }) => {
-        await safeGoto(page, `/t/${tenantSlug}/coverage`);
-        await page.waitForSelector('h1', { timeout: 30_000 });
-        await runA11yScan(page, 'coverage');
-    });
 });
 
 // ─── Modal / interactive surfaces ────────────────────────────────

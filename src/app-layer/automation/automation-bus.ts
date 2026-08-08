@@ -181,11 +181,11 @@ export function resetAutomationBus(): void {
  * lookup so emit sites stay one line:
  *
  *   await emitAutomationEvent(ctx, {
- *       event: 'RISK_CREATED',
- *       entityType: 'Risk',
- *       entityId: risk.id,
+ *       event: 'TEST_PLAN_CREATED',
+ *       entityType: 'ControlTestPlan',
+ *       entityId: plan.id,
  *       actorUserId: ctx.userId,
- *       data: { title: risk.title, score: risk.score, category: null },
+ *       data: { name: plan.name, controlId: plan.controlId },
  *   });
  */
 export async function emitAutomationEvent(

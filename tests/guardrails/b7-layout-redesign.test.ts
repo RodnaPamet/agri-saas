@@ -167,33 +167,6 @@ describe('B7 — layout redesign', () => {
         });
     });
 
-    describe('Controls AI Assist co-pilot rail (Risks-parity)', () => {
-        const src = read(
-            'src/app/t/[tenantSlug]/(app)/controls/ControlsClient.tsx',
-        );
-
-        it('mounts AiAssistRail inside an AsidePanel titled "AI Assist"', () => {
-            // Mirror of the Risks list rail. Same primitive
-            // (`<AiAssistRail>`), same chrome (`<AsidePanel>`),
-            // same destination (`/risks/ai`) so the panel reads as
-            // ONE shared co-pilot across registers — not a stub.
-            // i18n batch T07 — the rail title routes through next-intl.
-            expect(src).toMatch(/<AsidePanel\b[\s\S]{0,200}title=\{t\('list\.aiAssist'\)\}/);
-            // eslint-disable-next-line @typescript-eslint/no-var-requires
-            expect(require('../../messages/en.json').controls.list.aiAssist).toBe('AI Assist');
-            expect(src).toMatch(/<AiAssistRail\b/);
-            expect(src).toMatch(/aiHref=\{tenantHref\(['"]\/risks\/ai['"]\)\}/);
-        });
-
-        it('defaults to collapsed-to-spine (44px)', () => {
-            // The co-pilot is a secondary rail; it should not
-            // claim 320px unprompted. Matches the Risks contract.
-            expect(src).toMatch(
-                /<AsidePanel\b[\s\S]{0,200}title=\{t\('list\.aiAssist'\)\}[\s\S]{0,400}defaultCollapsed/,
-            );
-        });
-    });
-
     describe('Controls table — `Category` column (framework-tagged)', () => {
         const src = read(
             'src/app/t/[tenantSlug]/(app)/controls/ControlsClient.tsx',

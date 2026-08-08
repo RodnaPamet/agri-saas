@@ -94,7 +94,7 @@ export async function createAudit(ctx: RequestContext, data: {
             }
 
             for (const ctrl of controls.slice(0, 10)) {
-                const prompt = `Verify control "${ctrl.name}" (${ctrl.annexId || 'Custom'}): Check implementation status and evidence`;
+                const prompt = `Verify control "${ctrl.name}" (${ctrl.code || 'Custom'}): Check implementation status and evidence`;
                 await AuditRepository.createChecklistItem(db, ctx, audit.id, prompt, items.length + controls.indexOf(ctrl));
             }
         }

@@ -112,8 +112,6 @@ export function violationReason(a: Analysis): string | null {
  */
 const EXEMPTIONS: Record<string, string> = {
     // ── Multi-section dashboards / multi-table admin pages ──
-    't/[tenantSlug]/(app)/coverage/CoverageClient.tsx':
-        'multi-section dashboard (KPIs + summary + two gap tables)',
     't/[tenantSlug]/(app)/admin/api-keys/page.tsx':
         'multi-table page (active + revoked keys stacked)',
     't/[tenantSlug]/(app)/admin/members/page.tsx':
@@ -146,14 +144,8 @@ const EXEMPTIONS: Record<string, string> = {
         'detail page — parcels sub-table (opts into card mode itself, but not a list page)',
 
     // ── Wizards / browsers ──
-    't/[tenantSlug]/(app)/controls/templates/page.tsx':
-        'install-from-templates browser (multi-section, not a single list)',
-    't/[tenantSlug]/(app)/risks/import/page.tsx':
-        'risk-import wizard — result table appears mid-flow inside a wizard step',
 
     // ── Responsive view-toggle ──
-    't/[tenantSlug]/(app)/frameworks/FrameworksClient.tsx':
-        'Epic 66 cards/table toggle — the cards view is already a responsive grid on mobile',
 };
 
 // ── File walk ───────────────────────────────────────────────────────

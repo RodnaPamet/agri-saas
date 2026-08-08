@@ -53,7 +53,6 @@ jest.mock('@/lib/tenant-context-provider', () => ({
 import { useApi, useMutation } from '@/lib/hooks/use-api';
 import * as controls from '@/lib/hooks/use-controls';
 import * as policies from '@/lib/hooks/use-policies';
-import * as risks from '@/lib/hooks/use-risks';
 import * as tasks from '@/lib/hooks/use-tasks';
 import * as assets from '@/lib/hooks/use-assets';
 import * as evidence from '@/lib/hooks/use-evidence';
@@ -253,7 +252,6 @@ describe('useMutation', () => {
 const DOMAINS = [
     { name: 'controls', mod: controls, path: 'controls', list: 'useControls', detail: 'useControl', create: 'useCreateControl', update: 'useUpdateControl', remove: 'useDeleteControl' },
     { name: 'policies', mod: policies, path: 'policies', list: 'usePolicies', detail: 'usePolicy', create: 'useCreatePolicy', update: 'useUpdatePolicy', remove: 'useDeletePolicy' },
-    { name: 'risks', mod: risks, path: 'risks', list: 'useRisks', detail: 'useRisk', create: 'useCreateRisk', update: 'useUpdateRisk', remove: 'useDeleteRisk' },
     { name: 'tasks', mod: tasks, path: 'tasks', list: 'useTasks', detail: 'useTask', create: 'useCreateTask', update: 'useUpdateTask', remove: 'useDeleteTask' },
     { name: 'assets', mod: assets, path: 'assets', list: 'useAssets', detail: 'useAsset', create: 'useCreateAsset', update: 'useUpdateAsset', remove: 'useDeleteAsset' },
     // Evidence has no PATCH surface — an evidence item is replaced, not edited.

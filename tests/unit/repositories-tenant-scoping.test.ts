@@ -300,43 +300,6 @@ describe('ClauseRepository', () => {
 
 // ─── ReportRepository + MappingRepository ────────────────────────────
 
-describe('global-or-tenant Control reads', () => {
-    it.each([
-        ['ReportRepository.getSOAData', () => ReportRepository.getSOAData(db, ctx)],
-        ['MappingRepository.getControlsWithEvidence', () => MappingRepository.getControlsWithEvidence(db, ctx)],
-    ])('%s matches global controls but never another tenant’s evidence', async (_label, run) => {
-        await run();
-
-        const args = db.control.findMany.mock.calls[0][0];
-        // Framework controls are global (tenantId null) and must be visible.
-        expect(args.where).toEqual({ OR: [{ tenantId: 'tenant-1' }, { tenantId: null }] });
-        // …but the nested evidence stays strictly tenant-scoped. Widening
-        // this to match the outer OR would surface another tenant's
-        // evidence through a shared global control.
-        expect(args.include.evidence.where).toEqual({ tenantId: 'tenant-1' });
-    });
-
-    it('orders the SOA by annex id', async () => {
-        await ReportRepository.getSOAData(db, ctx);
-        expect(db.control.findMany.mock.calls[0][0].orderBy).toEqual({ annexId: 'asc' });
-    });
-
-    it('asks for the evidence count alongside the rows in the mapping view', async () => {
-        await MappingRepository.getControlsWithEvidence(db, ctx);
-        expect(db.control.findMany.mock.calls[0][0].include._count).toEqual({
-            select: { evidence: true },
-        });
-    });
-
-    it('ranks the risk register by inherent score', async () => {
-        await ReportRepository.getRiskRegisterData(db, ctx);
-
-        const args = db.risk.findMany.mock.calls[0][0];
-        expect(args.where).toEqual({ tenantId: 'tenant-1' });
-        expect(args.orderBy).toEqual({ inherentScore: 'desc' });
-        expect(args.include.controls.include.control.select).toEqual({ name: true, annexId: true });
-    });
-});
 
 // ─── NotificationRepository ──────────────────────────────────────────
 

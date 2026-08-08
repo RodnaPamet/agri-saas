@@ -67,12 +67,6 @@ const MODAL_SURFACES: ModalSurface[] = [
         cacheKey: 'queryKeys.evidence.all',
         expectedSize: 'lg',
     },
-    {
-        label: 'Create Risk',
-        file: 'src/app/t/[tenantSlug]/(app)/risks/NewRiskModal.tsx',
-        cacheKey: 'queryKeys.risks.all',
-        expectedSize: 'lg',
-    },
 ];
 
 describe('Epic 54 — modal surface consistency', () => {
@@ -175,29 +169,3 @@ describe('Epic 54 — sheet surface consistency', () => {
 });
 
 // ─── Redirect shims ──────────────────────────────────────────────────
-
-describe('Epic 54 — legacy /new routes are server redirect shims', () => {
-    const SHIMS = [
-        {
-            label: 'Controls',
-            file: 'src/app/t/[tenantSlug]/(app)/controls/new/page.tsx',
-            dest: '/controls?create=1',
-        },
-        {
-            label: 'Risks',
-            file: 'src/app/t/[tenantSlug]/(app)/risks/new/page.tsx',
-            dest: '/risks?create=1',
-        },
-    ];
-
-    it.each(SHIMS)(
-        '$label — /new page is a server redirect to $dest',
-        ({ file, dest }) => {
-            const src = read(file);
-            expect(src).not.toMatch(/^'use client'/m);
-            expect(src).toMatch(/from ['"]next\/navigation['"]/);
-            expect(src).toMatch(/redirect\(/);
-            expect(src).toContain(dest);
-        },
-    );
-});

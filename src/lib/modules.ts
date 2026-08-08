@@ -16,7 +16,6 @@ export const ALL_MODULES: readonly ModuleKey[] = [
     'INVENTORY',
     'PLANNING',
     'CERTIFICATION',
-    'RISK',
     'VENDORS',
     'AUTOMATION',
     'PROCESSES',
@@ -54,7 +53,6 @@ export const MODULE_LABELS: Record<ModuleKey, string> = {
     INVENTORY: 'Inventory',
     PLANNING: 'Crop Planning',
     CERTIFICATION: 'Certification & Compliance',
-    RISK: 'Risk Register',
     VENDORS: 'Suppliers & Buyers',
     AUTOMATION: 'Automation',
     PROCESSES: 'Process Maps',
@@ -104,10 +102,7 @@ export function hasComplianceModules(
     availableModules: readonly ModuleKey[] | undefined,
 ): boolean {
     if (availableModules === undefined) return true;
-    return (
-        availableModules.includes('CERTIFICATION') ||
-        availableModules.includes('RISK')
-    );
+    return availableModules.includes('CERTIFICATION');
 }
 
 /** Validate an arbitrary string[] down to known ModuleKey values. */

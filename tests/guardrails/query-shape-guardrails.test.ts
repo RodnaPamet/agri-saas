@@ -155,10 +155,6 @@ const KNOWN_N_PLUS_ONE: Record<string, KnownNPlusOne> = {
     // removed by the quality-roadmap unused-variable sweep — the
     // resolved `controlName` was never referenced in the
     // notification body. The N+1 baseline entry is now stale.
-    'src/app-layer/usecases/control/templates.ts:findFirst:control': {
-        reason:
-            'template-instantiation loop over an explicit, user-supplied templateIds list — the per-template "control with this code already exists?" check keeps instantiation idempotent. Bounded by the request payload.',
-    },
     'src/app-layer/usecases/evidence-maintenance.ts:findUnique:fileRecord': {
         reason:
             'maintenance scan over file-backed evidence verifying each row\'s FileRecord still exists; an admin/background integrity check, not a hot request path. Loop is over the tenant\'s file evidence — acceptable for a maintenance task.',
@@ -166,10 +162,6 @@ const KNOWN_N_PLUS_ONE: Record<string, KnownNPlusOne> = {
     'src/app-layer/usecases/framework/fixtures.ts:findUnique:frameworkRequirement': {
         reason:
             'framework-fixture upsert loop — per-requirement existence check drives create-vs-update. Runs at install / seed time over a fixed framework definition, not on a user request.',
-    },
-    'src/app-layer/usecases/framework/install.ts:findFirst:control': {
-        reason:
-            'framework-install loop — per-control "already installed?" idempotency check. Install-time only, over the fixed framework control set; re-running install must not duplicate controls.',
     },
     'src/app-layer/usecases/library-sync.ts:findFirst:framework': {
         reason:
@@ -179,33 +171,13 @@ const KNOWN_N_PLUS_ONE: Record<string, KnownNPlusOne> = {
         reason:
             'onboarding-automation seed loop — per-asset idempotency check so re-running onboarding does not duplicate starter assets. Over a fixed starter-asset template list.',
     },
-    'src/app-layer/usecases/onboarding-automation.ts:findFirst:risk': {
-        reason:
-            'onboarding-automation seed loop — per-risk idempotency check so re-running onboarding does not duplicate starter risks. Over a fixed starter-risk template list.',
-    },
     'src/app-layer/usecases/onboarding-automation.ts:findFirst:task': {
         reason:
             'onboarding-automation seed loop — per-task idempotency check so re-running onboarding does not duplicate starter tasks. Over a fixed starter-task template list.',
     },
-    'src/app-layer/usecases/risk-suggestions.ts:findFirst:risk': {
-        reason:
-            'accept-AI-suggestions loop — per-item "risk with this title already exists?" check keeps acceptance idempotent. Loop is over the suggestion session\'s items, a bounded set.',
-    },
     'src/app-layer/usecases/sso.ts:findFirst:tenantIdentityProvider': {
         reason:
             'sign-in SSO-enforcement check — per-membership lookup of an enforced identity provider. Loop is over the user\'s tenant memberships (typically 1-3); the per-membership query is acceptable at sign-in.',
-    },
-    'src/app-layer/usecases/test-readiness.ts:findMany:controlRequirementLink': {
-        reason:
-            'test-readiness rollup — one query per framework to fetch its mapped control IDs. Loop is over the tenant\'s frameworks (a small set); a single cross-framework query would not materially change the round-trip count.',
-    },
-    'src/app-layer/usecases/test-readiness.ts:findMany:controlTestPlan': {
-        reason:
-            'test-readiness rollup — per-framework fetch of ACTIVE test plans for that framework\'s mapped controls. Same bounded per-framework loop as the controlRequirementLink read above.',
-    },
-    'src/app-layer/usecases/test-readiness.ts:findMany:controlTestRun': {
-        reason:
-            'test-readiness rollup — per-framework fetch of completed test runs in the last 90 days for that framework\'s mapped controls. Same bounded per-framework loop as the reads above.',
     },
     'src/app-layer/usecases/vendor-audit.ts:findFirst:vendorDocument': {
         reason:
@@ -340,7 +312,8 @@ function scanNPlusOne(): NPlusOneFinding[] {
 // +2 (Feature 1): LocationRepository.list (mirrors the unbounded
 // AssetRepository.list) + ParcelRepository.validIdsForLocation (bounded
 // in practice by the input id set). Both tenant-scoped.
-const UNBOUNDED_FINDMANY_BUDGET = 56;
+// Compliance uproot (2026-08-07): compliance uproot removed 7 unbounded findMany call sites.
+const UNBOUNDED_FINDMANY_BUDGET = 46;
 
 /** How far the budget may sit ABOVE the live count before it is stale. */
 const UNBOUNDED_BUDGET_SLACK = 5;

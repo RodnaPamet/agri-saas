@@ -48,8 +48,6 @@ const EXEMPT_FILE_PATTERNS: RegExp[] = [
  */
 const EXEMPTIONS: Record<string, string> = {
     // Certification scheme detail (schemes roadmap PR2).
-    "src/app/t/[tenantSlug]/(app)/schemes/[schemeKey]/SchemeDetailClient.tsx":
-        "detail-page sub-table — the control points OF one standard, not a list page. The set is fixed by the standard (a scheme publishes its control points; a farm cannot add or remove them), already ordered by the catalogue's own sortOrder, and read top-to-bottom against the status column. Faceted filtering, a column gear and viewport-clamping all add chrome without adding reach.",
 
     // Grain bin detail (bins roadmap PR2).
     "src/app/t/[tenantSlug]/(app)/grain/bins/[binId]/BinDetailClient.tsx":
@@ -97,8 +95,6 @@ const EXEMPTIONS: Record<string, string> = {
         "Org-level overdue-evidence digest — fixed scope (review past due) + sort, no per-tenant facets.",
     "src/app/org/[orgSlug]/(app)/members/MembersTable.tsx":
         "Org-level membership list — small aggregate with sort, faceted filtering not yet a need at this scale.",
-    "src/app/org/[orgSlug]/(app)/risks/RisksTable.tsx":
-        "Org-level critical-risk digest — fixed scope (severity >= HIGH) + sort.",
     "src/app/org/[orgSlug]/(app)/tenants/TenantsTable.tsx":
         "Org-level tenant health roll-up — fixed scope, no faceted filtering at portfolio tier.",
     "src/app/org/[orgSlug]/(app)/grain/PortfolioGrainClient.tsx":
@@ -159,26 +155,12 @@ const EXEMPTIONS: Record<string, string> = {
     // would compete with the page's existing composition.
     "src/app/t/[tenantSlug]/(app)/access-reviews/AccessReviewsClient.tsx":
         "Multi-section dashboard — review cycle list lives inside a tabbed dashboard composition with per-tab filtering.",
-    "src/app/t/[tenantSlug]/(app)/coverage/CoverageClient.tsx":
-        "Multi-section coverage dashboard — already in the Epic 52 EXEMPTIONS list for ListPageShell; same shape applies here.",
     "src/app/t/[tenantSlug]/(app)/findings/FindingsClient.tsx":
         "Findings list — currently uses inline filter controls; planned for FilterToolbar migration in a follow-up.",
-    "src/app/t/[tenantSlug]/(app)/frameworks/FrameworksClient.tsx":
-        "Framework picker — small fixed catalogue of installable frameworks; tile + status surface, not a filter-driven list.",
-    "src/app/t/[tenantSlug]/(app)/reports/ReportsClient.tsx":
-        "Reports landing — composite of discrete report tiles, not an entity list.",
-
-    // ── Wizards / multi-step flows ──
-    "src/app/t/[tenantSlug]/(app)/risks/import/page.tsx":
-        "Risk import wizard — staged workflow, each step has its own controls; not an ongoing browse surface.",
 
     // ── Templates / sub-resource lists ──
-    "src/app/t/[tenantSlug]/(app)/controls/templates/page.tsx":
-        "Control template catalogue — small fixed catalogue browsed by section; faceting not yet a need.",
 
     // ── Tests / planning surfaces ──
-    "src/app/t/[tenantSlug]/(app)/tests/due/page.tsx":
-        "Due-tests planning surface — fixed scope (tests due in the next window) with one tab selector.",
     // tests/page.tsx now carries a real FilterToolbar (Status / Last
     // Result / Frequency / Due + search), so it is no longer exempt.
 };

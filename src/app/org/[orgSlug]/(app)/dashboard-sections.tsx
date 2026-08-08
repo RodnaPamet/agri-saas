@@ -13,7 +13,7 @@
 
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
-import { AlertTriangle, ChevronRight, Layers, Paperclip, ShieldCheck } from 'lucide-react';
+import { ChevronRight, Layers, Paperclip, ShieldCheck } from 'lucide-react';
 
 import { AnimatedNumber } from '@/components/ui/animated-number';
 import { CardList } from '@/components/ui/card-list';
@@ -100,8 +100,6 @@ export function TenantCoverageList({
                             </div>
                             <CoverageBar percent={row.coveragePercent} rag={row.rag} />
                             <div className="mt-1.5 flex items-center gap-default text-xs text-content-muted">
-                                <span>{row.openRisks ?? '—'} {t('openRisks')}</span>
-                                <span>{row.criticalRisks ?? 0} {t('critical')}</span>
                                 <span>{row.overdueEvidence ?? 0} {t('overdueEvidence')}</span>
                             </div>
                         </div>
@@ -281,14 +279,6 @@ export function TenantCoverageCards({
                                             : '—',
                                 },
                                 {
-                                    label: t('cardOpenRisks'),
-                                    value: row.openRisks ?? '—',
-                                },
-                                {
-                                    label: t('cardCritical'),
-                                    value: row.criticalRisks ?? 0,
-                                },
-                                {
                                     label: t('cardOverdueEvidence'),
                                     value: row.overdueEvidence ?? 0,
                                 },
@@ -336,7 +326,7 @@ export function DrillDownCtas({
 }: {
     summary: PortfolioSummary;
     orgSlug: string;
-    entries?: ReadonlyArray<'controls' | 'risks' | 'evidence'>;
+    entries?: ReadonlyArray<'controls' | 'evidence'>;
 }) {
     const t = useTranslations('org.sections');
     const all = [
@@ -347,14 +337,6 @@ export function DrillDownCtas({
             href: `/org/${orgSlug}/controls`,
             icon: ShieldCheck,
             tone: 'rose',
-        },
-        {
-            key: 'risks' as const,
-            label: t('ctaRisks'),
-            count: summary.risks.critical,
-            href: `/org/${orgSlug}/risks`,
-            icon: AlertTriangle,
-            tone: 'amber',
         },
         {
             key: 'evidence' as const,

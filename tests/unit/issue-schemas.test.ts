@@ -153,7 +153,7 @@ describe('Issue Schemas', () => {
             expect(result.success).toBe(false);
         });
 
-        it.each(['CONTROL', 'RISK', 'ASSET', 'EVIDENCE', 'FILE'])('accepts entityType %s', (entityType) => {
+        it.each(['CONTROL', 'ASSET', 'EVIDENCE', 'FILE'])('accepts entityType %s', (entityType) => {
             const result = AddIssueLinkSchema.safeParse({ entityType, entityId: 'id-1' });
             expect(result.success).toBe(true);
         });

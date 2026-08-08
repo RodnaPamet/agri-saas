@@ -150,16 +150,6 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'Mis-configuration leaks data outside the tenant.',
     },
 
-    // ── Risk matrix configuration (Epic 44) ──────────────────────────
-    {
-        path: new RegExp(`^${T}\\/admin\\/risk-matrix-config(\\/.*)?$`),
-        permission: 'admin.manage',
-        note:
-            'Tenant-scoped likelihood × impact matrix shape, axis ' +
-            'labels, severity bands, and per-level vocabulary. ' +
-            'Read-only sibling at /risk-matrix-config (risks.view).',
-    },
-
     // ── M2M API keys ────────────────────────────────────────────────
     {
         path: new RegExp(`^${T}\\/admin\\/api-keys(\\/.*)?$`),

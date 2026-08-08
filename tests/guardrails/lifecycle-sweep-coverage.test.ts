@@ -20,7 +20,6 @@ const ROOT = path.resolve(__dirname, '../..');
 
 /** model → the schedules.ts job name that performs its EXPIRED transition. */
 const MODEL_SWEEP_JOBS: Record<string, string> = {
-    ControlException: 'exception-expiry-monitor',
     ExchangeListing: 'exchange-expiry-sweep',
 };
 
@@ -84,7 +83,7 @@ describe('lifecycle-sweep-coverage', () => {
     const jobs = registeredJobNames();
 
     it('finds the known expiry-shaped models (parser sanity)', () => {
-        expect(models).toEqual(expect.arrayContaining(['ControlException', 'ExchangeListing']));
+        expect(models).toEqual(expect.arrayContaining(['ExchangeListing']));
     });
 
     it.each(expiryShapedModels(readSchema()))(

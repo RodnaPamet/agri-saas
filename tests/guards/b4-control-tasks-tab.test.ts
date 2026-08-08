@@ -17,7 +17,6 @@ const read = (p: string) => fs.readFileSync(path.join(ROOT, p), 'utf8');
 
 const CONTROL = read('src/app/t/[tenantSlug]/(app)/controls/[controlId]/page.tsx');
 const ASSET = read('src/app/t/[tenantSlug]/(app)/assets/[id]/page.tsx');
-const RISK = read('src/app/t/[tenantSlug]/(app)/risks/[riskId]/page.tsx');
 
 describe('B4 — Control Tasks tab matches Asset/Risk', () => {
     it('Control Tasks tab is a single card-wrapped LinkedTasksPanel', () => {
@@ -37,7 +36,7 @@ describe('B4 — Control Tasks tab matches Asset/Risk', () => {
     });
 
     it('all three detail pages render LinkedTasksPanel for their Tasks tab', () => {
-        for (const src of [CONTROL, ASSET, RISK]) {
+        for (const src of [CONTROL, ASSET]) {
             expect(src).toMatch(/<LinkedTasksPanel/);
         }
     });

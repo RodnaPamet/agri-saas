@@ -58,71 +58,6 @@ export const UpdateAssetSchema = z.object({
     description: 'Partial update for an agricultural asset. Every field is optional; only provided fields are persisted.',
 });
 
-// ─── Risks ───
-
-export const CreateRiskSchema = z.object({
-    title: z.string().min(1, 'Title is required'),
-    description: z.string().optional().nullable(),
-    category: z.string().optional().nullable(),
-    threat: z.string().optional(),
-    vulnerability: z.string().optional(),
-    impact: z.coerce.number().int().min(1).max(10).optional().default(3),
-    likelihood: z.coerce.number().int().min(1).max(10).optional().default(3),
-    treatment: z.string().optional().nullable(),
-    treatmentOwner: z.string().optional().nullable(),
-    treatmentNotes: z.string().optional().nullable(),
-    ownerUserId: z.string().optional().nullable(),    // Real user reference — the risk owner (people picker)
-    targetDate: z.string().optional().nullable(),
-    nextReviewAt: z.string().optional().nullable(),
-}).strip().openapi('RiskCreateRequest', {
-    description: 'Payload for creating a risk. Inherent score = impact × likelihood; the server computes residualScore separately when treatment data lands. treatmentNotes is encrypted at rest (Epic B field-encryption manifest).',
-});
-
-export const UpdateRiskSchema = z.object({
-    title: z.string().min(1).optional(),
-    threat: z.string().optional(),
-    vulnerability: z.string().optional(),
-    impact: z.coerce.number().int().min(1).max(10).optional(),
-    likelihood: z.coerce.number().int().min(1).max(10).optional(),
-    // RQ2-1 — direct residual assessment (both-or-neither; the
-    // usecase derives residualScore and rejects an incomplete pair).
-    residualLikelihood: z.coerce.number().int().min(1).max(10).optional(),
-    residualImpact: z.coerce.number().int().min(1).max(10).optional(),
-    // RQ2-1 — optional rationale recorded on the score-provenance
-    // ledger event when a score dimension changes.
-    scoreJustification: z.string().max(2000).optional().nullable(),
-    treatment: z.string().optional().nullable(),
-    treatmentOwner: z.string().optional().nullable(),
-    treatmentNotes: z.string().optional().nullable(),
-    ownerUserId: z.string().optional().nullable(),    // Real user reference — "Assigned to"
-    targetDate: z.string().optional().nullable(),
-}).strip().refine(
-    (d) => (d.residualLikelihood === undefined) === (d.residualImpact === undefined),
-    { message: 'residualLikelihood and residualImpact must be supplied together' },
-).openapi('RiskUpdateRequest', {
-    description: 'Partial update for a risk. All fields optional. residualLikelihood/residualImpact must be supplied together; residualScore is derived server-side and every score change lands a provenance event (RQ2-1).',
-});
-
-export const LinkRiskControlSchema = z.object({
-    controlId: z.string().min(1, 'controlId is required'),
-}).strip().openapi('RiskControlLinkRequest', {
-    description: 'Body for linking an existing control to this risk (mitigation mapping).',
-});
-
-// ─── Risk Status & Mapping ───
-
-
-export const SetRiskStatusSchema = z.object({
-    status: z.enum(['OPEN', 'MITIGATING', 'ACCEPTED', 'CLOSED']),
-}).strip().openapi('RiskSetStatusRequest', {
-    description: 'Lifecycle transition for a risk. The four states form an open lattice; closed risks remain queryable via includeDeleted=true.',
-});
-
-export const MapRiskControlSchema = z.object({
-    controlId: z.string().min(1, 'controlId is required'),
-}).strip().openapi('RiskControlMapRequest', {
-    description: 'Body for mapping a control to a risk (alternative endpoint to RiskControlLinkRequest; same shape, different surface).',
-});
 
 // ─── Controls ───
 
@@ -376,11 +311,9 @@ export const CreateFindingSchema = z.object({
     controlId: z.string().optional().nullable(),
     // A compensating control that mitigates the finding.
     compensatingControlId: z.string().optional().nullable(),
-    // Risks this finding implicates (many-to-many).
-    riskIds: z.array(z.string()).max(100).optional(),
     dueDate: z.string().optional().nullable(),
 }).strip().openapi('FindingCreateRequest', {
-    description: 'Create an audit finding. auditId is optional — findings can be raised independently of an audit cycle. description, rootCause + analysis are encrypted at rest. assigneeUserId / controlId / compensatingControlId / riskIds are validated against the tenant.',
+    description: 'Create an audit finding. auditId is optional — findings can be raised independently of an audit cycle. description, rootCause + analysis are encrypted at rest. assigneeUserId / controlId / compensatingControlId are validated against the tenant.',
 });
 
 export const UpdateFindingSchema = z.object({
@@ -395,12 +328,11 @@ export const UpdateFindingSchema = z.object({
     assigneeUserId: z.string().optional().nullable(),
     controlId: z.string().optional().nullable(),
     compensatingControlId: z.string().optional().nullable(),
-    riskIds: z.array(z.string()).max(100).optional(),
     dueDate: z.string().optional().nullable(),
     status: z.enum(['OPEN', 'IN_PROGRESS', 'READY_FOR_VERIFICATION', 'CLOSED']).optional(),
     verificationNotes: z.string().optional().nullable(),
 }).strip().openapi('FindingUpdateRequest', {
-    description: 'Partial update for a finding — including lifecycle transitions and verification notes. Relation fields (assignee/control/compensating/risks) are validated against the tenant; riskIds is a full replace.',
+    description: 'Partial update for a finding — including lifecycle transitions and verification notes. Relation fields (assignee/control/compensating) are validated against the tenant.',
 });
 
 // ─── Audits ───
@@ -491,13 +423,6 @@ export const LinkTaskEvidenceSchema = z.object({
     description: 'Attach a URL as evidence on a task. File uploads use the multipart /evidence/uploads endpoint with a taskId.',
 });
 
-export const LinkRiskEvidenceSchema = z.object({
-    url: z.string().url().max(2000),
-    note: z.string().max(2000).nullable().optional(),
-}).strip().openapi('RiskEvidenceLinkRequest', {
-    description: 'Attach a URL as evidence on a risk. File uploads use the multipart /evidence/uploads endpoint with a riskId.',
-});
-
 export const LinkAssetEvidenceSchema = z.object({
     url: z.string().url().max(2000),
     note: z.string().max(2000).nullable().optional(),
@@ -506,7 +431,7 @@ export const LinkAssetEvidenceSchema = z.object({
 });
 
 export const AddTaskLinkSchema = z.object({
-    entityType: z.enum(['CONTROL', 'FRAMEWORK_REQUIREMENT', 'RISK', 'ASSET', 'POLICY', 'EVIDENCE', 'FILE', 'AUDIT_PACK', 'VENDOR']),
+    entityType: z.enum(['CONTROL', 'FRAMEWORK_REQUIREMENT', 'ASSET', 'POLICY', 'EVIDENCE', 'FILE', 'AUDIT_PACK', 'VENDOR']),
     entityId: z.string().min(1),
     relation: z.enum(['RELATES_TO', 'EVIDENCE_FOR', 'BLOCKED_BY', 'CAUSED_BY', 'MITIGATED_BY']).optional(),
 }).strip().openapi('TaskLinkAddRequest', {
@@ -666,7 +591,7 @@ export const SetVendorReviewSchema = z.object({
 }).strip();
 
 export const AddVendorLinkSchema = z.object({
-    entityType: z.enum(['ASSET', 'RISK', 'ISSUE', 'CONTROL']),
+    entityType: z.enum(['ASSET', 'ISSUE', 'CONTROL']),
     entityId: z.string().min(1),
     relation: z.enum(['USES', 'STORES_DATA_FOR', 'PROVIDES_SERVICE_TO', 'MITIGATES', 'RELATED']).optional(),
 }).strip();

@@ -16,24 +16,6 @@ export {
 // Hierarchical tree view (Epic 46)
 export { getFrameworkTree, reorderFrameworkRequirements } from './tree';
 
-// Install operations (pack, template, bulk)
-export {
-    previewPackInstall,
-    installPack,
-    installSingleTemplate,
-    bulkInstallTemplates,
-    bulkMapControls,
-} from './install';
-
-// Coverage, templates, & readiness
-export {
-    computeCoverage,
-    listTemplates,
-    exportCoverageData,
-    generateReadinessReport,
-    exportReadinessReport,
-} from './coverage';
-
 // Fixture upsert & diff
 export {
     upsertRequirements,

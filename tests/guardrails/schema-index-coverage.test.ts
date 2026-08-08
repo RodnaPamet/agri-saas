@@ -173,18 +173,11 @@ const FK_INDEX_EXEMPT: Record<string, string> = {
     'TaskComment.createdByUserId': R_ACTOR,
     'TaskWatcher.userId': R_ACTOR,
     'Asset.ownerUserId': R_ACTOR,
-    'RiskSuggestionSession.createdByUserId': R_ACTOR,
-    'RiskSuggestionItem.assetId': R_ONE_TO_ONE,
     'Control.applicabilityDecidedByUserId': R_ACTOR,
     'Control.createdByUserId': R_ACTOR,
-    'RiskControl.createdByUserId': R_ACTOR,
     'ControlAsset.createdByUserId': R_ACTOR,
-    'AssetRiskLink.createdByUserId': R_ACTOR,
-    'ControlContributor.userId': R_ACTOR,
     'ControlTask.assigneeUserId': R_ACTOR,
     'ControlEvidenceLink.createdByUserId': R_ACTOR,
-    'ControlTemplateTask.templateId': R_LIBRARY_TABLE,
-    'ControlTemplateRequirementLink.requirementId': R_LIBRARY_TABLE,
     'Evidence.fileRecordId': R_ONE_TO_ONE,
     'FileRecord.uploadedByUserId': R_ACTOR,
     'EvidenceReview.reviewerId': R_ACTOR,
@@ -194,24 +187,8 @@ const FK_INDEX_EXEMPT: Record<string, string> = {
     'PolicyApproval.requestedByUserId': R_ACTOR,
     'PolicyAcknowledgement.userId': R_ACTOR,
     'FrameworkPack.frameworkId': R_LIBRARY_TABLE,
-    'PackTemplateLink.templateId': R_LIBRARY_TABLE,
     'FrameworkMapping.toControlId': R_REVERSE_RARE,
     'FrameworkMapping.toRequirementId': R_REVERSE_RARE,
-    'ControlTestPlan.createdByUserId': R_ACTOR,
-    'ControlTestPlan.ownerUserId': R_ACTOR,
-    'ControlTestRun.createdByUserId': R_ACTOR,
-    'ControlTestRun.executedByUserId': R_ACTOR,
-    'ControlTestEvidenceLink.createdByUserId': R_ACTOR,
-    'ControlTestEvidenceLink.evidenceId': R_REVERSE_RARE,
-    'ControlException.compensatingControlId': R_ONE_TO_ONE,
-    'ControlException.createdByUserId': R_ACTOR,
-    'ControlException.riskAcceptedByUserId': R_ACTOR,
-    'ControlException.approvedByUserId': R_ACTOR,
-    'ControlException.rejectedByUserId': R_ACTOR,
-    'ControlException.deletedByUserId': R_ACTOR,
-    'RiskTreatmentPlan.createdByUserId': R_ACTOR,
-    'RiskTreatmentPlan.completedByUserId': R_ACTOR,
-    'RiskTreatmentPlan.deletedByUserId': R_ACTOR,
     'TreatmentMilestone.completedByUserId': R_ACTOR,
     'ProcessMap.createdByUserId': R_ACTOR,
     'ProcessMap.deletedByUserId': R_ACTOR,
@@ -302,23 +279,6 @@ const LIST_QUERY_INDEXES: readonly CompositeIndex[] = [
         fields: ['tenantId', 'type', 'status'],
         justification:
             'listMachines / validMachineIds filter tenantId + type IN (machine-shaped) + status != RETIRED — the equipment-picker query that `Equipment` used to serve.',
-    },
-    // ── Risk (from list-query-indexes.test.ts) ──────────────────────
-    {
-        model: 'Risk',
-        fields: ['tenantId', 'ownerUserId'],
-        justification: 'RiskFilters.ownerUserId',
-    },
-    {
-        model: 'Risk',
-        fields: ['tenantId', 'score'],
-        justification: 'RiskFilters.scoreMin/scoreMax range',
-    },
-    {
-        model: 'Risk',
-        fields: ['tenantId', 'inherentScore'],
-        justification:
-            "listRisks default sort: orderBy: { inherentScore: 'desc' }",
     },
     // ── Control (from list-query-indexes.test.ts) ───────────────────
     {
@@ -469,54 +429,6 @@ const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
     // covered by @@index([tenantId]) + @@unique([tenantId, externalId]); bounded take:200.
     ScimGroup:
         'EI-3 scimListGroups filters by tenantId (take:200); reconcile looks up by [tenantId, memberIds has] — @@index([tenantId]) + @@unique([tenantId, externalId]) suffice.',
-    // RQ-2 — breach history lists by tenantId ordered by detectedAt;
-    // covered by @@index([tenantId, detectedAt]).
-    RiskAppetiteBreach:
-        'RQ-2 listBreaches filters by tenantId, orders by detectedAt DESC — covered by @@index([tenantId, detectedAt]); bounded take:200.',
-    // RQ-2 — one config row per tenant, fetched by tenantId (unique).
-    RiskAppetiteConfig:
-        'RQ-2 single per-tenant config fetched by tenantId — covered by the @@unique([tenantId]) / @@index([tenantId]); never a multi-row list.',
-    // RQ-4 — scenarios listed by tenantId (+ optional status) ordered by createdAt.
-    RiskScenario:
-        'RQ-4 listScenarios filters by tenantId (+ optional status), orders by createdAt DESC — covered by @@index([tenantId, createdAt]) + @@index([tenantId, status]); bounded take:200.',
-    // RQ-5 — hierarchy nodes fetched by tenantId+type for tree/treemap.
-    RiskHierarchyNode:
-        'RQ-5 getTree/loadTree filters by tenantId + type — covered by @@index([tenantId, type]); bounded take:5000.',
-    // RQ-5 — links fetched by tenantId+nodeId (roll-up) and tenantId+riskId (risk form).
-    RiskHierarchyLink:
-        'RQ-5 loadTree filters by tenantId + nodeId, getRiskNodes by tenantId + riskId — covered by @@index([tenantId, nodeId]) + @@index([tenantId, riskId]); bounded take.',
-    // RQ-6 — KRIs listed by tenantId (+ optional riskId/isActive) ordered by createdAt.
-    KeyRiskIndicator:
-        'RQ-6 listKris filters by tenantId (+ optional riskId/isActive) — covered by @@index([tenantId]) + @@index([tenantId, riskId]) + @@index([tenantId, isActive]); bounded take:500.',
-    // RQ-6 — readings fetched by kriId+recordedAt (history/sparkline).
-    KriReading:
-        'RQ-6 getReadings/listKris filter by tenantId + kriId, order by recordedAt — covered by @@index([kriId, recordedAt]) + @@index([tenantId, kriId]); bounded take.',
-    // RQ3-6 — loss events listed by tenantId (+ optional riskId) ordered by occurredAt;
-    // aggregate scans by tenantId. Covered by @@index([tenantId, occurredAt]) +
-    // @@index([tenantId, riskId, occurredAt]); cursor-paginated take:500.
-    LossEvent:
-        'RQ3-6 listLossEvents filters by tenantId (+ optional riskId), orders by occurredAt DESC; getLossEventAggregate scans by tenantId ordered by occurredAt — covered by @@index([tenantId, occurredAt]) + @@index([tenantId, riskId, occurredAt]); bounded take:500.',
-    // RQ-8 — all correlation pairs for a tenant (matrix build / suggestions).
-    RiskCorrelation:
-        'RQ-8 getCorrelationMatrix/suggestCorrelations fetch all pairs by tenantId — covered by @@index([tenantId]); bounded take.',
-    // RQ-9 — per-risk history + velocity fetched by tenantId+riskId+snapshotAt.
-    RiskSnapshot:
-        'RQ-9 getRiskHistory/computeVelocity filter by tenantId + riskId, order by snapshotAt — covered by @@index([tenantId, riskId, snapshotAt]); bounded take.',
-    // RQ2-1 — provenance trail fetched by tenantId+riskId ordered by createdAt.
-    RiskScoreEvent:
-        'RQ2-1 listScoreEvents filters by tenantId + riskId, orders by createdAt — covered by @@index([tenantId, riskId, createdAt]); take clamped to 200.',
-    // RQ-9 — portfolio trend fetched by tenantId ordered by snapshotAt.
-    PortfolioSnapshot:
-        'RQ-9 getPortfolioTrend filters by tenantId, orders by snapshotAt — covered by @@index([tenantId, snapshotAt]); bounded take.',
-    // RQ-10 — report templates listed by tenantId.
-    ReportTemplate:
-        'RQ-10 listTemplates filters by tenantId — covered by @@index([tenantId]); bounded take:200.',
-    // RQ-10 — report runs listed by tenantId ordered by createdAt.
-    ReportRun:
-        'RQ-10 listReports filters by tenantId, orders by createdAt DESC — covered by @@index([tenantId, createdAt]); bounded take.',
-    // RQ-10 — schedules listed by tenantId + due-scan by (nextRunAt, isActive).
-    ReportSchedule:
-        'RQ-10 listSchedules filters by tenantId; the delivery cron scans (nextRunAt, isActive) — covered by @@index([tenantId]) + @@index([nextRunAt, isActive]); bounded take.',
     // SP-3 — delta sync lists mappings by [tenantId, provider, connectionId];
     // covered by @@index([tenantId, provider]) + @@index([connectionId]).
     IntegrationSyncMapping:
@@ -533,8 +445,6 @@ const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
         'filtered only by tenantId plus leading-indexed FK / status columns — Layers A/B cover its query shapes; no curated composite index needed today.',
     AccessReviewDecision:
         'filtered only by tenantId plus leading-indexed FK / status columns — Layers A/B cover its query shapes; no curated composite index needed today.',
-    AssetRiskLink:
-        'join table — fetched by tenantId plus a leading-indexed FK; Layers A/B cover its query shapes; no curated composite index needed.',
     Audit:
         'filtered only by tenantId plus leading-indexed FK / status columns — Layers A/B cover its query shapes; no curated composite index needed today.',
     AuditCycle:
@@ -555,20 +465,10 @@ const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
         'time-series snapshot rows — read tenant-scoped and time-ordered; Layers A/B cover it; no curated composite index needed today.',
     ControlAsset:
         'join table — fetched by tenantId plus a leading-indexed FK; Layers A/B cover its query shapes; no curated composite index needed.',
-    ControlContributor:
-        'join table — fetched by tenantId plus a leading-indexed FK; Layers A/B cover its query shapes; no curated composite index needed.',
     ControlEvidenceLink:
         'join table — fetched by tenantId plus a leading-indexed FK; Layers A/B cover its query shapes; no curated composite index needed.',
-    ControlException:
-        'filtered only by tenantId plus leading-indexed FK / status columns — Layers A/B cover its query shapes; no curated composite index needed today.',
     ControlRequirementLink:
         'join table — fetched by tenantId plus a leading-indexed FK; Layers A/B cover its query shapes; no curated composite index needed.',
-    ControlTestEvidenceLink:
-        'join table — fetched by tenantId plus a leading-indexed FK; Layers A/B cover its query shapes; no curated composite index needed.',
-    ControlTestPlan:
-        'filtered only by tenantId plus leading-indexed FK / status columns — Layers A/B cover its query shapes; no curated composite index needed today.',
-    ControlTestRun:
-        'filtered only by tenantId plus leading-indexed FK / status columns — Layers A/B cover its query shapes; no curated composite index needed today.',
     FileRecord:
         'filtered only by tenantId plus leading-indexed FK / status columns — Layers A/B cover its query shapes; no curated composite index needed today.',
     Finding:
@@ -599,10 +499,6 @@ const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
         'Epic P5-PR-A version-history list: filtered by (tenantId, processMapId) which is covered by the model\'s leading `@@index([tenantId, processMapId, version])`. Capped at 200 rows in the repo (`take: 200`); no curated composite index needed.',
     ReadinessSnapshot:
         'time-series readiness chart query (Audit S5, 2026-05-24); the model carries [tenantId, frameworkKey, computedAt] composite index for the trend lookup, covered structurally by its own index — no separate LIST_QUERY_INDEXES entry needed.',
-    RiskControl:
-        'join table — fetched by tenantId plus a leading-indexed FK; Layers A/B cover its query shapes; no curated composite index needed.',
-    RiskTreatmentPlan:
-        'fetched per risk via a leading-indexed FK; Layers A/B cover its query shapes; no curated composite index needed today.',
     TaskComment:
         'fetched per task via a leading-indexed FK; Layers A/B cover its query shapes; no curated composite index needed today.',
     TaskWatcher:
@@ -619,8 +515,6 @@ const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
         'filtered only by tenantId plus leading-indexed FK / status columns — Layers A/B cover its query shapes; no curated composite index needed today.',
     TenantMembership:
         'filtered only by tenantId plus leading-indexed FK / status columns — Layers A/B cover its query shapes; no curated composite index needed today.',
-    TreatmentMilestone:
-        'fetched per treatment plan via a leading-indexed FK; Layers A/B cover its query shapes; no curated composite index needed today.',
     UserIdentityLink:
         'fetched per tenant / user via a leading-indexed FK; Layers A/B cover its query shapes; no curated composite index needed today.',
     Vendor:
@@ -779,10 +673,12 @@ describe('schema-index-coverage — parser sanity', () => {
     });
 
     it('parses field-level @id and relation FK groups', () => {
-        const risk = MODEL_BY_NAME.get('Risk');
-        expect(risk?.fieldIdName).toBe('id');
-        // Risk has a `tenant Tenant @relation(fields: [tenantId], ...)`.
-        expect(risk?.relationFkFieldGroups).toContainEqual(['tenantId']);
+        // Fixture model: any tenant-scoped model with a field-level @id
+        // and a `tenant Tenant @relation(fields: [tenantId], ...)`. This
+        // was Risk until the risk register was removed.
+        const control = MODEL_BY_NAME.get('Control');
+        expect(control?.fieldIdName).toBe('id');
+        expect(control?.relationFkFieldGroups).toContainEqual(['tenantId']);
     });
 });
 

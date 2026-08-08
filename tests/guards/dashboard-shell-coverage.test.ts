@@ -51,31 +51,9 @@ const DASHBOARDS: DashboardEntry[] = [
         note: "Farm-UI trim removed the dashboard masthead header (the 'Compliance Dashboard' PageHeader) along with the KPI/trend/hero surfaces. The page's greeting header (server page.tsx) is the sole masthead now, so DashboardClient no longer mounts <DashboardLayout> — it's just onboarding banner + ag strip + recent-activity feed.",
     },
     {
-        file: "src/app/t/[tenantSlug]/(app)/risks/dashboard/page.tsx",
-        adopted: true,
-        note: "Risks portfolio dashboard with severity breakdown + trend cards.",
-    },
-    {
-        file: "src/app/t/[tenantSlug]/(app)/controls/dashboard/page.tsx",
-        adopted: true,
-        note: "Controls performance dashboard with status breakdown + owner workload tiles.",
-    },
-    {
-        file: "src/app/t/[tenantSlug]/(app)/tests/dashboard/page.tsx",
-        adopted: true,
-        note: "Tests pipeline dashboard with run cadence + result distribution.",
-    },
-    {
         file: "src/app/t/[tenantSlug]/(app)/vendors/dashboard/page.tsx",
         adopted: true,
         note: "Vendors portfolio dashboard with risk-rating breakdown + assessment status.",
-    },
-
-    // ── Migrated R8-PR9 ──
-    {
-        file: "src/app/t/[tenantSlug]/(app)/coverage/CoverageClient.tsx",
-        adopted: true,
-        note: "Multi-section coverage dashboard — migrated R8-PR9. Page header (breadcrumbs + title + description + back-to-Assets) flows through DashboardLayout's header slot. The FilterToolbar EXEMPTION 'multi-section dashboard' is now correct-by-design.",
     },
 ];
 

@@ -43,10 +43,6 @@ import {
     useTenantControls,
 } from "@/lib/processes/use-tenant-controls";
 import {
-    findTenantRisk,
-    useTenantRisks,
-} from "@/lib/processes/use-tenant-risks";
-import {
     findTenantAsset,
     formatAssetLabel,
     useTenantAssets,
@@ -138,7 +134,7 @@ export interface ProcessInspectorProps {
      * its nodes state.
      *
      * Epic P2-PR-B — `linkedEntityId` carries the FK to whichever
-     * entity matches the node's kind (control / risk / asset). The
+     * entity matches the node's kind (control / asset). The
      * picker is conditional on `data.kind`, so a single shared field
      * suffices — kind disambiguates on read.
      */
@@ -253,7 +249,7 @@ export function ProcessInspector({
     };
 
     // R31 Bundle 5 (PR 6) — Inspector chrome now flows through the
-    // canonical `<AsidePanel>` primitive (Risks + Controls parity).
+    // canonical `<AsidePanel>` primitive (Controls parity).
     // The pre-R31 bespoke 260px `<aside>` is gone; the new shell
     // gives the inspector collapse-to-spine, resize, deep-link
     // (`?aside=processes-inspector`), and a `<Sheet>` fallback
@@ -331,7 +327,7 @@ export function ProcessInspector({
             </div>
             {/* Epic P2-PR-B — Linked-entity picker. Mounts only on
                 nodes whose kind matches a compliance entity (control
-                / risk / asset). The selection writes the FK into
+                / asset). The selection writes the FK into
                 `data.linkedEntityId`; the canvas's `nodeDataJson`
                 serialiser persists it via the existing `dataJson`
                 column — no schema change needed. */}
@@ -355,7 +351,7 @@ export function ProcessInspector({
     );
 }
 
-// ─── Epic P2-PR-B — Linked-entity picker (control / risk / asset) ──
+// ─── Epic P2-PR-B — Linked-entity picker (control / asset) ──
 
 function NodeLinkedEntityPicker({
     nodeKind,
@@ -379,10 +375,9 @@ function NodeLinkedEntityPicker({
     // tenant even with three concurrent hook mounts.
     const slug = tenantSlug ?? "";
     const controls = useTenantControls(slug, { pollMs: ENTITY_STATUS_POLL_MS });
-    const risks = useTenantRisks(slug, { pollMs: ENTITY_STATUS_POLL_MS });
     const assets = useTenantAssets(slug, { pollMs: ENTITY_STATUS_POLL_MS });
 
-    if (nodeKind !== "control" && nodeKind !== "risk" && nodeKind !== "asset") {
+    if (nodeKind !== "control" && nodeKind !== "asset") {
         return null;
     }
 
@@ -397,17 +392,7 @@ function NodeLinkedEntityPicker({
                   loading: controls.loading,
                   emptyHint: t("processInspector.noControls"),
               }
-            : nodeKind === "risk"
-              ? {
-                    label: t("processInspector.linkedRisk"),
-                    options: risks.options.map((r) => ({
-                        value: r.id,
-                        label: r.title,
-                    })),
-                    loading: risks.loading,
-                    emptyHint: t("processInspector.noRisks"),
-                }
-              : {
+            : {
                     label: t("processInspector.linkedAsset"),
                     options: assets.options.map((a) => ({
                         value: a.id,
@@ -427,9 +412,7 @@ function NodeLinkedEntityPicker({
     const liveStatus =
         nodeKind === "control"
             ? findTenantControl(controls, selectedId)?.status ?? null
-            : nodeKind === "risk"
-              ? findTenantRisk(risks, selectedId)?.status ?? null
-              : findTenantAsset(assets, selectedId)?.status ?? null;
+            : findTenantAsset(assets, selectedId)?.status ?? null;
 
     return (
         <div

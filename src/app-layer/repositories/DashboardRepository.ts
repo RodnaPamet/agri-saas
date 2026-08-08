@@ -165,27 +165,6 @@ export interface EvidenceExpiryItem {
 }
 
 /**
- * Epic G-5 — control exception inventory + expiry-soon counts for
- * the dashboard. Surfaces the same data the operator wants to act
- * on: how many exceptions are live + how many cross the 30-day line
- * in the next month.
- */
-export interface ExceptionSummary {
-    /** Approved exceptions with no expiry date yet, or with an
-     *  expiry in the future. */
-    activeApproved: number;
-    /** REQUESTED rows still awaiting an approver action. */
-    pendingRequest: number;
-    /** Approved exceptions whose expiry is within the next 30 days. */
-    expiringWithin30: number;
-    /** Approved exceptions whose expiry is within the next 7 days
-     *  (subset of the 30-day count — operators want the urgent slice). */
-    expiringWithin7: number;
-    /** Already-EXPIRED rows that haven't been renewed or cleaned up. */
-    expired: number;
-}
-
-/**
  * Epic G-7 — risk treatment plan inventory + overdue counts for the
  * dashboard. Five COUNTs against the `(tenantId, status)` and
  * `(tenantId, targetDate)` indexes from prompt 1.
@@ -218,8 +197,6 @@ export interface ExecutiveDashboardPayload {
     taskSummary: TaskSummary;
     vendorSummary: VendorSummary;
     upcomingExpirations: EvidenceExpiryItem[];
-    /** Epic G-5 — control exception health card. */
-    exceptions: ExceptionSummary;
     /** Epic G-7 — risk treatment plan health card. */
     treatmentPlans: TreatmentPlanSummary;
     /** ISO 8601 timestamp of when the payload was computed */
@@ -237,46 +214,6 @@ export class DashboardRepository {
      * counts + 1 clauseProgress query + 1 notification count = 11 parallel
      * queries. All use existing indexes.
      */
-    static async getStats(db: PrismaTx, ctx: RequestContext): Promise<DashboardStats> {
-        const tenantId = ctx.tenantId;
-
-        const [assetCount, riskCount, controlCount, evidenceCount, taskCount, findingCount] = await Promise.all([
-            db.asset.count({ where: { tenantId } }),
-            db.risk.count({ where: { tenantId } }),
-            db.control.count({ where: { OR: [{ tenantId }, { tenantId: null }] } }),
-            db.evidence.count({ where: { tenantId } }),
-            db.task.count({ where: { tenantId, status: { notIn: [...TERMINAL_WORK_ITEM_STATUSES] } } }),
-            db.finding.count({ where: { tenantId, status: { not: 'CLOSED' } } }),
-        ]);
-
-        const highRisks = await db.risk.count({ where: { tenantId, inherentScore: { gte: 15 } } });
-        const pendingEvidence = await db.evidence.count({ where: { tenantId, status: 'SUBMITTED' } });
-        const overdueEvidence = await db.evidence.count({
-            where: { tenantId, nextReviewDate: { lt: new Date() }, status: { not: 'APPROVED' } },
-        });
-
-        const clauseProgress = await db.clauseProgress.findMany({ where: { tenantId } });
-        const clausesReady = clauseProgress.filter((p) => p.status === 'READY').length;
-
-        const unreadNotifications = await db.notification.count({
-            where: { tenantId, userId: ctx.userId, read: false },
-        });
-
-        return {
-            assets: assetCount,
-            risks: riskCount,
-            controls: controlCount,
-            evidence: evidenceCount,
-            openTasks: taskCount,
-            openFindings: findingCount,
-            highRisks,
-            pendingEvidence,
-            overdueEvidence,
-            clausesReady,
-            totalClauses: 7,
-            unreadNotifications,
-        };
-    }
 
     /**
      * Control coverage — the executive KPI.
@@ -372,44 +309,12 @@ export class DashboardRepository {
      *
      * Uses 4 parallel count queries with range filters on an indexed column.
      */
-    static async getRiskBySeverity(db: PrismaTx, ctx: RequestContext): Promise<RiskBySeverity> {
-        const tenantId = ctx.tenantId;
-        const base = { tenantId, deletedAt: null };
-
-        const [low, medium, high, critical] = await Promise.all([
-            db.risk.count({ where: { ...base, inherentScore: { gte: 1, lte: 4 } } }),
-            db.risk.count({ where: { ...base, inherentScore: { gte: 5, lte: 9 } } }),
-            db.risk.count({ where: { ...base, inherentScore: { gte: 10, lte: 14 } } }),
-            db.risk.count({ where: { ...base, inherentScore: { gte: 15, lte: 25 } } }),
-        ]);
-
-        return { low, medium, high, critical };
-    }
 
     /**
      * Risk counts by status.
      *
      * Query: 1 groupBy
      */
-    static async getRiskByStatus(db: PrismaTx, ctx: RequestContext): Promise<RiskByStatus> {
-        const groups = await db.risk.groupBy({
-            by: ['status'],
-            where: { tenantId: ctx.tenantId, deletedAt: null },
-            _count: true,
-        });
-
-        const counts: Record<string, number> = {};
-        for (const g of groups) {
-            counts[g.status] = g._count;
-        }
-
-        return {
-            open: counts['OPEN'] ?? 0,
-            mitigating: counts['MITIGATING'] ?? 0,
-            accepted: counts['ACCEPTED'] ?? 0,
-            closed: counts['CLOSED'] ?? 0,
-        };
-    }
 
     /**
      * Evidence expiry/freshness summary.
@@ -639,130 +544,8 @@ export class DashboardRepository {
     }
 
     /**
-     * Epic G-5 — exception inventory + expiry-soon counts for the
-     * dashboard card. Five parallel COUNTs against the
-     * `(tenantId, status)` and `(tenantId, expiresAt)` indexes.
-     */
-    static async getExceptionSummary(
-        db: PrismaTx,
-        ctx: RequestContext,
-    ): Promise<ExceptionSummary> {
-        const tenantId = ctx.tenantId;
-        const now = new Date();
-        const in30 = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
-        const in7 = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-
-        const [
-            activeApproved,
-            pendingRequest,
-            expiringWithin30,
-            expiringWithin7,
-            expired,
-        ] = await Promise.all([
-            db.controlException.count({
-                where: {
-                    tenantId,
-                    status: 'APPROVED',
-                    deletedAt: null,
-                    OR: [{ expiresAt: null }, { expiresAt: { gte: now } }],
-                },
-            }),
-            db.controlException.count({
-                where: { tenantId, status: 'REQUESTED', deletedAt: null },
-            }),
-            db.controlException.count({
-                where: {
-                    tenantId,
-                    status: 'APPROVED',
-                    deletedAt: null,
-                    expiresAt: { not: null, gte: now, lte: in30 },
-                },
-            }),
-            db.controlException.count({
-                where: {
-                    tenantId,
-                    status: 'APPROVED',
-                    deletedAt: null,
-                    expiresAt: { not: null, gte: now, lte: in7 },
-                },
-            }),
-            db.controlException.count({
-                where: { tenantId, status: 'EXPIRED', deletedAt: null },
-            }),
-        ]);
-
-        return {
-            activeApproved,
-            pendingRequest,
-            expiringWithin30,
-            expiringWithin7,
-            expired,
-        };
-    }
-
-    /**
      * Epic G-7 — risk treatment plan inventory + overdue counts for
      * the dashboard card. Five parallel COUNTs against the
      * `(tenantId, status)` + `(tenantId, targetDate)` indexes.
      */
-    static async getTreatmentPlanSummary(
-        db: PrismaTx,
-        ctx: RequestContext,
-    ): Promise<TreatmentPlanSummary> {
-        const tenantId = ctx.tenantId;
-        const now = new Date();
-        const in30 = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
-        const in7 = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-
-        const [
-            activeOnTrack,
-            overdue,
-            dueWithin30,
-            dueWithin7,
-            completed,
-        ] = await Promise.all([
-            db.riskTreatmentPlan.count({
-                where: {
-                    tenantId,
-                    deletedAt: null,
-                    status: { in: ['DRAFT', 'ACTIVE'] },
-                    targetDate: { gte: now },
-                },
-            }),
-            db.riskTreatmentPlan.count({
-                where: {
-                    tenantId,
-                    deletedAt: null,
-                    status: { in: ['DRAFT', 'ACTIVE', 'OVERDUE'] },
-                    targetDate: { lt: now },
-                },
-            }),
-            db.riskTreatmentPlan.count({
-                where: {
-                    tenantId,
-                    deletedAt: null,
-                    status: { in: ['DRAFT', 'ACTIVE'] },
-                    targetDate: { gte: now, lte: in30 },
-                },
-            }),
-            db.riskTreatmentPlan.count({
-                where: {
-                    tenantId,
-                    deletedAt: null,
-                    status: { in: ['DRAFT', 'ACTIVE'] },
-                    targetDate: { gte: now, lte: in7 },
-                },
-            }),
-            db.riskTreatmentPlan.count({
-                where: { tenantId, deletedAt: null, status: 'COMPLETED' },
-            }),
-        ]);
-        return {
-            activeOnTrack,
-            overdue,
-            dueWithin30,
-            dueWithin7,
-            completed,
-        };
-    }
 }

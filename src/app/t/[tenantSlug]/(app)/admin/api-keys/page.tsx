@@ -54,7 +54,6 @@ const SCOPE_GROUPS: Record<string, { label: string; scopes: string[] }> = {
     evidence:   { label: 'Evidence',   scopes: ['evidence:read', 'evidence:write'] },
     policies:   { label: 'Policies',   scopes: ['policies:read', 'policies:write', 'policies:admin'] },
     tasks:      { label: 'Tasks',      scopes: ['tasks:read', 'tasks:write'] },
-    risks:      { label: 'Risks',      scopes: ['risks:read', 'risks:write'] },
     vendors:    { label: 'Vendors',    scopes: ['vendors:read', 'vendors:write'] },
     tests:      { label: 'Tests',      scopes: ['tests:read', 'tests:write'] },
     frameworks: { label: 'Frameworks', scopes: ['frameworks:read', 'frameworks:write'] },

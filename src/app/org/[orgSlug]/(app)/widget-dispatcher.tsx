@@ -61,14 +61,12 @@ interface DispatcherProps {
 
 const KPI_GRADIENTS: Record<string, string> = {
     coverage: 'from-emerald-500 to-teal-500',
-    'critical-risks': 'from-rose-500 to-red-500',
     'overdue-evidence': 'from-amber-500 to-orange-500',
     tenants: 'from-blue-500 to-indigo-500',
 };
 
 const KPI_ICONS = {
     coverage: ShieldCheck,
-    'critical-risks': AlertTriangle,
     'overdue-evidence': Paperclip,
     tenants: Building2,
 } as const;
@@ -94,19 +92,6 @@ function resolveKpiContent(
                     gradient,
                     icon: KPI_ICONS.coverage,
                     subtitle: `${data.summary.controls.implemented.toLocaleString()} of ${data.summary.controls.applicable.toLocaleString()} controls implemented`,
-                },
-            };
-        case 'critical-risks':
-            return {
-                chartType: 'kpi',
-                config: {
-                    label: widget.title ?? 'Critical Risks',
-                    value: data.summary.risks.critical,
-                    format,
-                    gradient,
-                    icon: KPI_ICONS['critical-risks'],
-                    subtitle: `${data.summary.risks.open.toLocaleString()} open · ${data.summary.risks.high.toLocaleString()} high`,
-                    trendPolarity: 'down-good',
                 },
             };
         case 'overdue-evidence':
@@ -187,9 +172,6 @@ function resolveTrendContent(
     const points = data.trends.dataPoints.map((p) => {
         let value = 0;
         switch (widget.chartType) {
-            case 'risks-open':
-                value = p.risksOpen;
-                break;
             case 'controls-coverage':
                 value = p.controlCoveragePercent;
                 break;
@@ -201,7 +183,6 @@ function resolveTrendContent(
     });
 
     const colorMap: Record<string, string> = {
-        'risks-open': 'text-content-error',
         'controls-coverage': 'text-content-success',
         'evidence-overdue': 'text-content-warning',
     };
@@ -224,7 +205,7 @@ function resolveTrendContent(
  *
  * The org dashboard predates the configurable widget engine; the
  * pre-Epic-41 hardcoded layout exposed `#org-stat-coverage`,
- * `#org-stat-critical-risks`, `#org-stat-overdue-evidence`,
+ * `#org-stat-overdue-evidence`,
  * `#org-stat-tenants`, `#org-drilldown-ctas`, and `#org-tenant-coverage`
  * as load-bearing anchors for E2E selectors (`ciso-portfolio.spec.ts`)
  * and deep-link navigation. The rewire to widgets must preserve them
@@ -301,7 +282,7 @@ export function DispatchedWidget({
         }
         case 'DRILLDOWN_CTAS': {
             const cfg = widget.config as {
-                entries?: ReadonlyArray<'controls' | 'risks' | 'evidence'>;
+                entries?: ReadonlyArray<'controls' | 'evidence'>;
             };
             title = widget.title ?? 'Drill-down';
             body = (

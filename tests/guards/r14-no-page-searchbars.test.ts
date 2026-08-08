@@ -97,7 +97,6 @@ const BANNED_PATTERNS: RegExp[] = [
 //
 const LIST_PAGES_REQUIRE_SEARCH = [
     'src/app/t/[tenantSlug]/(app)/assets/AssetsClient.tsx',
-    'src/app/t/[tenantSlug]/(app)/risks/RisksClient.tsx',
     'src/app/t/[tenantSlug]/(app)/controls/ControlsClient.tsx',
     'src/app/t/[tenantSlug]/(app)/policies/PoliciesClient.tsx',
     'src/app/t/[tenantSlug]/(app)/vendors/VendorsClient.tsx',
@@ -199,11 +198,7 @@ describe('Live filter-scoped search on list pages', () => {
         // explicitly (and check the new location too).
         const baselineFiles = [
             'src/app/t/[tenantSlug]/(app)/policies/templates/page.tsx',
-            'src/app/t/[tenantSlug]/(app)/controls/templates/page.tsx',
-            'src/app/t/[tenantSlug]/(app)/frameworks/[frameworkKey]/templates/page.tsx',
             'src/app/t/[tenantSlug]/(app)/admin/members/page.tsx',
-            'src/app/t/[tenantSlug]/(app)/controls/sankey/ControlsSankeyClient.tsx',
-            'src/app/t/[tenantSlug]/(app)/reports/soa/SoAClient.tsx',
         ];
         for (const rel of baselineFiles) {
             const abs = path.join(ROOT, rel);
@@ -224,11 +219,6 @@ describe('Live filter-scoped search on list pages', () => {
             // PR migrates them to the shared <Combobox> primitive;
             // until then the carve-out is explicit.
             const allowedLines: Record<string, number[]> = {
-                'src/app/t/[tenantSlug]/(app)/reports/soa/SoAClient.tsx': [
-                    // The modal control picker's placeholder is
-                    // "Search controls…" — picker-scoped, not
-                    // page-scoped.
-                ],
             };
             const filtered = hits.filter(
                 (h) => !(allowedLines[rel] ?? []).includes(h.line),

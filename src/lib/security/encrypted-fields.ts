@@ -65,17 +65,17 @@
  * **Fields DELIBERATELY NOT in this manifest:**
  *   - PII fields (email, name, phone, tokens) — already handled by
  *     `pii-middleware.ts` with the dual-column convention.
- *   - `Risk.description`, `Policy.description`, `Evidence.content` —
- *     searched via `contains` LIKE in their repositories. A product
- *     decision on whether to sacrifice substring search for
- *     encryption is still pending. If ever added here, the
- *     RiskRepository / PolicyRepository / EvidenceRepository search
- *     branches must be removed in the same PR.
+ *   - `Policy.description`, `Evidence.content` — searched via
+ *     `contains` LIKE in their repositories. A product decision on
+ *     whether to sacrifice substring search for encryption is still
+ *     pending. If ever added here, the PolicyRepository /
+ *     EvidenceRepository search branches must be removed in the
+ *     same PR.
  *   - Operational keys (status, category, severity, FKs, dates) —
  *     load-bearing for filters, joins, and indexes.
- *   - Global library tables (Framework, Clause, ControlTemplate,
- *     PolicyTemplate, QuestionnaireTemplate, RiskTemplate) — no
- *     tenant-specific content, zero breach value.
+ *   - Global library tables (Framework, Clause, PolicyTemplate,
+ *     QuestionnaireTemplate) — no tenant-specific content, zero
+ *     breach value.
  *   - `AuditLog.*` — append-only hash-chained audit trail. Encrypting
  *     would break `entryHash` integrity; investigation needs
  *     plaintext anyway.
@@ -135,16 +135,6 @@ export const ENCRYPTED_FIELDS: Readonly<Record<string, readonly string[]>> = {
     //  can audit which tenants are forwarding to which SIEM without
     //  holding the decryption key.
     TenantSecuritySettings: ['auditStreamSecretEncrypted'],
-
-    // ─── Risk ──────────────────────────────────────────
-    //  `description` omitted — searched via RiskRepository `contains`.
-    Risk: ['treatmentNotes', 'threat', 'vulnerability'],
-
-    // ─── Loss-event register (RQ3-6) ───────────────────
-    //  Loss narratives are confidential business content (customer
-    //  data exposed, settlement amounts, vendor reputation): the
-    //  attacker value if leaked is comparable to the Finding rows.
-    LossEvent: ['description', 'justification'],
 
     // ─── Finding ───────────────────────────────────────
     //  Findings are audit artifacts — attacker value if leaked is high.
@@ -207,9 +197,6 @@ export const ENCRYPTED_FIELDS: Readonly<Record<string, readonly string[]>> = {
     ],
     AuditChecklistItem: ['prompt', 'notes', 'evidenceRef'],
 
-    // ─── Control test runs ─────────────────────────────
-    ControlTestRun: ['notes', 'findingSummary'],
-
     // ─── Epic G-4 access review campaigns ──────────────
     //  Both columns can carry sensitive reviewer rationale that
     //  should be encrypted at rest:
@@ -225,36 +212,6 @@ export const ENCRYPTED_FIELDS: Readonly<Record<string, readonly string[]>> = {
     //  ciphertext to callers.
     AccessReview: ['description'],
     AccessReviewDecision: ['notes'],
-
-    // ─── Epic G-5 control exception register ───────────
-    //  `justification` carries the rationale for accepting risk;
-    //  surfaces in audit packs alongside the approver. The
-    //  `rejectionReason` field is the parallel free-text capture
-    //  on REJECTED rows. Both contain narrative that may name
-    //  internal users / systems, so they're encrypted at rest.
-    ControlException: ['justification', 'rejectionReason'],
-
-    // ─── RQ2-1 risk score provenance ───────────────────
-    //  `justification` carries the assessor's narrative for a score
-    //  change ("transferred via cyber insurance", "pen-test found
-    //  the control bypassed") — business free-text that may name
-    //  internal systems / vendors / people. Encrypted at rest like
-    //  every other rationale column. The explicit entry also keeps
-    //  the manifest aligned with the fan-out write path, which
-    //  already encrypts any field NAMED `justification` (it appears
-    //  on ControlException) — without this entry the encryption
-    //  would be incidental rather than declared.
-    RiskScoreEvent: ['justification'],
-
-    // ─── Epic G-7 risk treatment plans ─────────────────
-    //  Both columns can name internal systems / vendors / users:
-    //    - RiskTreatmentPlan.closingRemark — narrative rationale
-    //      written when a plan is marked COMPLETED.
-    //    - TreatmentMilestone.description — milestone detail; may
-    //      reference vendors, internal teams, or sensitive
-    //      infrastructure.
-    RiskTreatmentPlan: ['closingRemark'],
-    TreatmentMilestone: ['description'],
 
     // ─── Enterprise-grain — marketing contracts + yield ────
     //  The NEGOTIATED free text on a grain contract is the most

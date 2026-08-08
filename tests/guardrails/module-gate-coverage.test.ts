@@ -57,26 +57,7 @@ const MODULE_GATED_ROUTES: ReadonlyArray<{
         module: 'CERTIFICATION',
     },
     {
-        file: 'src/app/api/t/[tenantSlug]/coverage/route.ts',
-        module: 'CERTIFICATION',
-    },
-    {
         file: 'src/app/api/t/[tenantSlug]/frameworks/route.ts',
-        module: 'CERTIFICATION',
-    },
-    {
-        file: 'src/app/api/t/[tenantSlug]/schemes/route.ts',
-        module: 'CERTIFICATION',
-    },
-    {
-        // Scheme inspection-pack assembly (FRAMEWORK_COVERAGE + approved
-        // evidence → an audit pack frozen/shared via the existing flow).
-        file: 'src/app/api/t/[tenantSlug]/schemes/[schemeKey]/pack/route.ts',
-        module: 'CERTIFICATION',
-    },
-    {
-        // Per-scheme applicability-statement CSV (SoA pinned to the scheme).
-        file: 'src/app/api/t/[tenantSlug]/schemes/[schemeKey]/applicability.csv/route.ts',
         module: 'CERTIFICATION',
     },
     {
@@ -93,10 +74,6 @@ const MODULE_GATED_ROUTES: ReadonlyArray<{
     },
     {
         file: 'src/app/api/t/[tenantSlug]/findings/route.ts',
-        module: 'CERTIFICATION',
-    },
-    {
-        file: 'src/app/api/t/[tenantSlug]/risks/route.ts',
         module: 'CERTIFICATION',
     },
     {

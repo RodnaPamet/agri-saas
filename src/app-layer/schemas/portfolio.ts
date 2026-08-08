@@ -61,15 +61,6 @@ export const PortfolioSummarySchema = z
             })
             .strict(),
 
-        risks: z
-            .object({
-                total: NonNegInt,
-                open: NonNegInt,
-                critical: NonNegInt,
-                high: NonNegInt,
-            })
-            .strict(),
-
         evidence: z
             .object({
                 total: NonNegInt,
@@ -135,8 +126,6 @@ export const TenantHealthRowSchema = z
         snapshotDate: z.string().nullable(),
 
         coveragePercent: z.number().min(0).max(100).nullable(),
-        openRisks: NonNegInt.nullable(),
-        criticalRisks: NonNegInt.nullable(),
         overdueEvidence: NonNegInt.nullable(),
         rag: RagBadgeSchema.nullable(),
     })
@@ -158,10 +147,6 @@ export const PortfolioTrendDataPointSchema = z
         controlCoveragePercent: z.number().min(0).max(100),
         controlsImplemented: NonNegInt,
         controlsApplicable: NonNegInt,
-        risksTotal: NonNegInt,
-        risksOpen: NonNegInt,
-        risksCritical: NonNegInt,
-        risksHigh: NonNegInt,
         evidenceOverdue: NonNegInt,
         evidenceDueSoon7d: NonNegInt,
         evidenceCurrent: NonNegInt,
@@ -344,30 +329,28 @@ export interface PaginatedDrillDownResult<TRow> {
 
 export interface RagInputs {
     coveragePercent: number;
-    criticalRisks: number;
     overdueEvidence: number;
 }
 
 /**
  * Map a tenant's snapshot metrics to a single RAG badge.
  *
- *   RED   — coverage < 60%
- *           OR criticalRisks ≥ 3
- *           OR overdueEvidence ≥ 10
- *   AMBER — coverage < 80%
- *           OR criticalRisks ≥ 1
- *           OR overdueEvidence ≥ 1
- *   GREEN — otherwise (coverage ≥ 80% AND no criticals AND no overdue)
+ *   RED   — coverage < 60% OR overdueEvidence ≥ 10
+ *   AMBER — coverage < 80% OR overdueEvidence ≥ 1
+ *   GREEN — otherwise (coverage ≥ 80% AND no overdue evidence)
+ *
+ * The `criticalRisks` term went with the risk register; the coverage
+ * and overdue-evidence thresholds are unchanged.
  *
  * Thresholds are deliberately conservative for v1; a future iteration
  * could pull them from `TenantSecuritySettings` per-tenant.
  */
 export function computeRag(inputs: RagInputs): RagBadge {
-    const { coveragePercent, criticalRisks, overdueEvidence } = inputs;
-    if (coveragePercent < 60 || criticalRisks >= 3 || overdueEvidence >= 10) {
+    const { coveragePercent, overdueEvidence } = inputs;
+    if (coveragePercent < 60 || overdueEvidence >= 10) {
         return 'RED';
     }
-    if (coveragePercent < 80 || criticalRisks >= 1 || overdueEvidence >= 1) {
+    if (coveragePercent < 80 || overdueEvidence >= 1) {
         return 'AMBER';
     }
     return 'GREEN';

@@ -54,7 +54,6 @@ describe('Action-button canonical entity label', () => {
         // belong to confirmation surfaces, not action triggers.
         const HEADER_ACTION_KEYS: Array<[string, string, string]> = [
             ['assets', 'addAsset', 'Asset'],
-            ['risks', 'addRisk', 'Risk'],
             // "Record", not "Evidence": the page, its nav entry, its title,
             // its counts and this button now all say the same word, in the
             // register a farmer uses. It previously said "Records" in the

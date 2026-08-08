@@ -45,7 +45,6 @@ const APP_ROOT = path.resolve(__dirname, '../../src/app');
 // Known allowlisted escape valves (documented in
 // docs/tooltip-and-copy-strategy.md):
 //   - controls/[controlId]/page.tsx        syncError truncation fallback
-//   - reports/soa/SoAClient.tsx            justification truncation fallback
 //   - risks/dashboard/page.tsx             heatmap matrix cell (density)
 //   - risks/RisksClient.tsx:360            heatmap matrix cell (density) —
 //       same pattern as dashboard, fourth cell-density tooltip in the

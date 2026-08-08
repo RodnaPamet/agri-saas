@@ -30,8 +30,6 @@ export interface RuleSuggestion {
 }
 
 export interface SuggestionPosture {
-    /** Risks in an active state (OPEN / MITIGATING). */
-    activeRiskCount: number;
     /** Trigger events already covered by an ENABLED rule — excluded. */
     coveredEvents: ReadonlySet<string>;
 }
@@ -43,10 +41,7 @@ interface Candidate extends Omit<RuleSuggestion, 'rank'> {}
  * already covered, scores them (posture-weighted), and assigns 1-based ranks.
  */
 export function rankRuleSuggestions(posture: SuggestionPosture): RuleSuggestion[] {
-    const { activeRiskCount, coveredEvents } = posture;
-    // Posture weight: more open risk → higher confidence in the risk-driven
-    // automations. Bounded to [0, 0.3] so a quiet tenant still sees base priors.
-    const riskWeight = Math.min(activeRiskCount, 30) / 100;
+    const { coveredEvents } = posture;
 
     const candidates: Candidate[] = [
         {
@@ -57,26 +52,6 @@ export function rankRuleSuggestions(posture: SuggestionPosture): RuleSuggestion[
             triggerEvent: 'TEST_RUN_FAILED',
             actionType: 'NOTIFY_USER',
             confidenceScore: 0.82,
-        },
-        {
-            id: 'risk-created-task',
-            title: 'Open a remediation task for every new risk',
-            rationale:
-                activeRiskCount > 0
-                    ? `${activeRiskCount} risk${activeRiskCount === 1 ? '' : 's'} are active — auto-create a remediation task so none sits unowned.`
-                    : 'Auto-create a remediation task whenever a risk is logged so nothing sits unowned.',
-            triggerEvent: 'RISK_CREATED',
-            actionType: 'CREATE_TASK',
-            confidenceScore: 0.6 + riskWeight,
-        },
-        {
-            id: 'risk-status-critical-notify',
-            title: 'Alert when a risk escalates',
-            rationale:
-                'A risk moving to a higher severity warrants an immediate heads-up to the risk owner.',
-            triggerEvent: 'RISK_STATUS_CHANGED',
-            actionType: 'NOTIFY_USER',
-            confidenceScore: 0.55 + riskWeight,
         },
         {
             id: 'issue-created-task',
@@ -103,19 +78,17 @@ export async function getAutomationSuggestions(
 ): Promise<{ suggestions: RuleSuggestion[]; generatedAt: string }> {
     assertCanReadAutomation(ctx);
     return runInTenantContext(ctx, async (db) => {
-        const [activeRiskCount, enabledRules] = await Promise.all([
-            db.risk.count({
-                where: { tenantId: ctx.tenantId, status: { in: ['OPEN', 'MITIGATING'] } },
-            }),
-            db.automationRule.findMany({
-                where: { tenantId: ctx.tenantId, status: 'ENABLED', deletedAt: null },
-                select: { triggerEvent: true },
-                take: 500,
-            }),
-        ]);
+        // The register-driven `activeRiskCount` posture signal went with
+        // the risk register; what remains is which trigger events an
+        // ENABLED rule already covers.
+        const enabledRules = await db.automationRule.findMany({
+            where: { tenantId: ctx.tenantId, status: 'ENABLED', deletedAt: null },
+            select: { triggerEvent: true },
+            take: 500,
+        });
         const coveredEvents = new Set(enabledRules.map((r) => r.triggerEvent));
         return {
-            suggestions: rankRuleSuggestions({ activeRiskCount, coveredEvents }),
+            suggestions: rankRuleSuggestions({ coveredEvents }),
             generatedAt: new Date().toISOString(),
         };
     });

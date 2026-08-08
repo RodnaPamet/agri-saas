@@ -46,7 +46,6 @@ import { EntityListPage } from '@/components/layout/EntityListPage';
 import { TableLoadMoreFooter } from '@/components/ui/table-load-more-footer';
 import { useThresholdLoadMore } from '@/components/ui/hooks';
 import { AsidePanel } from '@/components/ui/aside-panel';
-import { BestValueControls } from './_components/BestValueControls';
 import {
     Accordion,
     AccordionContent,
@@ -57,8 +56,6 @@ import {
     categorizeControl,
     ISO27001_DOMAIN_ORDER,
 } from '@/lib/controls/control-taxonomy';
-import { AiAssistRail } from '@/components/ui/ai-assist-rail';
-import { Sparkle3 } from '@/components/ui/icons/nucleo/sparkle3';
 import { KpiFilterCard } from '@/components/ui/kpi-filter-card';
 import { useKpiFilter, type KpiFilterDef } from '@/components/ui/kpi-filter';
 import type { CappedList } from '@/lib/list-backfill-cap';
@@ -1000,47 +997,12 @@ function ControlsPageInner({
         </AsidePanel>
     );
 
-    // AI Assist — mirror of Risks' co-pilot rail. Quiet (44px spine)
-    // by default; the same `<AiAssistRail>` content + `/risks/ai`
-    // destination as the Risks page so the panel reads as one
-    // shared co-pilot across registers, not a stub.
-    // RQ3-8 — Best-value controls leaderboard. Lives in the rail
-    // so the list-page reading order (filters → table → asides)
-    // surfaces it without pushing the main table down. Honest-null
-    // shape — when no control yet has a price + effectiveness + a
-    // quantified linked risk, the panel says so rather than
-    // rendering a fabricated zero-row list.
-    const bestValueAside = (
-        <AsidePanel
-            title={t('list.bestValue')}
-            surfaceKey="controls-list-best-value"
-            defaultCollapsed
-            icon={<AppIcon name="controls" size={16} />}
-        >
-            <BestValueControls limit={5} />
-        </AsidePanel>
-    );
-
-    const aiAssistAside = appPermissions.controls.edit ? (
-        <AsidePanel
-            title={t('list.aiAssist')}
-            surfaceKey="controls-list-ai"
-            defaultCollapsed
-            icon={<Sparkle3 className="h-4 w-4" />}
-        >
-            <AiAssistRail aiHref={tenantHref('/risks/ai')} />
-        </AsidePanel>
-    ) : null;
-
     // Compose the aside slot — selection summary first (only
     // appears on multi-row selection), then the always-on browse
-    // rail, then the AI assist co-pilot. They stack vertically
-    // inside the docked third column.
+    // rail. They stack vertically inside the docked third column.
     const composedAside = (
         <div className="flex flex-col gap-default">
             {browseAside}
-            {bestValueAside}
-            {aiAssistAside}
         </div>
     );
 

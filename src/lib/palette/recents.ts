@@ -121,7 +121,6 @@ export function serializeRecents(items: ReadonlyArray<RecentItem>): RecentsBlob 
 
 const VALID_TYPES: ReadonlySet<SearchHitType> = new Set([
     'control',
-    'risk',
     'policy',
     'evidence',
     'framework',

@@ -249,33 +249,6 @@ export class ControlRepository {
         });
     }
 
-    // ─── Contributors ───
-
-    static async listContributors(db: PrismaTx, ctx: RequestContext, controlId: string) {
-        return db.controlContributor.findMany({
-            where: { controlId, tenantId: ctx.tenantId },
-            include: { user: { select: { id: true, name: true, email: true } } },
-        });
-    }
-
-    static async addContributor(db: PrismaTx, ctx: RequestContext, controlId: string, userId: string) {
-        const control = await db.control.findFirst({ where: { id: controlId, tenantId: ctx.tenantId } });
-        if (!control) return null;
-        return db.controlContributor.create({
-            data: { tenantId: ctx.tenantId, controlId, userId },
-            include: { user: { select: { id: true, name: true, email: true } } },
-        });
-    }
-
-    static async removeContributor(db: PrismaTx, ctx: RequestContext, controlId: string, userId: string) {
-        const control = await db.control.findFirst({ where: { id: controlId, tenantId: ctx.tenantId } });
-        if (!control) return null;
-        const link = await db.controlContributor.findFirst({ where: { controlId, userId } });
-        if (!link) return null;
-        await db.controlContributor.delete({ where: { id: link.id } });
-        return true;
-    }
-
     // ─── Tasks ───
 
     static async listTasks(db: PrismaTx, ctx: RequestContext, controlId: string) {

@@ -1,14 +1,18 @@
 import { getTenantCtx } from '@/app-layer/context';
-import { listSchemes } from '@/app-layer/usecases/certification-scheme';
+import { listSupportSchemes } from '@/app-layer/usecases/support-schemes';
 import { SchemesClient } from './SchemesClient';
-import { isPlatformTenant } from '@/lib/auth/platform-support';
 
 export const dynamic = 'force-dynamic';
 
 /**
- * Certification Schemes — Server Component.
- * Fetches the global AG_SCHEME framework catalog server-side and
- * delegates all interaction to the client island.
+ * Схеми — government support schemes a farm APPLIES FOR (ДФЗ / МЗХ / EC
+ * measures with an application window and a payment).
+ *
+ * This route used to host the CERTIFICATION scheme catalog (voluntary
+ * standards a farm is audited against, with control points and evidence).
+ * That surface was removed with the compliance uproot and `/schemes` now
+ * belongs to support measures — the thing a Bulgarian farm actually files
+ * against a deadline.
  */
 export default async function SchemesPage({
     params,
@@ -16,23 +20,14 @@ export default async function SchemesPage({
     params: Promise<{ tenantSlug: string }>;
 }) {
     const { tenantSlug } = await params;
-    const ctx = await getTenantCtx({ tenantSlug });
+    await getTenantCtx({ tenantSlug });
 
-    const schemes = await listSchemes(ctx);
+    const schemes = await listSupportSchemes();
 
     return (
         <SchemesClient
-            initialSchemes={JSON.parse(JSON.stringify(schemes))}
             tenantSlug={tenantSlug}
-            permissions={{
-                // Authoring a scheme writes the GLOBAL catalogue every tenant
-                // reads, so the API now refuses it outside the platform
-                // tenant. Gating the button on `canAdmin` alone would offer
-                // every farm's owner a form whose submit 404s — the UI has to
-                // agree with the gate, not just decorate around it.
-                canAuthorScheme:
-                    ctx.permissions.canAdmin && isPlatformTenant(ctx.tenantSlug),
-            }}
+            initialSchemes={JSON.parse(JSON.stringify(schemes))}
         />
     );
 }

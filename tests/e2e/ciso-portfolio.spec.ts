@@ -3,7 +3,7 @@
  *
  * Walks the full hub-and-spoke flow against the production-mode
  * Next server, the seeded `acme-org` Organization, and the seeded
- * `acme-corp` child Tenant (which already has controls / risks /
+ * `acme-corp` child Tenant (which already has controls /
  * evidence courtesy of `prisma/seed.ts`):
  *
  *   A. Login as `ciso@acme.com` (ORG_ADMIN of acme-org, AUDITOR
@@ -13,15 +13,15 @@
  *   B. Portfolio overview at `/org/acme-org` renders the four stat
  *      cards + the drill-down CTAs + the per-tenant coverage list.
  *
- *   C. Drill-down lists at `/org/acme-org/{controls,risks,evidence}`
- *      render with tenant attribution columns. The first risk row
- *      links to `/t/acme-corp/risks/{id}` and lands on the per-
+ *   C. Drill-down lists at `/org/acme-org/{controls,evidence}`
+ *      render with tenant attribution columns. The first control row
+ *      links to `/t/acme-corp/controls/{id}` and lands on the per-
  *      tenant detail page (RLS-enforced read via the auto-
  *      provisioned AUDITOR membership).
  *
  *   D. Read-only invariant: the AUDITOR membership grants no
- *      `canWrite`, so the tenant risks list must NOT render
- *      `#new-risk-btn`.
+ *      `canWrite`, so the tenant controls list must NOT render
+ *      `#new-control-btn`.
  *
  *   E. Tenant creation via `/org/acme-org/tenants/new`. Confirms
  *      the new tenant appears in the org tenants list. We do NOT
@@ -122,9 +122,9 @@ test.describe('CISO portfolio journey (Epic O-4)', () => {
             page.getByRole('heading', { name: /Portfolio Overview/i }),
         ).toBeVisible({ timeout: 30_000 });
 
-        // Four stat cards are present and rendered.
+        // The stat cards are present and rendered. (The critical-risks
+        // tile went with the risk register.)
         await expect(page.locator('#org-stat-coverage')).toBeVisible();
-        await expect(page.locator('#org-stat-critical-risks')).toBeVisible();
         await expect(page.locator('#org-stat-overdue-evidence')).toBeVisible();
         await expect(page.locator('#org-stat-tenants')).toBeVisible();
 
@@ -161,43 +161,6 @@ test.describe('CISO portfolio journey (Epic O-4)', () => {
         expect(hasRow || hasEmpty).toBe(true);
     });
 
-    test('D — risks drill-down → click row → land on /t/acme-corp/risks/{id}', async ({ page }) => {
-        await loginAsCiso(page);
-        await safeGoto(page, `/org/${ORG_SLUG}/risks`);
-        await expect(page.locator('#org-risks-table')).toBeVisible({
-            timeout: 30_000,
-        });
-
-        const firstRiskLink = page
-            .locator('[data-testid^="org-risk-link-"]')
-            .first();
-
-        if ((await firstRiskLink.count()) > 0) {
-            // Tenant attribution surfaced alongside the row.
-            await expect(
-                page
-                    .locator(`[data-testid="org-risk-tenant-${SEED_TENANT}"]`)
-                    .first(),
-            ).toBeVisible({ timeout: 15_000 });
-
-            await firstRiskLink.click();
-            await page.waitForURL(
-                new RegExp(`/t/${SEED_TENANT}/risks/[^/?#]+`),
-                { timeout: 30_000 },
-            );
-            // Per-tenant page rendered (sidebar + main visible).
-            await expect(page.locator('aside').first()).toBeVisible({
-                timeout: 30_000,
-            });
-        } else {
-            // No critical risks seeded today — assert the empty state
-            // copy so we know the page rendered cleanly.
-            await expect(
-                page.getByText(/No critical risks/i).first(),
-            ).toBeVisible({ timeout: 15_000 });
-        }
-    });
-
     test('E — overdue evidence list renders with tenant attribution or empty state', async ({ page }) => {
         await loginAsCiso(page);
         await safeGoto(page, `/org/${ORG_SLUG}/evidence`);
@@ -220,7 +183,7 @@ test.describe('CISO portfolio journey (Epic O-4)', () => {
 
     test('F — read-only invariant: AUDITOR cannot create tenant-level records', async ({ page }) => {
         await loginAsCiso(page);
-        await safeGoto(page, `/t/${SEED_TENANT}/risks`);
+        await safeGoto(page, `/t/${SEED_TENANT}/controls`);
 
         // Wait for the tenant chrome to come up.
         await expect(page.locator('aside').first()).toBeVisible({
@@ -228,10 +191,11 @@ test.describe('CISO portfolio journey (Epic O-4)', () => {
         });
         await page.waitForLoadState('networkidle').catch(() => { /* best-effort */ });
 
-        // The "+ New Risk" button is gated by `permissions.canWrite` —
+        // The create button is gated by `permissions.canWrite` —
         // AUDITOR never has it. Absence of the button is the read-only
-        // proof.
-        await expect(page.locator('#new-risk-btn')).toHaveCount(0);
+        // proof. (This asserted on the risks page until the register was
+        // removed; the invariant is about the ROLE, not the entity.)
+        await expect(page.locator('#new-control-btn')).toHaveCount(0);
     });
 
     test('G — CISO creates a 2nd tenant via /org/{slug}/tenants/new', async ({ page }) => {

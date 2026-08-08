@@ -130,7 +130,7 @@ export interface AutomationRuleSlaInput {
     /** PR-E — schedule config for time-based (SCHEDULE) triggers. */
     scheduleConfig?: {
         kind: 'DATE_RELATIVE';
-        target: 'Evidence' | 'ControlException' | 'ControlTestPlan';
+        target: 'Evidence';
         offsetDays: number;
     } | null;
 }

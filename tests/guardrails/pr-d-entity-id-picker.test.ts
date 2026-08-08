@@ -36,13 +36,12 @@ describe('PR-D — entity-ID picker migration', () => {
             expect(src).toMatch(/export type EntityPickerKind/);
         });
 
-        it('supports the seven canonical entity kinds', () => {
+        it('supports the six canonical entity kinds', () => {
             // The Kind union must list every entity type the four
             // migrated sites reference. Anchor on each literal so a
             // future "drop one" PR fails CI loudly.
             for (const kind of [
                 'CONTROL',
-                'RISK',
                 'ASSET',
                 'EVIDENCE',
                 'VENDOR',

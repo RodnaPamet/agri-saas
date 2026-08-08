@@ -5,7 +5,6 @@
  *   1. tasks/new                  → Combobox hideSearch × 3 (type/severity/priority)
  *   2. controls/NewControlModal   → Combobox × 2 (category/frequency, freq hideSearch)
  *   3. controls/ControlDetailSheet → Combobox × 2 (category/frequency, freq hideSearch)
- *   4. risks/NewRiskModal         → Combobox × 1 (category)
  *   5. vendors/new                → RadioGroup × 1 (status) + Combobox hideSearch × 2
  *
  * Primitive rules verified:
@@ -42,9 +41,6 @@ const CONTROL_MODAL_SRC = read(
 );
 const CONTROL_SHEET_SRC = read(
     'src/app/t/[tenantSlug]/(app)/controls/ControlDetailSheet.tsx',
-);
-const RISK_MODAL_SRC = read(
-    'src/app/t/[tenantSlug]/(app)/risks/NewRiskModal.tsx',
 );
 const VENDORS_NEW_SRC =
     read('src/app/t/[tenantSlug]/(app)/vendors/new/page.tsx') +
@@ -200,35 +196,6 @@ describe('ControlDetailSheet — category + frequency Comboboxes', () => {
     });
 });
 
-// ─── 4. NewRiskModal — category ───────────────────────────────────
-
-describe('NewRiskModal — category Combobox', () => {
-    it('no native <select id="risk-category">', () => {
-        expect(RISK_MODAL_SRC).not.toMatch(
-            /<select[^>]*\bid=["']risk-category["']/,
-        );
-    });
-
-    it('Combobox preserves id="risk-category" + name="category"', () => {
-        expect(RISK_MODAL_SRC).toMatch(
-            /<Combobox[\s\S]{0,500}id=["']risk-category["']/,
-        );
-        expect(RISK_MODAL_SRC).toMatch(
-            /<Combobox[\s\S]{0,500}name=["']category["']/,
-        );
-    });
-
-    it('projects CATEGORIES into CATEGORY_OPTIONS typed as ComboboxOption[]', () => {
-        expect(RISK_MODAL_SRC).toMatch(
-            /CATEGORY_OPTIONS:\s*ComboboxOption\[\]\s*=\s*CATEGORIES\.map/,
-        );
-    });
-
-    it('keeps the existing CATEGORIES const as the single source of truth', () => {
-        expect(RISK_MODAL_SRC).toMatch(/const CATEGORIES\s*=\s*\[/);
-    });
-});
-
 // ─── 5. vendors/new — status RadioGroup + criticality/dataAccess Combobox ─
 
 describe('vendors/new — mixed primitives (RadioGroup + Combobox)', () => {
@@ -302,7 +269,6 @@ describe('Epic 55 Prompt 6 — drift sentinels', () => {
             [TASK_NEW_SRC, ['type', 'severity', 'priority']],
             [CONTROL_MODAL_SRC, ['category', 'frequency']],
             [CONTROL_SHEET_SRC, ['category', 'frequency']],
-            [RISK_MODAL_SRC, ['category']],
             [VENDORS_NEW_SRC, ['criticality', 'dataAccess']],
         ] as const) {
             for (const name of ids) {
@@ -320,6 +286,5 @@ describe('Epic 55 Prompt 6 — drift sentinels', () => {
         expect(TASK_NEW_SRC).not.toMatch(/<RadioGroup\b/);
         expect(CONTROL_MODAL_SRC).not.toMatch(/<RadioGroup\b/);
         expect(CONTROL_SHEET_SRC).not.toMatch(/<RadioGroup\b/);
-        expect(RISK_MODAL_SRC).not.toMatch(/<RadioGroup\b/);
     });
 });

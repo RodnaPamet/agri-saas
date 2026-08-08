@@ -106,15 +106,11 @@ function makeSnapshot(
         controlsInProgress: 5,
         controlsNotStarted: 5,
         controlCoverageBps: overrides.controlCoverageBps ?? 900, // 90.0%
-        risksTotal: overrides.risksTotal ?? 10,
-        risksOpen: overrides.risksOpen ?? 4,
         risksMitigating: 1,
         risksAccepted: 2,
         risksClosed: 3,
         risksLow: 5,
         risksMedium: 3,
-        risksHigh: overrides.risksHigh ?? 1,
-        risksCritical: overrides.risksCritical ?? 0,
         evidenceTotal: overrides.evidenceTotal ?? 50,
         evidenceOverdue: overrides.evidenceOverdue ?? 0,
         evidenceDueSoon7d: overrides.evidenceDueSoon7d ?? 0,
@@ -180,20 +176,17 @@ describe('getPortfolioSummary', () => {
             // GREEN: cov=95%, no criticals, no overdue
             makeSnapshot('t-green', {
                 controlsApplicable: 100, controlsImplemented: 95,
-                controlCoverageBps: 950,
-                risksCritical: 0, evidenceOverdue: 0,
+                controlCoverageBps: 950, evidenceOverdue: 0,
             }),
             // AMBER: cov=70%, no criticals, no overdue
             makeSnapshot('t-amber', {
                 controlsApplicable: 100, controlsImplemented: 70,
-                controlCoverageBps: 700,
-                risksCritical: 0, evidenceOverdue: 0,
+                controlCoverageBps: 700, evidenceOverdue: 0,
             }),
             // RED: cov=50%, no criticals, no overdue
             makeSnapshot('t-red', {
                 controlsApplicable: 100, controlsImplemented: 50,
-                controlCoverageBps: 500,
-                risksCritical: 0, evidenceOverdue: 0,
+                controlCoverageBps: 500, evidenceOverdue: 0,
             }),
         ]);
 
@@ -218,8 +211,7 @@ describe('getPortfolioTenantHealth', () => {
         ]);
         complianceSnapshotFindManyMock.mockResolvedValue([
             makeSnapshot('t-1', {
-                controlCoverageBps: 850,
-                risksOpen: 5, risksCritical: 0,
+                controlCoverageBps: 850, risksCritical: 0,
                 evidenceOverdue: 0,
             }),
         ]);
@@ -231,8 +223,6 @@ describe('getPortfolioTenantHealth', () => {
         const has = rows.find((r) => r.tenantId === 't-1')!;
         expect(has.hasSnapshot).toBe(true);
         expect(has.coveragePercent).toBe(85);
-        expect(has.openRisks).toBe(5);
-        expect(has.criticalRisks).toBe(0);
         expect(has.overdueEvidence).toBe(0);
         expect(has.rag).toBe('GREEN');
         expect(has.drillDownUrl).toBe('/t/has/dashboard');
@@ -285,8 +275,7 @@ describe('getPortfolioTrends', () => {
                 snapshotDate: new Date('2026-04-25'),
                 _sum: {
                     controlsApplicable: 200,
-                    controlsImplemented: 150, // 75%
-                    risksTotal: 20, risksOpen: 8, risksCritical: 1, risksHigh: 3,
+                    controlsImplemented: 150, // 75% risksOpen: 8, risksCritical: 1, risksHigh: 3,
                     evidenceOverdue: 2, evidenceDueSoon7d: 5, evidenceCurrent: 100,
                     policiesTotal: 10, policiesOverdueReview: 1,
                     tasksOpen: 12, tasksOverdue: 1,
@@ -298,8 +287,7 @@ describe('getPortfolioTrends', () => {
                 snapshotDate: new Date('2026-04-26'),
                 _sum: {
                     controlsApplicable: 200,
-                    controlsImplemented: 170, // 85%
-                    risksTotal: 18, risksOpen: 6, risksCritical: 0, risksHigh: 2,
+                    controlsImplemented: 170, // 85% risksOpen: 6, risksCritical: 0, risksHigh: 2,
                     evidenceOverdue: 1, evidenceDueSoon7d: 4, evidenceCurrent: 110,
                     policiesTotal: 10, policiesOverdueReview: 0,
                     tasksOpen: 10, tasksOverdue: 0,

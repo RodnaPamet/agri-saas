@@ -98,10 +98,6 @@ const ALLOWLIST: AllowlistEntry[] = [
         reason: 'Funnel chart tooltip floats above the canvas; shadow communicates lift.',
     },
     {
-        file: 'src/components/ui/GraphExplorer.tsx',
-        reason: 'Graph node tooltips and the centred overlay banner float above the graph canvas.',
-    },
-    {
         file: 'src/app/t/[tenantSlug]/(app)/admin/members/page.tsx',
         reason: 'Hand-rolled overflow menu floats above the row; shadow communicates lift. Future PR may migrate to Popover.',
     },

@@ -27,29 +27,6 @@ import {
     assertCatalogConsistency,
 } from './catalog-loader';
 
-const DEFAULT_TASKS = [
-    {
-        title: 'Define control owner and scope',
-        description: 'Assign an owner and define the scope of this control within the organization.',
-    },
-    {
-        title: 'Document procedure or policy',
-        description: 'Create or reference the policy/procedure that implements this control.',
-    },
-    {
-        title: 'Implement technical or operational measure',
-        description: 'Put the control into practice — deploy tooling, configure settings, or establish processes.',
-    },
-    {
-        title: 'Collect evidence of implementation',
-        description: 'Gather evidence demonstrating the control is operating effectively.',
-    },
-    {
-        title: 'Review effectiveness',
-        description: 'Periodically review and assess whether the control meets its objectives.',
-    },
-];
-
 export interface ApplyCatalogResult {
     framework: { id: string; key: string; created: boolean };
     requirements: { upserted: number };
@@ -174,51 +151,10 @@ export async function applyCatalogFile(
         requirementMap[req.code] = r.id;
     }
 
-    // ── 3. ControlTemplates + 4. Tasks + 5. Requirement links ──
-    let templatesCreated = 0;
-    let templatesExisting = 0;
-    const templateMap: Record<string, string> = {};
-    for (const t of file.templates) {
-        const existing = await prisma.controlTemplate.findUnique({
-            where: { code: t.code },
-        });
-        if (existing) {
-            templatesExisting++;
-            templateMap[t.code] = existing.id;
-            continue;
-        }
-        const tmpl = await prisma.controlTemplate.create({
-            data: {
-                code: t.code,
-                title: t.title,
-                description: t.description ?? null,
-                category: t.category,
-                defaultFrequency: t.defaultFrequency,
-            },
-        });
-        templateMap[t.code] = tmpl.id;
-        templatesCreated++;
-
-        for (const task of DEFAULT_TASKS) {
-            await prisma.controlTemplateTask.create({
-                data: {
-                    templateId: tmpl.id,
-                    title: task.title,
-                    description: task.description,
-                },
-            });
-        }
-
-        for (const reqCode of t.requirementCodes) {
-            const reqId = requirementMap[reqCode];
-            if (!reqId) continue; // already covered by assertCatalogConsistency
-            await prisma.controlTemplateRequirementLink.create({
-                data: { templateId: tmpl.id, requirementId: reqId },
-            }).catch(() => undefined); // tolerate duplicate-link races
-        }
-    }
-
-    // ── 6. + 7. Pack + PackTemplateLinks ───────────────────────
+    // ── 3. Pack ────────────────────────────────────────────────
+    // Control templates (and their tasks / requirement links / pack
+    // links) were removed with the compliance uproot — a catalogue file
+    // now seeds the framework and its requirements only.
     let packResult: ApplyCatalogResult['pack'];
     if (file.pack) {
         const packBefore = await prisma.frameworkPack.findUnique({
@@ -245,24 +181,11 @@ export async function applyCatalogFile(
             },
         });
 
-        // Default to every template in this file when omitted.
-        const codes = file.pack.templateCodes ?? file.templates.map((t) => t.code);
-        let linked = 0;
-        for (const code of codes) {
-            const templateId = templateMap[code];
-            if (!templateId) continue; // already covered by consistency check
-            await prisma.packTemplateLink.upsert({
-                where: { packId_templateId: { packId: pack.id, templateId } },
-                create: { packId: pack.id, templateId },
-                update: {},
-            });
-            linked++;
-        }
         packResult = {
             id: pack.id,
             key: pack.key,
             created: !packBefore,
-            templatesLinked: linked,
+            templatesLinked: 0,
         };
     }
 
@@ -273,7 +196,7 @@ export async function applyCatalogFile(
             created: !fwBefore,
         },
         requirements: { upserted: file.requirements.length },
-        templates: { created: templatesCreated, existing: templatesExisting },
+        templates: { created: 0, existing: 0 },
         pack: packResult,
     };
 }

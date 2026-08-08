@@ -228,9 +228,7 @@ model Asset {
   deletedByUserId     String?
   ownerUser           User?                @relation("AssetOwner", fields: [ownerUserId], references: [id])
   tenant              Tenant               @relation(fields: [tenantId], references: [id])
-  risks               AssetRiskLink[]
   controls            ControlAsset[]
-  riskSuggestionItems RiskSuggestionItem[]
   // Evidence attached directly to this asset (Evidence Library tag +
   // the asset Evidence tab). Mirrors Control/Task.
   evidence            Evidence[]
@@ -265,208 +263,6 @@ model AssetKeySequence {
   lastValue Int    @default(0)
 }
 
-model Risk {
-  id                 String    @id @default(cuid())
-  tenantId           String
-  /// PR-B — generated per-tenant short key (RSK-1, RSK-2, …) so the
-  /// Risk list page can lead with a scannable identifier column.
-  /// Mints atomically via `RiskKeySequence.upsert` mirroring the
-  /// TaskKeySequence pattern. Nullable to keep historic rows
-  /// renderable; the create-path generates fresh values for every
-  /// new row.
-  key                String?
-  title              String
-  description        String?
-  category           String?
-  threat             String?
-  vulnerability      String?
-  likelihood         Int       @default(3)
-  impact             Int       @default(3)
-  score              Int       @default(9)
-  /// The CURRENT inherent assessment (likelihood × impact at the
-  /// latest edit) — moves together with `score` on every L/I update.
-  /// NOT a frozen creation-time value; the full change history lives
-  /// in `RiskScoreEvent` (RQ2-1).
-  inherentScore      Int       @default(9)
-  /// Residual risk score — the auditor's "after controls implemented"
-  /// view. Distinct from `inherentScore` and `score` (both of which
-  /// move together on every likelihood/impact edit — the "current
-  /// inherent assessment", NOT a frozen creation-time value; RQ2-1
-  /// fixed this doc to match the long-standing behavior of
-  /// `updateRisk`).
-  ///
-  /// NULL until the first residual assessment lands. Written by:
-  ///   (a) treatment-plan completion (`completePlan`,
-  ///       source: PLAN — strategy-based until RQ2-2 replaces the
-  ///       divisors with control-effectiveness derivation), or
-  ///   (b) a direct residual assessment via `updateRisk` with
-  ///       `residualLikelihood`/`residualImpact` (RQ2-1,
-  ///       source: USER) — in which case residualScore is DERIVED
-  ///       from those two dimensions via `calculateRiskScore`.
-  ///
-  /// Every change is recorded as a `RiskScoreEvent` (RQ2-1) with
-  /// full provenance.
-  residualScore      Int?
-  residualScoreSetAt DateTime?
-  /// RQ2-1 — residual decomposed into its dimensions, mirroring the
-  /// inherent likelihood/impact pair. Nullable: legacy rows carry
-  /// only the rolled-up `residualScore` (divisor-era, provenance
-  /// flagged MIGRATION). When present, the invariant
-  /// `residualScore === calculateRiskScore(residualLikelihood,
-  /// residualImpact, maxScale)` holds and is enforced at the
-  /// usecase layer.
-  residualLikelihood Int?
-  residualImpact     Int?
-  /// B10 — Quantitative risk assessment (SLE × ARO = ALE).
-  ///
-  /// `sleAmount` — Single Loss Expectancy: the monetary impact of
-  ///               ONE realised incident. Nullable until the risk
-  ///               owner quantifies; null risks keep the existing
-  ///               qualitative score-only view.
-  /// `aroAmount` — Annualised Rate of Occurrence: incidents/year.
-  ///               Float so 0.25 (= once per 4 years) is expressible
-  ///               without coercing to weird rationals. The audit
-  ///               UI will surface percentage equivalents.
-  ///
-  /// ALE is derived (`sleAmount * aroAmount`), not stored — both
-  /// inputs are nullable so a stored derived would have to be
-  /// `null OR sleAmount * aroAmount` everywhere, doubling the
-  /// invariants without buying query benefit. The analytics
-  /// usecase materialises ALE per-row at read time.
-  sleAmount          Float?
-  aroAmount          Float?
-
-  // ── RQ-1 FAIR taxonomy decomposition ──
-  // All nullable + additive: risks with only sleAmount/aroAmount keep
-  // working via `resolveALE` (prefers fairAle → SLE×ARO → null).
-  // Threat Event Frequency (events/year) + its sub-factors.
-  threatEventFrequency        Float?
-  contactFrequency            Float?
-  probabilityOfAction         Float?
-  // Vulnerability (probability a threat event becomes a loss, 0..1) + sub-factors.
-  vulnerabilityProbability    Float?
-  threatCapability            Float?
-  controlStrength             Float?
-  // Primary Loss Magnitude (cost of one loss event) + components.
-  primaryLossMagnitude        Float?
-  productivityLoss            Float?
-  responseCost                Float?
-  replacementCost             Float?
-  // Secondary loss.
-  secondaryLossEventFrequency Float?
-  secondaryLossMagnitude      Float?
-  regulatoryFineEstimate      Float?
-  reputationDamageEstimate    Float?
-  competitiveAdvantageLoss    Float?
-  // Derived (stored for query perf; recomputed on FAIR input change).
-  lossEventFrequency          Float?
-  fairAle                     Float?
-  // Metadata.
-  fairConfidence              FairConfidence?
-  /// PERT distribution triples per factor for Monte Carlo (RQ-3).
-  fairInputsJson              Json?
-  fairComputedAt              DateTime?
-
-  // ── RQ-10 — Business Impact Analysis ──
-  /// Recovery Time Objective: max acceptable downtime (hours).
-  rtoHours          Int?
-  /// Recovery Point Objective: max acceptable data-loss window (hours).
-  rpoHours          Int?
-  /// Maximum Tolerable Period of Disruption (hours).
-  mtpdHours         Int?
-  /// Impact scores — financial / operational / regulatory / reputational, each 1-5.
-  biaImpactJson     Json?
-  /// Business process(es) this risk could disrupt (comma-separated).
-  affectedProcesses String?
-  /// Estimated annual revenue at risk if this risk materialises.
-  revenueAtRisk     Float?
-
-  status           RiskStatus           @default(OPEN)
-  treatment        TreatmentDecision?
-  treatmentOwner   String?
-  treatmentNotes   String?
-  ownerUserId      String?
-  createdByUserId  String?
-  targetDate       DateTime?
-  nextReviewAt     DateTime?
-  createdAt        DateTime             @default(now())
-  updatedAt        DateTime             @updatedAt
-  deletedAt        DateTime?
-  deletedByUserId  String?
-  retentionUntil   DateTime?
-  assetLinks       AssetRiskLink[]
-  tenant           Tenant               @relation(fields: [tenantId], references: [id])
-  controls         RiskControl[]
-  // Epic G-7 — structured treatment plans (replaces free-text
-  // `treatmentNotes` for ISO 27001 6.1.3 conformance).
-  treatmentPlans   RiskTreatmentPlan[]
-  findingLinks     FindingRisk[]
-  // Evidence attached directly to this risk (Evidence Library tag +
-  // the risk Evidence tab). Mirrors Control/Task.
-  evidence         Evidence[]
-  // RQ-2 — appetite breaches attributed to this risk.
-  appetiteBreaches RiskAppetiteBreach[]
-  // RQ-5 — hierarchy node memberships.
-  hierarchyLinks   RiskHierarchyLink[]
-  // RQ-6 — key risk indicators linked to this risk.
-  kris             KeyRiskIndicator[]
-  // RQ-8 — pairwise correlations (this risk on either side of the pair).
-  correlationsA    RiskCorrelation[]    @relation("CorrelationA")
-  correlationsB    RiskCorrelation[]    @relation("CorrelationB")
-  // RQ-9 — historical snapshots.
-  snapshots        RiskSnapshot[]
-  // RQ2-1 — per-mutation score provenance ledger.
-  scoreEvents      RiskScoreEvent[]
-  lossEvents       LossEvent[]
-  /// Agro-intel — a disease-risk signal that raised this Risk.
-  agroSignals      AgroSignal[]
-
-  /// Composite parent key — supports the
-  /// `RiskTreatmentPlan.(riskId, tenantId) → Risk.(id, tenantId)`
-  /// FK shape so cross-tenant treatment plans are impossible at the
-  /// DB level. Same denorm-tenantId Phase-2 pattern Audit uses.
-  @@unique([id, tenantId])
-  // PR-B — unique within a tenant so `RSK-1` can't collide. Allows
-  // `@@unique` on a nullable column (Postgres treats NULLs as
-  // distinct), so historic NULL rows don't clash with each other.
-  @@unique([tenantId, key])
-  @@index([tenantId])
-  @@index([tenantId, createdAt])
-  @@index([tenantId, status])
-  @@index([tenantId, category])
-  @@index([tenantId, deletedAt])
-  // GAP-perf — supports `ownerUserId` filter in RiskFilters
-  @@index([tenantId, ownerUserId])
-  // GAP-perf — supports `scoreMin`/`scoreMax` range filter
-  @@index([tenantId, score])
-  // RQ-1 FAIR — quantitative ranking + filtering
-  @@index([tenantId, fairAle])
-  @@index([tenantId, lossEventFrequency])
-  @@index([tenantId, fairConfidence])
-  // GAP-perf — backs the default unpaginated `list()` orderBy:
-  // `inherentScore desc`. Without this Postgres sorts the full
-  // tenant result set per call.
-  @@index([tenantId, inherentScore])
-  // Calendar (compliance-calendar loadRiskEvents) — the risk-review /
-  // risk-target range predicates on these two columns had no index
-  // backing them; every calendar load was a per-tenant seq scan of
-  // Risk. Two separate composites (not one), mirroring
-  // Vendor.[nextReviewAt]/[contractRenewalAt] — the loader's `OR`
-  // filters each column independently, so a single multi-column index
-  // would only serve the leading field.
-  @@index([tenantId, nextReviewAt])
-  @@index([tenantId, targetDate])
-}
-
-/// Per-tenant monotonic counter for minting `RSK-N` risk keys.
-/// Mirrors `TaskKeySequence` — `upsert` with an atomic `increment`
-/// is race-free under concurrent imports and scales O(1) regardless
-/// of tenant size.
-model RiskKeySequence {
-  tenantId  String @id
-  lastValue Int    @default(0)
-}
-
 /// Per-tenant monotonic counter for minting `CTL-N` custom-control
 /// keys (the framework-installed controls keep their canonical
 /// annexId / supplied code). Only the `createControl` path that
@@ -477,558 +273,20 @@ model ControlKeySequence {
   lastValue Int    @default(0)
 }
 
-model RiskTemplate {
-  id                String   @id @default(cuid())
-  title             String
-  description       String?
-  category          String?
-  defaultLikelihood Int      @default(3)
-  defaultImpact     Int      @default(3)
-  frameworkTag      String?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-}
-
-/// Tenant-scoped risk-matrix configuration (Epic 44).
-///
-/// Drives the dimensions, axis labels, per-level labels, and severity
-/// bands of the likelihood × impact matrix the UI renders. Existing
-/// tenants resolve to the canonical 5×5 default until an admin
-/// customises it via the admin UI — the row is absent in that case;
-/// the read usecase centralises the fallback so callers don't have
-/// to know about presence.
-///
-/// `levelLabels` and `bands` are JSON because the per-level
-/// vocabulary varies (operational vs. clinical vs. supply-chain
-/// risks all want different scale legends) and forcing a side table
-/// would buy nothing — the rows are deeply tenant-specific and
-/// validated end-to-end by Zod before write. Schema invariants:
-///   - `likelihoodLevels`, `impactLevels` ∈ [2, 10]
-///   - `levelLabels.likelihood` length === likelihoodLevels (when set)
-///   - `levelLabels.impact`     length === impactLevels (when set)
-///   - `bands` cover [1, likelihoodLevels * impactLevels] without gaps
-///     or overlaps; each entry has { name, minScore, maxScore, color }
-///
-/// One row per tenant (`@@unique([tenantId])`).
-model RiskMatrixConfig {
-  id                  String   @id @default(cuid())
-  tenantId            String   @unique
-  /// Number of likelihood levels (matrix rows). Default 5.
-  likelihoodLevels    Int      @default(5)
-  /// Number of impact levels (matrix columns). Default 5.
-  impactLevels        Int      @default(5)
-  /// Y-axis title (default "Likelihood").
-  axisLikelihoodLabel String   @default("Likelihood")
-  /// X-axis title (default "Impact").
-  axisImpactLabel     String   @default("Impact")
-  /// Per-level human labels keyed by axis. Falls back to numeric labels when absent.
-  levelLabels         Json?
-  /// Ordered severity bands. See doc above for the contract.
-  bands               Json     @default("[]")
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
-  tenant              Tenant   @relation(fields: [tenantId], references: [id])
-
-  @@index([tenantId])
-}
-
-/// RQ-2 — board-approved risk appetite. One row per tenant; absent row
-/// means no appetite configured (UI shows a "Configure" CTA).
-model RiskAppetiteConfig {
-  id                    String        @id @default(cuid())
-  tenantId              String        @unique
-  /// Max acceptable total ALE across all active risks (Σ ALE/year).
-  totalAleThreshold     Float?
-  /// Max acceptable ALE for any single risk.
-  singleRiskAleMax      Float?
-  /// Max acceptable qualitative score (likelihood × impact).
-  qualScoreMax          Int?
-  /// RQ3-3 — which simulated portfolio percentile the ceiling is
-  /// tested at (board-level policy). Breach detection reads the
-  /// latest run's portfolioP<NN>; falls back to Σ(mean ALE) when no
-  /// simulation exists. Supported: 50 / 80 / 90 / 95 / 99.
-  testedPercentile      Int           @default(80)
-  /// category → { totalAleMax, singleAleMax, qualScoreMax } overrides.
-  categoryOverridesJson Json?
-  /// Board-approved narrative statement.
-  appetiteStatement     String?
-  approvedByUserId      String?
-  approvedAt            DateTime?
-  reviewCadence         ReviewCadence @default(ANNUALLY)
-  nextReviewAt          DateTime?
-  createdAt             DateTime      @default(now())
-  updatedAt             DateTime      @updatedAt
-  tenant                Tenant        @relation(fields: [tenantId], references: [id])
-
-  @@index([tenantId])
-}
-
-/// RQ-2 — a point-in-time record of an appetite threshold breach.
-/// Created by the monitor job / write-path checks; resolved when the
-/// value drops back under threshold.
-model RiskAppetiteBreach {
-  id                  String    @id @default(cuid())
-  tenantId            String
-  breachType          String // PORTFOLIO_ALE | SINGLE_RISK_ALE | QUAL_SCORE | CATEGORY_ALE
-  riskId              String?
-  category            String?
-  thresholdValue      Float
-  actualValue         Float
-  notifiedUserIds     Json?
-  detectedAt          DateTime  @default(now())
-  resolvedAt          DateTime?
-  acknowledgedAt      DateTime?
-  acknowledgedBy      String?
-  acknowledgementNote String?
-  /// RQ2-6 — the remediation task spawned from this breach (one per
-  /// breach, claimed via conditional update). Soft reference by
-  /// design: deleting the task leaves a dangling id the UI treats
-  /// as "no task"; breach telemetry never blocks task lifecycle.
-  remediationTaskId   String?
-  tenant              Tenant    @relation(fields: [tenantId], references: [id])
-  risk                Risk?     @relation(fields: [riskId], references: [id])
-
-  @@index([tenantId, detectedAt])
-  @@index([tenantId, breachType])
-  @@index([tenantId, resolvedAt])
-  @@index([riskId])
-}
-
-/// RQ-3 — a single Monte Carlo simulation execution. Immutable after
-/// completion; re-running creates a new row.
-model RiskSimulationRun {
-  id                 String    @id @default(cuid())
-  tenantId           String
-  triggeredBy        String    @default("manual") // manual | scheduled | scenario
-  createdByUserId    String?
-  iterations         Int       @default(10000)
-  confidenceLevels   Json      @default("[0.90, 0.95, 0.99]")
-  seed               Int?
-  riskFilterJson     Json?
-  correlationId      String?
-  // ── Results ──
-  portfolioMean      Float?
-  portfolioP50       Float?
-  /// RQ3-1 — VaR-80: the "likely bad year" marker on the simulated LEC.
-  portfolioP80       Float?
-  portfolioP90       Float?
-  portfolioP95       Float?
-  portfolioP99       Float?
-  portfolioStdDev    Float?
-  perRiskResultsJson Json?
-  lecPointsJson      Json?
-  convergenceDelta   Float?
-  executionMs        Int?
-  status             String    @default("RUNNING") // RUNNING | COMPLETED | FAILED
-  errorMessage       String?
-  startedAt          DateTime  @default(now())
-  completedAt        DateTime?
-  createdAt          DateTime  @default(now())
-  tenant             Tenant    @relation(fields: [tenantId], references: [id])
-
-  @@index([tenantId, createdAt])
-  @@index([tenantId, status])
-}
-
-/// RQ-4 — a hypothetical "what-if" scenario that patches the portfolio
-/// before re-running the Monte Carlo simulation. Clone to iterate.
-model RiskScenario {
-  id              String   @id @default(cuid())
-  tenantId        String
-  name            String
-  description     String?
-  createdByUserId String
-  /// "Before" run (null = current live portfolio is the baseline).
-  baselineRunId   String?
-  /// Array<ScenarioOverride> applied before simulation.
-  overridesJson   Json
-  /// The run executed WITH overrides applied (null until simulated).
-  resultRunId     String?
-  status          String   @default("DRAFT") // DRAFT | SIMULATED | ARCHIVED
-  investmentCost  Float?
-  computedRoi     Float?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  tenant          Tenant   @relation(fields: [tenantId], references: [id])
-
-  @@index([tenantId])
-  @@index([tenantId, status])
-  @@index([tenantId, createdAt])
-}
-
-/// RQ-5 — a node in a tenant-defined org hierarchy for risk aggregation.
-/// Parallel trees per `type` (BU / geography / asset class / custom).
-model RiskHierarchyNode {
-  id           String              @id @default(cuid())
-  tenantId     String
-  name         String
-  type         String // BUSINESS_UNIT | GEOGRAPHY | ASSET_CLASS | CUSTOM
-  parentId     String?
-  sortOrder    Int                 @default(0)
-  metadataJson Json?
-  parent       RiskHierarchyNode?  @relation("HierarchyTree", fields: [parentId], references: [id])
-  children     RiskHierarchyNode[] @relation("HierarchyTree")
-  riskLinks    RiskHierarchyLink[]
-  tenant       Tenant              @relation(fields: [tenantId], references: [id])
-
-  @@unique([tenantId, type, name])
-  @@index([tenantId, type])
-  @@index([tenantId, parentId])
-  @@index([parentId])
-}
-
-/// RQ-5 — M:N join: a risk can sit in multiple hierarchy nodes.
-model RiskHierarchyLink {
-  id        String            @id @default(cuid())
-  tenantId  String
-  riskId    String
-  nodeId    String
-  createdAt DateTime          @default(now())
-  risk      Risk              @relation(fields: [riskId], references: [id], onDelete: Cascade)
-  node      RiskHierarchyNode @relation(fields: [nodeId], references: [id], onDelete: Cascade)
-  tenant    Tenant            @relation(fields: [tenantId], references: [id])
-
-  @@unique([tenantId, riskId, nodeId])
-  @@index([tenantId, nodeId])
-  @@index([tenantId, riskId])
-  @@index([nodeId])
-}
-
-/// RQ-6 — a leading/lagging indicator that signals whether a risk is
-/// trending toward materialisation. RAG-thresholded; readings tracked.
-model KeyRiskIndicator {
-  id               String       @id @default(cuid())
-  tenantId         String
-  riskId           String?
-  name             String
-  description      String?
-  unit             String?
-  direction        String       @default("HIGHER_IS_WORSE") // HIGHER_IS_WORSE | LOWER_IS_WORSE
-  greenMax         Float?
-  amberMax         Float?
-  frequency        String       @default("MONTHLY") // DAILY | WEEKLY | MONTHLY | QUARTERLY
-  ownerUserId      String?
-  isActive         Boolean      @default(true)
-  automationRuleId String?
-  targetValue      Float?
-  createdAt        DateTime     @default(now())
-  updatedAt        DateTime     @updatedAt
-  tenant           Tenant       @relation(fields: [tenantId], references: [id])
-  risk             Risk?        @relation(fields: [riskId], references: [id])
-  owner            User?        @relation("KriOwner", fields: [ownerUserId], references: [id])
-  readings         KriReading[]
-
-  @@index([tenantId])
-  @@index([tenantId, riskId])
-  @@index([tenantId, isActive])
-  @@index([riskId])
-  @@index([ownerUserId])
-}
-
-/// RQ-6 — a single KRI measurement; RAG computed at write time.
-model KriReading {
-  id         String           @id @default(cuid())
-  tenantId   String
-  kriId      String
-  value      Float
-  ragStatus  String? // GREEN | AMBER | RED
-  recordedAt DateTime         @default(now())
-  recordedBy String?
-  note       String?
-  kri        KeyRiskIndicator @relation(fields: [kriId], references: [id], onDelete: Cascade)
-  tenant     Tenant           @relation(fields: [tenantId], references: [id])
-
-  @@index([kriId, recordedAt])
-  @@index([tenantId, recordedAt])
-  @@index([tenantId, kriId])
-}
-
-/// RQ-8 — pairwise correlation between two risks, used by the Monte
-/// Carlo engine (RQ-3) to generate correlated loss samples via Cholesky.
-/// Normalised so riskAId < riskBId (one row per unordered pair).
-model RiskCorrelation {
-  id              String   @id @default(cuid())
-  tenantId        String
-  riskAId         String
-  riskBId         String
-  /// Pearson coefficient (-1.0 .. 1.0). Positive = co-materialise.
-  coefficient     Float
-  rationale       String?
-  source          String   @default("MANUAL") // MANUAL | AUTO_SUGGESTED | HISTORICAL
-  createdByUserId String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  tenant          Tenant   @relation(fields: [tenantId], references: [id])
-  riskA           Risk     @relation("CorrelationA", fields: [riskAId], references: [id], onDelete: Cascade)
-  riskB           Risk     @relation("CorrelationB", fields: [riskBId], references: [id], onDelete: Cascade)
-
-  @@unique([tenantId, riskAId, riskBId])
-  @@index([tenantId])
-  @@index([riskAId])
-  @@index([riskBId])
-}
-
-/// RQ-9 — daily point-in-time capture of a risk's key metrics for
-/// trend + velocity analysis. Created by the `risk-snapshot` cron.
-model RiskSnapshot {
-  id                   String   @id @default(cuid())
-  tenantId             String
-  riskId               String
-  score                Int
-  inherentScore        Int
-  residualScore        Int?
-  likelihood           Int
-  impact               Int
-  status               String
-  ale                  Float?
-  fairAle              Float?
-  sleAmount            Float?
-  aroAmount            Float?
-  tef                  Float?
-  vulnerability        Float?
-  plm                  Float?
-  activeTreatmentPlans Int      @default(0)
-  snapshotAt           DateTime @default(now())
-  risk                 Risk     @relation(fields: [riskId], references: [id], onDelete: Cascade)
-  tenant               Tenant   @relation(fields: [tenantId], references: [id])
-
-  @@index([tenantId, riskId, snapshotAt])
-  @@index([tenantId, snapshotAt])
-  @@index([riskId, snapshotAt])
-}
-
-/// RQ2-1 — per-mutation score provenance ledger.
-///
-/// Boundary vs RQ-9's `RiskSnapshot`: RiskSnapshot is a CADENCE
-/// record (one row per risk per day, written by the snapshot cron,
-/// for trend charts). RiskScoreEvent is a MUTATION record — exactly
-/// one row per score-changing write, carrying WHO changed WHAT, from
-/// what SOURCE (user edit / system derivation / plan completion / AI
-/// acceptance / migration backfill), and an optional justification.
-/// Trends read snapshots; explainability + audit narrative read
-/// events. Neither substitutes for the other.
-///
-/// Written transactionally with the score write itself (same
-/// `runInTenantContext` transaction) so the ledger can never drift
-/// from the row state.
-model RiskScoreEvent {
-  id              String               @id @default(cuid())
-  tenantId        String
-  riskId          String
-  kind            RiskScoreEventKind
-  likelihood      Int
-  impact          Int
-  score           Int
-  source          RiskScoreEventSource
-  /// Free-text rationale (override reasons, plan ids, AI rationale).
-  /// Plain metadata — deliberately NOT in the encryption manifest:
-  /// no business content beyond what AuditLog.details already
-  /// carries for the same mutations.
-  justification   String?
-  /// Nullable: PLAN/MIGRATION events may have no acting user.
-  createdByUserId String?
-  createdAt       DateTime             @default(now())
-  risk            Risk                 @relation(fields: [riskId], references: [id], onDelete: Cascade)
-  tenant          Tenant               @relation(fields: [tenantId], references: [id])
-
-  @@index([tenantId, riskId, createdAt])
-  @@index([tenantId, createdAt])
-  @@index([tenantId, kind, createdAt])
-}
-
-/// RQ3-6 — recorded loss event ("an actual"). The system predicts
-/// losses everywhere (FAIR ALE, Monte Carlo P50/P90, LEC); this
-/// model is where the world's answer comes back, so the forecasting
-/// stack becomes falsifiable. Sources: USER (manual entry), FINDING
-/// (recorded from a finding's close-out), INCIDENT (recorded from
-/// an incident / ticket).
-model LossEvent {
-  id              String          @id @default(cuid())
-  tenantId        String
-  /// Optional risk attribution: a loss can be portfolio-wide (riskId
-  /// null) — the predicted-vs-actual overlay still aggregates it.
-  riskId          String?
-  /// When the loss occurred (calendar date — finance, not telemetry).
-  occurredAt      DateTime
-  /// Realised loss amount, currency = tenant's `currencySymbol` (OB-A).
-  amount          Float
-  /// Short human description ("Customer breach response, vendor X").
-  /// Encrypted at rest via the Epic B manifest (loss narratives are
-  /// confidential business content).
-  description     String?
-  source          LossEventSource @default(USER)
-  /// Free-text rationale (RQ2-1-style provenance): WHY this number,
-  /// WHICH ticket, who the assessor talked to.
-  justification   String?
-  /// Nullable: imported / migrated rows may have no acting user.
-  createdByUserId String?
-  createdAt       DateTime        @default(now())
-  /// Mark-as-resolved style soft delete so historical predictions
-  /// can still see the actual that came in then later got reclassified.
-  deletedAt       DateTime?
-  risk            Risk?           @relation(fields: [riskId], references: [id], onDelete: SetNull)
-  tenant          Tenant          @relation(fields: [tenantId], references: [id])
-
-  @@index([tenantId, occurredAt])
-  @@index([tenantId, riskId, occurredAt])
-  @@index([tenantId, createdAt])
-}
-
 /// RQ-9 — daily aggregate snapshot of the whole portfolio (one per
 /// tenant per day) for portfolio trend charts.
-model PortfolioSnapshot {
-  id               String   @id @default(cuid())
-  tenantId         String
-  totalRiskCount   Int
-  openRiskCount    Int
-  quantifiedCount  Int
-  totalAle         Float?
-  avgAle           Float?
-  maxSingleAle     Float?
-  totalScore       Int
-  avgScore         Float
-  appetiteBreached Boolean  @default(false)
-  snapshotAt       DateTime @default(now())
-  tenant           Tenant   @relation(fields: [tenantId], references: [id])
-
-  @@unique([tenantId, snapshotAt])
-  @@index([tenantId, snapshotAt])
-}
-
-/// RQ-10 — a reusable report template (structure + data sources).
-model ReportTemplate {
-  id          String           @id @default(cuid())
-  tenantId    String
-  name        String
-  description String?
-  type        String // PORTFOLIO_SUMMARY | RISK_DEEP_DIVE | BIA | CUSTOM
-  configJson  Json
-  isSystem    Boolean          @default(false)
-  createdAt   DateTime         @default(now())
-  updatedAt   DateTime         @updatedAt
-  tenant      Tenant           @relation(fields: [tenantId], references: [id])
-  runs        ReportRun[]
-  schedules   ReportSchedule[]
-
-  @@index([tenantId])
-  @@index([tenantId, type])
-}
-
-/// RQ-10 — a single report generation execution.
-model ReportRun {
-  id              String         @id @default(cuid())
-  tenantId        String
-  templateId      String
-  parametersJson  Json
-  format          String // PDF | CSV
-  outputPath      String?
-  outputSizeBytes Int?
-  status          String         @default("QUEUED") // QUEUED | GENERATING | COMPLETED | FAILED
-  errorMessage    String?
-  requestedBy     String?
-  deliverToJson   Json?
-  startedAt       DateTime?
-  completedAt     DateTime?
-  createdAt       DateTime       @default(now())
-  template        ReportTemplate @relation(fields: [templateId], references: [id])
-  tenant          Tenant         @relation(fields: [tenantId], references: [id])
-
-  @@index([tenantId, createdAt])
-  @@index([tenantId, status])
-  @@index([templateId])
-}
-
-/// RQ-10 — scheduled report delivery configuration.
-model ReportSchedule {
-  id                 String         @id @default(cuid())
-  tenantId           String
-  templateId         String
-  parametersJson     Json
-  format             String         @default("PDF")
-  cadence            String // WEEKLY | MONTHLY | QUARTERLY
-  deliveryDay        Int?
-  recipientsJson     Json
-  sharePointDriveId  String?
-  sharePointFolderId String?
-  isActive           Boolean        @default(true)
-  nextRunAt          DateTime?
-  lastRunAt          DateTime?
-  createdAt          DateTime       @default(now())
-  updatedAt          DateTime       @updatedAt
-  template           ReportTemplate @relation(fields: [templateId], references: [id])
-  tenant             Tenant         @relation(fields: [tenantId], references: [id])
-
-  @@index([tenantId])
-  @@index([nextRunAt, isActive])
-  @@index([templateId])
-}
-
-model RiskSuggestionSession {
-  id              String                  @id @default(cuid())
-  tenantId        String
-  createdByUserId String
-  status          SuggestionSessionStatus @default(DRAFT)
-  inputJson       String
-  modelName       String?
-  provider        String                  @default("stub")
-  errorMessage    String?
-  createdAt       DateTime                @default(now())
-  updatedAt       DateTime                @updatedAt
-  items           RiskSuggestionItem[]
-  createdBy       User                    @relation("SuggestionSessionCreator", fields: [createdByUserId], references: [id])
-  tenant          Tenant                  @relation(fields: [tenantId], references: [id])
-
-  @@index([tenantId])
-  @@index([tenantId, createdAt])
-  @@index([tenantId, status])
-}
-
-model RiskSuggestionItem {
-  id                    String                @id @default(cuid())
-  sessionId             String
-  tenantId              String
-  assetId               String?
-  title                 String
-  description           String?
-  category              String?
-  threat                String?
-  vulnerability         String?
-  likelihoodSuggested   Int?
-  impactSuggested       Int?
-  rationale             String?
-  suggestedControlsJson String?
-  status                SuggestionItemStatus  @default(PENDING)
-  editedJson            String?
-  createdRiskId         String?
-  createdAt             DateTime              @default(now())
-  updatedAt             DateTime              @updatedAt
-  asset                 Asset?                @relation(fields: [assetId], references: [id])
-  suggestionSession     RiskSuggestionSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  session               Tenant                @relation(fields: [tenantId], references: [id])
-
-  @@index([sessionId])
-  @@index([tenantId])
-  @@index([tenantId, sessionId])
-}
-
 model Control {
   id                           String                   @id @default(cuid())
   tenantId                     String?
   code                         String?
-  annexId                      String?                  @unique
   name                         String
   description                  String?
   intent                       String?
   category                     String?
   status                       ControlStatus            @default(NOT_STARTED)
+  /// 0-100 declared control effectiveness. Read by the bow-tie
+  /// barrier projection and the residual-risk suggestion.
   effectiveness                Int?
-  /// RQ3-8 — annual cost (operate + maintain) in the tenant's
-  /// currency. Float matches the existing money-field pattern
-  /// (sleAmount, aroAmount, fairAle on Risk). Nullable until an
-  /// owner prices it — the ROI surface returns an honest null with
-  /// a typed `NO_COST` reason rather than fabricating a number.
-  annualCost                   Float?
-  lastTested                   DateTime?
   reviewCadence                ReviewCadence?
   isCustom                     Boolean                  @default(false)
   ownerUserId                  String?
@@ -1036,8 +294,10 @@ model Control {
   frequency                    ControlFrequency?
   nextDueAt                    DateTime?
   evidenceSource               EvidenceSourceType?
+  /// Integration binding — `<provider>.<check>` (e.g. `sharepoint.policy_doc`).
+  /// Drives the scheduled integration checks that produce auto-evidence.
   automationKey                String?
-  automationType               ControlAutomationType?
+  /// Barrier classification for the bow-tie projection.
   mitigationType               ControlMitigationType?
   applicability                Applicability            @default(APPLICABLE)
   applicabilityJustification   String?
@@ -1053,26 +313,20 @@ model Control {
   owner                        User?                    @relation("ControlOwner", fields: [ownerUserId], references: [id])
   tenant                       Tenant?                  @relation(fields: [tenantId], references: [id])
   assets                       ControlAsset[]
-  contributors                 ControlContributor[]
   evidenceLinks                ControlEvidenceLink[]
   requirementLinks             ControlRequirementLink[]
   controlTasks                 ControlTask[]
-  testPlans                    ControlTestPlan[]
-  testRuns                     ControlTestRun[]
   evidence                     Evidence[]
   frameworkMappings            FrameworkMapping[]
   findings                     Finding[]                @relation("FindingControl")
   compensatingForFindings      Finding[]                @relation("FindingCompensatingControl")
   integrationExecutions        IntegrationExecution[]
   policyLinks                  PolicyControlLink[]
-  risks                        RiskControl[]
   tasks                        Task[]
   // Epic G-5 — control exception register. Two reverse relations:
   // (a) exceptions registered against THIS control,
   // (b) exceptions that name THIS control as their compensating
   //     control (i.e. "we mitigate the gap by doing this").
-  exceptions                   ControlException[]       @relation("ControlExceptionAffected")
-  compensatingForExceptions    ControlException[]       @relation("ControlExceptionCompensating")
 
   /// Composite parent key — supports the
   /// `ControlException.(controlId, tenantId) → Control.(id, tenantId)`
@@ -1097,24 +351,6 @@ model Control {
   @@index([tenantId, category])
 }
 
-model RiskControl {
-  id              String   @id @default(cuid())
-  riskId          String
-  controlId       String
-  tenantId        String
-  rationale       String?
-  createdByUserId String?
-  createdAt       DateTime @default(now())
-  control         Control  @relation(fields: [controlId], references: [id], onDelete: Cascade)
-  createdBy       User?    @relation("RiskControlCreator", fields: [createdByUserId], references: [id])
-  risk            Risk     @relation(fields: [riskId], references: [id], onDelete: Cascade)
-  tenant          Tenant   @relation(fields: [tenantId], references: [id])
-
-  @@unique([tenantId, riskId, controlId])
-  @@index([tenantId, controlId])
-  @@index([tenantId])
-}
-
 model ControlAsset {
   id              String       @id @default(cuid())
   controlId       String
@@ -1131,39 +367,6 @@ model ControlAsset {
 
   @@unique([tenantId, controlId, assetId])
   @@index([tenantId, assetId])
-  @@index([tenantId])
-}
-
-model AssetRiskLink {
-  id              String        @id @default(cuid())
-  tenantId        String
-  assetId         String
-  riskId          String
-  exposureLevel   ExposureLevel @default(MEDIUM)
-  rationale       String?
-  createdByUserId String?
-  createdAt       DateTime      @default(now())
-  asset           Asset         @relation(fields: [assetId], references: [id], onDelete: Cascade)
-  createdBy       User?         @relation("AssetRiskCreator", fields: [createdByUserId], references: [id])
-  risk            Risk          @relation(fields: [riskId], references: [id], onDelete: Cascade)
-  tenant          Tenant        @relation(fields: [tenantId], references: [id])
-
-  @@unique([tenantId, assetId, riskId])
-  @@index([tenantId, riskId])
-  @@index([tenantId])
-}
-
-model ControlContributor {
-  id        String   @id @default(cuid())
-  tenantId  String
-  controlId String
-  userId    String
-  createdAt DateTime @default(now())
-  control   Control  @relation(fields: [controlId], references: [id], onDelete: Cascade)
-  tenant    Tenant   @relation(fields: [tenantId], references: [id])
-  user      User     @relation(fields: [userId], references: [id])
-
-  @@unique([controlId, userId])
   @@index([tenantId])
 }
 
@@ -1216,39 +419,6 @@ model ControlEvidenceLink {
   @@index([controlId])
 }
 
-model ControlTemplate {
-  id               String                           @id @default(cuid())
-  code             String                           @unique
-  title            String
-  description      String?
-  category         String?
-  defaultFrequency ControlFrequency?
-  defaultOwnerHint String?
-  isGlobal         Boolean                          @default(true)
-  createdAt        DateTime                         @default(now())
-  requirementLinks ControlTemplateRequirementLink[]
-  tasks            ControlTemplateTask[]
-  packLinks        PackTemplateLink[]
-}
-
-model ControlTemplateTask {
-  id          String          @id @default(cuid())
-  templateId  String
-  title       String
-  description String?
-  template    ControlTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
-}
-
-model ControlTemplateRequirementLink {
-  id            String               @id @default(cuid())
-  templateId    String
-  requirementId String
-  requirement   FrameworkRequirement @relation(fields: [requirementId], references: [id])
-  template      ControlTemplate      @relation(fields: [templateId], references: [id], onDelete: Cascade)
-
-  @@unique([templateId, requirementId])
-}
-
 model Evidence {
   id                String                    @id @default(cuid())
   tenantId          String
@@ -1257,10 +427,9 @@ model Evidence {
   // task's Evidence tab. Powers the task Evidence tab AND the
   // "uploaded from" back-reference on the evidence detail surface.
   taskId            String?
-  // Source risk / asset — same pattern as taskId: set when uploaded
-  // from that entity's Evidence tab; powers the attached-evidence tab
-  // + the "uploaded from" back-reference.
-  riskId            String?
+  // Source asset — same pattern as taskId: set when uploaded from that
+  // entity's Evidence tab; powers the attached-evidence tab + the
+  // "uploaded from" back-reference.
   assetId           String?
   type              EvidenceType
   title             String
@@ -1297,13 +466,10 @@ model Evidence {
   /// (logEntry, control)) and the "which farm records back this scheme"
   /// query. NULL for hand-authored evidence.
   sourceLogEntryId  String?
-  testEvidenceLinks ControlTestEvidenceLink[]
-  // Epic G-3 — vendor questionnaire FILE_UPLOAD answers attach
   // their proof here.
   vendorAnswers     VendorAssessmentAnswer[]  @relation("VendorAnswerEvidence")
   control           Control?                  @relation(fields: [controlId], references: [id])
   task              Task?                     @relation(fields: [taskId], references: [id])
-  risk              Risk?                     @relation(fields: [riskId], references: [id])
   asset             Asset?                    @relation(fields: [assetId], references: [id])
   fileRecord        FileRecord?               @relation(fields: [fileRecordId], references: [id])
   ownerUser         User?                     @relation("EvidenceOwner", fields: [ownerUserId], references: [id])
@@ -1329,7 +495,6 @@ model Evidence {
   // evidence "uploaded from" back-reference lookup.
   @@index([tenantId, taskId])
   // Same, for the risk + asset Evidence tabs.
-  @@index([tenantId, riskId])
   @@index([tenantId, assetId])
   // GAP-perf — supports `type` filter (FILE|LINK|TEXT|SCREENSHOT).
   @@index([tenantId, type])
@@ -1594,7 +759,6 @@ model Finding {
   control               Control?          @relation("FindingControl", fields: [controlId], references: [id], onDelete: SetNull)
   compensatingControl   Control?          @relation("FindingCompensatingControl", fields: [compensatingControlId], references: [id], onDelete: SetNull)
   evidenceLinks         FindingEvidence[]
-  riskLinks             FindingRisk[]
 
   @@unique([id, tenantId])
   @@index([tenantId])
@@ -1608,25 +772,6 @@ model Finding {
   // finding-due range predicate had no index; every calendar load was
   // a per-tenant seq scan of Finding.
   @@index([tenantId, dueDate])
-}
-
-// Many-to-many: a finding can implicate several risks. Composite parent
-// FKs to (id, tenantId) guarantee both sides share this row's tenant —
-// the FindingEvidence pattern. RLS + indexes mirror that junction.
-model FindingRisk {
-  id        String   @id @default(cuid())
-  tenantId  String
-  findingId String
-  riskId    String
-  createdAt DateTime @default(now())
-  finding   Finding  @relation(fields: [findingId, tenantId], references: [id, tenantId], onDelete: Cascade)
-  risk      Risk     @relation(fields: [riskId, tenantId], references: [id, tenantId], onDelete: Cascade)
-  tenant    Tenant   @relation(fields: [tenantId], references: [id])
-
-  @@unique([findingId, riskId])
-  @@index([tenantId])
-  @@index([tenantId, findingId])
-  @@index([tenantId, riskId])
 }
 
 model FindingEvidence {
@@ -1702,7 +847,6 @@ model FrameworkRequirement {
   section                 String?
   deprecatedAt            DateTime?
   controlLinks            ControlRequirementLink[]
-  templateLinks           ControlTemplateRequirementLink[]
   mappingsFrom            FrameworkMapping[]               @relation("MappingFrom")
   mappingsTo              FrameworkMapping[]               @relation("MappingTo")
   requirementMappingsFrom RequirementMapping[]             @relation("ReqMappingSource")
@@ -1746,17 +890,6 @@ model FrameworkPack {
   description   String?
   createdAt     DateTime           @default(now())
   framework     Framework          @relation(fields: [frameworkId], references: [id])
-  templateLinks PackTemplateLink[]
-}
-
-model PackTemplateLink {
-  id         String          @id @default(cuid())
-  packId     String
-  templateId String
-  pack       FrameworkPack   @relation(fields: [packId], references: [id], onDelete: Cascade)
-  template   ControlTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
-
-  @@unique([packId, templateId])
 }
 
 model FrameworkMapping {
@@ -1837,115 +970,6 @@ model ControlRequirementLink {
   @@index([tenantId, requirementId])
 }
 
-model ControlTestPlan {
-  id                 String            @id @default(cuid())
-  tenantId           String
-  controlId          String
-  name               String
-  description        String?
-  method             TestMethod        @default(MANUAL)
-  frequency          ControlFrequency  @default(AD_HOC)
-  nextDueAt          DateTime?
-  ownerUserId        String?
-  expectedEvidence   Json?
-  status             TestPlanStatus    @default(ACTIVE)
-  // Epic G-2 — automated scheduled execution. `nextDueAt` stays the
-  // soft due-by indicator (UI overdue badge, deadline-monitor digest);
-  // `nextRunAt` is the hard scheduler trigger. They diverge for plans
-  // where humans review monthly but the script runs daily.
-  automationType     AutomationType    @default(MANUAL)
-  schedule           String?
-  scheduleTimezone   String?
-  nextRunAt          DateTime?
-  lastScheduledRunAt DateTime?
-  automationConfig   Json?
-  createdByUserId    String
-  createdAt          DateTime          @default(now())
-  updatedAt          DateTime          @updatedAt
-  control            Control           @relation(fields: [controlId], references: [id])
-  createdBy          User              @relation("TestPlanCreator", fields: [createdByUserId], references: [id])
-  owner              User?             @relation("TestPlanOwner", fields: [ownerUserId], references: [id])
-  tenant             Tenant            @relation(fields: [tenantId], references: [id])
-  runs               ControlTestRun[]
-  steps              ControlTestStep[]
-
-  @@index([tenantId])
-  @@index([tenantId, controlId])
-  @@index([tenantId, nextDueAt])
-  @@index([tenantId, status])
-  @@index([tenantId, nextRunAt])
-  @@index([tenantId, automationType, status])
-}
-
-model ControlTestRun {
-  id               String                    @id @default(cuid())
-  tenantId         String
-  controlId        String
-  testPlanId       String
-  status           TestRunStatus             @default(PLANNED)
-  result           TestResult?
-  executedAt       DateTime?
-  executedByUserId String?
-  notes            String?
-  findingSummary   String?
-  createdByUserId  String
-  requestId        String?
-  createdAt        DateTime                  @default(now())
-  updatedAt        DateTime                  @updatedAt
-  evidence         ControlTestEvidenceLink[]
-  control          Control                   @relation(fields: [controlId], references: [id])
-  createdBy        User                      @relation("TestRunCreator", fields: [createdByUserId], references: [id])
-  executedBy       User?                     @relation("TestRunExecutor", fields: [executedByUserId], references: [id])
-  tenant           Tenant                    @relation(fields: [tenantId], references: [id])
-  testPlan         ControlTestPlan           @relation(fields: [testPlanId], references: [id])
-
-  @@index([tenantId])
-  @@index([tenantId, testPlanId])
-  @@index([tenantId, result])
-  @@index([tenantId, executedAt])
-  @@index([tenantId, controlId])
-}
-
-model ControlTestEvidenceLink {
-  id                  String           @id @default(cuid())
-  tenantId            String
-  testRunId           String
-  kind                TestEvidenceKind
-  fileId              String?
-  evidenceId          String?
-  url                 String?
-  integrationResultId String?
-  note                String?
-  createdByUserId     String
-  createdAt           DateTime         @default(now())
-  updatedAt           DateTime         @updatedAt
-  sha256Hash          String?
-  createdBy           User             @relation("TestEvidenceCreator", fields: [createdByUserId], references: [id])
-  evidence            Evidence?        @relation(fields: [evidenceId], references: [id])
-  tenant              Tenant           @relation(fields: [tenantId], references: [id])
-  testRun             ControlTestRun   @relation(fields: [testRunId], references: [id], onDelete: Cascade)
-
-  @@unique([testRunId, kind, evidenceId])
-  @@unique([testRunId, kind, fileId])
-  @@index([tenantId])
-  @@index([tenantId, testRunId])
-}
-
-model ControlTestStep {
-  id             String          @id @default(cuid())
-  tenantId       String
-  testPlanId     String
-  sortOrder      Int             @default(0)
-  instruction    String
-  expectedOutput String?
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
-  tenant         Tenant          @relation(fields: [tenantId], references: [id])
-  testPlan       ControlTestPlan @relation(fields: [testPlanId], references: [id], onDelete: Cascade)
-
-  @@index([tenantId, testPlanId])
-}
-
 /// Daily compliance KPI snapshot for trend reporting.
 /// One row per tenant per day. Idempotent via @@unique([tenantId, snapshotDate]).
 /// Stores denormalized KPI values computed by the daily snapshot job.
@@ -1964,17 +988,6 @@ model ComplianceSnapshot {
   controlsNotStarted  Int @default(0)
   /// Cached coverage % × 10 (e.g. 753 = 75.3%). Int avoids float precision issues.
   controlCoverageBps  Int @default(0)
-
-  // ── Risks ──
-  risksTotal      Int @default(0)
-  risksOpen       Int @default(0)
-  risksMitigating Int @default(0)
-  risksAccepted   Int @default(0)
-  risksClosed     Int @default(0)
-  risksLow        Int @default(0)
-  risksMedium     Int @default(0)
-  risksHigh       Int @default(0)
-  risksCritical   Int @default(0)
 
   // ── Evidence ──
   evidenceTotal      Int @default(0)
@@ -2017,93 +1030,6 @@ model ComplianceSnapshot {
 }
 
 // ─────────────────────────────────────────────────────────────────
-// Epic G-5 — Control Exception Register.
-//
-// Formal record of a control that cannot be implemented as designed,
-// covering the auditor's required artifact: who accepted the risk,
-// what compensating control (if any) is in place, when it expires,
-// and the chain of renewals over time.
-//
-// Lifecycle is REQUESTED → (APPROVED | REJECTED) → (EXPIRED). A
-// renewal is a brand-new row in REQUESTED state with `renewedFromId`
-// pointing at the prior (typically EXPIRED or near-expiry APPROVED)
-// row — the renewal lineage is intentionally a per-row link, not a
-// status mutation, so each acceptance has its own approver +
-// expiry + audit trail.
-//
-// `compensatingControlId` is optional but heavily used: most
-// exceptions carry a "we mitigate by doing X with Control Y"
-// rationale that auditors expect to see linked.
-//
-// Tenant scoping: Class-A direct-scoped (own `tenantId` column);
-// canonical RLS trio + FORCE in the migration. The control FK is
-// composite (controlId, tenantId) → Control(id, tenantId) so a
-// cross-tenant link is impossible at the DB level. Compensating
-// control + renewal-from FK use the same composite shape.
-// ─────────────────────────────────────────────────────────────────
-
-model ControlException {
-  id                    String                 @id @default(cuid())
-  tenantId              String
-  /// FK target — the control that cannot be implemented as designed.
-  controlId             String
-  status                ControlExceptionStatus @default(REQUESTED)
-  /// Required free-text rationale for the exception. Surfaced
-  /// verbatim in audit packs; encrypted at rest via the manifest.
-  justification         String
-  /// Optional FK to the control that mitigates this exception
-  /// ("we don't enforce X because we instead do Y via control Z").
-  compensatingControlId String?
-  /// User who carries the risk-acceptance authority. Required at
-  /// creation — auditors want to know up-front who would sign off.
-  riskAcceptedByUserId  String
-  /// Set when status transitions to APPROVED.
-  approvedAt            DateTime?
-  approvedByUserId      String?
-  /// Set when status transitions to REJECTED.
-  rejectedAt            DateTime?
-  rejectedByUserId      String?
-  rejectionReason       String?
-  /// Required deadline at which the exception expires. The expiry
-  /// monitor reminds approvers in the 30 → 7 → 1 day windows.
-  /// Nullable for REQUESTED rows that haven't been formally
-  /// scoped yet; required (CHECK) once status moves to APPROVED.
-  expiresAt             DateTime?
-  /// Renewal lineage — points at the prior row this one supersedes.
-  /// Self-referential composite FK (renewedFromId, tenantId) →
-  /// ControlException(id, tenantId) so renewals can never reference
-  /// a prior row in another tenant.
-  renewedFromId         String?
-  createdByUserId       String
-  createdAt             DateTime               @default(now())
-  updatedAt             DateTime               @updatedAt
-  /// Soft-delete columns — same convention as AuditCycle.
-  deletedAt             DateTime?
-  deletedByUserId       String?
-
-  tenant              Tenant             @relation(fields: [tenantId], references: [id])
-  control             Control            @relation("ControlExceptionAffected", fields: [controlId, tenantId], references: [id, tenantId])
-  compensatingControl Control?           @relation("ControlExceptionCompensating", fields: [compensatingControlId, tenantId], references: [id, tenantId])
-  renewedFrom         ControlException?  @relation("ControlExceptionRenewalChain", fields: [renewedFromId, tenantId], references: [id, tenantId])
-  renewals            ControlException[] @relation("ControlExceptionRenewalChain")
-  createdBy           User               @relation("ControlExceptionCreatedBy", fields: [createdByUserId], references: [id])
-  riskAcceptedBy      User               @relation("ControlExceptionRiskAcceptedBy", fields: [riskAcceptedByUserId], references: [id])
-  approvedBy          User?              @relation("ControlExceptionApprovedBy", fields: [approvedByUserId], references: [id])
-  rejectedBy          User?              @relation("ControlExceptionRejectedBy", fields: [rejectedByUserId], references: [id])
-  deletedBy           User?              @relation("ControlExceptionDeletedBy", fields: [deletedByUserId], references: [id])
-
-  /// Composite parent key. Used by the self-referential FK above
-  /// AND by any future child entity (audit packs, approval logs).
-  @@unique([id, tenantId])
-  @@index([tenantId, status])
-  @@index([tenantId, expiresAt])
-  @@index([tenantId, controlId])
-  @@index([tenantId, deletedAt])
-  @@index([tenantId, createdAt])
-  @@index([renewedFromId])
-}
-
-// ─────────────────────────────────────────────────────────────────
 // Epic G-7 — Risk Treatment Plans (ISO 27001 6.1.3).
 //
 // Replaces the free-text `Risk.treatmentNotes` field with a
@@ -2125,55 +1051,6 @@ model ControlException {
 // tenant plans are impossible by construction. Milestones use the
 // same composite shape against the parent plan.
 // ─────────────────────────────────────────────────────────────────
-
-model RiskTreatmentPlan {
-  id                String              @id @default(cuid())
-  tenantId          String
-  riskId            String
-  /// Strategy chosen for this plan. Parallel to (but more
-  /// vocabulary-current than) the legacy `Risk.treatment` field —
-  /// see `TreatmentStrategy` enum docstring.
-  strategy          TreatmentStrategy
-  /// Plan owner — the user accountable for execution. Required
-  /// because auditors will ask "who runs this plan?".
-  ownerUserId       String
-  /// SLA target — surfaced in the dashboard + drives the
-  /// overdue-monitor job's flip to OVERDUE.
-  targetDate        DateTime
-  status            TreatmentPlanStatus @default(DRAFT)
-  /// Set when status transitions to COMPLETED. Audit-visible
-  /// timestamp + the user who closed the plan.
-  completedAt       DateTime?
-  completedByUserId String?
-  /// Free-text closing remark — encrypted at rest because the
-  /// rationale may name internal users / systems.
-  closingRemark     String?
-  /// Soft-delete columns — same convention as AuditCycle.
-  createdByUserId   String
-  createdAt         DateTime            @default(now())
-  updatedAt         DateTime            @updatedAt
-  deletedAt         DateTime?
-  deletedByUserId   String?
-
-  tenant      Tenant               @relation(fields: [tenantId], references: [id])
-  risk        Risk                 @relation(fields: [riskId, tenantId], references: [id, tenantId])
-  owner       User                 @relation("RiskTreatmentPlanOwner", fields: [ownerUserId], references: [id])
-  createdBy   User                 @relation("RiskTreatmentPlanCreator", fields: [createdByUserId], references: [id])
-  completedBy User?                @relation("RiskTreatmentPlanCompleter", fields: [completedByUserId], references: [id])
-  deletedBy   User?                @relation("RiskTreatmentPlanDeleter", fields: [deletedByUserId], references: [id])
-  milestones  TreatmentMilestone[]
-
-  /// Composite parent key — supports the
-  /// `TreatmentMilestone.(treatmentPlanId, tenantId) →
-  /// RiskTreatmentPlan.(id, tenantId)` FK shape.
-  @@unique([id, tenantId])
-  @@index([tenantId, status])
-  @@index([tenantId, riskId])
-  @@index([tenantId, ownerUserId, status])
-  @@index([tenantId, targetDate])
-  @@index([tenantId, deletedAt])
-  @@index([tenantId, createdAt])
-}
 
 model TreatmentMilestone {
   id                String    @id @default(cuid())
@@ -2201,7 +1078,6 @@ model TreatmentMilestone {
   updatedAt         DateTime  @updatedAt
 
   tenant        Tenant            @relation(fields: [tenantId], references: [id])
-  treatmentPlan RiskTreatmentPlan @relation(fields: [treatmentPlanId, tenantId], references: [id, tenantId], onDelete: Cascade)
   completedBy   User?             @relation("TreatmentMilestoneCompleter", fields: [completedByUserId], references: [id])
 
   @@index([tenantId, treatmentPlanId])

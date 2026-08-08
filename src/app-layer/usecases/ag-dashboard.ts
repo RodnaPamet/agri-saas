@@ -6,8 +6,6 @@ import { listLots } from './inventory';
 import { listMyFarmTasks } from './farm-task';
 import { getAchievements, type AchievementsResult } from './achievements';
 import { getEnabledModules } from './modules';
-import { listSchemes } from './certification-scheme';
-import { generateReadinessReport } from './framework/coverage';
 
 /**
  * Agriculture dashboard strip — the small "your farm today" read-model

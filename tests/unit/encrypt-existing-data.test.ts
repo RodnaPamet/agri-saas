@@ -105,8 +105,8 @@ describe('encryptFieldForModel', () => {
 
         const r = await encryptFieldForModel(
             deps,
-            'Risk',
-            'treatmentNotes',
+            'Finding',
+            'rootCause',
             DEFAULTS,
         );
 
@@ -124,10 +124,10 @@ describe('encryptFieldForModel', () => {
 
     test("SELECT includes the idempotency guard (NOT LIKE 'v1:%')", async () => {
         const deps = makeDeps({ batches: [[]] });
-        await encryptFieldForModel(deps, 'Risk', 'treatmentNotes', DEFAULTS);
+        await encryptFieldForModel(deps, 'Finding', 'rootCause', DEFAULTS);
         expect(deps.queryCalls[0].sql).toContain("NOT LIKE 'v1:%'");
-        expect(deps.queryCalls[0].sql).toContain(`FROM "Risk"`);
-        expect(deps.queryCalls[0].sql).toContain(`"treatmentNotes"`);
+        expect(deps.queryCalls[0].sql).toContain(`FROM "Finding"`);
+        expect(deps.queryCalls[0].sql).toContain(`"rootCause"`);
     });
 
     test('stops cleanly after a short final batch', async () => {
@@ -148,8 +148,8 @@ describe('encryptFieldForModel', () => {
 
         const r = await encryptFieldForModel(
             deps,
-            'Risk',
-            'treatmentNotes',
+            'Finding',
+            'rootCause',
             { ...DEFAULTS, batchSize: 10 },
         );
 
@@ -164,8 +164,8 @@ describe('encryptFieldForModel', () => {
         const deps = makeDeps({ batches: [[]] });
         const r = await encryptFieldForModel(
             deps,
-            'Risk',
-            'treatmentNotes',
+            'Finding',
+            'rootCause',
             DEFAULTS,
         );
         expect(r.scanned).toBe(0);
@@ -184,7 +184,7 @@ describe('encryptFieldForModel', () => {
             ],
         });
 
-        const r = await encryptFieldForModel(deps, 'Risk', 'treatmentNotes', {
+        const r = await encryptFieldForModel(deps, 'Finding', 'rootCause', {
             ...DEFAULTS,
             execute: false,
         });
@@ -208,8 +208,8 @@ describe('encryptFieldForModel', () => {
 
         const r = await encryptFieldForModel(
             deps,
-            'Risk',
-            'treatmentNotes',
+            'Finding',
+            'rootCause',
             DEFAULTS,
         );
 
@@ -234,8 +234,8 @@ describe('encryptFieldForModel', () => {
 
         const r = await encryptFieldForModel(
             deps,
-            'Risk',
-            'treatmentNotes',
+            'Finding',
+            'rootCause',
             DEFAULTS,
         );
         expect(r.scanned).toBe(3);
@@ -257,8 +257,8 @@ describe('encryptFieldForModel', () => {
 
         const r = await encryptFieldForModel(
             deps,
-            'Risk',
-            'treatmentNotes',
+            'Finding',
+            'rootCause',
             DEFAULTS,
         );
         expect(r.errors).toBe(1);
@@ -281,7 +281,7 @@ describe('encryptFieldForModel', () => {
             failUpdates: new Set(['r1']),
         });
 
-        await encryptFieldForModel(deps, 'Risk', 'treatmentNotes', DEFAULTS);
+        await encryptFieldForModel(deps, 'Finding', 'rootCause', DEFAULTS);
 
         const serialised = JSON.stringify(deps.logCalls);
         expect(serialised).not.toContain('ROOT_PASSWORD=supersecret!');
@@ -292,7 +292,7 @@ describe('encryptFieldForModel', () => {
         const deps = makeDeps({
             batches: [[{ id: 'r1', value: 'hello' }]],
         });
-        const r = await encryptFieldForModel(deps, 'Risk', 'treatmentNotes', {
+        const r = await encryptFieldForModel(deps, 'Finding', 'rootCause', {
             ...DEFAULTS,
             verify: true,
         });
@@ -313,7 +313,7 @@ describe('encryptFieldForModel', () => {
         ).rejects.toThrow(/Invalid model identifier/);
 
         await expect(
-            encryptFieldForModel(deps, 'Risk', 'bad field name', DEFAULTS),
+            encryptFieldForModel(deps, 'Finding', 'bad field name', DEFAULTS),
         ).rejects.toThrow(/Invalid field identifier/);
 
         expect(deps.queryCalls).toHaveLength(0);
@@ -324,7 +324,7 @@ describe('encryptFieldForModel', () => {
         const first = makeDeps({
             batches: [[{ id: 'r1', value: 'plain' }]],
         });
-        await encryptFieldForModel(first, 'Risk', 'treatmentNotes', DEFAULTS);
+        await encryptFieldForModel(first, 'Finding', 'rootCause', DEFAULTS);
 
         // Second run: all data now encrypted → SELECT returns empty
         // (the `NOT LIKE 'v1:%'` filter takes care of it in reality;
@@ -332,8 +332,8 @@ describe('encryptFieldForModel', () => {
         const second = makeDeps({ batches: [[]] });
         const r = await encryptFieldForModel(
             second,
-            'Risk',
-            'treatmentNotes',
+            'Finding',
+            'rootCause',
             DEFAULTS,
         );
         expect(r.scanned).toBe(0);
@@ -375,14 +375,16 @@ describe('runBackfill — orchestration', () => {
             execute: false,
             verify: false,
             batchSize: 10,
-            modelsFilter: ['Risk'], // only Risk has 3 fields in the manifest
+            // AuditChecklistItem is the manifest's 3-field model
+            // (this was Risk until the risk register was removed).
+            modelsFilter: ['AuditChecklistItem'],
             piiOnly: false,
             skipPii: true,
         });
 
-        // All results are from the Risk model.
+        // All results are from the filtered model.
         for (const r of report.results) {
-            expect(r.model).toBe('Risk');
+            expect(r.model).toBe('AuditChecklistItem');
         }
         expect(report.results.length).toBe(3);
     });
@@ -390,14 +392,14 @@ describe('runBackfill — orchestration', () => {
     test('end-to-end: plaintext rows in 2 fields get encrypted + summed in totals', async () => {
         const deps = makeDeps({
             batches: [
-                // Risk.treatmentNotes — 2 plaintext rows
+                // AuditChecklistItem.prompt — 2 plaintext rows
                 [
                     { id: 'r1', value: 'a' },
                     { id: 'r2', value: 'b' },
                 ],
-                // Risk.threat — 1 plaintext row
+                // AuditChecklistItem.notes — 1 plaintext row
                 [{ id: 'r3', value: 'c' }],
-                // Risk.vulnerability — empty
+                // AuditChecklistItem.evidenceRef — empty
                 [],
             ],
         });
@@ -406,7 +408,7 @@ describe('runBackfill — orchestration', () => {
             execute: true,
             verify: false,
             batchSize: 10,
-            modelsFilter: ['Risk'],
+            modelsFilter: ['AuditChecklistItem'],
             piiOnly: false,
             skipPii: true,
         });

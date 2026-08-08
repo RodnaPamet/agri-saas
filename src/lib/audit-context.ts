@@ -11,7 +11,7 @@
  *
  * Usage:
  *   await runWithAuditContext({ tenantId, actorUserId: userId, requestId }, async () => {
- *       await prisma.risk.create({ data: { ... } });
+ *       await prisma.evidence.create({ data: { ... } });
  *       // Middleware reads context from the stack
  *   });
  */

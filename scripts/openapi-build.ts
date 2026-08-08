@@ -53,7 +53,6 @@ import { registry } from '@/lib/openapi/registry';
 import * as requestSchemas from '@/lib/schemas';
 import * as commonDTOs from '@/lib/dto/common';
 import * as controlDTOs from '@/lib/dto/control.dto';
-import * as riskDTOs from '@/lib/dto/risk.dto';
 import * as evidenceDTOs from '@/lib/dto/evidence.dto';
 import * as policyDTOs from '@/lib/dto/policy.dto';
 import * as auditDTOs from '@/lib/dto/audit.dto';
@@ -147,7 +146,6 @@ export function buildOpenApiDoc(opts: BuildOptions = {}): {
         { ns: requestSchemas, label: '@/lib/schemas' },
         { ns: commonDTOs, label: '@/lib/dto/common' },
         { ns: controlDTOs, label: '@/lib/dto/control.dto' },
-        { ns: riskDTOs, label: '@/lib/dto/risk.dto' },
         { ns: evidenceDTOs, label: '@/lib/dto/evidence.dto' },
         { ns: policyDTOs, label: '@/lib/dto/policy.dto' },
         { ns: auditDTOs, label: '@/lib/dto/audit.dto' },

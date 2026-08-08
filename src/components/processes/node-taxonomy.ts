@@ -28,21 +28,17 @@
  *      gate a step in place (e.g. dual-approval at a single
  *      action) or for documenting orphan controls during
  *      authoring before the edge is drawn.
- *   4. `risk` — a risk associated with a step. Warning-tone
- *      border + triangle icon read as "watch out here"
- *      without competing with the flow itself for visual
- *      weight.
- *   5. `asset` — the system / datastore / document a step
+ *   4. `asset` — the system / datastore / document a step
  *      acts upon. One node type covers all three because
  *      IC's data model already groups them under a single
  *      Asset entity with a typed `assetType` field; the
  *      canvas inherits that grouping.
- *   6. `external` — an external party (vendor, customer,
+ *   5. `external` — an external party (vendor, customer,
  *      regulator) involved in the flow. Dashed border is the
  *      universal "outside the org" signal. Distinguishes
  *      "step we do" from "step they do" without forcing the
  *      reader to read every label.
- *   7. `annotation` — a free-text note. No flow semantics
+ *   6. `annotation` — a free-text note. No flow semantics
  *      (no handles), borderless, italic. Lets authors leave
  *      reviewer prompts / open questions on the canvas
  *      without polluting the actual graph.
@@ -76,7 +72,6 @@ import {
     GitBranch,
     Globe,
     ShieldCheck,
-    AlertTriangle,
     StickyNote,
     Group as GroupIcon,
     // VR-1 — automation node kinds.
@@ -90,7 +85,6 @@ export type ProcessNodeKind =
     | 'processStep'
     | 'decision'
     | 'control'
-    | 'risk'
     | 'asset'
     | 'external'
     | 'annotation'
@@ -110,7 +104,7 @@ export type ProcessNodeKind =
 export type NodeAccent =
     | 'brand'           // process step (default — quiet, primary surface)
     | 'brand-secondary' // control (the flag's white family — was navy/blue)
-    | 'warning'         // risk (amber — caution without alarm)
+    | 'warning'         // slaGate (amber — caution without alarm)
     | 'success'         // asset (calm green — "here is data")
     | 'neutral'         // decision (graphite — structural)
     | 'subtle';         // external + annotation (lowest visual weight)
@@ -137,7 +131,7 @@ export type NodeShape = 'rect' | 'note';
  *   flow     — the node IS part of the operational flow
  *              (processStep, decision). Solid surface.
  *   context  — the node DECORATES the flow with governance /
- *              risk / asset / external context. Slightly muted
+ *              asset / external context. Slightly muted
  *              surface so the eye reads "this is here to
  *              annotate the flow, not be part of it."
  *   note     — pure-text annotation (no flow semantics at all).
@@ -223,17 +217,6 @@ export const NODE_TAXONOMY: Record<ProcessNodeKind, NodeTypeMeta> = {
         category: 'context',
         hasHandles: true,
         defaultLabel: 'Control',
-    },
-    risk: {
-        id: 'risk',
-        label: 'Risk',
-        description: 'A risk associated with a step. Context, not flow.',
-        icon: AlertTriangle,
-        accent: 'warning',
-        shape: 'rect',
-        category: 'context',
-        hasHandles: true,
-        defaultLabel: 'Risk',
     },
     asset: {
         id: 'asset',
@@ -350,14 +333,13 @@ export const NODE_TAXONOMY: Record<ProcessNodeKind, NodeTypeMeta> = {
  * point.
  *
  * Order otherwise: flow primitives (step + decision) first; then
- * the three context kinds (risk + asset + external); then the
+ * the two context kinds (asset + external); then the
  * annotation last. Reading left to right, the palette communicates
  * "build the flow → layer the context → leave a note".
  */
 export const NODE_TAXONOMY_ORDER: ProcessNodeKind[] = [
     'processStep',
     'decision',
-    'risk',
     'asset',
     'external',
     'group',

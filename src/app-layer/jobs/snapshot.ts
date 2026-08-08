@@ -126,8 +126,6 @@ export async function generateSnapshotForTenant(
         // Run all aggregation queries in parallel within the transaction
         const [
             controlCoverage,
-            riskBySeverity,
-            riskByStatus,
             evidenceExpiry,
             policySummary,
             taskSummary,
@@ -136,8 +134,6 @@ export async function generateSnapshotForTenant(
             findingsOpen,
         ] = await Promise.all([
             DashboardRepository.getControlCoverage(db, ctx),
-            DashboardRepository.getRiskBySeverity(db, ctx),
-            DashboardRepository.getRiskByStatus(db, ctx),
             DashboardRepository.getEvidenceExpiry(db, ctx),
             DashboardRepository.getPolicySummary(db, ctx),
             DashboardRepository.getTaskSummary(db, ctx),
@@ -159,15 +155,10 @@ export async function generateSnapshotForTenant(
             controlCoverageBps,
 
             // Risks
-            risksTotal: riskByStatus.open + riskByStatus.mitigating + riskByStatus.accepted + riskByStatus.closed,
-            risksOpen: riskByStatus.open,
-            risksMitigating: riskByStatus.mitigating,
-            risksAccepted: riskByStatus.accepted,
-            risksClosed: riskByStatus.closed,
-            risksLow: riskBySeverity.low,
-            risksMedium: riskBySeverity.medium,
-            risksHigh: riskBySeverity.high,
-            risksCritical: riskBySeverity.critical,
+            // The GRC risk register was removed with the compliance uproot.
+            // The snapshot columns stay (historical rows still carry real
+            // values and the trend charts read them); new snapshots record
+            // zero rather than a fabricated number.
 
             // Evidence
             evidenceTotal: evidenceExpiry.overdue + evidenceExpiry.dueSoon30d + evidenceExpiry.noReviewDate + evidenceExpiry.current,

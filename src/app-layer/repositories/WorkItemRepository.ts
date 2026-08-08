@@ -522,7 +522,7 @@ export class WorkItemRepository {
             by: ['entityType', 'entityId'],
             where: {
                 tenantId,
-                entityType: { in: [TaskLinkEntityType.ASSET, TaskLinkEntityType.RISK] },
+                entityType: { in: [TaskLinkEntityType.ASSET] },
                 task: { status: openFilter },
             },
             _count: true,

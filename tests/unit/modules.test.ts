@@ -77,13 +77,12 @@ const readerCtx = makeRequestContext('READER');
 // ─── src/lib/modules.ts — pure helpers ─────────────────────────────
 
 describe('pure helpers', () => {
-    it('ALL_MODULES enumerates the eleven canonical module keys', () => {
+    it('ALL_MODULES enumerates the ten canonical module keys', () => {
         expect(ALL_MODULES).toEqual([
             'JOURNAL',
             'INVENTORY',
             'PLANNING',
             'CERTIFICATION',
-            'RISK',
             'VENDORS',
             'AUTOMATION',
             'PROCESSES',
@@ -138,7 +137,7 @@ describe('pure helpers', () => {
 
     it('isModuleEnabledIn membership test', () => {
         expect(isModuleEnabledIn(['JOURNAL', 'AI'], 'AI')).toBe(true);
-        expect(isModuleEnabledIn(['JOURNAL', 'AI'], 'RISK')).toBe(false);
+        expect(isModuleEnabledIn(['JOURNAL', 'AI'], 'VENDORS')).toBe(false);
         expect(isModuleEnabledIn([], 'JOURNAL')).toBe(false);
     });
 

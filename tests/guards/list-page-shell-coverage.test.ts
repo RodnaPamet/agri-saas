@@ -50,8 +50,6 @@ const APP_ROOT = path.resolve(
  */
 const EXEMPTIONS: Record<string, string> = {
     // Certification scheme detail (schemes roadmap PR2).
-    "schemes/[schemeKey]/SchemeDetailClient.tsx":
-        "detail-page sub-table — the control points OF one standard, not a list page. The set is fixed by the standard (a scheme publishes its control points; a farm cannot add or remove them), already ordered by the catalogue's own sortOrder, and read top-to-bottom against the status column. Faceted filtering, a column gear and viewport-clamping all add chrome without adding reach.",
 
     // Grain bin detail (bins roadmap PR2).
     "grain/bins/[binId]/BinDetailClient.tsx":
@@ -60,8 +58,6 @@ const EXEMPTIONS: Record<string, string> = {
     // Multi-section dashboard with KPI strip + summary bar + two
     // side-by-side gap tables. Viewport-clamping would compress the
     // whole grid awkwardly. Natural scroll is the right shape.
-    'coverage/CoverageClient.tsx':
-        'multi-card dashboard (KPIs + summary + two gap tables)',
 
     // Two stacked tables (active / revoked). A single fillBody
     // would force one of them to overflow internally while the
@@ -149,21 +145,15 @@ const EXEMPTIONS: Record<string, string> = {
 
     // Browse-and-install template picker — multi-section browser,
     // not a list page in the perf-complaint sense.
-    'controls/templates/page.tsx':
-        'install-from-templates browser (multi-section)',
 
     // Risk import wizard. Result table appears mid-flow inside a
     // wizard step; not a primary list-page experience.
-    'risks/import/page.tsx':
-        'import wizard flow',
 
     // Epic 66 — frameworks client island that owns the table/cards
     // view toggle. Cards mode is a responsive grid (no clamping
     // needed); table mode delegates fillBody to the inner
     // <DataTable>. Wrapping the toggle outer in <ListPageShell>
     // would compress the toggle chrome unnaturally in cards view.
-    'frameworks/FrameworksClient.tsx':
-        'Epic 66 toggle — cards = grid (no clamp), table = inner fillBody',
 };
 
 // Accept either the raw `ListPageShell` primitive or the `EntityListPage`

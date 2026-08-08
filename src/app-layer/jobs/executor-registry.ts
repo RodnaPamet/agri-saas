@@ -472,33 +472,6 @@ executorRegistry.register('access-review-overdue-escalation', async (payload) =>
     );
 });
 
-// ── exception-expiry-monitor (Epic G-5) ─────────────────────────────
-
-executorRegistry.register('exception-expiry-monitor', async (payload) => {
-    const startedAt = new Date().toISOString();
-    const startMs = performance.now();
-    const { runExceptionExpiryMonitor } = await import(
-        './exception-expiry-monitor'
-    );
-    const { prisma } = await import('@/lib/prisma');
-    const r = await runExceptionExpiryMonitor(prisma, {
-        tenantId: payload.tenantId,
-    });
-    return makeResult(
-        'exception-expiry-monitor',
-        startedAt,
-        startMs,
-        r.scanned,
-        r.enqueued,
-        0,
-        {
-            skippedDuplicate: r.skippedDuplicate,
-            skippedNoEmail: r.skippedNoEmail,
-            skippedNoRecipient: r.skippedNoRecipient,
-        },
-    );
-});
-
 // ── exchange-expiry-sweep ───────────────────────────────────────────
 
 executorRegistry.register('exchange-expiry-sweep', async (payload) => {
@@ -995,55 +968,6 @@ executorRegistry.register('automation-event-dispatch', async (payload) => {
     );
 });
 
-// ── control-test-scheduler + control-test-runner (Epic G-2) ──────────
-//
-// Scheduler claims due ControlTestPlan rows and enqueues per-plan
-// runner jobs (deduplicated by `ctr:{planId}:{scheduledForIso}`).
-// The runner materializes each into a ControlTestRun + auto-evidence
-// + (on automated FAIL) a Finding linked to the control via the
-// FindingEvidence → Evidence → controlId chain.
-
-executorRegistry.register('control-test-scheduler', async (payload) => {
-    const startedAt = new Date().toISOString();
-    const startMs = performance.now();
-    const { runControlTestScheduler } = await import('./control-test-scheduler');
-    const r = await runControlTestScheduler({
-        tenantId: payload.tenantId,
-        now: payload.nowIso ? new Date(payload.nowIso) : undefined,
-        dryRun: payload.dryRun,
-    });
-    return makeResult(
-        'control-test-scheduler',
-        startedAt,
-        startMs,
-        r.totalDue,
-        r.enqueued,
-        r.skippedClaimRace +
-            r.skippedInvalidSchedule +
-            r.bootstrapped,
-        {
-            bootstrapped: r.bootstrapped,
-            enqueued: r.enqueued,
-            skippedClaimRace: r.skippedClaimRace,
-            skippedInvalidSchedule: r.skippedInvalidSchedule,
-            enqueueFailures: r.enqueueFailures,
-            dryRun: r.dryRun,
-            jobRunId: r.jobRunId,
-        },
-    );
-});
-
-executorRegistry.register('control-test-runner', async (payload) => {
-    // tenantId scoping happens one frame down in `runControlTestRunner`:
-    // it loads the plan via
-    //   prisma.controlTestPlan.findFirst({ where: { id, tenantId: payload.tenantId } })
-    // and every subsequent write goes through `runInTenantContext`
-    // bound to that same tenantId. Referencing `payload.tenantId`
-    // here documents the contract for the scope-audit ratchet.
-    const { controlTestRunnerExecutor } = await import('./control-test-runner');
-    return controlTestRunnerExecutor(payload);
-});
-
 // ── evidence-import (Epic 43.3) ──────────────────────────────────────
 //
 // One job invocation per uploaded ZIP. The HTTP layer stages the
@@ -1135,31 +1059,6 @@ executorRegistry.register('sharepoint-subscription-renew', async (payload) => {
     });
 });
 
-// RQ-10 — daily cross-tenant scheduled-report delivery.
-executorRegistry.register('report-delivery', async (payload) => {
-    const startedAt = new Date().toISOString();
-    const startMs = performance.now();
-    const { runReportDelivery } = await import('./report-delivery-jobs');
-    const r = await runReportDelivery(payload);
-    return makeResult('report-delivery', startedAt, startMs, r.due, r.generated, r.failed, {
-        due: r.due, generated: r.generated, delivered: r.delivered, pushed: r.pushed, failed: r.failed,
-    });
-});
-
-// RQ-2 — daily cross-tenant risk-appetite breach monitor.
-executorRegistry.register('risk-appetite-monitor', async (payload) => {
-    const startedAt = new Date().toISOString();
-    const startMs = performance.now();
-    const { runRiskAppetiteMonitor } = await import('./risk-appetite-jobs');
-    const r = await runRiskAppetiteMonitor(payload);
-    return makeResult('risk-appetite-monitor', startedAt, startMs, r.scanned, r.newBreaches, 0, {
-        tenants: r.tenants,
-        scanned: r.scanned,
-        newBreaches: r.newBreaches,
-        resolved: r.resolved,
-    });
-});
-
 // ── spatial-import (parcel-boundary upload hardening) ────────────────
 //
 // One job invocation per staged shapefile/KML/GeoJSON. The HTTP layer
@@ -1218,19 +1117,6 @@ executorRegistry.register('cadastre-import', async (payload) => {
 });
 
 // RQ-9 — daily cross-tenant risk + portfolio snapshot.
-executorRegistry.register('risk-snapshot', async (payload) => {
-    const startedAt = new Date().toISOString();
-    const startMs = performance.now();
-    const { runRiskSnapshot } = await import('./risk-snapshot-jobs');
-    const r = await runRiskSnapshot(payload);
-    return makeResult('risk-snapshot', startedAt, startMs, r.scanned, r.riskSnapshots, 0, {
-        tenants: r.tenants,
-        scanned: r.scanned,
-        riskSnapshots: r.riskSnapshots,
-        pruned: r.pruned,
-    });
-});
-
 
 // БАБХ farm-record — regenerate a location's current-season ДНЕВНИК into its
 // Farm-records register when a field task auto-resolves. Fail-open: the job

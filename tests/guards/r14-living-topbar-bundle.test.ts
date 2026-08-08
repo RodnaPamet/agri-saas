@@ -168,10 +168,7 @@ describe('Roadmap-14 PR-13 — Living Top-Bar capstone bundle', () => {
             // canonical banned shapes.
             const baseline = [
                 'src/app/t/[tenantSlug]/(app)/policies/templates/page.tsx',
-                'src/app/t/[tenantSlug]/(app)/controls/templates/page.tsx',
                 'src/app/t/[tenantSlug]/(app)/admin/members/page.tsx',
-                'src/app/t/[tenantSlug]/(app)/controls/sankey/ControlsSankeyClient.tsx',
-                'src/app/t/[tenantSlug]/(app)/reports/soa/SoAClient.tsx',
             ];
             for (const rel of baseline) {
                 expect(fs.existsSync(path.join(ROOT, rel))).toBe(true);

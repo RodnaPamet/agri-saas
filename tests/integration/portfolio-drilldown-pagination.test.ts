@@ -22,7 +22,6 @@ import type { PrismaClient } from '@prisma/client';
 
 import {
     listNonPerformingControls,
-    listCriticalRisksAcrossOrg,
     listOverdueEvidenceAcrossOrg,
 } from '@/app-layer/usecases/portfolio';
 import type { OrgContext } from '@/app-layer/types';
@@ -115,22 +114,6 @@ describeFn('Portfolio drill-down — cursor pagination (DB-backed)', () => {
                 });
             }
 
-            // Seed 8 critical risks per tenant — score 18-20.
-            for (let n = 0; n < 8; n++) {
-                await prisma.risk.create({
-                    data: {
-                        tenantId: tenant.id,
-                        title: `t${i + 1} critical risk ${n}`,
-                        inherentScore: 18 + (n % 3),
-                        score: 18 + (n % 3),
-                        status: 'OPEN',
-                        likelihood: 4,
-                        impact: 5,
-                        updatedAt: new Date(baseDate + n * 86400_000),
-                    },
-                });
-            }
-
             // Seed 8 overdue evidence per tenant.
             for (let n = 0; n < 8; n++) {
                 await prisma.evidence.create({
@@ -150,7 +133,6 @@ describeFn('Portfolio drill-down — cursor pagination (DB-backed)', () => {
 
     afterAll(async () => {
         await prisma.evidence.deleteMany({ where: { tenantId: { in: tenantIds } } }).catch(() => {});
-        await prisma.risk.deleteMany({ where: { tenantId: { in: tenantIds } } }).catch(() => {});
         await prisma.control.deleteMany({ where: { tenantId: { in: tenantIds } } }).catch(() => {});
         await prisma.tenantMembership.deleteMany({ where: { tenantId: { in: tenantIds } } }).catch(() => {});
         await prisma.tenant.deleteMany({ where: { id: { in: tenantIds } } }).catch(() => {});
@@ -198,33 +180,6 @@ describeFn('Portfolio drill-down — cursor pagination (DB-backed)', () => {
         expect(result.nextCursor).toBeNull();
     });
 
-    // ── Risks ────────────────────────────────────────────────────────
-
-    it('risks: pages through all 16 rows preserving inherentScore DESC ordering', async () => {
-        const seen = new Set<string>();
-        let cursor: string | undefined = undefined;
-        let prevScore = Number.POSITIVE_INFINITY;
-        let pages = 0;
-        const limit = 6;
-
-        while (pages < 10) {
-            const result = await listCriticalRisksAcrossOrg(ctxFor(), { cursor, limit });
-            for (const row of result.rows) {
-                expect(seen.has(row.riskId)).toBe(false);
-                seen.add(row.riskId);
-                // Sort invariant across page boundaries: scores
-                // monotonically non-increasing.
-                expect(row.inherentScore).toBeLessThanOrEqual(prevScore);
-                prevScore = row.inherentScore;
-                expect(tenantSlugs).toContain(row.tenantSlug);
-            }
-            pages++;
-            if (!result.nextCursor) break;
-            cursor = result.nextCursor;
-        }
-        expect(seen.size).toBe(16);
-    });
-
     // ── Evidence ─────────────────────────────────────────────────────
 
     it('evidence: pages through all 16 rows preserving nextReviewDate ASC ordering', async () => {
@@ -261,18 +216,21 @@ describeFn('Portfolio drill-down — cursor pagination (DB-backed)', () => {
 
     // ── Page-1 parity with dashboard preview ─────────────────────────
 
-    it('page-1 of paginated risks matches the first N rows of a non-paginated query', async () => {
+    it('a single page holding every row matches the multi-page walk', async () => {
         // limit=16 → all rows in one page → nextCursor null.
-        const paginated = await listCriticalRisksAcrossOrg(ctxFor(), { limit: 16 });
+        const paginated = await listNonPerformingControls(ctxFor(), { limit: 16 });
         expect(paginated.rows.length).toBe(16);
         expect(paginated.nextCursor).toBeNull();
 
-        // Sort invariant on the full set.
-        for (let i = 1; i < paginated.rows.length; i++) {
-            const prev = paginated.rows[i - 1];
-            const cur = paginated.rows[i];
-            const score = prev.inherentScore - cur.inherentScore;
-            expect(score >= 0).toBe(true);
+        // Same 16 ids the paged walk above emitted, same order.
+        const walked: string[] = [];
+        let cursor: string | undefined = undefined;
+        for (let page = 0; page < 10; page++) {
+            const result = await listNonPerformingControls(ctxFor(), { cursor, limit: 5 });
+            walked.push(...result.rows.map((r) => r.controlId));
+            if (!result.nextCursor) break;
+            cursor = result.nextCursor;
         }
+        expect(walked).toEqual(paginated.rows.map((r) => r.controlId));
     });
 });

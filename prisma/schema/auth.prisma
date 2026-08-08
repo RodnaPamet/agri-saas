@@ -102,7 +102,6 @@ model Tenant {
   createdAt                         DateTime                           @default(now())
   updatedAt                         DateTime                           @updatedAt
   assets                            Asset[]
-  assetRiskLinks                    AssetRiskLink[]
   audits                            Audit[]
   auditCycles                       AuditCycle[]
   auditLogs                         AuditLog[]
@@ -115,16 +114,11 @@ model Tenant {
   billingEvents                     BillingEvent[]
   clauseProgress                    ClauseProgress[]
   controls                          Control[]
-  controlAssets                     ControlAsset[]
-  controlContributors               ControlContributor[]
   controlEvidenceLinks              ControlEvidenceLink[]
+  controlAssets                     ControlAsset[]
   controlRequirementLinks           ControlRequirementLink[]
   frameworkRequirementOrders        FrameworkRequirementOrder[]
   controlTasks                      ControlTask[]
-  controlTestEvidenceLinks          ControlTestEvidenceLink[]
-  controlTestPlans                  ControlTestPlan[]
-  controlTestRuns                   ControlTestRun[]
-  controlTestSteps                  ControlTestStep[]
   evidence                          Evidence[]
   fileRecords                       FileRecord[]
   findings                          Finding[]
@@ -139,27 +133,6 @@ model Tenant {
   policyVersions                    PolicyVersion[]
   policyApprovals                   PolicyApproval[]
   reminderHistories                 ReminderHistory[]
-  risks                             Risk[]
-  riskControls                      RiskControl[]
-  riskSuggestionItems               RiskSuggestionItem[]
-  riskSuggestionSessions            RiskSuggestionSession[]
-  riskMatrixConfig                  RiskMatrixConfig?
-  riskAppetiteConfig                RiskAppetiteConfig?
-  riskAppetiteBreaches              RiskAppetiteBreach[]
-  riskSimulationRuns                RiskSimulationRun[]
-  riskScenarios                     RiskScenario[]
-  riskHierarchyNodes                RiskHierarchyNode[]
-  riskHierarchyLinks                RiskHierarchyLink[]
-  keyRiskIndicators                 KeyRiskIndicator[]
-  kriReadings                       KriReading[]
-  riskCorrelations                  RiskCorrelation[]
-  riskSnapshots                     RiskSnapshot[]
-  riskScoreEvents                   RiskScoreEvent[]
-  lossEvents                        LossEvent[]
-  portfolioSnapshots                PortfolioSnapshot[]
-  reportTemplates                   ReportTemplate[]
-  reportRuns                        ReportRun[]
-  reportSchedules                   ReportSchedule[]
   tasks                             Task[]
   taskComments                      TaskComment[]
   taskLinks                         TaskLink[]
@@ -200,7 +173,6 @@ model Tenant {
   evidenceReviews                   EvidenceReview[]
   auditChecklistItems               AuditChecklistItem[]
   findingEvidences                  FindingEvidence[]
-  findingRisks                      FindingRisk[]
   auditorPackAccesses               AuditorPackAccess[]
   // PolicyControlLink denormalisation (single-table follow-on).
   policyControlLinks                PolicyControlLink[]
@@ -208,9 +180,6 @@ model Tenant {
   accessReviews                     AccessReview[]
   accessReviewDecisions             AccessReviewDecision[]
   // Epic G-5 — control exception register.
-  controlExceptions                 ControlException[]
-  // Epic G-7 — risk treatment plans.
-  riskTreatmentPlans                RiskTreatmentPlan[]
   treatmentMilestones               TreatmentMilestone[]
   // Roadmap-26 PR-A — persisted process maps (xyflow canvases).
   processMaps                       ProcessMap[]
@@ -709,9 +678,7 @@ model User {
   /// returning user's device is seeded from this in the middleware.
   uiLanguage                    String                       @default("bg")
   accounts                      Account[]
-  ownedKris                     KeyRiskIndicator[]           @relation("KriOwner")
   ownedAssets                   Asset[]                      @relation("AssetOwner")
-  assetRiskLinksCreated         AssetRiskLink[]              @relation("AssetRiskCreator")
   auditCyclesCreated            AuditCycle[]
   auditLogs                     AuditLog[]
   auditPacksFrozen              AuditPack[]                  @relation("AuditPackFrozenBy")
@@ -719,16 +686,10 @@ model User {
   controlApplicabilityDecisions Control[]                    @relation("ControlApplicabilityDecider")
   createdControls               Control[]                    @relation("ControlCreator")
   ownedControls                 Control[]                    @relation("ControlOwner")
+  controlEvidenceLinksCreated   ControlEvidenceLink[]        @relation("ControlEvidenceCreator")
   assignedFindings              Finding[]                    @relation("FindingAssignee")
   controlAssetsCreated          ControlAsset[]               @relation("ControlAssetCreator")
-  controlContributions          ControlContributor[]
-  controlEvidenceLinksCreated   ControlEvidenceLink[]        @relation("ControlEvidenceCreator")
   controlTaskAssignments        ControlTask[]                @relation("ControlTaskAssignee")
-  testEvidenceLinksCreated      ControlTestEvidenceLink[]    @relation("TestEvidenceCreator")
-  createdTestPlans              ControlTestPlan[]            @relation("TestPlanCreator")
-  ownedTestPlans                ControlTestPlan[]            @relation("TestPlanOwner")
-  createdTestRuns               ControlTestRun[]             @relation("TestRunCreator")
-  executedTestRuns              ControlTestRun[]             @relation("TestRunExecutor")
   evidenceReviews               EvidenceReview[]
   ownedEvidence                 Evidence[]                   @relation("EvidenceOwner")
   uploadedFiles                 FileRecord[]                 @relation("FileUploader")
@@ -739,8 +700,6 @@ model User {
   policyApprovals               PolicyApproval[]             @relation("PolicyApprover")
   policyApprovalRequests        PolicyApproval[]             @relation("PolicyApprovalRequester")
   policyVersionsCreated         PolicyVersion[]              @relation("PolicyVersionCreator")
-  riskControlsCreated           RiskControl[]                @relation("RiskControlCreator")
-  riskSuggestionSessions        RiskSuggestionSession[]      @relation("SuggestionSessionCreator")
   sessions                      AuthSession[]
   assignedTasks                 Task[]                       @relation("TaskAssignee")
   createdTasks                  Task[]                       @relation("TaskCreator")
@@ -784,19 +743,10 @@ model User {
   // Epic G-5 — control exceptions involve up to five distinct
   // user-roles per row (creator, risk-acceptor, approver, rejecter,
   // deleter). Distinct relation names so Prisma can disambiguate.
-  controlExceptionsCreated      ControlException[]           @relation("ControlExceptionCreatedBy")
-  controlExceptionsRiskAccepted ControlException[]           @relation("ControlExceptionRiskAcceptedBy")
-  controlExceptionsApproved     ControlException[]           @relation("ControlExceptionApprovedBy")
-  controlExceptionsRejected     ControlException[]           @relation("ControlExceptionRejectedBy")
-  controlExceptionsDeleted      ControlException[]           @relation("ControlExceptionDeletedBy")
   // Epic G-7 — risk treatment plans. Up to four distinct user-roles
   // per plan (owner, creator, completer, deleter) plus the
   // milestone completer. Distinct relation names so Prisma can
   // disambiguate.
-  riskTreatmentPlansOwned       RiskTreatmentPlan[]          @relation("RiskTreatmentPlanOwner")
-  riskTreatmentPlansCreated     RiskTreatmentPlan[]          @relation("RiskTreatmentPlanCreator")
-  riskTreatmentPlansCompleted   RiskTreatmentPlan[]          @relation("RiskTreatmentPlanCompleter")
-  riskTreatmentPlansDeleted     RiskTreatmentPlan[]          @relation("RiskTreatmentPlanDeleter")
   treatmentMilestonesCompleted  TreatmentMilestone[]         @relation("TreatmentMilestoneCompleter")
   // Roadmap-26 PR-A — persisted process maps.
   processMapsCreated            ProcessMap[]                 @relation("ProcessMapCreatedBy")

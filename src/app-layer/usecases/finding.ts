@@ -11,10 +11,10 @@ import { CreateFindingSchema, UpdateFindingSchema } from '@/lib/schemas';
 
 /**
  * Validate that every referenced entity (assignee, control, compensating
- * control, risks) belongs to the caller's tenant. Throws `badRequest` on
- * any miss — RLS already prevents cross-tenant WRITES, but this turns a
+ * control) belongs to the caller's tenant. Throws `badRequest` on any
+ * miss — RLS already prevents cross-tenant WRITES, but this turns a
  * silent no-op into a clear 400 and stops a finding pointing at a
- * foreign id. Returns the validated risk-id list (deduped).
+ * foreign id.
  */
 async function validateFindingRefs(
     db: PrismaTx,
@@ -23,10 +23,9 @@ async function validateFindingRefs(
         assigneeUserId?: string | null;
         controlId?: string | null;
         compensatingControlId?: string | null;
-        riskIds?: string[] | undefined;
     },
-): Promise<string[]> {
-    const { assigneeUserId, controlId, compensatingControlId, riskIds } = refs;
+): Promise<void> {
+    const { assigneeUserId, controlId, compensatingControlId } = refs;
 
     if (assigneeUserId) {
         const member = await db.tenantMembership.findFirst({
@@ -56,18 +55,6 @@ async function validateFindingRefs(
             );
         }
     }
-
-    const uniqueRiskIds = riskIds ? [...new Set(riskIds)] : [];
-    if (uniqueRiskIds.length > 0) {
-        const found = await db.risk.findMany({
-            where: { id: { in: uniqueRiskIds }, tenantId: ctx.tenantId },
-            select: { id: true },
-        });
-        if (found.length !== uniqueRiskIds.length) {
-            throw badRequest('INVALID_RISK', 'One or more risks not found or belong to a different tenant');
-        }
-    }
-    return uniqueRiskIds;
 }
 
 // Epic D.2 — sanitise optional free-text on UPDATE without disturbing
@@ -104,11 +91,10 @@ export async function createFinding(ctx: RequestContext, data: z.infer<typeof Cr
     assertCanWrite(ctx);
 
     return runInTenantContext(ctx, async (db) => {
-        const riskIds = await validateFindingRefs(db, ctx, {
+        await validateFindingRefs(db, ctx, {
             assigneeUserId: data.assigneeUserId,
             controlId: data.controlId,
             compensatingControlId: data.compensatingControlId,
-            riskIds: data.riskIds,
         });
 
         const finding = await FindingRepository.create(db, ctx, {
@@ -133,16 +119,6 @@ export async function createFinding(ctx: RequestContext, data: z.infer<typeof Cr
             dueDate: data.dueDate ? new Date(data.dueDate) : null,
             status: 'OPEN',
         });
-
-        if (riskIds.length > 0) {
-            await db.findingRisk.createMany({
-                data: riskIds.map((riskId) => ({
-                    findingId: finding.id,
-                    riskId,
-                    tenantId: ctx.tenantId,
-                })),
-            });
-        }
 
         await logEvent(db, ctx, {
             action: 'CREATE',
@@ -169,11 +145,10 @@ export async function updateFinding(ctx: RequestContext, id: string, data: z.inf
         const oldFinding = await FindingRepository.getById(db, ctx, id);
         if (!oldFinding) throw notFound('Finding not found');
 
-        const riskIds = await validateFindingRefs(db, ctx, {
+        await validateFindingRefs(db, ctx, {
             assigneeUserId: data.assigneeUserId,
             controlId: data.controlId,
             compensatingControlId: data.compensatingControlId,
-            riskIds: data.riskIds,
         });
 
         const finding = await FindingRepository.update(db, ctx, id, {
@@ -201,17 +176,6 @@ export async function updateFinding(ctx: RequestContext, id: string, data: z.inf
         });
 
         if (!finding) throw notFound('Finding not found');
-
-        // Risk links are a full replace when `riskIds` is supplied
-        // (undefined = leave untouched).
-        if (data.riskIds !== undefined) {
-            await db.findingRisk.deleteMany({ where: { findingId: id, tenantId: ctx.tenantId } });
-            if (riskIds.length > 0) {
-                await db.findingRisk.createMany({
-                    data: riskIds.map((riskId) => ({ findingId: id, riskId, tenantId: ctx.tenantId })),
-                });
-            }
-        }
 
         if (data.status && data.status !== oldFinding.status) {
             await logEvent(db, ctx, {

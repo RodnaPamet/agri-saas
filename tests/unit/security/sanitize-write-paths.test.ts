@@ -23,7 +23,6 @@
  *     · vendor.createVendor / updateVendor / addVendorDocument
  *                / decideVendorAssessment
  *     · audit.createAudit / updateAudit (incl. checklist notes)
- *     · controlTest.createTestPlan / updateTestPlan / completeTestRun
  *
  * Adding a new sanitised write path: append a `describe(...)` block
  * below AND extend the static guardrail's `RICH_TEXT_USECASES` table.
@@ -104,19 +103,7 @@ jest.mock('@/app-layer/repositories/FindingRepository', () => ({
     },
 }));
 
-jest.mock('@/app-layer/repositories/RiskRepository', () => ({
-    RiskRepository: {
-        create: (...a: unknown[]) => mockRiskCreate(...a),
-        update: (...a: unknown[]) => mockRiskUpdate(...a),
-        getById: (...a: unknown[]) => mockRiskGetById(...a),
-    },
-}));
 
-jest.mock('@/app-layer/repositories/RiskTemplateRepository', () => ({
-    RiskTemplateRepository: {
-        getById: (...a: unknown[]) => mockRiskTemplateGet(...a),
-    },
-}));
 
 jest.mock('@/app-layer/repositories/VendorRepository', () => ({
     VendorRepository: {
@@ -146,25 +133,8 @@ jest.mock('@/app-layer/repositories/AuditRepository', () => ({
     },
 }));
 
-jest.mock('@/app-layer/repositories/TestPlanRepository', () => ({
-    TestPlanRepository: {
-        create: (...a: unknown[]) => mockTestPlanCreate(...a),
-        update: (...a: unknown[]) => mockTestPlanUpdate(...a),
-        updateNextDueAt: (...a: unknown[]) => mockTestPlanUpdateNextDueAt(...a),
-        getById: (...a: unknown[]) => mockTestPlanGetById(...a),
-    },
-}));
 
-jest.mock('@/app-layer/repositories/TestRunRepository', () => ({
-    TestRunRepository: {
-        complete: (...a: unknown[]) => mockTestRunComplete(...a),
-        getById: (...a: unknown[]) => mockTestRunGetById(...a),
-    },
-}));
 
-jest.mock('@/app-layer/repositories/TestEvidenceRepository', () => ({
-    TestEvidenceRepository: {},
-}));
 
 // `runInTenantContext` returns a stub Prisma tx. Risk usecase uses
 // `tenant.findUnique` against it for maxScale lookup.
@@ -182,16 +152,6 @@ jest.mock('@/app-layer/events/audit', () => ({
     logEvent: jest.fn(async () => undefined),
 }));
 
-jest.mock('@/app-layer/events/test.events', () => ({
-    emitTestPlanCreated: jest.fn(async () => undefined),
-    emitTestPlanUpdated: jest.fn(async () => undefined),
-    emitTestPlanStatusChanged: jest.fn(async () => undefined),
-    emitTestRunCreated: jest.fn(async () => undefined),
-    emitTestRunCompleted: jest.fn(async () => undefined),
-    emitTestRunFailed: jest.fn(async () => undefined),
-    emitTestEvidenceLinked: jest.fn(async () => undefined),
-    emitTestEvidenceUnlinked: jest.fn(async () => undefined),
-}));
 
 jest.mock('@/app-layer/policies/common', () => ({
     assertCanRead: jest.fn(),
@@ -234,7 +194,6 @@ jest.mock('@/app-layer/usecases/task', () => ({
 import { createPolicyVersion } from '@/app-layer/usecases/policy';
 import { addTaskComment } from '@/app-layer/usecases/task';
 import { createFinding, updateFinding } from '@/app-layer/usecases/finding';
-import { createRisk, updateRisk, createRiskFromTemplate } from '@/app-layer/usecases/risk';
 import {
     createVendor,
     updateVendor,
@@ -242,11 +201,6 @@ import {
     decideVendorAssessment,
 } from '@/app-layer/usecases/vendor';
 import { createAudit, updateAudit } from '@/app-layer/usecases/audit';
-import {
-    createTestPlan,
-    updateTestPlan,
-    completeTestRun,
-} from '@/app-layer/usecases/control-test';
 import { makeRequestContext } from '../../helpers/make-context';
 
 const ctx = makeRequestContext('ADMIN');
@@ -386,60 +340,8 @@ describe('finding.updateFinding sanitises only fields actually being written', (
 
 // ── risk.ts ───────────────────────────────────────────────────────
 
-describe('risk.createRisk sanitises every encrypted + free-text column', () => {
-    it('strips <script> from title, threat, vulnerability, treatmentNotes, treatmentOwner, description, category', async () => {
-        mockRiskCreate.mockResolvedValue({ id: 'r1', title: 'X' });
-        await createRisk(ctx, {
-            title: `T ${XSS}`,
-            description: `D ${XSS}`,
-            category: `Cat ${XSS}`,
-            threat: `Threat ${XSS}`,
-            vulnerability: `Vuln ${XSS}`,
-            treatmentOwner: `Owner ${XSS}`,
-            treatmentNotes: `Notes ${XSS}`,
-        });
-        const data = mockRiskCreate.mock.calls[0][2];
-        for (const k of [
-            'title',
-            'description',
-            'category',
-            'threat',
-            'vulnerability',
-            'treatmentOwner',
-            'treatmentNotes',
-        ]) {
-            expect(data[k]).not.toMatch(/<script/);
-        }
-    });
-});
 
-describe('risk.createRiskFromTemplate sanitises the merged value', () => {
-    it('sanitises overrides + the template fallback path', async () => {
-        mockRiskTemplateGet.mockResolvedValue({
-            id: 'tpl-1',
-            title: `Template ${XSS}`,
-            description: 'pristine',
-            category: 'Ops',
-            defaultLikelihood: 3,
-            defaultImpact: 3,
-        });
-        mockRiskCreate.mockResolvedValue({ id: 'r1', title: 'X' });
-        await createRiskFromTemplate(ctx, 'tpl-1', { description: `Custom ${XSS}` });
-        const data = mockRiskCreate.mock.calls[0][2];
-        expect(data.title).not.toMatch(/<script/); // from template
-        expect(data.description).not.toMatch(/<script/); // from override
-    });
-});
 
-describe('risk.updateRisk sanitises optional fields only when provided', () => {
-    it('sanitises threat when provided; leaves untouched columns undefined', async () => {
-        mockRiskUpdate.mockResolvedValue({ id: 'r1' });
-        await updateRisk(ctx, 'r1', { threat: `bad ${XSS}` });
-        const data = mockRiskUpdate.mock.calls[0][3];
-        expect(data.threat).not.toMatch(/<script/);
-        expect(data.title).toBeUndefined();
-    });
-});
 
 // ── vendor.ts ─────────────────────────────────────────────────────
 
@@ -553,66 +455,5 @@ describe('audit.updateAudit sanitises top-level fields and per-checklist notes',
         const item2 = mockAuditChecklistUpdate.mock.calls[1][3];
         expect(item2.notes).toBeUndefined();
         expect(item2.result).toBe('FAIL');
-    });
-});
-
-// ── control-test.ts ───────────────────────────────────────────────
-
-describe('controlTest.createTestPlan sanitises name, description, and steps[]', () => {
-    it('strips <script> from name + description + every step instruction/expectedOutput', async () => {
-        mockTestPlanCreate.mockResolvedValue({
-            id: 'plan-1', name: 'X', controlId: 'c1',
-        });
-        mockTestPlanUpdateNextDueAt.mockResolvedValue(undefined);
-        await createTestPlan(ctx, 'c1', {
-            name: `Plan ${XSS}`,
-            description: `Desc ${XSS}`,
-            method: 'MANUAL',
-            frequency: 'MONTHLY',
-            steps: [
-                { instruction: `do thing ${XSS}`, expectedOutput: `output ${XSS}` },
-                { instruction: 'safe', expectedOutput: null },
-            ],
-        });
-        const data = mockTestPlanCreate.mock.calls[0][3];
-        expect(data.name).not.toMatch(/<script/);
-        expect(data.description).not.toMatch(/<script/);
-        expect(data.steps[0].instruction).not.toMatch(/<script/);
-        expect(data.steps[0].expectedOutput).not.toMatch(/<script/);
-        expect(data.steps[1].expectedOutput).toBeNull();
-    });
-});
-
-describe('controlTest.updateTestPlan sanitises only the provided fields', () => {
-    it('sanitises description on update; leaves untouched columns undefined', async () => {
-        mockTestPlanGetById.mockResolvedValue({
-            id: 'plan-1', status: 'ACTIVE', frequency: 'MONTHLY',
-        });
-        mockTestPlanUpdate.mockResolvedValue({ id: 'plan-1' });
-        await updateTestPlan(ctx, 'plan-1', { description: `bad ${XSS}` });
-        const patch = mockTestPlanUpdate.mock.calls[0][3];
-        expect(patch.description).not.toMatch(/<script/);
-        expect(patch.name).toBeUndefined();
-    });
-});
-
-describe('controlTest.completeTestRun sanitises notes + findingSummary', () => {
-    it('strips <script> from both encrypted columns', async () => {
-        mockTestRunGetById.mockResolvedValue({
-            id: 'run-1', status: 'IN_PROGRESS', testPlanId: 'plan-1', controlId: 'c1',
-            testPlan: {
-                id: 'plan-1', name: 'plan', frequency: 'MONTHLY', ownerUserId: null,
-            },
-        });
-        mockTestRunComplete.mockResolvedValue({ id: 'run-1' });
-        mockTestPlanUpdateNextDueAt.mockResolvedValue(undefined);
-        await completeTestRun(ctx, 'run-1', {
-            result: 'PASS',
-            notes: `notes ${XSS}`,
-            findingSummary: `summary ${XSS}`,
-        });
-        const data = mockTestRunComplete.mock.calls[0][3];
-        expect(data.notes).not.toMatch(/<script/);
-        expect(data.findingSummary).not.toMatch(/<script/);
     });
 });

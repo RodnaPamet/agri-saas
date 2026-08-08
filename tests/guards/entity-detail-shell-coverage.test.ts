@@ -44,7 +44,6 @@ const ADOPTED_PAGES: ReadonlyArray<Adopter> = [
   // /schemes previously had no [schemeKey] route at all. Registered against
   // the CLIENT, which is where the shell is mounted; the server page only
   // fetches (same shape as the grain-bin and access-review entries).
-  { page: "src/app/t/[tenantSlug]/(app)/schemes/[schemeKey]/SchemeDetailClient.tsx", entity: "Certification scheme" },
   // Grain bins roadmap PR2 — new detail pages adopt the shell at creation.
   // Registered against the CLIENT, which is where the shell is mounted (same
   // shape as the access-review entry below) — the server page only fetches.
@@ -52,16 +51,13 @@ const ADOPTED_PAGES: ReadonlyArray<Adopter> = [
   // Wave 1 (PR-4)
   { page: "src/app/t/[tenantSlug]/(app)/controls/[controlId]/page.tsx", entity: "Control" },
   { page: "src/app/t/[tenantSlug]/(app)/assets/[id]/page.tsx", entity: "Asset" },
-  { page: "src/app/t/[tenantSlug]/(app)/frameworks/[frameworkKey]/page.tsx", entity: "Framework" },
   { page: "src/app/t/[tenantSlug]/(app)/access-reviews/[reviewId]/AccessReviewDetailClient.tsx", entity: "Access review" },
   { page: "src/app/t/[tenantSlug]/(app)/audits/cycles/[cycleId]/page.tsx", entity: "Audit cycle" },
   { page: "src/app/t/[tenantSlug]/(app)/audits/packs/[packId]/page.tsx", entity: "Audit pack" },
   // Wave 2 (PR-4b)
-  { page: "src/app/t/[tenantSlug]/(app)/risks/[riskId]/page.tsx", entity: "Risk" },
   { page: "src/app/t/[tenantSlug]/(app)/farm-tasks/[taskId]/FarmTaskDetailClient.tsx", entity: "Farm task" },
   { page: "src/app/t/[tenantSlug]/(app)/vendors/[vendorId]/page.tsx", entity: "Vendor" },
   { page: "src/app/t/[tenantSlug]/(app)/policies/[policyId]/page.tsx", entity: "Policy" },
-  { page: "src/app/t/[tenantSlug]/(app)/tests/runs/[runId]/page.tsx", entity: "Test run" },
   // Agriculture (Feature 1) — spray-prescription map.
   { page: "src/app/t/[tenantSlug]/(app)/locations/[locationId]/page.tsx", entity: "Location" },
   // Field Journal.
@@ -160,10 +156,6 @@ describe("EntityDetailLayout adoption — PR-4", () => {
     // the ratchet doesn't flag them.
     const KNOWN_NON_PRIMARY_DETAIL = new Set<string>([
       "src/app/t/[tenantSlug]/(app)/audits/cycles/[cycleId]/readiness/page.tsx",
-      "src/app/t/[tenantSlug]/(app)/controls/[controlId]/tests/[planId]/page.tsx",
-      "src/app/t/[tenantSlug]/(app)/frameworks/[frameworkKey]/diff/page.tsx",
-      "src/app/t/[tenantSlug]/(app)/frameworks/[frameworkKey]/install/page.tsx",
-      "src/app/t/[tenantSlug]/(app)/frameworks/[frameworkKey]/templates/page.tsx",
       "src/app/t/[tenantSlug]/(app)/vendors/[vendorId]/assessment/[assessmentId]/page.tsx",
       "src/app/t/[tenantSlug]/(app)/issues/[issueId]/page.tsx", // legacy redirect → /farm-tasks/[id]
       "src/app/t/[tenantSlug]/(app)/admin/vendor-templates/[templateId]/page.tsx",

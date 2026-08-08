@@ -44,7 +44,6 @@ const FORM_FIELD_SURFACES: FormSurface[] = [
             'src/app/t/[tenantSlug]/(app)/policies/_form/NewPolicyFields.tsx',
         ],
     },
-    { label: 'risks/NewRiskModal.tsx', files: ['src/app/t/[tenantSlug]/(app)/risks/NewRiskModal.tsx'] },
     {
         label: 'tasks create (modal + fields)',
         files: [
@@ -68,7 +67,6 @@ const FORM_ERROR_SURFACES: FormSurface[] = [
     // (`#upload-error`) rather than per-field validation errors, so
     // `<FormError>` is not the right primitive — the ratchet was stale
     // listing it here. Field-level error surfaces remain ratcheted below.
-    { label: 'risks/NewRiskModal.tsx', files: ['src/app/t/[tenantSlug]/(app)/risks/NewRiskModal.tsx'] },
     {
         label: 'tasks create (modal + fields)',
         files: [

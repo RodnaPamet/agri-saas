@@ -17,11 +17,9 @@ const getPortfolioSummaryMock = jest.fn();
 const getPortfolioTenantHealthMock = jest.fn();
 const getPortfolioTrendsMock = jest.fn();
 const getNonPerformingControlsMock = jest.fn();
-const getCriticalRisksAcrossOrgMock = jest.fn();
 const getOverdueEvidenceAcrossOrgMock = jest.fn();
 // Paginated counterparts — the drill-down API now uses these.
 const listNonPerformingControlsMock = jest.fn();
-const listCriticalRisksAcrossOrgMock = jest.fn();
 const listOverdueEvidenceAcrossOrgMock = jest.fn();
 
 jest.mock('@/app-layer/context', () => ({
@@ -35,10 +33,8 @@ jest.mock('@/app-layer/usecases/portfolio', () => ({
     getPortfolioTenantHealth: (...a: unknown[]) => getPortfolioTenantHealthMock(...a),
     getPortfolioTrends: (...a: unknown[]) => getPortfolioTrendsMock(...a),
     getNonPerformingControls: (...a: unknown[]) => getNonPerformingControlsMock(...a),
-    getCriticalRisksAcrossOrg: (...a: unknown[]) => getCriticalRisksAcrossOrgMock(...a),
     getOverdueEvidenceAcrossOrg: (...a: unknown[]) => getOverdueEvidenceAcrossOrgMock(...a),
     listNonPerformingControls: (...a: unknown[]) => listNonPerformingControlsMock(...a),
-    listCriticalRisksAcrossOrg: (...a: unknown[]) => listCriticalRisksAcrossOrgMock(...a),
     listOverdueEvidenceAcrossOrg: (...a: unknown[]) => listOverdueEvidenceAcrossOrgMock(...a),
 }));
 
@@ -83,10 +79,8 @@ beforeEach(() => {
     getPortfolioTenantHealthMock.mockReset();
     getPortfolioTrendsMock.mockReset();
     getNonPerformingControlsMock.mockReset();
-    getCriticalRisksAcrossOrgMock.mockReset();
     getOverdueEvidenceAcrossOrgMock.mockReset();
     listNonPerformingControlsMock.mockReset();
-    listCriticalRisksAcrossOrgMock.mockReset();
     listOverdueEvidenceAcrossOrgMock.mockReset();
 });
 
@@ -212,7 +206,7 @@ describe('GET /api/org/[orgSlug]/portfolio', () => {
     it('drill-down views are blocked for ORG_READER with 403 — usecase NOT called', async () => {
         getOrgCtxMock.mockResolvedValue(readerCtx);
 
-        for (const v of ['controls', 'risks', 'evidence']) {
+        for (const v of ['controls', 'evidence']) {
             const res = await viewGET(
                 makeRequest(`/api/org/acme-org/portfolio?view=${v}`),
                 { params: Promise.resolve({ orgSlug: 'acme-org' }) },
@@ -220,7 +214,6 @@ describe('GET /api/org/[orgSlug]/portfolio', () => {
             expect(res.status).toBe(403);
         }
         expect(listNonPerformingControlsMock).not.toHaveBeenCalled();
-        expect(listCriticalRisksAcrossOrgMock).not.toHaveBeenCalled();
         expect(listOverdueEvidenceAcrossOrgMock).not.toHaveBeenCalled();
     });
 
@@ -239,21 +232,6 @@ describe('GET /api/org/[orgSlug]/portfolio', () => {
         }
     });
 
-    it('view=risks routes to listCriticalRisksAcrossOrg with cursor', async () => {
-        getOrgCtxMock.mockResolvedValue(adminCtx);
-        listCriticalRisksAcrossOrgMock.mockResolvedValue({
-            rows: [{ riskId: 'r-1' }],
-            nextCursor: 'risks-cursor',
-        });
-
-        const res = await viewGET(
-            makeRequest('/api/org/acme-org/portfolio?view=risks'),
-            { params: Promise.resolve({ orgSlug: 'acme-org' }) },
-        );
-        const body = await res.json();
-        expect(body.rows).toEqual([{ riskId: 'r-1' }]);
-        expect(body.nextCursor).toBe('risks-cursor');
-    });
 
     it('view=evidence routes to listOverdueEvidenceAcrossOrg with cursor', async () => {
         getOrgCtxMock.mockResolvedValue(adminCtx);
@@ -273,15 +251,15 @@ describe('GET /api/org/[orgSlug]/portfolio', () => {
 
     it('drill-down ignores invalid limit parameter (lenient on read)', async () => {
         getOrgCtxMock.mockResolvedValue(adminCtx);
-        listCriticalRisksAcrossOrgMock.mockResolvedValue({ rows: [], nextCursor: null });
+        listNonPerformingControlsMock.mockResolvedValue({ rows: [], nextCursor: null });
 
         const res = await viewGET(
-            makeRequest('/api/org/acme-org/portfolio?view=risks&limit=not-a-number'),
+            makeRequest('/api/org/acme-org/portfolio?view=controls&limit=not-a-number'),
             { params: Promise.resolve({ orgSlug: 'acme-org' }) },
         );
         expect(res.status).toBe(200);
         // No `limit` key in the call args → usecase falls back to default.
-        const args = listCriticalRisksAcrossOrgMock.mock.calls[0];
+        const args = listNonPerformingControlsMock.mock.calls[0];
         expect(args[1].limit).toBeUndefined();
     });
 });
@@ -296,7 +274,6 @@ describe('GET /api/org/[orgSlug]/portfolio/export', () => {
             generatedAt: '2026-04-26T00:00:00Z',
             tenants: { total: 2, snapshotted: 1, pending: 1 },
             controls: { applicable: 100, implemented: 75, coveragePercent: 75 },
-            risks: { total: 10, open: 5, critical: 1, high: 2 },
             evidence: { total: 50, overdue: 3, dueSoon7d: 4 },
             policies: { total: 5, overdueReview: 1 },
             tasks: { open: 12, overdue: 2 },
@@ -314,8 +291,6 @@ describe('GET /api/org/[orgSlug]/portfolio/export', () => {
                 hasSnapshot: true,
                 snapshotDate: '2026-04-25',
                 coveragePercent: 75,
-                openRisks: 5,
-                criticalRisks: 1,
                 overdueEvidence: 3,
                 rag: 'AMBER',
             },
@@ -327,7 +302,6 @@ describe('GET /api/org/[orgSlug]/portfolio/export', () => {
         getPortfolioSummaryMock.mockResolvedValue(summaryFixture());
         getPortfolioTenantHealthMock.mockResolvedValue(healthFixture());
         getNonPerformingControlsMock.mockResolvedValue([]);
-        getCriticalRisksAcrossOrgMock.mockResolvedValue([]);
         getOverdueEvidenceAcrossOrgMock.mockResolvedValue([]);
 
         const res = await exportGET(
@@ -341,7 +315,7 @@ describe('GET /api/org/[orgSlug]/portfolio/export', () => {
         );
     });
 
-    it('CSV body contains all 5 expected sections for an ORG_ADMIN', async () => {
+    it('CSV body contains all 4 expected sections for an ORG_ADMIN', async () => {
         getOrgCtxMock.mockResolvedValue(adminCtx);
         getPortfolioSummaryMock.mockResolvedValue(summaryFixture());
         getPortfolioTenantHealthMock.mockResolvedValue(healthFixture());
@@ -356,7 +330,6 @@ describe('GET /api/org/[orgSlug]/portfolio/export', () => {
                 updatedAt: '2026-04-25T00:00:00Z',
             },
         ]);
-        getCriticalRisksAcrossOrgMock.mockResolvedValue([]);
         getOverdueEvidenceAcrossOrgMock.mockResolvedValue([]);
 
         const res = await exportGET(
@@ -368,12 +341,11 @@ describe('GET /api/org/[orgSlug]/portfolio/export', () => {
         expect(body).toContain('# Portfolio Summary');
         expect(body).toContain('# Tenant Health');
         expect(body).toContain('# Non-Performing Controls');
-        expect(body).toContain('# Critical Risks');
         expect(body).toContain('# Overdue Evidence');
         // Summary values present
         expect(body).toContain('Coverage %,75.0');
         // Tenant health row present
-        expect(body).toContain('Alpha Co,alpha,2026-04-25,75.0,5,1,3,AMBER');
+        expect(body).toContain('Alpha Co,alpha,2026-04-25,75.0,3,AMBER');
         // Drill-down row present
         expect(body).toContain('Alpha Co,alpha,AC-1,AC-1,NOT_STARTED,2026-04-25T00:00:00Z');
     });
@@ -392,14 +364,12 @@ describe('GET /api/org/[orgSlug]/portfolio/export', () => {
         expect(body).toContain('# Portfolio Summary');
         expect(body).toContain('# Tenant Health');
         expect(body).not.toContain('# Non-Performing Controls');
-        expect(body).not.toContain('# Critical Risks');
         expect(body).not.toContain('# Overdue Evidence');
 
         // The drill-down usecases must NOT have been called for the
         // partial-export branch — saves DB round-trips when canDrillDown
         // is false.
         expect(getNonPerformingControlsMock).not.toHaveBeenCalled();
-        expect(getCriticalRisksAcrossOrgMock).not.toHaveBeenCalled();
         expect(getOverdueEvidenceAcrossOrgMock).not.toHaveBeenCalled();
     });
 
@@ -433,7 +403,6 @@ describe('GET /api/org/[orgSlug]/portfolio/export', () => {
             },
         ]);
         getNonPerformingControlsMock.mockResolvedValue([]);
-        getCriticalRisksAcrossOrgMock.mockResolvedValue([]);
         getOverdueEvidenceAcrossOrgMock.mockResolvedValue([]);
 
         const res = await exportGET(

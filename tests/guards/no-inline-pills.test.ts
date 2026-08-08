@@ -60,7 +60,6 @@ const PATTERNS: PillPattern[] = [
 
 const ALLOWLIST_FILES = new Set<string>([
     // Print view — intentionally bespoke styling for paper.
-    'src/app/t/[tenantSlug]/(app)/reports/soa/print/SoAPrintView.tsx',
 ]);
 
 const ALLOWLIST_LINE_FRAGMENTS: Array<{ file: string; substring: string; reason: string }> = [

@@ -2,12 +2,16 @@
  * Cross-tenant drill-down auditor fan-out integrity check.
  *
  * Mocks the repository + Prisma at module boundaries to verify that
- * the three drill-down usecases (`getNonPerformingControls`,
- * `getCriticalRisksAcrossOrg`, `getOverdueEvidenceAcrossOrg`) all
- * consistently call the integrity check before iterating, that the
- * structured drift warning fires only when memberships are missing,
- * and that the iteration filters down to the accessible subset
- * rather than silently masking missing memberships as empty results.
+ * the drill-down usecases (`getNonPerformingControls`,
+ * `getOverdueEvidenceAcrossOrg`) both call the integrity check before
+ * iterating, that the structured drift warning fires only when
+ * memberships are missing, and that the iteration filters down to the
+ * accessible subset rather than silently masking missing memberships
+ * as empty results.
+ *
+ * A third path, `getCriticalRisksAcrossOrg`, was covered here until the
+ * risk register was removed; the two remaining paths exercise the same
+ * shared `assertAuditorFanoutIntegrity` helper.
  */
 
 const getOrgTenantIdsMock = jest.fn();
@@ -51,7 +55,6 @@ jest.mock('@/lib/observability/logger', () => ({
 
 import {
     getNonPerformingControls,
-    getCriticalRisksAcrossOrg,
     getOverdueEvidenceAcrossOrg,
 } from '@/app-layer/usecases/portfolio';
 import type { OrgContext } from '@/app-layer/types';
@@ -90,7 +93,6 @@ beforeEach(() => {
     withTenantDbMock.mockImplementation(async (_tenantId: string, fn: (db: unknown) => Promise<unknown>) => {
         const db = {
             control: { findMany: () => Promise.resolve([]) },
-            risk: { findMany: () => Promise.resolve([]) },
             evidence: { findMany: () => Promise.resolve([]) },
         };
         return fn(db);
@@ -133,7 +135,7 @@ describe('drill-down integrity check — healthy fan-out (all tenants accessible
             { tenantId: 't-2' },
             { tenantId: 't-3' },
         ]);
-        await getCriticalRisksAcrossOrg(ctxFor());
+        await getOverdueEvidenceAcrossOrg(ctxFor());
         expect(loggerWarnMock).not.toHaveBeenCalled();
         expect(withTenantDbMock).toHaveBeenCalledTimes(3);
     });
@@ -191,7 +193,7 @@ describe('drill-down integrity check — fan-out drift detected', () => {
             { tenantId: 't-3' },
         ]);
 
-        await getCriticalRisksAcrossOrg(ctxFor());
+        await getNonPerformingControls(ctxFor());
 
         // The fan-out only touches t-1 and t-3 — t-2 is skipped.
         const tenantIdsIterated = withTenantDbMock.mock.calls.map((c) => c[0]);
@@ -217,12 +219,11 @@ describe('drill-down integrity check — fan-out drift detected', () => {
     });
 });
 
-// ── Reuse across all three drill-down paths ────────────────────────
+// ── Reuse across the drill-down paths ────────────────────────────────
 
 describe('drill-down integrity check — reused consistently across usecases', () => {
     it.each([
         ['getNonPerformingControls', getNonPerformingControls],
-        ['getCriticalRisksAcrossOrg', getCriticalRisksAcrossOrg],
         ['getOverdueEvidenceAcrossOrg', getOverdueEvidenceAcrossOrg],
     ])('%s runs the integrity check before fan-out', async (_label, fn) => {
         getOrgTenantIdsMock.mockResolvedValue(TENANTS);

@@ -47,10 +47,6 @@ interface DigestData {
     controlCoveragePercent: number;
     controlsImplemented: number;
     controlsApplicable: number;
-    risksTotal: number;
-    risksOpen: number;
-    risksCritical: number;
-    risksHigh: number;
     evidenceOverdue: number;
     evidenceDueSoon7d: number;
     policiesOverdueReview: number;
@@ -59,7 +55,6 @@ interface DigestData {
     findingsOpen: number;
     // Trend deltas (vs N days ago)
     coverageDelta: number | null;
-    risksOpenDelta: number | null;
     evidenceOverdueDelta: number | null;
     findingsOpenDelta: number | null;
 }
@@ -159,10 +154,6 @@ async function generateAndSendDigest(
         controlCoveragePercent: latestSnapshot.controlCoverageBps / 100,
         controlsImplemented: latestSnapshot.controlsImplemented,
         controlsApplicable: latestSnapshot.controlsApplicable,
-        risksTotal: latestSnapshot.risksTotal,
-        risksOpen: latestSnapshot.risksOpen,
-        risksCritical: latestSnapshot.risksCritical,
-        risksHigh: latestSnapshot.risksHigh,
         evidenceOverdue: latestSnapshot.evidenceOverdue,
         evidenceDueSoon7d: latestSnapshot.evidenceDueSoon7d,
         policiesOverdueReview: latestSnapshot.policiesOverdueReview,
@@ -171,9 +162,6 @@ async function generateAndSendDigest(
         findingsOpen: latestSnapshot.findingsOpen,
         coverageDelta: priorSnapshot
             ? (latestSnapshot.controlCoverageBps - priorSnapshot.controlCoverageBps) / 100
-            : null,
-        risksOpenDelta: priorSnapshot
-            ? latestSnapshot.risksOpen - priorSnapshot.risksOpen
             : null,
         evidenceOverdueDelta: priorSnapshot
             ? latestSnapshot.evidenceOverdue - priorSnapshot.evidenceOverdue
@@ -263,11 +251,6 @@ function renderDigestEmail(data: DigestData, trendDays: number): { subject: stri
         `  Coverage: ${data.controlCoveragePercent.toFixed(1)}% (${data.controlsImplemented}/${data.controlsApplicable})`,
         `  ${trendDays}d change: ${formatDelta(data.coverageDelta, 'pp')}`,
         ``,
-        `── Risk Posture ──`,
-        `  Total: ${data.risksTotal} | Open: ${data.risksOpen}`,
-        `  Critical: ${data.risksCritical} | High: ${data.risksHigh}`,
-        `  ${trendDays}d open change: ${formatDelta(data.risksOpenDelta)}`,
-        ``,
         `── Evidence & Deadlines ──`,
         `  Overdue: ${data.evidenceOverdue} | Due ≤7d: ${data.evidenceDueSoon7d}`,
         `  ${trendDays}d overdue change: ${formatDelta(data.evidenceOverdueDelta)}`,
@@ -281,8 +264,7 @@ function renderDigestEmail(data: DigestData, trendDays: number): { subject: stri
         ...(data.policiesOverdueReview > 0 ? [`  ${data.policiesOverdueReview} policies need review`] : []),
         ...(data.tasksOverdue > 0 ? [`  ${data.tasksOverdue} overdue tasks`] : []),
         ...(data.evidenceOverdue > 0 ? [`  ${data.evidenceOverdue} overdue evidence items`] : []),
-        ...(data.risksCritical > 0 ? [`  ${data.risksCritical} critical risks`] : []),
-        ...(data.policiesOverdueReview === 0 && data.tasksOverdue === 0 && data.evidenceOverdue === 0 && data.risksCritical === 0
+        ...(data.policiesOverdueReview === 0 && data.tasksOverdue === 0 && data.evidenceOverdue === 0
             ? ['  ✓ No urgent items.'] : []),
         ``,
         `— Agrent`,
@@ -310,14 +292,8 @@ function renderDigestEmail(data: DigestData, trendDays: number): { subject: stri
     </div>
   </div>
 
-  <!-- Risk + Evidence row -->
+  <!-- Evidence row -->
   <div style="display:flex;gap:12px;margin-bottom:12px;">
-    <div style="flex:1;background:rgba(30,41,59,0.8);border:1px solid rgba(51,65,85,0.5);border-radius:12px;padding:16px;">
-      <div style="font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">Risks</div>
-      <div style="font-size:24px;font-weight:700;color:#f59e0b;">${data.risksOpen}</div>
-      <div style="font-size:11px;color:#94a3b8;">open of ${data.risksTotal}</div>
-      ${data.risksCritical > 0 ? `<div style="font-size:11px;color:#ef4444;margin-top:4px;">${data.risksCritical} critical</div>` : ''}
-    </div>
     <div style="flex:1;background:rgba(30,41,59,0.8);border:1px solid rgba(51,65,85,0.5);border-radius:12px;padding:16px;">
       <div style="font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">Evidence</div>
       <div style="font-size:24px;font-weight:700;color:${data.evidenceOverdue > 0 ? '#ef4444' : '#22c55e'};">${data.evidenceOverdue}</div>
@@ -344,7 +320,6 @@ function renderDigestEmail(data: DigestData, trendDays: number): { subject: stri
   <!-- Attention Required -->
   ${(() => {
       const items: string[] = [];
-      if (data.risksCritical > 0) items.push(`<span style="color:#ef4444;">● ${data.risksCritical} critical risk${data.risksCritical > 1 ? 's' : ''}</span>`);
       if (data.evidenceOverdue > 0) items.push(`<span style="color:#ef4444;">● ${data.evidenceOverdue} overdue evidence</span>`);
       if (data.tasksOverdue > 0) items.push(`<span style="color:#f59e0b;">● ${data.tasksOverdue} overdue task${data.tasksOverdue > 1 ? 's' : ''}</span>`);
       if (data.policiesOverdueReview > 0) items.push(`<span style="color:#f59e0b;">● ${data.policiesOverdueReview} policies need review</span>`);

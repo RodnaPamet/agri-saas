@@ -30,11 +30,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getOrgCtx } from '@/app-layer/context';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { forbidden } from '@/lib/errors/types';
+import { escapeCSV } from '@/lib/reports/csv-escape';
 import {
     getPortfolioSummary,
     getPortfolioTenantHealth,
     getNonPerformingControls,
-    getCriticalRisksAcrossOrg,
     getOverdueEvidenceAcrossOrg,
 } from '@/app-layer/usecases/portfolio';
 
@@ -44,14 +44,6 @@ interface RouteContext {
 
 // ── CSV helpers ────────────────────────────────────────────────────────
 
-function escapeCSV(value: string | number | null | undefined): string {
-    const s = String(value ?? '');
-    if (s.includes(',') || s.includes('"') || s.includes('\n') || s.includes('\r')) {
-        return `"${s.replace(/"/g, '""')}"`;
-    }
-    return s;
-}
-
 function sectionHeader(title: string, columnCount: number): string {
     // Repeat empty cells so the section banner spans the widest table.
     return [`# ${title}`, ...Array(Math.max(0, columnCount - 1)).fill('')]
@@ -60,9 +52,8 @@ function sectionHeader(title: string, columnCount: number): string {
 }
 
 const SUMMARY_COLUMNS = 2;
-const HEALTH_COLUMNS = 7;
+const HEALTH_COLUMNS = 6;
 const CONTROLS_COLUMNS = 6;
-const RISKS_COLUMNS = 6;
 const EVIDENCE_COLUMNS = 6;
 
 // ── Route ──────────────────────────────────────────────────────────────
@@ -88,10 +79,6 @@ export const GET = withApiErrorHandling(
             ['Controls Applicable', summary.controls.applicable],
             ['Controls Implemented', summary.controls.implemented],
             ['Coverage %', summary.controls.coveragePercent.toFixed(1)],
-            ['Risks Total', summary.risks.total],
-            ['Risks Open', summary.risks.open],
-            ['Risks Critical', summary.risks.critical],
-            ['Risks High', summary.risks.high],
             ['Evidence Overdue', summary.evidence.overdue],
             ['Evidence Due Soon (7d)', summary.evidence.dueSoon7d],
             ['Policies Overdue Review', summary.policies.overdueReview],
@@ -110,7 +97,7 @@ export const GET = withApiErrorHandling(
         sections.push('');
         sections.push(sectionHeader('Tenant Health', HEALTH_COLUMNS));
         sections.push(
-            ['Tenant', 'Slug', 'Snapshot Date', 'Coverage %', 'Open Risks', 'Critical Risks', 'Overdue Evidence', 'RAG']
+            ['Tenant', 'Slug', 'Snapshot Date', 'Coverage %', 'Overdue Evidence', 'RAG']
                 .map(escapeCSV)
                 .join(','),
         );
@@ -121,8 +108,6 @@ export const GET = withApiErrorHandling(
                     escapeCSV(row.slug),
                     escapeCSV(row.snapshotDate ?? ''),
                     escapeCSV(row.coveragePercent !== null ? row.coveragePercent.toFixed(1) : ''),
-                    escapeCSV(row.openRisks ?? ''),
-                    escapeCSV(row.criticalRisks ?? ''),
                     escapeCSV(row.overdueEvidence ?? ''),
                     escapeCSV(row.rag ?? 'PENDING'),
                 ].join(','),
@@ -131,9 +116,8 @@ export const GET = withApiErrorHandling(
 
         // ── Sections 3-5: drill-down (only when canDrillDown) ────────
         if (ctx.permissions.canDrillDown) {
-            const [controls, risks, evidence] = await Promise.all([
+            const [controls, evidence] = await Promise.all([
                 getNonPerformingControls(ctx),
-                getCriticalRisksAcrossOrg(ctx),
                 getOverdueEvidenceAcrossOrg(ctx),
             ]);
 
@@ -153,26 +137,6 @@ export const GET = withApiErrorHandling(
                         escapeCSV(c.code ?? ''),
                         escapeCSV(c.status),
                         escapeCSV(c.updatedAt),
-                    ].join(','),
-                );
-            }
-
-            sections.push('');
-            sections.push(sectionHeader('Critical Risks', RISKS_COLUMNS));
-            sections.push(
-                ['Tenant', 'Slug', 'Title', 'Inherent Score', 'Status', 'Updated At']
-                    .map(escapeCSV)
-                    .join(','),
-            );
-            for (const r of risks) {
-                sections.push(
-                    [
-                        escapeCSV(r.tenantName),
-                        escapeCSV(r.tenantSlug),
-                        escapeCSV(r.title),
-                        escapeCSV(r.inherentScore),
-                        escapeCSV(r.status),
-                        escapeCSV(r.updatedAt),
                     ].join(','),
                 );
             }

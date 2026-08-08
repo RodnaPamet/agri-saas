@@ -32,7 +32,6 @@ export const BACK_AFFORDANCE_EXEMPT_SUBPAGES: readonly string[] = [
     '/issues/new',          // legacy redirect
     '/onboarding',          // forced flow — back would skip a required step
     '/policies/new',        // redirect shim
-    '/reports/soa/print',   // print view, chrome-less by design
     '/risks/new',           // redirect shim
     '/security/mfa',        // self-service security flow
     '/vendors/new',         // redirect shim
@@ -57,7 +56,6 @@ export const MAIN_PAGES: readonly string[] = [
     '/evidence',
     '/farm-tasks',
     '/findings',
-    '/frameworks',
     '/grain/bins',
     '/grain/contracts',
     '/grain/costs',
@@ -72,9 +70,7 @@ export const MAIN_PAGES: readonly string[] = [
     '/planning',
     '/policies',
     '/processes',
-    '/reports',
     '/risks',
-    '/schemes',
     '/tests',
     '/vendors',
 ] as const;
@@ -99,7 +95,6 @@ export const SUBPAGES: readonly string[] = [
     '/admin/modules',
     '/admin/notifications',
     '/admin/rbac',
-    '/admin/risk-appetite',
     '/admin/roles',
     '/admin/scim',
     '/admin/security',
@@ -136,10 +131,6 @@ export const SUBPAGES: readonly string[] = [
     '/field/[taskId]',
 
     // Frameworks
-    '/frameworks/[frameworkKey]',
-    '/frameworks/[frameworkKey]/diff',
-    '/frameworks/[frameworkKey]/install',
-    '/frameworks/[frameworkKey]/templates',
 
     // Issues (legacy → tasks)
     '/issues/[issueId]',
@@ -171,8 +162,6 @@ export const SUBPAGES: readonly string[] = [
     '/processes/governance',
 
     // Reports
-    '/reports/soa',
-    '/reports/soa/print',
 
     // Risks
     '/risks/[riskId]',

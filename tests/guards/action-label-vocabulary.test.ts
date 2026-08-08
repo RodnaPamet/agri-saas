@@ -90,7 +90,6 @@ const BASELINE_PLUS_LITERAL_SITES = new Set<string>([
     'src/app/t/[tenantSlug]/(app)/audits/cycles/page.tsx:209',
     'src/app/t/[tenantSlug]/(app)/audits/cycles/page.tsx:221',
     'src/app/t/[tenantSlug]/(app)/audits/readiness/page.tsx:155',
-    'src/app/t/[tenantSlug]/(app)/controls/[controlId]/tests/[planId]/page.tsx:300',
     // B9 — line numbers shifted by 13 when the Export PDF anchor
     // landed in the page-header actions slot. The `+ Version`
     // labels themselves are unchanged staged debt (see baseline
@@ -108,11 +107,9 @@ const BASELINE_PLUS_LITERAL_SITES = new Set<string>([
     // message value would trip no-plus-prefix-labels). Its line shifted
     // 419 → 424 when the useTranslations import/hook + useMemo import
     // landed above it.
-    'src/app/t/[tenantSlug]/(app)/tests/runs/[runId]/page.tsx:424',
     'src/app/t/[tenantSlug]/(app)/vendors/[vendorId]/page.tsx:369',
     'src/app/t/[tenantSlug]/(app)/vendors/[vendorId]/page.tsx:393',
     'src/app/t/[tenantSlug]/(app)/vendors/[vendorId]/page.tsx:470',
-    'src/components/TestPlansPanel.tsx:130',
 ]);
 
 function walk(dir: string): string[] {

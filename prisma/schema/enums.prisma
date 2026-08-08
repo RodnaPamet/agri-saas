@@ -173,6 +173,17 @@ enum ControlStatus {
   NOT_APPLICABLE
 }
 
+/// How a control mitigates a risk. Read by the bow-tie projection
+/// (PREVENTIVE/DETERRENT sit left of the event, DETECTIVE/CORRECTIVE/
+/// COMPENSATING right) and by the residual-risk suggestion.
+enum ControlMitigationType {
+  PREVENTIVE
+  DETERRENT
+  DETECTIVE
+  CORRECTIVE
+  COMPENSATING
+}
+
 enum Applicability {
   APPLICABLE
   NOT_APPLICABLE
@@ -187,11 +198,6 @@ enum ControlFrequency {
   ANNUALLY
 }
 
-enum TestMethod {
-  MANUAL
-  AUTOMATED
-}
-
 // Refines TestMethod for Epic G-2 scheduled execution. MANUAL plans
 // are never picked up by the scheduler; SCRIPT plans run a built-in
 // handler; INTEGRATION plans dispatch to an external connector.
@@ -202,42 +208,6 @@ enum AutomationType {
   MANUAL
   SCRIPT
   INTEGRATION
-}
-
-/// Lifecycle for a control test plan.
-///
-///   ACTIVE   — the plan runs on cadence (`nextDueAt` ticks via
-///              `computeNextDueAt(frequency)` after each run completion).
-///   PAUSED   — temporarily not running runs; can be re-activated.
-///   ARCHIVED — terminal state. Plan is preserved for historical
-///              audit but no new runs can be created. Auditor view
-///              treats it as "retired control test". Distinct from
-///              soft-delete (which removes the row from default
-///              queries entirely); ARCHIVED stays visible but read-
-///              only. Audit Coherence S2 (2026-05-22).
-enum TestPlanStatus {
-  ACTIVE
-  PAUSED
-  ARCHIVED
-}
-
-enum TestRunStatus {
-  PLANNED
-  RUNNING
-  COMPLETED
-}
-
-enum TestResult {
-  PASS
-  FAIL
-  INCONCLUSIVE
-}
-
-enum TestEvidenceKind {
-  FILE
-  EVIDENCE
-  LINK
-  INTEGRATION_RESULT
 }
 
 enum EvidenceSourceType {
@@ -359,7 +329,6 @@ enum WorkItemSource {
 enum TaskLinkEntityType {
   CONTROL
   FRAMEWORK_REQUIREMENT
-  RISK
   ASSET
   POLICY
   EVIDENCE
@@ -737,7 +706,6 @@ enum AssessmentStatus {
 
 enum VendorLinkEntityType {
   ASSET
-  RISK
   ISSUE
   CONTROL
 }
@@ -891,25 +859,6 @@ enum AccessReviewDecisionType {
   MODIFY
 }
 
-/// Epic G-5 — Control Exception Register lifecycle.
-///
-///   REQUESTED — submitted by a control owner or risk admin; awaits
-///               approver action. Default state at creation.
-///   APPROVED  — risk-accepted with an explicit approver and an
-///               expiry deadline (`expiresAt` non-null).
-///   REJECTED  — approver declined; the original control remains
-///               applicable. Terminal — a fresh REQUESTED row is
-///               the path forward.
-///   EXPIRED   — APPROVED row whose `expiresAt` has elapsed without
-///               a renewal landing. Terminal — a renewal points to
-///               this row via `renewedFromId`.
-enum ControlExceptionStatus {
-  REQUESTED
-  APPROVED
-  REJECTED
-  EXPIRED
-}
-
 /// Epic G-7 — Risk Treatment Plans (ISO 27001 6.1.3).
 ///
 /// Strategy chosen for the risk. Distinct from the legacy
@@ -964,26 +913,6 @@ enum ProcessMapStatus {
 enum ProcessCanvasMode {
   DOCUMENT
   AUTOMATION
-}
-
-/// Control automation classification (operator-set on the control).
-///   AUTOMATED            — runs without human action.
-///   MANUAL               — performed entirely by a person.
-///   IT_DEPENDENT_MANUAL  — a manual control that relies on
-///                          system-generated information/reports.
-enum ControlAutomationType {
-  AUTOMATED
-  MANUAL
-  IT_DEPENDENT_MANUAL
-}
-
-/// Risk-mitigation nature of a control (how it acts on a risk).
-enum ControlMitigationType {
-  PREVENTIVE
-  DETECTIVE
-  DETERRENT
-  CORRECTIVE
-  COMPENSATING
 }
 
 /// RQ2-1 — what a RiskScoreEvent records.
@@ -1112,7 +1041,6 @@ enum ModuleKey {
   INVENTORY
   PLANNING
   CERTIFICATION
-  RISK
   VENDORS
   AUTOMATION
   PROCESSES

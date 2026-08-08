@@ -17,7 +17,6 @@ import {
     Paperclip,
     FileText,
     ClipboardList,
-    ClipboardCheck,
     Settings,
     LogOut,
     Calendar as CalendarIcon,
@@ -93,22 +92,11 @@ export function useNavSections(): NavSectionDef[] {
     // Live badge — fetched lazily; undefined when count is 0 or load fails.
     const calendarBadge = useCalendarBadge(tenant.tenantSlug);
 
-    // Module availability gate (plan-allowed ∧ tenant-enabled, resolved
-    // server-side in the tenant layout). The GRC surfaces (risks, controls,
-    // audits, policies, vendors, processes) hang off the CERTIFICATION
-    // module — a startup-farmer tenant on the simple-mode plan never sees
-    // them. `availableModules` is absent on pre-port providers ⇒ degrade
-    // gracefully to "all available" so older sessions are unaffected until
-    // natural re-mint.
-    const certAvailable =
-        tenant.availableModules === undefined ||
-        tenant.availableModules.includes('CERTIFICATION');
-
     // Enterprise-grain surfaces (contracts / bins / yield / costs) hang
     // off the GRAIN module — a tenant whose plan doesn't reach the GRAIN
-    // tier (or which has it toggled off) never sees the section. As with
-    // `certAvailable`, an absent `availableModules` (pre-port providers)
-    // degrades gracefully to "available" until natural session re-mint.
+    // tier (or which has it toggled off) never sees the section. An absent
+    // `availableModules` (pre-port providers) degrades gracefully to
+    // "available" until natural session re-mint.
     const grainAvailable =
         tenant.availableModules === undefined ||
         tenant.availableModules.includes('GRAIN');
@@ -223,13 +211,17 @@ export function useNavSections(): NavSectionDef[] {
                 // News (#news) — aggregated agricultural news feed, decoupled
                 // from Trends into its own destination. Visible to every tenant.
                 { href: tenantHref('/news'), label: t('news'), icon: Newspaper },
-                // Support schemes (ДФЗ / МЗХ / EC measures a farm APPLIES FOR).
-                // Sits beside News and Trends, NOT beside Schemes: a subsidy is
-                // something you apply for, a certification scheme is something
-                // you are audited against, and putting them together would make
-                // "apply by 30 Sep" and "control point CB.7.1" look like the
-                // same kind of thing.
-                { href: tenantHref('/support-schemes'), label: t('supportSchemes'), icon: Coins },
+                // Схеми — government support measures (ДФЗ / МЗХ / EC) a farm
+                // APPLIES FOR. Sits beside News and Trends: an open call with
+                // an application window is market/opportunity information, in
+                // the same register as a price move or a policy story.
+                //
+                // This entry used to point at `/support-schemes` while a
+                // separate CERTIFICATION entry owned `/schemes`. The
+                // certification catalog was removed with the compliance
+                // uproot, so support measures took over the shorter route and
+                // there is now exactly ONE "Схеми" destination.
+                { href: tenantHref('/schemes'), label: t('schemes'), icon: Coins },
             ]),
         },
         {
@@ -252,12 +244,6 @@ export function useNavSections(): NavSectionDef[] {
                 // The page stays reachable via the Frameworks pill on
                 // the Audits page header (R13-PR9) and via the command
                 // palette (⌘K → "Frameworks").
-                // Certification Schemes — the catalog of AG_SCHEME frameworks
-                // (Organic, GLOBALG.A.P., etc.) the tenant maps practices to.
-                // GRC surface — gated behind CERTIFICATION. Reuses the
-                // already-imported ClipboardCheck glyph (a verified-standard
-                // affordance) — no new lucide import.
-                { href: tenantHref('/schemes'), label: t('schemes'), icon: ClipboardCheck, visible: certAvailable },
                 // Knowledge Base — versioned SOPs / guides / reference
                 // articles (the Policy feature's twin). Sits under Manage
                 // alongside Policy. Reuses the already-imported FileText

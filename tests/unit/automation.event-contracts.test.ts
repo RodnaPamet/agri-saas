@@ -30,27 +30,12 @@ function buildFakeEvent(
         emittedAt: new Date(),
     };
     switch (name) {
-        case 'RISK_CREATED':
-            return {
-                ...base,
-                event: name,
-                data: { title: 't', score: 1, category: null },
-            };
-        case 'RISK_UPDATED':
-            return { ...base, event: name, data: { changedFields: [] } };
-        case 'RISK_STATUS_CHANGED':
         case 'TEST_PLAN_PAUSED':
         case 'TEST_PLAN_RESUMED':
             return {
                 ...base,
                 event: name,
                 data: { fromStatus: 'A', toStatus: 'B' },
-            };
-        case 'RISK_CONTROLS_MAPPED':
-            return {
-                ...base,
-                event: name,
-                data: { controlId: 'c', action: 'LINKED' },
             };
         case 'TEST_PLAN_CREATED':
             return {
@@ -202,13 +187,13 @@ describe('Automation event contracts', () => {
     });
 
     it('isEvent narrows correctly', () => {
-        const risk = buildFakeEvent('RISK_CREATED');
-        expect(isEvent(risk, 'RISK_CREATED')).toBe(true);
-        expect(isEvent(risk, 'RISK_UPDATED')).toBe(false);
+        const plan = buildFakeEvent('TEST_PLAN_CREATED');
+        expect(isEvent(plan, 'TEST_PLAN_CREATED')).toBe(true);
+        expect(isEvent(plan, 'TEST_PLAN_UPDATED')).toBe(false);
 
-        if (isEvent(risk, 'RISK_CREATED')) {
-            // TypeScript-narrowed — `risk.data.title` is string at compile time.
-            expect(risk.data.title).toBe('t');
+        if (isEvent(plan, 'TEST_PLAN_CREATED')) {
+            // TypeScript-narrowed — `plan.data.name` is string at compile time.
+            expect(plan.data.name).toBe('n');
         }
     });
 
@@ -218,11 +203,11 @@ describe('Automation event contracts', () => {
         // check that the shape we hand to the bus is narrower than
         // the full event.
         const input: EmitAutomationEvent = {
-            event: 'RISK_CREATED',
-            entityType: 'Risk',
-            entityId: 'r-1',
+            event: 'TEST_PLAN_CREATED',
+            entityType: 'ControlTestPlan',
+            entityId: 'p-1',
             actorUserId: null,
-            data: { title: 't', score: 1, category: null },
+            data: { name: 'n', controlId: 'c' },
         };
         expect('tenantId' in input).toBe(false);
         expect('emittedAt' in input).toBe(false);

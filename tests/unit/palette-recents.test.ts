@@ -68,7 +68,7 @@ describe('addRecent — FIFO + dedupe + cap', () => {
 
     it('treats a different type with the same id as a separate entry', () => {
         const list = [makeItem('a', 'control')];
-        const out = addRecent(list, makeItem('a', 'risk'));
+        const out = addRecent(list, makeItem('a', 'policy'));
         expect(out).toHaveLength(2);
     });
 
@@ -93,7 +93,7 @@ describe('addRecent — FIFO + dedupe + cap', () => {
 describe('recentFromHit — adapter shape', () => {
     it('lifts the bare-essentials shape from a SearchHit', () => {
         const hit: SearchHit = {
-            type: 'risk',
+            type: 'asset',
             id: 'r1',
             title: 'Phishing exposure',
             subtitle: 'tech',
@@ -101,10 +101,10 @@ describe('recentFromHit — adapter shape', () => {
             href: '/t/x/risks/r1',
             score: 99,
             iconKey: 'alert-triangle',
-            category: 'Risks',
+            category: 'Assets',
         };
         expect(recentFromHit(hit)).toEqual({
-            type: 'risk',
+            type: 'asset',
             id: 'r1',
             title: 'Phishing exposure',
             href: '/t/x/risks/r1',
@@ -189,7 +189,7 @@ describe('serializeRecents — wire shape', () => {
     });
 
     it('round-trips through loadRecents', () => {
-        const items = [makeItem('a'), makeItem('b', 'risk')];
+        const items = [makeItem('a'), makeItem('b', 'policy')];
         const restored = loadRecents(serializeRecents(items));
         expect(restored).toEqual(items);
     });

@@ -87,28 +87,4 @@ describe('PR-A — dashboard balance + reports card', () => {
         });
     });
 
-    describe('Reports SoA table card', () => {
-        const src = read(
-            'src/app/t/[tenantSlug]/(app)/reports/soa/SoAClient.tsx',
-        );
-
-        it('uses default cardVariants density (no `density: "none"`)', () => {
-            // Anchor the assertion to the SoA-table card-card
-            // div via the new testid. The pre-PR-A wrapper passed
-            // `density: 'none'`; matching the Controls/Risks list-
-            // page DataTable card means the card-default density.
-            //
-            // The "soa-table-card" anchor + the `cardVariants()`
-            // call site appear inside the same JSX expression. A
-            // future refactor that forgets the default density will
-            // re-introduce `cardVariants({ density: 'none' })` here
-            // and trip the second assertion.
-            const cardIdx = src.indexOf('data-testid="soa-table-card"');
-            expect(cardIdx).toBeGreaterThan(0);
-            // The preceding ~150 chars are the wrapper open tag.
-            const wrapper = src.slice(Math.max(0, cardIdx - 200), cardIdx + 80);
-            expect(wrapper).toMatch(/cardVariants\(\)/);
-            expect(wrapper).not.toMatch(/density:\s*['"]none['"]/);
-        });
-    });
 });

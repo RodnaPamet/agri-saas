@@ -27,9 +27,6 @@ jest.mock('@/app-layer/repositories/ControlRepository', () => ({
     },
 }));
 
-jest.mock('@/app-layer/repositories/ControlTemplateRepository', () => ({
-    ControlTemplateRepository: { list: jest.fn(), getById: jest.fn() },
-}));
 
 jest.mock('@/app-layer/repositories/FrameworkRepository', () => ({
     FrameworkRepository: { listFrameworks: jest.fn(), listRequirements: jest.fn() },

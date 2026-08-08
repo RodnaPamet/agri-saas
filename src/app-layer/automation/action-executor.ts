@@ -62,7 +62,6 @@ const WEBHOOK_TIMEOUT_MS = 8000;
  * this a rule config could write any column to any string.
  */
 const STATUS_ALLOWLIST: Record<string, { field: string; values: ReadonlySet<string> }> = {
-    Risk: { field: 'status', values: new Set(['OPEN', 'MITIGATING', 'MITIGATED', 'ACCEPTED', 'CLOSED']) },
     Task: {
         field: 'status',
         values: new Set(['OPEN', 'TRIAGED', 'IN_PROGRESS', 'BLOCKED', 'RESOLVED', 'CLOSED', 'CANCELED']),
@@ -199,9 +198,6 @@ async function updateStatus(db: Db, rule: ExecutableRule, event: ActionEvent): P
     // never be attacker-influenced and the call stays type-checked.
     let updated: number;
     switch (cfg?.entityType) {
-        case 'Risk':
-            updated = (await db.risk.updateMany({ where, data })).count;
-            break;
         case 'Task':
             // A Task's `completedAt` is derived state, not an independent
             // column: `WorkItemRepository.setStatus` keeps it in lockstep

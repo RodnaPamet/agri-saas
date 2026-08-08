@@ -74,11 +74,6 @@ const TAB_PAGES: TabPageEntry[] = [
     // templates tab was dropped. The admin landing is now a pure
     // pill-nav surface that no longer owns any tab UI.
     {
-        file: "src/app/t/[tenantSlug]/(app)/reports/ReportsClient.tsx",
-        migrated: false,
-        note: "Reports landing — tabs for report categories.",
-    },
-    {
         file: "src/app/t/[tenantSlug]/(app)/evidence/EvidenceClient.tsx",
         migrated: false,
         note: "Evidence list — retention-tab selector (active / expiring / archived).",

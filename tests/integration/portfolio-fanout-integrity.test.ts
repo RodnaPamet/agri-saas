@@ -24,7 +24,7 @@ import { DB_AVAILABLE } from './db-helper';
 import { prismaTestClient } from '../helpers/db';
 import type { PrismaClient } from '@prisma/client';
 
-import { getCriticalRisksAcrossOrg } from '@/app-layer/usecases/portfolio';
+import { getNonPerformingControls } from '@/app-layer/usecases/portfolio';
 import type { OrgContext } from '@/app-layer/types';
 import { generateAndWrapDek } from '@/lib/security/tenant-keys';
 import { logger } from '@/lib/observability/logger';
@@ -97,23 +97,24 @@ describeFn('Portfolio drill-down — auditor fan-out integrity (DB-backed)', () 
                 },
             });
 
-            // One critical risk per tenant — score 20.
-            await prisma.risk.create({
+            // One non-performing control per tenant. This suite is about
+            // the FAN-OUT integrity property (does the drill-down reach
+            // every tenant, and does a missing AUDITOR row surface as a
+            // warning), not about the entity being drilled into — it used
+            // the risk register until that was removed.
+            await prisma.control.create({
                 data: {
                     tenantId: tenant.id,
-                    title: `t${i} critical risk`,
-                    inherentScore: 20,
-                    score: 20,
-                    status: 'OPEN',
-                    likelihood: 4,
-                    impact: 5,
+                    name: `t${i} non-performing control`,
+                    status: 'NOT_STARTED',
+                    applicability: 'APPLICABLE',
                 },
             });
         }
     });
 
     afterAll(async () => {
-        await prisma.risk.deleteMany({ where: { tenantId: { in: tenantIds } } }).catch(() => {});
+        await prisma.control.deleteMany({ where: { tenantId: { in: tenantIds } } }).catch(() => {});
         await prisma.tenantMembership.deleteMany({ where: { tenantId: { in: tenantIds } } }).catch(() => {});
         await prisma.tenant.deleteMany({ where: { id: { in: tenantIds } } }).catch(() => {});
         await prisma.orgMembership.deleteMany({ where: { organizationId: orgId } }).catch(() => {});
@@ -125,8 +126,8 @@ describeFn('Portfolio drill-down — auditor fan-out integrity (DB-backed)', () 
     it('healthy fan-out: drill-down returns rows from ALL three tenants, no warning', async () => {
         const warnSpy = jest.spyOn(logger, 'warn');
         try {
-            const rows = await getCriticalRisksAcrossOrg(ctxFor());
-            // 3 critical risks visible (one per tenant).
+            const rows = await getNonPerformingControls(ctxFor());
+            // 3 non-performing controls visible (one per tenant).
             expect(rows).toHaveLength(3);
             // No drift warning emitted on the healthy path.
             const driftWarnings = warnSpy.mock.calls.filter(
@@ -146,7 +147,7 @@ describeFn('Portfolio drill-down — auditor fan-out integrity (DB-backed)', () 
 
         const warnSpy = jest.spyOn(logger, 'warn');
         try {
-            const rows = await getCriticalRisksAcrossOrg(ctxFor());
+            const rows = await getNonPerformingControls(ctxFor());
 
             // Drill-down still works for the 2 accessible tenants.
             // Without the integrity check, the result would still be

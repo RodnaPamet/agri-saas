@@ -28,8 +28,6 @@ const SCAN_DIRS = ["src/app", "src/components"];
 // Files that legitimately use raw colors and are explicitly exempt.
 // Keep this list narrow — every entry needs a written reason.
 const EXEMPT_FILES = new Set<string>([
-  "src/components/ui/RiskHeatmap.tsx",    // 3-tier alpha gradient (/80, /60, /50) for risk score visualization
-  "src/components/ui/GraphExplorer.tsx",  // sky/rose/emerald/amber as 4-color category palette for node types
   "src/components/ui/ExpiryCalendar.tsx", // 3-tier urgency gradient (red/amber/yellow) — collapsing urgent + upcoming to a single warning token would erase the at-a-glance distinction
 ]);
 

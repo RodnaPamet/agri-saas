@@ -15,9 +15,7 @@ const read = (p: string) => fs.readFileSync(path.join(ROOT, p), 'utf8');
 
 const REPO = read('src/app-layer/repositories/WorkItemRepository.ts');
 const ASSET_UC = read('src/app-layer/usecases/asset.ts');
-const RISK_UC = read('src/app-layer/usecases/risk.ts');
 const ASSETS = read('src/app/t/[tenantSlug]/(app)/assets/AssetsClient.tsx');
-const RISKS = read('src/app/t/[tenantSlug]/(app)/risks/RisksClient.tsx');
 
 describe('B7 — Tasks column on Asset + Risk', () => {
     it('WorkItemRepository exposes the generic countLinkedToEntities', () => {
@@ -28,7 +26,7 @@ describe('B7 — Tasks column on Asset + Risk', () => {
     });
 
     it('listAssets + listRisks attach taskTotal/taskDone', () => {
-        for (const uc of [ASSET_UC, RISK_UC]) {
+        for (const uc of [ASSET_UC]) {
             expect(uc).toMatch(/countLinkedToEntities/);
             expect(uc).toMatch(/taskTotal:/);
             expect(uc).toMatch(/taskDone:/);
@@ -36,7 +34,7 @@ describe('B7 — Tasks column on Asset + Risk', () => {
     });
 
     it('Asset + Risk list tables render a Tasks column (done/total) + gear toggle', () => {
-        for (const src of [ASSETS, RISKS]) {
+        for (const src of [ASSETS]) {
             expect(src).toMatch(/id: 'tasks'/);
             // i18n (T06): the risks table resolves headers through next-intl;
             // the assets table still uses the literal. Accept either.

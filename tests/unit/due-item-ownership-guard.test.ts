@@ -208,14 +208,16 @@ describe('Structural: scanner queries select owner fields', () => {
     const { readFileSync } = require('fs');
     const { resolve } = require('path');
 
-    test('deadline-monitor: all 5 scanners select ownerUserId or assigneeUserId', () => {
+    test('deadline-monitor: all 3 scanners select ownerUserId or assigneeUserId', () => {
         const source = readFileSync(
             resolve(__dirname, '../../src/app-layer/jobs/deadline-monitor.ts'), 'utf8'
         );
 
-        // Each scanner should have ownerUserId: true or assigneeUserId: true in its select
+        // Each scanner should have ownerUserId: true or assigneeUserId: true in its select.
+        // Floor was 5 until the Risk + ControlTestPlan scanners went with
+        // their models; Control / Policy / Task remain.
         const selectBlocks = source.match(/select:\s*\{[\s\S]*?\}/g) || [];
-        expect(selectBlocks.length).toBeGreaterThanOrEqual(5);
+        expect(selectBlocks.length).toBeGreaterThanOrEqual(3);
 
         for (const block of selectBlocks) {
             const hasOwnerField =

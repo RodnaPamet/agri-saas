@@ -89,7 +89,6 @@ const EXEMPT_FILES = new Set<string>([
     // Two `rounded-full` status pills inside SoA report rows
     // (UNMAPPED → error pill, JUSTIFIED → warning pill). Pills are not
     // notices; SoA has no banner sites.
-    "src/app/t/[tenantSlug]/(app)/reports/soa/SoAClient.tsx",
 
     // "MFA enrolled" success pill (rounded-full, single-line). Not a
     // notice — there's no ?error/?success messaging here, just a

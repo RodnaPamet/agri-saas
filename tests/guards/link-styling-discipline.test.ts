@@ -8,8 +8,6 @@
  *
  *   • controls/[controlId]/page.tsx (×2) — evidence URL link,
  *     evidence card link
- *   • tests/page.tsx — row "View →" action
- *   • tests/runs/[runId]/page.tsx — evidence URL link
  *   • vendors/VendorsClient.tsx — vendor name link in row
  *
  * The TextLink primitive at `@/components/ui/typography` already
