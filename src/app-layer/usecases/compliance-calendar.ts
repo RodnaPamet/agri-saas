@@ -183,12 +183,9 @@ export async function getComplianceCalendarEvents(
                 loadAuditCycleEvents(db, ctx, range, now, limit),
                 loadControlEvents(db, ctx, range, now, limit),
                 loadTaskEvents(db, ctx, range, now, limit),
-                loadRiskEvents(db, ctx, range, now, limit),
                 loadFindingEvents(db, ctx, range, now, limit),
                 // Epic G-7 — milestones contribute one event per milestone;
                 // plans contribute one per non-completed plan target.
-                loadTreatmentMilestoneEvents(db, ctx, range, now, limit),
-                loadTreatmentPlanEvents(db, ctx, range, now, limit),
                 // Agriculture data sources (PR 2 of the calendar roadmap).
                 loadParcelLeaseEvents(db, ctx, range, now, limit),
                 loadContractEvents(db, ctx, range, now, limit),
@@ -751,76 +748,6 @@ async function loadTaskEvents(
     return { events, truncated };
 }
 
-async function loadRiskEvents(
-    db: PrismaTx,
-    ctx: RequestContext,
-    range: DateRange,
-    now: Date,
-    limit: number,
-): Promise<SourceResult> {
-    const rawRows = await db.risk.findMany({
-        where: {
-            tenantId: ctx.tenantId,
-            deletedAt: null,
-            OR: [
-                { nextReviewAt: { not: null, gte: range.from, lte: range.to } },
-                { targetDate: { not: null, gte: range.from, lte: range.to } },
-            ],
-        },
-        select: {
-            id: true,
-            title: true,
-            nextReviewAt: true,
-            targetDate: true,
-            status: true,
-        },
-        orderBy: { nextReviewAt: 'asc' },
-        take: limit + 1,
-    });
-    const { rows, truncated } = capRows(rawRows, limit);
-    const events: CalendarEvent[] = [];
-    for (const r of rows) {
-        const isClosed = r.status === 'CLOSED' || r.status === 'ACCEPTED';
-        if (
-            r.nextReviewAt &&
-            r.nextReviewAt >= range.from &&
-            r.nextReviewAt <= range.to
-        ) {
-            events.push({
-                id: `RISK:${r.id}:risk-review`,
-                type: 'risk-review',
-                category: 'risk',
-                titleKey: 'riskReview',
-                titleParams: { name: r.title },
-                date: r.nextReviewAt.toISOString(),
-                status: classifyStatus(r.nextReviewAt, now, isClosed),
-                entityType: 'RISK',
-                entityId: r.id,
-                href: tenantHrefFromCtx(ctx, `/risks/${r.id}`),
-            });
-        }
-        if (
-            r.targetDate &&
-            r.targetDate >= range.from &&
-            r.targetDate <= range.to
-        ) {
-            events.push({
-                id: `RISK:${r.id}:risk-target`,
-                type: 'risk-target',
-                category: 'risk',
-                titleKey: 'riskTarget',
-                titleParams: { name: r.title },
-                date: r.targetDate.toISOString(),
-                status: classifyStatus(r.targetDate, now, isClosed),
-                entityType: 'RISK',
-                entityId: r.id,
-                href: tenantHrefFromCtx(ctx, `/risks/${r.id}`),
-            });
-        }
-    }
-    return { events, truncated };
-}
-
 async function loadFindingEvents(
     db: PrismaTx,
     ctx: RequestContext,
@@ -964,119 +891,6 @@ export async function getUpcomingDeadlineCount(
 }
 
 // ─── Epic G-7 — treatment plan + milestone calendar loaders ─────────
-
-/**
- * Each non-completed milestone contributes one calendar event keyed
- * by its `dueDate`. Completed milestones surface with status `done`
- * so the heatmap can show "this was on the calendar; here's the
- * receipt". Click-through lands on the parent risk's detail page,
- * scrolled to the treatment-plan card section.
- */
-async function loadTreatmentMilestoneEvents(
-    db: PrismaTx,
-    ctx: RequestContext,
-    range: DateRange,
-    now: Date,
-    limit: number,
-): Promise<SourceResult> {
-    const rawRows = await db.treatmentMilestone.findMany({
-        where: {
-            tenantId: ctx.tenantId,
-            dueDate: { gte: range.from, lte: range.to },
-            // Skip milestones whose parent plan was soft-deleted or
-            // whose linked risk was retired.
-            treatmentPlan: { deletedAt: null },
-        },
-        select: {
-            id: true,
-            title: true,
-            dueDate: true,
-            completedAt: true,
-            sortOrder: true,
-            treatmentPlan: {
-                select: {
-                    id: true,
-                    riskId: true,
-                    risk: { select: { title: true } },
-                },
-            },
-        },
-        orderBy: { dueDate: 'asc' },
-        take: limit + 1,
-    });
-    const { rows, truncated } = capRows(rawRows, limit);
-    const events = rows.map((r): CalendarEvent => {
-        const date = r.dueDate;
-        const isDone = r.completedAt !== null;
-        const riskTitle = r.treatmentPlan?.risk?.title ?? 'Risk';
-        return {
-            id: `TREATMENT_MILESTONE:${r.id}:treatment-milestone-due`,
-            type: 'treatment-milestone-due',
-            category: 'risk',
-            titleKey: 'milestone',
-            titleParams: { name: r.title },
-            date: date.toISOString(),
-            status: classifyStatus(date, now, isDone),
-            entityType: 'TREATMENT_MILESTONE',
-            entityId: r.id,
-            href: tenantHrefFromCtx(
-                ctx,
-                `/risks/${r.treatmentPlan?.riskId ?? ''}`,
-            ),
-            detail: riskTitle,
-        };
-    });
-    return { events, truncated };
-}
-
-/**
- * Treatment plans contribute one event per non-completed plan keyed
- * by `targetDate` so the calendar shows the plan-level deadline next
- * to its constituent milestone deadlines.
- */
-async function loadTreatmentPlanEvents(
-    db: PrismaTx,
-    ctx: RequestContext,
-    range: DateRange,
-    now: Date,
-    limit: number,
-): Promise<SourceResult> {
-    const rawRows = await db.riskTreatmentPlan.findMany({
-        where: {
-            tenantId: ctx.tenantId,
-            deletedAt: null,
-            status: { in: ['DRAFT', 'ACTIVE', 'OVERDUE'] },
-            targetDate: { gte: range.from, lte: range.to },
-        },
-        select: {
-            id: true,
-            riskId: true,
-            strategy: true,
-            targetDate: true,
-            risk: { select: { title: true } },
-        },
-        orderBy: { targetDate: 'asc' },
-        take: limit + 1,
-    });
-    const { rows, truncated } = capRows(rawRows, limit);
-    const events = rows.map((r): CalendarEvent => {
-        const date = r.targetDate;
-        return {
-            id: `RISK_TREATMENT_PLAN:${r.id}:treatment-plan-target`,
-            type: 'treatment-plan-target',
-            category: 'risk',
-            titleKey: 'planTarget',
-            titleParams: { name: r.risk?.title ?? '' },
-            date: date.toISOString(),
-            status: classifyStatus(date, now, false),
-            entityType: 'RISK_TREATMENT_PLAN',
-            entityId: r.id,
-            href: tenantHrefFromCtx(ctx, `/risks/${r.riskId}`),
-            detail: `${r.strategy} strategy`,
-        };
-    });
-    return { events, truncated };
-}
 
 // ─── Agriculture catalogue ───────────────────────────────────────────
 

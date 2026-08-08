@@ -10,7 +10,6 @@
 import prisma from '@/lib/prisma';
 import type { RequestContext } from '@/app-layer/types';
 import { getPermissionsForRole } from '@/lib/permissions';
-import { generateReport, deliverReportByEmail, deliverReportToSharePoint, computeNextRun, type ReportFormat } from '@/app-layer/usecases/risk-report';
 import { logger } from '@/lib/observability/logger';
 import type { ReportDeliveryPayload } from './types';
 

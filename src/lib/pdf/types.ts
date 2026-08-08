@@ -2,10 +2,6 @@
  * PDF Report Types
  */
 
-export enum ReportType {
-    RISK_REGISTER = 'RISK_REGISTER',
-}
-
 export type WatermarkMode = 'DRAFT' | 'FINAL' | 'NONE';
 
 export interface ReportMeta {

@@ -1053,19 +1053,6 @@ executorRegistry.register('report-delivery', async (payload) => {
 });
 
 // RQ-2 — daily cross-tenant risk-appetite breach monitor.
-executorRegistry.register('risk-appetite-monitor', async (payload) => {
-    const startedAt = new Date().toISOString();
-    const startMs = performance.now();
-    const { runRiskAppetiteMonitor } = await import('./risk-appetite-jobs');
-    const r = await runRiskAppetiteMonitor(payload);
-    return makeResult('risk-appetite-monitor', startedAt, startMs, r.scanned, r.newBreaches, 0, {
-        tenants: r.tenants,
-        scanned: r.scanned,
-        newBreaches: r.newBreaches,
-        resolved: r.resolved,
-    });
-});
-
 // ── spatial-import (parcel-boundary upload hardening) ────────────────
 //
 // One job invocation per staged shapefile/KML/GeoJSON. The HTTP layer
@@ -1124,19 +1111,6 @@ executorRegistry.register('cadastre-import', async (payload) => {
 });
 
 // RQ-9 — daily cross-tenant risk + portfolio snapshot.
-executorRegistry.register('risk-snapshot', async (payload) => {
-    const startedAt = new Date().toISOString();
-    const startMs = performance.now();
-    const { runRiskSnapshot } = await import('./risk-snapshot-jobs');
-    const r = await runRiskSnapshot(payload);
-    return makeResult('risk-snapshot', startedAt, startMs, r.scanned, r.riskSnapshots, 0, {
-        tenants: r.tenants,
-        scanned: r.scanned,
-        riskSnapshots: r.riskSnapshots,
-        pruned: r.pruned,
-    });
-});
-
 
 // БАБХ farm-record — regenerate a location's current-season ДНЕВНИК into its
 // Farm-records register when a field task auto-resolves. Fail-open: the job
