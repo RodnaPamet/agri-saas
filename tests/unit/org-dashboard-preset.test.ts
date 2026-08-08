@@ -22,11 +22,12 @@ import {
 import { CreateOrgDashboardWidgetInput } from '@/app-layer/schemas/org-dashboard-widget.schemas';
 
 describe('Epic 41 — default org dashboard preset', () => {
-    it('contains exactly eight widgets', () => {
-        // The prior `/org/[orgSlug]` page rendered four KPI cards +
-        // one donut + one trend + one tenant list + one drilldown
-        // CTA group = 8 sections. The preset preserves that count.
-        expect(DEFAULT_ORG_DASHBOARD_PRESET.length).toBe(8);
+    it('contains exactly six widgets', () => {
+        // Was 8: four KPI cards + one donut + one trend + one tenant
+        // list + one drilldown CTA group. The risk-quantification
+        // uproot removed the `critical-risks` KPI and the `risks-open`
+        // trend, both of which read columns that no longer exist.
+        expect(DEFAULT_ORG_DASHBOARD_PRESET.length).toBe(6);
     });
 
     it('every entry is Zod-valid against CreateOrgDashboardWidgetInput', () => {
@@ -46,40 +47,54 @@ describe('Epic 41 — default org dashboard preset', () => {
         }
     });
 
-    it('covers the four KPI tiles in left-to-right order', () => {
+    it('covers the KPI tiles in left-to-right order', () => {
         const kpis = DEFAULT_ORG_DASHBOARD_PRESET.filter(
             (w) => w.type === 'KPI',
         );
-        expect(kpis).toHaveLength(4);
+        expect(kpis).toHaveLength(3);
 
         // Order matches StatCardsRow in the prior page.tsx.
         expect(kpis.map((w) => w.chartType)).toEqual([
             'coverage',
-            'critical-risks',
             'overdue-evidence',
             'tenants',
         ]);
 
-        // All four sit on row y=0, columns 0/3/6/9.
+        // All three sit on row y=0, columns 0/4/8 — re-flowed from
+        // 0/3/6/9 when the critical-risks tile was removed.
         for (let i = 0; i < kpis.length; i++) {
-            expect(kpis[i].position).toEqual({ x: i * 3, y: 0 });
-            expect(kpis[i].size).toEqual({ w: 3, h: 2 });
+            expect(kpis[i].position).toEqual({ x: i * 4, y: 0 });
+            expect(kpis[i].size).toEqual({ w: 4, h: 2 });
         }
     });
 
-    it('places the donut + trend side-by-side on row y=2', () => {
+    it('gives the donut the full width of row y=2', () => {
+        // It shared the row with the open-risks TREND until the risk
+        // register was removed; leaving it at w:6 would have left half
+        // the row empty.
         const donut = DEFAULT_ORG_DASHBOARD_PRESET.find(
             (w) => w.type === 'DONUT',
         );
-        const trend = DEFAULT_ORG_DASHBOARD_PRESET.find(
-            (w) => w.type === 'TREND',
-        );
         expect(donut).toBeDefined();
-        expect(trend).toBeDefined();
         expect(donut?.position).toEqual({ x: 0, y: 2 });
-        expect(donut?.size).toEqual({ w: 6, h: 4 });
-        expect(trend?.position).toEqual({ x: 6, y: 2 });
-        expect(trend?.size).toEqual({ w: 6, h: 4 });
+        expect(donut?.size).toEqual({ w: 12, h: 4 });
+        expect(
+            DEFAULT_ORG_DASHBOARD_PRESET.find((w) => w.type === 'TREND'),
+        ).toBeUndefined();
+    });
+
+    it('row 1 tiles tile the 12-column grid with no gap', () => {
+        // Regression guard for the hole the removed critical-risks tile
+        // left behind: x=0,w=3 / x=6 / x=9 rendered an empty column 3-5.
+        const row1 = DEFAULT_ORG_DASHBOARD_PRESET
+            .filter((w) => w.position.y === 0)
+            .sort((a, b) => a.position.x - b.position.x);
+        let expectedX = 0;
+        for (const w of row1) {
+            expect(w.position.x).toBe(expectedX);
+            expectedX += w.size.w;
+        }
+        expect(expectedX).toBe(12);
     });
 
     it('places the tenant list full-width on row y=6', () => {
@@ -150,7 +165,7 @@ describe('Epic 41 — default org dashboard preset', () => {
 
     it('mutation regression — dropping a widget trips the count assertion', () => {
         const broken = DEFAULT_ORG_DASHBOARD_PRESET.slice(0, -1);
-        expect(broken.length).toBe(7);
-        expect(broken.length).not.toBe(8);
+        expect(broken.length).toBe(5);
+        expect(broken.length).not.toBe(6);
     });
 });

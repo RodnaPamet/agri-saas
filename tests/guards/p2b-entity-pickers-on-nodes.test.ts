@@ -1,5 +1,5 @@
 /**
- * Epic P2-PR-B — Entity pickers on nodes (control / risk / asset).
+ * Epic P2-PR-B — Entity pickers on nodes (control / asset).
  *
  * Brief gap #11 🟠 "Domain Entity Linking" — P2-PR-A wired the
  * edge-mode control picker (#733); P2-PR-B wires the node-mode
@@ -7,7 +7,6 @@
  *
  *   - `control` node → picks a tenant Control (the same picker
  *     primitive as the edge mode, different mount).
- *   - `risk` node → picks a tenant Risk.
  *   - `asset` node → picks a tenant Asset.
  *
  * The selection writes to `data.linkedEntityId` (one shared field;
@@ -27,39 +26,6 @@ const ROOT = path.resolve(__dirname, "../..");
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), "utf8");
 
 describe("Epic P2-PR-B — entity pickers on nodes", () => {
-    describe("useTenantRisks hook (P2-PR-B sibling of P2-PR-A's controls hook)", () => {
-        const src = read("src/lib/processes/use-tenant-risks.ts");
-
-        it("exports the hook with the canonical signature", () => {
-            // PR-D polish added an optional second arg
-            // (`options?: { pollMs?: number }`) for periodic
-            // revalidation. The first param + return type stay put.
-            expect(src).toMatch(
-                /export function useTenantRisks\(\s*tenantSlug:\s*string,\s*options\?:\s*UseTenantRisksOptions,?\s*\):\s*TenantRisksState/,
-            );
-        });
-
-        it("returns options shape: { id, title }", () => {
-            expect(src).toMatch(
-                /interface TenantRiskOption \{[\s\S]{0,200}id:\s*string;[\s\S]{0,200}title:\s*string;/,
-            );
-        });
-
-        it("hits /api/t/<slug>/risks (the canonical tenant route)", () => {
-            expect(src).toMatch(/\/api\/t\/\$\{tenantSlug\}\/risks/);
-        });
-
-        it("normalises bare-array AND { risks } AND { data } response shapes", () => {
-            expect(src).toMatch(/Array\.isArray\(body\)/);
-            expect(src).toMatch(/risks\?: unknown\[\]/);
-            expect(src).toMatch(/data\?: unknown\[\]/);
-        });
-
-        it("empty-string slug short-circuits to a no-op", () => {
-            expect(src).toMatch(/tenantSlug === ""/);
-        });
-    });
-
     describe("useTenantAssets hook (P2-PR-B sibling)", () => {
         const src = read("src/lib/processes/use-tenant-assets.ts");
 
@@ -92,16 +58,16 @@ describe("Epic P2-PR-B — entity pickers on nodes", () => {
         });
     });
 
-    describe("ProcessInspector — node mode mounts the picker on control/risk/asset", () => {
+    describe("ProcessInspector — node mode mounts the picker on control/asset", () => {
         const src = read("src/components/processes/ProcessInspector.tsx");
 
-        it("imports both sibling hooks", () => {
-            // PR-D polish landed the `findTenantRisk` helper
-            // alongside `useTenantRisks`; the regex now accepts
-            // either a single-import OR a multi-import form so a
-            // future rename doesn't lock the import shape too tight.
+        it("imports the sibling hooks", () => {
+            // Was a pair (risks + assets) until the risk register was
+            // removed. The regex accepts a single-import OR a
+            // multi-import form so a future rename doesn't lock the
+            // import shape too tight.
             expect(src).toMatch(
-                /import\s*\{[\s\S]{0,200}useTenantRisks[\s\S]{0,200}\}\s*from\s*["']@\/lib\/processes\/use-tenant-risks["']/,
+                /import\s*\{[\s\S]{0,200}useTenantControls[\s\S]{0,200}\}\s*from\s*["']@\/lib\/processes\/use-tenant-controls["']/,
             );
             expect(src).toMatch(
                 /import\s*\{[\s\S]{0,200}useTenantAssets[\s\S]{0,200}\}\s*from\s*["']@\/lib\/processes\/use-tenant-assets["']/,
@@ -112,13 +78,13 @@ describe("Epic P2-PR-B — entity pickers on nodes", () => {
             expect(src).toMatch(/function NodeLinkedEntityPicker/);
         });
 
-        it("the picker mounts only on control/risk/asset kinds", () => {
+        it("the picker mounts only on control/asset kinds", () => {
             // The early-return guard is the contract that says
             // "other kinds get NO picker block". A refactor that
             // moves the picker to processStep / decision / external
             // would have to update this assertion.
             expect(src).toMatch(
-                /if\s*\(nodeKind !== "control" && nodeKind !== "risk" && nodeKind !== "asset"\)/,
+                /if\s*\(nodeKind !== "control" && nodeKind !== "asset"\)/,
             );
         });
 

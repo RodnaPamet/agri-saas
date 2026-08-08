@@ -136,7 +136,14 @@ const ROOT = path.resolve(__dirname, '../..');
 // No surviving component lost its rendered coverage. The floor resumes its
 // upward-only ratchet from 207.
 const RENDERED_TEST_FLOOR = 207;
-const E2E_SPEC_FLOOR = 55;
+// Lowered 55 → 54 in the risk-quantification uproot (2026-08-08).
+// `ai-risk-assessment.spec.ts` and `new-risk-modal.spec.ts` were both
+// wholly about the deleted register; the specs that merely REFERENCED a
+// risk route were edited rather than deleted, and one of them —
+// ciso-portfolio's AUDITOR read-only invariant — was repointed to the
+// controls page because the assertion is about the ROLE, not the entity.
+// Net: 56 → 54. The floor resumes its upward-only ratchet from 54.
+const E2E_SPEC_FLOOR = 54;
 const REGISTRY_FLOOR = 5;
 
 /** Max a live count may exceed its floor before the floor must rise. */

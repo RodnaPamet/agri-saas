@@ -53,14 +53,14 @@ import type { CreateOrgDashboardWidgetInput } from '@/app-layer/schemas/org-dash
  * `tests/unit/org-dashboard-preset.test.ts`.
  */
 export const DEFAULT_ORG_DASHBOARD_PRESET: ReadonlyArray<CreateOrgDashboardWidgetInput> = [
-    // ─── Row 1: four KPI tiles ──────────────────────────────────────
+    // ─── Row 1: three KPI tiles, evenly across the 12-col row ───────
     {
         type: 'KPI',
         chartType: 'coverage',
         title: 'Coverage',
         config: { format: 'percent' },
         position: { x: 0, y: 0 },
-        size: { w: 3, h: 2 },
+        size: { w: 4, h: 2 },
         enabled: true,
     },
     {
@@ -68,8 +68,8 @@ export const DEFAULT_ORG_DASHBOARD_PRESET: ReadonlyArray<CreateOrgDashboardWidge
         chartType: 'overdue-evidence',
         title: 'Overdue Evidence',
         config: { format: 'number' },
-        position: { x: 6, y: 0 },
-        size: { w: 3, h: 2 },
+        position: { x: 4, y: 0 },
+        size: { w: 4, h: 2 },
         enabled: true,
     },
     {
@@ -77,19 +77,20 @@ export const DEFAULT_ORG_DASHBOARD_PRESET: ReadonlyArray<CreateOrgDashboardWidge
         chartType: 'tenants',
         title: 'Tenants',
         config: { format: 'number' },
-        position: { x: 9, y: 0 },
-        size: { w: 3, h: 2 },
+        position: { x: 8, y: 0 },
+        size: { w: 4, h: 2 },
         enabled: true,
     },
 
-    // ─── Row 2: donut + trend side-by-side ──────────────────────────
+    // ─── Row 2: donut, full width (its trend partner went with the
+    //            risk register) ────────────────────────────────────────
     {
         type: 'DONUT',
         chartType: 'rag-distribution',
         title: 'Tenant Health Distribution',
         config: { showLegend: true },
         position: { x: 0, y: 2 },
-        size: { w: 6, h: 4 },
+        size: { w: 12, h: 4 },
         enabled: true,
     },
 
