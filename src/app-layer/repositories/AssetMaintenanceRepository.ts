@@ -30,7 +30,7 @@ export class AssetMaintenanceRepository {
                 createdBy: { select: { id: true, name: true, email: true } },
             },
             orderBy: [{ openedAt: 'desc' }],
-            take,
+            take: take,
         });
     }
 
