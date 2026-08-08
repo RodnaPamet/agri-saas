@@ -29,6 +29,8 @@ export const CreateAssetSchema = z.object({
     ownerUserId: z.string().optional().nullable(),    // Real user reference — "Assigned to" (people picker)
     externalRef: z.string().optional().nullable(),    // External system / registry reference
     location: z.string().optional(),
+    locationId: z.string().min(1).optional().nullable(), // Structured location (Location.id)
+    usefulLifeYears: z.coerce.number().int().min(1).max(100).optional().nullable(),
     manufacturer: z.string().optional().nullable(),
     model: z.string().optional().nullable(),
     serialNumber: z.string().optional().nullable(),
@@ -48,6 +50,8 @@ export const UpdateAssetSchema = z.object({
     ownerUserId: z.string().optional().nullable(),    // Real user reference — "Assigned to"
     externalRef: z.string().optional().nullable(),    // External system / registry reference
     location: z.string().optional(),
+    locationId: z.string().min(1).optional().nullable(), // Structured location (Location.id)
+    usefulLifeYears: z.coerce.number().int().min(1).max(100).optional().nullable(),
     manufacturer: z.string().optional().nullable(),
     model: z.string().optional().nullable(),
     serialNumber: z.string().optional().nullable(),

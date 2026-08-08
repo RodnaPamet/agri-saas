@@ -7,6 +7,7 @@
 import { useTranslations } from 'next-intl';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { FormField } from '@/components/ui/form-field';
+import { AssetLocationField } from './AssetLocationField';
 import { Input } from '@/components/ui/input';
 import { UserCombobox } from '@/components/ui/user-combobox';
 import { DatePicker } from '@/components/ui/date-picker/date-picker';
@@ -169,16 +170,12 @@ export function NewAssetFields({
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-default">
-                <FormField label={labels.location}>
-                    <Input
-                        id="asset-location-input"
-                        value={form.fields.location}
-                        onChange={(e) =>
-                            form.setField('location', e.target.value)
-                        }
-                        placeholder={t('locationPlaceholder')}
-                    />
-                </FormField>
+                <AssetLocationField
+                    locationId={form.fields.locationId}
+                    onLocationIdChange={(id) => form.setField('locationId', id)}
+                    note={form.fields.location}
+                    onNoteChange={(v) => form.setField('location', v)}
+                />
                 <FormField label={t('externalRef')}>
                     <Input
                         id="asset-external-ref-input"
