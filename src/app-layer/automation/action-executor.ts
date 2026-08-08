@@ -62,7 +62,6 @@ const WEBHOOK_TIMEOUT_MS = 8000;
  * this a rule config could write any column to any string.
  */
 const STATUS_ALLOWLIST: Record<string, { field: string; values: ReadonlySet<string> }> = {
-    Risk: { field: 'status', values: new Set(['OPEN', 'MITIGATING', 'MITIGATED', 'ACCEPTED', 'CLOSED']) },
     Task: {
         field: 'status',
         values: new Set(['OPEN', 'TRIAGED', 'IN_PROGRESS', 'BLOCKED', 'RESOLVED', 'CLOSED', 'CANCELED']),

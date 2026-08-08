@@ -16,11 +16,11 @@ import { executeAction } from '@/app-layer/automation/action-executor';
 
 const baseEvent = {
     tenantId: 't1',
-    event: 'RISK_CREATED',
-    entityType: 'Risk',
-    entityId: 'risk-1',
+    event: 'TASK_CREATED',
+    entityType: 'Task',
+    entityId: 'task-1',
     actorUserId: 'u1',
-    data: { riskId: 'risk-1' },
+    data: { taskId: 'task-1' },
 };
 
 function makeDb() {
@@ -38,7 +38,6 @@ function makeDb() {
             findFirst: jest.fn().mockResolvedValue(null),
             updateMany: jest.fn().mockResolvedValue({ count: 1 }),
         },
-        risk: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
     } as any;
 }
 
@@ -77,12 +76,15 @@ describe('executeAction', () => {
         const db = makeDb();
         const res = await executeAction(db, {
             id: 'r1', name: 'Close', actionType: 'UPDATE_STATUS', createdByUserId: 'u1',
-            actionConfigJson: { entityType: 'Risk', field: 'status', toStatus: 'MITIGATED' },
+            actionConfigJson: { entityType: 'Task', field: 'status', toStatus: 'RESOLVED' },
         }, baseEvent);
         expect(res.ok).toBe(true);
-        expect(db.risk.updateMany).toHaveBeenCalledWith({
-            where: { id: 'risk-1', tenantId: 't1' },
-            data: { status: 'MITIGATED' },
+        expect(db.task.updateMany).toHaveBeenCalledWith({
+            where: { id: 'task-1', tenantId: 't1' },
+            // A terminal Task status also stamps completedAt — the
+            // dedicated lockstep test below owns that rule; here we only
+            // need the status write itself to land.
+            data: { status: 'RESOLVED', completedAt: expect.any(Date) },
         });
     });
 
@@ -167,20 +169,20 @@ describe('PR-D hardening guards', () => {
     it('UPDATE_STATUS rejects a non-status field', async () => {
         const db = makeDb();
         const res = await executeAction(db, ruleOf('UPDATE_STATUS', {
-            entityType: 'Risk', field: 'treatmentNotes', toStatus: 'pwned',
+            entityType: 'Task', field: 'resolution', toStatus: 'pwned',
         }), baseEvent);
         expect(res.ok).toBe(false);
-        expect(db.risk.updateMany).not.toHaveBeenCalled();
+        expect(db.task.updateMany).not.toHaveBeenCalled();
     });
 
     it('UPDATE_STATUS rejects an illegal target status', async () => {
         const db = makeDb();
         const res = await executeAction(db, ruleOf('UPDATE_STATUS', {
-            entityType: 'Risk', field: 'status', toStatus: 'banana',
+            entityType: 'Task', field: 'status', toStatus: 'banana',
         }), baseEvent);
         expect(res.ok).toBe(false);
         expect(res.summary).toMatch(/illegal/i);
-        expect(db.risk.updateMany).not.toHaveBeenCalled();
+        expect(db.task.updateMany).not.toHaveBeenCalled();
     });
 
     it('WEBHOOK blocks a non-https URL (no fetch)', async () => {

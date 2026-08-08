@@ -11,10 +11,10 @@ import { CreateFindingSchema, UpdateFindingSchema } from '@/lib/schemas';
 
 /**
  * Validate that every referenced entity (assignee, control, compensating
- * control, risks) belongs to the caller's tenant. Throws `badRequest` on
- * any miss — RLS already prevents cross-tenant WRITES, but this turns a
+ * control) belongs to the caller's tenant. Throws `badRequest` on any
+ * miss — RLS already prevents cross-tenant WRITES, but this turns a
  * silent no-op into a clear 400 and stops a finding pointing at a
- * foreign id. Returns the validated risk-id list (deduped).
+ * foreign id.
  */
 async function validateFindingRefs(
     db: PrismaTx,
@@ -55,7 +55,6 @@ async function validateFindingRefs(
             );
         }
     }
-
 }
 
 // Epic D.2 — sanitise optional free-text on UPDATE without disturbing

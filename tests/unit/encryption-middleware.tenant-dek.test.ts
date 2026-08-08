@@ -101,7 +101,7 @@ beforeEach(() => {
 
 describe('resolveTenantDekPair (middleware hook)', () => {
     it('returns empty pair when no audit context is set (v1 fallback)', async () => {
-        const deks = await resolveTenantDekPair('Risk');
+        const deks = await resolveTenantDekPair('Finding');
         expect(deks.primary).toBeNull();
         expect(deks.previous).toBeNull();
     });
@@ -125,7 +125,7 @@ describe('resolveTenantDekPair (middleware hook)', () => {
             await withAuditCtx(
                 { tenantId: 'tenant-A', source },
                 async () => {
-                    const deks = await resolveTenantDekPair('Risk');
+                    const deks = await resolveTenantDekPair('Finding');
                     expect(deks.primary).toBeNull();
                     expect(deks.previous).toBeNull();
                 },
@@ -139,7 +139,7 @@ describe('resolveTenantDekPair (middleware hook)', () => {
         const dek = generateDek();
         tenantDekMap.set('tenant-A', dek);
         await withAuditCtx({ tenantId: 'tenant-A', source: 'api' }, async () => {
-            const deks = await resolveTenantDekPair('Risk');
+            const deks = await resolveTenantDekPair('Finding');
             expect(deks.primary).not.toBeNull();
             expect(deks.primary!.equals(dek)).toBe(true);
             expect(deks.previous).toBeNull();
@@ -152,7 +152,7 @@ describe('resolveTenantDekPair (middleware hook)', () => {
         tenantDekMap.set('tenant-A', primaryDek);
         tenantPreviousDekMap.set('tenant-A', previousDek);
         await withAuditCtx({ tenantId: 'tenant-A', source: 'api' }, async () => {
-            const deks = await resolveTenantDekPair('Risk');
+            const deks = await resolveTenantDekPair('Finding');
             expect(deks.primary!.equals(primaryDek)).toBe(true);
             expect(deks.previous!.equals(previousDek)).toBe(true);
         });
@@ -161,7 +161,7 @@ describe('resolveTenantDekPair (middleware hook)', () => {
     it('returns empty pair + logs warn when the primary key manager throws', async () => {
         // No DEK set → primary mock throws.
         await withAuditCtx({ tenantId: 'tenant-missing', source: 'api' }, async () => {
-            const deks = await resolveTenantDekPair('Risk');
+            const deks = await resolveTenantDekPair('Finding');
             expect(deks.primary).toBeNull();
             expect(deks.previous).toBeNull();
         });
@@ -178,7 +178,7 @@ describe('resolveTenantDekPair (middleware hook)', () => {
             throw new Error('transient db blip');
         });
         await withAuditCtx({ tenantId: 'tenant-A', source: 'api' }, async () => {
-            const deks = await resolveTenantDekPair('Risk');
+            const deks = await resolveTenantDekPair('Finding');
             expect(deks.primary!.equals(dek)).toBe(true);
             expect(deks.previous).toBeNull();
         });
@@ -192,20 +192,20 @@ describe('resolveTenantDekPair (middleware hook)', () => {
 describe('write path — v2 when DEK present, v1 fallback otherwise', () => {
     it('with a tenant DEK, writes produce v2 ciphertext', () => {
         const dek = generateDek();
-        const data = { treatmentNotes: 'secret-notes' };
-        walkWriteArgument(data, 'Risk', dek);
-        expect(getCiphertextVersion(data.treatmentNotes as string)).toBe('v2');
+        const data = { rootCause: 'secret-notes' };
+        walkWriteArgument(data, 'Finding', dek);
+        expect(getCiphertextVersion(data.rootCause as string)).toBe('v2');
         // Round-trip under the tenant DEK recovers the plaintext.
-        expect(decryptWithKey(dek, data.treatmentNotes as string)).toBe(
+        expect(decryptWithKey(dek, data.rootCause as string)).toBe(
             'secret-notes',
         );
     });
 
     it('without a tenant DEK (null), writes produce v1 ciphertext', () => {
-        const data = { treatmentNotes: 'fallback-notes' };
-        walkWriteArgument(data, 'Risk', null);
-        expect(getCiphertextVersion(data.treatmentNotes as string)).toBe('v1');
-        expect(decryptField(data.treatmentNotes as string)).toBe(
+        const data = { rootCause: 'fallback-notes' };
+        walkWriteArgument(data, 'Finding', null);
+        expect(getCiphertextVersion(data.rootCause as string)).toBe('v1');
+        expect(decryptField(data.rootCause as string)).toBe(
             'fallback-notes',
         );
     });
@@ -232,18 +232,18 @@ describe('write path — v2 when DEK present, v1 fallback otherwise', () => {
     it('is idempotent — a value that is already v2 is not double-encrypted', () => {
         const dek = generateDek();
         const already = encryptWithKey(dek, 'already encrypted');
-        const data = { treatmentNotes: already };
-        walkWriteArgument(data, 'Risk', dek);
-        expect(data.treatmentNotes).toBe(already);
+        const data = { rootCause: already };
+        walkWriteArgument(data, 'Finding', dek);
+        expect(data.rootCause).toBe(already);
     });
 
     it('is idempotent — a value that is already v1 is not double-encrypted with v2', () => {
         const dek = generateDek();
         const alreadyV1 = encryptField('v1 legacy value');
-        const data = { treatmentNotes: alreadyV1 };
-        walkWriteArgument(data, 'Risk', dek);
+        const data = { rootCause: alreadyV1 };
+        walkWriteArgument(data, 'Finding', dek);
         // Still v1 — mixed-state tolerance.
-        expect(data.treatmentNotes).toBe(alreadyV1);
+        expect(data.rootCause).toBe(alreadyV1);
     });
 });
 
@@ -251,34 +251,34 @@ describe('read path — per-value dispatch on v1 / v2', () => {
     it('decrypts v2 with the supplied tenant DEK', () => {
         const dek = generateDek();
         const node = {
-            treatmentNotes: encryptWithKey(dek, 'notes-under-v2'),
+            rootCause: encryptWithKey(dek, 'notes-under-v2'),
         };
-        walkReadResult(node, 'Risk', pair(dek));
-        expect(node.treatmentNotes).toBe('notes-under-v2');
+        walkReadResult(node, 'Finding', pair(dek));
+        expect(node.rootCause).toBe('notes-under-v2');
     });
 
     it('decrypts v1 using the global KEK, regardless of the supplied DEK', () => {
         const dek = generateDek();
         const node = {
-            treatmentNotes: encryptField('legacy-v1-value'),
+            rootCause: encryptField('legacy-v1-value'),
         };
-        walkReadResult(node, 'Risk', pair(dek));
-        expect(node.treatmentNotes).toBe('legacy-v1-value');
+        walkReadResult(node, 'Finding', pair(dek));
+        expect(node.rootCause).toBe('legacy-v1-value');
     });
 
     it('handles MIXED v1 + v2 rows in a single findMany result', () => {
         const dek = generateDek();
         const rows = [
-            { treatmentNotes: encryptField('v1-row') },
-            { treatmentNotes: encryptWithKey(dek, 'v2-row') },
-            { treatmentNotes: null },
-            { treatmentNotes: 'pre-encryption plaintext legacy' },
+            { rootCause: encryptField('v1-row') },
+            { rootCause: encryptWithKey(dek, 'v2-row') },
+            { rootCause: null },
+            { rootCause: 'pre-encryption plaintext legacy' },
         ];
-        walkReadResult(rows, 'Risk', pair(dek));
-        expect(rows[0].treatmentNotes).toBe('v1-row');
-        expect(rows[1].treatmentNotes).toBe('v2-row');
-        expect(rows[2].treatmentNotes).toBeNull();
-        expect(rows[3].treatmentNotes).toBe(
+        walkReadResult(rows, 'Finding', pair(dek));
+        expect(rows[0].rootCause).toBe('v1-row');
+        expect(rows[1].rootCause).toBe('v2-row');
+        expect(rows[2].rootCause).toBeNull();
+        expect(rows[3].rootCause).toBe(
             'pre-encryption plaintext legacy',
         );
     });
@@ -301,17 +301,17 @@ describe('read path — per-value dispatch on v1 / v2', () => {
     it('v2 with no DEK available — logs warn, returns raw (never throws)', () => {
         const dek = generateDek();
         const node = {
-            treatmentNotes: encryptWithKey(dek, 'should-not-decrypt'),
+            rootCause: encryptWithKey(dek, 'should-not-decrypt'),
         };
         // Pass null — simulates a cross-tenant bypass read.
-        expect(() => walkReadResult(node, 'Risk', pair(null))).not.toThrow();
+        expect(() => walkReadResult(node, 'Finding', pair(null))).not.toThrow();
         // Value preserved (still ciphertext).
-        expect(getCiphertextVersion(node.treatmentNotes as string)).toBe('v2');
+        expect(getCiphertextVersion(node.rootCause as string)).toBe('v2');
         expect(logger.warn).toHaveBeenCalledWith(
             'encryption-middleware.decrypt_failed',
             expect.objectContaining({
                 version: 'v2',
-                field: 'treatmentNotes',
+                field: 'rootCause',
             }),
         );
     });
@@ -324,13 +324,13 @@ describe('mid-rotation read fallback to previous DEK', () => {
         // Row was written before the rotation — under the (now)
         // previous DEK.
         const oldRow = {
-            treatmentNotes: encryptWithKey(previousDek, 'pre-rotation-value'),
+            rootCause: encryptWithKey(previousDek, 'pre-rotation-value'),
         };
         // Reader has the new primary DEK + the previous (mid-rotation
         // pair). The middleware's decryptValue falls back on AES-GCM
         // auth failure.
-        walkReadResult(oldRow, 'Risk', pair(newPrimaryDek, previousDek));
-        expect(oldRow.treatmentNotes).toBe('pre-rotation-value');
+        walkReadResult(oldRow, 'Finding', pair(newPrimaryDek, previousDek));
+        expect(oldRow.rootCause).toBe('pre-rotation-value');
     });
 
     it('mixed batch of pre- and post-rotation rows decrypts cleanly under the pair', () => {
@@ -338,15 +338,15 @@ describe('mid-rotation read fallback to previous DEK', () => {
         const newPrimaryDek = generateDek();
         const rows = [
             {
-                treatmentNotes: encryptWithKey(previousDek, 'pre-row'),
+                rootCause: encryptWithKey(previousDek, 'pre-row'),
             },
             {
-                treatmentNotes: encryptWithKey(newPrimaryDek, 'post-row'),
+                rootCause: encryptWithKey(newPrimaryDek, 'post-row'),
             },
         ];
-        walkReadResult(rows, 'Risk', pair(newPrimaryDek, previousDek));
-        expect(rows[0].treatmentNotes).toBe('pre-row');
-        expect(rows[1].treatmentNotes).toBe('post-row');
+        walkReadResult(rows, 'Finding', pair(newPrimaryDek, previousDek));
+        expect(rows[0].rootCause).toBe('pre-row');
+        expect(rows[1].rootCause).toBe('post-row');
     });
 
     it('without a previous DEK, a pre-rotation row fails safely (warn + ciphertext preserved)', () => {
@@ -356,11 +356,11 @@ describe('mid-rotation read fallback to previous DEK', () => {
         // post-rotation steady state where Tenant.previousEncryptedDek
         // is now NULL but a stale row still carries the old ciphertext.
         const oldRow = {
-            treatmentNotes: encryptWithKey(previousDek, 'pre-rotation-value'),
+            rootCause: encryptWithKey(previousDek, 'pre-rotation-value'),
         };
-        walkReadResult(oldRow, 'Risk', pair(newPrimaryDek, null));
+        walkReadResult(oldRow, 'Finding', pair(newPrimaryDek, null));
         // Decryption failed; ciphertext preserved, warn emitted.
-        expect(getCiphertextVersion(oldRow.treatmentNotes as string)).toBe('v2');
+        expect(getCiphertextVersion(oldRow.rootCause as string)).toBe('v2');
         expect(logger.warn).toHaveBeenCalledWith(
             'encryption-middleware.decrypt_failed',
             expect.objectContaining({ version: 'v2' }),
@@ -375,13 +375,13 @@ describe('cross-tenant isolation', () => {
         expect(dekA.equals(dekB)).toBe(false); // sanity
 
         const aCipher = encryptWithKey(dekA, 'tenant-A-secret');
-        const node = { treatmentNotes: aCipher };
+        const node = { rootCause: aCipher };
 
         // Reader has tenant B's DEK only — GCM tag should fail.
-        walkReadResult(node, 'Risk', pair(dekB));
+        walkReadResult(node, 'Finding', pair(dekB));
 
         // Ciphertext preserved (decryption failed safely).
-        expect(node.treatmentNotes).toBe(aCipher);
+        expect(node.rootCause).toBe(aCipher);
         expect(logger.warn).toHaveBeenCalledWith(
             'encryption-middleware.decrypt_failed',
             expect.objectContaining({ version: 'v2' }),
@@ -392,18 +392,18 @@ describe('cross-tenant isolation', () => {
         const dekA = generateDek();
         const dekB = generateDek();
         const plaintext = 'identical value';
-        const a = { treatmentNotes: plaintext };
-        const b = { treatmentNotes: plaintext };
-        walkWriteArgument(a, 'Risk', dekA);
-        walkWriteArgument(b, 'Risk', dekB);
-        expect(a.treatmentNotes).not.toBe(b.treatmentNotes);
+        const a = { rootCause: plaintext };
+        const b = { rootCause: plaintext };
+        walkWriteArgument(a, 'Finding', dekA);
+        walkWriteArgument(b, 'Finding', dekB);
+        expect(a.rootCause).not.toBe(b.rootCause);
         // Each is only decryptable with its own DEK.
-        expect(decryptWithKey(dekA, a.treatmentNotes as string)).toBe(plaintext);
-        expect(decryptWithKey(dekB, b.treatmentNotes as string)).toBe(plaintext);
+        expect(decryptWithKey(dekA, a.rootCause as string)).toBe(plaintext);
+        expect(decryptWithKey(dekB, b.rootCause as string)).toBe(plaintext);
         // Swapping keys does NOT produce plaintext — verified by the
         // GCM auth failure (thrown by decryptWithKey, not swallowed).
         expect(() =>
-            decryptWithKey(dekA, b.treatmentNotes as string),
+            decryptWithKey(dekA, b.rootCause as string),
         ).toThrow();
     });
 
@@ -425,10 +425,10 @@ describe('never leaks DEK material or plaintext in logs', () => {
         const node = {
             // v2 ciphertext, but we pass a different DEK to force a
             // GCM tag failure.
-            treatmentNotes: encryptWithKey(dek, plaintext),
+            rootCause: encryptWithKey(dek, plaintext),
         };
         const wrongDek = generateDek();
-        walkReadResult(node, 'Risk', pair(wrongDek));
+        walkReadResult(node, 'Finding', pair(wrongDek));
 
         // Every warn call should be value-free.
         const allLogs = JSON.stringify(

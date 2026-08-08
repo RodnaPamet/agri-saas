@@ -196,8 +196,8 @@ describe('runKeyRotation — v1 ciphertext re-encrypt', () => {
         const dek = generateDek();
         tenantFindUnique.mockResolvedValueOnce({ encryptedDek: wrapDek(dek) });
 
-        // Only Risk has tenantId column (probe succeeds for Risk, fails
-        // for the first ownership-chained model we hit).
+        // Tenant-scoped manifest models pass the probe; the first
+        // ownership-chained model we hit fails it.
         queryRawUnsafe.mockImplementation(async (sql: string, ...args) => {
             if (sql.includes('LIMIT 0')) {
                 // Probe — return empty (column exists).
@@ -301,9 +301,9 @@ describe('runKeyRotation — v1 ciphertext re-encrypt', () => {
             encryptedDek: wrapDek(generateDek()),
         });
 
-        // Probe for EvidenceReview (no tenantId) throws; probe for
-        // Risk succeeds. We can't easily filter here — instead, make
-        // the probe for models containing "Review" or "Evidence" fail.
+        // Probe for EvidenceReview (no tenantId) throws; probes for
+        // tenant-scoped models succeed. We can't easily filter here —
+        // instead, make the probe for "EvidenceReview" fail.
         queryRawUnsafe.mockImplementation(async (sql: string) => {
             if (sql.includes('LIMIT 0')) {
                 if (sql.includes('"EvidenceReview"')) {
@@ -322,9 +322,9 @@ describe('runKeyRotation — v1 ciphertext re-encrypt', () => {
         // EvidenceReview never appears in per-field results.
         const models = new Set(result.perField.map((f) => f.model));
         expect(models.has('EvidenceReview')).toBe(false);
-        // Risk (has tenantId) was probed + processed (0 rows, but
+        // Finding (has tenantId) was probed + processed (0 rows, but
         // present in the per-field breakdown).
-        expect(models.has('Risk')).toBe(true);
+        expect(models.has('Finding')).toBe(true);
     });
 });
 
