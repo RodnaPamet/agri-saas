@@ -165,7 +165,7 @@ export function MaintenanceTab({ assetId, canWrite, assetStatus, onStatusChange 
             <div className="flex items-center justify-between">
                 <h2 className="text-content-emphasis font-medium">{t('maintTitle')}</h2>
                 {canWrite && (
-                    <Button variant="primary" icon={<Plus />} onClick={() => setAdding(true)}>
+                    <Button variant="secondary" icon={<Plus />} onClick={() => setAdding(true)}>
                         {t('maintAdd')}
                     </Button>
                 )}
@@ -202,7 +202,6 @@ export function MaintenanceTab({ assetId, canWrite, assetStatus, onStatusChange 
                 <ConfirmDialog
                     showModal
                     setShowModal={() => setClosing(null)}
-                    tone="danger"
                     title={t('maintCloseConfirm')}
                     confirmLabel={t('maintClose')}
                     onConfirm={handleClose}
