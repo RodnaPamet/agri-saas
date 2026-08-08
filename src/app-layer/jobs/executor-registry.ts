@@ -1041,8 +1041,6 @@ executorRegistry.register('sharepoint-subscription-renew', async (payload) => {
     });
 });
 
-// RQ-10 — daily cross-tenant scheduled-report delivery.
-// RQ-2 — daily cross-tenant risk-appetite breach monitor.
 // ── spatial-import (parcel-boundary upload hardening) ────────────────
 //
 // One job invocation per staged shapefile/KML/GeoJSON. The HTTP layer

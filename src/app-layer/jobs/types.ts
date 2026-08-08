@@ -471,21 +471,6 @@ export interface SharePointSubscriptionRenewPayload {
     requestId?: string;
 }
 
-/** RQ-2 — daily cron: scan every tenant's portfolio for appetite breaches (cross-tenant). */
-export interface RiskAppetiteMonitorPayload {
-    requestId?: string;
-}
-
-/** RQ-9 — daily cron: snapshot every tenant's risk + portfolio metrics (cross-tenant). */
-export interface RiskSnapshotPayload {
-    requestId?: string;
-}
-
-/** RQ-10 — daily cron: generate + deliver due scheduled reports (cross-tenant). */
-export interface ReportDeliveryPayload {
-    requestId?: string;
-}
-
 /** Inventory Phase 1 — daily cross-tenant low-stock sweep + LOW_STOCK alerts. */
 export interface LowStockMonitorPayload {
     tenantId?: string;
@@ -729,9 +714,6 @@ export interface JobPayloadMap {
     'sharepoint-delta-sync-dispatch': SharePointDeltaSyncDispatchPayload;
     'sharepoint-policy-pull': SharePointPolicyPullPayload;
     'sharepoint-subscription-renew': SharePointSubscriptionRenewPayload;
-    'risk-appetite-monitor': RiskAppetiteMonitorPayload;
-    'risk-snapshot': RiskSnapshotPayload;
-    'report-delivery': ReportDeliveryPayload;
     'low-stock-monitor': LowStockMonitorPayload;
     'lease-expiry-sweep': LeaseExpirySweepPayload;
     'contract-delivery-window-sweep': ContractDeliveryWindowSweepPayload;
@@ -874,24 +856,6 @@ export const JOB_DEFAULTS: Record<JobName, {
         removeOnFail: 500,
     },
     'sharepoint-subscription-renew': {
-        attempts: 1,
-        backoff: { type: 'fixed', delay: 0 },
-        removeOnComplete: 50,
-        removeOnFail: 200,
-    },
-    'risk-appetite-monitor': {
-        attempts: 1,
-        backoff: { type: 'fixed', delay: 0 },
-        removeOnComplete: 50,
-        removeOnFail: 200,
-    },
-    'risk-snapshot': {
-        attempts: 1,
-        backoff: { type: 'fixed', delay: 0 },
-        removeOnComplete: 50,
-        removeOnFail: 200,
-    },
-    'report-delivery': {
         attempts: 1,
         backoff: { type: 'fixed', delay: 0 },
         removeOnComplete: 50,

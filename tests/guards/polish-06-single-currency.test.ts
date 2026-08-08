@@ -22,11 +22,14 @@ describe('polish #6 — single compact-currency formatter', () => {
         expect(out).toBe('');
     });
 
-    test('formatCompactCurrency is declared once (the canonical home in risk-coherence.ts)', () => {
+    test('formatCompactCurrency is declared once (the canonical home in format-currency.ts)', () => {
+        // Moved out of `risk-coherence.ts` by the risk-quantification
+        // uproot — the formatter is money, not risk, so it outlived the
+        // FAIR/ALE module it happened to live in.
         const out = execSync(
             `grep -rln "export function formatCompactCurrency" src --include="*.ts"`,
             { encoding: 'utf-8', cwd: ROOT },
         ).trim().split('\n');
-        expect(out).toEqual(['src/lib/risk-coherence.ts']);
+        expect(out).toEqual(['src/lib/format-currency.ts']);
     });
 });
