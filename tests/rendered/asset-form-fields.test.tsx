@@ -8,6 +8,22 @@
  *     Residency.
  *   - Detail: shows the ag attributes; no CIA badge / classification.
  */
+// The asset forms now render <AssetLocationField>, which reads the
+// tenant's Location list via useTenantSWR and therefore needs tenant
+// context. These tests mount the field groups bare (no TenantProvider),
+// so stub the context module — same idiom as
+// tests/rendered/evidence-upload-optimistic.test.tsx. The empty list
+// keeps the picker rendered but with no options, which is exactly the
+// state these assertions care about (they are about the OTHER fields).
+jest.mock('@/lib/tenant-context-provider', () => ({
+    useTenantApiUrl: () => (path: string) => `/api/t/acme${path}`,
+    useTenantContext: () => ({ tenantSlug: 'acme', permissions: { canWrite: true } }),
+    useTenantHref: () => (path: string) => `/t/acme${path}`,
+}));
+jest.mock('@/lib/hooks/use-tenant-swr', () => ({
+    useTenantSWR: () => ({ data: [], error: undefined, isLoading: false, mutate: jest.fn() }),
+}));
+
 import { render, screen } from '@testing-library/react';
 import * as React from 'react';
 import * as fs from 'fs';

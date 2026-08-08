@@ -29,6 +29,7 @@ import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { DatePicker } from '@/components/ui/date-picker';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
 import { EmptyState } from '@/components/ui/empty-state';
+import { Heading } from '@/components/ui/typography';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useToast } from '@/components/ui/hooks';
 import { formatDate } from '@/lib/format-date';
@@ -163,7 +164,7 @@ export function MaintenanceTab({ assetId, canWrite, assetStatus, onStatusChange 
     return (
         <div className="space-y-section">
             <div className="flex items-center justify-between">
-                <h2 className="text-content-emphasis font-medium">{t('maintTitle')}</h2>
+                <Heading level={2} size="sm">{t('maintTitle')}</Heading>
                 {canWrite && (
                     <Button variant="secondary" icon={<Plus />} onClick={() => setAdding(true)}>
                         {t('maintAdd')}
