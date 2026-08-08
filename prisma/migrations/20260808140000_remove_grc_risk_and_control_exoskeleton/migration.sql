@@ -30,8 +30,10 @@
 -- --from-config-datasource --to-schema prisma/schema --script` against a
 -- database built by `migrate deploy` from every preceding migration, and
 -- then FILTERED to the risk/control statements only. The raw diff also
--- emitted 31 statements of pre-existing schema↔database drift that have
--- nothing to do with this change and were deliberately excluded — most
+-- emitted ~30 statements of pre-existing schema↔database drift that have
+-- nothing to do with this change and were deliberately excluded (the
+-- exact count moves as `main` evolves — it was 31 when this migration
+-- was written and 30 after merging main at 2a6ffe55) — most
 -- importantly `ALTER TABLE "User" ALTER COLUMN "emailHash" DROP NOT
 -- NULL`, which would have silently reverted the GAP-21 hardening, plus
 -- the hand-written `KnowledgeChunk_embedding_ivfflat` and

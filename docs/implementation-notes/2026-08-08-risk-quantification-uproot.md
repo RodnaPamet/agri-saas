@@ -85,8 +85,10 @@ suites run with `RLS_GUARDRAIL_REQUIRE_DB=1` so they could not skip.
 
 That process caught two things nothing else would have:
 
-1. **A near-miss security regression.** The generated diff swept in 31
-   statements of pre-existing schema↔DB drift, one of which was
+1. **A near-miss security regression.** The generated diff swept in ~30
+   statements of pre-existing schema↔DB drift (31 when written, 30 after
+   merging main at `2a6ffe55` — the count moves as main evolves), one of
+   which was
    `ALTER TABLE "User" ALTER COLUMN "emailHash" DROP NOT NULL` — silently
    reverting the GAP-21 hardening. Also present: the hand-written
    `KnowledgeChunk_embedding_ivfflat` and `Parcel_geometry_gist` indexes
@@ -99,7 +101,7 @@ That process caught two things nothing else would have:
    axe accessibility gate and every spec — on both shards. The E2E signal
    was absent, not weak.
 
-> **Pre-existing drift is still there.** Those 31 statements describe a
+> **Pre-existing drift is still there.** Those ~30 statements describe a
 > real gap between `prisma/schema/` and a migration-built database. It
 > predates this work and deserves its own investigation; excluding it
 > here was scope discipline, not a claim that it is fine.
