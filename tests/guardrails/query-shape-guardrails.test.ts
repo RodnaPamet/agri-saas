@@ -171,17 +171,9 @@ const KNOWN_N_PLUS_ONE: Record<string, KnownNPlusOne> = {
         reason:
             'onboarding-automation seed loop — per-asset idempotency check so re-running onboarding does not duplicate starter assets. Over a fixed starter-asset template list.',
     },
-    'src/app-layer/usecases/onboarding-automation.ts:findFirst:risk': {
-        reason:
-            'onboarding-automation seed loop — per-risk idempotency check so re-running onboarding does not duplicate starter risks. Over a fixed starter-risk template list.',
-    },
     'src/app-layer/usecases/onboarding-automation.ts:findFirst:task': {
         reason:
             'onboarding-automation seed loop — per-task idempotency check so re-running onboarding does not duplicate starter tasks. Over a fixed starter-task template list.',
-    },
-    'src/app-layer/usecases/risk-suggestions.ts:findFirst:risk': {
-        reason:
-            'accept-AI-suggestions loop — per-item "risk with this title already exists?" check keeps acceptance idempotent. Loop is over the suggestion session\'s items, a bounded set.',
     },
     'src/app-layer/usecases/sso.ts:findFirst:tenantIdentityProvider': {
         reason:
@@ -321,7 +313,7 @@ function scanNPlusOne(): NPlusOneFinding[] {
 // AssetRepository.list) + ParcelRepository.validIdsForLocation (bounded
 // in practice by the input id set). Both tenant-scoped.
 // Compliance uproot (2026-08-07): compliance uproot removed 7 unbounded findMany call sites.
-const UNBOUNDED_FINDMANY_BUDGET = 49;
+const UNBOUNDED_FINDMANY_BUDGET = 46;
 
 /** How far the budget may sit ABOVE the live count before it is stale. */
 const UNBOUNDED_BUDGET_SLACK = 5;

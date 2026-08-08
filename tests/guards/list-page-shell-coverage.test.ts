@@ -58,8 +58,6 @@ const EXEMPTIONS: Record<string, string> = {
     // Multi-section dashboard with KPI strip + summary bar + two
     // side-by-side gap tables. Viewport-clamping would compress the
     // whole grid awkwardly. Natural scroll is the right shape.
-    'coverage/CoverageClient.tsx':
-        'multi-card dashboard (KPIs + summary + two gap tables)',
 
     // Two stacked tables (active / revoked). A single fillBody
     // would force one of them to overflow internally while the
@@ -150,8 +148,6 @@ const EXEMPTIONS: Record<string, string> = {
 
     // Risk import wizard. Result table appears mid-flow inside a
     // wizard step; not a primary list-page experience.
-    'risks/import/page.tsx':
-        'import wizard flow',
 
     // Epic 66 — frameworks client island that owns the table/cards
     // view toggle. Cards mode is a responsive grid (no clamping

@@ -131,7 +131,6 @@ const LEGACY_LUCIDE_USERS = new Set<string>([
     'src/components/onboarding/OnboardingBanner.tsx',
     'src/components/onboarding/OnboardingWizard.tsx',
     'src/components/org-switcher.tsx',
-    'src/components/PdfExportButton.tsx',
     'src/components/theme/ThemeToggle.tsx',
     'src/components/ui/accordion.tsx',
     'src/components/ui/ActionCluster.tsx',

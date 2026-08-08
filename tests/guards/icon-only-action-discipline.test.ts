@@ -74,12 +74,6 @@ describe('icon-only action discipline', () => {
         ariaMatch: string;
         tooltipMatch: RegExp;
     }> = [
-        {
-            file: `${APP}/risks/RisksClient.tsx`,
-            ariaLabel: 'Import risks',
-            ariaMatch: `aria-label=\\{tm\\('importRisks'\\)\\}[\\s\\S]*?size: 'icon'`,
-            tooltipMatch: /<Tooltip content=\{tm\('importRisks'\)\}>/,
-        },
         // i18n batch T08 — the pack Export JSON/CSV icon-link labels + tooltips
         // now route through next-intl (`t('packDetail.exportJson' | 'exportCsv')`).
         {

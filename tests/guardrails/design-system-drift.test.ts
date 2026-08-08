@@ -41,15 +41,10 @@ const MIGRATED_PAGES = [
     // SP-5 — SharePoint sync-health dashboard; semantic tokens + KPIStat only.
     'admin/integrations/sharepoint-health/page.tsx',
     // RQ-2 — risk appetite config; semantic tokens + Card/Input/Textarea only.
-    'admin/risk-appetite/page.tsx',
     // RQ-4 — risk scenarios; semantic tokens + Card/Input/Button/StatusBadge only.
-    'risks/scenarios/page.tsx',
     // RQ-5 — risk hierarchy; semantic tokens + Card/Button/Input/ProgressBar only.
-    'risks/hierarchy/page.tsx',
     // RQ-6 — KRI dashboard; semantic tokens + Card/Button/Input/StatusBadge only.
-    'risks/kri/page.tsx',
     // RQ-8 — correlation matrix; semantic tokens + Card/Button/Input + heat bands.
-    'risks/correlations/page.tsx',
     // RQ-10 — reports; semantic tokens + Card/Button/StatusBadge only.
     // Field Journal — design-system-native from birth. Server shell +
     // EntityListPage client + EntityDetailLayout detail page; semantic
@@ -64,7 +59,6 @@ const MIGRATED_PAGES = [
     // sides of the split clean on the design-system checks.
     'dashboard/DashboardClient.tsx',
     'vendors/VendorsClient.tsx',
-    'risks/[riskId]/page.tsx',
     'admin/members/page.tsx',
     // Second migration pass — Epic 51 finishing guide. A page is only
     // added here once it is clean on ALL three checks: raw color
@@ -254,13 +248,11 @@ describe('New page token discipline', () => {
         //     utilities — uses content-*/border-*/bg-* tokens + health
         //     ring tokens); in the unmigrated tally only because the
         //     surface is new and not yet promoted to MIGRATED_PAGES.
-        //   - 105 (+1): RQ3-6 — risks/loss-events/page.tsx, the
         //     loss-event register (predicted-vs-actual). Token-clean
         //     (content-*/bg-*/border-* semantic tokens only; bars via
         //     <ProgressBar>, date via <DatePicker>); in the unmigrated
         //     tally only because the surface is new and not yet
         //     promoted to MIGRATED_PAGES.
-        //   - 106 (+1): RQ3-10 — risks/board/page.tsx, the new
         //     board-altitude view. Token-clean (semantic tokens only,
         //     reuses <Card>/<KPIStat>/<StatusBadge>/<DashboardLayout>);
         //     in the unmigrated tally only because the surface is new

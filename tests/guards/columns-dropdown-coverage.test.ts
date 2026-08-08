@@ -106,12 +106,8 @@ const EXEMPTIONS: Record<string, string> = {
         '(b) multi-section admin page — small fixed catalogue with inline controls.',
     'admin/roles/page.tsx':
         '(b) custom roles admin — small fixed list with inline create + permission controls.',
-    'coverage/CoverageClient.tsx':
-        '(b) multi-card coverage dashboard — KPIs + two gap tables; per-table gear would compete with the page composition.',
     'access-reviews/AccessReviewsClient.tsx':
         '(b) multi-section dashboard — review cycle list inside a tabbed composition.',
-    'risks/import/page.tsx':
-        '(b) risk import wizard — staged workflow, each step has its own controls.',
 
     // ─── (c) Toolbar pending ────────────────────────────────────────
     // (none today — Findings got the gear in R10-PR11 mounted

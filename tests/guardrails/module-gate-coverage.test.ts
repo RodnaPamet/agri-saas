@@ -57,10 +57,6 @@ const MODULE_GATED_ROUTES: ReadonlyArray<{
         module: 'CERTIFICATION',
     },
     {
-        file: 'src/app/api/t/[tenantSlug]/coverage/route.ts',
-        module: 'CERTIFICATION',
-    },
-    {
         file: 'src/app/api/t/[tenantSlug]/frameworks/route.ts',
         module: 'CERTIFICATION',
     },
@@ -78,10 +74,6 @@ const MODULE_GATED_ROUTES: ReadonlyArray<{
     },
     {
         file: 'src/app/api/t/[tenantSlug]/findings/route.ts',
-        module: 'CERTIFICATION',
-    },
-    {
-        file: 'src/app/api/t/[tenantSlug]/risks/route.ts',
         module: 'CERTIFICATION',
     },
     {

@@ -36,7 +36,6 @@ const EXCLUDED_PAGES: Record<string, string> = {
 const MIGRATED_PAGES = [
     'controls/ControlsClient.tsx',
     'evidence/EvidenceClient.tsx',
-    'risks/RisksClient.tsx',
     'policies/PoliciesClient.tsx',
     // /tasks compliance UI retired 2026-07-25 → the farm-tasks list is the
     // task-entity list page now (it mounts <DataTable> via the EntityListPage
@@ -232,17 +231,18 @@ describe('Excluded page registry', () => {
 // ─── Migration Progress Tracking ─────────────────────────────────────
 
 describe('Migration progress', () => {
-    it('at least 10 pages are fully migrated', () => {
+    it('at least 8 pages are fully migrated', () => {
         const existing = MIGRATED_PAGES.filter(rel => {
             try { readClientFile(rel); return true; } catch { return false; }
         });
         // Compliance uproot (2026-08-07): SoAClient was deleted with the
         // Statement of Applicability, taking the migrated-page count to 9.
-        expect(existing.length).toBeGreaterThanOrEqual(9);
+        // Risk-register uproot (2026-08-08): RisksClient went too — 8.
+        expect(existing.length).toBeGreaterThanOrEqual(8);
     });
 
     it('migrated pages collectively cover all entity types', () => {
-        const entityNames = ['control', 'evidence', 'risk', 'polic', 'task', 'vendor', 'asset', 'finding'];
+        const entityNames = ['control', 'evidence', 'polic', 'task', 'vendor', 'asset', 'finding'];
         for (const entity of entityNames) {
             const covered = MIGRATED_PAGES.some(p => p.toLowerCase().includes(entity));
             expect(covered).toBe(true);
