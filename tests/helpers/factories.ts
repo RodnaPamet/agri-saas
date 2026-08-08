@@ -239,11 +239,6 @@ export async function createControl(prisma: PrismaClient, tenantId: string, over
     return prisma.control.create({ data: data as any }); // eslint-disable-line @typescript-eslint/no-explicit-any
 }
 
-export async function createRisk(prisma: PrismaClient, tenantId: string, overrides: Record<string, unknown> = {}) {
-    const data = buildRisk({ tenantId, ...overrides });
-    return prisma.risk.create({ data: data as any }); // eslint-disable-line @typescript-eslint/no-explicit-any
-}
-
 // ─── Reset helpers ───
 
 /**

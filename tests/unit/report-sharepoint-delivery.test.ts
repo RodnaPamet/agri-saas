@@ -18,7 +18,6 @@ jest.mock('@/lib/storage', () => ({
     generatePathKey: (t: string, n: string) => `${t}/${n}`,
 }));
 
-import { deliverReportToSharePoint } from '@/app-layer/usecases/risk-report';
 import { listSharePointConnections } from '@/app-layer/integrations/providers/sharepoint';
 import { makeRequestContext } from '../helpers/make-context';
 

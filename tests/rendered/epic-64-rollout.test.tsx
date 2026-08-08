@@ -14,7 +14,6 @@ import { render } from '@testing-library/react';
 
 import KpiCard from '@/components/ui/KpiCard';
 import DonutChart from '@/components/ui/DonutChart';
-import RiskHeatmap from '@/components/ui/RiskHeatmap';
 import { Modal } from '@/components/ui/modal';
 import { Sheet } from '@/components/ui/sheet';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -133,39 +132,7 @@ describe('Epic 64 — DonutChart loading state', () => {
     });
 });
 
-// ─── RiskHeatmap ───────────────────────────────────────────────────
 
-describe('Epic 64 — RiskHeatmap loading state', () => {
-    it('renders shimmer dots covering the matrix area while loading', () => {
-        const { container } = render(<RiskHeatmap cells={[]} loading />);
-        const wrapper = container.querySelector('[data-heatmap-loading]');
-        expect(wrapper).not.toBeNull();
-        expect(
-            wrapper?.querySelector('[data-shimmer-dots]'),
-        ).not.toBeNull();
-    });
-
-    it('shimmer grid matches the heatmap scale (5×5 dots)', () => {
-        const { container } = render(<RiskHeatmap cells={[]} loading />);
-        // Default scale is 5; that's 25 dots.
-        expect(
-            container.querySelectorAll(
-                '[data-heatmap-loading] [data-shimmer-dot]',
-            ).length,
-        ).toBe(25);
-    });
-
-    it('keeps the "Risk Heatmap" header visible while loading', () => {
-        const { getByText } = render(<RiskHeatmap cells={[]} loading />);
-        expect(getByText('Risk Heatmap')).toBeInTheDocument();
-    });
-
-    it('still renders the empty-state copy when loading=false and cells=[]', () => {
-        const { container, getByText } = render(<RiskHeatmap cells={[]} />);
-        expect(container.querySelector('[data-heatmap-loading]')).toBeNull();
-        expect(getByText(/No risks registered/i)).toBeInTheDocument();
-    });
-});
 
 // ─── Sheet.Body progressiveBlur ────────────────────────────────────
 

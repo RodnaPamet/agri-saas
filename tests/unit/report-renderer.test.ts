@@ -1,8 +1,6 @@
 /**
  * RQ-10 — report renderers + schedule cadence (pure). No DB.
  */
-import { renderCsv, renderPptx, type ReportData } from '@/app-layer/reports/risk-report-render';
-import { computeNextRun, FORMAT_META } from '@/app-layer/usecases/risk-report';
 
 const data: ReportData = {
     title: 'Portfolio Risk Summary',
