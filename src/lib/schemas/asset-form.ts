@@ -43,6 +43,16 @@ export const NewAssetFormSchema = z.object({
     owner: z.string().trim().max(255).default(''),
     externalRef: z.string().trim().max(255).default(''),
     location: z.string().trim().max(255).default(''),
+    /** Structured location (Location.id). Null when unset — the free-text
+     *  `location` above is retained for detail a Location row cannot model. */
+    locationId: z.string().trim().min(1).nullable().default(null),
+    /** Straight-line depreciation denominator; see /costs machinery basis. */
+    usefulLifeYears: z
+        .number()
+        .int('Must be a whole number of years')
+        .min(1, 'Must be at least one year')
+        .max(100, 'Useful life looks too long')
+        .optional(),
     manufacturer: z.string().trim().max(255).default(''),
     model: z.string().trim().max(255).default(''),
     serialNumber: z.string().trim().max(255).default(''),

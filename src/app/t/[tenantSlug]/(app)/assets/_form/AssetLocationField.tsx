@@ -35,10 +35,10 @@ interface LocationRow {
 }
 
 interface Props {
-    locationId: string | null;
+    locationId: string | null | undefined;
     onLocationIdChange: (id: string | null) => void;
     /** The retained free-text note. */
-    note: string;
+    note: string | undefined;
     onNoteChange: (value: string) => void;
 }
 
@@ -58,16 +58,16 @@ export function AssetLocationField({
             .map((l) => ({ value: l.id, label: l.name }));
     }, [data]);
 
-    const selected = options.filter((o) => o.value === locationId);
+    const selected = options.find((o) => o.value === locationId) ?? null;
 
     return (
         <>
-            <FormField label={t('locationStructured')} help={t('locationStructuredHelp')}>
+            <FormField label={t('locationStructured')} hint={t('locationStructuredHelp')}>
                 <Combobox
                     id="asset-location-select"
                     options={options}
                     selected={selected}
-                    setSelected={(opts) => onLocationIdChange(opts[0]?.value ?? null)}
+                    setSelected={(o) => onLocationIdChange(o?.value ?? null)}
                     placeholder={t('locationNone')}
                     matchTriggerWidth
                 />
@@ -75,7 +75,7 @@ export function AssetLocationField({
             <FormField label={t('location')}>
                 <Input
                     id="asset-location-input"
-                    value={note}
+                    value={note ?? ''}
                     onChange={(e) => onNoteChange(e.target.value)}
                     placeholder={t('locationNotePlaceholder')}
                 />

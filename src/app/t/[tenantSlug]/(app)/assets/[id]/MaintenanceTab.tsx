@@ -283,25 +283,27 @@ function AddMaintenanceModal({
     };
 
     return (
-        <Modal open onClose={onClose} title={t('maintTitle')}>
+        <Modal showModal setShowModal={onClose} title={t('maintTitle')}>
             <Modal.Form onSubmit={submit}>
                 <div className="space-y-default">
-                    <FormField label={t('maintKind')} htmlFor="maint-kind">
+                    <FormField label={t('maintKind')}>
                         <Combobox
                             id="maint-kind"
                             options={kindOptions}
-                            selected={kindOptions.filter((o) => o.value === kind)}
-                            setSelected={(opts) => setKind((opts[0]?.value as Kind) ?? 'SERVICE')}
+                            selected={kindOptions.find((o) => o.value === kind) ?? null}
+                            setSelected={(o) => setKind((o?.value as Kind) ?? 'SERVICE')}
+                            hideSearch
+                            matchTriggerWidth
                         />
                     </FormField>
-                    <FormField label={t('maintDescription')} htmlFor="maint-desc">
+                    <FormField label={t('maintDescription')}>
                         <Input
                             id="maint-desc"
                             value={description}
                             onChange={(e) => setDescription(e.target.value)}
                         />
                     </FormField>
-                    <FormField label={t('maintMeter')} htmlFor="maint-meter">
+                    <FormField label={t('maintMeter')}>
                         <Input
                             id="maint-meter"
                             inputMode="decimal"
@@ -309,7 +311,7 @@ function AddMaintenanceModal({
                             onChange={(e) => setMeter(e.target.value)}
                         />
                     </FormField>
-                    <FormField label={t('maintCost')} htmlFor="maint-cost">
+                    <FormField label={t('maintCost')}>
                         <Input
                             id="maint-cost"
                             inputMode="decimal"
@@ -317,10 +319,10 @@ function AddMaintenanceModal({
                             onChange={(e) => setCost(e.target.value)}
                         />
                     </FormField>
-                    <FormField label={t('maintNextDueAt')} htmlFor="maint-next-due">
+                    <FormField label={t('maintNextDueAt')}>
                         <DatePicker id="maint-next-due" value={nextDueAt} onChange={setNextDueAt} />
                     </FormField>
-                    <FormField label={t('maintNextDueMeter')} htmlFor="maint-next-meter">
+                    <FormField label={t('maintNextDueMeter')}>
                         <Input
                             id="maint-next-meter"
                             inputMode="decimal"
