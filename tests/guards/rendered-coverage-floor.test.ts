@@ -115,8 +115,27 @@ const ROOT = path.resolve(__dirname, '../..');
 // control-roi-card, control-exceptions-panel, test-plan-schedule-section and
 // test-dashboard-g2-section. This is the documented exception the ratchet
 // contemplates ("if a test was legitimately merged or renamed, account for
-// it"); the floor resumes its upward-only ratchet from 223.
-const RENDERED_TEST_FLOOR = 223;
+// it").
+//
+// Lowered 223 → 207 in the risk-quantification uproot (2026-08-08). The same
+// exception, and the count is exact: 21 suites are gone versus main, and every
+// one of them verified a component that no longer exists —
+//   risk register / scoring UI (9): risk-assessment-panel, risk-board-page,
+//     risk-dashboard-portfolio-honesty, risk-modal-fields,
+//     risk-score-explainer-escape, risk-score-explainer-provenance,
+//     risk-treatment-plan-card, score-explainer-retry,
+//     polish-15-assessment-conflict
+//   FAIR / Monte-Carlo (3): fair-calibration-panel, monte-carlo-stage,
+//     ale-histogram
+//   charts + rails whose only consumer was a risk surface (4):
+//     loss-exceedance-reference-lines, sankey-chart, ai-assist-rail,
+//     org-drilldown-load-more
+//   control exoskeleton, already accounted for above (4)
+//   schemes-disclosure (1) — the certification /schemes page it asserted on
+//     was replaced by the support-measures page.
+// No surviving component lost its rendered coverage. The floor resumes its
+// upward-only ratchet from 207.
+const RENDERED_TEST_FLOOR = 207;
 const E2E_SPEC_FLOOR = 55;
 const REGISTRY_FLOOR = 5;
 

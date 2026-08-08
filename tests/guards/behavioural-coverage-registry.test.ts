@@ -120,18 +120,6 @@ const REGISTRY: RegistryEntry[] = [
             'passed.',
     },
     {
-        primitive: 'SankeyChart graph projection + click-to-pin',
-        structuralRatchets: ['guards/r21-prb-sankey-rebuild.test.ts'],
-        renderedTest: 'rendered/sankey-chart.test.tsx',
-        guards:
-            'the structural ratchet scans the source for the R16 ' +
-            'chart-token wiring but cannot tell whether the graph ' +
-            'actually projects into rendered nodes/links, or whether ' +
-            'click-to-pin fires; the rendered test asserts the ' +
-            'computed node/link counts, both empty branches, and the ' +
-            'pin/unpin interaction.',
-    },
-    {
         primitive: 'Tooltip coarse-pointer (tap-to-toggle) path',
         structuralRatchets: ['guards/tooltip-touch-uniformity.test.ts'],
         renderedTest: 'rendered/tooltip-touch.test.tsx',

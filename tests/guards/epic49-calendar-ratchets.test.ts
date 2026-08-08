@@ -67,7 +67,6 @@ describe('Epic 49 — calendar feature wiring', () => {
             'loadAuditCycleEvents',
             'loadControlEvents',
             'loadTaskEvents',
-            'loadRiskEvents',
             'loadFindingEvents',
             // Agriculture data sources (PR 2 of the calendar roadmap).
             'loadParcelLeaseEvents',

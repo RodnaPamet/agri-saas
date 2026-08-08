@@ -221,7 +221,8 @@ describe("PageHeader adoption registry", () => {
         // 30 candidate pages today. New page-list additions force a
         // registry entry (the next assertion); page removals force
         // entry removal (the first assertion).
-        expect(PAGES.length).toBeGreaterThanOrEqual(25);
+        // 25 → 24: the risks list page went with the register.
+        expect(PAGES.length).toBeGreaterThanOrEqual(24);
         expect(PAGES.length).toBeLessThanOrEqual(35);
     });
 });

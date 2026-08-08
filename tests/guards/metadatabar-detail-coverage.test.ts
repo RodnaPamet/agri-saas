@@ -152,7 +152,8 @@ describe("MetaStrip detail-page coverage", () => {
         // pages were deleted, taking the registry from 11 to 9. The floor is a
         // drift detector — it exists so someone cannot quietly empty the
         // registry — so it tracks the new reality rather than a stale number.
-        expect(DETAIL_PAGES.length).toBeGreaterThanOrEqual(9);
+        // 9 → 8: the risk detail page went with the register.
+        expect(DETAIL_PAGES.length).toBeGreaterThanOrEqual(8);
     });
 
     it("MetadataBar (the deprecated sibling primitive) has zero production adopters", () => {

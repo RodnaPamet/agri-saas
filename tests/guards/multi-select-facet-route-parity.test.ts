@@ -49,7 +49,6 @@ const KNOWN_UNFIXED: Readonly<Record<string, readonly string[]>> = {
     'farm-tasks': ['assigneeUserId', 'status'],
     journal: ['crop', 'status', 'type'],
     policies: ['category', 'status'],
-    risks: ['category', 'ownerUserId', 'status'],
     vendors: ['criticality', 'riskRating', 'status'],
 };
 

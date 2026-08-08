@@ -57,13 +57,6 @@ describe('Regression: Middleware existence', () => {
         expect(content).toContain('runInTenantContext');
     });
 
-    test('risk scoring engine exists', () => {
-        const scoring = path.join(SRC_ROOT, 'lib/risk-scoring.ts');
-        expect(fs.existsSync(scoring)).toBe(true);
-        const content = readSafe(scoring);
-        expect(content).toContain('calculateRiskScore');
-    });
-
     test('RBAC policy layer exists', () => {
         const common = path.join(SRC_ROOT, 'app-layer/policies/common.ts');
         expect(fs.existsSync(common)).toBe(true);
