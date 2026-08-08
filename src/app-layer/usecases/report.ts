@@ -24,26 +24,12 @@ export async function getReports(ctx: RequestContext) {
             reviewCadence: c.reviewCadence,
         }));
 
-        const risks = await ReportRepository.getRiskRegisterData(db, ctx);
-
-        const riskRegister = risks.map((r) => ({
-            id: r.id,
-            title: r.title,
-            threat: r.threat,
-            vulnerability: r.vulnerability,
-            likelihood: r.likelihood,
-            impact: r.impact,
-            score: r.inherentScore,
-            treatment: r.treatment || 'Untreated',
-            owner: r.treatmentOwner || 'Unassigned',
-            targetDate: r.targetDate,
-            controls: r.controls.map((rc: { control: { code: string | null; name: string } }) => rc.control.code || rc.control.name).join(', '),
-        }));
 
         logger.info('report generation completed', {
-            component: 'report', soaCount: soa.length, riskCount: riskRegister.length,
+            component: 'report',
+            soaCount: soa.length,
         });
 
-        return { soa, riskRegister };
+        return { soa };
     }));
 }

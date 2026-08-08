@@ -100,12 +100,6 @@ export const SCHEDULED_JOBS: ScheduleDefinition[] = [
         defaultPayload: {},
     },
     {
-        name: 'report-delivery',
-        pattern: '0 6 * * *',     // daily at 06:00 UTC
-        description: 'Generate + deliver due scheduled risk reports (RQ-10)',
-        defaultPayload: {},
-    },
-    {
         name: 'low-stock-monitor',
         pattern: '0 9 * * *',     // daily at 09:00 UTC
         description: 'Scan inventory items below reorderLevel and fire LOW_STOCK notifications to tenant OWNER/ADMIN members',

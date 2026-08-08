@@ -35,7 +35,6 @@ import type { RequestContext } from '../types';
 import { assertCanWrite } from '../policies/common';
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { logEvent } from '../events/audit';
-import { createRisk } from './risk';
 import { createAgroSignalNotification } from '../notifications/agro';
 import {
     evaluateSprayWindow,
