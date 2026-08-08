@@ -47,7 +47,6 @@ export interface TotalsRow {
 }
 
 export interface GeneratePdfInput {
-    type: ReportType;
     saveToFileRecord?: boolean;
     watermark?: WatermarkMode;
 }

@@ -256,55 +256,9 @@ export async function evaluateLocationSignals(
         result.spray.fired = true;
     }
 
-    // ── Phase 2 — raise the Risk for a NEW disease signal. ──
-    // `createRisk` opens its own transaction, so this runs OUTSIDE the
-    // claim tx; the back-link + disease notification land in a short
-    // follow-up tx.
-    if (phase1.diseaseNew) {
-        result.created += 1;
-        result.disease.fired = true;
-        try {
-            const risk = await createRisk(ctx, {
-                title: `Disease pressure — ${phase1.location.name}`,
-                description: phase1.diseaseReasons || 'Sustained warm-wet conditions favour foliar disease.',
-                category: 'Agronomic',
-                likelihood: DISEASE_RISK_MATRIX.likelihood,
-                impact: DISEASE_RISK_MATRIX.impact,
-                // TreatmentDecision enum: TREAT | TRANSFER | TOLERATE | AVOID.
-                // Weather-driven disease pressure is actively managed → TREAT.
-                treatment: 'TREAT',
-                treatmentNotes:
-                    'Auto-raised from weather-derived disease pressure. Review fungicide/spray programme and field scouting.',
-            });
-            result.disease.riskId = risk.id;
-
-            await runInTenantContext(ctx, async (db: PrismaTx) => {
-                await db.agroSignal.updateMany({
-                    where: { tenantId: ctx.tenantId, locationId, kind: 'DISEASE_RISK', signalDate },
-                    data: { riskId: risk.id, notified: true },
-                });
-                const recipient = phase1.location.ownerUserId ?? ctx.userId;
-                await createAgroSignalNotification(db, 'DISEASE_RISK_RAISED', {
-                    tenantId: ctx.tenantId,
-                    recipientUserId: recipient,
-                    locationId,
-                    locationLabel: phase1.location.name,
-                    tenantSlug: ctx.tenantSlug ?? '',
-                    detail: phase1.diseaseReasons || null,
-                }, now);
-            });
-        } catch (err) {
-            // The signal row is already committed (idempotency holds); a
-            // Risk/notification failure is logged, not fatal — the next
-            // run won't re-fire because the signal already exists.
-            logger.warn('agro-signals: disease Risk raise failed', {
-                component: 'agro-signals',
-                tenantId: ctx.tenantId,
-                locationId,
-                error: err instanceof Error ? err.message : String(err),
-            });
-        }
-    }
+    // Phase 2 used to raise a GRC Risk row for a new disease signal and
+    // back-link it. The Risk register was removed with the compliance
+    // uproot; the signal itself is the record now.
 
     // ── Agronomy copilot — enrich a NEW signal with a plain-language
     //    explanation (async, fail-safe). Gated on LLM config so the

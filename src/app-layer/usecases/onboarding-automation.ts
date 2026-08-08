@@ -203,85 +203,11 @@ async function executeControlInstall(ctx: RequestContext, allData: StepData): Pr
 // ─── Risk Register Generation (deterministic) ───
 
 async function executeRiskGeneration(ctx: RequestContext, allData: StepData): Promise<StepActionResult> {
-    const generate = allData['INITIAL_RISK_REGISTER']?.generate;
-    if (generate === false) {
-        return { action: 'RISK_GENERATION', created: 0, skipped: 0, details: 'User opted out of risk generation' };
-    }
-
-    const selectedFrameworks: string[] = allData['FRAMEWORK_SELECTION']?.selectedFrameworks || [];
-    const assetNames: string[] = allData['ASSET_SETUP']?.assets || [];
-
-    // Infer asset types from names
-    const assetTypes = new Set(assetNames.map(n => inferAssetType(n)));
-    // If no assets, use general risks
-    if (assetTypes.size === 0) assetTypes.add('APPLICATION');
-
-    // Select applicable risks
-    const applicableRisks = STARTER_RISKS.filter(risk => {
-        // Framework match: if risk specifies frameworks, at least one must be selected
-        const fwMatch = risk.frameworks.length === 0 || risk.frameworks.some(fw => selectedFrameworks.includes(fw));
-        // Asset type match: if risk specifies asset types, at least one must exist
-        const typeMatch = risk.assetTypes.length === 0 || risk.assetTypes.some(at => assetTypes.has(at));
-        return fwMatch && typeMatch;
-    });
-
-    let created = 0;
-    let skipped = 0;
-
-    await runInTenantContext(ctx, async (db) => {
-        // Tenant table is global (no RLS) but accessible via the scoped client
-        const tenant = await db.tenant.findUnique({ where: { id: ctx.tenantId } });
-        const maxScale = tenant?.maxRiskScale || 5;
-
-        for (const risk of applicableRisks) {
-            // Idempotent: check existing by title
-            const existing = await db.risk.findFirst({
-                where: { tenantId: ctx.tenantId, title: risk.title },
-            });
-            if (existing) {
-                skipped++;
-                continue;
-            }
-
-            const score = Math.round((risk.likelihood / maxScale) * (risk.impact / maxScale) * maxScale * maxScale);
-            await db.risk.create({
-                data: {
-                    tenantId: ctx.tenantId,
-                    title: risk.title,
-                    category: risk.category,
-                    threat: risk.threat,
-                    vulnerability: risk.vulnerability,
-                    likelihood: risk.likelihood,
-                    impact: risk.impact,
-                    score,
-                    inherentScore: score,
-                    status: 'OPEN',
-                    createdByUserId: ctx.userId,
-                },
-            });
-            created++;
-        }
-
-        if (created > 0) {
-            await logEvent(db, ctx, {
-                action: 'ONBOARDING_RISKS_GENERATED',
-                entityType: 'Risk',
-                entityId: ctx.tenantId,
-                details: `Onboarding generated ${created} starter risks (${skipped} already existed)`,
-                detailsJson: {
-                    category: 'custom',
-                    event: 'onboarding_risks_generated',
-                    created,
-                    skipped,
-                    selectedFrameworks,
-                    assetTypes: [...assetTypes],
-                },
-                metadata: { created, skipped, selectedFrameworks, assetTypes: [...assetTypes] },
-            });
-        }
-    });
-
-    return { action: 'RISK_GENERATION', created, skipped, details: `${created} risks generated, ${skipped} already existed` };
+    // Seeded a starter GRC risk register from the tenant's profile. The Risk
+    // register was removed with the compliance uproot, so the step reports
+    // every candidate as skipped rather than pretending to have done work.
+    void ctx; void allData;
+    return { action: 'RISK_GENERATION', created: 0, skipped: 0, details: 'Risk generation retired' };
 }
 
 // ─── Team Setup / Starter Tasks ───

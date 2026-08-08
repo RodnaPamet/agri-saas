@@ -76,7 +76,7 @@ export async function getUnifiedSearch(
     const allHits: SearchHit[] = [];
 
     await runInTenantContext(ctx, async (db) => {
-        const [controls, risks, policies, evidence, assets, tasks, knowledge] = await Promise.all([
+        const [controls, policies, evidence, assets, tasks, knowledge] = await Promise.all([
             db.control.findMany({
                 where: {
                     tenantId,
@@ -86,23 +86,6 @@ export async function getUnifiedSearch(
                     ],
                 },
                 select: { id: true, code: true, name: true, status: true },
-                take: dbLimit,
-            }),
-            db.risk.findMany({
-                where: {
-                    tenantId,
-                    OR: [
-                        { title: { contains, mode: 'insensitive' } },
-                        { category: { contains, mode: 'insensitive' } },
-                    ],
-                },
-                select: {
-                    id: true,
-                    title: true,
-                    category: true,
-                    status: true,
-                    score: true,
-                },
                 take: dbLimit,
             }),
             db.policy.findMany({
@@ -188,14 +171,6 @@ export async function getUnifiedSearch(
             status: string;
         }>[]) {
             allHits.push(buildControlHit(c, trimmed, tenantSlug));
-        }
-        for (const r of risks as Row<{
-            title: string;
-            category: string | null;
-            status: string;
-            score: number;
-        }>[]) {
-            allHits.push(buildRiskHit(r, trimmed, tenantSlug));
         }
         for (const p of policies as Row<{ title: string; status: string }>[]) {
             allHits.push(buildPolicyHit(p, trimmed, tenantSlug));
@@ -303,28 +278,6 @@ function buildControlHit(
             type: 'control',
             title: row.name,
             code: row.code,
-        }),
-        ...meta,
-    };
-}
-
-function buildRiskHit(
-    row: { id: string; title: string; category: string | null; status: string; score: number },
-    query: string,
-    slug: string,
-): SearchHit {
-    const meta = SEARCH_TYPE_DEFAULTS.risk;
-    return {
-        type: 'risk',
-        id: row.id,
-        title: row.title,
-        subtitle: row.category ? `${row.category} · Score ${row.score}` : `Score ${row.score}`,
-        badge: row.status,
-        href: `/t/${slug}/risks/${row.id}`,
-        score: computeRankScore(query, {
-            type: 'risk',
-            title: row.title,
-            subtitle: row.category,
         }),
         ...meta,
     };
@@ -484,7 +437,6 @@ export type { SearchHit, SearchResponse } from '@/lib/search/types';
 // expected union of types without re-deriving it.
 export const __SEARCHABLE_TYPES__: ReadonlyArray<SearchHitType> = [
     'control',
-    'risk',
     'policy',
     'evidence',
     'framework',

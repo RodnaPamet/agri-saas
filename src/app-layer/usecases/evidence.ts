@@ -650,15 +650,6 @@ export async function uploadEvidenceFile(
             if (!task) throw badRequest('INVALID_TASK', 'Task not found or belongs to a different tenant');
         }
 
-        // Validate risk belongs to the same tenant
-        if (riskId) {
-            const risk = await db.risk.findFirst({
-                where: { id: riskId, tenantId: ctx.tenantId },
-                select: { id: true },
-            });
-            if (!risk) throw badRequest('INVALID_RISK', 'Risk not found or belongs to a different tenant');
-        }
-
         // Validate asset belongs to the same tenant
         if (assetId) {
             const asset = await db.asset.findFirst({
@@ -711,7 +702,6 @@ export async function uploadEvidenceFile(
             fileRecordId,
             controlId,
             taskId,
-            riskId,
             assetId,
             category: metadata.category ? sanitizePlainText(metadata.category) : undefined,
             // B8 follow-up — same null-coercion as the TEXT path.

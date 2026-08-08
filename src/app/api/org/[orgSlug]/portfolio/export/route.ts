@@ -35,7 +35,6 @@ import {
     getPortfolioSummary,
     getPortfolioTenantHealth,
     getNonPerformingControls,
-    getCriticalRisksAcrossOrg,
     getOverdueEvidenceAcrossOrg,
 } from '@/app-layer/usecases/portfolio';
 
@@ -114,8 +113,6 @@ export const GET = withApiErrorHandling(
                     escapeCSV(row.slug),
                     escapeCSV(row.snapshotDate ?? ''),
                     escapeCSV(row.coveragePercent !== null ? row.coveragePercent.toFixed(1) : ''),
-                    escapeCSV(row.openRisks ?? ''),
-                    escapeCSV(row.criticalRisks ?? ''),
                     escapeCSV(row.overdueEvidence ?? ''),
                     escapeCSV(row.rag ?? 'PENDING'),
                 ].join(','),
@@ -124,9 +121,8 @@ export const GET = withApiErrorHandling(
 
         // ── Sections 3-5: drill-down (only when canDrillDown) ────────
         if (ctx.permissions.canDrillDown) {
-            const [controls, risks, evidence] = await Promise.all([
+            const [controls, evidence] = await Promise.all([
                 getNonPerformingControls(ctx),
-                getCriticalRisksAcrossOrg(ctx),
                 getOverdueEvidenceAcrossOrg(ctx),
             ]);
 
@@ -146,26 +142,6 @@ export const GET = withApiErrorHandling(
                         escapeCSV(c.code ?? ''),
                         escapeCSV(c.status),
                         escapeCSV(c.updatedAt),
-                    ].join(','),
-                );
-            }
-
-            sections.push('');
-            sections.push(sectionHeader('Critical Risks', RISKS_COLUMNS));
-            sections.push(
-                ['Tenant', 'Slug', 'Title', 'Inherent Score', 'Status', 'Updated At']
-                    .map(escapeCSV)
-                    .join(','),
-            );
-            for (const r of risks) {
-                sections.push(
-                    [
-                        escapeCSV(r.tenantName),
-                        escapeCSV(r.tenantSlug),
-                        escapeCSV(r.title),
-                        escapeCSV(r.inherentScore),
-                        escapeCSV(r.status),
-                        escapeCSV(r.updatedAt),
                     ].join(','),
                 );
             }

@@ -103,10 +103,11 @@ export async function getAutomationSuggestions(
 ): Promise<{ suggestions: RuleSuggestion[]; generatedAt: string }> {
     assertCanReadAutomation(ctx);
     return runInTenantContext(ctx, async (db) => {
-        const [activeRiskCount, enabledRules] = await Promise.all([
-            db.risk.count({
-                where: { tenantId: ctx.tenantId, status: { in: ['OPEN', 'MITIGATING'] } },
-            }),
+        // `activeRiskCount` fed a risk-register-driven ranking signal. The
+        // register was removed with the compliance uproot; the remaining
+        // signal is which trigger events are already covered by a rule.
+        const activeRiskCount = 0;
+        const [enabledRules] = await Promise.all([
             db.automationRule.findMany({
                 where: { tenantId: ctx.tenantId, status: 'ENABLED', deletedAt: null },
                 select: { triggerEvent: true },

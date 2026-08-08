@@ -199,9 +199,6 @@ async function updateStatus(db: Db, rule: ExecutableRule, event: ActionEvent): P
     // never be attacker-influenced and the call stays type-checked.
     let updated: number;
     switch (cfg?.entityType) {
-        case 'Risk':
-            updated = (await db.risk.updateMany({ where, data })).count;
-            break;
         case 'Task':
             // A Task's `completedAt` is derived state, not an independent
             // column: `WorkItemRepository.setStatus` keeps it in lockstep
