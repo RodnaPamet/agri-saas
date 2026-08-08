@@ -2,7 +2,7 @@
  * Epic P2-PR-B — ProcessInspector node-mode entity picker.
  *
  * Asserts the picker block mounts on the three compliance-entity
- * node kinds (control / risk / asset), and does NOT mount on the
+ * node kinds (control / asset), and does NOT mount on the
  * other kinds (processStep / decision / external / annotation /
  * group). Three cases run against the three entity-kind responses
  * so a refactor that swaps a hook breaks loudly.
@@ -11,7 +11,6 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import { ProcessInspector } from '@/components/processes/ProcessInspector';
 import { __resetTenantControlsCacheForTests } from '@/lib/processes/use-tenant-controls';
-import { __resetTenantRisksCacheForTests } from '@/lib/processes/use-tenant-risks';
 import { __resetTenantAssetsCacheForTests } from '@/lib/processes/use-tenant-assets';
 
 function makeNode(kind: string, extra: any = {}) {
@@ -28,7 +27,6 @@ describe('ProcessInspector — node-mode entity picker (P2-PR-B)', () => {
 
     beforeEach(() => {
         __resetTenantControlsCacheForTests();
-        __resetTenantRisksCacheForTests();
         __resetTenantAssetsCacheForTests();
         global.fetch = jest.fn(async (url: string | URL) => {
             const u = url.toString();
@@ -37,12 +35,6 @@ describe('ProcessInspector — node-mode entity picker (P2-PR-B)', () => {
                     JSON.stringify([
                         { id: 'ctrl-1', ref: 'AC-1', title: 'Access policy' },
                     ]),
-                    { status: 200 },
-                );
-            }
-            if (u.includes('/api/t/acme/risks')) {
-                return new Response(
-                    JSON.stringify([{ id: 'risk-1', title: 'Data breach' }]),
                     { status: 200 },
                 );
             }
@@ -81,22 +73,6 @@ describe('ProcessInspector — node-mode entity picker (P2-PR-B)', () => {
         });
     });
 
-    it('mounts the picker on a risk node + fetches risks', async () => {
-        render(
-            <ProcessInspector
-                node={makeNode('risk') as any}
-                tenantSlug="acme"
-                onUpdate={jest.fn()}
-            />,
-        );
-        const picker = screen.getByTestId('inspector-node-entity-picker');
-        expect(picker.getAttribute('data-entity-kind')).toBe('risk');
-        await waitFor(() => {
-            expect(global.fetch).toHaveBeenCalledWith(
-                '/api/t/acme/risks',
-            );
-        });
-    });
 
     it('mounts the picker on an asset node + fetches assets', async () => {
         render(

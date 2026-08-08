@@ -294,12 +294,7 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
             { id: 'owner', label: t.owner },
             { id: 'status', label: tm('status') },
             // Compliance-only link counts — hidden for a plain farm.
-            ...(showCompliance
-                ? [
-                      { id: 'risks', label: tm('risksCol') },
-                      { id: 'controls', label: t.controlsCol },
-                  ]
-                : []),
+            ...(showCompliance ? [{ id: 'controls', label: t.controlsCol }] : []),
             { id: 'tasks', label: tm('colTasks') },
         ],
         [t, tm, showCompliance],
@@ -386,13 +381,6 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
         // a compliance module. Gated out entirely for a plain farm.
         ...(showCompliance
             ? [
-                  {
-                      id: 'risks',
-                      header: tm('risksCol'),
-                      accessorFn: (a: any) => a._count?.risks || 0,
-                      cell: ({ getValue }: any) => <span className="text-xs">{getValue()}</span>,
-                      meta: { mobileCard: { slot: 'meta' as const, label: tm('risksCol') } },
-                  },
                   {
                       id: 'controls',
                       header: t.controlsCol,
