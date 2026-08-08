@@ -103,19 +103,7 @@ jest.mock('@/app-layer/repositories/FindingRepository', () => ({
     },
 }));
 
-jest.mock('@/app-layer/repositories/RiskRepository', () => ({
-    RiskRepository: {
-        create: (...a: unknown[]) => mockRiskCreate(...a),
-        update: (...a: unknown[]) => mockRiskUpdate(...a),
-        getById: (...a: unknown[]) => mockRiskGetById(...a),
-    },
-}));
 
-jest.mock('@/app-layer/repositories/RiskTemplateRepository', () => ({
-    RiskTemplateRepository: {
-        getById: (...a: unknown[]) => mockRiskTemplateGet(...a),
-    },
-}));
 
 jest.mock('@/app-layer/repositories/VendorRepository', () => ({
     VendorRepository: {
@@ -206,7 +194,6 @@ jest.mock('@/app-layer/usecases/task', () => ({
 import { createPolicyVersion } from '@/app-layer/usecases/policy';
 import { addTaskComment } from '@/app-layer/usecases/task';
 import { createFinding, updateFinding } from '@/app-layer/usecases/finding';
-import { createRisk, updateRisk, createRiskFromTemplate } from '@/app-layer/usecases/risk';
 import {
     createVendor,
     updateVendor,

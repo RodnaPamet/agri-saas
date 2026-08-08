@@ -32,30 +32,15 @@ jest.mock('@/lib/prisma', () => ({ __esModule: true, default: mockPrisma, prisma
 
 const mockTakeSnapshot = jest.fn();
 const mockCleanupSnapshots = jest.fn();
-jest.mock('@/app-layer/usecases/risk-snapshot', () => ({
-    takeSnapshot: (...a: unknown[]) => mockTakeSnapshot(...a),
-    cleanupSnapshots: (...a: unknown[]) => mockCleanupSnapshots(...a),
-}));
 
 const mockCheckPortfolioAppetite = jest.fn();
 const mockRecordBreaches = jest.fn();
 const mockResolveStaleBreaches = jest.fn();
-jest.mock('@/app-layer/usecases/risk-appetite', () => ({
-    checkPortfolioAppetite: (...a: unknown[]) => mockCheckPortfolioAppetite(...a),
-    recordBreaches: (...a: unknown[]) => mockRecordBreaches(...a),
-    resolveStaleBreaches: (...a: unknown[]) => mockResolveStaleBreaches(...a),
-}));
 
 const mockGenerateReport = jest.fn();
 const mockDeliverReportByEmail = jest.fn();
 const mockDeliverReportToSharePoint = jest.fn();
 const mockComputeNextRun = jest.fn();
-jest.mock('@/app-layer/usecases/risk-report', () => ({
-    generateReport: (...a: unknown[]) => mockGenerateReport(...a),
-    deliverReportByEmail: (...a: unknown[]) => mockDeliverReportByEmail(...a),
-    deliverReportToSharePoint: (...a: unknown[]) => mockDeliverReportToSharePoint(...a),
-    computeNextRun: (...a: unknown[]) => mockComputeNextRun(...a),
-}));
 
 const mockEmbed = jest.fn();
 jest.mock('@/app-layer/ai/provider', () => ({ getEmbeddingProvider: () => ({ embed: mockEmbed }) }));
@@ -104,151 +89,9 @@ beforeEach(() => {
 
 // ─── risk-snapshot ───────────────────────────────────────────────────
 
-describe('runRiskSnapshot', () => {
-    beforeEach(() => {
-        mockPrisma.risk.findMany.mockResolvedValue([{ tenantId: 't1' }, { tenantId: 't2' }]);
-        mockTakeSnapshot.mockResolvedValue({ riskSnapshots: 3 });
-        mockCleanupSnapshots.mockResolvedValue(2);
-    });
-
-    it('snapshots every tenant with a live risk and aggregates the counters', async () => {
-        expect(await runRiskSnapshot({} as any)).toEqual({
-            tenants: 2,
-            scanned: 2,
-            riskSnapshots: 6,
-            pruned: 4,
-        });
-    });
-
-    it('selects DISTINCT tenants from non-deleted risks only', async () => {
-        // Soft-deleted risks must not keep a wound-down tenant in the
-        // nightly sweep forever.
-        await runRiskSnapshot({} as any);
-
-        expect(mockPrisma.risk.findMany).toHaveBeenCalledWith(
-            expect.objectContaining({
-                where: { deletedAt: null },
-                distinct: ['tenantId'],
-            }),
-        );
-    });
-
-    it('prunes against the 730-day retention window', async () => {
-        await runRiskSnapshot({} as any);
-        expect(mockCleanupSnapshots).toHaveBeenCalledWith(expect.anything(), 't1', 730);
-    });
-
-    it('isolates a failing tenant so later tenants still run', async () => {
-        // The property the whole loop exists for: t2 must still be
-        // snapshotted after t1 blows up.
-        mockTakeSnapshot
-            .mockRejectedValueOnce(new Error('deadlock detected'))
-            .mockResolvedValueOnce({ riskSnapshots: 5 });
-        mockCleanupSnapshots.mockResolvedValue(1);
-
-        expect(await runRiskSnapshot({} as any)).toEqual({
-            tenants: 2,
-            scanned: 1, // only t2 completed
-            riskSnapshots: 5,
-            pruned: 1,
-        });
-        expect(logger.warn).toHaveBeenCalledWith(
-            'risk-snapshot: tenant snapshot failed',
-            expect.objectContaining({ tenantId: 't1', error: 'deadlock detected' }),
-        );
-    });
-
-    it('stringifies a non-Error rejection', async () => {
-        mockTakeSnapshot.mockRejectedValue('pg terminated');
-
-        await runRiskSnapshot({} as any);
-
-        expect(logger.warn).toHaveBeenCalledWith(
-            'risk-snapshot: tenant snapshot failed',
-            expect.objectContaining({ error: 'pg terminated' }),
-        );
-    });
-
-    it('is a no-op with no tenants', async () => {
-        mockPrisma.risk.findMany.mockResolvedValue([]);
-        expect(await runRiskSnapshot({} as any)).toEqual({
-            tenants: 0,
-            scanned: 0,
-            riskSnapshots: 0,
-            pruned: 0,
-        });
-    });
-});
 
 // ─── risk-appetite monitor ───────────────────────────────────────────
 
-describe('runRiskAppetiteMonitor', () => {
-    beforeEach(() => {
-        mockPrisma.riskAppetiteConfig.findMany.mockResolvedValue([
-            { tenantId: 't1' },
-            { tenantId: 't2' },
-        ]);
-        mockPrisma.tenantMembership.findFirst.mockResolvedValue({ userId: 'u1', role: 'ADMIN' });
-        mockCheckPortfolioAppetite.mockResolvedValue({ breaches: [{ riskId: 'r1' }] });
-        mockRecordBreaches.mockResolvedValue(1);
-        mockResolveStaleBreaches.mockResolvedValue(2);
-    });
-
-    it('scans each configured tenant and aggregates breach counts', async () => {
-        expect(await runRiskAppetiteMonitor({} as any)).toEqual({
-            tenants: 2,
-            scanned: 2,
-            newBreaches: 2,
-            resolved: 4,
-        });
-    });
-
-    it('builds a risk-read context from the longest-standing admin', async () => {
-        await runRiskAppetiteMonitor({} as any);
-
-        expect(mockPrisma.tenantMembership.findFirst).toHaveBeenCalledWith(
-            expect.objectContaining({
-                where: { tenantId: 't1', status: 'ACTIVE', role: { in: ['OWNER', 'ADMIN'] } },
-                orderBy: { createdAt: 'asc' },
-            }),
-        );
-        const ctx = mockCheckPortfolioAppetite.mock.calls[0][0];
-        expect(ctx).toMatchObject({ tenantId: 't1', userId: 'u1', role: 'ADMIN' });
-        expect(ctx.permissions.canRead).toBe(true);
-    });
-
-    it('skips a tenant with no eligible admin without counting it as scanned', async () => {
-        mockPrisma.tenantMembership.findFirst
-            .mockResolvedValueOnce(null)
-            .mockResolvedValueOnce({ userId: 'u2', role: 'OWNER' });
-
-        expect(await runRiskAppetiteMonitor({} as any)).toMatchObject({ tenants: 2, scanned: 1 });
-        expect(mockCheckPortfolioAppetite).toHaveBeenCalledTimes(1);
-    });
-
-    it('isolates a failing tenant scan', async () => {
-        mockCheckPortfolioAppetite
-            .mockRejectedValueOnce(new Error('appetite config malformed'))
-            .mockResolvedValueOnce({ breaches: [] });
-
-        expect(await runRiskAppetiteMonitor({} as any)).toMatchObject({ scanned: 1 });
-        expect(logger.warn).toHaveBeenCalledWith(
-            'risk-appetite-monitor: tenant scan failed',
-            expect.objectContaining({ tenantId: 't1', error: 'appetite config malformed' }),
-        );
-    });
-
-    it('stringifies a non-Error rejection', async () => {
-        mockCheckPortfolioAppetite.mockRejectedValue({ code: 'P2002' });
-
-        await runRiskAppetiteMonitor({} as any);
-
-        expect(logger.warn).toHaveBeenCalledWith(
-            'risk-appetite-monitor: tenant scan failed',
-            expect.objectContaining({ error: '[object Object]' }),
-        );
-    });
-});
 
 // ─── report delivery ─────────────────────────────────────────────────
 

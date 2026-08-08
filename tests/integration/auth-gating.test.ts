@@ -17,7 +17,6 @@ import { buildRequestContext } from '../helpers/factories';
 
 // ── Import usecases ──
 import { createControl, deleteControl } from '@/app-layer/usecases/control';
-import { createRisk, deleteRisk } from '@/app-layer/usecases/risk';
 
 // ── Auth error detection ──
 function isForbiddenError(err: unknown): boolean {

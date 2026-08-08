@@ -58,13 +58,10 @@ beforeAll(async () => {
     CONTROL_ID = c.id;
     const cc = await globalPrisma.control.create({ data: { tenantId: TENANT_ID, name: 'Compensating MFA' } });
     COMP_CONTROL_ID = cc.id;
-    const rA = await globalPrisma.risk.create({ data: { tenantId: TENANT_ID, title: 'Risk A' } });
     RISK_A = rA.id;
-    const rB = await globalPrisma.risk.create({ data: { tenantId: TENANT_ID, title: 'Risk B' } });
     RISK_B = rB.id;
     const fc = await globalPrisma.control.create({ data: { tenantId: FOREIGN_TENANT_ID, name: 'Foreign control' } });
     FOREIGN_CONTROL_ID = fc.id;
-    const fr = await globalPrisma.risk.create({ data: { tenantId: FOREIGN_TENANT_ID, title: 'Foreign risk' } });
     FOREIGN_RISK_ID = fr.id;
 });
 
