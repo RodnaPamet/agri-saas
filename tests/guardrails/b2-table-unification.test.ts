@@ -29,7 +29,6 @@ describe('B2 — table unification', () => {
             file: string;
         }> = [
             { label: 'Controls (canonical)', file: 'src/app/t/[tenantSlug]/(app)/controls/ControlsClient.tsx' },
-            { label: 'Risks', file: 'src/app/t/[tenantSlug]/(app)/risks/RisksClient.tsx' },
             { label: 'Policies', file: 'src/app/t/[tenantSlug]/(app)/policies/PoliciesClient.tsx' },
             { label: 'Vendors', file: 'src/app/t/[tenantSlug]/(app)/vendors/VendorsClient.tsx' },
             { label: 'Assets', file: 'src/app/t/[tenantSlug]/(app)/assets/AssetsClient.tsx' },
@@ -79,7 +78,6 @@ describe('B2 — table unification', () => {
         // this ratchet red.
         const EDIT_PAGES: Array<{ label: string; file: string }> = [
             { label: 'Asset detail', file: 'src/app/t/[tenantSlug]/(app)/assets/[id]/page.tsx' },
-            { label: 'Risk detail', file: 'src/app/t/[tenantSlug]/(app)/risks/[riskId]/page.tsx' },
             { label: 'Vendor detail', file: 'src/app/t/[tenantSlug]/(app)/vendors/[vendorId]/page.tsx' },
             { label: 'Control detail', file: 'src/app/t/[tenantSlug]/(app)/controls/[controlId]/page.tsx' },
         ];

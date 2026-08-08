@@ -93,7 +93,6 @@ const LEGACY_LUCIDE_USERS = new Set<string>([
     // export-buttons cluster up into the Reports header. Net
     // change: one new lucide consumer on the allowlist.
     'src/app/t/[tenantSlug]/(app)/farm-tasks/filter-defs.ts',
-    'src/app/t/[tenantSlug]/(app)/risks/filter-defs.ts',
     'src/app/t/[tenantSlug]/(app)/security/mfa/page.tsx',
     // T13 i18n migration — the sole lucide import (Paperclip) migrated to
     // the Nucleo `paperclip` icon; the file no longer imports lucide, so
@@ -157,7 +156,6 @@ const LEGACY_LUCIDE_USERS = new Set<string>([
     'src/components/ui/filter/types.ts',
     'src/components/ui/FrameworkBuilder.tsx',
     'src/components/ui/FreshnessBadge.tsx',
-    'src/components/ui/GraphExplorer.tsx',
     // R25/R26 — Processes canvas chrome. The taxonomy module owns
     // the lucide imports (one stroke family for the seven kinds);
     // the palette + typed-node renderer consume icons via the

@@ -56,8 +56,6 @@ import {
     categorizeControl,
     ISO27001_DOMAIN_ORDER,
 } from '@/lib/controls/control-taxonomy';
-import { AiAssistRail } from '@/components/ui/ai-assist-rail';
-import { Sparkle3 } from '@/components/ui/icons/nucleo/sparkle3';
 import { KpiFilterCard } from '@/components/ui/kpi-filter-card';
 import { useKpiFilter, type KpiFilterDef } from '@/components/ui/kpi-filter';
 import type { CappedList } from '@/lib/list-backfill-cap';
@@ -999,29 +997,12 @@ function ControlsPageInner({
         </AsidePanel>
     );
 
-    // AI Assist — mirror of Risks' co-pilot rail. Quiet (44px spine)
-    // by default; the same `<AiAssistRail>` content + `/risks/ai`
-    // destination as the Risks page so the panel reads as one
-    // shared co-pilot across registers, not a stub.
-    const aiAssistAside = appPermissions.controls.edit ? (
-        <AsidePanel
-            title={t('list.aiAssist')}
-            surfaceKey="controls-list-ai"
-            defaultCollapsed
-            icon={<Sparkle3 className="h-4 w-4" />}
-        >
-            <AiAssistRail aiHref={tenantHref('/risks/ai')} />
-        </AsidePanel>
-    ) : null;
-
     // Compose the aside slot — selection summary first (only
     // appears on multi-row selection), then the always-on browse
-    // rail, then the AI assist co-pilot. They stack vertically
-    // inside the docked third column.
+    // rail. They stack vertically inside the docked third column.
     const composedAside = (
         <div className="flex flex-col gap-default">
             {browseAside}
-            {aiAssistAside}
         </div>
     );
 

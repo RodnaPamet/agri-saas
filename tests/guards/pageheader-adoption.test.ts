@@ -77,11 +77,6 @@ const PAGES: PageEntry[] = [
         note: "Readiness landing page (Server Component). Pending migration; needs ratchet-aware handling of server-component composition.",
     },
     {
-        file: "src/app/t/[tenantSlug]/(app)/risks/RisksClient.tsx",
-        adopted: false,
-        note: "Risks list page. Pending migration.",
-    },
-    {
         file: "src/app/t/[tenantSlug]/(app)/calendar/CalendarClient.tsx",
         adopted: false,
         note: "Calendar / Review page. Pending migration — needs viewport-specific header behaviour preserved.",

@@ -48,11 +48,6 @@ interface DetailPageEntry {
 const DETAIL_PAGES: DetailPageEntry[] = [
     // ── Adopted ──
     {
-        file: "src/app/t/[tenantSlug]/(app)/risks/[riskId]/page.tsx",
-        adopted: true,
-        note: "First detail page on EntityDetailLayout — the proof-of-pattern reference.",
-    },
-    {
         file: "src/app/t/[tenantSlug]/(app)/controls/[controlId]/page.tsx",
         adopted: true,
         note: "Heavy detail page with multiple tabs + traceability panel; runs through the shell cleanly.",

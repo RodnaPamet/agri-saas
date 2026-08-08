@@ -97,7 +97,6 @@ const BANNED_PATTERNS: RegExp[] = [
 //
 const LIST_PAGES_REQUIRE_SEARCH = [
     'src/app/t/[tenantSlug]/(app)/assets/AssetsClient.tsx',
-    'src/app/t/[tenantSlug]/(app)/risks/RisksClient.tsx',
     'src/app/t/[tenantSlug]/(app)/controls/ControlsClient.tsx',
     'src/app/t/[tenantSlug]/(app)/policies/PoliciesClient.tsx',
     'src/app/t/[tenantSlug]/(app)/vendors/VendorsClient.tsx',

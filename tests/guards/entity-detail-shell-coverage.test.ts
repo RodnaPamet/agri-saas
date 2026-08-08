@@ -55,7 +55,6 @@ const ADOPTED_PAGES: ReadonlyArray<Adopter> = [
   { page: "src/app/t/[tenantSlug]/(app)/audits/cycles/[cycleId]/page.tsx", entity: "Audit cycle" },
   { page: "src/app/t/[tenantSlug]/(app)/audits/packs/[packId]/page.tsx", entity: "Audit pack" },
   // Wave 2 (PR-4b)
-  { page: "src/app/t/[tenantSlug]/(app)/risks/[riskId]/page.tsx", entity: "Risk" },
   { page: "src/app/t/[tenantSlug]/(app)/farm-tasks/[taskId]/FarmTaskDetailClient.tsx", entity: "Farm task" },
   { page: "src/app/t/[tenantSlug]/(app)/vendors/[vendorId]/page.tsx", entity: "Vendor" },
   { page: "src/app/t/[tenantSlug]/(app)/policies/[policyId]/page.tsx", entity: "Policy" },

@@ -95,8 +95,6 @@ const EXEMPTIONS: Record<string, string> = {
         "Org-level overdue-evidence digest — fixed scope (review past due) + sort, no per-tenant facets.",
     "src/app/org/[orgSlug]/(app)/members/MembersTable.tsx":
         "Org-level membership list — small aggregate with sort, faceted filtering not yet a need at this scale.",
-    "src/app/org/[orgSlug]/(app)/risks/RisksTable.tsx":
-        "Org-level critical-risk digest — fixed scope (severity >= HIGH) + sort.",
     "src/app/org/[orgSlug]/(app)/tenants/TenantsTable.tsx":
         "Org-level tenant health roll-up — fixed scope, no faceted filtering at portfolio tier.",
     "src/app/org/[orgSlug]/(app)/grain/PortfolioGrainClient.tsx":
@@ -157,14 +155,8 @@ const EXEMPTIONS: Record<string, string> = {
     // would compete with the page's existing composition.
     "src/app/t/[tenantSlug]/(app)/access-reviews/AccessReviewsClient.tsx":
         "Multi-section dashboard — review cycle list lives inside a tabbed dashboard composition with per-tab filtering.",
-    "src/app/t/[tenantSlug]/(app)/coverage/CoverageClient.tsx":
-        "Multi-section coverage dashboard — already in the Epic 52 EXEMPTIONS list for ListPageShell; same shape applies here.",
     "src/app/t/[tenantSlug]/(app)/findings/FindingsClient.tsx":
         "Findings list — currently uses inline filter controls; planned for FilterToolbar migration in a follow-up.",
-
-    // ── Wizards / multi-step flows ──
-    "src/app/t/[tenantSlug]/(app)/risks/import/page.tsx":
-        "Risk import wizard — staged workflow, each step has its own controls; not an ongoing browse surface.",
 
     // ── Templates / sub-resource lists ──
 

@@ -248,23 +248,7 @@ describe('PR-A notification-assignment alert wiring', () => {
         });
     });
 
-    describe('5. risk.ts + asset.ts wire RISK/ASSET_ASSIGNED on owner change', () => {
-        it('updateRisk imports + emits RISK_ASSIGNED only on an actual change', () => {
-            const s = read('src/app-layer/usecases/risk.ts');
-            expect(s).toMatch(
-                /import\s*\{\s*createAssignmentNotification\s*\}\s*from\s*['"]\.\.\/notifications\/assignment['"]/,
-            );
-            expect(s).toMatch(
-                /createAssignmentNotification\(\s*db,\s*['"]RISK_ASSIGNED['"]/,
-            );
-            // Guard: fire only when the new owner differs from the
-            // previous one AND is non-null (no spam on unrelated edits
-            // / unassign).
-            expect(s).toMatch(
-                /newOwnerId && newOwnerId !== previousOwnerId && ctx\.tenantSlug/,
-            );
-        });
-
+    describe('5. asset.ts wires ASSET_ASSIGNED on owner change', () => {
         it('updateAsset imports + emits ASSET_ASSIGNED only on an actual change', () => {
             const s = read('src/app-layer/usecases/asset.ts');
             expect(s).toMatch(
@@ -278,19 +262,15 @@ describe('PR-A notification-assignment alert wiring', () => {
             );
         });
 
-        it('UpdateRiskSchema + UpdateAssetSchema accept ownerUserId', () => {
+        it('UpdateAssetSchema accepts ownerUserId', () => {
             const s = read('src/lib/schemas/index.ts');
-            // Both update schemas must carry ownerUserId or the PUT
+            // The update schema must carry ownerUserId or the PUT
             // would strip the "Assigned to" value before it reaches
-            // the usecase.
-            const riskBlock = s.slice(
-                s.indexOf('export const UpdateRiskSchema'),
-                s.indexOf('export const LinkRiskControlSchema'),
-            );
-            expect(riskBlock).toMatch(/ownerUserId:/);
+            // the usecase. (The paired UpdateRiskSchema assertion went
+            // with the risk register.)
             const assetBlock = s.slice(
                 s.indexOf('export const UpdateAssetSchema'),
-                s.indexOf('// ─── Risks ───'),
+                s.indexOf("}).strip().openapi('AssetUpdateRequest'"),
             );
             expect(assetBlock).toMatch(/ownerUserId:/);
         });
