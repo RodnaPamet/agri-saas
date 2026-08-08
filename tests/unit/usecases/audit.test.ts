@@ -76,7 +76,7 @@ beforeEach(() => {
     mockUpdate.mockResolvedValue({ id: 'a1' } as never);
 });
 
-function fakeDbWithControls(controls: { id: string; name: string; annexId?: string }[] = []) {
+function fakeDbWithControls(controls: { id: string; name: string; code?: string }[] = []) {
     return {
         control: { findMany: jest.fn().mockResolvedValue(controls) },
     };
@@ -131,7 +131,7 @@ describe('createAudit', () => {
 
     it('generateChecklist=true creates 10 standard items + control-derived items', async () => {
         const controls = Array.from({ length: 5 }, (_, i) => ({
-            id: `c${i}`, name: `Control ${i}`, annexId: `A.${i}`,
+            id: `c${i}`, name: `Control ${i}`, code: `A.${i}`,
         }));
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
             fn(fakeDbWithControls(controls) as never),

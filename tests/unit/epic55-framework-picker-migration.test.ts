@@ -164,7 +164,7 @@ describe('UploadEvidenceModal — control linker', () => {
     it('projects controls into ComboboxOption with annex/code/name folded into label', () => {
         expect(UPLOAD_SRC).toMatch(/controlOptions\s*=\s*useMemo/);
         expect(UPLOAD_SRC).toMatch(
-            /`\$\{c\.annexId \|\| c\.code \|\| 'Custom'\}: \$\{c\.name\}`/,
+            /`\$\{c\.code \|\| 'Custom'\}: \$\{c\.name\}`/,
         );
     });
 
@@ -185,7 +185,7 @@ describe('NewEvidenceTextModal — control linker', () => {
     it('projects controls into ComboboxOption', () => {
         expect(TEXT_EV_SRC).toMatch(/controlOptions\s*=\s*useMemo/);
         expect(TEXT_EV_SRC).toMatch(
-            /`\$\{c\.annexId \|\| c\.code \|\| 'Custom'\}: \$\{c\.name\}`/,
+            /`\$\{c\.code \|\| 'Custom'\}: \$\{c\.name\}`/,
         );
     });
 

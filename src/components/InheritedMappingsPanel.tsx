@@ -19,7 +19,6 @@ import { InlineNotice } from '@/components/ui/inline-notice';
 interface ControlRef {
     id: string;
     code: string | null;
-    annexId: string | null;
     name: string;
 }
 interface FrameworkRef {
@@ -110,7 +109,6 @@ export function InheritedMappingsPanel({
                 row.original.control ? (
                     <TableTitleCell href={tenantHref(`/controls/${row.original.control.id}`)}>
                         {row.original.control.code ||
-                            row.original.control.annexId ||
                             row.original.control.name}
                     </TableTitleCell>
                 ) : (

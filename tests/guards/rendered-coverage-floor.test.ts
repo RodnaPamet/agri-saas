@@ -143,7 +143,24 @@ const RENDERED_TEST_FLOOR = 207;
 // ciso-portfolio's AUDITOR read-only invariant — was repointed to the
 // controls page because the assertion is about the ROLE, not the entity.
 // Net: 56 → 54. The floor resumes its upward-only ratchet from 54.
-const E2E_SPEC_FLOOR = 54;
+//
+// Lowered again 54 → 52 once CI's E2E job produced a real signal for the
+// first time since the seed was repaired. Two more specs were asserting on
+// surfaces this PR deleted, so they had no subject left:
+//   frameworks.spec.ts    — drove `/t/<slug>/frameworks` (the certification
+//                           catalogue UI), which is gone; only the
+//                           `GET /frameworks` API it never called survives.
+//   control-tests.spec.ts — drove the test-of-control plan/run UI
+//                           (`#create-test-plan-btn`, `#test-plan-*`),
+//                           deleted with the control exoskeleton.
+// Everything else that merely REFERENCED a dead route was repointed, not
+// deleted, and so still counts: core-flow's steps D-F moved from Risk onto
+// Asset, entity-detail-layout's representative surface moved from Risk to
+// Control, reporting.spec.ts kept its audit-cycle scenario (E-G) and lost
+// only the three read-only tests whose pages are gone, and
+// mobile/horizontal-drift dropped three risk rows from its path table.
+// No surviving surface lost its E2E coverage. Upward-only from 52.
+const E2E_SPEC_FLOOR = 52;
 const REGISTRY_FLOOR = 5;
 
 /** Max a live count may exceed its floor before the floor must rise. */

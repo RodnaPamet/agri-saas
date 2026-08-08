@@ -491,7 +491,7 @@ export async function getEvidenceMetrics(ctx: RequestContext) {
         const controlNames = controlIds.length > 0
             ? await db.control.findMany({
                 where: { id: { in: controlIds } },
-                select: { id: true, name: true, annexId: true, code: true },
+                select: { id: true, name: true, code: true },
             })
             : [];
 
@@ -514,7 +514,7 @@ export async function getEvidenceMetrics(ctx: RequestContext) {
                 const ctrl = g.controlId ? controlLookup.get(g.controlId) : null;
                 return {
                     controlId: g.controlId,
-                    controlName: ctrl ? `${ctrl.annexId || ctrl.code || ''} ${ctrl.name}`.trim() : '—',
+                    controlName: ctrl ? `${ctrl.code || ''} ${ctrl.name}`.trim() : '—',
                     evidenceCount: g._count.id,
                 };
             }),
@@ -554,8 +554,7 @@ export async function uploadEvidenceFile(
         controlId?: string | null;
         /** Source task — set when uploaded from a task's Evidence tab. */
         taskId?: string | null;
-        /** Source risk / asset — set when uploaded from that entity's Evidence tab. */
-        riskId?: string | null;
+        /** Source asset — set when uploaded from that entity's Evidence tab. */
         assetId?: string | null;
         category?: string | null;
         /** B8 follow-up — folder applied to the newly-created
@@ -629,7 +628,6 @@ export async function uploadEvidenceFile(
     const result = await runInTenantContext(ctx, async (db) => {
         const controlId = metadata.controlId || null;
         const taskId = metadata.taskId || null;
-        const riskId = metadata.riskId || null;
         const assetId = metadata.assetId || null;
 
         // Validate control belongs to the same tenant

@@ -51,7 +51,7 @@ const LinkedTasksPanel = dynamic(() => import('@/components/LinkedTasksPanel'), 
 });
 import type {
     ControlDetailDTO, EvidenceLinkDTO,
-    ContributorDTO, AuditLogEntry,
+    AuditLogEntry,
 } from '@/lib/dto';
 
 // Polish PR-1 — STATUS_BADGE moved to shared domain mapping as
@@ -64,9 +64,6 @@ const STATUS_LABELS: Record<string, string> = {
 const FREQ_LABELS: Record<string, string> = {
     AD_HOC: 'Ad Hoc', DAILY: 'Daily', WEEKLY: 'Weekly',
     MONTHLY: 'Monthly', QUARTERLY: 'Quarterly', ANNUALLY: 'Annually',
-};
-const AUTOMATION_TYPE_LABELS: Record<string, string> = {
-    AUTOMATED: 'Automated', MANUAL: 'Manual', IT_DEPENDENT_MANUAL: 'IT-Dependent Manual',
 };
 const MITIGATION_TYPE_LABELS: Record<string, string> = {
     PREVENTIVE: 'Preventive', DETECTIVE: 'Detective', DETERRENT: 'Deterrent',
@@ -216,7 +213,7 @@ export default function ControlDetailPage() {
 
     // Edit modal state
     const [showEditModal, setShowEditModal] = useState(false);
-    const [editForm, setEditForm] = useState({ name: '', description: '', intent: '', category: '', frequency: '', owner: '', automationType: '', mitigationType: '', annualCost: '' });
+    const [editForm, setEditForm] = useState({ name: '', description: '', intent: '', category: '', frequency: '', owner: '', mitigationType: '' });
     const [savingEdit, setSavingEdit] = useState(false);
     const [editError, setEditError] = useState('');
     const [editSuccess, setEditSuccess] = useState(false);
@@ -234,12 +231,7 @@ export default function ControlDetailPage() {
             category: control.category || '',
             frequency: control.frequency || '',
             owner: control.ownerUserId || '',
-            automationType: control.automationType || '',
             mitigationType: control.mitigationType || '',
-            annualCost:
-                control.annualCost === null || control.annualCost === undefined
-                    ? ''
-                    : String(control.annualCost),
         });
         setEditError('');
         setEditSuccess(false);
@@ -272,17 +264,6 @@ export default function ControlDetailPage() {
                     intent: form.intent.trim() || null,
                     category: form.category.trim() || null,
                     frequency: form.frequency || null,
-                    // RQ3-8 — empty string clears the price (honest
-                    // null); a parseable number is sent through, an
-                    // unparseable value is dropped (the input is
-                    // type=number so this is the belt-and-braces
-                    // case).
-                    annualCost:
-                        form.annualCost.trim() === ''
-                            ? null
-                            : Number.isFinite(Number(form.annualCost))
-                                ? Number(form.annualCost)
-                                : undefined,
                 }),
             });
             if (!res.ok) {
@@ -856,10 +837,6 @@ export default function ControlDetailPage() {
                             <p className="text-sm text-content-default mt-1">{control.frequency ? FREQ_LABELS[control.frequency] || control.frequency : '—'}</p>
                         </div>
                         <div>
-                            <span className="text-xs text-content-subtle uppercase">{t('detail.fieldAutomationType')}</span>
-                            <p className="text-sm text-content-default mt-1">{control.automationType ? AUTOMATION_TYPE_LABELS[control.automationType] || control.automationType : '—'}</p>
-                        </div>
-                        <div>
                             <span className="text-xs text-content-subtle uppercase">{t('detail.fieldMitigationType')}</span>
                             <p className="text-sm text-content-default mt-1">{control.mitigationType ? MITIGATION_TYPE_LABELS[control.mitigationType] || control.mitigationType : '—'}</p>
                         </div>
@@ -877,18 +854,6 @@ export default function ControlDetailPage() {
                                 <p className="text-sm text-content-warning mt-1">{control.applicabilityJustification}</p>
                             </div>
                         )}
-                        <div>
-                            <span className="text-xs text-content-subtle uppercase">{t('detail.contributors')}</span>
-                            <div className="text-sm text-content-default mt-1">
-                                {(control.contributors?.length ?? 0) > 0 ? control.contributors?.map((c: ContributorDTO) => (
-                                    <StatusBadge variant="neutral" className="mr-1" key={c.user.id}>{c.user.name ?? '—'}</StatusBadge>
-                                )) : '—'}
-                            </div>
-                        </div>
-                        <div>
-                            <span className="text-xs text-content-subtle uppercase">{t('detail.lastTested')}</span>
-                            <p className="text-sm text-content-default mt-1">{control.lastTested ? formatDate(control.lastTested) : '—'}</p>
-                        </div>
                         <div>
                             <span className="text-xs text-content-subtle uppercase">{t('detail.nextDue')}</span>
                             <p className="text-sm text-content-default mt-1">{control.nextDueAt ? formatDate(control.nextDueAt) : '—'}</p>

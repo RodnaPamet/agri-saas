@@ -9,7 +9,7 @@
  *      `createControl` usecase minting `CTL-N` for the custom-
  *      control create path (`isCustom && !code`). Framework-
  *      installed controls always supply their own `code` /
- *      `annexId` from the catalogue and bypass the counter.
+ *      `code` from the catalogue and bypass the counter.
  *
  *   3. The first-column registry flips Assets from `name` to
  *      `code` (Risk/Controls parity) and adds a written note.

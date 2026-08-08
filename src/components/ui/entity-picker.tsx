@@ -20,7 +20,7 @@
  * Six entity types are supported out of the box, matching the
  * union of task-link and vendor-link targets:
  *
- *   • CONTROL                — code/annexId + name
+ *   • CONTROL                — code + name
  *   • ASSET                  — name
  *   • EVIDENCE               — title
  *   • VENDOR                 — name
@@ -74,7 +74,7 @@ function rowsFromResponse(
     switch (kind) {
         case 'CONTROL':
             return rows.map((r) => {
-                const prefix = (r.code as string) || (r.annexId as string) || '';
+                const prefix = (r.code as string) || '';
                 const name = (r.name as string) || '(untitled)';
                 return {
                     id: r.id,

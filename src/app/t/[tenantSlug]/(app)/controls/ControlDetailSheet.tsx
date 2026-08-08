@@ -50,7 +50,6 @@ import { extractMutationError } from '@/lib/mutations';
 interface ControlDetailResponse {
     id: string;
     code: string | null;
-    annexId: string | null;
     name: string;
     description: string | null;
     intent: string | null;
@@ -263,8 +262,8 @@ export function ControlDetailSheet({
     const summary = useMemo(() => {
         if (!control) return [] as { label: string; value: string; badge?: StatusBadgeVariant }[];
         const rows: { label: string; value: string; badge?: StatusBadgeVariant }[] = [];
-        if (control.code || control.annexId) {
-            rows.push({ label: t('sheet.labelCode'), value: control.annexId || control.code || '—' });
+        if (control.code) {
+            rows.push({ label: t('sheet.labelCode'), value: control.code || '—' });
         }
         rows.push({
             label: t('sheet.labelStatus'),
@@ -318,7 +317,7 @@ export function ControlDetailSheet({
                 <>
                     <Sheet.Header
                         title={control.name}
-                        description={control.annexId || control.code || undefined}
+                        description={control.code || undefined}
                     />
                     <form
                         onSubmit={handleSubmit}

@@ -33,7 +33,6 @@ export interface ControlCategory {
 /** Minimal shape the categorizer needs off a control row. */
 export interface CategorizableControl {
     code?: string | null;
-    annexId?: string | null;
     category?: string | null;
 }
 
@@ -206,8 +205,8 @@ export const UNCATEGORIZED_LABEL = 'Uncategorized';
 // ─── Clause parsing + classification ──────────────────────────────────
 
 /**
- * Extract an ISO 27001:2022 Annex A clause ("5.15", "8.34", …) from an
- * annexId or code. Accepts the forms the codebase uses:
+ * Extract an ISO 27001:2022 Annex A clause ("5.15", "8.34", …) from a
+ * control code. Accepts the forms the codebase uses:
  *   "A.5.15"  "A-5.15"  "5.15"
  * Returns null for anything that isn't a bare ISO annex reference — so
  * SOC 2 "CC5.1" / "NIS2-3" / etc. fall through to their own detectors.
@@ -230,7 +229,7 @@ export function iso27001Domain(
  * Resolve a control to its framework-tagged category.
  *
  * Resolution order:
- *   1. ISO 27001 by Annex clause (annexId, then code) → granular domain.
+ *   1. ISO 27001 by Annex clause parsed from `code` → granular domain.
  *   2. Known framework by code prefix → the control's persisted
  *      framework-native `category` (SOC 2 TSC, NIS2/ISO section, …).
  *   3. Any persisted `category` with no detectable framework → an
@@ -243,9 +242,12 @@ export function categorizeControl(
     const code = (control.code ?? '').trim();
     const persisted = (control.category ?? '').trim();
 
-    // 1. ISO 27001 — annexId is ISO-specific; fall back to an ISO-shaped code.
-    const isoDomain =
-        iso27001Domain(control.annexId) ?? iso27001Domain(code);
+    // 1. ISO 27001 — an ISO-shaped code ("A.5.15" / "A-5.15" / "5.15").
+    // The dedicated `annexId` column that used to lead this lookup was
+    // dropped with the control exoskeleton; `code` carries the Annex
+    // reference now, and `parseIsoClause` already accepts every form it
+    // was written in.
+    const isoDomain = iso27001Domain(code);
     if (isoDomain) {
         return {
             frameworkKey: 'iso27001',

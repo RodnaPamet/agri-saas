@@ -329,9 +329,9 @@ describe('getRetentionMetrics', () => {
             .mockResolvedValueOnce(2)   // archivedCount
             .mockResolvedValueOnce(1);  // expiredCount
         (mockDb.evidence.findMany as jest.Mock).mockResolvedValue([
-            { controlId: 'c-1', control: { id: 'c-1', name: 'Access control', annexId: 'A.5' } },
-            { controlId: 'c-1', control: { id: 'c-1', name: 'Access control', annexId: 'A.5' } },
-            { controlId: 'c-2', control: { id: 'c-2', name: 'Backups', annexId: 'A.8' } },
+            { controlId: 'c-1', control: { id: 'c-1', name: 'Access control', code: 'A.5' } },
+            { controlId: 'c-1', control: { id: 'c-1', name: 'Access control', code: 'A.5' } },
+            { controlId: 'c-2', control: { id: 'c-2', name: 'Backups', code: 'A.8' } },
         ]);
 
         const res = await getRetentionMetrics(readerCtx);
@@ -340,8 +340,8 @@ describe('getRetentionMetrics', () => {
         expect(res.archivedCount).toBe(2);
         expect(res.expiredCount).toBe(1);
         expect(res.topControlsWithExpiringEvidence).toEqual([
-            { controlId: 'c-1', name: 'Access control', annexId: 'A.5', count: 2 },
-            { controlId: 'c-2', name: 'Backups', annexId: 'A.8', count: 1 },
+            { controlId: 'c-1', name: 'Access control', code: 'A.5', count: 2 },
+            { controlId: 'c-2', name: 'Backups', code: 'A.8', count: 1 },
         ]);
     });
 
@@ -358,7 +358,7 @@ describe('getRetentionMetrics', () => {
         (mockDb.evidence.count as jest.Mock).mockResolvedValueOnce(0).mockResolvedValueOnce(0).mockResolvedValueOnce(0);
         const rows = [];
         for (let i = 0; i < 15; i++) {
-            rows.push({ controlId: `c-${i}`, control: { id: `c-${i}`, name: `n${i}`, annexId: '' } });
+            rows.push({ controlId: `c-${i}`, control: { id: `c-${i}`, name: `n${i}`, code: '' } });
         }
         (mockDb.evidence.findMany as jest.Mock).mockResolvedValue(rows);
         const res = await getRetentionMetrics(readerCtx);

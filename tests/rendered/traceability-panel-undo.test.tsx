@@ -70,21 +70,24 @@ beforeEach(() => {
 
 // ─── Test harness ───────────────────────────────────────────────────
 
+// A control's traceability shows its linked ASSETS. (It used to show
+// linked Risks; that arm went with the risk register, so this suite
+// exercises the same Epic 67 delayed-commit wiring through the
+// surviving control→asset link.)
 const TRACE_DATA = {
-    risks: [
+    controls: [],
+    assets: [
         {
             id: "trace-link-1",
             rationale: "primary",
-            risk: { id: "risk-7", title: "Phishing", status: "OPEN", score: 9 },
+            asset: { id: "asset-7", name: "Combine Harvester", type: "MACHINE", criticality: "HIGH" },
         },
         {
             id: "trace-link-2",
             rationale: null,
-            risk: { id: "risk-8", title: "Lost device", status: "MITIGATING", score: 6 },
+            asset: { id: "asset-8", name: "Grain Silo", type: "BUILDING", criticality: "MEDIUM" },
         },
     ],
-    controls: [],
-    assets: [],
 };
 
 function ok(json: unknown) {
@@ -145,7 +148,7 @@ describe("TraceabilityPanel — unlink delayed-commit", () => {
     it("does not call fetch DELETE synchronously when Unlink is clicked", async () => {
         mountPanel();
         await waitFor(() => {
-            expect(screen.getByText("Phishing")).toBeInTheDocument();
+            expect(screen.getByText("Combine Harvester")).toBeInTheDocument();
         });
 
         fetchMock.mockClear();
@@ -153,7 +156,7 @@ describe("TraceabilityPanel — unlink delayed-commit", () => {
         // is the DELETE itself.
         fetchMock.mockResolvedValue(ok({}));
 
-        fireEvent.click(screen.getByLabelText("Unlink risk", { selector: "#unlink-risk-risk-7" }));
+        fireEvent.click(screen.getByLabelText("Unlink asset", { selector: "#unlink-asset-asset-7" }));
 
         // Microtask flush — give optimistic setQueryData a tick.
         await act(async () => {
@@ -170,18 +173,18 @@ describe("TraceabilityPanel — unlink delayed-commit", () => {
     it("optimistic remove — the row disappears from the table immediately", async () => {
         mountPanel();
         await waitFor(() => {
-            expect(screen.getByText("Phishing")).toBeInTheDocument();
+            expect(screen.getByText("Combine Harvester")).toBeInTheDocument();
         });
 
-        fireEvent.click(screen.getByLabelText("Unlink risk", { selector: "#unlink-risk-risk-7" }));
+        fireEvent.click(screen.getByLabelText("Unlink asset", { selector: "#unlink-asset-asset-7" }));
 
         // The Phishing row goes via TanStack's notify scheduler
         // (setTimeout 0 internally). `waitFor` polls past that tick;
         // the second row must remain visible.
         await waitFor(() => {
-            expect(screen.queryByText("Phishing")).not.toBeInTheDocument();
+            expect(screen.queryByText("Combine Harvester")).not.toBeInTheDocument();
         });
-        expect(screen.getByText("Lost device")).toBeInTheDocument();
+        expect(screen.getByText("Grain Silo")).toBeInTheDocument();
     });
 
     it("after 5s the DELETE fires exactly once for the unlinked id", async () => {
@@ -193,7 +196,7 @@ describe("TraceabilityPanel — unlink delayed-commit", () => {
         // gets to flush the optimistic cache write.
         mountPanel();
         await waitFor(() => {
-            expect(screen.getByText("Phishing")).toBeInTheDocument();
+            expect(screen.getByText("Combine Harvester")).toBeInTheDocument();
         });
 
         fetchMock.mockClear();
@@ -202,7 +205,7 @@ describe("TraceabilityPanel — unlink delayed-commit", () => {
         jest.useFakeTimers();
         try {
             fireEvent.click(
-                screen.getByLabelText("Unlink risk", { selector: "#unlink-risk-risk-7" }),
+                screen.getByLabelText("Unlink asset", { selector: "#unlink-asset-asset-7" }),
             );
 
             await act(async () => {
@@ -221,7 +224,7 @@ describe("TraceabilityPanel — unlink delayed-commit", () => {
                 ([, init]) => (init as RequestInit | undefined)?.method === "DELETE",
             );
             expect(after).toHaveLength(1);
-            expect(after[0]?.[0]).toBe("/api/t/acme/controls/ctrl-1/risks/risk-7");
+            expect(after[0]?.[0]).toBe("/api/t/acme/assets/asset-7/controls/ctrl-1");
         } finally {
             jest.useRealTimers();
         }
@@ -230,7 +233,7 @@ describe("TraceabilityPanel — unlink delayed-commit", () => {
     it("clicking Undo cancels the commit and restores the row", async () => {
         mountPanel();
         await waitFor(() => {
-            expect(screen.getByText("Phishing")).toBeInTheDocument();
+            expect(screen.getByText("Combine Harvester")).toBeInTheDocument();
         });
 
         fetchMock.mockClear();
@@ -239,7 +242,7 @@ describe("TraceabilityPanel — unlink delayed-commit", () => {
         jest.useFakeTimers();
         try {
             fireEvent.click(
-                screen.getByLabelText("Unlink risk", { selector: "#unlink-risk-risk-7" }),
+                screen.getByLabelText("Unlink asset", { selector: "#unlink-asset-asset-7" }),
             );
 
             // Yield zero fake-time so React commits the cache write.
@@ -248,7 +251,7 @@ describe("TraceabilityPanel — unlink delayed-commit", () => {
             });
 
             // Optimistically gone.
-            expect(screen.queryByText("Phishing")).not.toBeInTheDocument();
+            expect(screen.queryByText("Combine Harvester")).not.toBeInTheDocument();
 
             await act(async () => {
                 await jest.advanceTimersByTimeAsync(2000);
@@ -257,7 +260,7 @@ describe("TraceabilityPanel — unlink delayed-commit", () => {
             });
 
             // Restored.
-            expect(screen.getByText("Phishing")).toBeInTheDocument();
+            expect(screen.getByText("Combine Harvester")).toBeInTheDocument();
 
             // Drive past the original deadline — fetch DELETE must NOT
             // run, even though the original timer would have fired.

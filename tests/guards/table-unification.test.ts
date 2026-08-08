@@ -139,7 +139,7 @@ const FIRST_COLUMN_TABLES: FirstColumnEntry[] = [
         file: "src/app/t/[tenantSlug]/(app)/controls/ControlsClient.tsx",
         firstColumnId: "code",
         adopted: true,
-        note: "Controls — the canonical reference. First column is `id: 'code'` accessing `c.code || c.annexId || ''`.",
+        note: "Controls — the canonical reference. First column is `id: 'code'` accessing `c.code || ''`.",
     },
     // R10-PR5 — registry expansion across the remaining list-page
     // tables. Every entity converges on the same shape: column 0 is

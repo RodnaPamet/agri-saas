@@ -63,7 +63,6 @@ export const UpdateAssetSchema = z.object({
 
 export const CreateControlSchema = z.object({
     code: z.string().optional().nullable(),
-    annexId: z.string().optional().nullable(),
     name: z.string().min(1, 'Name is required'),
     description: z.string().optional().nullable(),
     intent: z.string().optional().nullable(),
@@ -73,11 +72,10 @@ export const CreateControlSchema = z.object({
     ownerUserId: z.string().optional().nullable(),
     evidenceSource: z.enum(['MANUAL', 'INTEGRATION']).optional().nullable(),
     automationKey: z.string().optional().nullable(),
-    automationType: z.enum(['AUTOMATED', 'MANUAL', 'IT_DEPENDENT_MANUAL']).optional().nullable(),
     mitigationType: z.enum(['PREVENTIVE', 'DETECTIVE', 'DETERRENT', 'CORRECTIVE', 'COMPENSATING']).optional().nullable(),
     isCustom: z.boolean().optional().default(true),
 }).strip().openapi('ControlCreateRequest', {
-    description: 'Payload for creating a control. Status defaults to NOT_STARTED. annexId references the framework annex catalogue (e.g. ISO 27001:2022 A.5.1). Custom controls (isCustom=true) are tenant-specific; framework-shipped controls install via the templates endpoint instead.',
+    description: 'Payload for creating a control. Status defaults to NOT_STARTED. `code` carries the framework reference where one applies (e.g. ISO 27001:2022 A.5.1) and is minted as `CTL-N` for custom controls. Custom controls (isCustom=true) are tenant-specific.',
 });
 
 export const UpdateControlSchema = z.object({
@@ -89,11 +87,7 @@ export const UpdateControlSchema = z.object({
     frequency: z.enum(['AD_HOC', 'DAILY', 'WEEKLY', 'MONTHLY', 'QUARTERLY', 'ANNUALLY']).optional().nullable(),
     evidenceSource: z.enum(['MANUAL', 'INTEGRATION']).optional().nullable(),
     automationKey: z.string().optional().nullable(),
-    automationType: z.enum(['AUTOMATED', 'MANUAL', 'IT_DEPENDENT_MANUAL']).optional().nullable(),
     mitigationType: z.enum(['PREVENTIVE', 'DETECTIVE', 'DETERRENT', 'CORRECTIVE', 'COMPENSATING']).optional().nullable(),
-    // RQ3-8 — annual cost in the tenant's currency. Float (matches
-    // the existing Risk money-field pattern); null clears the price.
-    annualCost: z.number().nonnegative().optional().nullable(),
 }).strip().openapi('ControlUpdateRequest', {
     description: 'Partial update for a control. Status, applicability, and owner have dedicated focused endpoints; this body covers descriptive metadata only.',
 });
@@ -115,12 +109,6 @@ export const SetControlOwnerSchema = z.object({
     ownerUserId: z.string().nullable(),
 }).strip().openapi('ControlSetOwnerRequest', {
     description: 'Reassign or unassign a control owner. Pass null to clear the owner; pass a userId to assign.',
-});
-
-export const AddContributorSchema = z.object({
-    userId: z.string().min(1, 'userId is required'),
-}).strip().openapi('ContributorAddRequest', {
-    description: 'Add a user as a contributor to a control. Contributors get write access to the control without being the canonical owner.',
 });
 
 export const CreateControlTaskSchema = z.object({
@@ -149,12 +137,6 @@ export const LinkEvidenceSchema = z.object({
     note: z.string().optional().nullable(),
 }).strip().openapi('EvidenceLinkRequest', {
     description: 'Attach evidence to a control. FILE kinds reference an uploaded FileRecord by id; LINK kinds carry a URL; INTEGRATION_RESULT kinds are emitted by automation runs.',
-});
-
-export const InstallTemplatesSchema = z.object({
-    templateIds: z.array(z.string().min(1)).min(1, 'At least one template ID is required'),
-}).strip().openapi('ControlTemplatesInstallRequest', {
-    description: 'Install one or more framework-shipped control templates into the tenant. Idempotent — re-installing an already-installed template is a no-op.',
 });
 
 export const MapRequirementSchema = z.object({
@@ -597,60 +579,6 @@ export const AddVendorLinkSchema = z.object({
 }).strip();
 
 // ─── Control Test Schemas ───
-
-export const CreateTestPlanSchema = z.object({
-    name: z.string().min(1).max(500),
-    description: z.string().max(10000).nullable().optional(),
-    method: z.enum(['MANUAL', 'AUTOMATED']).optional().default('MANUAL'),
-    frequency: z.enum(['AD_HOC', 'DAILY', 'WEEKLY', 'MONTHLY', 'QUARTERLY', 'ANNUALLY']).optional().default('AD_HOC'),
-    ownerUserId: z.string().nullable().optional(),
-    expectedEvidence: z.any().nullable().optional(),
-    steps: z.array(z.object({
-        instruction: z.string().min(1).max(10000),
-        expectedOutput: z.string().max(10000).nullable().optional(),
-    })).optional(),
-}).strip();
-
-export const UpdateTestPlanSchema = z.object({
-    name: z.string().min(1).max(500).optional(),
-    description: z.string().max(10000).nullable().optional(),
-    method: z.enum(['MANUAL', 'AUTOMATED']).optional(),
-    frequency: z.enum(['AD_HOC', 'DAILY', 'WEEKLY', 'MONTHLY', 'QUARTERLY', 'ANNUALLY']).optional(),
-    ownerUserId: z.string().nullable().optional(),
-    expectedEvidence: z.any().nullable().optional(),
-    status: z.enum(['ACTIVE', 'PAUSED']).optional(),
-}).strip();
-
-export const CompleteTestRunSchema = z.object({
-    result: z.enum(['PASS', 'FAIL', 'INCONCLUSIVE']),
-    notes: z.string().max(10000).nullable().optional(),
-    findingSummary: z.string().max(2000).nullable().optional(),
-}).strip();
-
-export const LinkTestEvidenceSchema = z.object({
-    kind: z.enum(['FILE', 'EVIDENCE', 'LINK', 'INTEGRATION_RESULT']),
-    fileId: z.string().nullable().optional(),
-    evidenceId: z.string().nullable().optional(),
-    url: z.string().url().nullable().optional(),
-    integrationResultId: z.string().nullable().optional(),
-    note: z.string().max(2000).nullable().optional(),
-}).strip();
-
-// Epic G-2 — schedule a ControlTestPlan. The cross-field invariants
-// (SCRIPT/INTEGRATION must have a schedule; MANUAL must not) are
-// enforced at the usecase boundary so the validation error message
-// can reference the plan rather than the raw zod path. Zod just
-// shape-checks here.
-export const ScheduleTestPlanSchema = z.object({
-    schedule: z.string().min(1).max(120).nullable(),
-    scheduleTimezone: z.string().min(1).max(64).nullable().optional(),
-    automationType: z.enum(['MANUAL', 'SCRIPT', 'INTEGRATION']),
-    // automationConfig is shaped per handler. We accept any
-    // JSON-serialisable blob here — the SCRIPT and INTEGRATION
-    // handlers (next G-2 prompt) carry their own per-handler shape
-    // checks.
-    automationConfig: z.unknown().nullable().optional(),
-}).strip();
 
 // ─── Epic G-3 — Vendor Assessment Template Authoring ──────────────
 //

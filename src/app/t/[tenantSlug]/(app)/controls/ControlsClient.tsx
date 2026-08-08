@@ -94,7 +94,6 @@ const FREQ_LABELS: Record<string, string> = {
 interface ControlListItem {
     id: string;
     code: string | null;
-    annexId: string | null;
     name: string;
     description: string | null;
     status: string;
@@ -273,7 +272,7 @@ function ControlsPageInner({
 
     // ─── PR-1: org-parity sortable headers ───
     // Client-side sort over the loaded controls. The server returns
-    // by its canonical order (annexId/code asc); when the user
+    // by its canonical order (code asc); when the user
     // clicks a sortable header the page re-orders the in-memory
     // slice without a refetch. `sortBy` + `sortOrder` flow into
     // the shared table primitive as the sortableColumns surface.
@@ -286,7 +285,7 @@ function ControlsPageInner({
         const accessor = (c: ControlListItem): string | number => {
             switch (sortBy) {
                 case 'code':
-                    return (c.code || c.annexId || '').toString();
+                    return (c.code || '').toString();
                 case 'name':
                     return (c.name || '').toString();
                 case 'status':
@@ -571,7 +570,7 @@ function ControlsPageInner({
     // ── Column definitions ──
     const controlColumns = useMemo(() => createColumns<ControlListItem>([
         {
-            accessorFn: (c) => c.code || c.annexId || '',
+            accessorFn: (c) => c.code || '',
             id: 'code',
             header: t('list.colCode'),
             cell: ({ getValue }) => (
@@ -968,8 +967,8 @@ function ControlsPageInner({
                                                     }
                                                 >
                                                     <span className="truncate">
-                                                        {c.code || c.annexId
-                                                            ? `${c.code || c.annexId} · ${c.name}`
+                                                        {c.code
+                                                            ? `${c.code} · ${c.name}`
                                                             : c.name}
                                                     </span>
                                                     <StatusBadge

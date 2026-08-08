@@ -161,13 +161,16 @@ describe('ControlRepository — list filters', () => {
 });
 
 describe('ControlRepository.list — shape', () => {
-    it('orders by code then annexId, and selects the list projection', async () => {
-        // Break: losing the `annexId` tiebreak makes the ISO control
-        // order non-deterministic between two rows sharing a code.
+    it('orders by code and selects the list projection', async () => {
+        // `annexId` used to be the tiebreak here. It was dropped with the
+        // control exoskeleton, and because Prisma argument objects are not
+        // excess-property checked, the stale `orderBy` typechecked while
+        // throwing at runtime — it 500'd /controls and /evidence until CI
+        // E2E caught it. Assert the surviving single-key order.
         await ControlRepository.list(asTx(db), ctx);
 
         const arg = argOf(db.control.findMany);
-        expect(arg.orderBy).toEqual([{ code: 'asc' }, { annexId: 'asc' }]);
+        expect(arg.orderBy).toEqual([{ code: 'asc' }]);
         // `createdAt` is not rendered but IS required by computePageInfo —
         // dropping it from the projection breaks cursor pagination.
         expect(arg.select).toMatchObject({ id: true, code: true, createdAt: true });

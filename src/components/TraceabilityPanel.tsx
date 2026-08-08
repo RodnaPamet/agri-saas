@@ -16,18 +16,10 @@ import { DataTable, createColumns } from '@/components/ui/table';
 import { cn } from '@/lib/cn';
 
 // ── Linked-row shapes ───────────────────────────────────────────────
-// The traceability API returns link rows as `{ id, rationale, risk|control|asset }`.
+// The traceability API returns link rows as `{ id, rationale, control|asset }`.
 // Typed here so the DataTable column cells read `row.original.*` without
 // per-cell `any`. Assigning the `any` API arrays to these types needs no
 // cast (any is assignable to a typed target).
-interface LinkedRiskRow {
-    id: string;
-    rationale: string | null;
-    // Scalar on the asset↔risk link itself (LOW | MEDIUM | HIGH). Present only
-    // on an asset's risks (the control arm's risk links have no exposure).
-    exposureLevel?: string | null;
-    risk: { id: string; title: string; status: string; score: number | null } | null;
-}
 interface LinkedControlRow {
     id: string;
     rationale: string | null;
@@ -45,21 +37,12 @@ const tempRowClass = (id: string | undefined) =>
 
 interface TraceabilityPanelProps {
     apiBase: string;            // e.g. /api/t/acme-corp
-    entityType: 'control' | 'risk' | 'asset';
+    entityType: 'control' | 'asset';
     entityId: string;
     canWrite: boolean;
     tenantHref: (path: string) => string;
     tenantSlug?: string;        // for cache key scoping
 }
-
-const RISK_STATUS_BADGE: Record<string, StatusBadgeVariant> = {
-    OPEN: 'error', MITIGATING: 'warning', CLOSED: 'success', ACCEPTED: 'info',
-};
-
-// Asset↔risk exposure severity → badge tone (mirrors the criticality scale).
-const EXPOSURE_BADGE: Record<string, StatusBadgeVariant> = {
-    HIGH: 'error', MEDIUM: 'warning', LOW: 'neutral',
-};
 
 // Cache key for traceability data
 const traceabilityKey = (tenantSlug: string, entityType: string, entityId: string) =>
@@ -67,7 +50,7 @@ const traceabilityKey = (tenantSlug: string, entityType: string, entityId: strin
 
 export default function TraceabilityPanel({ apiBase: apiBaseRaw, entityType, entityId, canWrite, tenantHref, tenantSlug: tenantSlugProp }: TraceabilityPanelProps) {
     // Callers pass `apiUrl('')` which yields `/api/t/<slug>/` with a
-    // trailing slash. Concatenating `${apiBase}/risks/…` then produces a
+    // trailing slash. Concatenating `${apiBase}/controls/…` then produces a
     // `//` path which Next.js middleware redirects (308) to the canonical
     // URL — the redirected request drops fetch credentials, and the
     // server-side log shows no traceability call. Strip the trailing
@@ -80,7 +63,6 @@ export default function TraceabilityPanel({ apiBase: apiBaseRaw, entityType, ent
     const triggerUndoToast = useToastWithUndo();
 
     // Add forms
-    const [showAddRisk, setShowAddRisk] = useState(false);
     const [showAddControl, setShowAddControl] = useState(false);
     const [showAddAsset, setShowAddAsset] = useState(false);
     const [addId, setAddId] = useState('');
@@ -88,17 +70,13 @@ export default function TraceabilityPanel({ apiBase: apiBaseRaw, entityType, ent
 
     // Available items for dropdown
 
-    const [availableRisks, setAvailableRisks] = useState<any[]>([]);
-
     const [availableControls, setAvailableControls] = useState<any[]>([]);
 
     const [availableAssets, setAvailableAssets] = useState<any[]>([]);
 
     const traceUrl = entityType === 'control'
         ? `${apiBase}/controls/${entityId}/traceability`
-        : entityType === 'risk'
-            ? `${apiBase}/risks/${entityId}/traceability`
-            : `${apiBase}/assets/${entityId}/traceability`;
+        : `${apiBase}/assets/${entityId}/traceability`;
 
     // ─── Query: traceability data ───
     const traceQuery = useQuery({
@@ -116,26 +94,23 @@ export default function TraceabilityPanel({ apiBase: apiBaseRaw, entityType, ent
 
     // Fetch available items when forms open.
     //
-    // B1 — `/risks`, `/assets`, `/controls` all return the cap'd
+    // B1 — `/assets` and `/controls` both return the cap'd
     // `{ rows, truncated }` shape from `applyBackfillCap`. Pre-B1
     // the panel only knew about (a) bare array and (b) the
-    // entity-keyed shape `{ risks: [...] }` / etc. — neither
+    // entity-keyed shape `{ controls: [...] }` / etc. — neither
     // matched, so every linking dropdown silently rendered empty.
     // The `unwrap` helper accepts every shape the API has ever
     // returned for these endpoints; new shapes need an explicit
     // entry.
     //
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const unwrap = (d: any, entityKey: 'risks' | 'controls' | 'assets'): any[] => {
+    const unwrap = (d: any, entityKey: 'controls' | 'assets'): any[] => {
         if (Array.isArray(d)) return d;
         if (d && Array.isArray(d.rows)) return d.rows;
         if (d && Array.isArray(d[entityKey])) return d[entityKey];
         if (d && Array.isArray(d.items)) return d.items;
         return [];
     };
-    useEffect(() => {
-        if (showAddRisk) fetch(`${apiBase}/risks`).then(r => r.ok ? r.json() : []).then(d => setAvailableRisks(unwrap(d, 'risks')));
-    }, [showAddRisk, apiBase]);
     useEffect(() => {
         if (showAddControl) fetch(`${apiBase}/controls`).then(r => r.ok ? r.json() : []).then(d => setAvailableControls(unwrap(d, 'controls')));
     }, [showAddControl, apiBase]);
@@ -145,28 +120,16 @@ export default function TraceabilityPanel({ apiBase: apiBaseRaw, entityType, ent
 
     // ─── Mutation: link ───
     const linkMutation = useMutation({
-        mutationFn: async ({ type, linkedId, rationale }: { type: 'risk' | 'control' | 'asset'; linkedId: string; rationale?: string }) => {
+        mutationFn: async ({ type, linkedId, rationale }: { type: 'control' | 'asset'; linkedId: string; rationale?: string }) => {
             let url = '';
 
             let body: any = {};
-            if (entityType === 'control' && type === 'risk') {
-                url = `${apiBase}/controls/${entityId}/risks`;
-                body = { riskId: linkedId, rationale: rationale || undefined };
-            } else if (entityType === 'control' && type === 'asset') {
+            if (entityType === 'control' && type === 'asset') {
                 url = `${apiBase}/assets/${linkedId}/controls`;
                 body = { controlId: entityId, rationale: rationale || undefined };
-            } else if (entityType === 'risk' && type === 'control') {
-                url = `${apiBase}/controls/${linkedId}/risks`;
-                body = { riskId: entityId, rationale: rationale || undefined };
-            } else if (entityType === 'risk' && type === 'asset') {
-                url = `${apiBase}/assets/${linkedId}/risks`;
-                body = { riskId: entityId, rationale: rationale || undefined };
             } else if (entityType === 'asset' && type === 'control') {
                 url = `${apiBase}/assets/${entityId}/controls`;
                 body = { controlId: linkedId, rationale: rationale || undefined };
-            } else if (entityType === 'asset' && type === 'risk') {
-                url = `${apiBase}/assets/${entityId}/risks`;
-                body = { riskId: linkedId, rationale: rationale || undefined };
             }
             const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
             if (!res.ok) throw new Error('Link failed');
@@ -180,7 +143,7 @@ export default function TraceabilityPanel({ apiBase: apiBaseRaw, entityType, ent
             if (previous) {
 
                 const updated = { ...previous };
-                const section = type === 'risk' ? 'risks' : type === 'control' ? 'controls' : 'assets';
+                const section = type === 'control' ? 'controls' : 'assets';
                 const tempEntry = {
                     id: `temp:${crypto.randomUUID()}`,
                     rationale: rationale || null,
@@ -200,12 +163,10 @@ export default function TraceabilityPanel({ apiBase: apiBaseRaw, entityType, ent
         onSuccess: (_data, vars) => {
             // Only close the form that was just linked — leaving the
             // other open Link forms intact so a user staging multiple
-            // links (e.g. control + risk on an asset) doesn't lose
-            // the second form when the first commits.
+            // links doesn't lose the second form when the first commits.
             setAddId('');
             setAddRationale('');
-            if (vars.type === 'risk') setShowAddRisk(false);
-            else if (vars.type === 'control') setShowAddControl(false);
+            if (vars.type === 'control') setShowAddControl(false);
             else if (vars.type === 'asset') setShowAddAsset(false);
         },
         onSettled: (_data, _err, vars) => {
@@ -216,8 +177,6 @@ export default function TraceabilityPanel({ apiBase: apiBaseRaw, entityType, ent
                 queryClient.invalidateQueries({ queryKey: traceabilityKey(tenantSlug, vars.type, vars.linkedId) });
                 if (vars.type === 'control') {
                     queryClient.invalidateQueries({ queryKey: queryKeys.controls.all(tenantSlug) });
-                } else if (vars.type === 'risk') {
-                    queryClient.invalidateQueries({ queryKey: queryKeys.risks.all(tenantSlug) });
                 }
             }
         },
@@ -231,28 +190,23 @@ export default function TraceabilityPanel({ apiBase: apiBaseRaw, entityType, ent
     // commit fails the snapshot also restores. Cross-entity invalidation
     // runs on commit success, mirroring the pre-Epic-67 mutation's
     // onSettled fan-out.
-    const unlinkUrl = (type: 'risk' | 'control' | 'asset', linkedId: string): string => {
-        if (entityType === 'control' && type === 'risk') return `${apiBase}/controls/${entityId}/risks/${linkedId}`;
+    const unlinkUrl = (type: 'control' | 'asset', linkedId: string): string => {
         if (entityType === 'control' && type === 'asset') return `${apiBase}/assets/${linkedId}/controls/${entityId}`;
-        if (entityType === 'risk' && type === 'control') return `${apiBase}/controls/${linkedId}/risks/${entityId}`;
-        if (entityType === 'risk' && type === 'asset') return `${apiBase}/assets/${linkedId}/risks/${entityId}`;
         if (entityType === 'asset' && type === 'control') return `${apiBase}/assets/${entityId}/controls/${linkedId}`;
-        if (entityType === 'asset' && type === 'risk') return `${apiBase}/assets/${entityId}/risks/${linkedId}`;
         return '';
     };
 
-    const UNLINK_LABEL: Record<'risk' | 'control' | 'asset', string> = {
-        risk: t('riskUnlinked'),
+    const UNLINK_LABEL: Record<'control' | 'asset', string> = {
         control: t('controlUnlinked'),
         asset: t('assetUnlinked'),
     };
 
-    const handleLink = (type: 'risk' | 'control' | 'asset') => {
+    const handleLink = (type: 'control' | 'asset') => {
         if (!addId) return;
         linkMutation.mutate({ type, linkedId: addId, rationale: addRationale || undefined });
     };
 
-    const handleUnlink = (type: 'risk' | 'control' | 'asset', linkedId: string) => {
+    const handleUnlink = (type: 'control' | 'asset', linkedId: string) => {
         const cacheKey = traceabilityKey(tenantSlug, entityType, entityId);
         // Snapshot BEFORE the optimistic write so undo restores exactly
         // what the user saw — not a stale snapshot from before some
@@ -262,7 +216,7 @@ export default function TraceabilityPanel({ apiBase: apiBaseRaw, entityType, ent
 
         if (previous) {
             const updated = { ...previous };
-            const section = type === 'risk' ? 'risks' : type === 'control' ? 'controls' : 'assets';
+            const section = type === 'control' ? 'controls' : 'assets';
 
             updated[section] = (updated[section] || []).filter((l: any) => {
                 const linked = l[type];
@@ -285,8 +239,6 @@ export default function TraceabilityPanel({ apiBase: apiBaseRaw, entityType, ent
                 queryClient.invalidateQueries({ queryKey: traceabilityKey(tenantSlug, type, linkedId) });
                 if (type === 'control') {
                     queryClient.invalidateQueries({ queryKey: queryKeys.controls.all(tenantSlug) });
-                } else if (type === 'risk') {
-                    queryClient.invalidateQueries({ queryKey: queryKeys.risks.all(tenantSlug) });
                 }
             },
             undoAction: () => {
@@ -301,7 +253,6 @@ export default function TraceabilityPanel({ apiBase: apiBaseRaw, entityType, ent
     if (loading) return <div className="p-6 text-center text-content-subtle animate-pulse">{t('loading')}</div>;
     if (!data) return <div className="p-6 text-center text-content-subtle">{t('loadFailed')}</div>;
 
-    const risks: LinkedRiskRow[] = data.risks || [];
     const controls: LinkedControlRow[] = data.controls || [];
     const assets: LinkedAssetRow[] = data.assets || [];
 
@@ -309,15 +260,15 @@ export default function TraceabilityPanel({ apiBase: apiBaseRaw, entityType, ent
     // rendered as a DataTable actions column (card mode surfaces it in the
     // card footer). `stopPropagation` keeps a future row-click from firing.
     const unlinkCell = (
-        type: 'risk' | 'control' | 'asset',
+        type: 'control' | 'asset',
         linkedId: string | undefined,
     ) => (
-        <Tooltip content={t(type === 'risk' ? 'unlinkRisk' : type === 'control' ? 'unlinkControl' : 'unlinkAsset')}>
+        <Tooltip content={t(type === 'control' ? 'unlinkControl' : 'unlinkAsset')}>
             <button
                 className="text-content-error text-xs hover:text-content-error"
                 onClick={(e) => { e.stopPropagation(); handleUnlink(type, linkedId ?? ''); }}
                 id={`unlink-${type}-${linkedId}`}
-                aria-label={t(type === 'risk' ? 'unlinkRisk' : type === 'control' ? 'unlinkControl' : 'unlinkAsset')}
+                aria-label={t(type === 'control' ? 'unlinkControl' : 'unlinkAsset')}
             >
                 ×
             </button>
@@ -325,65 +276,6 @@ export default function TraceabilityPanel({ apiBase: apiBaseRaw, entityType, ent
     );
 
     // ── Column defs (mobileFallback="card": each row → a tappable card) ──
-    const riskColumns = createColumns<LinkedRiskRow>([
-        {
-            id: 'risk',
-            header: t('colRisk'),
-            cell: ({ row }) => (
-                <span className={cn('text-sm text-content-default', tempRowClass(row.original.id))}>
-                    {row.original.risk?.title || '—'}
-                </span>
-            ),
-            meta: { mobileCard: { slot: 'title' } },
-        },
-        {
-            id: 'status',
-            header: t('colStatus'),
-            cell: ({ row }) => (
-                <StatusBadge variant={RISK_STATUS_BADGE[row.original.risk?.status ?? ''] || 'neutral'}>
-                    {row.original.risk?.status || '—'}
-                </StatusBadge>
-            ),
-            meta: { mobileCard: { slot: 'status' } },
-        },
-        {
-            id: 'score',
-            header: t('colScore'),
-            cell: ({ row }) => (
-                <span className="text-sm text-content-emphasis font-medium">{row.original.risk?.score ?? '—'}</span>
-            ),
-            meta: { mobileCard: { slot: 'meta', label: t('colScore') } },
-        },
-        // Exposure only exists on an asset's risk links — closes the write-only
-        // read-back gap so the level captured at link time is visible.
-        ...(entityType === 'asset'
-            ? [{
-                id: 'exposure',
-                header: t('colExposure'),
-                cell: ({ row }: { row: { original: LinkedRiskRow } }) => (
-                    row.original.exposureLevel
-                        ? <StatusBadge variant={EXPOSURE_BADGE[row.original.exposureLevel] || 'neutral'}>{row.original.exposureLevel}</StatusBadge>
-                        : <span className="text-content-subtle">—</span>
-                ),
-                meta: { mobileCard: { slot: 'meta' as const, label: t('colExposure') } },
-            }]
-            : []),
-        {
-            id: 'rationale',
-            header: t('colRationale'),
-            cell: ({ row }) => <span className="text-xs text-content-muted">{row.original.rationale || '—'}</span>,
-            meta: { mobileCard: { slot: 'meta', label: t('colRationale') } },
-        },
-        ...(canWrite
-            ? [{
-                id: 'actions',
-                header: t('colActions'),
-                cell: ({ row }: { row: { original: LinkedRiskRow } }) => unlinkCell('risk', row.original.risk?.id),
-                meta: { mobileCard: { slot: 'actions' as const } },
-            }]
-            : []),
-    ]);
-
     const controlColumns = createColumns<LinkedControlRow>([
         {
             id: 'code',
@@ -465,55 +357,16 @@ export default function TraceabilityPanel({ apiBase: apiBaseRaw, entityType, ent
     ]);
 
     // Determine which sections to show based on entity type
-    const showRisks = entityType === 'control' || entityType === 'asset';
-    const showControls = entityType === 'risk' || entityType === 'asset';
-    const showAssets = entityType === 'control' || entityType === 'risk';
+    const showControls = entityType === 'asset';
+    const showAssets = entityType === 'control';
 
     return (
         <div className="space-y-section" id="traceability-panel">
-            {/* Risks section */}
-            {showRisks && (
-                <div>
-                    <div className="flex items-center justify-between mb-3">
-                        <Heading level={3} className="text-content-emphasis inline-flex items-center gap-tight">{entityType === 'control' ? <><AppIcon name="shield" size={16} /> {t('mitigatesRisks')}</> : <><AppIcon name="warning" size={16} /> {t('associatedRisks')}</>} ({risks.length})</Heading>
-                        {canWrite && (
-                            <Button variant="primary" size="xs" onClick={() => { setShowAddRisk(!showAddRisk); setAddId(''); }} id="add-risk-link-btn">{t('linkRisk')}</Button>
-                        )}
-                    </div>
-                    {showAddRisk && canWrite && (
-                        <div className={cn(cardVariants({ density: 'compact' }), 'mb-3 space-y-tight')}>
-                            <Combobox
-                                id="risk-select"
-                                selected={availableRisks.map((r: any) => ({ value: r.id, label: r.title, meta: { status: r.status } })).find((o: { value: string }) => o.value === addId) ?? null}
-                                setSelected={(opt) => setAddId(opt?.value ?? '')}
-                                options={availableRisks.map((r: any) => ({ value: r.id, label: r.title, meta: { status: r.status } }))}
-                                optionDescription={(o) => (o.meta?.status ? t('statusMeta', { status: o.meta.status }) : null)}
-                                placeholder={t('selectRisk')}
-                                matchTriggerWidth
-                            />
-                            <input type="text" className="input w-full text-sm" placeholder={t('rationalePlaceholder')} value={addRationale} onChange={e => setAddRationale(e.target.value)} />
-                            <Button variant="primary" size="xs" disabled={!addId || linkMutation.isPending} onClick={() => handleLink('risk')} id="confirm-risk-link">
-                                {linkMutation.isPending ? t('linking') : t('link')}
-                            </Button>
-                        </div>
-                    )}
-                    <DataTable<LinkedRiskRow>
-                        data-testid="linked-risks-table"
-                        data={risks}
-                        columns={riskColumns}
-                        getRowId={(l) => l.id}
-                        selectionEnabled={false}
-                        mobileFallback="card"
-                        emptyState={<div className="p-6 text-center text-content-subtle text-sm" id="no-risks">{t('noRisksLinked')}</div>}
-                    />
-                </div>
-            )}
-
             {/* Controls section */}
             {showControls && (
                 <div>
                     <div className="flex items-center justify-between mb-3">
-                        <Heading level={3} className="text-content-emphasis inline-flex items-center gap-tight">{entityType === 'risk' ? <><AppIcon name="shield" size={16} /> {t('mitigatedByControls')}</> : <><AppIcon name="controls" size={16} /> {t('coveredByControls')}</>} ({controls.length})</Heading>
+                        <Heading level={3} className="text-content-emphasis inline-flex items-center gap-tight"><AppIcon name="controls" size={16} /> {t('coveredByControls')} ({controls.length})</Heading>
                         {canWrite && (
                             <Button variant="primary" size="xs" onClick={() => { setShowAddControl(!showAddControl); setAddId(''); }} id="add-control-link-btn">{t('linkControl')}</Button>
                         )}

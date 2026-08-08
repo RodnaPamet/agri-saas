@@ -97,13 +97,12 @@ export const EVIDENCE_FILTER_KEYS = evidenceFilterDefs.filterKeys;
 interface ControlLike {
     id: string;
     name: string;
-    annexId?: string | null;
     code?: string | null;
 }
 
 /**
  * Build Control options from the list loaded server-side. The filter row
- * displays `{ code | annexId }: name` to match the pattern used elsewhere on
+ * displays `{ code }: name` to match the pattern used elsewhere on
  * Evidence pages, while the pill text (displayLabel) stays short.
  */
 export function controlOptionsFromControls(
@@ -112,7 +111,7 @@ export function controlOptionsFromControls(
     const seen = new Map<string, FilterOption>();
     for (const c of controls) {
         if (!c.id || seen.has(c.id)) continue;
-        const prefix = c.annexId || c.code || '';
+        const prefix = c.code || '';
         seen.set(c.id, {
             value: c.id,
             label: prefix ? `${prefix}: ${c.name}` : c.name,

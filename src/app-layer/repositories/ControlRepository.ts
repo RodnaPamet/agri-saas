@@ -26,7 +26,6 @@ export interface ControlListParams {
 const controlListSelect = {
     id: true,
     code: true,
-    annexId: true,
     name: true,
     description: true,
     status: true,
@@ -57,7 +56,7 @@ export class ControlRepository {
 
             return db.control.findMany({
                 where,
-                orderBy: [{ code: 'asc' }, { annexId: 'asc' }],
+                orderBy: [{ code: 'asc' }],
                 select: controlListSelect,
                 ...(options.take ? { take: options.take } : {}),
             });

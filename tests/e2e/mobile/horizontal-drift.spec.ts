@@ -75,10 +75,8 @@ const PAGES: ReadonlyArray<{ label: string; path: (slug: string) => string }> = 
     { label: 'grain/bins', path: (s) => `/t/${s}/grain/bins` },
     { label: 'grain/contracts', path: (s) => `/t/${s}/grain/contracts` },
     { label: 'grain/yield', path: (s) => `/t/${s}/grain/yield` },
-    // Planning + risk visualisations (boards / hierarchies / matrices).
+    // Planning visualisations (boards / calendars).
     { label: 'planning/seasons', path: (s) => `/t/${s}/planning/seasons` },
-    { label: 'risks/board', path: (s) => `/t/${s}/risks/board` },
-    { label: 'risks/hierarchy', path: (s) => `/t/${s}/risks/hierarchy` },
     // Admin — wide RBAC/role matrices + audit-log + integrations tables.
     { label: 'admin/rbac', path: (s) => `/t/${s}/admin/rbac` },
     { label: 'admin/roles', path: (s) => `/t/${s}/admin/roles` },
@@ -98,9 +96,8 @@ const PAGES: ReadonlyArray<{ label: string; path: (slug: string) => string }> = 
 const DETAIL_PAGES: ReadonlyArray<{
     label: string;
     list: (slug: string) => string;
-    entity: string; // path segment after the slug, e.g. 'risks'
+    entity: string; // path segment after the slug, e.g. 'controls'
 }> = [
-    { label: 'risks/[riskId]', list: (s) => `/t/${s}/risks`, entity: 'risks' },
     { label: 'controls/[controlId]', list: (s) => `/t/${s}/controls`, entity: 'controls' },
     { label: 'vendors/[vendorId]', list: (s) => `/t/${s}/vendors`, entity: 'vendors' },
     { label: 'journal/[id]', list: (s) => `/t/${s}/journal`, entity: 'journal' },

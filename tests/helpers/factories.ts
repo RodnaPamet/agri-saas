@@ -79,7 +79,6 @@ export function buildControl(overrides: Record<string, unknown> = {}) {
         description: 'Test control description',
         status: 'NOT_IMPLEMENTED',
         applicability: 'APPLICABLE',
-        annexId: overrides.annexId ?? null,
         createdAt: new Date(),
         updatedAt: new Date(),
         deletedAt: null,

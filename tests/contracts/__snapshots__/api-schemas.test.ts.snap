@@ -845,33 +845,11 @@ exports[`API contract — per-schema snapshots schema: Contract 1`] = `
 }"
 `;
 
-exports[`API contract — per-schema snapshots schema: ContributorAddRequest 1`] = `
-"{
-  "type": "object",
-  "properties": {
-    "userId": {
-      "type": "string",
-      "minLength": 1
-    }
-  },
-  "required": [
-    "userId"
-  ],
-  "description": "Add a user as a contributor to a control. Contributors get write access to the control without being the canonical owner."
-}"
-`;
-
 exports[`API contract — per-schema snapshots schema: ControlCreateRequest 1`] = `
 "{
   "type": "object",
   "properties": {
     "code": {
-      "type": [
-        "string",
-        "null"
-      ]
-    },
-    "annexId": {
       "type": [
         "string",
         "null"
@@ -947,18 +925,6 @@ exports[`API contract — per-schema snapshots schema: ControlCreateRequest 1`] 
         "null"
       ]
     },
-    "automationType": {
-      "type": [
-        "string",
-        "null"
-      ],
-      "enum": [
-        "AUTOMATED",
-        "MANUAL",
-        "IT_DEPENDENT_MANUAL",
-        null
-      ]
-    },
     "mitigationType": {
       "type": [
         "string",
@@ -981,7 +947,7 @@ exports[`API contract — per-schema snapshots schema: ControlCreateRequest 1`] 
   "required": [
     "name"
   ],
-  "description": "Payload for creating a control. Status defaults to NOT_STARTED. annexId references the framework annex catalogue (e.g. ISO 27001:2022 A.5.1). Custom controls (isCustom=true) are tenant-specific; framework-shipped controls install via the templates endpoint instead."
+  "description": "Payload for creating a control. Status defaults to NOT_STARTED. \`code\` carries the framework reference where one applies (e.g. ISO 27001:2022 A.5.1) and is minted as \`CTL-N\` for custom controls. Custom controls (isCustom=true) are tenant-specific."
 }"
 `;
 
@@ -1100,25 +1066,6 @@ exports[`API contract — per-schema snapshots schema: ControlDetail 1`] = `
               ]
             }
           ]
-        },
-        "contributors": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string"
-              },
-              "user": {
-                "$ref": "#/components/schemas/UserRef"
-              }
-            },
-            "required": [
-              "id",
-              "user"
-            ],
-            "additionalProperties": {}
-          }
         },
         "controlTasks": {
           "type": "array",
@@ -1251,44 +1198,6 @@ exports[`API contract — per-schema snapshots schema: ControlDetail 1`] = `
             "additionalProperties": {}
           }
         },
-        "risks": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string"
-              },
-              "risk": {
-                "type": "object",
-                "properties": {
-                  "id": {
-                    "type": "string"
-                  },
-                  "title": {
-                    "type": "string"
-                  },
-                  "inherentScore": {
-                    "type": [
-                      "number",
-                      "null"
-                    ]
-                  }
-                },
-                "required": [
-                  "id",
-                  "title"
-                ],
-                "additionalProperties": {}
-              }
-            },
-            "required": [
-              "id",
-              "risk"
-            ],
-            "additionalProperties": {}
-          }
-        },
         "policyLinks": {
           "type": "array",
           "items": {
@@ -1402,7 +1311,7 @@ exports[`API contract — per-schema snapshots schema: ControlDetail 1`] = `
       "additionalProperties": {}
     }
   ],
-  "description": "Control with all relations included — contributors, tasks, evidence links, mapped risks/policies, and framework requirement mappings. Returned by GET /controls/{id}."
+  "description": "Control with all relations included — tasks, evidence links, mapped policies, and framework requirement mappings. Returned by GET /controls/{id}."
 }"
 `;
 
@@ -1420,12 +1329,6 @@ exports[`API contract — per-schema snapshots schema: ControlListItem 1`] = `
       ]
     },
     "code": {
-      "type": [
-        "string",
-        "null"
-      ]
-    },
-    "annexId": {
       "type": [
         "string",
         "null"
@@ -1488,21 +1391,9 @@ exports[`API contract — per-schema snapshots schema: ControlListItem 1`] = `
         "null"
       ]
     },
-    "automationType": {
-      "type": [
-        "string",
-        "null"
-      ]
-    },
     "mitigationType": {
       "type": [
         "string",
-        "null"
-      ]
-    },
-    "annualCost": {
-      "type": [
-        "number",
         "null"
       ]
     },
@@ -1514,12 +1405,6 @@ exports[`API contract — per-schema snapshots schema: ControlListItem 1`] = `
     },
     "isCustom": {
       "type": "boolean"
-    },
-    "lastTested": {
-      "type": [
-        "string",
-        "null"
-      ]
     },
     "nextDueAt": {
       "type": [
@@ -1558,9 +1443,6 @@ exports[`API contract — per-schema snapshots schema: ControlListItem 1`] = `
         "evidence": {
           "type": "number"
         },
-        "risks": {
-          "type": "number"
-        },
         "assets": {
           "type": "number"
         },
@@ -1568,9 +1450,6 @@ exports[`API contract — per-schema snapshots schema: ControlListItem 1`] = `
           "type": "number"
         },
         "evidenceLinks": {
-          "type": "number"
-        },
-        "contributors": {
           "type": "number"
         },
         "frameworkMappings": {
@@ -1583,7 +1462,6 @@ exports[`API contract — per-schema snapshots schema: ControlListItem 1`] = `
     "id",
     "tenantId",
     "code",
-    "annexId",
     "name",
     "description",
     "category",
@@ -1752,26 +1630,6 @@ exports[`API contract — per-schema snapshots schema: ControlTaskUpdateRequest 
 }"
 `;
 
-exports[`API contract — per-schema snapshots schema: ControlTemplatesInstallRequest 1`] = `
-"{
-  "type": "object",
-  "properties": {
-    "templateIds": {
-      "type": "array",
-      "items": {
-        "type": "string",
-        "minLength": 1
-      },
-      "minItems": 1
-    }
-  },
-  "required": [
-    "templateIds"
-  ],
-  "description": "Install one or more framework-shipped control templates into the tenant. Idempotent — re-installing an already-installed template is a no-op."
-}"
-`;
-
 exports[`API contract — per-schema snapshots schema: ControlUpdateRequest 1`] = `
 "{
   "type": "object",
@@ -1836,18 +1694,6 @@ exports[`API contract — per-schema snapshots schema: ControlUpdateRequest 1`] 
         "null"
       ]
     },
-    "automationType": {
-      "type": [
-        "string",
-        "null"
-      ],
-      "enum": [
-        "AUTOMATED",
-        "MANUAL",
-        "IT_DEPENDENT_MANUAL",
-        null
-      ]
-    },
     "mitigationType": {
       "type": [
         "string",
@@ -1861,13 +1707,6 @@ exports[`API contract — per-schema snapshots schema: ControlUpdateRequest 1`] 
         "COMPENSATING",
         null
       ]
-    },
-    "annualCost": {
-      "type": [
-        "number",
-        "null"
-      ],
-      "minimum": 0
     }
   },
   "description": "Partial update for a control. Status, applicability, and owner have dedicated focused endpoints; this body covers descriptive metadata only."
@@ -4181,7 +4020,7 @@ exports[`API contract — per-schema snapshots schema: PolicyDetail 1`] = `
                   "name": {
                     "type": "string"
                   },
-                  "annexId": {
+                  "code": {
                     "type": [
                       "string",
                       "null"

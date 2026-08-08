@@ -40,7 +40,6 @@ describe('Contract Drift — DTO integrity', () => {
             id: 'ctl_123',
             tenantId: 'ten_1',
             code: 'A.5.1',
-            annexId: null,
             name: 'Access Control Policy',
             description: 'Ensures proper access controls',
             category: 'TECHNICAL',

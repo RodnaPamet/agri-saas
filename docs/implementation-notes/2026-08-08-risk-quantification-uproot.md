@@ -73,6 +73,44 @@ The generalisable lesson: when removing a feature, a block that *starts*
 with a call into it is not necessarily *about* it. Read to the end of the
 block before deleting it.
 
+## A dropped COLUMN is quieter than a dropped table — and it 500s
+
+Deleting `Risk` made the compiler find every `prisma.risk.*`. Dropping four
+scalars off a surviving `Control` made it find nothing, because Prisma
+argument objects are not excess-property checked here. `ControlRepository.list`
+kept
+
+```ts
+orderBy: [{ code: 'asc' }, { annexId: 'asc' }],
+```
+
+against a column that no longer exists. `tsc` was clean, every Jest suite was
+green (the repository test *asserted the broken shape*, and the retention
+usecase's test mocks Prisma), and both `/controls` and `/evidence` threw in
+the Server Components render — a 500 on two of the product's main pages.
+Nothing but a browser against a real database could see it. CI's E2E job
+found it the first time it ran after the seed was repaired.
+
+The same class ran wider than the one line: `annexId` was still in the list
+`select`, in `EvidenceRepository` / `PolicyRepository` nested selects, in
+`inherited-control-data`, in `evidence-retention` (three selects), in the
+DTO and the OpenAPI request schemas, and in ten UI files. `code` is the
+surviving column, so everything collapsed onto it — and the collapse fixed
+real display bugs on the way, e.g. `CreateFindingModal` had been falling
+through `c.annexId ? … : c.name` and silently dropping the code prefix from
+every option label.
+
+Two dead UI surfaces came out with it: the control edit/create forms still
+offered `automationType` and `annualCost` fields that were written into a
+`ControlRepository.update` call (a throw) or accepted and silently discarded
+(a lie), and `TraceabilityPanel` still rendered a **Risks section with a
+working-looking `Link Risk` button** on both the control and asset detail
+pages, wired to deleted routes.
+
+The rule that generalises: **when you drop a column rather than a table,
+grep for the column name across `src/` and `tests/` before trusting the
+compiler.** The compiler's silence is not evidence.
+
 ## The migration is the only thing that proves the schema
 
 `tsc` cannot see Prisma `where` / `create` argument objects (they are not
@@ -119,6 +157,12 @@ That process caught two things nothing else would have:
 | `src/app/org/[orgSlug]/**` | sidebar entry, KPI widget, tenants columns, CTA tile, CSV section, trend |
 | `src/app-layer/jobs/{schedules,types,snapshot,compliance-digest}.ts` | 3 executor-less cron jobs; the nine zero-valued snapshot columns |
 | `src/lib/format-currency.ts` | **new** — `formatCompactCurrency` rescued from `risk-coherence.ts` |
+| `src/app-layer/repositories/{Control,Evidence,Policy}Repository.ts` | dropped `annexId` from the list `select` + the `orderBy` tiebreak + two nested control selects |
+| `src/app-layer/usecases/{evidence,evidence-retention,inherited-control-data,control/mutations}.ts` | `annexId` → `code`; `automationType` / `annualCost` removed from the update path |
+| `src/lib/dto/control.dto.ts`, `src/lib/schemas/index.ts` | dropped the four dead Control fields, the dead `_count` keys, and seven schemas this PR orphaned |
+| `src/components/TraceabilityPanel.tsx` | the whole Risks arm — section, columns, link/unlink branches, `entityType` union member |
+| `tests/e2e/{frameworks,control-tests}.spec.ts` | **deleted** — both drove pages this PR removed |
+| `tests/e2e/{core-flow,entity-detail-layout,reporting,mobile/horizontal-drift}.spec.ts` | repointed off the risk register onto Asset / Control |
 | `src/lib/reports/csv-escape.ts` | (from the 08-07 pass) the shared formula-injection guard |
 
 ## Decisions

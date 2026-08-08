@@ -77,7 +77,7 @@ const evidenceListSelect = {
     // `createdAt` is required by the cursor-pagination helper
     // (`computePageInfo`) — it's not rendered in the table.
     createdAt: true,
-    control: { select: { id: true, name: true, annexId: true } },
+    control: { select: { id: true, name: true, code: true } },
     fileRecord: { select: { id: true, mimeType: true } },
 } as const;
 

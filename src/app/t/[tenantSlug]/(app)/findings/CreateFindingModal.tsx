@@ -45,7 +45,7 @@ import { useTranslations } from 'next-intl';
 
 interface ControlOption {
     id: string;
-    annexId: string | null;
+    code: string | null;
     name: string;
 }
 
@@ -111,7 +111,7 @@ export function CreateFindingModal({
             if (!Array.isArray(data)) return [];
             return data.map((c: ControlOption) => ({
                 id: c.id,
-                annexId: c.annexId ?? null,
+                code: c.code ?? null,
                 name: c.name,
             }));
         },
@@ -122,7 +122,7 @@ export function CreateFindingModal({
         () =>
             controls.map((c) => ({
                 value: c.id,
-                label: c.annexId ? `${c.annexId} · ${c.name}` : c.name,
+                label: c.code ? `${c.code} · ${c.name}` : c.name,
             })),
         [controls],
     );

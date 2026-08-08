@@ -16,10 +16,10 @@ import { RequestContext } from '../types';
 import { runInTenantContext } from '@/lib/db-context';
 import type { PrismaTx } from '@/lib/db-context';
 
-const CONTROL_SELECT = { id: true, code: true, annexId: true, name: true } as const;
+const CONTROL_SELECT = { id: true, code: true, name: true } as const;
 const AGG_TAKE = 200;
 
-type ControlRef = { id: string; code: string | null; annexId: string | null; name: string };
+type ControlRef = { id: string; code: string | null; name: string };
 
 /** Resolve the controls mapped to an asset → (controlId[], control-by-id map). */
 async function controlsForAsset(db: PrismaTx, tenantId: string, assetId: string) {

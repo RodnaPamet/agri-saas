@@ -11,7 +11,6 @@ export const ControlListItemDTOSchema = z.object({
     id: z.string(),
     tenantId: z.string().nullable(),
     code: z.string().nullable(),
-    annexId: z.string().nullable(),
     name: z.string(),
     description: z.string().nullable(),
     intent: z.string().nullable().optional(),
@@ -23,15 +22,9 @@ export const ControlListItemDTOSchema = z.object({
     createdByUserId: z.string().nullable().optional(),
     evidenceSource: z.string().nullable().optional(),
     automationKey: z.string().nullable().optional(),
-    automationType: z.string().nullable().optional(),
     mitigationType: z.string().nullable().optional(),
-    // RQ3-8 — annual cost in the tenant's currency. Null until an
-    // owner prices it; the ROI surface returns a typed `NO_COST`
-    // gap rather than fabricating a number.
-    annualCost: z.number().nullable().optional(),
     effectiveness: z.number().nullable().optional(),
     isCustom: z.boolean().optional(),
-    lastTested: z.string().nullable().optional(),
     nextDueAt: z.string().nullable().optional(),
     applicabilityJustification: z.string().nullable().optional(),
     createdAt: z.string().optional(),
@@ -39,11 +32,9 @@ export const ControlListItemDTOSchema = z.object({
     owner: UserRefSchema.nullable().optional(),
     _count: z.object({
         evidence: z.number().optional(),
-        risks: z.number().optional(),
         assets: z.number().optional(),
         controlTasks: z.number().optional(),
         evidenceLinks: z.number().optional(),
-        contributors: z.number().optional(),
         // #102 item 1 — the control detail header's tab badge for
         // Mappings reads this count off the page-data payload.
         frameworkMappings: z.number().optional(),
@@ -80,16 +71,6 @@ export const EvidenceLinkDTOSchema = z.object({
 }).passthrough();
 export type EvidenceLinkDTO = z.infer<typeof EvidenceLinkDTOSchema>;
 
-export const RiskLinkDTOSchema = z.object({
-    id: z.string(),
-    risk: z.object({
-        id: z.string(),
-        title: z.string(),
-        inherentScore: z.number().nullable().optional(),
-    }).passthrough(),
-}).passthrough();
-export type RiskLinkDTO = z.infer<typeof RiskLinkDTOSchema>;
-
 export const PolicyLinkDTOSchema = z.object({
     id: z.string(),
     policy: z.object({
@@ -117,27 +98,19 @@ export const FrameworkMappingDTOSchema = z.object({
 }).passthrough();
 export type FrameworkMappingDTO = z.infer<typeof FrameworkMappingDTOSchema>;
 
-export const ContributorDTOSchema = z.object({
-    id: z.string(),
-    user: UserRefSchema,
-}).passthrough();
-export type ContributorDTO = z.infer<typeof ContributorDTOSchema>;
-
 // ─── Control Detail ───
 // Returned by ControlRepository.getById() — full entity with relations
 
 export const ControlDetailDTOSchema = ControlListItemDTOSchema.extend({
     createdBy: UserRefSchema.nullable().optional(),
     applicabilityDecidedBy: UserRefSchema.nullable().optional(),
-    contributors: z.array(ContributorDTOSchema).optional(),
     controlTasks: z.array(ControlTaskDTOSchema).optional(),
     evidenceLinks: z.array(EvidenceLinkDTOSchema).optional(),
     evidence: z.array(z.object({ id: z.string() }).passthrough()).optional(),
-    risks: z.array(RiskLinkDTOSchema).optional(),
     policyLinks: z.array(PolicyLinkDTOSchema).optional(),
     frameworkMappings: z.array(FrameworkMappingDTOSchema).optional(),
 }).openapi('ControlDetail', {
-    description: 'Control with all relations included — contributors, tasks, evidence links, mapped risks/policies, and framework requirement mappings. Returned by GET /controls/{id}.',
+    description: 'Control with all relations included — tasks, evidence links, mapped policies, and framework requirement mappings. Returned by GET /controls/{id}.',
 });
 export type ControlDetailDTO = z.infer<typeof ControlDetailDTOSchema>;
 
