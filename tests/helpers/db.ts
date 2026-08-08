@@ -38,8 +38,14 @@ export function getBaseTestDatabaseUrl(): string {
         if (match?.[1]) return match[1];
     } catch { /* no .env.test */ }
 
-    // 3. Test container default (docker-compose.test.yml → port 5434)
-    const testContainerUrl = 'postgresql://test:test@127.0.0.1:5434/inflect_test?schema=public';
+    // 3. Test container default (docker-compose.test.yml → port 5434).
+    //    Repo-SPECIFIC database name on purpose. This used to be
+    //    `inflect_test`, which is the same name the inflect-compliance
+    //    checkout uses on the same host+port — so a run that fell through
+    //    to this fallback silently applied THIS repo's migrations to the
+    //    other product's database (observed: a failed migration left
+    //    behind in inflect's test DB).
+    const testContainerUrl = 'postgresql://test:test@127.0.0.1:5434/agri_saas_test?schema=public';
 
     // 4. Parse from .env (dev database)
     const envPath = path.resolve(__dirname, '../../.env');
