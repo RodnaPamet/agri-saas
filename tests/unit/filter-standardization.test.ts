@@ -38,7 +38,6 @@ const MIGRATED_PAGES: Array<{
 }> = [
     { dir: 'controls', client: 'ControlsClient.tsx' },
     { dir: 'evidence', client: 'EvidenceClient.tsx', allowLegacyUrlFilterScope: ['tab', 'view'] },
-    { dir: 'risks', client: 'RisksClient.tsx' },
     { dir: 'policies', client: 'PoliciesClient.tsx' },
     { dir: 'farm-tasks', client: 'FarmTasksClient.tsx' },
     { dir: 'vendors', client: 'VendorsClient.tsx' },

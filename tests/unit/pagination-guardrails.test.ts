@@ -28,7 +28,7 @@ function fileExists(filePath: string): boolean {
 
 describe('Guardrail: All core list endpoints support pagination', () => {
     const ROUTE_BASE = path.join(SRC_ROOT, 'app', 'api', 't', '[tenantSlug]');
-    const CORE_ENTITIES = ['controls', 'evidence', 'risks', 'tasks', 'policies', 'vendors', 'assets'];
+    const CORE_ENTITIES = ['controls', 'evidence', 'tasks', 'policies', 'vendors', 'assets'];
 
     for (const entity of CORE_ENTITIES) {
         it(`GET /${entity} route handler must import paginated usecase or pagination lib`, () => {
@@ -62,7 +62,6 @@ describe('Guardrail: Core list pages must not use useEffect(() => fetch(...))', 
     const CORE_LIST_PAGES = [
         'controls',
         'evidence',
-        'risks',
         'tasks',
         'policies',
         'vendors',
@@ -158,7 +157,7 @@ describe('Guardrail: clampLimit enforces pagination boundaries', () => {
 
 describe('Guardrail: Route handler Zod schemas must bound limit to max(100)', () => {
     const ROUTE_BASE = path.join(SRC_ROOT, 'app', 'api', 't', '[tenantSlug]');
-    const CORE_ENTITIES = ['controls', 'evidence', 'risks', 'tasks', 'policies', 'vendors', 'assets'];
+    const CORE_ENTITIES = ['controls', 'evidence', 'tasks', 'policies', 'vendors', 'assets'];
 
     for (const entity of CORE_ENTITIES) {
         it(`GET /${entity} route must use z.coerce.number() with .max(100) for limit`, () => {

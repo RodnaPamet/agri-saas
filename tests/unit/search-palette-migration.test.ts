@@ -149,12 +149,11 @@ describe('Search route + usecase — structural shape', () => {
         expect(usecase).toMatch(/forbidden\(/);
     });
 
-    it('searches all five canonical entity types', () => {
+    it('searches every canonical entity type', () => {
         // Mirrors the SearchHitType union; if a new type is added
         // there, the usecase must add a query branch + this test
         // grows. Catches accidental drops.
         expect(usecase).toMatch(/db\.control\.findMany/);
-        expect(usecase).toMatch(/db\.risk\.findMany/);
         expect(usecase).toMatch(/db\.policy\.findMany/);
         expect(usecase).toMatch(/db\.evidence\.findMany/);
         expect(usecase).toMatch(/prisma\.framework\.findMany/);

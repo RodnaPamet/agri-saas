@@ -89,13 +89,11 @@ function searchResponse(
             query,
             perTypeCounts: {
                 control: hits.filter((h) => h.type === 'control').length,
-                risk: hits.filter((h) => h.type === 'risk').length,
                 policy: hits.filter((h) => h.type === 'policy').length,
                 evidence: hits.filter((h) => h.type === 'evidence').length,
                 framework: hits.filter((h) => h.type === 'framework').length,
                 asset: hits.filter((h) => h.type === 'asset').length,
                 task: hits.filter((h) => h.type === 'task').length,
-                test: hits.filter((h) => h.type === 'test').length,
                 knowledge: hits.filter((h) => h.type === 'knowledge').length,
             },
             truncated: false,
@@ -115,17 +113,6 @@ const SAMPLE_HITS: SearchHit[] = [
         score: 0.95,
         iconKey: 'shield-check',
         category: 'Controls',
-    },
-    {
-        type: 'risk',
-        id: 'risk-1',
-        title: 'Phishing compromise',
-        subtitle: 'Score 20',
-        badge: 'OPEN',
-        href: '/t/acme-corp/risks/risk-1',
-        score: 0.9,
-        iconKey: 'alert-triangle',
-        category: 'Risks',
     },
     {
         type: 'policy',
@@ -278,13 +265,6 @@ describe('CommandPalette — entity search (unified /search)', () => {
         expect(row.textContent).toContain('A.5.1');
         expect(row.textContent).toContain('Information security policies');
         expect(row.textContent).toContain('IMPLEMENTED');
-
-        const risk = document.querySelector(
-            '[data-testid="command-palette-result-risk"]',
-        )!;
-        expect(risk.textContent).toContain('Phishing compromise');
-        expect(risk.textContent).toContain('Score 20');
-        expect(risk.textContent).toContain('OPEN');
 
         const policy = document.querySelector(
             '[data-testid="command-palette-result-policy"]',

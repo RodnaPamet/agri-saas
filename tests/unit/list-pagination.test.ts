@@ -169,11 +169,6 @@ describe('Epic 52 adoption — migrated pages wire column visibility', () => {
             storageKey: 'inflect:col-vis:controls',
         },
         {
-            dir: 'risks',
-            client: 'RisksClient.tsx',
-            storageKey: 'inflect:col-vis:risks',
-        },
-        {
             dir: 'evidence',
             client: 'EvidenceClient.tsx',
             storageKey: 'inflect:col-vis:evidence',

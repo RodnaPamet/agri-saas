@@ -9,7 +9,7 @@
  *
  * Design notes:
  *
- *   - **5 parallel queries** (control / risk / policy / evidence
+ *   - **parallel queries** (control / policy / evidence
  *     / framework). Same fan-out the client used to do; just
  *     consolidated server-side so one round-trip replaces five.
  *   - **Per-type cap before sort.** Each underlying query is
@@ -246,13 +246,11 @@ function emptyResponse(query: string, limit: number): SearchResponse {
             query,
             perTypeCounts: {
                 control: 0,
-                risk: 0,
                 policy: 0,
                 evidence: 0,
                 framework: 0,
                 asset: 0,
                 task: 0,
-                test: 0,
                 knowledge: 0,
             },
             truncated: false,
@@ -442,6 +440,5 @@ export const __SEARCHABLE_TYPES__: ReadonlyArray<SearchHitType> = [
     'framework',
     'asset',
     'task',
-    'test',
     'knowledge',
 ];
