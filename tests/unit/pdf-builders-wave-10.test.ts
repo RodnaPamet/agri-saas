@@ -2,31 +2,19 @@
  * large chainable surface; a structural fake is the practical shape here. */
 
 /**
- * Zero-coverage PDF builders, wave 10: `processMap`.
+ * Zero-coverage PDF builder, wave 10: `processMap`.
  *
- * The `riskRegister` half went with the GRC risk stack.
+ * The `riskRegister` half of this suite went with the GRC risk stack —
+ * its headline invariant (severity buckets follow the TENANT'S matrix
+ * bands rather than a second hardcoded threshold set) had no subject
+ * left once the matrix config was removed.
  *
- * Structure, not bytes. These builders fetch data, compute summaries, and
- * then drive the shared `@/lib/pdf/*` primitives; asserting on rendered PDF
- * bytes would be both fragile and blind to the parts that can actually be
- * wrong. So the primitives are recorded and the assertions target the
- * decisions: which data was fetched, what the summary computed, what order
- * the document was assembled in, and what reaches the table.
- *
- * The headline invariant is in `riskRegister`, and its own comment names the
- * bug it exists to prevent: severity buckets come from the TENANT'S OWN
- * matrix bands (via the same `resolveBandForScore` the UI uses) rather than
- * a second hardcoded >=15 / 8-14 / <8 threshold set that "silently
- * disagreed with the configured matrix the moment a tenant customised it".
- * That is a class of bug no type checker can see and no byte comparison
- * would localise, so the real scoring function is used here — not a mock —
- * and the test drives a CUSTOM matrix to prove the buckets follow it.
- *
- * Second: row order is `score desc, then title` and the content hash is
- * derived only from counts + band names. Together those make an export
- * reproducible — the same register produces the same hash regardless of
- * fetch order or generation time, which is what makes the hash meaningful
- * in an audit pack.
+ * Structure, not bytes. The builder fetches data and drives the shared
+ * `@/lib/pdf/*` primitives; asserting on rendered PDF bytes would be
+ * both fragile and blind to the parts that can actually be wrong. So
+ * the primitives are recorded and the assertions target the decisions:
+ * which data was fetched, what order the document was assembled in, and
+ * how the canvas image is fitted.
  */
 
 const calls: string[] = [];
@@ -38,15 +26,7 @@ const record = (name: string) => (...args: unknown[]) => {
 const mockPrisma = { tenant: { findUnique: jest.fn() } };
 jest.mock('@/lib/prisma', () => ({ __esModule: true, default: mockPrisma }));
 
-const mockGetReports = jest.fn();
-jest.mock('@/app-layer/usecases/report', () => ({
-    getReports: (...a: unknown[]) => mockGetReports(...a),
-}));
 
-const mockGetRiskMatrixConfig = jest.fn();
-jest.mock('@/app-layer/usecases/risk-matrix-config', () => ({
-    getRiskMatrixConfig: (...a: unknown[]) => mockGetRiskMatrixConfig(...a),
-}));
 
 /** A chainable structural stand-in for the PDFKit document. */
 function fakeDoc() {
@@ -119,35 +99,11 @@ const ctx = makeRequestContext('ADMIN', {
     userId: 'user-1',
 });
 
-// A DELIBERATELY non-default matrix. If the builder ever reverts to
-// hardcoded >=15 / 8-14 / <8 thresholds, these bucket counts change.
-const CUSTOM_MATRIX = {
-    bands: [
-        { name: 'Minor', minScore: 1, maxScore: 3 },
-        { name: 'Moderate', minScore: 4, maxScore: 9 },
-        { name: 'Severe', minScore: 10, maxScore: 25 },
-    ],
-};
-
-const risk = (over: Record<string, unknown> = {}) => ({
-    title: 'Grain spoilage',
-    threat: 'Moisture',
-    likelihood: 3,
-    impact: 4,
-    score: 12,
-    treatment: 'Mitigated',
-    owner: 'Maria',
-    controls: 'C-1, C-2',
-    ...over,
-});
-
 beforeEach(() => {
     jest.clearAllMocks();
     calls.length = 0;
     doc = fakeDoc();
     mockPrisma.tenant.findUnique.mockResolvedValue({ name: 'Acme Farms' });
-    mockGetRiskMatrixConfig.mockResolvedValue(CUSTOM_MATRIX);
-    mockGetReports.mockResolvedValue({ riskRegister: [risk()] });
 });
 
 
