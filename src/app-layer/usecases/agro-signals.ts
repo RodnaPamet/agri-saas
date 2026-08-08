@@ -12,9 +12,8 @@
  *     location owner (fallback: the job's admin ctx user).
  *
  *   • DISEASE_RISK — when the recent run reaches HIGH, claim an
- *     AgroSignal(kind=DISEASE_RISK, signalDate=today). If the claim
- *     CREATED a new row, raise a Risk in the GRC register
- *     (`createRisk`, category 'Agronomic'), back-link it on the signal,
+ *     AgroSignal(kind=DISEASE_RISK, signalDate=today), and if the claim
+ *     CREATED a new row,
  *     and notify.
  *
  * Idempotency: the AgroSignal `@@unique([tenantId, locationId, kind,
@@ -23,13 +22,8 @@
  * means the row is NEW (fire side effects), count===0 means a prior run
  * today already handled it (no-op). This is a claim-then-act pattern,
  * NOT an upsert-that-overwrites, precisely because we must KNOW whether
- * the row is new before firing the Risk + notification.
+ * the row is new before firing the notification.
  *
- * `createRisk` opens its OWN transaction, so the Risk is created
- * OUTSIDE the signal-claim transaction and the back-link + disease
- * notification land in a short follow-up transaction.
- *
- * @module usecases/agro-signals
  */
 import type { RequestContext } from '../types';
 import { assertCanWrite } from '../policies/common';
@@ -47,7 +41,6 @@ import { enqueue } from '../jobs/queue';
 import { isLlmConfigured } from '../ai/llm-client';
 
 /** Disease level → (likelihood, impact) on the 1–5 GRC matrix. */
-const DISEASE_RISK_MATRIX = { likelihood: 4, impact: 4 } as const;
 
 /** Lookback window (days) for the disease-pressure streak. */
 const DISEASE_LOOKBACK_DAYS = 10;
@@ -55,7 +48,7 @@ const DISEASE_LOOKBACK_DAYS = 10;
 export interface EvaluateLocationSignalsResult {
     created: number;
     spray: { fired: boolean; status: string | null };
-    disease: { fired: boolean; level: string | null; riskId: string | null };
+    disease: { fired: boolean; level: string | null };
     /**
      * When a NEW spray-window warning fired, the Web Push payload for the
      * caller (weather-pull job) to deliver AFTER the tx commits — so the
@@ -104,7 +97,7 @@ export async function evaluateLocationSignals(
     const result: EvaluateLocationSignalsResult = {
         created: 0,
         spray: { fired: false, status: null },
-        disease: { fired: false, level: null, riskId: null },
+        disease: { fired: false, level: null },
     };
 
     // ── Phase 1 — load weather, evaluate, claim signals (one tx). ──
@@ -256,9 +249,46 @@ export async function evaluateLocationSignals(
         result.spray.fired = true;
     }
 
-    // Phase 2 used to raise a GRC Risk row for a new disease signal and
-    // back-link it. The Risk register was removed with the compliance
-    // uproot; the signal itself is the record now.
+    // ── Phase 2 — disease signal side effects. ──
+    //
+    // This used to also raise a GRC Risk row and back-link it; the risk
+    // register was removed and the AgroSignal row IS the record now. The
+    // notification, the `notified` mark and the counters are unchanged —
+    // they were never about the Risk.
+    //
+    // Runs in its own short tx after the claim tx commits, so a
+    // notification failure can never roll the (idempotent) claim back.
+    if (phase1.diseaseNew) {
+        result.created += 1;
+        result.disease.fired = true;
+        try {
+            await runInTenantContext(ctx, async (db: PrismaTx) => {
+                await db.agroSignal.updateMany({
+                    where: { tenantId: ctx.tenantId, locationId, kind: 'DISEASE_RISK', signalDate },
+                    data: { notified: true },
+                });
+                const recipient = phase1.location.ownerUserId ?? ctx.userId;
+                await createAgroSignalNotification(db, 'DISEASE_RISK_RAISED', {
+                    tenantId: ctx.tenantId,
+                    recipientUserId: recipient,
+                    locationId,
+                    locationLabel: phase1.location.name,
+                    tenantSlug: ctx.tenantSlug ?? '',
+                    detail: phase1.diseaseReasons || null,
+                }, now);
+            });
+        } catch (err) {
+            // The signal row is already committed (idempotency holds); a
+            // notification failure is logged, not fatal — the next run
+            // won't re-fire because the signal already exists.
+            logger.warn('agro-signals: disease signal notification failed', {
+                component: 'agro-signals',
+                tenantId: ctx.tenantId,
+                locationId,
+                error: err instanceof Error ? err.message : String(err),
+            });
+        }
+    }
 
     // ── Agronomy copilot — enrich a NEW signal with a plain-language
     //    explanation (async, fail-safe). Gated on LLM config so the

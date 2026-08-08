@@ -4,9 +4,9 @@
 /**
  * Unit tests for the agro-signals usecase.
  *
- * Verifies the rule → AgroSignal claim → Risk + Notification side
+ * Verifies the rule → AgroSignal claim → Notification side
  * effects, and (the key invariant) that a same-day re-run does NOT
- * duplicate the Risk or the notification because the AgroSignal
+ * duplicate the notification because the AgroSignal
  * unique-claim collapses (createMany returns count=0).
  */
 
@@ -22,10 +22,6 @@ jest.mock('@/lib/db-context', () => ({
     runInTenantContext: jest.fn(async (_ctx: any, fn: (db: any) => any) => fn(mockDb)),
 }));
 
-const createRiskMock = jest.fn().mockResolvedValue({ id: 'risk-1', title: 'Disease pressure — Home Field' });
-jest.mock('@/app-layer/usecases/risk', () => ({
-    createRisk: (...args: any[]) => createRiskMock(...args),
-}));
 
 const createAgroNotificationMock = jest.fn().mockResolvedValue({ status: 'created' });
 jest.mock('@/app-layer/notifications/agro', () => ({
@@ -66,7 +62,7 @@ beforeEach(() => {
 });
 
 describe('evaluateLocationSignals — first run (signals fire)', () => {
-    it('claims both signals, raises a Risk for disease, notifies the owner', async () => {
+    it('claims both signals and notifies the owner', async () => {
         // Both claims succeed (NEW rows).
         mockDb.agroSignal.createMany.mockResolvedValue({ count: 1 });
 
@@ -78,13 +74,6 @@ describe('evaluateLocationSignals — first run (signals fire)', () => {
         expect(result.spray.status).toBe('UNSUITABLE');
         expect(result.disease.fired).toBe(true);
         expect(result.disease.level).toBe('HIGH');
-
-        // Disease → Risk created (category Agronomic), back-linked.
-        expect(createRiskMock).toHaveBeenCalledTimes(1);
-        const riskArg = createRiskMock.mock.calls[0][1];
-        expect(riskArg.category).toBe('Agronomic');
-        expect(riskArg.title).toContain('Home Field');
-        expect(result.disease.riskId).toBe('risk-1');
 
         // Two notifications — spray + disease — to the location owner.
         expect(createAgroNotificationMock).toHaveBeenCalledTimes(2);
@@ -119,7 +108,6 @@ describe('evaluateLocationSignals — idempotent re-run (no duplicates)', () => 
         expect(result.spray.fired).toBe(false);
         expect(result.disease.fired).toBe(false);
         // No Risk and no notification on the duplicate day.
-        expect(createRiskMock).not.toHaveBeenCalled();
         expect(createAgroNotificationMock).not.toHaveBeenCalled();
     });
 });
@@ -135,7 +123,6 @@ describe('evaluateLocationSignals — calm/dry weather (no signals)', () => {
 
         expect(result.created).toBe(0);
         expect(mockDb.agroSignal.createMany).not.toHaveBeenCalled();
-        expect(createRiskMock).not.toHaveBeenCalled();
     });
 
     it('returns early (no throw) when the location is missing', async () => {
