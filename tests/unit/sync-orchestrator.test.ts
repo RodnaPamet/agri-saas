@@ -73,6 +73,7 @@ export const mockCtx: RequestContext = {
         frameworks: { view: true, install: true },
         audits: { view: true, manage: true, freeze: true, share: true },
         reports: { view: true, export: true },
+        knowledge: { view: true },
         admin: { view: true, manage: true, members: true, sso: true, scim: true, tenant_lifecycle: true, owner_management: true },
     },
 };

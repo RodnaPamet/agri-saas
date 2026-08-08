@@ -94,6 +94,19 @@ export function FieldBriefingCard() {
                 <p className="text-xs text-content-subtle">
                     {basis} · {formatDate(data.date)}
                 </p>
+
+                {/* W2/#90 — a grounded answer whose sources are invisible reads
+                    exactly like an ungrounded one. `data.sources` is empty
+                    whenever retrieval found nothing (no crop mapped yet, or a
+                    keyword-only miss) — the footer simply doesn't render, it
+                    never claims a grounding that didn't happen. `?? []` covers
+                    a Redis-cached payload written by a pre-W1 deploy (up to the
+                    6h cache TTL) that predates this field. */}
+                {(data.sources ?? []).length > 0 && (
+                    <p className="text-xs text-content-subtle">
+                        {t('sourcesLabel')}: {(data.sources ?? []).map((s) => s.source).join(', ')}
+                    </p>
+                )}
             </div>
         </Card>
     );

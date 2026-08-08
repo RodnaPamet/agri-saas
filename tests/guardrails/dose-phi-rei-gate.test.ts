@@ -11,7 +11,8 @@
  * cannot fail":
  *
  *   1. STRUCTURAL — the actual shipped content (`GLOBAL_CORPUS` +
- *      `GROWING_GUIDES`) is scanned with the real detector and must come
+ *      `ALL_SEED_ARTICLES`, i.e. `GROWING_GUIDES` + `SATELLITE_GUIDES`)
+ *      is scanned with the real detector and must come
  *      back clean. This is what makes the gate "catch content you did
  *      not write" — any future addition to either array is scanned by
  *      this same test, not just at ingest time against a live database.
@@ -33,7 +34,7 @@ import {
     assertNoUnregisteredRegulatedContent,
 } from '../../scripts/rag/dose-phi-guard';
 import { GLOBAL_CORPUS } from '../../scripts/rag/corpus';
-import { GROWING_GUIDES } from '../../scripts/import-knowledge';
+import { ALL_SEED_ARTICLES } from '../../scripts/import-knowledge';
 
 describe('dose/PHI/REI structural gate', () => {
     // ── 1. Structural: the real shipped content is clean ──────────────
@@ -47,8 +48,8 @@ describe('dose/PHI/REI structural gate', () => {
         );
 
         it.each(
-            GROWING_GUIDES.map((g) => [g.slug, `${g.title} ${g.summary} ${g.content}`] as const),
-        )('GROWING_GUIDES entry "%s"', (slug, text) => {
+            ALL_SEED_ARTICLES.map((g) => [g.slug, `${g.title} ${g.summary} ${g.content}`] as const),
+        )('ALL_SEED_ARTICLES entry "%s"', (slug, text) => {
             expect(scanForUnregisteredRegulatedContent(text)).toEqual([]);
             expect(() => assertNoUnregisteredRegulatedContent(text, slug)).not.toThrow();
         });
