@@ -560,7 +560,14 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
                     {canWrite && (
                         <div className="flex items-center gap-compact justify-end">
                             {!showStartAssessment ? (
-                                <Button variant="primary" onClick={() => setShowStartAssessment(true)} id="start-assessment-btn">
+                                // `secondary`, not `primary`: this only reveals the
+                                // inline template picker + confirm step below — it
+                                // doesn't commit anything itself. The actual commit
+                                // action is `confirm-start-assessment`, which stays
+                                // primary (see tests/guards/primary-secondary-ratio.test.ts —
+                                // this demotion pays for the KB wire-up PR's new
+                                // KnowledgeAskModal submit primary).
+                                <Button variant="secondary" onClick={() => setShowStartAssessment(true)} id="start-assessment-btn">
                                     {t('startAssessment')}
                                 </Button>
                             ) : (

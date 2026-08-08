@@ -492,6 +492,57 @@ const REGISTER_CHECK_EN =
     'How to check the official БАБХ register before any treatment. ' +
     'Before applying any plant-protection product, it is a legal requirement to check the official register of products authorised for use in Bulgaria, maintained by the Bulgarian Food Safety Agency (БАБХ). For each product, the register states the crops and pests/diseases it is authorised for, the authorised rate of use, the waiting period that must pass before harvest, and the waiting period that must pass before returning to the treated area — this information is specific to each individual registered product and cannot be generalised. This knowledge base deliberately carries no specific rates or waiting periods, precisely because they are only valid together with a product’s specific БАБХ registration number — always check the current register, or consult a registered agronomist, before any treatment.';
 
+// ─── Satellite vegetation indices (W5/#93 — KB wire-up PR) ────────────
+// Folds the content of the standalone `/knowledge/satellite` guide page
+// into the retrievable GLOBAL corpus, so a question like "what does NDVI
+// show" is answerable through the ask box / field briefing / advisor —
+// not just through the dedicated guide page (see that page's own doc
+// comment for what did NOT fold: the page itself, its colour-ramp
+// legend metadata, and its map deep-link UX stay as they are). Applies
+// to every crop/region (no cropTags/regions/bbchStage — these describe
+// a sensor, not an agronomic stage), so those fields are omitted the
+// same way REGISTER_CHECK_* omits them above.
+
+const NDVI_GUIDE_BG =
+    'Сателитен вегетационен индекс NDVI — жизненост на посева. ' +
+    'NDVI сравнява червената и близката инфрачервена светлина, за да измери количеството здрава, фотосинтезираща листна маса на дадено поле от сателитно изображение Sentinel-2. Най-полезен е от пълно покритие на почвата до средата на сезона; при много гъст листен покрив се насища (спира да реагира на по-нататъшно нарастване на биомасата), затова тогава е по-подходящо да се погледне EVI или NDRE. Стойностите варират от −1 до 1: червено-кафяво отбелязва гола почва, пропуски в посева или стресирани и подсъхващи растения; жълто е рядко или възстановяващо се покритие; тъмнозелено е гъст, жизнен посев. Търсете червени петна в поле, което иначе би трябвало да е равномерно зелено — те показват слабите места, които си струва да се обходят пеша.';
+
+const NDVI_GUIDE_EN =
+    'Satellite vegetation index NDVI — canopy vigour. ' +
+    'NDVI compares red and near-infrared light from a Sentinel-2 satellite image to measure how much healthy, photosynthesising leaf area a field carries. It is most useful from full ground cover to mid-season; in a very dense canopy it saturates (stops responding to further biomass increase), so EVI or NDRE become the better read then. Values range from −1 to 1: red-brown marks bare soil, gaps in the stand, or stressed and senescing plants; yellow is thin or recovering cover; deep green is a dense, vigorous canopy. Scan for red patches inside a field that should otherwise be uniformly green — those are the weak spots worth walking.';
+
+const NDMI_GUIDE_BG =
+    'Сателитен вегетационен индекс NDMI — влажност на посева. ' +
+    'NDMI проследява водното съдържание в листния покрив, използвайки близка инфрачервена и късовълнова инфрачервена светлина от сателитно изображение, затова сигнализира воден стрес преди той да стане видим за окото. Полезен е за преценка кои участъци от полето изсъхват неравномерно и за сравнение на напоявани спрямо неполивни площи. Стойностите варират от −1 до 1: червено е сух, воднострадащ посев; през бледожълто до синьо е постепенно по-добре хидратиран посев. Разглеждайте този индекс особено в горещи, сухи периоди.';
+
+const NDMI_GUIDE_EN =
+    'Satellite vegetation index NDMI — canopy moisture. ' +
+    'NDMI tracks water content in the canopy using near-infrared and shortwave-infrared light from a satellite image, so it flags moisture stress before it is visible to the eye. It is useful for judging which parts of a field are drying down unevenly and for comparing irrigated against rain-fed blocks. Values range from −1 to 1: red is dry, moisture-stressed canopy; through pale yellow to blue is progressively better-hydrated crop. Reach for this index especially during hot, dry spells.';
+
+const NDRE_GUIDE_BG =
+    'Сателитен вегетационен индекс NDRE — хлорофил и азотен статус. ' +
+    'NDRE използва спектралната лента „red-edge“, която остава чувствителна в гъст, средно- и късносезонен посев, където NDVI вече се е наситил. Проследява съдържанието на хлорофил — добър индикатор за азотния статус на растението — затова е индексът, който се разглежда при преценка на неравномерно азотно хранене по полето. Стойностите варират от −1 до 1: лилаво отбелязва нисък хлорофил (възможен азотен недостиг); през бяло до тъмнозелено е нарастващ хлорофил и жизненост. Използвайте го в късния сезон или при буен посев, когато NDVI изглежда равномерно зелен, но добивите не съвпадат по полето.';
+
+const NDRE_GUIDE_EN =
+    'Satellite vegetation index NDRE — chlorophyll and nitrogen status. ' +
+    'NDRE uses the red-edge spectral band, which stays sensitive in a thick, mid-to-late-season canopy where NDVI has already saturated. It tracks chlorophyll content — a good proxy for the plant\'s nitrogen status — so it is the index to look at when judging uneven nitrogen nutrition across a field. Values range from −1 to 1: purple marks low chlorophyll (a possible nitrogen shortfall); through white to deep green is increasing chlorophyll and vigour. Use it late-season or in a lush crop, when NDVI looks uniformly green but yield does not match across the field.';
+
+const GNDVI_GUIDE_BG =
+    'Сателитен вегетационен индекс GNDVI — зелена жизненост. ' +
+    'GNDVI е близък на NDVI, но заменя червената лента със зелена, което го прави по-чувствителен към хлорофил и азот и по-бавно насищащ се при гъст посев. Служи като допълнителна проверка на хранителния статус и фотосинтетичната активност на посева. Стойностите варират от −1 до 1: бледокремаво е слаб или разреден растеж; задълбочаващо се зелено е по-висок хлорофил и по-силен посев. Сравнявайте го с NDVI — там, където двата индекса се разминават, често става дума за проблем с храненето, а не с биомасата.';
+
+const GNDVI_GUIDE_EN =
+    'Satellite vegetation index GNDVI — green vigour. ' +
+    'GNDVI is a close relative of NDVI that swaps the red band for the green one, making it more sensitive to chlorophyll and nitrogen and slower to saturate in a dense canopy. It serves as a second check on a crop\'s nutrient status and photosynthetic activity. Values range from −1 to 1: pale cream is weak or sparse growth; deepening green is higher chlorophyll and a stronger canopy. Compare it against NDVI — where the two disagree is often where nutrition, not biomass, is the real story.';
+
+const EVI_GUIDE_BG =
+    'Сателитен вегетационен индекс EVI — подобрена вегетационна оценка. ' +
+    'EVI е подобрена версия на NDVI, която коригира за атмосферна мъгла и яркост на фона на почвата и се насища по-трудно при висока биомаса. Затова е най-надеждният индекс за жизненост в пика на сезона и при горещи, мъгливи условия, когато NDVI вече губи способността си да разграничава силните участъци от много силните. Стойностите варират от −1 до 1: тъмно лилаво-синьо е рядка или стресирана растителност; през тюркоазено и зелено до жълто е все по-гъст, жизнен посев. Предпочитайте го пред NDVI, когато посевът е при пълно листно покритие.';
+
+const EVI_GUIDE_EN =
+    'Satellite vegetation index EVI — enhanced vegetation. ' +
+    'EVI is an improved version of NDVI that corrects for atmospheric haze and background soil brightness and resists saturating in high-biomass crops. That makes it the most reliable vigour index at peak season and in hot, hazy conditions, once NDVI has already stopped separating the strong areas from the very strong. Values range from −1 to 1: dark purple-blue is sparse or stressed vegetation; through teal and green to yellow is an increasingly dense, vigorous canopy. Prefer it over NDVI once the crop is at full canopy.';
+
 /**
  * The GLOBAL corpus (renamed from `SAMPLE_GLOBAL_CORPUS` — PR 4/5 replaces
  * the earlier handful of Indian-KCC/EU/USDA samples with a real Bulgarian
@@ -545,6 +596,18 @@ export const GLOBAL_CORPUS: CorpusEntry[] = [
     // ─── Shared — official register pointer (every crop) ───
     { source: AGRONOMY_SOURCE, sourceRef: 'bg-babh-register-check', text: REGISTER_CHECK_BG, language: 'bg' },
     { source: AGRONOMY_SOURCE, sourceRef: 'en-babh-register-check', text: REGISTER_CHECK_EN, language: 'en' },
+
+    // ─── Satellite vegetation indices (W5/#93 — every crop/region) ───
+    { source: AGRONOMY_SOURCE, sourceRef: 'bg-satellite-ndvi', text: NDVI_GUIDE_BG, language: 'bg' },
+    { source: AGRONOMY_SOURCE, sourceRef: 'en-satellite-ndvi', text: NDVI_GUIDE_EN, language: 'en' },
+    { source: AGRONOMY_SOURCE, sourceRef: 'bg-satellite-ndmi', text: NDMI_GUIDE_BG, language: 'bg' },
+    { source: AGRONOMY_SOURCE, sourceRef: 'en-satellite-ndmi', text: NDMI_GUIDE_EN, language: 'en' },
+    { source: AGRONOMY_SOURCE, sourceRef: 'bg-satellite-ndre', text: NDRE_GUIDE_BG, language: 'bg' },
+    { source: AGRONOMY_SOURCE, sourceRef: 'en-satellite-ndre', text: NDRE_GUIDE_EN, language: 'en' },
+    { source: AGRONOMY_SOURCE, sourceRef: 'bg-satellite-gndvi', text: GNDVI_GUIDE_BG, language: 'bg' },
+    { source: AGRONOMY_SOURCE, sourceRef: 'en-satellite-gndvi', text: GNDVI_GUIDE_EN, language: 'en' },
+    { source: AGRONOMY_SOURCE, sourceRef: 'bg-satellite-evi', text: EVI_GUIDE_BG, language: 'bg' },
+    { source: AGRONOMY_SOURCE, sourceRef: 'en-satellite-evi', text: EVI_GUIDE_EN, language: 'en' },
 ];
 
 /**
