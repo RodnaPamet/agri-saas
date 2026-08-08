@@ -14,7 +14,6 @@ import { getAuditContext } from './audit-context';
 export const SOFT_DELETE_MODELS = new Set([
     // P0 — already had deletedAt
     'Asset',
-    'Risk',
     'Control',
     'Evidence',
     'Policy',

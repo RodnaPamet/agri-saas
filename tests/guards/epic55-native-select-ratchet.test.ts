@@ -121,7 +121,6 @@ describe('Epic 55 — native <select> ratchet', () => {
 describe('Epic 55 — migrated surfaces must not regress to native <select>', () => {
     const APP_MIGRATED = [
         'audits/cycles/page.tsx',
-        'risks/NewRiskModal.tsx',
         'controls/NewControlModal.tsx',
         'controls/ControlDetailSheet.tsx',
         'evidence/UploadEvidenceModal.tsx',
@@ -131,7 +130,6 @@ describe('Epic 55 — migrated surfaces must not regress to native <select>', ()
         'clauses/ClausesBrowser.tsx',
         'policies/new/page.tsx',
         // Session 2 — Batch 1 migrated files
-        'risks/[riskId]/page.tsx',
         'assets/[id]/page.tsx',
         'assets/AssetsClient.tsx',
         'controls/[controlId]/page.tsx',
@@ -141,7 +139,6 @@ describe('Epic 55 — migrated surfaces must not regress to native <select>', ()
         'admin/integrations/page.tsx',
         'vendors/[vendorId]/page.tsx',
         'vendors/[vendorId]/assessment/[assessmentId]/page.tsx',
-        'risks/ai/page.tsx',
         'policies/templates/page.tsx',
         // Session 3 — final native-select closeouts (baseline → 0)
         'audits/AuditsClient.tsx',

@@ -31,7 +31,6 @@ const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
 
 const ENTITIES = [
     'assets',
-    'risks',
     'controls',
     'evidence',
     'policies',

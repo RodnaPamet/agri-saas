@@ -84,16 +84,6 @@ describe('RBAC Guardrail Scans', () => {
         });
     });
 
-    describe('Risks page RBAC', () => {
-        test('risks server page resolves permissions and passes to client island', () => {
-            const content = readFile('app/t/[tenantSlug]/(app)/risks/page.tsx');
-            // Server component must resolve tenant context (which includes permissions)
-            expect(content).toMatch(/getTenantCtx/);
-            // Must pass permissions to client island
-            expect(content).toMatch(/permissions/);
-        });
-    });
-
     describe('Farm tasks page RBAC', () => {
         // The compliance /tasks list was retired; /farm-tasks is the sole task
         // UI. Its create affordance + bulk selection gate on write permission
@@ -137,7 +127,7 @@ describe('RBAC Guardrail Scans', () => {
 
         test('PermissionSet type covers all critical resources', () => {
             const content = readFile('lib/permissions.ts');
-            const requiredResources = ['controls', 'evidence', 'policies', 'tasks', 'risks', 'vendors', 'tests', 'frameworks', 'audits', 'reports', 'admin'];
+            const requiredResources = ['controls', 'evidence', 'policies', 'tasks', 'vendors', 'tests', 'frameworks', 'audits', 'reports', 'admin'];
             for (const resource of requiredResources) {
                 expect(content).toContain(`${resource}:`);
             }
