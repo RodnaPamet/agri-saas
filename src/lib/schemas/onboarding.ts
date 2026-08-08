@@ -8,7 +8,6 @@ export const ONBOARDING_STEPS = [
     'FRAMEWORK_SELECTION',
     'ASSET_SETUP',
     'CONTROL_BASELINE_INSTALL',
-    'INITIAL_RISK_REGISTER',
     'TEAM_SETUP',
     'REVIEW_AND_FINISH',
 ] as const;
@@ -29,7 +28,6 @@ export const SKIPPABLE_STEPS: OnboardingStep[] = [
     'FRAMEWORK_SELECTION',
     'ASSET_SETUP',
     'CONTROL_BASELINE_INSTALL',
-    'INITIAL_RISK_REGISTER',
     'TEAM_SETUP',
 ];
 
