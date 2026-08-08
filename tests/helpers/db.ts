@@ -89,7 +89,7 @@ export function withDbName(url: string, dbName: string): string {
     return u.toString();
 }
 
-/** The database name from a Postgres URL (`inflect_test`). */
+/** The database name from a Postgres URL (`agri_saas_test`). */
 export function getDbName(url: string): string {
     return new URL(url).pathname.replace(/^\//, '');
 }

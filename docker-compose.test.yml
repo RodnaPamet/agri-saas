@@ -14,15 +14,18 @@ services:
       context: .
       dockerfile: deploy/postgres/Dockerfile
     image: agri-saas-postgres:16-3.4-pgvector
-    container_name: inflect-test-db
+    container_name: agri-saas-test-db
     environment:
       POSTGRES_USER: test
       POSTGRES_PASSWORD: test
-      POSTGRES_DB: inflect_test
+      # Repo-specific: the separate inflect-compliance product runs its
+      # suite against the same host:port, and a shared database name lets
+      # one repo's migrations land in the other's database.
+      POSTGRES_DB: agri_saas_test
     ports:
       - "5434:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U test -d inflect_test"]
+      test: ["CMD-SHELL", "pg_isready -U test -d agri_saas_test"]
       interval: 3s
       timeout: 3s
       retries: 10
