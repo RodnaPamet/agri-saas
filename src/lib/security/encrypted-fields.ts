@@ -136,16 +136,6 @@ export const ENCRYPTED_FIELDS: Readonly<Record<string, readonly string[]>> = {
     //  holding the decryption key.
     TenantSecuritySettings: ['auditStreamSecretEncrypted'],
 
-    // ─── Risk ──────────────────────────────────────────
-    //  `description` omitted — searched via RiskRepository `contains`.
-    Risk: ['treatmentNotes', 'threat', 'vulnerability'],
-
-    // ─── Loss-event register (RQ3-6) ───────────────────
-    //  Loss narratives are confidential business content (customer
-    //  data exposed, settlement amounts, vendor reputation): the
-    //  attacker value if leaked is comparable to the Finding rows.
-    LossEvent: ['description', 'justification'],
-
     // ─── Finding ───────────────────────────────────────
     //  Findings are audit artifacts — attacker value if leaked is high.
     Finding: [
@@ -222,28 +212,6 @@ export const ENCRYPTED_FIELDS: Readonly<Record<string, readonly string[]>> = {
     //  ciphertext to callers.
     AccessReview: ['description'],
     AccessReviewDecision: ['notes'],
-
-    // ─── RQ2-1 risk score provenance ───────────────────
-    //  `justification` carries the assessor's narrative for a score
-    //  change ("transferred via cyber insurance", "pen-test found
-    //  the control bypassed") — business free-text that may name
-    //  internal systems / vendors / people. Encrypted at rest like
-    //  every other rationale column. The explicit entry also keeps
-    //  the manifest aligned with the fan-out write path, which
-    //  already encrypts any field NAMED `justification` — without
-    //  this entry the encryption would be incidental rather than
-    //  declared.
-    RiskScoreEvent: ['justification'],
-
-    // ─── Epic G-7 risk treatment plans ─────────────────
-    //  Both columns can name internal systems / vendors / users:
-    //    - RiskTreatmentPlan.closingRemark — narrative rationale
-    //      written when a plan is marked COMPLETED.
-    //    - TreatmentMilestone.description — milestone detail; may
-    //      reference vendors, internal teams, or sensitive
-    //      infrastructure.
-    RiskTreatmentPlan: ['closingRemark'],
-    TreatmentMilestone: ['description'],
 
     // ─── Enterprise-grain — marketing contracts + yield ────
     //  The NEGOTIATED free text on a grain contract is the most

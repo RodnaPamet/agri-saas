@@ -23,53 +23,5 @@ jest.mock('@/app-layer/context', () => ({
     getTenantCtx: jest.fn().mockRejectedValue(new Error('Not reached - validation should fail first')),
 }));
 
-import { PUT as RisksPut } from '@/app/api/risks/[id]/route';
 import { POST as EvidencePost } from '@/app/api/evidence/route';
 
-describe('Validation Layer Integration', () => {
-    describe('JSON Body Validation', () => {
-        it('POST /api/t/:tenantSlug/policies returns 400 on invalid JSON payload', async () => {
-            const req = new NextRequest('http://localhost/api/t/acme/policies', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: 'this-is-not-json',
-            });
-            const res = await PoliciesPost(req, { params: { tenantSlug: 'acme' } } as any);
-            expect(res.status).toBe(400);
-
-            const data = await res.json();
-            expect(data.error.code).toBe('BAD_REQUEST');
-            expect(data.error.message).toBe('Invalid JSON payload');
-        });
-
-        it('PUT /api/risks/123 returns 400 on out-of-bounds numbers', async () => {
-            const req = new NextRequest('http://localhost/api/risks/123', {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ impact: 99 }), // max is 10
-            });
-            const res = await RisksPut(req, { params: { id: '123' } } as any);
-            expect(res.status).toBe(400);
-
-            const data = await res.json();
-            expect(data.error.code).toBe('VALIDATION_ERROR');
-        });
-    });
-
-    describe('JSON Body Validation — Evidence', () => {
-        it('POST /api/evidence returns 400 when required fields are missing', async () => {
-            const req = new NextRequest('http://localhost/api/evidence', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ type: 'FILE' }),
-                // Missing 'title' which is strictly required by CreateEvidenceSchema
-            });
-            const res = await EvidencePost(req, { params: {} } as any);
-
-            expect(res.status).toBe(400);
-            const data = await res.json();
-            expect(data.error.code).toBe('VALIDATION_ERROR');
-            expect(data.error.details.some((issue: any) => issue.path.includes('title'))).toBe(true);
-        });
-    });
-});

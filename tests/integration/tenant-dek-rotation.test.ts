@@ -62,7 +62,7 @@ describeFn('rotateTenantDek (integration — real DB)', () => {
     });
 
     afterAll(async () => {
-        // Best-effort cleanup. The lifecycle test seeds Risk rows
+        // Best-effort cleanup. The lifecycle test seeds Finding rows
         // and the rotation engine writes AuditLog rows — both have
         // FK -> Tenant, so they must go before the tenant rows.
         // AuditLog has an immutability trigger that blocks DELETE
@@ -88,7 +88,7 @@ describeFn('rotateTenantDek (integration — real DB)', () => {
                         }
                     })
                     .catch(() => undefined);
-                await prisma.risk
+                await prisma.finding
                     .deleteMany({ where: { tenantId: { in: tenantIds } } })
                     .catch(() => undefined);
             }
@@ -239,39 +239,47 @@ describeFn('rotateTenantDek (integration — real DB)', () => {
         });
 
         // ── Seed v2 ciphertexts under the INITIAL DEK ───────────────
-        // Risk.threat is in the encrypted-fields manifest and Risk
-        // carries a tenantId column — so the rotation sweep will
-        // pick these rows up. Write directly via Prisma + a pre-
+        // Finding.rootCause is in the encrypted-fields manifest and
+        // Finding carries a tenantId column — so the rotation sweep
+        // will pick these rows up. Write directly via Prisma + a pre-
         // computed v2 ciphertext (bypasses the runtime middleware
         // which is conditional on audit context).
         const PLAINTEXTS = [
-            'phishing campaign targeting finance team',
-            'unpatched VPN concentrator (CVE-2024-XXXX)',
-            'shared service-account credential in legacy script',
+            'drainage channel silted at the north headland',
+            'sprayer nozzle drift beyond the buffer strip',
+            'storage humidity above the grain contract threshold',
         ];
         const seeded: Array<{ id: string; plaintext: string }> = [];
         for (const plaintext of PLAINTEXTS) {
             const v2 = encryptWithKey(initialDek, plaintext);
-            const risk = await prisma.risk.create({
+            const finding = await prisma.finding.create({
                 data: {
                     tenantId: tenant.id,
                     title: `lifecycle-${seeded.length}`,
-                    threat: v2,
+                    description: `lifecycle finding ${seeded.length}`,
+                    severity: 'HIGH',
+                    type: 'NONCONFORMITY',
+                    rootCause: v2,
                 },
             });
-            seeded.push({ id: risk.id, plaintext });
+            seeded.push({ id: finding.id, plaintext });
         }
 
         // Sanity — ciphertexts on disk are v2: shape and decrypt
         // cleanly under the initial DEK.
         const seededRows = await prisma.$queryRawUnsafe<
-            Array<{ id: string; threat: string }>
-        >(`SELECT id, "threat" FROM "Risk" WHERE "tenantId" = $1 ORDER BY id`, tenant.id);
+            Array<{ id: string; rootCause: string }>
+        >(
+            `SELECT id, "rootCause" FROM "Finding" WHERE "tenantId" = $1 ORDER BY id`,
+            tenant.id,
+        );
         expect(seededRows).toHaveLength(PLAINTEXTS.length);
         for (const row of seededRows) {
-            expect(row.threat.startsWith('v2:')).toBe(true);
+            expect(row.rootCause.startsWith('v2:')).toBe(true);
             const seedMatch = seeded.find((s) => s.id === row.id)!;
-            expect(decryptWithKey(initialDek, row.threat)).toBe(seedMatch.plaintext);
+            expect(decryptWithKey(initialDek, row.rootCause)).toBe(
+                seedMatch.plaintext,
+            );
         }
 
         // ── Phase 1: rotateTenantDek (sync swap) ────────────────────
@@ -297,14 +305,16 @@ describeFn('rotateTenantDek (integration — real DB)', () => {
         // auth, and falls back to the previous DEK.
         for (const row of seededRows) {
             // Under the NEW DEK directly: must FAIL (different key).
-            expect(() => decryptWithKey(newDek, row.threat)).toThrow();
+            expect(() => decryptWithKey(newDek, row.rootCause)).toThrow();
             // Under the PREVIOUS DEK directly: still works.
             const seedMatch = seeded.find((s) => s.id === row.id)!;
-            expect(decryptWithKey(previousDek, row.threat)).toBe(seedMatch.plaintext);
+            expect(decryptWithKey(previousDek, row.rootCause)).toBe(
+                seedMatch.plaintext,
+            );
             // Via the production fallback: works without the caller
             // having to know which DEK is active.
             expect(
-                decryptWithKeyOrPrevious(newDek, previousDek, row.threat),
+                decryptWithKeyOrPrevious(newDek, previousDek, row.rootCause),
             ).toBe(seedMatch.plaintext);
         }
 
@@ -323,8 +333,8 @@ describeFn('rotateTenantDek (integration — real DB)', () => {
         expect(sweepResult.tenantId).toBe(tenant.id);
         expect(sweepResult.previousEncryptedDekCleared).toBe(true);
         expect(sweepResult.totalErrors).toBe(0);
-        // The Risk.threat column carried 3 v2 rows — they all get
-        // rewritten. The sweep walks every (model, field) so its
+        // The Finding.rootCause column carried 3 v2 rows — they all
+        // get rewritten. The sweep walks every (model, field) so its
         // counters span the whole manifest, but `totalRewritten` is
         // bounded below by what we seeded.
         expect(sweepResult.totalRewritten).toBeGreaterThanOrEqual(PLAINTEXTS.length);
@@ -352,40 +362,46 @@ describeFn('rotateTenantDek (integration — real DB)', () => {
         expect(afterSweep?.encryptedDek).toBe(afterSwap?.encryptedDek);
 
         const sweptRows = await prisma.$queryRawUnsafe<
-            Array<{ id: string; threat: string }>
-        >(`SELECT id, "threat" FROM "Risk" WHERE "tenantId" = $1 ORDER BY id`, tenant.id);
+            Array<{ id: string; rootCause: string }>
+        >(
+            `SELECT id, "rootCause" FROM "Finding" WHERE "tenantId" = $1 ORDER BY id`,
+            tenant.id,
+        );
         expect(sweptRows).toHaveLength(PLAINTEXTS.length);
         for (const row of sweptRows) {
             const seedMatch = seeded.find((s) => s.id === row.id)!;
             // Plaintext recovers correctly under the NEW DEK alone —
             // no fallback needed.
-            expect(row.threat.startsWith('v2:')).toBe(true);
-            expect(decryptWithKey(newDek, row.threat)).toBe(seedMatch.plaintext);
+            expect(row.rootCause.startsWith('v2:')).toBe(true);
+            expect(decryptWithKey(newDek, row.rootCause)).toBe(seedMatch.plaintext);
             // Under the PREVIOUS DEK: must FAIL (the row is no
             // longer encrypted under that key).
-            expect(() => decryptWithKey(previousDek, row.threat)).toThrow();
+            expect(() => decryptWithKey(previousDek, row.rootCause)).toThrow();
         }
 
         // ── Phase 4: a brand-new write uses the new DEK ─────────────
         // This proves the post-rotation steady state — no stale
         // tenant DEK is hanging around in any cache or middleware
         // path that would silently encrypt under the old key.
-        const freshPlaintext = 'newly-discovered insider threat';
+        const freshPlaintext = 'newly-discovered headland compaction';
         const freshV2 = encryptWithKey(newDek, freshPlaintext);
-        const freshRisk = await prisma.risk.create({
+        const freshFinding = await prisma.finding.create({
             data: {
                 tenantId: tenant.id,
                 title: 'lifecycle-fresh',
-                threat: freshV2,
+                description: 'lifecycle finding — post-rotation write',
+                severity: 'HIGH',
+                type: 'NONCONFORMITY',
+                rootCause: freshV2,
             },
         });
         const [freshRow] = await prisma.$queryRawUnsafe<
-            Array<{ threat: string }>
-        >(`SELECT "threat" FROM "Risk" WHERE id = $1`, freshRisk.id);
-        expect(freshRow.threat.startsWith('v2:')).toBe(true);
-        expect(decryptWithKey(newDek, freshRow.threat)).toBe(freshPlaintext);
+            Array<{ rootCause: string }>
+        >(`SELECT "rootCause" FROM "Finding" WHERE id = $1`, freshFinding.id);
+        expect(freshRow.rootCause.startsWith('v2:')).toBe(true);
+        expect(decryptWithKey(newDek, freshRow.rootCause)).toBe(freshPlaintext);
         // And the previous DEK doesn't decrypt it.
-        expect(() => decryptWithKey(previousDek, freshRow.threat)).toThrow();
+        expect(() => decryptWithKey(previousDek, freshRow.rootCause)).toThrow();
 
         // ── Cleanup ────────────────────────────────────────────────
         // AuditLog has an immutability trigger; bypass with
@@ -400,7 +416,7 @@ describeFn('rotateTenantDek (integration — real DB)', () => {
                 tenant.id,
             );
         });
-        await prisma.risk.deleteMany({ where: { tenantId: tenant.id } });
+        await prisma.finding.deleteMany({ where: { tenantId: tenant.id } });
         await prisma.user
             .delete({ where: { id: lifecycleUser.id } })
             .catch(() => undefined);

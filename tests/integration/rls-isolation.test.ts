@@ -18,7 +18,6 @@ const describeFn = DB_AVAILABLE ? describe : describe.skip;
 // ═══════════════════════════════════════════════════════════════════
 const TENANT_SCOPED_TABLES_WITH_TENANT_ID: string[] = [
     // Core entities
-    'Risk',
     'Policy',
     'PolicyVersion',
     'Evidence',
@@ -32,14 +31,11 @@ const TENANT_SCOPED_TABLES_WITH_TENANT_ID: string[] = [
     'TaskComment',
     'TaskWatcher',
     // Control sub-entities
-    'ControlContributor',
     'ControlTask',
     'ControlEvidenceLink',
     'ControlRequirementLink',
     // Mapping/junction tables
-    'RiskControl',
     'ControlAsset',
-    'AssetRiskLink',
     // Clause tracker
     'ClauseProgress',
     // Audit & logging
@@ -69,16 +65,8 @@ const TENANT_SCOPED_TABLES_WITH_TENANT_ID: string[] = [
     'AuditPackItem',
     'AuditPackShare',
     'AuditorAccount',
-    // Control tests
-    'ControlTestPlan',
-    'ControlTestRun',
-    'ControlTestEvidenceLink',
-    'ControlTestStep',
     // Files
     'FileRecord',
-    // AI Risk Suggestions
-    'RiskSuggestionSession',
-    'RiskSuggestionItem',
     // Billing
     'BillingAccount',
     'BillingEvent',
@@ -128,15 +116,6 @@ describeFn('Postgres RLS Tenant Isolation', () => {
             data: { name: 'Tenant A', slug: `tenant-a-${testRunId}`, industry: 'Technology', maxRiskScale: 5 },
         });
         tenantAId = tenantA.id;
-
-        const riskA = await globalPrisma.risk.create({
-            data: {
-                tenantId: tenantAId,
-                title: `Risk A - ${testRunId}`,
-                inherentScore: 10,
-                score: 10,
-            },
-        });
 
         const policyA = await globalPrisma.policy.create({
             data: {
@@ -188,10 +167,6 @@ describeFn('Postgres RLS Tenant Isolation', () => {
         });
 
         // Create mapping rows for Tenant A
-        await globalPrisma.riskControl.create({
-            data: { tenantId: tenantAId, riskId: riskA.id, controlId: controlA.id },
-        });
-
         await globalPrisma.controlAsset.create({
             data: { tenantId: tenantAId, controlId: controlA.id, assetId: assetA.id },
         });
@@ -205,15 +180,6 @@ describeFn('Postgres RLS Tenant Isolation', () => {
             data: { name: 'Tenant B', slug: `tenant-b-${testRunId}`, industry: 'Technology', maxRiskScale: 5 },
         });
         tenantBId = tenantB.id;
-
-        const riskB = await globalPrisma.risk.create({
-            data: {
-                tenantId: tenantBId,
-                title: `Risk B - ${testRunId}`,
-                inherentScore: 10,
-                score: 10,
-            },
-        });
 
         const policyB = await globalPrisma.policy.create({
             data: {
@@ -263,10 +229,6 @@ describeFn('Postgres RLS Tenant Isolation', () => {
         });
 
         // Create mapping rows for Tenant B
-        await globalPrisma.riskControl.create({
-            data: { tenantId: tenantBId, riskId: riskB.id, controlId: controlB.id },
-        });
-
         await globalPrisma.controlAsset.create({
             data: { tenantId: tenantBId, controlId: controlB.id, assetId: assetB.id },
         });
@@ -282,7 +244,6 @@ describeFn('Postgres RLS Tenant Isolation', () => {
             for (const tid of tenantIds) {
                 // Clean up in dependency order (leaf → root)
                 await globalPrisma.$executeRawUnsafe(`DELETE FROM "PolicyControlLink" WHERE "policyId" IN (SELECT id FROM "Policy" WHERE "tenantId" = $1)`, tid);
-                await globalPrisma.$executeRawUnsafe(`DELETE FROM "RiskControl" WHERE "tenantId" = $1`, tid);
                 await globalPrisma.$executeRawUnsafe(`DELETE FROM "ControlAsset" WHERE "tenantId" = $1`, tid);
                 await globalPrisma.$executeRawUnsafe(`DELETE FROM "Control" WHERE "tenantId" = $1`, tid);
                 await globalPrisma.$executeRawUnsafe(`DELETE FROM "Asset" WHERE "tenantId" = $1`, tid);
@@ -290,7 +251,6 @@ describeFn('Postgres RLS Tenant Isolation', () => {
                 await globalPrisma.$executeRawUnsafe(`DELETE FROM "Vendor" WHERE "tenantId" = $1`, tid);
                 await globalPrisma.$executeRawUnsafe(`DELETE FROM "Evidence" WHERE "tenantId" = $1`, tid);
                 await globalPrisma.$executeRawUnsafe(`DELETE FROM "Policy" WHERE "tenantId" = $1`, tid);
-                await globalPrisma.$executeRawUnsafe(`DELETE FROM "Risk" WHERE "tenantId" = $1`, tid);
                 await globalPrisma.$executeRawUnsafe(`DELETE FROM "Tenant" WHERE "id" = $1`, tid);
             }
             if (userAId) await globalPrisma.$executeRawUnsafe(`DELETE FROM "User" WHERE "id" = $1`, userAId);
@@ -438,13 +398,6 @@ describeFn('Postgres RLS Tenant Isolation', () => {
             expect(badTables).toEqual([]);
         });
     });
-
-    // ═══════════════════════════════════════════════════════════════════
-    // Risk Table
-    // ═══════════════════════════════════════════════════════════════════
-
-
-
 
     // ═══════════════════════════════════════════════════════════════════
     // Policy Table
@@ -647,11 +600,6 @@ describeFn('Postgres RLS Tenant Isolation', () => {
             }, globalPrisma);
         });
     });
-
-    // ═══════════════════════════════════════════════════════════════════
-    // MAPPING TABLE: RiskControl (tenantId-based)
-    // ═══════════════════════════════════════════════════════════════════
-
 
     // ═══════════════════════════════════════════════════════════════════
     // MAPPING TABLE: ControlAsset (tenantId-based)

@@ -3,12 +3,10 @@
  *
  * Verifies:
  * 1. Control coverage % is calculated correctly
- * 2. Risk severity bucketing is correct
  * 3. Evidence expiry logic handles edge cases
  * 4. Tenant scoping is preserved
  * 5. Empty datasets return sensible zeros
  * 6. No N+1 — each method uses groupBy/count (not findMany)
- * 7. Executive payload has correct shape
  */
 
 // ─── Mock db-context ───
@@ -26,7 +24,6 @@ import {
     type RiskBySeverity,
     type EvidenceExpiry,
 } from '@/app-layer/repositories/DashboardRepository';
-import { getExecutiveDashboard } from '@/app-layer/usecases/dashboard';
 import { getPermissionsForRole } from '@/lib/permissions';
 import type { RequestContext } from '@/app-layer/types';
 
@@ -124,72 +121,9 @@ describe('Dashboard — Control Coverage', () => {
 
 // ─── Risk by Severity ───
 
-describe('Dashboard — Risk by Severity', () => {
-    it('buckets correctly by inherentScore tiers', async () => {
-        mockTx.risk = {
-            count: jest.fn()
-                .mockResolvedValueOnce(2)   // low (1–4)
-                .mockResolvedValueOnce(5)   // medium (5–9)
-                .mockResolvedValueOnce(3)   // high (10–14)
-                .mockResolvedValueOnce(1),  // critical (15–25)
-        };
-
-        const result: RiskBySeverity = await DashboardRepository.getRiskBySeverity(mockTx as never, makeCtx());
-
-        expect(result.low).toBe(2);
-        expect(result.medium).toBe(5);
-        expect(result.high).toBe(3);
-        expect(result.critical).toBe(1);
-    });
-
-    it('returns all zeros for empty risk set', async () => {
-        mockTx.risk = {
-            count: jest.fn().mockResolvedValue(0),
-        };
-
-        const result = await DashboardRepository.getRiskBySeverity(mockTx as never, makeCtx());
-
-        expect(result.low).toBe(0);
-        expect(result.medium).toBe(0);
-        expect(result.high).toBe(0);
-        expect(result.critical).toBe(0);
-    });
-});
 
 // ─── Risk by Status ───
 
-describe('Dashboard — Risk by Status', () => {
-    it('maps status groups correctly', async () => {
-        mockTx.risk = {
-            groupBy: jest.fn(async () => [
-                { status: 'OPEN', _count: 10 },
-                { status: 'MITIGATING', _count: 3 },
-                { status: 'ACCEPTED', _count: 2 },
-                { status: 'CLOSED', _count: 5 },
-            ]),
-        };
-
-        const result = await DashboardRepository.getRiskByStatus(mockTx as never, makeCtx());
-
-        expect(result.open).toBe(10);
-        expect(result.mitigating).toBe(3);
-        expect(result.accepted).toBe(2);
-        expect(result.closed).toBe(5);
-    });
-
-    it('returns zeros for missing statuses', async () => {
-        mockTx.risk = {
-            groupBy: jest.fn(async () => []),
-        };
-
-        const result = await DashboardRepository.getRiskByStatus(mockTx as never, makeCtx());
-
-        expect(result.open).toBe(0);
-        expect(result.mitigating).toBe(0);
-        expect(result.accepted).toBe(0);
-        expect(result.closed).toBe(0);
-    });
-});
 
 // ─── Evidence Expiry ───
 
