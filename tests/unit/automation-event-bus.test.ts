@@ -40,6 +40,22 @@ function makeCtx(overrides?: Partial<RequestContext>): RequestContext {
     };
 }
 
+/**
+ * Shared TASK_CREATED payload. The bus tests care about metadata
+ * stamping and subscriber routing, not about any one domain — this
+ * used to be a RISK_CREATED payload until the risk register was
+ * removed, and the assertions are unchanged.
+ */
+const TASK_CREATED_DATA = {
+    key: 'TSK-1',
+    title: 't',
+    type: 'CORRECTIVE',
+    severity: 'MEDIUM',
+    priority: 'NORMAL',
+    assigneeUserId: null,
+    controlId: null,
+} as const;
+
 describe('Automation Bus', () => {
     beforeEach(() => {
         resetAutomationBus();
@@ -48,16 +64,16 @@ describe('Automation Bus', () => {
     describe('tenant-safe metadata stamping', () => {
         it('stamps tenantId from ctx (producer cannot forge it)', async () => {
             const received: AutomationDomainEvent[] = [];
-            getAutomationBus().subscribe('RISK_CREATED', (e) => {
+            getAutomationBus().subscribe('TASK_CREATED', (e) => {
                 received.push(e);
             });
 
             await emitAutomationEvent(makeCtx({ tenantId: 'tenant-A' }), {
-                event: 'RISK_CREATED',
-                entityType: 'Risk',
+                event: 'TASK_CREATED',
+                entityType: 'Task',
                 entityId: 'r-1',
                 actorUserId: 'user-1',
-                data: { title: 't', score: 5, category: null },
+                data: TASK_CREATED_DATA,
             });
 
             expect(received).toHaveLength(1);
@@ -66,17 +82,17 @@ describe('Automation Bus', () => {
 
         it('stamps emittedAt at emit time', async () => {
             let captured: AutomationDomainEvent | null = null;
-            getAutomationBus().subscribe('RISK_CREATED', (e) => {
+            getAutomationBus().subscribe('TASK_CREATED', (e) => {
                 captured = e;
             });
 
             const before = Date.now();
             await emitAutomationEvent(makeCtx(), {
-                event: 'RISK_CREATED',
-                entityType: 'Risk',
+                event: 'TASK_CREATED',
+                entityType: 'Task',
                 entityId: 'r-1',
                 actorUserId: 'user-1',
-                data: { title: 't', score: 5, category: null },
+                data: TASK_CREATED_DATA,
             });
             const after = Date.now();
 
@@ -88,18 +104,18 @@ describe('Automation Bus', () => {
 
         it('defaults actorUserId to ctx.userId when producer omits it', async () => {
             let captured: AutomationDomainEvent | null = null;
-            getAutomationBus().subscribe('RISK_UPDATED', (e) => {
+            getAutomationBus().subscribe('TASK_STATUS_CHANGED', (e) => {
                 captured = e;
             });
 
             await getAutomationBus().emit(
                 makeCtx({ userId: 'user-fallback' }),
                 {
-                    event: 'RISK_UPDATED',
-                    entityType: 'Risk',
+                    event: 'TASK_STATUS_CHANGED',
+                    entityType: 'Task',
                     entityId: 'r-1',
                     actorUserId: null,
-                    data: { changedFields: ['title'] },
+                    data: { fromStatus: 'OPEN', toStatus: 'DONE', resolution: null },
                 }
             );
             expect(captured).not.toBeNull();
@@ -114,24 +130,24 @@ describe('Automation Bus', () => {
 
     describe('subscribe / unsubscribe / wildcard', () => {
         it('named subscriber only receives matching events', async () => {
-            const risks: string[] = [];
+            const tasks: string[] = [];
             const tests: string[] = [];
-            getAutomationBus().subscribe('RISK_CREATED', (e) => {
-                risks.push(e.event);
+            getAutomationBus().subscribe('TASK_CREATED', (e) => {
+                tasks.push(e.event);
             });
             getAutomationBus().subscribe('TEST_RUN_FAILED', (e) => {
                 tests.push(e.event);
             });
 
             await emitAutomationEvent(makeCtx(), {
-                event: 'RISK_CREATED',
-                entityType: 'Risk',
+                event: 'TASK_CREATED',
+                entityType: 'Task',
                 entityId: 'r-1',
                 actorUserId: null,
-                data: { title: 't', score: 1, category: null },
+                data: TASK_CREATED_DATA,
             });
 
-            expect(risks).toEqual(['RISK_CREATED']);
+            expect(tasks).toEqual(['TASK_CREATED']);
             expect(tests).toEqual([]);
         });
 
@@ -142,11 +158,11 @@ describe('Automation Bus', () => {
             });
 
             await emitAutomationEvent(makeCtx(), {
-                event: 'RISK_CREATED',
-                entityType: 'Risk',
+                event: 'TASK_CREATED',
+                entityType: 'Task',
                 entityId: 'r-1',
                 actorUserId: null,
-                data: { title: 't', score: 1, category: null },
+                data: TASK_CREATED_DATA,
             });
             await emitAutomationEvent(makeCtx(), {
                 event: 'ONBOARDING_FINISHED',
@@ -156,7 +172,7 @@ describe('Automation Bus', () => {
                 data: {},
             });
 
-            expect(all).toEqual(['RISK_CREATED', 'ONBOARDING_FINISHED']);
+            expect(all).toEqual(['TASK_CREATED', 'ONBOARDING_FINISHED']);
         });
 
         it('unsubscribe detaches the handler', async () => {
@@ -164,22 +180,22 @@ describe('Automation Bus', () => {
             const handler: AutomationEventHandler = (e) => {
                 hits.push(e.event);
             };
-            const off = getAutomationBus().subscribe('RISK_CREATED', handler);
+            const off = getAutomationBus().subscribe('TASK_CREATED', handler);
 
             await emitAutomationEvent(makeCtx(), {
-                event: 'RISK_CREATED',
-                entityType: 'Risk',
+                event: 'TASK_CREATED',
+                entityType: 'Task',
                 entityId: 'r-1',
                 actorUserId: null,
-                data: { title: 't', score: 1, category: null },
+                data: TASK_CREATED_DATA,
             });
             off();
             await emitAutomationEvent(makeCtx(), {
-                event: 'RISK_CREATED',
-                entityType: 'Risk',
+                event: 'TASK_CREATED',
+                entityType: 'Task',
                 entityId: 'r-2',
                 actorUserId: null,
-                data: { title: 't', score: 1, category: null },
+                data: TASK_CREATED_DATA,
             });
 
             expect(hits).toHaveLength(1);
@@ -188,19 +204,19 @@ describe('Automation Bus', () => {
         it('multiple subscribers on same event all fire', async () => {
             let a = 0;
             let b = 0;
-            getAutomationBus().subscribe('RISK_CREATED', () => {
+            getAutomationBus().subscribe('TASK_CREATED', () => {
                 a++;
             });
-            getAutomationBus().subscribe('RISK_CREATED', () => {
+            getAutomationBus().subscribe('TASK_CREATED', () => {
                 b++;
             });
 
             await emitAutomationEvent(makeCtx(), {
-                event: 'RISK_CREATED',
-                entityType: 'Risk',
+                event: 'TASK_CREATED',
+                entityType: 'Task',
                 entityId: 'r-1',
                 actorUserId: null,
-                data: { title: 't', score: 1, category: null },
+                data: TASK_CREATED_DATA,
             });
 
             expect(a).toBe(1);
@@ -211,19 +227,19 @@ describe('Automation Bus', () => {
     describe('handler isolation', () => {
         it('a throwing handler does not break other handlers', async () => {
             let goodRan = false;
-            getAutomationBus().subscribe('RISK_CREATED', () => {
+            getAutomationBus().subscribe('TASK_CREATED', () => {
                 throw new Error('boom');
             });
-            getAutomationBus().subscribe('RISK_CREATED', () => {
+            getAutomationBus().subscribe('TASK_CREATED', () => {
                 goodRan = true;
             });
 
             await emitAutomationEvent(makeCtx(), {
-                event: 'RISK_CREATED',
-                entityType: 'Risk',
+                event: 'TASK_CREATED',
+                entityType: 'Task',
                 entityId: 'r-1',
                 actorUserId: null,
-                data: { title: 't', score: 1, category: null },
+                data: TASK_CREATED_DATA,
             });
 
             expect(goodRan).toBe(true);
@@ -231,7 +247,7 @@ describe('Automation Bus', () => {
 
         it('a throwing handler does not block the dispatcher', async () => {
             const dispatched: AutomationDomainEvent[] = [];
-            getAutomationBus().subscribe('RISK_CREATED', () => {
+            getAutomationBus().subscribe('TASK_CREATED', () => {
                 throw new Error('boom');
             });
             getAutomationBus().setDispatcher((e) => {
@@ -239,11 +255,11 @@ describe('Automation Bus', () => {
             });
 
             await emitAutomationEvent(makeCtx(), {
-                event: 'RISK_CREATED',
-                entityType: 'Risk',
+                event: 'TASK_CREATED',
+                entityType: 'Task',
                 entityId: 'r-1',
                 actorUserId: null,
-                data: { title: 't', score: 1, category: null },
+                data: TASK_CREATED_DATA,
             });
 
             expect(dispatched).toHaveLength(1);
@@ -256,11 +272,11 @@ describe('Automation Bus', () => {
 
             await expect(
                 emitAutomationEvent(makeCtx(), {
-                    event: 'RISK_CREATED',
-                    entityType: 'Risk',
+                    event: 'TASK_CREATED',
+                    entityType: 'Task',
                     entityId: 'r-1',
                     actorUserId: null,
-                    data: { title: 't', score: 1, category: null },
+                    data: TASK_CREATED_DATA,
                 })
             ).resolves.toBeUndefined();
         });
@@ -275,21 +291,21 @@ describe('Automation Bus', () => {
             getAutomationBus().setDispatcher(d);
 
             await emitAutomationEvent(makeCtx(), {
-                event: 'RISK_CREATED',
-                entityType: 'Risk',
+                event: 'TASK_CREATED',
+                entityType: 'Task',
                 entityId: 'r-1',
                 actorUserId: null,
-                data: { title: 't', score: 1, category: null },
+                data: TASK_CREATED_DATA,
             });
             await emitAutomationEvent(makeCtx(), {
-                event: 'RISK_STATUS_CHANGED',
-                entityType: 'Risk',
+                event: 'TASK_STATUS_CHANGED',
+                entityType: 'Task',
                 entityId: 'r-1',
                 actorUserId: null,
-                data: { fromStatus: 'OPEN', toStatus: 'CLOSED' },
+                data: { fromStatus: 'OPEN', toStatus: 'DONE', resolution: null },
             });
 
-            expect(got).toEqual(['RISK_CREATED', 'RISK_STATUS_CHANGED']);
+            expect(got).toEqual(['TASK_CREATED', 'TASK_STATUS_CHANGED']);
         });
 
         it('dispatcher receives the same tenantId as subscribers', async () => {
@@ -303,11 +319,11 @@ describe('Automation Bus', () => {
             });
 
             await emitAutomationEvent(makeCtx({ tenantId: 'tenant-B' }), {
-                event: 'RISK_CREATED',
-                entityType: 'Risk',
+                event: 'TASK_CREATED',
+                entityType: 'Task',
                 entityId: 'r-1',
                 actorUserId: null,
-                data: { title: 't', score: 1, category: null },
+                data: TASK_CREATED_DATA,
             });
 
             expect(subSaw).toEqual(['tenant-B']);
@@ -322,11 +338,11 @@ describe('Automation Bus', () => {
             resetAutomationBus();
 
             await emitAutomationEvent(makeCtx(), {
-                event: 'RISK_CREATED',
-                entityType: 'Risk',
+                event: 'TASK_CREATED',
+                entityType: 'Task',
                 entityId: 'r-1',
                 actorUserId: null,
-                data: { title: 't', score: 1, category: null },
+                data: TASK_CREATED_DATA,
             });
 
             expect(called).toBe(false);

@@ -10,51 +10,62 @@
 import { matchesFilter } from '@/app-layer/automation/filters';
 import type { AutomationDomainEvent } from '@/app-layer/automation/event-contracts';
 
-function riskEvent(
+/**
+ * The filter DSL is deliberately schema-agnostic: `matchesFilter`
+ * casts `event.data` to `Record<string, unknown>` and walks whatever
+ * keys a persisted rule names. That is the behaviour under test, so
+ * the fixture carries a synthetic three-key bag rather than any one
+ * event's real payload — the `AutomationDomainEvent` union constrains
+ * EMIT sites, not what a stored filter may probe.
+ *
+ * (This built a RISK_CREATED event until the risk register was
+ * removed; every assertion below is unchanged.)
+ */
+function probeEvent(
     data: { title: string; score: number; category: string | null }
 ): AutomationDomainEvent {
     return {
-        event: 'RISK_CREATED',
+        event: 'ISSUE_CREATED',
         tenantId: 't',
-        entityType: 'Risk',
-        entityId: 'r-1',
+        entityType: 'Issue',
+        entityId: 'i-1',
         actorUserId: null,
         emittedAt: new Date(),
         data,
-    };
+    } as unknown as AutomationDomainEvent;
 }
 
 describe('matchesFilter', () => {
     it('null filter matches any event', () => {
-        const evt = riskEvent({ title: 't', score: 10, category: 'SEC' });
+        const evt = probeEvent({ title: 't', score: 10, category: 'SEC' });
         expect(matchesFilter(evt, null)).toBe(true);
         expect(matchesFilter(evt, undefined)).toBe(true);
     });
 
     it('empty filter matches any event', () => {
-        const evt = riskEvent({ title: 't', score: 10, category: null });
+        const evt = probeEvent({ title: 't', score: 10, category: null });
         expect(matchesFilter(evt, {})).toBe(true);
     });
 
     it('single-key equality match', () => {
-        const evt = riskEvent({ title: 't', score: 10, category: 'SEC' });
+        const evt = probeEvent({ title: 't', score: 10, category: 'SEC' });
         expect(matchesFilter(evt, { category: 'SEC' })).toBe(true);
         expect(matchesFilter(evt, { category: 'COMP' })).toBe(false);
     });
 
     it('multi-key match is AND', () => {
-        const evt = riskEvent({ title: 't', score: 10, category: 'SEC' });
+        const evt = probeEvent({ title: 't', score: 10, category: 'SEC' });
         expect(matchesFilter(evt, { category: 'SEC', score: 10 })).toBe(true);
         expect(matchesFilter(evt, { category: 'SEC', score: 9 })).toBe(false);
     });
 
     it('unknown filter key fails closed', () => {
-        const evt = riskEvent({ title: 't', score: 10, category: 'SEC' });
+        const evt = probeEvent({ title: 't', score: 10, category: 'SEC' });
         expect(matchesFilter(evt, { nope: 'x' })).toBe(false);
     });
 
     it('only looks at event.data, not metadata', () => {
-        const evt = riskEvent({ title: 't', score: 10, category: 'SEC' });
+        const evt = probeEvent({ title: 't', score: 10, category: 'SEC' });
         // tenantId is metadata, not filter-addressable
         expect(matchesFilter(evt, { tenantId: 't' })).toBe(false);
     });
@@ -76,7 +87,7 @@ describe('matchesFilter', () => {
 
 // ─── DSL v2 (Epic 4) — FilterGroup ─────────────────────────────────────
 describe('matchesFilter — FilterGroup DSL v2', () => {
-    const evt = riskEvent({ title: 'Breach', score: 18, category: 'SEC' });
+    const evt = probeEvent({ title: 'Breach', score: 18, category: 'SEC' });
 
     it('AND passes only when every condition matches', () => {
         expect(

@@ -7,7 +7,6 @@
 
 export * from './common';
 export * from './control.dto';
-export * from './risk.dto';
 export * from './policy.dto';
 export * from './task.dto';
 export * from './vendor.dto';

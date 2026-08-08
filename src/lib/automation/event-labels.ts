@@ -36,52 +36,7 @@ const SEVERITY_OPTS = [
     { value: 'CRITICAL', label: 'Critical' },
 ] as const;
 
-const RISK_STATUS_OPTS = [
-    { value: 'OPEN', label: 'Open' },
-    { value: 'MITIGATING', label: 'Mitigating' },
-    { value: 'ACCEPTED', label: 'Accepted' },
-    { value: 'CLOSED', label: 'Closed' },
-] as const;
-
 export const EVENT_LABELS: Record<AutomationEventName, EventLabel> = {
-    [AUTOMATION_EVENTS.RISK_CREATED]: {
-        name: AUTOMATION_EVENTS.RISK_CREATED,
-        label: 'Risk created',
-        description: 'A new risk is added to the register.',
-        domain: 'Risk',
-        filterFields: [
-            { field: 'severity', label: 'Severity', type: 'enum', options: SEVERITY_OPTS },
-            { field: 'status', label: 'Status', type: 'enum', options: RISK_STATUS_OPTS },
-            { field: 'score', label: 'Score', type: 'number' },
-        ],
-    },
-    [AUTOMATION_EVENTS.RISK_UPDATED]: {
-        name: AUTOMATION_EVENTS.RISK_UPDATED,
-        label: 'Risk updated',
-        description: 'An existing risk is edited.',
-        domain: 'Risk',
-        filterFields: [
-            { field: 'severity', label: 'Severity', type: 'enum', options: SEVERITY_OPTS },
-            { field: 'score', label: 'Score', type: 'number' },
-        ],
-    },
-    [AUTOMATION_EVENTS.RISK_STATUS_CHANGED]: {
-        name: AUTOMATION_EVENTS.RISK_STATUS_CHANGED,
-        label: 'Risk status changed',
-        description: 'A risk moves between lifecycle states.',
-        domain: 'Risk',
-        filterFields: [
-            { field: 'toStatus', label: 'New status', type: 'enum', options: RISK_STATUS_OPTS },
-            { field: 'fromStatus', label: 'Old status', type: 'enum', options: RISK_STATUS_OPTS },
-        ],
-    },
-    [AUTOMATION_EVENTS.RISK_CONTROLS_MAPPED]: {
-        name: AUTOMATION_EVENTS.RISK_CONTROLS_MAPPED,
-        label: 'Risk controls mapped',
-        description: 'Controls are linked to a risk.',
-        domain: 'Risk',
-        filterFields: [],
-    },
     [AUTOMATION_EVENTS.TEST_PLAN_CREATED]: {
         name: AUTOMATION_EVENTS.TEST_PLAN_CREATED,
         label: 'Test plan created',
