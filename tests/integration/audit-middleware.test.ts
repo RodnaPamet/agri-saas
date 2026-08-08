@@ -185,7 +185,7 @@ describeFn('Audit Middleware — Integration Tests', () => {
         // anything actionable.
         if (tenantId) {
             await rawPrisma.$executeRawUnsafe(`DELETE FROM "AuditLog" WHERE "tenantId" = $1`, tenantId).catch(() => {});
-            await rawPrisma.$executeRawUnsafe(`DELETE FROM "Risk" WHERE "tenantId" = $1`, tenantId).catch(() => {});
+            await rawPrisma.$executeRawUnsafe(`DELETE FROM "Control" WHERE "tenantId" = $1`, tenantId).catch(() => {});
             await rawPrisma.$executeRawUnsafe(`DELETE FROM "Tenant" WHERE "id" = $1`, tenantId).catch(() => {});
             if (userId) await rawPrisma.$executeRawUnsafe(`DELETE FROM "User" WHERE "id" = $1`, userId).catch(() => {});
         }
@@ -244,7 +244,7 @@ describeFn('Audit Middleware — Integration Tests', () => {
                 { tenantId, actorUserId: userId, requestId: `req-update-${testRunId}` },
                 () => appPrisma.control.update({
                     where: { id: controlId },
-                    data: { name: `Updated ${testRunId}` },
+                    data: { name: `Updated ${testRunId}`, effectiveness: 8 },
                 }),
             );
 
@@ -257,14 +257,14 @@ describeFn('Audit Middleware — Integration Tests', () => {
             expect(diff).toBeDefined();
             expect(diff).not.toBeNull();
             expect(diff.changedFields).toContain('name');
-            expect(diff.changedFields).toContain('inherentScore');
+            expect(diff.changedFields).toContain('effectiveness');
             expect(diff.after).toBeDefined();
             expect(diff.after.name).toBe(`Updated ${testRunId}`);
-            expect(diff.after.inherentScore).toBe(8);
+            expect(diff.after.effectiveness).toBe(8);
         });
 
         afterAll(async () => {
-            await rawPrisma.$executeRawUnsafe(`DELETE FROM "Risk" WHERE "id" = $1`, controlId);
+            await rawPrisma.$executeRawUnsafe(`DELETE FROM "Control" WHERE "id" = $1`, controlId);
         });
     });
 
@@ -354,7 +354,7 @@ describeFn('Audit Middleware — Integration Tests', () => {
         });
 
         afterAll(async () => {
-            await rawPrisma.$executeRawUnsafe(`DELETE FROM "Risk" WHERE "tenantId" = $1 AND "title" LIKE $2`, tenantId, `Bulk%${testRunId}%`);
+            await rawPrisma.$executeRawUnsafe(`DELETE FROM "Control" WHERE "tenantId" = $1 AND "name" LIKE $2`, tenantId, `Bulk%${testRunId}%`);
         });
     });
 
