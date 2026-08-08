@@ -1,13 +1,23 @@
 #!/usr/bin/env tsx
 /**
- * Seed the Knowledge Base with CC0 growing guides.
+ * Seed the Knowledge Base with per-tenant demo growing-guide overviews
+ * for Bulgaria's four major arable crops (PR 4/5 — replaces the earlier
+ * OpenFarm-modelled home-garden vegetable guides, which had nothing to
+ * do with Bulgarian arable farming).
  *
- * Content provenance: the crop facts (sowing method, spacing, sun, days to
- * maturity) are modelled on the OpenFarm crop dataset, which is released
- * CC0 / public domain (https://openfarm.cc — "all data is licensed CC0").
- * Public-domain data can be embedded + redistributed freely; attribution
- * is courtesy, recorded in THIRD_PARTY_NOTICES.md and on each article's
- * `source` field.
+ * Content provenance: 100% original agronomy authored in this repository
+ * — "Agri-SaaS agronomy desk (original)" — same source label and same
+ * dose/PHI/REI gate as the GLOBAL corpus in scripts/rag/corpus.ts (see
+ * that module's header for the hard rule this content must not violate).
+ * These are short, tenant-scoped overview articles; the deep BBCH/
+ * scouting/cultural-practice/harvest content lives ONCE in the GLOBAL
+ * NULL-tenant catalog (scripts/rag/corpus.ts) rather than being
+ * duplicated into every tenant — see this PR's implementation note
+ * (docs/implementation-notes/2026-08-07-kb-bulgarian-agronomy-content.md)
+ * for why. Each overview points the reader at that GLOBAL content.
+ *
+ * Bulgarian-first: each crop gets a `bg` article (the source) and an
+ * `en` article (the translation) — two rows, two slugs, same crop.
  *
  * Each guide becomes a PUBLISHED KnowledgeArticle (+ v1 version) in the
  * target tenant, authored by its first active OWNER/ADMIN. Idempotent:
@@ -20,6 +30,12 @@
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { sanitizeRichTextHtml } from '../src/lib/security/sanitize';
+import { assertNoUnregisteredRegulatedContent } from './rag/dose-phi-guard';
+
+/** Provenance label — see the module header. Matches `LICENSED_SOURCES`
+ *  in scripts/rag/corpus.ts (kept as a literal here so this script has
+ *  no import-time dependency on the RAG corpus module beyond the guard). */
+const AGRONOMY_SOURCE = 'Agri-SaaS agronomy desk (original)';
 
 interface Guide {
     slug: string;
@@ -28,82 +44,136 @@ interface Guide {
     category: string;
     /** TipTap-compatible HTML. */
     content: string;
+    language: 'bg' | 'en';
+    cropTags: string[];
 }
 
-/** CC0 growing guides (OpenFarm-modelled crop data). */
+/** Bulgarian-first arable-crop overviews (bg source + en translation, one
+ *  pair per crop). Agronomy only — no dose/PHI/REI (see module header). */
 export const GROWING_GUIDES: Guide[] = [
+    // ─── Wheat / Пшеница ───
     {
-        slug: 'growing-guide-tomato',
-        title: 'Growing Tomatoes',
-        summary: 'Warm-season fruiting crop; transplant after last frost.',
+        slug: 'growing-guide-wheat-bg',
+        title: 'Отглеждане на пшеница',
+        summary: 'Есенна житна култура — основна земеделска култура за България.',
         category: 'Growing Guide',
+        language: 'bg',
+        cropTags: ['Wheat'],
         content:
-            '<h2>Tomatoes</h2><p>Tomatoes are a warm-season crop that needs full sun (6–8 hours).</p>' +
-            '<ul><li><strong>Sowing:</strong> start indoors 6–8 weeks before the last frost; transplant out once soil is warm.</li>' +
-            '<li><strong>Spacing:</strong> 45–60 cm between plants, 90 cm between rows.</li>' +
-            '<li><strong>Days to maturity:</strong> 60–85 days from transplant.</li>' +
-            '<li><strong>Water:</strong> deep, even watering; avoid wetting foliage to reduce blight.</li></ul>' +
-            '<p>Harvest when fruit is fully coloured and slightly soft.</p>',
+            '<h2>Пшеница</h2><p>Есенна житна култура, една от четирите основни земеделски култури в България.</p>' +
+            '<ul><li><strong>Сеитбооборот:</strong> избягвайте пшеница след пшеница повече от две поредни години.</li>' +
+            '<li><strong>Гъстота на сеитба:</strong> съобразена със сорта и срока на сеитба, за балансирано братене.</li>' +
+            '<li><strong>Наблюдение:</strong> редовен оглед за листни въшки, ръжда и брашнеста мана от вретенене нататък.</li>' +
+            '<li><strong>Прибиране:</strong> при влажност на зърното около 12–14%, когато зърното е твърдо.</li></ul>' +
+            '<p>Пълната BBCH скала, прагове за наблюдение и хранене без дози са налични в глобалната база от знания. Тази статия съзнателно не посочва конкретна норма на употреба, нито срокове, свързани с прибиране или връщане на площта — те са валидни само заедно с регистрационен номер на конкретен продукт от официалния регистър на БАБХ.</p>',
     },
     {
-        slug: 'growing-guide-lettuce',
-        title: 'Growing Lettuce',
-        summary: 'Cool-season leafy green; succession-sow for a continuous harvest.',
+        slug: 'growing-guide-wheat-en',
+        title: 'Growing wheat',
+        summary: 'Autumn-sown cereal — one of Bulgaria’s four major arable crops.',
         category: 'Growing Guide',
+        language: 'en',
+        cropTags: ['Wheat'],
         content:
-            '<h2>Lettuce</h2><p>A fast, cool-season leafy crop tolerant of partial shade.</p>' +
-            '<ul><li><strong>Sowing:</strong> direct-sow shallowly; sow every 2–3 weeks for succession.</li>' +
-            '<li><strong>Spacing:</strong> 20–30 cm for heading types, 10 cm for leaf types.</li>' +
-            '<li><strong>Days to maturity:</strong> 30–60 days.</li>' +
-            '<li><strong>Tips:</strong> bolts in heat — provide afternoon shade in summer.</li></ul>',
+            '<h2>Wheat</h2><p>An autumn-sown cereal, one of Bulgaria’s four major arable crops.</p>' +
+            '<ul><li><strong>Rotation:</strong> avoid wheat after wheat for more than two years running.</li>' +
+            '<li><strong>Seeding density:</strong> matched to the variety and sowing date for balanced tillering.</li>' +
+            '<li><strong>Scouting:</strong> regularly check for cereal aphids, rust, and powdery mildew from stem elongation onward.</li>' +
+            '<li><strong>Harvest:</strong> around 12–14% grain moisture, once the grain is hard.</li></ul>' +
+            '<p>The full BBCH scale, scouting thresholds, and nutrition timing without rates live in the global knowledge base. This article deliberately states no specific rate of use, and no waiting period tied to harvest or to returning to the field — those are only valid together with a specific product’s registration number from the official БАБХ register.</p>',
+    },
+    // ─── Barley / Ечемик ───
+    {
+        slug: 'growing-guide-barley-bg',
+        title: 'Отглеждане на ечемик',
+        summary: 'Есенна житна култура, узряваща по-рано от пшеницата.',
+        category: 'Growing Guide',
+        language: 'bg',
+        cropTags: ['Barley'],
+        content:
+            '<h2>Ечемик</h2><p>Есенна житна култура, узряваща обикновено 1–2 седмици по-рано от пшеницата.</p>' +
+            '<ul><li><strong>Предшественик:</strong> реагира добре след бобови или окопни култури.</li>' +
+            '<li><strong>Гъстота на сеитба:</strong> братва по-интензивно от пшеницата, затова по-ниска норма често е достатъчна.</li>' +
+            '<li><strong>Наблюдение:</strong> редовен оглед за мрежовидна петнистост и листни въшки от братене нататък.</li>' +
+            '<li><strong>Прибиране:</strong> при влажност около 13–14%; класът лесно се рони при закъсняло прибиране.</li></ul>' +
+            '<p>Пълната BBCH скала, прагове за наблюдение и хранене без дози са налични в глобалната база от знания. Тази статия съзнателно не посочва конкретна норма на употреба, нито срокове, свързани с прибиране или връщане на площта — те са валидни само заедно с регистрационен номер на конкретен продукт от официалния регистър на БАБХ.</p>',
     },
     {
-        slug: 'growing-guide-carrot',
-        title: 'Growing Carrots',
-        summary: 'Cool-season root crop; needs loose, stone-free soil.',
+        slug: 'growing-guide-barley-en',
+        title: 'Growing barley',
+        summary: 'Autumn-sown cereal that matures earlier than wheat.',
         category: 'Growing Guide',
+        language: 'en',
+        cropTags: ['Barley'],
         content:
-            '<h2>Carrots</h2><p>Root crop that prefers loose, deep, stone-free soil and full sun.</p>' +
-            '<ul><li><strong>Sowing:</strong> direct-sow thinly 1 cm deep; do not transplant.</li>' +
-            '<li><strong>Spacing:</strong> thin to 5 cm apart, rows 30 cm.</li>' +
-            '<li><strong>Days to maturity:</strong> 70–80 days.</li>' +
-            '<li><strong>Tips:</strong> keep soil evenly moist for straight roots; avoid fresh manure.</li></ul>',
+            '<h2>Barley</h2><p>An autumn-sown cereal that typically matures 1–2 weeks earlier than wheat.</p>' +
+            '<ul><li><strong>Preceding crop:</strong> responds well after legumes or row crops.</li>' +
+            '<li><strong>Seeding density:</strong> barley tillers more heavily than wheat, so a lower rate is often enough.</li>' +
+            '<li><strong>Scouting:</strong> regularly check for net blotch and cereal aphids from tillering onward.</li>' +
+            '<li><strong>Harvest:</strong> around 13–14% moisture; the ear shatters easily if harvest is delayed.</li></ul>' +
+            '<p>The full BBCH scale, scouting thresholds, and nutrition timing without rates live in the global knowledge base. This article deliberately states no specific rate of use, and no waiting period tied to harvest or to returning to the field — those are only valid together with a specific product’s registration number from the official БАБХ register.</p>',
+    },
+    // ─── Maize / Царевица ───
+    {
+        slug: 'growing-guide-maize-bg',
+        title: 'Отглеждане на царевица',
+        summary: 'Пролетна окопна култура за зърно или силаж.',
+        category: 'Growing Guide',
+        language: 'bg',
+        cropTags: ['Maize'],
+        content:
+            '<h2>Царевица</h2><p>Пролетна култура, отглеждана за зърно или силаж.</p>' +
+            '<ul><li><strong>Сеитба:</strong> едва когато почвата се затопли трайно за сезона — ранната сеитба в студена почва удължава покълването.</li>' +
+            '<li><strong>Сеитбооборот:</strong> избягвайте повторение повече от 1–2 години в райони с натиск от стъблопробивач.</li>' +
+            '<li><strong>Наблюдение:</strong> оглед на фунията за есенен армейски червей и стъблопробивач от поникване до стъблено удължаване.</li>' +
+            '<li><strong>Прибиране:</strong> след появата на „черния слой“ при основата на зърното (физиологична зрялост).</li></ul>' +
+            '<p>Пълната BBCH скала, прагове за наблюдение и хранене без дози са налични в глобалната база от знания. Тази статия съзнателно не посочва конкретна норма на употреба, нито срокове, свързани с прибиране или връщане на площта — те са валидни само заедно с регистрационен номер на конкретен продукт от официалния регистър на БАБХ.</p>',
     },
     {
-        slug: 'growing-guide-potato',
-        title: 'Growing Potatoes',
-        summary: 'Cool-season tuber; plant seed potatoes and earth up as they grow.',
+        slug: 'growing-guide-maize-en',
+        title: 'Growing maize',
+        summary: 'Spring-sown row crop grown for grain or silage.',
         category: 'Growing Guide',
+        language: 'en',
+        cropTags: ['Maize'],
         content:
-            '<h2>Potatoes</h2><p>Grown from seed potatoes in full sun and well-drained soil.</p>' +
-            '<ul><li><strong>Planting:</strong> plant chitted tubers 10–15 cm deep, 30 cm apart.</li>' +
-            '<li><strong>Earthing up:</strong> mound soil over shoots to protect tubers from light.</li>' +
-            '<li><strong>Days to maturity:</strong> 70–120 days depending on variety.</li>' +
-            '<li><strong>Harvest:</strong> earlies when flowers open; maincrop once foliage dies back.</li></ul>',
+            '<h2>Maize</h2><p>A spring-sown crop grown for grain or silage.</p>' +
+            '<ul><li><strong>Sowing:</strong> only once the soil has warmed durably for the season — sowing too early into cold soil prolongs germination.</li>' +
+            '<li><strong>Rotation:</strong> avoid maize after maize for more than 1–2 years in areas with corn borer pressure.</li>' +
+            '<li><strong>Scouting:</strong> inspect the whorl for fall armyworm and corn borer from emergence through stem elongation.</li>' +
+            '<li><strong>Harvest:</strong> once the "black layer" appears at the kernel base (physiological maturity).</li></ul>' +
+            '<p>The full BBCH scale, scouting thresholds, and nutrition timing without rates live in the global knowledge base. This article deliberately states no specific rate of use, and no waiting period tied to harvest or to returning to the field — those are only valid together with a specific product’s registration number from the official БАБХ register.</p>',
+    },
+    // ─── Sunflower / Слънчоглед ───
+    {
+        slug: 'growing-guide-sunflower-bg',
+        title: 'Отглеждане на слънчоглед',
+        summary: 'Пролетна маслодайна култура с най-дългия изискван сеитбооборот.',
+        category: 'Growing Guide',
+        language: 'bg',
+        cropTags: ['Sunflower'],
+        content:
+            '<h2>Слънчоглед</h2><p>Пролетна маслодайна култура, изискваща едно от най-дългите редувания сред земеделските култури.</p>' +
+            '<ul><li><strong>Сеитбооборот:</strong> обичайна препоръка е връщане на едно и също поле не по-рано от 4–5 години заради синя китка и мана.</li>' +
+            '<li><strong>Сортов избор:</strong> устойчивост към местните раси синя китка е ключов критерий за поле с история на проблема.</li>' +
+            '<li><strong>Наблюдение:</strong> оглед за закърнели, хлоротични растения (мана) скоро след поникване.</li>' +
+            '<li><strong>Прибиране:</strong> когато гърбът на кошницата стане кафяв по цялата площ на полето.</li></ul>' +
+            '<p>Пълната BBCH скала, прагове за наблюдение и хранене без дози са налични в глобалната база от знания. Тази статия съзнателно не посочва конкретна норма на употреба, нито срокове, свързани с прибиране или връщане на площта — те са валидни само заедно с регистрационен номер на конкретен продукт от официалния регистър на БАБХ.</p>',
     },
     {
-        slug: 'growing-guide-beans',
-        title: 'Growing Bush Beans',
-        summary: 'Warm-season legume; fixes nitrogen, sow after frost.',
+        slug: 'growing-guide-sunflower-en',
+        title: 'Growing sunflower',
+        summary: 'Spring-sown oilseed crop with the longest required rotation.',
         category: 'Growing Guide',
+        language: 'en',
+        cropTags: ['Sunflower'],
         content:
-            '<h2>Bush Beans</h2><p>A warm-season legume that fixes nitrogen in the soil.</p>' +
-            '<ul><li><strong>Sowing:</strong> direct-sow 3–4 cm deep after the last frost; soil must be warm.</li>' +
-            '<li><strong>Spacing:</strong> 10 cm apart, rows 45 cm.</li>' +
-            '<li><strong>Days to maturity:</strong> 50–60 days.</li>' +
-            '<li><strong>Harvest:</strong> pick pods young and often to keep plants productive.</li></ul>',
-    },
-    {
-        slug: 'growing-guide-winter-squash',
-        title: 'Growing Winter Squash',
-        summary: 'Warm-season vining crop; needs space, heat, and rich soil.',
-        category: 'Growing Guide',
-        content:
-            '<h2>Winter Squash</h2><p>A sprawling warm-season crop needing rich soil and full sun.</p>' +
-            '<ul><li><strong>Sowing:</strong> sow 2–3 cm deep after frost, or start indoors 3 weeks early.</li>' +
-            '<li><strong>Spacing:</strong> 90–120 cm between plants — they vine widely.</li>' +
-            '<li><strong>Days to maturity:</strong> 80–110 days.</li>' +
-            '<li><strong>Harvest:</strong> when rind is hard and stem corky; cure in sun before storing.</li></ul>',
+            '<h2>Sunflower</h2><p>A spring-sown oilseed crop requiring one of the longest rotation intervals among field crops.</p>' +
+            '<ul><li><strong>Rotation:</strong> a common recommendation is not returning to the same field sooner than 4–5 years, because of broomrape and downy mildew.</li>' +
+            '<li><strong>Variety choice:</strong> resistance to the local broomrape races is a key criterion for a field with a history of the problem.</li>' +
+            '<li><strong>Scouting:</strong> watch for stunted, chlorotic plants (downy mildew) shortly after emergence.</li>' +
+            '<li><strong>Harvest:</strong> once the back of the head has turned brown across the whole field.</li></ul>' +
+            '<p>The full BBCH scale, scouting thresholds, and nutrition timing without rates live in the global knowledge base. This article deliberately states no specific rate of use, and no waiting period tied to harvest or to returning to the field — those are only valid together with a specific product’s registration number from the official БАБХ register.</p>',
     },
 ];
 
@@ -142,6 +212,14 @@ export async function importKnowledge(
             continue;
         }
 
+        // Dose/PHI/REI hard-rule gate (see scripts/rag/dose-phi-guard.ts) —
+        // scans title + summary + content so a violation anywhere in the
+        // authored guide is caught before anything is written.
+        assertNoUnregisteredRegulatedContent(
+            `${guide.title} ${guide.summary} ${guide.content}`,
+            guide.slug,
+        );
+
         const article = await prisma.knowledgeArticle.create({
             data: {
                 tenantId: tenant.id,
@@ -149,7 +227,9 @@ export async function importKnowledge(
                 title: guide.title,
                 summary: guide.summary,
                 category: guide.category,
-                source: 'OpenFarm (CC0)',
+                source: AGRONOMY_SOURCE,
+                language: guide.language,
+                cropTags: guide.cropTags,
                 ownerUserId: author.userId,
                 status: 'PUBLISHED',
             },
@@ -162,7 +242,7 @@ export async function importKnowledge(
                 versionNumber: 1,
                 contentType: 'HTML',
                 contentText: sanitizeRichTextHtml(guide.content),
-                changeSummary: 'Imported from OpenFarm CC0 dataset',
+                changeSummary: 'Seeded — Agri-SaaS agronomy desk (original) demo overview',
                 createdById: author.userId,
             },
             select: { id: true },

@@ -65,17 +65,17 @@
  * **Fields DELIBERATELY NOT in this manifest:**
  *   - PII fields (email, name, phone, tokens) — already handled by
  *     `pii-middleware.ts` with the dual-column convention.
- *   - `Risk.description`, `Policy.description`, `Evidence.content` —
- *     searched via `contains` LIKE in their repositories. A product
- *     decision on whether to sacrifice substring search for
- *     encryption is still pending. If ever added here, the
- *     RiskRepository / PolicyRepository / EvidenceRepository search
- *     branches must be removed in the same PR.
+ *   - `Policy.description`, `Evidence.content` — searched via
+ *     `contains` LIKE in their repositories. A product decision on
+ *     whether to sacrifice substring search for encryption is still
+ *     pending. If ever added here, the PolicyRepository /
+ *     EvidenceRepository search branches must be removed in the
+ *     same PR.
  *   - Operational keys (status, category, severity, FKs, dates) —
  *     load-bearing for filters, joins, and indexes.
- *   - Global library tables (Framework, Clause, ControlTemplate,
- *     PolicyTemplate, QuestionnaireTemplate, RiskTemplate) — no
- *     tenant-specific content, zero breach value.
+ *   - Global library tables (Framework, Clause, PolicyTemplate,
+ *     QuestionnaireTemplate) — no tenant-specific content, zero
+ *     breach value.
  *   - `AuditLog.*` — append-only hash-chained audit trail. Encrypting
  *     would break `entryHash` integrity; investigation needs
  *     plaintext anyway.

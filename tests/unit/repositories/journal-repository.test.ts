@@ -18,6 +18,7 @@
  */
 import { JournalRepository } from '@/app-layer/repositories/JournalRepository';
 import { makeRequestContext } from '../../helpers/make-context';
+import { MACHINE_ASSET_TYPE_LIST } from '@/lib/agriculture/machine-asset-types';
 import { encodeCursor, MAX_LIMIT, DEFAULT_LIMIT } from '@/lib/pagination';
 import type { PrismaTx } from '@/lib/db-context';
 
@@ -36,7 +37,9 @@ function makeDb() {
         logEntry: model(),
         logEntryFile: model(),
         location: model(),
-        equipment: model(),
+        // The machine register is `asset` since the Equipment merge —
+        // `validEquipmentIds` / `listEquipment` delegate to it.
+        asset: model(),
         parcel: model(),
     };
 }
@@ -185,14 +188,18 @@ describe('JournalRepository — cross-tenant id validation', () => {
         expect(result.has('loc-theirs')).toBe(false);
     });
 
-    it('treats soft-deleted equipment as invalid', async () => {
+    it('treats soft-deleted, retired and non-machine assets as invalid', async () => {
         // Break: omitting `deletedAt: null` lets retired equipment be
-        // attached to new work records.
+        // attached to new work records. Since the Equipment merge the
+        // same call must ALSO exclude RETIRED machines and non-machine
+        // asset types — otherwise a barn becomes a valid link target.
         await JournalRepository.validEquipmentIds(asTx(db), ctx, ['eq-1']);
 
-        expect(whereOf(db.equipment.findMany)).toMatchObject({
+        expect(whereOf(db.asset.findMany)).toMatchObject({
             tenantId: 'tenant-1',
             deletedAt: null,
+            status: { not: 'RETIRED' },
+            type: { in: MACHINE_ASSET_TYPE_LIST },
         });
     });
 
@@ -308,8 +315,13 @@ describe('JournalRepository — equipment picker', () => {
         // of machines.
         await JournalRepository.listEquipment(asTx(db), ctx);
 
-        const arg = argOf(db.equipment.findMany);
-        expect(arg.where).toEqual({ tenantId: 'tenant-1', deletedAt: null });
+        const arg = argOf(db.asset.findMany);
+        expect(arg.where).toEqual({
+            tenantId: 'tenant-1',
+            type: { in: MACHINE_ASSET_TYPE_LIST },
+            status: { not: 'RETIRED' },
+            deletedAt: null,
+        });
         expect(arg.take).toBe(200);
         expect(arg.orderBy).toEqual([{ createdAt: 'desc' }]);
     });
@@ -317,7 +329,7 @@ describe('JournalRepository — equipment picker', () => {
     it('honours an explicit take', async () => {
         await JournalRepository.listEquipment(asTx(db), ctx, 10);
 
-        expect(argOf(db.equipment.findMany).take).toBe(10);
+        expect(argOf(db.asset.findMany).take).toBe(10);
     });
 });
 
@@ -456,7 +468,7 @@ describe('JournalRepository — createLogEntry', () => {
             { tenantId: 'tenant-1', locationId: 'loc-1' },
         ]);
         expect(data.equipment.create).toEqual([
-            { tenantId: 'tenant-1', equipmentId: 'eq-1' },
+            { tenantId: 'tenant-1', assetId: 'eq-1' },
         ]);
     });
 
@@ -549,7 +561,7 @@ describe('JournalRepository — updateLogEntry', () => {
 
         expect(dataOf().equipment).toEqual({
             deleteMany: {},
-            create: [{ tenantId: 'tenant-1', equipmentId: 'eq-9' }],
+            create: [{ tenantId: 'tenant-1', assetId: 'eq-9' }],
         });
     });
 

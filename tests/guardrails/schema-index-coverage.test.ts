@@ -233,7 +233,6 @@ const FK_INDEX_EXEMPT: Record<string, string> = {
     'LotLink.actorUserId': R_ACTOR,
     'LogEntry.createdByUserId': R_ACTOR,
     // ─── Field Journal ───
-    'Equipment.createdByUserId': R_ACTOR,
     // LogEntryFile.fileRecordId — the photo/document link is always read
     // through the parent LogEntry's `files` include (LogEntry.getById),
     // never reverse-scanned "which entries reference file X"; the
@@ -274,6 +273,13 @@ interface CompositeIndex {
 }
 
 const LIST_QUERY_INDEXES: readonly CompositeIndex[] = [
+    // ── Asset (machine register, since the Equipment merge) ─────────
+    {
+        model: 'Asset',
+        fields: ['tenantId', 'type', 'status'],
+        justification:
+            'listMachines / validMachineIds filter tenantId + type IN (machine-shaped) + status != RETIRED — the equipment-picker query that `Equipment` used to serve.',
+    },
     // ── Control (from list-query-indexes.test.ts) ───────────────────
     {
         model: 'Control',
@@ -409,11 +415,9 @@ const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
         'lotLedger filters by tenantId + lotId ordered by occurredAt DESC — covered by @@index([tenantId, lotId, occurredAt]); lotLedgerPage cursor-walks tenantId+lotId ordered by (createdAt, id) — covered by the perf-scale @@index([tenantId, lotId, createdAt]); the verifyStockChain integrity sweep is an explicit unbounded full-tenant scan (guardrail-allow). findConsumptionParcels / findInputLotsConsumedOnParcel filter tenantId + type (+ lotId set / nested operationParcel) — covered by @@index([tenantId, type, occurredAt]); bounded take:500.',
     LotLink:
         'The traceability walk reads genealogy edges by tenantId + childLotId (listParentLinks, BFS up) and tenantId + parentLotId (listChildLinks, BFS down) — both leading-indexed by @@index([tenantId, parentLotId]) / @@index([tenantId, childLotId]); each level is take:500-bounded.',
-    // ─── Field Journal (LogEntry + Equipment) ───
+    // ─── Field Journal (LogEntry) ───
     LogEntry:
         'listLogEntries filters by tenantId (+ optional type / status / occurredAt range), searches title/notes, orders by occurredAt DESC — covered by @@index([tenantId, type, occurredAt]) + @@index([tenantId, status, occurredAt]); the paginated path is cursor-bounded and the flat path is take:200-bounded.',
-    Equipment:
-        'listEquipment filters by tenantId ordered by createdAt DESC (take:200, the farm-task equipment picker); validEquipmentIds does id-set link-validation. @@index([tenantId, name]) / @@index([tenantId, category]) cover the register; the small per-tenant equipment set keeps the createdAt sort a bounded scan.',
     // ─── Knowledge Base (mirrors Policy) ───
     KnowledgeArticle:
         'list filters by tenantId (+ optional status / category), searches title/summary, orders updatedAt DESC — covered by @@index([tenantId, status]) / @@index([tenantId, category]) / @@index([tenantId, updatedAt]); listCategories is a distinct tenantId scan; the unified search matches title/summary (take:dbLimit, mirrors policy search). All take-bounded.',
@@ -440,8 +444,6 @@ const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
     AccessReview:
         'filtered only by tenantId plus leading-indexed FK / status columns — Layers A/B cover its query shapes; no curated composite index needed today.',
     AccessReviewDecision:
-        'filtered only by tenantId plus leading-indexed FK / status columns — Layers A/B cover its query shapes; no curated composite index needed today.',
-    Asset:
         'filtered only by tenantId plus leading-indexed FK / status columns — Layers A/B cover its query shapes; no curated composite index needed today.',
     Audit:
         'filtered only by tenantId plus leading-indexed FK / status columns — Layers A/B cover its query shapes; no curated composite index needed today.',

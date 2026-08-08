@@ -26,6 +26,18 @@
  * degrade to the KEYWORD branch alone rather than throwing — a
  * lexical-only answer beats a 500, and `safety/advisor.ts` already
  * refuses on empty retrieval, so the degraded path stays safe.
+ *
+ * Language-aware ranking (S7, KB agronomy structure PR): the product is
+ * Bulgarian-first, so a chunk whose stamped `language` matches the
+ * caller's preferred language gets a small score BONUS
+ * (`LANGUAGE_MATCH_BONUS`) — a PREFERENCE, not a WHERE-clause filter.
+ * Chunks in another language, or with no language stamped at all (most
+ * of the GLOBAL external corpus predates this field), are never excluded
+ * — only ranked lower — so a query with no same-language match still
+ * returns the best available result instead of an empty array. Omitting
+ * `opts.language` defaults to `'bg'` (the product default); pass
+ * `language: null` to disable the preference entirely (every language
+ * ranks equally).
  */
 import { Prisma } from '@prisma/client';
 import { getEmbeddingProvider } from '@/app-layer/ai/provider';
@@ -43,6 +55,13 @@ export interface RetrieveOptions {
     includeGlobal?: boolean;
     /** Max chunks to return after merge + rank. Default 6. */
     topK?: number;
+    /**
+     * Preferred language (e.g. "bg", "en") — chunks stamped with a
+     * matching `language` rank higher (see the module doc comment).
+     * Omit to use the product default (`'bg'`); pass `null` to disable
+     * the preference and rank every language equally.
+     */
+    language?: string | null;
 }
 
 export interface RetrievedChunk {
@@ -50,6 +69,9 @@ export interface RetrievedChunk {
     source: string;
     sourceType: KnowledgeChunkSourceType;
     text: string;
+    /** The chunk's stamped language ("bg" / "en" / …), or null when not
+     *  stamped (most of the GLOBAL external corpus predates this field). */
+    language: string | null;
     /** Higher is better. Vector hits carry cosine similarity; keyword-only
      *  hits get a small fixed floor so a strong lexical match still ranks. */
     score: number;
@@ -58,6 +80,15 @@ export interface RetrievedChunk {
 const DEFAULT_TOP_K = 6;
 /** Score floor for a keyword-only hit (no vector similarity available). */
 const KEYWORD_SCORE = 0.2;
+/** Bulgarian-first product default — see the module doc comment. */
+const DEFAULT_LANGUAGE = 'bg';
+/**
+ * Score bonus for a chunk whose stamped language matches the preferred
+ * one. Small relative to a strong vector similarity (0-1 scale) so a
+ * highly relevant chunk in another language still outranks a weak
+ * same-language match — "prefer, don't exclude".
+ */
+const LANGUAGE_MATCH_BONUS = 0.15;
 
 /**
  * Hybrid retrieve. Returns the top-K merged chunks, ranked by score
@@ -76,6 +107,13 @@ export async function retrieve(
     // Fetch a wider candidate set per branch so the merge has material
     // to rank, then trim to topK.
     const branchTake = topK * 2;
+    // `undefined` → Bulgarian-first default; explicit `null` → no
+    // preference (every language ranks equally).
+    const preferredLanguage = opts.language === null ? null : (opts.language ?? DEFAULT_LANGUAGE);
+    const languageBonus = (chunkLanguage: string | null | undefined): number => {
+        if (!preferredLanguage || !chunkLanguage) return 0;
+        return chunkLanguage.toLowerCase() === preferredLanguage.toLowerCase() ? LANGUAGE_MATCH_BONUS : 0;
+    };
 
     // Embed the query up front (one call) for the vector branch. Repeated
     // identical queries are served from the Redis embedding cache (long
@@ -114,7 +152,7 @@ export async function retrieve(
                 ...tenantFilter,
                 text: { contains: query, mode: 'insensitive' },
             },
-            select: { id: true, source: true, sourceType: true, text: true },
+            select: { id: true, source: true, sourceType: true, text: true, language: true },
             take: branchTake,
         });
 
@@ -135,10 +173,11 @@ export async function retrieve(
                       source: string;
                       sourceType: KnowledgeChunkSourceType;
                       text: string;
+                      language: string | null;
                       similarity: number;
                   }>
               >(Prisma.sql`
-            SELECT "id", "source", "sourceType", "text",
+            SELECT "id", "source", "sourceType", "text", "language",
                    (1 - ("embedding" <=> ${queryLiteral}::vector)) AS "similarity"
             FROM "KnowledgeChunk"
             WHERE ${tenantSql}
@@ -156,7 +195,8 @@ export async function retrieve(
                 source: v.source,
                 sourceType: v.sourceType,
                 text: v.text,
-                score: Number(v.similarity),
+                language: v.language ?? null,
+                score: Number(v.similarity) + languageBonus(v.language),
             });
         }
         for (const k of keywordHits) {
@@ -170,7 +210,8 @@ export async function retrieve(
                     source: k.source,
                     sourceType: k.sourceType,
                     text: k.text,
-                    score: KEYWORD_SCORE,
+                    language: k.language ?? null,
+                    score: KEYWORD_SCORE + languageBonus(k.language),
                 });
             }
         }

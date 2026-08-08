@@ -81,6 +81,10 @@ interface ArticleDetail {
     status: 'DRAFT' | 'PUBLISHED' | 'ARCHIVED';
     source: string | null;
     language: string | null;
+    cropTags: string[];
+    regions: string[];
+    bbchStageMin: number | null;
+    bbchStageMax: number | null;
     currentVersionId: string | null;
     owner: { id: string; name: string | null } | null;
     updatedAt: string;
@@ -371,6 +375,22 @@ export default function KnowledgeArticleDetailPage() {
                                   {
                                       label: t('metaSource'),
                                       value: article.source,
+                                  } as const,
+                              ]
+                            : []),
+                        ...(article.cropTags.length > 0
+                            ? [
+                                  {
+                                      label: t('metaCrop'),
+                                      value: article.cropTags.join(', '),
+                                  } as const,
+                              ]
+                            : []),
+                        ...(article.bbchStageMin != null && article.bbchStageMax != null
+                            ? [
+                                  {
+                                      label: t('metaBbch'),
+                                      value: `BBCH ${article.bbchStageMin}-${article.bbchStageMax}`,
                                   } as const,
                               ]
                             : []),
@@ -671,6 +691,10 @@ export default function KnowledgeArticleDetailPage() {
                     category: article.category,
                     ownerUserId: article.owner?.id ?? null,
                     language: article.language,
+                    cropTags: article.cropTags,
+                    regions: article.regions,
+                    bbchStageMin: article.bbchStageMin,
+                    bbchStageMax: article.bbchStageMax,
                 }}
                 onSaved={fetchArticle}
             />

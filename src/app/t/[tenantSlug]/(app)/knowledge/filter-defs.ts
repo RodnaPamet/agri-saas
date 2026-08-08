@@ -24,7 +24,7 @@
 import type { FilterDefInput, FilterDef } from '@/components/ui/filter/filter-definitions';
 import { createTypedFilterDefs } from '@/components/ui/filter/filter-definitions';
 import type { FilterOption } from '@/components/ui/filter/types';
-import { CircleDot, Tag } from 'lucide-react';
+import { CircleDot, Tag, Sprout, MapPin } from 'lucide-react';
 
 /** `KnowledgeArticleStatus` enum member values — the single source of
  *  truth for the filter picker AND the row/version badge label
@@ -69,6 +69,24 @@ const STATIC_DEFS = {
         multiple: true,
         resetBehavior: 'clearable',
     },
+    crop: {
+        label: '',
+        description: '',
+        group: 'Attributes',
+        icon: Sprout,
+        options: null, // derived from loaded rows' cropTags
+        multiple: true,
+        resetBehavior: 'clearable',
+    },
+    region: {
+        label: '',
+        description: '',
+        group: 'Attributes',
+        icon: MapPin,
+        options: null, // derived from loaded rows' regions
+        multiple: true,
+        resetBehavior: 'clearable',
+    },
 } satisfies Record<string, FilterDefInput>;
 
 export const knowledgeFilterDefs = createTypedFilterDefs()(STATIC_DEFS);
@@ -76,19 +94,35 @@ export const KNOWLEDGE_FILTER_KEYS = knowledgeFilterDefs.filterKeys;
 
 interface ArticleLike {
     category?: string | null;
+    cropTags?: string[] | null;
+    regions?: string[] | null;
+}
+
+/** Distinct, sorted `{ value, label }` options from a string field on the
+ *  loaded rows — shared shape for category / crop / region facets. */
+function distinctStringOptions(values: ReadonlyArray<string | null | undefined>): FilterOption[] {
+    const seen = new Set<string>();
+    for (const v of values) {
+        const clean = v?.trim();
+        if (clean) seen.add(clean);
+    }
+    return Array.from(seen)
+        .sort((a, b) => a.localeCompare(b))
+        .map((value) => ({ value, label: value }));
 }
 
 export function categoryOptionsFromArticles(
     articles: ReadonlyArray<ArticleLike>,
 ): FilterOption[] {
-    const seen = new Set<string>();
-    for (const a of articles) {
-        const c = a.category?.trim();
-        if (c) seen.add(c);
-    }
-    return Array.from(seen)
-        .sort((a, b) => a.localeCompare(b))
-        .map((value) => ({ value, label: value }));
+    return distinctStringOptions(articles.map((a) => a.category));
+}
+
+export function cropOptionsFromArticles(articles: ReadonlyArray<ArticleLike>): FilterOption[] {
+    return distinctStringOptions(articles.flatMap((a) => a.cropTags ?? []));
+}
+
+export function regionOptionsFromArticles(articles: ReadonlyArray<ArticleLike>): FilterOption[] {
+    return distinctStringOptions(articles.flatMap((a) => a.regions ?? []));
 }
 
 /**
@@ -107,6 +141,8 @@ export function buildKnowledgeFilters(
     articles: ReadonlyArray<ArticleLike>,
 ): FilterDef[] {
     const categoryOpts = categoryOptionsFromArticles(articles);
+    const cropOpts = cropOptionsFromArticles(articles);
+    const regionOpts = regionOptionsFromArticles(articles);
     return knowledgeFilterDefs.filters.map((f) => {
         if (f.key === 'status') {
             return {
@@ -122,6 +158,22 @@ export function buildKnowledgeFilters(
                 label: t('categoryLabel'),
                 description: t('categoryDescription'),
                 options: categoryOpts,
+            };
+        }
+        if (f.key === 'crop') {
+            return {
+                ...f,
+                label: t('cropLabel'),
+                description: t('cropDescription'),
+                options: cropOpts,
+            };
+        }
+        if (f.key === 'region') {
+            return {
+                ...f,
+                label: t('regionLabel'),
+                description: t('regionDescription'),
+                options: regionOpts,
             };
         }
         return f;

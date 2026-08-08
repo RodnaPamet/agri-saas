@@ -48,6 +48,11 @@ interface LocationLink {
     location?: { id: string; name: string } | null;
 }
 interface EquipmentLink {
+    // `LogEquipment` points at `Asset` since the Equipment merge. The
+    // legacy field names stay accepted so an entry rendered from a
+    // cached/offline payload minted before the merge still resolves.
+    assetId?: string;
+    asset?: { id: string; name: string; type?: string | null } | null;
     equipmentId?: string;
     equipment?: { id: string; name: string; category?: string | null } | null;
 }
@@ -306,7 +311,7 @@ export default function JournalDetailPage() {
                         // omitting them would silently clear the entry's
                         // equipment links on every edit.
                         equipmentIds: equipment
-                            .map((e) => e.equipmentId ?? e.equipment?.id)
+                            .map((e) => e.assetId ?? e.asset?.id ?? e.equipmentId ?? e.equipment?.id)
                             .filter((id): id is string => Boolean(id)),
                         costAmount: entry.costAmount ?? null,
                     }}
@@ -333,7 +338,7 @@ export default function JournalDetailPage() {
                             <Eyebrow>{t('equipment')}</Eyebrow>
                             <p className="text-sm">
                                 {equipment.length
-                                    ? equipment.map((e) => e.equipment?.name).filter(Boolean).join(', ')
+                                    ? equipment.map((e) => e.asset?.name ?? e.equipment?.name).filter(Boolean).join(', ')
                                     : '—'}
                             </p>
                         </div>

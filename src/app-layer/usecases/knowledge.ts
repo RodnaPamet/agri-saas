@@ -6,6 +6,8 @@ import { logEvent } from '../events/audit';
 import { notFound, badRequest } from '@/lib/errors/types';
 import { runInTenantContext } from '@/lib/db-context';
 import { sanitizePlainText, sanitizeRichTextHtml } from '@/lib/security/sanitize';
+import { enqueue } from '../jobs/queue';
+import { logger } from '@/lib/observability/logger';
 
 /**
  * Knowledge Base usecases — versioned SOPs + growing guides, repurposing
@@ -31,6 +33,68 @@ function sanitizeContent(contentType: 'HTML' | 'MARKDOWN', text: string | null |
 function sanitizeOptional<T extends string | null | undefined>(value: T): T {
     if (value === undefined || value === null) return value;
     return sanitizePlainText(value as string) as T;
+}
+
+/** Cap on the number of crop tags / regions an article can carry — a
+ *  runaway list is a data-entry mistake, not a real taxonomy. */
+const MAX_TAGS = 20;
+
+/**
+ * Sanitise a `cropTags` / `regions` array: trim, strip HTML, drop empties,
+ * dedupe case-insensitively (keeping the first-seen casing), cap length.
+ * `undefined` passes through unchanged (three-state contract — undefined
+ * means "no change" at the usecase boundary).
+ */
+function sanitizeTagArray(value: string[] | undefined): string[] | undefined {
+    if (value === undefined) return undefined;
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const raw of value) {
+        const clean = sanitizePlainText(raw).trim();
+        if (!clean) continue;
+        const key = clean.toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push(clean.slice(0, 60));
+        if (out.length >= MAX_TAGS) break;
+    }
+    return out;
+}
+
+/** BBCH is a 00-99 ordinal growth-stage scale. Validates the pair is
+ *  internally consistent — both-or-neither set, in range, min <= max. */
+function assertValidBbchRange(min: number | null | undefined, max: number | null | undefined): void {
+    if (min == null && max == null) return;
+    if (min == null || max == null) {
+        throw badRequest('bbchStageMin and bbchStageMax must both be set or both be omitted');
+    }
+    if (min < 0 || min > 99 || max < 0 || max > 99) {
+        throw badRequest('BBCH stage must be between 0 and 99');
+    }
+    if (min > max) {
+        throw badRequest('bbchStageMin must be less than or equal to bbchStageMax');
+    }
+}
+
+/**
+ * Fire-and-forget enqueue of the reindex job (S4/S5) — publish makes an
+ * article's content retrievable, archive/unpublish must remove it from
+ * retrieval (an archived SOP must never keep being cited as current). A
+ * queue failure must never fail the publish/archive request itself, so
+ * this only logs on error, mirroring the `classify-photo` enqueue in
+ * `journal.ts`.
+ */
+async function enqueueReindex(ctx: RequestContext, articleId: string): Promise<void> {
+    try {
+        await enqueue('reindex-knowledge-article', { tenantId: ctx.tenantId, articleId });
+    } catch (err) {
+        logger.warn('knowledge: reindex-knowledge-article enqueue failed', {
+            component: 'knowledge',
+            tenantId: ctx.tenantId,
+            articleId,
+            error: err instanceof Error ? err.message : String(err),
+        });
+    }
 }
 
 // ─── Reads ───
@@ -82,12 +146,17 @@ export interface CreateArticleInput {
     ownerUserId?: string | null;
     language?: string | null;
     source?: string | null;
+    cropTags?: string[];
+    regions?: string[];
+    bbchStageMin?: number | null;
+    bbchStageMax?: number | null;
     contentType?: 'HTML' | 'MARKDOWN';
     content?: string | null;
 }
 
 export async function createArticle(ctx: RequestContext, data: CreateArticleInput) {
     assertCanWrite(ctx);
+    assertValidBbchRange(data.bbchStageMin, data.bbchStageMax);
     return runInTenantContext(ctx, async (db) => {
         // Unique slug per tenant (collision-checked, mirrors createPolicy).
         let base = slugify(data.title) || 'article';
@@ -109,6 +178,10 @@ export async function createArticle(ctx: RequestContext, data: CreateArticleInpu
             ownerUserId: data.ownerUserId,
             language: data.language,
             source: data.source != null ? sanitizePlainText(data.source) : null,
+            cropTags: sanitizeTagArray(data.cropTags),
+            regions: sanitizeTagArray(data.regions),
+            bbchStageMin: data.bbchStageMin ?? null,
+            bbchStageMax: data.bbchStageMax ?? null,
         });
 
         if (data.content) {
@@ -145,6 +218,10 @@ export interface UpdateArticleMetadataInput {
     category?: string | null;
     ownerUserId?: string | null;
     language?: string | null;
+    cropTags?: string[];
+    regions?: string[];
+    bbchStageMin?: number | null;
+    bbchStageMax?: number | null;
 }
 
 /**
@@ -160,6 +237,10 @@ export async function updateArticleMetadata(
     data: UpdateArticleMetadataInput,
 ) {
     assertCanWrite(ctx);
+    // Both-or-neither: changing the BBCH range means sending both fields
+    // together (see assertValidBbchRange) — a lone field is ambiguous
+    // against whatever half of the range is already stored.
+    assertValidBbchRange(data.bbchStageMin, data.bbchStageMax);
     return runInTenantContext(ctx, async (db) => {
         const article = await KnowledgeRepository.getById(db, ctx, articleId);
         if (!article) throw notFound('Article not found');
@@ -177,6 +258,10 @@ export async function updateArticleMetadata(
             category: sanitizeOptional(data.category),
             ownerUserId: data.ownerUserId,
             language: data.language,
+            cropTags: sanitizeTagArray(data.cropTags),
+            regions: sanitizeTagArray(data.regions),
+            bbchStageMin: data.bbchStageMin,
+            bbchStageMax: data.bbchStageMax,
         });
 
         await logEvent(db, ctx, {
@@ -249,7 +334,7 @@ export async function createArticleVersion(ctx: RequestContext, articleId: strin
 
 export async function publishArticle(ctx: RequestContext, articleId: string, versionId: string) {
     assertCanAdmin(ctx);
-    return runInTenantContext(ctx, async (db) => {
+    const result = await runInTenantContext(ctx, async (db) => {
         const article = await KnowledgeRepository.getById(db, ctx, articleId);
         if (!article) throw notFound('Article not found');
         const version = await KnowledgeVersionRepository.getById(db, ctx, versionId);
@@ -277,11 +362,19 @@ export async function publishArticle(ctx: RequestContext, articleId: string, ver
 
         return KnowledgeRepository.getById(db, ctx, articleId);
     });
+
+    // S4/S5 — publishing makes the article's content retrievable: chunk
+    // the newly-current version + embed it. Enqueued AFTER the transaction
+    // commits (not inside the callback above) so the worker never races a
+    // still-open transaction and reads the pre-publish row.
+    await enqueueReindex(ctx, articleId);
+
+    return result;
 }
 
 export async function archiveArticle(ctx: RequestContext, articleId: string) {
     assertCanAdmin(ctx);
-    return runInTenantContext(ctx, async (db) => {
+    const result = await runInTenantContext(ctx, async (db) => {
         const article = await KnowledgeRepository.getById(db, ctx, articleId);
         if (!article) throw notFound('Article not found');
         await KnowledgeRepository.updateStatus(db, ctx, articleId, 'ARCHIVED');
@@ -299,6 +392,13 @@ export async function archiveArticle(ctx: RequestContext, articleId: string) {
         });
         return { success: true };
     });
+
+    // S4/S5 — archive must REMOVE the article's chunks, or an archived SOP
+    // keeps being cited as current retrieval content. Same commit-then-
+    // enqueue ordering as publishArticle above.
+    await enqueueReindex(ctx, articleId);
+
+    return result;
 }
 
 /**
@@ -319,12 +419,14 @@ export async function archiveArticle(ctx: RequestContext, articleId: string) {
  */
 export async function unarchiveArticle(ctx: RequestContext, articleId: string) {
     assertCanAdmin(ctx);
-    return runInTenantContext(ctx, async (db) => {
+    let restoredToPublished = false;
+    const result = await runInTenantContext(ctx, async (db) => {
         const article = await KnowledgeRepository.getById(db, ctx, articleId);
         if (!article) throw notFound('Article not found');
         if (article.status !== 'ARCHIVED') return article; // idempotent
 
         const restoredStatus = article.lifecycleVersion > 1 ? 'PUBLISHED' : 'DRAFT';
+        restoredToPublished = restoredStatus === 'PUBLISHED';
         await KnowledgeRepository.updateStatus(db, ctx, articleId, restoredStatus);
 
         await logEvent(db, ctx, {
@@ -342,6 +444,16 @@ export async function unarchiveArticle(ctx: RequestContext, articleId: string) {
 
         return KnowledgeRepository.getById(db, ctx, articleId);
     });
+
+    // Symmetric with publish/archive: restoring to PUBLISHED makes the
+    // article's content retrievable again (it was removed on archive).
+    // Restoring to DRAFT needs no reindex — the job's own PUBLISHED check
+    // would only ever remove (already-absent) chunks.
+    if (restoredToPublished) {
+        await enqueueReindex(ctx, articleId);
+    }
+
+    return result;
 }
 
 // ─── Acknowledgement (mirrors policy-attestation) ───
