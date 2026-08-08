@@ -9,8 +9,6 @@
  *   - Control       → nextDueAt
  *   - Policy        → nextReviewAt
  *   - Task          → dueAt
- *   - Risk          → nextReviewAt, targetDate
- *   - ControlTestPlan → nextDueAt
  *
  * Design principles:
  *   - Detection ONLY — no email sending, no side effects beyond audit logs
