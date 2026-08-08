@@ -56,27 +56,27 @@ describeFn('Epic 41 — default-preset seeding (DB-backed)', () => {
 
     // ─── Happy path ───────────────────────────────────────────────
 
-    it('seeds an empty org with exactly eight widgets', async () => {
+    it('seeds an empty org with exactly six widgets', async () => {
         const orgId = await makeOrg('happy');
         const result = await seedDefaultOrgDashboard(prisma, orgId);
 
         expect(result.seeded).toBe(true);
-        expect(result.created).toBe(8);
+        expect(result.created).toBe(6);
 
         const persisted = await prisma.orgDashboardWidget.count({
             where: { organizationId: orgId },
         });
-        expect(persisted).toBe(8);
+        expect(persisted).toBe(6);
     });
 
     // ─── Idempotency ──────────────────────────────────────────────
 
-    it('seeding twice yields eight widgets total (not sixteen)', async () => {
+    it('seeding twice yields six widgets total (not twelve)', async () => {
         const orgId = await makeOrg('idempotent');
 
         const first = await seedDefaultOrgDashboard(prisma, orgId);
         expect(first.seeded).toBe(true);
-        expect(first.created).toBe(8);
+        expect(first.created).toBe(6);
 
         const second = await seedDefaultOrgDashboard(prisma, orgId);
         expect(second.seeded).toBe(false);
@@ -85,7 +85,7 @@ describeFn('Epic 41 — default-preset seeding (DB-backed)', () => {
         const persisted = await prisma.orgDashboardWidget.count({
             where: { organizationId: orgId },
         });
-        expect(persisted).toBe(8);
+        expect(persisted).toBe(6);
     });
 
     it('seeding an org that already has a manual widget is a no-op', async () => {
@@ -119,7 +119,7 @@ describeFn('Epic 41 — default-preset seeding (DB-backed)', () => {
 
     // ─── Concurrent seed safety ───────────────────────────────────
 
-    it('two concurrent seeds on the same fresh org converge to 8 widgets', async () => {
+    it('two concurrent seeds on the same fresh org converge to 6 widgets', async () => {
         const orgId = await makeOrg('concurrent');
 
         const [a, b] = await Promise.all([
@@ -144,7 +144,7 @@ describeFn('Epic 41 — default-preset seeding (DB-backed)', () => {
         const total = await prisma.orgDashboardWidget.count({
             where: { organizationId: orgId },
         });
-        expect([8, 16]).toContain(total);
+        expect([6, 12]).toContain(total);
     });
 
     // ─── Layout fidelity ──────────────────────────────────────────
@@ -157,7 +157,7 @@ describeFn('Epic 41 — default-preset seeding (DB-backed)', () => {
             where: { organizationId: orgId },
             orderBy: { createdAt: 'asc' },
         });
-        expect(rows).toHaveLength(8);
+        expect(rows).toHaveLength(6);
 
         // Group by (type, chartType) since createMany doesn't preserve
         // input order across drivers. Map key type is a string —

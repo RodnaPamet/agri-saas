@@ -77,7 +77,7 @@ describeFn('Epic 41 — POST /api/org seeds default widgets (DB-backed)', () => 
         });
     }
 
-    it('creates the org + persists eight default widgets atomically', async () => {
+    it('creates the org + persists the default widgets atomically', async () => {
         const user = await prisma.user.create({
             data: {
                 email: `${uniq}-creator@example.com`,
@@ -104,7 +104,9 @@ describeFn('Epic 41 — POST /api/org seeds default widgets (DB-backed)', () => 
         const widgets = await prisma.orgDashboardWidget.findMany({
             where: { organizationId: orgId },
         });
-        expect(widgets).toHaveLength(8);
+        // 8 → 6: the critical-risks KPI and open-risks trend went with
+        // the risk register.
+        expect(widgets).toHaveLength(6);
 
         const distinctOrgIds = new Set(widgets.map((w) => w.organizationId));
         expect(distinctOrgIds).toEqual(new Set([orgId]));
