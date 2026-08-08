@@ -83,26 +83,4 @@ export class AssetMaintenanceRepository {
         await db.assetMaintenance.delete({ where: { id } });
         return true;
     }
-
-    /**
-     * Machines whose depreciation the /costs rollup needs: every
-     * non-retired asset carrying a purchase cost. Bounded.
-     */
-    static async listDepreciableAssets(db: PrismaTx, ctx: RequestContext, take = 1000) {
-        return db.asset.findMany({
-            where: {
-                tenantId: ctx.tenantId,
-                deletedAt: null,
-                purchaseCost: { not: null },
-            },
-            select: {
-                id: true,
-                name: true,
-                purchaseCost: true,
-                purchaseDate: true,
-                usefulLifeYears: true,
-            },
-            take,
-        });
-    }
 }

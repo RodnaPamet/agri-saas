@@ -164,7 +164,7 @@ export function MaintenanceTab({ assetId, canWrite, assetStatus, onStatusChange 
     return (
         <div className="space-y-section">
             <div className="flex items-center justify-between">
-                <Heading level={2} size="sm">{t('maintTitle')}</Heading>
+                <Heading level={2}>{t('maintTitle')}</Heading>
                 {canWrite && (
                     <Button variant="secondary" icon={<Plus />} onClick={() => setAdding(true)}>
                         {t('maintAdd')}
