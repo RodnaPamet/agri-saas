@@ -28,10 +28,7 @@ let admin: { userId: string };
 let nonMember: { userId: string };
 let CONTROL_ID = '';
 let COMP_CONTROL_ID = '';
-let RISK_A = '';
-let RISK_B = '';
 let FOREIGN_CONTROL_ID = '';
-let FOREIGN_RISK_ID = '';
 
 async function makeUser(label: string): Promise<{ userId: string }> {
     const email = `${TAG}-${label}@example.test`;
@@ -58,11 +55,8 @@ beforeAll(async () => {
     CONTROL_ID = c.id;
     const cc = await globalPrisma.control.create({ data: { tenantId: TENANT_ID, name: 'Compensating MFA' } });
     COMP_CONTROL_ID = cc.id;
-    RISK_A = rA.id;
-    RISK_B = rB.id;
     const fc = await globalPrisma.control.create({ data: { tenantId: FOREIGN_TENANT_ID, name: 'Foreign control' } });
     FOREIGN_CONTROL_ID = fc.id;
-    FOREIGN_RISK_ID = fr.id;
 });
 
 afterAll(async () => {
@@ -73,9 +67,7 @@ afterAll(async () => {
     const t = { tenantId: { in: [TENANT_ID, FOREIGN_TENANT_ID] } };
     for (const del of [
         () => globalPrisma.auditLog.deleteMany({ where: t }),
-        () => globalPrisma.findingRisk.deleteMany({ where: t }),
         () => globalPrisma.finding.deleteMany({ where: t }),
-        () => globalPrisma.risk.deleteMany({ where: t }),
         () => globalPrisma.control.deleteMany({ where: t }),
         () => globalPrisma.tenantMembership.deleteMany({ where: t }),
         () => globalPrisma.user.deleteMany({ where: { id: { in: [admin.userId, nonMember.userId] } } }),

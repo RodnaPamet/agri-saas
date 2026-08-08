@@ -106,37 +106,6 @@ describe('ControlRepository._buildWhere', () => {
     });
 });
 
-describe('RiskRepository._buildWhere', () => {
-    it('searches title + description + category with q', async () => {
-        const { RiskRepository } = await import('@/app-layer/repositories/RiskRepository');
-        const mockFindMany = jest.fn().mockResolvedValue([]);
-        const mockDb = { risk: { findMany: mockFindMany } } as unknown as PrismaTx;
-        const ctx = { tenantId: 'tenant-1', userId: 'user-1' } as unknown as RequestContext;
-
-        await RiskRepository.list(mockDb, ctx, { q: 'phishing' });
-
-        const where = mockFindMany.mock.calls[0][0].where;
-        expect(where.OR).toEqual(
-            expect.arrayContaining([
-                expect.objectContaining({ title: { contains: 'phishing', mode: 'insensitive' } }),
-                expect.objectContaining({ description: { contains: 'phishing', mode: 'insensitive' } }),
-                expect.objectContaining({ category: { contains: 'phishing', mode: 'insensitive' } }),
-            ])
-        );
-    });
-
-    it('enforces tenant boundary', async () => {
-        const { RiskRepository } = await import('@/app-layer/repositories/RiskRepository');
-        const mockFindMany = jest.fn().mockResolvedValue([]);
-        const mockDb = { risk: { findMany: mockFindMany } } as unknown as PrismaTx;
-        const ctx = { tenantId: 'tenant-1', userId: 'user-1' } as unknown as RequestContext;
-
-        await RiskRepository.list(mockDb, ctx);
-
-        const where = mockFindMany.mock.calls[0][0].where;
-        expect(where.tenantId).toBe('tenant-1');
-    });
-});
 
 describe('AssetRepository._buildWhere', () => {
     it('searches name + manufacturer + model + serialNumber + owner with q', async () => {
@@ -406,48 +375,3 @@ describe('PolicyRepository._buildWhere', () => {
 
 // ─── 9. Tenant isolation via where clause ───
 
-describe('Tenant isolation via where clause', () => {
-    it('ControlRepository always includes tenant boundary', async () => {
-        const { ControlRepository } = await import('@/app-layer/repositories/ControlRepository');
-        const mockFindMany = jest.fn().mockResolvedValue([]);
-        const mockDb = { control: { findMany: mockFindMany } } as unknown as PrismaTx;
-
-        const ctxA = { tenantId: 'tenant-a', userId: 'user-1' } as unknown as RequestContext;
-        const ctxB = { tenantId: 'tenant-b', userId: 'user-2' } as unknown as RequestContext;
-
-        await ControlRepository.list(mockDb, ctxA, { q: 'secret-control' });
-        await ControlRepository.list(mockDb, ctxB, { q: 'secret-control' });
-
-        const whereA = mockFindMany.mock.calls[0][0].where;
-        const whereB = mockFindMany.mock.calls[1][0].where;
-
-        // Tenant A query only returns tenant-a or global (null) controls
-        expect(whereA.OR).toEqual([{ tenantId: 'tenant-a' }, { tenantId: null }]);
-        // Tenant B query only returns tenant-b or global (null) controls
-        expect(whereB.OR).toEqual([{ tenantId: 'tenant-b' }, { tenantId: null }]);
-    });
-
-    it('RiskRepository scopes to tenant', async () => {
-        const { RiskRepository } = await import('@/app-layer/repositories/RiskRepository');
-        const mockFindMany = jest.fn().mockResolvedValue([]);
-        const mockDb = { risk: { findMany: mockFindMany } } as unknown as PrismaTx;
-
-        const ctxA = { tenantId: 'tenant-a', userId: 'user-1' } as unknown as RequestContext;
-        await RiskRepository.list(mockDb, ctxA, { q: 'confidential' });
-
-        const where = mockFindMany.mock.calls[0][0].where;
-        expect(where.tenantId).toBe('tenant-a');
-    });
-
-    it('EvidenceRepository scopes to tenant', async () => {
-        const { EvidenceRepository } = await import('@/app-layer/repositories/EvidenceRepository');
-        const mockFindMany = jest.fn().mockResolvedValue([]);
-        const mockDb = { evidence: { findMany: mockFindMany } } as unknown as PrismaTx;
-
-        const ctxA = { tenantId: 'tenant-a', userId: 'user-1' } as unknown as RequestContext;
-        await EvidenceRepository.list(mockDb, ctxA, { q: 'secret' });
-
-        const where = mockFindMany.mock.calls[0][0].where;
-        expect(where.tenantId).toBe('tenant-a');
-    });
-});

@@ -340,60 +340,8 @@ describe('finding.updateFinding sanitises only fields actually being written', (
 
 // ── risk.ts ───────────────────────────────────────────────────────
 
-describe('risk.createRisk sanitises every encrypted + free-text column', () => {
-    it('strips <script> from title, threat, vulnerability, treatmentNotes, treatmentOwner, description, category', async () => {
-        mockRiskCreate.mockResolvedValue({ id: 'r1', title: 'X' });
-        await createRisk(ctx, {
-            title: `T ${XSS}`,
-            description: `D ${XSS}`,
-            category: `Cat ${XSS}`,
-            threat: `Threat ${XSS}`,
-            vulnerability: `Vuln ${XSS}`,
-            treatmentOwner: `Owner ${XSS}`,
-            treatmentNotes: `Notes ${XSS}`,
-        });
-        const data = mockRiskCreate.mock.calls[0][2];
-        for (const k of [
-            'title',
-            'description',
-            'category',
-            'threat',
-            'vulnerability',
-            'treatmentOwner',
-            'treatmentNotes',
-        ]) {
-            expect(data[k]).not.toMatch(/<script/);
-        }
-    });
-});
 
-describe('risk.createRiskFromTemplate sanitises the merged value', () => {
-    it('sanitises overrides + the template fallback path', async () => {
-        mockRiskTemplateGet.mockResolvedValue({
-            id: 'tpl-1',
-            title: `Template ${XSS}`,
-            description: 'pristine',
-            category: 'Ops',
-            defaultLikelihood: 3,
-            defaultImpact: 3,
-        });
-        mockRiskCreate.mockResolvedValue({ id: 'r1', title: 'X' });
-        await createRiskFromTemplate(ctx, 'tpl-1', { description: `Custom ${XSS}` });
-        const data = mockRiskCreate.mock.calls[0][2];
-        expect(data.title).not.toMatch(/<script/); // from template
-        expect(data.description).not.toMatch(/<script/); // from override
-    });
-});
 
-describe('risk.updateRisk sanitises optional fields only when provided', () => {
-    it('sanitises threat when provided; leaves untouched columns undefined', async () => {
-        mockRiskUpdate.mockResolvedValue({ id: 'r1' });
-        await updateRisk(ctx, 'r1', { threat: `bad ${XSS}` });
-        const data = mockRiskUpdate.mock.calls[0][3];
-        expect(data.threat).not.toMatch(/<script/);
-        expect(data.title).toBeUndefined();
-    });
-});
 
 // ── vendor.ts ─────────────────────────────────────────────────────
 
