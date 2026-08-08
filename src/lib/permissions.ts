@@ -11,6 +11,13 @@ export type PermissionSet = {
     frameworks: { view: boolean; install: boolean };
     audits: { view: boolean; manage: boolean; freeze: boolean; share: boolean };
     reports: { view: boolean; export: boolean };
+    /**
+     * The knowledge base (versioned SOPs/guides + the RAG-grounded ask
+     * endpoint). A single `view` flag covers both today — asking a
+     * question is a read of the same corpus the article list already
+     * shows, not a separate privilege tier.
+     */
+    knowledge: { view: boolean };
     admin: {
         view: boolean;
         manage: boolean;
@@ -72,6 +79,7 @@ export const PERMISSION_SCHEMA: Record<keyof PermissionSet, string[]> = {
     frameworks: ['view', 'install'],
     audits: ['view', 'manage', 'freeze', 'share'],
     reports: ['view', 'export'],
+    knowledge: ['view'],
     admin: ['view', 'manage', 'members', 'sso', 'scim', 'tenant_lifecycle', 'owner_management'],
 };
 
@@ -100,6 +108,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 frameworks: { view: true, install: true },
                 audits: { view: true, manage: true, freeze: true, share: true },
                 reports: { view: true, export: true },
+                knowledge: { view: true },
                 admin: {
                     view: true, manage: true, members: true, sso: true, scim: true,
                     tenant_lifecycle: true, owner_management: true,
@@ -117,6 +126,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 frameworks: { view: true, install: true },
                 audits: { view: true, manage: true, freeze: true, share: true },
                 reports: { view: true, export: true },
+                knowledge: { view: true },
                 admin: {
                     view: true, manage: true, members: true, sso: true, scim: true,
                     // Explicit false: ADMIN is NOT the tenant owner.
@@ -138,6 +148,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 frameworks: { view: true, install: false },
                 audits: { view: true, manage: false, freeze: false, share: false },
                 reports: { view: true, export: true },
+                knowledge: { view: true },
                 admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false },
             };
         case 'AUDITOR':
@@ -155,6 +166,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 // Auditors can view and maybe export/share depending on policy, but let's keep view/share
                 audits: { view: true, manage: false, freeze: false, share: true },
                 reports: { view: true, export: true },
+                knowledge: { view: true },
                 admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false },
             };
         case 'MECHANISATOR':
@@ -178,6 +190,9 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 frameworks: { view: false, install: false },
                 audits: { view: false, manage: false, freeze: false, share: false },
                 reports: { view: false, export: false },
+                // Restricted persona — the same "opposite of READER" reasoning
+                // as every other domain above applies to the knowledge base.
+                knowledge: { view: false },
                 admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false },
             };
         case 'READER':
@@ -193,6 +208,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 frameworks: { view: true, install: false },
                 audits: { view: true, manage: false, freeze: false, share: false },
                 reports: { view: true, export: false },
+                knowledge: { view: true },
                 admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false },
             };
     }

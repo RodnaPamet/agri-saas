@@ -311,6 +311,21 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'Creating, listing, and revoking pending tenant invites. ' +
             'Changes who can join the tenant — gated under admin.members.',
     },
+
+    // ── Knowledge-base ask (KB wire-up PR, W3/#91) ───────────────────
+    // Deliberately narrower than the rest of this file: `knowledge.view`
+    // is a READ-tier permission every role but MECHANISATOR holds, not an
+    // admin key. It is listed here (rather than left on the usecase-layer
+    // assertCanRead gate like the sibling article routes) because this
+    // endpoint runs an LLM completion per request — see the matching
+    // EXCLUDED_ROUTES-adjacent note in api-permission-coverage.test.ts.
+    {
+        path: new RegExp(`^${T}\\/knowledge\\/ask$`),
+        permission: 'knowledge.view',
+        note:
+            'RAG Q&A over the tenant + GLOBAL knowledge base — gated so a ' +
+            'denial audits cleanly, on top of the KNOWLEDGE_ASK_LIMIT rate limit.',
+    },
 ] as const;
 
 // ─── Resolver ───────────────────────────────────────────────────────

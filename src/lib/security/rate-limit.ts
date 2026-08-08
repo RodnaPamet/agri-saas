@@ -350,6 +350,24 @@ export const EXCHANGE_INQUIRY_LIMIT: RateLimitConfig = {
     windowMs: 60 * 1000,
 };
 
+/**
+ * Knowledge-base ask (RAG Q&A): 10 requests per minute per (IP, userId).
+ *
+ * Threat model: cost + abuse. Every call is an LLM completion over a
+ * user-supplied string (`askKnowledgeBase`) — an ungated endpoint turns
+ * into a free-form prompt firehose a compromised credential or a script
+ * could hammer, running up model spend with no product value. 10/min is
+ * generous for a person actually reading answers (each round trip takes
+ * several seconds) while blunting a scripted loop. Tighter than the
+ * generic API_MUTATION_LIMIT (60/min) for the same reason
+ * EXCHANGE_INQUIRY_LIMIT is tighter than the listing limit: this
+ * specific action is materially more expensive than an ordinary write.
+ */
+export const KNOWLEDGE_ASK_LIMIT: RateLimitConfig = {
+    maxAttempts: 10,
+    windowMs: 60 * 1000,
+};
+
 // ═══════════════════════════════════════════════════════════════════
 // Progressive rate limit — Epic A.3 auth brute-force protection
 // ═══════════════════════════════════════════════════════════════════
