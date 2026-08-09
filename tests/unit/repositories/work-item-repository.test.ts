@@ -236,21 +236,21 @@ describe('WorkItemRepository — filter translation', () => {
         // (or similar) makes a filter chip select the wrong rows —
         // wrong, but plausible-looking, results.
         await WorkItemRepository.list(asTx(db), ctx, {
-            status: 'OPEN',
+            status: ['OPEN'],
             type: 'FARM_TASK',
             severity: 'HIGH',
             priority: 'P1',
-            assigneeUserId: 'user-3',
+            assigneeUserId: ['user-3'],
             controlId: 'c-1',
         });
 
         expect(whereOf(db.task.findMany)).toEqual({
             tenantId: 'tenant-1',
-            status: 'OPEN',
+            status: { in: ['OPEN'] },
             type: 'FARM_TASK',
             severity: 'HIGH',
             priority: 'P1',
-            assigneeUserId: 'user-3',
+            assigneeUserId: { in: ['user-3'] },
             controlId: 'c-1',
         });
     });
@@ -273,10 +273,10 @@ describe('WorkItemRepository — filter translation', () => {
         // clobber the caller's own status filter, so "closed AND
         // overdue" — the query an auditor runs to find late work —
         // would silently return nothing.
-        await WorkItemRepository.list(asTx(db), ctx, { due: 'overdue', status: 'CLOSED' });
+        await WorkItemRepository.list(asTx(db), ctx, { due: 'overdue', status: ['CLOSED'] });
 
         expect(whereOf(db.task.findMany)).toMatchObject({
-            status: 'CLOSED',
+            status: { in: ['CLOSED'] },
             dueAt: { lt: NOW },
         });
     });
@@ -298,9 +298,9 @@ describe('WorkItemRepository — filter translation', () => {
         // be fixed on one and left broken on the other. Asserting it
         // only for `overdue` would let "closed AND due this week" —
         // the query for work that was closed early — return nothing.
-        await WorkItemRepository.list(asTx(db), ctx, { due: 'next7d', status: 'RESOLVED' });
+        await WorkItemRepository.list(asTx(db), ctx, { due: 'next7d', status: ['RESOLVED'] });
 
-        expect(whereOf(db.task.findMany).status).toBe('RESOLVED');
+        expect(whereOf(db.task.findMany).status).toEqual({ in: ['RESOLVED'] });
     });
 
     it('searches title AND key, case-insensitively', async () => {
