@@ -47,10 +47,36 @@
 /// A knowledge-base article — a versioned SOP or growing guide. The
 /// published content is whatever `currentVersion` points at; DRAFT edits
 /// live on the latest version until publish flips status + currentVersionId.
+///
+/// NULLABLE tenantId (W5 task) — the asymmetric-RLS twist, mirroring
+/// `KnowledgeChunk` / `UserSession` / `IntegrationWebhookEvent`:
+///   • tenantId NULL  → GLOBAL, platform-authored content (e.g. the
+///                      satellite-imagery guide, seeded by
+///                      `scripts/rag/ingest-satellite-guide.ts` under the
+///                      superuser-bypassed default Prisma client — see
+///                      that script's header). Readable by EVERY tenant;
+///                      only a superuser-bypassed script may write one.
+///   • tenantId set   → tenant-private, unchanged behaviour.
+/// The single asymmetric policy (USING (NULL OR own) WITH CHECK (own)) is
+/// mandatory — see migration 20260809130000_knowledge_global_articles and
+/// the UserSession migration it mirrors. No tenant-facing usecase may
+/// create, edit, publish, archive, unarchive, delete, or acknowledge a
+/// GLOBAL article — enforced in `src/app-layer/usecases/knowledge.ts`
+/// (`assertTenantOwned`); `KnowledgeAcknowledgement`'s composite FK to
+/// `KnowledgeArticleVersion(id, tenantId)` independently rejects an
+/// acknowledgement attempt at the DB layer too (a GLOBAL version's NULL
+/// tenantId can never equal an acting tenantId).
 model KnowledgeArticle {
   id               String                 @id @default(cuid())
-  tenantId         String
+  tenantId         String?
   /// Unique per tenant — used in readable URLs + as the seed upsert key.
+  /// For GLOBAL (tenantId NULL) rows, `@@unique([tenantId, slug])` below
+  /// does NOT enforce uniqueness — Postgres treats NULLs as distinct, so
+  /// two GLOBAL rows could otherwise share a slug. A hand-authored partial
+  /// unique index (`KnowledgeArticle_slug_global_key ON (slug) WHERE
+  /// "tenantId" IS NULL`, in the migration — Prisma's DSL has no
+  /// `@@unique(..., where: ...)`) covers that case; same hand-authored-SQL
+  /// pattern as the `KnowledgeChunk.embedding` ivfflat index above.
   slug             String
   title            String
   summary          String?
@@ -85,7 +111,7 @@ model KnowledgeArticle {
   deletedByUserId  String?
   retentionUntil   DateTime?
 
-  tenant         Tenant                    @relation(fields: [tenantId], references: [id])
+  tenant         Tenant?                   @relation(fields: [tenantId], references: [id])
   owner          User?                     @relation("KnowledgeArticleOwner", fields: [ownerUserId], references: [id])
   currentVersion KnowledgeArticleVersion?  @relation("KnowledgeCurrentVersion", fields: [currentVersionId], references: [id])
   versions       KnowledgeArticleVersion[] @relation("KnowledgeArticleVersions")
@@ -102,9 +128,17 @@ model KnowledgeArticle {
 /// One immutable content snapshot of an article. New edits create a new
 /// version (versionNumber++); publish points the article's currentVersion
 /// at the chosen version. Acknowledgements attach to a specific version.
+///
+/// NULLABLE tenantId (W5 task) — mirrors `KnowledgeArticle.tenantId` above
+/// (NULL = GLOBAL, same asymmetric-RLS policy, same write restriction).
+/// `createdById` stays a required FK to `User` even for GLOBAL versions —
+/// `scripts/rag/ingest-satellite-guide.ts` upserts one designated
+/// "platform author" User row rather than allowing a null author, so
+/// "who authored this" stays a real, displayable answer everywhere the UI
+/// already shows `createdBy.name`.
 model KnowledgeArticleVersion {
   id            String               @id @default(cuid())
-  tenantId      String
+  tenantId      String?
   articleId     String
   versionNumber Int
   contentType   KnowledgeContentType @default(HTML)
@@ -113,7 +147,7 @@ model KnowledgeArticleVersion {
   createdById   String
   createdAt     DateTime             @default(now())
 
-  tenant           Tenant                     @relation(fields: [tenantId], references: [id])
+  tenant           Tenant?                    @relation(fields: [tenantId], references: [id])
   article          KnowledgeArticle           @relation("KnowledgeArticleVersions", fields: [articleId], references: [id], onDelete: Cascade)
   currentOfArticle KnowledgeArticle?          @relation("KnowledgeCurrentVersion")
   createdBy        User                       @relation("KnowledgeVersionCreator", fields: [createdById], references: [id])
@@ -127,6 +161,17 @@ model KnowledgeArticleVersion {
 
 /// A worker's acknowledgement of a specific published article version
 /// (read-receipt). One per (version, user) — re-acknowledging is a no-op.
+///
+/// Deliberately NOT nullable (W5 task) and still on the canonical
+/// split-policy RLS pair — an acknowledgement always belongs to the
+/// ACTING tenant, never to a GLOBAL one. Its composite FK below
+/// (`[articleVersionId, tenantId] -> KnowledgeArticleVersion(id,
+/// tenantId)`) requires an EXACT tenantId match, so it is structurally
+/// impossible to acknowledge a GLOBAL (tenantId NULL) article version —
+/// no row in `KnowledgeArticleVersion` ever has `tenantId = <a real
+/// tenant id>` AND `id = <a GLOBAL version's id>`. The usecase layer
+/// (`acknowledgeArticle`) rejects it first with a clear error; this FK is
+/// the independent DB-layer backstop.
 model KnowledgeAcknowledgement {
   id               String   @id @default(cuid())
   tenantId         String

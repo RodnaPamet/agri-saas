@@ -31,6 +31,7 @@
         "eval:ai": "tsx scripts/ai/eval/run.ts",
         "rag:ingest": "tsx scripts/rag/ingest-corpus.ts",
         "rag:ingest-tenant": "tsx scripts/rag/ingest-tenant.ts",
+        "rag:ingest:satellite": "tsx scripts/rag/ingest-satellite-guide.ts",
         "varieties:import": "tsx scripts/import-crop-varieties.ts",
         "products:import": "tsx scripts/import-products.ts",
         "seed:demo": "tsx scripts/seed-demo.ts",

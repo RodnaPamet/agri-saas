@@ -10,12 +10,14 @@
  * Three things this file proves, none of which is "an assertion that
  * cannot fail":
  *
- *   1. STRUCTURAL — the actual shipped content (`GLOBAL_CORPUS` +
- *      `ALL_SEED_ARTICLES`, i.e. `GROWING_GUIDES` + `SATELLITE_GUIDES`)
+ *   1. STRUCTURAL — the actual shipped content (`GLOBAL_CORPUS`,
+ *      `ALL_SEED_ARTICLES` i.e. `GROWING_GUIDES`, and the GLOBAL
+ *      `SATELLITE_GUIDES` from `scripts/rag/ingest-satellite-guide.ts`)
  *      is scanned with the real detector and must come
  *      back clean. This is what makes the gate "catch content you did
- *      not write" — any future addition to either array is scanned by
- *      this same test, not just at ingest time against a live database.
+ *      not write" — any future addition to any of the three arrays is
+ *      scanned by this same test, not just at ingest time against a live
+ *      database.
  *   2. MUTATION PROOF (negative) — synthetic fixtures shaped like real
  *      Bulgarian dose/PHI/REI text (both languages, both unit systems:
  *      л/дка as well as l/ha) MUST be rejected. If a future edit
@@ -35,6 +37,7 @@ import {
 } from '../../scripts/rag/dose-phi-guard';
 import { GLOBAL_CORPUS } from '../../scripts/rag/corpus';
 import { ALL_SEED_ARTICLES } from '../../scripts/import-knowledge';
+import { SATELLITE_GUIDES } from '../../scripts/rag/ingest-satellite-guide';
 
 describe('dose/PHI/REI structural gate', () => {
     // ── 1. Structural: the real shipped content is clean ──────────────
@@ -50,6 +53,16 @@ describe('dose/PHI/REI structural gate', () => {
         it.each(
             ALL_SEED_ARTICLES.map((g) => [g.slug, `${g.title} ${g.summary} ${g.content}`] as const),
         )('ALL_SEED_ARTICLES entry "%s"', (slug, text) => {
+            expect(scanForUnregisteredRegulatedContent(text)).toEqual([]);
+            expect(() => assertNoUnregisteredRegulatedContent(text, slug)).not.toThrow();
+        });
+
+        // W5 (final task) — the GLOBAL satellite-imagery guide, promoted
+        // out of ALL_SEED_ARTICLES (see that array's doc comment). Scanned
+        // here so it stays covered by the same hard-rule gate.
+        it.each(
+            SATELLITE_GUIDES.map((g) => [g.slug, `${g.title} ${g.summary} ${g.content}`] as const),
+        )('SATELLITE_GUIDES entry "%s"', (slug, text) => {
             expect(scanForUnregisteredRegulatedContent(text)).toEqual([]);
             expect(() => assertNoUnregisteredRegulatedContent(text, slug)).not.toThrow();
         });

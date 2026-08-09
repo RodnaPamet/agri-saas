@@ -1,5 +1,6 @@
 /**
- * Knowledge Base agronomy structure (S1-S5, KB agronomy structure PR).
+ * Knowledge Base agronomy structure (S1-S5, KB agronomy structure PR) +
+ * GLOBAL articles (W5 final task, 2026-08-09).
  *
  * Covers what's new in `usecases/knowledge.ts`:
  *   - cropTags/regions sanitisation (trim, dedupe, cap) on create + PATCH
@@ -8,13 +9,26 @@
  *     AFTER the DB transaction resolves (never from inside the callback —
  *     a job enqueued mid-transaction could race a still-open commit)
  *   - a failed enqueue never fails the request (logged, not thrown)
+ *   - `assertTenantOwned` — every tenant-facing write usecase
+ *     (updateArticleMetadata, createArticleVersion, publishArticle,
+ *     archiveArticle, unarchiveArticle, acknowledgeArticle) rejects a
+ *     GLOBAL (`tenantId: null`) article BEFORE calling any repository
+ *     write, with a Forbidden error — this is the ONE piece of the W5
+ *     migration that can be proven WITHOUT a live database (RLS itself,
+ *     the partial unique index, and the composite-FK backstop on
+ *     `KnowledgeAcknowledgement` all need Postgres — see
+ *     `tests/integration/knowledge-article-rls.test.ts`, cannot run in
+ *     this sandbox — PgBouncer is down locally — but runs in CI)
+ *   - `getSatelliteGuideArticles` reads via
+ *     `KnowledgeRepository.listGlobalByCategory`
  *
  * `KnowledgeRepository` / `KnowledgeVersionRepository` / `logEvent` /
  * `runInTenantContext` / `enqueue` are all mocked — this is a pure
  * usecase-layer test, mirroring `rag-retrieve.test.ts`'s mocking shape.
  * DB-backed behaviour (RLS, real Prisma writes) is covered by
- * `tests/integration/knowledge.test.ts` (cannot run in this sandbox —
- * PgBouncer is down locally — but runs in CI).
+ * `tests/integration/knowledge.test.ts` and
+ * `tests/integration/knowledge-article-rls.test.ts` (cannot run in this
+ * sandbox — PgBouncer is down locally — but runs in CI).
  */
 const mockGetById = jest.fn();
 const mockGetBySlug = jest.fn();
@@ -22,6 +36,7 @@ const mockCreate = jest.fn();
 const mockUpdateMetadata = jest.fn();
 const mockUpdateStatus = jest.fn();
 const mockSetCurrentVersion = jest.fn();
+const mockListGlobalByCategory = jest.fn();
 jest.mock('@/app-layer/repositories/KnowledgeRepository', () => ({
     KnowledgeRepository: {
         getById: (...a: unknown[]) => mockGetById(...a),
@@ -30,13 +45,16 @@ jest.mock('@/app-layer/repositories/KnowledgeRepository', () => ({
         updateMetadata: (...a: unknown[]) => mockUpdateMetadata(...a),
         updateStatus: (...a: unknown[]) => mockUpdateStatus(...a),
         setCurrentVersion: (...a: unknown[]) => mockSetCurrentVersion(...a),
+        listGlobalByCategory: (...a: unknown[]) => mockListGlobalByCategory(...a),
     },
 }));
 
 const mockVersionGetById = jest.fn();
+const mockVersionCreate = jest.fn();
 jest.mock('@/app-layer/repositories/KnowledgeVersionRepository', () => ({
     KnowledgeVersionRepository: {
         getById: (...a: unknown[]) => mockVersionGetById(...a),
+        create: (...a: unknown[]) => mockVersionCreate(...a),
     },
 }));
 
@@ -58,9 +76,12 @@ import { logger } from '@/lib/observability/logger';
 import {
     createArticle,
     updateArticleMetadata,
+    createArticleVersion,
     publishArticle,
     archiveArticle,
     unarchiveArticle,
+    acknowledgeArticle,
+    getSatelliteGuideArticles,
 } from '@/app-layer/usecases/knowledge';
 import { makeRequestContext } from '../helpers/make-context';
 
@@ -216,5 +237,79 @@ describe('unarchiveArticle enqueues reindex-knowledge-article only when restored
         mockGetById.mockResolvedValue({ id: 'art-1', status: 'PUBLISHED', lifecycleVersion: 2 });
         await unarchiveArticle(ctx, 'art-1');
         expect(mockEnqueue).not.toHaveBeenCalled();
+    });
+});
+
+// ─── GLOBAL articles (W5 final task) — read-only for every tenant ───
+
+describe('GLOBAL (tenantId null) articles reject every tenant-facing write', () => {
+    const globalArticle = { id: 'art-global', tenantId: null, status: 'PUBLISHED', currentVersionId: 'v-global', title: 'Global' };
+
+    beforeEach(() => {
+        mockGetById.mockResolvedValue(globalArticle);
+    });
+
+    it('updateArticleMetadata rejects with a Forbidden error, never reaching the repository write', async () => {
+        await expect(updateArticleMetadata(ctx, 'art-global', { title: 'Hacked' })).rejects.toThrow(
+            /platform-authored and read-only/,
+        );
+        expect(mockUpdateMetadata).not.toHaveBeenCalled();
+    });
+
+    it('createArticleVersion rejects before touching the version repository', async () => {
+        await expect(
+            createArticleVersion(ctx, 'art-global', { contentType: 'HTML', contentText: '<p>hi</p>' }),
+        ).rejects.toThrow(/platform-authored and read-only/);
+        expect(mockVersionCreate).not.toHaveBeenCalled();
+    });
+
+    it('publishArticle rejects before looking up the version or touching the status', async () => {
+        await expect(publishArticle(ctx, 'art-global', 'v-global')).rejects.toThrow(
+            /platform-authored and read-only/,
+        );
+        expect(mockVersionGetById).not.toHaveBeenCalled();
+        expect(mockUpdateStatus).not.toHaveBeenCalled();
+        expect(mockEnqueue).not.toHaveBeenCalled();
+    });
+
+    it('archiveArticle rejects before touching the status', async () => {
+        await expect(archiveArticle(ctx, 'art-global')).rejects.toThrow(/platform-authored and read-only/);
+        expect(mockUpdateStatus).not.toHaveBeenCalled();
+        expect(mockEnqueue).not.toHaveBeenCalled();
+    });
+
+    it('unarchiveArticle rejects even though the article is not ARCHIVED (guard runs first)', async () => {
+        await expect(unarchiveArticle(ctx, 'art-global')).rejects.toThrow(/platform-authored and read-only/);
+        expect(mockUpdateStatus).not.toHaveBeenCalled();
+    });
+
+    it('acknowledgeArticle rejects before ever touching db.knowledgeAcknowledgement', async () => {
+        // runInTenantContext is mocked to hand back an empty `{}` as `db` —
+        // if the guard did NOT run first, the next line in acknowledgeArticle
+        // (`db.knowledgeAcknowledgement.findUnique`) would throw a
+        // "not a function" TypeError instead of the Forbidden error asserted
+        // here, so this test also proves the guard's ordering.
+        await expect(acknowledgeArticle(ctx, 'art-global')).rejects.toThrow(/platform-authored and read-only/);
+    });
+
+    it('a bogus id still gets the plain notFound error, not the Forbidden one', async () => {
+        mockGetById.mockResolvedValue(null);
+        await expect(updateArticleMetadata(ctx, 'does-not-exist', { title: 'x' })).rejects.toThrow(
+            'Article not found',
+        );
+    });
+});
+
+// ─── Satellite-imagery guide read (W5 final task) ───
+
+describe('getSatelliteGuideArticles', () => {
+    it('reads GLOBAL "Satellite Imagery" articles for the requested language', async () => {
+        const rows = [{ id: 'a1', slug: 'satellite-ndvi-bg', title: 'NDVI', summary: null, language: 'bg', currentVersion: null }];
+        mockListGlobalByCategory.mockResolvedValue(rows);
+
+        const result = await getSatelliteGuideArticles(ctx, 'bg');
+
+        expect(result).toBe(rows);
+        expect(mockListGlobalByCategory).toHaveBeenCalledWith({}, 'Satellite Imagery', 'bg');
     });
 });

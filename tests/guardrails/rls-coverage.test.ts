@@ -419,6 +419,19 @@ describeFn(DB_SUITE_NAME, () => {
             // would be a permissive sibling letting app_user re-tenant a
             // NULL GLOBAL row. See migration 20260619100000_ai_rag_pgvector.
             'KnowledgeChunk',
+            // W5 (final task) — `KnowledgeArticle` / `KnowledgeArticleVersion`
+            // gained NULLABLE tenantId: NULL = GLOBAL, platform-authored
+            // content (e.g. the satellite-imagery guide), readable by every
+            // tenant; non-null = tenant-private, unchanged. Same asymmetric
+            // single-policy form as KnowledgeChunk/UserSession — a split
+            // tenant_isolation_insert policy would let app_user re-tenant a
+            // GLOBAL row. `KnowledgeAcknowledgement` is DELIBERATELY NOT
+            // listed here — it stays NOT NULL tenantId on the canonical
+            // split-policy pair (see migration
+            // 20260809130000_knowledge_global_articles for why an
+            // acknowledgement can never attach to a GLOBAL article).
+            'KnowledgeArticle',
+            'KnowledgeArticleVersion',
         ]);
 
         const { Prisma } = require('@prisma/client');
