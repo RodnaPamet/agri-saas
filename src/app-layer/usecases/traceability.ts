@@ -1,5 +1,5 @@
 import { RequestContext } from '../types';
-import { ControlRiskRepository, AssetControlRepository, AssetRiskRepository } from '../repositories/TraceabilityRepository';
+import { AssetControlRepository } from '../repositories/TraceabilityRepository';
 import { logEvent } from '../events/audit';
 import { forbidden } from '@/lib/errors/types';
 import { runInTenantContext } from '@/lib/db-context';
@@ -15,16 +15,12 @@ function assertCanManage(ctx: RequestContext) {
     }
 }
 
-// ─── Control ↔ Risk ───
-
-
-
-
-
 // ─── Asset ↔ Control ───
-// The read side is served by `getAssetTraceability` / `getControlTraceability`
-// below (the TraceabilityPanel reads those); the standalone list-by-asset /
-// list-by-control readers were dead and removed.
+//
+// The only traceability edge left after the risk register was removed.
+// `<TraceabilityPanel>` reads it from BOTH directions — the control detail
+// page lists linked assets, the asset detail page lists linked controls —
+// via `getControlTraceability` / `getAssetTraceability` below.
 
 export async function mapAssetToControl(ctx: RequestContext, assetId: string, controlId: string, coverageType?: string, rationale?: string) {
     assertCanManage(ctx);
@@ -56,3 +52,27 @@ export async function unmapAssetFromControl(ctx: RequestContext, assetId: string
 
 // ─── Coverage Summary ───
 
+// ─── Read side (TraceabilityPanel) ───
+//
+// The panel renders nothing until its fetch resolves — `#traceability-panel`
+// only mounts once `data` is truthy — so deleting these readers did not
+// degrade the tab, it left it permanently on "load failed". The risk arms
+// (`getRiskTraceability`, and the `risks` key each of these used to return)
+// went with the register; the shapes keep their entity-keyed form because
+// the panel's `unwrap` helper and its optimistic cache writes index by it.
+
+export async function getControlTraceability(ctx: RequestContext, controlId: string) {
+    assertCanRead(ctx);
+    return runInTenantContext(ctx, async (db) => {
+        const assets = await AssetControlRepository.listByControl(db, ctx.tenantId, controlId);
+        return { controlId, assets };
+    });
+}
+
+export async function getAssetTraceability(ctx: RequestContext, assetId: string) {
+    assertCanRead(ctx);
+    return runInTenantContext(ctx, async (db) => {
+        const controls = await AssetControlRepository.listByAsset(db, ctx.tenantId, assetId);
+        return { assetId, controls };
+    });
+}

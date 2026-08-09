@@ -1,11 +1,5 @@
 import { PrismaTx } from '@/lib/db-context';
-import { CoverageType, ExposureLevel } from '@prisma/client';
-
-export class ControlRiskRepository {
-
-
-
-}
+import { CoverageType } from '@prisma/client';
 
 export class AssetControlRepository {
     static async listByAsset(db: PrismaTx, tenantId: string, assetId: string) {
@@ -37,9 +31,3 @@ export class AssetControlRepository {
     }
 }
 
-export class AssetRiskRepository {
-
-
-
-
-}
