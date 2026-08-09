@@ -4,7 +4,7 @@ import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { TimestampTooltip } from '@/components/ui/timestamp-tooltip';
 import { Button } from '@/components/ui/button';
-import { Plus } from '@/components/ui/icons/nucleo';
+import { Plus, Sparkle3 } from '@/components/ui/icons/nucleo';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { createColumns } from '@/components/ui/table';
 import {
@@ -21,6 +21,7 @@ import { TableTitleCell } from '@/components/ui/table-title-cell';
 import { toApiSearchParams } from '@/lib/filters/url-sync';
 import { buildKnowledgeFilters, KNOWLEDGE_FILTER_KEYS } from './filter-defs';
 import { NewArticleModal } from './NewArticleModal';
+import { KnowledgeAskModal } from './KnowledgeAskModal';
 import {
     StatusBadge,
     type StatusBadgeVariant,
@@ -248,24 +249,42 @@ function KnowledgePageInner({
                 ],
                 title: t('title'),
                 description: t('description'),
-                actions: permissions.canWrite ? (
-                    <NewArticleModal
-                        trigger={
-                            <Button
-                                variant="primary"
-                                icon={<Plus className="-ml-0.5 -mr-2.5" />}
-                                id="new-article-btn"
-                            >
-                                {t('newArticle')}
-                            </Button>
-                        }
-                        onCreated={(article) =>
-                            router.push(
-                                tenantHref(`/knowledge/${article.id}`),
-                            )
-                        }
-                    />
-                ) : null,
+                actions: (
+                    <div className="flex items-center gap-compact">
+                        {/* W4/#92 — ask the knowledge base. Available to every
+                            role that can see this page (gated server-side by
+                            `knowledge.view` on the /knowledge/ask route). */}
+                        <KnowledgeAskModal
+                            trigger={
+                                <Button
+                                    variant="secondary"
+                                    icon={<Sparkle3 />}
+                                    id="knowledge-ask-btn"
+                                >
+                                    {t('ask.trigger')}
+                                </Button>
+                            }
+                        />
+                        {permissions.canWrite ? (
+                            <NewArticleModal
+                                trigger={
+                                    <Button
+                                        variant="primary"
+                                        icon={<Plus className="-ml-0.5 -mr-2.5" />}
+                                        id="new-article-btn"
+                                    >
+                                        {t('newArticle')}
+                                    </Button>
+                                }
+                                onCreated={(article) =>
+                                    router.push(
+                                        tenantHref(`/knowledge/${article.id}`),
+                                    )
+                                }
+                            />
+                        ) : null}
+                    </div>
+                ),
             }}
             filters={{
                 defs: visibleFilterDefs,
