@@ -426,7 +426,7 @@ describe('pull() failure — applyLocalChanges throws', () => {
             remoteUpdatedAt: new Date(),
         });
 
-        // updateStatus should NOT alter identity/practice-plane fields
+        // updateStatus should NOT alter identity/control-plane fields
         expect(result.mapping.conflictStrategy).toBe('LOCAL_WINS');
         expect(result.mapping.localEntityId).toBe('ctrl-1');
         expect(result.mapping.provider).toBe('stub');

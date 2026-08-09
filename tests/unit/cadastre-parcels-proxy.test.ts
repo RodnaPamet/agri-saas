@@ -202,7 +202,7 @@ it('returns empty (200, no fetch) for an oversized bbox', async () => {
 it('fetches upstream, trims properties, and caches on a cache miss', async () => {
     const res = await call(OK_BBOX);
     expect(res.status).toBe(200);
-    expect(res.headers.get('cache-practice')).toBe('public, max-age=86400');
+    expect(res.headers.get('cache-control')).toBe('public, max-age=86400');
 
     const body = await res.json();
     expect(body.features).toHaveLength(1);

@@ -87,7 +87,7 @@ export interface SyncMappingStore {
     /**
      * Find an existing mapping by key, or create one with safe defaults.
      *
-     * On create: identity fields come from `key`, practice-plane fields
+     * On create: identity fields come from `key`, control-plane fields
      * get safe defaults (conflictStrategy=REMOTE_WINS, version=1).
      * Only `syncStatus` and `errorMessage` can be set via `defaults`.
      *
@@ -100,7 +100,7 @@ export interface SyncMappingStore {
      * Update operational status of an existing mapping.
      *
      * The `extra` payload is narrowly typed to prevent accidental
-     * overwrites of identity and practice-plane fields.
+     * overwrites of identity and control-plane fields.
      */
     updateStatus(
         id: string,

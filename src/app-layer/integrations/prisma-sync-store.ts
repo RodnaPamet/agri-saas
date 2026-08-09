@@ -102,7 +102,7 @@ export class PrismaSyncMappingStore implements SyncMappingStore {
      * Find an existing sync mapping by its composite key, or create
      * one with safe defaults. Only `syncStatus` and `errorMessage`
      * can be set via `defaults` — identity fields come from `key`,
-     * and practice-plane fields get safe defaults.
+     * and control-plane fields get safe defaults.
      *
      * On find: returns the existing mapping unchanged.
      */
@@ -131,7 +131,7 @@ export class PrismaSyncMappingStore implements SyncMappingStore {
                     localEntityId: key.localEntityId,
                     remoteEntityType: key.remoteEntityType,
                     remoteEntityId: key.remoteEntityId,
-                    // Safe defaults for practice-plane fields
+                    // Safe defaults for control-plane fields
                     // conflictStrategy defaults to REMOTE_WINS in Prisma schema
                     // version defaults to 1 in Prisma schema
                     ...createPayload,
@@ -154,7 +154,7 @@ export class PrismaSyncMappingStore implements SyncMappingStore {
     /**
      * Update the status of an existing mapping by ID.
      * Uses narrowly-typed SyncMappingStatusUpdate to prevent
-     * accidental overwrites of identity or practice-plane fields.
+     * accidental overwrites of identity or control-plane fields.
      */
     async updateStatus(
         id: string,

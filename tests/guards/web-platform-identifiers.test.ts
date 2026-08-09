@@ -128,11 +128,9 @@ const BANNED_TOKENS: ReadonlyArray<{ token: string; why: string }> = [
         why: 'Mangled aria-controls.',
     },
     {
+        // One entry, not two — matching folds case, so `Practice-Plane`,
+        // `Practice-plane` and `practice-plane` are all this token.
         token: 'Practice-plane',
-        why: 'Infrastructure term — "control plane", not our entity.',
-    },
-    {
-        token: 'Practice-Plane',
         why: 'Infrastructure term — "control plane", not our entity.',
     },
 ];
@@ -163,7 +161,25 @@ const FILES: ReadonlyArray<{ rel: string; src: string }> = SCAN_ROOTS.flatMap(
 
 /** This guard file itself names every banned token as data. */
 const SELF = 'tests/guards/web-platform-identifiers.test.ts';
-const SUBJECTS = FILES.filter((f) => f.rel !== SELF);
+const SUBJECTS: ReadonlyArray<{ rel: string; src: string; lower: string }> = FILES
+    .filter((f) => f.rel !== SELF)
+    .map((f) => ({ ...f, lower: f.src.toLowerCase() }));
+
+/**
+ * Mangled forms are matched CASE-INSENSITIVELY, and that is load-bearing,
+ * not defensive. HTTP header names and ARIA attributes are both
+ * case-insensitive in use — `res.headers.get('cache-control')` reads the
+ * same header a route writes as `'Cache-Control'` — so a codebase spells
+ * them in whichever case reads best at each site. The first cut of this
+ * guard matched exact case and passed while two tests still asserted on
+ * `res.headers.get('cache-practice')`; CI caught them, the guard did not.
+ *
+ * The canonical `mustExist` probe stays case-SENSITIVE on purpose: it
+ * asserts the name is spelled correctly somewhere, and a lowercase
+ * reader is not proof that any writer emits the real header.
+ */
+const containsFold = (haystackLower: string, needle: string) =>
+    haystackLower.includes(needle.toLowerCase());
 
 describe('web-platform identifiers survive project-wide renames', () => {
     it('scans a real population (the walker still works)', () => {
@@ -186,8 +202,8 @@ describe('web-platform identifiers survive project-wide renames', () => {
             });
         }
 
-        it.each(mangled)('is never mangled to "%s"', (bad) => {
-            const hits = SUBJECTS.filter((f) => f.src.includes(bad));
+        it.each(mangled)('is never mangled to "%s" (in any case)', (bad) => {
+            const hits = SUBJECTS.filter((f) => containsFold(f.lower, bad));
             if (hits.length > 0) {
                 throw new Error(
                     `Found "${bad}" — a mangled "${canonical}" — in ` +
@@ -199,8 +215,8 @@ describe('web-platform identifiers survive project-wide renames', () => {
         });
     });
 
-    it.each(BANNED_TOKENS)('never contains $token', ({ token, why }) => {
-        const hits = SUBJECTS.filter((f) => f.src.includes(token));
+    it.each(BANNED_TOKENS)('never contains $token (in any case)', ({ token, why }) => {
+        const hits = SUBJECTS.filter((f) => containsFold(f.lower, token));
         if (hits.length > 0) {
             throw new Error(
                 `Found banned token "${token}" in ${hits.length} file(s). ${why}\n` +
@@ -222,11 +238,15 @@ describe('web-platform identifiers survive project-wide renames', () => {
         expect(src).not.toMatch(/^\s*practice:\s*'ctrl',/m);
     });
 
-    it('the detector actually fires (mutation proof)', () => {
+    it.each([
+        ["headers: { 'Cache-Practice': 'no-store' }", 'Cache-Practice'],
+        ["res.headers.get('cache-practice')", 'Cache-Practice'],
+        ['<div aria-Practices="x" />', 'aria-practices'],
+    ])('the detector fires on %s (mutation proof)', (planted, token) => {
         // Guards that only ever pass are indistinguishable from guards
-        // that cannot fail. Prove the matcher catches a planted mangle.
-        const planted = [{ rel: 'planted.ts', src: "headers: { 'Cache-Practice': 'no-store' }" }];
-        const hits = planted.filter((f) => f.src.includes('Cache-Practice'));
-        expect(hits).toHaveLength(1);
+        // that cannot fail. The lowercase case is the one that actually
+        // escaped: two tests read `headers.get('cache-practice')` while
+        // an exact-case matcher reported all-clear.
+        expect(containsFold(planted.toLowerCase(), token)).toBe(true);
     });
 });

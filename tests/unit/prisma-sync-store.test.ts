@@ -256,7 +256,7 @@ describe('PrismaSyncMappingStore', () => {
             expect(call.create.syncStatus).toBe('FAILED');
             expect(call.create.errorMessage).toBe('Network error');
 
-            // Create must NOT contain practice-plane fields
+            // Create must NOT contain control-plane fields
             expect(call.create).not.toHaveProperty('conflictStrategy');
             expect(call.create).not.toHaveProperty('version');
             expect(call.create).not.toHaveProperty('lastSyncDirection');
