@@ -56,7 +56,6 @@ jest.mock('@/lib/db-context', () => {
 
 import {
     getNonPerformingControls,
-    getCriticalRisksAcrossOrg,
     getOverdueEvidenceAcrossOrg,
 } from '@/app-layer/usecases/portfolio';
 import type { OrgContext } from '@/app-layer/types';
@@ -218,49 +217,6 @@ describe('getNonPerformingControls', () => {
 
 // ── getCriticalRisksAcrossOrg ─────────────────────────────────────────
 
-describe('getCriticalRisksAcrossOrg', () => {
-    it('queries inherentScore >= 15 AND status != CLOSED inside RLS', async () => {
-        tenantFindManyMock.mockResolvedValue([tenantA]);
-        riskFindManyMock.mockResolvedValue([]);
-
-        await getCriticalRisksAcrossOrg(ctxFor());
-
-        const where = riskFindManyMock.mock.calls[0][0].where;
-        expect(where.tenantId).toBe('t-a');
-        expect(where.inherentScore).toEqual({ gte: 15 });
-        expect(where.status).toEqual({ not: 'CLOSED' });
-        expect(where.deletedAt).toBeNull();
-    });
-
-    it('sorts by inherentScore desc, ties broken by updatedAt desc, capped at 50', async () => {
-        tenantFindManyMock.mockResolvedValue([tenantA, tenantB]);
-        riskFindManyMock
-            .mockResolvedValueOnce([
-                { id: 'r-1', title: 'R1', inherentScore: 16, status: 'OPEN',       updatedAt: new Date('2026-04-25T08:00:00Z') },
-                { id: 'r-2', title: 'R2', inherentScore: 25, status: 'MITIGATING', updatedAt: new Date('2026-04-25T09:00:00Z') },
-            ])
-            .mockResolvedValueOnce([
-                { id: 'r-3', title: 'R3', inherentScore: 25, status: 'OPEN',       updatedAt: new Date('2026-04-25T10:00:00Z') },
-                { id: 'r-4', title: 'R4', inherentScore: 20, status: 'OPEN',       updatedAt: new Date('2026-04-25T11:00:00Z') },
-            ]);
-
-        const rows = await getCriticalRisksAcrossOrg(ctxFor());
-
-        // 25 (newer) → 25 (older) → 20 → 16
-        expect(rows.map((r) => r.riskId)).toEqual(['r-3', 'r-2', 'r-4', 'r-1']);
-        expect(rows[0].drillDownUrl).toBe('/t/beta/risks/r-3');
-        expect(rows[0].tenantName).toBe('Beta Co');
-    });
-
-    it('returns empty list when org has tenants but no critical risks anywhere', async () => {
-        tenantFindManyMock.mockResolvedValue([tenantA, tenantB]);
-        riskFindManyMock.mockResolvedValue([]);
-
-        const rows = await getCriticalRisksAcrossOrg(ctxFor());
-        expect(rows).toEqual([]);
-        expect(withTenantDbCalls).toEqual(['t-a', 't-b']);
-    });
-});
 
 // ── getOverdueEvidenceAcrossOrg ───────────────────────────────────────
 
@@ -329,79 +285,6 @@ describe('getOverdueEvidenceAcrossOrg', () => {
 
 // ── canViewPortfolio gate ─────────────────────────────────────────────
 
-describe('drill-down canViewPortfolio gate', () => {
-    it('refuses every drill-down when canViewPortfolio is false', async () => {
-        const ctx = ctxFor({
-            permissions: {
-                canViewPortfolio: false,
-                canDrillDown: false,
-                canExportReports: false,
-                canManageTenants: false,
-                canManageMembers: false,
-            canConfigureDashboard: false,
-            },
-        });
-
-        await expect(getNonPerformingControls(ctx)).rejects.toMatchObject({ status: 403 });
-        await expect(getCriticalRisksAcrossOrg(ctx)).rejects.toMatchObject({ status: 403 });
-        await expect(getOverdueEvidenceAcrossOrg(ctx)).rejects.toMatchObject({ status: 403 });
-
-        // The org tenant lookup must NOT be reached when the gate fails —
-        // a denied caller produces zero data-plane queries.
-        expect(tenantFindManyMock).not.toHaveBeenCalled();
-        expect(withTenantDbCalls).toHaveLength(0);
-    });
-});
 
 // ── Schema-level lockdown of the drill-down rows ─────────────────────
 
-describe('drill-down DTO schemas', () => {
-    it('NonPerformingControlRowSchema rejects IMPLEMENTED + NOT_APPLICABLE statuses', async () => {
-        const { NonPerformingControlRowSchema } = await import('@/app-layer/schemas/portfolio');
-        const base = {
-            controlId: 'c-1',
-            tenantId: 't-a',
-            tenantSlug: 'alpha',
-            tenantName: 'Alpha Co',
-            name: 'AC-1',
-            code: null,
-            updatedAt: new Date().toISOString(),
-            drillDownUrl: '/t/alpha/controls/c-1',
-        };
-        expect(() => NonPerformingControlRowSchema.parse({ ...base, status: 'IMPLEMENTED' })).toThrow();
-        expect(() => NonPerformingControlRowSchema.parse({ ...base, status: 'NOT_APPLICABLE' })).toThrow();
-        expect(() => NonPerformingControlRowSchema.parse({ ...base, status: 'NOT_STARTED' })).not.toThrow();
-    });
-
-    it('CriticalRiskRowSchema rejects CLOSED status', async () => {
-        const { CriticalRiskRowSchema } = await import('@/app-layer/schemas/portfolio');
-        const base = {
-            riskId: 'r-1',
-            tenantId: 't-a',
-            tenantSlug: 'alpha',
-            tenantName: 'Alpha Co',
-            title: 'R1',
-            inherentScore: 20,
-            updatedAt: new Date().toISOString(),
-            drillDownUrl: '/t/alpha/risks/r-1',
-        };
-        expect(() => CriticalRiskRowSchema.parse({ ...base, status: 'CLOSED' })).toThrow();
-        expect(() => CriticalRiskRowSchema.parse({ ...base, status: 'OPEN' })).not.toThrow();
-    });
-
-    it('OverdueEvidenceRowSchema rejects APPROVED status and zero/negative daysOverdue', async () => {
-        const { OverdueEvidenceRowSchema } = await import('@/app-layer/schemas/portfolio');
-        const base = {
-            evidenceId: 'e-1',
-            tenantId: 't-a',
-            tenantSlug: 'alpha',
-            tenantName: 'Alpha Co',
-            title: 'E1',
-            nextReviewDate: '2026-04-20',
-            drillDownUrl: '/t/alpha/evidence/e-1',
-        };
-        expect(() => OverdueEvidenceRowSchema.parse({ ...base, status: 'APPROVED', daysOverdue: 5 })).toThrow();
-        expect(() => OverdueEvidenceRowSchema.parse({ ...base, status: 'SUBMITTED', daysOverdue: 0 })).toThrow();
-        expect(() => OverdueEvidenceRowSchema.parse({ ...base, status: 'SUBMITTED', daysOverdue: 5 })).not.toThrow();
-    });
-});

@@ -1,27 +1,29 @@
 /**
  * E2E Reporting & Audit Narrative Tests
  *
- * A) Frameworks page loads with framework cards    (read-only)
- * B) Framework coverage tab — metrics visible      (read-only)
- * D) Reports page — SOA & Risk Register tables     (read-only)
  * E-G) Audit cycle → pack → freeze → share link    (mutating scenario)
  *
+ * Read-only tests A/B/D are gone with their surfaces: A and B drove the
+ * `/frameworks` catalogue UI and D drove `/reports` (a Statement of
+ * Applicability tab and a Risk Register tab). The SoA builder, the
+ * frameworks UI and the risk register were all removed with the
+ * inherited GRC stack, so those three tests had no subject left —
+ * unlike E-G, which exercise audit cycles and packs, both of which
+ * survive.
+ *
  * Tenant strategy: this spec stays on the SHARED seeded `acme-corp`
- * tenant. The read-only tests (A/B/D) need the seed's installed
- * frameworks (ISO27001/SOC2/…). The mutating scenario (E-G) creates
- * an audit cycle *for ISO27001* — an isolated tenant from
- * `createIsolatedTenant` is empty and has NO frameworks installed,
- * so it cannot run this flow. Migrating E-G is gated on the factory
- * gaining a framework-install option (same carve-out as
- * `frameworks.spec.ts` / `ai-risk-assessment.spec.ts`).
+ * tenant. The mutating scenario (E-G) creates an audit cycle *for
+ * ISO27001* — an isolated tenant from `createIsolatedTenant` is empty
+ * and has NO frameworks installed, so it cannot run this flow.
+ * Migrating E-G is gated on the factory gaining a framework-install
+ * option (same carve-out as `audit-readiness.spec.ts`).
  *
  * Cascade fix: the previous shape had E/F/G as three serial
  * `test()`s sharing module-level `let cycleId / packId /
  * shareToken` — F read `cycleId` written by E, G read `shareToken`
  * written by F. A failure in E cascaded into F and G. E-G is one
  * sequential scenario, so it is now a single `test()` with
- * `test.step(...)` sub-steps and no cross-test state. A/B/D are
- * each independent read-only tests.
+ * `test.step(...)` sub-steps and no cross-test state.
  *
  * Uses AUTH_TEST_MODE=1 credentials provider (admin@acme.com).
  */
@@ -31,54 +33,6 @@ import { loginAndGetTenant, gotoAndVerify } from './e2e-utils';
 const UNIQUE = Date.now().toString(36);
 
 test.describe('Reporting & Audit Narrative', () => {
-    // ─── A) Frameworks Page (read-only) ──────────────────────────────
-
-    test('A — frameworks page loads with framework cards', async ({ page }) => {
-        const tenantSlug = await loginAndGetTenant(page);
-        await gotoAndVerify(page, `/t/${tenantSlug}/frameworks`, '#frameworks-heading');
-        await expect(page.locator('#frameworks-heading')).toContainText(
-            'Certification Schemes',
-        );
-        await page.waitForLoadState('networkidle').catch(() => {});
-        const cardCount = await page.locator('[data-testid^="fw-card-"]').count();
-        expect(cardCount).toBeGreaterThanOrEqual(1);
-    });
-
-    // ─── B) Coverage Report (read-only) ──────────────────────────────
-
-    test('B — ISO27001 coverage tab shows metrics', async ({ page }) => {
-        const tenantSlug = await loginAndGetTenant(page);
-        await gotoAndVerify(
-            page,
-            `/t/${tenantSlug}/frameworks/ISO27001`,
-            '#framework-detail-heading',
-            3,
-        );
-        await expect(page.locator('#tab-coverage')).toBeVisible({ timeout: 30_000 });
-        await page.locator('#tab-coverage').click();
-        await expect(page.locator('#coverage-panel')).toBeVisible({ timeout: 30_000 });
-    });
-
-    // ─── D) Reports Page (read-only) ─────────────────────────────────
-
-    test('D — reports page shows SOA and Risk Register', async ({ page }) => {
-        const tenantSlug = await loginAndGetTenant(page);
-        await gotoAndVerify(page, `/t/${tenantSlug}/reports`, '#reports-heading', 4);
-
-        await expect(page.locator('#soa-tab-btn')).toBeVisible();
-        await expect(page.locator('#risk-tab-btn')).toBeVisible();
-        await expect(page.locator('#soa-table')).toBeVisible({ timeout: 5000 });
-        await expect(page.locator('#export-soa-btn')).toBeVisible();
-
-        await page.click('#risk-tab-btn');
-        await expect(page.locator('#risk-table')).toBeVisible({ timeout: 5000 });
-        await expect(page.locator('#export-risks-btn')).toBeVisible();
-
-        await page.click('#soa-tab-btn');
-        await expect(page.locator('#soa-table')).toBeVisible({ timeout: 5000 });
-        await expect(page.locator('#export-soa-btn')).toBeVisible();
-    });
-
     // ─── E-G) Audit cycle → pack → freeze → share (one scenario) ─────
 
     test('E-G — create audit cycle, pack, freeze, and share', async ({

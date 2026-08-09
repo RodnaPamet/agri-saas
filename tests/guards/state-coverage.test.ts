@@ -123,6 +123,7 @@ describe('State coverage ratchet (Polish PR-10)', () => {
         // Sanity check — must find risks, tasks, controls, vendors,
         // tests dashboards (5 minimum) so a future code reorg doesn't
         // silently turn the ratchet into a no-op.
-        expect(found.length).toBeGreaterThanOrEqual(5);
+        // 5 → 4: the risks dashboard went with the register.
+        expect(found.length).toBeGreaterThanOrEqual(4);
     });
 });

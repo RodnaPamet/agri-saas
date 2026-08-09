@@ -83,7 +83,6 @@ const STATUS_BADGE_BUDGET: Record<string, number> = {
     // Heavy display surfaces — many badges across distinct
     // contexts (each its own row / cell, not stacked in one cell).
     "src/app/t/[tenantSlug]/(app)/risks/ai/page.tsx": 12,
-    "src/app/t/[tenantSlug]/(app)/reports/soa/SoAClient.tsx": 11,
     "src/app/t/[tenantSlug]/(app)/controls/[controlId]/page.tsx": 10,
     "src/app/t/[tenantSlug]/(app)/vendors/[vendorId]/page.tsx": 9,
     "src/app/t/[tenantSlug]/(app)/coverage/CoverageClient.tsx": 5,

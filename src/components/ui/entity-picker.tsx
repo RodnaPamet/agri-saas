@@ -20,8 +20,7 @@
  * Six entity types are supported out of the box, matching the
  * union of task-link and vendor-link targets:
  *
- *   • CONTROL                — code/annexId + name
- *   • RISK                   — key (RSK-N) + title
+ *   • CONTROL                — code + name
  *   • ASSET                  — name
  *   • EVIDENCE               — title
  *   • VENDOR                 — name
@@ -52,7 +51,6 @@ type ComboboxButtonProps = ComponentProps<typeof Combobox>['buttonProps'] & {
 
 export type EntityPickerKind =
     | 'CONTROL'
-    | 'RISK'
     | 'ASSET'
     | 'EVIDENCE'
     | 'VENDOR'
@@ -76,20 +74,11 @@ function rowsFromResponse(
     switch (kind) {
         case 'CONTROL':
             return rows.map((r) => {
-                const prefix = (r.code as string) || (r.annexId as string) || '';
+                const prefix = (r.code as string) || '';
                 const name = (r.name as string) || '(untitled)';
                 return {
                     id: r.id,
                     label: prefix ? `${prefix}: ${name}` : name,
-                };
-            });
-        case 'RISK':
-            return rows.map((r) => {
-                const key = (r.key as string) || '';
-                const title = (r.title as string) || '(untitled)';
-                return {
-                    id: r.id,
-                    label: key ? `${key}: ${title}` : title,
                 };
             });
         case 'ASSET':
@@ -153,9 +142,6 @@ async function fetchCandidates(
     switch (kind) {
         case 'CONTROL':
             url = `${base}/controls${qs}`;
-            break;
-        case 'RISK':
-            url = `${base}/risks${qs}`;
             break;
         case 'ASSET':
             url = `${base}/assets${qs}`;

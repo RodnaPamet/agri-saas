@@ -3,7 +3,7 @@
  *
  * Verifies the contract for the two curated command buckets:
  *
- *   - Navigation commands (Go to Dashboard / Controls / Risks / …)
+ *   - Navigation commands (Go to Dashboard / Controls / …)
  *     render when a tenant slug is present in the URL, each carries
  *     the expected tenant-scoped `/t/<slug>/<route>` href, and
  *     selecting one calls `router.push()` + closes the palette.
@@ -119,9 +119,7 @@ describe('Command Palette — navigation commands', () => {
         render(<Shell />);
         const expected = [
             'nav:dashboard',
-            'nav:risks',
             'nav:evidence',
-            'nav:frameworks',
             'nav:vendors',
             'nav:admin',
         ];
@@ -147,12 +145,12 @@ describe('Command Palette — navigation commands', () => {
     it('selecting a navigation command calls router.push and closes the palette', async () => {
         const { queryByTestId } = render(<Shell />);
         const row = document.querySelector(
-            '[data-testid="command-palette-nav-nav:risks"]',
+            '[data-testid="command-palette-nav-nav:evidence"]',
         )!;
-        expect(row.getAttribute('data-href')).toBe('/t/acme-corp/risks');
+        expect(row.getAttribute('data-href')).toBe('/t/acme-corp/evidence');
 
         fireEvent.click(row);
-        expect(navigationMock.push).toHaveBeenCalledWith('/t/acme-corp/risks');
+        expect(navigationMock.push).toHaveBeenCalledWith('/t/acme-corp/evidence');
         await waitFor(() => {
             expect(queryByTestId('command-palette-input')).toBeNull();
         });
@@ -173,20 +171,22 @@ describe('Command Palette — navigation commands', () => {
         const input = document.querySelector(
             '[data-testid="command-palette-input"]',
         ) as HTMLInputElement;
-        fireEvent.change(input, { target: { value: 'risk' } });
+        fireEvent.change(input, { target: { value: 'evidence' } });
 
-        // Commands filter immediately (no debounce). Nav:risks stays,
-        // non-matching commands (e.g. nav:evidence) disappear.
+        // Commands filter immediately (no debounce). Nav:evidence stays,
+        // non-matching commands (e.g. nav:vendors) disappear.
+        // (This used 'risk' as the query until the register was removed;
+        // the assertion is about the FILTER, not the entity.)
         await waitFor(() => {
             expect(
                 document.querySelector(
-                    '[data-testid="command-palette-nav-nav:risks"]',
+                    '[data-testid="command-palette-nav-nav:evidence"]',
                 ),
             ).not.toBeNull();
         });
         expect(
             document.querySelector(
-                '[data-testid="command-palette-nav-nav:evidence"]',
+                '[data-testid="command-palette-nav-nav:vendors"]',
             ),
         ).toBeNull();
     });

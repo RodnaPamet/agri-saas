@@ -79,7 +79,6 @@ export function buildControl(overrides: Record<string, unknown> = {}) {
         description: 'Test control description',
         status: 'NOT_IMPLEMENTED',
         applicability: 'APPLICABLE',
-        annexId: overrides.annexId ?? null,
         createdAt: new Date(),
         updatedAt: new Date(),
         deletedAt: null,
@@ -237,11 +236,6 @@ export async function createMembership(
 export async function createControl(prisma: PrismaClient, tenantId: string, overrides: Record<string, unknown> = {}) {
     const data = buildControl({ tenantId, ...overrides });
     return prisma.control.create({ data: data as any }); // eslint-disable-line @typescript-eslint/no-explicit-any
-}
-
-export async function createRisk(prisma: PrismaClient, tenantId: string, overrides: Record<string, unknown> = {}) {
-    const data = buildRisk({ tenantId, ...overrides });
-    return prisma.risk.create({ data: data as any }); // eslint-disable-line @typescript-eslint/no-explicit-any
 }
 
 // ─── Reset helpers ───

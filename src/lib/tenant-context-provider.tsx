@@ -108,7 +108,7 @@ export function useTenantApiUrl() {
 // with a hardcoded symbol — the hook closes over the tenant's
 // configured currencySymbol (default €).
 
-import { formatCompactCurrency } from '@/lib/risk-coherence';
+import { formatCompactCurrency } from '@/lib/format-currency';
 
 /**
  * The tenant's configured display currency SYMBOL (default €).

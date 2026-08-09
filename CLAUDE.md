@@ -166,7 +166,7 @@ prisma/schema/         → Multi-file Prisma schema (GAP-09):
                             base.prisma         — generator + datasource (sole owners)
                             enums.prisma        — every shared enum
                             auth.prisma         — Tenant/User/Membership/Session/SSO/Billing
-                            compliance.prisma   — Control/Risk/Evidence/Framework/Policy/Asset/etc.
+                            compliance.prisma   — Control/Evidence/Framework/Policy/Asset/etc.
                             vendor.prisma       — Vendor + assessment graph
                             audit.prisma        — AuditCycle/Pack/Auditor + AuditLog
                             automation.prisma   — AutomationRule/Execution + Notification + Integration
@@ -291,7 +291,7 @@ and `docs/rls-tenant-isolation.md` for the RLS deep dive.
 
 ### Field Encryption (Epic B)
 
-Business-content fields (Finding.description, Risk.treatmentNotes,
+Business-content fields (Finding.description, Finding.rootCause,
 PolicyVersion.contentText, TaskComment.body, …) are encrypted at
 rest by a Prisma `$extends({ query })` client extension (migrated
 from the Prisma 5 `$use` middleware, which Prisma 7 removed — see
@@ -466,6 +466,9 @@ rejects; etc.).
 **D.2 — Encrypted-field write paths sanitised.** Five usecase
 files (`finding`, `risk`, `vendor`, `audit`, `control-test`) wrote
 to encrypted free-text columns without server-side sanitisation.
+(`risk` and `control-test` were deleted by the 2026-08 risk +
+control-exoskeleton uproot; the rule below is unchanged for the
+surfaces that remain.)
 Encryption protects confidentiality at rest; sanitisation protects
 every downstream renderer (UI, PDF export, audit-pack share link,
 SDK consumer reading the row verbatim) that decrypts and reads the
@@ -473,10 +476,12 @@ field. All five now route user-supplied free text through
 `sanitizePlainText` (or, for surfaces that share the call shape,
 the per-file `sanitizeOptional` helper that preserves the
 undefined/null/string three-state contract). The
-`tests/guardrails/sanitize-rich-text-coverage.test.ts` ratchet has
-`SANITISER_COVERAGE_FLOOR = 8`; a future PR cannot silently drop
-one of the eight known sanitised usecases without bumping the
-floor in the same diff. The companion
+`tests/guardrails/sanitize-rich-text-coverage.test.ts` ratchet no
+longer keeps a numeric floor — it derives the rich-text inventory
+from `ENCRYPTED_FIELDS` and requires every encrypted
+business-content model to be CLASSIFIED (sanitised / not-rich-text /
+a named gap), so a NEW unsanitised write path fails rather than
+sliding under an "at least N". The companion
 `tests/unit/security/sanitize-write-paths.test.ts` carries 20
 write-path assertions — one positive XSS-strip per call site.
 
@@ -837,7 +842,8 @@ duplicating the limits table).
       attributes.
     - Scope `#id` / role locators to `getByRole('main')` where a
       Next streaming duplicate of the page could match — never a
-      bare page-level locator (see the risk-matrix E2E lesson).
+      bare page-level locator (the lesson came from the since-removed
+      risk-matrix E2E spec).
   See `docs/implementation-notes/2026-05-21-e2e-isolation.md` and
   `tests/e2e/fixtures.ts`.
 - `SKIP_ENV_VALIDATION=1` is set in `jest.setup.js` to prevent env loader crash in unit tests.
@@ -1077,24 +1083,24 @@ stands for that PR only — not as a precedent.
   header trigger reads:
 
   ```tsx
-  <Button variant="primary" icon={<Plus />} onClick={…}>Risk</Button>
+  <Button variant="primary" icon={<Plus />} onClick={…}>Asset</Button>
   ```
 
-  not `+ Risk` (in text) and not `Create Risk` / `New Risk` / `Add Risk`
-  (verb-prefixed). The verb is dead weight once the Plus glyph is doing
-  the work, and the Button primitive's icon-balance ghost optically
-  centres `[+] Risk` as one symmetric unit.
+  not `+ Asset` (in text) and not `Create Asset` / `New Asset` /
+  `Add Asset` (verb-prefixed). The verb is dead weight once the Plus
+  glyph is doing the work, and the Button primitive's icon-balance ghost
+  optically centres `[+] Asset` as one symmetric unit.
 
   Caveats — where verbs still belong:
     - **Modal/dialog confirm buttons** keep their verbed form
-      (`Create risk`, `Add document`, `Save policy`) — confirmation
+      (`Create asset`, `Add document`, `Save policy`) — confirmation
       surfaces need to declare the action, not just the subject.
     - **Detail-page "+ child entity" affordances** that attach to an
       open parent ("Add Document" on vendor detail, "Add Comment" on
       a task) follow this same icon-slot rule, but if you keep a verb
       it's `Add {Entity}` (the child-attachment register).
     - **Traceability / cross-entity association** uses
-      `Link {Entity}` (`Link Risk`, `Link Control`) — the verb
+      `Link {Entity}` (`Link Asset`, `Link Control`) — the verb
       changes the meaning (associating, not creating).
 
   Forward enforcement:
@@ -1103,7 +1109,7 @@ stands for that PR only — not as a precedent.
     - `tests/guards/action-button-canonical-entity-label.test.ts` —
       asserts the canonical entity-page header buttons render
       `icon={<Plus />}` + bare noun, AND that the header-action
-      i18n keys (`addAsset`, `addRisk`, `addEvidence`, `newAudit`,
+      i18n keys (`addAsset`, `addEvidence`, `newAudit`,
       `newFinding`) hold just the noun, not a verb-prefixed string.
 - **Destructive-action vocabulary** (Roadmap-4 PR-9): every
   `<ConfirmDialog tone="danger">` confirmLabel MUST start with one of
@@ -1222,8 +1228,7 @@ A new app page that imports `DataTable` MUST either wrap in
 `tests/guards/list-page-shell-coverage.test.ts` with a written
 reason. Exemptions exist for multi-section dashboards (Coverage,
 admin/api-keys, admin/notifications, admin/integrations) and
-detail-page sub-tables / wizards (risks/import) where viewport-
-clamping doesn't fit. See `docs/epic-52-list-page-shell.md` for the
+detail-page sub-tables / wizards where viewport-clamping doesn't fit. See `docs/epic-52-list-page-shell.md` for the
 decision tree.
 
 ### Entity-page architecture (`EntityListPage` + `EntityDetailLayout`)
@@ -1274,7 +1279,7 @@ and domain-specific tab bodies (e.g. `TraceabilityPanel`,
     list — Coverage, admin/api-keys, admin/notifications,
     admin/integrations).
   - Wizards / multi-step flows where the page isn't a single list or
-    detail (risks/import).
+    detail.
   - Sub-tables nested inside a detail tab — `<DataTable>` directly
     is the right primitive there, not `<EntityListPage>`.
 
@@ -1282,7 +1287,7 @@ and domain-specific tab bodies (e.g. `TraceabilityPanel`,
 that asserts the page mounts the shell and doesn't hand-roll the
 inline composition: `controls-client-shell-adoption.test.ts` (list)
 and `control-detail-shell-adoption.test.ts` (detail). When you
-migrate a new entity page (risks / policies / vendors / audits /
+migrate a new entity page (policies / vendors / audits /
 …), add a sibling `*-shell-adoption.test.ts` next to the existing
 two — same shape, same regression-class lock.
 

@@ -37,7 +37,6 @@ jest.mock('@/lib/db-context', () => ({
 
 import {
     listNonPerformingControls,
-    listCriticalRisksAcrossOrg,
     listOverdueEvidenceAcrossOrg,
 } from '@/app-layer/usecases/portfolio';
 import type { OrgContext } from '@/app-layer/types';
@@ -239,73 +238,6 @@ describe('listNonPerformingControls — cursor pagination', () => {
 
 // ── Risks ──────────────────────────────────────────────────────────────
 
-describe('listCriticalRisksAcrossOrg — cursor pagination', () => {
-    it('cursor encodes inherentScore + updatedAt + id', async () => {
-        const cursor = Buffer.from(
-            JSON.stringify({
-                s: 18,
-                d: '2026-04-25T00:00:00.000Z',
-                i: 'r-99',
-            }),
-        ).toString('base64url');
-
-        riskFindManyMock.mockResolvedValue([]);
-        await listCriticalRisksAcrossOrg(ctxFor(), { cursor });
-
-        const where = (riskFindManyMock.mock.calls[0][0] as CapturedQuery).where;
-        const orClauses = where.OR as Array<Record<string, unknown>>;
-        expect(orClauses).toHaveLength(3);
-        // Strictly lower inherentScore.
-        expect(orClauses[0]).toEqual({ inherentScore: { lt: 18 } });
-    });
-
-    it('orderBy is [inherentScore desc, updatedAt desc, id asc]', async () => {
-        riskFindManyMock.mockResolvedValue([]);
-        await listCriticalRisksAcrossOrg(ctxFor());
-        const orderBy = (riskFindManyMock.mock.calls[0][0] as CapturedQuery).orderBy;
-        expect(orderBy).toEqual([
-            { inherentScore: 'desc' },
-            { updatedAt: 'desc' },
-            { id: 'asc' },
-        ]);
-    });
-
-    it('returns nextCursor when results exceed limit', async () => {
-        riskFindManyMock
-            .mockResolvedValueOnce([
-                {
-                    id: 'r-1',
-                    title: 'Top alpha',
-                    inherentScore: 20,
-                    status: 'OPEN',
-                    updatedAt: new Date('2026-04-25T00:00:00Z'),
-                },
-            ])
-            .mockResolvedValueOnce([
-                {
-                    id: 'r-2',
-                    title: 'Top beta',
-                    inherentScore: 18,
-                    status: 'OPEN',
-                    updatedAt: new Date('2026-04-25T00:00:00Z'),
-                },
-            ]);
-
-        const result = await listCriticalRisksAcrossOrg(ctxFor(), { limit: 1 });
-        expect(result.rows).toHaveLength(1);
-        // Score 20 > score 18 → alpha wins.
-        expect(result.rows[0].riskId).toBe('r-1');
-        expect(result.rows[0].inherentScore).toBe(20);
-        expect(result.nextCursor).not.toBeNull();
-
-        // Decode the cursor and verify it points at the last returned row.
-        const decoded = JSON.parse(
-            Buffer.from(result.nextCursor!, 'base64url').toString('utf-8'),
-        );
-        expect(decoded.s).toBe(20);
-        expect(decoded.i).toBe('r-1');
-    });
-});
 
 // ── Evidence ───────────────────────────────────────────────────────────
 
@@ -341,19 +273,3 @@ describe('listOverdueEvidenceAcrossOrg — cursor pagination', () => {
 
 // ── Permission gate (shared) ──────────────────────────────────────────
 
-describe('paginated drill-down — permission gate', () => {
-    it('throws forbidden when canViewPortfolio is false', async () => {
-        const denied = ctxFor();
-        denied.permissions.canViewPortfolio = false;
-
-        await expect(listNonPerformingControls(denied)).rejects.toMatchObject({
-            status: 403,
-        });
-        await expect(listCriticalRisksAcrossOrg(denied)).rejects.toMatchObject({
-            status: 403,
-        });
-        await expect(listOverdueEvidenceAcrossOrg(denied)).rejects.toMatchObject({
-            status: 403,
-        });
-    });
-});

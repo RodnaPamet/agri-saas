@@ -77,11 +77,8 @@ const EXEMPT_FILES = new Set<string>([
     // Self-contained creation/import flows with their own back-step
     // navigation. Breadcrumbs would compete with the wizard's own
     // step indicators.
-    "src/app/t/[tenantSlug]/(app)/risks/import/page.tsx",
-    "src/app/t/[tenantSlug]/(app)/risks/ai/page.tsx",
     "src/app/t/[tenantSlug]/(app)/policies/new/page.tsx",
     "src/app/t/[tenantSlug]/(app)/vendors/new/page.tsx",
-    "src/app/t/[tenantSlug]/(app)/frameworks/[frameworkKey]/install/page.tsx",
 
     // ── Auth / personal settings ────────────────────────────────
     // User-scoped, sit outside the main app navigation hierarchy.
@@ -93,9 +90,6 @@ const EXEMPT_FILES = new Set<string>([
     // rendering breadcrumbs here would duplicate. Each sits under
     // an entity detail (control, audit, framework, vendor) and
     // renders inside the parent's `<EntityDetailLayout>` context.
-    "src/app/t/[tenantSlug]/(app)/controls/[controlId]/tests/[planId]/page.tsx",
-    "src/app/t/[tenantSlug]/(app)/frameworks/[frameworkKey]/diff/page.tsx",
-    "src/app/t/[tenantSlug]/(app)/frameworks/[frameworkKey]/templates/page.tsx",
     "src/app/t/[tenantSlug]/(app)/admin/vendor-assessment-reviews/[assessmentId]/VendorAssessmentReviewClient.tsx",
     "src/app/t/[tenantSlug]/(app)/vendors/[vendorId]/assessment/[assessmentId]/page.tsx",
 
@@ -105,27 +99,19 @@ const EXEMPT_FILES = new Set<string>([
     // the list page (`/risks`); a chain `Dashboard › Risks ›
     // Dashboard` would read as duplicate self-reference. The
     // sidebar nav is the canonical entry point.
-    "src/app/t/[tenantSlug]/(app)/controls/dashboard/page.tsx",
-    "src/app/t/[tenantSlug]/(app)/risks/dashboard/page.tsx",
-    "src/app/t/[tenantSlug]/(app)/tests/dashboard/page.tsx",
     "src/app/t/[tenantSlug]/(app)/vendors/dashboard/page.tsx",
 
     // ── Templates / sub-list views ──────────────────────────────
     // Live as auxiliary index pages under their parent resource.
     // The page intentionally renders a back-link rather than full
     // breadcrumbs — these read as "settings"-tier surfaces.
-    "src/app/t/[tenantSlug]/(app)/controls/templates/page.tsx",
     "src/app/t/[tenantSlug]/(app)/policies/templates/page.tsx",
-    "src/app/t/[tenantSlug]/(app)/tests/due/page.tsx",
     "src/app/t/[tenantSlug]/(app)/clauses/page.tsx",
 
     // ── Visualization / report views ────────────────────────────
     // Standalone visualization or print views with their own
     // controls. Breadcrumbs would compete with the in-page
     // navigation (e.g. SoA filter row, controls/sankey legend).
-    "src/app/t/[tenantSlug]/(app)/controls/sankey/ControlsSankeyClient.tsx",
-    "src/app/t/[tenantSlug]/(app)/reports/soa/SoAClient.tsx",
-    "src/app/t/[tenantSlug]/(app)/reports/soa/print/SoAPrintView.tsx",
 
     // (Admin sub-pages risk-matrix, vendor-templates index +
     // builder were on this list with a "TODO migrate" label;

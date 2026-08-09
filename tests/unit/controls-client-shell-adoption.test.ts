@@ -87,17 +87,23 @@ describe('ControlsClient — EntityListPage adoption', () => {
         expect(source).toContain("'data-testid': 'controls-table'");
     });
 
-    it('preserves all four header actions gated by appPermissions.controls.create', () => {
+    it('keeps the create action gated by appPermissions.controls.create', () => {
         // Regression guard — the refactor must not silently drop the
-        // permission gate or any of the four buttons. Accept both
-        // ternary (`? :`) and short-circuit (`&&`) gating styles —
-        // both correctly hide the actions when the permission is false.
+        // permission gate or the create button. Accept both ternary
+        // (`? :`) and short-circuit (`&&`) gating styles — both correctly
+        // hide the action when the permission is false.
         expect(source).toMatch(/appPermissions\.controls\.create\s*[?&]/);
-        expect(source).toContain('controls-dashboard-btn');
+        expect(source).toContain('new-control-btn');
         // UI-15: the standalone "Frameworks" header button was removed.
         expect(source).not.toContain('frameworks-btn');
-        expect(source).toContain('install-templates-btn');
-        expect(source).toContain('new-control-btn');
+        // The Dashboard / Templates / Sankey shields linked to
+        // `/controls/dashboard`, `/controls/templates` and
+        // `/controls/sankey` — all three pages went with the control
+        // exoskeleton, so the buttons were live links to 404s. They must
+        // not come back without their destinations.
+        expect(source).not.toContain('controls-dashboard-btn');
+        expect(source).not.toContain('install-templates-btn');
+        expect(source).not.toContain('controls-sankey-btn');
     });
 
     it('preserves the rich domain cell behaviour (status / applicability / quick-edit)', () => {

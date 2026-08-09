@@ -4,7 +4,7 @@
  * Where `events.ts` is the *string* catalogue, this file is the
  * *shape* catalogue: one discriminated-union member per event with
  * its own `data` payload. Producers get compile-time guarantees:
- * emitting `RISK_CREATED` with the wrong `data` shape is a type
+ * emitting `TEST_PLAN_CREATED` with the wrong `data` shape is a type
  * error, not a silently non-firing rule later.
  *
  * Shared metadata (tenantId, actor, entity, timestamp) lives on the
@@ -35,23 +35,6 @@ export interface AutomationEventMetadata {
 }
 
 // ─── Per-event payload shapes ──────────────────────────────────────────
-
-export interface RiskCreatedData {
-    title: string;
-    score: number;
-    category: string | null;
-}
-export interface RiskUpdatedData {
-    changedFields: string[];
-}
-export interface RiskStatusChangedData {
-    fromStatus: string;
-    toStatus: string;
-}
-export interface RiskControlsMappedData {
-    controlId: string;
-    action: 'LINKED' | 'UNLINKED';
-}
 
 export interface TestPlanCreatedData {
     name: string;
@@ -211,14 +194,10 @@ export interface HarvestYieldRecordedData {
 // ─── Discriminated union ───────────────────────────────────────────────
 //
 // The whole point: `event` is the tag; `data` narrows off it. Any
-// handler that checks `evt.event === 'RISK_CREATED'` gets
-// `RiskCreatedData` on `evt.data` automatically.
+// handler that checks `evt.event === 'TEST_PLAN_CREATED'` gets
+// `TestPlanCreatedData` on `evt.data` automatically.
 
 export type AutomationDomainEvent =
-    | (AutomationEventMetadata & { event: 'RISK_CREATED'; data: RiskCreatedData })
-    | (AutomationEventMetadata & { event: 'RISK_UPDATED'; data: RiskUpdatedData })
-    | (AutomationEventMetadata & { event: 'RISK_STATUS_CHANGED'; data: RiskStatusChangedData })
-    | (AutomationEventMetadata & { event: 'RISK_CONTROLS_MAPPED'; data: RiskControlsMappedData })
     | (AutomationEventMetadata & { event: 'TEST_PLAN_CREATED'; data: TestPlanCreatedData })
     | (AutomationEventMetadata & { event: 'TEST_PLAN_UPDATED'; data: TestPlanUpdatedData })
     | (AutomationEventMetadata & { event: 'TEST_PLAN_PAUSED'; data: TestPlanStatusChangedData })

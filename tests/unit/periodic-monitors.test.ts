@@ -271,44 +271,7 @@ describe('Deadline Monitor', () => {
         expect(items[0].ownerUserId).toBe('user-3');
     });
 
-    test('detects risk review deadlines', async () => {
-        mockPrisma.risk.findMany.mockResolvedValue([
-            {
-                id: 'risk-1',
-                tenantId: 'tenant-1',
-                title: 'Data Leakage Risk',
-                nextReviewAt: new Date('2026-04-15T00:00:00Z'), // 2 days overdue
-                ownerUserId: null,
-            },
-        ]);
 
-        const { runDeadlineMonitor } = await import('../../src/app-layer/jobs/deadline-monitor');
-        const { items } = await runDeadlineMonitor({ now });
-
-        expect(items).toHaveLength(1);
-        expect(items[0].entityType).toBe('RISK');
-        expect(items[0].urgency).toBe('OVERDUE');
-    });
-
-    test('detects test plan deadlines', async () => {
-        mockPrisma.controlTestPlan.findMany.mockResolvedValue([
-            {
-                id: 'tp-1',
-                tenantId: 'tenant-1',
-                name: 'Quarterly Penetration Test',
-                nextDueAt: new Date('2026-04-22T00:00:00Z'), // 5 days
-                ownerUserId: 'user-4',
-                controlId: 'ctrl-1',
-            },
-        ]);
-
-        const { runDeadlineMonitor } = await import('../../src/app-layer/jobs/deadline-monitor');
-        const { items } = await runDeadlineMonitor({ now });
-
-        expect(items).toHaveLength(1);
-        expect(items[0].entityType).toBe('TEST_PLAN');
-        expect(items[0].urgency).toBe('URGENT');
-    });
 
     test('tenant isolation: filters by tenantId when provided', async () => {
         mockPrisma.control.findMany.mockResolvedValue([]);
@@ -352,8 +315,8 @@ describe('Deadline Monitor', () => {
         mockPrisma.task.findMany.mockResolvedValue([
             { id: 't1', tenantId: 't', title: 'Urgent', dueAt: new Date('2026-04-20T00:00:00Z'), assigneeUserId: null },
         ]);
-        mockPrisma.risk.findMany.mockResolvedValue([
-            { id: 'r1', tenantId: 't', title: 'Overdue', nextReviewAt: new Date('2026-04-10T00:00:00Z'), ownerUserId: null },
+        mockPrisma.policy.findMany.mockResolvedValue([
+            { id: 'p1', tenantId: 't', title: 'Overdue', nextReviewAt: new Date('2026-04-10T00:00:00Z'), ownerUserId: null },
         ]);
 
         const { runDeadlineMonitor } = await import('../../src/app-layer/jobs/deadline-monitor');

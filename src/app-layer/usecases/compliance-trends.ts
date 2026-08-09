@@ -29,10 +29,6 @@ export interface TrendDataPoint {
     controlsApplicable: number;
 
     // Risks
-    risksTotal: number;
-    risksOpen: number;
-    risksCritical: number;
-    risksHigh: number;
 
     // Evidence
     evidenceOverdue: number;
@@ -84,10 +80,6 @@ function toDataPoint(s: ComplianceSnapshot): TrendDataPoint {
         controlCoveragePercent: s.controlCoverageBps / 10,
         controlsImplemented: s.controlsImplemented,
         controlsApplicable: s.controlsApplicable,
-        risksTotal: s.risksTotal,
-        risksOpen: s.risksOpen,
-        risksCritical: s.risksCritical,
-        risksHigh: s.risksHigh,
         evidenceOverdue: s.evidenceOverdue,
         evidenceDueSoon7d: s.evidenceDueSoon7d,
         evidenceCurrent: s.evidenceCurrent,

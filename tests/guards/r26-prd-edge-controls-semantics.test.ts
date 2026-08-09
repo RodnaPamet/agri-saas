@@ -1,5 +1,5 @@
 /**
- * R26-PR-D — Edge-mounted controls + risk/asset semantics ratchet.
+ * R26-PR-D — Edge-mounted controls + asset semantics ratchet.
  *
  * Locks the THREE structural commitments PR-D makes:
  *
@@ -51,7 +51,6 @@ describe("R26-PR-D — edge-first controls + semantic categories", () => {
         for (const kept of [
             "processStep",
             "decision",
-            "risk",
             "asset",
             "external",
             "annotation",
@@ -73,7 +72,6 @@ describe("R26-PR-D — edge-first controls + semantic categories", () => {
             "processStep",
             "decision",
             "control",
-            "risk",
             "asset",
             "external",
             "annotation",
@@ -99,8 +97,8 @@ describe("R26-PR-D — edge-first controls + semantic categories", () => {
         }
     });
 
-    it("context kinds: control + risk + asset + external", () => {
-        for (const contextKind of ["control", "risk", "asset", "external"]) {
+    it("context kinds: control + asset + external", () => {
+        for (const contextKind of ["control", "asset", "external"]) {
             const re = new RegExp(
                 `^\\s*${contextKind}:\\s*\\{[\\s\\S]*?\\bcategory:\\s*['"]context['"]`,
                 "m",

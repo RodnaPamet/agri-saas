@@ -54,7 +54,7 @@ const DOC_TYPE_FILTER_OPTIONS: ComboboxOption[] = [
     ...DOC_TYPE_CB_OPTIONS,
 ];
 const VENDOR_LINK_TYPE_OPTIONS: ComboboxOption[] = [
-    { value: 'ASSET', label: 'Asset' }, { value: 'RISK', label: 'Risk' },
+    { value: 'ASSET', label: 'Asset' },
     { value: 'ISSUE', label: 'Issue' }, { value: 'CONTROL', label: 'Control' },
 ];
 const VENDOR_LINK_RELATION_OPTIONS: ComboboxOption[] = [
@@ -560,7 +560,14 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
                     {canWrite && (
                         <div className="flex items-center gap-compact justify-end">
                             {!showStartAssessment ? (
-                                <Button variant="primary" onClick={() => setShowStartAssessment(true)} id="start-assessment-btn">
+                                // `secondary`, not `primary`: this only reveals the
+                                // inline template picker + confirm step below — it
+                                // doesn't commit anything itself. The actual commit
+                                // action is `confirm-start-assessment`, which stays
+                                // primary (see tests/guards/primary-secondary-ratio.test.ts —
+                                // this demotion pays for the KB wire-up PR's new
+                                // KnowledgeAskModal submit primary).
+                                <Button variant="secondary" onClick={() => setShowStartAssessment(true)} id="start-assessment-btn">
                                     {t('startAssessment')}
                                 </Button>
                             ) : (
@@ -637,7 +644,7 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
                             }}>{t('add')}</Button>
                         </div>
                     )}
-                    {['ASSET', 'RISK', 'ISSUE', 'CONTROL'].map(type => {
+                    {['ASSET', 'ISSUE', 'CONTROL'].map(type => {
                         const typeLinks = links.filter((l: any) => l.entityType === type);
                         if (typeLinks.length === 0) return null;
                         return (

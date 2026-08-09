@@ -2,12 +2,6 @@
  * PDF Report Types
  */
 
-export enum ReportType {
-    AUDIT_READINESS = 'AUDIT_READINESS',
-    RISK_REGISTER = 'RISK_REGISTER',
-    GAP_ANALYSIS = 'GAP_ANALYSIS',
-}
-
 export type WatermarkMode = 'DRAFT' | 'FINAL' | 'NONE';
 
 export interface ReportMeta {
@@ -53,7 +47,6 @@ export interface TotalsRow {
 }
 
 export interface GeneratePdfInput {
-    type: ReportType;
     saveToFileRecord?: boolean;
     watermark?: WatermarkMode;
 }

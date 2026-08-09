@@ -51,15 +51,11 @@ interface Exempt {
     reason: string;
 }
 
-const EXEMPT: Exempt[] = [
-    {
-        file: path.join(APP, 'risks/RisksClient.tsx'),
-        reason:
-            "Page renders no inline date strings today — `nextReviewAt` is " +
-            'consumed by the overdue-count filter, not displayed. Switch to ' +
-            'TimestampTooltip and move into ROLLED_OUT if a date column is added.',
-    },
-];
+// Empty since the risk register was removed — its RisksClient was the
+// only exemption. A new exemption goes here with a written reason; the
+// tests below are `it.each(EXEMPT)`, so an empty list simply runs none
+// of them rather than asserting vacuously.
+const EXEMPT: Exempt[] = [];
 
 describe('Epic 63 — TimestampTooltip rollout ratchet', () => {
     for (const { file, label } of ROLLED_OUT) {

@@ -6,13 +6,12 @@
  * landed):
  *
  *   1. PageHeader               (chrome — not a widget)
- *   2. StatCardsRow             — four KPI tiles (coverage, critical-risks,
+ *   2. StatCardsRow             — KPI tiles (coverage,
  *                                 overdue-evidence, tenants)
  *   3. RagDistributionCard      — donut breakdown of tenant RAG status
- *   4. RiskTrendCard            — open-risks trend over 90 days
  *   5. TenantCoverageList       — per-tenant list with drill-down
  *   6. DrillDownCtas            — three navigation cards (controls /
- *                                 risks / evidence)
+ *                                 evidence)
  *
  * The preset below is the SOURCE OF TRUTH for both:
  *
@@ -32,7 +31,6 @@
  *   y=0   ┌── KPI ──┬── KPI ──┬── KPI ──┬── KPI ──┐
  *         │ cov 3×2 │ cri 3×2 │ ovd 3×2 │ ten 3×2 │
  *   y=2   ├──────── DONUT ─────┬──── TREND ───────┤
- *         │     rag 6×4        │  risks-open 6×4  │
  *   y=6   ├────────── TENANT_LIST 12×6 ───────────┤
  *         │                                       │
  *   y=12  ├────────── DRILLDOWN_CTAS 12×2 ────────┤
@@ -55,23 +53,14 @@ import type { CreateOrgDashboardWidgetInput } from '@/app-layer/schemas/org-dash
  * `tests/unit/org-dashboard-preset.test.ts`.
  */
 export const DEFAULT_ORG_DASHBOARD_PRESET: ReadonlyArray<CreateOrgDashboardWidgetInput> = [
-    // ─── Row 1: four KPI tiles ──────────────────────────────────────
+    // ─── Row 1: three KPI tiles, evenly across the 12-col row ───────
     {
         type: 'KPI',
         chartType: 'coverage',
         title: 'Coverage',
         config: { format: 'percent' },
         position: { x: 0, y: 0 },
-        size: { w: 3, h: 2 },
-        enabled: true,
-    },
-    {
-        type: 'KPI',
-        chartType: 'critical-risks',
-        title: 'Critical Risks',
-        config: { format: 'number' },
-        position: { x: 3, y: 0 },
-        size: { w: 3, h: 2 },
+        size: { w: 4, h: 2 },
         enabled: true,
     },
     {
@@ -79,8 +68,8 @@ export const DEFAULT_ORG_DASHBOARD_PRESET: ReadonlyArray<CreateOrgDashboardWidge
         chartType: 'overdue-evidence',
         title: 'Overdue Evidence',
         config: { format: 'number' },
-        position: { x: 6, y: 0 },
-        size: { w: 3, h: 2 },
+        position: { x: 4, y: 0 },
+        size: { w: 4, h: 2 },
         enabled: true,
     },
     {
@@ -88,28 +77,20 @@ export const DEFAULT_ORG_DASHBOARD_PRESET: ReadonlyArray<CreateOrgDashboardWidge
         chartType: 'tenants',
         title: 'Tenants',
         config: { format: 'number' },
-        position: { x: 9, y: 0 },
-        size: { w: 3, h: 2 },
+        position: { x: 8, y: 0 },
+        size: { w: 4, h: 2 },
         enabled: true,
     },
 
-    // ─── Row 2: donut + trend side-by-side ──────────────────────────
+    // ─── Row 2: donut, full width (its trend partner went with the
+    //            risk register) ────────────────────────────────────────
     {
         type: 'DONUT',
         chartType: 'rag-distribution',
         title: 'Tenant Health Distribution',
         config: { showLegend: true },
         position: { x: 0, y: 2 },
-        size: { w: 6, h: 4 },
-        enabled: true,
-    },
-    {
-        type: 'TREND',
-        chartType: 'risks-open',
-        title: 'Open Risks (90 days)',
-        config: { days: 90 },
-        position: { x: 6, y: 2 },
-        size: { w: 6, h: 4 },
+        size: { w: 12, h: 4 },
         enabled: true,
     },
 

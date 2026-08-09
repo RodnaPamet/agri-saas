@@ -17,7 +17,6 @@ import { buildRequestContext } from '../helpers/factories';
 
 // ── Import usecases ──
 import { createControl, deleteControl } from '@/app-layer/usecases/control';
-import { createRisk, deleteRisk } from '@/app-layer/usecases/risk';
 
 // ── Auth error detection ──
 function isForbiddenError(err: unknown): boolean {
@@ -86,53 +85,6 @@ describe('Auth Gating — Controls', () => {
     });
 });
 
-describe('Auth Gating — Risks', () => {
-    test('READER cannot create a risk', async () => {
-        const ctx = buildRequestContext({ role: 'READER' });
-        await expect(
-            createRisk(ctx as any, { title: 'Test Risk' }) // eslint-disable-line @typescript-eslint/no-explicit-any
-        ).rejects.toThrow();
-
-        try {
-            await createRisk(ctx as any, { title: 'Test Risk' }); // eslint-disable-line @typescript-eslint/no-explicit-any
-        } catch (err) {
-            expect(isForbiddenError(err)).toBe(true);
-        }
-    });
-
-    test('READER cannot delete a risk', async () => {
-        const ctx = buildRequestContext({ role: 'READER' });
-        await expect(
-            deleteRisk(ctx as any, 'any-id') // eslint-disable-line @typescript-eslint/no-explicit-any
-        ).rejects.toThrow();
-
-        try {
-            await deleteRisk(ctx as any, 'any-id'); // eslint-disable-line @typescript-eslint/no-explicit-any
-        } catch (err) {
-            expect(isForbiddenError(err)).toBe(true);
-        }
-    });
-
-    test('EDITOR cannot delete a risk (admin-only)', async () => {
-        const ctx = buildRequestContext({ role: 'EDITOR' });
-        await expect(
-            deleteRisk(ctx as any, 'any-id') // eslint-disable-line @typescript-eslint/no-explicit-any
-        ).rejects.toThrow();
-
-        try {
-            await deleteRisk(ctx as any, 'any-id'); // eslint-disable-line @typescript-eslint/no-explicit-any
-        } catch (err) {
-            expect(isForbiddenError(err)).toBe(true);
-        }
-    });
-
-    test('AUDITOR cannot create a risk', async () => {
-        const ctx = buildRequestContext({ role: 'AUDITOR' });
-        await expect(
-            createRisk(ctx as any, { title: 'Test Risk' }) // eslint-disable-line @typescript-eslint/no-explicit-any
-        ).rejects.toThrow();
-    });
-});
 
 describe('Auth Gating — Policy assertions', () => {
     test('assertCanRead allows any role', () => {

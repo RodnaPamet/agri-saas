@@ -121,7 +121,7 @@ export class PolicyRepository {
                 },
                 controlLinks: {
                     include: {
-                        control: { select: { id: true, name: true, annexId: true } },
+                        control: { select: { id: true, name: true, code: true } },
                     },
                 },
             },

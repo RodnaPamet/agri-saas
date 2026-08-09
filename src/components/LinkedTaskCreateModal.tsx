@@ -2,12 +2,12 @@
 
 /**
  * LinkedTaskCreateModal — shared create-task modal used by the
- * Asset and Risk detail pages' Tasks tabs (via LinkedTasksPanel).
+ * Asset detail page's Tasks tab (via LinkedTasksPanel).
  *
  * Mirrors `NewControlTaskModal` (the Control detail page's modal)
  * with one key difference: the Control flow has a dedicated
  * `POST /controls/<id>/tasks` endpoint that auto-links the task,
- * while ASSET / RISK don't. This modal therefore does TWO calls
+ * while ASSET doesn't. This modal therefore does TWO calls
  * sequentially on submit:
  *
  *   1. `POST /tasks` (generic create) — body matches
@@ -22,9 +22,9 @@
  * implementation today.
  *
  * Why a sibling module of LinkedTasksPanel (not nested in
- * `_modals/` like Control's): the panel is used by multiple
- * consumer pages (Asset + Risk), so the modal lives alongside it
- * in `src/components/` for shared visibility.
+ * `_modals/` like Control's): the panel is shared across consumer
+ * pages, so the modal lives alongside it in `src/components/` for
+ * shared visibility.
  */
 
 import { useState } from 'react';
@@ -39,7 +39,7 @@ import {
     toYMD,
 } from '@/components/ui/date-picker/date-utils';
 
-export type LinkedTaskEntityType = 'ASSET' | 'RISK';
+export type LinkedTaskEntityType = 'ASSET';
 
 export interface LinkedTaskCreateModalProps {
     open: boolean;
@@ -48,7 +48,7 @@ export interface LinkedTaskCreateModalProps {
     apiBase: string;
     /** Which domain entity to link the new task to. */
     entityType: LinkedTaskEntityType;
-    /** The id of the entity (asset id or risk id). */
+    /** The id of the entity (asset id). */
     entityId: string;
     /** Called after both calls succeed so the panel can refetch its list. */
     onCreated: () => void;
@@ -148,12 +148,12 @@ export function LinkedTaskCreateModal({
             }}
             size="md"
             title={t('createTask')}
-            description={entityType === 'ASSET' ? t('descriptionAsset') : t('descriptionRisk')}
+            description={t('descriptionAsset')}
             preventDefaultClose={saving}
         >
             <Modal.Header
                 title={t('createTask')}
-                description={entityType === 'ASSET' ? t('descriptionAsset') : t('descriptionRisk')}
+                description={t('descriptionAsset')}
             />
             <Modal.Form
                 onSubmit={handleSubmit}

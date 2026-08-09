@@ -144,26 +144,4 @@ describe('B8 — folders + framework lifecycle', () => {
         });
     });
 
-    describe('Frameworks list page CTAs', () => {
-        const src = read(
-            'src/app/t/[tenantSlug]/(app)/frameworks/FrameworksClient.tsx',
-        );
-
-        it('shows an "Import framework" primary CTA pointing at /install', () => {
-            expect(src).toMatch(/data-testid="import-framework-btn"/);
-            expect(src).toMatch(/\/frameworks\/\$\{[\s\S]{0,30}\.key\}\/install/);
-        });
-
-        it('shows a "Create framework" CTA wired to the explainer modal', () => {
-            expect(src).toMatch(/data-testid="create-framework-btn"/);
-            expect(src).toMatch(/setCustomFwModalOpen\(true\)/);
-        });
-
-        it('explainer modal documents the today-vs-future split', () => {
-            // i18n (T11): the modal copy moved to messages/*.json; the
-            // component now references the keys.
-            expect(src).toMatch(/customModal\.title/);
-            expect(src).toMatch(/customModal\.comingSoonLabel/);
-        });
-    });
 });

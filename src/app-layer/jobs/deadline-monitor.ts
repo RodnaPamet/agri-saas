@@ -9,8 +9,6 @@
  *   - Control       → nextDueAt
  *   - Policy        → nextReviewAt
  *   - Task          → dueAt
- *   - Risk          → nextReviewAt, targetDate
- *   - ControlTestPlan → nextDueAt
  *
  * Design principles:
  *   - Detection ONLY — no email sending, no side effects beyond audit logs
@@ -247,304 +245,7 @@ async function scanTasks(
     return items;
 }
 
-/**
- * Scan risks with nextReviewAt approaching or overdue.
- */
-async function scanRisks(
-    now: Date,
-    maxWindow: number,
-    tenantId?: string,
-): Promise<DueItem[]> {
-    const horizon = new Date(now.getTime() + maxWindow * 86_400_000);
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const where: any = {
-        deletedAt: null,
-        status: { notIn: ['CLOSED', 'ACCEPTED'] },
-        nextReviewAt: { not: null, lte: horizon },
-    };
-    if (tenantId) where.tenantId = tenantId;
-
-    const risks = await prisma.risk.findMany({
-        where,
-        select: {
-            id: true,
-            tenantId: true,
-            title: true,
-            nextReviewAt: true,
-            ownerUserId: true,
-        },
-        orderBy: { nextReviewAt: 'asc' },
-        take: 1000,
-    });
-
-    const items: DueItem[] = [];
-    for (const r of risks) {
-        if (!r.nextReviewAt) continue;
-        const classification = classifyUrgency(r.nextReviewAt, now);
-        if (!classification) continue;
-
-        items.push({
-            entityType: 'RISK',
-            entityId: r.id,
-            tenantId: r.tenantId,
-            name: r.title,
-            reason: classification.urgency === 'OVERDUE'
-                ? `Risk review overdue by ${Math.abs(classification.daysRemaining)} day(s)`
-                : `Risk review due in ${classification.daysRemaining} day(s)`,
-            urgency: classification.urgency,
-            dueDate: r.nextReviewAt.toISOString(),
-            daysRemaining: classification.daysRemaining,
-            ownerUserId: r.ownerUserId ?? undefined,
-        });
-    }
-    return items;
-}
-
-/**
- * Scan test plans with nextDueAt approaching or overdue.
- */
-async function scanTestPlans(
-    now: Date,
-    maxWindow: number,
-    tenantId?: string,
-): Promise<DueItem[]> {
-    const horizon = new Date(now.getTime() + maxWindow * 86_400_000);
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const where: any = {
-        status: 'ACTIVE',
-        nextDueAt: { not: null, lte: horizon },
-    };
-    if (tenantId) where.tenantId = tenantId;
-
-    const plans = await prisma.controlTestPlan.findMany({
-        where,
-        select: {
-            id: true,
-            tenantId: true,
-            name: true,
-            nextDueAt: true,
-            ownerUserId: true,
-            controlId: true,
-        },
-        orderBy: { nextDueAt: 'asc' },
-        take: 1000,
-    });
-
-    const items: DueItem[] = [];
-    for (const p of plans) {
-        if (!p.nextDueAt) continue;
-        const classification = classifyUrgency(p.nextDueAt, now);
-        if (!classification) continue;
-
-        items.push({
-            entityType: 'TEST_PLAN',
-            entityId: p.id,
-            tenantId: p.tenantId,
-            name: p.name,
-            reason: classification.urgency === 'OVERDUE'
-                ? `Test plan overdue by ${Math.abs(classification.daysRemaining)} day(s)`
-                : `Test plan due in ${classification.daysRemaining} day(s)`,
-            urgency: classification.urgency,
-            dueDate: p.nextDueAt.toISOString(),
-            daysRemaining: classification.daysRemaining,
-            ownerUserId: p.ownerUserId ?? undefined,
-        });
-    }
-    return items;
-}
-
 // ─── Epic G-7 — treatment-plan + milestone scanners ────────────────
-
-/**
- * Scan treatment plans whose `targetDate` is approaching or past
- * AND whose status is not already COMPLETED. The monitor doesn't
- * mutate state — it emits DueItem records that downstream
- * notification + dashboard surfaces consume.
- */
-async function scanTreatmentPlans(
-    now: Date,
-    maxWindow: number,
-    tenantId?: string,
-): Promise<DueItem[]> {
-    const horizon = new Date(now.getTime() + maxWindow * 86_400_000);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const where: any = {
-        deletedAt: null,
-        status: { in: ['DRAFT', 'ACTIVE', 'OVERDUE'] },
-        targetDate: { lte: horizon },
-    };
-    if (tenantId) where.tenantId = tenantId;
-
-    const plans = await prisma.riskTreatmentPlan.findMany({
-        where,
-        select: {
-            id: true,
-            tenantId: true,
-            riskId: true,
-            ownerUserId: true,
-            targetDate: true,
-            risk: { select: { title: true } },
-        },
-        orderBy: { targetDate: 'asc' },
-        take: 1000,
-    });
-
-    const items: DueItem[] = [];
-    for (const p of plans) {
-        if (!p.targetDate) continue;
-        const c = classifyUrgency(p.targetDate, now);
-        if (!c) continue;
-        items.push({
-            entityType: 'TREATMENT_PLAN',
-            entityId: p.id,
-            tenantId: p.tenantId,
-            name: p.risk?.title ?? '(unnamed risk)',
-            reason:
-                c.urgency === 'OVERDUE'
-                    ? `Treatment plan target overdue by ${Math.abs(c.daysRemaining)} day(s)`
-                    : `Treatment plan target due in ${c.daysRemaining} day(s)`,
-            urgency: c.urgency,
-            dueDate: p.targetDate.toISOString(),
-            daysRemaining: c.daysRemaining,
-            ownerUserId: p.ownerUserId,
-        });
-    }
-    return items;
-}
-
-/**
- * Scan treatment milestones whose `dueDate` is approaching or past
- * AND whose `completedAt` is null. Each milestone surfaces as its
- * own DueItem so per-owner digests can group them naturally.
- */
-async function scanTreatmentMilestones(
-    now: Date,
-    maxWindow: number,
-    tenantId?: string,
-): Promise<DueItem[]> {
-    const horizon = new Date(now.getTime() + maxWindow * 86_400_000);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const where: any = {
-        completedAt: null,
-        dueDate: { lte: horizon },
-        treatmentPlan: { deletedAt: null, status: { in: ['DRAFT', 'ACTIVE', 'OVERDUE'] } },
-    };
-    if (tenantId) where.tenantId = tenantId;
-
-    const milestones = await prisma.treatmentMilestone.findMany({
-        where,
-        select: {
-            id: true,
-            tenantId: true,
-            title: true,
-            dueDate: true,
-            treatmentPlan: {
-                select: { id: true, ownerUserId: true, riskId: true },
-            },
-        },
-        orderBy: { dueDate: 'asc' },
-        take: 2000,
-    });
-
-    const items: DueItem[] = [];
-    for (const m of milestones) {
-        if (!m.dueDate) continue;
-        const c = classifyUrgency(m.dueDate, now);
-        if (!c) continue;
-        items.push({
-            entityType: 'TREATMENT_MILESTONE',
-            entityId: m.id,
-            tenantId: m.tenantId,
-            name: m.title,
-            reason:
-                c.urgency === 'OVERDUE'
-                    ? `Milestone overdue by ${Math.abs(c.daysRemaining)} day(s)`
-                    : `Milestone due in ${c.daysRemaining} day(s)`,
-            urgency: c.urgency,
-            dueDate: m.dueDate.toISOString(),
-            daysRemaining: c.daysRemaining,
-            ownerUserId: m.treatmentPlan?.ownerUserId,
-        });
-    }
-    return items;
-}
-
-/**
- * Phase 0 — flip past-due treatment plans (DRAFT/ACTIVE) to OVERDUE
- * with one audit row per transition. Runs BEFORE the scanners so
- * the post-flip status is what downstream surfaces see. Each
- * transition is per-row + atomic so a concurrent renewal never
- * gets clobbered.
- */
-async function transitionPlansToOverdue(
-    now: Date,
-    tenantId?: string,
-): Promise<number> {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const where: any = {
-        deletedAt: null,
-        status: { in: ['DRAFT', 'ACTIVE'] },
-        targetDate: { lt: now },
-    };
-    if (tenantId) where.tenantId = tenantId;
-
-    const candidates = await prisma.riskTreatmentPlan.findMany({
-        where,
-        // ownerUserId is included for parity with the scanner SELECTs —
-        // the due-item-ownership ratchet asserts every SELECT in this
-        // file carries an owner field. The transition itself doesn't
-        // use it, but pulling it in costs nothing and keeps the shape
-        // uniform for future "notify the owner of an overdue plan"
-        // callers that build off this list.
-        select: {
-            id: true,
-            tenantId: true,
-            riskId: true,
-            ownerUserId: true,
-            targetDate: true,
-        },
-    });
-
-    let transitioned = 0;
-    for (const c of candidates) {
-        const update = await prisma.riskTreatmentPlan.updateMany({
-            where: {
-                id: c.id,
-                tenantId: c.tenantId,
-                status: { in: ['DRAFT', 'ACTIVE'] },
-                deletedAt: null,
-                targetDate: { lt: now },
-            },
-            data: { status: 'OVERDUE' },
-        });
-        if (update.count === 0) continue;
-
-        await appendAuditEntry({
-            tenantId: c.tenantId,
-            userId: null,
-            actorType: 'SYSTEM',
-            entity: 'RiskTreatmentPlan',
-            entityId: c.id,
-            action: 'TREATMENT_PLAN_MARKED_OVERDUE',
-            detailsJson: {
-                category: 'status_change',
-                entityName: 'RiskTreatmentPlan',
-                toStatus: 'OVERDUE',
-                summary: `Treatment plan ${c.id} transitioned to OVERDUE at scheduled deadline`,
-                after: {
-                    riskId: c.riskId,
-                    targetDateIso: c.targetDate?.toISOString() ?? null,
-                    transitionedBy: 'deadline-monitor',
-                },
-            },
-        });
-        transitioned++;
-    }
-
-    return transitioned;
-}
 
 // ─── Main Entry Point ───────────────────────────────────────────────
 
@@ -574,35 +275,22 @@ export async function runDeadlineMonitor(
         // Phase 0 — flip past-due treatment plans before scanning so
         // the urgency classifier sees the post-flip status. Each
         // transition emits one TREATMENT_PLAN_MARKED_OVERDUE audit row.
-        await transitionPlansToOverdue(now, options.tenantId);
 
         // Run all scanners in parallel
         const [
             controls,
             policies,
             tasks,
-            risks,
-            testPlans,
-            treatmentPlans,
-            treatmentMilestones,
         ] = await Promise.all([
             scanControls(now, maxWindow, options.tenantId),
             scanPolicies(now, maxWindow, options.tenantId),
             scanTasks(now, maxWindow, options.tenantId),
-            scanRisks(now, maxWindow, options.tenantId),
-            scanTestPlans(now, maxWindow, options.tenantId),
-            scanTreatmentPlans(now, maxWindow, options.tenantId),
-            scanTreatmentMilestones(now, maxWindow, options.tenantId),
         ]);
 
         const items = [
             ...controls,
             ...policies,
             ...tasks,
-            ...risks,
-            ...testPlans,
-            ...treatmentPlans,
-            ...treatmentMilestones,
         ];
 
         // Sort by urgency (OVERDUE first, then by days remaining)

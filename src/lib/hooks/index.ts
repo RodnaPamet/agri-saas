@@ -32,9 +32,8 @@ export type {
     UseKeyboardShortcutOptions,
 } from './use-keyboard-shortcut';
 
-export { useControls, useControl, useControlDashboard, useCreateControl, useUpdateControl, useDeleteControl } from './use-controls';
+export { useControls, useControl, useCreateControl, useUpdateControl, useDeleteControl } from './use-controls';
 export { usePolicies, usePolicy, useCreatePolicy, useUpdatePolicy, useDeletePolicy } from './use-policies';
-export { useRisks, useRisk, useCreateRisk, useUpdateRisk, useDeleteRisk } from './use-risks';
 export { useTasks, useTask, useCreateTask, useUpdateTask, useDeleteTask } from './use-tasks';
 export { useAssets, useAsset, useCreateAsset, useUpdateAsset, useDeleteAsset } from './use-assets';
 export { useEvidence, useEvidenceItem, useCreateEvidence, useDeleteEvidence } from './use-evidence';

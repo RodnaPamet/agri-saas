@@ -32,7 +32,9 @@ import {
     isFieldBriefingConfigured,
     type FieldBriefing,
     type BriefingFieldInput,
+    type BriefingKnowledgeSnippet,
 } from '../ai/field-briefing';
+import { retrieve } from '../ai/rag/retrieve';
 import { isGeeConfigured, getIndexMeansForBounds } from '@/lib/agro/earth-engine';
 import type { NdviAoi } from '@/lib/agro/earth-engine';
 import { getRedis } from '@/lib/redis';
@@ -54,6 +56,16 @@ export interface FieldBriefingPayload {
     fieldCount: number;
     /** The AI briefing, or null when unavailable (card hides). */
     briefing: FieldBriefing | null;
+    /**
+     * Knowledge-base sources the briefing was grounded in (W1/#89 +
+     * W2/#90) — deduplicated by `source` label, empty when retrieval
+     * found nothing (keyword-only search with no crop match, or the
+     * farm has no crops mapped yet). `FieldBriefingCard` renders this so
+     * a grounded answer is visibly traceable, per the same "don't let a
+     * grounded answer look identical to an ungrounded one" principle as
+     * the `/knowledge` ask box.
+     */
+    sources: Array<{ source: string; sourceType: string }>;
 }
 
 /** How many fields to include in the briefing context. */
@@ -63,6 +75,18 @@ const MAX_SATELLITE_FIELDS = 6;
 /** Composite window: the 30 days ending today (matches the tile routes). */
 const WINDOW_DAYS = 30;
 const CACHE_TTL_SECONDS = 21_600; // 6h
+
+/**
+ * Retrieval bound for the briefing's knowledge-base grounding (W1/#89).
+ * Kept deliberately small: this runs on a dashboard card, once per
+ * tenant per `CACHE_TTL_SECONDS` window (the 6h cache above already
+ * amortises the cost — this bound is about keeping THAT one call cheap,
+ * not about calling it often). 3 short chunks add a few hundred tokens
+ * to a Haiku call that already has a MAX_TOKENS budget of 800; more than
+ * that would start crowding out the actual satellite/season data the
+ * briefing exists to summarise.
+ */
+const FIELD_BRIEFING_RAG_TOP_K = 3;
 
 function ymd(d: Date): string {
     return d.toISOString().slice(0, 10);
@@ -96,6 +120,7 @@ export async function getFieldBriefing(ctx: RequestContext): Promise<FieldBriefi
             date,
             fieldCount: 0,
             briefing: null,
+            sources: [],
         };
     }
 
@@ -178,6 +203,37 @@ export async function getFieldBriefing(ctx: RequestContext): Promise<FieldBriefi
     // Pin the briefing's output language to the operator's UI locale (bg → Bulgarian).
     const locale = await getLocale().catch(() => undefined);
 
+    // ── W1/#89 — ground the briefing in the tenant's own SOPs + the
+    // GLOBAL agronomy catalogue. Bounded to ONE `retrieve()` call keyed
+    // off the farm's own primary crop (the first non-empty crop tag
+    // across its mapped fields, deterministic) — see
+    // FIELD_BRIEFING_RAG_TOP_K above for why the call itself stays
+    // small. `retrieve()` is keyword+vector hybrid and already degrades
+    // to keyword-only when no embedding endpoint is configured (today's
+    // production reality); a failure here must never sink the briefing,
+    // so it degrades the same way the satellite reads above do — to "no
+    // additional grounding", not to an error.
+    const primaryCrop = fields.find((f) => f.crops.length > 0)?.crops[0] ?? null;
+    let knowledgeChunks: Awaited<ReturnType<typeof retrieve>> = [];
+    if (primaryCrop) {
+        knowledgeChunks = await retrieve(ctx, {
+            query: primaryCrop,
+            topK: FIELD_BRIEFING_RAG_TOP_K,
+            includeGlobal: true,
+        }).catch((err) => {
+            logger.warn('field-briefing: KB retrieval failed', {
+                component: 'ag',
+                tenantId: ctx.tenantId,
+                error: err instanceof Error ? err.message : String(err),
+            });
+            return [];
+        });
+    }
+    const knowledgeContext: BriefingKnowledgeSnippet[] = knowledgeChunks.map((c) => ({
+        source: c.source,
+        text: c.text,
+    }));
+
     const briefing = await generateFieldBriefing({
         today: date,
         locale,
@@ -195,7 +251,14 @@ export async function getFieldBriefing(ctx: RequestContext): Promise<FieldBriefi
             : null,
         openTaskCount: tasks.length,
         recentJournalCount: journal.length,
+        knowledgeContext,
     });
+
+    // Dedup by source label — several chunks commonly share one label
+    // (e.g. every wheat corpus passage carries the same provenance).
+    const sources: FieldBriefingPayload['sources'] = [
+        ...new Map(knowledgeChunks.map((c) => [c.source, { source: c.source, sourceType: c.sourceType }])).values(),
+    ];
 
     const payload: FieldBriefingPayload = {
         aiConfigured: true,
@@ -205,6 +268,7 @@ export async function getFieldBriefing(ctx: RequestContext): Promise<FieldBriefi
         date,
         fieldCount: fields.length,
         briefing,
+        sources,
     };
 
     // Only cache a successful briefing — a null result (generation failure)

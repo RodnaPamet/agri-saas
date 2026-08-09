@@ -88,7 +88,6 @@ const ADMIN_ONLY_ROUTES = [
     'admin/invites/bulk/delete/route.ts',
 
     // Epic 44 — risk matrix configuration
-    'admin/risk-matrix-config/route.ts',
 
     // Billing routes (admin-only)
     'billing/checkout/route.ts',

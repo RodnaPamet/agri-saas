@@ -67,12 +67,12 @@ export const mockCtx: RequestContext = {
         evidence: { view: true, upload: true, edit: true, download: true },
         policies: { view: true, create: true, edit: true, approve: true },
         tasks: { view: true, create: true, edit: true, assign: true },
-        risks: { view: true, create: true, edit: true },
         vendors: { view: true, create: true, edit: true },
         tests: { view: true, create: true, execute: true },
         frameworks: { view: true, install: true },
         audits: { view: true, manage: true, freeze: true, share: true },
         reports: { view: true, export: true },
+        knowledge: { view: true },
         admin: { view: true, manage: true, members: true, sso: true, scim: true, tenant_lifecycle: true, owner_management: true },
     },
 };

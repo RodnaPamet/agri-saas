@@ -433,7 +433,6 @@ function StepContent({ step, data, onUpdate, completedSteps, allData }: {
         case 'COMPANY_PROFILE': return <CompanyProfileStep data={data} onUpdate={onUpdate} />;
         case 'FRAMEWORK_SELECTION': return <FrameworkSelectionStep data={data} onUpdate={onUpdate} />;
         case 'CONTROL_BASELINE_INSTALL': return <ControlInstallStep data={data} onUpdate={onUpdate} allData={allData} />;
-        case 'INITIAL_RISK_REGISTER': return <RiskRegisterStep data={data} onUpdate={onUpdate} />;
         case 'TEAM_SETUP': return <TeamSetupStep data={data} onUpdate={onUpdate} />;
         case 'REVIEW_AND_FINISH': return <ReviewStep completedSteps={completedSteps} allData={allData} />;
         default: return <p className="text-content-muted">{t('unknownStep')}</p>;
@@ -580,29 +579,6 @@ function ControlInstallStep({ data, onUpdate, allData }: { data: StepData; onUpd
     );
 }
 
-// ─── INITIAL_RISK_REGISTER ───
-
-function RiskRegisterStep({ data, onUpdate }: { data: StepData; onUpdate: (d: StepData) => void }) {
-    const t = useTranslations('onboarding');
-    return (
-        <div className="space-y-default max-w-lg animate-fadeIn">
-            <p className="text-sm text-content-muted mb-4">{t('riskIntro')}</p>
-            <div className="p-4 rounded-lg bg-gradient-to-br from-amber-500/10 to-orange-500/10 border border-border-warning">
-                <div className="flex items-center gap-compact mb-3">
-                    <AlertTriangle className="w-5 h-5 text-content-warning" />
-                    <span className="font-medium text-content-emphasis text-sm">{t('starterRiskRegister')}</span>
-                </div>
-                <p className="text-xs text-content-muted leading-relaxed">{t('starterRiskDesc')}</p>
-            </div>
-            <label className="flex items-center gap-tight text-sm text-content-default cursor-pointer">
-                <input type="checkbox" checked={data.generate !== false} onChange={(e) => onUpdate({ generate: e.target.checked })}
-                    className="w-4 h-4 rounded border-border-default bg-bg-default text-brand-500 focus:ring-brand-500" />
-                {t('generateStarterRisks')}
-            </label>
-        </div>
-    );
-}
-
 // ─── TEAM_SETUP ───
 
 function TeamSetupStep({ data, onUpdate }: { data: StepData; onUpdate: (d: StepData) => void }) {
@@ -660,7 +636,6 @@ function ReviewStep({ completedSteps, allData }: { completedSteps: string[]; all
         { key: 'FRAMEWORK_SELECTION', label: t('summaryFrameworks'), detail: (allData['FRAMEWORK_SELECTION']?.selectedFrameworks || []).join(', ') || t('detailNoneSelected') },
         { key: 'ASSET_SETUP', label: t('summaryAssets'), detail: t('detailAssetsAdded', { count: (allData['ASSET_SETUP']?.assets || []).length }) },
         { key: 'CONTROL_BASELINE_INSTALL', label: t('summaryControls'), detail: allData['CONTROL_BASELINE_INSTALL']?.confirmed ? t('detailBaselineConfirmed') : t('detailPendingConfirmation') },
-        { key: 'INITIAL_RISK_REGISTER', label: t('summaryRiskRegister'), detail: allData['INITIAL_RISK_REGISTER']?.generate !== false ? t('detailStarterGenerated') : t('detailSkipped') },
         { key: 'TEAM_SETUP', label: t('summaryTeam'), detail: t('detailInvitationsPending', { count: (allData['TEAM_SETUP']?.inviteEmails || []).length }) },
     ];
 

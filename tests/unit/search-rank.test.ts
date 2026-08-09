@@ -19,8 +19,8 @@ import type { SearchHit } from '@/lib/search/types';
 
 describe('computeRankScore — match bands', () => {
     it('exact title match outranks prefix match', () => {
-        const exact = computeRankScore('phishing', { type: 'risk', title: 'phishing' });
-        const prefix = computeRankScore('phish', { type: 'risk', title: 'phishing' });
+        const exact = computeRankScore('phishing', { type: 'asset', title: 'phishing' });
+        const prefix = computeRankScore('phish', { type: 'asset', title: 'phishing' });
         expect(exact).toBeGreaterThan(prefix);
     });
 
@@ -44,9 +44,9 @@ describe('computeRankScore — match bands', () => {
     });
 
     it('title substring outranks subtitle-only substring', () => {
-        const titleHit = computeRankScore('access', { type: 'risk', title: 'Unauthorised access' });
+        const titleHit = computeRankScore('access', { type: 'asset', title: 'Unauthorised access' });
         const subtitleHit = computeRankScore('access', {
-            type: 'risk',
+            type: 'asset',
             title: 'Phishing',
             subtitle: 'Access category',
         });
@@ -54,14 +54,14 @@ describe('computeRankScore — match bands', () => {
     });
 
     it('case-insensitive matching', () => {
-        const upper = computeRankScore('PHISH', { type: 'risk', title: 'phishing' });
-        const lower = computeRankScore('phish', { type: 'risk', title: 'phishing' });
+        const upper = computeRankScore('PHISH', { type: 'asset', title: 'phishing' });
+        const lower = computeRankScore('phish', { type: 'asset', title: 'phishing' });
         expect(upper).toBe(lower);
     });
 
     it('returns 0 for empty query', () => {
-        expect(computeRankScore('', { type: 'risk', title: 'anything' })).toBe(0);
-        expect(computeRankScore('   ', { type: 'risk', title: 'anything' })).toBe(0);
+        expect(computeRankScore('', { type: 'asset', title: 'anything' })).toBe(0);
+        expect(computeRankScore('   ', { type: 'asset', title: 'anything' })).toBe(0);
     });
 
     it('returns only the type-baseline when no field matches', () => {
@@ -139,11 +139,11 @@ describe('sortHits', () => {
 
 describe('capPerType', () => {
     it('keeps everything when under the cap', () => {
-        const out = capPerType([hit('c1', 'control', 50), hit('r1', 'risk', 40)], 5);
+        const out = capPerType([hit('c1', 'control', 50), hit('r1', 'asset', 40)], 5);
         expect(out.kept).toHaveLength(2);
         expect(out.truncated).toBe(false);
         expect(out.perTypeCounts.control).toBe(1);
-        expect(out.perTypeCounts.risk).toBe(1);
+        expect(out.perTypeCounts.asset).toBe(1);
     });
 
     it('caps each type independently and flags truncated', () => {
@@ -151,12 +151,12 @@ describe('capPerType', () => {
             hit('c1', 'control', 50),
             hit('c2', 'control', 49),
             hit('c3', 'control', 48),
-            hit('r1', 'risk', 40),
+            hit('r1', 'asset', 40),
         ];
         const out = capPerType(hits, 2);
         expect(out.kept.map((h) => h.id)).toEqual(['c1', 'c2', 'r1']);
         expect(out.perTypeCounts.control).toBe(2);
-        expect(out.perTypeCounts.risk).toBe(1);
+        expect(out.perTypeCounts.asset).toBe(1);
         expect(out.truncated).toBe(true);
     });
 
@@ -164,13 +164,11 @@ describe('capPerType', () => {
         const out = capPerType([], 5);
         expect(out.perTypeCounts).toEqual({
             control: 0,
-            risk: 0,
             policy: 0,
             framework: 0,
             evidence: 0,
             asset: 0,
             task: 0,
-            test: 0,
             knowledge: 0,
         });
         expect(out.truncated).toBe(false);

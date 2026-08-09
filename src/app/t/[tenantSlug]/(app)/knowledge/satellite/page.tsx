@@ -7,16 +7,55 @@
  * `…/knowledge/satellite#ndvi`); the effect below scrolls to that section,
  * Wikipedia-style. One section per index, each with a short blurb and a
  * "how to read the colours" note tied to the same gradient the map uses.
+ *
+ * ── W5/#93 (KB wire-up PR) — what folded into the article model, and what
+ *    deliberately did NOT ──
+ *
+ * This page used to be the ONLY place this content existed. It still IS the
+ * live UI (kept as-is on purpose — see below), but the same explanatory text
+ * is now ALSO authored as real, versioned `KnowledgeArticle` rows AND as
+ * retrievable `KnowledgeChunk` rows, so it stops being invisible to the rest
+ * of the product:
+ *
+ *   - `scripts/rag/corpus.ts` — GLOBAL_CORPUS gained 5 bg + 5 en entries
+ *     (`bg-satellite-*` / `en-satellite-*`). These are retrievable by EVERY
+ *     tenant with zero setup (GLOBAL chunks need no per-tenant seeding), so
+ *     the ask box (`/knowledge`), the field briefing, and the agronomy
+ *     advisor can all ground an answer in this content today.
+ *   - `scripts/import-knowledge.ts` — `SATELLITE_GUIDES` gained 5 bg + 5 en
+ *     `KnowledgeArticle` entries (category "Satellite Imagery"), seeded via
+ *     `npm run import:knowledge` the same way the growing-guide overviews
+ *     are. These show up in the `/knowledge` list — searchable, filterable
+ *     by category, versioned — for any tenant that has run the seed.
+ *
+ * What could NOT fold: THIS PAGE. `KnowledgeArticle.tenantId` is a required
+ * (non-nullable) column (`prisma/schema/knowledge.prisma`) — unlike
+ * `KnowledgeChunk`, there is no GLOBAL/tenant-less Article row. Making this
+ * guide's LIVE rendering read from the Article model would mean either (a)
+ * a schema change to make Article tenant-optional (a cross-cutting change
+ * well outside this PR's scope), or (b) every tenant running the seed
+ * script before the guide would show anything — which would SILENTLY EMPTY
+ * this page for the (majority of) tenants that never run it, the exact
+ * "drop content silently" outcome the brief for this PR warned against. So
+ * the live guide below keeps reading from i18n (`messages/*.json`,
+ * `satelliteImagery.*`) exactly as before — works for every tenant, with no
+ * setup — and the article-model copy above is the complementary,
+ * RETRIEVABLE half. The `/knowledge` link below is how a reader gets from
+ * one to the other.
  */
 import { useEffect } from 'react';
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
-import { Heading } from '@/components/ui/typography';
+import { Heading, TextLink } from '@/components/ui/typography';
 import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { useTenantHref } from '@/lib/tenant-context-provider';
 import { cn } from '@/lib/cn';
 import { VEGETATION_INDICES } from '@/lib/agro/vegetation-indices';
+
+/** Matches the `category` seeded onto every `SATELLITE_GUIDES` article in
+ *  `scripts/import-knowledge.ts` — the pivot the link below filters on. */
+const SATELLITE_ARTICLE_CATEGORY = 'Satellite Imagery';
 
 export default function SatelliteImageryGuidePage() {
     const t = useTranslations('satelliteImagery');
@@ -46,6 +85,14 @@ export default function SatelliteImageryGuidePage() {
                 </Button>
                 <Heading level={1}>{t('title')}</Heading>
                 <p className="max-w-prose text-content-secondary">{t('intro')}</p>
+                {/* W5/#93 — this content also lives as searchable, versioned
+                    articles (and, for every tenant, as retrievable ask-box /
+                    field-briefing grounding) — see the module doc comment. */}
+                <p className="text-xs text-content-subtle">
+                    <TextLink href={tenantHref(`/knowledge?category=${encodeURIComponent(SATELLITE_ARTICLE_CATEGORY)}`)}>
+                        {t('searchableInKnowledgeBase')}
+                    </TextLink>
+                </p>
             </div>
 
             {/* Table of contents — jump links to each index's section. */}

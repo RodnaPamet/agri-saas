@@ -115,7 +115,7 @@ describe('requirePermission — allowed', () => {
         mockGetTenantCtx.mockResolvedValue(ctx);
 
         const handler = jest.fn().mockResolvedValue(new Response('ok'));
-        const wrapped = requirePermission('risks.create', handler);
+        const wrapped = requirePermission('controls.create', handler);
 
         const req = makeReq();
         const res = await wrapped(req, routeArgs);
@@ -160,7 +160,7 @@ describe('requirePermission — denied', () => {
         mockGetTenantCtx.mockResolvedValue(makeCtx('READER'));
 
         const handler = jest.fn();
-        const wrapped = requirePermission('risks.create', handler);
+        const wrapped = requirePermission('controls.create', handler);
 
         await expect(wrapped(makeReq(), routeArgs)).rejects.toMatchObject({
             status: 403,
@@ -182,7 +182,7 @@ describe('requirePermission — denied', () => {
             previousHash: null,
         });
 
-        const wrapped = requirePermission('risks.create', jest.fn());
+        const wrapped = requirePermission('controls.create', jest.fn());
         await expect(
             wrapped(makeReq('POST', '/api/t/acme/risks'), routeArgs),
         ).rejects.toThrow();
@@ -194,14 +194,14 @@ describe('requirePermission — denied', () => {
             userId: 'user-1',
             actorType: 'USER',
             entity: 'Permission',
-            entityId: 'risks.create',
+            entityId: 'controls.create',
             action: 'AUTHZ_DENIED',
             requestId: 'req-test-1',
         });
         expect(entry.detailsJson).toMatchObject({
             category: 'access',
             event: 'authz_denied',
-            permissionKeys: ['risks.create'],
+            permissionKeys: ['controls.create'],
             role: 'READER',
             method: 'POST',
             path: '/api/t/acme/risks',
@@ -219,7 +219,7 @@ describe('requirePermission — denied', () => {
         });
 
         await expect(
-            requirePermission('risks.create', jest.fn())(makeReq(), routeArgs),
+            requirePermission('controls.create', jest.fn())(makeReq(), routeArgs),
         ).rejects.toThrow();
 
         expect(mockAppendAuditEntry).toHaveBeenCalledTimes(1);
@@ -233,7 +233,7 @@ describe('requirePermission — denied', () => {
         mockAppendAuditEntry.mockRejectedValue(new Error('audit DB down'));
 
         await expect(
-            requirePermission('risks.create', jest.fn())(makeReq(), routeArgs),
+            requirePermission('controls.create', jest.fn())(makeReq(), routeArgs),
         ).rejects.toMatchObject({ status: 403 });
 
         // The telemetry failure surfaces through the logger so ops can

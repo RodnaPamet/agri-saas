@@ -27,7 +27,7 @@ interface Template {
     tags: string[];
 }
 
-const ALL_TAGS = ['risk', 'control', 'task', 'issue', 'notify', 'webhook'] as const;
+const ALL_TAGS = ['control', 'task', 'issue', 'notify', 'webhook'] as const;
 
 export interface TemplateLibraryModalProps {
     open: boolean;

@@ -154,7 +154,7 @@ describe('ProcessTypedNode — R27 elevated surfaces', () => {
     });
 
     it('a context node uses the quieter elevated fill', () => {
-        const { container } = renderNode('risk');
+        const { container } = renderNode('asset');
         const cls = container.querySelector('[data-process-node]')!.className;
         expect(cls).toMatch(/bg-canvas-node-muted/);
     });

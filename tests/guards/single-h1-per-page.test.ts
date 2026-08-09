@@ -47,8 +47,6 @@ const EXEMPT_FILE_PATTERNS: RegExp[] = [
 const EXEMPT_FILES: Record<string, string> = {
     "src/app/vendor-assessment/[assessmentId]/VendorAssessmentClient.tsx":
         "External-link assessment page renders distinct H1s for `loading`, `forbidden`, and `success` states — each represents a different page identity at the same route.",
-    "src/app/t/[tenantSlug]/(app)/frameworks/[frameworkKey]/install/page.tsx":
-        "Install wizard renders one H1 for the pre-install configuration step and another for the post-install success step — two distinct page identities.",
     "src/app/t/[tenantSlug]/(app)/auth/mfa/page.tsx":
         "MFA gate renders distinct H1s for `enrollment` and `verification` flows — each is a separate sign-in obstacle, not a sub-section of one page.",
     "src/app/invite/[token]/page.tsx":

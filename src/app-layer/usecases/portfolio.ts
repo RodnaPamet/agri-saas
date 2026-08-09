@@ -80,10 +80,6 @@ function trendRowToDataPoint(row: SnapshotTrendRow): PortfolioTrendDataPoint {
         ),
         controlsImplemented: row.controlsImplemented,
         controlsApplicable: row.controlsApplicable,
-        risksTotal: row.risksTotal,
-        risksOpen: row.risksOpen,
-        risksCritical: row.risksCritical,
-        risksHigh: row.risksHigh,
         evidenceOverdue: row.evidenceOverdue,
         evidenceDueSoon7d: row.evidenceDueSoon7d,
         evidenceCurrent: row.evidenceCurrent,
@@ -134,10 +130,6 @@ function projectPortfolioSummary(
 
     let controlsApplicable = 0;
     let controlsImplemented = 0;
-    let risksTotal = 0;
-    let risksOpen = 0;
-    let risksCritical = 0;
-    let risksHigh = 0;
     let evidenceTotal = 0;
     let evidenceOverdue = 0;
     let evidenceDueSoon7d = 0;
@@ -160,10 +152,6 @@ function projectPortfolioSummary(
         }
         controlsApplicable += s.controlsApplicable;
         controlsImplemented += s.controlsImplemented;
-        risksTotal += s.risksTotal;
-        risksOpen += s.risksOpen;
-        risksCritical += s.risksCritical;
-        risksHigh += s.risksHigh;
         evidenceTotal += s.evidenceTotal;
         evidenceOverdue += s.evidenceOverdue;
         evidenceDueSoon7d += s.evidenceDueSoon7d;
@@ -175,7 +163,6 @@ function projectPortfolioSummary(
 
         const rag = computeRag({
             coveragePercent: bpsToPercent(s.controlCoverageBps),
-            criticalRisks: s.risksCritical,
             overdueEvidence: s.evidenceOverdue,
         });
         if (rag === 'GREEN') green++;
@@ -199,12 +186,6 @@ function projectPortfolioSummary(
                 controlsImplemented,
                 controlsApplicable,
             ),
-        },
-        risks: {
-            total: risksTotal,
-            open: risksOpen,
-            critical: risksCritical,
-            high: risksHigh,
         },
         evidence: {
             total: evidenceTotal,
@@ -239,8 +220,6 @@ function projectPortfolioTenantHealth(base: PortfolioBaseData): TenantHealthRow[
                 hasSnapshot: false,
                 snapshotDate: null,
                 coveragePercent: null,
-                openRisks: null,
-                criticalRisks: null,
                 overdueEvidence: null,
                 rag: null,
             };
@@ -254,12 +233,9 @@ function projectPortfolioTenantHealth(base: PortfolioBaseData): TenantHealthRow[
             hasSnapshot: true,
             snapshotDate: toIsoDate(s.snapshotDate),
             coveragePercent,
-            openRisks: s.risksOpen,
-            criticalRisks: s.risksCritical,
             overdueEvidence: s.evidenceOverdue,
             rag: computeRag({
                 coveragePercent,
-                criticalRisks: s.risksCritical,
                 overdueEvidence: s.evidenceOverdue,
             }),
         };
@@ -545,64 +521,6 @@ export async function getNonPerformingControls(
     );
 }
 
-export async function getCriticalRisksAcrossOrg(
-    ctx: OrgContext,
-): Promise<CriticalRiskRow[]> {
-    assertCanViewPortfolio(ctx);
-    const { tenants } = await getPortfolioData(ctx.organizationId, {
-        includeSnapshots: false,
-    });
-    const integrity = await checkAuditorFanOutIntegrity(ctx, tenants);
-
-    return fanOutPerTenant<CriticalRiskRow>(
-        integrity.accessibleTenants,
-        async (db, tenant) => {
-            // "Critical" = inherentScore >= 15 (5×5 matrix top tier) AND
-            // still actionable (status != CLOSED). The architecture doc's
-            // hint of `inherentScore >= 15 OR status = 'OPEN'` would also
-            // surface every low-severity OPEN risk and clutter the
-            // portfolio view; the AND interpretation is what a CISO
-            // monitoring critical risk actually wants.
-            const rows = await db.risk.findMany({
-                where: {
-                    tenantId: tenant.id,
-                    inherentScore: { gte: 15 },
-                    status: { not: 'CLOSED' },
-                    deletedAt: null,
-                },
-                select: {
-                    id: true,
-                    title: true,
-                    inherentScore: true,
-                    status: true,
-                    updatedAt: true,
-                },
-                orderBy: [{ inherentScore: 'desc' }, { updatedAt: 'desc' }],
-                take: PER_TENANT_LIMIT,
-            });
-            return rows.map((r): CriticalRiskRow => ({
-                riskId: r.id,
-                tenantId: tenant.id,
-                tenantSlug: tenant.slug,
-                tenantName: tenant.name,
-                title: r.title,
-                inherentScore: r.inherentScore,
-                status: r.status as CriticalRiskRow['status'],
-                updatedAt: r.updatedAt.toISOString(),
-                drillDownUrl: `/t/${tenant.slug}/risks/${r.id}`,
-            }));
-        },
-        (rows) =>
-            rows
-                .sort((a, b) => {
-                    if (a.inherentScore !== b.inherentScore) {
-                        return b.inherentScore - a.inherentScore;
-                    }
-                    return b.updatedAt.localeCompare(a.updatedAt);
-                })
-                .slice(0, PORTFOLIO_DRILLDOWN_LIMIT),
-    );
-}
 
 export async function getOverdueEvidenceAcrossOrg(
     ctx: OrgContext,
@@ -957,102 +875,6 @@ interface RisksCursor {
     s: number;
     d: string;
     i: string;
-}
-
-export async function listCriticalRisksAcrossOrg(
-    ctx: OrgContext,
-    input: PaginatedDrillDownInput = {},
-): Promise<PaginatedDrillDownResult<CriticalRiskRow>> {
-    assertCanViewPortfolio(ctx);
-    const limit = clampPageLimit(input.limit);
-    const cursor = decodeJson<RisksCursor>(input.cursor);
-    const { tenants } = await getPortfolioData(ctx.organizationId, {
-        includeSnapshots: false,
-    });
-
-    const cursorWhere = cursor
-        ? {
-              OR: [
-                  { inherentScore: { lt: cursor.s } },
-                  {
-                      AND: [
-                          { inherentScore: cursor.s },
-                          { updatedAt: { lt: new Date(cursor.d) } },
-                      ],
-                  },
-                  {
-                      AND: [
-                          { inherentScore: cursor.s },
-                          { updatedAt: new Date(cursor.d) },
-                          { id: { gt: cursor.i } },
-                      ],
-                  },
-              ],
-          }
-        : undefined;
-
-    const merged = await fanOutPerTenant<CriticalRiskRow>(
-        tenants,
-        async (db, tenant) => {
-            const rows = await db.risk.findMany({
-                where: {
-                    tenantId: tenant.id,
-                    inherentScore: { gte: 15 },
-                    status: { not: 'CLOSED' },
-                    deletedAt: null,
-                    ...(cursorWhere ?? {}),
-                },
-                select: {
-                    id: true,
-                    title: true,
-                    inherentScore: true,
-                    status: true,
-                    updatedAt: true,
-                },
-                orderBy: [
-                    { inherentScore: 'desc' },
-                    { updatedAt: 'desc' },
-                    { id: 'asc' },
-                ],
-                take: perTenantTake(limit),
-            });
-            return rows.map((r): CriticalRiskRow => ({
-                riskId: r.id,
-                tenantId: tenant.id,
-                tenantSlug: tenant.slug,
-                tenantName: tenant.name,
-                title: r.title,
-                inherentScore: r.inherentScore,
-                status: r.status as CriticalRiskRow['status'],
-                updatedAt: r.updatedAt.toISOString(),
-                drillDownUrl: `/t/${tenant.slug}/risks/${r.id}`,
-            }));
-        },
-        (rows) => rows,
-    );
-
-    merged.sort((a, b) => {
-        if (a.inherentScore !== b.inherentScore) {
-            return b.inherentScore - a.inherentScore;
-        }
-        const cmp = b.updatedAt.localeCompare(a.updatedAt);
-        if (cmp !== 0) return cmp;
-        return a.riskId.localeCompare(b.riskId);
-    });
-
-    const trimmed = merged.slice(0, limit);
-    const hasMore = merged.length > limit;
-    const last = trimmed[trimmed.length - 1];
-    const nextCursor =
-        hasMore && last
-            ? encodeJson<RisksCursor>({
-                  s: last.inherentScore,
-                  d: last.updatedAt,
-                  i: last.riskId,
-              })
-            : null;
-
-    return { rows: trimmed, nextCursor };
 }
 
 // ── Evidence ─────────────────────────────────────────────────────────

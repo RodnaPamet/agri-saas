@@ -33,7 +33,6 @@ import { EditAssetModal } from '../EditAssetModal';
 import { InheritedEvidencePanel } from '@/components/InheritedEvidencePanel';
 import { AttachedEvidencePanel } from '@/components/AttachedEvidencePanel';
 import { Heading } from '@/components/ui/typography';
-import { InheritedTestPlansPanel } from '@/components/InheritedTestPlansPanel';
 import { InheritedMappingsPanel } from '@/components/InheritedMappingsPanel';
 import { hasComplianceModules } from '@/lib/modules';
 
@@ -89,8 +88,7 @@ export default function AssetDetailPage() {
         | 'evidence'
         | 'mappings'
         | 'traceability'
-        | 'activity'
-        | 'tests';
+        | 'activity';
     const [activeTab, setActiveTab] = useState<Tab>('overview');
     const tabs: ReadonlyArray<{ key: Tab; label: string }> = [
         { key: 'overview', label: t('tabOverview') },
@@ -107,9 +105,6 @@ export default function AssetDetailPage() {
               ] as const)
             : []),
         { key: 'activity', label: t('tabActivity') },
-        ...(showCompliance
-            ? ([{ key: 'tests', label: t('tabTests') }] as const)
-            : []),
     ];
     // Modal-form P2 — the inline-edit panel is replaced by an
     // EditAssetModal launched from the detail header. The page URL
@@ -419,14 +414,6 @@ export default function AssetDetailPage() {
                     )}
                 </div>
             )}
-            {activeTab === 'tests' && (
-                <InheritedTestPlansPanel
-                    endpoint={apiUrl(`/assets/${assetId}/test-plans`)}
-                    tenantHref={tenantHref}
-                    entityLabel="asset"
-                />
-            )}
-
             {activeTab === 'overview' && (
                 <>
 

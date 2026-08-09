@@ -72,7 +72,7 @@ describe('Epic O-4 — org shell structural contract', () => {
 
     // ── Sidebar nav structure ─────────────────────────────────────────
 
-    it('OrgSidebarNav declares all 7 spec nav entries', () => {
+    it('OrgSidebarNav declares all 6 spec nav entries', () => {
         const src = read(NAV_PATH);
         // T04 i18n — labels moved to `t('<key>')`; the English copy lives
         // in messages/en.json under orgSidebar.*. Assert both the source
@@ -83,7 +83,6 @@ describe('Epic O-4 — org shell structural contract', () => {
             ['portfolioOverview', 'Portfolio Overview'],
             ['allTenants', 'All Tenants'],
             ['nonPerformingControls', 'Non-Performing Controls'],
-            ['criticalRisks', 'Critical Risks'],
             ['overdueEvidence', 'Overdue Evidence'],
             ['members', 'Members'],
             ['settings', 'Settings'],
@@ -96,10 +95,10 @@ describe('Epic O-4 — org shell structural contract', () => {
 
     it('drill-down nav entries are gated by canDrillDown', () => {
         const src = read(NAV_PATH);
-        // The three drill-down items must carry `requiresDrillDown: true`
-        // (labels now `t('<key>')` per the T04 i18n migration).
+        // The drill-down items must carry `requiresDrillDown: true`
+        // (labels now `t('<key>')` per the T04 i18n migration). Was three;
+        // `criticalRisks` went with the risk register.
         expect(src).toMatch(/label:\s*t\(['"]nonPerformingControls['"]\)[\s\S]+?requiresDrillDown:\s*true/);
-        expect(src).toMatch(/label:\s*t\(['"]criticalRisks['"]\)[\s\S]+?requiresDrillDown:\s*true/);
         expect(src).toMatch(/label:\s*t\(['"]overdueEvidence['"]\)[\s\S]+?requiresDrillDown:\s*true/);
         // And the filter must check `perms.canDrillDown` for those rows.
         expect(src).toMatch(/canDrillDown/);

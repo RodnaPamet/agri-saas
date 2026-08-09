@@ -19,7 +19,6 @@ import { TimestampTooltip } from '@/components/ui/timestamp-tooltip';
 interface ControlRef {
     id: string;
     code: string | null;
-    annexId: string | null;
     name: string;
 }
 interface InheritedEvidenceRow {
@@ -101,7 +100,7 @@ export function InheritedEvidencePanel({
             cell: ({ row }) =>
                 row.original.control ? (
                     <TableTitleCell href={tenantHref(`/controls/${row.original.control.id}`)}>
-                        {row.original.control.code || row.original.control.annexId || row.original.control.name}
+                        {row.original.control.code || row.original.control.name}
                     </TableTitleCell>
                 ) : (
                     <span className="text-xs text-content-subtle">—</span>

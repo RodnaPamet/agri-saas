@@ -168,7 +168,7 @@ describe('Permission Resolution', () => {
     });
 
     test('PermissionSet covers all resource domains', () => {
-        const domains = ['controls', 'evidence', 'policies', 'tasks', 'risks',
+        const domains = ['controls', 'evidence', 'policies', 'tasks',
             'vendors', 'tests', 'frameworks', 'audits', 'reports', 'admin'];
         for (const domain of domains) {
             expect(permissions).toContain(`${domain}:`);

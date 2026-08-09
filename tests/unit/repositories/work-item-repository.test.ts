@@ -657,15 +657,15 @@ describe('WorkItemRepository — countLinkedToEntities (batched, link-only)', ()
 
     it('uses ONE tenant-scoped query keyed on the caller-supplied entity type', async () => {
         // Break: hard-coding the entity type (the method was extracted
-        // from the CONTROL-specific one) makes the risks column show
-        // asset counts. And an N+1 over the entity list is the shape
-        // this method exists to avoid.
-        await WorkItemRepository.countLinkedToEntities(asTx(db), ctx, 'RISK', ['r-1', 'r-2']);
+        // from the CONTROL-specific one) makes the assets column show
+        // counts for a different entity. And an N+1 over the entity
+        // list is the shape this method exists to avoid.
+        await WorkItemRepository.countLinkedToEntities(asTx(db), ctx, 'ASSET', ['r-1', 'r-2']);
 
         expect(db.taskLink.findMany).toHaveBeenCalledTimes(1);
         expect(whereOf(db.taskLink.findMany)).toEqual({
             tenantId: 'tenant-1',
-            entityType: 'RISK',
+            entityType: 'ASSET',
             entityId: { in: ['r-1', 'r-2'] },
         });
     });
@@ -681,7 +681,7 @@ describe('WorkItemRepository — countLinkedToEntities (batched, link-only)', ()
             { entityId: 'r-2', taskId: 't-3', task: { status: 'CLOSED' } },
         ]);
 
-        const result = await WorkItemRepository.countLinkedToEntities(asTx(db), ctx, 'RISK', ['r-1', 'r-2']);
+        const result = await WorkItemRepository.countLinkedToEntities(asTx(db), ctx, 'ASSET', ['r-1', 'r-2']);
 
         expect(result.get('r-1')).toEqual({ total: 2, done: 1 });
         expect(result.get('r-2')).toEqual({ total: 1, done: 1 });
@@ -1125,7 +1125,7 @@ describe('WorkItemRepository — metrics', () => {
         expect(args.take).toBe(5);
         expect(args.where).toEqual({
             tenantId: 'tenant-1',
-            entityType: { in: ['ASSET', 'RISK'] },
+            entityType: { in: ['ASSET'] },
             task: { status: { notIn: ['RESOLVED', 'CLOSED', 'CANCELED'] } },
         });
         expect(m.topLinkedEntities).toEqual([
@@ -1157,7 +1157,7 @@ describe('TaskLinkRepository', () => {
     it('honours an explicit relation', async () => {
         // Break: a `??` that ignores the argument would flatten every
         // link to RELATES_TO, losing the BLOCKS/DUPLICATES semantics.
-        await TaskLinkRepository.link(asTx(db), ctx, 't-1', 'RISK', 'r-1', 'BLOCKS');
+        await TaskLinkRepository.link(asTx(db), ctx, 't-1', 'ASSET', 'r-1', 'BLOCKS');
 
         expect(dataOf(db.taskLink.create).relation).toBe('BLOCKS');
     });

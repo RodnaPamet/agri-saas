@@ -57,7 +57,7 @@ import {
 // from a repointed deep-link. Farm-first: the header leads with the field-work
 // catalog type; severity / control / audit fields only surface when the row
 // actually carries them.
-const ENTITY_TYPE_OPTIONS = ['CONTROL', 'RISK', 'ASSET', 'EVIDENCE', 'FRAMEWORK_REQUIREMENT', 'LOCATION', 'PARCEL', 'EQUIPMENT'];
+const ENTITY_TYPE_OPTIONS = ['CONTROL', 'ASSET', 'EVIDENCE', 'FRAMEWORK_REQUIREMENT', 'LOCATION', 'PARCEL', 'EQUIPMENT'];
 const RELATION_OPTIONS = ['RELATES_TO', 'CAUSED_BY', 'MITIGATED_BY', 'EVIDENCE_FOR'];
 const SELECTABLE_STATUSES = ['OPEN', 'TRIAGED', 'IN_PROGRESS', 'BLOCKED', 'CLOSED', 'CANCELED'];
 // Statuses a task can legally move to RESOLVED from (BLOCKED must be unblocked

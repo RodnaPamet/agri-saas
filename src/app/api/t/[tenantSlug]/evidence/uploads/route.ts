@@ -27,7 +27,6 @@ export const POST = withApiErrorHandling(async (req: NextRequest, { params: para
         title: formData.get('title') as string | undefined,
         controlId: formData.get('controlId') as string | null,
         taskId: formData.get('taskId') as string | null,
-        riskId: formData.get('riskId') as string | null,
         assetId: formData.get('assetId') as string | null,
         category: formData.get('category') as string | null,
         // B8 follow-up — folder rides with the upload form so a

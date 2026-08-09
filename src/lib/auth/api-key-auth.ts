@@ -65,7 +65,6 @@ const SCOPE_ACTION_MAP: Record<string, Record<string, string[]>> = {
     evidence:   { read: ['view', 'download'], write: ['upload', 'edit'] },
     policies:   { read: ['view'], write: ['create', 'edit'], admin: ['approve'] },
     tasks:      { read: ['view'], write: ['create', 'edit', 'assign'] },
-    risks:      { read: ['view'], write: ['create', 'edit'] },
     vendors:    { read: ['view'], write: ['create', 'edit'] },
     tests:      { read: ['view'], write: ['create', 'execute'] },
     frameworks: { read: ['view'], write: ['install'] },

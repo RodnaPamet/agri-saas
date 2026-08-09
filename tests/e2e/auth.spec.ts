@@ -144,9 +144,13 @@ test.describe('Middleware Auth Guard', () => {
     test('authenticated API request returns 200', async ({ page }) => {
         await doLogin(page);
 
-        // Use page.evaluate to make an authed API request (includes cookies)
+        // Same route as the 401 case above, so the pair isolates exactly one
+        // variable: the session. It used to hit `/api/dashboard`, a legacy
+        // non-tenant route deleted with the GRC stack — this spec was its
+        // only remaining caller, so the test 404'd rather than proving
+        // anything about the guard.
         const apiResponse = await page.evaluate(async () => {
-            const res = await fetch('/api/dashboard');
+            const res = await fetch('/api/clauses');
             return { status: res.status, ok: res.ok };
         });
         expect(apiResponse.status).toBe(200);

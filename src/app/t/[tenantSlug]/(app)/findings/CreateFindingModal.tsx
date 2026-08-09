@@ -6,11 +6,11 @@
  * Replaces the inline create form on the findings list with a modal that
  * captures the full finding shape: title/description/type/severity/due
  * date PLUS an assignee (tenant member), a linked control, a compensating
- * control, multiple implicated risks, and a free-text analysis.
+ * control, and a free-text analysis.
  *
  * Business contract — POST /api/t/:slug/findings with
  *   { title, description, severity, type, dueDate?, analysis?,
- *     assigneeUserId?, controlId?, compensatingControlId?, riskIds[] }
+ *     assigneeUserId?, controlId?, compensatingControlId? }
  * The server validates every referenced id against the tenant. On success
  * the findings list cache is invalidated.
  */
@@ -45,14 +45,8 @@ import { useTranslations } from 'next-intl';
 
 interface ControlOption {
     id: string;
-    annexId: string | null;
+    code: string | null;
     name: string;
-}
-
-interface RiskOption {
-    id: string;
-    key: string | null;
-    title: string;
 }
 
 const SEVERITY_OPTIONS: ComboboxOption[] = [
@@ -100,8 +94,6 @@ export function CreateFindingModal({
     const t = useTranslations('findings.createModal');
 
     const [form, setForm] = useState({ ...EMPTY_FORM });
-    const [selectedRiskIds, setSelectedRiskIds] = useState<Set<string>>(new Set());
-    const [riskFilter, setRiskFilter] = useState('');
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState('');
 
@@ -119,60 +111,27 @@ export function CreateFindingModal({
             if (!Array.isArray(data)) return [];
             return data.map((c: ControlOption) => ({
                 id: c.id,
-                annexId: c.annexId ?? null,
+                code: c.code ?? null,
                 name: c.name,
             }));
         },
     });
     const controls = useMemo(() => controlsQuery.data ?? [], [controlsQuery.data]);
 
-    const risksQuery = useQuery<RiskOption[]>({
-        queryKey: ['findings', tenantSlug, 'risks-for-new-finding'],
-        enabled: open,
-        queryFn: async () => {
-            const res = await fetch(apiUrl('/risks'));
-            if (!res.ok) throw new Error(`Risks: ${res.status}`);
-            const data: CappedList<RiskOption> | RiskOption[] = await res.json();
-            const rows = Array.isArray(data) ? data : (data?.rows ?? []);
-            return rows.map((r) => ({ id: r.id, key: r.key ?? null, title: r.title }));
-        },
-    });
-    const risks = useMemo(() => risksQuery.data ?? [], [risksQuery.data]);
-
     const controlOptions = useMemo<ComboboxOption[]>(
         () =>
             controls.map((c) => ({
                 value: c.id,
-                label: c.annexId ? `${c.annexId} · ${c.name}` : c.name,
+                label: c.code ? `${c.code} · ${c.name}` : c.name,
             })),
         [controls],
     );
-
-    const filteredRisks = useMemo(() => {
-        const q = riskFilter.trim().toLowerCase();
-        if (!q) return risks;
-        return risks.filter(
-            (r) =>
-                r.title.toLowerCase().includes(q) ||
-                (r.key ?? '').toLowerCase().includes(q),
-        );
-    }, [risks, riskFilter]);
-
-    const toggleRisk = (id: string) =>
-        setSelectedRiskIds((prev) => {
-            const next = new Set(prev);
-            if (next.has(id)) next.delete(id);
-            else next.add(id);
-            return next;
-        });
 
     // ── Reset + focus on open ──
     useEffect(() => {
         if (!open) return;
         // eslint-disable-next-line react-hooks/set-state-in-effect
         setForm({ ...EMPTY_FORM });
-        setSelectedRiskIds(new Set());
-        setRiskFilter('');
         setError('');
         setSubmitting(false);
         const t = setTimeout(() => titleRef.current?.focus(), 60);
@@ -195,7 +154,6 @@ export function CreateFindingModal({
             hasAssignee: Boolean(form.assigneeUserId),
             hasControl: Boolean(form.controlId),
             hasCompensatingControl: Boolean(form.compensatingControlId),
-            riskLinkCount: selectedRiskIds.size,
         });
         try {
             const payload: Record<string, unknown> = {
@@ -207,7 +165,6 @@ export function CreateFindingModal({
                 controlId: form.controlId || undefined,
                 compensatingControlId: form.compensatingControlId || undefined,
                 analysis: form.analysis.trim() || undefined,
-                riskIds: Array.from(selectedRiskIds),
             };
             if (form.dueDate) payload.dueDate = form.dueDate;
 
@@ -341,7 +298,7 @@ export function CreateFindingModal({
                             </FormField>
                         </FormSection>
 
-                        <FormSection eyebrow={t('sectionControlsRisks')}>
+                        <FormSection eyebrow={t('sectionControls')}>
                             <div className="grid grid-cols-1 gap-default sm:grid-cols-2">
                                 <FormField
                                     label={t('fieldLinkedControl')}
@@ -385,51 +342,6 @@ export function CreateFindingModal({
                                 </FormField>
                             </div>
 
-                            <FormField label={t('implicatedRisks', { count: selectedRiskIds.size })}>
-                                <div className="rounded-lg border border-border-subtle bg-bg-subtle">
-                                    <div className="border-b border-border-subtle p-2">
-                                        <Input
-                                            id="finding-risk-filter"
-                                            type="text"
-                                            placeholder={t('riskSearch')}
-                                            value={riskFilter}
-                                            onChange={(e) => setRiskFilter(e.target.value)}
-                                            autoComplete="off"
-                                        />
-                                    </div>
-                                    <div
-                                        className="max-h-40 space-y-1 overflow-y-auto p-2"
-                                        data-testid="finding-risks-list"
-                                    >
-                                        {risksQuery.isLoading ? (
-                                            <p className="px-1 py-1 text-sm text-content-muted">{t('loadingRisks')}</p>
-                                        ) : filteredRisks.length === 0 ? (
-                                            <p className="px-1 py-1 text-sm text-content-muted">
-                                                {t('noRisksToLink')}
-                                            </p>
-                                        ) : (
-                                            filteredRisks.map((r) => (
-                                                <label
-                                                    key={r.id}
-                                                    className="flex cursor-pointer items-center gap-tight rounded px-1 py-1 text-sm text-content-default hover:bg-bg-muted"
-                                                >
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={selectedRiskIds.has(r.id)}
-                                                        onChange={() => toggleRisk(r.id)}
-                                                        className="accent-brand-emphasis"
-                                                        data-testid={`finding-risk-opt-${r.id}`}
-                                                    />
-                                                    <span className="w-16 shrink-0 text-xs text-content-muted">
-                                                        {r.key || 'RISK'}
-                                                    </span>
-                                                    <span className="truncate text-content-emphasis">{r.title}</span>
-                                                </label>
-                                            ))
-                                        )}
-                                    </div>
-                                </div>
-                            </FormField>
                         </FormSection>
 
                         <FormSection eyebrow={t('sectionAnalysis')}>

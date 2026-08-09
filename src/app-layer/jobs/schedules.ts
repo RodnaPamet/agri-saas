@@ -88,24 +88,6 @@ export const SCHEDULED_JOBS: ScheduleDefinition[] = [
         defaultPayload: {},
     },
     {
-        name: 'risk-appetite-monitor',
-        pattern: '0 6 * * *',     // daily at 06:00 UTC
-        description: 'Scan every tenant portfolio for risk-appetite threshold breaches (RQ-2)',
-        defaultPayload: {},
-    },
-    {
-        name: 'risk-snapshot',
-        pattern: '0 2 * * *',     // daily at 02:00 UTC
-        description: 'Capture daily per-risk + portfolio snapshots for trend/velocity analytics (RQ-9)',
-        defaultPayload: {},
-    },
-    {
-        name: 'report-delivery',
-        pattern: '0 6 * * *',     // daily at 06:00 UTC
-        description: 'Generate + deliver due scheduled risk reports (RQ-10)',
-        defaultPayload: {},
-    },
-    {
         name: 'low-stock-monitor',
         pattern: '0 9 * * *',     // daily at 09:00 UTC
         description: 'Scan inventory items below reorderLevel and fire LOW_STOCK notifications to tenant OWNER/ADMIN members',
@@ -276,17 +258,6 @@ export const SCHEDULED_JOBS: ScheduleDefinition[] = [
         defaultPayload: {},
     },
     {
-        name: 'exception-expiry-monitor',
-        // Daily at 04:30 UTC — chosen to land between the 04:00
-        // access-review reminder (G-4) and the 05:00 compliance-
-        // snapshot, with idle DB capacity. Calendar-day-based
-        // trigger means time-of-day drift doesn't move the window.
-        pattern: '30 4 * * *',
-        description:
-            'Flag control exceptions approaching their `expiresAt` deadline at 30 / 14 / 7 day windows + emit reminder notifications.',
-        defaultPayload: {},
-    },
-    {
         name: 'retention-sweep',
         pattern: '0 4 * * *',     // daily at 04:00 UTC
         description: 'Archive evidence with elapsed retention periods',
@@ -324,13 +295,6 @@ export const SCHEDULED_JOBS: ScheduleDefinition[] = [
         name: 'compliance-digest',
         pattern: '0 8 * * 1',     // weekly Monday at 08:00 UTC
         description: 'Send weekly compliance digest email to tenant admins. Reuses snapshot data — no live aggregation.',
-        defaultPayload: {},
-    },
-    {
-        name: 'control-test-scheduler',
-        pattern: '*/5 * * * *',   // every 5 minutes
-        description:
-            'Epic G-2 — scan ControlTestPlan rows with automationType IN (SCRIPT, INTEGRATION) and nextRunAt <= now, enqueue per-plan control-test-runner jobs.',
         defaultPayload: {},
     },
 ];

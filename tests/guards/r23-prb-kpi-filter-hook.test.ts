@@ -1,12 +1,12 @@
 /**
  * R23-PR-B — `useKpiFilter` hook structural ratchet.
  *
- * Locks the hook's API surface + the Risks-page consumer migration.
+ * Locks the hook's API surface.
  * The behavioural contract (toggle semantics, activeKpiId resolution,
  * multi-match → null) is covered by the unit test at
  * `tests/unit/use-kpi-filter.test.ts`; this file is the structural
  * lock — a future PR that splits the hook, renames the exports, or
- * bypasses it on the Risks page fails CI.
+ * bypasses it fails CI.
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -14,7 +14,6 @@ import * as path from 'node:path';
 const ROOT = path.resolve(__dirname, '../..');
 const HOOK_PATH = 'src/components/ui/kpi-filter/use-kpi-filter.ts';
 const BARREL_PATH = 'src/components/ui/kpi-filter/index.ts';
-const RISKS_PATH = 'src/app/t/[tenantSlug]/(app)/risks/RisksClient.tsx';
 
 function read(rel: string): string {
     return fs.readFileSync(path.join(ROOT, rel), 'utf8');
@@ -81,41 +80,6 @@ describe('R23-PR-B — useKpiFilter hook', () => {
             expect(src).toMatch(/useKpiFilter/);
             expect(src).toMatch(/KpiFilterDef/);
             expect(src).toMatch(/UseKpiFilterReturn/);
-        });
-    });
-
-    describe('Risks page consumes the shared hook', () => {
-        const src = read(RISKS_PATH);
-
-        it('imports useKpiFilter + KpiFilterDef from the barrel', () => {
-            expect(src).toMatch(
-                /import\s*\{[\s\S]*?useKpiFilter[\s\S]*?\}\s*from\s+["']@\/components\/ui\/kpi-filter["']/,
-            );
-            expect(src).toMatch(
-                /import\s*\{[\s\S]*?KpiFilterDef[\s\S]*?\}\s*from\s+["']@\/components\/ui\/kpi-filter["']/,
-            );
-        });
-
-        it('mounts useKpiFilter', () => {
-            expect(src).toMatch(/useKpiFilter\(/);
-        });
-
-        it('KPI cards drive selected via activeKpiId === <id> (data-driven)', () => {
-            // R-filter-gear (#3, 2026-06-07): the KPI grid is now data-driven
-            // over the gear's `visibleKpiCards` (so the gear controls which
-            // cards show + their order). `selected` is wired via the per-card
-            // `kpiId`; the `total`/`open` filter ids live in the render config.
-            expect(src).toMatch(/activeKpiId\s*===\s*kpiId/);
-            expect(src).toMatch(/kpi:\s*['"]total['"]/);
-            expect(src).toMatch(/kpi:\s*['"]open['"]/);
-        });
-
-        it('KPI clicks route through toggleKpi (not inline filterCtx.set)', () => {
-            // The shared hook owns the filter operation via toggleKpi(kpiId);
-            // a re-introduced inline `filterCtx.set(...)` on a KPI onClick
-            // means the hook was bypassed.
-            expect(src).toMatch(/toggleKpi\(kpiId\)/);
-            expect(src).not.toMatch(/onClick=\{\(\)\s*=>\s*filterCtx\.set/);
         });
     });
 });

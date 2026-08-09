@@ -10,12 +10,35 @@
  *   - Polyfills matchMedia + IntersectionObserver + ResizeObserver so
  *     the primitives that depend on them (useMediaQuery in Modal/Sheet,
  *     Vaul's scroll observer) don't throw in jsdom.
+ *   - Sets the project-wide test timeout (see below).
  */
 
 import '../setup/jsdom-shims';
 import '@testing-library/jest-dom';
 import { cleanup } from '@testing-library/react';
 import { toHaveNoViolations } from 'jest-axe';
+
+/**
+ * Project-wide test timeout for the jsdom project.
+ *
+ * `jest.config.js` has always documented that the default is "set via
+ * `jest.setTimeout()` in tests/rendered/setup.ts (project-level
+ * testTimeout is ignored)" — but the call was never actually here, so
+ * every jsdom test ran at Jest's 5s default. That is fine in isolation
+ * and not fine under the sharded full-suite run, where an RTL render
+ * competing with bcrypt and chart-renderer suites for CPU can cross 5s
+ * on machine noise alone. The symptom was two suites that passed with
+ * `--runInBand` and failed in the full run
+ * (`use-toast-with-undo`, `keyboard-shortcut-parse`), and a 90s
+ * per-file bump in the latter compensating locally for a gap that
+ * belonged here.
+ *
+ * 30s is chosen to absorb scheduling noise while still failing fast on
+ * a genuine hang — a test that legitimately needs longer is a test
+ * doing too much, and an infinite loop still trips this well inside the
+ * CI job budget.
+ */
+jest.setTimeout(30_000);
 
 expect.extend(toHaveNoViolations);
 

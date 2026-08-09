@@ -7,7 +7,7 @@ import { z } from 'zod';
 
 const UpdateModulesSchema = z.object({
     enabledModules: z.array(
-        z.enum(['JOURNAL', 'INVENTORY', 'PLANNING', 'CERTIFICATION', 'RISK', 'VENDORS', 'AUTOMATION', 'PROCESSES', 'AI']),
+        z.enum(['JOURNAL', 'INVENTORY', 'PLANNING', 'CERTIFICATION', 'VENDORS', 'AUTOMATION', 'PROCESSES', 'AI']),
     ),
 }).strip();
 

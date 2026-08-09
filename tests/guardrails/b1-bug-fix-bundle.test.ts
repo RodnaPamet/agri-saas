@@ -109,10 +109,18 @@ describe('B1 — bug-fix bundle', () => {
             expect(src).toMatch(/Array\.isArray\(d\.items\)/);
         });
 
-        it('all three fetchers route through `unwrap`', () => {
-            // Three useEffects — one per entity. Each should call unwrap.
-            const occurrences = src.match(/unwrap\(d,/g) ?? [];
-            expect(occurrences.length).toBeGreaterThanOrEqual(3);
+        it('every list fetcher routes through `unwrap`', () => {
+            // One fetcher per linkable entity. This asserted "at least
+            // three" until the Risks arm went with the risk register,
+            // leaving controls + assets — a hard-coded count turns a
+            // deliberate removal into a red build and, worse, would let a
+            // NEW un-unwrapped fetcher slip in as long as the total stayed
+            // above the floor. Derive the expectation from the fetchers
+            // themselves so it holds at any arity.
+            const fetchers = src.match(/setAvailable\w+\(/g) ?? [];
+            const unwrapped = src.match(/unwrap\(d,/g) ?? [];
+            expect(fetchers.length).toBeGreaterThan(0);
+            expect(unwrapped.length).toBe(fetchers.length);
         });
 
         it('legacy `d.risks || []` shape fallback is retired', () => {

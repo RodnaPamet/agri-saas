@@ -1,30 +1,26 @@
 /**
  * R23-PR-A — KpiFilterCard primitive extraction.
  *
- * Locks the four invariants the rest of R23 depends on:
+ * Locks the two invariants the rest of R23 depends on:
  *   1. The shared primitive exists at the canonical path.
  *   2. It exports the expected API surface (label / value / onClick /
  *      selected at minimum).
- *   3. The Risks page consumes `<KpiFilterCard>` (it's the first
- *      consumer; PRs C-F roll the same primitive to 6 more pages).
- *   4. The Risks page no longer carries the inline
- *      `<Card><KPIStat /></Card>` pattern that PR-A extracted —
- *      otherwise future PRs could drift away from the shared
- *      primitive without anyone noticing.
+ *
+ * The consumer-adoption half of this ratchet named the Risks page and
+ * went with it; the API-drift half below is what the rest of R23
+ * stands on.
  *
  * Why structural ratchet and not a render test: the visual contract
  * is owned by the Card + KPIStat primitives the new wrapper composes;
  * those already have their own coverage. The R23 risk is API drift —
  * a future PR that hand-rolls a sibling `KpiFilterCard2` and bypasses
- * the shared one. The four assertions below catch that class of bug.
+ * the shared one. The assertions below catch that class of bug.
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 const ROOT = path.resolve(__dirname, '../..');
 const PRIMITIVE_PATH = 'src/components/ui/kpi-filter-card.tsx';
-const RISKS_CLIENT_PATH =
-    'src/app/t/[tenantSlug]/(app)/risks/RisksClient.tsx';
 
 function read(rel: string): string {
     return fs.readFileSync(path.join(ROOT, rel), 'utf8');
@@ -106,45 +102,6 @@ describe('R23-PR-A — KpiFilterCard primitive', () => {
             expect(src).toMatch(
                 /ring-2\s+ring-inset\s+ring-\[color:var\(--brand-default\)\]/,
             );
-        });
-    });
-
-    describe('Risks page consumes the shared primitive', () => {
-        const src = read(RISKS_CLIENT_PATH);
-
-        it('imports KpiFilterCard from the shared module', () => {
-            expect(src).toMatch(
-                /import\s*\{\s*KpiFilterCard\s*\}\s*from\s+["']@\/components\/ui\/kpi-filter-card["']/,
-            );
-        });
-
-        it('mounts KpiFilterCard (at least once)', () => {
-            expect(src).toMatch(/<KpiFilterCard\b/);
-        });
-
-        it('does NOT import the legacy KPIStat directly on the Risks page', () => {
-            // The Risks page used to import KPIStat + Card and inline
-            // the KPI cards. PR-A extracts that pattern into the
-            // shared primitive; the Risks page now imports
-            // KpiFilterCard only. A future PR that re-introduces a
-            // direct KPIStat import on the Risks page would mean the
-            // shared primitive isn't being used — fail CI.
-            expect(src).not.toMatch(
-                /import[\s\S]*?\bKPIStat\b[\s\S]*?from\s+["']@\/components\/ui\/metric["']/,
-            );
-        });
-
-        it('does NOT carry the inline `<Card><KPIStat /></Card>` KPI pattern', () => {
-            // Strip comments so the explanatory header on
-            // kpi-filter-card.tsx (which references the OLD pattern as
-            // historical context) doesn't false-positive when the
-            // Risks page imports nothing of the kind.
-            const stripped = src
-                .replace(/\/\*[\s\S]*?\*\//g, '')
-                .replace(/\/\/[^\n]*/g, '');
-            // A `<KPIStat />` JSX element on this page would mean the
-            // page is bypassing the shared primitive.
-            expect(stripped).not.toMatch(/<KPIStat\b/);
         });
     });
 });

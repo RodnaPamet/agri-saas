@@ -42,8 +42,12 @@ const PRIMITIVE_PATH = 'src/components/ui/card-header.tsx';
 // the Tasks tab was aligned to Asset/Risk, so the anchor moved to the
 // control TEST-PLAN detail page — a stable CardHeader adopter (Test
 // Procedure section header, R9-PR2).
+// Compliance uproot (2026-08-07): the control TEST-PLAN detail page was
+// deleted with the test-plan feature, emptying this list. An empty ADOPTERS
+// array makes the "curated adopters mount CardHeader" test vacuously green,
+// so the anchor moves to the audits list — a surviving CardHeader adopter.
 const ADOPTERS = [
-    'src/app/t/[tenantSlug]/(app)/controls/[controlId]/tests/[planId]/page.tsx',
+    'src/app/t/[tenantSlug]/(app)/audits/AuditsClient.tsx',
 ];
 
 describe('CardHeader discipline (Roadmap-3 PR-5)', () => {

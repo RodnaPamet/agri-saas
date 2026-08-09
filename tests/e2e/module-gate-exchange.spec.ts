@@ -18,8 +18,12 @@ import { test, expect } from './fixtures';
 // the enabled list, so submitting exactly these 9 disables EXCHANGE by
 // OMISSION — it's simply not in the enabled set, so isModuleAvailable('EXCHANGE')
 // is false and its page + nav tab gate out.
+// `RISK` was dropped from the ModuleKey enum with the risk register.
+// The PUT below validates every member, so leaving it here made the
+// request 400 with a VALIDATION_ERROR on `enabledModules` — the spec
+// then failed on its own setup helper, not on the gate it tests.
 const ENABLED_WITHOUT_EXCHANGE = [
-    'JOURNAL', 'INVENTORY', 'PLANNING', 'CERTIFICATION', 'RISK',
+    'JOURNAL', 'INVENTORY', 'PLANNING', 'CERTIFICATION',
     'VENDORS', 'AUTOMATION', 'PROCESSES', 'AI',
 ];
 

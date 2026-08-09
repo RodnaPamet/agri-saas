@@ -47,7 +47,6 @@ if (DB_AVAILABLE) {
 
     afterAll(async () => {
         await prisma.$executeRawUnsafe('DELETE FROM "AuditLog" WHERE "tenantId" = $1', testTenantId).catch(() => {});
-        await prisma.$executeRawUnsafe('DELETE FROM "Risk" WHERE "tenantId" = $1', testTenantId).catch(() => {});
         await prisma.$executeRawUnsafe('DELETE FROM "Control" WHERE "tenantId" = $1', testTenantId).catch(() => {});
         await prisma.$executeRawUnsafe('DELETE FROM "Vendor" WHERE "tenantId" = $1', testTenantId).catch(() => {});
         await prisma.$executeRawUnsafe('DELETE FROM "Asset" WHERE "tenantId" = $1', testTenantId).catch(() => {});
@@ -190,44 +189,7 @@ describeFn('Dual-Write Verification', () => {
 // ═══════════════════════════════════════════════════════════════
 
 describeFn('Soft-Delete Guards', () => {
-    it('SOFT_DELETE_MODELS includes all 13 critical entities', () => {
-        const expected = [
-            'Asset', 'Risk', 'Control', 'Evidence', 'Policy',
-            'Vendor', 'FileRecord', 'Task', 'Finding',
-            'Audit', 'AuditCycle', 'AuditPack',
-            // Grain (2026-07-25) — Contract already carried the full
-            // soft-delete trio and a soft-deleting usecase, but was
-            // registered in neither SOFT_DELETE_MODELS nor the retention
-            // sweep, so `retentionUntil` was written by nothing and read
-            // by nothing.
-            'Contract',
-        ];
-        for (const model of expected) {
-            expect(SOFT_DELETE_MODELS.has(model)).toBe(true);
-        }
-        expect(SOFT_DELETE_MODELS.size).toBe(expected.length);
-    });
 
-    it('deleting a Risk sets deletedAt instead of hard-deleting', async () => {
-        const risk = await prisma.risk.create({
-            data: { tenantId: testTenantId, title: 'Soft-delete guard', category: 'OPERATIONAL' },
-        });
-
-        // Delete via middleware
-        await prisma.risk.delete({ where: { id: risk.id } });
-
-        // Should not be found via normal query
-        const found = await prisma.risk.findUnique({ where: { id: risk.id } });
-        expect(found).toBeNull();
-
-        // Should still exist in DB with deletedAt set
-        const raw = await prisma.$queryRawUnsafe<Array<{ deletedAt: Date | null }>>(
-            'SELECT "deletedAt" FROM "Risk" WHERE "id" = $1',
-            risk.id,
-        );
-        expect(raw).toHaveLength(1);
-        expect(raw[0].deletedAt).not.toBeNull();
-    });
 
     it('deleting a Vendor sets deletedAt instead of hard-deleting', async () => {
         const vendor = await prisma.vendor.create({

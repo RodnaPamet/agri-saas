@@ -115,10 +115,6 @@ export function TenantsTable({ rows, orgSlug }: Props) {
                     return dir * a.name.localeCompare(b.name);
                 case 'coverage':
                     return dir * ((a.coveragePercent ?? -1) - (b.coveragePercent ?? -1));
-                case 'openRisks':
-                    return dir * ((a.openRisks ?? -1) - (b.openRisks ?? -1));
-                case 'criticalRisks':
-                    return dir * ((a.criticalRisks ?? -1) - (b.criticalRisks ?? -1));
                 case 'overdueEvidence':
                     return dir * ((a.overdueEvidence ?? -1) - (b.overdueEvidence ?? -1));
                 case 'rag':
@@ -165,25 +161,6 @@ export function TenantsTable({ rows, orgSlug }: Props) {
                         </span>
                     ),
                     meta: { mobileCard: { slot: 'meta', label: t('colCoverage') } },
-                },
-                {
-                    id: 'openRisks',
-                    header: t('colOpenRisks'),
-                    cell: ({ row }) => (
-                        <span className="tabular-nums text-content-muted">
-                            {row.original.openRisks ?? '—'}
-                        </span>
-                    ),
-                },
-                {
-                    id: 'criticalRisks',
-                    header: t('colCritical'),
-                    cell: ({ row }) => (
-                        <span className="tabular-nums text-content-muted">
-                            {row.original.criticalRisks ?? '—'}
-                        </span>
-                    ),
-                    meta: { mobileCard: { slot: 'meta', label: t('colCritical') } },
                 },
                 {
                     id: 'overdueEvidence',
@@ -265,8 +242,6 @@ export function TenantsTable({ rows, orgSlug }: Props) {
                         'name',
                         'rag',
                         'coverage',
-                        'openRisks',
-                        'criticalRisks',
                         'overdueEvidence',
                     ]}
                     sortBy={sortBy}

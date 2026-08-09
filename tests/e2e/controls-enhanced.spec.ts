@@ -36,36 +36,11 @@ async function createControl(page: Page, slug: string): Promise<void> {
     await page.waitForSelector('#control-title', { timeout: 30000 });
 }
 
+// The `dashboard loads and shows metrics` test that opened this block
+// drove `/t/<slug>/controls/dashboard` — the controls dashboard (stats +
+// implementation-progress + sankey) deleted with the control exoskeleton.
+// It had no subject left; the activity tab below is unaffected.
 test.describe('Controls Enhanced', () => {
-    test('dashboard loads and shows metrics', async ({
-        authedPage,
-        isolatedTenant,
-    }) => {
-        const { tenantSlug } = isolatedTenant;
-        let retries = 3;
-        while (retries > 0) {
-            const resp = await safeGoto(
-                authedPage,
-                `/t/${tenantSlug}/controls/dashboard`,
-                { waitUntil: 'domcontentloaded' },
-            );
-            if (resp && resp.status() < 500) break;
-            retries--;
-            if (retries > 0) await authedPage.waitForTimeout(5000);
-        }
-        await authedPage.waitForLoadState('networkidle').catch(() => {});
-        await authedPage.waitForSelector('#dashboard-heading', { timeout: 60000 });
-        await expect(authedPage.locator('#dashboard-heading')).toContainText(
-            'Controls Dashboard',
-        );
-        await expect(authedPage.locator('#implementation-progress')).toBeVisible({
-            timeout: 15000,
-        });
-        await expect(authedPage.locator('#dashboard-stats')).toBeVisible({
-            timeout: 15000,
-        });
-    });
-
     test('activity tab shows events', async ({ authedPage, isolatedTenant }) => {
         // Self-contained: create the control whose activity we inspect.
         await createControl(authedPage, isolatedTenant.tenantSlug);

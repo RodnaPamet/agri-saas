@@ -40,7 +40,6 @@ import { useFormTelemetry } from '@/lib/telemetry/form-telemetry';
 interface ControlOption {
     id: string;
     name: string;
-    annexId?: string | null;
     code?: string | null;
 }
 
@@ -110,7 +109,7 @@ export function NewEvidenceTextModal({
         () =>
             controls.map((c) => ({
                 value: c.id,
-                label: `${c.annexId || c.code || 'Custom'}: ${c.name}`,
+                label: `${c.code || 'Custom'}: ${c.name}`,
                 meta: c,
             })),
         [controls],

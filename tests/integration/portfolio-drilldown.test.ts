@@ -8,11 +8,10 @@
  *   2. CREATE the CISO + their auto-provisioned AUDITOR membership in
  *      both tenants (mirrors what `provisionOrgAdminToTenants` does
  *      at runtime)
- *   3. SEED tenant-scoped Control + Risk + Evidence rows in each
- *      tenant — including some that should be excluded by the
- *      drill-down filter (IMPLEMENTED control, CLOSED risk,
- *      APPROVED evidence)
- *   4. CALL the three drill-down usecases via the OrgContext
+ *   3. SEED tenant-scoped Control + Evidence rows in each tenant —
+ *      including some that should be excluded by the drill-down
+ *      filter (IMPLEMENTED control, APPROVED evidence)
+ *   4. CALL the drill-down usecases via the OrgContext
  *   5. ASSERT the returned rows are merged across both tenants,
  *      tenant-attributed, and exclude the rows that should be
  *      filtered out
@@ -36,7 +35,6 @@ import type { PrismaClient } from '@prisma/client';
 
 import {
     getNonPerformingControls,
-    getCriticalRisksAcrossOrg,
     getOverdueEvidenceAcrossOrg,
     getPortfolioSummary,
     getPortfolioTenantHealth,
@@ -150,42 +148,6 @@ describeFn('Epic O-3 — portfolio drill-down lifecycle (DB-backed)', () => {
                 },
             });
 
-            // ── Risks ──
-            // One critical (score=20, OPEN) + one excluded (score=20 but CLOSED) + one excluded (low score).
-            await prisma.risk.create({
-                data: {
-                    tenantId: tenant.id,
-                    title: `t${i + 1} critical risk`,
-                    inherentScore: 20,
-                    score: 20,
-                    status: 'OPEN',
-                    likelihood: 4,
-                    impact: 5,
-                },
-            });
-            await prisma.risk.create({
-                data: {
-                    tenantId: tenant.id,
-                    title: `t${i + 1} closed critical risk`,
-                    inherentScore: 20,
-                    score: 20,
-                    status: 'CLOSED', // excluded
-                    likelihood: 4,
-                    impact: 5,
-                },
-            });
-            await prisma.risk.create({
-                data: {
-                    tenantId: tenant.id,
-                    title: `t${i + 1} low risk`,
-                    inherentScore: 5, // excluded
-                    score: 5,
-                    status: 'OPEN',
-                    likelihood: 1,
-                    impact: 5,
-                },
-            });
-
             // ── Evidence ──
             // One overdue + one excluded (APPROVED, regardless of date) + one excluded (future review).
             const tenDaysAgo = new Date(Date.now() - 10 * 86400_000);
@@ -222,7 +184,6 @@ describeFn('Epic O-3 — portfolio drill-down lifecycle (DB-backed)', () => {
 
     afterAll(async () => {
         await prisma.evidence.deleteMany({ where: { tenantId: { in: tenantIds } } }).catch(() => {});
-        await prisma.risk.deleteMany({ where: { tenantId: { in: tenantIds } } }).catch(() => {});
         await prisma.control.deleteMany({ where: { tenantId: { in: tenantIds } } }).catch(() => {});
         await prisma.tenantMembership.deleteMany({ where: { tenantId: { in: tenantIds } } }).catch(() => {});
         await prisma.tenant.deleteMany({ where: { id: { in: tenantIds } } }).catch(() => {});
@@ -248,22 +209,6 @@ describeFn('Epic O-3 — portfolio drill-down lifecycle (DB-backed)', () => {
             expect(r.status).toBe('NOT_STARTED');
             expect(r.code).toMatch(/PENDING/);
             expect(r.drillDownUrl).toBe(`/t/${r.tenantSlug}/controls/${r.controlId}`);
-        }
-    });
-
-    // ── Drill-down: risks ─────────────────────────────────────────
-
-    it('getCriticalRisksAcrossOrg returns rows with inherentScore≥15 AND status≠CLOSED', async () => {
-        const rows = await getCriticalRisksAcrossOrg(ctxFor());
-
-        // 2 tenants × 1 OPEN-critical = 2 rows. Closed-critical and
-        // low-score rows must be excluded.
-        expect(rows).toHaveLength(2);
-        for (const r of rows) {
-            expect(r.inherentScore).toBeGreaterThanOrEqual(15);
-            expect(r.status).not.toBe('CLOSED');
-            expect(r.title).toMatch(/critical risk$/);
-            expect(r.drillDownUrl).toBe(`/t/${r.tenantSlug}/risks/${r.riskId}`);
         }
     });
 

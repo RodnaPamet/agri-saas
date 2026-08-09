@@ -15,10 +15,8 @@ import { apiPost, apiPatch, apiDelete } from '@/lib/api-client';
 import {
     ControlListItemDTOSchema,
     ControlDetailDTOSchema,
-    ControlDashboardDTOSchema,
     type ControlListItemDTO,
     type ControlDetailDTO,
-    type ControlDashboardDTO,
 } from '@/lib/dto';
 import { z } from 'zod';
 
@@ -34,14 +32,6 @@ export function useControl(id: string | null | undefined) {
     return useApi<ControlDetailDTO>(
         id ? apiUrl(`/controls/${id}`) : null,
         ControlDetailDTOSchema,
-    );
-}
-
-export function useControlDashboard() {
-    const apiUrl = useTenantApiUrl();
-    return useApi<ControlDashboardDTO>(
-        apiUrl('/controls/dashboard'),
-        ControlDashboardDTOSchema,
     );
 }
 

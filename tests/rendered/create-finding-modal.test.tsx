@@ -3,7 +3,7 @@
  *
  * Asserts the create-finding modal exposes the full field set the feature
  * requires (title, type, severity, assignee, due date, description, linked
- * control, compensating control, implicated risks, analysis) and that the
+ * control, compensating control, analysis) and that the
  * submit button gates on the required title + description.
  */
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
@@ -20,7 +20,7 @@ jest.mock('next/navigation', () => ({
 import { CreateFindingModal } from '@/app/t/[tenantSlug]/(app)/findings/CreateFindingModal';
 
 beforeEach(() => {
-    // Every lookup (controls / risks / assignable members) resolves empty.
+    // Every lookup (controls / assignable members) resolves empty.
     global.fetch = jest.fn(() =>
         Promise.resolve({ ok: true, json: () => Promise.resolve([]) }),
     ) as unknown as typeof fetch;
@@ -49,15 +49,15 @@ const FIELD_IDS = [
 ];
 
 describe('CreateFindingModal', () => {
-    it('renders every required field + the risks linker', async () => {
+    it('renders every required field', async () => {
         renderModal();
         for (const id of FIELD_IDS) {
             await waitFor(() => expect(document.getElementById(id)).not.toBeNull());
         }
-        // Due-date picker (DatePicker doesn't surface its id in jsdom) +
-        // the risks linker.
+        // Due-date picker (DatePicker doesn't surface its id in jsdom).
+        // The implicated-risks linker that used to be asserted here went
+        // with the risk register.
         expect(screen.getByText('Due date')).not.toBeNull();
-        expect(screen.getByTestId('finding-risks-list')).not.toBeNull();
     });
 
     it('disables submit until title AND description are filled', async () => {

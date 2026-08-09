@@ -3,20 +3,12 @@
  *
  * Verifies watermark, metadata page, totals row, and large dataset performance.
  */
-import { ReportType } from '@/lib/pdf/types';
 import { createPdfDocument } from '@/lib/pdf/pdfKitFactory';
 import { addCoverPage, addMetadataPage, applyHeadersAndFooters } from '@/lib/pdf/layout';
 import { renderTable, autoColumnWidths } from '@/lib/pdf/table';
 import { addSectionTitle, addSummaryMetrics, addSpacer } from '@/lib/pdf/sections';
 import type { ReportMeta, DataSourceNote } from '@/lib/pdf/types';
 
-describe('ReportType enum', () => {
-    it('has the three expected report types', () => {
-        expect(ReportType.AUDIT_READINESS).toBe('AUDIT_READINESS');
-        expect(ReportType.RISK_REGISTER).toBe('RISK_REGISTER');
-        expect(ReportType.GAP_ANALYSIS).toBe('GAP_ANALYSIS');
-    });
-});
 
 describe('PDF document factory', () => {
     it('creates a document that emits valid PDF bytes', (done) => {

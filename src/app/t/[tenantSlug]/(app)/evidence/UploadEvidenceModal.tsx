@@ -100,7 +100,6 @@ interface ControlOption {
     id: string;
     name: string;
     code?: string | null;
-    annexId?: string | null;
 }
 
 export interface UploadEvidenceModalProps {
@@ -195,7 +194,7 @@ export function UploadEvidenceModal({
         setUploadingAll(false);
     }, [open]);
 
-    // Project controls into ComboboxOption shape. The annexId + code +
+    // Project controls into ComboboxOption shape. The code +
     // name are all folded into the label so cmdk's fuzzy-match scoring
     // hits on any of them — typing "A.5.1" or "access review" or the
     // raw control code all filter to the same row.
@@ -203,7 +202,7 @@ export function UploadEvidenceModal({
         () =>
             controls.map((c) => ({
                 value: c.id,
-                label: `${c.annexId || c.code || 'Custom'}: ${c.name}`,
+                label: `${c.code || 'Custom'}: ${c.name}`,
                 meta: c,
             })),
         [controls],

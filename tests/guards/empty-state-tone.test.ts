@@ -181,6 +181,13 @@ describe('Empty-state copy tone (Roadmap-3 PR-6)', () => {
                 // and pass the ratchet unaided.
                 'assets.noResultsDescription',
                 'schemes.noResultsDescription',
+                // W4/#92 (KB wire-up PR) — the knowledge-base ask box's
+                // honest "nothing found" state. Same shape as the T11
+                // exemptions above: `knowledge.ask.noResultsTitle` is the
+                // terse title and passes unaided; this is its paired
+                // full-sentence description explaining WHY (an honest
+                // negative result, not a failure — see KnowledgeAskModal.tsx).
+                'knowledge.ask.noResultsDescription',
                 // T13 i18n migration (knowledge/locations batch) —
                 // pre-existing inline empty-state MESSAGES migrated verbatim
                 // from the hardcoded JSX: knowledge-detail version fallbacks

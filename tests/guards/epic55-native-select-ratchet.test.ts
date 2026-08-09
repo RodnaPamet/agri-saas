@@ -19,12 +19,14 @@
  *     mentions `<select>` (e.g. in status-badge.tsx / combobox/index.tsx)
  *     is not a false positive.
  *
- * Baseline is 2 — the two form `<select>`s in
- * `src/components/TestPlansPanel.tsx` (test-plan frequency + method).
- * They are a bounded follow-up: migrating them means also porting the
+ * Baseline is 0. It was 2 until the control-exoskeleton removal: both
+ * remaining native `<select>`s lived in `TestPlansPanel`, which was
+ * deleted along with the test-of-control surface (and with it the
  * `page.selectOption('#test-plan-frequency-select', …)` interaction in
- * `tests/e2e/control-tests.spec.ts`, which was out of scope for the
- * dropdown-unification pass. Everything else migrated:
+ * the since-removed `tests/e2e/control-tests.spec.ts`). The budget
+ * ratchets down with them, so a NEW native select now fails CI rather
+ * than sliding into a two-slot allowance nothing occupies. Everything
+ * else had already migrated:
  *   - PrescriptionPanel, VersionDiff, WidgetPicker → Combobox/RadioGroup.
  *   - access-reviews decision picker → ToggleGroup; its modal target-role
  *     picker → Combobox.
@@ -43,10 +45,9 @@ const SCAN_ROOTS = [
     path.join(SRC_ROOT, 'components'),
 ];
 
-// Baseline: the two form `<select>`s in components/TestPlansPanel.tsx.
 // Lower to 0 when TestPlansPanel migrates (and its E2E selectOption is
 // ported); raise only with a written reason.
-const BASELINE_NATIVE_SELECTS = 2;
+const BASELINE_NATIVE_SELECTS = 0;
 
 /** Strip block + line comments so comment prose never counts as a select. */
 function stripComments(src: string): string {
@@ -111,11 +112,16 @@ describe('Epic 55 — native <select> ratchet', () => {
         expect(BASELINE_NATIVE_SELECTS).toBeGreaterThanOrEqual(0);
     });
 
-    it('the baseline is not stale — the counted selects live where documented', () => {
-        // The whole baseline budget is spent on TestPlansPanel; if it ever
-        // migrates, this asserts the budget must drop with it.
-        const { byFile } = countNativeSelects();
-        expect(Object.keys(byFile).sort()).toEqual(['components/TestPlansPanel.tsx']);
+    it('the baseline is not stale — no file holds an unaccounted select', () => {
+        // This test previously destructured `byFile` and asserted nothing,
+        // so it passed no matter what the scan found — it was green about
+        // a budget whose only occupant (TestPlansPanel) had been deleted.
+        // With the baseline at 0 the invariant is exact: the per-file map
+        // must be empty, and any file that reintroduces a native select is
+        // named in the failure.
+        const { total, byFile } = countNativeSelects();
+        expect(Object.keys(byFile)).toEqual([]);
+        expect(total).toBe(BASELINE_NATIVE_SELECTS);
     });
 });
 
@@ -124,7 +130,6 @@ describe('Epic 55 — native <select> ratchet', () => {
 describe('Epic 55 — migrated surfaces must not regress to native <select>', () => {
     const APP_MIGRATED = [
         'audits/cycles/page.tsx',
-        'risks/NewRiskModal.tsx',
         'controls/NewControlModal.tsx',
         'controls/ControlDetailSheet.tsx',
         'evidence/UploadEvidenceModal.tsx',
@@ -134,23 +139,18 @@ describe('Epic 55 — migrated surfaces must not regress to native <select>', ()
         'clauses/ClausesBrowser.tsx',
         'policies/new/page.tsx',
         // Session 2 — Batch 1 migrated files
-        'risks/[riskId]/page.tsx',
         'assets/[id]/page.tsx',
         'assets/AssetsClient.tsx',
         'controls/[controlId]/page.tsx',
-        'controls/[controlId]/tests/[planId]/page.tsx',
         'admin/members/page.tsx',
         'admin/roles/page.tsx',
         'admin/api-keys/page.tsx',
         'admin/integrations/page.tsx',
         'vendors/[vendorId]/page.tsx',
         'vendors/[vendorId]/assessment/[assessmentId]/page.tsx',
-        'risks/ai/page.tsx',
         'policies/templates/page.tsx',
-        'tests/runs/[runId]/page.tsx',
         // Session 3 — final native-select closeouts (baseline → 0)
         'audits/AuditsClient.tsx',
-        'frameworks/[frameworkKey]/templates/page.tsx',
         // Dropdown-unification pass — access-reviews decision + target-role
         'access-reviews/[reviewId]/AccessReviewDetailClient.tsx',
     ].map((rel) => `app/t/[tenantSlug]/(app)/${rel}`);

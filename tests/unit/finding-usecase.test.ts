@@ -10,14 +10,14 @@
  *
  * Covers:
  *   - validateFindingRefs — tenant-isolation validator for assignee,
- *     control, compensatingControl, riskIds. Each error path has its
- *     own assertion + the deduped riskIds return shape.
+ *     control, compensatingControl. Each error path has its own
+ *     assertion.
  *   - listFindings / getFinding — read paths.
  *   - createFinding — Epic D.2 sanitisation across every free-text
- *     column, FindingRisk join inserts, audit shape.
+ *     column, audit shape.
  *   - updateFinding — three-state sanitiseOptional contract for free-
  *     text, three-state on FK relations (assigneeUserId / controlId /
- *     compensatingControlId), riskIds full-replace semantics
+ *     compensatingControlId)
  *     (undefined = no touch, [] = clear all, [...] = replace),
  *     verifiedAt + verifiedBy auto-population on CLOSED, status-change
  *     vs entity-lifecycle audit branch.
@@ -26,8 +26,6 @@
 const mockDb = {
     tenantMembership: { findFirst: jest.fn() },
     control: { findMany: jest.fn() },
-    risk: { findMany: jest.fn() },
-    findingRisk: { createMany: jest.fn(), deleteMany: jest.fn() },
 } as any;
 
 jest.mock('@/lib/db-context', () => ({
@@ -123,26 +121,7 @@ describe('createFinding — reference validation', () => {
         } as any)).rejects.toThrow(/INVALID_COMPENSATING_CONTROL/);
     });
 
-    it('rejects when one or more riskIds are missing (INVALID_RISK)', async () => {
-        (mockDb.risk.findMany as jest.Mock).mockResolvedValue([{ id: 'r-1' }]);
-        await expect(createFinding(editorCtx, {
-            title: 'F', severity: 'HIGH', type: 'GAP', riskIds: ['r-1', 'r-ghost'],
-        } as any)).rejects.toThrow(/INVALID_RISK/);
-    });
 
-    it('dedups riskIds before validation (passes when distinct list matches)', async () => {
-        (mockDb.risk.findMany as jest.Mock).mockResolvedValue([{ id: 'r-1' }]);
-        (FindingRepository.create as jest.Mock).mockResolvedValue({ id: 'f-1', title: 'SAN::F' });
-
-        await expect(createFinding(editorCtx, {
-            title: 'F', severity: 'HIGH', type: 'GAP', riskIds: ['r-1', 'r-1', 'r-1'],
-        } as any)).resolves.toMatchObject({ id: 'f-1' });
-
-        // FindingRisk inserts only once per distinct riskId
-        expect(mockDb.findingRisk.createMany).toHaveBeenCalledTimes(1);
-        const args = (mockDb.findingRisk.createMany as jest.Mock).mock.calls[0][0];
-        expect(args.data).toHaveLength(1);
-    });
 });
 
 describe('createFinding — sanitisation + audit', () => {
@@ -219,38 +198,8 @@ describe('updateFinding — three-state contract', () => {
         expect(updateArgs.compensatingControlId).toBeNull();
     });
 
-    it('full-replace of riskIds when supplied (deleteMany + createMany)', async () => {
-        (FindingRepository.getById as jest.Mock).mockResolvedValue({ id: 'f-1', status: 'OPEN' });
-        (FindingRepository.update as jest.Mock).mockResolvedValue({ id: 'f-1' });
-        (mockDb.risk.findMany as jest.Mock).mockResolvedValue([{ id: 'r-1' }, { id: 'r-2' }]);
 
-        await updateFinding(editorCtx, 'f-1', { riskIds: ['r-1', 'r-2'] } as any);
 
-        expect(mockDb.findingRisk.deleteMany).toHaveBeenCalledTimes(1);
-        expect(mockDb.findingRisk.createMany).toHaveBeenCalledTimes(1);
-        const insertArgs = (mockDb.findingRisk.createMany as jest.Mock).mock.calls[0][0];
-        expect(insertArgs.data).toHaveLength(2);
-    });
-
-    it('clears all riskIds when an empty array is supplied (deleteMany, no createMany)', async () => {
-        (FindingRepository.getById as jest.Mock).mockResolvedValue({ id: 'f-1', status: 'OPEN' });
-        (FindingRepository.update as jest.Mock).mockResolvedValue({ id: 'f-1' });
-
-        await updateFinding(editorCtx, 'f-1', { riskIds: [] } as any);
-
-        expect(mockDb.findingRisk.deleteMany).toHaveBeenCalledTimes(1);
-        expect(mockDb.findingRisk.createMany).not.toHaveBeenCalled();
-    });
-
-    it('does NOT touch FindingRisk join when riskIds is undefined', async () => {
-        (FindingRepository.getById as jest.Mock).mockResolvedValue({ id: 'f-1', status: 'OPEN' });
-        (FindingRepository.update as jest.Mock).mockResolvedValue({ id: 'f-1' });
-
-        await updateFinding(editorCtx, 'f-1', { title: 'X' } as any);
-
-        expect(mockDb.findingRisk.deleteMany).not.toHaveBeenCalled();
-        expect(mockDb.findingRisk.createMany).not.toHaveBeenCalled();
-    });
 
     it('auto-populates verifiedBy + verifiedAt when status moves to CLOSED', async () => {
         (FindingRepository.getById as jest.Mock).mockResolvedValue({ id: 'f-1', status: 'OPEN' });

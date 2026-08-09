@@ -39,15 +39,12 @@ test.describe('Epic 54 — CRUD/detail surfaces mount on demand', () => {
         await page.keyboard.press('Escape');
     });
 
-    test('Redirect shims — /controls/new and /risks/new open their modals', async ({ page }) => {
+    test('Redirect shim — /controls/new opens the modal', async ({ page }) => {
+        // The paired /risks/new shim went with the risk register.
         tenantSlug = await loginAndGetTenant(page);
 
         await safeGoto(page, `/t/${tenantSlug}/controls/new`);
         await expect(page.locator('#control-name-input')).toBeVisible({ timeout: 15000 });
         await expect(page).toHaveURL(/\/controls(\?|$)/);
-
-        await safeGoto(page, `/t/${tenantSlug}/risks/new`);
-        await expect(page.locator('#risk-title')).toBeVisible({ timeout: 15000 });
-        await expect(page).toHaveURL(/\/risks(\?|$)/);
     });
 });

@@ -6,7 +6,7 @@
  * No drag, no edit mode — the dispatcher is the unit under test.
  *
  * Coverage:
- *   - KPI variants (coverage / critical-risks / overdue-evidence /
+ *   - KPI variants (coverage / overdue-evidence /
  *     tenants) render with the right value pulled from PortfolioData
  *   - DONUT (rag-distribution) renders the four legend bands
  *   - TENANT_LIST renders rows with drill-down links
@@ -46,7 +46,6 @@ function makeData(): PortfolioData {
             generatedAt: new Date().toISOString(),
             tenants: { total: 12, snapshotted: 10, pending: 2 },
             controls: { applicable: 100, implemented: 75, coveragePercent: 75 },
-            risks: { total: 50, open: 12, critical: 3, high: 4 },
             evidence: { total: 200, overdue: 8, dueSoon7d: 5 },
             policies: { total: 20, overdueReview: 2 },
             tasks: { open: 30, overdue: 4 },
@@ -62,8 +61,6 @@ function makeData(): PortfolioData {
                 hasSnapshot: true,
                 snapshotDate: '2026-04-29',
                 coveragePercent: 75,
-                openRisks: 5,
-                criticalRisks: 1,
                 overdueEvidence: 2,
                 rag: 'AMBER',
             },
@@ -75,8 +72,6 @@ function makeData(): PortfolioData {
                 hasSnapshot: true,
                 snapshotDate: '2026-04-29',
                 coveragePercent: 90,
-                openRisks: 1,
-                criticalRisks: 0,
                 overdueEvidence: 0,
                 rag: 'GREEN',
             },
@@ -129,19 +124,6 @@ describe('Epic 41 — DispatchedWidget per (type, chartType)', () => {
         expect(
             screen.getByText(/75 of 100 controls implemented/),
         ).toBeInTheDocument();
-    });
-
-    it('KPI/critical-risks renders the critical count + open/high subtitle', () => {
-        const widget = makeWidget({
-            type: 'KPI',
-            chartType: 'critical-risks',
-            config: { format: 'number' },
-            title: 'Critical Risks',
-        });
-        render(<DispatchedWidget widget={widget} data={makeData()} />);
-        expect(screen.getByText('Critical Risks')).toBeInTheDocument();
-        expect(screen.getByText('3')).toBeInTheDocument();
-        expect(screen.getByText(/12 open · 4 high/)).toBeInTheDocument();
     });
 
     it('KPI/overdue-evidence renders the overdue count + due-soon subtitle', () => {
@@ -219,7 +201,7 @@ describe('Epic 41 — DispatchedWidget per (type, chartType)', () => {
 
     // ─── DRILLDOWN_CTAS ──────────────────────────────────────────
 
-    it('DRILLDOWN_CTAS renders three nav cards pointing at /org/<slug>/{controls,risks,evidence}', () => {
+    it('DRILLDOWN_CTAS renders the nav cards pointing at /org/<slug>/{controls,evidence}', () => {
         const widget = makeWidget({
             type: 'DRILLDOWN_CTAS',
             chartType: 'default',
@@ -233,9 +215,6 @@ describe('Epic 41 — DispatchedWidget per (type, chartType)', () => {
             screen.getByTestId('org-drilldown-controls').getAttribute('href'),
         ).toBe('/org/acme-org/controls');
         expect(
-            screen.getByTestId('org-drilldown-risks').getAttribute('href'),
-        ).toBe('/org/acme-org/risks');
-        expect(
             screen.getByTestId('org-drilldown-evidence').getAttribute('href'),
         ).toBe('/org/acme-org/evidence');
     });
@@ -244,16 +223,13 @@ describe('Epic 41 — DispatchedWidget per (type, chartType)', () => {
         const widget = makeWidget({
             type: 'DRILLDOWN_CTAS',
             chartType: 'default',
-            config: { entries: ['controls', 'risks'] },
+            config: { entries: ['controls'] },
             title: 'Drill-down',
             size: { w: 12, h: 2 },
         });
         render(<DispatchedWidget widget={widget} data={makeData()} />);
         expect(
             screen.getByTestId('org-drilldown-controls'),
-        ).toBeInTheDocument();
-        expect(
-            screen.getByTestId('org-drilldown-risks'),
         ).toBeInTheDocument();
         expect(
             screen.queryByTestId('org-drilldown-evidence'),

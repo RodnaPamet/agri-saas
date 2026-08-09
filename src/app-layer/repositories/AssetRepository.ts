@@ -29,7 +29,7 @@ export class AssetRepository {
             where,
             orderBy: { createdAt: 'desc' },
             include: {
-                _count: { select: { controls: true, risks: true } },
+                _count: { select: { controls: true } },
                 // B4 — resolve the structured assignee so the list Owner
                 // column can prefer the assigned user's name over the
                 // free-text keeper.
@@ -55,7 +55,7 @@ export class AssetRepository {
             where,
             orderBy: CURSOR_ORDER_BY,
             take: limit + 1,
-            include: { _count: { select: { controls: true, risks: true } } },
+            include: { _count: { select: { controls: true } } },
         });
 
         const { trimmedItems, nextCursor, hasNextPage } = computePageInfo(items, limit);

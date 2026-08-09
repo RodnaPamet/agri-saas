@@ -36,7 +36,6 @@ describe('Asset search coverage', () => {
         // strips the literal.
         const types: SearchHitType[] = [
             'control',
-            'risk',
             'policy',
             'evidence',
             'framework',

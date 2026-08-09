@@ -80,8 +80,8 @@ describe('Soft-Delete Middleware', () => {
             expect(result.args.data.deletedAt).toBeDefined();
         });
 
-        test('delete on Risk becomes update with deletedAt', () => {
-            const result = simulateMiddleware('Risk', 'delete', { where: { id: 'r1' } });
+        test('delete on Control becomes update with deletedAt', () => {
+            const result = simulateMiddleware('Control', 'delete', { where: { id: 'r1' } });
             expect(result.action).toBe('update');
             expect(result.args.data.deletedAt).toBeDefined();
         });
@@ -110,8 +110,8 @@ describe('Soft-Delete Middleware', () => {
             expect(result.args.data.deletedAt).toBeDefined();
         });
 
-        test('deleteMany on Risk becomes updateMany with deletedAt', () => {
-            const result = simulateMiddleware('Risk', 'deleteMany', { where: { tenantId: 't1' } });
+        test('deleteMany on Control becomes updateMany with deletedAt', () => {
+            const result = simulateMiddleware('Control', 'deleteMany', { where: { tenantId: 't1' } });
             expect(result.action).toBe('updateMany');
             expect(result.args.data.deletedAt).toBeDefined();
         });
@@ -124,7 +124,7 @@ describe('Soft-Delete Middleware', () => {
         });
 
         test('findFirst on Risk adds deletedAt:null filter', () => {
-            const result = simulateMiddleware('Risk', 'findFirst', { where: { id: 'r1' } });
+            const result = simulateMiddleware('Control', 'findFirst', { where: { id: 'r1' } });
             expect(result.args.where.deletedAt).toBeNull();
         });
 
@@ -206,7 +206,6 @@ describe('Soft-Delete Middleware', () => {
         test('contains exactly the expected models', () => {
             // P0 models
             expect(SOFT_DELETE_MODELS.has('Asset')).toBe(true);
-            expect(SOFT_DELETE_MODELS.has('Risk')).toBe(true);
             expect(SOFT_DELETE_MODELS.has('Control')).toBe(true);
             expect(SOFT_DELETE_MODELS.has('Evidence')).toBe(true);
             expect(SOFT_DELETE_MODELS.has('Policy')).toBe(true);
@@ -226,7 +225,7 @@ describe('Soft-Delete Middleware', () => {
             // `retentionUntil` was written by nothing and read by
             // nothing.
             expect(SOFT_DELETE_MODELS.has('Contract')).toBe(true);
-            expect(SOFT_DELETE_MODELS.size).toBe(13);
+            expect(SOFT_DELETE_MODELS.size).toBe(12);
         });
 
         test('does NOT include ephemeral models', () => {

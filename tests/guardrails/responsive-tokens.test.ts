@@ -34,10 +34,7 @@ function findPageFiles(dir: string, acc: string[] = []): string[] {
  */
 const KNOWN_EXCEPTIONS = new Set([
     'controls/[controlId]/page.tsx',
-    'controls/[controlId]/tests/[planId]/page.tsx',
     'evidence/EvidenceClient.tsx',
-    'frameworks/[frameworkKey]/diff/page.tsx',
-    'frameworks/[frameworkKey]/templates/page.tsx',
     'policies/templates/page.tsx',
     'policies/[policyId]/page.tsx',
     'risks/new/page.tsx',

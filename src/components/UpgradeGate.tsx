@@ -15,7 +15,6 @@ import { Tooltip } from '@/components/ui/tooltip';
  *
  * Usage:
  *   <UpgradeGate feature="PDF_EXPORTS">
- *     <PdfExportButton ... />
  *   </UpgradeGate>
  *
  *   <UpgradeGate feature="AUDIT_PACK_SHARING" mode="hide">

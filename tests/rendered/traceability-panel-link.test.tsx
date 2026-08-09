@@ -1,15 +1,19 @@
 /**
  * TraceabilityPanel — Link form regressions.
  *
- * Mounts the real `<TraceabilityPanel>` (entityType=asset) and asserts
- * the two bugs reported on the asset detail page:
+ * Mounts the real `<TraceabilityPanel>` (entityType=asset) and asserts:
  *
- *   1. Opening BOTH the Link Risk and Link Control forms then committing
- *      one of them must leave the OTHER form open. Pre-fix the shared
- *      `linkMutation.onSuccess` callback closed all three `showAdd*`
- *      flags unconditionally, so the second form disappeared mid-flow.
+ *   1. Committing the Link Control form closes THAT form and POSTs the
+ *      link. This descends from a regression where the shared
+ *      `linkMutation.onSuccess` closed every `showAdd*` flag
+ *      unconditionally; the original test proved a second, still-open
+ *      form survived the commit. An asset now has exactly ONE link
+ *      section (its Risks arm went with the risk register), so the
+ *      two-forms-at-once shape is no longer expressible — what remains
+ *      testable, and what the regression was really about, is that
+ *      onSuccess closes the form it committed and fires the right POST.
  *
- *   2. Control / risk / asset options in the Combobox are rendered via
+ *   2. Control / asset options in the Combobox are rendered via
  *      `optionDescription` so the cmdk row uses the wrapping
  *      (description-mode) layout — i.e. no `truncate` class on the
  *      label span — keeping long names readable.
@@ -62,12 +66,7 @@ beforeEach(() => {
         fetchMock as unknown as typeof fetch;
 });
 
-const EMPTY_TRACE = { risks: [], controls: [], assets: [] };
-
-const AVAILABLE_RISKS = [
-    { id: "risk-1", title: "Phishing attack against credentialed staff", status: "OPEN" },
-    { id: "risk-2", title: "Lost mobile device", status: "MITIGATING" },
-];
+const EMPTY_TRACE = { controls: [], assets: [] };
 
 const AVAILABLE_CONTROLS = [
     {
@@ -94,7 +93,6 @@ function setupRoutes(): void {
     fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
         const url = typeof input === "string" ? input : (input as URL).toString();
         if (url.endsWith("/assets/asset-1/traceability")) return Promise.resolve(ok(EMPTY_TRACE));
-        if (url.endsWith("/risks")) return Promise.resolve(ok(AVAILABLE_RISKS));
         if (url.endsWith("/controls")) return Promise.resolve(ok(AVAILABLE_CONTROLS));
         if (init?.method === "POST" && url.endsWith("/assets/asset-1/controls")) {
             return Promise.resolve(ok({ id: "link-1" }));
@@ -125,16 +123,14 @@ function mountPanel() {
 }
 
 describe("TraceabilityPanel — link form regressions", () => {
-    it("committing one Link form leaves the other open", async () => {
+    it("committing the Link form closes it and POSTs the link", async () => {
         const user = userEvent.setup();
         mountPanel();
 
         await waitFor(() => {
-            expect(screen.getByText("No risks linked")).toBeInTheDocument();
+            expect(screen.getByText("No controls linked")).toBeInTheDocument();
         });
 
-        // Open BOTH forms.
-        await user.click(screen.getByRole("button", { name: "Link Risk" }));
         await user.click(screen.getByRole("button", { name: "Link Control" }));
 
         // Wait for the available-controls fetch to populate so the
@@ -162,11 +158,19 @@ describe("TraceabilityPanel — link form regressions", () => {
             await user.click(confirm);
         });
 
-        // After success: Control form gone, Risk form STILL THERE.
+        // After success the committed form closes...
         await waitFor(() => {
             expect(document.getElementById("control-select")).not.toBeInTheDocument();
         });
-        expect(document.getElementById("risk-select")).toBeInTheDocument();
+        // ...and the link actually went to the asset↔control endpoint.
+        const posts = fetchMock.mock.calls.filter(
+            ([, init]) => (init as RequestInit | undefined)?.method === "POST",
+        );
+        expect(posts).toHaveLength(1);
+        expect(posts[0]?.[0]).toBe("/api/t/acme/assets/asset-1/controls");
+        expect(
+            JSON.parse((posts[0]?.[1] as RequestInit).body as string),
+        ).toMatchObject({ controlId: "ctrl-2" });
     });
 
     it("control combobox options render with optionDescription (no truncate on label)", async () => {
@@ -174,7 +178,7 @@ describe("TraceabilityPanel — link form regressions", () => {
         mountPanel();
 
         await waitFor(() => {
-            expect(screen.getByText("No risks linked")).toBeInTheDocument();
+            expect(screen.getByText("No controls linked")).toBeInTheDocument();
         });
 
         await user.click(screen.getByRole("button", { name: "Link Control" }));

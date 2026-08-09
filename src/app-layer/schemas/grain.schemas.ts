@@ -3,7 +3,7 @@
  * / blend / cost-rollup usecase inputs (shared between the route handlers
  * and the usecases).
  *
- * Convention mirrors `risk-treatment-plan.schemas.ts`:
+ * Convention mirrors the other domain schema modules:
  *   - numeric magnitudes (volumeTonnes, pricePerTonne, grossTonnes, …)
  *     stay PLAIN Decimals — accepted as `number | null` so the portfolio /
  *     yield / cost rollups can SUM them in-DB.

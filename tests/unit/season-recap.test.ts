@@ -31,12 +31,6 @@ jest.mock('@/lib/prisma', () => ({
 jest.mock('@/app-layer/usecases/modules', () => ({
     getEnabledModules: jest.fn().mockResolvedValue([]),
 }));
-jest.mock('@/app-layer/usecases/certification-scheme', () => ({
-    listSchemes: jest.fn().mockResolvedValue([]),
-}));
-jest.mock('@/app-layer/usecases/framework/coverage', () => ({
-    generateReadinessReport: jest.fn(),
-}));
 
 import { getSeasonRecap } from '@/app-layer/usecases/season-recap';
 

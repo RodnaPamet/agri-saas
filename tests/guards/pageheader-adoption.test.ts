@@ -52,11 +52,6 @@ const PAGES: PageEntry[] = [
 
     // ── Pending migration ──
     {
-        file: "src/app/t/[tenantSlug]/(app)/tests/page.tsx",
-        adopted: false,
-        note: "Tests page with multi-card composition; PageHeader migration pending — needs the multi-sub-table layout's heading discipline rationalised first.",
-    },
-    {
         file: "src/app/t/[tenantSlug]/(app)/audits/cycles/page.tsx",
         adopted: false,
         note: "Audit cycles list page. Pending migration — straightforward shape.",
@@ -82,19 +77,9 @@ const PAGES: PageEntry[] = [
         note: "Readiness landing page (Server Component). Pending migration; needs ratchet-aware handling of server-component composition.",
     },
     {
-        file: "src/app/t/[tenantSlug]/(app)/risks/RisksClient.tsx",
-        adopted: false,
-        note: "Risks list page. Pending migration.",
-    },
-    {
         file: "src/app/t/[tenantSlug]/(app)/calendar/CalendarClient.tsx",
         adopted: false,
         note: "Calendar / Review page. Pending migration — needs viewport-specific header behaviour preserved.",
-    },
-    {
-        file: "src/app/t/[tenantSlug]/(app)/frameworks/FrameworksClient.tsx",
-        adopted: false,
-        note: "Frameworks catalogue. Pending migration.",
     },
     {
         file: "src/app/t/[tenantSlug]/(app)/admin/members/page.tsx",
@@ -167,11 +152,6 @@ const PAGES: PageEntry[] = [
         note: "Access reviews list. Pending migration.",
     },
     {
-        file: "src/app/t/[tenantSlug]/(app)/reports/ReportsClient.tsx",
-        adopted: false,
-        note: "Reports landing page. Pending migration.",
-    },
-    {
         file: "src/app/t/[tenantSlug]/(app)/vendors/VendorsClient.tsx",
         adopted: false,
         note: "Vendors list page. Pending migration.",
@@ -241,7 +221,8 @@ describe("PageHeader adoption registry", () => {
         // 30 candidate pages today. New page-list additions force a
         // registry entry (the next assertion); page removals force
         // entry removal (the first assertion).
-        expect(PAGES.length).toBeGreaterThanOrEqual(25);
+        // 25 → 24: the risks list page went with the register.
+        expect(PAGES.length).toBeGreaterThanOrEqual(24);
         expect(PAGES.length).toBeLessThanOrEqual(35);
     });
 });

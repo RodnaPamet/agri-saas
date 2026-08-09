@@ -30,7 +30,6 @@ import * as requestSchemas from '@/lib/schemas';
 // All annotated schemas — response DTO side
 import * as commonDTOs from '@/lib/dto/common';
 import * as controlDTOs from '@/lib/dto/control.dto';
-import * as riskDTOs from '@/lib/dto/risk.dto';
 import * as evidenceDTOs from '@/lib/dto/evidence.dto';
 import * as policyDTOs from '@/lib/dto/policy.dto';
 import * as auditDTOs from '@/lib/dto/audit.dto';
@@ -114,10 +113,6 @@ describe('GAP-10 foundation — annotated schemas have metadata', () => {
             'ControlDetailDTOSchema',
             'ControlDashboardDTOSchema',
         ],
-        '@/lib/dto/risk.dto': [
-            'RiskListItemDTOSchema',
-            'RiskDetailDTOSchema',
-        ],
         '@/lib/dto/evidence.dto': [
             'EvidenceReviewDTOSchema',
             'EvidenceListItemDTOSchema',
@@ -141,7 +136,6 @@ describe('GAP-10 foundation — annotated schemas have metadata', () => {
         '@/lib/schemas': [
             // Canonical CRUD pairs across the 9 domains
             'CreateAssetSchema', 'UpdateAssetSchema',
-            'CreateRiskSchema', 'UpdateRiskSchema',
             'CreateControlSchema', 'UpdateControlSchema',
             'CreatePolicySchema', 'UpdatePolicyMetadataSchema',
             'CreateEvidenceSchema', 'UpdateEvidenceSchema',
@@ -150,7 +144,7 @@ describe('GAP-10 foundation — annotated schemas have metadata', () => {
             'CreateVendorSchema', 'UpdateVendorSchema',
             'CreateFindingSchema', 'UpdateFindingSchema',
             // Focused mutation requests
-            'SetRiskStatusSchema', 'SetControlStatusSchema',
+            'SetControlStatusSchema',
             'SetControlApplicabilitySchema', 'SetTaskStatusSchema',
             'EvidenceReviewSchema', 'PublishPolicySchema',
         ],
@@ -159,7 +153,6 @@ describe('GAP-10 foundation — annotated schemas have metadata', () => {
     const moduleSources: Record<string, Record<string, unknown>> = {
         '@/lib/dto/common': commonDTOs,
         '@/lib/dto/control.dto': controlDTOs,
-        '@/lib/dto/risk.dto': riskDTOs,
         '@/lib/dto/evidence.dto': evidenceDTOs,
         '@/lib/dto/policy.dto': policyDTOs,
         '@/lib/dto/audit.dto': auditDTOs,
@@ -197,7 +190,6 @@ describe('GAP-10 foundation — component IDs are globally unique', () => {
         const sources = [
             { ns: commonDTOs, name: 'common' },
             { ns: controlDTOs, name: 'control.dto' },
-            { ns: riskDTOs, name: 'risk.dto' },
             { ns: evidenceDTOs, name: 'evidence.dto' },
             { ns: policyDTOs, name: 'policy.dto' },
             { ns: auditDTOs, name: 'audit.dto' },

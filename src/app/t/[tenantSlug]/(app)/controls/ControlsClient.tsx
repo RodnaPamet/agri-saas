@@ -46,7 +46,6 @@ import { EntityListPage } from '@/components/layout/EntityListPage';
 import { TableLoadMoreFooter } from '@/components/ui/table-load-more-footer';
 import { useThresholdLoadMore } from '@/components/ui/hooks';
 import { AsidePanel } from '@/components/ui/aside-panel';
-import { BestValueControls } from './_components/BestValueControls';
 import {
     Accordion,
     AccordionContent,
@@ -57,8 +56,6 @@ import {
     categorizeControl,
     ISO27001_DOMAIN_ORDER,
 } from '@/lib/controls/control-taxonomy';
-import { AiAssistRail } from '@/components/ui/ai-assist-rail';
-import { Sparkle3 } from '@/components/ui/icons/nucleo/sparkle3';
 import { KpiFilterCard } from '@/components/ui/kpi-filter-card';
 import { useKpiFilter, type KpiFilterDef } from '@/components/ui/kpi-filter';
 import type { CappedList } from '@/lib/list-backfill-cap';
@@ -97,7 +94,6 @@ const FREQ_LABELS: Record<string, string> = {
 interface ControlListItem {
     id: string;
     code: string | null;
-    annexId: string | null;
     name: string;
     description: string | null;
     status: string;
@@ -276,7 +272,7 @@ function ControlsPageInner({
 
     // ─── PR-1: org-parity sortable headers ───
     // Client-side sort over the loaded controls. The server returns
-    // by its canonical order (annexId/code asc); when the user
+    // by its canonical order (code asc); when the user
     // clicks a sortable header the page re-orders the in-memory
     // slice without a refetch. `sortBy` + `sortOrder` flow into
     // the shared table primitive as the sortableColumns surface.
@@ -289,7 +285,7 @@ function ControlsPageInner({
         const accessor = (c: ControlListItem): string | number => {
             switch (sortBy) {
                 case 'code':
-                    return (c.code || c.annexId || '').toString();
+                    return (c.code || '').toString();
                 case 'name':
                     return (c.name || '').toString();
                 case 'status':
@@ -574,7 +570,7 @@ function ControlsPageInner({
     // ── Column definitions ──
     const controlColumns = useMemo(() => createColumns<ControlListItem>([
         {
-            accessorFn: (c) => c.code || c.annexId || '',
+            accessorFn: (c) => c.code || '',
             id: 'code',
             header: t('list.colCode'),
             cell: ({ getValue }) => (
@@ -971,8 +967,8 @@ function ControlsPageInner({
                                                     }
                                                 >
                                                     <span className="truncate">
-                                                        {c.code || c.annexId
-                                                            ? `${c.code || c.annexId} · ${c.name}`
+                                                        {c.code
+                                                            ? `${c.code} · ${c.name}`
                                                             : c.name}
                                                     </span>
                                                     <StatusBadge
@@ -1000,47 +996,12 @@ function ControlsPageInner({
         </AsidePanel>
     );
 
-    // AI Assist — mirror of Risks' co-pilot rail. Quiet (44px spine)
-    // by default; the same `<AiAssistRail>` content + `/risks/ai`
-    // destination as the Risks page so the panel reads as one
-    // shared co-pilot across registers, not a stub.
-    // RQ3-8 — Best-value controls leaderboard. Lives in the rail
-    // so the list-page reading order (filters → table → asides)
-    // surfaces it without pushing the main table down. Honest-null
-    // shape — when no control yet has a price + effectiveness + a
-    // quantified linked risk, the panel says so rather than
-    // rendering a fabricated zero-row list.
-    const bestValueAside = (
-        <AsidePanel
-            title={t('list.bestValue')}
-            surfaceKey="controls-list-best-value"
-            defaultCollapsed
-            icon={<AppIcon name="controls" size={16} />}
-        >
-            <BestValueControls limit={5} />
-        </AsidePanel>
-    );
-
-    const aiAssistAside = appPermissions.controls.edit ? (
-        <AsidePanel
-            title={t('list.aiAssist')}
-            surfaceKey="controls-list-ai"
-            defaultCollapsed
-            icon={<Sparkle3 className="h-4 w-4" />}
-        >
-            <AiAssistRail aiHref={tenantHref('/risks/ai')} />
-        </AsidePanel>
-    ) : null;
-
     // Compose the aside slot — selection summary first (only
     // appears on multi-row selection), then the always-on browse
-    // rail, then the AI assist co-pilot. They stack vertically
-    // inside the docked third column.
+    // rail. They stack vertically inside the docked third column.
     const composedAside = (
         <div className="flex flex-col gap-default">
             {browseAside}
-            {bestValueAside}
-            {aiAssistAside}
         </div>
     );
 
@@ -1096,23 +1057,8 @@ function ControlsPageInner({
                             outside the create-permission gate so READERs
                             can still glance at the asset → risk → control
                             flow. */}
-                        <Tooltip content={t('list.tooltipSankey')}>
-                            <Link href={tenantHref('/controls/sankey')} aria-label={t('list.tooltipSankey')} className={buttonVariants({ variant: 'secondary', size: 'icon' })} id="controls-sankey-btn">
-                                <AppIcon name="share" size={16} />
-                            </Link>
-                        </Tooltip>
                         {appPermissions.controls.create && (
                             <>
-                                <Tooltip content={t('list.tooltipDashboard')}>
-                                    <Link href={tenantHref('/controls/dashboard')} aria-label={t('list.tooltipDashboard')} className={buttonVariants({ variant: 'secondary', size: 'icon' })} id="controls-dashboard-btn">
-                                        <AppIcon name="dashboard" size={16} />
-                                    </Link>
-                                </Tooltip>
-                                <Tooltip content={t('list.tooltipTemplates')}>
-                                    <Link href={tenantHref('/controls/templates')} aria-label={t('list.tooltipTemplates')} className={buttonVariants({ variant: 'secondary', size: 'icon' })} id="install-templates-btn">
-                                        <AppIcon name="templates" size={16} />
-                                    </Link>
-                                </Tooltip>
                                 <Button
                                     variant="primary"
                                     icon={<Plus className="-ml-0.5 -mr-2.5" />}
@@ -1235,10 +1181,6 @@ function ControlsPageInner({
                         title={t('list.emptyTitle')}
                         description={t('list.emptyDesc')}
                         primaryAction={{
-                            label: t('list.installTemplates'),
-                            href: tenantHref('/controls/templates'),
-                        }}
-                        secondaryAction={{
                             label: t('list.createControl'),
                             onClick: () => setIsCreateOpen(true),
                         }}

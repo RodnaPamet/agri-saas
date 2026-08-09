@@ -35,7 +35,6 @@
  * After each check:
  *   - IntegrationExecution row created (PASSED/FAILED/ERROR)
  *   - Evidence row created (type: CONFIGURATION, source: integration)
- *   - Control.lastTested updated
  *   - Control.nextDueAt advanced to next window
  *
  * Usage (cron):
@@ -364,15 +363,19 @@ export async function executeControlAutomation(
         },
     });
 
-    // Advance control scheduling
+    // Advance control scheduling. This also wrote `lastTested: now`
+    // until that column went with the control exoskeleton — a stale
+    // scalar in a Prisma `update` throws at runtime rather than being
+    // ignored, so every scheduled automation run was failing here. The
+    // run timestamp is still recorded on the IntegrationExecution row
+    // written above, which is where callers read it from.
     const nextDueAt = computeNextDueAt(control.frequency, now);
-    await prisma.control.update({
-        where: { id: control.id },
-        data: {
-            lastTested: now,
-            ...(nextDueAt ? { nextDueAt } : {}),
-        },
-    });
+    if (nextDueAt) {
+        await prisma.control.update({
+            where: { id: control.id },
+            data: { nextDueAt },
+        });
+    }
 
     return { status: result.status, executionId: execution.id };
 }

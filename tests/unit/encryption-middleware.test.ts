@@ -43,7 +43,6 @@ const { walkWriteArgument, walkReadResult, encryptDataNode, decryptResultNode } 
 describe('ENCRYPTED_FIELDS manifest', () => {
     it('contains the core Epic B.1 models', () => {
         for (const m of [
-            'Risk',
             'Finding',
             'EvidenceReview',
             'PolicyVersion',
@@ -52,7 +51,8 @@ describe('ENCRYPTED_FIELDS manifest', () => {
             'TaskComment',
             'Audit',
             'AuditChecklistItem',
-            'ControlTestRun',
+            // ControlTestRun was in this list until the compliance uproot
+            // dropped the model; its manifest entry went with it.
         ]) {
             expect(isEncryptedModel(m)).toBe(true);
         }
@@ -62,7 +62,9 @@ describe('ENCRYPTED_FIELDS manifest', () => {
         // Flagged in the manifest as "omit until product decision on
         // dropping substring search". These must stay off until that
         // decision + the repo search removal land together.
-        expect(ENCRYPTED_FIELDS.Risk).not.toContain('description');
+        // (The Risk example went with the risk register; Vendor.name is
+        // the remaining searched-and-deliberately-plaintext column.)
+        expect(ENCRYPTED_FIELDS.Vendor).not.toContain('name');
         // PolicyVersion.contentText is the high-value target; Policy.description
         // stays plaintext. There is no Policy entry in the manifest.
         expect((ENCRYPTED_FIELDS as Record<string, unknown>).Policy).toBeUndefined();
@@ -72,10 +74,8 @@ describe('ENCRYPTED_FIELDS manifest', () => {
         for (const m of [
             'Framework',
             'Clause',
-            'ControlTemplate',
             'PolicyTemplate',
             'QuestionnaireTemplate',
-            'RiskTemplate',
         ]) {
             expect(isEncryptedModel(m)).toBe(false);
         }
@@ -113,16 +113,16 @@ describe('ENCRYPTED_FIELDS manifest', () => {
 describe('encryptDataNode', () => {
     it('encrypts listed fields and leaves others alone', () => {
         const data: Record<string, unknown> = {
-            treatmentNotes: 'sensitive remediation plan',
-            threat: 'ransomware via supply-chain',
+            rootCause: 'sensitive remediation plan',
+            correctiveAction: 'rework the drainage channel',
             status: 'OPEN',
             score: 12,
             tenantId: 'tenant-1',
         };
-        encryptDataNode(data, 'Risk', null);
+        encryptDataNode(data, 'Finding', null);
 
-        expect(isEncryptedValue(data.treatmentNotes as string)).toBe(true);
-        expect(isEncryptedValue(data.threat as string)).toBe(true);
+        expect(isEncryptedValue(data.rootCause as string)).toBe(true);
+        expect(isEncryptedValue(data.correctiveAction as string)).toBe(true);
         expect(data.status).toBe('OPEN'); // not in manifest
         expect(data.score).toBe(12);
         expect(data.tenantId).toBe('tenant-1');
@@ -130,30 +130,30 @@ describe('encryptDataNode', () => {
 
     it('is idempotent — re-encrypting a ciphertext is a no-op', () => {
         const alreadyEncrypted = encryptField('existing ciphertext');
-        const data = { treatmentNotes: alreadyEncrypted };
-        encryptDataNode(data, 'Risk', null);
-        expect(data.treatmentNotes).toBe(alreadyEncrypted);
+        const data = { rootCause: alreadyEncrypted };
+        encryptDataNode(data, 'Finding', null);
+        expect(data.rootCause).toBe(alreadyEncrypted);
     });
 
     it('passes null / undefined / empty string through unchanged', () => {
         const data: Record<string, unknown> = {
-            treatmentNotes: null,
+            rootCause: null,
             threat: undefined,
             vulnerability: '',
         };
-        encryptDataNode(data, 'Risk', null);
-        expect(data.treatmentNotes).toBeNull();
+        encryptDataNode(data, 'Finding', null);
+        expect(data.rootCause).toBeNull();
         expect(data.threat).toBeUndefined();
         expect(data.vulnerability).toBe('');
     });
 
     it('skips non-string values defensively', () => {
         const data: Record<string, unknown> = {
-            treatmentNotes: 42, // not a realistic Prisma shape but the
+            rootCause: 42, // not a realistic Prisma shape but the
                                 // middleware must not crash on it
         };
-        encryptDataNode(data, 'Risk', null);
-        expect(data.treatmentNotes).toBe(42);
+        encryptDataNode(data, 'Finding', null);
+        expect(data.rootCause).toBe(42);
     });
 
     it('ignores models not in the manifest', () => {
@@ -167,48 +167,48 @@ describe('decryptResultNode', () => {
     it('decrypts listed fields and leaves others alone', () => {
         const encrypted = encryptField('nuclear launch codes');
         const node: Record<string, unknown> = {
-            treatmentNotes: encrypted,
+            rootCause: encrypted,
             status: 'CLOSED',
             score: 1,
         };
-        decryptResultNode(node, 'Risk', NO_DEKS);
-        expect(node.treatmentNotes).toBe('nuclear launch codes');
+        decryptResultNode(node, 'Finding', NO_DEKS);
+        expect(node.rootCause).toBe('nuclear launch codes');
         expect(node.status).toBe('CLOSED');
     });
 
     it('passes legacy plaintext (no v1: prefix) through unchanged', () => {
         const node: Record<string, unknown> = {
-            treatmentNotes: 'legacy plaintext row',
+            rootCause: 'legacy plaintext row',
         };
-        decryptResultNode(node, 'Risk', NO_DEKS);
-        expect(node.treatmentNotes).toBe('legacy plaintext row');
+        decryptResultNode(node, 'Finding', NO_DEKS);
+        expect(node.rootCause).toBe('legacy plaintext row');
     });
 
     it('logs warn + returns raw on malformed ciphertext', () => {
         // Valid prefix, but payload is gibberish — AES-GCM decrypt
         // will throw. The middleware swallows, logs, and returns raw.
         const node: Record<string, unknown> = {
-            treatmentNotes: 'v1:garbage-that-is-not-valid-base64-or-ciphertext',
+            rootCause: 'v1:garbage-that-is-not-valid-base64-or-ciphertext',
         };
-        expect(() => decryptResultNode(node, 'Risk', NO_DEKS)).not.toThrow();
+        expect(() => decryptResultNode(node, 'Finding', NO_DEKS)).not.toThrow();
         expect(logger.warn).toHaveBeenCalledWith(
             'encryption-middleware.decrypt_failed',
-            expect.objectContaining({ model: 'Risk', field: 'treatmentNotes' }),
+            expect.objectContaining({ model: 'Finding', field: 'rootCause' }),
         );
         // Raw value preserved.
-        expect(node.treatmentNotes).toBe(
+        expect(node.rootCause).toBe(
             'v1:garbage-that-is-not-valid-base64-or-ciphertext',
         );
     });
 
     it('handles null / empty gracefully', () => {
         const node: Record<string, unknown> = {
-            treatmentNotes: null,
-            threat: '',
+            rootCause: null,
+            correctiveAction: '',
         };
-        decryptResultNode(node, 'Risk', NO_DEKS);
-        expect(node.treatmentNotes).toBeNull();
-        expect(node.threat).toBe('');
+        decryptResultNode(node, 'Finding', NO_DEKS);
+        expect(node.rootCause).toBeNull();
+        expect(node.correctiveAction).toBe('');
     });
 });
 
@@ -328,28 +328,28 @@ describe('walkReadResult — end-to-end decrypt', () => {
     it('decrypts a single read result', () => {
         const node = {
             id: 'r-1',
-            treatmentNotes: encryptField('plan'),
-            threat: encryptField('ransomware'),
+            rootCause: encryptField('plan'),
+            correctiveAction: encryptField('rework the drainage channel'),
             status: 'OPEN',
         };
-        walkReadResult(node, 'Risk', NO_DEKS);
-        expect(node.treatmentNotes).toBe('plan');
-        expect(node.threat).toBe('ransomware');
+        walkReadResult(node, 'Finding', NO_DEKS);
+        expect(node.rootCause).toBe('plan');
+        expect(node.correctiveAction).toBe('rework the drainage channel');
         expect(node.status).toBe('OPEN');
     });
 
     it('decrypts an array of findMany results', () => {
         const results = [
-            { treatmentNotes: encryptField('A') },
-            { treatmentNotes: encryptField('B') },
-            { treatmentNotes: null },
-            { treatmentNotes: 'legacy plaintext — passes through' },
+            { rootCause: encryptField('A') },
+            { rootCause: encryptField('B') },
+            { rootCause: null },
+            { rootCause: 'legacy plaintext — passes through' },
         ];
-        walkReadResult(results, 'Risk', NO_DEKS);
-        expect(results[0].treatmentNotes).toBe('A');
-        expect(results[1].treatmentNotes).toBe('B');
-        expect(results[2].treatmentNotes).toBeNull();
-        expect(results[3].treatmentNotes).toBe(
+        walkReadResult(results, 'Finding', NO_DEKS);
+        expect(results[0].rootCause).toBe('A');
+        expect(results[1].rootCause).toBe('B');
+        expect(results[2].rootCause).toBeNull();
+        expect(results[3].rootCause).toBe(
             'legacy plaintext — passes through',
         );
     });
@@ -394,10 +394,10 @@ describe('walkReadResult — end-to-end decrypt', () => {
     });
 
     it('handles null / undefined / empty result shapes', () => {
-        expect(() => walkReadResult(null, 'Risk', NO_DEKS)).not.toThrow();
-        expect(() => walkReadResult(undefined, 'Risk', NO_DEKS)).not.toThrow();
-        expect(() => walkReadResult([], 'Risk', NO_DEKS)).not.toThrow();
-        expect(() => walkReadResult({}, 'Risk', NO_DEKS)).not.toThrow();
+        expect(() => walkReadResult(null, 'Finding', NO_DEKS)).not.toThrow();
+        expect(() => walkReadResult(undefined, 'Finding', NO_DEKS)).not.toThrow();
+        expect(() => walkReadResult([], 'Finding', NO_DEKS)).not.toThrow();
+        expect(() => walkReadResult({}, 'Finding', NO_DEKS)).not.toThrow();
     });
 
     it('does NOT decrypt non-manifest model results', () => {
@@ -452,24 +452,24 @@ describe('withEncryptionExtension', () => {
 
         const plaintext = 'mitigation strategy details';
         const result = (await handler({
-            model: 'Risk',
+            model: 'Finding',
             operation: 'create',
             args: {
-                data: { title: 'X', treatmentNotes: plaintext, status: 'OPEN' },
+                data: { title: 'X', rootCause: plaintext, status: 'OPEN' },
             },
             query,
-        })) as { title: string; treatmentNotes: string; status: string };
+        })) as { title: string; rootCause: string; status: string };
 
         // What the DB saw: ciphertext.
         expect(
             isEncryptedValue(
-                (seenDbArgs as { data: { treatmentNotes: string } }).data
-                    .treatmentNotes,
+                (seenDbArgs as { data: { rootCause: string } }).data
+                    .rootCause,
             ),
         ).toBe(true);
 
         // What the caller saw: plaintext.
-        expect(result.treatmentNotes).toBe(plaintext);
+        expect(result.rootCause).toBe(plaintext);
         expect(result.status).toBe('OPEN');
     });
 

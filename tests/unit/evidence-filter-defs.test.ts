@@ -56,9 +56,9 @@ describe('Evidence filter config', () => {
 });
 
 describe('controlOptionsFromControls', () => {
-    it('builds a label with the annex/code prefix and a short display label', () => {
+    it('builds a label with the code prefix and a short display label', () => {
         const opts = controlOptionsFromControls([
-            { id: 'c1', name: 'Information Classification', annexId: 'A.5.12' },
+            { id: 'c1', name: 'Information Classification', code: 'A.5.12' },
             { id: 'c2', name: 'Custom policy', code: 'CUST-1' },
             { id: 'c3', name: 'No prefix' },
         ]);
@@ -70,9 +70,9 @@ describe('controlOptionsFromControls', () => {
 
     it('dedupes by id and sorts alphabetically', () => {
         const opts = controlOptionsFromControls([
-            { id: 'zz', name: 'Zulu', annexId: 'Z.1' },
-            { id: 'aa', name: 'Alpha', annexId: 'A.1' },
-            { id: 'aa', name: 'Alpha duplicate', annexId: 'A.1' },
+            { id: 'zz', name: 'Zulu', code: 'Z.1' },
+            { id: 'aa', name: 'Alpha', code: 'A.1' },
+            { id: 'aa', name: 'Alpha duplicate', code: 'A.1' },
         ]);
         expect(opts.map((o) => o.value)).toEqual(['aa', 'zz']);
     });
@@ -81,7 +81,7 @@ describe('controlOptionsFromControls', () => {
 describe('buildEvidenceFilters', () => {
     it('injects control options without mutating the static defs', () => {
         const live = buildEvidenceFilters([
-            { id: 'c1', name: 'ISMS Scope', annexId: 'A.4.3' },
+            { id: 'c1', name: 'ISMS Scope', code: 'A.4.3' },
         ]);
         const control = live.find((f) => f.key === 'controlId');
         expect(control?.options).toHaveLength(1);

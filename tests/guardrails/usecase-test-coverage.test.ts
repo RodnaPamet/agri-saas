@@ -73,12 +73,10 @@ const EXEMPTIONS: Record<string, string> = {
         'Roadmap Q3 — vendor → tenant inherited control denormalisation, indirectly exercised by vendor.assessment tests.',
     'src/app-layer/usecases/vendor-audit.ts':
         'Roadmap Q2 — vendor audit cycle, pending direct unit tests in Vendor PR.',
-    'src/app-layer/usecases/traceability-graph.ts':
-        'Roadmap Q1 — graph builder, exercised via traceability integration test; pending direct unit tests.',
+    'src/app-layer/usecases/traceability.ts':
+        'Asset ↔ control mapping verbs, exercised end-to-end through the control detail page; pending direct unit tests. (Replaced the traceability-graph.ts entry, which went with the risk register.)',
 
     // Test-internal hardening — last priority, low blast radius.
-    'src/app-layer/usecases/test-hardening.ts':
-        'Roadmap Q3 — test plan hardening utility, low blast radius; pending direct tests.',
 };
 
 const EXEMPTION_COUNT = Object.keys(EXEMPTIONS).length;
