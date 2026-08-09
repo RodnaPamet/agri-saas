@@ -166,6 +166,42 @@ not just typechecked:
   escaped. Before the next project-wide identifier sweep, add the
   at-risk standard names to it first.
 
+- **"Control" has three senses in this codebase, and the sweep ate two of
+  them.** The entity is one. The other two are ordinary English:
+
+  *The widget sense* — a form **control**. Four primitives are about
+  nothing else, and the sweep renamed their prose *and their exported
+  API*: `controlVariants` → `practiceVariants`, `controlSize` →
+  `practiceSize`, `InjectedControlProps` → `InjectedPracticeProps`, and
+  the DOM id `controlId` → `practiceId`. It typechecked, because a
+  consistent rename always does. `control-variants.ts` is named in
+  CLAUDE.md as off-limits — only its *filename* was spared, which is
+  worth remembering: protecting a path does not protect its contents.
+  Restored from main, along with `tooltip.tsx`, `inline-notice.tsx` and
+  `form-field.tsx`.
+
+  *The verb sense* — "the gear **controls** the KPI cards", "strategies
+  **control** how", "**Controls** how long evidence stays searchable",
+  "**control** plane". No tool sees these; only reading does.
+
+  Two more restorations of the same kind: `src/data/annex-a.ts` is ISO
+  27001:2022 Annex A reference text — real control NAMES ("Physical
+  Entry Controls") and intent paraphrases — so it goes with
+  `isoControlId` as the standard's terminology, not ours; and
+  `tree.controlsLabel`, whose value had become the screen-reader label
+  "Tree expansion practices".
+
+- **The source↔guard coupling cuts both ways.** Restoring those four
+  primitives broke nine guards that grep their source text — the mirror
+  of the `aria-controls` case, where the guard had been renamed *with*
+  the bug and went on passing. Un-renaming a subject orphans any guard
+  that was renamed alongside it, so the two move together in both
+  directions. And the restore is not blanket: `form-primitive-adoption`
+  and `inline-notice-discipline` reference genuine entity PATHS
+  (`practices/PracticeDetailSheet.tsx`) and `required-marker-discipline`
+  mixes both senses in one file, so those took surgical edits. Deciding
+  per-file, not per-token, is the only thing that works here.
+
 - **Historical migrations are asserted verbatim.** Two structural
   guards (`pr-asset-practice-codes`, `notif-assignment-alerts-wiring`)
   read applied migration SQL. They now assert the ORIGINAL spelling
