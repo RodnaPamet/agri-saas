@@ -28,6 +28,7 @@ import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { withTenantDb } from '@/lib/db-context';
 import { randomUUID } from 'crypto';
+import { hashForLookup } from '@/lib/security/encryption';
 import { DB_URL, DB_AVAILABLE } from './db-helper';
 
 const globalPrisma = new PrismaClient({
@@ -101,8 +102,17 @@ describeFn('W5 — KnowledgeArticle / KnowledgeArticleVersion RLS', () => {
     beforeAll(async () => {
         TENANT_A = await makeTenant('kbrls-a');
         TENANT_B = await makeTenant('kbrls-b');
+        // `User.email` is an Epic B encrypted column (`@map("emailEncrypted")`),
+        // so the plaintext is unusable as a lookup key and `emailHash` carries
+        // that role — it is NOT NULL. Omitting it fails the insert with a null
+        // constraint violation, which is what broke this suite's first CI run.
+        const authorEmail = `kbrls-author-${SUFFIX}@example.com`;
         const author = await globalPrisma.user.create({
-            data: { email: `kbrls-author-${SUFFIX}@example.com`, name: 'RLS fixture author' },
+            data: {
+                email: authorEmail,
+                emailHash: hashForLookup(authorEmail),
+                name: 'RLS fixture author',
+            },
             select: { id: true },
         });
         AUTHOR_ID = author.id;
