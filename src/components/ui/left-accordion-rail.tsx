@@ -272,7 +272,7 @@ export function LeftAccordionRail({
                                 type="button"
                                 id={triggerId}
                                 data-rail-section-trigger={section.id}
-                                aria-practices={contentId}
+                                aria-controls={contentId}
                                 aria-expanded={isOpen}
                                 onClick={() => toggle(section.id)}
                                 onKeyDown={(e) => handleKeyDown(e, idx)}

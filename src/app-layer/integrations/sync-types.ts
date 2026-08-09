@@ -61,7 +61,7 @@ export interface SyncMappingKey {
  *
  * Only operational initial-state fields are permitted.
  * Identity fields come from SyncMappingKey.
- * Practice-plane fields (conflictStrategy, version) get safe defaults.
+ * Control-plane fields (conflictStrategy, version) get safe defaults.
  */
 export interface SyncMappingCreateData {
     /** Initial sync status (defaults to 'PENDING' in store implementations) */

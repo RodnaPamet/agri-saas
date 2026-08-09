@@ -75,7 +75,7 @@ describe('PR-C SSE notification streaming wiring', () => {
         it('returns Content-Type: text/event-stream with no-cache + X-Accel-Buffering', () => {
             const s = read(PATH_ROUTE);
             expect(s).toMatch(/['"]Content-Type['"]:\s*['"]text\/event-stream/);
-            expect(s).toMatch(/['"]Cache-Practice['"]:\s*['"]no-cache, no-transform['"]/);
+            expect(s).toMatch(/['"]Cache-Control['"]:\s*['"]no-cache, no-transform['"]/);
             expect(s).toMatch(/['"]X-Accel-Buffering['"]:\s*['"]no['"]/);
         });
 

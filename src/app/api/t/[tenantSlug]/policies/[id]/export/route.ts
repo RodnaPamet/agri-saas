@@ -102,7 +102,7 @@ export const GET = withApiErrorHandling(
             headers: {
                 'Content-Type': 'application/pdf',
                 'Content-Disposition': `attachment; filename="${fileName}"`,
-                'Cache-Practice': 'no-store',
+                'Cache-Control': 'no-store',
             },
         });
     },

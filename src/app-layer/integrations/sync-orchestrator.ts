@@ -66,7 +66,7 @@ import { enqueue } from '../jobs/queue';
  * Design: create vs update are intentionally separated.
  *   - `findOrCreate` sets identity + safe defaults only
  *   - `updateStatus` updates operational fields with a narrow typed input
- *   - Practice-plane fields (e.g. `conflictStrategy`) cannot be
+ *   - Control-plane fields (e.g. `conflictStrategy`) cannot be
  *     accidentally overwritten through either path
  */
 export interface SyncMappingStore {

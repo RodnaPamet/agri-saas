@@ -67,7 +67,7 @@ export const GET = withApiErrorHandling(
                 'Content-Type': fileRecord.mimeType,
                 'Content-Disposition': `attachment; filename="${fileRecord.originalName}"`,
                 'Content-Length': String(fileRecord.sizeBytes),
-                'Cache-Practice': 'private, no-store',
+                'Cache-Control': 'private, no-store',
             },
         });
     },

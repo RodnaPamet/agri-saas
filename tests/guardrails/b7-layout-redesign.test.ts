@@ -66,9 +66,9 @@ describe('B7 — layout redesign', () => {
             expect(src).not.toMatch(/onFocus=\{[\s\S]{0,80}toggle\(/);
         });
 
-        it('renders aria-expanded + aria-practices (a11y)', () => {
+        it('renders aria-expanded + aria-controls (a11y)', () => {
             expect(src).toMatch(/aria-expanded=\{isOpen\}/);
-            expect(src).toMatch(/aria-practices=\{contentId\}/);
+            expect(src).toMatch(/aria-controls=\{contentId\}/);
         });
     });
 

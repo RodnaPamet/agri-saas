@@ -36,7 +36,7 @@ test.describe('Search affordances', () => {
 
         // Close the dropdown, then confirm ⌘K still opens the palette.
         await page.keyboard.press('Escape');
-        await page.keyboard.press('Practice+KeyK');
+        await page.keyboard.press('Control+KeyK');
         await expect(
             page.locator('[data-testid="command-palette-input"]'),
         ).toBeVisible({ timeout: 5000 });

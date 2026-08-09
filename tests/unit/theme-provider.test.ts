@@ -65,13 +65,13 @@ describe('ThemeProvider — source contract', () => {
     });
 });
 
-describe('ThemeToggle — accessible practice', () => {
+describe('ThemeToggle — accessible control', () => {
     const src = read('src/components/theme/ThemeToggle.tsx');
 
     it('is a client button with an accessible label naming the action', () => {
         // The toggle cycles dark → light → sunlight (feat/delight-personality),
         // so it carries an aria-label that names the action rather than a
-        // binary aria-pressed (which only models a two-state practice).
+        // binary aria-pressed (which only models a two-state control).
         expect(src).toMatch(/^'use client'/);
         expect(src).toMatch(/aria-label=/);
         expect(src).toMatch(/sunlight/);

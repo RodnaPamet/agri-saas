@@ -120,7 +120,7 @@ export async function GET(req: NextRequest): Promise<Response> {
             // Disable proxy buffering — without this, nginx / Cloud
             // Run buffer SSE bytes and the client doesn't see them
             // until the buffer fills.
-            'Cache-Practice': 'no-cache, no-transform',
+            'Cache-Control': 'no-cache, no-transform',
             'X-Accel-Buffering': 'no',
             Connection: 'keep-alive',
         },

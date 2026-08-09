@@ -172,7 +172,7 @@ export const GET = withApiErrorHandling(
             headers: {
                 'Content-Type': 'text/csv; charset=utf-8',
                 'Content-Disposition': `attachment; filename="${filename}"`,
-                'Cache-Practice': 'no-cache, no-store',
+                'Cache-Control': 'no-cache, no-store',
             },
         });
     },

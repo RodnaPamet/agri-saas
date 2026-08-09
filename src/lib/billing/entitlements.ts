@@ -125,7 +125,7 @@ export type GatedResource =
 // working budget, ENTERPRISE is unlimited. Per-request size is separately
 // capped by the route's `maxTokens`; this is the cumulative monthly cap.
 // `exchange_listing` caps the number of ACTIVE marketplace listings a tenant
-// may hold open at once. It is the real spam practice for the Exchange, since
+// may hold open at once. It is the real spam control for the Exchange, since
 // the EXCHANGE module itself is available on the FREE plan (MODULE_MIN_PLAN):
 // a small FREE budget keeps a single tenant from flooding the shared feed,
 // while working tiers lift it and ENTERPRISE is unlimited.

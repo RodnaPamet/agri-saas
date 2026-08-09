@@ -28,7 +28,7 @@
  * body) or a 200 whose body is the very bytes that were hashed — so the
  * ETag the client caches always matches the body it holds.
  *
- * `Cache-Practice: private, no-cache` is deliberate: `no-cache` means
+ * `Cache-Control: private, no-cache` is deliberate: `no-cache` means
  * "you may store this, but you MUST revalidate before reuse" — which is
  * precisely the ETag round-trip we want (always ask the server, but let
  * a 304 short-circuit the payload). `private` keeps per-tenant data out
@@ -116,7 +116,7 @@ export function ifNoneMatchSatisfied(
 
 export interface JsonWithETagInit extends ResponseInit {
     /**
-     * Extra `Cache-Practice` directive. Defaults to
+     * Extra `Cache-Control` directive. Defaults to
      * `private, no-cache` — store-but-always-revalidate, which is what
      * makes the 304 round-trip work. Pass a custom value only if a
      * specific route wants a different freshness policy.
@@ -147,7 +147,7 @@ export function jsonWithETag<T>(
 
     const baseHeaders = new Headers(extraHeaders);
     baseHeaders.set('ETag', etag);
-    baseHeaders.set('Cache-Practice', cachePractice ?? DEFAULT_CACHE_CONTROL);
+    baseHeaders.set('Cache-Control', cachePractice ?? DEFAULT_CACHE_CONTROL);
 
     if (ifNoneMatchSatisfied(ifNoneMatch, etag)) {
         // 304 MUST carry no body but SHOULD echo the validators the

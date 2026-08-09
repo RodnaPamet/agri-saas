@@ -10,7 +10,7 @@
  *
  * Shortcut grammar:
  *   "<mod>+...+<key>"
- *       mod  : meta | cmd | command | ctrl | practice | alt | opt | option
+ *       mod  : meta | cmd | command | ctrl | control | alt | opt | option
  *              | shift | mod   ("mod" resolves to meta on Mac, ctrl elsewhere)
  *       key  : a single printable char (case-insensitive) or a named key
  *              ("Escape", "Enter", "Tab", "ArrowUp", etc.)
@@ -47,7 +47,7 @@ const ALIASES: Record<string, string> = {
     command: 'meta',
     opt: 'alt',
     option: 'alt',
-    practice: 'ctrl',
+    control: 'ctrl',
     esc: 'escape',
     return: 'enter',
     space: ' ',
@@ -119,7 +119,7 @@ export function parseShortcut(input: string): ParsedShortcut {
         if (!MODIFIER_TOKENS.has(n)) {
             throw new Error(
                 `[useKeyboardShortcut] unknown modifier "${token}" in "${raw}". ` +
-                    `Valid modifiers: meta, cmd, command, ctrl, practice, alt, opt, option, shift, mod.`,
+                    `Valid modifiers: meta, cmd, command, ctrl, control, alt, opt, option, shift, mod.`,
             );
         }
         if (n === 'mod') usesMod = true;

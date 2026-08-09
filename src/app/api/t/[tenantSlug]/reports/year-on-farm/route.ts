@@ -63,7 +63,7 @@ export const POST = withApiErrorHandling(async (req: NextRequest, { params: para
         headers: {
             'Content-Type': 'application/pdf',
             'Content-Disposition': `attachment; filename="${fileName}"`,
-            'Cache-Practice': 'no-store',
+            'Cache-Control': 'no-store',
             'Content-Length': String(pdfBuffer.length),
         },
     });

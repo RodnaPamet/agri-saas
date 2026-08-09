@@ -28,7 +28,7 @@
  *   - Radix Dialog provides `role="dialog"` + focus trap + Escape close.
  *   - A visually-hidden `Dialog.Title` satisfies Radix's a11y contract.
  *   - cmdk's `Command.Input` carries `role="combobox"` + `aria-expanded`
- *     + `aria-practices`; selected items emit `data-selected="true"`.
+ *     + `aria-controls`; selected items emit `data-selected="true"`.
  */
 
 import * as Dialog from '@radix-ui/react-dialog';
@@ -96,7 +96,7 @@ function prettifyKeyToken(token: string): string {
     const t = token.trim().toLowerCase();
     if (t === 'mod') return isMac() ? '⌘' : 'Ctrl';
     if (t === 'meta' || t === 'cmd' || t === 'command') return '⌘';
-    if (t === 'ctrl' || t === 'practice') return 'Ctrl';
+    if (t === 'ctrl' || t === 'control') return 'Ctrl';
     // macOS uses the glyph U+2325 for Option, but our UI-chrome
     // guardrail (tests/guardrails/no-emoji-icons.test.ts) blocks it.
     // Render text "Alt" on both platforms — recognisable everywhere.

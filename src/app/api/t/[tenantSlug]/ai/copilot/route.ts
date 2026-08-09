@@ -164,7 +164,7 @@ export const POST = withApiErrorHandling(async (req: NextRequest, { params: para
         status: 200,
         headers: {
             'Content-Type': 'text/event-stream; charset=utf-8',
-            'Cache-Practice': 'no-cache, no-transform',
+            'Cache-Control': 'no-cache, no-transform',
             'X-Accel-Buffering': 'no',
             Connection: 'keep-alive',
         },

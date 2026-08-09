@@ -58,7 +58,7 @@ export const GET = withApiErrorHandling(
             headers: {
                 'Content-Type': file.mimeType || 'application/octet-stream',
                 'Content-Disposition': `attachment; filename="${file.originalName}"`,
-                'Cache-Practice': 'no-store',
+                'Cache-Control': 'no-store',
                 'Content-Length': String(buf.length),
             },
         });

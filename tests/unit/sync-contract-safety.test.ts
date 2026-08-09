@@ -12,7 +12,7 @@
  *      - findOrCreate only accepts SyncMappingCreateData (narrow type)
  *      - updateStatus only accepts SyncMappingStatusUpdate (narrow type)
  *
- *   3. Practice-plane field protection
+ *   3. Control-plane field protection
  *      - conflictStrategy cannot be set via findOrCreate
  *      - conflictStrategy cannot be set via updateStatus
  *      - version cannot be freely set via findOrCreate
@@ -280,10 +280,10 @@ describe('SyncMappingStore — findOrCreate vs updateStatus', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════
-// 3. Practice-Plane Field Protection
+// 3. Control-Plane Field Protection
 // ═══════════════════════════════════════════════════════════════════════
 
-describe('Practice-plane field protection', () => {
+describe('Control-plane field protection', () => {
     let store: ContractTestStore;
 
     beforeEach(() => {

@@ -271,7 +271,7 @@ describe('Shortcut safety — input hijack', () => {
         render(
             <Shell>
                 <Binding />
-                <button role="combobox" aria-practices="status-listbox" aria-expanded="false" aria-label="Status" />
+                <button role="combobox" aria-controls="status-listbox" aria-expanded="false" aria-label="Status" />
             </Shell>,
         );
         const el = document.querySelector(

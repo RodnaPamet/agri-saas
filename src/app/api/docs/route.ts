@@ -117,7 +117,7 @@ export const GET = withApiErrorHandling(async (): Promise<NextResponse> => {
             // Belt-and-braces: even though isDocsEnabled() blocks
             // production rendering, the response itself signals to
             // any cache that this is a dev-only document.
-            'Cache-Practice': 'no-store',
+            'Cache-Control': 'no-store',
             'X-Robots-Tag': 'noindex, nofollow',
         },
     });

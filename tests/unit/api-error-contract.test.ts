@@ -11,7 +11,7 @@
  *   - body JSON shape is `{ error: { code, message, requestId } }`
  *   - `x-request-id` header is set on EVERY response (success + error)
  *   - `x-request-id` echoes the inbound header when present
- *   - `Cache-Practice: no-store` on error responses (no cached errors)
+ *   - `Cache-Control: no-store` on error responses (no cached errors)
  *   - successful responses are passed through unchanged
  *   - representative subclasses round-trip correctly (4xx + 5xx + domain)
  *   - unknown thrown values do not leak stack traces
@@ -148,7 +148,7 @@ describe('Epic E — withApiErrorHandling HTTP contract', () => {
         ];
 
         it.each(cases)(
-            '$name → $status with code=$code, requestId, x-request-id, Cache-Practice: no-store',
+            '$name → $status with code=$code, requestId, x-request-id, Cache-Control: no-store',
             async ({ err, status, code, message }) => {
                 const handler = withApiErrorHandling(async () => {
                     throw err();
@@ -162,7 +162,7 @@ describe('Epic E — withApiErrorHandling HTTP contract', () => {
                 expect(body.error.requestId).toBeTruthy();
 
                 expect(res.headers.get('x-request-id')).toBe(body.error.requestId);
-                expect(res.headers.get('Cache-Practice')).toBe('no-store, max-age=0');
+                expect(res.headers.get('Cache-Control')).toBe('no-store, max-age=0');
             },
         );
 
@@ -326,7 +326,7 @@ describe('Epic E — withApiErrorHandling HTTP contract', () => {
             ['ValidationError', () => badRequest('x'), 400],
             ['UnknownThrow', () => new Error('boom'), 500],
         ])(
-            '%s response sets x-request-id AND Cache-Practice: no-store',
+            '%s response sets x-request-id AND Cache-Control: no-store',
             async (_name, makeErr, expectedStatus) => {
                 const handler = withApiErrorHandling(async () => {
                     throw makeErr();
@@ -334,7 +334,7 @@ describe('Epic E — withApiErrorHandling HTTP contract', () => {
                 const res = await handler(makeRequest(), {});
                 expect(res.status).toBe(expectedStatus);
                 expect(res.headers.get('x-request-id')).toBeTruthy();
-                expect(res.headers.get('Cache-Practice')).toBe('no-store, max-age=0');
+                expect(res.headers.get('Cache-Control')).toBe('no-store, max-age=0');
             },
         );
     });

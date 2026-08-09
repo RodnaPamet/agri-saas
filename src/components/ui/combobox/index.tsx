@@ -32,7 +32,7 @@
  *
  * Accessibility:
  *   - The default trigger is a `<Button>` that Radix Popover.Trigger
- *     augments with `aria-expanded` / `aria-practices`. We additionally
+ *     augments with `aria-expanded` / `aria-controls`. We additionally
  *     set `aria-haspopup="listbox"` so screen readers announce the
  *     select-like affordance correctly.
  *   - The trigger's accessible NAME comes from `aria-labelledby` when
@@ -450,7 +450,7 @@ export function Combobox<
         // WAI-ARIA 1.2: a trigger that opens a listbox should carry
         // `role="combobox"` alongside `aria-haspopup="listbox"`.
         // Radix Popover.Trigger only emits `aria-expanded` /
-        // `aria-practices` — we supply the role explicitly so assistive
+        // `aria-controls` — we supply the role explicitly so assistive
         // tech announces "combobox, collapsed" / "combobox, expanded".
         role: "combobox" as const,
         "aria-haspopup": "listbox" as const,

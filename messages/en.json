@@ -1474,7 +1474,7 @@
         "clickToUse": "Click to use as template",
         "templates": {
             "infoSecurity": "Information Security Policy",
-            "accessPractice": "Access Control Policy",
+            "accessControl": "Access Control Policy",
             "incidentResponse": "Incident Response Policy",
             "acceptableUse": "Acceptable Use Policy",
             "supplierSecurity": "Supplier Security Policy",

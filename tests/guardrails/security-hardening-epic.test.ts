@@ -72,8 +72,8 @@ describe('CORS Hardening', () => {
         expect(middleware).not.toContain("origin.startsWith('http://localhost:");
     });
 
-    test('no wildcard Access-Practice-Allow-Origin in middleware', () => {
-        expect(middleware).not.toContain("'Access-Practice-Allow-Origin', '*'");
+    test('no wildcard Access-Control-Allow-Origin in middleware', () => {
+        expect(middleware).not.toContain("'Access-Control-Allow-Origin', '*'");
     });
 });
 

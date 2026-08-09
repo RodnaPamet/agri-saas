@@ -70,13 +70,13 @@ describe('ifNoneMatchSatisfied', () => {
 });
 
 describe('jsonWithETag', () => {
-    it('returns 200 with an ETag + revalidation Cache-Practice when no INM', async () => {
+    it('returns 200 with an ETag + revalidation Cache-Control when no INM', async () => {
         const payload = [{ id: 'a', title: 'Row A' }];
         const res = jsonWithETag(reqWith(), payload);
         expect(res.status).toBe(200);
         const etag = res.headers.get('ETag');
         expect(etag).toBe(computeWeakETag(JSON.stringify(payload)));
-        expect(res.headers.get('Cache-Practice')).toBe('private, no-cache');
+        expect(res.headers.get('Cache-Control')).toBe('private, no-cache');
         expect(res.headers.get('Content-Type')).toContain('application/json');
         expect(await res.json()).toEqual(payload);
     });

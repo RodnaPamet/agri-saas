@@ -159,7 +159,7 @@ export async function createListing(ctx: RequestContext, input: CreateListingInp
     if (!region) throw badRequest('invalid_region', `Unknown region code: ${input.regionCode}`);
 
     return runInTenantContext(ctx, async (db) => {
-        // Per-tenant ACTIVE-listing quota — the real spam practice, since the
+        // Per-tenant ACTIVE-listing quota — the real spam control, since the
         // EXCHANGE module is available on the FREE plan. Self-hosted mode
         // resolves to ENTERPRISE (unlimited) and short-circuits without a DB
         // count.

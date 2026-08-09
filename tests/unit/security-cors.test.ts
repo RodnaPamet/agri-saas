@@ -134,29 +134,29 @@ describe('isOriginAllowed', () => {
 });
 
 describe('applyCorsHeaders', () => {
-    test('sets Access-Practice-Allow-Origin to the specific origin', () => {
+    test('sets Access-Control-Allow-Origin to the specific origin', () => {
         const h = new Headers();
         applyCorsHeaders(h, 'https://app.example.com');
 
-        expect(h.get('Access-Practice-Allow-Origin')).toBe('https://app.example.com');
-        expect(h.get('Access-Practice-Allow-Credentials')).toBe('true');
+        expect(h.get('Access-Control-Allow-Origin')).toBe('https://app.example.com');
+        expect(h.get('Access-Control-Allow-Credentials')).toBe('true');
         expect(h.get('Vary')).toContain('Origin');
     });
 
     test('never sets wildcard origin', () => {
         const h = new Headers();
         applyCorsHeaders(h, 'https://app.example.com');
-        expect(h.get('Access-Practice-Allow-Origin')).not.toBe('*');
+        expect(h.get('Access-Control-Allow-Origin')).not.toBe('*');
     });
 });
 
 describe('CORS_PREFLIGHT_HEADERS', () => {
     test('includes required preflight headers', () => {
-        expect(CORS_PREFLIGHT_HEADERS['Access-Practice-Allow-Methods']).toContain('GET');
-        expect(CORS_PREFLIGHT_HEADERS['Access-Practice-Allow-Methods']).toContain('POST');
-        expect(CORS_PREFLIGHT_HEADERS['Access-Practice-Allow-Methods']).toContain('DELETE');
-        expect(CORS_PREFLIGHT_HEADERS['Access-Practice-Allow-Headers']).toContain('Content-Type');
-        expect(CORS_PREFLIGHT_HEADERS['Access-Practice-Allow-Headers']).toContain('Authorization');
-        expect(CORS_PREFLIGHT_HEADERS['Access-Practice-Max-Age']).toBe('86400');
+        expect(CORS_PREFLIGHT_HEADERS['Access-Control-Allow-Methods']).toContain('GET');
+        expect(CORS_PREFLIGHT_HEADERS['Access-Control-Allow-Methods']).toContain('POST');
+        expect(CORS_PREFLIGHT_HEADERS['Access-Control-Allow-Methods']).toContain('DELETE');
+        expect(CORS_PREFLIGHT_HEADERS['Access-Control-Allow-Headers']).toContain('Content-Type');
+        expect(CORS_PREFLIGHT_HEADERS['Access-Control-Allow-Headers']).toContain('Authorization');
+        expect(CORS_PREFLIGHT_HEADERS['Access-Control-Max-Age']).toBe('86400');
     });
 });

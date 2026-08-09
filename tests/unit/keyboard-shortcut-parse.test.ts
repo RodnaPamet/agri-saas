@@ -86,10 +86,10 @@ describe('parseShortcut', () => {
         expect(p.modifiers.ctrl).toBe(false);
     });
 
-    it('resolves aliases: cmd→meta, opt→alt, practice→ctrl, return→enter', () => {
+    it('resolves aliases: cmd→meta, opt→alt, control→ctrl, return→enter', () => {
         expect(parseShortcut('cmd+k').modifiers.meta).toBe(true);
         expect(parseShortcut('opt+j').modifiers.alt).toBe(true);
-        expect(parseShortcut('practice+a').modifiers.ctrl).toBe(true);
+        expect(parseShortcut('control+a').modifiers.ctrl).toBe(true);
         expect(parseShortcut('return').key).toBe('enter');
     });
 

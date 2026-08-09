@@ -395,7 +395,7 @@ export function EntityDetailLayout<TKey extends string = string>({
                                 type="button"
                                 role="tab"
                                 aria-selected={isActive}
-                                aria-practices={`tabpanel-${t.key}`}
+                                aria-controls={`tabpanel-${t.key}`}
                                 disabled={t.disabled}
                                 className={cn(
                                     'px-5 py-2.5 text-base font-medium transition border-b-2 whitespace-nowrap',

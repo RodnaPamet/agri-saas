@@ -53,9 +53,9 @@ describe('CORS Middleware Logic', () => {
         const res = await middleware(req, {} as any);
 
         expect(res.status).toBe(204);
-        expect(res.headers.get('Access-Practice-Allow-Origin')).toBe('https://myapp.com');
-        expect(res.headers.get('Access-Practice-Allow-Credentials')).toBe('true');
-        expect(res.headers.get('Access-Practice-Allow-Methods')).toContain('OPTIONS');
+        expect(res.headers.get('Access-Control-Allow-Origin')).toBe('https://myapp.com');
+        expect(res.headers.get('Access-Control-Allow-Credentials')).toBe('true');
+        expect(res.headers.get('Access-Control-Allow-Methods')).toContain('OPTIONS');
     });
 
     it('should return default CORS preflight without specific Origin if disallowed', async () => {
@@ -66,7 +66,7 @@ describe('CORS Middleware Logic', () => {
 
         expect(res.status).toBe(204);
         // It does not echo the evil site for allow-origin
-        expect(res.headers.get('Access-Practice-Allow-Origin')).toBeNull();
+        expect(res.headers.get('Access-Control-Allow-Origin')).toBeNull();
     });
 
     it('should correctly handle localhost dynamically without env var in Dev', async () => {
@@ -76,7 +76,7 @@ describe('CORS Middleware Logic', () => {
         const res = await middleware(req, {} as any);
 
         expect(res.status).toBe(204);
-        expect(res.headers.get('Access-Practice-Allow-Origin')).toBe('http://localhost:3001');
+        expect(res.headers.get('Access-Control-Allow-Origin')).toBe('http://localhost:3001');
     });
 
     it('should append Vary and Allow-Origin to normal API GET requests from allowed origin', async () => {
@@ -86,9 +86,9 @@ describe('CORS Middleware Logic', () => {
         const res = await middleware(req, {} as any);
 
         // Next.js middleware passes through if auth passes
-        expect(res.headers.get('Access-Practice-Allow-Origin')).toBe('https://myapp.com');
+        expect(res.headers.get('Access-Control-Allow-Origin')).toBe('https://myapp.com');
         expect(res.headers.get('Vary')).toBe('Origin');
-        expect(res.headers.get('Access-Practice-Allow-Credentials')).toBe('true');
+        expect(res.headers.get('Access-Control-Allow-Credentials')).toBe('true');
     });
 
     it('should NOT append Allow-Origin to normal API GET responses for disallowed origin', async () => {
@@ -97,6 +97,6 @@ describe('CORS Middleware Logic', () => {
         const req = createMockRequest('GET', '/api/data', 'https://evilsite.com');
         const res = await middleware(req, {} as any);
 
-        expect(res.headers.get('Access-Practice-Allow-Origin')).toBeNull();
+        expect(res.headers.get('Access-Control-Allow-Origin')).toBeNull();
     });
 });
