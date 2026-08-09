@@ -16,7 +16,7 @@ version: 0.1.0
 # image tag in values.yaml and surfaced as
 # app.kubernetes.io/version on every rendered resource. Bump in
 # lock-step with package.json on each app release.
-appVersion: "1.111.0"
+appVersion: "1.112.0"
 
 kubeVersion: ">= 1.28.0"
 
