@@ -213,15 +213,17 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
             }>;
         },
     });
-    // While the counts are in flight, fall back to the loaded rows rather
-    // than flashing zeros — a momentary 0 reads as "you have no machines".
-    const totalAssets = kpiQuery.data?.total ?? assets.length;
-    const activeAssets =
-        kpiQuery.data?.active ?? assets.filter((a: any) => a.status === 'ACTIVE').length;
-    const criticalAssets =
-        kpiQuery.data?.critical ?? assets.filter((a: any) => a.criticality === 'HIGH').length;
-    const retiredAssets =
-        kpiQuery.data?.retired ?? assets.filter((a: any) => a.status === 'RETIRED').length;
+    // No client-side fallback: re-deriving these from the loaded rows is
+    // the very thing being removed, and it is what the
+    // no-client-side-filtering guardrail forbids. While the counts are in
+    // flight the cards render `null`, which the KPI tile shows as a
+    // placeholder — honest about "not known yet", where a 0 would assert
+    // "you have no machines".
+    const kpiLoaded = kpiQuery.data;
+    const totalAssets = kpiLoaded?.total ?? null;
+    const activeAssets = kpiLoaded?.active ?? null;
+    const criticalAssets = kpiLoaded?.critical ?? null;
+    const retiredAssets = kpiLoaded?.retired ?? null;
 
     // Sparkline data per KPI — cumulative count by `createdAt`, so each
     // tile shows how its current number was built up over time. Derived
@@ -482,7 +484,11 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
                         const cfg: Record<
                             string,
                             {
-                                value: number;
+                                // `null` while the server counts are in
+                                // flight — the tile renders a placeholder
+                                // rather than a 0 that would read as
+                                // "you have no machines".
+                                value: number | null;
                                 accent: 'indigo' | 'emerald' | 'rose' | 'slate';
                                 sparkline?: typeof assetTrends.total;
                             }
