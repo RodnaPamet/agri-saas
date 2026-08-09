@@ -17,7 +17,7 @@
  *   1. Accessibility — the inline shape omitted `aria-hidden="true"`
  *      so screen readers announced a literal "asterisk" before each
  *      required field. The `aria-required="true"` on the form
- *      practice is the canonical signal for assistive tech; the
+ *      control is the canonical signal for assistive tech; the
  *      visual asterisk is sighted-only and must be hidden from AT.
  *
  *   2. Visual rhythm — three flavours rendered in the codebase:

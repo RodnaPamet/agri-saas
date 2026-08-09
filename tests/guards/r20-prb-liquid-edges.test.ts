@@ -208,7 +208,7 @@ describe('R20-PR-B — Liquid edges', () => {
         });
     });
 
-    describe('form-practice parity — Input wired to controlEdge tokens', () => {
+    describe('form-control parity — Input wired to controlEdge tokens', () => {
         it('Input uses `--ctrl-edge-rest` for the rest border', () => {
             expect(INPUT).toMatch(/border-\[var\(--ctrl-edge-rest\)\]/);
         });
@@ -233,7 +233,7 @@ describe('R20-PR-B — Liquid edges', () => {
         });
     });
 
-    describe('form-practice parity — date-picker trigger wired to controlEdge tokens', () => {
+    describe('form-control parity — date-picker trigger wired to controlEdge tokens', () => {
         it('rest border uses `--ctrl-edge-rest`', () => {
             expect(DATE_TRIGGER).toMatch(/border-\[var\(--ctrl-edge-rest\)\]/);
         });

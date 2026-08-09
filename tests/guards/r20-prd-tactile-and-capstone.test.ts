@@ -176,7 +176,7 @@ describe('R20-PR-D — Tactile press', () => {
         });
     });
 
-    describe('enriched `--ctrl-edge-focus` — 3-stop form-practice focus', () => {
+    describe('enriched `--ctrl-edge-focus` — 3-stop form-control focus', () => {
         it('dark theme: 3 stops (brand ring + 2-stop ambient drop)', () => {
             const m = TOKENS.match(/:root \{[\s\S]*?--ctrl-edge-focus:\s*([^;]+);/);
             expect(m).toBeTruthy();

@@ -19,7 +19,7 @@
  *   3. Gap rhythm — lg's icon↔label gap widens from 8px to 10px
  *      so the airy-padded lg button doesn't look icon-cramped.
  *
- * Plus form-practice parity: `<Label>` carries the same md-tracking
+ * Plus form-control parity: `<Label>` carries the same md-tracking
  * as buttons so a focused input + its label share typographic
  * rhythm — the "expensive type" effect lands on the whole form row,
  * not just the buttons.
@@ -194,7 +194,7 @@ describe('R20-PR-C — Airy density + typography', () => {
         });
     });
 
-    describe('form-practice typographic parity — <Label> rhymes with button-md', () => {
+    describe('form-control typographic parity — <Label> rhymes with button-md', () => {
         it('<Label> carries the same `tracking-[-0.005em]` as button md', () => {
             expect(LABEL_TSX).toMatch(/tracking-\[-0\.005em\]/);
         });

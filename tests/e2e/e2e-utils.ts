@@ -126,7 +126,7 @@ export async function loginAndGetTenant(
     // Wait for the dev server to be ready — first navigation may trigger JIT compilation
     await safeGoto(page, '/login', { timeout: 90_000 });
 
-    // Scope every form-practice lookup to the primary credentials form so
+    // Scope every form-control lookup to the primary credentials form so
     // the resend-verification form rendered below it (separate email +
     // submit button) doesn't trigger Playwright strict-mode violations.
     // The `#credentials-form` anchor lives on the login page's primary

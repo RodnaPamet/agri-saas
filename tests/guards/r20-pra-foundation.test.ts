@@ -2,14 +2,14 @@
  * R20-PR-A — Liquid Elegance foundation ratchet.
  *
  * Roadmap-20 takes the R19 carbon button system three steps further:
- *   • PR-A — foundation: new tokens + form-practice parity scaffold.
+ *   • PR-A — foundation: new tokens + form-control parity scaffold.
  *   • PR-B — liquid edges: iridescent border + soft diffusion.
  *   • PR-C — airy density: padding scale + letter-spacing.
  *   • PR-D — tactile press: ambient shadow shift + capstone.
  *
  * PR-A's job is to land the LANGUAGE pieces — every following PR
  * consumes them. The token names, the gradient string shape, the
- * presence of a `control-variants.ts` scaffold for form-practice
+ * presence of a `control-variants.ts` scaffold for form-control
  * parity, the per-theme dark+light coverage — every following PR
  * builds on this surface, so we lock it structurally here. A
  * future "simplify" pass that strips an unused token would break
@@ -24,11 +24,11 @@
  *   3. An aura-wash token pair (primary + neutral) in both themes —
  *      pre-composed multi-stop box-shadow strings, consumed by
  *      PR-B as the `::after` halo for hover.
- *   4. Three form-practice parity edge tokens (rest / hover / focus)
+ *   4. Three form-control parity edge tokens (rest / hover / focus)
  *      in both themes.
  *   5. A `src/components/ui/control-variants.ts` file exporting
  *      `controlEdge`, `controlSize`, and a `controlVariants` cva.
- *      The practice sizing scale mirrors the button sizing scale so
+ *      The control sizing scale mirrors the button sizing scale so
  *      paired-row layouts (filter toolbar) align.
  */
 import * as fs from "node:fs";
@@ -117,7 +117,7 @@ describe("R20-PR-A — Liquid Elegance foundation", () => {
             // Focus must carry a brand ring stop PLUS the rest
             // drop's two stops, totalling 3 stops. R22-PR-B
             // tightened the ring from 4px → 3px to match the
-            // form-practice `--ctrl-edge-focus` shape — focused
+            // form-control `--ctrl-edge-focus` shape — focused
             // button + focused input now wear the same halo
             // geometry.
             for (const block of [DARK, LIGHT]) {
@@ -170,7 +170,7 @@ describe("R20-PR-A — Liquid Elegance foundation", () => {
         });
     });
 
-    describe("form-practice parity edge tokens — both themes", () => {
+    describe("form-control parity edge tokens — both themes", () => {
         for (const token of [
             "--ctrl-edge-rest",
             "--ctrl-edge-hover",
@@ -198,7 +198,7 @@ describe("R20-PR-A — Liquid Elegance foundation", () => {
             expect(CONTROL_VARIANTS).toMatch(/export\s+const\s+controlVariants\s*=\s*cva\(/);
         });
 
-        it("`controlEdge` wires the three R20 practice tokens", () => {
+        it("`controlEdge` wires the three R20 control tokens", () => {
             const m = CONTROL_VARIANTS.match(
                 /export\s+const\s+controlEdge\s*=\s*\[([\s\S]*?)\];/,
             );

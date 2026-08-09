@@ -8,7 +8,7 @@
  * so with no explicit label the name was *the selected option's label*.
  * Two concrete harms:
  *
- *   1. A screen-reader user hears a practice whose name changes as they
+ *   1. A screen-reader user hears a control whose name changes as they
  *      use it, and never hears the author's intended label. WAI-ARIA is
  *      explicit that a combobox's NAME comes from its label while its
  *      VALUE is conveyed separately (trigger content / aria-expanded).
@@ -17,7 +17,7 @@
  *      label instead of by role+name.
  *
  * The fix threads `aria-labelledby` from `<FormField>`'s visible label
- * (FormField already owns the label↔practice id wiring for `htmlFor` /
+ * (FormField already owns the label↔control id wiring for `htmlFor` /
  * `aria-describedby`). The `aria-label` fallback that guarantees axe's
  * `button-name` rule stays intact as the LAST resort — the tests at the
  * bottom of this file lock that in.
