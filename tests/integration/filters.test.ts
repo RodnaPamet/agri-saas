@@ -270,9 +270,9 @@ describe('WorkItemRepository._buildWhere', () => {
         await WorkItemRepository.list(mockDb, ctx, { status: ['IN_PROGRESS'], priority: 'P0', assigneeUserId: ['user-5'] });
 
         const where = mockFindMany.mock.calls[0][0].where;
-        expect(where.status).toBe('IN_PROGRESS');
+        expect(where.status).toEqual({ in: ['IN_PROGRESS'] });
         expect(where.priority).toBe('P0');
-        expect(where.assigneeUserId).toBe('user-5');
+        expect(where.assigneeUserId).toEqual({ in: ['user-5'] });
     });
 
     it('preserves explicit status when combined with due filter', async () => {
@@ -284,7 +284,7 @@ describe('WorkItemRepository._buildWhere', () => {
         await WorkItemRepository.list(mockDb, ctx, { status: ['OPEN'], due: 'overdue' });
 
         const where = mockFindMany.mock.calls[0][0].where;
-        expect(where.status).toBe('OPEN');
+        expect(where.status).toEqual({ in: ['OPEN'] });
         expect(where.dueAt).toBeDefined();
         expect(where.dueAt.lt).toBeInstanceOf(Date);
     });
@@ -298,7 +298,7 @@ describe('WorkItemRepository._buildWhere', () => {
         await WorkItemRepository.list(mockDb, ctx, { status: ['IN_PROGRESS'], due: 'next7d', q: 'urgent' });
 
         const where = mockFindMany.mock.calls[0][0].where;
-        expect(where.status).toBe('IN_PROGRESS');
+        expect(where.status).toEqual({ in: ['IN_PROGRESS'] });
         expect(where.dueAt).toBeDefined();
         expect(where.AND).toEqual([{
             OR: expect.arrayContaining([
