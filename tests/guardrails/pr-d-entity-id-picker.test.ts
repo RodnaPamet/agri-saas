@@ -41,7 +41,7 @@ describe('PR-D — entity-ID picker migration', () => {
             // migrated sites reference. Anchor on each literal so a
             // future "drop one" PR fails CI loudly.
             for (const kind of [
-                'CONTROL',
+                'PRACTICE',
                 'ASSET',
                 'EVIDENCE',
                 'VENDOR',

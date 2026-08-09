@@ -43,7 +43,7 @@ export interface AssignmentTarget {
 
 export type AssignmentNotificationKind =
     | 'TASK_ASSIGNED'
-    | 'CONTROL_ASSIGNED'
+    | 'PRACTICE_ASSIGNED'
     | 'RISK_ASSIGNED'
     | 'ASSET_ASSIGNED';
 
@@ -59,7 +59,7 @@ const COPY: Record<AssignmentNotificationKind, AssignmentCopy> = {
         body: (label) => `${label} is now yours.`,
         linkPath: (slug, id) => `/t/${slug}/farm-tasks/${id}`,
     },
-    CONTROL_ASSIGNED: {
+    PRACTICE_ASSIGNED: {
         title: 'You were assigned a practice',
         body: (label) => `${label} is now yours.`,
         linkPath: (slug, id) => `/t/${slug}/practices/${id}`,

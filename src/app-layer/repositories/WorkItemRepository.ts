@@ -99,7 +99,7 @@ export class WorkItemRepository {
     /**
      * Total + completed count of the unified tasks linked to a practice,
      * using the SAME where-shape the LinkedTasksPanel list renders
-     * (TaskLink with entityType=CONTROL OR the direct `Task.practiceId`
+     * (TaskLink with entityType=PRACTICE OR the direct `Task.practiceId`
      * FK). Backs the practice header's Tasks-tab badge + Overview
      * progress so they reflect the table — not the legacy `PracticeTask`
      * relation count, which diverged after the work-item unification.
@@ -114,7 +114,7 @@ export class WorkItemRepository {
         practiceId: string,
     ): Promise<{ total: number; done: number }> {
         const where = WorkItemRepository._buildWhere(ctx, {
-            linkedEntityType: 'CONTROL',
+            linkedEntityType: 'PRACTICE',
             linkedEntityId: practiceId,
         });
         const [total, done] = await Promise.all([
@@ -134,7 +134,7 @@ export class WorkItemRepository {
     /**
      * Batched version of `countLinkedToPractice` for the practices LIST.
      * Returns a `practiceId → { total, done }` map using the SAME
-     * linkage rule (TaskLink with entityType=CONTROL OR the direct
+     * linkage rule (TaskLink with entityType=PRACTICE OR the direct
      * `Task.practiceId` FK), deduped by task id so a task linked BOTH
      * ways counts once. Two indexed queries — NOT an N+1 over practices
      * — so the list-page Tasks column reflects the real linked-task
@@ -175,7 +175,7 @@ export class WorkItemRepository {
         const links = await db.taskLink.findMany({ // guardrail-allow: unbounded -- aggregate count, bounded by the practiceIds set
             where: {
                 tenantId: ctx.tenantId,
-                entityType: 'CONTROL' as TaskLinkEntityType,
+                entityType: 'PRACTICE' as TaskLinkEntityType,
                 entityId: { in: practiceIds },
             },
             select: {
@@ -308,7 +308,7 @@ export class WorkItemRepository {
                     },
                 },
             };
-            if (filters.linkedEntityType === 'CONTROL') {
+            if (filters.linkedEntityType === 'PRACTICE') {
                 // A task is linked to a practice via EITHER the generic
                 // TaskLink OR the direct `Task.practiceId` FK. The latter
                 // is what pack install and the task-create form set, and

@@ -361,7 +361,7 @@ export const UpdateAuditSchema = z.object({
 
 export const CreateTaskSchema = z.object({
     title: z.string().min(1).max(500),
-    type: z.enum(['AUDIT_FINDING', 'CONTROL_GAP', 'INCIDENT', 'IMPROVEMENT', 'TASK']).optional().default('TASK'),
+    type: z.enum(['AUDIT_FINDING', 'PRACTICE_GAP', 'INCIDENT', 'IMPROVEMENT', 'TASK']).optional().default('TASK'),
     description: z.string().max(10000).nullable().optional(),
     severity: z.enum(['INFO', 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL']).optional(),
     priority: z.enum(['P0', 'P1', 'P2', 'P3']).optional(),
@@ -378,7 +378,7 @@ export const CreateTaskSchema = z.object({
 export const UpdateTaskSchema = z.object({
     title: z.string().min(1).max(500).optional(),
     description: z.string().max(10000).nullable().optional(),
-    type: z.enum(['TASK', 'AUDIT_FINDING', 'CONTROL_GAP', 'INCIDENT', 'IMPROVEMENT']).optional(),
+    type: z.enum(['TASK', 'AUDIT_FINDING', 'PRACTICE_GAP', 'INCIDENT', 'IMPROVEMENT']).optional(),
     severity: z.enum(['INFO', 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL']).optional(),
     priority: z.enum(['P0', 'P1', 'P2', 'P3']).optional(),
     dueAt: z.string().nullable().optional(),
@@ -417,7 +417,7 @@ export const LinkAssetEvidenceSchema = z.object({
 });
 
 export const AddTaskLinkSchema = z.object({
-    entityType: z.enum(['CONTROL', 'FRAMEWORK_REQUIREMENT', 'ASSET', 'POLICY', 'EVIDENCE', 'FILE', 'AUDIT_PACK', 'VENDOR']),
+    entityType: z.enum(['PRACTICE', 'FRAMEWORK_REQUIREMENT', 'ASSET', 'POLICY', 'EVIDENCE', 'FILE', 'AUDIT_PACK', 'VENDOR']),
     entityId: z.string().min(1),
     relation: z.enum(['RELATES_TO', 'EVIDENCE_FOR', 'BLOCKED_BY', 'CAUSED_BY', 'MITIGATED_BY']).optional(),
 }).strip().openapi('TaskLinkAddRequest', {
@@ -577,7 +577,7 @@ export const SetVendorReviewSchema = z.object({
 }).strip();
 
 export const AddVendorLinkSchema = z.object({
-    entityType: z.enum(['ASSET', 'ISSUE', 'CONTROL']),
+    entityType: z.enum(['ASSET', 'ISSUE', 'PRACTICE']),
     entityId: z.string().min(1),
     relation: z.enum(['USES', 'STORES_DATA_FOR', 'PROVIDES_SERVICE_TO', 'MITIGATES', 'RELATED']).optional(),
 }).strip();

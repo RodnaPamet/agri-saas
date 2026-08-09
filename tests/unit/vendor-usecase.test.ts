@@ -481,7 +481,7 @@ describe('vendor links', () => {
 
     it('addVendorLink creates and returns', async () => {
         (VendorLinkRepository.create as jest.Mock).mockResolvedValue({ id: 'l-1' });
-        const res = await addVendorLink(editorCtx, 'v-1', { entityType: 'CONTROL' as any, entityId: 'c-1' });
+        const res = await addVendorLink(editorCtx, 'v-1', { entityType: 'PRACTICE' as any, entityId: 'c-1' });
         expect(res).toEqual({ id: 'l-1' });
     });
 

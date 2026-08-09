@@ -234,14 +234,14 @@ export async function setPracticeOwner(ctx: RequestContext, id: string, ownerUse
     });
     await bumpEntityCacheVersion(ctx, 'practice');
 
-    // PR-A 2026-05-27 — in-app CONTROL_ASSIGNED bell notification
+    // PR-A 2026-05-27 — in-app PRACTICE_ASSIGNED bell notification
     // for the new owner. Pre-PR-A the ownership transfer wrote
     // only an audit row; the new owner had no in-product alert.
     //
     // Runs AFTER the parent transaction commits, in its own short
     // `runInTenantContext` — a notification write must never roll
     // back the ownership change. Idempotent via the
-    // `(tenantId, CONTROL_ASSIGNED, practiceId, userId, date)`
+    // `(tenantId, PRACTICE_ASSIGNED, practiceId, userId, date)`
     // dedupeKey so rapid re-assigns within one day collapse to a
     // single bell entry. Fire-and-forget — logged + swallowed on
     // failure, never surfaces to the caller.
@@ -249,7 +249,7 @@ export async function setPracticeOwner(ctx: RequestContext, id: string, ownerUse
         const tenantSlug = ctx.tenantSlug;
         try {
             await runInTenantContext(ctx, (db) =>
-                createAssignmentNotification(db, 'CONTROL_ASSIGNED', {
+                createAssignmentNotification(db, 'PRACTICE_ASSIGNED', {
                     tenantId: ctx.tenantId,
                     assigneeUserId: ownerUserId,
                     entityId: id,

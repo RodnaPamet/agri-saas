@@ -21,7 +21,7 @@
  *                       empty-items reject + skipDuplicates accounting
  *   freezeAuditPack:    policy + not-found + already-frozen +
  *                       empty-pack reject + snapshot-per-entityType
- *                       (CONTROL/POLICY/EVIDENCE/ISSUE/default) +
+ *                       (PRACTICE/POLICY/EVIDENCE/ISSUE/default) +
  *                       transaction-timeout option propagation +
  *                       SoA best-effort attachment
  *   previewDefaultPack: policy + cycle-not-found + ISO27001 + NIS2 +
@@ -265,14 +265,14 @@ describe('addAuditPackItems', () => {
     it('throws notFound for a foreign pack id', async () => {
         mockTdb.auditPack.findFirst.mockResolvedValueOnce(null);
         await expect(
-            addAuditPackItems(ctx, 'p-foreign', [{ entityType: 'CONTROL', entityId: 'c-1' }]),
+            addAuditPackItems(ctx, 'p-foreign', [{ entityType: 'PRACTICE', entityId: 'c-1' }]),
         ).rejects.toThrow(/audit pack not found/i);
     });
 
     it('REJECTS adds to non-DRAFT pack (immutability gate)', async () => {
         mockTdb.auditPack.findFirst.mockResolvedValueOnce({ id: 'p-1', status: 'FROZEN' });
         await expect(
-            addAuditPackItems(ctx, 'p-1', [{ entityType: 'CONTROL', entityId: 'c-1' }]),
+            addAuditPackItems(ctx, 'p-1', [{ entityType: 'PRACTICE', entityId: 'c-1' }]),
         ).rejects.toThrow(/cannot add items to a frozen/i);
         expect(mockTdb.auditPackItem.createMany).not.toHaveBeenCalled();
     });
@@ -300,8 +300,8 @@ describe('addAuditPackItems', () => {
         mockTdb.auditPackItem.createMany.mockResolvedValueOnce({ count: 2 });
 
         const result = await addAuditPackItems(ctx, 'p-1', [
-            { entityType: 'CONTROL', entityId: 'c-1' },
-            { entityType: 'CONTROL', entityId: 'c-2' },
+            { entityType: 'PRACTICE', entityId: 'c-1' },
+            { entityType: 'PRACTICE', entityId: 'c-2' },
             { entityType: 'POLICY',  entityId: 'p-1' },
         ]);
 
@@ -314,7 +314,7 @@ describe('addAuditPackItems', () => {
         mockTdb.auditPack.findFirst.mockResolvedValueOnce({ id: 'p-1', status: 'DRAFT' });
         mockTdb.auditPackItem.createMany.mockResolvedValueOnce({ count: 1 });
 
-        await addAuditPackItems(ctx, 'p-1', [{ entityType: 'CONTROL', entityId: 'c-1' }]);
+        await addAuditPackItems(ctx, 'p-1', [{ entityType: 'PRACTICE', entityId: 'c-1' }]);
 
         const payload = mockTdb.auditPackItem.createMany.mock.calls[0][0].data;
         expect(payload[0].sortOrder).toBe(0);
@@ -350,7 +350,7 @@ describe('freezeAuditPack', () => {
         // The opts pass-through is load-bearing.
         mockTdb.auditPack.findFirst.mockResolvedValueOnce({
             id: 'p-1', status: 'DRAFT',
-            items: [{ id: 'i-1', entityType: 'CONTROL', entityId: 'c-1', snapshotJson: '{}' }],
+            items: [{ id: 'i-1', entityType: 'PRACTICE', entityId: 'c-1', snapshotJson: '{}' }],
         });
         mockTdb.practice.findFirst.mockResolvedValueOnce({
             id: 'c-1', code: 'CC1', name: 't', status: 'ACTIVE', tasks: [], evidence: [], requirementLinks: [],
@@ -371,7 +371,7 @@ describe('freezeAuditPack', () => {
         // payload at addItems time keeps that payload through freeze.
         mockTdb.auditPack.findFirst.mockResolvedValueOnce({
             id: 'p-1', status: 'DRAFT',
-            items: [{ id: 'i-1', entityType: 'CONTROL', entityId: 'c-1', snapshotJson: '{"pre":"baked"}' }],
+            items: [{ id: 'i-1', entityType: 'PRACTICE', entityId: 'c-1', snapshotJson: '{"pre":"baked"}' }],
         });
         mockTdb.auditPack.update.mockResolvedValueOnce({ id: 'p-1', status: 'FROZEN' });
         mockGetSoA.mockResolvedValueOnce({
@@ -386,10 +386,10 @@ describe('freezeAuditPack', () => {
         expect(mockTdb.auditPackItem.update).not.toHaveBeenCalled();
     });
 
-    it('builds CONTROL snapshots when item.entityType === CONTROL and snapshot was empty', async () => {
+    it('builds PRACTICE snapshots when item.entityType === PRACTICE and snapshot was empty', async () => {
         mockTdb.auditPack.findFirst.mockResolvedValueOnce({
             id: 'p-1', status: 'DRAFT',
-            items: [{ id: 'i-1', entityType: 'CONTROL', entityId: 'c-1', snapshotJson: '{}' }],
+            items: [{ id: 'i-1', entityType: 'PRACTICE', entityId: 'c-1', snapshotJson: '{}' }],
         });
         mockTdb.practice.findFirst.mockResolvedValueOnce({
             id: 'c-1', code: 'CC1', name: 'Practice Env', status: 'ACTIVE',
@@ -433,7 +433,7 @@ describe('freezeAuditPack', () => {
     });
 
     it('records error-shape snapshot when the entity was deleted/orphaned', async () => {
-        // A CONTROL/POLICY/EVIDENCE/ISSUE item whose source row is
+        // A PRACTICE/POLICY/EVIDENCE/ISSUE item whose source row is
         // gone (deleted between add + freeze) gets an explicit
         // error-shape snapshot rather than a thrown error — the
         // pack still freezes; the auditor sees the missing source.
@@ -621,7 +621,7 @@ describe('exportAuditPack', () => {
         mockTdb.auditPack.findFirst.mockResolvedValueOnce({
             id: 'p-1', name: 'X', status: 'FROZEN', frozenAt: new Date(),
             items: [
-                { entityType: 'CONTROL', entityId: 'c-1', sortOrder: 0, snapshotJson: '{"code":"CC1"}' },
+                { entityType: 'PRACTICE', entityId: 'c-1', sortOrder: 0, snapshotJson: '{"code":"CC1"}' },
             ],
             cycle: { name: 'Q3' },
             _count: {},
@@ -637,7 +637,7 @@ describe('exportAuditPack', () => {
         mockTdb.auditPack.findFirst.mockResolvedValueOnce({
             id: 'p-1', name: 'My Pack 2026', status: 'FROZEN', frozenAt: new Date(),
             items: [
-                { entityType: 'CONTROL', entityId: 'c-1', sortOrder: 0, snapshotJson: '{"code":"CC1","status":"ACTIVE"}' },
+                { entityType: 'PRACTICE', entityId: 'c-1', sortOrder: 0, snapshotJson: '{"code":"CC1","status":"ACTIVE"}' },
             ],
             cycle: {}, _count: {},
         });
@@ -647,7 +647,7 @@ describe('exportAuditPack', () => {
         // Each row column is quoted (covers embedded commas) — the
         // header row is `"Type","Entity ID","Name/Title",...`.
         expect(result.csv).toContain('"Type","Entity ID"');
-        expect(result.csv).toContain('"CONTROL"');
+        expect(result.csv).toContain('"PRACTICE"');
         expect(result.csv).toContain('"CC1"');
         // Filename is slugified — spaces become hyphens.
         expect(result.filename).toBe('My-Pack-2026-audit-pack.csv');

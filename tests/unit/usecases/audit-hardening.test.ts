@@ -254,7 +254,7 @@ describe('clonePackForRetest', () => {
             auditCycleId: 'cyc-1',
             name: 'Q4 Pack',
             items: [
-                { entityType: 'CONTROL', entityId: 'c1', sortOrder: 1 },
+                { entityType: 'PRACTICE', entityId: 'c1', sortOrder: 1 },
                 { entityType: 'FILE', entityId: 'f1', sortOrder: 2 },
                 { entityType: 'READINESS_REPORT', entityId: 'rep1', sortOrder: 3 },
                 { entityType: 'EVIDENCE', entityId: 'e1', sortOrder: 4 },
@@ -314,7 +314,7 @@ describe('clonePackForRetest', () => {
         // retest is a fresh capture.
         expect(types).not.toContain('FILE');
         expect(types).not.toContain('READINESS_REPORT');
-        expect(types).toContain('CONTROL');
+        expect(types).toContain('PRACTICE');
         expect(types).toContain('EVIDENCE');
         expect(types).toContain('ISSUE'); // auto-added retest issue
 
@@ -338,7 +338,7 @@ describe('clonePackForRetest', () => {
                     status: 'FROZEN',
                     auditCycleId: 'cyc-1',
                     name: 'Q4',
-                    items: [{ entityType: 'CONTROL', entityId: 'c1', sortOrder: 1 }],
+                    items: [{ entityType: 'PRACTICE', entityId: 'c1', sortOrder: 1 }],
                 }) as never,
             )
             .mockImplementationOnce(async (_ctx, fn) =>

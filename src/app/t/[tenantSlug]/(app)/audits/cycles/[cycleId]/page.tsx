@@ -55,7 +55,7 @@ export default function CycleDetailPage() {
             if (preview?.selection) {
                 const items: any[] = [];
                 const sel = preview.selection;
-                sel.practices?.ids?.forEach((id: string, i: number) => items.push({ entityType: 'CONTROL', entityId: id, sortOrder: i }));
+                sel.practices?.ids?.forEach((id: string, i: number) => items.push({ entityType: 'PRACTICE', entityId: id, sortOrder: i }));
                 sel.policies?.ids?.forEach((id: string, i: number) => items.push({ entityType: 'POLICY', entityId: id, sortOrder: 100 + i }));
                 sel.evidence?.ids?.forEach((id: string, i: number) => items.push({ entityType: 'EVIDENCE', entityId: id, sortOrder: 200 + i }));
                 sel.issues?.ids?.forEach((id: string, i: number) => items.push({ entityType: 'ISSUE', entityId: id, sortOrder: 300 + i }));

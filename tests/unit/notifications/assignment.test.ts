@@ -6,7 +6,7 @@
  *
  *   1. dedupeKey shape: `{tenantId}:{TYPE}:{entityId}:{userId}:{YYYY-MM-DD}`.
  *   2. duplicate calls within one day collapse (skipDuplicates).
- *   3. TASK_ASSIGNED and CONTROL_ASSIGNED point at the right
+ *   3. TASK_ASSIGNED and PRACTICE_ASSIGNED point at the right
  *      tenant-scoped detail-page URL.
  */
 
@@ -40,7 +40,7 @@ describe('buildAssignmentDedupeKey', () => {
         );
     });
 
-    it('different KIND produces different key (so TASK + CONTROL of the same id don\'t collide)', () => {
+    it('different KIND produces different key (so TASK + PRACTICE of the same id don\'t collide)', () => {
         const taskKey = buildAssignmentDedupeKey(
             'tenant-1',
             'TASK_ASSIGNED',
@@ -50,7 +50,7 @@ describe('buildAssignmentDedupeKey', () => {
         );
         const practiceKey = buildAssignmentDedupeKey(
             'tenant-1',
-            'CONTROL_ASSIGNED',
+            'PRACTICE_ASSIGNED',
             'entity-1',
             'user-1',
             new Date('2026-05-27T10:30:00Z'),
@@ -118,16 +118,16 @@ describe('createAssignmentNotification', () => {
         expect(args.skipDuplicates).toBe(true);
     });
 
-    it('writes type=CONTROL_ASSIGNED with the tenant-scoped /practices deep link', async () => {
+    it('writes type=PRACTICE_ASSIGNED with the tenant-scoped /practices deep link', async () => {
         createManyMock.mockResolvedValueOnce({ count: 1 });
         await createAssignmentNotification(
             db as never,
-            'CONTROL_ASSIGNED',
+            'PRACTICE_ASSIGNED',
             makeTarget({ entityId: 'ctrl-X', tenantSlug: 'acme' }),
         );
         const args = createManyMock.mock.calls[0][0];
         const row = args.data[0];
-        expect(row.type).toBe('CONTROL_ASSIGNED');
+        expect(row.type).toBe('PRACTICE_ASSIGNED');
         expect(row.linkUrl).toBe('/t/acme/practices/ctrl-X');
     });
 
@@ -292,7 +292,7 @@ describe('createAssignmentNotification — SSE publish (2026-05-28 follow-up)', 
         createManyMock.mockResolvedValueOnce({ count: 1 });
         await createAssignmentNotification(
             db as never,
-            'CONTROL_ASSIGNED',
+            'PRACTICE_ASSIGNED',
             {
                 tenantId: 'tenant-1',
                 assigneeUserId: 'user-1',

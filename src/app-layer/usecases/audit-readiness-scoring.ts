@@ -8,7 +8,7 @@
  *   - Implementation (APPLIES practices IMPLEMENTED): 25%
  *   - Evidence (APPLIES practices with >=1 evidence): 25%
  *   - Task completion (penalty for overdue tasks): 10%
- *   - Issues (penalty for open CONTROL_GAP/AUDIT_FINDING): 5%
+ *   - Issues (penalty for open PRACTICE_GAP/AUDIT_FINDING): 5%
  *
  * NIS2 Directive weights:
  *   - Coverage (NIS2 requirements mapped to practices): 40%
@@ -221,7 +221,7 @@ export async function getReadinessHistory(
 // framework key without a hardcoded scoring profile. Uses three
 // dimensions only: coverage (% requirements mapped to APPLIES
 // practices), evidence (% mapped practices with ≥1 evidence), and
-// issues (penalty for open CONTROL_GAP / AUDIT_FINDING). Per-tenant
+// issues (penalty for open PRACTICE_GAP / AUDIT_FINDING). Per-tenant
 // `GENERIC` weight override is honoured.
 
 const GENERIC_WEIGHTS = { coverage: 0.5, evidence: 0.35, issues: 0.15 };
@@ -296,12 +296,12 @@ async function computeGenericReadiness(
             ? Math.round((withEvidence / mappedPractices.length) * 100)
             : 0;
 
-    // 3) Issues — penalty for open CONTROL_GAP / AUDIT_FINDING.
+    // 3) Issues — penalty for open PRACTICE_GAP / AUDIT_FINDING.
     const openIssues = await runInTenantContext(ctx, (tdb) =>
         tdb.task.count({
             where: {
                 tenantId: ctx.tenantId,
-                type: { in: ['CONTROL_GAP', 'AUDIT_FINDING'] },
+                type: { in: ['PRACTICE_GAP', 'AUDIT_FINDING'] },
                 status: {
                     notIn: TERMINAL_WORK_ITEM_STATUSES as readonly WorkItemStatus[] as WorkItemStatus[],
                 },
@@ -437,7 +437,7 @@ async function computeISO27001Readiness(ctx: RequestContext, cycle: AuditCycle):
             where: {
                 tenantId: ctx.tenantId,
                 status: { notIn: [...TERMINAL_WORK_ITEM_STATUSES] },
-                type: { in: ['CONTROL_GAP', 'AUDIT_FINDING'] },
+                type: { in: ['PRACTICE_GAP', 'AUDIT_FINDING'] },
             },
             select: { id: true, title: true, severity: true },
             take: 20,

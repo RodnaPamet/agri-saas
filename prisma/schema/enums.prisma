@@ -299,7 +299,7 @@ enum ReviewAction {
 
 enum WorkItemType {
   AUDIT_FINDING
-  CONTROL_GAP
+  PRACTICE_GAP
   INCIDENT
   IMPROVEMENT
   TASK
@@ -353,7 +353,7 @@ enum WorkItemSource {
 }
 
 enum TaskLinkEntityType {
-  CONTROL
+  PRACTICE
   FRAMEWORK_REQUIREMENT
   ASSET
   POLICY
@@ -508,10 +508,10 @@ enum NotificationType {
   // ownership transfers. Mirrors the TASK_ASSIGNED contract:
   // one in-app notification per (practice, new owner, day) pair,
   // routed to the bell. Email + SSE follow the same dedup.
-  CONTROL_ASSIGNED
+  PRACTICE_ASSIGNED
   // 2026-05-30 — fired by `updateRisk` / `updateAsset` when the
   // `ownerUserId` ("Assigned to") changes. Same one-per-(entity,
-  // owner, day) bell contract as CONTROL_ASSIGNED.
+  // owner, day) bell contract as PRACTICE_ASSIGNED.
   RISK_ASSIGNED
   ASSET_ASSIGNED
   // Fired by the `task-due-notification` job at 08:00 UTC. One
@@ -733,7 +733,7 @@ enum AssessmentStatus {
 enum VendorLinkEntityType {
   ASSET
   ISSUE
-  CONTROL
+  PRACTICE
 }
 
 enum VendorLinkRelation {
@@ -764,7 +764,7 @@ enum AuditorStatus {
 }
 
 enum AuditPackItemEntityType {
-  CONTROL
+  PRACTICE
   POLICY
   EVIDENCE
   FILE

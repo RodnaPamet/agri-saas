@@ -204,7 +204,7 @@ export interface CalendarEvent {
         | 'VENDOR'
         | 'VENDOR_DOCUMENT'
         | 'AUDIT_CYCLE'
-        | 'CONTROL'
+        | 'PRACTICE'
         | 'TASK'
         | 'RISK'
         | 'RISK_TREATMENT_PLAN'

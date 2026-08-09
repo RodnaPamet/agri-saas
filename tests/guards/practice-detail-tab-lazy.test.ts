@@ -59,7 +59,7 @@ describe('practice detail — tab-lazy page-data (#102 item 1)', () => {
         // the Asset + Risk Tasks tabs. The page-level CACHE_KEYS.practices.tasks
         // fetch was removed.
         expect(PAGE).toMatch(/tab === 'tasks' &&/);
-        expect(PAGE).toMatch(/<LinkedTasksPanel[\s\S]*?entityType="CONTROL"/);
+        expect(PAGE).toMatch(/<LinkedTasksPanel[\s\S]*?entityType="PRACTICE"/);
         expect(PAGE).not.toMatch(/CACHE_KEYS\.practices\.tasks/);
         // Evidence still uses a per-tab SWR key that's null until active.
         expect(PAGE).toMatch(

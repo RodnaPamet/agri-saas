@@ -292,7 +292,7 @@ describe('setPracticeOwner', () => {
 
         expect(createAssignmentNotification).toHaveBeenCalledTimes(1);
         const args = (createAssignmentNotification as jest.Mock).mock.calls[0];
-        expect(args[1]).toBe('CONTROL_ASSIGNED');
+        expect(args[1]).toBe('PRACTICE_ASSIGNED');
         expect(args[2]).toMatchObject({
             assigneeUserId: 'u-1',
             entityId: 'c-1',

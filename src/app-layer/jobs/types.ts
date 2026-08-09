@@ -63,7 +63,7 @@ export interface JobRunResult {
  * Used for downstream notification grouping.
  */
 export type MonitoredEntityType =
-    | 'CONTROL'
+    | 'PRACTICE'
     | 'EVIDENCE'
     | 'POLICY'
     | 'VENDOR'

@@ -9,7 +9,7 @@
  *   - title — required, min 1.
  *   - description — optional free text.
  *   - type — one of TASK / IMPROVEMENT / AUDIT_FINDING /
- *     CONTROL_GAP / INCIDENT.
+ *     PRACTICE_GAP / INCIDENT.
  *   - severity — one of LOW / MEDIUM / HIGH / CRITICAL.
  *   - priority — one of P0 / P1 / P2 / P3.
  *   - dueAt — optional `YYYY-MM-DD`.
@@ -35,7 +35,7 @@ export const NewTaskFormSchema = z.object({
         'TASK',
         'IMPROVEMENT',
         'AUDIT_FINDING',
-        'CONTROL_GAP',
+        'PRACTICE_GAP',
         'INCIDENT',
     ]),
     severity: z.enum(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']),

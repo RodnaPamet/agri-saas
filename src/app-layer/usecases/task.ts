@@ -24,12 +24,12 @@ import { getSlaStatus } from '../services/sla';
 
 // ─── Type-Specific Validation ───
 
-type TaskType = 'AUDIT_FINDING' | 'CONTROL_GAP' | 'INCIDENT' | 'IMPROVEMENT' | 'TASK';
+type TaskType = 'AUDIT_FINDING' | 'PRACTICE_GAP' | 'INCIDENT' | 'IMPROVEMENT' | 'TASK';
 
 /**
  * Validate type-specific relevance rules.
- * - AUDIT_FINDING / CONTROL_GAP: must have practiceId OR a link to CONTROL/FRAMEWORK_REQUIREMENT
- * - INCIDENT: must have practiceId OR a link to CONTROL/ASSET
+ * - AUDIT_FINDING / PRACTICE_GAP: must have practiceId OR a link to PRACTICE/FRAMEWORK_REQUIREMENT
+ * - INCIDENT: must have practiceId OR a link to PRACTICE/ASSET
  * - TASK / IMPROVEMENT: no additional requirement
  */
 async function validateTypeRelevance(
@@ -47,18 +47,18 @@ async function validateTypeRelevance(
     const links = await TaskLinkRepository.listByTask(db, ctx, taskId);
     const linkEntityTypes = links.map(l => l.entityType);
 
-    if (type === 'AUDIT_FINDING' || type === 'CONTROL_GAP') {
-        if (!linkEntityTypes.includes('CONTROL') && !linkEntityTypes.includes('FRAMEWORK_REQUIREMENT')) {
+    if (type === 'AUDIT_FINDING' || type === 'PRACTICE_GAP') {
+        if (!linkEntityTypes.includes('PRACTICE') && !linkEntityTypes.includes('FRAMEWORK_REQUIREMENT')) {
             throw badRequest(
-                `${type} tasks must have a practiceId or a link to CONTROL or FRAMEWORK_REQUIREMENT.`
+                `${type} tasks must have a practiceId or a link to PRACTICE or FRAMEWORK_REQUIREMENT.`
             );
         }
     }
 
     if (type === 'INCIDENT') {
-        if (!linkEntityTypes.includes('CONTROL') && !linkEntityTypes.includes('ASSET')) {
+        if (!linkEntityTypes.includes('PRACTICE') && !linkEntityTypes.includes('ASSET')) {
             throw badRequest(
-                'INCIDENT tasks must have a practiceId or a link to CONTROL or ASSET.'
+                'INCIDENT tasks must have a practiceId or a link to PRACTICE or ASSET.'
             );
         }
     }
@@ -148,7 +148,7 @@ export async function createTask(ctx: RequestContext, input: {
         if (type !== 'TASK' && type !== 'IMPROVEMENT') {
             // Only validate if practiceId is required and not provided
             // Links can't exist yet at creation time, so we only enforce practiceId here
-            if (!input.practiceId && (type === 'AUDIT_FINDING' || type === 'CONTROL_GAP' || type === 'INCIDENT')) {
+            if (!input.practiceId && (type === 'AUDIT_FINDING' || type === 'PRACTICE_GAP' || type === 'INCIDENT')) {
                 // Don't fail — allow creation; validation happens on status transitions
                 // Store a warning in metadataJson
             }

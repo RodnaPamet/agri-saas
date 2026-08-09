@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { jsonResponse } from '@/lib/api-response';
 
 const AddItemSchema = z.object({
-    entityType: z.enum(['VENDOR_DOCUMENT', 'ASSESSMENT', 'EVIDENCE', 'CONTROL']),
+    entityType: z.enum(['VENDOR_DOCUMENT', 'ASSESSMENT', 'EVIDENCE', 'PRACTICE']),
     entityId: z.string().min(1),
 }).strip();
 

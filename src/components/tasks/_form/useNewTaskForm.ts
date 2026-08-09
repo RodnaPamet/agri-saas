@@ -14,7 +14,7 @@
  *   - `findingSource` / `practiceGapType` — type-conditional
  *     metadata that lands in `metadataJson` only when set.
  *   - `validationMessage` — derived semantic gate
- *     (AUDIT_FINDING / CONTROL_GAP require a practice link;
+ *     (AUDIT_FINDING / PRACTICE_GAP require a practice link;
  *     INCIDENT requires an asset / practice link). Zod alone can't
  *     express this because the link list is sibling state, not a
  *     field of the form. The hook ANDs the validation message into
@@ -113,7 +113,7 @@ export function useNewTaskForm({
     const [pendingLinks, setPendingLinks] = useState<PendingLink[]>(
         initialPendingLinks ?? [],
     );
-    const [linkEntityType, setLinkEntityType] = useState('CONTROL');
+    const [linkEntityType, setLinkEntityType] = useState('PRACTICE');
     const [linkEntityId, setLinkEntityId] = useState('');
     const [extrasDirty, setExtrasDirty] = useState(false);
 
@@ -246,18 +246,18 @@ export function useNewTaskForm({
     };
 
     // Validation: certain types require a practice or link.
-    const needsPracticeOrLink = ['AUDIT_FINDING', 'CONTROL_GAP'].includes(
+    const needsPracticeOrLink = ['AUDIT_FINDING', 'PRACTICE_GAP'].includes(
         fields.type,
     );
     const needsAssetOrPractice = fields.type === 'INCIDENT';
     const hasPracticeOrLink =
         !!fields.practiceId ||
         pendingLinks.some((l) =>
-            ['CONTROL', 'FRAMEWORK_REQUIREMENT'].includes(l.entityType),
+            ['PRACTICE', 'FRAMEWORK_REQUIREMENT'].includes(l.entityType),
         );
     const hasAssetOrPractice =
         !!fields.practiceId ||
-        pendingLinks.some((l) => ['CONTROL', 'ASSET'].includes(l.entityType));
+        pendingLinks.some((l) => ['PRACTICE', 'ASSET'].includes(l.entityType));
 
     const validationMessage = (() => {
         if (needsPracticeOrLink && !hasPracticeOrLink) {

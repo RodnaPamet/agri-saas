@@ -55,7 +55,7 @@ const DOC_TYPE_FILTER_OPTIONS: ComboboxOption[] = [
 ];
 const VENDOR_LINK_TYPE_OPTIONS: ComboboxOption[] = [
     { value: 'ASSET', label: 'Asset' },
-    { value: 'ISSUE', label: 'Issue' }, { value: 'CONTROL', label: 'Practice' },
+    { value: 'ISSUE', label: 'Issue' }, { value: 'PRACTICE', label: 'Practice' },
 ];
 const VENDOR_LINK_RELATION_OPTIONS: ComboboxOption[] = [
     { value: 'RELATED', label: 'Related' }, { value: 'USES', label: 'Uses' },
@@ -644,7 +644,7 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
                             }}>{t('add')}</Button>
                         </div>
                     )}
-                    {['ASSET', 'ISSUE', 'CONTROL'].map(type => {
+                    {['ASSET', 'ISSUE', 'PRACTICE'].map(type => {
                         const typeLinks = links.filter((l: any) => l.entityType === type);
                         if (typeLinks.length === 0) return null;
                         return (

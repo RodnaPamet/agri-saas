@@ -33,7 +33,7 @@ import type { NewTaskFormFields, NewTaskFormReturn } from './useNewTaskForm';
 const TYPE_OPTIONS: ComboboxOption[] = [
     { value: 'TASK', label: 'Task' },
     { value: 'AUDIT_FINDING', label: 'Audit Finding' },
-    { value: 'CONTROL_GAP', label: 'Practice Gap' },
+    { value: 'PRACTICE_GAP', label: 'Practice Gap' },
     { value: 'INCIDENT', label: 'Incident' },
     { value: 'IMPROVEMENT', label: 'Improvement' },
 ];
@@ -51,7 +51,7 @@ const PRIORITY_OPTIONS: ComboboxOption[] = [
     { value: 'P3', label: 'P3 — Low' },
 ];
 const LINK_ENTITY_OPTIONS: ComboboxOption[] = [
-    { value: 'CONTROL', label: 'Practice' },
+    { value: 'PRACTICE', label: 'Practice' },
     { value: 'FRAMEWORK_REQUIREMENT', label: 'Framework Requirement' },
     { value: 'ASSET', label: 'Asset' },
     { value: 'EVIDENCE', label: 'Evidence' },
@@ -205,7 +205,7 @@ export function NewTaskFields({
                 <EntityPicker
                     id="task-practice-input"
                     tenantSlug={tenantSlug}
-                    entityType="CONTROL"
+                    entityType="PRACTICE"
                     value={form.fields.practiceId ?? ''}
                     onChange={(id) => form.setField('practiceId', id)}
                     placeholder={t('practicePlaceholder')}
@@ -214,7 +214,7 @@ export function NewTaskFields({
             </FormField>
 
             {(form.fields.type === 'AUDIT_FINDING' ||
-                form.fields.type === 'CONTROL_GAP') && (
+                form.fields.type === 'PRACTICE_GAP') && (
                 <div className="border-t border-border-default pt-4 space-y-default">
                     <Heading level={3}>{t('auditDetails')}</Heading>
                     <div className="grid grid-cols-2 gap-default">
@@ -239,7 +239,7 @@ export function NewTaskFields({
                                 caret
                             />
                         </FormField>
-                        {form.fields.type === 'CONTROL_GAP' && (
+                        {form.fields.type === 'PRACTICE_GAP' && (
                             <FormField label={t('practiceGapType')}>
                                 <Combobox
                                     id="gap-type-select"
@@ -293,7 +293,7 @@ export function NewTaskFields({
                                 ) ?? null
                             }
                             setSelected={(o) =>
-                                form.setLinkEntityType(o?.value ?? 'CONTROL')
+                                form.setLinkEntityType(o?.value ?? 'PRACTICE')
                             }
                             placeholder={t('entityTypePlaceholder')}
                             hideSearch

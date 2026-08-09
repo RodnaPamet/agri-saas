@@ -105,7 +105,7 @@ interface PracticeListItem {
     _count?: { practiceTasks?: number; evidenceLinks?: number };
     practiceTasks?: Array<{ status: string }>;
     /**
-     * Unified linked-task counts (TaskLink CONTROL link OR the
+     * Unified linked-task counts (TaskLink PRACTICE link OR the
      * `practiceId` FK), supplied by `listPractices`. The Tasks column
      * reads these — the legacy `_count.practiceTasks` / `practiceTasks[]`
      * counted the old PracticeTask relation and read 0/0 for unified
@@ -555,7 +555,7 @@ function PracticesPageInner({
 
     const taskStats = useCallback((c: PracticeListItem) => {
         // Unified linked-task counts from `listPractices` (TaskLink
-        // CONTROL link OR the practiceId FK). Falls back to the legacy
+        // PRACTICE link OR the practiceId FK). Falls back to the legacy
         // PracticeTask relation only if the new fields are absent (older
         // cached payload), so the column never regresses to a crash.
         const total = c.taskTotal ?? c._count?.practiceTasks ?? 0;

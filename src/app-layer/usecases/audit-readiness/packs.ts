@@ -225,7 +225,7 @@ export async function freezeAuditPack(ctx: RequestContext, packId: string) {
                 try {
                     if (!snapshot || snapshot === '{}') {
                         switch (item.entityType) {
-                            case 'CONTROL': snapshot = await createPracticeSnapshot(tdb, item.entityId, ctx.tenantId); break;
+                            case 'PRACTICE': snapshot = await createPracticeSnapshot(tdb, item.entityId, ctx.tenantId); break;
                             case 'POLICY': snapshot = await createPolicySnapshot(tdb, item.entityId, ctx.tenantId); break;
                             case 'EVIDENCE': snapshot = await createEvidenceSnapshot(tdb, item.entityId, ctx.tenantId); break;
                             case 'ISSUE': snapshot = await createIssueSnapshot(tdb, item.entityId, ctx.tenantId); break;

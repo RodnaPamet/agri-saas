@@ -3,7 +3,7 @@
  *
  * Locks the THREE structural commitments PR-D makes:
  *
- *   1. CONTROL IS EDGE-FIRST. The `practice` kind is intentionally
+ *   1. PRACTICE IS EDGE-FIRST. The `practice` kind is intentionally
  *      ABSENT from `NODE_TAXONOMY_ORDER` — the palette no longer
  *      offers a Practice stamp. The canonical entry point is the
  *      "Add practice" affordance on the edge selection.

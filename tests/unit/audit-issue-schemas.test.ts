@@ -17,9 +17,9 @@ describe('Audit Issue Schemas', () => {
             expect(result.success).toBe(true);
         });
 
-        it('accepts CONTROL_GAP type', () => {
+        it('accepts PRACTICE_GAP type', () => {
             const result = CreateIssueSchema.safeParse({
-                title: 'Gap 1', type: 'CONTROL_GAP',
+                title: 'Gap 1', type: 'PRACTICE_GAP',
             });
             expect(result.success).toBe(true);
         });

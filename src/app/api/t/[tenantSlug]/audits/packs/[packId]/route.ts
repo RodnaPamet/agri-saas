@@ -19,7 +19,7 @@ const UpdatePackSchema = z.object({
 
 const AddItemsSchema = z.object({
     items: z.array(z.object({
-        entityType: z.enum(['CONTROL', 'POLICY', 'EVIDENCE', 'FILE', 'ISSUE', 'READINESS_REPORT', 'FRAMEWORK_COVERAGE']),
+        entityType: z.enum(['PRACTICE', 'POLICY', 'EVIDENCE', 'FILE', 'ISSUE', 'READINESS_REPORT', 'FRAMEWORK_COVERAGE']),
         entityId: z.string().min(1),
         snapshotJson: z.string().optional(),
         sortOrder: z.number().int().optional(),

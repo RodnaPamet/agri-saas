@@ -12,7 +12,7 @@ import { cn } from '@/lib/cn';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 const ENTITY_ICON: Record<string, AppIconName> = {
-    CONTROL: 'practices', POLICY: 'policies', EVIDENCE: 'evidence', FILE: 'overview', ISSUE: 'warning',
+    PRACTICE: 'practices', POLICY: 'policies', EVIDENCE: 'evidence', FILE: 'overview', ISSUE: 'warning',
     READINESS_REPORT: 'dashboard', FRAMEWORK_COVERAGE: 'frameworks',
 };
 

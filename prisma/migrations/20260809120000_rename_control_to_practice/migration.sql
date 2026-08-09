@@ -145,3 +145,42 @@ ALTER TABLE "PracticeKeySequence" RENAME CONSTRAINT "ControlKeySequence_pkey" TO
 ALTER TABLE "PracticeRequirementLink" RENAME CONSTRAINT "ControlRequirementLink_pkey" TO "PracticeRequirementLink_pkey";
 ALTER TABLE "PracticeTask" RENAME CONSTRAINT "ControlTask_pkey" TO "PracticeTask_pkey";
 ALTER TABLE "ProcessEdgePractice" RENAME CONSTRAINT "ProcessEdgeControl_pkey" TO "ProcessEdgePractice_pkey";
+
+-- ── Data: the persisted permission domain ────────────────────────────
+--
+-- `PermissionSet` carries a `controls: {view,create,edit}` domain, and
+-- custom roles PERSIST it in `TenantCustomRole.permissionsJson`. The
+-- code side of this rename turned that domain into `practices`, and
+-- `parsePermissionsJson` fills any domain missing from the stored blob
+-- from the BASE ROLE's defaults — it does not error. So without this
+-- statement every custom role that tuned `controls` would silently snap
+-- back to its base role's practice permissions on the next request:
+-- an EDITOR-based role granted `create` would lose it, and a
+-- READER-based role denied `view` would gain it. No exception, no log,
+-- no failing test — just different answers to "may this user do that".
+--
+-- Renaming the key in place preserves each role's intent exactly.
+UPDATE "TenantCustomRole"
+   SET "permissionsJson" =
+         ("permissionsJson" - 'controls')
+         || jsonb_build_object('practices', "permissionsJson" -> 'controls')
+ WHERE jsonb_typeof("permissionsJson") = 'object'
+   AND "permissionsJson" ? 'controls';
+
+-- ── Enum VALUES ──────────────────────────────────────────────────────
+--
+-- `CONTROL` is a live value: TaskLink, VendorLink and AuditPackItem rows
+-- hold it today. Prisma renders an enum-member change as a type swap
+-- that casts every existing value through a new type — the shape used to
+-- REMOVE `RISK` earlier — which needs a pre-flight to clear or remap
+-- rows and fails outright on any it cannot cast.
+--
+-- `ALTER TYPE … RENAME VALUE` is the better tool for a rename: it is
+-- metadata-only, so every existing row follows the value implicitly with
+-- no rewrite, no cast, and no window in which a row holds a value its
+-- type does not accept.
+ALTER TYPE "TaskLinkEntityType"      RENAME VALUE 'CONTROL' TO 'PRACTICE';
+ALTER TYPE "VendorLinkEntityType"    RENAME VALUE 'CONTROL' TO 'PRACTICE';
+ALTER TYPE "AuditPackItemEntityType" RENAME VALUE 'CONTROL' TO 'PRACTICE';
+ALTER TYPE "WorkItemType"            RENAME VALUE 'CONTROL_GAP' TO 'PRACTICE_GAP';
+ALTER TYPE "NotificationType"        RENAME VALUE 'CONTROL_ASSIGNED' TO 'PRACTICE_ASSIGNED';

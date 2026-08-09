@@ -21,8 +21,8 @@
  *      for emitAutomationEvent — without this the automation payload
  *      can't drive transition-aware rules (e.g. "OPEN → IN_PROGRESS").
  *   4. validateTypeRelevance fires on RESOLVED/CLOSED transitions:
- *      AUDIT_FINDING / CONTROL_GAP without practiceId AND without a
- *      CONTROL / FRAMEWORK_REQUIREMENT link must be blocked.
+ *      AUDIT_FINDING / PRACTICE_GAP without practiceId AND without a
+ *      PRACTICE / FRAMEWORK_REQUIREMENT link must be blocked.
  *   5. createTask + assignTask enqueue an assignment notification
  *      (best-effort try/catch — never breaks the task op).
  *   6. Audit emit on every state change.
@@ -214,13 +214,13 @@ describe('setTaskStatus — fromStatus capture + validateTypeRelevance', () => {
         ).rejects.toThrow(/Task not found/);
     });
 
-    it('blocks RESOLVED for AUDIT_FINDING without practiceId AND without CONTROL/FRAMEWORK link', async () => {
+    it('blocks RESOLVED for AUDIT_FINDING without practiceId AND without PRACTICE/FRAMEWORK link', async () => {
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn({} as never));
         mockGetById.mockResolvedValueOnce({
             id: 't1', status: 'OPEN', type: 'AUDIT_FINDING', practiceId: null,
         } as never);
         mockLinkList.mockResolvedValueOnce([
-            { entityType: 'POLICY' }, // wrong type — not CONTROL / FRAMEWORK_REQUIREMENT
+            { entityType: 'POLICY' }, // wrong type — not PRACTICE / FRAMEWORK_REQUIREMENT
         ] as never);
 
         await expect(

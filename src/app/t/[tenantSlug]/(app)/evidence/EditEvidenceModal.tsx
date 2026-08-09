@@ -247,7 +247,7 @@ export function EditEvidenceModal({
                                 <EntityPicker
                                     id="edit-evidence-practice-input"
                                     tenantSlug={tenantSlug}
-                                    entityType="CONTROL"
+                                    entityType="PRACTICE"
                                     value={practiceId}
                                     onChange={(id) => {
                                         setPracticeId(id);

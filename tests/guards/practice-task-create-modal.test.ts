@@ -9,8 +9,8 @@
  * endpoint that wrote a separate `PracticeTask` row — invisible to the
  * global Tasks list and a different (3-field) modal than every other
  * surface. 2026-05-30 unified all task creation: the Tasks tab now
- * mounts the shared `<LinkedTasksPanel entityType="CONTROL">`, which
- * opens the canonical `<NewTaskModal>` (preset with a CONTROL TaskLink)
+ * mounts the shared `<LinkedTasksPanel entityType="PRACTICE">`, which
+ * opens the canonical `<NewTaskModal>` (preset with a PRACTICE TaskLink)
  * and POSTs to `/tasks`. The wiring is locked here so a future refactor
  * can't silently fork the practice task-create flow again.
  *
@@ -30,18 +30,18 @@ const PAGE_PATH =
 describe("Practice task creation — unified through LinkedTasksPanel", () => {
     const src = () => read(PAGE_PATH);
 
-    it("Tasks tab mounts <LinkedTasksPanel entityType=\"CONTROL\"> with canWrite", () => {
+    it("Tasks tab mounts <LinkedTasksPanel entityType=\"PRACTICE\"> with canWrite", () => {
         const s = src();
         // The panel is the single create+list surface for practice
-        // tasks now. It must receive entityType CONTROL + the page's
+        // tasks now. It must receive entityType PRACTICE + the page's
         // write permission so the "+ Task" affordance shows for
         // editors and the created task links back to this practice.
         const block = s.slice(
-            s.indexOf("entityType=\"CONTROL\""),
-            s.indexOf("entityType=\"CONTROL\"") + 400,
+            s.indexOf("entityType=\"PRACTICE\""),
+            s.indexOf("entityType=\"PRACTICE\"") + 400,
         );
         expect(s).toMatch(/<LinkedTasksPanel\b/);
-        expect(s).toMatch(/entityType="CONTROL"/);
+        expect(s).toMatch(/entityType="PRACTICE"/);
         expect(block).toMatch(/canWrite=\{permissions\.canWrite\}/);
     });
 

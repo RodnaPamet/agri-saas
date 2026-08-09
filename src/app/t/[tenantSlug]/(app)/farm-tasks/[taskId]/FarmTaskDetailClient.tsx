@@ -57,7 +57,7 @@ import {
 // from a repointed deep-link. Farm-first: the header leads with the field-work
 // catalog type; severity / practice / audit fields only surface when the row
 // actually carries them.
-const ENTITY_TYPE_OPTIONS = ['CONTROL', 'ASSET', 'EVIDENCE', 'FRAMEWORK_REQUIREMENT', 'LOCATION', 'PARCEL', 'EQUIPMENT'];
+const ENTITY_TYPE_OPTIONS = ['PRACTICE', 'ASSET', 'EVIDENCE', 'FRAMEWORK_REQUIREMENT', 'LOCATION', 'PARCEL', 'EQUIPMENT'];
 const RELATION_OPTIONS = ['RELATES_TO', 'CAUSED_BY', 'MITIGATED_BY', 'EVIDENCE_FOR'];
 const SELECTABLE_STATUSES = ['OPEN', 'TRIAGED', 'IN_PROGRESS', 'BLOCKED', 'CLOSED', 'CANCELED'];
 // Statuses a task can legally move to RESOLVED from (BLOCKED must be unblocked
@@ -699,7 +699,7 @@ export function FarmTaskDetailClient({
                         )}
                     </div>
 
-                    {(task.type === 'AUDIT_FINDING' || task.type === 'CONTROL_GAP') && (metadata.findingSource || metadata.practiceGapType) && (
+                    {(task.type === 'AUDIT_FINDING' || task.type === 'PRACTICE_GAP') && (metadata.findingSource || metadata.practiceGapType) && (
                         <div className="border-t border-border-default pt-4 mt-4">
                             <Heading level={3} className="mb-3">{t('auditDetails')}</Heading>
                             <div className="grid grid-cols-2 gap-default">

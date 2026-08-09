@@ -5,7 +5,7 @@
  *
  * Mounts the P1-extracted `useNewTaskForm` hook + `<NewTaskFields>`
  * markup inside `<Modal>`. The hook owns the pending-links staging
- * buffer + the per-type validation (`AUDIT_FINDING` / `CONTROL_GAP`
+ * buffer + the per-type validation (`AUDIT_FINDING` / `PRACTICE_GAP`
  * requires a practice or link); the modal just chrome's it.
  *
  * Shared create-task modal, consumed by the calendar and the Epic-67

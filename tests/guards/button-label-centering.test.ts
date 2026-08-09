@@ -27,7 +27,7 @@
  *      primitive's centring. `w-full` menu/list buttons are carved
  *      out (left-aligned by convention).
  *
- *   3. CONTROL-STATUS TRIGGER — hugs its content (no fixed-width void).
+ *   3. PRACTICE-STATUS TRIGGER — hugs its content (no fixed-width void).
  *
  * Behavioural companion (asserts the DOM mechanism per prop shape):
  * tests/rendered/button-label-centering.test.tsx.

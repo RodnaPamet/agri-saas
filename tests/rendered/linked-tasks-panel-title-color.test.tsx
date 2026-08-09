@@ -46,7 +46,7 @@ describe('LinkedTasksPanel — task title color', () => {
         render(
             <LinkedTasksPanel
                 apiBase="/api/t/acme"
-                entityType="CONTROL"
+                entityType="PRACTICE"
                 entityId="c1"
                 tenantHref={(p) => p}
             />,
@@ -63,7 +63,7 @@ describe('LinkedTasksPanel — task title color', () => {
         render(
             <LinkedTasksPanel
                 apiBase="/api/t/acme/"
-                entityType="CONTROL"
+                entityType="PRACTICE"
                 entityId="c1"
                 tenantHref={(p) => p}
             />,
@@ -75,6 +75,6 @@ describe('LinkedTasksPanel — task title color', () => {
         // No `//tasks` double slash (which Next 308-redirects to an
         // absolute https URL and breaks over HTTP).
         expect(url).not.toContain('//tasks');
-        expect(url).toContain('/api/t/acme/tasks?linkedEntityType=CONTROL');
+        expect(url).toContain('/api/t/acme/tasks?linkedEntityType=PRACTICE');
     });
 });

@@ -659,7 +659,7 @@ async function main() {
                 data: {
                     tenantId: tenant.id,
                     auditPackId: seedPack.id,
-                    entityType: 'CONTROL',
+                    entityType: 'PRACTICE',
                     entityId: c.id,
                     snapshotJson: JSON.stringify({ id: c.id, annexId: c.annexId, name: c.name, status: c.status }),
                     sortOrder: i,

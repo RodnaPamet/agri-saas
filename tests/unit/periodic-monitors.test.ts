@@ -131,7 +131,7 @@ describe('classifyUrgency', () => {
 describe('DueItem contract', () => {
     test('all entity types are valid', () => {
         const validTypes: MonitoredEntityType[] = [
-            'CONTROL', 'EVIDENCE', 'POLICY', 'VENDOR', 'TASK', 'RISK', 'TEST_PLAN',
+            'PRACTICE', 'EVIDENCE', 'POLICY', 'VENDOR', 'TASK', 'RISK', 'TEST_PLAN',
         ];
         for (const type of validTypes) {
             expect(type).toBeTruthy();
@@ -147,7 +147,7 @@ describe('DueItem contract', () => {
 
     test('DueItem is fully JSON-serializable', () => {
         const item: DueItem = {
-            entityType: 'CONTROL',
+            entityType: 'PRACTICE',
             entityId: 'ctrl-123',
             tenantId: 'tenant-abc',
             name: 'Access Control Review',
@@ -223,7 +223,7 @@ describe('Deadline Monitor', () => {
         const { items } = await runDeadlineMonitor({ now });
 
         expect(items).toHaveLength(1);
-        expect(items[0].entityType).toBe('CONTROL');
+        expect(items[0].entityType).toBe('PRACTICE');
         expect(items[0].urgency).toBe('OVERDUE');
         expect(items[0].daysRemaining).toBeLessThan(0);
         expect(items[0].tenantId).toBe('tenant-1');
@@ -342,7 +342,7 @@ describe('Deadline Monitor', () => {
 
         expect(result.details).toBeDefined();
         const byEntity = result.details!.byEntity as Record<string, number>;
-        expect(byEntity.CONTROL).toBe(2);
+        expect(byEntity.PRACTICE).toBe(2);
         expect(byEntity.POLICY).toBe(1);
     });
 });

@@ -904,7 +904,7 @@ export default function PracticeDetailPage() {
                 <div className={cardVariants()} id="practice-tasks-tab">
                     <LinkedTasksPanel
                         apiBase={apiUrl('')}
-                        entityType="CONTROL"
+                        entityType="PRACTICE"
                         entityId={practiceId}
                         tenantHref={tenantHref}
                         canWrite={permissions.canWrite}

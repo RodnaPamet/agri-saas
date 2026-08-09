@@ -2,8 +2,8 @@
  * Unit Tests — Task Type-Specific Relevance Rules
  *
  * Tests that validateTypeRelevance() enforces:
- * - AUDIT_FINDING/CONTROL_GAP: must have practiceId or link to CONTROL/FRAMEWORK_REQUIREMENT
- * - INCIDENT: must have practiceId or link to CONTROL/ASSET
+ * - AUDIT_FINDING/PRACTICE_GAP: must have practiceId or link to PRACTICE/FRAMEWORK_REQUIREMENT
+ * - INCIDENT: must have practiceId or link to PRACTICE/ASSET
  * - TASK/IMPROVEMENT: no additional requirements
  */
 
@@ -36,10 +36,10 @@ describe('Task Type-Specific Relevance Rules', () => {
             expect(input.practiceId).toBeTruthy();
         });
 
-        test('is valid with CONTROL link (when no practiceId)', () => {
-            // A CONTROL link should satisfy the requirement
-            const link = { entityType: 'CONTROL', entityId: 'ctrl-2' };
-            expect(link.entityType).toBe('CONTROL');
+        test('is valid with PRACTICE link (when no practiceId)', () => {
+            // A PRACTICE link should satisfy the requirement
+            const link = { entityType: 'PRACTICE', entityId: 'ctrl-2' };
+            expect(link.entityType).toBe('PRACTICE');
         });
 
         test('is valid with FRAMEWORK_REQUIREMENT link (when no practiceId)', () => {
@@ -49,15 +49,15 @@ describe('Task Type-Specific Relevance Rules', () => {
         });
     });
 
-    describe('CONTROL_GAP type', () => {
+    describe('PRACTICE_GAP type', () => {
         test('is valid with practiceId', () => {
-            const input = { title: 'Gap in access control', type: 'CONTROL_GAP', practiceId: 'ctrl-3' };
+            const input = { title: 'Gap in access control', type: 'PRACTICE_GAP', practiceId: 'ctrl-3' };
             expect(input.practiceId).toBeTruthy();
         });
 
-        test('is valid with CONTROL link', () => {
-            const link = { entityType: 'CONTROL', entityId: 'ctrl-4' };
-            expect(link.entityType).toBe('CONTROL');
+        test('is valid with PRACTICE link', () => {
+            const link = { entityType: 'PRACTICE', entityId: 'ctrl-4' };
+            expect(link.entityType).toBe('PRACTICE');
         });
     });
 
@@ -67,9 +67,9 @@ describe('Task Type-Specific Relevance Rules', () => {
             expect(input.practiceId).toBeTruthy();
         });
 
-        test('is valid with CONTROL link', () => {
-            const link = { entityType: 'CONTROL', entityId: 'ctrl-6' };
-            expect(link.entityType).toBe('CONTROL');
+        test('is valid with PRACTICE link', () => {
+            const link = { entityType: 'PRACTICE', entityId: 'ctrl-6' };
+            expect(link.entityType).toBe('PRACTICE');
         });
 
         test('is valid with ASSET link', () => {
@@ -98,7 +98,7 @@ describe('Task Status Enum Values', () => {
 });
 
 describe('Task Type Enum Values', () => {
-    const VALID_TYPES = ['AUDIT_FINDING', 'CONTROL_GAP', 'INCIDENT', 'IMPROVEMENT', 'TASK'];
+    const VALID_TYPES = ['AUDIT_FINDING', 'PRACTICE_GAP', 'INCIDENT', 'IMPROVEMENT', 'TASK'];
 
     test('AUDIT_FINDING is a valid type', () => {
         expect(VALID_TYPES).toContain('AUDIT_FINDING');

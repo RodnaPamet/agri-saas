@@ -15,28 +15,28 @@ import * as path from 'node:path';
 const ROOT = path.resolve(__dirname, '../..');
 const read = (p: string) => fs.readFileSync(path.join(ROOT, p), 'utf8');
 
-const CONTROL = read('src/app/t/[tenantSlug]/(app)/practices/[practiceId]/page.tsx');
+const PRACTICE = read('src/app/t/[tenantSlug]/(app)/practices/[practiceId]/page.tsx');
 const ASSET = read('src/app/t/[tenantSlug]/(app)/assets/[id]/page.tsx');
 
 describe('B4 — Practice Tasks tab matches Asset/Risk', () => {
     it('Practice Tasks tab is a single card-wrapped LinkedTasksPanel', () => {
-        expect(CONTROL).toMatch(
+        expect(PRACTICE).toMatch(
             /tab === 'tasks'[\s\S]*?cardVariants\(\)[\s\S]*?<LinkedTasksPanel/,
         );
-        expect(CONTROL).toContain('id="practice-tasks-tab"');
+        expect(PRACTICE).toContain('id="practice-tasks-tab"');
     });
 
     it('the divergent legacy "Practice tasks" DataTable + flow are gone', () => {
-        expect(CONTROL).not.toContain('practice-tasks-table');
-        expect(CONTROL).not.toContain('Practice tasks (legacy)');
+        expect(PRACTICE).not.toContain('practice-tasks-table');
+        expect(PRACTICE).not.toContain('Practice tasks (legacy)');
         // the legacy declarations are gone (a removal comment may still name
         // them, so match the actual `const` declarations, not the bare word).
-        expect(CONTROL).not.toMatch(/const practiceTaskColumns/);
-        expect(CONTROL).not.toMatch(/const updateTaskStatus/);
+        expect(PRACTICE).not.toMatch(/const practiceTaskColumns/);
+        expect(PRACTICE).not.toMatch(/const updateTaskStatus/);
     });
 
     it('all three detail pages render LinkedTasksPanel for their Tasks tab', () => {
-        for (const src of [CONTROL, ASSET]) {
+        for (const src of [PRACTICE, ASSET]) {
             expect(src).toMatch(/<LinkedTasksPanel/);
         }
     });

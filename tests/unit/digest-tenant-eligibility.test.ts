@@ -51,7 +51,7 @@ import { dispatchDigest } from '../../src/app-layer/notifications/digest-dispatc
 
 function makeDueItem(overrides: Partial<DueItem> = {}): DueItem {
     return {
-        entityType: 'CONTROL',
+        entityType: 'PRACTICE',
         entityId: 'ctrl-1',
         tenantId: 'tenant-enabled',
         name: 'Firewall Review',

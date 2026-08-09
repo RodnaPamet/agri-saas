@@ -20,7 +20,7 @@
  * Six entity types are supported out of the box, matching the
  * union of task-link and vendor-link targets:
  *
- *   • CONTROL                — code + name
+ *   • PRACTICE                — code + name
  *   • ASSET                  — name
  *   • EVIDENCE               — title
  *   • VENDOR                 — name
@@ -50,7 +50,7 @@ type ComboboxButtonProps = ComponentProps<typeof Combobox>['buttonProps'] & {
 };
 
 export type EntityPickerKind =
-    | 'CONTROL'
+    | 'PRACTICE'
     | 'ASSET'
     | 'EVIDENCE'
     | 'VENDOR'
@@ -72,7 +72,7 @@ function rowsFromResponse(
     rows: ReadonlyArray<FetchedCandidate>,
 ): CandidateRow[] {
     switch (kind) {
-        case 'CONTROL':
+        case 'PRACTICE':
             return rows.map((r) => {
                 const prefix = (r.code as string) || '';
                 const name = (r.name as string) || '(untitled)';
@@ -140,7 +140,7 @@ async function fetchCandidates(
         : '';
     let url: string;
     switch (kind) {
-        case 'CONTROL':
+        case 'PRACTICE':
             url = `${base}/practices${qs}`;
             break;
         case 'ASSET':

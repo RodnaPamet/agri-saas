@@ -625,14 +625,14 @@ async function loadPracticeEvents(
             const date = r.nextDueAt as Date;
             const isDone = r.status === 'IMPLEMENTED';
             return {
-                id: `CONTROL:${r.id}:practice-review`,
+                id: `PRACTICE:${r.id}:practice-review`,
                 type: 'practice-review',
                 category: 'practice',
                 titleKey: 'practiceReview',
                 titleParams: { name: r.name },
                 date: date.toISOString(),
                 status: classifyStatus(date, now, isDone),
-                entityType: 'CONTROL',
+                entityType: 'PRACTICE',
                 entityId: r.id,
                 href: tenantHrefFromCtx(ctx, `/practices/${r.id}`),
                 ownerUserId: r.ownerUserId ?? undefined,

@@ -120,7 +120,7 @@ async function scanPractices(
         if (!classification) continue;
 
         items.push({
-            entityType: 'CONTROL',
+            entityType: 'PRACTICE',
             entityId: c.id,
             tenantId: c.tenantId,
             name: c.name,

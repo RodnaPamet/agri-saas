@@ -108,8 +108,8 @@ async function scanAuditCycles(
         const classified = classifyUrgency(r.periodEndAt, now, windows);
         if (!classified) continue;
         items.push({
-            entityType: 'CONTROL', // No CALENDAR-native entity type;
-            // re-use CONTROL bucket so the digest template renders. The
+            entityType: 'PRACTICE', // No CALENDAR-native entity type;
+            // re-use PRACTICE bucket so the digest template renders. The
             // entity type is informational only — the email shows
             // `name` + `reason` + `dueDate`.
             entityId: r.id,

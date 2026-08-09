@@ -66,7 +66,7 @@ import {
 
 function makeDueItem(overrides: Partial<DueItem> = {}): DueItem {
     return {
-        entityType: 'CONTROL',
+        entityType: 'PRACTICE',
         entityId: 'ctrl-1',
         tenantId: 'tenant-1',
         name: 'Firewall Review',

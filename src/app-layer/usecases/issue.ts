@@ -424,7 +424,7 @@ export async function listIssuesByPractice(ctx: RequestContext, practiceId: stri
     assertCanReadIssues(ctx);
     return runInTenantContext(ctx, async (db) => {
         const links = await db.taskLink.findMany({
-            where: { tenantId: ctx.tenantId, entityType: TaskLinkEntityType.CONTROL, entityId: practiceId },
+            where: { tenantId: ctx.tenantId, entityType: TaskLinkEntityType.PRACTICE, entityId: practiceId },
             include: {
                 task: {
                     include: {

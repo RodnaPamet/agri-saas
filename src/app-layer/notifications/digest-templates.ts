@@ -44,7 +44,7 @@ const URGENCY_LABEL: Record<DueItemUrgency, string> = {
 };
 
 const ENTITY_LABEL: Record<MonitoredEntityType, string> = {
-    CONTROL: 'Practice',
+    PRACTICE: 'Practice',
     EVIDENCE: 'Evidence',
     POLICY: 'Policy',
     VENDOR: 'Vendor',
@@ -56,7 +56,7 @@ const ENTITY_LABEL: Record<MonitoredEntityType, string> = {
 };
 
 const ENTITY_PATH: Record<MonitoredEntityType, string> = {
-    CONTROL: 'practices',
+    PRACTICE: 'practices',
     EVIDENCE: 'evidence',
     POLICY: 'policies',
     VENDOR: 'vendors',

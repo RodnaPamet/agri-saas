@@ -36,7 +36,7 @@ export async function listPractices(
                     filters,
                     options,
                 );
-                // Attach the unified linked-task counts (TaskLink CONTROL
+                // Attach the unified linked-task counts (TaskLink PRACTICE
                 // link OR the practiceId FK) so the list-page Tasks column
                 // matches the practice's Tasks tab — the legacy
                 // `_count.practiceTasks` read 0/0 for unified tasks.
@@ -102,7 +102,7 @@ export async function getPracticeHeader(ctx: RequestContext, id: string) {
         if (!practice) throw notFound('Practice not found');
         // The Tasks tab badge + Overview "Tasks Progress" must reflect
         // the unified Task rows the LinkedTasksPanel actually renders
-        // (TaskLink CONTROL link OR the direct practiceId FK), NOT the
+        // (TaskLink PRACTICE link OR the direct practiceId FK), NOT the
         // legacy `PracticeTask` relation — which `_count.practiceTasks`
         // and the old `practiceTask.count` measured. Those diverged from
         // the table after the work-item unification (#806).

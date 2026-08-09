@@ -281,7 +281,7 @@ describe('Audit Readiness', () => {
             const exportData = {
                 pack: { id: 'p1', name: 'ISO27001 Pack', status: 'FROZEN', frozenAt: '2025-01-01' },
                 cycle: { frameworkKey: 'ISO27001' },
-                items: [{ entityType: 'CONTROL', entityId: 'c1', snapshot: {} }],
+                items: [{ entityType: 'PRACTICE', entityId: 'c1', snapshot: {} }],
             };
             expect(exportData).toHaveProperty('pack');
             expect(exportData).toHaveProperty('cycle');

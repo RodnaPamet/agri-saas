@@ -3,12 +3,12 @@
  *
  * Bug: installing a framework pack creates tasks with the direct
  * `Task.practiceId` FK (no generic TaskLink row). The practice detail
- * page's "Tasks" tab lists tasks via `linkedEntityType=CONTROL`, which
+ * page's "Tasks" tab lists tasks via `linkedEntityType=PRACTICE`, which
  * the repository previously translated to a TaskLink-only filter — so
  * pack-installed tasks (practiceId set, no TaskLink) never appeared,
  * even though the task's OWN view shows the practice.
  *
- * Fix: for `linkedEntityType === 'CONTROL'`, match via TaskLink OR the
+ * Fix: for `linkedEntityType === 'PRACTICE'`, match via TaskLink OR the
  * `practiceId` FK. This test locks the where-clause shape (the
  * repository's filter is the single source of truth for "tasks linked
  * to a practice").
@@ -29,10 +29,10 @@ function whereOf(findMany: jest.Mock) {
 }
 
 describe('WorkItemRepository — practice-linked tasks', () => {
-    it('CONTROL link matches via TaskLink OR the practiceId FK', async () => {
+    it('PRACTICE link matches via TaskLink OR the practiceId FK', async () => {
         const { db, findMany } = mockDb();
         await WorkItemRepository.list(db, ctx, {
-            linkedEntityType: 'CONTROL',
+            linkedEntityType: 'PRACTICE',
             linkedEntityId: 'ctrl-1',
         });
         const where = whereOf(findMany);
@@ -44,7 +44,7 @@ describe('WorkItemRepository — practice-linked tasks', () => {
                 { practiceId: 'ctrl-1' },
                 {
                     links: {
-                        some: { entityType: 'CONTROL', entityId: 'ctrl-1' },
+                        some: { entityType: 'PRACTICE', entityId: 'ctrl-1' },
                     },
                 },
             ]),
@@ -91,7 +91,7 @@ describe('WorkItemRepository.countLinkedToPractice', () => {
         expect(totalOr.OR).toEqual(
             expect.arrayContaining([
                 { practiceId: 'ctrl-1' },
-                { links: { some: { entityType: 'CONTROL', entityId: 'ctrl-1' } } },
+                { links: { some: { entityType: 'PRACTICE', entityId: 'ctrl-1' } } },
             ]),
         );
 
