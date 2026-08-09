@@ -40,6 +40,15 @@ const CSP_ALLOWLIST = new Set([
     // calls funnel through the same DOMPurify allowlist; widening it
     // requires a security review.
     'app/t/[tenantSlug]/(app)/knowledge/[id]/page.tsx',
+    // W5 final task (2026-08-09) — the satellite-imagery guide renders
+    // the GLOBAL article's HTML body in place of its old hardcoded i18n
+    // text. Same defence-in-depth as the knowledge detail page above:
+    // sanitised server-side on write (`sanitizeRichTextHtml` in
+    // `scripts/rag/ingest-satellite-guide.ts`) AND client-side on render
+    // via `sanitizeRichTextHtml(...)` before `dangerouslySetInnerHTML`.
+    // Both calls funnel through the same DOMPurify allowlist; widening
+    // it requires a security review.
+    'app/t/[tenantSlug]/(app)/knowledge/satellite/page.tsx',
     // 2026-05-14 — CSP `strict-dynamic` webpack chunk loader bridge.
     // The root layout renders an inline <script nonce={nonce}> that
     // sets `__webpack_nonce__` so webpack stamps the same nonce on
