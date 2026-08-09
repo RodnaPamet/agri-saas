@@ -45,7 +45,6 @@ test.describe('Controls Center', () => {
         await authedPage.waitForLoadState('networkidle').catch(() => {});
         await authedPage.waitForSelector('h1', { timeout: 15000 });
         await expect(authedPage.locator('#new-control-btn')).toBeVisible({ timeout: 5000 });
-        await expect(authedPage.locator('#install-templates-btn')).toBeVisible();
         // R14 (#443) removed the FilterToolbar text-search input from every
         // list page — no `#control-search` element to assert.
         // Epic 53: the per-field `#control-status-filter` dropdown has been
@@ -201,8 +200,5 @@ test.describe('Controls Center', () => {
 
         // Reader should NOT see create buttons.
         await expect(page.locator('#new-control-btn')).not.toBeVisible({ timeout: 3000 });
-        await expect(page.locator('#install-templates-btn')).not.toBeVisible({
-            timeout: 3000,
-        });
     });
 });

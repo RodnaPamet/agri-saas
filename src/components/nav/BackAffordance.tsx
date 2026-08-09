@@ -42,7 +42,6 @@ const SECTION_LABELS: Record<string, string> = {
     '/calendar': 'calendar',
     '/clauses': 'clauses',
     '/controls': 'controls',
-    '/coverage': 'coverage',
     '/dashboard': 'dashboard',
     '/evidence': 'evidence',
     '/farm-tasks': 'farmTasks',

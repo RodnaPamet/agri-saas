@@ -97,18 +97,6 @@ const PARENT_MAP: Record<string, CanonicalParent> = {
     '/reports/soa/print': { href: '/reports/soa', label: 'soa' },
 
     // ── Risks ─────────────────────────────────────────────────────────
-    '/risks/[riskId]': { href: '/risks', label: 'risks' },
-    '/risks/ai': { href: '/risks', label: 'risks' },
-    '/risks/board': { href: '/risks', label: 'risks' },
-    '/risks/correlations': { href: '/risks', label: 'risks' },
-    '/risks/dashboard': { href: '/risks', label: 'risks' },
-    '/risks/hierarchy': { href: '/risks', label: 'risks' },
-    '/risks/import': { href: '/risks', label: 'risks' },
-    '/risks/kri': { href: '/risks', label: 'risks' },
-    '/risks/loss-events': { href: '/risks', label: 'risks' },
-    '/risks/new': { href: '/risks', label: 'risks' },
-    '/risks/reports': { href: '/risks', label: 'risks' },
-    '/risks/scenarios': { href: '/risks', label: 'risks' },
 
     // ── Tests ─────────────────────────────────────────────────────────
     '/tests/dashboard': { href: '/tests', label: 'tests' },

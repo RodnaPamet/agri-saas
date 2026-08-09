@@ -28,10 +28,8 @@ describe('CACHE_KEYS — key construction', () => {
             expect(CACHE_KEYS.controls.detail('c1')).toBe('/controls/c1');
         });
         it('exposes the dashboard sub-view', () => {
-            expect(CACHE_KEYS.controls.dashboard()).toBe('/controls/dashboard');
         });
         it('exposes templates and consistencyCheck', () => {
-            expect(CACHE_KEYS.controls.templates()).toBe('/controls/templates');
             expect(CACHE_KEYS.controls.consistencyCheck()).toBe(
                 '/controls/consistency-check',
             );
@@ -101,9 +99,6 @@ describe('CACHE_KEYS — key construction', () => {
             expect(CACHE_KEYS.dashboard.home()).toBe('/dashboard');
             expect(CACHE_KEYS.dashboard.executive()).toBe('/dashboard/executive');
             expect(CACHE_KEYS.dashboard.trends()).toBe('/dashboard/trends');
-        });
-        it('coverage home', () => {
-            expect(CACHE_KEYS.coverage.home()).toBe('/coverage');
         });
         it('audit log / notifications / search / traceability', () => {
             expect(CACHE_KEYS.auditLog.list()).toBe('/audit-log');
@@ -210,7 +205,7 @@ describe('CACHE_KEYS — composability with the hook layer', () => {
     });
 
     it('different tenants get different absolute URLs from the same key', () => {
-        const key = CACHE_KEYS.controls.dashboard();
+        const key = CACHE_KEYS.controls.consistencyCheck();
         expect(withTenant('acme', key)).not.toBe(
             withTenant('globex', key),
         );

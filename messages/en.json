@@ -263,7 +263,6 @@
         "kpiRetired": "Retired",
         "colCode": "Code",
         "colTasks": "Tasks",
-        "tooltipCoverage": "Coverage",
         "searchPlaceholder": "Search assets…",
         "noResultsTitle": "No assets match your filters",
         "noResultsDescription": "Try widening your search or clearing one of the active filters.",

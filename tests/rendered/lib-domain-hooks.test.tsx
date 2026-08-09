@@ -322,19 +322,6 @@ describe.each(DOMAINS)('$name hooks', (d) => {
     }
 });
 
-// ─── the one hook that breaks the pattern ────────────────────────────
-
-describe('useControlDashboard', () => {
-    it('reads the aggregate endpoint, not the collection', async () => {
-        // Controls is the only domain with a dashboard rollup, so it is the
-        // one function the table-driven pass above cannot reach.
-        renderHook(() => controls.useControlDashboard());
-
-        await waitFor(() => expect(mockApiGet).toHaveBeenCalled());
-        expect(mockApiGet.mock.calls[0][0]).toBe('/api/t/acme/controls/dashboard');
-    });
-});
-
 // ─── barrel ──────────────────────────────────────────────────────────
 
 describe('@/lib/hooks barrel', () => {
@@ -350,7 +337,6 @@ describe('@/lib/hooks barrel', () => {
     });
 
     it('re-exports the shared primitives', () => {
-        expect(typeof (barrel as unknown as HookModule).useControlDashboard).toBe('function');
         for (const key of ['useApi', 'useMutation', 'useTenantSWR', 'useTenantMutation', 'useKeyboardShortcut']) {
             expect(typeof (barrel as unknown as HookModule)[key]).toBe('function');
         }

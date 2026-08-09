@@ -18,7 +18,7 @@
  *
  *   - Every resource exposes `list()` and (where the API has a
  *     detail route) `detail(id)`. Sub-views are named methods
- *     beneath the resource (`controls.dashboard()`,
+ *     beneath the resource (`controls.consistencyCheck()`,
  *     `tasks.metrics()`, …) — never deeply nested objects, never
  *     a generic templating DSL.
  *
@@ -87,8 +87,6 @@ export const CACHE_KEYS = {
     // ─── Compliance core ─────────────────────────────────────────
     controls: {
         ...makeResource('controls'),
-        dashboard: () => '/controls/dashboard' as const,
-        templates: () => '/controls/templates' as const,
         consistencyCheck: () => '/controls/consistency-check' as const,
         /**
          * Combined detail-page payload — `/controls/{id}/page-data`
@@ -214,9 +212,6 @@ export const CACHE_KEYS = {
         ag: () => '/dashboard/ag' as const,
         // Farm-task "created vs completed" daily trend. Read by <TasksTrendCard>.
         taskTrend: () => '/dashboard/task-trend' as const,
-    },
-    coverage: {
-        home: () => '/coverage' as const,
     },
 
     // ─── Cross-cutting ──────────────────────────────────────────

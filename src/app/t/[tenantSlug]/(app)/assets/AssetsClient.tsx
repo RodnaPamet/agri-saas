@@ -2,7 +2,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useState, useMemo, useEffect } from 'react';
 import { useTranslations } from 'next-intl';
-import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { queryKeys } from '@/lib/queryKeys';
@@ -16,14 +15,12 @@ import {
 } from '@/components/ui/filter';
 import { FilterToolbar } from '@/components/filters/FilterToolbar';
 import { Tooltip } from '@/components/ui/tooltip';
-import { AppIcon } from '@/components/icons/AppIcon';
 import { ListPageShell } from '@/components/layout/ListPageShell';
 import { toApiSearchParams } from '@/lib/filters/url-sync';
 import { buildAssetFilters, ASSET_FILTER_KEYS } from './filter-defs';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { TableTitleCell } from '@/components/ui/table-title-cell';
-import { buttonVariants } from '@/components/ui/button-variants';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Heading } from '@/components/ui/typography';
 import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
@@ -437,13 +434,6 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
                         )}
                     </div>
                     <div className="flex gap-tight">
-                        {/* Coverage shield → the compliance coverage board.
-                            Hidden for a plain farm (assets-exoskeleton). */}
-                        {showCompliance && (
-                            <Tooltip content={tm('tooltipCoverage')}>
-                                <Link href={tenantHref('/coverage')} aria-label={tm('tooltipCoverage')} className={buttonVariants({ variant: 'secondary', size: 'icon' })}><AppIcon name="shield" size={16} /></Link>
-                            </Tooltip>
-                        )}
                         {/* B2 — in-page Trash. ADMIN-only (the includeDeleted
                             route + restore/purge are ADMIN-gated). */}
                         {permissions.canAdmin && (

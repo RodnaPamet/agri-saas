@@ -1057,23 +1057,8 @@ function ControlsPageInner({
                             outside the create-permission gate so READERs
                             can still glance at the asset → risk → control
                             flow. */}
-                        <Tooltip content={t('list.tooltipSankey')}>
-                            <Link href={tenantHref('/controls/sankey')} aria-label={t('list.tooltipSankey')} className={buttonVariants({ variant: 'secondary', size: 'icon' })} id="controls-sankey-btn">
-                                <AppIcon name="share" size={16} />
-                            </Link>
-                        </Tooltip>
                         {appPermissions.controls.create && (
                             <>
-                                <Tooltip content={t('list.tooltipDashboard')}>
-                                    <Link href={tenantHref('/controls/dashboard')} aria-label={t('list.tooltipDashboard')} className={buttonVariants({ variant: 'secondary', size: 'icon' })} id="controls-dashboard-btn">
-                                        <AppIcon name="dashboard" size={16} />
-                                    </Link>
-                                </Tooltip>
-                                <Tooltip content={t('list.tooltipTemplates')}>
-                                    <Link href={tenantHref('/controls/templates')} aria-label={t('list.tooltipTemplates')} className={buttonVariants({ variant: 'secondary', size: 'icon' })} id="install-templates-btn">
-                                        <AppIcon name="templates" size={16} />
-                                    </Link>
-                                </Tooltip>
                                 <Button
                                     variant="primary"
                                     icon={<Plus className="-ml-0.5 -mr-2.5" />}
@@ -1196,10 +1181,6 @@ function ControlsPageInner({
                         title={t('list.emptyTitle')}
                         description={t('list.emptyDesc')}
                         primaryAction={{
-                            label: t('list.installTemplates'),
-                            href: tenantHref('/controls/templates'),
-                        }}
-                        secondaryAction={{
                             label: t('list.createControl'),
                             onClick: () => setIsCreateOpen(true),
                         }}
