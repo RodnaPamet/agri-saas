@@ -16,6 +16,18 @@ export interface AssetFilters {
     q?: string;
 }
 
+/**
+ * Hard ceiling on the flat (non-cursor) asset list.
+ *
+ * The read was unbounded, so a tenant with thousands of machines shipped
+ * every row on every page load. Bounding it is only SAFE because the KPI
+ * cards no longer count the loaded rows — they come from
+ * `kpiCounts` over the whole filtered set, so capping the list can no
+ * longer make "Total" lie. The client compares `rows.length` against
+ * that total to tell the user when it is seeing a subset.
+ */
+export const ASSET_LIST_CAP = 1000;
+
 export interface AssetListParams {
     limit?: number;
     cursor?: string;
@@ -23,11 +35,17 @@ export interface AssetListParams {
 }
 
 export class AssetRepository {
-    static async list(db: PrismaTx, ctx: RequestContext, filters?: AssetFilters) {
+    static async list(
+        db: PrismaTx,
+        ctx: RequestContext,
+        filters?: AssetFilters,
+        options: { take?: number } = {},
+    ) {
         const where = AssetRepository._buildWhere(ctx, filters);
         return db.asset.findMany({
             where,
             orderBy: { createdAt: 'desc' },
+            take: options.take ?? ASSET_LIST_CAP,
             include: {
                 _count: { select: { controls: true } },
                 // B4 — resolve the structured assignee so the list Owner
@@ -150,6 +168,35 @@ export class AssetRepository {
 
         await db.asset.delete({ where: { id } });
         return true;
+    }
+
+    /**
+     * KPI counts for the /assets header cards, computed IN THE DATABASE
+     * over the whole filtered set.
+     *
+     * The client derived these from the loaded rows, which is correct
+     * only while the list is unbounded. The moment it pages, "Total"
+     * silently becomes "total on this page" — a wrong number that looks
+     * like a right one. Counting server-side is what makes bounding the
+     * list safe.
+     *
+     * The status/criticality cards are a BREAKDOWN of the current set, so
+     * each ignores its OWN facet: with status=ACTIVE selected, a Retired
+     * card reading 0 would imply the farm has no retired machines. Every
+     * other filter still applies.
+     */
+    static async kpiCounts(db: PrismaTx, ctx: RequestContext, filters?: AssetFilters) {
+        const where = AssetRepository._buildWhere(ctx, filters);
+        const { status: _status, criticality: _criticality, ...rest } = where;
+        const byStatus = { ...rest, ...(where.criticality ? { criticality: where.criticality } : {}) };
+        const byCriticality = { ...rest, ...(where.status ? { status: where.status } : {}) };
+        const [total, active, critical, retired] = await Promise.all([
+            db.asset.count({ where }),
+            db.asset.count({ where: { ...byStatus, status: 'ACTIVE' } }),
+            db.asset.count({ where: { ...byCriticality, criticality: 'HIGH' } }),
+            db.asset.count({ where: { ...byStatus, status: 'RETIRED' } }),
+        ]);
+        return { total, active, critical, retired };
     }
 
     // ─── Machine register (the retired `Equipment` model's job) ───────

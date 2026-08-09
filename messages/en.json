@@ -392,7 +392,8 @@
         "criticalityHIGH": "High",
         "filterTypeDesc": "What kind of machine, building or tool this is.",
         "statusLabel": "Status",
-        "criticalityLabel": "Criticality"
+        "criticalityLabel": "Criticality",
+        "listTruncated": "Showing the first {shown} of {total} machines. Refine the filters to narrow the list."
     },
     "controls": {
         "title": "Practices & Controls",

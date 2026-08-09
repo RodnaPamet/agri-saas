@@ -49,6 +49,16 @@ export async function listAssetsPaginated(ctx: RequestContext, params: AssetList
     );
 }
 
+/**
+ * KPI card counts for /assets, computed in the database over the whole
+ * filtered set rather than the loaded page. See
+ * `AssetRepository.kpiCounts` for the breakdown semantics.
+ */
+export async function getAssetKpiCounts(ctx: RequestContext, filters?: AssetFilters) {
+    assertCanRead(ctx);
+    return runInTenantContext(ctx, (db) => AssetRepository.kpiCounts(db, ctx, filters));
+}
+
 export async function getAsset(ctx: RequestContext, id: string) {
     assertCanRead(ctx);
     return runInTenantContext(ctx, async (db) => {
