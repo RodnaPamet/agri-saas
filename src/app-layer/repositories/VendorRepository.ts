@@ -6,9 +6,11 @@ import { validateVendorTags } from '../schemas/json-columns.schemas';
 import type { PaginatedResponse } from '@/lib/dto/pagination';
 
 export interface VendorFilters {
-    status?: string;
-    criticality?: string;
-    riskRating?: string;
+    // ARRAYS — these are multiple:true facets; a scalar let the
+    // comma-joined value reach Prisma as an enum equality (500).
+    status?: VendorStatus[];
+    criticality?: VendorCriticality[];
+    riskRating?: string[];
     reviewDue?: 'overdue' | 'next30d';
     q?: string;
 }
@@ -87,10 +89,16 @@ export class VendorRepository {
     private static _buildWhere(ctx: RequestContext, filters: VendorFilters = {}): Prisma.VendorWhereInput {
         const where: Prisma.VendorWhereInput = { tenantId: ctx.tenantId };
 
-        if (filters.status) where.status = filters.status as VendorStatus;
-        if (filters.criticality) where.criticality = filters.criticality as VendorCriticality;
-        if (filters.riskRating) {
-            where.assessments = { some: { riskRating: filters.riskRating as VendorCriticality } };
+        // Guarded on `.length`: a CLEARED facet must OMIT the filter — `{ in: [] }`
+        // matches nothing and would blank the table.
+        if (filters.status?.length) where.status = { in: filters.status };
+        if (filters.criticality?.length) where.criticality = { in: filters.criticality };
+        if (filters.riskRating?.length) {
+            // riskRating lives on the ASSESSMENT, not the vendor — the facet
+            // still multi-selects, so the nested filter takes `in` too.
+            where.assessments = {
+                some: { riskRating: { in: filters.riskRating as VendorCriticality[] } },
+            };
         }
         if (filters.q) {
             where.OR = [

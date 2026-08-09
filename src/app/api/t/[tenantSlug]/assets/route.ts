@@ -6,14 +6,21 @@ import { CreateAssetSchema } from '@/lib/schemas';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { z } from 'zod';
 import { normalizeQ } from '@/lib/filters/query-helpers';
+import { csvEnumField } from '@/lib/validation/query-params';
+import { AssetType, AssetStatus, Criticality } from '@prisma/client';
 import { jsonResponse } from '@/lib/api-response';
 
 const AssetQuerySchema = z.object({
     limit: z.coerce.number().int().min(1).max(100).optional(),
     cursor: z.string().optional(),
-    type: z.string().optional(),
-    status: z.string().optional(),
-    criticality: z.string().optional(),
+    // These three facets are `multiple: true` in filter-defs, and
+    // `toApiSearchParams` comma-joins a multi-select into ONE param. Read
+    // as a scalar they reached Prisma as the literal "TRACTOR,HARVESTER"
+    // and threw PrismaClientValidationError → 500. csvEnumField splits and
+    // validates every member (400 on a bad one) and yields an ARRAY.
+    type: csvEnumField(z.nativeEnum(AssetType)),
+    status: csvEnumField(z.nativeEnum(AssetStatus)),
+    criticality: csvEnumField(z.nativeEnum(Criticality)),
     q: z.string().optional().transform(normalizeQ),
     includeDeleted: z.enum(['true', 'false']).optional(),
 }).strip();

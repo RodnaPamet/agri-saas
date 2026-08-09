@@ -204,13 +204,13 @@ describe('VendorRepository — filter translation', () => {
     it('translates status and criticality straight through', async () => {
         // Break: mapping either to the wrong column.
         await VendorRepository.list(asTx(db), ctx, {
-            status: 'ACTIVE',
-            criticality: 'HIGH',
+            status: ['ACTIVE'],
+            criticality: ['HIGH'],
         });
 
         expect(whereOf(db.vendor.findMany)).toMatchObject({
-            status: 'ACTIVE',
-            criticality: 'HIGH',
+            status: { in: ['ACTIVE'] },
+            criticality: { in: ['HIGH'] },
         });
     });
 
@@ -218,10 +218,10 @@ describe('VendorRepository — filter translation', () => {
         // Break: applying riskRating to the Vendor row itself, where
         // the column does not exist — the filter would silently no-op
         // or throw at the database.
-        await VendorRepository.list(asTx(db), ctx, { riskRating: 'HIGH' });
+        await VendorRepository.list(asTx(db), ctx, { riskRating: ['HIGH'] });
 
         expect(whereOf(db.vendor.findMany)).toMatchObject({
-            assessments: { some: { riskRating: 'HIGH' } },
+            assessments: { some: { riskRating: { in: ['HIGH'] } } },
         });
     });
 
@@ -325,12 +325,12 @@ describe('VendorRepository — cursor pagination', () => {
 
         await VendorRepository.listPaginated(asTx(db), ctx, {
             cursor,
-            filters: { status: 'ACTIVE' },
+            filters: { status: ['ACTIVE'] },
         });
 
         const where = whereOf(db.vendor.findMany);
         expect(where.tenantId).toBe('tenant-1');
-        expect(where.status).toBe('ACTIVE');
+        expect(where.status).toEqual({ in: ['ACTIVE'] });
         expect(where.AND).toHaveLength(1);
         expect(where.AND[0]).toHaveProperty('OR');
     });

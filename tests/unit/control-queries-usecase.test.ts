@@ -142,9 +142,9 @@ describe('listControls', () => {
     it('forwards filters into the cache key', async () => {
         (ControlRepository.list as jest.Mock).mockResolvedValue([]);
         (WorkItemRepository.countLinkedToControls as jest.Mock).mockResolvedValue(new Map());
-        await listControls(readerCtx, { status: 'IMPLEMENTED', q: 'access' });
+        await listControls(readerCtx, { status: ['IMPLEMENTED'], q: 'access' });
         const cacheArgs = (cachedListRead as jest.Mock).mock.calls[0][0];
-        expect(cacheArgs.params).toEqual({ status: 'IMPLEMENTED', q: 'access' });
+        expect(cacheArgs.params).toEqual({ status: ['IMPLEMENTED'], q: 'access' });
     });
 });
 

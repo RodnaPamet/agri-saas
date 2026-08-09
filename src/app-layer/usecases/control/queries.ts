@@ -1,3 +1,4 @@
+import type { ControlStatus } from '@prisma/client';
 import { RequestContext } from '../../types';
 import { ControlRepository } from '../../repositories/ControlRepository';
 import { WorkItemRepository } from '../../repositories/WorkItemRepository';
@@ -13,7 +14,7 @@ import { cachedListRead } from '@/lib/cache/list-cache';
 export async function listControls(
     ctx: RequestContext,
     filters?: {
-        status?: string; applicability?: string; ownerUserId?: string; q?: string; category?: string;
+        status?: ControlStatus[]; applicability?: string; ownerUserId?: string[]; q?: string; category?: string[];
     },
     options: { take?: number } = {},
 ) {
@@ -56,7 +57,7 @@ export async function listControls(
 
 export async function listControlsPaginated(ctx: RequestContext, params: {
     limit?: number; cursor?: string;
-    filters?: { status?: string; applicability?: string; ownerUserId?: string; q?: string; category?: string };
+    filters?: { status?: ControlStatus[]; applicability?: string; ownerUserId?: string[]; q?: string; category?: string[] };
 }) {
     assertCanReadControls(ctx);
     return cachedListRead({

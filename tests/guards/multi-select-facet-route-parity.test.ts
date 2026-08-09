@@ -44,13 +44,8 @@ const API = join(ROOT, 'src/app/api/t/[tenantSlug]');
  * you fix its page — the "no stale entries" test below fails if you forget.
  */
 const KNOWN_UNFIXED: Readonly<Record<string, readonly string[]>> = {
-    assets: ['criticality', 'status', 'type'],
-    controls: ['category', 'ownerUserId', 'status'],
     'farm-tasks': ['assigneeUserId', 'status'],
     journal: ['crop', 'status', 'type'],
-    policies: ['category', 'status'],
-    risks: ['category', 'ownerUserId', 'status'],
-    vendors: ['criticality', 'riskRating', 'status'],
 };
 
 /** Pages whose facets are handled somewhere other than a sibling route.ts. */

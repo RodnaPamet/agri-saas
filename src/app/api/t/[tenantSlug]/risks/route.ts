@@ -6,6 +6,8 @@ import { withValidatedBody } from '@/lib/validation/route';
 import { CreateRiskSchema } from '@/lib/schemas';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { z } from 'zod';
+import { csvEnumField, csvIdField } from '@/lib/validation/query-params';
+import { RiskStatus } from '@prisma/client';
 import { normalizeQ } from '@/lib/filters/query-helpers';
 import { jsonResponse } from '@/lib/api-response';
 import { LIST_BACKFILL_CAP, applyBackfillCap } from '@/lib/list-backfill-cap';
@@ -14,11 +16,11 @@ import { recordListPageRowCount } from '@/lib/observability/list-page-metrics';
 const RiskQuerySchema = z.object({
     limit: z.coerce.number().int().min(1).max(100).optional(),
     cursor: z.string().optional(),
-    status: z.string().optional(),
+    status: csvEnumField(z.nativeEnum(RiskStatus)),
     scoreMin: z.coerce.number().int().min(0).optional(),
     scoreMax: z.coerce.number().int().min(0).optional(),
-    category: z.string().optional(),
-    ownerUserId: z.string().optional(),
+    category: csvIdField(),
+    ownerUserId: csvIdField(),
     q: z.string().optional().transform(normalizeQ),
     includeDeleted: z.enum(['true', 'false']).optional(),
 }).strip();

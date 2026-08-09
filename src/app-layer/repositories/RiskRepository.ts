@@ -6,11 +6,13 @@ import type { PaginatedResponse } from '@/lib/dto/pagination';
 import { traceRepository } from '@/lib/observability/repository-tracing';
 
 export interface RiskFilters {
-    status?: string;
+    // ARRAYS for the multiple:true facets — see the note in
+    // AssetRepository.AssetFilters; a scalar 500s the list.
+    status?: RiskStatus[];
     scoreMin?: number;
     scoreMax?: number;
-    category?: string;
-    ownerUserId?: string;
+    category?: string[];
+    ownerUserId?: string[];
     q?: string;
 }
 
@@ -108,14 +110,16 @@ export class RiskRepository {
     private static _buildWhere(ctx: RequestContext, filters: RiskFilters = {}): Prisma.RiskWhereInput {
         const where: Prisma.RiskWhereInput = { tenantId: ctx.tenantId };
 
-        if (filters.status) where.status = filters.status as RiskStatus;
+        // Guarded on `.length`: a CLEARED facet must OMIT the filter — `{ in: [] }`
+        // matches nothing and would blank the table.
+        if (filters.status?.length) where.status = { in: filters.status };
         if (filters.scoreMin !== undefined || filters.scoreMax !== undefined) {
             where.score = {};
             if (filters.scoreMin !== undefined) where.score.gte = filters.scoreMin;
             if (filters.scoreMax !== undefined) where.score.lte = filters.scoreMax;
         }
-        if (filters.category) where.category = filters.category;
-        if (filters.ownerUserId) where.ownerUserId = filters.ownerUserId;
+        if (filters.category?.length) where.category = { in: filters.category };
+        if (filters.ownerUserId?.length) where.ownerUserId = { in: filters.ownerUserId };
         if (filters.q) {
             where.OR = [
                 { title: { contains: filters.q, mode: 'insensitive' } },

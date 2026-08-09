@@ -97,11 +97,11 @@ describe('ControlRepository — the read tenant predicate', () => {
     it('keeps the tenant predicate when filters are also applied', async () => {
         // Break: building `where` from the filters and then forgetting to
         // seed it with the tenant arms — a filtered list would go global.
-        await ControlRepository.list(asTx(db), ctx, { status: 'IMPLEMENTED' });
+        await ControlRepository.list(asTx(db), ctx, { status: ['IMPLEMENTED'] });
 
         expect(whereOf(db.control.findMany)).toMatchObject({
             OR: [{ tenantId: 'tenant-1' }, { tenantId: null }],
-            status: 'IMPLEMENTED',
+            status: { in: ['IMPLEMENTED'] },
         });
     });
 });
@@ -109,13 +109,13 @@ describe('ControlRepository — the read tenant predicate', () => {
 describe('ControlRepository — list filters', () => {
     it('applies owner and category filters verbatim', async () => {
         await ControlRepository.list(asTx(db), ctx, {
-            ownerUserId: 'user-9',
-            category: 'Access Control',
+            ownerUserId: ['user-9'],
+            category: ['Access Control'],
         });
 
         expect(whereOf(db.control.findMany)).toMatchObject({
-            ownerUserId: 'user-9',
-            category: 'Access Control',
+            ownerUserId: { in: ['user-9'] },
+            category: { in: ['Access Control'] },
         });
     });
 
