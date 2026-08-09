@@ -49,7 +49,7 @@ describe('PR-A notification-assignment alert wiring', () => {
             expect(block).toMatch(/TASK_ASSIGNED/);
         });
 
-        it('migration directory exists for PRACTICE_ASSIGNED enum add', () => {
+        it('migration directory exists for the PRACTICE_ASSIGNED enum add', () => {
             const migrationDir = path.join(
                 ROOT,
                 'prisma/migrations/20260527160000_notif_control_assigned',
@@ -59,8 +59,28 @@ describe('PR-A notification-assignment alert wiring', () => {
                 path.join(migrationDir, 'migration.sql'),
                 'utf-8',
             );
+            // Applied history, asserted verbatim. This migration added the
+            // value under its ORIGINAL name; the Control→Practice rename
+            // renamed it in place afterwards (`ALTER TYPE … RENAME VALUE`,
+            // metadata-only). Rewriting an applied migration would change
+            // its checksum and break `migrate deploy` on every existing
+            // database — the value's CURRENT name is asserted against the
+            // live schema above, and the rename itself below.
             expect(sql).toMatch(
-                /ALTER TYPE "NotificationType" ADD VALUE IF NOT EXISTS 'PRACTICE_ASSIGNED'/,
+                /ALTER TYPE "NotificationType" ADD VALUE IF NOT EXISTS 'CONTROL_ASSIGNED'/,
+            );
+        });
+
+        it('the rename migration carries CONTROL_ASSIGNED → PRACTICE_ASSIGNED', () => {
+            const sql = readFileSync(
+                path.join(
+                    ROOT,
+                    'prisma/migrations/20260809120000_rename_control_to_practice/migration.sql',
+                ),
+                'utf-8',
+            );
+            expect(sql).toMatch(
+                /ALTER TYPE "NotificationType"\s+RENAME VALUE 'CONTROL_ASSIGNED' TO 'PRACTICE_ASSIGNED'/,
             );
         });
 

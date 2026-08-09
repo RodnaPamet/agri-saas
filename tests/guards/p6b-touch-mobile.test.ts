@@ -45,7 +45,7 @@ describe("Epic P6-PR-B — touch / mobile ergonomics", () => {
 
         it("widens the zoom practice buttons to the Apple HIG minimum (32px)", () => {
             expect(src).toMatch(
-                /\.react-flow__practices-button \{[\s\S]{0,200}width:\s*32px;[\s\S]{0,200}height:\s*32px;/,
+                /\.react-flow__controls-button \{[\s\S]{0,200}width:\s*32px;[\s\S]{0,200}height:\s*32px;/,
             );
         });
 

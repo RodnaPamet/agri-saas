@@ -89,16 +89,22 @@ describe('Asset Code column + Asset/Practice code generation', () => {
             );
         });
 
-        it('creates PracticeKeySequence with Class A RLS', () => {
-            expect(migration).toMatch(/CREATE TABLE "PracticeKeySequence"/);
+        // The practice counter was created under its ORIGINAL name and
+        // renamed in place later (see the rename assertions below).
+        // Applied migrations are asserted verbatim — rewriting one changes
+        // its checksum and breaks `migrate deploy` on every existing
+        // database. The table's CURRENT name is asserted against the live
+        // schema in the `Practice key sequence schema` block above.
+        it('creates the practice counter with Class A RLS', () => {
+            expect(migration).toMatch(/CREATE TABLE "ControlKeySequence"/);
             expect(migration).toMatch(
-                /CREATE POLICY tenant_isolation ON "PracticeKeySequence"/,
+                /CREATE POLICY tenant_isolation ON "ControlKeySequence"/,
             );
             expect(migration).toMatch(
-                /CREATE POLICY tenant_isolation_insert ON "PracticeKeySequence"/,
+                /CREATE POLICY tenant_isolation_insert ON "ControlKeySequence"/,
             );
             expect(migration).toMatch(
-                /CREATE POLICY superuser_bypass ON "PracticeKeySequence"/,
+                /CREATE POLICY superuser_bypass ON "ControlKeySequence"/,
             );
         });
 
@@ -107,7 +113,16 @@ describe('Asset Code column + Asset/Practice code generation', () => {
                 /ALTER TABLE "AssetKeySequence" FORCE ROW LEVEL SECURITY/,
             );
             expect(migration).toMatch(
-                /ALTER TABLE "PracticeKeySequence" FORCE ROW LEVEL SECURITY/,
+                /ALTER TABLE "ControlKeySequence" FORCE ROW LEVEL SECURITY/,
+            );
+        });
+
+        it('the rename migration carries the counter table to its new name', () => {
+            const rename = read(
+                'prisma/migrations/20260809120000_rename_control_to_practice/migration.sql',
+            );
+            expect(rename).toMatch(
+                /ALTER TABLE "ControlKeySequence"\s+RENAME TO "PracticeKeySequence"/,
             );
         });
 

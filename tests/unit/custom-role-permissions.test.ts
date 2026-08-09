@@ -55,8 +55,8 @@ describe('getPermissionsForRole', () => {
             // so the shape is asserted exhaustively rather than by subset.
             // `risks` left it with the risk register: 12 → 11.
             expect(Object.keys(perms).sort()).toEqual([
-                'admin', 'audits', 'practices', 'evidence', 'frameworks',
-                'knowledge', 'policies', 'reports', 'tasks', 'tests',
+                'admin', 'audits', 'evidence', 'frameworks', 'knowledge',
+                'policies', 'practices', 'reports', 'tasks', 'tests',
                 'vendors',
             ]);
         }

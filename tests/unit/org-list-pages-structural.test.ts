@@ -154,7 +154,7 @@ describe('Epic O-4 — cross-tenant list pages structural contract', () => {
     it('the pages collectively cover the spec entities', () => {
         // Was four; `risks` went with the risk register.
         const names = PAGES.map((p) => p.name).sort();
-        expect(names).toEqual(['practices', 'evidence', 'tenants']);
+        expect(names).toEqual(['evidence', 'practices', 'tenants']);
     });
 
     it('every cross-tenant list resourceName is plural-aware', () => {

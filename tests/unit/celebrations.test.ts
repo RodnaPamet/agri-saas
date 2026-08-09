@@ -48,10 +48,10 @@ describe('MILESTONES registry', () => {
         expect(Object.keys(MILESTONES).sort()).toEqual([
             'audit-pack-complete',
             'evidence-all-current',
-            'first-practice-mapped',
             // feat/delight-celebrations — agriculture milestones.
             'first-field-mapped',
             'first-harvest',
+            'first-practice-mapped',
             'framework-100',
             'inspection-passed',
             'season-closed',

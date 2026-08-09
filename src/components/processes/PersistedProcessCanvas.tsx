@@ -2378,7 +2378,7 @@ function Inner({
                             Zoom-button icon + surface colours come
                             from `globals.css` `[data-process-canvas]`
                             overrides that wire xyflow's
-                            `--xy-practices-button-*` cascade through
+                            `--xy-controls-button-*` cascade through
                             to the canvas-frame token suite, so the
                             buttons read on both light and dark
                             themes. */}
