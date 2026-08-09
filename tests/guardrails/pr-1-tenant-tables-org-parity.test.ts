@@ -107,12 +107,9 @@ describe('PR-1 — tenant tables → org-level parity', () => {
         });
     });
 
-    describe('Tenant rollouts — Controls / Risks / Evidence', () => {
+    describe('Tenant rollouts — Controls / Evidence', () => {
         const controls = read(
             'src/app/t/[tenantSlug]/(app)/controls/ControlsClient.tsx',
-        );
-        const risks = read(
-            'src/app/t/[tenantSlug]/(app)/risks/RisksClient.tsx',
         );
         const evidence = read(
             'src/app/t/[tenantSlug]/(app)/evidence/EvidenceClient.tsx',
@@ -120,7 +117,6 @@ describe('PR-1 — tenant tables → org-level parity', () => {
 
         const rollouts = [
             { name: 'ControlsClient', src: controls, testId: 'tenant-controls-load-more', sortKey: 'code' },
-            { name: 'RisksClient',    src: risks,    testId: 'tenant-risks-load-more',    sortKey: 'title' },
             { name: 'EvidenceClient', src: evidence, testId: 'tenant-evidence-load-more', sortKey: 'title' },
         ];
 

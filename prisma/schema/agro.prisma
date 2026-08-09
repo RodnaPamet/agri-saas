@@ -115,8 +115,10 @@ model DataStreamReading {
 
 /// An agronomic signal the daily job emits from the weather rules — a
 /// spray-window warning or a disease-risk escalation. The row is the
-/// IDEMPOTENCY key (one per location/kind/day) AND the provenance link to
-/// the reused Risk-register Risk + whether a notification was sent.
+/// IDEMPOTENCY key (one per location/kind/day) and records whether a
+/// notification was sent. It used to also carry a `riskId` into the GRC
+/// Risk register; that register was removed with the compliance uproot,
+/// and an agronomic signal was never really a governance risk row.
 model AgroSignal {
   id           String          @id @default(cuid())
   tenantId     String
@@ -126,8 +128,6 @@ model AgroSignal {
   /// Free severity label per kind (e.g. UNSUITABLE / HIGH).
   level        String?
   signalDate   DateTime        @db.Date
-  /// The Risk row this signal raised (disease risk reuses the register).
-  riskId       String?
   notified     Boolean         @default(false)
   detailsJson  Json?
   createdAt    DateTime        @default(now())
@@ -135,10 +135,8 @@ model AgroSignal {
   tenant   Tenant    @relation(fields: [tenantId], references: [id])
   location Location  @relation(fields: [locationId, tenantId], references: [id, tenantId], onDelete: Cascade)
   planting Planting? @relation(fields: [plantingId, tenantId], references: [id, tenantId])
-  risk     Risk?     @relation(fields: [riskId, tenantId], references: [id, tenantId])
 
   @@unique([tenantId, locationId, kind, signalDate])
   @@index([tenantId, signalDate])
   @@index([tenantId, plantingId])
-  @@index([tenantId, riskId])
 }

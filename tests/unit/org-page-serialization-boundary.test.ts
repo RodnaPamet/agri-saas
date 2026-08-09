@@ -1,7 +1,7 @@
 /**
  * Server→client serialization boundary ratchet for org list pages.
  *
- * The org drill-down pages (controls / risks / evidence / tenants)
+ * The org drill-down pages (controls / evidence / tenants)
  * each cross the RSC boundary by passing usecase result rows into a
  * client-component table. The convention is:
  *
@@ -50,11 +50,6 @@ const PAGES: PageSpec[] = [
         name: 'controls',
         page: 'src/app/org/[orgSlug]/(app)/controls/page.tsx',
         tableTag: 'ControlsTable',
-    },
-    {
-        name: 'risks',
-        page: 'src/app/org/[orgSlug]/(app)/risks/page.tsx',
-        tableTag: 'RisksTable',
     },
     {
         name: 'evidence',
@@ -109,7 +104,8 @@ describe('org list pages — server→client serialization boundary', () => {
         // Snapshot: 4 list pages cross the RSC boundary today. If a
         // new page is added without an entry in PAGES, the floor
         // forces an explicit conversation rather than a silent miss.
-        expect(PAGES.length).toBeGreaterThanOrEqual(4);
+        // Floor was 4 until the org risks page went with the register.
+        expect(PAGES.length).toBeGreaterThanOrEqual(3);
     });
 
     it('the helper file itself exists and exports the function', () => {

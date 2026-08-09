@@ -25,9 +25,7 @@ const TENANT_APP_DIR = path.resolve(__dirname, '../../src/app/t/[tenantSlug]/(ap
  */
 const RSC_PAGES = [
     'dashboard',
-    'frameworks',
     'clauses',
-    'reports',
     'evidence',
 ];
 

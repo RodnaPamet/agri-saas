@@ -183,13 +183,6 @@ export interface TaskDueNotificationPayload {
     tenantId?: string;
 }
 
-/** Epic G-5 — exception expiry monitor */
-export interface ExceptionExpiryMonitorPayload {
-    /** Optional: scope the scan to a single tenant. Omit for the
-     *  system-wide nightly scan. */
-    tenantId?: string;
-}
-
 /** Evidence retention sweep */
 export interface RetentionSweepPayload {
     tenantId?: string;
@@ -412,44 +405,6 @@ export interface EvidenceImportPayload {
     requestId?: string;
 }
 
-/**
- * Epic G-2 — Control Test Automation Scheduler.
- *
- * Repeatable BullMQ job that scans `ControlTestPlan` rows for due
- * scheduled runs and enqueues per-plan `control-test-runner` jobs.
- * Tenant-scopable for ad-hoc / CLI invocations; left unset for the
- * default cron tick (scans all tenants).
- *
- * `now` lets tests inject a deterministic clock; production callers
- * leave it unset so the executor uses real time.
- */
-export interface ControlTestSchedulerPayload {
-    tenantId?: string;
-    /** ISO timestamp override — for deterministic tests + CLI replay. */
-    nowIso?: string;
-    /** When true, scan + log but do not enqueue or update plans. */
-    dryRun?: boolean;
-}
-
-/**
- * Epic G-2 — Per-plan automation runner. The scheduler enqueues
- * one of these per claimed due plan; the runner (built in the next
- * G-2 prompt) executes the SCRIPT or INTEGRATION handler and links
- * the result evidence back to a fresh `ControlTestRun`.
- *
- * `scheduledForIso` is the `nextRunAt` value the scheduler stamped
- * when claiming the plan. It doubles as the dedupe key fragment in
- * the BullMQ jobId so two scheduler ticks racing on the same plan
- * cannot enqueue twice for the same intended execution instant.
- */
-export interface ControlTestRunnerPayload {
-    tenantId: string;
-    testPlanId: string;
-    scheduledForIso: string;
-    /** Optional log-correlation id from the upstream scheduler invocation. */
-    schedulerJobRunId?: string;
-}
-
 /** Webhook-driven sync pull */
 export interface SyncPullPayload {
     ctx: {
@@ -513,21 +468,6 @@ export interface SharePointPolicyPullPayload {
 
 /** SP-4 — daily cron: renew every active policy Graph subscription (cross-tenant). */
 export interface SharePointSubscriptionRenewPayload {
-    requestId?: string;
-}
-
-/** RQ-2 — daily cron: scan every tenant's portfolio for appetite breaches (cross-tenant). */
-export interface RiskAppetiteMonitorPayload {
-    requestId?: string;
-}
-
-/** RQ-9 — daily cron: snapshot every tenant's risk + portfolio metrics (cross-tenant). */
-export interface RiskSnapshotPayload {
-    requestId?: string;
-}
-
-/** RQ-10 — daily cron: generate + deliver due scheduled reports (cross-tenant). */
-export interface ReportDeliveryPayload {
     requestId?: string;
 }
 
@@ -765,7 +705,6 @@ export interface JobPayloadMap {
     'daily-evidence-expiry': DailyEvidenceExpiryPayload;
     'data-lifecycle': DataLifecyclePayload;
     'policy-review-reminder': PolicyReviewReminderPayload;
-    'exception-expiry-monitor': ExceptionExpiryMonitorPayload;
     'retention-sweep': RetentionSweepPayload;
     'promotion-lead-retention': PromotionLeadRetentionPayload;
     'vendor-renewal-check': VendorRenewalCheckPayload;
@@ -784,8 +723,6 @@ export interface JobPayloadMap {
     'key-rotation': KeyRotationPayload;
     'tenant-dek-rotation': TenantDekRotationPayload;
     'evidence-import': EvidenceImportPayload;
-    'control-test-scheduler': ControlTestSchedulerPayload;
-    'control-test-runner': ControlTestRunnerPayload;
     'access-review-reminder': AccessReviewReminderPayload;
     'access-review-overdue-escalation': AccessReviewOverdueEscalationPayload;
     'task-due-notification': TaskDueNotificationPayload;
@@ -793,9 +730,6 @@ export interface JobPayloadMap {
     'sharepoint-delta-sync-dispatch': SharePointDeltaSyncDispatchPayload;
     'sharepoint-policy-pull': SharePointPolicyPullPayload;
     'sharepoint-subscription-renew': SharePointSubscriptionRenewPayload;
-    'risk-appetite-monitor': RiskAppetiteMonitorPayload;
-    'risk-snapshot': RiskSnapshotPayload;
-    'report-delivery': ReportDeliveryPayload;
     'low-stock-monitor': LowStockMonitorPayload;
     'lease-expiry-sweep': LeaseExpirySweepPayload;
     'contract-delivery-window-sweep': ContractDeliveryWindowSweepPayload;
@@ -953,24 +887,6 @@ export const JOB_DEFAULTS: Record<JobName, {
         removeOnComplete: 50,
         removeOnFail: 200,
     },
-    'risk-appetite-monitor': {
-        attempts: 1,
-        backoff: { type: 'fixed', delay: 0 },
-        removeOnComplete: 50,
-        removeOnFail: 200,
-    },
-    'risk-snapshot': {
-        attempts: 1,
-        backoff: { type: 'fixed', delay: 0 },
-        removeOnComplete: 50,
-        removeOnFail: 200,
-    },
-    'report-delivery': {
-        attempts: 1,
-        backoff: { type: 'fixed', delay: 0 },
-        removeOnComplete: 50,
-        removeOnFail: 200,
-    },
     'low-stock-monitor': {
         attempts: 2,
         backoff: { type: 'exponential', delay: 10000 },
@@ -1076,12 +992,6 @@ export const JOB_DEFAULTS: Record<JobName, {
         removeOnComplete: 50,
         removeOnFail: 100,
     },
-    'exception-expiry-monitor': {
-        attempts: 2,
-        backoff: { type: 'exponential', delay: 5000 },
-        removeOnComplete: 200,
-        removeOnFail: 500,
-    },
     'retention-sweep': {
         attempts: 2,
         backoff: { type: 'exponential', delay: 10000 },
@@ -1186,28 +1096,6 @@ export const JOB_DEFAULTS: Record<JobName, {
         attempts: 1,
         backoff: { type: 'fixed', delay: 0 },
         removeOnComplete: 200,
-        removeOnFail: 1000,
-    },
-    'control-test-scheduler': {
-        // Tick is a pure read-then-claim — DB optimistic-lock guards
-        // against duplicate claims if a tick crashes mid-flight and
-        // BullMQ retries. Two attempts gives one retry on a transient
-        // Redis/DB blip; beyond that the next 5-minute tick will
-        // catch up so further retries just add log noise.
-        attempts: 2,
-        backoff: { type: 'exponential', delay: 5000 },
-        removeOnComplete: 200,
-        removeOnFail: 500,
-    },
-    'control-test-runner': {
-        // Per-plan execution. Two attempts handles a transient
-        // integration / DB blip; the jobId is keyed to the
-        // `scheduledForIso` instant so a retry that completes after
-        // the next scheduler tick has already enqueued the next
-        // window's job will not overlap.
-        attempts: 2,
-        backoff: { type: 'exponential', delay: 10000 },
-        removeOnComplete: 500,
         removeOnFail: 1000,
     },
     'spatial-import': {

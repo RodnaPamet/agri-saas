@@ -28,10 +28,7 @@ let admin: { userId: string };
 let nonMember: { userId: string };
 let CONTROL_ID = '';
 let COMP_CONTROL_ID = '';
-let RISK_A = '';
-let RISK_B = '';
 let FOREIGN_CONTROL_ID = '';
-let FOREIGN_RISK_ID = '';
 
 async function makeUser(label: string): Promise<{ userId: string }> {
     const email = `${TAG}-${label}@example.test`;
@@ -58,14 +55,8 @@ beforeAll(async () => {
     CONTROL_ID = c.id;
     const cc = await globalPrisma.control.create({ data: { tenantId: TENANT_ID, name: 'Compensating MFA' } });
     COMP_CONTROL_ID = cc.id;
-    const rA = await globalPrisma.risk.create({ data: { tenantId: TENANT_ID, title: 'Risk A' } });
-    RISK_A = rA.id;
-    const rB = await globalPrisma.risk.create({ data: { tenantId: TENANT_ID, title: 'Risk B' } });
-    RISK_B = rB.id;
     const fc = await globalPrisma.control.create({ data: { tenantId: FOREIGN_TENANT_ID, name: 'Foreign control' } });
     FOREIGN_CONTROL_ID = fc.id;
-    const fr = await globalPrisma.risk.create({ data: { tenantId: FOREIGN_TENANT_ID, title: 'Foreign risk' } });
-    FOREIGN_RISK_ID = fr.id;
 });
 
 afterAll(async () => {
@@ -76,9 +67,7 @@ afterAll(async () => {
     const t = { tenantId: { in: [TENANT_ID, FOREIGN_TENANT_ID] } };
     for (const del of [
         () => globalPrisma.auditLog.deleteMany({ where: t }),
-        () => globalPrisma.findingRisk.deleteMany({ where: t }),
         () => globalPrisma.finding.deleteMany({ where: t }),
-        () => globalPrisma.risk.deleteMany({ where: t }),
         () => globalPrisma.control.deleteMany({ where: t }),
         () => globalPrisma.tenantMembership.deleteMany({ where: t }),
         () => globalPrisma.user.deleteMany({ where: { id: { in: [admin.userId, nonMember.userId] } } }),
@@ -94,45 +83,7 @@ function adminCtx() {
 }
 
 describeFn('createFinding — relations (integration)', () => {
-    it('persists assignee, control, compensating control, analysis + risk links', async () => {
-        const finding = await createFinding(adminCtx(), {
-            title: 'Quarterly access review missed',
-            description: 'No evidence of Q2 review.',
-            severity: 'HIGH',
-            type: 'NONCONFORMITY',
-            assigneeUserId: admin.userId,
-            controlId: CONTROL_ID,
-            compensatingControlId: COMP_CONTROL_ID,
-            analysis: 'Root cause: calendar reminder removed.',
-            riskIds: [RISK_A, RISK_B],
-        });
 
-        expect(finding.assigneeUserId).toBe(admin.userId);
-        expect(finding.controlId).toBe(CONTROL_ID);
-        expect(finding.compensatingControlId).toBe(COMP_CONTROL_ID);
-
-        const links = await globalPrisma.findingRisk.findMany({ where: { findingId: finding.id } });
-        expect(links.map((l) => l.riskId).sort()).toEqual([RISK_A, RISK_B].sort());
-
-        // getFinding hydrates the relations + decrypts analysis.
-        const hydrated = await getFinding(adminCtx(), finding.id);
-        expect(hydrated.analysis).toBe('Root cause: calendar reminder removed.');
-        expect(hydrated.assignee?.id).toBe(admin.userId);
-        expect(hydrated.control?.id).toBe(CONTROL_ID);
-        expect(hydrated.riskLinks).toHaveLength(2);
-    });
-
-    it('dedups repeated risk ids', async () => {
-        const finding = await createFinding(adminCtx(), {
-            title: 'Dup risks',
-            description: 'x',
-            severity: 'LOW',
-            type: 'OBSERVATION',
-            riskIds: [RISK_A, RISK_A, RISK_A],
-        });
-        const links = await globalPrisma.findingRisk.findMany({ where: { findingId: finding.id } });
-        expect(links).toHaveLength(1);
-    });
 
     it('rejects a foreign control', async () => {
         await expect(
@@ -143,14 +94,6 @@ describeFn('createFinding — relations (integration)', () => {
         ).rejects.toThrow();
     });
 
-    it('rejects a foreign risk', async () => {
-        await expect(
-            createFinding(adminCtx(), {
-                title: 'x', description: 'x', severity: 'LOW', type: 'OBSERVATION',
-                riskIds: [RISK_A, FOREIGN_RISK_ID],
-            }),
-        ).rejects.toThrow();
-    });
 
     it('rejects an assignee who is not a tenant member', async () => {
         await expect(
@@ -163,23 +106,5 @@ describeFn('createFinding — relations (integration)', () => {
 });
 
 describeFn('updateFinding — risk replacement (integration)', () => {
-    it('replaces the risk links when riskIds is supplied', async () => {
-        const finding = await createFinding(adminCtx(), {
-            title: 'To re-link', description: 'x', severity: 'LOW', type: 'OBSERVATION',
-            riskIds: [RISK_A],
-        });
-        await updateFinding(adminCtx(), finding.id, { riskIds: [RISK_B] });
-        const links = await globalPrisma.findingRisk.findMany({ where: { findingId: finding.id } });
-        expect(links.map((l) => l.riskId)).toEqual([RISK_B]);
-    });
 
-    it('leaves risk links untouched when riskIds is omitted', async () => {
-        const finding = await createFinding(adminCtx(), {
-            title: 'Keep links', description: 'x', severity: 'LOW', type: 'OBSERVATION',
-            riskIds: [RISK_A],
-        });
-        await updateFinding(adminCtx(), finding.id, { severity: 'HIGH' });
-        const links = await globalPrisma.findingRisk.findMany({ where: { findingId: finding.id } });
-        expect(links).toHaveLength(1);
-    });
 });

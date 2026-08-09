@@ -110,8 +110,57 @@ const ROOT = path.resolve(__dirname, '../..');
 //
 // Both landed the same day and each independently raised the floor to 224;
 // the conflict resolution is 225, the live count with both suites present.
-const RENDERED_TEST_FLOOR = 225;
-const E2E_SPEC_FLOOR = 55;
+// Lowered 225 → 223 in the compliance uproot (2026-08-07): four rendered
+// suites were deleted alongside the components they verify —
+// control-roi-card, control-exceptions-panel, test-plan-schedule-section and
+// test-dashboard-g2-section. This is the documented exception the ratchet
+// contemplates ("if a test was legitimately merged or renamed, account for
+// it").
+//
+// Lowered 223 → 207 in the risk-quantification uproot (2026-08-08). The same
+// exception, and the count is exact: 21 suites are gone versus main, and every
+// one of them verified a component that no longer exists —
+//   risk register / scoring UI (9): risk-assessment-panel, risk-board-page,
+//     risk-dashboard-portfolio-honesty, risk-modal-fields,
+//     risk-score-explainer-escape, risk-score-explainer-provenance,
+//     risk-treatment-plan-card, score-explainer-retry,
+//     polish-15-assessment-conflict
+//   FAIR / Monte-Carlo (3): fair-calibration-panel, monte-carlo-stage,
+//     ale-histogram
+//   charts + rails whose only consumer was a risk surface (4):
+//     loss-exceedance-reference-lines, sankey-chart, ai-assist-rail,
+//     org-drilldown-load-more
+//   control exoskeleton, already accounted for above (4)
+//   schemes-disclosure (1) — the certification /schemes page it asserted on
+//     was replaced by the support-measures page.
+// No surviving component lost its rendered coverage. The floor resumes its
+// upward-only ratchet from 207.
+const RENDERED_TEST_FLOOR = 207;
+// Lowered 55 → 54 in the risk-quantification uproot (2026-08-08).
+// `ai-risk-assessment.spec.ts` and `new-risk-modal.spec.ts` were both
+// wholly about the deleted register; the specs that merely REFERENCED a
+// risk route were edited rather than deleted, and one of them —
+// ciso-portfolio's AUDITOR read-only invariant — was repointed to the
+// controls page because the assertion is about the ROLE, not the entity.
+// Net: 56 → 54. The floor resumes its upward-only ratchet from 54.
+//
+// Lowered again 54 → 52 once CI's E2E job produced a real signal for the
+// first time since the seed was repaired. Two more specs were asserting on
+// surfaces this PR deleted, so they had no subject left:
+//   frameworks.spec.ts    — drove `/t/<slug>/frameworks` (the certification
+//                           catalogue UI), which is gone; only the
+//                           `GET /frameworks` API it never called survives.
+//   control-tests.spec.ts — drove the test-of-control plan/run UI
+//                           (`#create-test-plan-btn`, `#test-plan-*`),
+//                           deleted with the control exoskeleton.
+// Everything else that merely REFERENCED a dead route was repointed, not
+// deleted, and so still counts: core-flow's steps D-F moved from Risk onto
+// Asset, entity-detail-layout's representative surface moved from Risk to
+// Control, reporting.spec.ts kept its audit-cycle scenario (E-G) and lost
+// only the three read-only tests whose pages are gone, and
+// mobile/horizontal-drift dropped three risk rows from its path table.
+// No surviving surface lost its E2E coverage. Upward-only from 52.
+const E2E_SPEC_FLOOR = 52;
 const REGISTRY_FLOOR = 5;
 
 /** Max a live count may exceed its floor before the floor must rise. */

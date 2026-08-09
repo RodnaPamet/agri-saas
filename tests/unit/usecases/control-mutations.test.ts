@@ -154,7 +154,7 @@ describe('createControl', () => {
         });
 
         // Framework-installed controls never mint — their code /
-        // annexId comes from the catalogue.
+        // the code comes from the catalogue.
         expect(upsertMock).not.toHaveBeenCalled();
     });
 });

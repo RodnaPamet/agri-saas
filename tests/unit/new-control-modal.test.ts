@@ -11,7 +11,6 @@
  *   3. Business behaviour is intact — same POST body, same applicability
  *      follow-up, same post-create navigation, same React-Query cache
  *      invalidation.
- *   4. The legacy /controls/new page is now a server-side redirect shim
  *      so deep links keep working against the modal-based flow.
  *   5. ControlsClient wires the trigger + auto-opens on `?create=1`.
  */
@@ -26,7 +25,6 @@ function read(rel: string): string {
 
 const MODAL_SRC = read('src/app/t/[tenantSlug]/(app)/controls/NewControlModal.tsx');
 const CLIENT_SRC = read('src/app/t/[tenantSlug]/(app)/controls/ControlsClient.tsx');
-const NEW_PAGE_SRC = read('src/app/t/[tenantSlug]/(app)/controls/new/page.tsx');
 
 // ─── 1. Modal composition ────────────────────────────────────────
 
@@ -156,55 +154,5 @@ describe('NewControlModal — business behaviour preserved', () => {
         expect(MODAL_SRC).toMatch(/superRefine/);
         expect(MODAL_SRC).toMatch(/applicability === ['"]NOT_APPLICABLE['"]/);
         expect(MODAL_SRC).toMatch(/justification/);
-    });
-});
-
-// ─── 4. Legacy /controls/new → redirect shim ────────────────────
-
-describe('/controls/new — redirect compat shim', () => {
-    it('is no longer a client page — it is a server redirect', () => {
-        expect(NEW_PAGE_SRC).not.toMatch(/^'use client'/m);
-        expect(NEW_PAGE_SRC).toMatch(/from ['"]next\/navigation['"]/);
-        expect(NEW_PAGE_SRC).toMatch(/redirect\(/);
-    });
-
-    it('redirects to /controls?create=1 for the current tenant', () => {
-        expect(NEW_PAGE_SRC).toMatch(/\/controls\?create=1/);
-    });
-
-    it('awaits the async params promise per Next.js 15 convention', () => {
-        expect(NEW_PAGE_SRC).toMatch(/params:\s*Promise<\{\s*tenantSlug:\s*string\s*\}>/);
-        expect(NEW_PAGE_SRC).toMatch(/await params/);
-    });
-});
-
-// ─── 5. ControlsClient wiring ────────────────────────────────────
-
-describe('ControlsClient — create trigger + auto-open', () => {
-    it('imports NewControlModal', () => {
-        // Accept both static and dynamic imports (lazy-loading via next/dynamic)
-        const hasImport = /from ['"]\.\/NewControlModal['"]/.test(CLIENT_SRC) ||
-            /import\(['"]\.\/NewControlModal['"]\)/.test(CLIENT_SRC);
-        expect(hasImport).toBe(true);
-    });
-
-    it('turned the #new-control-btn <Link> into a <button> that opens the modal', () => {
-        expect(CLIENT_SRC).toMatch(/<button[\s\S]*?id=["']new-control-btn["'][\s\S]*?onClick=\{\(\)\s*=>\s*setIsCreateOpen\(true\)\}/);
-        // Drift sentinel — the old Link-to-/new route must not come back.
-        expect(CLIENT_SRC).not.toMatch(/href=\{tenantHref\(['"]\/controls\/new['"]\)\}/);
-    });
-
-    it('mounts <NewControlModal> with controlled state + tenantSlug', () => {
-        expect(CLIENT_SRC).toMatch(/<NewControlModal\b/);
-        expect(CLIENT_SRC).toMatch(/open=\{isCreateOpen\}/);
-        expect(CLIENT_SRC).toMatch(/setOpen=\{setIsCreateOpen\}/);
-        expect(CLIENT_SRC).toMatch(/tenantSlug=\{tenantSlug\}/);
-    });
-
-    it('auto-opens when the URL carries ?create=1 and strips the flag', () => {
-        expect(CLIENT_SRC).toMatch(/useSearchParams/);
-        expect(CLIENT_SRC).toMatch(/searchParams\?\.get\(['"]create['"]\)\s*===\s*['"]1['"]/);
-        expect(CLIENT_SRC).toMatch(/router\.replace/);
-        expect(CLIENT_SRC).toMatch(/next\.delete\(['"]create['"]\)/);
     });
 });

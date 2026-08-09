@@ -119,7 +119,7 @@ describe('Vendor Schemas', () => {
         });
 
         it('accepts optional relation', () => {
-            const r = AddVendorLinkSchema.safeParse({ entityType: 'RISK', entityId: 'risk-1', relation: 'MITIGATES' });
+            const r = AddVendorLinkSchema.safeParse({ entityType: 'ASSET', entityId: 'asset-1', relation: 'MITIGATES' });
             expect(r.success).toBe(true);
         });
 

@@ -22,7 +22,6 @@ export class FrameworkRepository {
                 requirements: { orderBy: { sortOrder: 'asc' } },
                 packs: {
                     include: {
-                        templateLinks: { include: { template: { select: { id: true, code: true, title: true } } } },
                     },
                 },
             },
@@ -55,16 +54,6 @@ export class FrameworkRepository {
             where: { key: packKey },
             include: {
                 framework: true,
-                templateLinks: {
-                    include: {
-                        template: {
-                            include: {
-                                tasks: true,
-                                requirementLinks: { include: { requirement: true } },
-                            },
-                        },
-                    },
-                },
             },
         });
     }
@@ -111,23 +100,27 @@ export class FrameworkRepository {
         };
     }
 
-    // Check if pack is installed for tenant (has controls from pack templates)
+    /**
+     * Is this pack installed for the tenant?
+     *
+     * This used to answer "does the tenant hold controls whose codes match
+     * the pack's control templates". The compliance uproot removed the
+     * template library, so the pack no longer carries a code list to match
+     * against — installation is now judged by whether the tenant has mapped
+     * any control to a requirement of the pack's framework.
+     */
     static async isPackInstalled(db: PrismaTx, packKey: string, tenantId: string) {
         // `findUnique`: only Framework.key lost its single-column unique.
         const pack = await db.frameworkPack.findUnique({
             where: { key: packKey },
-            include: { templateLinks: { include: { template: { select: { code: true } } } } },
+            select: { frameworkId: true },
         });
         if (!pack) return false;
 
-        const templateCodes = pack.templateLinks.map(l => l.template.code);
-        if (templateCodes.length === 0) return false;
-
-        // Check if any controls with matching codes exist for this tenant
-        const controlCount = await db.control.count({
-            where: { tenantId, code: { in: templateCodes } },
+        const linkCount = await db.controlRequirementLink.count({
+            where: { tenantId, requirement: { frameworkId: pack.frameworkId } },
         });
 
-        return controlCount > 0;
+        return linkCount > 0;
     }
 }

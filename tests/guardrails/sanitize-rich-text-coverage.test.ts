@@ -75,11 +75,9 @@ const RICH_TEXT_COVERAGE: Readonly<
         usecases: ['src/app-layer/usecases/promotions.ts'],
         sanitizer: 'sanitizePlainText',
     },
-    Risk: { usecases: ['src/app-layer/usecases/risk.ts'], sanitizer: 'sanitizePlainText' },
     // RQ3-6 — loss-event narrative + reviewer justification; sanitised
     // at the single createLossEvent write seam before the Epic B
     // middleware persists them.
-    LossEvent: { usecases: ['src/app-layer/usecases/loss-event.ts'], sanitizer: 'sanitizePlainText' },
     Vendor: { usecases: ['src/app-layer/usecases/vendor.ts'], sanitizer: 'sanitizePlainText' },
     VendorDocument: { usecases: ['src/app-layer/usecases/vendor.ts'], sanitizer: 'sanitizePlainText' },
     VendorAssessment: { usecases: ['src/app-layer/usecases/vendor.ts'], sanitizer: 'sanitizePlainText' },
@@ -89,15 +87,10 @@ const RICH_TEXT_COVERAGE: Readonly<
     },
     Audit: { usecases: ['src/app-layer/usecases/audit.ts'], sanitizer: 'sanitizePlainText' },
     AuditChecklistItem: { usecases: ['src/app-layer/usecases/audit.ts'], sanitizer: 'sanitizePlainText' },
-    ControlTestRun: { usecases: ['src/app-layer/usecases/control-test.ts'], sanitizer: 'sanitizePlainText' },
     AccessReview: { usecases: ['src/app-layer/usecases/access-review.ts'], sanitizer: 'sanitizePlainText' },
     AccessReviewDecision: { usecases: ['src/app-layer/usecases/access-review.ts'], sanitizer: 'sanitizePlainText' },
-    ControlException: { usecases: ['src/app-layer/usecases/control-exception.ts'], sanitizer: 'sanitizePlainText' },
     // RQ2-1/RQ2-2 — score-change justification narrative; sanitised
     // at the single recordScoreEvent write seam.
-    RiskScoreEvent: { usecases: ['src/app-layer/usecases/risk-score-events.ts'], sanitizer: 'sanitizePlainText' },
-    RiskTreatmentPlan: { usecases: ['src/app-layer/usecases/risk-treatment-plan.ts'], sanitizer: 'sanitizePlainText' },
-    TreatmentMilestone: { usecases: ['src/app-layer/usecases/risk-treatment-plan.ts'], sanitizer: 'sanitizePlainText' },
     // Enterprise-grain — Contract.terms / Contract.pricingNotes and
     // YieldRecord.valuationNotes are encrypted at rest (Epic B manifest)
     // AND sanitised at the usecase boundary before the write, so every

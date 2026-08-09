@@ -101,7 +101,6 @@ const MODULE_MIN_PLAN: Record<ModuleKey, BillingPlan> = {
     INVENTORY: 'FREE',
     PLANNING: 'FREE',
     CERTIFICATION: 'PRO',
-    RISK: 'PRO',
     VENDORS: 'PRO',
     AUTOMATION: 'PRO',
     PROCESSES: 'PRO',

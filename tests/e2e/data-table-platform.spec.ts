@@ -107,17 +107,6 @@ test.describe('DataTable Platform — Cross-page regression', () => {
         });
     });
 
-    // ── Risks ──
-
-    test('Risks page renders DataTable', async ({ page }) => {
-        tenantSlug = await loginAndGetTenant(page);
-        await assertTableRendered(page, '/risks', {
-            heading: 'Risk',
-            testId: 'risks-table',
-            minHeaders: 3,
-        });
-    });
-
     // ── Vendors ──
 
     test('Vendors page renders DataTable', async ({ page }) => {

@@ -18,7 +18,7 @@
  * tenant transaction:
  *
  *   • The control fetch is `getControlHeader(ctx, id)` — header
- *     scalars + user refs + `contributors` + relation `_count`s,
+ *     scalars + user refs + relation `_count`s,
  *     without the heavy tabbed arrays (#102 item 1 tab-lazy split).
  *   • The sync-mapping lookup runs only if `automationKey` is
  *     present, mirroring the GET /sync endpoint's branch — but

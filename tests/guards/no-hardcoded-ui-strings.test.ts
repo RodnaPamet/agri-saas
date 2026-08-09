@@ -70,7 +70,11 @@ const CURRENT_BASELINE = 20;
  * the repo applies to `as any` — a large existing debt makes a hard
  * error infeasible, so the ratchet is the enforcement.
  */
-const CONFIG_PROP_BASELINE = 380;
+// Lowered 380 → 340 by the risk-quantification uproot: the deleted risk
+// pages, filter-defs, org widget config and permission modules carried
+// 40 of the counted hard-coded config-prop strings. The drift sentinel
+// below forbids leaving slack, so this tracks reality, not headroom.
+const CONFIG_PROP_BASELINE = 340;
 
 /** A string counts as user-facing copy if — after stripping HTML entities —
  *  it has a real word (≥2 latin letters) and is not an ALL-CAPS enum/acronym

@@ -57,9 +57,6 @@ import {
     unlinkEvidence,
     linkAssetToControl,
     unlinkAssetFromControl,
-    listContributors,
-    addContributor,
-    removeContributor,
 } from '@/app-layer/usecases/control/evidence';
 import { makeRequestContext } from '../helpers/make-context';
 
@@ -260,44 +257,3 @@ describe('unlinkAssetFromControl', () => {
     });
 });
 
-describe('listContributors', () => {
-    it('delegates to ControlRepository.listContributors', async () => {
-        (ControlRepository.listContributors as jest.Mock).mockResolvedValue([{ id: 'u-1' }]);
-        const rows = await listContributors(readerCtx, 'c-1');
-        expect(rows).toEqual([{ id: 'u-1' }]);
-    });
-});
-
-describe('addContributor', () => {
-    it('adds a contributor and emits CONTROL_CONTRIBUTOR_ADDED', async () => {
-        (ControlRepository.addContributor as jest.Mock).mockResolvedValue({ id: 'cb-1' });
-        const res = await addContributor(editorCtx, 'c-1', 'u-1');
-        expect(res).toEqual({ id: 'cb-1' });
-        const payload = (logEvent as jest.Mock).mock.calls[0][2];
-        expect(payload.action).toBe('CONTROL_CONTRIBUTOR_ADDED');
-    });
-
-    it('throws notFound when the control is missing', async () => {
-        (ControlRepository.addContributor as jest.Mock).mockResolvedValue(null);
-        await expect(addContributor(editorCtx, 'missing', 'u-1')).rejects.toThrow(/Control not found/i);
-    });
-
-    it('rejects READER', async () => {
-        await expect(addContributor(readerCtx, 'c-1', 'u-1')).rejects.toBeDefined();
-    });
-});
-
-describe('removeContributor', () => {
-    it('removes a contributor and emits CONTROL_CONTRIBUTOR_REMOVED', async () => {
-        (ControlRepository.removeContributor as jest.Mock).mockResolvedValue(true);
-        const res = await removeContributor(editorCtx, 'c-1', 'u-1');
-        expect(res).toEqual({ success: true });
-        const payload = (logEvent as jest.Mock).mock.calls[0][2];
-        expect(payload.action).toBe('CONTROL_CONTRIBUTOR_REMOVED');
-    });
-
-    it('throws notFound when the row is missing', async () => {
-        (ControlRepository.removeContributor as jest.Mock).mockResolvedValue(null);
-        await expect(removeContributor(editorCtx, 'c-1', 'missing')).rejects.toThrow(/Control or contributor not found/i);
-    });
-});

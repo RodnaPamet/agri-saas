@@ -10,7 +10,7 @@ import {
 
 describe('control-taxonomy', () => {
     describe('parseIsoClause', () => {
-        it('parses the annexId / code forms the codebase uses', () => {
+        it('parses the control-code forms the codebase uses', () => {
             expect(parseIsoClause('A.5.15')).toBe('5.15');
             expect(parseIsoClause('A-5.15')).toBe('5.15');
             expect(parseIsoClause('5.15')).toBe('5.15');
@@ -57,16 +57,16 @@ describe('control-taxonomy', () => {
     });
 
     describe('categorizeControl — framework detection', () => {
-        it('tags an ISO 27001 control via annexId', () => {
-            expect(categorizeControl({ annexId: 'A.5.15', code: null })).toEqual({
+        it('tags an ISO 27001 control via a dotted Annex code', () => {
+            expect(categorizeControl({ code: 'A.5.15' })).toEqual({
                 frameworkKey: 'iso27001',
                 frameworkLabel: 'ISO 27001',
                 category: ISO27001_DOMAIN.ACCESS_CONTROL,
             });
         });
 
-        it('tags an ISO 27001 control via an ISO-shaped code when annexId is absent', () => {
-            expect(categorizeControl({ annexId: null, code: 'A-7.7' })).toEqual({
+        it('tags an ISO 27001 control via the hyphenated Annex code form', () => {
+            expect(categorizeControl({ code: 'A-7.7' })).toEqual({
                 frameworkKey: 'iso27001',
                 frameworkLabel: 'ISO 27001',
                 category: ISO27001_DOMAIN.PHYSICAL,
@@ -114,13 +114,13 @@ describe('control-taxonomy', () => {
 
         it('returns null when there is nothing to group on', () => {
             expect(categorizeControl({ code: 'CUSTOM-1', category: null })).toBeNull();
-            expect(categorizeControl({ code: null, annexId: null })).toBeNull();
+            expect(categorizeControl({ code: null })).toBeNull();
         });
     });
 
     describe('multi-framework grouping', () => {
         it('keeps ISO and SOC 2 controls in distinct framework-tagged buckets', () => {
-            const iso = categorizeControl({ annexId: 'A.5.15' });
+            const iso = categorizeControl({ code: 'A.5.15' });
             const soc2 = categorizeControl({ code: 'CC6.1', category: 'Logical Access' });
             expect(iso?.frameworkKey).not.toBe(soc2?.frameworkKey);
             expect(`${iso?.frameworkKey}::${iso?.category}`).not.toBe(

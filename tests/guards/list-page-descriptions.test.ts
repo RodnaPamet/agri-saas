@@ -31,7 +31,6 @@ const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
 
 const ENTITIES = [
     'assets',
-    'risks',
     'controls',
     'evidence',
     'policies',
@@ -46,7 +45,6 @@ interface ClientFile {
 
 const CLIENTS: ClientFile[] = [
     { entity: 'assets', file: 'src/app/t/[tenantSlug]/(app)/assets/AssetsClient.tsx' },
-    { entity: 'risks', file: 'src/app/t/[tenantSlug]/(app)/risks/RisksClient.tsx' },
     { entity: 'controls', file: 'src/app/t/[tenantSlug]/(app)/controls/ControlsClient.tsx' },
     { entity: 'evidence', file: 'src/app/t/[tenantSlug]/(app)/evidence/EvidenceClient.tsx' },
     { entity: 'policies', file: 'src/app/t/[tenantSlug]/(app)/policies/PoliciesClient.tsx' },

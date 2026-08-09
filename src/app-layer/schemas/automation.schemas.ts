@@ -99,7 +99,7 @@ const TriggerFilter = z.union([FilterGroup, LegacyFlatFilter]).nullable().option
 const ScheduleConfig = z
     .object({
         kind: z.literal('DATE_RELATIVE'),
-        target: z.enum(['Evidence', 'ControlException', 'ControlTestPlan']),
+        target: z.enum(['Evidence']),
         offsetDays: z.number().int().min(0).max(365),
     })
     .nullable()

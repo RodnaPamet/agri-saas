@@ -51,7 +51,6 @@ jest.mock('@/lib/db-context', () => ({
 }));
 
 import { upsertRequirements } from '@/app-layer/usecases/framework/fixtures';
-import { createScheme } from '@/app-layer/usecases/certification-scheme';
 import { logEvent } from '@/app-layer/events/audit';
 import { makeRequestContext } from '../../helpers/make-context';
 
@@ -141,60 +140,3 @@ describe('upsertRequirements — the requirement wipe', () => {
     });
 });
 
-describe('createScheme — tenant-authored global schemes', () => {
-    const INPUT = {
-        key: 'MY-FARM-SCHEME',
-        name: 'My scheme',
-        requirements: [{ code: 'R1', title: 'A requirement' }],
-    };
-
-    it('refuses an ordinary farm OWNER', async () => {
-        await expect(createScheme(farmOwner(), INPUT)).rejects.toThrow();
-        expect(mockPrisma.framework.create).not.toHaveBeenCalled();
-    });
-
-    it('refuses before burning the globally-unique key', async () => {
-        // The key column is globally unique and there is no delete path, so a
-        // write that got as far as `create` would cost that key permanently.
-        await expect(createScheme(farmOwner(), INPUT)).rejects.toThrow();
-        expect(mockPrisma.framework.findFirst).not.toHaveBeenCalled();
-        expect(mockPrisma.frameworkRequirement.createMany).not.toHaveBeenCalled();
-    });
-
-    it('allows a platform-tenant admin', async () => {
-        // First findFirst is the duplicate-key check (null = key is free);
-        // `createScheme` tail-calls `getScheme`, which looks the row up again.
-        mockPrisma.framework.findFirst
-            .mockResolvedValueOnce(null)
-            .mockResolvedValue({ id: 'fw-new', key: 'CUSTOM', kind: 'AG_SCHEME' });
-        await createScheme(platformAdmin(), INPUT).catch(() => undefined);
-        expect(mockPrisma.framework.create).toHaveBeenCalled();
-    });
-
-    it('fails closed with no platform tenant configured', async () => {
-        delete process.env.PLATFORM_TENANT_SLUG;
-        await expect(createScheme(platformAdmin(), INPUT)).rejects.toThrow();
-    });
-});
-
-describe('the gate is not satisfied by tenant role alone', () => {
-    it.each(['OWNER', 'ADMIN'] as const)(
-        'a %s of an ordinary farm cannot write the catalogue',
-        async (role) => {
-            // The whole point: these gates used to resolve from Role, and Role
-            // is what every farm's owner already has.
-            const ctx = makeRequestContext(role, { tenantSlug: 'some-other-farm' });
-            await expect(upsertRequirements(ctx, 'GG', FIXTURE)).rejects.toThrow();
-            await expect(createScheme(ctx, {
-                key: 'K', name: 'N', requirements: [{ code: 'C', title: 'T' }],
-            })).rejects.toThrow();
-        },
-    );
-
-    it('a READER inside the platform tenant still cannot write', async () => {
-        // `assertPlatformSupport` calls `assertCanAdmin` itself — the slug
-        // check replaces the role check's SCOPE, not the role check.
-        const ctx = makeRequestContext('READER', { tenantSlug: PLATFORM_SLUG });
-        await expect(upsertRequirements(ctx, 'GG', FIXTURE)).rejects.toThrow();
-    });
-});

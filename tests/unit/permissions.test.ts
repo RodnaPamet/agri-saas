@@ -52,7 +52,6 @@ describe('Permissions Map', () => {
         expect(permissions.controls.view).toBe(false);
         expect(permissions.evidence.view).toBe(false);
         expect(permissions.evidence.download).toBe(false);
-        expect(permissions.risks.view).toBe(false);
         expect(permissions.vendors.view).toBe(false);
         expect(permissions.audits.view).toBe(false);
         expect(permissions.reports.view).toBe(false);

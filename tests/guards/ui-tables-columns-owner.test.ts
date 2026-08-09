@@ -15,7 +15,6 @@ const ROOT = path.resolve(__dirname, '../..');
 const read = (p: string) => fs.readFileSync(path.join(ROOT, p), 'utf8');
 
 const CLIENTS = {
-    risks: 'src/app/t/[tenantSlug]/(app)/risks/RisksClient.tsx',
     assets: 'src/app/t/[tenantSlug]/(app)/assets/AssetsClient.tsx',
     controls: 'src/app/t/[tenantSlug]/(app)/controls/ControlsClient.tsx',
 };
@@ -30,7 +29,6 @@ describe('UI-21 — code column off by default', () => {
 
 describe('UI-2/3 — entity-table tags are one size smaller (size="sm")', () => {
     it.each([
-        ['risks', CLIENTS.risks],
         ['assets', CLIENTS.assets],
         ['controls', CLIENTS.controls],
     ])('%s status/tag badges carry size="sm"', (_n, file) => {
@@ -49,7 +47,6 @@ describe('UI-14 — Owner column is name-only (no email address)', () => {
     });
 
     it.each([
-        ['risks', CLIENTS.risks],
         ['controls', CLIENTS.controls],
     ])('%s owner cell uses ownerDisplayName (no `.owner?.email` rendered)', (_n, file) => {
         const src = read(file);

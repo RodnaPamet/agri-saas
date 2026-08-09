@@ -35,20 +35,24 @@ import { execSync } from 'node:child_process';
  * @type {Array<{id: string, package: string, reason: string, review: string}>}
  */
 const EXEMPT = [
-    {
-        id: 'GHSA-w3rx-r6r6-pgpr',
-        package: 'image-size',
-        reason:
-            'Reachability verified NIL. image-size arrives only via pptxgenjs, whose sole consumer is renderPptx() in src/app-layer/reports/risk-report-render.ts — which builds text and table slides and calls addImage() nowhere, so the vulnerable ICNS parser is never invoked on any input, let alone attacker-supplied. Enforced by tests/guardrails/pptx-no-image-embedding.test.ts: the day someone adds image embedding, that guard fails and this exemption must be re-argued. No upstream fix exists (image-size@1.2.1 is the latest published version and is the vulnerable one); npm\'s only proposed remedy is a THREE-major downgrade of pptxgenjs 4.0.1 → 1.1.5, which trades an unreachable DoS for real regressions in a working export path.',
-        review: '2026-11-01',
-    },
-    {
-        id: 'GHSA-5p2g-fcmc-qvqq',
-        package: 'image-size',
-        reason:
-            'Same dependency path, same nil reachability, same absent upstream fix as GHSA-w3rx-r6r6-pgpr above — this advisory covers the JXL/HEIF parsers rather than ICNS. renderPptx() embeds no images at all.',
-        review: '2026-11-01',
-    },
+    // Intentionally empty.
+    //
+    // The two `image-size` advisories (GHSA-w3rx-r6r6-pgpr,
+    // GHSA-5p2g-fcmc-qvqq) that lived here reached the production tree
+    // only through `pptxgenjs`, which existed for a single consumer:
+    // `renderPptx()` in the risk report. The risk-quantification uproot
+    // deleted that renderer, so the dependency was dropped rather than
+    // exempted — `npm ls image-size --omit=dev` is now empty and
+    // `npm audit --omit=dev --audit-level=moderate` reports zero
+    // vulnerabilities without any exemption at all.
+    //
+    // Removing a vulnerable package beats arguing it unreachable, and
+    // rule 3 above requires the entry to go in the same PR. Note the
+    // stale check that would have caught this only runs when `npm audit`
+    // FAILS — with the advisories gone the gate passes, this script never
+    // executes, and a stale entry would have sat here unexercised.
+    // `tests/guardrails/pptx-no-image-embedding.test.ts` now holds the
+    // invariant instead: the dependency may not come back silently.
 ];
 
 function auditJson() {

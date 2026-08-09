@@ -94,7 +94,6 @@ jest.mock('next-intl', () => ({
 }));
 
 import { TenantCoverageCards } from '@/app/org/[orgSlug]/(app)/dashboard-sections';
-import { FrameworksClient } from '@/app/t/[tenantSlug]/(app)/frameworks/FrameworksClient';
 import {
     viewModeStorageKey,
 } from '@/components/ui/hooks';
@@ -111,8 +110,6 @@ function tenantRow(over: Partial<TenantHealthRow> = {}): TenantHealthRow {
         hasSnapshot: true,
         snapshotDate: '2026-05-01',
         coveragePercent: 75.3,
-        openRisks: 5,
-        criticalRisks: 1,
         overdueEvidence: 2,
         rag: 'GREEN',
         ...over,
@@ -213,8 +210,6 @@ describe('TenantCoverageCards — Epic 66 rollout', () => {
                         tenantId: 't1',
                         slug: 'acme',
                         coveragePercent: 88.2,
-                        openRisks: 12,
-                        criticalRisks: 3,
                         overdueEvidence: 4,
                     }),
                 ]}
@@ -223,9 +218,9 @@ describe('TenantCoverageCards — Epic 66 rollout', () => {
         const card = container.querySelector(
             '[data-testid="org-tenant-card-acme"]',
         );
+        // The openRisks (12) + criticalRisks (3) stats went with the
+        // risk register; coverage + overdue-evidence remain.
         expect(card?.textContent).toContain('88.2%');
-        expect(card?.textContent).toContain('12');
-        expect(card?.textContent).toContain('3');
         expect(card?.textContent).toContain('4');
     });
 
@@ -294,121 +289,3 @@ const COV_FIXTURES = {
     NIS2: { coveragePercent: 0, mapped: 0, total: 20 },
 };
 
-describe('FrameworksClient — view toggle rollout', () => {
-    beforeEach(() => {
-        window.localStorage.clear();
-    });
-
-    it('defaults to cards view (preserves the prior bespoke layout)', () => {
-        const { container } = render(
-            <FrameworksClient
-                frameworks={FW_FIXTURES}
-                coverages={COV_FIXTURES}
-                tenantSlug="acme-corp"
-            />,
-        );
-        expect(
-            container.querySelector('[data-testid="frameworks-card-list"]'),
-        ).not.toBeNull();
-        // Two framework cards in the grid.
-        expect(
-            container.querySelectorAll(
-                '[data-testid="frameworks-card-list"] [data-card-list-card]',
-            ).length,
-        ).toBe(2);
-        // Toggle is visible.
-        expect(
-            container.querySelector('[data-testid="frameworks-view-toggle"]'),
-        ).not.toBeNull();
-    });
-
-    it('renders Installed badge when coverage > 0 mapped', () => {
-        const { getByTestId } = render(
-            <FrameworksClient
-                frameworks={FW_FIXTURES}
-                coverages={COV_FIXTURES}
-                tenantSlug="acme-corp"
-            />,
-        );
-        const isoCard = getByTestId('fw-card-ISO27001');
-        const nisCard = getByTestId('fw-card-NIS2');
-        // i18n: useTranslations is mocked to echo the key, so the status
-        // badges render their message keys (`installed` / `available`).
-        expect(isoCard.textContent).toContain('installed');
-        expect(nisCard.textContent).toContain('available');
-    });
-
-    it('switches to a DataTable when the user picks the Table view', () => {
-        const { container } = render(
-            <FrameworksClient
-                frameworks={FW_FIXTURES}
-                coverages={COV_FIXTURES}
-                tenantSlug="acme-corp"
-            />,
-        );
-        const tableRadio = container.querySelector(
-            '#view-toggle-table',
-        ) as HTMLElement;
-        fireEvent.click(tableRadio);
-        // Cards gone, table mounted.
-        expect(
-            container.querySelector('[data-testid="frameworks-card-list"]'),
-        ).toBeNull();
-        expect(container.querySelector('table')).not.toBeNull();
-        // Table row count matches fixture count (1 header + 2 data rows).
-        expect(
-            container.querySelectorAll('table tbody tr').length,
-        ).toBe(2);
-    });
-
-    it('persists the table preference to localStorage', () => {
-        const { container } = render(
-            <FrameworksClient
-                frameworks={FW_FIXTURES}
-                coverages={COV_FIXTURES}
-                tenantSlug="acme-corp"
-            />,
-        );
-        const tableRadio = container.querySelector(
-            '#view-toggle-table',
-        ) as HTMLElement;
-        fireEvent.click(tableRadio);
-        const stored = window.localStorage.getItem(
-            viewModeStorageKey('frameworks'),
-        );
-        expect(stored).toBe('"table"');
-    });
-
-    it('hydrates the persisted view from localStorage on mount', async () => {
-        window.localStorage.setItem(
-            viewModeStorageKey('frameworks'),
-            '"table"',
-        );
-        const { container, findByRole } = render(
-            <FrameworksClient
-                frameworks={FW_FIXTURES}
-                coverages={COV_FIXTURES}
-                tenantSlug="acme-corp"
-            />,
-        );
-        // useLocalStorage hydrates inside a useEffect — wait for table to render.
-        await findByRole('table');
-        expect(
-            container.querySelector('[data-testid="frameworks-card-list"]'),
-        ).toBeNull();
-    });
-
-    it('cards link to the framework detail page', () => {
-        const { container } = render(
-            <FrameworksClient
-                frameworks={FW_FIXTURES}
-                coverages={COV_FIXTURES}
-                tenantSlug="acme-corp"
-            />,
-        );
-        const iso = container.querySelector(
-            '[data-testid="fw-card-ISO27001"] a[href="/t/acme-corp/frameworks/ISO27001"]',
-        );
-        expect(iso).not.toBeNull();
-    });
-});

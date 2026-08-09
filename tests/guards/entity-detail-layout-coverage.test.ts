@@ -48,11 +48,6 @@ interface DetailPageEntry {
 const DETAIL_PAGES: DetailPageEntry[] = [
     // ── Adopted ──
     {
-        file: "src/app/t/[tenantSlug]/(app)/risks/[riskId]/page.tsx",
-        adopted: true,
-        note: "First detail page on EntityDetailLayout — the proof-of-pattern reference.",
-    },
-    {
         file: "src/app/t/[tenantSlug]/(app)/controls/[controlId]/page.tsx",
         adopted: true,
         note: "Heavy detail page with multiple tabs + traceability panel; runs through the shell cleanly.",
@@ -104,11 +99,6 @@ const DETAIL_PAGES: DetailPageEntry[] = [
         file: "src/app/t/[tenantSlug]/(app)/vendors/[vendorId]/assessment/[assessmentId]/page.tsx",
         adopted: false,
         note: "Nested vendor assessment review detail. Pending migration — sub-route of vendor detail; needs breadcrumb stacking.",
-    },
-    {
-        file: "src/app/t/[tenantSlug]/(app)/controls/[controlId]/tests/[planId]/page.tsx",
-        adopted: false,
-        note: "Nested control test plan detail. Pending migration — sub-route of control detail; needs breadcrumb stacking.",
     },
     {
         file: "src/app/t/[tenantSlug]/(app)/admin/vendor-assessment-reviews/[assessmentId]/page.tsx",

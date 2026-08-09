@@ -36,7 +36,6 @@ const ALL_R23_RATCHETS = [
 ] as const;
 
 const ALL_R23_CONSUMERS = [
-    'src/app/t/[tenantSlug]/(app)/risks/RisksClient.tsx',
     'src/app/t/[tenantSlug]/(app)/assets/AssetsClient.tsx',
     'src/app/t/[tenantSlug]/(app)/controls/ControlsClient.tsx',
     'src/app/t/[tenantSlug]/(app)/farm-tasks/FarmTasksClient.tsx',

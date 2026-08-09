@@ -35,7 +35,7 @@ export const PolicyControlLinkDTOSchema = z.object({
     control: z.object({
         id: z.string(),
         name: z.string(),
-        annexId: z.string().nullable().optional(),
+        code: z.string().nullable().optional(),
     }).passthrough(),
 }).passthrough();
 export type PolicyControlLinkDTO = z.infer<typeof PolicyControlLinkDTOSchema>;

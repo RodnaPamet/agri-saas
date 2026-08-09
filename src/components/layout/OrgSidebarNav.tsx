@@ -6,7 +6,6 @@ import {
     LayoutDashboard,
     Building2,
     ShieldCheck,
-    AlertTriangle,
     Paperclip,
     Wheat,
     Users,
@@ -37,7 +36,6 @@ import { NavSection } from './nav-section';
 //   1. Portfolio Overview
 //   2. All Tenants
 //   3. Non-Performing Controls   ← drill-down
-//   4. Critical Risks            ← drill-down
 //   5. Overdue Evidence          ← drill-down
 //   6. Members
 //   7. Settings
@@ -80,12 +78,6 @@ export function useOrgNavSections(): OrgNavSectionDef[] {
                     href: orgHref('/controls'),
                     label: t('nonPerformingControls'),
                     icon: ShieldCheck,
-                    requiresDrillDown: true,
-                },
-                {
-                    href: orgHref('/risks'),
-                    label: t('criticalRisks'),
-                    icon: AlertTriangle,
                     requiresDrillDown: true,
                 },
                 {

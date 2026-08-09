@@ -54,7 +54,6 @@ const LINK_ENTITY_OPTIONS: ComboboxOption[] = [
     { value: 'CONTROL', label: 'Control' },
     { value: 'FRAMEWORK_REQUIREMENT', label: 'Framework Requirement' },
     { value: 'ASSET', label: 'Asset' },
-    { value: 'RISK', label: 'Risk' },
     { value: 'EVIDENCE', label: 'Evidence' },
 ];
 const FINDING_OPTIONS: ComboboxOption[] = [

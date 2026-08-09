@@ -1,18 +1,24 @@
 /**
  * E2E Core Certification Flow
  *
- * Covers the full GRC certification lifecycle as ONE scenario:
+ * Covers the full compliance lifecycle as ONE scenario:
  *   A) Log in (OWNER of a fresh isolated tenant)
  *   B) Create a Control
  *   C) Upload Evidence linked to that Control
- *   D) Create a Risk (via API)
- *   E) Link Control → Risk and verify on the risk detail
+ *   D) Create an Asset (via API)
+ *   E) Link Control → Asset and verify on the asset detail
  *   F) Verify the bidirectional link on the control detail
+ *
+ * Steps D-F used to run against the Risk register. That went with the
+ * inherited GRC stack, so they were repointed onto Asset — the surviving
+ * entity on the other side of a control's traceability graph. The shape
+ * of the assertion (link once via API, read it back from BOTH detail
+ * pages) is unchanged, which is the property this spec exists to hold.
  *
  * Isolation: the whole flow runs against ONE fresh, empty tenant
  * provisioned by the `isolatedTenant` fixture. The previous shape
  * was six separate `test()`s sharing a module-level `let
- * tenantSlug` + `const CONTROL_CODE/RISK_TITLE` — a resource minted
+ * tenantSlug` + per-entity consts — a resource minted
  * in step B was read by step C, so a failure in B cascaded into
  * C-F. This is genuinely a single sequential scenario, so it is now
  * a single `test()` with `test.step(...)` sub-steps: a step failure
@@ -28,7 +34,7 @@ import * as path from 'path';
 const EVIDENCE_FIXTURE = path.resolve(__dirname, '../fixtures/evidence.txt');
 
 test.describe('Core Certification Flow', () => {
-    test('full certification lifecycle: control → evidence → risk → link', async ({
+    test('full compliance lifecycle: control → evidence → asset → link', async ({
         authedPage: page,
         isolatedTenant,
     }) => {
@@ -36,7 +42,7 @@ test.describe('Core Certification Flow', () => {
         const unique = `${Date.now().toString(36)}-${randomUUID().slice(0, 8)}`;
         const CONTROL_CODE = `E2E-CTRL-${unique}`;
         const CONTROL_NAME = `E2E Access Control ${unique}`;
-        const RISK_TITLE = `E2E Risk ${unique}`;
+        const ASSET_NAME = `E2E Asset ${unique}`;
 
         // ── A) Already signed in via the `authedPage` fixture ──
         await test.step('A — landed on dashboard as the isolated OWNER', async () => {
@@ -108,81 +114,73 @@ test.describe('Core Certification Flow', () => {
             ).toBeVisible({ timeout: 10000 });
         });
 
-        // ── D) Create a Risk via API ──
-        let riskId: string | undefined;
-        await test.step('D — create a risk via API', async () => {
-            await page.goto(`/t/${tenantSlug}/risks`);
+        // ── D) Create an Asset via API ──
+        let assetId: string | undefined;
+        await test.step('D — create an asset via API', async () => {
+            await page.goto(`/t/${tenantSlug}/assets`);
             await page.waitForLoadState('networkidle').catch(() => {});
             await page.waitForSelector('h1', { timeout: 60000 });
 
-            const riskResult = await page.evaluate(async (riskTitle) => {
+            const assetResult = await page.evaluate(async (assetName) => {
                 const slug = window.location.pathname.split('/')[2];
                 const res = await fetch(
-                    `${window.location.origin}/api/t/${slug}/risks`,
+                    `${window.location.origin}/api/t/${slug}/assets`,
                     {
                         method: 'POST',
                         credentials: 'include',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
-                            title: riskTitle,
-                            description: 'E2E test risk for certification flow',
-                            category: 'Technical',
-                            likelihood: 4,
-                            impact: 5,
-                            treatmentOwner: 'E2E Test Owner',
+                            name: assetName,
+                            type: 'TRACTOR',
+                            criticality: 'HIGH',
                         }),
                     },
                 );
                 const data = await res.json();
-                return { ok: res.ok, status: res.status, id: data?.id, title: data?.title };
-            }, RISK_TITLE);
+                return { ok: res.ok, status: res.status, id: data?.id, name: data?.name };
+            }, ASSET_NAME);
 
-            expect(riskResult.ok).toBe(true);
-            expect(riskResult.title).toBe(RISK_TITLE);
-            riskId = riskResult.id;
-            expect(riskId).toBeTruthy();
+            expect(assetResult.ok).toBe(true);
+            expect(assetResult.name).toBe(ASSET_NAME);
+            assetId = assetResult.id;
+            expect(assetId).toBeTruthy();
 
             await page.goto(
-                `/t/${tenantSlug}/risks?q=${encodeURIComponent(RISK_TITLE)}`,
+                `/t/${tenantSlug}/assets?q=${encodeURIComponent(ASSET_NAME)}`,
             );
             await page.waitForLoadState('networkidle').catch(() => {});
             await page.waitForSelector('h1', { timeout: 30000 });
             await expect(
-                page.locator(`text=${RISK_TITLE}`).first(),
+                page.locator(`text=${ASSET_NAME}`).first(),
             ).toBeVisible({ timeout: 10000 });
         });
 
-        // ── E) Link Control → Risk and verify on the risk detail ──
-        await test.step('E — link control to risk and verify in traceability', async () => {
+        // ── E) Link Control → Asset and verify on the asset detail ──
+        await test.step('E — link control to asset and verify in traceability', async () => {
             const linkResult = await page.evaluate(
-                async ({ cId, rId }) => {
+                async ({ cId, aId }) => {
                     const slug = window.location.pathname.split('/')[2];
                     const res = await fetch(
-                        `${window.location.origin}/api/t/${slug}/controls/${cId}/risks`,
+                        `${window.location.origin}/api/t/${slug}/assets/${aId}/controls`,
                         {
                             method: 'POST',
                             credentials: 'include',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ riskId: rId }),
+                            body: JSON.stringify({ controlId: cId }),
                         },
                     );
                     return { ok: res.ok, status: res.status };
                 },
-                { cId: controlId!, rId: riskId! },
+                { cId: controlId!, aId: assetId! },
             );
             expect(linkResult.ok).toBe(true);
 
-            await page.goto(`/t/${tenantSlug}/risks/${riskId}`);
+            await page.goto(`/t/${tenantSlug}/assets/${assetId}`);
             await page.waitForLoadState('networkidle').catch(() => {});
-            await page.waitForSelector('#risk-title-heading', { timeout: 60000 });
-            await expect(page.locator('#risk-title-heading')).toContainText(
-                RISK_TITLE,
-                { timeout: 10000 },
-            );
-
-            // Traceability lives on its own tab now (it was removed from
-            // the Overview tab, which duplicated it). Open the tab before
-            // asserting on the linked-controls table.
+            // Traceability lives on its own tab. Wait for the tab trigger
+            // itself (EntityDetailLayout renders `id={`tab-${key}`}`) so a
+            // slow detail fetch can't race the click.
+            await page.waitForSelector('#tab-traceability', { timeout: 60000 });
             await page.click('#tab-traceability');
             await page.waitForSelector('#traceability-panel', { timeout: 60000 });
             await expect(
@@ -197,7 +195,7 @@ test.describe('Core Certification Flow', () => {
         });
 
         // ── F) Verify the bidirectional link on the control detail ──
-        await test.step('F — verify control shows linked risk in traceability', async () => {
+        await test.step('F — verify control shows linked asset in traceability', async () => {
             await page.goto(`/t/${tenantSlug}/controls/${controlId}`);
             await page.waitForLoadState('networkidle').catch(() => {});
             await page.waitForSelector('#control-title', { timeout: 60000 });
@@ -209,11 +207,11 @@ test.describe('Core Certification Flow', () => {
             await page.waitForSelector('#traceability-panel', { timeout: 60000 });
 
             await expect(
-                page.locator('#linked-risks-table'),
+                page.locator('#linked-assets-table'),
             ).toBeVisible({ timeout: 10000 });
             await expect(
-                page.locator('#linked-risks-table'),
-            ).toContainText(RISK_TITLE, { timeout: 5000 });
+                page.locator('#linked-assets-table'),
+            ).toContainText(ASSET_NAME, { timeout: 5000 });
         });
     });
 });

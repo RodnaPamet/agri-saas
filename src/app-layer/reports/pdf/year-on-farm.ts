@@ -13,9 +13,6 @@
  */
 import type { RequestContext } from '@/app-layer/types';
 import { getSeasonRecap } from '@/app-layer/usecases/season-recap';
-import { getEnabledModules } from '@/app-layer/usecases/modules';
-import { listSchemes } from '@/app-layer/usecases/certification-scheme';
-import { generateReadinessReport } from '@/app-layer/usecases/framework/coverage';
 import { haToDca } from '@/lib/agro/rate-calc';
 import { createPdfDocument } from '@/lib/pdf/pdfKitFactory';
 import { addCoverPage, applyHeadersAndFooters } from '@/lib/pdf/layout';
@@ -44,19 +41,11 @@ export async function generateYearOnFarmPdf(
     });
     const tenantName = tenant?.name || 'Tenant';
 
-    // Certification readiness — reuse the ag-dashboard derivation: top
-    // AG_SCHEME by key (listSchemes orders asc), gated on the module so a
-    // non-certified tenant pays no readiness query.
-    let certification: { schemeName: string; score: number } | null = null;
-    const enabledModules = await getEnabledModules(ctx);
-    if (enabledModules.includes('CERTIFICATION')) {
-        const schemes = await listSchemes(ctx);
-        const top = schemes[0];
-        if (top) {
-            const report = await generateReadinessReport(ctx, top.key);
-            certification = { schemeName: top.name, score: report.summary.readinessScore };
-        }
-    }
+    // Certification readiness used to ride here, derived from the top
+    // AG_SCHEME framework. The certification-scheme catalog was removed
+    // with the compliance uproot, so the report carries no readiness
+    // section — the remaining sections are all farm records.
+    const certification = null as { schemeName: string; score: number } | null;
 
     // ─── Meta ─────────────────────────────────────────────────────────
     const yearLabel = recap.year != null ? String(recap.year) : 'All time';

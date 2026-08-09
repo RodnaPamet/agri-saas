@@ -1,16 +1,15 @@
 /**
  * Audit Coherence S9 (2026-05-24) — structural ratchet locking the
- * three cross-framework traceability gap closures.
+ * cross-framework traceability gap closures.
  *
  *   Gap A — RequirementMapping carries `validFrom` / `validTo`
  *   columns; the repository read paths apply the
  *   `activeMappingWindow()` predicate so historical / superseded
  *   mappings never reach the resolver.
  *
- *   Gap B — `getTraceabilityGraph` pushes pagination into the DB
- *   (per-kind `take:` + a 4× linkCap multiplier) so a large tenant
- *   doesn't materialise tens of thousands of rows just to render
- *   500 nodes.
+ *   Gap B — `getTraceabilityGraph`'s DB-side pagination. The graph
+ *   usecase went with the risk register; Gaps A and C below stand on
+ *   modules that are still live.
  *
  *   Gap C — `enrichWithTenantImplementations` overlays the
  *   tenant's ControlRequirementLink rows onto the gap-analysis
@@ -83,34 +82,6 @@ describe('Audit S9 — Cross-Framework Traceability', () => {
             const occurrences =
                 repo.match(/\.\.\.activeMappingWindow\(\)/g) ?? [];
             expect(occurrences.length).toBeGreaterThanOrEqual(3);
-        });
-    });
-
-    describe('Gap B — getTraceabilityGraph pushes pagination into the DB', () => {
-        const src = read(
-            'src/app-layer/usecases/traceability-graph.ts',
-        );
-
-        it('declares LINK_CAP_MULTIPLIER and derives nodeCap / linkCap', () => {
-            expect(src).toMatch(
-                /const LINK_CAP_MULTIPLIER\s*=\s*\d+/,
-            );
-            expect(src).toMatch(
-                /const nodeCap\s*=\s*options\.nodeCap\s*\?\?\s*DEFAULT_NODE_CAP/,
-            );
-            expect(src).toMatch(
-                /const linkCap\s*=\s*nodeCap\s*\*\s*LINK_CAP_MULTIPLIER/,
-            );
-        });
-
-        it('control / risk / asset findMany calls all carry take: nodeCap', () => {
-            // Six findMany calls in the usecase — three entity + three
-            // link. Each must carry a `take:` literal. The structural
-            // detector confirms the absence of any bare findMany.
-            const findManyCount = (src.match(/\.findMany\(/g) ?? []).length;
-            expect(findManyCount).toBe(6);
-            const takeCount = (src.match(/take:\s*(nodeCap|linkCap)/g) ?? []).length;
-            expect(takeCount).toBe(6);
         });
     });
 

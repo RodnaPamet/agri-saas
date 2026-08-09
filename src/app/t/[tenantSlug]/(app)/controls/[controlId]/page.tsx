@@ -41,28 +41,7 @@ import { Sparkle3 } from '@/components/ui/icons/nucleo/sparkle3';
 import { cardVariants } from '@/components/ui/card';
 import { cn } from '@/lib/cn';
 
-import { ControlRoiCard } from './_components/ControlRoiCard';
-
 const TraceabilityPanel = dynamic(() => import('@/components/TraceabilityPanel'), {
-    loading: () => <SkeletonCard lines={3} />,
-    ssr: false,
-});
-// Epic G-5 — exceptions panel + header badge. The badge alone is
-// loaded eagerly via a tiny named import so the control header can
-// surface "Exception: APPROVED" without waiting for the modal
-// machinery in the panel chunk.
-const ControlExceptionsPanel = dynamic(
-    () => import('@/components/ControlExceptionsPanel').then((m) => m.ControlExceptionsPanel),
-    {
-        loading: () => <SkeletonCard lines={3} />,
-        ssr: false,
-    },
-);
-const ControlExceptionHeaderBadge = dynamic(
-    () => import('@/components/ControlExceptionsPanel').then((m) => m.ControlExceptionHeaderBadge),
-    { ssr: false },
-);
-const TestPlansPanel = dynamic(() => import('@/components/TestPlansPanel'), {
     loading: () => <SkeletonCard lines={3} />,
     ssr: false,
 });
@@ -72,7 +51,7 @@ const LinkedTasksPanel = dynamic(() => import('@/components/LinkedTasksPanel'), 
 });
 import type {
     ControlDetailDTO, EvidenceLinkDTO,
-    ContributorDTO, AuditLogEntry,
+    AuditLogEntry,
 } from '@/lib/dto';
 
 // Polish PR-1 — STATUS_BADGE moved to shared domain mapping as
@@ -85,9 +64,6 @@ const STATUS_LABELS: Record<string, string> = {
 const FREQ_LABELS: Record<string, string> = {
     AD_HOC: 'Ad Hoc', DAILY: 'Daily', WEEKLY: 'Weekly',
     MONTHLY: 'Monthly', QUARTERLY: 'Quarterly', ANNUALLY: 'Annually',
-};
-const AUTOMATION_TYPE_LABELS: Record<string, string> = {
-    AUTOMATED: 'Automated', MANUAL: 'Manual', IT_DEPENDENT_MANUAL: 'IT-Dependent Manual',
 };
 const MITIGATION_TYPE_LABELS: Record<string, string> = {
     PREVENTIVE: 'Preventive', DETECTIVE: 'Detective', DETERRENT: 'Deterrent',
@@ -102,7 +78,7 @@ const CATEGORY_LABELS: Record<string, string> = {
 const CATEGORY_CB_OPTIONS: ComboboxOption[] = CATEGORY_OPTIONS.filter(Boolean).map(c => ({ value: c, label: CATEGORY_LABELS[c] || c }));
 const STATUS_CB_OPTIONS: ComboboxOption[] = Object.entries(STATUS_LABELS).map(([val, lbl]) => ({ value: val, label: lbl }));
 
-type Tab = 'overview' | 'tasks' | 'evidence' | 'mappings' | 'traceability' | 'activity' | 'tests';
+type Tab = 'overview' | 'tasks' | 'evidence' | 'mappings' | 'traceability' | 'activity';
 
 /**
  * Evidence-tab payload — `GET /controls/{id}/evidence` (#102 item 1).
@@ -237,7 +213,7 @@ export default function ControlDetailPage() {
 
     // Edit modal state
     const [showEditModal, setShowEditModal] = useState(false);
-    const [editForm, setEditForm] = useState({ name: '', description: '', intent: '', category: '', frequency: '', owner: '', automationType: '', mitigationType: '', annualCost: '' });
+    const [editForm, setEditForm] = useState({ name: '', description: '', intent: '', category: '', frequency: '', owner: '', mitigationType: '' });
     const [savingEdit, setSavingEdit] = useState(false);
     const [editError, setEditError] = useState('');
     const [editSuccess, setEditSuccess] = useState(false);
@@ -255,12 +231,7 @@ export default function ControlDetailPage() {
             category: control.category || '',
             frequency: control.frequency || '',
             owner: control.ownerUserId || '',
-            automationType: control.automationType || '',
             mitigationType: control.mitigationType || '',
-            annualCost:
-                control.annualCost === null || control.annualCost === undefined
-                    ? ''
-                    : String(control.annualCost),
         });
         setEditError('');
         setEditSuccess(false);
@@ -293,17 +264,6 @@ export default function ControlDetailPage() {
                     intent: form.intent.trim() || null,
                     category: form.category.trim() || null,
                     frequency: form.frequency || null,
-                    // RQ3-8 — empty string clears the price (honest
-                    // null); a parseable number is sent through, an
-                    // unparseable value is dropped (the input is
-                    // type=number so this is the belt-and-braces
-                    // case).
-                    annualCost:
-                        form.annualCost.trim() === ''
-                            ? null
-                            : Number.isFinite(Number(form.annualCost))
-                                ? Number(form.annualCost)
-                                : undefined,
                 }),
             });
             if (!res.ok) {
@@ -656,7 +616,6 @@ export default function ControlDetailPage() {
         { key: 'mappings', label: t('detail.tabMappings'), count: control._count?.frameworkMappings ?? 0 },
         { key: 'traceability', label: t('detail.tabTraceability') },
         { key: 'activity', label: t('detail.tabActivity') },
-        { key: 'tests', label: t('detail.tabTests') },
     ];
 
     // ── Header meta strip (Polish PR-1) ──
@@ -747,10 +706,6 @@ export default function ControlDetailPage() {
                     </StatusBadge>
                 </Tooltip>
             )}
-            <ControlExceptionHeaderBadge
-                tenantSlug={tenantSlug}
-                controlId={control.id}
-            />
         </>
     );
 
@@ -843,7 +798,6 @@ export default function ControlDetailPage() {
             )}
 
             {/* Tab content — tab bar is rendered by EntityDetailLayout */}
-            {tab === 'overview' && <ControlRoiCard controlId={controlId} />}
 
             {tab === 'overview' && (
                 <div className={cn(cardVariants(), 'space-y-default')}>
@@ -883,10 +837,6 @@ export default function ControlDetailPage() {
                             <p className="text-sm text-content-default mt-1">{control.frequency ? FREQ_LABELS[control.frequency] || control.frequency : '—'}</p>
                         </div>
                         <div>
-                            <span className="text-xs text-content-subtle uppercase">{t('detail.fieldAutomationType')}</span>
-                            <p className="text-sm text-content-default mt-1">{control.automationType ? AUTOMATION_TYPE_LABELS[control.automationType] || control.automationType : '—'}</p>
-                        </div>
-                        <div>
                             <span className="text-xs text-content-subtle uppercase">{t('detail.fieldMitigationType')}</span>
                             <p className="text-sm text-content-default mt-1">{control.mitigationType ? MITIGATION_TYPE_LABELS[control.mitigationType] || control.mitigationType : '—'}</p>
                         </div>
@@ -904,18 +854,6 @@ export default function ControlDetailPage() {
                                 <p className="text-sm text-content-warning mt-1">{control.applicabilityJustification}</p>
                             </div>
                         )}
-                        <div>
-                            <span className="text-xs text-content-subtle uppercase">{t('detail.contributors')}</span>
-                            <div className="text-sm text-content-default mt-1">
-                                {(control.contributors?.length ?? 0) > 0 ? control.contributors?.map((c: ContributorDTO) => (
-                                    <StatusBadge variant="neutral" className="mr-1" key={c.user.id}>{c.user.name ?? '—'}</StatusBadge>
-                                )) : '—'}
-                            </div>
-                        </div>
-                        <div>
-                            <span className="text-xs text-content-subtle uppercase">{t('detail.lastTested')}</span>
-                            <p className="text-sm text-content-default mt-1">{control.lastTested ? formatDate(control.lastTested) : '—'}</p>
-                        </div>
                         <div>
                             <span className="text-xs text-content-subtle uppercase">{t('detail.nextDue')}</span>
                             <p className="text-sm text-content-default mt-1">{control.nextDueAt ? formatDate(control.nextDueAt) : '—'}</p>
@@ -1067,29 +1005,6 @@ export default function ControlDetailPage() {
                             ))}
                         </div>
                     )}
-                </div>
-            )}
-
-            {tab === 'tests' && (
-                <div className={cardVariants({ density: 'compact' })}>
-                    <TestPlansPanel controlId={controlId} />
-                </div>
-            )}
-
-            {/* Epic G-5 — Control exceptions section. Scoped to the
-              * Overview tab only: the request-exception workflow is
-              * control-level metadata, not per-sub-tab, so it would
-              * read as noise repeated under Tasks / Evidence / etc. */}
-            {tab === 'overview' && (
-                <div className={cn(cardVariants({ density: 'compact' }), 'mt-6')}>
-                    <ControlExceptionsPanel
-                        tenantSlug={tenantSlug}
-                        controlId={controlId}
-                        compensatingControlChoices={[]}
-                        defaultRiskAcceptedByUserId={control.ownerUserId ?? ''}
-                        canWrite={permissions.canWrite}
-                        canAdmin={permissions.canAdmin}
-                    />
                 </div>
             )}
         </EntityDetailLayout>

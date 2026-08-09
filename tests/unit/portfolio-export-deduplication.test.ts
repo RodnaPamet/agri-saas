@@ -3,7 +3,7 @@
  *
  * The CSV export route composes 5 portfolio usecases in one HTTP
  * request: summary + tenant-health + 3 drill-downs (controls /
- * risks / evidence). Before E.3 each usecase fetched its own
+ * evidence). Before E.3 each usecase fetched its own
  * tenants list (5×) and the two snapshot-driven ones each fetched
  * their own snapshots (2×) — 7 DB round-trips per export.
  *
@@ -118,7 +118,6 @@ describe('Epic E.3 — CSV export tenants/snapshots deduplication', () => {
                 expect(body).toContain('# Portfolio Summary');
                 expect(body).toContain('# Tenant Health');
                 expect(body).toContain('# Non-Performing Controls');
-                expect(body).toContain('# Critical Risks');
                 expect(body).toContain('# Overdue Evidence');
             },
         );

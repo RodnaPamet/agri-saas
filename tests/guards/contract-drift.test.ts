@@ -14,7 +14,6 @@
 describe('Contract Drift — DTO integrity', () => {
     const dtoPaths = [
         { module: 'control.dto', schemas: ['ControlListItemDTOSchema', 'ControlDetailDTOSchema', 'ControlDashboardDTOSchema'] },
-        { module: 'risk.dto', schemas: ['RiskListItemDTOSchema', 'RiskDetailDTOSchema'] },
         { module: 'policy.dto', schemas: ['PolicyListItemDTOSchema', 'PolicyDetailDTOSchema'] },
         { module: 'task.dto', schemas: ['TaskDTOSchema'] },
         { module: 'vendor.dto', schemas: ['VendorListItemDTOSchema', 'VendorDetailDTOSchema'] },
@@ -41,7 +40,6 @@ describe('Contract Drift — DTO integrity', () => {
             id: 'ctl_123',
             tenantId: 'ten_1',
             code: 'A.5.1',
-            annexId: null,
             name: 'Access Control Policy',
             description: 'Ensures proper access controls',
             category: 'TECHNICAL',
@@ -55,24 +53,6 @@ describe('Contract Drift — DTO integrity', () => {
             _count: { evidence: 3, risks: 1 },
         };
         const result = ControlListItemDTOSchema.safeParse(validControl);
-        expect(result.success).toBe(true);
-    });
-
-    test('RiskListItemDTOSchema parses a valid risk shape', () => {
-
-        const { RiskListItemDTOSchema } = require('../../src/lib/dto/risk.dto');
-        const validRisk = {
-            id: 'risk_1',
-            tenantId: 'ten_1',
-            title: 'Data Breach Risk',
-            impact: 4,
-            likelihood: 3,
-            inherentScore: 12,
-            score: 8,
-            status: 'OPEN',
-            createdAt: '2025-01-01T00:00:00.000Z',
-        };
-        const result = RiskListItemDTOSchema.safeParse(validRisk);
         expect(result.success).toBe(true);
     });
 
@@ -121,7 +101,6 @@ describe('Contract Drift — DTO integrity', () => {
         const dtoIndex = require('../../src/lib/dto/index');
         const expectedExports = [
             'ControlListItemDTOSchema', 'ControlDetailDTOSchema',
-            'RiskListItemDTOSchema', 'RiskDetailDTOSchema',
             'PolicyListItemDTOSchema', 'PolicyDetailDTOSchema',
             'TaskDTOSchema',
             'VendorListItemDTOSchema', 'VendorDetailDTOSchema',

@@ -70,7 +70,6 @@ const mockCtx: RequestContext = {
         evidence: { view: true, upload: true, edit: true, download: true },
         policies: { view: true, create: true, edit: true, approve: true },
         tasks: { view: true, create: true, edit: true, assign: true },
-        risks: { view: true, create: true, edit: true },
         vendors: { view: true, create: true, edit: true },
         tests: { view: true, create: true, execute: true },
         frameworks: { view: true, install: true },

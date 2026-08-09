@@ -63,10 +63,11 @@ describe('B6 — Phase 3 useZodForm adoption', () => {
         }
     });
 
-    describe('Canonical 7-tab structure on detail pages (B6 +1)', () => {
-        // The user asked for risks + assets to wear the same
-        // submenu structure as controls: Overview, Tasks, Evidence,
-        // Mappings, Traceability, Activity, Tests.
+    describe('Canonical 6-tab structure on detail pages (B6 +1)', () => {
+        // The user asked for risks + assets to wear the same submenu
+        // structure as controls: Overview, Tasks, Evidence, Mappings,
+        // Traceability, Activity. (A seventh tab, Tests, was dropped in the
+        // compliance uproot along with the test-plan feature it opened.)
         const CANONICAL_TABS = [
             'overview',
             'tasks',
@@ -74,7 +75,6 @@ describe('B6 — Phase 3 useZodForm adoption', () => {
             'mappings',
             'traceability',
             'activity',
-            'tests',
         ] as const;
         // RQ2-4: Risks left the canonical 7-tab club — its IA is now
         // assessment-centric (Overview · Assessment · Quantification ·
@@ -92,7 +92,7 @@ describe('B6 — Phase 3 useZodForm adoption', () => {
         ];
 
         for (const { label, file } of PAGES) {
-            it(`${label} declares the 7-tab Tab union`, () => {
+            it(`${label} declares the 6-tab Tab union`, () => {
                 const src = read(file);
                 for (const t of CANONICAL_TABS) {
                     expect(src).toMatch(new RegExp(`['"]${t}['"]`));

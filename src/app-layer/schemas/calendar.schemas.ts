@@ -85,7 +85,6 @@ export const CALENDAR_EVENT_TYPES = [
     'audit-cycle',
     // control
     'control-review',
-    'control-test-due',
     // task
     'task-due',
     // farm-task — Task rows with type: 'FARM_TASK'. Same source model as
@@ -206,7 +205,6 @@ export interface CalendarEvent {
         | 'VENDOR_DOCUMENT'
         | 'AUDIT_CYCLE'
         | 'CONTROL'
-        | 'CONTROL_TEST_PLAN'
         | 'TASK'
         | 'RISK'
         | 'RISK_TREATMENT_PLAN'
@@ -221,7 +219,7 @@ export interface CalendarEvent {
         // A government support-scheme application window. Reuses the existing
         // subsidy-deadline calendar TYPES (a deadline is a deadline whatever
         // produced it) but needs its own entityType so the side panel can link
-        // back to /support-schemes rather than to a news article.
+        // back to /schemes rather than to a news article.
         | 'SUPPORT_SCHEME';
     entityId: string;
     /**

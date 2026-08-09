@@ -53,7 +53,8 @@ const EXEMPT_FILE_PATTERNS: RegExp[] = [
  * of the budgeted sites. The supersession is documented in
  * `tests/guards/r31-document-bar.test.ts`.
  */
-const INLINE_SUBTITLE_BUDGET = 36;
+// Compliance uproot (2026-08-07): compliance uproot removed 10 inline-subtitle sites.
+const INLINE_SUBTITLE_BUDGET = 26;
 
 function isExempt(rel: string): boolean {
     const segments = rel.split(path.sep);

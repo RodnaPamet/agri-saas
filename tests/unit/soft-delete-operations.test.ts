@@ -96,8 +96,8 @@ describe('Soft-Delete Operations', () => {
             expect(auditAction).not.toBe('DELETE');
         });
 
-        test('all five models support soft delete operations', () => {
-            const models = ['Asset', 'Risk', 'Control', 'Evidence', 'Policy'];
+        test('the P0 models support soft delete operations', () => {
+            const models = ['Asset', 'Control', 'Evidence', 'Policy'];
             for (const model of models) {
                 expect(SOFT_DELETE_MODELS.has(model)).toBe(true);
             }

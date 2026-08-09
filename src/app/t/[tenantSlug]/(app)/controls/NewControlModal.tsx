@@ -63,13 +63,7 @@ const FREQUENCY_OPTIONS: ComboboxOption[] = [
 ];
 
 // Mirror of EditControlModal's classification options (the Prisma
-// enums are the source of truth — keep these two lists in sync).
-const AUTOMATION_TYPE_OPTIONS: ComboboxOption[] = [
-    { value: 'AUTOMATED', label: 'Automated' },
-    { value: 'MANUAL', label: 'Manual' },
-    { value: 'IT_DEPENDENT_MANUAL', label: 'IT-Dependent Manual' },
-];
-
+// enum is the source of truth — keep these two lists in sync).
 const MITIGATION_TYPE_OPTIONS: ComboboxOption[] = [
     { value: 'PREVENTIVE', label: 'Preventive' },
     { value: 'DETECTIVE', label: 'Detective' },
@@ -107,7 +101,6 @@ const formSchema = z
         category: z.string().optional(),
         frequency: z.string().optional(),
         ownerUserId: z.string().optional(),
-        automationType: z.string().optional(),
         mitigationType: z.string().optional(),
         applicability: z.enum(['APPLICABLE', 'NOT_APPLICABLE']),
         justification: z.string().optional(),
@@ -134,7 +127,6 @@ const DEFAULT_VALUES: FormValues = {
     category: '',
     frequency: '',
     ownerUserId: '',
-    automationType: '',
     mitigationType: '',
     applicability: 'APPLICABLE',
     justification: '',
@@ -218,7 +210,6 @@ export function NewControlModal({ open, setOpen, tenantSlug }: NewControlModalPr
                 category: values.category || undefined,
                 frequency: values.frequency || undefined,
                 ownerUserId: values.ownerUserId || undefined,
-                automationType: values.automationType || undefined,
                 mitigationType: values.mitigationType || undefined,
                 isCustom: true,
             };
@@ -395,35 +386,6 @@ export function NewControlModal({ open, setOpen, tenantSlug }: NewControlModalPr
                             </FormField>
                         </div>
                         <div className="grid grid-cols-1 gap-default sm:grid-cols-2">
-                            <FormField
-                                label={t('newModal.automationType')}
-                                error={errors.automationType?.message}
-                            >
-                                <Controller
-                                    control={control}
-                                    name="automationType"
-                                    render={({ field }) => (
-                                        <Combobox
-                                            id="control-automation-type-input"
-                                            name="automationType"
-                                            options={AUTOMATION_TYPE_OPTIONS}
-                                            selected={
-                                                AUTOMATION_TYPE_OPTIONS.find(
-                                                    (o) => o.value === field.value,
-                                                ) ?? null
-                                            }
-                                            setSelected={(o) =>
-                                                field.onChange(o?.value ?? '')
-                                            }
-                                            placeholder={t('newModal.phAutomation')}
-                                            hideSearch
-                                            matchTriggerWidth
-                                            buttonProps={{ className: 'w-full' }}
-                                            caret
-                                        />
-                                    )}
-                                />
-                            </FormField>
                             <FormField
                                 label={t('newModal.mitigationType')}
                                 error={errors.mitigationType?.message}

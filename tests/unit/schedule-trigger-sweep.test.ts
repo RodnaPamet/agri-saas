@@ -49,8 +49,8 @@ describe('parseScheduleConfig', () => {
         expect(parseScheduleConfig({ kind: 'DATE_RELATIVE', target: 'Evidence', offsetDays: -1 })).toBeNull();
         expect(parseScheduleConfig(null)).toBeNull();
     });
-    it('only allowlists the three GRC date targets', () => {
-        expect(Object.keys(SCHEDULE_TARGETS).sort()).toEqual(['ControlException', 'ControlTestPlan', 'Evidence']);
+    it('only allowlists the Evidence date target', () => {
+        expect(Object.keys(SCHEDULE_TARGETS).sort()).toEqual(['Evidence']);
     });
 });
 

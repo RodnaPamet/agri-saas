@@ -107,7 +107,6 @@ describe('No unsafe any — CI Guardrails', () => {
         const dtoDir = path.join(SRC_DIR, 'lib', 'dto');
         const required = [
             'control.dto.ts',
-            'risk.dto.ts',
             'policy.dto.ts',
             'task.dto.ts',
             'vendor.dto.ts',
@@ -127,7 +126,6 @@ describe('No unsafe any — CI Guardrails', () => {
             'use-api.ts',
             'use-controls.ts',
             'use-policies.ts',
-            'use-risks.ts',
             'use-tasks.ts',
             'use-assets.ts',
             'use-evidence.ts',

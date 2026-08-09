@@ -34,14 +34,14 @@ const getKind = (h: SearchHit) => h.type;
 
 describe('filterHitsByKind', () => {
     it('passes everything through when active set is empty (no chips selected = all kinds)', () => {
-        const hits = [hit('c1', 'control'), hit('r1', 'risk')];
+        const hits = [hit('c1', 'control'), hit('a1', 'asset')];
         expect(filterHitsByKind(hits, new Set(), getKind)).toEqual(hits);
     });
 
     it('keeps only hits whose kind is in the active set', () => {
         const hits = [
             hit('c1', 'control'),
-            hit('r1', 'risk'),
+            hit('a1', 'asset'),
             hit('p1', 'policy'),
         ];
         const out = filterHitsByKind(
@@ -53,7 +53,7 @@ describe('filterHitsByKind', () => {
     });
 
     it('returns a new array — never mutates input', () => {
-        const hits = [hit('c1', 'control'), hit('r1', 'risk')];
+        const hits = [hit('c1', 'control'), hit('a1', 'asset')];
         const before = JSON.stringify(hits);
         filterHitsByKind(hits, new Set<SearchHitType>(['control']), getKind);
         expect(JSON.stringify(hits)).toBe(before);
@@ -63,7 +63,7 @@ describe('filterHitsByKind', () => {
         const hits = [hit('c1', 'control')];
         const out = filterHitsByKind(
             hits,
-            new Set<SearchHitType>(['risk']),
+            new Set<SearchHitType>(['asset']),
             getKind,
         );
         expect(out).toEqual([]);
@@ -74,14 +74,14 @@ describe('filterHitsByKind', () => {
 
 describe('toggleKind', () => {
     it('adds a kind that is not in the active set', () => {
-        const out = toggleKind(new Set<SearchHitType>(['control']), 'risk');
-        expect([...out].sort()).toEqual(['control', 'risk']);
+        const out = toggleKind(new Set<SearchHitType>(['control']), 'asset');
+        expect([...out].sort()).toEqual(['asset', 'control']);
     });
 
     it('removes a kind that IS in the active set', () => {
         const out = toggleKind(
-            new Set<SearchHitType>(['control', 'risk']),
-            'risk',
+            new Set<SearchHitType>(['control', 'asset']),
+            'asset',
         );
         expect([...out]).toEqual(['control']);
     });
@@ -89,7 +89,7 @@ describe('toggleKind', () => {
     it('returns a new Set — never mutates input', () => {
         const input = new Set<SearchHitType>(['control']);
         const before = [...input];
-        toggleKind(input, 'risk');
+        toggleKind(input, 'asset');
         expect([...input]).toEqual(before);
     });
 });
@@ -107,13 +107,11 @@ describe('countHitsByKind', () => {
         const out = countHitsByKind([], getKind);
         expect(out).toEqual({
             control: 0,
-            risk: 0,
             policy: 0,
             framework: 0,
             evidence: 0,
             asset: 0,
             task: 0,
-            test: 0,
             knowledge: 0,
         });
     });
@@ -122,23 +120,23 @@ describe('countHitsByKind', () => {
         const hits = [
             hit('c1', 'control'),
             hit('c2', 'control'),
-            hit('r1', 'risk'),
+            hit('a1', 'asset'),
             hit('p1', 'policy'),
         ];
         const out = countHitsByKind(hits, getKind);
         expect(out.control).toBe(2);
-        expect(out.risk).toBe(1);
+        expect(out.asset).toBe(1);
         expect(out.policy).toBe(1);
         expect(out.evidence).toBe(0);
         expect(out.framework).toBe(0);
     });
 
     it('counts the FULL list — independent of any filter that may be applied later', () => {
-        const hits = [hit('c1', 'control'), hit('r1', 'risk')];
-        // Even if we then filter to 'control', the count for risk
-        // stays at 1 — the chip should still display "Risk (1)" so
+        const hits = [hit('c1', 'control'), hit('a1', 'asset')];
+        // Even if we then filter to 'control', the count for asset
+        // stays at 1 — the chip should still display "Assets (1)" so
         // the user can toggle it back on.
         const out = countHitsByKind(hits, getKind);
-        expect(out.risk).toBe(1);
+        expect(out.asset).toBe(1);
     });
 });

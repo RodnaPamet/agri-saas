@@ -29,17 +29,15 @@ import type { SearchHit, SearchHitType } from './types';
 /**
  * Tiebreak hint when two hits across different kinds match the
  * query equally well. Bias toward the entities operators search
- * for most often in the palette (controls > risks > policies >
+ * for most often in the palette (controls > policies >
  * frameworks > evidence). Magnitudes are tiny relative to the
  * match-quality bands so ranking is dominated by relevance, not
  * type bias.
  */
 const TYPE_BASELINE: Record<SearchHitType, number> = {
     control: 7,
-    risk: 6,
     task: 5,
     policy: 4,
-    test: 3,
     asset: 2,
     framework: 1,
     evidence: 0,
@@ -111,13 +109,11 @@ export function capPerType(
 ): { kept: SearchHit[]; perTypeCounts: Record<SearchHitType, number>; truncated: boolean } {
     const counts: Record<SearchHitType, number> = {
         control: 0,
-        risk: 0,
         policy: 0,
         framework: 0,
         evidence: 0,
         asset: 0,
         task: 0,
-        test: 0,
         knowledge: 0,
     };
     const kept: SearchHit[] = [];

@@ -44,8 +44,6 @@ const EXEMPTIONS: Record<string, string> = {
         "(a) detail-page sub-table — one machine's service history, not a list page. The set is bounded by MAINTENANCE_PAGE_SIZE and already ordered newest-first, which is how a service log is read; the open records a farmer is actually looking for sit at the top by construction. Faceted filtering, a column gear and viewport-clamping all add chrome without adding reach.",
 
     // Certification scheme detail (schemes roadmap PR2).
-    "schemes/[schemeKey]/SchemeDetailClient.tsx":
-        "(a) detail-page sub-table — the control points OF one standard, not a list page. The set is fixed by the standard (a scheme publishes its control points; a farm cannot add or remove them), already ordered by the catalogue's own sortOrder, and read top-to-bottom against the status column. Faceted filtering, a column gear and viewport-clamping all add chrome without adding reach.",
 
     // Grain bin detail (bins roadmap PR2).
     "grain/bins/[binId]/BinDetailClient.tsx":
@@ -112,18 +110,8 @@ const EXEMPTIONS: Record<string, string> = {
         '(b) multi-section admin page — small fixed catalogue with inline controls.',
     'admin/roles/page.tsx':
         '(b) custom roles admin — small fixed list with inline create + permission controls.',
-    'coverage/CoverageClient.tsx':
-        '(b) multi-card coverage dashboard — KPIs + two gap tables; per-table gear would compete with the page composition.',
     'access-reviews/AccessReviewsClient.tsx':
         '(b) multi-section dashboard — review cycle list inside a tabbed composition.',
-    'reports/ReportsClient.tsx':
-        '(b) reports landing — composite of discrete report tiles, not a single entity list.',
-    'tests/due/page.tsx':
-        '(b) due-tests planning surface — fixed scope with tab selector.',
-    'controls/templates/page.tsx':
-        '(b) control-template catalogue — small fixed catalogue browsed by section.',
-    'risks/import/page.tsx':
-        '(b) risk import wizard — staged workflow, each step has its own controls.',
 
     // ─── (c) Toolbar pending ────────────────────────────────────────
     // (none today — Findings got the gear in R10-PR11 mounted

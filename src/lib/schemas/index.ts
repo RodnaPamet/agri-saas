@@ -62,77 +62,11 @@ export const UpdateAssetSchema = z.object({
     description: 'Partial update for an agricultural asset. Every field is optional; only provided fields are persisted.',
 });
 
-// ─── Risks ───
-
-export const CreateRiskSchema = z.object({
-    title: z.string().min(1, 'Title is required'),
-    description: z.string().optional().nullable(),
-    category: z.string().optional().nullable(),
-    threat: z.string().optional(),
-    vulnerability: z.string().optional(),
-    impact: z.coerce.number().int().min(1).max(10).optional().default(3),
-    likelihood: z.coerce.number().int().min(1).max(10).optional().default(3),
-    treatment: z.string().optional().nullable(),
-    treatmentOwner: z.string().optional().nullable(),
-    treatmentNotes: z.string().optional().nullable(),
-    ownerUserId: z.string().optional().nullable(),    // Real user reference — the risk owner (people picker)
-    targetDate: z.string().optional().nullable(),
-    nextReviewAt: z.string().optional().nullable(),
-}).strip().openapi('RiskCreateRequest', {
-    description: 'Payload for creating a risk. Inherent score = impact × likelihood; the server computes residualScore separately when treatment data lands. treatmentNotes is encrypted at rest (Epic B field-encryption manifest).',
-});
-
-export const UpdateRiskSchema = z.object({
-    title: z.string().min(1).optional(),
-    threat: z.string().optional(),
-    vulnerability: z.string().optional(),
-    impact: z.coerce.number().int().min(1).max(10).optional(),
-    likelihood: z.coerce.number().int().min(1).max(10).optional(),
-    // RQ2-1 — direct residual assessment (both-or-neither; the
-    // usecase derives residualScore and rejects an incomplete pair).
-    residualLikelihood: z.coerce.number().int().min(1).max(10).optional(),
-    residualImpact: z.coerce.number().int().min(1).max(10).optional(),
-    // RQ2-1 — optional rationale recorded on the score-provenance
-    // ledger event when a score dimension changes.
-    scoreJustification: z.string().max(2000).optional().nullable(),
-    treatment: z.string().optional().nullable(),
-    treatmentOwner: z.string().optional().nullable(),
-    treatmentNotes: z.string().optional().nullable(),
-    ownerUserId: z.string().optional().nullable(),    // Real user reference — "Assigned to"
-    targetDate: z.string().optional().nullable(),
-}).strip().refine(
-    (d) => (d.residualLikelihood === undefined) === (d.residualImpact === undefined),
-    { message: 'residualLikelihood and residualImpact must be supplied together' },
-).openapi('RiskUpdateRequest', {
-    description: 'Partial update for a risk. All fields optional. residualLikelihood/residualImpact must be supplied together; residualScore is derived server-side and every score change lands a provenance event (RQ2-1).',
-});
-
-export const LinkRiskControlSchema = z.object({
-    controlId: z.string().min(1, 'controlId is required'),
-}).strip().openapi('RiskControlLinkRequest', {
-    description: 'Body for linking an existing control to this risk (mitigation mapping).',
-});
-
-// ─── Risk Status & Mapping ───
-
-
-export const SetRiskStatusSchema = z.object({
-    status: z.enum(['OPEN', 'MITIGATING', 'ACCEPTED', 'CLOSED']),
-}).strip().openapi('RiskSetStatusRequest', {
-    description: 'Lifecycle transition for a risk. The four states form an open lattice; closed risks remain queryable via includeDeleted=true.',
-});
-
-export const MapRiskControlSchema = z.object({
-    controlId: z.string().min(1, 'controlId is required'),
-}).strip().openapi('RiskControlMapRequest', {
-    description: 'Body for mapping a control to a risk (alternative endpoint to RiskControlLinkRequest; same shape, different surface).',
-});
 
 // ─── Controls ───
 
 export const CreateControlSchema = z.object({
     code: z.string().optional().nullable(),
-    annexId: z.string().optional().nullable(),
     name: z.string().min(1, 'Name is required'),
     description: z.string().optional().nullable(),
     intent: z.string().optional().nullable(),
@@ -142,11 +76,10 @@ export const CreateControlSchema = z.object({
     ownerUserId: z.string().optional().nullable(),
     evidenceSource: z.enum(['MANUAL', 'INTEGRATION']).optional().nullable(),
     automationKey: z.string().optional().nullable(),
-    automationType: z.enum(['AUTOMATED', 'MANUAL', 'IT_DEPENDENT_MANUAL']).optional().nullable(),
     mitigationType: z.enum(['PREVENTIVE', 'DETECTIVE', 'DETERRENT', 'CORRECTIVE', 'COMPENSATING']).optional().nullable(),
     isCustom: z.boolean().optional().default(true),
 }).strip().openapi('ControlCreateRequest', {
-    description: 'Payload for creating a control. Status defaults to NOT_STARTED. annexId references the framework annex catalogue (e.g. ISO 27001:2022 A.5.1). Custom controls (isCustom=true) are tenant-specific; framework-shipped controls install via the templates endpoint instead.',
+    description: 'Payload for creating a control. Status defaults to NOT_STARTED. `code` carries the framework reference where one applies (e.g. ISO 27001:2022 A.5.1) and is minted as `CTL-N` for custom controls. Custom controls (isCustom=true) are tenant-specific.',
 });
 
 export const UpdateControlSchema = z.object({
@@ -158,11 +91,7 @@ export const UpdateControlSchema = z.object({
     frequency: z.enum(['AD_HOC', 'DAILY', 'WEEKLY', 'MONTHLY', 'QUARTERLY', 'ANNUALLY']).optional().nullable(),
     evidenceSource: z.enum(['MANUAL', 'INTEGRATION']).optional().nullable(),
     automationKey: z.string().optional().nullable(),
-    automationType: z.enum(['AUTOMATED', 'MANUAL', 'IT_DEPENDENT_MANUAL']).optional().nullable(),
     mitigationType: z.enum(['PREVENTIVE', 'DETECTIVE', 'DETERRENT', 'CORRECTIVE', 'COMPENSATING']).optional().nullable(),
-    // RQ3-8 — annual cost in the tenant's currency. Float (matches
-    // the existing Risk money-field pattern); null clears the price.
-    annualCost: z.number().nonnegative().optional().nullable(),
 }).strip().openapi('ControlUpdateRequest', {
     description: 'Partial update for a control. Status, applicability, and owner have dedicated focused endpoints; this body covers descriptive metadata only.',
 });
@@ -184,12 +113,6 @@ export const SetControlOwnerSchema = z.object({
     ownerUserId: z.string().nullable(),
 }).strip().openapi('ControlSetOwnerRequest', {
     description: 'Reassign or unassign a control owner. Pass null to clear the owner; pass a userId to assign.',
-});
-
-export const AddContributorSchema = z.object({
-    userId: z.string().min(1, 'userId is required'),
-}).strip().openapi('ContributorAddRequest', {
-    description: 'Add a user as a contributor to a control. Contributors get write access to the control without being the canonical owner.',
 });
 
 export const CreateControlTaskSchema = z.object({
@@ -218,12 +141,6 @@ export const LinkEvidenceSchema = z.object({
     note: z.string().optional().nullable(),
 }).strip().openapi('EvidenceLinkRequest', {
     description: 'Attach evidence to a control. FILE kinds reference an uploaded FileRecord by id; LINK kinds carry a URL; INTEGRATION_RESULT kinds are emitted by automation runs.',
-});
-
-export const InstallTemplatesSchema = z.object({
-    templateIds: z.array(z.string().min(1)).min(1, 'At least one template ID is required'),
-}).strip().openapi('ControlTemplatesInstallRequest', {
-    description: 'Install one or more framework-shipped control templates into the tenant. Idempotent — re-installing an already-installed template is a no-op.',
 });
 
 export const MapRequirementSchema = z.object({
@@ -380,11 +297,9 @@ export const CreateFindingSchema = z.object({
     controlId: z.string().optional().nullable(),
     // A compensating control that mitigates the finding.
     compensatingControlId: z.string().optional().nullable(),
-    // Risks this finding implicates (many-to-many).
-    riskIds: z.array(z.string()).max(100).optional(),
     dueDate: z.string().optional().nullable(),
 }).strip().openapi('FindingCreateRequest', {
-    description: 'Create an audit finding. auditId is optional — findings can be raised independently of an audit cycle. description, rootCause + analysis are encrypted at rest. assigneeUserId / controlId / compensatingControlId / riskIds are validated against the tenant.',
+    description: 'Create an audit finding. auditId is optional — findings can be raised independently of an audit cycle. description, rootCause + analysis are encrypted at rest. assigneeUserId / controlId / compensatingControlId are validated against the tenant.',
 });
 
 export const UpdateFindingSchema = z.object({
@@ -399,12 +314,11 @@ export const UpdateFindingSchema = z.object({
     assigneeUserId: z.string().optional().nullable(),
     controlId: z.string().optional().nullable(),
     compensatingControlId: z.string().optional().nullable(),
-    riskIds: z.array(z.string()).max(100).optional(),
     dueDate: z.string().optional().nullable(),
     status: z.enum(['OPEN', 'IN_PROGRESS', 'READY_FOR_VERIFICATION', 'CLOSED']).optional(),
     verificationNotes: z.string().optional().nullable(),
 }).strip().openapi('FindingUpdateRequest', {
-    description: 'Partial update for a finding — including lifecycle transitions and verification notes. Relation fields (assignee/control/compensating/risks) are validated against the tenant; riskIds is a full replace.',
+    description: 'Partial update for a finding — including lifecycle transitions and verification notes. Relation fields (assignee/control/compensating) are validated against the tenant.',
 });
 
 // ─── Audits ───
@@ -495,13 +409,6 @@ export const LinkTaskEvidenceSchema = z.object({
     description: 'Attach a URL as evidence on a task. File uploads use the multipart /evidence/uploads endpoint with a taskId.',
 });
 
-export const LinkRiskEvidenceSchema = z.object({
-    url: z.string().url().max(2000),
-    note: z.string().max(2000).nullable().optional(),
-}).strip().openapi('RiskEvidenceLinkRequest', {
-    description: 'Attach a URL as evidence on a risk. File uploads use the multipart /evidence/uploads endpoint with a riskId.',
-});
-
 export const LinkAssetEvidenceSchema = z.object({
     url: z.string().url().max(2000),
     note: z.string().max(2000).nullable().optional(),
@@ -510,7 +417,7 @@ export const LinkAssetEvidenceSchema = z.object({
 });
 
 export const AddTaskLinkSchema = z.object({
-    entityType: z.enum(['CONTROL', 'FRAMEWORK_REQUIREMENT', 'RISK', 'ASSET', 'POLICY', 'EVIDENCE', 'FILE', 'AUDIT_PACK', 'VENDOR']),
+    entityType: z.enum(['CONTROL', 'FRAMEWORK_REQUIREMENT', 'ASSET', 'POLICY', 'EVIDENCE', 'FILE', 'AUDIT_PACK', 'VENDOR']),
     entityId: z.string().min(1),
     relation: z.enum(['RELATES_TO', 'EVIDENCE_FOR', 'BLOCKED_BY', 'CAUSED_BY', 'MITIGATED_BY']).optional(),
 }).strip().openapi('TaskLinkAddRequest', {
@@ -670,66 +577,12 @@ export const SetVendorReviewSchema = z.object({
 }).strip();
 
 export const AddVendorLinkSchema = z.object({
-    entityType: z.enum(['ASSET', 'RISK', 'ISSUE', 'CONTROL']),
+    entityType: z.enum(['ASSET', 'ISSUE', 'CONTROL']),
     entityId: z.string().min(1),
     relation: z.enum(['USES', 'STORES_DATA_FOR', 'PROVIDES_SERVICE_TO', 'MITIGATES', 'RELATED']).optional(),
 }).strip();
 
 // ─── Control Test Schemas ───
-
-export const CreateTestPlanSchema = z.object({
-    name: z.string().min(1).max(500),
-    description: z.string().max(10000).nullable().optional(),
-    method: z.enum(['MANUAL', 'AUTOMATED']).optional().default('MANUAL'),
-    frequency: z.enum(['AD_HOC', 'DAILY', 'WEEKLY', 'MONTHLY', 'QUARTERLY', 'ANNUALLY']).optional().default('AD_HOC'),
-    ownerUserId: z.string().nullable().optional(),
-    expectedEvidence: z.any().nullable().optional(),
-    steps: z.array(z.object({
-        instruction: z.string().min(1).max(10000),
-        expectedOutput: z.string().max(10000).nullable().optional(),
-    })).optional(),
-}).strip();
-
-export const UpdateTestPlanSchema = z.object({
-    name: z.string().min(1).max(500).optional(),
-    description: z.string().max(10000).nullable().optional(),
-    method: z.enum(['MANUAL', 'AUTOMATED']).optional(),
-    frequency: z.enum(['AD_HOC', 'DAILY', 'WEEKLY', 'MONTHLY', 'QUARTERLY', 'ANNUALLY']).optional(),
-    ownerUserId: z.string().nullable().optional(),
-    expectedEvidence: z.any().nullable().optional(),
-    status: z.enum(['ACTIVE', 'PAUSED']).optional(),
-}).strip();
-
-export const CompleteTestRunSchema = z.object({
-    result: z.enum(['PASS', 'FAIL', 'INCONCLUSIVE']),
-    notes: z.string().max(10000).nullable().optional(),
-    findingSummary: z.string().max(2000).nullable().optional(),
-}).strip();
-
-export const LinkTestEvidenceSchema = z.object({
-    kind: z.enum(['FILE', 'EVIDENCE', 'LINK', 'INTEGRATION_RESULT']),
-    fileId: z.string().nullable().optional(),
-    evidenceId: z.string().nullable().optional(),
-    url: z.string().url().nullable().optional(),
-    integrationResultId: z.string().nullable().optional(),
-    note: z.string().max(2000).nullable().optional(),
-}).strip();
-
-// Epic G-2 — schedule a ControlTestPlan. The cross-field invariants
-// (SCRIPT/INTEGRATION must have a schedule; MANUAL must not) are
-// enforced at the usecase boundary so the validation error message
-// can reference the plan rather than the raw zod path. Zod just
-// shape-checks here.
-export const ScheduleTestPlanSchema = z.object({
-    schedule: z.string().min(1).max(120).nullable(),
-    scheduleTimezone: z.string().min(1).max(64).nullable().optional(),
-    automationType: z.enum(['MANUAL', 'SCRIPT', 'INTEGRATION']),
-    // automationConfig is shaped per handler. We accept any
-    // JSON-serialisable blob here — the SCRIPT and INTEGRATION
-    // handlers (next G-2 prompt) carry their own per-handler shape
-    // checks.
-    automationConfig: z.unknown().nullable().optional(),
-}).strip();
 
 // ─── Epic G-3 — Vendor Assessment Template Authoring ──────────────
 //

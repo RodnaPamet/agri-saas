@@ -23,7 +23,7 @@ export async function getFrameworkMappings(ctx: RequestContext) {
         const soc2Categories = SOC2_REQS.map((req) => {
             const relatedMappings = MAPPINGS.filter((m) => m.soc2Codes.includes(req.code));
             const relatedControls = controls.filter((c) =>
-                relatedMappings.some((m) => m.isoControlId === c.annexId)
+                relatedMappings.some((m) => m.isoControlId === c.code)
             );
             const implemented = relatedControls.filter((c) => c.status === 'IMPLEMENTED').length;
             const withEvidence = relatedControls.filter((c) => c.evidence.some((e) => e.status === 'APPROVED')).length;
@@ -43,7 +43,7 @@ export async function getFrameworkMappings(ctx: RequestContext) {
         const nis2Areas = NIS2_REQS.map((req) => {
             const relatedMappings = MAPPINGS.filter((m) => m.nis2Codes.includes(req.code));
             const relatedControls = controls.filter((c) =>
-                relatedMappings.some((m) => m.isoControlId === c.annexId)
+                relatedMappings.some((m) => m.isoControlId === c.code)
             );
             const implemented = relatedControls.filter((c) => c.status === 'IMPLEMENTED').length;
             const total = relatedControls.length;

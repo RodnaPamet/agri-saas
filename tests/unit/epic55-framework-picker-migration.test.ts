@@ -6,7 +6,6 @@
  *
  * Scope:
  *   1. Framework selector  — /audits/cycles/page.tsx  (#fw-select)
- *   2. Risk template picker — NewRiskModal.tsx        (#risk-template-select)
  *   3. Control linker      — UploadEvidenceModal.tsx  (#control-select)
  *   4. Control linker      — NewEvidenceTextModal.tsx (#text-evidence-control-select)
  *
@@ -34,7 +33,6 @@ function read(rel: string): string {
 }
 
 const CYCLES_SRC = read('src/app/t/[tenantSlug]/(app)/audits/cycles/page.tsx');
-const RISK_MODAL_SRC = read('src/app/t/[tenantSlug]/(app)/risks/NewRiskModal.tsx');
 const UPLOAD_SRC = read(
     'src/app/t/[tenantSlug]/(app)/evidence/UploadEvidenceModal.tsx',
 );
@@ -57,13 +55,6 @@ const SURFACES: MigrationSurface[] = [
         pickerId: 'fw-select',
         name: 'frameworkKey',
         insideModal: false,
-    },
-    {
-        label: 'NewRiskModal — template picker',
-        src: RISK_MODAL_SRC,
-        pickerId: 'risk-template-select',
-        name: 'templateId',
-        insideModal: true,
     },
     {
         label: 'UploadEvidenceModal — control linker',
@@ -155,27 +146,6 @@ describe('audits/cycles — FW_OPTIONS shape', () => {
     });
 });
 
-// ─── Risk template picker ───────────────────────────────────────
-
-describe('NewRiskModal — templateOptions', () => {
-    it('projects the fetched templates into ComboboxOption shape', () => {
-        expect(RISK_MODAL_SRC).toMatch(/templateOptions\s*=\s*useMemo/);
-        expect(RISK_MODAL_SRC).toMatch(/tmpl\.category\s*\?\s*`\$\{tmpl\.title\}/);
-    });
-
-    it('forwards the loading state to the Combobox', () => {
-        expect(RISK_MODAL_SRC).toMatch(
-            /loading=\{templatesQuery\.isLoading\}/,
-        );
-    });
-
-    it('preserves the applyTemplate business logic on selection', () => {
-        expect(RISK_MODAL_SRC).toMatch(
-            /setSelected=\{\(option\)\s*=>\s*\{[\s\S]{0,120}applyTemplate\(option\?\.value\s*\?\?\s*['"]['"]\)/,
-        );
-    });
-});
-
 // ─── Control linker — UploadEvidenceModal ───────────────────────
 
 describe('UploadEvidenceModal — control linker', () => {
@@ -194,7 +164,7 @@ describe('UploadEvidenceModal — control linker', () => {
     it('projects controls into ComboboxOption with annex/code/name folded into label', () => {
         expect(UPLOAD_SRC).toMatch(/controlOptions\s*=\s*useMemo/);
         expect(UPLOAD_SRC).toMatch(
-            /`\$\{c\.annexId \|\| c\.code \|\| 'Custom'\}: \$\{c\.name\}`/,
+            /`\$\{c\.code \|\| 'Custom'\}: \$\{c\.name\}`/,
         );
     });
 
@@ -215,7 +185,7 @@ describe('NewEvidenceTextModal — control linker', () => {
     it('projects controls into ComboboxOption', () => {
         expect(TEXT_EV_SRC).toMatch(/controlOptions\s*=\s*useMemo/);
         expect(TEXT_EV_SRC).toMatch(
-            /`\$\{c\.annexId \|\| c\.code \|\| 'Custom'\}: \$\{c\.name\}`/,
+            /`\$\{c\.code \|\| 'Custom'\}: \$\{c\.name\}`/,
         );
     });
 

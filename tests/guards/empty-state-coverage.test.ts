@@ -45,7 +45,6 @@ const EXEMPT_FILES = new Set<string>([
     // Detail pages — use EntityDetailLayout's `empty` prop, which
     // routes through DetailLoadingSkeleton + a centred empty
     // string. The empty path is handled by the shell.
-    'src/app/t/[tenantSlug]/(app)/tests/runs/[runId]/page.tsx',
     'src/app/t/[tenantSlug]/(app)/policies/[policyId]/page.tsx',
     'src/app/t/[tenantSlug]/(app)/audits/packs/[packId]/page.tsx',
 ]);

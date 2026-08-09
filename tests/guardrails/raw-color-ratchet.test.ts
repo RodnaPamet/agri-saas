@@ -27,7 +27,6 @@ const RAW_COLOR_RE = /\b(?:text|bg|border)-(?:slate|gray|neutral|zinc)-\d{2,3}\b
 //
 // Remaining hotspots are either deliberately out of theme scope or
 // rendering literal colors that can't be token-backed:
-//   - reports/soa/print/SoAPrintView.tsx  (PDF print view, tokens
 //     don't apply under @media print)
 //   - login/page.tsx                      (unauthenticated route,
 //     tenant context not yet active)

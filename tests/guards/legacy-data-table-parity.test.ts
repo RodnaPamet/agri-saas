@@ -7,7 +7,6 @@
  *     (Permission Matrix — resource rows × role columns)
  *   - src/app/t/[tenantSlug]/(app)/admin/roles/page.tsx
  *     (Custom role permission editor — toggle matrix)
- *   - src/app/t/[tenantSlug]/(app)/reports/soa/SoAClient.tsx
  *     (SoA report — expandable rows; not a flat list)
  *
  * Each is genuinely a matrix or expandable surface that the

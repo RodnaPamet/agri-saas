@@ -13,7 +13,7 @@ export async function getReports(ctx: RequestContext) {
         const controls = await ReportRepository.getSOAData(db, ctx);
 
         const soa = controls.map((c) => ({
-            controlId: c.annexId || c.id,
+            controlId: c.id,
             name: c.name,
             applicable: c.applicability === 'APPLICABLE',
             status: c.status,
@@ -21,30 +21,15 @@ export async function getReports(ctx: RequestContext) {
             evidenceCount: c.evidence.length,
             approvedEvidence: c.evidence.filter((e) => e.status === 'APPROVED').length,
             hasOverdue: c.evidence.some((e) => e.nextReviewDate && new Date(e.nextReviewDate) < new Date()),
-            lastTested: c.lastTested,
             reviewCadence: c.reviewCadence,
         }));
 
-        const risks = await ReportRepository.getRiskRegisterData(db, ctx);
-
-        const riskRegister = risks.map((r) => ({
-            id: r.id,
-            title: r.title,
-            threat: r.threat,
-            vulnerability: r.vulnerability,
-            likelihood: r.likelihood,
-            impact: r.impact,
-            score: r.inherentScore,
-            treatment: r.treatment || 'Untreated',
-            owner: r.treatmentOwner || 'Unassigned',
-            targetDate: r.targetDate,
-            controls: r.controls.map((rc: { control: { annexId: string | null; name: string } }) => rc.control.annexId || rc.control.name).join(', '),
-        }));
 
         logger.info('report generation completed', {
-            component: 'report', soaCount: soa.length, riskCount: riskRegister.length,
+            component: 'report',
+            soaCount: soa.length,
         });
 
-        return { soa, riskRegister };
+        return { soa };
     }));
 }

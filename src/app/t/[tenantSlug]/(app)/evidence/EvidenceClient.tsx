@@ -477,7 +477,7 @@ function EvidencePageInner({ initialEvidence, initialControls, tenantSlug, permi
             title?: string | null;
             type?: string | null;
             control?: {
-                annexId?: string | null;
+                code?: string | null;
                 name?: string | null;
             } | null;
             retentionUntil?: string | null;
@@ -492,7 +492,7 @@ function EvidencePageInner({ initialEvidence, initialControls, tenantSlug, permi
                 case 'type':
                     return ev.type || '';
                 case 'control':
-                    return ev.control?.annexId || ev.control?.name || '';
+                    return ev.control?.code || ev.control?.name || '';
                 case 'retention':
                     return ev.retentionUntil || '';
                 case 'status':
@@ -697,7 +697,7 @@ function EvidencePageInner({ initialEvidence, initialControls, tenantSlug, permi
             header: t.control,
             meta: { mobileCard: { slot: 'meta', label: t.control } },
 
-            accessorFn: (ev: any) => ev.control ? `${ev.control.annexId || ''} ${ev.control.name}` : '\u2014',
+            accessorFn: (ev: any) => ev.control ? `${ev.control.code || ''} ${ev.control.name}` : '\u2014',
             cell: ({ getValue }: { getValue: () => string }) => (
                 <span className="text-xs text-content-muted">{getValue()}</span>
             ),

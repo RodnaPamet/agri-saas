@@ -38,10 +38,6 @@ function snapshotRow(overrides: Record<string, any> = {}) {
         controlCoverageBps: 925, // 92.5%
         controlsImplemented: 37,
         controlsApplicable: 40,
-        risksTotal: 12,
-        risksOpen: 5,
-        risksCritical: 1,
-        risksHigh: 3,
         evidenceOverdue: 2,
         evidenceDueSoon7d: 4,
         evidenceCurrent: 30,
@@ -91,7 +87,6 @@ describe('getComplianceTrends', () => {
         expect(dp.controlCoveragePercent).toBe(92.5);
         expect(dp.date).toBe('2026-05-10');
         expect(dp.controlsImplemented).toBe(37);
-        expect(dp.risksCritical).toBe(1);
         expect(dp.findingsOpen).toBe(3);
         // asset KPI series — backs the Assets-page sparklines
         expect(dp.assetsTotal).toBe(42);

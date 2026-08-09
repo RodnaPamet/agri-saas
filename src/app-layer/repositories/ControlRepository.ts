@@ -26,7 +26,6 @@ export interface ControlListParams {
 const controlListSelect = {
     id: true,
     code: true,
-    annexId: true,
     name: true,
     description: true,
     status: true,
@@ -57,7 +56,7 @@ export class ControlRepository {
 
             return db.control.findMany({
                 where,
-                orderBy: [{ code: 'asc' }, { annexId: 'asc' }],
+                orderBy: [{ code: 'asc' }],
                 select: controlListSelect,
                 ...(options.take ? { take: options.take } : {}),
             });
@@ -113,11 +112,14 @@ export class ControlRepository {
 
     static async getById(db: PrismaTx, ctx: RequestContext, id: string) {
         return traceRepository('control.getById', ctx, async () => {
-            // `risks`, `policyLinks`, and `_count` are deliberately
-            // omitted — they were eager-loaded historically but no
-            // caller ever reads them off the detail payload (the page
-            // computes badge counts from `.length` on the kept arrays;
-            // TraceabilityPanel/TestPlansPanel run their own fetches).
+            // `policyLinks` and `_count` are deliberately omitted —
+            // they were eager-loaded historically but no caller ever
+            // reads them off the detail payload (the page computes badge
+            // counts from `.length` on the kept arrays; TraceabilityPanel
+            // runs its own fetch). `risks` and `contributors` are gone
+            // outright: the risk register and ControlContributor were
+            // both dropped, and a stale `include` on a deleted relation
+            // is a runtime PrismaClientValidationError, not a no-op.
             // The bigger tab-lazy refactor (drop controlTasks /
             // evidenceLinks / evidence / frameworkMappings arrays in
             // favour of per-tab fetches) is bounded follow-up; safe
@@ -131,7 +133,6 @@ export class ControlRepository {
                     owner: { select: { id: true, name: true, email: true } },
                     createdBy: { select: { id: true, name: true, email: true } },
                     applicabilityDecidedBy: { select: { id: true, name: true, email: true } },
-                    contributors: { include: { user: { select: { id: true, name: true, email: true } } } },
                     controlTasks: { orderBy: { createdAt: 'desc' }, include: { assignee: { select: { id: true, name: true, email: true } } } },
                     evidenceLinks: { orderBy: { createdAt: 'desc' }, include: { createdBy: { select: { id: true, name: true } } } },
                     evidence: { where: { tenantId: ctx.tenantId }, orderBy: { createdAt: 'desc' } },
@@ -145,10 +146,9 @@ export class ControlRepository {
      * Header-only control fetch — the tab-lazy counterpart to
      * `getById` (#102 item 1).
      *
-     * Loads control scalars, the three lightweight user refs, and
-     * `contributors` (all read by the Overview tab + header), plus a
-     * `_count` for the four tabbed relations so the tab badges render
-     * without their arrays. The heavy arrays themselves —
+     * Loads control scalars and the three lightweight user refs (all
+     * read by the Overview tab + header), plus a `_count` for the four
+     * tabbed relations so the tab badges render without their arrays. The heavy arrays themselves —
      * `controlTasks` / `evidenceLinks` / `evidence` /
      * `frameworkMappings` — are deliberately NOT loaded; each tab
      * fetches its own slice on demand via its own endpoint.
@@ -164,7 +164,6 @@ export class ControlRepository {
                     owner: { select: { id: true, name: true, email: true } },
                     createdBy: { select: { id: true, name: true, email: true } },
                     applicabilityDecidedBy: { select: { id: true, name: true, email: true } },
-                    contributors: { include: { user: { select: { id: true, name: true, email: true } } } },
                     _count: {
                         select: {
                             controlTasks: true,
@@ -247,33 +246,6 @@ export class ControlRepository {
             data: { ownerUserId },
             include: { owner: { select: { id: true, name: true, email: true } } },
         });
-    }
-
-    // ─── Contributors ───
-
-    static async listContributors(db: PrismaTx, ctx: RequestContext, controlId: string) {
-        return db.controlContributor.findMany({
-            where: { controlId, tenantId: ctx.tenantId },
-            include: { user: { select: { id: true, name: true, email: true } } },
-        });
-    }
-
-    static async addContributor(db: PrismaTx, ctx: RequestContext, controlId: string, userId: string) {
-        const control = await db.control.findFirst({ where: { id: controlId, tenantId: ctx.tenantId } });
-        if (!control) return null;
-        return db.controlContributor.create({
-            data: { tenantId: ctx.tenantId, controlId, userId },
-            include: { user: { select: { id: true, name: true, email: true } } },
-        });
-    }
-
-    static async removeContributor(db: PrismaTx, ctx: RequestContext, controlId: string, userId: string) {
-        const control = await db.control.findFirst({ where: { id: controlId, tenantId: ctx.tenantId } });
-        if (!control) return null;
-        const link = await db.controlContributor.findFirst({ where: { controlId, userId } });
-        if (!link) return null;
-        await db.controlContributor.delete({ where: { id: link.id } });
-        return true;
     }
 
     // ─── Tasks ───

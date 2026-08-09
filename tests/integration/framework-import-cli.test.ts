@@ -129,7 +129,7 @@ describeFn('framework:import CLI — integration', () => {
         }
     });
 
-    it('apply on a valid YAML exits 0 + writes Framework + Requirements + Templates + Pack', async () => {
+    it('apply on a valid YAML exits 0 + writes Framework + Requirements + Pack', async () => {
         const r = runCli(['--input', DEMO_YAML]);
         expect(r.code).toBe(0);
         const parsed = JSON.parse(r.stdout) as {
@@ -144,15 +144,21 @@ describeFn('framework:import CLI — integration', () => {
         expect(parsed.requirements.upserted).toBe(4);
 
         // Idempotency check: re-run, framework not re-created.
+        // The control-template half of the catalogue went with the
+        // compliance uproot — the applier now reports a constant
+        // `templates: { created: 0, existing: 0 }` and seeds the
+        // framework, its requirements and the pack only. Idempotency is
+        // asserted on the framework + pack instead.
         const r2 = runCli(['--input', DEMO_YAML]);
         expect(r2.code).toBe(0);
         const parsed2 = JSON.parse(r2.stdout) as {
             framework: { created: boolean };
-            templates: { created: number; existing: number };
+            requirements: { upserted: number };
+            pack?: { created: boolean };
         };
         expect(parsed2.framework.created).toBe(false);
-        expect(parsed2.templates.created).toBe(0);
-        expect(parsed2.templates.existing).toBeGreaterThan(0);
+        expect(parsed2.requirements.upserted).toBe(4);
+        if (parsed2.pack) expect(parsed2.pack.created).toBe(false);
     });
 
     it('exits 3 (parse error) on malformed YAML', () => {

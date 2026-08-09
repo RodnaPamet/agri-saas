@@ -101,7 +101,7 @@ export async function listExpiringEvidence(ctx: RequestContext, days: number = 3
             },
             orderBy: { retentionUntil: 'asc' },
             include: {
-                control: { select: { id: true, name: true, annexId: true } },
+                control: { select: { id: true, name: true, code: true } },
             },
         }),
     );
@@ -122,7 +122,7 @@ export async function listExpiredEvidence(ctx: RequestContext) {
             },
             orderBy: { expiredAt: 'desc' },
             include: {
-                control: { select: { id: true, name: true, annexId: true } },
+                control: { select: { id: true, name: true, code: true } },
             },
         }),
     );
@@ -255,10 +255,10 @@ export async function getRetentionMetrics(ctx: RequestContext) {
                 deletedAt: null,
                 controlId: { not: null },
             },
-            select: { controlId: true, control: { select: { id: true, name: true, annexId: true } } },
+            select: { controlId: true, control: { select: { id: true, name: true, code: true } } },
         });
 
-        const controlMap = new Map<string, { controlId: string; name: string; annexId: string; count: number }>();
+        const controlMap = new Map<string, { controlId: string; name: string; code: string; count: number }>();
         for (const ev of expiringEvidence) {
             const key = ev.controlId;
             if (!key) continue;
@@ -266,7 +266,7 @@ export async function getRetentionMetrics(ctx: RequestContext) {
                 controlMap.set(key, {
                     controlId: key,
                     name: ev.control?.name || 'Unknown',
-                    annexId: ev.control?.annexId || '',
+                    code: ev.control?.code || '',
                     count: 0,
                 });
             }

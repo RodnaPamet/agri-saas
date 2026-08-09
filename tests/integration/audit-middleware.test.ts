@@ -185,7 +185,7 @@ describeFn('Audit Middleware — Integration Tests', () => {
         // anything actionable.
         if (tenantId) {
             await rawPrisma.$executeRawUnsafe(`DELETE FROM "AuditLog" WHERE "tenantId" = $1`, tenantId).catch(() => {});
-            await rawPrisma.$executeRawUnsafe(`DELETE FROM "Risk" WHERE "tenantId" = $1`, tenantId).catch(() => {});
+            await rawPrisma.$executeRawUnsafe(`DELETE FROM "Control" WHERE "tenantId" = $1`, tenantId).catch(() => {});
             await rawPrisma.$executeRawUnsafe(`DELETE FROM "Tenant" WHERE "id" = $1`, tenantId).catch(() => {});
             if (userId) await rawPrisma.$executeRawUnsafe(`DELETE FROM "User" WHERE "id" = $1`, userId).catch(() => {});
         }
@@ -202,19 +202,19 @@ describeFn('Audit Middleware — Integration Tests', () => {
 
     // ─── CREATE ───
     describe('create operation', () => {
-        let riskId: string;
+        let controlId: string;
 
-        it('creates an AuditLog row for a Risk create', async () => {
-            const risk = await runWithAuditContext(
+        it('creates an AuditLog row for a Control create', async () => {
+            const control = await runWithAuditContext(
                 { tenantId, actorUserId: userId, requestId: `req-create-${testRunId}` },
-                () => appPrisma.risk.create({
-                    data: { tenantId, title: `AMW Risk Create ${testRunId}`, inherentScore: 5, score: 5 },
+                () => appPrisma.control.create({
+                    data: { tenantId, name: `AMW Control Create ${testRunId}` },
                 }),
             );
-            riskId = risk.id;
+            controlId = control.id;
 
-            const logs = await getAuditLogs('Risk', 'CREATE');
-            const match = logs.find((l) => l.entityId === riskId);
+            const logs = await getAuditLogs('Control', 'CREATE');
+            const match = logs.find((l) => l.entityId === controlId);
             expect(match).toBeDefined();
             expect(match!.userId).toBe(userId);
             expect((match as any).requestId).toBe(`req-create-${testRunId}`);
@@ -224,69 +224,69 @@ describeFn('Audit Middleware — Integration Tests', () => {
         });
 
         afterAll(async () => {
-            if (riskId) await rawPrisma.risk.deleteMany({ where: { id: riskId } });
+            if (controlId) await rawPrisma.control.deleteMany({ where: { id: controlId } });
         });
     });
 
     // ─── UPDATE with DIFF ───
     describe('update operation with diff', () => {
-        let riskId: string;
+        let controlId: string;
 
         beforeAll(async () => {
-            const risk = await rawPrisma.risk.create({
-                data: { tenantId, title: `AMW Risk Update ${testRunId}`, inherentScore: 3, score: 3 },
+            const control = await rawPrisma.control.create({
+                data: { tenantId, name: `AMW Control Update ${testRunId}` },
             });
-            riskId = risk.id;
+            controlId = control.id;
         });
 
-        it('creates an AuditLog row with diffJson for a Risk update', async () => {
+        it('creates an AuditLog row with diffJson for a Control update', async () => {
             await runWithAuditContext(
                 { tenantId, actorUserId: userId, requestId: `req-update-${testRunId}` },
-                () => appPrisma.risk.update({
-                    where: { id: riskId },
-                    data: { title: `Updated ${testRunId}`, inherentScore: 8 },
+                () => appPrisma.control.update({
+                    where: { id: controlId },
+                    data: { name: `Updated ${testRunId}`, effectiveness: 8 },
                 }),
             );
 
-            const logs = await getAuditLogs('Risk', 'UPDATE');
-            const match = logs.find((l) => l.entityId === riskId);
+            const logs = await getAuditLogs('Control', 'UPDATE');
+            const match = logs.find((l) => l.entityId === controlId);
             expect(match).toBeDefined();
 
             // Verify diffJson
             const diff = (match as any).diffJson as any;
             expect(diff).toBeDefined();
             expect(diff).not.toBeNull();
-            expect(diff.changedFields).toContain('title');
-            expect(diff.changedFields).toContain('inherentScore');
+            expect(diff.changedFields).toContain('name');
+            expect(diff.changedFields).toContain('effectiveness');
             expect(diff.after).toBeDefined();
-            expect(diff.after.title).toBe(`Updated ${testRunId}`);
-            expect(diff.after.inherentScore).toBe(8);
+            expect(diff.after.name).toBe(`Updated ${testRunId}`);
+            expect(diff.after.effectiveness).toBe(8);
         });
 
         afterAll(async () => {
-            await rawPrisma.$executeRawUnsafe(`DELETE FROM "Risk" WHERE "id" = $1`, riskId);
+            await rawPrisma.$executeRawUnsafe(`DELETE FROM "Control" WHERE "id" = $1`, controlId);
         });
     });
 
     // ─── DELETE ───
     describe('delete operation', () => {
-        let riskId: string;
+        let controlId: string;
 
         beforeAll(async () => {
-            const risk = await rawPrisma.risk.create({
-                data: { tenantId, title: `AMW Risk Delete ${testRunId}`, inherentScore: 2, score: 2 },
+            const control = await rawPrisma.control.create({
+                data: { tenantId, name: `AMW Control Delete ${testRunId}` },
             });
-            riskId = risk.id;
+            controlId = control.id;
         });
 
-        it('creates an AuditLog row for a Risk delete', async () => {
+        it('creates an AuditLog row for a Control delete', async () => {
             await runWithAuditContext(
                 { tenantId, actorUserId: userId, requestId: `req-delete-${testRunId}` },
-                () => appPrisma.risk.delete({ where: { id: riskId } }),
+                () => appPrisma.control.delete({ where: { id: controlId } }),
             );
 
-            const logs = await getAuditLogs('Risk', 'DELETE');
-            const match = logs.find((l) => l.entityId === riskId);
+            const logs = await getAuditLogs('Control', 'DELETE');
+            const match = logs.find((l) => l.entityId === controlId);
             expect(match).toBeDefined();
             expect(match!.action).toBe('DELETE');
             // DELETE should NOT have diffJson
@@ -296,42 +296,42 @@ describeFn('Audit Middleware — Integration Tests', () => {
 
     // ─── UPSERT with DIFF ───
     describe('upsert operation with diff', () => {
-        let riskId: string;
+        let controlId: string;
 
         it('creates an AuditLog row with diffJson for a Risk upsert', async () => {
             const tempId = `upsert-${testRunId}`;
-            const risk = await runWithAuditContext(
+            const control = await runWithAuditContext(
                 { tenantId, actorUserId: userId, requestId: `req-upsert-${testRunId}` },
-                () => appPrisma.risk.upsert({
+                () => appPrisma.control.upsert({
                     where: { id: tempId },
-                    create: { tenantId, title: `AMW Risk Upsert ${testRunId}`, inherentScore: 1, score: 1 },
-                    update: { title: `Upserted ${testRunId}` },
+                    create: { tenantId, name: `AMW Risk Upsert ${testRunId}` },
+                    update: { name: `Upserted ${testRunId}` },
                 }),
             );
-            riskId = risk.id;
+            controlId = control.id;
 
-            const logs = await getAuditLogs('Risk', 'UPSERT');
-            const match = logs.find((l) => l.entityId === riskId);
+            const logs = await getAuditLogs('Control', 'UPSERT');
+            const match = logs.find((l) => l.entityId === controlId);
             expect(match).toBeDefined();
             expect(match!.action).toBe('UPSERT');
             // Upsert should have diffJson (from update data)
             const diff = (match as any).diffJson as any;
             expect(diff).not.toBeNull();
-            expect(diff.changedFields).toContain('title');
+            expect(diff.changedFields).toContain('name');
         });
 
         afterAll(async () => {
-            if (riskId) await rawPrisma.risk.deleteMany({ where: { id: riskId } });
+            if (controlId) await rawPrisma.control.deleteMany({ where: { id: controlId } });
         });
     });
 
     // ─── UPDATE MANY ───
     describe('updateMany operation', () => {
         beforeAll(async () => {
-            await rawPrisma.risk.createMany({
+            await rawPrisma.control.createMany({
                 data: [
-                    { tenantId, title: `Bulk1 ${testRunId}`, inherentScore: 1, score: 1 },
-                    { tenantId, title: `Bulk2 ${testRunId}`, inherentScore: 1, score: 1 },
+                    { tenantId, name: `Bulk1 ${testRunId}` },
+                    { tenantId, name: `Bulk2 ${testRunId}` },
                 ],
             });
         });
@@ -339,13 +339,13 @@ describeFn('Audit Middleware — Integration Tests', () => {
         it('creates an AuditLog row for updateMany', async () => {
             await runWithAuditContext(
                 { tenantId, actorUserId: userId, requestId: `req-updateMany-${testRunId}` },
-                () => appPrisma.risk.updateMany({
-                    where: { tenantId, title: { contains: testRunId, startsWith: 'Bulk' } },
-                    data: { inherentScore: 9 },
+                () => appPrisma.control.updateMany({
+                    where: { tenantId, name: { contains: testRunId, startsWith: 'Bulk' } },
+                    data: { description: 'bulk-updated' },
                 }),
             );
 
-            const logs = await getAuditLogs('Risk', 'UPDATEMANY');
+            const logs = await getAuditLogs('Control', 'UPDATEMANY');
             const match = logs.find((l) => (l as any).requestId === `req-updateMany-${testRunId}`);
             expect(match).toBeDefined();
             expect(match!.entityId).toBe('batch');
@@ -354,17 +354,17 @@ describeFn('Audit Middleware — Integration Tests', () => {
         });
 
         afterAll(async () => {
-            await rawPrisma.$executeRawUnsafe(`DELETE FROM "Risk" WHERE "tenantId" = $1 AND "title" LIKE $2`, tenantId, `Bulk%${testRunId}%`);
+            await rawPrisma.$executeRawUnsafe(`DELETE FROM "Control" WHERE "tenantId" = $1 AND "name" LIKE $2`, tenantId, `Bulk%${testRunId}%`);
         });
     });
 
     // ─── DELETE MANY ───
     describe('deleteMany operation', () => {
         beforeAll(async () => {
-            await rawPrisma.risk.createMany({
+            await rawPrisma.control.createMany({
                 data: [
-                    { tenantId, title: `DelBulk1 ${testRunId}`, inherentScore: 1, score: 1 },
-                    { tenantId, title: `DelBulk2 ${testRunId}`, inherentScore: 1, score: 1 },
+                    { tenantId, name: `DelBulk1 ${testRunId}` },
+                    { tenantId, name: `DelBulk2 ${testRunId}` },
                 ],
             });
         });
@@ -372,12 +372,12 @@ describeFn('Audit Middleware — Integration Tests', () => {
         it('creates an AuditLog row for deleteMany', async () => {
             await runWithAuditContext(
                 { tenantId, actorUserId: userId, requestId: `req-deleteMany-${testRunId}` },
-                () => appPrisma.risk.deleteMany({
-                    where: { tenantId, title: { contains: testRunId, startsWith: 'DelBulk' } },
+                () => appPrisma.control.deleteMany({
+                    where: { tenantId, name: { contains: testRunId, startsWith: 'DelBulk' } },
                 }),
             );
 
-            const logs = await getAuditLogs('Risk', 'DELETEMANY');
+            const logs = await getAuditLogs('Control', 'DELETEMANY');
             const match = logs.find((l) => (l as any).requestId === `req-deleteMany-${testRunId}`);
             expect(match).toBeDefined();
             expect(match!.entityId).toBe('batch');
@@ -410,14 +410,14 @@ describeFn('Audit Middleware — Integration Tests', () => {
         it('operations outside runWithAuditContext skip audit logging', async () => {
             const countBefore = await rawPrisma.auditLog.count({ where: { tenantId } });
 
-            const risk = await appPrisma.risk.create({
-                data: { tenantId, title: `No Context Risk ${testRunId}`, inherentScore: 1, score: 1 },
+            const control = await appPrisma.control.create({
+                data: { tenantId, name: `No Context Risk ${testRunId}` },
             });
 
             const countAfter = await rawPrisma.auditLog.count({ where: { tenantId } });
             expect(countAfter).toBe(countBefore);
 
-            await rawPrisma.risk.deleteMany({ where: { id: risk.id } });
+            await rawPrisma.control.deleteMany({ where: { id: control.id } });
         });
     });
 
@@ -427,28 +427,28 @@ describeFn('Audit Middleware — Integration Tests', () => {
             // Create a user with known data, then update with "password-like" field
             // Since User model doesn't have password, we test redaction via the unit tests primarily.
             // Here we verify that the redaction integration works end-to-end for normal fields.
-            const risk = await rawPrisma.risk.create({
-                data: { tenantId, title: `Redact Risk ${testRunId}`, inherentScore: 1, score: 1 },
+            const control = await rawPrisma.control.create({
+                data: { tenantId, name: `Redact Control ${testRunId}` },
             });
 
             await runWithAuditContext(
                 { tenantId, actorUserId: userId },
-                () => appPrisma.risk.update({
-                    where: { id: risk.id },
-                    data: { title: `Redacted Update ${testRunId}` },
+                () => appPrisma.control.update({
+                    where: { id: control.id },
+                    data: { name: `Redacted Update ${testRunId}` },
                 }),
             );
 
-            const logs = await getAuditLogs('Risk', 'UPDATE');
-            const match = logs.find((l) => l.entityId === risk.id);
+            const logs = await getAuditLogs('Control', 'UPDATE');
+            const match = logs.find((l) => l.entityId === control.id);
             expect(match).toBeDefined();
             const diff = (match as any).diffJson as any;
             expect(diff).not.toBeNull();
-            expect(diff.changedFields).toContain('title');
-            // Verify title is NOT redacted (it's not sensitive)
-            expect(diff.after.title).toBe(`Redacted Update ${testRunId}`);
+            expect(diff.changedFields).toContain('name');
+            // Verify name is NOT redacted (it's not sensitive)
+            expect(diff.after.name).toBe(`Redacted Update ${testRunId}`);
 
-            await rawPrisma.risk.deleteMany({ where: { id: risk.id } });
+            await rawPrisma.control.deleteMany({ where: { id: control.id } });
         });
     });
 });

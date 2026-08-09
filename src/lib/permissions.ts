@@ -5,7 +5,6 @@ export type PermissionSet = {
     evidence: { view: boolean; upload: boolean; edit: boolean; download: boolean };
     policies: { view: boolean; create: boolean; edit: boolean; approve: boolean };
     tasks: { view: boolean; create: boolean; edit: boolean; assign: boolean };
-    risks: { view: boolean; create: boolean; edit: boolean };
     vendors: { view: boolean; create: boolean; edit: boolean };
     tests: { view: boolean; create: boolean; execute: boolean };
     frameworks: { view: boolean; install: boolean };
@@ -73,7 +72,6 @@ export const PERMISSION_SCHEMA: Record<keyof PermissionSet, string[]> = {
     evidence: ['view', 'upload', 'edit', 'download'],
     policies: ['view', 'create', 'edit', 'approve'],
     tasks: ['view', 'create', 'edit', 'assign'],
-    risks: ['view', 'create', 'edit'],
     vendors: ['view', 'create', 'edit'],
     tests: ['view', 'create', 'execute'],
     frameworks: ['view', 'install'],
@@ -102,7 +100,6 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 evidence: { view: true, upload: true, edit: true, download: true },
                 policies: { view: true, create: true, edit: true, approve: true },
                 tasks: { view: true, create: true, edit: true, assign: true },
-                risks: { view: true, create: true, edit: true },
                 vendors: { view: true, create: true, edit: true },
                 tests: { view: true, create: true, execute: true },
                 frameworks: { view: true, install: true },
@@ -120,7 +117,6 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 evidence: { view: true, upload: true, edit: true, download: true },
                 policies: { view: true, create: true, edit: true, approve: true },
                 tasks: { view: true, create: true, edit: true, assign: true },
-                risks: { view: true, create: true, edit: true },
                 vendors: { view: true, create: true, edit: true },
                 tests: { view: true, create: true, execute: true },
                 frameworks: { view: true, install: true },
@@ -142,7 +138,6 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 // Aligning with standard EDITOR: can't approve or admin.
                 policies: { view: true, create: true, edit: true, approve: false },
                 tasks: { view: true, create: true, edit: true, assign: true },
-                risks: { view: true, create: true, edit: true },
                 vendors: { view: true, create: true, edit: true },
                 tests: { view: true, create: true, execute: true },
                 frameworks: { view: true, install: false },
@@ -159,7 +154,6 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 policies: { view: true, create: false, edit: false, approve: false },
                 // Auditors might be able to assign or comment on tasks, but typically read-only. We'll set read-only here.
                 tasks: { view: true, create: false, edit: false, assign: false },
-                risks: { view: true, create: false, edit: false },
                 vendors: { view: true, create: false, edit: false },
                 tests: { view: true, create: false, execute: false },
                 frameworks: { view: true, install: false },
@@ -184,7 +178,6 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 evidence: { view: false, upload: false, edit: false, download: false },
                 policies: { view: false, create: false, edit: false, approve: false },
                 tasks: { view: true, create: false, edit: true, assign: false },
-                risks: { view: false, create: false, edit: false },
                 vendors: { view: false, create: false, edit: false },
                 tests: { view: false, create: false, execute: false },
                 frameworks: { view: false, install: false },
@@ -202,7 +195,6 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 evidence: { view: true, upload: false, edit: false, download: true },
                 policies: { view: true, create: false, edit: false, approve: false },
                 tasks: { view: true, create: false, edit: false, assign: false },
-                risks: { view: true, create: false, edit: false },
                 vendors: { view: true, create: false, edit: false },
                 tests: { view: true, create: false, execute: false },
                 frameworks: { view: true, install: false },

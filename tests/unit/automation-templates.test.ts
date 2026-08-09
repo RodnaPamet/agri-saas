@@ -11,8 +11,12 @@ import { CreateAutomationRuleSchema } from '@/app-layer/schemas/automation.schem
 import { isKnownAutomationEvent } from '@/app-layer/automation/events';
 
 describe('automation templates', () => {
-    it('ships at least 8 templates with unique ids', () => {
-        expect(AUTOMATION_TEMPLATES.length).toBeGreaterThanOrEqual(8);
+    it('ships at least 5 templates with unique ids', () => {
+        // Floor lowered from 8 when the risk-register uproot removed the
+        // three RISK_* templates — their trigger events no longer exist,
+        // so keeping them would have shipped catalogue entries a user
+        // could install and never see fire.
+        expect(AUTOMATION_TEMPLATES.length).toBeGreaterThanOrEqual(5);
         const ids = new Set(AUTOMATION_TEMPLATES.map((t) => t.id));
         expect(ids.size).toBe(AUTOMATION_TEMPLATES.length);
     });

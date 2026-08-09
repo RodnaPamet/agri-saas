@@ -32,8 +32,6 @@ export const BACK_AFFORDANCE_EXEMPT_SUBPAGES: readonly string[] = [
     '/issues/new',          // legacy redirect
     '/onboarding',          // forced flow — back would skip a required step
     '/policies/new',        // redirect shim
-    '/reports/soa/print',   // print view, chrome-less by design
-    '/risks/new',           // redirect shim
     '/security/mfa',        // self-service security flow
     '/vendors/new',         // redirect shim
 ] as const;
@@ -52,12 +50,10 @@ export const MAIN_PAGES: readonly string[] = [
     '/calendar',
     '/clauses',
     '/controls',
-    '/coverage',
     '/dashboard',
     '/evidence',
     '/farm-tasks',
     '/findings',
-    '/frameworks',
     '/grain/bins',
     '/grain/contracts',
     '/grain/costs',
@@ -72,10 +68,6 @@ export const MAIN_PAGES: readonly string[] = [
     '/planning',
     '/policies',
     '/processes',
-    '/reports',
-    '/risks',
-    '/schemes',
-    '/tests',
     '/vendors',
 ] as const;
 
@@ -99,7 +91,6 @@ export const SUBPAGES: readonly string[] = [
     '/admin/modules',
     '/admin/notifications',
     '/admin/rbac',
-    '/admin/risk-appetite',
     '/admin/roles',
     '/admin/scim',
     '/admin/security',
@@ -126,20 +117,11 @@ export const SUBPAGES: readonly string[] = [
 
     // Controls
     '/controls/[controlId]',
-    '/controls/[controlId]/tests/[planId]',
-    '/controls/dashboard',
     '/controls/new',
-    '/controls/sankey',
-    '/controls/templates',
 
     // Field operator view
     '/field/[taskId]',
 
-    // Frameworks
-    '/frameworks/[frameworkKey]',
-    '/frameworks/[frameworkKey]/diff',
-    '/frameworks/[frameworkKey]/install',
-    '/frameworks/[frameworkKey]/templates',
 
     // Issues (legacy → tasks)
     '/issues/[issueId]',
@@ -170,23 +152,7 @@ export const SUBPAGES: readonly string[] = [
     // Processes
     '/processes/governance',
 
-    // Reports
-    '/reports/soa',
-    '/reports/soa/print',
 
-    // Risks
-    '/risks/[riskId]',
-    '/risks/ai',
-    '/risks/board',
-    '/risks/correlations',
-    '/risks/dashboard',
-    '/risks/hierarchy',
-    '/risks/import',
-    '/risks/kri',
-    '/risks/loss-events',
-    '/risks/new',
-    '/risks/reports',
-    '/risks/scenarios',
 
     // Security (self-service)
     '/security/mfa',
@@ -194,10 +160,6 @@ export const SUBPAGES: readonly string[] = [
     // Farm tasks (the single task detail — reached from /farm-tasks)
     '/farm-tasks/[taskId]',
 
-    // Tests
-    '/tests/dashboard',
-    '/tests/due',
-    '/tests/runs/[runId]',
 
     // Vendors
     '/vendors/[vendorId]',

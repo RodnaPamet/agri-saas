@@ -13,9 +13,10 @@
  *      `data-testid="entity-detail-rail"` when a rail is provided.
  *      A future "simplify" PR that drops the aside is silently
  *      losing the master-detail composition; the ratchet shouts.
- *   3. The proof-of-pattern adoption — the risks detail page —
- *      still passes a `rail` prop. Removing it returns the page
- *      to single-column flow.
+ *   3. The slot stays opt-in — no page adopts it today (the risks
+ *      detail page was the original adopter and is gone), so the
+ *      ratchet asserts the SHELL still exposes and conditionally
+ *      renders it rather than naming a consumer.
  *
  * What this ratchet does NOT police
  *   The exact rail content (linked tasks, activity, quick actions)
@@ -43,11 +44,7 @@ const SELECTION_PANEL_PATH =
 const CONTROLS_CLIENT_PATH =
     'src/app/t/[tenantSlug]/(app)/controls/ControlsClient.tsx';
 
-// Phase 3 — AI assist rail on the risk register.
 const ASIDE_PANEL_PATH = 'src/components/ui/aside-panel.tsx';
-const AI_RAIL_PATH = 'src/components/ui/ai-assist-rail.tsx';
-const RISKS_CLIENT_PATH =
-    'src/app/t/[tenantSlug]/(app)/risks/RisksClient.tsx';
 
 describe('Right-rail master-detail discipline (Roadmap-2 PR-5)', () => {
     it('EntityDetailLayout exposes a `rail` prop in its public type', () => {
@@ -171,44 +168,6 @@ describe('Right-rail list-page aside discipline (Phase 2)', () => {
         expect(src).toMatch(/<EntityListPage[\s\S]*?\baside=\{/);
         expect(src).not.toContain('<SelectionSummaryPanel');
         expect(src).toMatch(/batchActions:\s*controlBatchActions/);
-    });
-});
-
-/**
- * Right-rail roadmap, Phase 3 — the AI assist rail.
- *
- * `<AsidePanel>` gains a `defaultCollapsed` prop (a persistent-but-
- * secondary rail starts as a spine, not a 320px land-grab), and
- * `<AiAssistRail>` is the AI co-pilot rail content — a persistent,
- * co-resident entry point to the AI risk-assessment flow, docked on
- * the risk register. This block locks the prop, the primitive, and
- * the risks-page proof-of-pattern adoption.
- */
-describe('Right-rail AI assist rail discipline (Phase 3)', () => {
-    it('AsidePanel exposes a `defaultCollapsed` prop in its public type', () => {
-        const src = read(ASIDE_PANEL_PATH);
-        expect(src).toMatch(/defaultCollapsed\?:\s*boolean/);
-        // The prop must seed the persisted collapse state — not be an
-        // inert field. `useLocalStorage` takes it as the initial value.
-        expect(src).toMatch(/useLocalStorage<boolean>\([\s\S]*?defaultCollapsed/);
-    });
-
-    it('AiAssistRail is the AI co-pilot rail content primitive', () => {
-        const src = read(AI_RAIL_PATH);
-        // The rail carries the launch CTA into the AI flow; the page
-        // resolves the href, the primitive never builds tenant URLs.
-        expect(src).toMatch(/data-testid=["']ai-assist-rail["']/);
-        expect(src).toMatch(/data-testid=["']ai-assist-rail-cta["']/);
-        expect(src).toMatch(/aiHref/);
-    });
-
-    it('risks register passes the AI assist rail (proof-of-pattern adoption)', () => {
-        // The risks list is the canonical adopter — the AI co-pilot
-        // belongs on the register it suggests risks for. Removing the
-        // aside drops the persistent co-pilot surface.
-        const src = read(RISKS_CLIENT_PATH);
-        expect(src).toMatch(/<ListPageShell\.Body\s+aside=\{/);
-        expect(src).toContain('<AiAssistRail');
     });
 });
 

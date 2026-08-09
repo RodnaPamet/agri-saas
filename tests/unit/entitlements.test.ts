@@ -106,7 +106,6 @@ describe('Entitlements', () => {
             expect(planAllowsModule('FREE', 'PLANNING')).toBe(true);
             // GRC + automation are gated above FREE.
             expect(planAllowsModule('FREE', 'CERTIFICATION')).toBe(false);
-            expect(planAllowsModule('FREE', 'RISK')).toBe(false);
             expect(planAllowsModule('FREE', 'VENDORS')).toBe(false);
             expect(planAllowsModule('FREE', 'PROCESSES')).toBe(false);
             expect(planAllowsModule('FREE', 'AUTOMATION')).toBe(false);
@@ -121,7 +120,6 @@ describe('Entitlements', () => {
 
         test('PRO plan unlocks the GRC + automation modules but not AI', () => {
             expect(planAllowsModule('PRO', 'CERTIFICATION')).toBe(true);
-            expect(planAllowsModule('PRO', 'RISK')).toBe(true);
             expect(planAllowsModule('PRO', 'VENDORS')).toBe(true);
             expect(planAllowsModule('PRO', 'PROCESSES')).toBe(true);
             expect(planAllowsModule('PRO', 'AUTOMATION')).toBe(true);
@@ -160,13 +158,13 @@ describe('Entitlements', () => {
         });
 
         test('null plan returns the full module set', () => {
-            expect(planModules(null)).toHaveLength(11);
+            expect(planModules(null)).toHaveLength(10);
             expect(planModules(null)).toContain('AI');
             expect(planModules(null)).toContain('GRAIN');
         });
 
         test('ENTERPRISE returns the full module set', () => {
-            expect(planModules('ENTERPRISE')).toHaveLength(11);
+            expect(planModules('ENTERPRISE')).toHaveLength(10);
             expect(planModules('ENTERPRISE')).toContain('GRAIN');
         });
     });

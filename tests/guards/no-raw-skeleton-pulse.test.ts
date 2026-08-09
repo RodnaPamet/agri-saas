@@ -62,7 +62,8 @@ const EXEMPT_FILE_PATTERNS: RegExp[] = [
  * each migration that drops the count toward zero gets a free
  * win.
  */
-const ANIMATE_PULSE_FILE_BUDGET = 26;
+// Compliance uproot (2026-08-07): compliance uproot removed 7 animate-pulse files.
+const ANIMATE_PULSE_FILE_BUDGET = 19;
 
 function isExempt(rel: string): boolean {
     const segments = rel.split(path.sep);

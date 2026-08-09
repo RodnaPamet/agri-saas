@@ -57,11 +57,6 @@ interface DetailPageEntry {
  */
 const DETAIL_PAGES: DetailPageEntry[] = [
     {
-        file: "src/app/t/[tenantSlug]/(app)/risks/[riskId]/page.tsx",
-        adopted: true,
-        note: "Risks detail — uses <MetaStrip> with status / severity / owner / framework / dates. Proof-of-pattern reference.",
-    },
-    {
         file: "src/app/t/[tenantSlug]/(app)/controls/[controlId]/page.tsx",
         adopted: true,
         note: "Controls detail — uses <MetaStrip> for status / framework / owner / last-updated. Heaviest detail page in the product.",
@@ -95,16 +90,6 @@ const DETAIL_PAGES: DetailPageEntry[] = [
         file: "src/app/t/[tenantSlug]/(app)/audits/packs/[packId]/page.tsx",
         adopted: true,
         note: "Audit pack detail — uses <MetaStrip> for state / auditor / due-date / item-count.",
-    },
-    {
-        file: "src/app/t/[tenantSlug]/(app)/tests/runs/[runId]/page.tsx",
-        adopted: true,
-        note: "Test run detail — uses <MetaStrip> for plan / status / executor / completed-at.",
-    },
-    {
-        file: "src/app/t/[tenantSlug]/(app)/frameworks/[frameworkKey]/page.tsx",
-        adopted: true,
-        note: "Framework detail — uses <MetaStrip> for code / version / installed-at / coverage.",
     },
     {
         file: "src/app/t/[tenantSlug]/(app)/access-reviews/[reviewId]/AccessReviewDetailClient.tsx",
@@ -163,7 +148,12 @@ describe("MetaStrip detail-page coverage", () => {
         // entity types (e.g., a new audit-cycle-readiness sub-detail
         // that needs its own metadata strip) should add an entry
         // here — the ≥10 floor catches an emptied registry.
-        expect(DETAIL_PAGES.length).toBeGreaterThanOrEqual(10);
+        // Compliance uproot (2026-08-07): the test-run and framework detail
+        // pages were deleted, taking the registry from 11 to 9. The floor is a
+        // drift detector — it exists so someone cannot quietly empty the
+        // registry — so it tracks the new reality rather than a stale number.
+        // 9 → 8: the risk detail page went with the register.
+        expect(DETAIL_PAGES.length).toBeGreaterThanOrEqual(8);
     });
 
     it("MetadataBar (the deprecated sibling primitive) has zero production adopters", () => {

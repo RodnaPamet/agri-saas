@@ -143,7 +143,6 @@ describe('OI-3 — repository metric instruments', () => {
 
 describe('OI-3 — sample repository instrumentation', () => {
     const SAMPLES = [
-        ['src/app-layer/repositories/RiskRepository.ts',     ['risk.list', 'risk.listPaginated', 'risk.getById', 'risk.create']],
         ['src/app-layer/repositories/ControlRepository.ts',  ['control.list', 'control.listPaginated', 'control.getById', 'control.create']],
         ['src/app-layer/repositories/EvidenceRepository.ts', ['evidence.list', 'evidence.listPaginated', 'evidence.getById', 'evidence.create']],
     ] as const;

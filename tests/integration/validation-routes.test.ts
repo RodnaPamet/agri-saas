@@ -23,7 +23,6 @@ jest.mock('@/app-layer/context', () => ({
     getTenantCtx: jest.fn().mockRejectedValue(new Error('Not reached - validation should fail first')),
 }));
 
-import { PUT as RisksPut } from '@/app/api/risks/[id]/route';
 import { POST as EvidencePost } from '@/app/api/evidence/route';
 
 describe('Validation Layer Integration', () => {
@@ -40,19 +39,6 @@ describe('Validation Layer Integration', () => {
             const data = await res.json();
             expect(data.error.code).toBe('BAD_REQUEST');
             expect(data.error.message).toBe('Invalid JSON payload');
-        });
-
-        it('PUT /api/risks/123 returns 400 on out-of-bounds numbers', async () => {
-            const req = new NextRequest('http://localhost/api/risks/123', {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ impact: 99 }), // max is 10
-            });
-            const res = await RisksPut(req, { params: { id: '123' } } as any);
-            expect(res.status).toBe(400);
-
-            const data = await res.json();
-            expect(data.error.code).toBe('VALIDATION_ERROR');
         });
     });
 

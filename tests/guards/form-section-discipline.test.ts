@@ -36,8 +36,12 @@ const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
 
 const PRIMITIVE_PATH = 'src/components/ui/form-section.tsx';
 
+// Repointed by the risk-register uproot: this listed
+// `risks/NewRiskModal.tsx`, and emptying the array would have left the
+// ratchet vacuously green. The findings create-modal is the surviving
+// multi-section form.
 const ADOPTERS = [
-    'src/app/t/[tenantSlug]/(app)/risks/NewRiskModal.tsx',
+    'src/app/t/[tenantSlug]/(app)/findings/CreateFindingModal.tsx',
 ];
 
 describe('FormSection discipline (Roadmap-2 PR-6)', () => {

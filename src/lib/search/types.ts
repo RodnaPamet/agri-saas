@@ -38,13 +38,11 @@
  */
 export type SearchHitType =
     | 'control'
-    | 'risk'
     | 'policy'
     | 'evidence'
     | 'framework'
     | 'asset'
     | 'task'
-    | 'test'
     | 'knowledge';
 
 // ─── Hit shape ─────────────────────────────────────────────────────────
@@ -100,13 +98,11 @@ export const SEARCH_TYPE_DEFAULTS: Record<
     { iconKey: SearchHit['iconKey']; category: string }
 > = {
     control: { iconKey: 'shield-check', category: 'Controls' },
-    risk: { iconKey: 'alert-triangle', category: 'Risks' },
     policy: { iconKey: 'file-text', category: 'Policies' },
     evidence: { iconKey: 'paperclip', category: 'Evidence' },
     framework: { iconKey: 'layers', category: 'Frameworks' },
     asset: { iconKey: 'package', category: 'Assets' },
     task: { iconKey: 'check-square', category: 'Tasks' },
-    test: { iconKey: 'flask', category: 'Tests' },
     // Knowledge Base articles — reuses the document glyph (the palette
     // group heading carries its own BookOpen icon).
     knowledge: { iconKey: 'file-text', category: 'Knowledge' },

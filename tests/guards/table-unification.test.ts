@@ -139,19 +139,7 @@ const FIRST_COLUMN_TABLES: FirstColumnEntry[] = [
         file: "src/app/t/[tenantSlug]/(app)/controls/ControlsClient.tsx",
         firstColumnId: "code",
         adopted: true,
-        note: "Controls — the canonical reference. First column is `id: 'code'` accessing `c.code || c.annexId || ''`.",
-    },
-    {
-        file: "src/app/t/[tenantSlug]/(app)/risks/RisksClient.tsx",
-        firstColumnId: "code",
-        adopted: true,
-        note: "Risks list — PR-B added `Risk.key` (`RSK-N`) generated atomically from `RiskKeySequence`; column 0 is now the canonical Code key, with title in the column immediately after.",
-    },
-    {
-        file: "src/app/t/[tenantSlug]/(app)/frameworks/FrameworksClient.tsx",
-        firstColumnId: "name",
-        adopted: true,
-        note: "Frameworks catalogue — the framework name is the canonical scannable identifier (the `key` field is a slug, used in URLs, not the user-facing identifier).",
+        note: "Controls — the canonical reference. First column is `id: 'code'` accessing `c.code || ''`.",
     },
     // R10-PR5 — registry expansion across the remaining list-page
     // tables. Every entity converges on the same shape: column 0 is

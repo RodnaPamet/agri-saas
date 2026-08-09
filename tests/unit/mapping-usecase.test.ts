@@ -57,8 +57,8 @@ const readerCtx = makeRequestContext('READER');
 describe('getFrameworkMappings — SOC2 fold', () => {
     it('joins controls to soc2Codes, counts IMPLEMENTED + APPROVED evidence, computes coverage %', async () => {
         (MappingRepository.getControlsWithEvidence as jest.Mock).mockResolvedValue([
-            { annexId: 'A.5.1', status: 'IMPLEMENTED', evidence: [{ status: 'APPROVED' }] },
-            { annexId: 'A.5.1', status: 'IN_PROGRESS', evidence: [{ status: 'DRAFT' }] },
+            { code: 'A.5.1', status: 'IMPLEMENTED', evidence: [{ status: 'APPROVED' }] },
+            { code: 'A.5.1', status: 'IN_PROGRESS', evidence: [{ status: 'DRAFT' }] },
         ]);
 
         const res = await getFrameworkMappings(readerCtx);
@@ -82,7 +82,7 @@ describe('getFrameworkMappings — SOC2 fold', () => {
 
     it('counts only APPROVED evidence (DRAFT/SUBMITTED ignored)', async () => {
         (MappingRepository.getControlsWithEvidence as jest.Mock).mockResolvedValue([
-            { annexId: 'A.5.1', status: 'IMPLEMENTED', evidence: [
+            { code: 'A.5.1', status: 'IMPLEMENTED', evidence: [
                 { status: 'DRAFT' }, { status: 'SUBMITTED' }, { status: 'APPROVED' },
             ] },
         ]);
@@ -96,8 +96,8 @@ describe('getFrameworkMappings — SOC2 fold', () => {
 describe('getFrameworkMappings — NIS2 fold', () => {
     it('joins controls via nis2Codes (skipping mappings with empty nis2Codes)', async () => {
         (MappingRepository.getControlsWithEvidence as jest.Mock).mockResolvedValue([
-            { annexId: 'A.5.1', status: 'IMPLEMENTED', evidence: [] },
-            { annexId: 'A.5.2', status: 'IMPLEMENTED', evidence: [] }, // soc2 only, skipped by NIS2
+            { code: 'A.5.1', status: 'IMPLEMENTED', evidence: [] },
+            { code: 'A.5.2', status: 'IMPLEMENTED', evidence: [] }, // soc2 only, skipped by NIS2
         ]);
 
         const res = await getFrameworkMappings(readerCtx);

@@ -64,30 +64,6 @@ describe('icon-only action discipline', () => {
         });
     }
 
-    // i18n batch T13 — the due-queue "Run due planning" IconAction label now
-    // routes through next-intl (`t('runDuePlanning')` on the
-    // `controlTests.due` namespace). Assert the icon-only wiring is preserved
-    // AND the en.json value keeps the copy so the a11y contract holds.
-    it('IconAction site stays icon-only (i18n): "Run due planning"', () => {
-        const src = read(`${APP}/tests/due/page.tsx`);
-        expect(src).toMatch(/import \{ IconAction \} from '@\/components\/ui\/icon-action'/);
-        expect(src).toMatch(/<IconAction[\s\S]*?label=\{t\('runDuePlanning'\)\}/);
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
-        expect(require('../../messages/en.json').controlTests.due.runDuePlanning).toBe('Run due planning');
-    });
-
-    // i18n batch T07 — the controls-dashboard "Consistency check" IconAction
-    // label now routes through next-intl (`t('dashboard.consistencyCheck')`).
-    // Assert the icon-only wiring is preserved AND the en.json value keeps
-    // the copy so the a11y contract holds.
-    it('IconAction site stays icon-only (i18n): "Consistency check"', () => {
-        const src = read(`${APP}/controls/dashboard/page.tsx`);
-        expect(src).toMatch(/import \{ IconAction \} from '@\/components\/ui\/icon-action'/);
-        expect(src).toMatch(/<IconAction[\s\S]*?label=\{t\('dashboard\.consistencyCheck'\)\}/);
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
-        expect(require('../../messages/en.json').controls.dashboard.consistencyCheck).toBe('Consistency check');
-    });
-
     // Link sites (download / navigation) — icon-only via a Tooltip-wrapped
     // `size:'icon'` anchor with an aria-label.
     // i18n (T06): RisksClient's "Import risks" link now resolves both the
@@ -98,12 +74,6 @@ describe('icon-only action discipline', () => {
         ariaMatch: string;
         tooltipMatch: RegExp;
     }> = [
-        {
-            file: `${APP}/risks/RisksClient.tsx`,
-            ariaLabel: 'Import risks',
-            ariaMatch: `aria-label=\\{tm\\('importRisks'\\)\\}[\\s\\S]*?size: 'icon'`,
-            tooltipMatch: /<Tooltip content=\{tm\('importRisks'\)\}>/,
-        },
         // i18n batch T08 — the pack Export JSON/CSV icon-link labels + tooltips
         // now route through next-intl (`t('packDetail.exportJson' | 'exportCsv')`).
         {

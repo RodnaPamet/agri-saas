@@ -50,10 +50,10 @@ describe('Tenant Isolation — runInTenantContext enforcement', () => {
         const fs = require('fs');
         const path = require('path');
         const usecasesDir = path.resolve(__dirname, '../../src/app-layer/usecases');
-        const criticalModules = ['risk', 'control', 'evidence'];
+        const criticalModules = ['control', 'evidence'];
 
         for (const mod of criticalModules) {
-            // Support both flat file (risk.ts) and directory barrel (control/index.ts)
+            // Support both flat file (evidence.ts) and directory barrel (control/index.ts)
             const flatPath = path.join(usecasesDir, `${mod}.ts`);
             const dirPath = path.join(usecasesDir, mod);
             let content: string;
@@ -107,7 +107,7 @@ describe('Tenant Isolation — Repository code analysis', () => {
         const usecasesDir = path.resolve(__dirname, '../../src/app-layer/usecases');
         if (!fs.existsSync(usecasesDir)) return;
 
-        const criticalFiles = ['risk.ts', 'control.ts', 'evidence.ts'];
+        const criticalFiles = ['control.ts', 'evidence.ts'];
 
         for (const mod of criticalFiles) {
             const modName = mod.replace('.ts', '');

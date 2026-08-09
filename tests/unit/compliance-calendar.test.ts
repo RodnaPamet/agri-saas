@@ -28,13 +28,9 @@ const mockVendorFindMany = jest.fn();
 const mockVendorDocFindMany = jest.fn();
 const mockAuditCycleFindMany = jest.fn();
 const mockControlFindMany = jest.fn();
-const mockTestPlanFindMany = jest.fn();
 const mockTaskFindMany = jest.fn();
-const mockRiskFindMany = jest.fn();
 const mockFindingFindMany = jest.fn();
 
-const mockTreatmentMilestoneFindMany = jest.fn();
-const mockTreatmentPlanFindMany = jest.fn();
 const mockAgriEventFindMany = jest.fn();
 // Calendar roadmap PR 3 — AI news-derived proposals. Global, like agriEvent.
 const mockNewsDerivedEventFindMany = jest.fn();
@@ -64,12 +60,8 @@ beforeEach(() => {
         mockVendorDocFindMany,
         mockAuditCycleFindMany,
         mockControlFindMany,
-        mockTestPlanFindMany,
         mockTaskFindMany,
-        mockRiskFindMany,
         mockFindingFindMany,
-        mockTreatmentMilestoneFindMany,
-        mockTreatmentPlanFindMany,
         mockAgriEventFindMany,
         mockNewsDerivedEventFindMany,
         mockParcelLeaseFindMany,
@@ -114,15 +106,9 @@ beforeEach(() => {
             findMany: (...a: unknown[]) => mockControlFindMany(...a),
             count: (...a: unknown[]) => mockControlCount(...a),
         },
-        controlTestPlan: {
-            findMany: (...a: unknown[]) => mockTestPlanFindMany(...a),
-        },
         task: {
             findMany: (...a: unknown[]) => mockTaskFindMany(...a),
             count: (...a: unknown[]) => mockTaskCount(...a),
-        },
-        risk: {
-            findMany: (...a: unknown[]) => mockRiskFindMany(...a),
         },
         finding: {
             findMany: (...a: unknown[]) => mockFindingFindMany(...a),
@@ -134,13 +120,6 @@ beforeEach(() => {
         // Calendar roadmap PR 3 — global, like agriEvent above.
         newsDerivedEvent: {
             findMany: (...a: unknown[]) => mockNewsDerivedEventFindMany(...a),
-        },
-        // Epic G-7
-        treatmentMilestone: {
-            findMany: (...a: unknown[]) => mockTreatmentMilestoneFindMany(...a),
-        },
-        riskTreatmentPlan: {
-            findMany: (...a: unknown[]) => mockTreatmentPlanFindMany(...a),
         },
         // Agriculture data sources (PR 2 of the calendar roadmap) — all
         // four ARE tenant-scoped, unlike agriEvent above.
@@ -230,13 +209,9 @@ describe('getComplianceCalendarEvents — aggregation', () => {
             mockVendorDocFindMany,
             mockAuditCycleFindMany,
             mockControlFindMany,
-            mockTestPlanFindMany,
             mockTaskFindMany,
-            mockRiskFindMany,
-            mockFindingFindMany,
-            mockTreatmentMilestoneFindMany,
-            mockTreatmentPlanFindMany,
-            // Agriculture data sources (PR 2) — all four ARE tenant-scoped.
+                mockFindingFindMany,
+                    // Agriculture data sources (PR 2) — all four ARE tenant-scoped.
             mockParcelLeaseFindMany,
             mockContractFindMany,
             mockPlantingFindMany,

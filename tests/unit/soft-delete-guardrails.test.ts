@@ -13,7 +13,7 @@ const PRISMA_FILE = path.join(__dirname, '..', '..', 'src', 'lib', 'prisma.ts');
 const SOFT_DELETE_FILE = path.join(__dirname, '..', '..', 'src', 'lib', 'soft-delete.ts');
 
 const SOFT_DELETE_MODELS = [
-    'Asset', 'Risk', 'Control', 'Evidence', 'Policy',
+    'Asset', 'Control', 'Evidence', 'Policy',
     'Vendor', 'FileRecord', 'Task', 'Finding',
     'Audit', 'AuditCycle', 'AuditPack',
 ];
@@ -47,7 +47,7 @@ describe('Soft-Delete CI Guardrails', () => {
         expect(content).toContain("import { withSoftDeleteExtension } from './soft-delete'");
     });
 
-    test('soft-delete.ts exports SOFT_DELETE_MODELS with all 5 models', () => {
+    test('soft-delete.ts exports SOFT_DELETE_MODELS with the P0 models', () => {
         const content = fs.readFileSync(SOFT_DELETE_FILE, 'utf-8');
         for (const model of SOFT_DELETE_MODELS) {
             expect(content).toContain(`'${model}'`);
@@ -152,12 +152,12 @@ describe('Soft-Delete CI Guardrails', () => {
         expect(softDeleteIdx).toBeLessThan(auditCallIdx);
     });
 
-    test('SOFT_DELETE_MODELS allowlist has exactly 12 models', () => {
+    test('SOFT_DELETE_MODELS allowlist has exactly 11 models', () => {
         const content = fs.readFileSync(SOFT_DELETE_FILE, 'utf-8');
         // Count the models in the Set
-        const modelMatches = content.match(/'(Asset|Risk|Control|Evidence|Policy|Vendor|FileRecord|Task|Finding|Audit|AuditCycle|AuditPack)'/g);
+        const modelMatches = content.match(/'(Asset|Control|Evidence|Policy|Vendor|FileRecord|Task|Finding|Audit|AuditCycle|AuditPack)'/g);
         expect(modelMatches).not.toBeNull();
-        expect(new Set(modelMatches).size).toBe(12);
+        expect(new Set(modelMatches).size).toBe(11);
     });
 
     test('withDeleted helper is exported from soft-delete.ts', () => {

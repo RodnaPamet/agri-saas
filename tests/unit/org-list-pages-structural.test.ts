@@ -14,7 +14,7 @@
  *   - the row-link cell uses the pre-computed `drillDownUrl` from the
  *     usecase (never a hand-built href)
  *   - tenant attribution is rendered as a column on every cross-tenant
- *     list (controls / risks / evidence)
+ *     list (controls / evidence)
  *
  * Mirrors the org-overview-structural.test.ts template.
  */
@@ -59,15 +59,6 @@ const PAGES: PageSpec[] = [
         usecase: 'listNonPerformingControls',
         rowLinkPattern: /href=\{row\.original\.drillDownUrl\}/,
         testIds: ['org-controls-table', 'org-control-link-', 'org-control-tenant-'],
-        requiresTenantColumn: true,
-    },
-    {
-        name: 'risks',
-        serverPath: 'src/app/org/[orgSlug]/(app)/risks/page.tsx',
-        clientPath: 'src/app/org/[orgSlug]/(app)/risks/RisksTable.tsx',
-        usecase: 'listCriticalRisksAcrossOrg',
-        rowLinkPattern: /href=\{row\.original\.drillDownUrl\}/,
-        testIds: ['org-risks-table', 'org-risk-link-', 'org-risk-tenant-'],
         requiresTenantColumn: true,
     },
     {
@@ -160,9 +151,10 @@ describe('Epic O-4 — cross-tenant list pages structural contract', () => {
 
     // ── Cross-page invariants ────────────────────────────────────────
 
-    it('the four pages collectively cover the four spec entities', () => {
+    it('the pages collectively cover the spec entities', () => {
+        // Was four; `risks` went with the risk register.
         const names = PAGES.map((p) => p.name).sort();
-        expect(names).toEqual(['controls', 'evidence', 'risks', 'tenants']);
+        expect(names).toEqual(['controls', 'evidence', 'tenants']);
     });
 
     it('every cross-tenant list resourceName is plural-aware', () => {

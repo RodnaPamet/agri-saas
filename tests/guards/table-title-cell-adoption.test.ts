@@ -30,7 +30,6 @@ const ROOT = path.resolve(__dirname, '../..');
 
 const ADOPTED_PAGES = [
     'src/app/t/[tenantSlug]/(app)/controls/ControlsClient.tsx',
-    'src/app/t/[tenantSlug]/(app)/risks/RisksClient.tsx',
     'src/app/t/[tenantSlug]/(app)/policies/PoliciesClient.tsx',
     'src/app/t/[tenantSlug]/(app)/evidence/EvidenceClient.tsx',
     'src/app/t/[tenantSlug]/(app)/vendors/VendorsClient.tsx',

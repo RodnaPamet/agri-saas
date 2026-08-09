@@ -38,7 +38,6 @@ import {
     Moon,
     Paperclip,
     Settings,
-    Triangle,
     Truck,
     type LucideIcon,
 } from 'lucide-react';
@@ -90,13 +89,6 @@ export function usePaletteCommands(tenantSlug: string | null): PaletteCommand[] 
                 href: href('/dashboard'),
             },
             {
-                id: 'nav:risks',
-                group: 'Navigation',
-                label: t('navRisks'),
-                icon: Triangle,
-                href: href('/risks'),
-            },
-            {
                 id: 'nav:evidence',
                 group: 'Navigation',
                 label: t('navEvidence'),
@@ -109,13 +101,6 @@ export function usePaletteCommands(tenantSlug: string | null): PaletteCommand[] 
                 label: t('navCalendar'),
                 icon: CalendarIcon,
                 href: href('/calendar'),
-            },
-            {
-                id: 'nav:frameworks',
-                group: 'Navigation',
-                label: t('navFrameworks'),
-                icon: Layers,
-                href: href('/frameworks'),
             },
             {
                 id: 'nav:vendors',

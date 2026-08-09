@@ -4,13 +4,17 @@
 
 /**
  * Attached-evidence panel — the writable, Control-style evidence
- * surface for a Risk or Asset detail page. Mirrors the Control / Task
+ * surface for an Asset detail page. Mirrors the Control / Task
  * Evidence tab: upload a file OR link a URL, both scoped to the entity
- * via `Evidence.riskId` / `Evidence.assetId`, rendered through the
- * shared <EvidenceSubTable>.
+ * via `Evidence.assetId`, rendered through the shared
+ * <EvidenceSubTable>.
+ *
+ * The `entity` prop is still threaded through (it names the element ids
+ * the E2E specs select on) but has only one member since the Risk
+ * variant went with the risk register.
  *
  * This is DISTINCT from `<InheritedEvidencePanel>` (read-only evidence
- * aggregated from the entity's mapped controls). The Risk/Asset Evidence
+ * aggregated from the entity's mapped controls). The Asset Evidence
  * tab stacks both: this panel for attached evidence, the inherited panel
  * below it.
  */
@@ -28,7 +32,7 @@ interface AttachedEvidencePanelProps {
     /** Risk or asset id. */
     entityId: string;
     /** Drives the upload field name + element ids + copy. */
-    entity: 'risk' | 'asset';
+    entity: 'asset';
     /**
      * Attached-evidence endpoint WITHOUT the `/api/t/<slug>` prefix —
      * e.g. `/risks/<id>/evidence/attached`. GET returns
@@ -64,7 +68,7 @@ export function AttachedEvidencePanel({
     const [saving, setSaving] = useState(false);
     const fileRef = useRef<HTMLInputElement>(null);
 
-    const uploadField = entity === 'risk' ? 'riskId' : 'assetId';
+    const uploadField = 'assetId';
 
     const refetch = useCallback(async () => {
         try {

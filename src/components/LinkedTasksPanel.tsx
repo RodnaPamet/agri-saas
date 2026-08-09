@@ -53,7 +53,7 @@ interface LinkedTasksPanelProps {
     /**
      * Domain entity the listed tasks are linked to. Drives the filter
      * query AND (when `canWrite`) the entityType passed into the create
-     * modal. Canonical values: `'ASSET' | 'RISK' | 'CONTROL'`.
+     * modal. Canonical values: `'ASSET' | 'CONTROL'`.
      */
     entityType: string;
     entityId: string;
@@ -111,12 +111,8 @@ export default function LinkedTasksPanel({
         void loadTasks();
     }, [loadTasks]);
 
-    const canonicalEntityType: 'ASSET' | 'RISK' | 'CONTROL' | null =
-        entityType === 'ASSET' ||
-        entityType === 'RISK' ||
-        entityType === 'CONTROL'
-            ? entityType
-            : null;
+    const canonicalEntityType: 'ASSET' | 'CONTROL' | null =
+        entityType === 'ASSET' || entityType === 'CONTROL' ? entityType : null;
     const showCreate = canWrite && canonicalEntityType !== null;
 
     // Columns mirror the Tasks page table so this tab reads identically.

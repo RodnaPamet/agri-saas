@@ -109,38 +109,6 @@ export async function addAuditPackItems(
 // РІвЂќР‚РІвЂќР‚РІвЂќР‚ Snapshot Creation РІвЂќР‚РІвЂќР‚РІвЂќР‚
 
 /**
- * Which framework does this pack cover?
- *
- * `getSoA` with no `frameworkKey` falls back to
- * `resolveInstalledFrameworkKey`, which returns the alphabetically-first
- * installed key — so a GlobalG.A.P. pack shipped an EU-Organic Statement of
- * Applicability, correctly formatted and about the wrong standard. An auditor
- * has no way to tell that from a document they did not ask for.
- *
- * The pack already knows: `scheme-pack.ts` adds exactly one FRAMEWORK_COVERAGE
- * item whose `entityId` is the framework's id. Falling back to `getSoA`'s own
- * default when there is no such item keeps generic audit packs working
- * unchanged.
- */
-async function resolvePackFrameworkKey(
-    ctx: RequestContext,
-    packId: string,
-): Promise<string | undefined> {
-    const item = await runInTenantContext(ctx, (tdb) =>
-        tdb.auditPackItem.findFirst({
-            where: { tenantId: ctx.tenantId, auditPackId: packId, entityType: 'FRAMEWORK_COVERAGE' },
-            select: { entityId: true },
-        }),
-    );
-    if (!item) return undefined;
-    const fw = await prisma.framework.findUnique({
-        where: { id: item.entityId },
-        select: { key: true },
-    });
-    return fw?.key;
-}
-
-/**
  * Snapshot a framework's coverage for a frozen pack.
  *
  * The freeze switch had no case for FRAMEWORK_COVERAGE, so it fell through to
@@ -166,22 +134,13 @@ async function createFrameworkCoverageSnapshot(
             snapshotAt: new Date().toISOString(),
         });
     }
-    const { computeCoverage } = await import('../framework/coverage');
-    const coverage = await computeCoverage(ctx, fw.key);
+    // The coverage engine (`framework/coverage`) was removed with the
+    // compliance uproot — a requirement is no longer "covered" by a Control
+    // row, so there is no percentage to freeze. The snapshot keeps the
+    // framework identity so the pack item still names what it refers to.
     return JSON.stringify({
         type: 'FRAMEWORK_COVERAGE',
         framework: { key: fw.key, name: fw.name, version: fw.version },
-        total: coverage.total,
-        mapped: coverage.mapped,
-        unmapped: coverage.unmapped,
-        coveragePercent: coverage.coveragePercent,
-        // The number that means "backed by approved evidence", as opposed to
-        // "a control row links to it".
-        satisfiedRequirements: coverage.satisfiedRequirements,
-        applicableRequirements: coverage.applicableRequirements,
-        satisfiedPercent: coverage.satisfiedPercent,
-        bySection: coverage.bySection,
-        unmappedRequirements: coverage.unmappedRequirements,
         snapshotAt: new Date().toISOString(),
     });
 }
@@ -301,70 +260,10 @@ export async function freezeAuditPack(ctx: RequestContext, packId: string) {
 
     // Phase 2: Attach the SoA snapshot as an EXPORT_ARTIFACT item.
     //
-    // Runs outside the freeze transaction because getSoA opens its own
-    // runInTenantContext calls, and Prisma interactive transactions cannot be
-    // nested.
-    //
-    // Two defects lived here. The insert used an `EXPORT_ARTIFACT` enum member
-    // that did not exist in the database, so it threw every time — and the
-    // throw was swallowed by a bare `catch {}`, so a pack frozen for a
-    // certifier shipped with no Statement of Applicability and nobody was
-    // told. And `getSoA` was called with no framework, so `soa.ts` fell back to
-    // the alphabetically-first installed key: a GlobalG.A.P. pack shipped an
-    // EU-Organic SoA.
-    //
-    // The framework now comes from the pack's own FRAMEWORK_COVERAGE item, and
-    // a failure is logged rather than discarded. It stays non-fatal on purpose
-    // — the freeze itself already committed, and unwinding it would lose the
-    // snapshots — but "non-fatal" must not mean "invisible".
-    try {
-        const { getSoA } = await import('../soa');
-        const soaReport = await getSoA(ctx, {
-            frameworkKey: await resolvePackFrameworkKey(ctx, packId),
-            includeEvidence: true,
-            includeTasks: true,
-            includeTests: true,
-        });
-        const soaSnapshot = JSON.stringify({
-            type: 'SOA_REPORT',
-            framework: soaReport.framework,
-            generatedAt: soaReport.generatedAt,
-            summary: soaReport.summary,
-            entries: soaReport.entries.map((e) => ({
-                code: e.requirementCode,
-                title: e.requirementTitle,
-                section: e.section,
-                applicable: e.applicable,
-                justification: e.justification,
-                status: e.implementationStatus,
-                controlRefs: e.mappedControls.map((c) => `${c.code ?? '—'} ${c.title}`).join('; '),
-                evidenceCount: e.evidenceCount,
-            })),
-            snapshotAt: new Date().toISOString(),
-        });
-        await runInTenantContext(ctx, (tdb) =>
-            tdb.auditPackItem.create({
-                data: {
-                    tenantId: ctx.tenantId,
-                    auditPackId: packId,
-                    // EXPORT_ARTIFACT not yet in AuditPackItemEntityType enum; pending schema migration
-                    entityType: 'EXPORT_ARTIFACT' as AuditPackItemEntityType,
-                    entityId: `soa-${soaReport.framework}`,
-                    snapshotJson: soaSnapshot,
-                    sortOrder: frozenPack.itemCount + 1,
-                },
-            })
-        );
-    } catch (err) {
-        // Non-fatal, but never silent: a certifier pack missing its SoA is a
-        // defect the operator has to be able to see.
-        logger.error('audit pack frozen WITHOUT its Statement of Applicability', {
-            component: 'audit-packs',
-            tenantId: ctx.tenantId,
-            packId,
-            detail: err instanceof Error ? err.message : String(err),
-        });
-    }
+    // A Statement of Applicability used to be appended here as an
+    // EXPORT_ARTIFACT pack item. `getSoA` derived it from Control rows and
+    // their applicability decisions; both went with the compliance uproot,
+    // so a frozen pack now carries its item snapshots and nothing further.
 
     return frozenPack.frozenPack;
 }

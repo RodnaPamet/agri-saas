@@ -17,12 +17,12 @@ import { prisma } from '@/lib/prisma';
 import type { JobRunResult } from './types';
 import { enqueue } from './queue';
 
-export type ScheduleTarget = 'Evidence' | 'ControlException' | 'ControlTestPlan';
+// ControlException / ControlTestPlan were dropped with the compliance
+// uproot; Evidence retention is the remaining date-relative trigger.
+export type ScheduleTarget = 'Evidence';
 
 export const SCHEDULE_TARGETS: Record<ScheduleTarget, { dateField: string }> = {
     Evidence: { dateField: 'retentionUntil' },
-    ControlException: { dateField: 'expiresAt' },
-    ControlTestPlan: { dateField: 'nextDueAt' },
 };
 
 export interface ScheduleConfig {
@@ -65,12 +65,6 @@ async function dueEntities(
     switch (target) {
         case 'Evidence':
             rows = await prisma.evidence.findMany({ where, select, take: 500 });
-            break;
-        case 'ControlException':
-            rows = await prisma.controlException.findMany({ where, select, take: 500 });
-            break;
-        case 'ControlTestPlan':
-            rows = await prisma.controlTestPlan.findMany({ where, select, take: 500 });
             break;
     }
     return rows.map((r) => ({ id: r.id as string, due: (r[field] as Date | null) ?? null }));
