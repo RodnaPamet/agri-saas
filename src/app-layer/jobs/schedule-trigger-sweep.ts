@@ -17,7 +17,7 @@ import { prisma } from '@/lib/prisma';
 import type { JobRunResult } from './types';
 import { enqueue } from './queue';
 
-// ControlException / ControlTestPlan were dropped with the compliance
+// PracticeException / PracticeTestPlan were dropped with the compliance
 // uproot; Evidence retention is the remaining date-relative trigger.
 export type ScheduleTarget = 'Evidence';
 

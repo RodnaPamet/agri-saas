@@ -247,7 +247,7 @@ describe('FilterRangePanel — navigation contract', () => {
 
     it('moves focus to the max field on ArrowRight at the end of the min field', async () => {
         // Break: dropping onFocusNextField / the caret check — the two
-        // bounds stop behaving as one continuous control.
+        // bounds stop behaving as one continuous practice.
         const user = userEvent.setup();
         await renderPanel();
 

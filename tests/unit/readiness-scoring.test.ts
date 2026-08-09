@@ -164,13 +164,13 @@ describe('Readiness Scoring', () => {
             expect(unmapped[0].code).toBe('A.5.2');
         });
 
-        it('identifies controls missing evidence', () => {
-            const controls = [
+        it('identifies practices missing evidence', () => {
+            const practices = [
                 { id: '1', evidence: [{ id: 'e1' }] },
                 { id: '2', evidence: [] },
                 { id: '3', evidence: [{ id: 'e2' }] },
             ];
-            const missing = controls.filter(c => c.evidence.length === 0);
+            const missing = practices.filter(c => c.evidence.length === 0);
             expect(missing.length).toBe(1);
         });
 
@@ -224,9 +224,9 @@ describe('Readiness Scoring', () => {
         });
 
         it('CSV properly escapes double quotes', () => {
-            const value = 'Control "A" description';
+            const value = 'Practice "A" description';
             const escaped = `"${value.replace(/"/g, '""')}"`;
-            expect(escaped).toBe('"Control ""A"" description"');
+            expect(escaped).toBe('"Practice ""A"" description"');
         });
     });
 
@@ -236,7 +236,7 @@ describe('Readiness Scoring', () => {
             expect(typeof mod.computeReadiness).toBe('function');
             expect(typeof mod.exportReadinessJson).toBe('function');
             expect(typeof mod.exportUnmappedCsv).toBe('function');
-            expect(typeof mod.exportControlGapsCsv).toBe('function');
+            expect(typeof mod.exportPracticeGapsCsv).toBe('function');
             expect(typeof mod.addReadinessToPack).toBe('function');
         });
 

@@ -218,7 +218,7 @@ describe('TrendCard — AnimatedNumber wiring', () => {
 describe('ProgressCard — AnimatedNumber wiring', () => {
     it('renders the percent through AnimatedNumber', () => {
         const { container, getByText } = render(
-            <ProgressCard label="Control Coverage" value={75.3} max={100} />,
+            <ProgressCard label="Practice Coverage" value={75.3} max={100} />,
         );
         // The percent span sits next to the bar; the AnimatedNumber
         // wrapper carries data-animated-number so we assert on it.

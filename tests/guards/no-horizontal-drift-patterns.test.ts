@@ -309,7 +309,7 @@ function scanRawTables(rel: string, content: string): TableHit[] {
  * Known raw-table offenders lacking an overflow-x ancestor.
  *
  * Emptied by P5.3: the three `TraceabilityPanel` linked-entity sub-tables
- * (risks / controls / assets) were migrated to `<DataTable
+ * (risks / practices / assets) were migrated to `<DataTable
  * mobileFallback="card">`, so there are no raw `<table>` offenders left.
  * Any NEW bare `<table>` without an `overflow-x-auto` ancestor must be
  * wrapped or migrated to `<DataTable>` — add here only with a written

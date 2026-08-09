@@ -3,7 +3,7 @@
  *
  * The "card-style scrolling" UX — table card sits viewport-clamped
  * inside `<ListPageShell.Body>`, only the table body scrolls,
- * filters + header stay anchored — is what Controls / Risks /
+ * filters + header stay anchored — is what Practices / Risks /
  * Tasks / etc. all do. After R10-R11 every major entity list page
  * uses this pattern; this ratchet locks the contract.
  *

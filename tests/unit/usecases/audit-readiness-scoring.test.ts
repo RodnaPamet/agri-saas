@@ -45,7 +45,7 @@ import {
     computeReadiness,
     exportReadinessJson,
     exportUnmappedCsv,
-    exportControlGapsCsv,
+    exportPracticeGapsCsv,
     ISO_WEIGHTS,
     NIS2_WEIGHTS,
     NIS2_KEY_POLICIES,
@@ -116,8 +116,8 @@ describe('computeReadiness — gate + framework dispatch', () => {
                 tenant: { findUnique: jest.fn().mockResolvedValue(null) },
                 framework: { findFirst: jest.fn().mockResolvedValue(null) },
                 frameworkRequirement: { findMany: jest.fn().mockResolvedValue([]) },
-                controlRequirementLink: { findMany: jest.fn().mockResolvedValue([]) },
-                control: { findMany: jest.fn().mockResolvedValue([]) },
+                practiceRequirementLink: { findMany: jest.fn().mockResolvedValue([]) },
+                practice: { findMany: jest.fn().mockResolvedValue([]) },
                 evidence: { findMany: jest.fn().mockResolvedValue([]) },
                 task: { count: jest.fn().mockResolvedValue(0) },
                 readinessSnapshot: { create: jest.fn().mockResolvedValue({}) },
@@ -135,7 +135,7 @@ describe('computeReadiness — evidence query excludes archived/deleted', () => 
     it('passes isArchived=false + deletedAt=null in the evidence sub-select on ISO27001', async () => {
         // Capture the full call sequence — the third runInTenantContext
         // call (after cycle + framework + reqs lookups) is the
-        // controlsWithEvidence query.
+        // practicesWithEvidence query.
         const findManyCallArgs: any[] = [];
 
         // 1. cycle lookup
@@ -170,21 +170,21 @@ describe('computeReadiness — evidence query excludes archived/deleted', () => 
         // 4. mapped req ids lookup
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
             fn({
-                controlRequirementLink: {
+                practiceRequirementLink: {
                     findMany: jest.fn().mockResolvedValue([]),
                 },
             } as never),
         );
-        // 5. controls lookup (implementation count)
+        // 5. practices lookup (implementation count)
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
             fn({
-                control: { findMany: jest.fn().mockResolvedValue([]) },
+                practice: { findMany: jest.fn().mockResolvedValue([]) },
             } as never),
         );
-        // 6. controlsWithEvidence — the one we care about
+        // 6. practicesWithEvidence — the one we care about
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
             fn({
-                control: {
+                practice: {
                     findMany: jest.fn().mockImplementation((args: any) => {
                         findManyCallArgs.push(args);
                         return Promise.resolve([]);
@@ -220,7 +220,7 @@ describe('computeReadiness — evidence query excludes archived/deleted', () => 
 describe('CSV export — RFC 4180 escaping + audit emit', () => {
     function setupReadiness(gaps: any[]) {
         // Stub computeReadiness path to land at "no requirements, no
-        // controls, no tasks" but with the supplied gaps. Each
+        // practices, no tasks" but with the supplied gaps. Each
         // computeReadiness call makes ~9 runInTenantContext calls; we
         // need to provide a coherent sequence.
         // For simplicity, we mock the whole chain to pass through and
@@ -255,13 +255,13 @@ describe('CSV export — RFC 4180 escaping + audit emit', () => {
                 framework: { findFirst: jest.fn().mockResolvedValue(null) },
             } as never),
         );
-        // Controls lookup
+        // Practices lookup
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
-            fn({ control: { findMany: jest.fn().mockResolvedValue([]) } } as never),
+            fn({ practice: { findMany: jest.fn().mockResolvedValue([]) } } as never),
         );
-        // Controls-with-evidence lookup
+        // Practices-with-evidence lookup
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
-            fn({ control: { findMany: jest.fn().mockResolvedValue([]) } } as never),
+            fn({ practice: { findMany: jest.fn().mockResolvedValue([]) } } as never),
         );
         // Overdue tasks
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
@@ -293,7 +293,7 @@ describe('CSV export — RFC 4180 escaping + audit emit', () => {
         expect(audits).toContain('AUDIT_EXPORT_GENERATED');
     });
 
-    it('exportControlGapsCsv produces filename with framework key', async () => {
+    it('exportPracticeGapsCsv produces filename with framework key', async () => {
         // Mock NIS2 cycle
         mockRunInTx.mockImplementationOnce(async () =>
             ({ id: 'c1', frameworkKey: 'NIS2' }) as never,
@@ -312,13 +312,13 @@ describe('CSV export — RFC 4180 escaping + audit emit', () => {
                 framework: { findFirst: jest.fn().mockResolvedValue(null) },
             } as never),
         );
-        // controlIds = [] → falls into "all controls" branch
+        // practiceIds = [] → falls into "all practices" branch
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
-            fn({ control: { findMany: jest.fn().mockResolvedValue([]) } } as never),
+            fn({ practice: { findMany: jest.fn().mockResolvedValue([]) } } as never),
         );
-        // controlsWithEv (empty)
+        // practicesWithEv (empty)
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
-            fn({ control: { findMany: jest.fn().mockResolvedValue([]) } } as never),
+            fn({ practice: { findMany: jest.fn().mockResolvedValue([]) } } as never),
         );
         // policies lookup
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
@@ -334,12 +334,12 @@ describe('CSV export — RFC 4180 escaping + audit emit', () => {
         );
         // computeReadiness internal log
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn({} as never));
-        // exportControlGapsCsv log
+        // exportPracticeGapsCsv log
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn({} as never));
 
-        const result = await exportControlGapsCsv(makeRequestContext('ADMIN'), 'c1');
+        const result = await exportPracticeGapsCsv(makeRequestContext('ADMIN'), 'c1');
 
-        expect(result.filename).toBe('NIS2-control-gaps.csv');
+        expect(result.filename).toBe('NIS2-practice-gaps.csv');
     });
 });
 
@@ -363,10 +363,10 @@ describe('exportReadinessJson — audit emit', () => {
             } as never),
         );
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
-            fn({ control: { findMany: jest.fn().mockResolvedValue([]) } } as never),
+            fn({ practice: { findMany: jest.fn().mockResolvedValue([]) } } as never),
         );
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
-            fn({ control: { findMany: jest.fn().mockResolvedValue([]) } } as never),
+            fn({ practice: { findMany: jest.fn().mockResolvedValue([]) } } as never),
         );
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
             fn({ task: { findMany: jest.fn().mockResolvedValue([]) } } as never),

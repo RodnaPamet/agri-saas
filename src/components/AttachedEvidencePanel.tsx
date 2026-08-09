@@ -3,8 +3,8 @@
  * panel consuming server-rendered evidence rows + form events. */
 
 /**
- * Attached-evidence panel — the writable, Control-style evidence
- * surface for an Asset detail page. Mirrors the Control / Task
+ * Attached-evidence panel — the writable, Practice-style evidence
+ * surface for an Asset detail page. Mirrors the Practice / Task
  * Evidence tab: upload a file OR link a URL, both scoped to the entity
  * via `Evidence.assetId`, rendered through the shared
  * <EvidenceSubTable>.
@@ -14,7 +14,7 @@
  * variant went with the risk register.
  *
  * This is DISTINCT from `<InheritedEvidencePanel>` (read-only evidence
- * aggregated from the entity's mapped controls). The Asset Evidence
+ * aggregated from the entity's mapped practices). The Asset Evidence
  * tab stacks both: this panel for attached evidence, the inherited panel
  * below it.
  */
@@ -26,7 +26,7 @@ import { EvidenceAddForm } from '@/components/EvidenceAddForm';
 import {
     EvidenceSubTable,
     type EvidenceTabData,
-} from '@/app/t/[tenantSlug]/(app)/controls/[controlId]/_tabs/EvidenceSubTable';
+} from '@/app/t/[tenantSlug]/(app)/practices/[practiceId]/_tabs/EvidenceSubTable';
 
 interface AttachedEvidencePanelProps {
     /** Risk or asset id. */

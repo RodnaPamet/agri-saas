@@ -184,7 +184,7 @@ describe('Onboarding Automation', () => {
 
     describe('Starter Tasks', () => {
         const starterTasks = [
-            { title: 'Review and assign control owners', type: 'TASK' },
+            { title: 'Review and assign practice owners', type: 'TASK' },
             { title: 'Schedule evidence collection cadence', type: 'TASK' },
             { title: 'Complete risk assessment review', type: 'TASK' },
             { title: 'Define incident response procedure', type: 'TASK' },

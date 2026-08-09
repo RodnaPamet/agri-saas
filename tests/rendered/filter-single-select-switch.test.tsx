@@ -2,7 +2,7 @@
  * `<FilterToolbar>` — single-select value switching from the active pill.
  *
  * Regression lock: a single-select filter (no `multiple`, e.g. the
- * controls "Applicability" filter) must be switchable to a different
+ * practices "Applicability" filter) must be switchable to a different
  * value by clicking the alternative in the ACTIVE PILL's value dropdown.
  *
  * The bug: FilterToolbar wired `onSelect` into the `FilterUI.Select`
@@ -20,7 +20,7 @@ jest.mock('next/navigation', () => ({
         push: jest.fn(), replace: jest.fn(), back: jest.fn(),
         forward: jest.fn(), refresh: jest.fn(), prefetch: jest.fn(),
     }),
-    usePathname: () => '/t/acme/controls',
+    usePathname: () => '/t/acme/practices',
     useSearchParams: () => new URLSearchParams(),
     useParams: () => ({ tenantSlug: 'acme' }),
 }));
@@ -35,7 +35,7 @@ import {
     useFilters,
 } from '@/components/ui/filter';
 
-// Single-select filter — NO `multiple`, like controls applicability.
+// Single-select filter — NO `multiple`, like practices applicability.
 const { filters: defs, filterKeys } = createFilterDefs({
     applicability: {
         label: 'Applicability',

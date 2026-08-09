@@ -74,7 +74,7 @@ const OBSESSION_CHECKLIST: ObsessionItem[] = [
     },
     {
         // OBSESSION: every entity list page mounts the gear or is in EXEMPTIONS
-        name: 'gear coverage — every entity list page has column visibility control',
+        name: 'gear coverage — every entity list page has column visibility practice',
         ratchet: 'tests/guards/columns-dropdown-coverage.test.ts',
     },
     {

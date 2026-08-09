@@ -2,7 +2,7 @@
  * Platform-support curation of the global promotions feed (#12).
  *
  * Every function here is gated by `assertPlatformSupport` at the route, which
- * is the control that matters — an `admin.*` permission is held by the
+ * is the practice that matters — an `admin.*` permission is held by the
  * OWNER/ADMIN of every tenant, so only the platform-tenant check stops one
  * farm's owner editing what every other farm sees.
  *

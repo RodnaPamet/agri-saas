@@ -101,7 +101,7 @@ export async function listExpiringEvidence(ctx: RequestContext, days: number = 3
             },
             orderBy: { retentionUntil: 'asc' },
             include: {
-                control: { select: { id: true, name: true, code: true } },
+                practice: { select: { id: true, name: true, code: true } },
             },
         }),
     );
@@ -122,7 +122,7 @@ export async function listExpiredEvidence(ctx: RequestContext) {
             },
             orderBy: { expiredAt: 'desc' },
             include: {
-                control: { select: { id: true, name: true, code: true } },
+                practice: { select: { id: true, name: true, code: true } },
             },
         }),
     );
@@ -246,34 +246,34 @@ export async function getRetentionMetrics(ctx: RequestContext) {
             },
         });
 
-        // Top controls with expiring evidence
+        // Top practices with expiring evidence
         const expiringEvidence = await db.evidence.findMany({
             where: {
                 tenantId: ctx.tenantId,
                 retentionUntil: { not: null, lte: in30Days, gt: now },
                 isArchived: false,
                 deletedAt: null,
-                controlId: { not: null },
+                practiceId: { not: null },
             },
-            select: { controlId: true, control: { select: { id: true, name: true, code: true } } },
+            select: { practiceId: true, practice: { select: { id: true, name: true, code: true } } },
         });
 
-        const controlMap = new Map<string, { controlId: string; name: string; code: string; count: number }>();
+        const practiceMap = new Map<string, { practiceId: string; name: string; code: string; count: number }>();
         for (const ev of expiringEvidence) {
-            const key = ev.controlId;
+            const key = ev.practiceId;
             if (!key) continue;
-            if (!controlMap.has(key)) {
-                controlMap.set(key, {
-                    controlId: key,
-                    name: ev.control?.name || 'Unknown',
-                    code: ev.control?.code || '',
+            if (!practiceMap.has(key)) {
+                practiceMap.set(key, {
+                    practiceId: key,
+                    name: ev.practice?.name || 'Unknown',
+                    code: ev.practice?.code || '',
                     count: 0,
                 });
             }
-            controlMap.get(key)!.count++;
+            practiceMap.get(key)!.count++;
         }
 
-        const topControlsWithExpiringEvidence = [...controlMap.values()]
+        const topPracticesWithExpiringEvidence = [...practiceMap.values()]
             .sort((a, b) => b.count - a.count)
             .slice(0, 10);
 
@@ -281,7 +281,7 @@ export async function getRetentionMetrics(ctx: RequestContext) {
             expiringCount,
             archivedCount,
             expiredCount,
-            topControlsWithExpiringEvidence,
+            topPracticesWithExpiringEvidence,
         };
     });
 }

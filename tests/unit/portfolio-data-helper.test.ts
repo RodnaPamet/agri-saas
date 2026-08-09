@@ -81,7 +81,7 @@ describe('Epic E.3 — getPortfolioData request-scoped memoisation', () => {
         await ctxScope(async () => {
             await getPortfolioData('org-1');                           // summary
             await getPortfolioData('org-1');                           // health
-            await getPortfolioData('org-1', { includeSnapshots: false }); // controls drill-down
+            await getPortfolioData('org-1', { includeSnapshots: false }); // practices drill-down
             await getPortfolioData('org-1', { includeSnapshots: false }); // risks drill-down
             await getPortfolioData('org-1', { includeSnapshots: false }); // evidence drill-down
         });

@@ -1,10 +1,10 @@
 /**
  * Integration tests for the create-finding backend (assignee, linked
- * control, compensating control, multi-risk links, analysis) against a
+ * practice, compensating practice, multi-risk links, analysis) against a
  * real RLS-enforced DB.
  *
  * Proves: a finding persists every relation; the Finding<->Risk junction
- * rows are written; tenant validation rejects foreign control/risk/
+ * rows are written; tenant validation rejects foreign practice/risk/
  * assignee ids; update replaces the risk links; getFinding hydrates the
  * relations.
  */
@@ -51,11 +51,11 @@ beforeAll(async () => {
     await globalPrisma.tenantMembership.create({
         data: { tenantId: TENANT_ID, userId: admin.userId, role: Role.ADMIN, status: MembershipStatus.ACTIVE },
     });
-    const c = await globalPrisma.control.create({ data: { tenantId: TENANT_ID, name: 'Access control' } });
+    const c = await globalPrisma.practice.create({ data: { tenantId: TENANT_ID, name: 'Access Control' } });
     CONTROL_ID = c.id;
-    const cc = await globalPrisma.control.create({ data: { tenantId: TENANT_ID, name: 'Compensating MFA' } });
+    const cc = await globalPrisma.practice.create({ data: { tenantId: TENANT_ID, name: 'Compensating MFA' } });
     COMP_CONTROL_ID = cc.id;
-    const fc = await globalPrisma.control.create({ data: { tenantId: FOREIGN_TENANT_ID, name: 'Foreign control' } });
+    const fc = await globalPrisma.practice.create({ data: { tenantId: FOREIGN_TENANT_ID, name: 'Foreign practice' } });
     FOREIGN_CONTROL_ID = fc.id;
 });
 
@@ -68,7 +68,7 @@ afterAll(async () => {
     for (const del of [
         () => globalPrisma.auditLog.deleteMany({ where: t }),
         () => globalPrisma.finding.deleteMany({ where: t }),
-        () => globalPrisma.control.deleteMany({ where: t }),
+        () => globalPrisma.practice.deleteMany({ where: t }),
         () => globalPrisma.tenantMembership.deleteMany({ where: t }),
         () => globalPrisma.user.deleteMany({ where: { id: { in: [admin.userId, nonMember.userId] } } }),
         () => globalPrisma.tenant.deleteMany({ where: { id: { in: [TENANT_ID, FOREIGN_TENANT_ID] } } }),
@@ -85,11 +85,11 @@ function adminCtx() {
 describeFn('createFinding — relations (integration)', () => {
 
 
-    it('rejects a foreign control', async () => {
+    it('rejects a foreign practice', async () => {
         await expect(
             createFinding(adminCtx(), {
                 title: 'x', description: 'x', severity: 'LOW', type: 'OBSERVATION',
-                controlId: FOREIGN_CONTROL_ID,
+                practiceId: FOREIGN_CONTROL_ID,
             }),
         ).rejects.toThrow();
     });

@@ -5,7 +5,7 @@
  * values on data refetch:
  *
  *   1. PortfolioDashboard header — total tenants + pending count
- *   2. DrillDownCtas — non-performing controls /
+ *   2. DrillDownCtas — non-performing practices /
  *      overdue evidence headline counters
  *   3. TenantCoverageList — per-row coveragePercent
  *
@@ -55,7 +55,7 @@ function makeSummary(overrides: Partial<PortfolioSummary> = {}): PortfolioSummar
         organizationSlug: 'acme-org',
         generatedAt: '2026-05-03T00:00:00Z',
         tenants: { total: 7, snapshotted: 5, pending: 2 },
-        controls: { applicable: 200, implemented: 150, coveragePercent: 75 },
+        practices: { applicable: 200, implemented: 150, coveragePercent: 75 },
         evidence: { total: 120, overdue: 9, dueSoon7d: 3 },
         policies: { total: 12, overdueReview: 1 },
         tasks: { open: 22, overdue: 4 },
@@ -179,7 +179,7 @@ describe('PortfolioDashboard — header stats animate', () => {
 describe('DrillDownCtas — counters animate', () => {
     it('renders all CTA counters through AnimatedNumber', () => {
         const summary = makeSummary({
-            controls: { applicable: 200, implemented: 150, coveragePercent: 75 },
+            practices: { applicable: 200, implemented: 150, coveragePercent: 75 },
             evidence: { total: 120, overdue: 9, dueSoon7d: 3 },
         });
         const { container } = render(
@@ -196,16 +196,16 @@ describe('DrillDownCtas — counters animate', () => {
 
     it('counters reflect the summary values exactly', () => {
         const summary = makeSummary({
-            controls: { applicable: 200, implemented: 150, coveragePercent: 75 },
+            practices: { applicable: 200, implemented: 150, coveragePercent: 75 },
             evidence: { total: 120, overdue: 9, dueSoon7d: 3 },
         });
         const { container } = render(
             <DrillDownCtas summary={summary} orgSlug="acme-org" />,
         );
-        const controls = container.querySelector('[data-testid="org-drilldown-controls"]');
+        const practices = container.querySelector('[data-testid="org-drilldown-practices"]');
         const evidence = container.querySelector('[data-testid="org-drilldown-evidence"]');
         // applicable - implemented = 50
-        expect(controls?.textContent).toContain('50');
+        expect(practices?.textContent).toContain('50');
         expect(evidence?.textContent).toContain('9');
     });
 
@@ -217,7 +217,7 @@ describe('DrillDownCtas — counters animate', () => {
         rerender(
             <DrillDownCtas
                 summary={makeSummary({
-                    controls: {
+                    practices: {
                         applicable: 300,
                         implemented: 250,
                         coveragePercent: 83,

@@ -125,7 +125,7 @@ export const NAV_SECTION_HEADER_BUTTON =
  * Why not just `border-image: linear-gradient(...)`?
  *   - `border-image` works but doesn't support the `border-style`
  *     alpha tuning we relied on with `/40`. A `::before` overlay
- *     gives full control over both the line's shape and its
+ *     gives full practice over both the line's shape and its
  *     opacity profile.
  *
  * Why peak at `--border-subtle` (not `/40`)?

@@ -55,7 +55,7 @@ export default function CycleDetailPage() {
             if (preview?.selection) {
                 const items: any[] = [];
                 const sel = preview.selection;
-                sel.controls?.ids?.forEach((id: string, i: number) => items.push({ entityType: 'CONTROL', entityId: id, sortOrder: i }));
+                sel.practices?.ids?.forEach((id: string, i: number) => items.push({ entityType: 'PRACTICE', entityId: id, sortOrder: i }));
                 sel.policies?.ids?.forEach((id: string, i: number) => items.push({ entityType: 'POLICY', entityId: id, sortOrder: 100 + i }));
                 sel.evidence?.ids?.forEach((id: string, i: number) => items.push({ entityType: 'EVIDENCE', entityId: id, sortOrder: 200 + i }));
                 sel.issues?.ids?.forEach((id: string, i: number) => items.push({ entityType: 'ISSUE', entityId: id, sortOrder: 300 + i }));
@@ -128,7 +128,7 @@ export default function CycleDetailPage() {
                 {preview ? (
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-default" id="preview-counts">
                         <div className="p-4 rounded-lg bg-bg-default border border-border-default">
-                            <KPIStat id="preview-controls" value={preview.selection?.controls?.count || 0} label={t('cycleDetail.kpiControls')} />
+                            <KPIStat id="preview-practices" value={preview.selection?.practices?.count || 0} label={t('cycleDetail.kpiPractices')} />
                         </div>
                         <div className="p-4 rounded-lg bg-bg-default border border-border-default">
                             <KPIStat id="preview-policies" value={preview.selection?.policies?.count || 0} label={t('cycleDetail.kpiPolicies')} />

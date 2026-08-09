@@ -62,10 +62,10 @@ export type TenantSafetyRule =
  * service can handle parent-before-child ordering.
  */
 export const SELF_REFERENCING_FIELDS: Record<ExportEntityType, string[]> = {
-    control: [],
-    controlTestPlan: [],
-    controlTestRun: [],
-    controlMapping: [],
+    practice: [],
+    practiceTestPlan: [],
+    practiceTestRun: [],
+    practiceMapping: [],
     policy: [],
     policyVersion: [],
     risk: [],

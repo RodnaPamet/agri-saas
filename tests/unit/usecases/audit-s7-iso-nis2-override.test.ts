@@ -54,7 +54,7 @@ function makeRequestContext(): RequestContext {
         permissions: ["audit.read", "audit.view_pack"],
         appPermissions: {
             policies: { read: true, write: true, delete: true, admin: true },
-            controls: { read: true, write: true, delete: true, admin: true },
+            practices: { read: true, write: true, delete: true, admin: true },
             risks: { read: true, write: true, delete: true, admin: true },
             evidence: { read: true, write: true, delete: true, admin: true },
             audits: { read: true, write: true, delete: true, admin: true, view_pack: true },
@@ -103,16 +103,16 @@ describe("Audit S7 — computeISO27001Readiness honours the override", () => {
                 },
             } as never),
         );
-        // 4. controls lookup
+        // 4. practices lookup
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
             fn({
-                control: { findMany: jest.fn().mockResolvedValue([]) },
+                practice: { findMany: jest.fn().mockResolvedValue([]) },
             } as never),
         );
-        // 5. controlsWithEvidence
+        // 5. practicesWithEvidence
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
             fn({
-                control: { findMany: jest.fn().mockResolvedValue([]) },
+                practice: { findMany: jest.fn().mockResolvedValue([]) },
             } as never),
         );
         // 6. overdue tasks
@@ -184,10 +184,10 @@ describe("Audit S7 — computeISO27001Readiness honours the override", () => {
             } as never),
         );
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
-            fn({ control: { findMany: jest.fn().mockResolvedValue([]) } } as never),
+            fn({ practice: { findMany: jest.fn().mockResolvedValue([]) } } as never),
         );
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
-            fn({ control: { findMany: jest.fn().mockResolvedValue([]) } } as never),
+            fn({ practice: { findMany: jest.fn().mockResolvedValue([]) } } as never),
         );
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
             fn({ task: { findMany: jest.fn().mockResolvedValue([]) } } as never),
@@ -247,13 +247,13 @@ describe("Audit S7 — computeNIS2Readiness honours the override", () => {
                 },
             } as never),
         );
-        // controlIds = [] → falls into all-controls branch
+        // practiceIds = [] → falls into all-practices branch
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
-            fn({ control: { findMany: jest.fn().mockResolvedValue([]) } } as never),
+            fn({ practice: { findMany: jest.fn().mockResolvedValue([]) } } as never),
         );
-        // controlsWithEv (empty)
+        // practicesWithEv (empty)
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
-            fn({ control: { findMany: jest.fn().mockResolvedValue([]) } } as never),
+            fn({ practice: { findMany: jest.fn().mockResolvedValue([]) } } as never),
         );
         // policies lookup
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>

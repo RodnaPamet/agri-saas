@@ -18,7 +18,7 @@
 const mockDb = {
     logEntry: { findFirst: jest.fn().mockResolvedValue(null) },
     frameworkRequirement: { findMany: jest.fn().mockResolvedValue([]) },
-    controlRequirementLink: { findMany: jest.fn().mockResolvedValue([]) },
+    practiceRequirementLink: { findMany: jest.fn().mockResolvedValue([]) },
     evidence: {
         findMany: jest.fn().mockResolvedValue([]),
         create: jest.fn(),
@@ -29,7 +29,7 @@ const mockDb = {
         // old title and a deleted one left the claim standing entirely.
         updateMany: jest.fn().mockResolvedValue({ count: 0 }),
     },
-    controlEvidenceLink: { create: jest.fn(), createMany: jest.fn().mockResolvedValue({ count: 0 }) },
+    practiceEvidenceLink: { create: jest.fn(), createMany: jest.fn().mockResolvedValue({ count: 0 }) },
 } as any;
 
 jest.mock('@/lib/db-context', () => ({
@@ -97,7 +97,7 @@ beforeEach(() => {
     // Re-arm the auto-evidence no-op (clearAllMocks wiped the default).
     mockDb.logEntry.findFirst.mockResolvedValue(null);
     mockDb.frameworkRequirement.findMany.mockResolvedValue([]);
-    mockDb.controlRequirementLink.findMany.mockResolvedValue([]);
+    mockDb.practiceRequirementLink.findMany.mockResolvedValue([]);
     mockDb.evidence.findMany.mockResolvedValue([]);
 });
 

@@ -50,7 +50,7 @@ interface CreatedKeyResponse extends ApiKeyRecord {
 // ─── Scope Categories for UI Grouping ───
 
 const SCOPE_GROUPS: Record<string, { label: string; scopes: string[] }> = {
-    controls:   { label: 'Controls',   scopes: ['controls:read', 'controls:write'] },
+    practices:   { label: 'Practices',   scopes: ['practices:read', 'practices:write'] },
     evidence:   { label: 'Evidence',   scopes: ['evidence:read', 'evidence:write'] },
     policies:   { label: 'Policies',   scopes: ['policies:read', 'policies:write', 'policies:admin'] },
     tasks:      { label: 'Tasks',      scopes: ['tasks:read', 'tasks:write'] },
@@ -631,7 +631,7 @@ export default function ApiKeysPage() {
             {/* Active Keys. R13-PR5 — the outer
                 `cardVariants({ density: 'none' })` wrapper was dropped
                 so the DataTable primitive's own bordered card is the
-                only one (matches Controls list visually). The section
+                only one (matches Practices list visually). The section
                 heading hoists out above the table. */}
             <div id="active-keys-card">
                 <Heading level={3} className="mb-3">{t('activeKeys', { count: activeKeys.length })}</Heading>

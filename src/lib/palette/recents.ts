@@ -15,7 +15,7 @@
  *   - **FIFO with dedupe-on-touch**. Picking the same entity
  *     again moves it to the top instead of stacking duplicates.
  *     The list stays bounded at `MAX_RECENTS` so a power user
- *     who picks 200 controls in a session doesn't bloat
+ *     who picks 200 practices in a session doesn't bloat
  *     localStorage.
  *   - **Schema-versioned payload**. The wire shape carries a
  *     `version` field so a future migration (e.g. adding a
@@ -120,7 +120,7 @@ export function serializeRecents(items: ReadonlyArray<RecentItem>): RecentsBlob 
 }
 
 const VALID_TYPES: ReadonlySet<SearchHitType> = new Set([
-    'control',
+    'practice',
     'policy',
     'evidence',
     'framework',

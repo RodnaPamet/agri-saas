@@ -2,7 +2,7 @@
  * Epic P2-PR-B — ProcessInspector node-mode entity picker.
  *
  * Asserts the picker block mounts on the three compliance-entity
- * node kinds (control / asset), and does NOT mount on the
+ * node kinds (practice / asset), and does NOT mount on the
  * other kinds (processStep / decision / external / annotation /
  * group). Three cases run against the three entity-kind responses
  * so a refactor that swaps a hook breaks loudly.
@@ -10,7 +10,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { render, screen, waitFor } from '@testing-library/react';
 import { ProcessInspector } from '@/components/processes/ProcessInspector';
-import { __resetTenantControlsCacheForTests } from '@/lib/processes/use-tenant-controls';
+import { __resetTenantPracticesCacheForTests } from '@/lib/processes/use-tenant-practices';
 import { __resetTenantAssetsCacheForTests } from '@/lib/processes/use-tenant-assets';
 
 function makeNode(kind: string, extra: any = {}) {
@@ -26,11 +26,11 @@ describe('ProcessInspector — node-mode entity picker (P2-PR-B)', () => {
     const originalFetch = global.fetch;
 
     beforeEach(() => {
-        __resetTenantControlsCacheForTests();
+        __resetTenantPracticesCacheForTests();
         __resetTenantAssetsCacheForTests();
         global.fetch = jest.fn(async (url: string | URL) => {
             const u = url.toString();
-            if (u.includes('/api/t/acme/controls')) {
+            if (u.includes('/api/t/acme/practices')) {
                 return new Response(
                     JSON.stringify([
                         { id: 'ctrl-1', ref: 'AC-1', title: 'Access policy' },
@@ -55,20 +55,20 @@ describe('ProcessInspector — node-mode entity picker (P2-PR-B)', () => {
         jest.clearAllMocks();
     });
 
-    it('mounts the picker on a control node + fetches controls', async () => {
+    it('mounts the picker on a practice node + fetches practices', async () => {
         render(
             <ProcessInspector
-                node={makeNode('control') as any}
+                node={makeNode('practice') as any}
                 tenantSlug="acme"
                 onUpdate={jest.fn()}
             />,
         );
         const picker = screen.getByTestId('inspector-node-entity-picker');
         expect(picker).toBeInTheDocument();
-        expect(picker.getAttribute('data-entity-kind')).toBe('control');
+        expect(picker.getAttribute('data-entity-kind')).toBe('practice');
         await waitFor(() => {
             expect(global.fetch).toHaveBeenCalledWith(
-                '/api/t/acme/controls',
+                '/api/t/acme/practices',
             );
         });
     });

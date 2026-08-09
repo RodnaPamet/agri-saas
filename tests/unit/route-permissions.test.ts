@@ -40,7 +40,7 @@ describe('resolveRoutePermission', () => {
 
     it('returns null for an uncovered tenant route', () => {
         expect(
-            resolveRoutePermission('/api/t/acme/controls', 'GET'),
+            resolveRoutePermission('/api/t/acme/practices', 'GET'),
         ).toBeNull();
     });
 

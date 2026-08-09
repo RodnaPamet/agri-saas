@@ -31,7 +31,7 @@ describe('File Storage — Path Sanitization', () => {
         expect(sanitizeFileName('..\\..\\windows\\system32\\cmd.exe')).toBe('cmd.exe');
     });
 
-    test('sanitizeFileName strips control characters', () => {
+    test('sanitizeFileName strips practice characters', () => {
         expect(sanitizeFileName('file\x00name\x1F.pdf')).toBe('file_name_.pdf');
     });
 

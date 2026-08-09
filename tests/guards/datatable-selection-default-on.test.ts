@@ -3,9 +3,9 @@
  *
  * Pre-R12 the select column was OPT-IN: a consumer only saw the
  * checkbox column if they passed `onRowSelectionChange` or
- * `selectionControls`. In practice exactly one page (Controls) did
+ * `selectionControls`. In practice exactly one page (Practices) did
  * — every other DataTable across the product had no checkbox
- * column at all, so tables visually differed (Controls has a
+ * column at all, so tables visually differed (Practices has a
  * 48-px-wide first column with checkboxes; Risks doesn't).
  *
  * R12-PR1 flips the contract: `selectionEnabled` defaults to
@@ -74,7 +74,7 @@ describe('DataTable selection default-on (R12-PR1)', () => {
         // (e.g. "select which templates to install"). Each carries a
         // written reason.
         const EXEMPTIONS: Record<string, string> = {
-            'src/app/t/[tenantSlug]/(app)/controls/templates/page.tsx':
+            'src/app/t/[tenantSlug]/(app)/practices/templates/page.tsx':
                 'Install-from-templates picker — `select` is the "include this template in the install set" toggle, not a row-record selection affordance.',
         };
         const stripComments = (s: string) =>

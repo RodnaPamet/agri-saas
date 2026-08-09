@@ -61,7 +61,7 @@ export interface OnboardingStep {
 
 /**
  * Single global tour set today. Future expansions (e.g. a
- * per-page "show me how" tour on /controls) plug in as
+ * per-page "show me how" tour on /practices) plug in as
  * additional named exports without changing the runner.
  */
 export const DEFAULT_TOUR_STEPS: ReadonlyArray<OnboardingStep> = [
@@ -177,7 +177,7 @@ export const DEFAULT_TOUR_STEPS: ReadonlyArray<OnboardingStep> = [
 export type OnboardingPersona = 'startup' | 'enterprise';
 
 /** Step ids that are only meaningful for the enterprise persona. */
-const ENTERPRISE_ONLY_STEP_IDS = new Set(['sidebar.controls', 'sidebar.vendors']);
+const ENTERPRISE_ONLY_STEP_IDS = new Set(['sidebar.practices', 'sidebar.vendors']);
 
 /**
  * Curated step set for a persona. The runtime tour ALSO filters by anchor

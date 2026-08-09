@@ -3,7 +3,7 @@
 /**
  * AI automation-rule suggestions rail (Visual Rule Editor VR-9).
  *
- * Designed for the Control-page right rail (mounted inside an <AsidePanel>).
+ * Designed for the Practice-page right rail (mounted inside an <AsidePanel>).
  * Fetches ranked, posture-aware automation suggestions and lets the user
  * spin one up as a DRAFT rule in one click (then refine it in the builder).
  *

@@ -135,7 +135,7 @@ describe("decideVirtualization — threshold contract", () => {
         expect(decideVirtualization(true, 5)).toBe(true);
     });
 
-    it("force-false overrides threshold (Controls page contract)", () => {
+    it("force-false overrides threshold (Practices page contract)", () => {
         expect(decideVirtualization(false, 100_000)).toBe(false);
     });
 
@@ -186,7 +186,7 @@ describe("DataTable — auto-virtualize above threshold", () => {
         expect(container.querySelector("[data-virtual-table]")).toBeInTheDocument();
     });
 
-    it("force virtualize=false disables even for 5000 rows (Controls-style opt-out)", () => {
+    it("force virtualize=false disables even for 5000 rows (Practices-style opt-out)", () => {
         const { container } = render(
             <DataTable<ThingRow>
                 data={makeRows(5_000)}

@@ -17,7 +17,7 @@
  *
  * Implementation note: the hook reads from `useFilters()` which
  * requires `<FilterProvider>`. We wrap the test harness in a
- * provider with a controllable mock context value so the test can
+ * provider with a practicelable mock context value so the test can
  * drive the state shape directly.
  */
 import * as React from 'react';
@@ -48,7 +48,7 @@ function makeMockCtx(initial: FilterState = {}): {
         state = { ...state, [key]: [value] };
     });
     // The test wraps the renderHook output in a FilterProvider whose
-    // value mutates between renders via the controllable closure. The
+    // value mutates between renders via the practicelable closure. The
     // re-render trigger comes from React testing-library — we just
     // ensure the provider value re-references state each render.
     const ctx: FilterContextValue = {

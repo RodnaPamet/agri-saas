@@ -131,14 +131,14 @@ describe('captureError', () => {
         captureError(new Error('fail'), {
             status: 500,
             requestId: 'req-42',
-            route: '/api/controls',
+            route: '/api/practices',
             method: 'POST',
             errorCode: 'INTERNAL',
         });
 
         const scope = mockWithScope.mock.results[0].value;
         expect(scope.setTag).toHaveBeenCalledWith('requestId', 'req-42');
-        expect(scope.setTag).toHaveBeenCalledWith('route', '/api/controls');
+        expect(scope.setTag).toHaveBeenCalledWith('route', '/api/practices');
         expect(scope.setTag).toHaveBeenCalledWith('method', 'POST');
         expect(scope.setTag).toHaveBeenCalledWith('errorCode', 'INTERNAL');
     });

@@ -5,7 +5,7 @@
  *
  *   1. Every navigable list table renders its title via
  *      `<TableTitleCell href={...}>` (single-click on title
- *      navigates) — the Controls-table canonical pattern.
+ *      navigates) — the Practices-table canonical pattern.
  *   2. `enableColumnResizing` is exposed on `DataTableProps`
  *      with a documented contract.
  *   3. Every detail-page edit button is icon-only —
@@ -28,7 +28,7 @@ describe('B2 — table unification', () => {
             label: string;
             file: string;
         }> = [
-            { label: 'Controls (canonical)', file: 'src/app/t/[tenantSlug]/(app)/controls/ControlsClient.tsx' },
+            { label: 'Practices (canonical)', file: 'src/app/t/[tenantSlug]/(app)/practices/PracticesClient.tsx' },
             { label: 'Policies', file: 'src/app/t/[tenantSlug]/(app)/policies/PoliciesClient.tsx' },
             { label: 'Vendors', file: 'src/app/t/[tenantSlug]/(app)/vendors/VendorsClient.tsx' },
             { label: 'Assets', file: 'src/app/t/[tenantSlug]/(app)/assets/AssetsClient.tsx' },
@@ -40,7 +40,7 @@ describe('B2 — table unification', () => {
                 // The title cell MUST carry an href — without it,
                 // single-click on the title is dead and the user
                 // has to double-click the row (the canonical
-                // Controls behaviour expects both).
+                // Practices behaviour expects both).
                 expect(src).toMatch(/<TableTitleCell\b[\s\S]{0,300}href=/);
             });
         }
@@ -79,7 +79,7 @@ describe('B2 — table unification', () => {
         const EDIT_PAGES: Array<{ label: string; file: string }> = [
             { label: 'Asset detail', file: 'src/app/t/[tenantSlug]/(app)/assets/[id]/page.tsx' },
             { label: 'Vendor detail', file: 'src/app/t/[tenantSlug]/(app)/vendors/[vendorId]/page.tsx' },
-            { label: 'Control detail', file: 'src/app/t/[tenantSlug]/(app)/controls/[controlId]/page.tsx' },
+            { label: 'Practice detail', file: 'src/app/t/[tenantSlug]/(app)/practices/[practiceId]/page.tsx' },
         ];
 
         for (const { label, file } of EDIT_PAGES) {
@@ -90,7 +90,7 @@ describe('B2 — table unification', () => {
                 // size="icon" is set on the edit button block —
                 // anchor on the `id="...edit...btn"` selector so
                 // unrelated buttons don't false-match.
-                const editIdx = src.search(/id=["'][a-z-]*edit[a-z-]*btn["']|id=["']control-edit-button["']/);
+                const editIdx = src.search(/id=["'][a-z-]*edit[a-z-]*btn["']|id=["']practice-edit-button["']/);
                 expect(editIdx).toBeGreaterThan(0);
                 // Walk back ~250 chars to find the matching
                 // `<Button` open tag + its `size="icon"`.

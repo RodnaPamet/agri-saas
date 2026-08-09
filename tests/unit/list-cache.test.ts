@@ -216,20 +216,20 @@ describe('cachedListRead — invalidation via bumpEntityCacheVersion', () => {
     it('bumping one entity does NOT invalidate another', async () => {
         const ctx = fakeCtx('t-1');
         const loaderRisk = jest.fn(async () => ['risk-data']);
-        const loaderControl = jest.fn(async () => ['control-data']);
+        const loaderPractice = jest.fn(async () => ['practice-data']);
 
         // Prime both.
         await cachedListRead({ ctx, entity: 'risk', operation: 'list', params: {}, loader: loaderRisk });
-        await cachedListRead({ ctx, entity: 'control', operation: 'list', params: {}, loader: loaderControl });
+        await cachedListRead({ ctx, entity: 'practice', operation: 'list', params: {}, loader: loaderPractice });
 
         await bumpEntityCacheVersion(ctx, 'risk');
 
-        // Risk re-loads (bumped); control still cached.
+        // Risk re-loads (bumped); practice still cached.
         await cachedListRead({ ctx, entity: 'risk', operation: 'list', params: {}, loader: loaderRisk });
-        await cachedListRead({ ctx, entity: 'control', operation: 'list', params: {}, loader: loaderControl });
+        await cachedListRead({ ctx, entity: 'practice', operation: 'list', params: {}, loader: loaderPractice });
 
         expect(loaderRisk).toHaveBeenCalledTimes(2);
-        expect(loaderControl).toHaveBeenCalledTimes(1);
+        expect(loaderPractice).toHaveBeenCalledTimes(1);
     });
 });
 

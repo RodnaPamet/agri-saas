@@ -17,22 +17,22 @@ export async function getFrameworkMappings(ctx: RequestContext) {
     const MAPPINGS = getGuidanceMappings();
 
     return runInTenantContext(ctx, async (db) => {
-        const controls = await MappingRepository.getControlsWithEvidence(db, ctx);
+        const practices = await MappingRepository.getPracticesWithEvidence(db, ctx);
 
         // Build SOC 2 readiness view
         const soc2Categories = SOC2_REQS.map((req) => {
             const relatedMappings = MAPPINGS.filter((m) => m.soc2Codes.includes(req.code));
-            const relatedControls = controls.filter((c) =>
+            const relatedPractices = practices.filter((c) =>
                 relatedMappings.some((m) => m.isoControlId === c.code)
             );
-            const implemented = relatedControls.filter((c) => c.status === 'IMPLEMENTED').length;
-            const withEvidence = relatedControls.filter((c) => c.evidence.some((e) => e.status === 'APPROVED')).length;
-            const total = relatedControls.length;
+            const implemented = relatedPractices.filter((c) => c.status === 'IMPLEMENTED').length;
+            const withEvidence = relatedPractices.filter((c) => c.evidence.some((e) => e.status === 'APPROVED')).length;
+            const total = relatedPractices.length;
 
             return {
                 ...req,
                 mappings: relatedMappings,
-                controlCount: total,
+                practiceCount: total,
                 implementedCount: implemented,
                 evidenceCount: withEvidence,
                 coverage: total > 0 ? Math.round((implemented / total) * 100) : 0,
@@ -42,16 +42,16 @@ export async function getFrameworkMappings(ctx: RequestContext) {
         // Build NIS2 readiness view
         const nis2Areas = NIS2_REQS.map((req) => {
             const relatedMappings = MAPPINGS.filter((m) => m.nis2Codes.includes(req.code));
-            const relatedControls = controls.filter((c) =>
+            const relatedPractices = practices.filter((c) =>
                 relatedMappings.some((m) => m.isoControlId === c.code)
             );
-            const implemented = relatedControls.filter((c) => c.status === 'IMPLEMENTED').length;
-            const total = relatedControls.length;
+            const implemented = relatedPractices.filter((c) => c.status === 'IMPLEMENTED').length;
+            const total = relatedPractices.length;
 
             return {
                 ...req,
                 mappings: relatedMappings,
-                controlCount: total,
+                practiceCount: total,
                 implementedCount: implemented,
                 coverage: total > 0 ? Math.round((implemented / total) * 100) : 0,
             };

@@ -63,7 +63,7 @@ function makeCtx(overrides: Partial<RequestContext> = {}): RequestContext {
 }
 
 function setupDashboardMocks() {
-    mockTx.control = {
+    mockTx.practice = {
         groupBy: jest.fn(async () => [
             { status: 'IMPLEMENTED', _count: 10 },
             { status: 'NOT_STARTED', _count: 5 },
@@ -185,7 +185,7 @@ describe('Snapshot Job', () => {
         expect(upsertCall.where.tenantId_snapshotDate.tenantId).toBe('tenant-1');
     });
 
-    it('stores control coverage BPS correctly', async () => {
+    it('stores practice coverage BPS correctly', async () => {
         setupDashboardMocks();
         mockUpsert.mockResolvedValue({});
 
@@ -193,8 +193,8 @@ describe('Snapshot Job', () => {
 
         const upsertCall = mockUpsert.mock.calls[0][0];
         // 10 implemented / 15 applicable = 66.7% → BPS = 667
-        expect(upsertCall.create.controlCoverageBps).toBe(667);
-        expect(upsertCall.create.controlsImplemented).toBe(10);
+        expect(upsertCall.create.practiceCoverageBps).toBe(667);
+        expect(upsertCall.create.practicesImplemented).toBe(10);
     });
 
     it('stores the asset KPI buckets', async () => {
@@ -264,8 +264,8 @@ describe('Compliance Trends', () => {
     it('returns ordered data points', async () => {
         mockTx.complianceSnapshot = {
             findMany: jest.fn(async () => [
-                { snapshotDate: new Date('2026-04-16'), controlCoverageBps: 700, controlsImplemented: 7, controlsApplicable: 10, risksTotal: 5, risksOpen: 3, risksCritical: 1, risksHigh: 2, evidenceOverdue: 1, evidenceDueSoon7d: 2, evidenceCurrent: 10, policiesTotal: 4, policiesOverdueReview: 0, tasksOpen: 3, tasksOverdue: 1, findingsOpen: 2 },
-                { snapshotDate: new Date('2026-04-17'), controlCoverageBps: 750, controlsImplemented: 8, controlsApplicable: 10, risksTotal: 5, risksOpen: 2, risksCritical: 1, risksHigh: 1, evidenceOverdue: 0, evidenceDueSoon7d: 1, evidenceCurrent: 12, policiesTotal: 4, policiesOverdueReview: 0, tasksOpen: 2, tasksOverdue: 0, findingsOpen: 1 },
+                { snapshotDate: new Date('2026-04-16'), practiceCoverageBps: 700, practicesImplemented: 7, practicesApplicable: 10, risksTotal: 5, risksOpen: 3, risksCritical: 1, risksHigh: 2, evidenceOverdue: 1, evidenceDueSoon7d: 2, evidenceCurrent: 10, policiesTotal: 4, policiesOverdueReview: 0, tasksOpen: 3, tasksOverdue: 1, findingsOpen: 2 },
+                { snapshotDate: new Date('2026-04-17'), practiceCoverageBps: 750, practicesImplemented: 8, practicesApplicable: 10, risksTotal: 5, risksOpen: 2, risksCritical: 1, risksHigh: 1, evidenceOverdue: 0, evidenceDueSoon7d: 1, evidenceCurrent: 12, policiesTotal: 4, policiesOverdueReview: 0, tasksOpen: 2, tasksOverdue: 0, findingsOpen: 1 },
             ]),
         };
 
@@ -281,13 +281,13 @@ describe('Compliance Trends', () => {
     it('converts BPS to percentage correctly', async () => {
         mockTx.complianceSnapshot = {
             findMany: jest.fn(async () => [
-                { snapshotDate: new Date('2026-04-18'), controlCoverageBps: 753, controlsImplemented: 8, controlsApplicable: 10, risksTotal: 0, risksOpen: 0, risksCritical: 0, risksHigh: 0, evidenceOverdue: 0, evidenceDueSoon7d: 0, evidenceCurrent: 0, policiesTotal: 0, policiesOverdueReview: 0, tasksOpen: 0, tasksOverdue: 0, findingsOpen: 0 },
+                { snapshotDate: new Date('2026-04-18'), practiceCoverageBps: 753, practicesImplemented: 8, practicesApplicable: 10, risksTotal: 0, risksOpen: 0, risksCritical: 0, risksHigh: 0, evidenceOverdue: 0, evidenceDueSoon7d: 0, evidenceCurrent: 0, policiesTotal: 0, policiesOverdueReview: 0, tasksOpen: 0, tasksOverdue: 0, findingsOpen: 0 },
             ]),
         };
 
         const result = await getComplianceTrends(makeCtx(), 30);
 
-        expect(result.dataPoints[0].controlCoveragePercent).toBe(75.3);
+        expect(result.dataPoints[0].practiceCoveragePercent).toBe(75.3);
     });
 
     it('returns empty array for no snapshots', async () => {

@@ -23,7 +23,7 @@ describe('EntityDetailLayout — header', () => {
     it('renders back link, title, meta, actions when all supplied', () => {
         render(
             <EntityDetailLayout
-                back={{ href: '/t/acme/controls', label: 'Controls' }}
+                back={{ href: '/t/acme/practices', label: 'Practices' }}
                 title="AC-1: Access Control"
                 meta={<span data-testid="meta-badge">Implemented</span>}
                 actions={
@@ -39,8 +39,8 @@ describe('EntityDetailLayout — header', () => {
         // v2-PR-5 — EntityDetailLayout now delegates to <PageHeader>;
         // assert via the canonical page-header-* test ids.
         const back = screen.getByTestId('page-header-back');
-        expect(back).toHaveAttribute('href', '/t/acme/controls');
-        expect(back.textContent).toContain('Controls');
+        expect(back).toHaveAttribute('href', '/t/acme/practices');
+        expect(back.textContent).toContain('Practices');
 
         expect(screen.getByTestId('page-header-title').textContent).toBe(
             'AC-1: Access Control',
@@ -82,7 +82,7 @@ describe('EntityDetailLayout — tabs', () => {
         const onTabChange = jest.fn();
         render(
             <EntityDetailLayout
-                title="Control"
+                title="Practice"
                 tabs={[
                     { key: 'overview', label: 'Overview' },
                     { key: 'tasks', label: 'Tasks', count: 3 },
@@ -136,7 +136,7 @@ describe('EntityDetailLayout — tabs', () => {
         const onTabChange = jest.fn();
         render(
             <EntityDetailLayout
-                title="Control"
+                title="Practice"
                 tabs={[
                     { key: 'overview', label: 'Overview' },
                     { key: 'tests', label: 'Tests', disabled: true },
@@ -179,7 +179,7 @@ describe('EntityDetailLayout — active tab auto-scroll', () => {
     function renderTabs(activeTab: string) {
         return render(
             <EntityDetailLayout
-                title="Control"
+                title="Practice"
                 tabs={[
                     { key: 'overview', label: 'Overview' },
                     { key: 'tasks', label: 'Tasks' },
@@ -213,7 +213,7 @@ describe('EntityDetailLayout — active tab auto-scroll', () => {
         scrollSpy.mockClear();
         rerender(
             <EntityDetailLayout
-                title="Control"
+                title="Practice"
                 tabs={[
                     { key: 'overview', label: 'Overview' },
                     { key: 'tasks', label: 'Tasks' },
@@ -261,7 +261,7 @@ describe('EntityDetailLayout — lifecycle states', () => {
     it('empty replaces the body with the supplied message', () => {
         render(
             <EntityDetailLayout
-                empty={{ message: 'Control not found.' }}
+                empty={{ message: 'Practice not found.' }}
                 title=""
             >
                 <div data-testid="body-content">should not render</div>
@@ -269,7 +269,7 @@ describe('EntityDetailLayout — lifecycle states', () => {
         );
         expect(
             screen.getByTestId('entity-detail-empty').textContent,
-        ).toBe('Control not found.');
+        ).toBe('Practice not found.');
         expect(screen.queryByTestId('body-content')).toBeNull();
     });
 });

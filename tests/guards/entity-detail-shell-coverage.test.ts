@@ -9,7 +9,7 @@
  * and graduates to `ADOPTED_PAGES` when migrated.
  *
  * Why this ratchet matters:
- *   - 16 entity detail pages in the product. Before PR-4 only Controls
+ *   - 16 entity detail pages in the product. Before PR-4 only Practices
  *     used the shell. Each hand-rolled detail page drifted in header
  *     order, action placement, loading/error/empty handling, and tab
  *     rhythm — every detail page felt slightly different.
@@ -17,7 +17,7 @@
  *     pages MUST adopt the shell at creation time.
  *
  * Pairs with the per-page render adoption tests (mirroring
- * `tests/rendered/control-detail-shell-adoption.test.ts`) which lock
+ * `tests/rendered/practice-detail-shell-adoption.test.ts`) which lock
  * the structural assertion that a specific page mounts the shell.
  */
 import * as fs from "fs";
@@ -49,7 +49,7 @@ const ADOPTED_PAGES: ReadonlyArray<Adopter> = [
   // shape as the access-review entry below) — the server page only fetches.
   { page: "src/app/t/[tenantSlug]/(app)/grain/bins/[binId]/BinDetailClient.tsx", entity: "Grain bin" },
   // Wave 1 (PR-4)
-  { page: "src/app/t/[tenantSlug]/(app)/controls/[controlId]/page.tsx", entity: "Control" },
+  { page: "src/app/t/[tenantSlug]/(app)/practices/[practiceId]/page.tsx", entity: "Practice" },
   { page: "src/app/t/[tenantSlug]/(app)/assets/[id]/page.tsx", entity: "Asset" },
   { page: "src/app/t/[tenantSlug]/(app)/access-reviews/[reviewId]/AccessReviewDetailClient.tsx", entity: "Access review" },
   { page: "src/app/t/[tenantSlug]/(app)/audits/cycles/[cycleId]/page.tsx", entity: "Audit cycle" },
@@ -151,7 +151,7 @@ describe("EntityDetailLayout adoption — PR-4", () => {
     const deferred = new Set(WAVE_2_DEFERRED.map((d) => d.page));
 
     // Routes that are nested sub-pages of a parent entity (e.g. tests
-    // sub-page under controls) — these have their own layout needs and
+    // sub-page under practices) — these have their own layout needs and
     // are not the entity's primary detail surface. Documented here so
     // the ratchet doesn't flag them.
     const KNOWN_NON_PRIMARY_DETAIL = new Set<string>([

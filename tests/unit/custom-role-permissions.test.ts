@@ -34,14 +34,14 @@ describe('getPermissionsForRole', () => {
         const perms = getPermissionsForRole('ADMIN');
         expect(perms.admin.manage).toBe(true);
         expect(perms.admin.members).toBe(true);
-        expect(perms.controls.create).toBe(true);
+        expect(perms.practices.create).toBe(true);
         expect(perms.frameworks.install).toBe(true);
     });
 
     test('READER gets view-only', () => {
         const perms = getPermissionsForRole('READER');
-        expect(perms.controls.view).toBe(true);
-        expect(perms.controls.create).toBe(false);
+        expect(perms.practices.view).toBe(true);
+        expect(perms.practices.create).toBe(false);
         expect(perms.admin.manage).toBe(false);
     });
 
@@ -55,8 +55,8 @@ describe('getPermissionsForRole', () => {
             // so the shape is asserted exhaustively rather than by subset.
             // `risks` left it with the risk register: 12 → 11.
             expect(Object.keys(perms).sort()).toEqual([
-                'admin', 'audits', 'controls', 'evidence', 'frameworks',
-                'knowledge', 'policies', 'reports', 'tasks', 'tests',
+                'admin', 'audits', 'evidence', 'frameworks', 'knowledge',
+                'policies', 'practices', 'reports', 'tasks', 'tests',
                 'vendors',
             ]);
         }
@@ -100,20 +100,20 @@ describe('validatePermissionsJson', () => {
     test('missing action within a domain is flagged', () => {
         const perms = getPermissionsForRole('READER');
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const modified = { ...perms, controls: { view: true, create: true } } as any;
+        const modified = { ...perms, practices: { view: true, create: true } } as any;
         // "edit" is missing
         const errors = validatePermissionsJson(modified);
-        expect(errors).toContain('Missing action "controls.edit"');
+        expect(errors).toContain('Missing action "practices.edit"');
     });
 
     test('non-boolean action value is flagged', () => {
         const perms = getPermissionsForRole('READER');
         const modified = {
             ...perms,
-            controls: { view: 'yes', create: false, edit: false },
+            practices: { view: 'yes', create: false, edit: false },
         };
         const errors = validatePermissionsJson(modified);
-        expect(errors).toContain('"controls.view" must be boolean, got string');
+        expect(errors).toContain('"practices.view" must be boolean, got string');
     });
 
     test('unexpected domain is flagged', () => {
@@ -127,22 +127,22 @@ describe('validatePermissionsJson', () => {
         const perms = getPermissionsForRole('READER');
         const modified = {
             ...perms,
-            controls: { ...perms.controls, destroy: true },
+            practices: { ...perms.practices, destroy: true },
         };
         const errors = validatePermissionsJson(modified);
-        expect(errors).toContain('Unexpected action "controls.destroy"');
+        expect(errors).toContain('Unexpected action "practices.destroy"');
     });
 
     test('domain that is not an object is flagged', () => {
         const perms = getPermissionsForRole('READER');
-        const modified = { ...perms, controls: 'invalid' };
+        const modified = { ...perms, practices: 'invalid' };
         const errors = validatePermissionsJson(modified);
-        expect(errors).toContain('Permission domain "controls" must be an object');
+        expect(errors).toContain('Permission domain "practices" must be an object');
     });
 
     test('custom role with all permissions valid passes', () => {
         const custom = makeValidPermissions({
-            controls: { create: true, edit: true },
+            practices: { create: true, edit: true },
             admin: { view: true, manage: true, members: true, sso: false, scim: false },
         });
         expect(validatePermissionsJson(custom)).toEqual([]);
@@ -172,12 +172,12 @@ describe('parsePermissionsJson', () => {
 
     test('partial override merges with base role defaults', () => {
         const partial = {
-            controls: { view: true, create: true, edit: true },
+            practices: { view: true, create: true, edit: true },
             // Other domains missing — should fall back to READER defaults
         };
         const result = parsePermissionsJson(partial, 'READER');
         // Override applied
-        expect(result.controls.create).toBe(true);
+        expect(result.practices.create).toBe(true);
         // Fallback preserved
         expect(result.admin).toEqual(getPermissionsForRole('READER').admin);
         expect(result.evidence).toEqual(getPermissionsForRole('READER').evidence);
@@ -186,27 +186,27 @@ describe('parsePermissionsJson', () => {
     test('invalid action types within a domain fall back to base role', () => {
         const input = {
             ...getPermissionsForRole('READER'),
-            controls: { view: 'not-a-boolean', create: false, edit: false },
+            practices: { view: 'not-a-boolean', create: false, edit: false },
         };
         const result = parsePermissionsJson(input, 'ADMIN');
         // The invalid "view" falls back to ADMIN default (true)
-        expect(result.controls.view).toBe(true);
+        expect(result.practices.view).toBe(true);
         // The valid booleans are preserved
-        expect(result.controls.create).toBe(false);
+        expect(result.practices.create).toBe(false);
     });
 
     test('missing actions within a domain fall back to base role', () => {
         const input = {
             ...getPermissionsForRole('READER'),
-            // "edit" is missing from controls
-            controls: { view: false, create: true },
+            // "edit" is missing from practices
+            practices: { view: false, create: true },
         };
         const result = parsePermissionsJson(input, 'EDITOR');
         // Present fields used
-        expect(result.controls.view).toBe(false);
-        expect(result.controls.create).toBe(true);
+        expect(result.practices.view).toBe(false);
+        expect(result.practices.create).toBe(true);
         // Missing "edit" falls back to EDITOR default (true)
-        expect(result.controls.edit).toBe(true);
+        expect(result.practices.edit).toBe(true);
     });
 
     test('array input falls back to base role defaults', () => {

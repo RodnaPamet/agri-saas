@@ -1,10 +1,10 @@
 /**
  * B1 (2026-06-07) — the row-select action bar lives in the column-header
- * row, NOT a right-rail (Controls) or a standalone section (Tasks).
+ * row, NOT a right-rail (Practices) or a standalone section (Tasks).
  *
  * The DataTable's `SelectionToolbar` already overlays the `<thead>` row
  * (absolute, top-0, z-30). B1:
- *   - Controls: the bulk-status verbs moved from the `SelectionSummaryPanel`
+ *   - Practices: the bulk-status verbs moved from the `SelectionSummaryPanel`
  *     right-rail BACK into the DataTable's `batchActions` (header bar).
  *   - Tasks: the standalone `#bulk-toolbar` card moved into the DataTable's
  *     `selectionControls` (the inline form renders in the header bar).
@@ -17,19 +17,19 @@ import * as path from 'node:path';
 const ROOT = path.resolve(__dirname, '../..');
 const read = (p: string) => fs.readFileSync(path.join(ROOT, p), 'utf8');
 
-const CONTROLS = read('src/app/t/[tenantSlug]/(app)/controls/ControlsClient.tsx');
+const CONTROLS = read('src/app/t/[tenantSlug]/(app)/practices/PracticesClient.tsx');
 const TASKS = read('src/app/t/[tenantSlug]/(app)/farm-tasks/FarmTasksClient.tsx');
 const TOOLBAR = read('src/components/ui/table/selection-toolbar.tsx');
 
 describe('B1 — row-select action bar in the header row', () => {
-    it('Controls renders bulk-status verbs via batchActions, NOT a selection right-rail', () => {
-        expect(CONTROLS).toMatch(/batchActions:\s*controlBatchActions/);
+    it('Practices renders bulk-status verbs via batchActions, NOT a selection right-rail', () => {
+        expect(CONTROLS).toMatch(/batchActions:\s*practiceBatchActions/);
         // i18n batch T07 — the bulk-status verb label routes through
         // next-intl (`t('list.markImplemented')`); assert the key is wired
         // AND the en.json value preserves the "Mark Implemented" copy.
         expect(CONTROLS).toMatch(/t\(['"]list\.markImplemented['"]\)/);
         // eslint-disable-next-line @typescript-eslint/no-var-requires
-        expect(require('../../messages/en.json').controls.list.markImplemented).toBe('Mark Implemented');
+        expect(require('../../messages/en.json').practices.list.markImplemented).toBe('Mark Implemented');
         // The selection-summary right-rail is gone.
         expect(CONTROLS).not.toMatch(/SelectionSummaryPanel/);
     });

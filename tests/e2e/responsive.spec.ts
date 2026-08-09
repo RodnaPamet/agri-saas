@@ -81,9 +81,9 @@ test.describe('Mobile viewport (375×812)', () => {
         await expect(drawer).toHaveAttribute('data-open', 'false', { timeout: 10_000 });
     });
 
-    test('controls list has no horizontal overflow', async ({ page }) => {
+    test('practices list has no horizontal overflow', async ({ page }) => {
         slug = await signInAs(page, tenant);
-        await gotoAndVerify(page, `/t/${slug}/controls`, 'h1');
+        await gotoAndVerify(page, `/t/${slug}/practices`, 'h1');
 
         const noOverflow = await hasNoHorizontalOverflow(page);
         expect(noOverflow).toBe(true);
@@ -118,9 +118,9 @@ test.describe('Desktop viewport (1280×720)', () => {
         await expect(toggle).toBeHidden();
     });
 
-    test('controls page renders without horizontal overflow', async ({ page }) => {
+    test('practices page renders without horizontal overflow', async ({ page }) => {
         slug = await signInAs(page, tenant);
-        await gotoAndVerify(page, `/t/${slug}/controls`, 'h1');
+        await gotoAndVerify(page, `/t/${slug}/practices`, 'h1');
 
         const noOverflow = await hasNoHorizontalOverflow(page);
         expect(noOverflow).toBe(true);

@@ -21,7 +21,7 @@ import { logger } from '@/lib/observability/logger';
 /**
  * Production local entity store backed by Prisma.
  *
- * Currently supports 'control' entities (the primary sync target for
+ * Currently supports 'practice' entities (the primary sync target for
  * branch protection rules). Extend the switch in applyChanges/getData
  * as additional entity types are synced.
  */
@@ -48,9 +48,9 @@ export class PrismaLocalStore implements GitHubLocalStore {
             }
 
             switch (entityType) {
-                case 'control': {
+                case 'practice': {
 
-                    await db.control.update({
+                    await db.practice.update({
                         where: { id: entityId },
                         data: updatableFields,
                     });
@@ -87,9 +87,9 @@ export class PrismaLocalStore implements GitHubLocalStore {
     ): Promise<Record<string, unknown> | null> {
         return runInTenantContext(ctx, async (db: PrismaTx) => {
             switch (entityType) {
-                case 'control': {
+                case 'practice': {
 
-                    const control = await db.control.findUnique({
+                    const practice = await db.practice.findUnique({
                         where: { id: entityId },
                         select: {
                             id: true,
@@ -100,8 +100,8 @@ export class PrismaLocalStore implements GitHubLocalStore {
                             updatedAt: true,
                         },
                     });
-                    if (!control) return null;
-                    return control as Record<string, unknown>;
+                    if (!practice) return null;
+                    return practice as Record<string, unknown>;
                 }
                 default:
                     return null;
@@ -122,7 +122,7 @@ function buildUpdatePayload(
     data: Record<string, unknown>,
 ): Record<string, unknown> {
     switch (entityType) {
-        case 'control': {
+        case 'practice': {
             // Allowlist of fields that can be updated from sync
             const ALLOWED_CONTROL_FIELDS: Record<string, string> = {
                 // sync field → Prisma column
@@ -145,9 +145,9 @@ function buildUpdatePayload(
                 if (target === 'automationResultJson') {
                     automationResult[field] = value;
                 } else {
-                    // Map sync status values to Prisma ControlStatus enum
+                    // Map sync status values to Prisma PracticeStatus enum
                     if (field === 'status' && typeof value === 'string') {
-                        payload[target] = mapControlStatus(value);
+                        payload[target] = mapPracticeStatus(value);
                     } else {
                         payload[target] = value;
                     }
@@ -167,9 +167,9 @@ function buildUpdatePayload(
 }
 
 /**
- * Map sync-layer status strings to Prisma ControlStatus enum values.
+ * Map sync-layer status strings to Prisma PracticeStatus enum values.
  */
-function mapControlStatus(syncStatus: string): string {
+function mapPracticeStatus(syncStatus: string): string {
     const STATUS_MAP: Record<string, string> = {
         'IMPLEMENTED': 'IMPLEMENTED',
         'NOT_STARTED': 'NOT_STARTED',

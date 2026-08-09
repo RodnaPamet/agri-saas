@@ -40,14 +40,14 @@ describe('normalizeRoute — cardinality safety', () => {
     it('collapses a UUID path segment to :id', () => {
         expect(
             normalizeRoute(
-                '/api/controls/550e8400-e29b-41d4-a716-446655440000',
+                '/api/practices/550e8400-e29b-41d4-a716-446655440000',
             ),
-        ).toBe('/api/controls/:id');
+        ).toBe('/api/practices/:id');
     });
 
     it('collapses the tenant slug in /api/t/<slug>/ to :tenantSlug', () => {
-        expect(normalizeRoute('/api/t/acme-corp/controls')).toBe(
-            '/api/t/:tenantSlug/controls',
+        expect(normalizeRoute('/api/t/acme-corp/practices')).toBe(
+            '/api/t/:tenantSlug/practices',
         );
     });
 
@@ -78,7 +78,7 @@ describe('normalizeRoute — cardinality safety', () => {
 
     it('is idempotent — re-normalising a normalised route is a fixed point', () => {
         const once = normalizeRoute(
-            '/api/t/acme/controls/550e8400-e29b-41d4-a716-446655440000',
+            '/api/t/acme/practices/550e8400-e29b-41d4-a716-446655440000',
         );
         expect(normalizeRoute(once)).toBe(once);
     });
@@ -89,7 +89,7 @@ describe('request + job recording (noop meter — exercises lazy singletons)', (
         expect(() =>
             recordRequestMetrics({
                 method: 'GET',
-                route: '/api/t/acme/controls/550e8400-e29b-41d4-a716-446655440000',
+                route: '/api/t/acme/practices/550e8400-e29b-41d4-a716-446655440000',
                 status: 200,
                 durationMs: 12,
             }),
@@ -109,7 +109,7 @@ describe('request + job recording (noop meter — exercises lazy singletons)', (
         expect(() =>
             recordRequestError({
                 method: 'DELETE',
-                route: '/api/t/acme/controls/abc',
+                route: '/api/t/acme/practices/abc',
                 errorCode: 'NOT_FOUND',
             }),
         ).not.toThrow();

@@ -18,25 +18,25 @@ import { Readable } from 'stream';
 // ─── Strict Download Policy ───
 
 describe('Evidence Hardening — Strict Download Policy', () => {
-    test('policy requires control link for READER/AUDITOR', () => {
+    test('policy requires practice link for READER/AUDITOR', () => {
         // Simulate the policy logic
         const isWriter = false; // READER/AUDITOR
-        const hasControlLink = false;
-        const canDownload = isWriter || hasControlLink;
+        const hasPracticeLink = false;
+        const canDownload = isWriter || hasPracticeLink;
         expect(canDownload).toBe(false);
     });
 
-    test('policy allows ADMIN/EDITOR to download without control link', () => {
+    test('policy allows ADMIN/EDITOR to download without practice link', () => {
         const isWriter = true; // ADMIN/EDITOR
-        const hasControlLink = false;
-        const canDownload = isWriter || hasControlLink;
+        const hasPracticeLink = false;
+        const canDownload = isWriter || hasPracticeLink;
         expect(canDownload).toBe(true);
     });
 
-    test('policy allows READER/AUDITOR to download with control link', () => {
+    test('policy allows READER/AUDITOR to download with practice link', () => {
         const isWriter = false;
-        const hasControlLink = true;
-        const canDownload = isWriter || hasControlLink;
+        const hasPracticeLink = true;
+        const canDownload = isWriter || hasPracticeLink;
         expect(canDownload).toBe(true);
     });
 

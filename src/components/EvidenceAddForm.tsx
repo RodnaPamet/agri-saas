@@ -2,7 +2,7 @@
 
 /**
  * Shared "add evidence" form — the single canonical add-evidence surface
- * used by the Control, Task, Risk and Asset evidence tabs so they are
+ * used by the Practice, Task, Risk and Asset evidence tabs so they are
  * EXACTLY the same. Upload a file (title + browse, brand-tinted file
  * button) OR link a URL + note; a chosen file takes precedence (the URL
  * fields disable). Presentational only — each page owns its state +

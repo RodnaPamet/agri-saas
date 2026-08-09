@@ -69,7 +69,7 @@ export const MODULE_LABELS: Record<ModuleKey, string> = {
 // side.
 //
 // The CERTIFICATION line also described the machinery rather than the point:
-// "Audit frameworks, controls, evidence, and policies" is what the module is
+// "Audit frameworks, practices, evidence, and policies" is what the module is
 // built from. What a farmer is buying is "certification schemes, the records
 // that prove them, and readiness for an inspection".
 
@@ -89,8 +89,8 @@ export function isModuleEnabledIn(modules: readonly ModuleKey[], key: ModuleKey)
 /**
  * The "compliance exoskeleton" gate for farm assets.
  *
- * An asset's GRC surfaces — control/risk traceability, inherited evidence,
- * mappings, control-test plans, and the coverage shield — only make sense for
+ * An asset's GRC surfaces — practice/risk traceability, inherited evidence,
+ * mappings, practice-test plans, and the coverage shield — only make sense for
  * a tenant that actually runs a compliance module (CERTIFICATION or RISK). A
  * plain farm (simple mode) gets a clean asset register with none of that
  * chrome. Callers pass the tenant's `availableModules` (from the tenant

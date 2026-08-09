@@ -65,7 +65,7 @@ describe('B6 — Phase 3 useZodForm adoption', () => {
 
     describe('Canonical 6-tab structure on detail pages (B6 +1)', () => {
         // The user asked for risks + assets to wear the same submenu
-        // structure as controls: Overview, Tasks, Evidence, Mappings,
+        // structure as practices: Overview, Tasks, Evidence, Mappings,
         // Traceability, Activity. (A seventh tab, Tests, was dropped in the
         // compliance uproot along with the test-plan feature it opened.)
         const CANONICAL_TABS = [
@@ -82,8 +82,8 @@ describe('B6 — Phase 3 useZodForm adoption', () => {
         // by tests/guards/rq2-4-assessment-ia.test.ts.
         const PAGES: Array<{ label: string; file: string }> = [
             {
-                label: 'Controls (canonical)',
-                file: 'src/app/t/[tenantSlug]/(app)/controls/[controlId]/page.tsx',
+                label: 'Practices (canonical)',
+                file: 'src/app/t/[tenantSlug]/(app)/practices/[practiceId]/page.tsx',
             },
             {
                 label: 'Assets',
@@ -102,7 +102,7 @@ describe('B6 — Phase 3 useZodForm adoption', () => {
             it(`${label} passes tabs to EntityDetailLayout`, () => {
                 const src = read(file);
                 expect(src).toMatch(/tabs=\{tabs\}/);
-                // Each page uses its own local state name (controls
+                // Each page uses its own local state name (practices
                 // calls it `tab`, risks/assets call it `activeTab`);
                 // either is fine as long as the prop is wired.
                 expect(src).toMatch(/activeTab=\{(activeTab|tab)\}/);

@@ -30,14 +30,14 @@ const ALL_R23_RATCHETS = [
     'tests/guards/r23-pra-kpi-primitive.test.ts',
     'tests/guards/r23-prb-kpi-filter-hook.test.ts',
     'tests/guards/r23-prc-kpi-url-sync.test.ts',
-    'tests/guards/r23-prd-assets-controls-rollout.test.ts',
+    'tests/guards/r23-prd-assets-practices-rollout.test.ts',
     'tests/guards/r23-pre-tasks-evidence-rollout.test.ts',
     'tests/guards/r23-prf-policies-vendors-capstone.test.ts',
 ] as const;
 
 const ALL_R23_CONSUMERS = [
     'src/app/t/[tenantSlug]/(app)/assets/AssetsClient.tsx',
-    'src/app/t/[tenantSlug]/(app)/controls/ControlsClient.tsx',
+    'src/app/t/[tenantSlug]/(app)/practices/PracticesClient.tsx',
     'src/app/t/[tenantSlug]/(app)/farm-tasks/FarmTasksClient.tsx',
     'src/app/t/[tenantSlug]/(app)/evidence/EvidenceClient.tsx',
     'src/app/t/[tenantSlug]/(app)/policies/PoliciesClient.tsx',

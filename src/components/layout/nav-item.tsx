@@ -103,8 +103,8 @@ export const NAV_ITEM_ICON_SIZE = 'h-7 w-7';
  *
  * The icon is `aria-hidden="true"` at the JSX layer (not in this
  * class string). The label is the accessible name; the icon is
- * decorative. Screen readers announce "Controls", not "icon
- * Controls". This is the right semantic and is locked by the
+ * decorative. Screen readers announce "Practices", not "icon
+ * Practices". This is the right semantic and is locked by the
  * R12-PR9 ratchet.
  *
  * Why a named const (not inline)?
@@ -162,7 +162,7 @@ export interface NavItemProps {
  *   - A real `<span>` adds DOM weight + a tab-stop edge case.
  *   - Pseudo-element is the canonical CSS recipe for decorative
  *     state signals (no DOM, no a11y noise, full transition
- *     control).
+ *     practice).
  *
  * Why 6px inset top/bottom (`top-1.5 bottom-1.5`)?
  *   - Full-height rules feel architectural (a divider). A

@@ -4,7 +4,7 @@
  * Until this PR each detail page redeclared its own STATUS_VARIANT
  * literal:
  *   risks/[riskId]/page.tsx::STATUS_VARIANT
- *   controls/[controlId]/page.tsx (inline ternaries)
+ *   practices/[practiceId]/page.tsx (inline ternaries)
  *   tasks/[taskId]/page.tsx (inline)
  *   policies/[policyId]/page.tsx::STATUS_BADGE
  *   etc.
@@ -25,7 +25,7 @@ import type { StatusBadgeVariant } from '@/components/ui/status-badge';
 export const RISK_STATUS_VARIANT: Record<string, StatusBadgeVariant> = {
     OPEN: 'warning',
     MITIGATING: 'info',
-    // Audit Coherence S1 — controls in place, residual score
+    // Audit Coherence S1 — practices in place, residual score
     // computed, awaiting explicit acceptance call. Distinct from
     // MITIGATING (work in progress) and ACCEPTED (signed off).
     MITIGATED: 'success',
@@ -51,7 +51,7 @@ export function getRiskScoreBand(score: number): RiskScoreBand {
     return { label: 'Critical', variant: 'error' };
 }
 
-// ─── Control status ──────────────────────────────────────────────────
+// ─── Practice status ──────────────────────────────────────────────────
 
 export const CONTROL_STATUS_VARIANT: Record<string, StatusBadgeVariant> = {
     NOT_STARTED: 'neutral',

@@ -10,7 +10,7 @@
  * Five dashboard composites already adopt it:
  *   • Main tenant dashboard (DashboardClient)
  *   • Risks dashboard
- *   • Controls dashboard
+ *   • Practices dashboard
  *   • Tests dashboard
  *   • Vendors dashboard
  *

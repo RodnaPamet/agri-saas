@@ -144,7 +144,7 @@ export function CalendarClient({
         policy: tCategory('policy'),
         vendor: tCategory('vendor'),
         audit: tCategory('audit'),
-        control: tCategory('control'),
+        practice: tCategory('practice'),
         task: tCategory('task'),
         risk: tCategory('risk'),
         finding: tCategory('finding'),
@@ -429,7 +429,7 @@ export function CalendarClient({
             </div>
 
             {/* New Task modal — driven by the header button or a day
-                double-click. Mounted unconditionally; `open` controls
+                double-click. Mounted unconditionally; `open` practices
                 visibility. After create we stay on the calendar, and the
                 query invalidation surfaces the new task on its day cell. */}
             <NewTaskModal

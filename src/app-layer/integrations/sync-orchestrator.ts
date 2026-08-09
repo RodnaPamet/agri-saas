@@ -190,7 +190,7 @@ export abstract class BaseSyncOrchestrator {
      * Called during pull operations after mapping.
      *
      * @param ctx            - The request context
-     * @param localEntityType - Entity type (e.g. 'task', 'control')
+     * @param localEntityType - Entity type (e.g. 'task', 'practice')
      * @param localEntityId   - Entity ID
      * @param localData       - Mapped data to apply
      * @returns Updated fields for audit

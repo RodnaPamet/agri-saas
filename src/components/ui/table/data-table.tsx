@@ -7,10 +7,10 @@
  * this wrapper provides a simpler, ergonomic API for the most common pattern:
  *
  *   <DataTable
- *     data={controls}
- *     columns={controlColumns}
+ *     data={practices}
+ *     columns={practiceColumns}
  *     loading={isLoading}
- *     onRowClick={(row) => router.push(`/controls/${row.original.id}`)}
+ *     onRowClick={(row) => router.push(`/practices/${row.original.id}`)}
  *   />
  *
  * For advanced features (column resizing, pinning, edit-columns), use the
@@ -46,7 +46,7 @@ export type { ColumnDef };
  * Helper to create a typed column array with proper inference.
  *
  * Usage:
- *   const columns = createColumns<Control>([
+ *   const columns = createColumns<Practice>([
  *     { accessorKey: "code", header: "Code" },
  *     { accessorKey: "name", header: "Name" },
  *     { id: "actions", header: "", cell: ({ row }) => <ActionsMenu row={row} /> },
@@ -240,7 +240,7 @@ export interface DataTableProps<T> {
    *   - `false`              — force virtualization OFF. Use this on
    *                            pages where the existing
    *                            non-virtualized layout is intentionally
-   *                            preserved (e.g. the Controls page,
+   *                            preserved (e.g. the Practices page,
    *                            where bespoke row affordances rely on
    *                            the standard `<table>` layout).
    *   - `{ threshold: N }`   — auto with a custom threshold.
@@ -292,7 +292,7 @@ export interface DataTableProps<T> {
  * Threshold raised to 1000 to scope auto-virtualization to genuinely
  * large unpaginated tables. Pages that legitimately need it for
  * smaller datasets can opt in with `virtualize={true}` or
- * `virtualize={{ threshold: N }}`. The Controls opt-out
+ * `virtualize={{ threshold: N }}`. The Practices opt-out
  * (`virtualize={false}`) stays as documented.
  */
 export const VIRTUALIZE_DEFAULT_THRESHOLD = 1000;
@@ -385,7 +385,7 @@ export function DataTable<T>({
   // Determine effective selection props
   const effectiveOnRowSelectionChange = onRowSelectionChange ?? (hasBatchActions ? (() => {}) : undefined);
   const effectiveSelectedRows = selectedRows ?? (hasBatchActions && !hasExplicitSelection ? internalSelection : undefined);
-  const effectiveSelectionControls = selectionControls ?? (hasBatchActions ? renderBatchActions(batchActions!) : undefined);
+  const effectiveSelectionPractices = selectionControls ?? (hasBatchActions ? renderBatchActions(batchActions!) : undefined);
   // Column resizing lives on the non-virtualized <Table> only — its
   // measure-then-fix step seeds each column's content width before
   // switching to fixed layout. VirtualTable reads getSize() straight
@@ -418,7 +418,7 @@ export function DataTable<T>({
         getRowId,
         onRowSelectionChange: effectiveOnRowSelectionChange,
         selectedRows: effectiveSelectedRows,
-        selectionControls: effectiveSelectionControls,
+        selectionControls: effectiveSelectionPractices,
         selectionEnabled,
         columnVisibility,
         onColumnVisibilityChange,
@@ -444,7 +444,7 @@ export function DataTable<T>({
         getRowId,
         onRowSelectionChange: effectiveOnRowSelectionChange,
         selectedRows: effectiveSelectedRows,
-        selectionControls: effectiveSelectionControls,
+        selectionControls: effectiveSelectionPractices,
         selectionEnabled,
         columnVisibility,
         onColumnVisibilityChange,

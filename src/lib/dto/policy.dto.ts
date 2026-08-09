@@ -28,17 +28,17 @@ export const PolicyVersionDTOSchema = z.object({
 }).passthrough();
 export type PolicyVersionDTO = z.infer<typeof PolicyVersionDTOSchema>;
 
-// ─── Policy Control Link ───
+// ─── Policy Practice Link ───
 
-export const PolicyControlLinkDTOSchema = z.object({
+export const PolicyPracticeLinkDTOSchema = z.object({
     id: z.string(),
-    control: z.object({
+    practice: z.object({
         id: z.string(),
         name: z.string(),
         code: z.string().nullable().optional(),
     }).passthrough(),
 }).passthrough();
-export type PolicyControlLinkDTO = z.infer<typeof PolicyControlLinkDTOSchema>;
+export type PolicyPracticeLinkDTO = z.infer<typeof PolicyPracticeLinkDTOSchema>;
 
 // ─── Policy List Item ───
 // Returned by PolicyRepository.list()
@@ -62,11 +62,11 @@ export const PolicyListItemDTOSchema = z.object({
     owner: UserRefSchema.nullable().optional(),
     _count: z.object({
         versions: z.number().optional(),
-        controlLinks: z.number().optional(),
+        practiceLinks: z.number().optional(),
         approvals: z.number().optional(),
     }).optional(),
 }).passthrough().openapi('PolicyListItem', {
-    description: 'Policy as it appears in list views — includes the currently published version, owner, and aggregate counts. The detail endpoint adds full version history + control links.',
+    description: 'Policy as it appears in list views — includes the currently published version, owner, and aggregate counts. The detail endpoint adds full version history + practice links.',
 });
 
 export type PolicyListItemDTO = z.infer<typeof PolicyListItemDTOSchema>;
@@ -76,7 +76,7 @@ export type PolicyListItemDTO = z.infer<typeof PolicyListItemDTOSchema>;
 
 export const PolicyDetailDTOSchema = PolicyListItemDTOSchema.extend({
     versions: z.array(PolicyVersionDTOSchema).optional(),
-    controlLinks: z.array(PolicyControlLinkDTOSchema).optional(),
+    practiceLinks: z.array(PolicyPracticeLinkDTOSchema).optional(),
     approvals: z.array(z.object({
         id: z.string(),
         status: z.string(),
@@ -87,7 +87,7 @@ export const PolicyDetailDTOSchema = PolicyListItemDTOSchema.extend({
         decidedAt: z.string().nullable().optional(),
     }).passthrough()).optional(),
 }).openapi('PolicyDetail', {
-    description: 'Policy with full version history, control links, and approval audit trail. Returned by GET /policies/{id}.',
+    description: 'Policy with full version history, practice links, and approval audit trail. Returned by GET /policies/{id}.',
 });
 
 export type PolicyDetailDTO = z.infer<typeof PolicyDetailDTOSchema>;

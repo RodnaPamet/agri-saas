@@ -204,7 +204,7 @@ export const API_MUTATION_LIMIT: RateLimitConfig = {
  * iterating filter combinations, or a compromised credential
  * scraping data. The limit is roughly 2× the mutation budget because
  * reads are cheaper, idempotent, and a normal page load can fan
- * out to 5-10 list endpoints (controls + risks + evidence + counts
+ * out to 5-10 list endpoints (practices + risks + evidence + counts
  * + traceability + …); 120/min comfortably covers that for a single
  * actor while still tripping a real scraper within seconds.
  *

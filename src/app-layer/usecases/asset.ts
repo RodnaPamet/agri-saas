@@ -27,7 +27,7 @@ export async function listAssets(ctx: RequestContext, filters?: AssetFilters) {
     return runInTenantContext(ctx, async (db) => {
         const rows = await AssetRepository.list(db, ctx, filters);
         // B7 — attach unified linked-task counts (TaskLink ASSET) so the
-        // list page can show a Tasks column, matching Controls.
+        // list page can show a Tasks column, matching Practices.
         const counts = await WorkItemRepository.countLinkedToEntities(
             db,
             ctx,
@@ -291,7 +291,7 @@ export async function listAssetsWithDeleted(ctx: RequestContext) {
  * already records every asset lifecycle event (CREATE / UPDATE /
  * SOFT_DELETE / ENTITY_RESTORED / ENTITY_PURGED / evidence + link edits).
  * This is a bounded read-only view of it for the detail-page Activity tab,
- * mirroring `getControlActivity`. The hash chain is never touched.
+ * mirroring `getPracticeActivity`. The hash chain is never touched.
  */
 export async function getAssetActivity(ctx: RequestContext, assetId: string) {
     assertCanRead(ctx);
@@ -310,10 +310,10 @@ export async function getAssetActivity(ctx: RequestContext, assetId: string) {
 // ─── Attached Evidence ───
 //
 // Evidence attached directly to an asset via `Evidence.assetId` — same
-// pattern as Control/Task/Risk. The asset Evidence tab renders this
+// pattern as Practice/Task/Risk. The asset Evidence tab renders this
 // through the shared <EvidenceSubTable> ({ links, evidence } shape;
 // `links` always empty). Distinct from the read-only INHERITED evidence
-// (aggregated from the asset's mapped controls), shown in its own
+// (aggregated from the asset's mapped practices), shown in its own
 // section.
 
 /** Asset attached-evidence payload — `{ links, evidence }` for the shared sub-table. */

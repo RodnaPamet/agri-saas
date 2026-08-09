@@ -32,7 +32,7 @@ const CreateTaskConfig = z.object({
 });
 
 const UpdateStatusConfig = z.object({
-    entityType: z.enum(['Risk', 'Task', 'Control', 'Issue']),
+    entityType: z.enum(['Risk', 'Task', 'Practice', 'Issue']),
     field: z.string().min(1),
     toStatus: z.string().min(1),
 });

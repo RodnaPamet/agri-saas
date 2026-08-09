@@ -9,7 +9,7 @@
 //
 //  Note: this is the EXTERNAL-AUDITOR domain — readiness scoring,
 //  evidence packs shared with auditors, hash-chained event log.
-//  Internal "audit-of-controls" tasks live with `Control*` in
+//  Internal "audit-of-practices" tasks live with `Practice*` in
 //  `compliance.prisma` because they're written and read by the
 //  compliance team, not auditors.
 //

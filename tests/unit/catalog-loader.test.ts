@@ -54,12 +54,12 @@ requirements:
   - code: A.5.1
     title: Information security policies
     summary: Establish, communicate, and review information security policies.
-    theme: Organizational Controls
+    theme: Organizational Practices
     themeNumber: 5
     sortOrder: 1
   - code: A.5.2
     title: Information security roles and responsibilities
-    theme: Organizational Controls
+    theme: Organizational Practices
     themeNumber: 5
     sortOrder: 2
 templates:
@@ -86,7 +86,7 @@ const VALID_JSON = JSON.stringify({
         kind: 'SOC_CRITERIA',
     },
     requirements: [
-        { code: 'CC1.1', title: 'Integrity and ethical values', category: 'Control Environment' },
+        { code: 'CC1.1', title: 'Integrity and ethical values', category: 'Practice Environment' },
         { code: 'CC6.1', title: 'Logical access controls', category: 'Logical Access' },
     ],
 });

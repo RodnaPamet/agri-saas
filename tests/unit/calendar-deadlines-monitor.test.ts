@@ -84,7 +84,7 @@ describe('runCalendarDeadlineMonitor', () => {
         const r = await runCalendarDeadlineMonitor({ now: NOW });
         expect(r.items).toHaveLength(1);
         expect(r.items[0].urgency).toBe('OVERDUE');
-        expect(r.items[0].entityType).toBe('CONTROL'); // re-uses CONTROL bucket
+        expect(r.items[0].entityType).toBe('PRACTICE'); // re-uses PRACTICE bucket
         expect(r.items[0].name).toContain('Q2 Audit');
         expect(r.items[0].ownerUserId).toBe('user-owner');
         expect(r.byEntity.AUDIT_CYCLE).toBe(1);

@@ -39,17 +39,17 @@ describe('RBAC Guardrail Scans', () => {
         });
     });
 
-    describe('Controls page RBAC', () => {
-        test('controls server page resolves appPerms and passes to client island', () => {
-            const content = readFile('app/t/[tenantSlug]/(app)/controls/page.tsx');
+    describe('Practices page RBAC', () => {
+        test('practices server page resolves appPerms and passes to client island', () => {
+            const content = readFile('app/t/[tenantSlug]/(app)/practices/page.tsx');
             // Server component must resolve permissions via ctx.appPermissions (from custom role resolution)
-            expect(content).toMatch(/ctx\.appPermissions\.controls/);
-            // Must pass appPermissions (including controls) to client island
+            expect(content).toMatch(/ctx\.appPermissions\.practices/);
+            // Must pass appPermissions (including practices) to client island
             expect(content).toMatch(/appPermissions/);
         });
 
-        test('controls client island receives and enforces create/edit permissions', () => {
-            const content = readFile('app/t/[tenantSlug]/(app)/controls/ControlsClient.tsx');
+        test('practices client island receives and enforces create/edit permissions', () => {
+            const content = readFile('app/t/[tenantSlug]/(app)/practices/PracticesClient.tsx');
             // Client island must declare create and edit permission props
             expect(content).toMatch(/create.*boolean/);
             expect(content).toMatch(/edit.*boolean/);
@@ -127,7 +127,7 @@ describe('RBAC Guardrail Scans', () => {
 
         test('PermissionSet type covers all critical resources', () => {
             const content = readFile('lib/permissions.ts');
-            const requiredResources = ['controls', 'evidence', 'policies', 'tasks', 'vendors', 'tests', 'frameworks', 'audits', 'reports', 'admin'];
+            const requiredResources = ['practices', 'evidence', 'policies', 'tasks', 'vendors', 'tests', 'frameworks', 'audits', 'reports', 'admin'];
             for (const resource of requiredResources) {
                 expect(content).toContain(`${resource}:`);
             }

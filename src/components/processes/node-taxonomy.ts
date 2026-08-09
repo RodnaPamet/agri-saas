@@ -21,12 +21,12 @@
  *      this, branches collapse into ambiguous step-to-step
  *      lines and the reader has to infer where the choice
  *      lives.
- *   3. `control` — a governance/control element ATTACHED to
- *      a step. PR-D makes controls primarily edge-mounted
- *      (control sits on the connection between two steps),
- *      but a control NODE remains useful for controls that
+ *   3. `practice` — a governance/practice element ATTACHED to
+ *      a step. PR-D makes practices primarily edge-mounted
+ *      (practice sits on the connection between two steps),
+ *      but a practice NODE remains useful for practices that
  *      gate a step in place (e.g. dual-approval at a single
- *      action) or for documenting orphan controls during
+ *      action) or for documenting orphan practices during
  *      authoring before the edge is drawn.
  *   4. `asset` — the system / datastore / document a step
  *      acts upon. One node type covers all three because
@@ -84,7 +84,7 @@ import {
 export type ProcessNodeKind =
     | 'processStep'
     | 'decision'
-    | 'control'
+    | 'practice'
     | 'asset'
     | 'external'
     | 'annotation'
@@ -103,7 +103,7 @@ export type ProcessNodeKind =
  */
 export type NodeAccent =
     | 'brand'           // process step (default — quiet, primary surface)
-    | 'brand-secondary' // control (the flag's white family — was navy/blue)
+    | 'brand-secondary' // practice (the flag's white family — was navy/blue)
     | 'warning'         // slaGate (amber — caution without alarm)
     | 'success'         // asset (calm green — "here is data")
     | 'neutral'         // decision (graphite — structural)
@@ -171,7 +171,7 @@ export interface NodeTypeMeta {
     hasHandles: boolean;
     /**
      * Default placeholder label rendered when the user drops a
-     * new node without typing one. Per-kind so a fresh control
+     * new node without typing one. Per-kind so a fresh practice
      * doesn't say "Untitled step".
      */
     defaultLabel: string;
@@ -206,17 +206,17 @@ export const NODE_TAXONOMY: Record<ProcessNodeKind, NodeTypeMeta> = {
         hasHandles: true,
         defaultLabel: 'Decision?',
     },
-    control: {
-        id: 'control',
-        label: 'Control',
+    practice: {
+        id: 'practice',
+        label: 'Practice',
         description:
-            'A governance / control element. Canonically edge-mounted (R26-PR-D); the node kind remains for legacy maps.',
+            'A governance / practice element. Canonically edge-mounted (R26-PR-D); the node kind remains for legacy maps.',
         icon: ShieldCheck,
         accent: 'brand-secondary',
         shape: 'rect',
         category: 'context',
         hasHandles: true,
-        defaultLabel: 'Control',
+        defaultLabel: 'Practice',
     },
     asset: {
         id: 'asset',
@@ -323,13 +323,13 @@ export const NODE_TAXONOMY: Record<ProcessNodeKind, NodeTypeMeta> = {
 /**
  * Ordered taxonomy — drives the palette's left-to-right layout.
  *
- * R26-PR-D dropped `control` from this list. Controls are now
+ * R26-PR-D dropped `practice` from this list. Practices are now
  * canonically edge-mounted (drag onto a connection between two
  * steps), not standalone nodes hanging in space. The taxonomy
  * entry stays in `NODE_TAXONOMY` so legacy map data carrying
- * `nodeType: 'control'` still rehydrates correctly, but the
+ * `nodeType: 'practice'` still rehydrates correctly, but the
  * palette never offers it as a primary affordance. The "Add
- * control" button on the edge selection is the canonical entry
+ * practice" button on the edge selection is the canonical entry
  * point.
  *
  * Order otherwise: flow primitives (step + decision) first; then

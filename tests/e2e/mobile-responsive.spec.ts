@@ -14,8 +14,8 @@
  *      changed from `lg:grid-cols-[1fr_320px]` to `md:` so phones get
  *      a stacked layout. We verify the map sits ABOVE the side panel
  *      (top-to-bottom), not beside it.
- *   3. Key controls remain visible + large enough to tap (the Map-mode
- *      segmented control is bumped to ≥44px touch targets).
+ *   3. Key practices remain visible + large enough to tap (the Map-mode
+ *      segmented practice is bumped to ≥44px touch targets).
  *
  * This spec is tagged `@mobile` and runs under the mobile device matrix —
  * `mobile-android` (Pixel 5, 393px) + `mobile-iphone` (iPhone 13 viewport,
@@ -109,10 +109,10 @@ test.describe('mobile responsive — agriculture @mobile', () => {
         const ndviButton = main.getByRole('button', { name: 'NDVI', exact: true });
         await expect(ndviButton).toBeVisible({ timeout: 30_000 });
         const ndviBox = await ndviButton.boundingBox();
-        expect(ndviBox, 'NDVI control has a measurable box').not.toBeNull();
+        expect(ndviBox, 'NDVI practice has a measurable box').not.toBeNull();
         expect(
             ndviBox!.height,
-            'NDVI control should be a ≥44px touch target on mobile',
+            'NDVI practice should be a ≥44px touch target on mobile',
         ).toBeGreaterThanOrEqual(44);
 
         // The map container is the labelled, focusable group rendered by
@@ -138,13 +138,13 @@ test.describe('mobile responsive — agriculture @mobile', () => {
             'full-bleed map should span (near) the full viewport width on mobile',
         ).toBeGreaterThanOrEqual(viewport!.width - 4);
 
-        // On-map thumb controls (find-my-field + zoom) render and are 36px
-        // controls (above the WCAG 2.5.8 AA 24px minimum; deliberately below
+        // On-map thumb practices (find-my-field + zoom) render and are 36px
+        // practices (above the WCAG 2.5.8 AA 24px minimum; deliberately below
         // the 44px AAA size, which read as oversized on the map).
         const findField = main.getByTestId('map-find-field');
         await expect(findField).toBeVisible({ timeout: 30_000 });
         const findFieldBox = await findField.boundingBox();
-        expect(findFieldBox, 'find-field control has a box').not.toBeNull();
+        expect(findFieldBox, 'find-field practice has a box').not.toBeNull();
         expect(
             Math.round(findFieldBox!.height),
             'find-my-field should be a ≥36px touch target',

@@ -6,7 +6,7 @@
  * behave correctly now that their trigger buttons are wrapped in a
  * Tooltip — the click handlers fire, `aria-label` replaces `title` as
  * the accessible name, and no blocking overlay sits between the user
- * and the control.
+ * and the practice.
  *
  * The jsdom project mocks `./tooltip` as a pass-through (see
  * `tests/rendered/tooltip-mock.tsx`), so these assertions focus on the

@@ -14,8 +14,8 @@
  *      tokens — chrome stays minimal.
  *
  *   3. The icon carries `aria-hidden="true"` so the label is the
- *      accessible name. Screen readers announce "Controls", not
- *      "icon Controls". The icon is decorative.
+ *      accessible name. Screen readers announce "Practices", not
+ *      "icon Practices". The icon is decorative.
  *
  *   4. The icon has NO other width/height tokens reaching it.
  *      A regression like `className={NAV_ITEM_ICON_CLASS + ' w-5

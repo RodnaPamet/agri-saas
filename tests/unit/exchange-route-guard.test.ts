@@ -100,7 +100,7 @@ assertCrossTenantGuard({
     foreignStatus: 404,
 });
 
-// ── Positive control: the owner IS let through (guard isn't just deny-all) ──
+// ── Positive practice: the owner IS let through (guard isn't just deny-all) ──
 describe('PATCH /exchange/listings/[listingId] — owner allowed', () => {
     it('200 when the caller OWNS the listing', async () => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any

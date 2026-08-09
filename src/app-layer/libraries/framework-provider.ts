@@ -241,7 +241,7 @@ export function getISO27001Clauses(): ClauseInfo[] {
  *
  * The YAML mappings use URN-based source/target pairs. This function
  * reconstructs the legacy GuidanceMapping shape by grouping ISO source
- * controls and resolving SOC2/NIS2 target ref_ids from loaded libraries.
+ * practices and resolving SOC2/NIS2 target ref_ids from loaded libraries.
  *
  * @deprecated Use YAML LoadedMapping objects for new cross-framework code.
  */
@@ -252,7 +252,7 @@ export function getFrameworkMappings(): GuidanceMapping[] {
         const soc2Lib = getLibraryByRefId('SOC2-2017');
         const nis2Lib = getLibraryByRefId('NIS2-2022');
 
-        // Group YAML mappings by source URN (ISO control)
+        // Group YAML mappings by source URN (ISO practice)
         const bySourceUrn = new Map<string, Array<{ targetUrn: string; rationale?: string }>>();
         for (const m of isoLib.mappings) {
             const entries = bySourceUrn.get(m.sourceUrn) ?? [];
@@ -263,7 +263,7 @@ export function getFrameworkMappings(): GuidanceMapping[] {
         // Reconstruct legacy GuidanceMapping shape
         const result: GuidanceMapping[] = [];
         for (const [sourceUrn, targets] of bySourceUrn) {
-            // Resolve ISO control ref_id from source URN
+            // Resolve ISO practice ref_id from source URN
             const isoNode = isoLib.framework.nodesByUrn.get(sourceUrn);
             if (!isoNode) continue;
 

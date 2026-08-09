@@ -6,7 +6,7 @@
  * `text-[var(--brand-default)] hover:underline` cocktail across 5
  * call sites:
  *
- *   • controls/[controlId]/page.tsx (×2) — evidence URL link,
+ *   • practices/[practiceId]/page.tsx (×2) — evidence URL link,
  *     evidence card link
  *   • vendors/VendorsClient.tsx — vendor name link in row
  *

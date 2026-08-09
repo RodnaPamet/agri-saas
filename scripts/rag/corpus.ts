@@ -337,7 +337,7 @@ const BARLEY_HARVEST_EN =
     'Grain moisture: harvest typically happens around 13–14% moisture; barley matures and dries faster than wheat, so the field should be checked more often in late dough/ripening. ' +
     'Ear brittleness: a fully ripe barley ear shatters easily and grain sheds readily — delayed harvest increases shatter losses more than it does in wheat. ' +
     'Colour: full yellowing of the ear and stem, with no green remaining, indicates physiological maturity. ' +
-    'Storage: malting barley needs tighter moisture and temperature control in storage to preserve germination capacity for malting; ventilate and monitor silo temperature regularly.';
+    'Storage: malting barley needs tighter moisture and temperature practice in storage to preserve germination capacity for malting; ventilate and monitor silo temperature regularly.';
 
 // ─── Maize / Царевица ───────────────────────────────────────────────
 

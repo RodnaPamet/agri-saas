@@ -40,11 +40,11 @@ jest.mock('@/lib/prisma', () => ({
         tenant: { findUnique: (...args: unknown[]) => mockTenantFindUnique(...args) },
         notificationOutbox: { create: (...args: unknown[]) => mockOutboxCreate(...args) },
         tenantNotificationSettings: { findUnique: jest.fn().mockResolvedValue(null) },
-        control: { findMany: jest.fn().mockResolvedValue([]) },
+        practice: { findMany: jest.fn().mockResolvedValue([]) },
         policy: { findMany: jest.fn().mockResolvedValue([]) },
         task: { findMany: jest.fn().mockResolvedValue([]) },
         risk: { findMany: jest.fn().mockResolvedValue([]) },
-        controlTestPlan: { findMany: jest.fn().mockResolvedValue([]) },
+        practiceTestPlan: { findMany: jest.fn().mockResolvedValue([]) },
         evidence: { findMany: jest.fn().mockResolvedValue([]) },
     },
 }));
@@ -66,11 +66,11 @@ import {
 
 function makeDueItem(overrides: Partial<DueItem> = {}): DueItem {
     return {
-        entityType: 'CONTROL',
+        entityType: 'PRACTICE',
         entityId: 'ctrl-1',
         tenantId: 'tenant-1',
         name: 'Firewall Review',
-        reason: 'Control testing overdue by 5 day(s)',
+        reason: 'Practice testing overdue by 5 day(s)',
         urgency: 'OVERDUE',
         dueDate: '2026-04-12T00:00:00Z',
         daysRemaining: -5,

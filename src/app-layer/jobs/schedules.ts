@@ -6,7 +6,7 @@
  * automatically enqueues jobs at the specified cadence.
  *
  * Schedule semantics (preserved from legacy cron docs/comments):
- *   - automation-runner:       every 15 min (control check scheduling)
+ *   - automation-runner:       every 15 min (practice check scheduling)
  *   - daily-evidence-expiry:   daily at 06:00 UTC (sweep + outbox)
  *   - data-lifecycle:          daily at 03:00 UTC (purge + retention)
  *   - policy-review-reminder:  daily at 08:00 UTC (overdue review audit)
@@ -59,7 +59,7 @@ export const SCHEDULED_JOBS: ScheduleDefinition[] = [
     {
         name: 'automation-runner',
         pattern: '*/15 * * * *',  // every 15 minutes
-        description: 'Execute scheduled automation/integration checks for controls',
+        description: 'Execute scheduled automation/integration checks for practices',
         defaultPayload: {},
     },
     {

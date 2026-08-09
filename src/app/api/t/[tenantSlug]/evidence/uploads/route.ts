@@ -25,7 +25,7 @@ export const POST = withApiErrorHandling(async (req: NextRequest, { params: para
 
     const metadata = {
         title: formData.get('title') as string | undefined,
-        controlId: formData.get('controlId') as string | null,
+        practiceId: formData.get('practiceId') as string | null,
         taskId: formData.get('taskId') as string | null,
         assetId: formData.get('assetId') as string | null,
         category: formData.get('category') as string | null,

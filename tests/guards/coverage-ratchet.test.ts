@@ -98,7 +98,7 @@ const RATCHET_FLOOR: Record<string, Metrics> = {
     //   - `framework/coverage.ts` (313 lines): file-level 98/78/95/98
     //     (the lower branches comes from nuanced section/category
     //     fallback chains).
-    //   - `control/queries.ts` (337 lines): file-level 100/95/100/100
+    //   - `practice/queries.ts` (337 lines): file-level 100/95/100/100
     //     (dashboard aggregator + consistency-check + RBAC + 3 not-
     //     found paths).
     // Combined ~143 covered branches. Conservative +1 across all
@@ -114,7 +114,7 @@ const RATCHET_FLOOR: Record<string, Metrics> = {
     // Combined ~85 covered branches; +1 across all metrics
     // (matches stage 3f's broader-tree-dilution pattern).
     // Stage 3h (this wave): 54 tests across FIVE small files in
-    // one PR. `control/page-data.ts` was dropped from the original
+    // one PR. `practice/page-data.ts` was dropped from the original
     // candidate list (already at 100/94/100/100); replaced with
     // `soft-delete-operations.ts`.
     //   - `test-readiness.ts` (105 lines): file-level **100/75/100/100**.

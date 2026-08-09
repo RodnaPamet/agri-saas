@@ -1,18 +1,18 @@
 /**
  * Scheduled Automation Runner
  *
- * Cron-based job that finds Controls with automationKey configured,
+ * Cron-based job that finds Practices with automationKey configured,
  * determines which are due for execution, and dispatches checks.
  *
  * ═══════════════════════════════════════════════════════════════════════
  * DUE-SELECTION RULES
  * ═══════════════════════════════════════════════════════════════════════
  *
- * A control is due for an automated check when ALL of:
+ * A practice is due for an automated check when ALL of:
  *   1. automationKey is set (non-null)
  *   2. evidenceSource = 'INTEGRATION' (explicitly opted in)
- *   3. Control is not soft-deleted (deletedAt is null)
- *   4. Control is APPLICABLE
+ *   3. Practice is not soft-deleted (deletedAt is null)
+ *   4. Practice is APPLICABLE
  *   5. nextDueAt <= now (schedule window reached)
  *   6. No successful execution exists within the current frequency window
  *      (idempotency / duplicate-run protection)
@@ -35,7 +35,7 @@
  * After each check:
  *   - IntegrationExecution row created (PASSED/FAILED/ERROR)
  *   - Evidence row created (type: CONFIGURATION, source: integration)
- *   - Control.nextDueAt advanced to next window
+ *   - Practice.nextDueAt advanced to next window
  *
  * Usage (cron):
  *   import { runScheduledAutomations } from '@/app-layer/jobs/automation-runner';
@@ -73,7 +73,7 @@ export interface AutomationRunnerResult {
     jobRunId: string;
 }
 
-interface DueControl {
+interface DuePractice {
     id: string;
     tenantId: string;
     automationKey: string;
@@ -110,23 +110,23 @@ export function computeNextDueAt(frequency: string | null, fromDate: Date): Date
     return new Date(fromDate.getTime() + interval);
 }
 
-// ─── Due Control Selection ───────────────────────────────────────────
+// ─── Due Practice Selection ───────────────────────────────────────────
 
 /**
- * Find controls that are due for automated checks.
+ * Find practices that are due for automated checks.
  *
- * A control is due when:
+ * A practice is due when:
  *   - automationKey is set
  *   - evidenceSource = 'INTEGRATION'
  *   - not deleted, is APPLICABLE
  *   - nextDueAt <= now (or nextDueAt is null and frequency is set)
  *   - no execution within current frequency window
  */
-export async function findDueAutomationControls(
+export async function findDueAutomationPractices(
     now: Date,
     tenantId?: string
-): Promise<DueControl[]> {
-    const where: Prisma.ControlWhereInput = {
+): Promise<DuePractice[]> {
+    const where: Prisma.PracticeWhereInput = {
         automationKey: { not: null },
         evidenceSource: 'INTEGRATION',
         deletedAt: null,
@@ -141,10 +141,10 @@ export async function findDueAutomationControls(
     if (tenantId) {
         where.tenantId = tenantId;
     } else {
-        where.tenantId = { not: null }; // only tenant-scoped controls
+        where.tenantId = { not: null }; // only tenant-scoped practices
     }
 
-    const controls = await prisma.control.findMany({
+    const practices = await prisma.practice.findMany({
         where,
         select: {
             id: true,
@@ -158,10 +158,10 @@ export async function findDueAutomationControls(
         take: 500, // bounded batch size
     });
 
-    // Filter: skip controls where a recent execution already exists within the window
-    const dueControls: DueControl[] = [];
+    // Filter: skip practices where a recent execution already exists within the window
+    const duePractices: DuePractice[] = [];
 
-    for (const ctrl of controls) {
+    for (const ctrl of practices) {
         if (!ctrl.tenantId || !ctrl.automationKey) continue;
 
         const interval = getFrequencyIntervalMs(ctrl.frequency);
@@ -171,7 +171,7 @@ export async function findDueAutomationControls(
         const windowStart = new Date(now.getTime() - interval);
         const recentExecution = await prisma.integrationExecution.findFirst({
             where: {
-                controlId: ctrl.id,
+                practiceId: ctrl.id,
                 tenantId: ctrl.tenantId,
                 automationKey: ctrl.automationKey,
                 status: { in: ['PASSED', 'FAILED', 'RUNNING'] },
@@ -181,7 +181,7 @@ export async function findDueAutomationControls(
         });
 
         if (!recentExecution) {
-            dueControls.push({
+            duePractices.push({
                 id: ctrl.id,
                 tenantId: ctrl.tenantId,
                 automationKey: ctrl.automationKey,
@@ -192,10 +192,10 @@ export async function findDueAutomationControls(
         }
     }
 
-    return dueControls;
+    return duePractices;
 }
 
-// ─── Single Control Execution ────────────────────────────────────────
+// ─── Single Practice Execution ────────────────────────────────────────
 
 /**
  * Decrypt connection secrets safely.
@@ -210,30 +210,30 @@ function decryptSecrets(secretEncrypted: string | null): Record<string, unknown>
 }
 
 /**
- * Execute an automation check for a single control.
- * Creates IntegrationExecution, Evidence, and updates Control scheduling.
+ * Execute an automation check for a single practice.
+ * Creates IntegrationExecution, Evidence, and updates Practice scheduling.
  */
-export async function executeControlAutomation(
-    control: DueControl,
+export async function executePracticeAutomation(
+    practice: DuePractice,
     jobRunId: string,
     now: Date
 ): Promise<{ status: 'PASSED' | 'FAILED' | 'ERROR'; executionId: string }> {
-    const parsed = parseAutomationKey(control.automationKey);
+    const parsed = parseAutomationKey(practice.automationKey);
     if (!parsed) {
         logger.warn('Invalid automationKey', {
             component: 'automation-runner',
-            controlId: control.id,
-            automationKey: control.automationKey,
+            practiceId: practice.id,
+            automationKey: practice.automationKey,
         });
         return { status: 'ERROR', executionId: '' };
     }
 
     // Resolve provider
-    const resolution = registry.resolveByAutomationKey(control.automationKey);
+    const resolution = registry.resolveByAutomationKey(practice.automationKey);
     if (!resolution) {
         logger.warn('No provider for automationKey', {
             component: 'automation-runner',
-            automationKey: control.automationKey,
+            automationKey: practice.automationKey,
         });
         return { status: 'ERROR', executionId: '' };
     }
@@ -250,7 +250,7 @@ export async function executeControlAutomation(
     // Find active connection
     const connection = await prisma.integrationConnection.findFirst({
         where: {
-            tenantId: control.tenantId,
+            tenantId: practice.tenantId,
             provider: parsed.provider,
             isEnabled: true,
         },
@@ -259,7 +259,7 @@ export async function executeControlAutomation(
     if (!connection) {
         logger.warn('No active connection for provider', {
             component: 'automation-runner',
-            tenantId: control.tenantId,
+            tenantId: practice.tenantId,
             provider: parsed.provider,
         });
         return { status: 'ERROR', executionId: '' };
@@ -268,11 +268,11 @@ export async function executeControlAutomation(
     // Create RUNNING execution
     const execution = await prisma.integrationExecution.create({
         data: {
-            tenantId: control.tenantId,
+            tenantId: practice.tenantId,
             connectionId: connection.id,
             provider: parsed.provider,
-            automationKey: control.automationKey,
-            controlId: control.id,
+            automationKey: practice.automationKey,
+            practiceId: practice.id,
             status: 'RUNNING',
             triggeredBy: 'scheduled',
             jobRunId,
@@ -286,10 +286,10 @@ export async function executeControlAutomation(
     try {
         const secrets = decryptSecrets(connection.secretEncrypted);
         const checkInput: CheckInput = {
-            automationKey: control.automationKey,
+            automationKey: practice.automationKey,
             parsed,
-            tenantId: control.tenantId,
-            controlId: control.id,
+            tenantId: practice.tenantId,
+            practiceId: practice.id,
             connectionConfig: {
                 ...(connection.configJson as Record<string, unknown>),
                 ...secrets,
@@ -322,10 +322,10 @@ export async function executeControlAutomation(
     let evidenceId: string | undefined;
     const evidencePayload = provider.mapResultToEvidence(
         {
-            automationKey: control.automationKey,
+            automationKey: practice.automationKey,
             parsed,
-            tenantId: control.tenantId,
-            controlId: control.id,
+            tenantId: practice.tenantId,
+            practiceId: practice.id,
             connectionConfig: {},
             triggeredBy: 'scheduled',
             jobRunId,
@@ -336,8 +336,8 @@ export async function executeControlAutomation(
     if (evidencePayload) {
         const evidence = await prisma.evidence.create({
             data: {
-                tenantId: control.tenantId,
-                controlId: control.id,
+                tenantId: practice.tenantId,
+                practiceId: practice.id,
                 // EvidencePayload.type uses integration-layer vocab (CONFIGURATION etc.)
                 // that maps to Prisma EvidenceType at runtime; cast is narrow and bounded.
                 type: evidencePayload.type as EvidenceType,
@@ -363,16 +363,16 @@ export async function executeControlAutomation(
         },
     });
 
-    // Advance control scheduling. This also wrote `lastTested: now`
-    // until that column went with the control exoskeleton — a stale
+    // Advance practice scheduling. This also wrote `lastTested: now`
+    // until that column went with the practice exoskeleton — a stale
     // scalar in a Prisma `update` throws at runtime rather than being
     // ignored, so every scheduled automation run was failing here. The
     // run timestamp is still recorded on the IntegrationExecution row
     // written above, which is where callers read it from.
-    const nextDueAt = computeNextDueAt(control.frequency, now);
+    const nextDueAt = computeNextDueAt(practice.frequency, now);
     if (nextDueAt) {
-        await prisma.control.update({
-            where: { id: control.id },
+        await prisma.practice.update({
+            where: { id: practice.id },
             data: { nextDueAt },
         });
     }
@@ -396,50 +396,50 @@ export async function runScheduledAutomations(
         const dryRun = options.dryRun ?? false;
         const jobRunId = crypto.randomUUID();
 
-        // 1. Find due controls
-        const dueControls = await findDueAutomationControls(now, options.tenantId);
+        // 1. Find due practices
+        const duePractices = await findDueAutomationPractices(now, options.tenantId);
 
-        logger.info('Automation runner: due controls found', {
+        logger.info('Automation runner: due practices found', {
             component: 'automation-runner',
-            totalDue: dueControls.length,
+            totalDue: duePractices.length,
             dryRun,
             jobRunId,
         });
 
         if (dryRun) {
             return {
-                totalDue: dueControls.length,
+                totalDue: duePractices.length,
                 executed: 0,
                 passed: 0,
                 failed: 0,
                 errors: 0,
-                skipped: dueControls.length,
+                skipped: duePractices.length,
                 dryRun: true,
                 jobRunId,
             };
         }
 
-        // 2. Execute each control
+        // 2. Execute each practice
         let executed = 0;
         let passed = 0;
         let failed = 0;
         let errors = 0;
         let skipped = 0;
 
-        for (const control of dueControls) {
+        for (const practice of duePractices) {
             // Verify provider exists before executing
-            if (!registry.canHandle(control.automationKey)) {
+            if (!registry.canHandle(practice.automationKey)) {
                 skipped++;
                 logger.info('Automation runner: skipping (no provider)', {
                     component: 'automation-runner',
-                    controlId: control.id,
-                    automationKey: control.automationKey,
+                    practiceId: practice.id,
+                    automationKey: practice.automationKey,
                 });
                 continue;
             }
 
             try {
-                const result = await executeControlAutomation(control, jobRunId, now);
+                const result = await executePracticeAutomation(practice, jobRunId, now);
                 executed++;
 
                 switch (result.status) {
@@ -451,7 +451,7 @@ export async function runScheduledAutomations(
                 errors++;
                 logger.error('Automation runner: execution failed', {
                     component: 'automation-runner',
-                    controlId: control.id,
+                    practiceId: practice.id,
                     err: err instanceof Error ? err : new Error(String(err)),
                 });
             }
@@ -460,7 +460,7 @@ export async function runScheduledAutomations(
         logger.info('Automation runner: batch complete', {
             component: 'automation-runner',
             jobRunId,
-            totalDue: dueControls.length,
+            totalDue: duePractices.length,
             executed,
             passed,
             failed,
@@ -469,7 +469,7 @@ export async function runScheduledAutomations(
         });
 
         return {
-            totalDue: dueControls.length,
+            totalDue: duePractices.length,
             executed,
             passed,
             failed,

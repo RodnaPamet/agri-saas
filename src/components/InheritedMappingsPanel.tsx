@@ -2,11 +2,11 @@
 
 /**
  * Read-only framework-mappings list for Asset / Risk detail pages.
- * Framework requirements map to controls, so an asset/risk inherits
- * its framework coverage from the controls it is mapped to. This
+ * Framework requirements map to practices, so an asset/risk inherits
+ * its framework coverage from the practices it is mapped to. This
  * panel fetches the aggregated requirement links (each tagged with
- * its owning control) and renders them — no add/unlink, since the
- * mapping lives on the control.
+ * its owning practice) and renders them — no add/unlink, since the
+ * mapping lives on the practice.
  */
 import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
@@ -16,7 +16,7 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import { EmptyState } from '@/components/ui/empty-state';
 import { InlineNotice } from '@/components/ui/inline-notice';
 
-interface ControlRef {
+interface PracticeRef {
     id: string;
     code: string | null;
     name: string;
@@ -31,7 +31,7 @@ interface InheritedMappingRow {
     code: string;
     title: string;
     framework: FrameworkRef | null;
-    control: ControlRef | null;
+    practice: PracticeRef | null;
 }
 
 export function InheritedMappingsPanel({
@@ -103,13 +103,13 @@ export function InheritedMappingsPanel({
                 ),
         },
         {
-            id: 'control',
-            header: t('colViaControl'),
+            id: 'practice',
+            header: t('colViaPractice'),
             cell: ({ row }) =>
-                row.original.control ? (
-                    <TableTitleCell href={tenantHref(`/controls/${row.original.control.id}`)}>
-                        {row.original.control.code ||
-                            row.original.control.name}
+                row.original.practice ? (
+                    <TableTitleCell href={tenantHref(`/practices/${row.original.practice.id}`)}>
+                        {row.original.practice.code ||
+                            row.original.practice.name}
                     </TableTitleCell>
                 ) : (
                     <span className="text-xs text-content-subtle">—</span>
@@ -126,7 +126,7 @@ export function InheritedMappingsPanel({
                 data={rows}
                 columns={columns}
                 loading={loading}
-                getRowId={(r) => `${r.requirementId}:${r.control?.id ?? 'none'}`}
+                getRowId={(r) => `${r.requirementId}:${r.practice?.id ?? 'none'}`}
                 emptyState={
                     <EmptyState
                         size="sm"

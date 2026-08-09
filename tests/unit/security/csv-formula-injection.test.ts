@@ -7,7 +7,7 @@
  * right, and Excel still runs it.
  *
  * It matters on these exports specifically because they are the
- * hand-this-to-your-certifier path. Control names and applicability
+ * hand-this-to-your-certifier path. Practice names and applicability
  * justifications are tenant-authored free text, and the file's entire purpose
  * is to be opened in a spreadsheet by someone outside the farm — a person who
  * has no reason to distrust a document their client sent them.

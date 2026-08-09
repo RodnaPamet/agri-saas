@@ -1,6 +1,6 @@
 /**
  * B7 (2026-06-07) — a "Tasks" column on the Asset + Risk list tables,
- * mirroring Controls (done/total linked-task count).
+ * mirroring Practices (done/total linked-task count).
  *
  * Backend: `WorkItemRepository.countLinkedToEntities` is a generic batched
  * TaskLink counter (one indexed query, no FK path) used by `listAssets` +

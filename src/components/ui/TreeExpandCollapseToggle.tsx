@@ -12,7 +12,7 @@
  * derived from `expandedCount` vs `totalExpandable`.
  *
  * Inspired by the explorer-style pattern used in Vanta and Drata
- * for control / requirement libraries — two compact buttons grouped
+ * for practice / requirement libraries — two compact buttons grouped
  * together, with the inactive side de-emphasised. Clearer than a
  * single toggle that hides one action behind state.
  */

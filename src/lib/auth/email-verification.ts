@@ -210,7 +210,7 @@ export type ConsumeResult =
  * `invalid` and `expired` are both user-facing — the verify endpoint
  * surfaces them because knowing "your link expired" is a legitimately
  * useful UX message that isn't a meaningful enumeration vector (an
- * attacker guessing 256-bit tokens is already past any other control).
+ * attacker guessing 256-bit tokens is already past any other practice).
  */
 export async function consumeEmailVerification(
     rawToken: string,

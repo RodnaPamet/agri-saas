@@ -13,21 +13,21 @@ import {
     aggregateComplianceStatus,
     computeRequirementComplianceStatus,
     decorateTreeWithCompliance,
-    type ControlForCompliance,
+    type PracticeForCompliance,
 } from '@/lib/framework-tree/compliance';
 import type { FrameworkTreeNode } from '@/lib/framework-tree/types';
 
 const C = (
-    status: ControlForCompliance['status'],
-    applicability: ControlForCompliance['applicability'] = 'APPLICABLE',
-): ControlForCompliance => ({ status, applicability });
+    status: PracticeForCompliance['status'],
+    applicability: PracticeForCompliance['applicability'] = 'APPLICABLE',
+): PracticeForCompliance => ({ status, applicability });
 
 describe('computeRequirementComplianceStatus', () => {
-    it('returns "gap" when no controls are mapped', () => {
+    it('returns "gap" when no practices are mapped', () => {
         expect(computeRequirementComplianceStatus([])).toBe('gap');
     });
 
-    it('returns "compliant" when every applicable control is IMPLEMENTED', () => {
+    it('returns "compliant" when every applicable practice is IMPLEMENTED', () => {
         expect(
             computeRequirementComplianceStatus([
                 C('IMPLEMENTED'),
@@ -53,7 +53,7 @@ describe('computeRequirementComplianceStatus', () => {
         ).toBe('partial');
     });
 
-    it('returns "gap" when none of the applicable controls are IMPLEMENTED', () => {
+    it('returns "gap" when none of the applicable practices are IMPLEMENTED', () => {
         expect(
             computeRequirementComplianceStatus([
                 C('IN_PROGRESS'),
@@ -63,7 +63,7 @@ describe('computeRequirementComplianceStatus', () => {
         ).toBe('gap');
     });
 
-    it('returns "na" when every mapped control is NOT_APPLICABLE', () => {
+    it('returns "na" when every mapped practice is NOT_APPLICABLE', () => {
         expect(
             computeRequirementComplianceStatus([
                 C('IN_PROGRESS', 'NOT_APPLICABLE'),
@@ -72,7 +72,7 @@ describe('computeRequirementComplianceStatus', () => {
         ).toBe('na');
     });
 
-    it('treats NOT_APPLICABLE controls as ignored, not gaps', () => {
+    it('treats NOT_APPLICABLE practices as ignored, not gaps', () => {
         // Mixing one IMPLEMENTED applicable + one NOT_APPLICABLE
         // (any status) → the N/A is ignored, so the requirement is
         // fully compliant.
@@ -160,12 +160,12 @@ describe('decorateTreeWithCompliance', () => {
         };
     }
 
-    it('decorates every node with a status from the controls lookup', () => {
+    it('decorates every node with a status from the practices lookup', () => {
         const tree: FrameworkTreeNode[] = [
             section('s-org', 'ORG', [req('r-5.1', '5.1'), req('r-5.2', '5.2')]),
             section('s-people', 'PEOPLE', [req('r-6.1', '6.1')]),
         ];
-        const ctlMap = new Map<string, ControlForCompliance[]>([
+        const ctlMap = new Map<string, PracticeForCompliance[]>([
             ['r-5.1', [C('IMPLEMENTED')]],
             ['r-5.2', [C('IN_PROGRESS')]],
             ['r-6.1', [C('IMPLEMENTED', 'NOT_APPLICABLE')]],
@@ -185,15 +185,15 @@ describe('decorateTreeWithCompliance', () => {
                 req('r-3', '3'),
             ]),
         ];
-        const ctlMap = new Map<string, ControlForCompliance[]>([
+        const ctlMap = new Map<string, PracticeForCompliance[]>([
             ['r-1', [C('IMPLEMENTED')]],
             ['r-2', [C('IN_PROGRESS')]],
-            // r-3 has no mapped controls → gap
+            // r-3 has no mapped practices → gap
         ]);
         const out = decorateTreeWithCompliance(tree, ctlMap);
         const counts = out[0].statusCounts!;
         expect(counts.compliant).toBe(1);
-        expect(counts.gap).toBe(2); // r-2 → gap (no IMPLEMENTED), r-3 → gap (no controls)
+        expect(counts.gap).toBe(2); // r-2 → gap (no IMPLEMENTED), r-3 → gap (no practices)
         expect(counts.partial).toBe(0);
         expect(counts.na).toBe(0);
         expect(counts.compliant + counts.partial + counts.gap + counts.na).toBe(3);
@@ -203,7 +203,7 @@ describe('decorateTreeWithCompliance', () => {
         const original: FrameworkTreeNode[] = [
             section('s', 'S', [req('r-1', '1')]),
         ];
-        const ctlMap = new Map<string, ControlForCompliance[]>([
+        const ctlMap = new Map<string, PracticeForCompliance[]>([
             ['r-1', [C('IMPLEMENTED')]],
         ]);
         decorateTreeWithCompliance(original, ctlMap);
@@ -214,7 +214,7 @@ describe('decorateTreeWithCompliance', () => {
     it('aggregates 3+ levels deep — section → requirement → sub-requirement', () => {
         // Section with one requirement (5.1) that itself has two
         // sub-requirements (5.1.1, 5.1.2). The parent requirement
-        // 5.1 has no own controls; status comes from leaf children.
+        // 5.1 has no own practices; status comes from leaf children.
         const sub1 = req('r-5.1.1', '5.1.1');
         const sub2 = req('r-5.1.2', '5.1.2');
         const parent = req('r-5.1', '5.1');
@@ -223,10 +223,10 @@ describe('decorateTreeWithCompliance', () => {
         parent.childCount = 2;
         parent.descendantCount = 2;
         const tree = [section('s', 'S', [parent])];
-        const ctlMap = new Map<string, ControlForCompliance[]>([
+        const ctlMap = new Map<string, PracticeForCompliance[]>([
             ['r-5.1.1', [C('IMPLEMENTED')]],
             ['r-5.1.2', [C('IN_PROGRESS')]],
-            // r-5.1 has no controls of its own — status comes from
+            // r-5.1 has no practices of its own — status comes from
             // its mapping (gap), but the SECTION aggregates over
             // leaves only.
         ]);

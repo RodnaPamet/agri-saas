@@ -11,7 +11,7 @@
  *   - progress callback wires the percent into the row's status label
  *   - upload error surfaces on the row
  *
- * Approach: stub `onUpload` so we control progress + completion
+ * Approach: stub `onUpload` so we practice progress + completion
  * synchronously via a Promise we resolve from the test. No real XHR.
  */
 

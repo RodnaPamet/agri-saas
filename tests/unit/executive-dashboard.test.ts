@@ -2,7 +2,7 @@
  * Executive Dashboard Aggregation Tests
  *
  * Verifies:
- * 1. Control coverage % is calculated correctly
+ * 1. Practice coverage % is calculated correctly
  * 3. Evidence expiry logic handles edge cases
  * 4. Tenant scoping is preserved
  * 5. Empty datasets return sensible zeros
@@ -20,7 +20,7 @@ jest.mock('@/lib/db-context', () => ({
 
 import {
     DashboardRepository,
-    type ControlCoverage,
+    type PracticeCoverage,
     type RiskBySeverity,
     type EvidenceExpiry,
 } from '@/app-layer/repositories/DashboardRepository';
@@ -45,24 +45,24 @@ beforeEach(() => {
     Object.keys(mockTx).forEach(k => delete mockTx[k]);
 });
 
-// ─── Control Coverage ───
+// ─── Practice Coverage ───
 
-describe('Dashboard — Control Coverage', () => {
-    function setupControlMock(groups: { status: string; _count: number }[], total: number) {
-        mockTx.control = {
+describe('Dashboard — Practice Coverage', () => {
+    function setupPracticeMock(groups: { status: string; _count: number }[], total: number) {
+        mockTx.practice = {
             groupBy: jest.fn(async () => groups),
             count: jest.fn(async () => total),
         };
     }
 
     it('calculates coverage % correctly', async () => {
-        setupControlMock([
+        setupPracticeMock([
             { status: 'IMPLEMENTED', _count: 7 },
             { status: 'IN_PROGRESS', _count: 2 },
             { status: 'NOT_STARTED', _count: 1 },
         ], 12);
 
-        const result: ControlCoverage = await DashboardRepository.getControlCoverage(mockTx as never, makeCtx());
+        const result: PracticeCoverage = await DashboardRepository.getPracticeCoverage(mockTx as never, makeCtx());
 
         // 7 implemented out of 10 applicable = 70%
         expect(result.implemented).toBe(7);
@@ -73,10 +73,10 @@ describe('Dashboard — Control Coverage', () => {
         expect(result.total).toBe(12);
     });
 
-    it('returns 0% for empty control set', async () => {
-        setupControlMock([], 0);
+    it('returns 0% for empty practice set', async () => {
+        setupPracticeMock([], 0);
 
-        const result = await DashboardRepository.getControlCoverage(mockTx as never, makeCtx());
+        const result = await DashboardRepository.getPracticeCoverage(mockTx as never, makeCtx());
 
         expect(result.coveragePercent).toBe(0);
         expect(result.applicable).toBe(0);
@@ -84,11 +84,11 @@ describe('Dashboard — Control Coverage', () => {
     });
 
     it('handles all IMPLEMENTED (100%)', async () => {
-        setupControlMock([
+        setupPracticeMock([
             { status: 'IMPLEMENTED', _count: 20 },
         ], 22);
 
-        const result = await DashboardRepository.getControlCoverage(mockTx as never, makeCtx());
+        const result = await DashboardRepository.getPracticeCoverage(mockTx as never, makeCtx());
 
         expect(result.coveragePercent).toBe(100);
         expect(result.implemented).toBe(20);
@@ -96,24 +96,24 @@ describe('Dashboard — Control Coverage', () => {
     });
 
     it('handles rounding to 1 decimal', async () => {
-        setupControlMock([
+        setupPracticeMock([
             { status: 'IMPLEMENTED', _count: 1 },
             { status: 'NOT_STARTED', _count: 2 },
         ], 3);
 
-        const result = await DashboardRepository.getControlCoverage(mockTx as never, makeCtx());
+        const result = await DashboardRepository.getPracticeCoverage(mockTx as never, makeCtx());
 
         // 1/3 = 33.3333... → rounds to 33.3
         expect(result.coveragePercent).toBe(33.3);
     });
 
     it('combines IN_PROGRESS and IMPLEMENTING statuses', async () => {
-        setupControlMock([
+        setupPracticeMock([
             { status: 'IN_PROGRESS', _count: 3 },
             { status: 'IMPLEMENTING', _count: 2 },
         ], 5);
 
-        const result = await DashboardRepository.getControlCoverage(mockTx as never, makeCtx());
+        const result = await DashboardRepository.getPracticeCoverage(mockTx as never, makeCtx());
 
         expect(result.inProgress).toBe(5); // 3 + 2
     });

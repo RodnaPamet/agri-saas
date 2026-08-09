@@ -94,7 +94,7 @@ function makeKey(over: Record<string, unknown> = {}) {
         id: 'k-1',
         name: 'CI pipeline',
         keyPrefix: VISIBLE_PREFIX,
-        scopes: ['controls:read'],
+        scopes: ['practices:read'],
         expiresAt: null,
         revokedAt: null,
         lastUsedAt: null,

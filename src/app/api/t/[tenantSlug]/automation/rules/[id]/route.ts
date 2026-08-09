@@ -13,7 +13,7 @@ import {
 import { UpdateAutomationRuleSchema } from '@/app-layer/schemas/automation.schemas';
 
 /**
- * Lightweight PATCH for the detail-sheet quick controls (Epic 2): an
+ * Lightweight PATCH for the detail-sheet quick practices (Epic 2): an
  * enable/disable toggle and the priority stepper. Heavier reconfiguration
  * (trigger/action/filter) goes through PUT.
  */

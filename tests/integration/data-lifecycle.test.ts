@@ -48,7 +48,7 @@ if (DB_AVAILABLE) {
     afterAll(async () => {
         // Clean up raw (bypass middleware)
         await prisma.$executeRawUnsafe('DELETE FROM "AuditLog" WHERE "tenantId" = $1', testTenantId).catch(() => {});
-        await prisma.$executeRawUnsafe('DELETE FROM "Control" WHERE "tenantId" = $1', testTenantId).catch(() => {});
+        await prisma.$executeRawUnsafe('DELETE FROM "Practice" WHERE "tenantId" = $1', testTenantId).catch(() => {});
         await prisma.$executeRawUnsafe('DELETE FROM "Vendor" WHERE "tenantId" = $1', testTenantId).catch(() => {});
         await prisma.$executeRawUnsafe('DELETE FROM "User" WHERE "id" = $1', testUserId).catch(() => {});
         await prisma.$executeRawUnsafe('DELETE FROM "Tenant" WHERE "id" = $1', testTenantId).catch(() => {});
@@ -61,15 +61,15 @@ describeFn('Data Lifecycle', () => {
 
     describe('purgeSoftDeletedOlderThan', () => {
         it('purges records whose grace period has elapsed', async () => {
-            const control = await prisma.control.create({
-                data: { tenantId: testTenantId, name: 'Old deleted control' },
+            const practice = await prisma.practice.create({
+                data: { tenantId: testTenantId, name: 'Old deleted practice' },
             });
 
             // Set deletedAt to 100 days ago via raw SQL
             const oldDate = new Date(Date.now() - 100 * 86_400_000);
             await prisma.$executeRawUnsafe(
-                'UPDATE "Control" SET "deletedAt" = $1 WHERE "id" = $2',
-                oldDate, control.id,
+                'UPDATE "Practice" SET "deletedAt" = $1 WHERE "id" = $2',
+                oldDate, practice.id,
             );
 
             // Run purge with 90-day grace
@@ -79,24 +79,24 @@ describeFn('Data Lifecycle', () => {
                 db: prisma,
             });
 
-            const controlResult = results.find(r => r.model === 'Control');
-            expect(controlResult).toBeDefined();
-            expect(controlResult!.purged).toBeGreaterThanOrEqual(1);
+            const practiceResult = results.find(r => r.model === 'Practice');
+            expect(practiceResult).toBeDefined();
+            expect(practiceResult!.purged).toBeGreaterThanOrEqual(1);
 
             // Verify hard-deleted
             const rows = await prisma.$queryRawUnsafe<Array<{ id: string }>>(
-                'SELECT "id" FROM "Control" WHERE "id" = $1', control.id,
+                'SELECT "id" FROM "Practice" WHERE "id" = $1', practice.id,
             );
             expect(rows).toHaveLength(0);
         });
 
         it('does NOT purge recently deleted records', async () => {
-            const control = await prisma.control.create({
+            const practice = await prisma.practice.create({
                 data: { tenantId: testTenantId, name: 'Recently deleted' },
             });
 
             // Soft-delete it (deletedAt = now)
-            await prisma.control.delete({ where: { id: control.id } });
+            await prisma.practice.delete({ where: { id: practice.id } });
 
             // Run purge with 90-day grace — should NOT purge
             await purgeSoftDeletedOlderThan({
@@ -107,14 +107,14 @@ describeFn('Data Lifecycle', () => {
 
             // Verify still exists (soft-deleted but not purged)
             const rows = await prisma.$queryRawUnsafe<Array<{ id: string }>>(
-                'SELECT "id" FROM "Control" WHERE "id" = $1', control.id,
+                'SELECT "id" FROM "Practice" WHERE "id" = $1', practice.id,
             );
             expect(rows).toHaveLength(1);
         });
 
         it('does NOT purge active (non-deleted) records', async () => {
-            const control = await prisma.control.create({
-                data: { tenantId: testTenantId, name: 'Active control' },
+            const practice = await prisma.practice.create({
+                data: { tenantId: testTenantId, name: 'Active practice' },
             });
 
             await purgeSoftDeletedOlderThan({
@@ -123,19 +123,19 @@ describeFn('Data Lifecycle', () => {
                 db: prisma,
             });
 
-            const found = await prisma.control.findUnique({ where: { id: control.id } });
+            const found = await prisma.practice.findUnique({ where: { id: practice.id } });
             expect(found).not.toBeNull();
         });
 
         it('emits DATA_PURGED audit event', async () => {
-            const control = await prisma.control.create({
+            const practice = await prisma.practice.create({
                 data: { tenantId: testTenantId, name: 'Purge audit test' },
             });
 
             const oldDate = new Date(Date.now() - 100 * 86_400_000);
             await prisma.$executeRawUnsafe(
-                'UPDATE "Control" SET "deletedAt" = $1 WHERE "id" = $2',
-                oldDate, control.id,
+                'UPDATE "Practice" SET "deletedAt" = $1 WHERE "id" = $2',
+                oldDate, practice.id,
             );
 
             await purgeSoftDeletedOlderThan({
@@ -147,7 +147,7 @@ describeFn('Data Lifecycle', () => {
             const auditLogs = await prisma.auditLog.findMany({
                 where: {
                     tenantId: testTenantId,
-                    entityId: control.id,
+                    entityId: practice.id,
                     action: 'DATA_PURGED',
                 },
             });
@@ -157,14 +157,14 @@ describeFn('Data Lifecycle', () => {
         });
 
         it('dryRun does not delete anything', async () => {
-            const control = await prisma.control.create({
+            const practice = await prisma.practice.create({
                 data: { tenantId: testTenantId, name: 'DryRun test' },
             });
 
             const oldDate = new Date(Date.now() - 200 * 86_400_000);
             await prisma.$executeRawUnsafe(
-                'UPDATE "Control" SET "deletedAt" = $1 WHERE "id" = $2',
-                oldDate, control.id,
+                'UPDATE "Practice" SET "deletedAt" = $1 WHERE "id" = $2',
+                oldDate, practice.id,
             );
 
             const results = await purgeSoftDeletedOlderThan({
@@ -174,14 +174,14 @@ describeFn('Data Lifecycle', () => {
                 db: prisma,
             });
 
-            const controlResult = results.find(r => r.model === 'Control');
-            expect(controlResult).toBeDefined();
-            expect(controlResult!.scanned).toBeGreaterThanOrEqual(1);
-            expect(controlResult!.purged).toBe(0);
+            const practiceResult = results.find(r => r.model === 'Practice');
+            expect(practiceResult).toBeDefined();
+            expect(practiceResult!.scanned).toBeGreaterThanOrEqual(1);
+            expect(practiceResult!.purged).toBe(0);
 
             // Record still exists
             const rows = await prisma.$queryRawUnsafe<Array<{ id: string }>>(
-                'SELECT "id" FROM "Control" WHERE "id" = $1', control.id,
+                'SELECT "id" FROM "Practice" WHERE "id" = $1', practice.id,
             );
             expect(rows).toHaveLength(1);
         });
@@ -276,7 +276,7 @@ describeFn('Data Lifecycle', () => {
         });
 
         it('dryRun does not soft-delete', async () => {
-            const control = await prisma.control.create({
+            const practice = await prisma.practice.create({
                 data: {
                     tenantId: testTenantId,
                     code: `DRY-${Date.now()}`,
@@ -286,8 +286,8 @@ describeFn('Data Lifecycle', () => {
 
             const pastDate = new Date(Date.now() - 5 * 86_400_000);
             await prisma.$executeRawUnsafe(
-                'UPDATE "Control" SET "retentionUntil" = $1 WHERE "id" = $2',
-                pastDate, control.id,
+                'UPDATE "Practice" SET "retentionUntil" = $1 WHERE "id" = $2',
+                pastDate, practice.id,
             );
 
             const results = await runRetentionSweep({
@@ -296,12 +296,12 @@ describeFn('Data Lifecycle', () => {
                 db: prisma,
             });
 
-            const controlResult = results.find(r => r.model === 'Control');
-            expect(controlResult).toBeDefined();
-            expect(controlResult!.scanned).toBeGreaterThanOrEqual(1);
+            const practiceResult = results.find(r => r.model === 'Practice');
+            expect(practiceResult).toBeDefined();
+            expect(practiceResult!.scanned).toBeGreaterThanOrEqual(1);
 
             // Should still be active
-            const found = await prisma.control.findUnique({ where: { id: control.id } });
+            const found = await prisma.practice.findUnique({ where: { id: practice.id } });
             expect(found).not.toBeNull();
         });
     });

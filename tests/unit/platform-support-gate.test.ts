@@ -1,7 +1,7 @@
 /**
  * The platform-support gate (#12).
  *
- * This is the control standing between one tenant's admins and every other
+ * This is the practice standing between one tenant's admins and every other
  * tenant's promotions feed, so the cases that matter are the negative ones —
  * especially the misconfiguration path. `PLATFORM_TENANT_SLUG` unset must make
  * the console unreachable for EVERYONE; a blank value that matched any slug

@@ -24,7 +24,7 @@ import { DB_AVAILABLE } from './db-helper';
 import { prismaTestClient } from '../helpers/db';
 import type { PrismaClient } from '@prisma/client';
 
-import { getNonPerformingControls } from '@/app-layer/usecases/portfolio';
+import { getNonPerformingPractices } from '@/app-layer/usecases/portfolio';
 import type { OrgContext } from '@/app-layer/types';
 import { generateAndWrapDek } from '@/lib/security/tenant-keys';
 import { logger } from '@/lib/observability/logger';
@@ -97,15 +97,15 @@ describeFn('Portfolio drill-down — auditor fan-out integrity (DB-backed)', () 
                 },
             });
 
-            // One non-performing control per tenant. This suite is about
+            // One non-performing practice per tenant. This suite is about
             // the FAN-OUT integrity property (does the drill-down reach
             // every tenant, and does a missing AUDITOR row surface as a
             // warning), not about the entity being drilled into — it used
             // the risk register until that was removed.
-            await prisma.control.create({
+            await prisma.practice.create({
                 data: {
                     tenantId: tenant.id,
-                    name: `t${i} non-performing control`,
+                    name: `t${i} non-performing practice`,
                     status: 'NOT_STARTED',
                     applicability: 'APPLICABLE',
                 },
@@ -114,7 +114,7 @@ describeFn('Portfolio drill-down — auditor fan-out integrity (DB-backed)', () 
     });
 
     afterAll(async () => {
-        await prisma.control.deleteMany({ where: { tenantId: { in: tenantIds } } }).catch(() => {});
+        await prisma.practice.deleteMany({ where: { tenantId: { in: tenantIds } } }).catch(() => {});
         await prisma.tenantMembership.deleteMany({ where: { tenantId: { in: tenantIds } } }).catch(() => {});
         await prisma.tenant.deleteMany({ where: { id: { in: tenantIds } } }).catch(() => {});
         await prisma.orgMembership.deleteMany({ where: { organizationId: orgId } }).catch(() => {});
@@ -126,8 +126,8 @@ describeFn('Portfolio drill-down — auditor fan-out integrity (DB-backed)', () 
     it('healthy fan-out: drill-down returns rows from ALL three tenants, no warning', async () => {
         const warnSpy = jest.spyOn(logger, 'warn');
         try {
-            const rows = await getNonPerformingControls(ctxFor());
-            // 3 non-performing controls visible (one per tenant).
+            const rows = await getNonPerformingPractices(ctxFor());
+            // 3 non-performing practices visible (one per tenant).
             expect(rows).toHaveLength(3);
             // No drift warning emitted on the healthy path.
             const driftWarnings = warnSpy.mock.calls.filter(
@@ -147,7 +147,7 @@ describeFn('Portfolio drill-down — auditor fan-out integrity (DB-backed)', () 
 
         const warnSpy = jest.spyOn(logger, 'warn');
         try {
-            const rows = await getNonPerformingControls(ctxFor());
+            const rows = await getNonPerformingPractices(ctxFor());
 
             // Drill-down still works for the 2 accessible tenants.
             // Without the integrity check, the result would still be

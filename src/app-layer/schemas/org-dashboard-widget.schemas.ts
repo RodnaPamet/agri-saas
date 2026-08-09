@@ -123,7 +123,7 @@ const DonutConfigSchema = z.object({
 
 const TrendChartType = z.enum([
     'risks-open',
-    'controls-coverage',
+    'practices-coverage',
     'evidence-overdue',
 ]);
 
@@ -187,9 +187,9 @@ const DrilldownCtasConfigSchema = z.object({
     config: z
         .object({
             /** Optional subset of CTAs to render. Empty / undefined =
-             *  render the canonical three (controls / risks / evidence). */
+             *  render the canonical three (practices / risks / evidence). */
             entries: z
-                .array(z.enum(['controls', 'risks', 'evidence']))
+                .array(z.enum(['practices', 'risks', 'evidence']))
                 .min(1)
                 .max(3)
                 .optional(),

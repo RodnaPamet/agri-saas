@@ -17,13 +17,13 @@ import type {
     FrameworkTreeNode,
 } from './types';
 
-// ─── Per-control inputs ────────────────────────────────────────────────
+// ─── Per-practice inputs ────────────────────────────────────────────────
 
 /**
- * The minimum a control must report to feed the rules. Aligns with
- * the columns the tree usecase selects from the `Control` model.
+ * The minimum a practice must report to feed the rules. Aligns with
+ * the columns the tree usecase selects from the `Practice` model.
  */
-export interface ControlForCompliance {
+export interface PracticeForCompliance {
     status:
         | 'NOT_STARTED'
         | 'PLANNED'
@@ -39,28 +39,28 @@ export interface ControlForCompliance {
 
 /**
  * Compute the compliance status of a single requirement from the
- * controls mapped to it.
+ * practices mapped to it.
  *
  * Rule table:
  *
- *   No mapped controls                          → 'gap'
- *   All mapped controls NOT_APPLICABLE          → 'na'
- *   (Considering only APPLICABLE controls:)
+ *   No mapped practices                          → 'gap'
+ *   All mapped practices NOT_APPLICABLE          → 'na'
+ *   (Considering only APPLICABLE practices:)
  *     All IMPLEMENTED                            → 'compliant'
  *     Some IMPLEMENTED, some not                 → 'partial'
  *     None IMPLEMENTED                           → 'gap'
  *
- * `Control.applicability === NOT_APPLICABLE` always wins over
- * `Control.status` — an N/A control never causes "partial" or
+ * `Practice.applicability === NOT_APPLICABLE` always wins over
+ * `Practice.status` — an N/A practice never causes "partial" or
  * "gap" by being un-implemented; that's the whole point of the
  * applicability flag.
  */
 export function computeRequirementComplianceStatus(
-    controls: ReadonlyArray<ControlForCompliance>,
+    practices: ReadonlyArray<PracticeForCompliance>,
 ): ComplianceStatus {
-    if (controls.length === 0) return 'gap';
+    if (practices.length === 0) return 'gap';
 
-    const applicable = controls.filter((c) => c.applicability !== 'NOT_APPLICABLE');
+    const applicable = practices.filter((c) => c.applicability !== 'NOT_APPLICABLE');
     if (applicable.length === 0) return 'na';
 
     let implemented = 0;
@@ -114,7 +114,7 @@ export function aggregateComplianceStatus(
 /**
  * Walk a built tree and decorate every node with
  * `complianceStatus` + `statusCounts`. Requirements pull their
- * status from the supplied `controlsByRequirementId` lookup;
+ * status from the supplied `practicesByRequirementId` lookup;
  * sections aggregate from their descendants.
  *
  * Returns a new array of root nodes — the input is not mutated.
@@ -124,7 +124,7 @@ export function aggregateComplianceStatus(
  */
 export function decorateTreeWithCompliance(
     nodes: ReadonlyArray<FrameworkTreeNode>,
-    controlsByRequirementId: ReadonlyMap<string, ReadonlyArray<ControlForCompliance>>,
+    practicesByRequirementId: ReadonlyMap<string, ReadonlyArray<PracticeForCompliance>>,
 ): FrameworkTreeNode[] {
     function emptyCounts() {
         return { compliant: 0, partial: 0, gap: 0, na: 0, unknown: 0 };
@@ -142,8 +142,8 @@ export function decorateTreeWithCompliance(
 
         let status: ComplianceStatus;
         if (node.kind === 'requirement') {
-            const ownControls = controlsByRequirementId.get(node.id) ?? [];
-            status = computeRequirementComplianceStatus(ownControls);
+            const ownPractices = practicesByRequirementId.get(node.id) ?? [];
+            status = computeRequirementComplianceStatus(ownPractices);
             bump(counts, status);
             // Descendant requirement counts (sub-requirements)
             for (const c of children) {
@@ -156,7 +156,7 @@ export function decorateTreeWithCompliance(
                 }
             }
         } else {
-            // Section — never has its own controls; aggregates from
+            // Section — never has its own practices; aggregates from
             // descendant requirement statuses.
             const descendantStatuses: ComplianceStatus[] = [];
             for (const c of children) {

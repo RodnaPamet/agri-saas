@@ -16,7 +16,7 @@ import * as React from 'react';
 
 import { SelectionSummaryPanel } from '@/components/ui/selection-summary-panel';
 
-const resourceLabel = { singular: 'control', plural: 'controls' };
+const resourceLabel = { singular: 'practice', plural: 'practices' };
 
 describe('<SelectionSummaryPanel>', () => {
     it('renders the count with the pluralised resource word', () => {
@@ -29,7 +29,7 @@ describe('<SelectionSummaryPanel>', () => {
         );
         const count = screen.getByTestId('selection-summary-count');
         expect(count).toHaveTextContent('3');
-        expect(count).toHaveTextContent('controls selected');
+        expect(count).toHaveTextContent('practices selected');
     });
 
     it('uses the singular resource word when exactly one row is selected', () => {
@@ -42,7 +42,7 @@ describe('<SelectionSummaryPanel>', () => {
         );
         expect(
             screen.getByTestId('selection-summary-count'),
-        ).toHaveTextContent('control selected');
+        ).toHaveTextContent('practice selected');
     });
 
     it('renders the batch verbs and fires their callbacks', async () => {

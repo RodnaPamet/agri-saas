@@ -23,10 +23,10 @@ export interface TrendDataPoint {
     /** ISO date string (YYYY-MM-DD) */
     date: string;
 
-    // Controls
-    controlCoveragePercent: number;
-    controlsImplemented: number;
-    controlsApplicable: number;
+    // Practices
+    practiceCoveragePercent: number;
+    practicesImplemented: number;
+    practicesApplicable: number;
 
     // Risks
 
@@ -77,9 +77,9 @@ export interface TrendPayload {
 function toDataPoint(s: ComplianceSnapshot): TrendDataPoint {
     return {
         date: s.snapshotDate.toISOString().slice(0, 10),
-        controlCoveragePercent: s.controlCoverageBps / 10,
-        controlsImplemented: s.controlsImplemented,
-        controlsApplicable: s.controlsApplicable,
+        practiceCoveragePercent: s.practiceCoverageBps / 10,
+        practicesImplemented: s.practicesImplemented,
+        practicesApplicable: s.practicesApplicable,
         evidenceOverdue: s.evidenceOverdue,
         evidenceDueSoon7d: s.evidenceDueSoon7d,
         evidenceCurrent: s.evidenceCurrent,

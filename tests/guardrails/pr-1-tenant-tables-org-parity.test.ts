@@ -15,7 +15,7 @@
  *   2. `<TableLoadMoreFooter>` exists and is gated on `hasMore`.
  *   3. `<EntityListPage>` carries a `tableFooter` slot rendered
  *      inside `ListPageShell.Body` AFTER the DataTable.
- *   4. ControlsClient consumes the hook + footer + the org-parity
+ *   4. PracticesClient consumes the hook + footer + the org-parity
  *      sortable headers (`sortableColumns`, `sortBy`, `sortOrder`,
  *      `onSortChange`).
  *   5. RisksClient + EvidenceClient match the same shape.
@@ -107,16 +107,16 @@ describe('PR-1 — tenant tables → org-level parity', () => {
         });
     });
 
-    describe('Tenant rollouts — Controls / Evidence', () => {
-        const controls = read(
-            'src/app/t/[tenantSlug]/(app)/controls/ControlsClient.tsx',
+    describe('Tenant rollouts — Practices / Evidence', () => {
+        const practices = read(
+            'src/app/t/[tenantSlug]/(app)/practices/PracticesClient.tsx',
         );
         const evidence = read(
             'src/app/t/[tenantSlug]/(app)/evidence/EvidenceClient.tsx',
         );
 
         const rollouts = [
-            { name: 'ControlsClient', src: controls, testId: 'tenant-controls-load-more', sortKey: 'code' },
+            { name: 'PracticesClient', src: practices, testId: 'tenant-practices-load-more', sortKey: 'code' },
             { name: 'EvidenceClient', src: evidence, testId: 'tenant-evidence-load-more', sortKey: 'title' },
         ];
 

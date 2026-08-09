@@ -147,13 +147,13 @@ describe('<NavItem> active band tone — behavioural (Tier 2)', () => {
         // value — the only form that actually overrides the BASE band.
         render(
             <NavItem
-                href="/t/acme/controls"
+                href="/t/acme/practices"
                 icon={Settings}
-                label="Controls"
+                label="Practices"
                 active
             />,
         );
-        const link = screen.getByRole('link', { name: 'Controls' });
+        const link = screen.getByRole('link', { name: 'Practices' });
         // The arbitrary-value override must be present...
         expect(() =>
             extractBeforeBg(link.className, 'active'),
@@ -168,13 +168,13 @@ describe('<NavItem> active band tone — behavioural (Tier 2)', () => {
     it('the rendered active band resolves to --bg-page on the METRO dark theme', () => {
         render(
             <NavItem
-                href="/t/acme/controls"
+                href="/t/acme/practices"
                 icon={Settings}
-                label="Controls"
+                label="Practices"
                 active
             />,
         );
-        const link = screen.getByRole('link', { name: 'Controls' });
+        const link = screen.getByRole('link', { name: 'Practices' });
         const bandValue = extractBeforeBg(link.className, 'active');
 
         const resolved = resolveVars(bandValue, METRO);
@@ -198,13 +198,13 @@ describe('<NavItem> active band tone — behavioural (Tier 2)', () => {
     it('the rendered active band resolves to --bg-page on the PwC light theme', () => {
         render(
             <NavItem
-                href="/t/acme/controls"
+                href="/t/acme/practices"
                 icon={Settings}
-                label="Controls"
+                label="Practices"
                 active
             />,
         );
-        const link = screen.getByRole('link', { name: 'Controls' });
+        const link = screen.getByRole('link', { name: 'Practices' });
         const bandValue = extractBeforeBg(link.className, 'active');
 
         const resolved = resolveVars(bandValue, PWC);
@@ -224,13 +224,13 @@ describe('<NavItem> active band tone — behavioural (Tier 2)', () => {
         // green; the band still painted brand yellow.
         render(
             <NavItem
-                href="/t/acme/controls"
+                href="/t/acme/practices"
                 icon={Settings}
-                label="Controls"
+                label="Practices"
                 active
             />,
         );
-        const link = screen.getByRole('link', { name: 'Controls' });
+        const link = screen.getByRole('link', { name: 'Practices' });
         const bandValue = extractBeforeBg(link.className, 'active');
 
         // The band's linear-gradient stops must NOT reference the
@@ -252,13 +252,13 @@ describe('<NavItem> active band tone — behavioural (Tier 2)', () => {
         // is still meant to be the warm brand gradient.
         render(
             <NavItem
-                href="/t/acme/controls"
+                href="/t/acme/practices"
                 icon={Settings}
-                label="Controls"
+                label="Practices"
                 active={false}
             />,
         );
-        const link = screen.getByRole('link', { name: 'Controls' });
+        const link = screen.getByRole('link', { name: 'Practices' });
         // The BASE band (applied in every state) carries the brand
         // ramp; the idle state does NOT override it with --bg-page.
         const bandValue = extractBeforeBg(link.className, 'base');

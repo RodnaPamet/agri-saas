@@ -121,7 +121,7 @@ export interface JsonWithETagInit extends ResponseInit {
      * makes the 304 round-trip work. Pass a custom value only if a
      * specific route wants a different freshness policy.
      */
-    cacheControl?: string;
+    cachePractice?: string;
 }
 
 const DEFAULT_CACHE_CONTROL = 'private, no-cache';
@@ -140,14 +140,14 @@ export function jsonWithETag<T>(
     payload: T,
     init: JsonWithETagInit = {},
 ): NextResponse {
-    const { cacheControl, headers: extraHeaders, ...rest } = init;
+    const { cachePractice, headers: extraHeaders, ...rest } = init;
     const body = JSON.stringify(payload ?? null);
     const etag = computeWeakETag(body);
     const ifNoneMatch = req.headers.get('if-none-match');
 
     const baseHeaders = new Headers(extraHeaders);
     baseHeaders.set('ETag', etag);
-    baseHeaders.set('Cache-Control', cacheControl ?? DEFAULT_CACHE_CONTROL);
+    baseHeaders.set('Cache-Control', cachePractice ?? DEFAULT_CACHE_CONTROL);
 
     if (ifNoneMatchSatisfied(ifNoneMatch, etag)) {
         // 304 MUST carry no body but SHOULD echo the validators the

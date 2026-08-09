@@ -12,7 +12,7 @@
  *     now "open" again but its parent is frozen for audit, which
  *     contradicts the cycle-immutable contract.
  *   - AuditPack restored under a deleted AuditCycle → orphan.
- *   - Task restored whose controlId points at a deleted Control.
+ *   - Task restored whose practiceId points at a deleted Practice.
  *   - Evidence restored whose ownerUserId points at a removed
  *     membership.
  *
@@ -33,7 +33,7 @@ import type { RequestContext } from '../types';
 export type RestorableModel =
     | 'Asset'
     | 'Risk'
-    | 'Control'
+    | 'Practice'
     | 'Evidence'
     | 'Policy'
     | 'Vendor'
@@ -66,24 +66,24 @@ const NOOP_VALIDATOR: RestoreValidator = async () => {
 // ─── Per-Model Validators ────────────────────────────────────────────
 
 /**
- * `Task` restore — refuse if the parent control was deleted.
+ * `Task` restore — refuse if the parent practice was deleted.
  *
- * Rationale: restoring a task under a deleted control creates an
- * "orphan" that the user can no longer navigate to (the control
- * page hides the row); the only escape is restoring the control,
+ * Rationale: restoring a task under a deleted practice creates an
+ * "orphan" that the user can no longer navigate to (the practice
+ * page hides the row); the only escape is restoring the practice,
  * which is itself a privileged operation. Better to surface this
  * blocker explicitly at restore time.
  */
 const TASK_VALIDATOR: RestoreValidator = async (ctx, db, record) => {
-    const row = record as { controlId: string | null };
-    if (!row.controlId) return;
-    const control = await db.control.findFirst({
-        where: { id: row.controlId, tenantId: ctx.tenantId, deletedAt: null },
+    const row = record as { practiceId: string | null };
+    if (!row.practiceId) return;
+    const practice = await db.practice.findFirst({
+        where: { id: row.practiceId, tenantId: ctx.tenantId, deletedAt: null },
         select: { id: true },
     });
-    if (!control) {
+    if (!practice) {
         throw badRequest(
-            'Cannot restore: the parent control has been deleted. Restore the control first, then retry.',
+            'Cannot restore: the parent practice has been deleted. Restore the practice first, then retry.',
         );
     }
 };
@@ -147,7 +147,7 @@ const EVIDENCE_VALIDATOR: RestoreValidator = async (ctx, db, record) => {
 export const RESTORE_VALIDATORS: Record<RestorableModel, RestoreValidator> = {
     Asset: NOOP_VALIDATOR,
     Risk: NOOP_VALIDATOR,
-    Control: NOOP_VALIDATOR,
+    Practice: NOOP_VALIDATOR,
     Evidence: EVIDENCE_VALIDATOR,
     Policy: NOOP_VALIDATOR,
     Vendor: NOOP_VALIDATOR,

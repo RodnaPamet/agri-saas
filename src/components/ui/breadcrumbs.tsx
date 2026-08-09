@@ -9,8 +9,8 @@
  * `aria-current="page"`.
  *
  * Use across:
- *   - List pages — usually one ancestor: `[Dashboard] / Controls`
- *   - Detail pages — `[Dashboard] / Controls / <Control name>`
+ *   - List pages — usually one ancestor: `[Dashboard] / Practices`
+ *   - Detail pages — `[Dashboard] / Practices / <Practice name>`
  *   - Admin — `[Dashboard] / Admin / API keys`
  *   - Wizards — `[Dashboard] / Risks / Import / Step 2`
  *

@@ -45,7 +45,7 @@ function makeData(): PortfolioData {
             organizationSlug: 'acme-org',
             generatedAt: new Date().toISOString(),
             tenants: { total: 12, snapshotted: 10, pending: 2 },
-            controls: { applicable: 100, implemented: 75, coveragePercent: 75 },
+            practices: { applicable: 100, implemented: 75, coveragePercent: 75 },
             evidence: { total: 200, overdue: 8, dueSoon7d: 5 },
             policies: { total: 20, overdueReview: 2 },
             tasks: { open: 30, overdue: 4 },
@@ -122,7 +122,7 @@ describe('Epic 41 — DispatchedWidget per (type, chartType)', () => {
         expect(screen.getByText('Coverage')).toBeInTheDocument();
         expect(screen.getByText('75.0%')).toBeInTheDocument();
         expect(
-            screen.getByText(/75 of 100 controls implemented/),
+            screen.getByText(/75 of 100 practices implemented/),
         ).toBeInTheDocument();
     });
 
@@ -201,7 +201,7 @@ describe('Epic 41 — DispatchedWidget per (type, chartType)', () => {
 
     // ─── DRILLDOWN_CTAS ──────────────────────────────────────────
 
-    it('DRILLDOWN_CTAS renders the nav cards pointing at /org/<slug>/{controls,evidence}', () => {
+    it('DRILLDOWN_CTAS renders the nav cards pointing at /org/<slug>/{practices,evidence}', () => {
         const widget = makeWidget({
             type: 'DRILLDOWN_CTAS',
             chartType: 'default',
@@ -212,8 +212,8 @@ describe('Epic 41 — DispatchedWidget per (type, chartType)', () => {
         render(<DispatchedWidget widget={widget} data={makeData()} />);
         expect(screen.getByText('Drill-down')).toBeInTheDocument();
         expect(
-            screen.getByTestId('org-drilldown-controls').getAttribute('href'),
-        ).toBe('/org/acme-org/controls');
+            screen.getByTestId('org-drilldown-practices').getAttribute('href'),
+        ).toBe('/org/acme-org/practices');
         expect(
             screen.getByTestId('org-drilldown-evidence').getAttribute('href'),
         ).toBe('/org/acme-org/evidence');
@@ -223,13 +223,13 @@ describe('Epic 41 — DispatchedWidget per (type, chartType)', () => {
         const widget = makeWidget({
             type: 'DRILLDOWN_CTAS',
             chartType: 'default',
-            config: { entries: ['controls'] },
+            config: { entries: ['practices'] },
             title: 'Drill-down',
             size: { w: 12, h: 2 },
         });
         render(<DispatchedWidget widget={widget} data={makeData()} />);
         expect(
-            screen.getByTestId('org-drilldown-controls'),
+            screen.getByTestId('org-drilldown-practices'),
         ).toBeInTheDocument();
         expect(
             screen.queryByTestId('org-drilldown-evidence'),

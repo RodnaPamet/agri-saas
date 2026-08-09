@@ -2,7 +2,7 @@
  * Roadmap-6 P4 — ResponsiveToaster position.
  *
  * On a phone the global sonner Toaster host must anchor at the BOTTOM so the
- * Undo / Close controls land in the thumb zone (clear of the sticky top
+ * Undo / Close practices land in the thumb zone (clear of the sticky top
  * chrome); on md+ it stays top-right. The rendered `matchMedia` mock reports
  * `matches: false` for `(min-width: 768px)`, i.e. a phone viewport, so the
  * post-mount effect flips `isMdUp` → false → `position="bottom-center"`.

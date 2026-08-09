@@ -79,7 +79,7 @@ describe('Notification Templates', () => {
             evidenceTitle: 'SOC 2 Report Q1',
             daysRemaining: 5,
             retentionUntil: '2026-03-22',
-            controlName: 'AC-01 Access Control Policy',
+            practiceName: 'AC-01 Access Control Policy',
             recipientName: 'Charlie',
             tenantSlug: 'acme-corp',
         };
@@ -95,14 +95,14 @@ describe('Notification Templates', () => {
             expect(result.subject).not.toContain('⚠️');
         });
 
-        it('returns bodyText with control name', () => {
+        it('returns bodyText with practice name', () => {
             const result = buildEvidenceExpiringEmail(payload);
             expect(result.bodyText).toContain('AC-01 Access Control Policy');
         });
 
-        it('handles null controlName', () => {
-            const result = buildEvidenceExpiringEmail({ ...payload, controlName: null });
-            expect(result.bodyText).not.toContain('Control:');
+        it('handles null practiceName', () => {
+            const result = buildEvidenceExpiringEmail({ ...payload, practiceName: null });
+            expect(result.bodyText).not.toContain('Practice:');
         });
 
         it('returns bodyHtml', () => {

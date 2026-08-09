@@ -98,7 +98,7 @@ export async function saveOnboardingStep(ctx: RequestContext, step: OnboardingSt
  *
  * Architecture note: The step completion (lightweight DB updates) runs inside
  * a Prisma transaction for RLS enforcement. The automation action (e.g. installing
- * framework packs with dozens of controls/tasks) runs AFTER the transaction commits
+ * framework packs with dozens of practices/tasks) runs AFTER the transaction commits
  * to avoid exceeding Prisma's interactive transaction timeout (5s default).
  * The automation is fire-and-forget — failures are logged but don't block the wizard.
  */
@@ -284,16 +284,16 @@ export function checkCompletionCriteria(
         issues.push('Review step must be completed.');
     }
 
-    // Rule 3/4: Framework → Control dependency
+    // Rule 3/4: Framework → Practice dependency
     const fwCompleted = completedSteps.includes('FRAMEWORK_SELECTION');
     const selectedFrameworks: string[] = stepData?.FRAMEWORK_SELECTION?.selectedFrameworks || [];
     const hasFrameworks = fwCompleted && selectedFrameworks.length > 0;
 
     if (hasFrameworks) {
-        const controlCompleted = completedSteps.includes('CONTROL_BASELINE_INSTALL');
-        const controlSkipped = skippedSteps.includes('CONTROL_BASELINE_INSTALL');
-        if (!controlCompleted && !controlSkipped) {
-            issues.push('Control baseline install must be completed or skipped when frameworks are selected.');
+        const practiceCompleted = completedSteps.includes('CONTROL_BASELINE_INSTALL');
+        const practiceSkipped = skippedSteps.includes('CONTROL_BASELINE_INSTALL');
+        if (!practiceCompleted && !practiceSkipped) {
+            issues.push('Practice baseline install must be completed or skipped when frameworks are selected.');
         }
     }
 

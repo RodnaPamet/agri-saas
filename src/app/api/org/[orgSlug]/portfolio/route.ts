@@ -4,7 +4,7 @@
  *   GET /api/org/[orgSlug]/portfolio?view=<name>
  *
  *   view = summary  | health   | trends      ← snapshot aggregation
- *        = controls | evidence    ← cross-tenant drill-down
+ *        = practices | evidence    ← cross-tenant drill-down
  *
  * Permission model:
  *   - All views require `canViewPortfolio` (any org member with that
@@ -27,7 +27,7 @@ import {
     getPortfolioSummary,
     getPortfolioTenantHealth,
     getPortfolioTrends,
-    listNonPerformingControls,
+    listNonPerformingPractices,
     listOverdueEvidenceAcrossOrg,
 } from '@/app-layer/usecases/portfolio';
 
@@ -35,12 +35,12 @@ const SUPPORTED_VIEWS = [
     'summary',
     'health',
     'trends',
-    'controls',
+    'practices',
     'evidence',
 ] as const;
 type View = (typeof SUPPORTED_VIEWS)[number];
 
-const DRILL_DOWN_VIEWS: ReadonlySet<View> = new Set(['controls', 'evidence']);
+const DRILL_DOWN_VIEWS: ReadonlySet<View> = new Set(['practices', 'evidence']);
 
 interface RouteContext {
     params: Promise<{ orgSlug: string }>;
@@ -91,9 +91,9 @@ export const GET = withApiErrorHandling(
                 return NextResponse.json(await getPortfolioTrends(ctx, days));
             }
 
-            case 'controls': {
+            case 'practices': {
                 const page = parsePagination(req);
-                const result = await listNonPerformingControls(ctx, page);
+                const result = await listNonPerformingPractices(ctx, page);
                 return NextResponse.json({
                     rows: result.rows,
                     nextCursor: result.nextCursor,

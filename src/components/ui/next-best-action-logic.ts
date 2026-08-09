@@ -11,9 +11,9 @@
 
 export interface NextBestActionInput {
     /**
-     * % of applicable controls implemented (0–100). Optional — callers
+     * % of applicable practices implemented (0–100). Optional — callers
      * that don't surface compliance (e.g. the farm dashboard, which
-     * hides the controls page) omit it; absent is treated as fully
+     * hides the practices page) omit it; absent is treated as fully
      * covered so the low-coverage nudge never fires for them.
      */
     coveragePercent?: number;
@@ -74,7 +74,7 @@ export function resolveNextBestAction(
         const coveragePercent = input.coveragePercent ?? 100;
         return {
             id: "low-coverage",
-            label: "Improve control coverage",
+            label: "Improve practice coverage",
             description: `Coverage is ${Math.round(coveragePercent)}%. Reach 80% to meet the readiness baseline.`,
             href: tenantHref("/clauses"),
         };

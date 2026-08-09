@@ -43,9 +43,9 @@ interface ModalSurface {
 
 const MODAL_SURFACES: ModalSurface[] = [
     {
-        label: 'Create Control',
-        file: 'src/app/t/[tenantSlug]/(app)/controls/NewControlModal.tsx',
-        cacheKey: 'queryKeys.controls.all',
+        label: 'Create Practice',
+        file: 'src/app/t/[tenantSlug]/(app)/practices/NewPracticeModal.tsx',
+        cacheKey: 'queryKeys.practices.all',
         expectedSize: 'lg',
     },
     {
@@ -125,10 +125,10 @@ interface SheetSurface {
 
 const SHEET_SURFACES: SheetSurface[] = [
     {
-        label: 'Control detail sheet',
-        file: 'src/app/t/[tenantSlug]/(app)/controls/ControlDetailSheet.tsx',
+        label: 'Practice detail sheet',
+        file: 'src/app/t/[tenantSlug]/(app)/practices/PracticeDetailSheet.tsx',
         expectedSize: 'md',
-        cacheKey: 'queryKeys.controls.all',
+        cacheKey: 'queryKeys.practices.all',
     },
 ];
 

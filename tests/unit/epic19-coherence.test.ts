@@ -368,7 +368,7 @@ describe('Epic 19 Coherence: route normalization idempotency', () => {
 
     it('normalizeRoute is idempotent (double application produces same result)', () => {
         const routes = [
-            '/api/t/acme/controls/550e8400-e29b-41d4-a716-446655440000',
+            '/api/t/acme/practices/550e8400-e29b-41d4-a716-446655440000',
             '/api/t/tenant-123/evidence',
             '/api/livez',
         ];

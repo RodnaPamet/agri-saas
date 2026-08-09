@@ -31,7 +31,7 @@ const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
 
 const ENTITIES = [
     'assets',
-    'controls',
+    'practices',
     'evidence',
     'policies',
     'audits',
@@ -45,7 +45,7 @@ interface ClientFile {
 
 const CLIENTS: ClientFile[] = [
     { entity: 'assets', file: 'src/app/t/[tenantSlug]/(app)/assets/AssetsClient.tsx' },
-    { entity: 'controls', file: 'src/app/t/[tenantSlug]/(app)/controls/ControlsClient.tsx' },
+    { entity: 'practices', file: 'src/app/t/[tenantSlug]/(app)/practices/PracticesClient.tsx' },
     { entity: 'evidence', file: 'src/app/t/[tenantSlug]/(app)/evidence/EvidenceClient.tsx' },
     { entity: 'policies', file: 'src/app/t/[tenantSlug]/(app)/policies/PoliciesClient.tsx' },
     { entity: 'audits', file: 'src/app/t/[tenantSlug]/(app)/audits/AuditsClient.tsx' },
@@ -76,7 +76,7 @@ describe('List-page editorial descriptions (Roadmap-2 PR-4)', () => {
             const src = read(file);
             // Four valid shapes:
             //   (a) EntityListPage `description:` slot — used by
-            //       controls + policies.
+            //       practices + policies.
             //   (a') PageHeader `description=` JSX prop — R9-PR1
             //       migration shape. Same semantics as (a) but
             //       authored as a React prop, not an object key.

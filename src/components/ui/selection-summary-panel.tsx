@@ -37,7 +37,7 @@ export interface SelectionSummaryPanelProps {
     count: number;
     /**
      * Singular / plural resource words, e.g.
-     * `{ singular: 'control', plural: 'controls' }`. The panel picks
+     * `{ singular: 'practice', plural: 'practices' }`. The panel picks
      * by `count`.
      */
     resourceLabel: { singular: string; plural: string };

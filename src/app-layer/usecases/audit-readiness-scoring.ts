@@ -4,15 +4,15 @@
  * Framework-aware readiness scoring with documented weights:
  *
  * ISO27001:2022 weights:
- *   - Coverage (requirements mapped to APPLIES controls): 35%
- *   - Implementation (APPLIES controls IMPLEMENTED): 25%
- *   - Evidence (APPLIES controls with >=1 evidence): 25%
+ *   - Coverage (requirements mapped to APPLIES practices): 35%
+ *   - Implementation (APPLIES practices IMPLEMENTED): 25%
+ *   - Evidence (APPLIES practices with >=1 evidence): 25%
  *   - Task completion (penalty for overdue tasks): 10%
- *   - Issues (penalty for open CONTROL_GAP/AUDIT_FINDING): 5%
+ *   - Issues (penalty for open PRACTICE_GAP/AUDIT_FINDING): 5%
  *
  * NIS2 Directive weights:
- *   - Coverage (NIS2 requirements mapped to controls): 40%
- *   - Evidence (mapped controls with >=1 evidence): 30%
+ *   - Coverage (NIS2 requirements mapped to practices): 40%
+ *   - Evidence (mapped practices with >=1 evidence): 30%
  *   - Policies (presence of key NIS2 policies: IR/BCP/Supplier): 15%
  *   - Issues (penalty for open incidents/issues): 15%
  *
@@ -220,8 +220,8 @@ export async function getReadinessHistory(
 // Audit Coherence S5 (2026-05-22) — fallback model for any
 // framework key without a hardcoded scoring profile. Uses three
 // dimensions only: coverage (% requirements mapped to APPLIES
-// controls), evidence (% mapped controls with ≥1 evidence), and
-// issues (penalty for open CONTROL_GAP / AUDIT_FINDING). Per-tenant
+// practices), evidence (% mapped practices with ≥1 evidence), and
+// issues (penalty for open PRACTICE_GAP / AUDIT_FINDING). Per-tenant
 // `GENERIC` weight override is honoured.
 
 const GENERIC_WEIGHTS = { coverage: 0.5, evidence: 0.35, issues: 0.15 };
@@ -233,7 +233,7 @@ async function computeGenericReadiness(
     const gaps: ReadinessGap[] = [];
     const weights = await loadEffectiveWeights(ctx, 'GENERIC', GENERIC_WEIGHTS);
 
-    // 1) Coverage — requirements mapped to APPLIES controls.
+    // 1) Coverage — requirements mapped to APPLIES practices.
     const fw = await runInTenantContext(ctx, (tdb) =>
         tdb.framework.findFirst({ where: { key: cycle.frameworkKey } }),
     );
@@ -249,11 +249,11 @@ async function computeGenericReadiness(
         totalReqs = reqs.length;
         const reqIds = reqs.map((r) => r.id);
         const mappings = await runInTenantContext(ctx, (tdb) =>
-            tdb.controlRequirementLink.findMany({
+            tdb.practiceRequirementLink.findMany({
                 where: {
                     tenantId: ctx.tenantId,
                     requirementId: { in: reqIds },
-                    control: { applicability: 'APPLIES' as Applicability },
+                    practice: { applicability: 'APPLIES' as Applicability },
                 },
                 select: { requirementId: true },
             }),
@@ -262,9 +262,9 @@ async function computeGenericReadiness(
     }
     const coverageScore = totalReqs > 0 ? Math.round((mappedReqs / totalReqs) * 100) : 0;
 
-    // 2) Evidence — mapped controls with ≥1 active evidence.
-    const mappedControls = await runInTenantContext(ctx, (tdb) =>
-        tdb.control.findMany({
+    // 2) Evidence — mapped practices with ≥1 active evidence.
+    const mappedPractices = await runInTenantContext(ctx, (tdb) =>
+        tdb.practice.findMany({
             where: {
                 tenantId: ctx.tenantId,
                 applicability: 'APPLIES' as Applicability,
@@ -275,33 +275,33 @@ async function computeGenericReadiness(
         }),
     );
     let withEvidence = 0;
-    if (mappedControls.length > 0) {
-        const ids = mappedControls.map((c) => c.id);
+    if (mappedPractices.length > 0) {
+        const ids = mappedPractices.map((c) => c.id);
         const ev = await runInTenantContext(ctx, (tdb) =>
             tdb.evidence.findMany({
                 where: {
                     tenantId: ctx.tenantId,
-                    controlId: { in: ids },
+                    practiceId: { in: ids },
                     isArchived: false,
                     deletedAt: null,
                     status: { in: ['SUBMITTED', 'APPROVED'] },
                 },
-                select: { controlId: true },
+                select: { practiceId: true },
             }),
         );
-        withEvidence = new Set(ev.map((e) => e.controlId).filter((v): v is string => !!v)).size;
+        withEvidence = new Set(ev.map((e) => e.practiceId).filter((v): v is string => !!v)).size;
     }
     const evidenceScore =
-        mappedControls.length > 0
-            ? Math.round((withEvidence / mappedControls.length) * 100)
+        mappedPractices.length > 0
+            ? Math.round((withEvidence / mappedPractices.length) * 100)
             : 0;
 
-    // 3) Issues — penalty for open CONTROL_GAP / AUDIT_FINDING.
+    // 3) Issues — penalty for open PRACTICE_GAP / AUDIT_FINDING.
     const openIssues = await runInTenantContext(ctx, (tdb) =>
         tdb.task.count({
             where: {
                 tenantId: ctx.tenantId,
-                type: { in: ['CONTROL_GAP', 'AUDIT_FINDING'] },
+                type: { in: ['PRACTICE_GAP', 'AUDIT_FINDING'] },
                 status: {
                     notIn: TERMINAL_WORK_ITEM_STATUSES as readonly WorkItemStatus[] as WorkItemStatus[],
                 },
@@ -322,7 +322,7 @@ async function computeGenericReadiness(
         score: finalScore,
         breakdown: {
             coverage: { score: coverageScore, weight: weights.coverage, mapped: mappedReqs, total: totalReqs },
-            evidence: { score: evidenceScore, weight: weights.evidence, withEvidence, total: mappedControls.length },
+            evidence: { score: evidenceScore, weight: weights.evidence, withEvidence, total: mappedPractices.length },
             issues: { score: issuesScore, weight: weights.issues, open: openIssues },
         },
         gaps,
@@ -364,7 +364,7 @@ async function computeISO27001Readiness(ctx: RequestContext, cycle: AuditCycle):
         totalReqs = reqs.length;
 
         const mappedReqIds = await runInTenantContext(ctx, (tdb) =>
-            tdb.controlRequirementLink.findMany({
+            tdb.practiceRequirementLink.findMany({
                 where: { tenantId: ctx.tenantId, requirement: { frameworkId: fw.id } },
                 select: { requirementId: true },
             }));
@@ -378,33 +378,33 @@ async function computeISO27001Readiness(ctx: RequestContext, cycle: AuditCycle):
     // Add unmapped requirement gaps (top 10)
     unmappedReqs.slice(0, 10).forEach((r) => gaps.push({
         type: 'UNMAPPED_REQUIREMENT', severity: 'HIGH',
-        title: `${r.code}: ${r.title}`, details: 'Not mapped to any control', entityId: r.id,
+        title: `${r.code}: ${r.title}`, details: 'Not mapped to any practice', entityId: r.id,
     }));
 
-    // 2) Controls implementation
-    const controls = await runInTenantContext(ctx, (tdb) =>
-        tdb.control.findMany({
+    // 2) Practices implementation
+    const practices = await runInTenantContext(ctx, (tdb) =>
+        tdb.practice.findMany({
             where: { tenantId: ctx.tenantId, applicability: 'APPLICABLE' },
             select: { id: true, code: true, name: true, status: true },
         }));
-    const totalControls = controls.length;
-    const implementedControls = controls.filter((c) => c.status === 'IMPLEMENTED').length;
-    const implScore = totalControls > 0 ? (implementedControls / totalControls) * 100 : 0;
+    const totalPractices = practices.length;
+    const implementedPractices = practices.filter((c) => c.status === 'IMPLEMENTED').length;
+    const implScore = totalPractices > 0 ? (implementedPractices / totalPractices) * 100 : 0;
 
     // 3) Evidence completeness — EXCLUDES archived/deleted evidence
-    const controlsWithEvidence = await runInTenantContext(ctx, (tdb) =>
-        tdb.control.findMany({
+    const practicesWithEvidence = await runInTenantContext(ctx, (tdb) =>
+        tdb.practice.findMany({
             where: { tenantId: ctx.tenantId, applicability: 'APPLICABLE' },
             select: { id: true, code: true, name: true, evidence: {
                 where: { isArchived: false, deletedAt: null },
                 select: { id: true },
             } },
         }));
-    const withEvidence = controlsWithEvidence.filter((c) => c.evidence?.length > 0).length;
-    const evidenceScore = totalControls > 0 ? (withEvidence / totalControls) * 100 : 0;
+    const withEvidence = practicesWithEvidence.filter((c) => c.evidence?.length > 0).length;
+    const evidenceScore = totalPractices > 0 ? (withEvidence / totalPractices) * 100 : 0;
 
-    // Controls missing evidence (top 10)
-    controlsWithEvidence
+    // Practices missing evidence (top 10)
+    practicesWithEvidence
         .filter((c) => !c.evidence?.length)
         .slice(0, 10)
         .forEach((c) => gaps.push({
@@ -437,7 +437,7 @@ async function computeISO27001Readiness(ctx: RequestContext, cycle: AuditCycle):
             where: {
                 tenantId: ctx.tenantId,
                 status: { notIn: [...TERMINAL_WORK_ITEM_STATUSES] },
-                type: { in: ['CONTROL_GAP', 'AUDIT_FINDING'] },
+                type: { in: ['PRACTICE_GAP', 'AUDIT_FINDING'] },
             },
             select: { id: true, title: true, severity: true },
             take: 20,
@@ -465,8 +465,8 @@ async function computeISO27001Readiness(ctx: RequestContext, cycle: AuditCycle):
         score: Math.min(100, Math.max(0, score)),
         breakdown: {
             coverage: { score: Math.round(coverageScore), weight: weights.coverage, mapped: mappedReqs, total: totalReqs },
-            implementation: { score: Math.round(implScore), weight: weights.implementation, implemented: implementedControls, total: totalControls },
-            evidence: { score: Math.round(evidenceScore), weight: weights.evidence, withEvidence, total: totalControls },
+            implementation: { score: Math.round(implScore), weight: weights.implementation, implemented: implementedPractices, total: totalPractices },
+            evidence: { score: Math.round(evidenceScore), weight: weights.evidence, withEvidence, total: totalPractices },
             tasks: { score: Math.round(taskScore), weight: weights.tasks, overdue: overdueCount },
             issues: { score: Math.round(issueScore), weight: weights.issues, open: issueCount },
         },
@@ -501,7 +501,7 @@ async function computeNIS2Readiness(ctx: RequestContext, cycle: AuditCycle): Pro
         totalReqs = reqs.length;
 
         const mappedReqIds = await runInTenantContext(ctx, (tdb) =>
-            tdb.controlRequirementLink.findMany({
+            tdb.practiceRequirementLink.findMany({
                 where: { tenantId: ctx.tenantId, requirement: { frameworkId: fw.id } },
                 select: { requirementId: true },
             }));
@@ -517,40 +517,40 @@ async function computeNIS2Readiness(ctx: RequestContext, cycle: AuditCycle): Pro
         title: `${r.code}: ${r.title}`, details: 'Not mapped to any measure', entityId: r.id,
     }));
 
-    // 2) Evidence completeness for mapped controls — EXCLUDES archived/deleted evidence
-    let controlIds: string[] = [];
+    // 2) Evidence completeness for mapped practices — EXCLUDES archived/deleted evidence
+    let practiceIds: string[] = [];
     if (fw) {
         const links = await runInTenantContext(ctx, (tdb) =>
-            tdb.controlRequirementLink.findMany({
+            tdb.practiceRequirementLink.findMany({
                 where: { tenantId: ctx.tenantId, requirement: { frameworkId: fw.id } },
-                select: { controlId: true },
+                select: { practiceId: true },
             }));
-        controlIds = [...new Set(links.map((l) => l.controlId))];
+        practiceIds = [...new Set(links.map((l) => l.practiceId))];
     }
-    if (controlIds.length === 0) {
-        const allControls = await runInTenantContext(ctx, (tdb) =>
-            tdb.control.findMany({ where: { tenantId: ctx.tenantId }, select: { id: true } }));
-        controlIds = allControls.map((c) => c.id);
+    if (practiceIds.length === 0) {
+        const allPractices = await runInTenantContext(ctx, (tdb) =>
+            tdb.practice.findMany({ where: { tenantId: ctx.tenantId }, select: { id: true } }));
+        practiceIds = allPractices.map((c) => c.id);
     }
 
-    const controlsWithEv = await runInTenantContext(ctx, (tdb) =>
-        tdb.control.findMany({
-            where: { tenantId: ctx.tenantId, id: { in: controlIds } },
+    const practicesWithEv = await runInTenantContext(ctx, (tdb) =>
+        tdb.practice.findMany({
+            where: { tenantId: ctx.tenantId, id: { in: practiceIds } },
             select: { id: true, code: true, name: true, evidence: {
                 where: { isArchived: false, deletedAt: null },
                 select: { id: true },
             } },
         }));
-    const totalControls = controlsWithEv.length;
-    const withEvidence = controlsWithEv.filter((c) => c.evidence?.length > 0).length;
-    const evidenceScore = totalControls > 0 ? (withEvidence / totalControls) * 100 : 0;
+    const totalPractices = practicesWithEv.length;
+    const withEvidence = practicesWithEv.filter((c) => c.evidence?.length > 0).length;
+    const evidenceScore = totalPractices > 0 ? (withEvidence / totalPractices) * 100 : 0;
 
-    controlsWithEv
+    practicesWithEv
         .filter((c) => !c.evidence?.length)
         .slice(0, 10)
         .forEach((c) => gaps.push({
             type: 'MISSING_EVIDENCE', severity: 'MEDIUM',
-            title: `${c.code}: ${c.name}`, details: 'No active evidence for this control (archived/expired excluded)', entityId: c.id,
+            title: `${c.code}: ${c.name}`, details: 'No active evidence for this practice (archived/expired excluded)', entityId: c.id,
         }));
 
     // 3) Key policies check
@@ -607,7 +607,7 @@ async function computeNIS2Readiness(ctx: RequestContext, cycle: AuditCycle): Pro
         score: Math.min(100, Math.max(0, score)),
         breakdown: {
             coverage: { score: Math.round(coverageScore), weight: weights.coverage, mapped: mappedReqs, total: totalReqs },
-            evidence: { score: Math.round(evidenceScore), weight: weights.evidence, withEvidence, total: totalControls },
+            evidence: { score: Math.round(evidenceScore), weight: weights.evidence, withEvidence, total: totalPractices },
             policies: { score: Math.round(policyScore), weight: weights.policies, found: foundPolicies, expected: expectedPolicies },
             issues: { score: Math.round(issueScore), weight: weights.issues, open: issueCount },
         },
@@ -621,23 +621,23 @@ async function computeNIS2Readiness(ctx: RequestContext, cycle: AuditCycle): Pro
 
 function generateISO27001Recommendations(coverage: number, impl: number, evidence: number, overdue: number, issues: number): string[] {
     const recs: string[] = [];
-    if (coverage < 50) recs.push('Map more Annex A requirements to controls — coverage is below 50%');
+    if (coverage < 50) recs.push('Map more Annex A requirements to practices — coverage is below 50%');
     else if (coverage < 80) recs.push('Continue mapping requirements — aim for 80%+ coverage before audit');
-    if (impl < 60) recs.push('Focus on implementing controls — many APPLICABLE controls are not yet IMPLEMENTED');
-    if (evidence < 50) recs.push('Attach evidence to controls — auditors will expect documentation for each control');
-    else if (evidence < 80) recs.push('Strengthen evidence collection — aim for 80%+ controls with evidence');
+    if (impl < 60) recs.push('Focus on implementing practices — many APPLICABLE practices are not yet IMPLEMENTED');
+    if (evidence < 50) recs.push('Attach evidence to practices — auditors will expect documentation for each practice');
+    else if (evidence < 80) recs.push('Strengthen evidence collection — aim for 80%+ practices with evidence');
     if (overdue > 5) recs.push(`Address ${overdue} overdue tasks to improve audit readiness`);
     else if (overdue > 0) recs.push(`Close remaining ${overdue} overdue task(s)`);
-    if (issues > 3) recs.push(`Resolve ${issues} open audit findings/control gaps before audit`);
+    if (issues > 3) recs.push(`Resolve ${issues} open audit findings/practice gaps before audit`);
     if (recs.length === 0) recs.push('Readiness is strong — review final pack before scheduling audit');
     return recs;
 }
 
 function generateNIS2Recommendations(coverage: number, evidence: number, policies: number, issues: number): string[] {
     const recs: string[] = [];
-    if (coverage < 50) recs.push('Map NIS2 requirements (Art.21 measures) to controls — coverage below 50%');
+    if (coverage < 50) recs.push('Map NIS2 requirements (Art.21 measures) to practices — coverage below 50%');
     else if (coverage < 80) recs.push('Continue mapping NIS2 requirements — aim for full Art.21 coverage');
-    if (evidence < 50) recs.push('Attach evidence to mapped controls — NIS2 requires demonstrable measures');
+    if (evidence < 50) recs.push('Attach evidence to mapped practices — NIS2 requires demonstrable measures');
     if (policies < 50) recs.push('Create key NIS2 policies: Incident Response, Business Continuity, Supplier Security');
     else if (policies < 100) recs.push('Complete missing NIS2 policy areas to demonstrate full compliance');
     if (issues > 3) recs.push(`Address ${issues} open issues to reduce compliance risk`);
@@ -693,7 +693,7 @@ export async function exportUnmappedCsv(ctx: RequestContext, cycleId: string): P
     return { csv, filename: `${result.frameworkKey}-unmapped-requirements.csv` };
 }
 
-export async function exportControlGapsCsv(ctx: RequestContext, cycleId: string): Promise<{ csv: string; filename: string }> {
+export async function exportPracticeGapsCsv(ctx: RequestContext, cycleId: string): Promise<{ csv: string; filename: string }> {
     const result = await computeReadiness(ctx, cycleId);
     const gapItems = result.gaps.filter((g) => g.type === 'MISSING_EVIDENCE' || g.type === 'OVERDUE_TASK' || g.type === 'OPEN_ISSUE');
 
@@ -707,17 +707,17 @@ export async function exportControlGapsCsv(ctx: RequestContext, cycleId: string)
             action: 'AUDIT_EXPORT_GENERATED',
             entityType: 'AuditCycle',
             entityId: cycleId,
-            details: JSON.stringify({ format: 'control-gaps.csv', count: gapItems.length }),
+            details: JSON.stringify({ format: 'practice-gaps.csv', count: gapItems.length }),
             detailsJson: {
                 category: 'custom',
                 event: 'audit_export_generated',
-                format: 'control-gaps.csv',
+                format: 'practice-gaps.csv',
                 count: gapItems.length,
             },
         })
     );
 
-    return { csv, filename: `${result.frameworkKey}-control-gaps.csv` };
+    return { csv, filename: `${result.frameworkKey}-practice-gaps.csv` };
 }
 
 // ─── Attach readiness to frozen pack ───

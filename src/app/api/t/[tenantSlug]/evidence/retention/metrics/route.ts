@@ -1,6 +1,6 @@
 /**
  * GET /api/t/[tenantSlug]/evidence/retention/metrics
- * Retention metrics: expiring, archived, expired counts, top controls.
+ * Retention metrics: expiring, archived, expired counts, top practices.
  */
 import { NextRequest } from 'next/server';
 import { getTenantCtx } from '@/app-layer/context';

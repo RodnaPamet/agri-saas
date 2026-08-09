@@ -76,13 +76,13 @@ export class FrameworkRepository {
             select: { id: true, code: true, title: true, theme: true, themeNumber: true },
         });
 
-        // Find which requirements have mapped controls for this tenant
+        // Find which requirements have mapped practices for this tenant
         const mappings = await db.frameworkMapping.findMany({
             where: {
                 fromRequirement: { frameworkId: framework.id },
-                toControl: { tenantId },
+                toPractice: { tenantId },
             },
-            select: { fromRequirementId: true, toControlId: true },
+            select: { fromRequirementId: true, toPracticeId: true },
         });
 
         const mappedReqIds = new Set(mappings.map(m => m.fromRequirementId));
@@ -103,11 +103,11 @@ export class FrameworkRepository {
     /**
      * Is this pack installed for the tenant?
      *
-     * This used to answer "does the tenant hold controls whose codes match
-     * the pack's control templates". The compliance uproot removed the
+     * This used to answer "does the tenant hold practices whose codes match
+     * the pack's practice templates". The compliance uproot removed the
      * template library, so the pack no longer carries a code list to match
      * against — installation is now judged by whether the tenant has mapped
-     * any control to a requirement of the pack's framework.
+     * any practice to a requirement of the pack's framework.
      */
     static async isPackInstalled(db: PrismaTx, packKey: string, tenantId: string) {
         // `findUnique`: only Framework.key lost its single-column unique.
@@ -117,7 +117,7 @@ export class FrameworkRepository {
         });
         if (!pack) return false;
 
-        const linkCount = await db.controlRequirementLink.count({
+        const linkCount = await db.practiceRequirementLink.count({
             where: { tenantId, requirement: { frameworkId: pack.frameworkId } },
         });
 

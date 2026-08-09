@@ -96,7 +96,7 @@ export type BillingMode = 'SAAS' | 'SELFHOSTED';
  * site.
  */
 export type GatedResource =
-    | 'control'
+    | 'practice'
     | 'user'
     | 'location'
     | 'ai_tokens'
@@ -110,7 +110,7 @@ export type GatedResource =
  * large grain producer (ENTERPRISE) are TEAM SIZE (`user`) and the
  * number of FARMS/FIELDS (`location`). FREE gets a single-operator,
  * few-fields budget; the working tiers lift it; ENTERPRISE is
- * unlimited. `control` is retained for tenants running the
+ * unlimited. `practice` is retained for tenants running the
  * CERTIFICATION module.
  *
  * TRIAL inherits PRO — a paying-customer-on-trial gets the full
@@ -130,10 +130,10 @@ export type GatedResource =
 // a small FREE budget keeps a single tenant from flooding the shared feed,
 // while working tiers lift it and ENTERPRISE is unlimited.
 const PLAN_LIMITS: Record<Plan, Record<GatedResource, number | null>> = {
-    FREE: { control: 10, user: 3, location: 5, ai_tokens: 50_000, exchange_listing: 5 },
-    TRIAL: { control: 100, user: 25, location: 50, ai_tokens: 1_000_000, exchange_listing: 50 },
-    PRO: { control: 100, user: 25, location: 50, ai_tokens: 5_000_000, exchange_listing: 50 },
-    ENTERPRISE: { control: null, user: null, location: null, ai_tokens: null, exchange_listing: null },
+    FREE: { practice: 10, user: 3, location: 5, ai_tokens: 50_000, exchange_listing: 5 },
+    TRIAL: { practice: 100, user: 25, location: 50, ai_tokens: 1_000_000, exchange_listing: 50 },
+    PRO: { practice: 100, user: 25, location: 50, ai_tokens: 5_000_000, exchange_listing: 50 },
+    ENTERPRISE: { practice: null, user: null, location: null, ai_tokens: null, exchange_listing: null },
 };
 
 // ─── Mode decision ───────────────────────────────────────────────
@@ -261,7 +261,7 @@ export async function getAiTokensUsedThisMonth(ctx: RequestContext): Promise<num
 /**
  * The current count of `resource` for the tenant — used by the
  * limit assertion. Soft-deleted rows are excluded so a tenant that
- * deleted some controls can immediately create new ones again.
+ * deleted some practices can immediately create new ones again.
  */
 async function getCurrentCount(
     ctx: RequestContext,
@@ -270,8 +270,8 @@ async function getCurrentCount(
 ): Promise<number> {
     return runIn(ctx, tx, async (db) => {
         switch (resource) {
-            case 'control':
-                return db.control.count({
+            case 'practice':
+                return db.practice.count({
                     where: { tenantId: ctx.tenantId, deletedAt: null },
                 });
             case 'user':

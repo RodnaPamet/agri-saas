@@ -53,7 +53,7 @@ export default async function AssetsPage({
                     manufacturer: t('manufacturer'),
                     owner: t('owner'),
                     location: t('location'),
-                    controlsCol: t('controlsCol'),
+                    practicesCol: t('practicesCol'),
                     noAssets: t('noAssets'),
                     cancel: tc('cancel'),
                     assetsRegistered: t('assetsRegistered', { count: assets.length }),

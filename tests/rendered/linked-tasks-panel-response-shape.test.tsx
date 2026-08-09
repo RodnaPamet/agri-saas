@@ -5,7 +5,7 @@
  *
  * Without the defensive read, mounting the panel after the response
  * shape flipped crashed every detail page that includes it (risk,
- * control, vendor, asset) with `tasks.map is not a function`.
+ * practice, vendor, asset) with `tasks.map is not a function`.
  *
  *   1. `{ rows: [...] }` — current shape; renders the rows.
  *   2. `[...]`            — legacy shape (older deploys); renders too.

@@ -98,7 +98,7 @@ describe('exportAuditPackToSharePoint', () => {
             items: [
                 { entityType: 'EVIDENCE', entityId: 'ev1' },
                 { entityType: 'EVIDENCE', entityId: 'ev2' },
-                { entityType: 'CONTROL', entityId: 'c1' },
+                { entityType: 'PRACTICE', entityId: 'c1' },
             ],
         });
         mockDb.evidence.findMany.mockResolvedValueOnce([

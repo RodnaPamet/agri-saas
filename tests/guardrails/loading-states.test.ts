@@ -77,7 +77,7 @@ describe('Loading-state guardrails', () => {
     // ─── 2. Key routes must have loading.tsx ───
     describe('Key routes have loading.tsx', () => {
         const REQUIRED_ROUTES = [
-            'controls',
+            'practices',
             'evidence',
             'policies',
             'audits',

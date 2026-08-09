@@ -161,7 +161,7 @@ describe('Modal.Confirm — tone-driven confirmation dialog', () => {
 // ─── 5. Focus + close behaviour ──────────────────────────────────
 
 describe('Modal — focus + dismissal', () => {
-    it('preventDefault on onOpenAutoFocus so cmdk / filter popovers keep focus control', () => {
+    it('preventDefault on onOpenAutoFocus so cmdk / filter popovers keep focus practice', () => {
         expect(MODAL_SRC).toMatch(/onOpenAutoFocus=\{\(e\)\s*=>\s*e\.preventDefault\(\)\}/);
     });
 
@@ -213,7 +213,7 @@ describe('Modal — token drift sentinel', () => {
 // ─── 7. Bespoke overlay ratchet ──────────────────────────────────
 
 describe('Bespoke modal ratchet — prevent new `fixed inset-0 bg-black/…` overlays', () => {
-    // Two bespoke overlays remain in the app today (ControlsClient's
+    // Two bespoke overlays remain in the app today (PracticesClient's
     // justification modal + a detail-page use). The Epic 54 CRUD migration
     // that follows this prompt will collapse them onto <Modal>. Until then
     // we ratchet so the count can only go down.

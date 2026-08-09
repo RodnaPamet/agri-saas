@@ -13,13 +13,13 @@
  * Polarity model — every KPI tile carries one of three values:
  *
  *   - `up-good`   — positive delta is GOOD (green). Examples:
- *                   coverage %, completed-controls count, MFA-enabled
+ *                   coverage %, completed-practices count, MFA-enabled
  *                   user count.
  *   - `down-good` — negative delta is GOOD (green). Examples:
  *                   overdue-evidence count, open-incident count,
  *                   critical-risk count.
  *   - `neutral`   — direction has no semantic. Examples: tenant
- *                   count, total-controls count.
+ *                   count, total-practices count.
  *
  * Picking the right polarity is a per-metric decision; getting it
  * wrong displays "growth in critical risks" as a green arrow,

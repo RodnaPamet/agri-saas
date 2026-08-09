@@ -8,7 +8,7 @@
  *   - VendorDocument (validTo)        — document expiry
  *   - Finding (dueDate)               — remediation deadline
  *
- * The existing `deadline-monitor` already handles Control/Policy/Task/
+ * The existing `deadline-monitor` already handles Practice/Policy/Task/
  * Risk/TestPlan; `evidence-expiry-monitor` handles Evidence retention;
  * `vendor-renewal-check` handles Vendor renewals. Adding a parallel
  * source here would double-count those entities, so we narrow to the
@@ -108,8 +108,8 @@ async function scanAuditCycles(
         const classified = classifyUrgency(r.periodEndAt, now, windows);
         if (!classified) continue;
         items.push({
-            entityType: 'CONTROL', // No CALENDAR-native entity type;
-            // re-use CONTROL bucket so the digest template renders. The
+            entityType: 'PRACTICE', // No CALENDAR-native entity type;
+            // re-use PRACTICE bucket so the digest template renders. The
             // entity type is informational only — the email shows
             // `name` + `reason` + `dueDate`.
             entityId: r.id,

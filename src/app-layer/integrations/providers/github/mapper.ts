@@ -5,8 +5,8 @@
  * local objects and GitHub branch protection rule structures.
  *
  * Demonstrates the bidirectional mapping pattern:
- *   - Local control fields → GitHub protection rule fields
- *   - GitHub protection rule fields → local control fields
+ *   - Local practice fields → GitHub protection rule fields
+ *   - GitHub protection rule fields → local practice fields
  *
  * @module integrations/providers/github-mapper
  */

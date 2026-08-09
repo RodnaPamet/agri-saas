@@ -1,5 +1,5 @@
 /**
- * VR-9 — the Control-page AI suggestions rail renders ranked cards + actions.
+ * VR-9 — the Practice-page AI suggestions rail renders ranked cards + actions.
  */
 import { render, screen, fireEvent } from '@testing-library/react';
 import * as React from 'react';
@@ -21,7 +21,7 @@ const SUGGESTIONS = [
     {
         id: 's1',
         rank: 1,
-        title: 'Notify the team when a control test fails',
+        title: 'Notify the team when a practice test fails',
         rationale: 'Surface failing tests fast.',
         triggerEvent: 'TEST_RUN_FAILED',
         actionType: 'NOTIFY_USER' as const,
@@ -43,7 +43,7 @@ describe('AutomationSuggestionsRail', () => {
         mockSWR.mockReturnValue({ data: { suggestions: SUGGESTIONS }, isLoading: false });
         render(<AutomationSuggestionsRail />);
         expect(screen.getByTestId('automation-suggestions-rail')).toBeInTheDocument();
-        expect(screen.getByText('Notify the team when a control test fails')).toBeInTheDocument();
+        expect(screen.getByText('Notify the team when a practice test fails')).toBeInTheDocument();
         expect(screen.getByText('Open a remediation task for every new risk')).toBeInTheDocument();
         // human-readable trigger badge
         expect(screen.getByText('Test Run Failed')).toBeInTheDocument();
@@ -52,12 +52,12 @@ describe('AutomationSuggestionsRail', () => {
     it('dismiss removes a suggestion from the list', () => {
         mockSWR.mockReturnValue({ data: { suggestions: SUGGESTIONS }, isLoading: false });
         render(<AutomationSuggestionsRail />);
-        const firstCard = screen.getByText('Notify the team when a control test fails');
+        const firstCard = screen.getByText('Notify the team when a practice test fails');
         expect(firstCard).toBeInTheDocument();
         // dismiss the first card
         fireEvent.click(screen.getAllByText('Dismiss')[0]);
         expect(
-            screen.queryByText('Notify the team when a control test fails'),
+            screen.queryByText('Notify the team when a practice test fails'),
         ).not.toBeInTheDocument();
     });
 

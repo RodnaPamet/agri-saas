@@ -41,7 +41,7 @@ export interface CreateTaskActionConfig {
 }
 
 export interface UpdateStatusActionConfig {
-    entityType: 'Risk' | 'Task' | 'Control' | 'Issue';
+    entityType: 'Risk' | 'Task' | 'Practice' | 'Issue';
     field: string;
     toStatus: string;
 }

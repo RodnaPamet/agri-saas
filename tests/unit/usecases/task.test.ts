@@ -21,8 +21,8 @@
  *      for emitAutomationEvent — without this the automation payload
  *      can't drive transition-aware rules (e.g. "OPEN → IN_PROGRESS").
  *   4. validateTypeRelevance fires on RESOLVED/CLOSED transitions:
- *      AUDIT_FINDING / CONTROL_GAP without controlId AND without a
- *      CONTROL / FRAMEWORK_REQUIREMENT link must be blocked.
+ *      AUDIT_FINDING / PRACTICE_GAP without practiceId AND without a
+ *      PRACTICE / FRAMEWORK_REQUIREMENT link must be blocked.
  *   5. createTask + assignTask enqueue an assignment notification
  *      (best-effort try/catch — never breaks the task op).
  *   6. Audit emit on every state change.
@@ -124,12 +124,12 @@ beforeEach(() => {
     mockCreate.mockResolvedValue({
         id: 't1', key: 'TASK-1', title: 'New', type: 'TASK',
         severity: null, priority: null, status: 'OPEN',
-        assigneeUserId: null, controlId: null,
+        assigneeUserId: null, practiceId: null,
     } as never);
     mockSetStatus.mockResolvedValue({ id: 't1', status: 'RESOLVED' } as never);
     mockAssign.mockResolvedValue({ id: 't1', title: 'X', key: 'T1', type: 'TASK' } as never);
     mockCommentAdd.mockResolvedValue({ id: 'comment-1' } as never);
-    mockGetById.mockResolvedValue({ id: 't1', status: 'OPEN', type: 'TASK', controlId: null } as never);
+    mockGetById.mockResolvedValue({ id: 't1', status: 'OPEN', type: 'TASK', practiceId: null } as never);
 });
 
 describe('createTask', () => {
@@ -188,7 +188,7 @@ describe('setTaskStatus — fromStatus capture + validateTypeRelevance', () => {
     it('passes fromStatus from the pre-fetch into the automation event payload', async () => {
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn({} as never));
         mockGetById.mockResolvedValueOnce({
-            id: 't1', status: 'OPEN', type: 'TASK', controlId: null,
+            id: 't1', status: 'OPEN', type: 'TASK', practiceId: null,
         } as never);
 
         await setTaskStatus(makeRequestContext('EDITOR'), 't1', 'IN_PROGRESS');
@@ -214,13 +214,13 @@ describe('setTaskStatus — fromStatus capture + validateTypeRelevance', () => {
         ).rejects.toThrow(/Task not found/);
     });
 
-    it('blocks RESOLVED for AUDIT_FINDING without controlId AND without CONTROL/FRAMEWORK link', async () => {
+    it('blocks RESOLVED for AUDIT_FINDING without practiceId AND without PRACTICE/FRAMEWORK link', async () => {
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn({} as never));
         mockGetById.mockResolvedValueOnce({
-            id: 't1', status: 'OPEN', type: 'AUDIT_FINDING', controlId: null,
+            id: 't1', status: 'OPEN', type: 'AUDIT_FINDING', practiceId: null,
         } as never);
         mockLinkList.mockResolvedValueOnce([
-            { entityType: 'POLICY' }, // wrong type — not CONTROL / FRAMEWORK_REQUIREMENT
+            { entityType: 'POLICY' }, // wrong type — not PRACTICE / FRAMEWORK_REQUIREMENT
         ] as never);
 
         await expect(
@@ -228,17 +228,17 @@ describe('setTaskStatus — fromStatus capture + validateTypeRelevance', () => {
             // Supply one so the type-relevance gate is the rejection
             // path under test, not the resolution-required gate.
             setTaskStatus(makeRequestContext('EDITOR'), 't1', 'RESOLVED', 'fix shipped'),
-        ).rejects.toThrow(/AUDIT_FINDING tasks must have a controlId/);
+        ).rejects.toThrow(/AUDIT_FINDING tasks must have a practiceId/);
         // Regression: a refactor that skipped validateTypeRelevance
         // would let an audit finding be marked "resolved" without
-        // pointing at WHICH control was remediated — the audit-pack
+        // pointing at WHICH practice was remediated — the audit-pack
         // export downstream loses the traceability link.
     });
 
     it('allows RESOLVED for INCIDENT when an ASSET link is present', async () => {
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn({} as never));
         mockGetById.mockResolvedValueOnce({
-            id: 't1', status: 'OPEN', type: 'INCIDENT', controlId: null,
+            id: 't1', status: 'OPEN', type: 'INCIDENT', practiceId: null,
         } as never);
         mockLinkList.mockResolvedValueOnce([
             { entityType: 'ASSET' },
@@ -255,7 +255,7 @@ describe('setTaskStatus — assignee self-serve (operator completion)', () => {
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn({} as never));
         // ctx.userId defaults to 'user-1'; the task is assigned to them.
         mockGetById.mockResolvedValueOnce({
-            id: 't1', status: 'OPEN', type: 'FARM_TASK', controlId: null,
+            id: 't1', status: 'OPEN', type: 'FARM_TASK', practiceId: null,
             assigneeUserId: 'user-1',
         } as never);
 
@@ -268,7 +268,7 @@ describe('setTaskStatus — assignee self-serve (operator completion)', () => {
     it('blocks a MECHANISATOR who is NOT the assignee', async () => {
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn({} as never));
         mockGetById.mockResolvedValueOnce({
-            id: 't1', status: 'OPEN', type: 'FARM_TASK', controlId: null,
+            id: 't1', status: 'OPEN', type: 'FARM_TASK', practiceId: null,
             assigneeUserId: 'someone-else',
         } as never);
 
@@ -370,7 +370,7 @@ describe('deleteTask', () => {
             fn({ task: { delete: del } } as never),
         );
         mockGetById.mockResolvedValueOnce({
-            id: 't1', title: 'My task', type: 'TASK', status: 'OPEN', controlId: null,
+            id: 't1', title: 'My task', type: 'TASK', status: 'OPEN', practiceId: null,
         } as never);
 
         await deleteTask(makeRequestContext('EDITOR'), 't1');

@@ -116,7 +116,7 @@ const REGISTRY: RegistryEntry[] = [
         guards:
             'the no-results variant + "Clear filters" CTA — the ' +
             'rendered test asserts the CTA renders as a reachable ' +
-            'control AND fires its handler, not just that the prop is ' +
+            'practice AND fires its handler, not just that the prop is ' +
             'passed.',
     },
     {

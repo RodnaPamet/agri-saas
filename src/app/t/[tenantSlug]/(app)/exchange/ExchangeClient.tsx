@@ -13,7 +13,7 @@
  *     and reported the result as the market. The filter state is now the SWR
  *     key, so Postgres answers the question over the whole table.
  *   - Pagination: `useCursorPagination` accumulates pages behind a "Load more"
- *     control. SWR owns page 1 (keyed by the active filters); a filter change
+ *     practice. SWR owns page 1 (keyed by the active filters); a filter change
  *     reseeds the accumulator via `reload`.
  *   - Market pulse: the ticker aggregates the LOADED rows and says so — see
  *     the currency + sample notes on `ticker` below.

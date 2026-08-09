@@ -38,7 +38,7 @@ export interface AutomationEventMetadata {
 
 export interface TestPlanCreatedData {
     name: string;
-    controlId: string;
+    practiceId: string;
 }
 export interface TestPlanUpdatedData {
     changedFields: string[];
@@ -67,12 +67,12 @@ export interface TestEvidenceUnlinkedData {
 
 export interface EvidenceExpiringData {
     title: string;
-    controlId: string | null;
+    practiceId: string | null;
     retentionUntil: string | null;
 }
 export interface EvidenceExpiredData {
     title: string;
-    controlId: string | null;
+    practiceId: string | null;
     expiredAt: string | null;
 }
 
@@ -85,7 +85,7 @@ export interface ScheduleFiredData {
     offsetDays: number;
 }
 
-export interface ControlStatusChangedData {
+export interface PracticeStatusChangedData {
     fromStatus: string;
     toStatus: string;
 }
@@ -123,7 +123,7 @@ export interface TaskCreatedData {
     severity: string;
     priority: string;
     assigneeUserId: string | null;
-    controlId: string | null;
+    practiceId: string | null;
 }
 export interface TaskStatusChangedData {
     fromStatus: string;
@@ -210,7 +210,7 @@ export type AutomationDomainEvent =
     | (AutomationEventMetadata & { event: 'EVIDENCE_EXPIRING'; data: EvidenceExpiringData })
     | (AutomationEventMetadata & { event: 'EVIDENCE_EXPIRED'; data: EvidenceExpiredData })
     | (AutomationEventMetadata & { event: 'SCHEDULE'; data: ScheduleFiredData })
-    | (AutomationEventMetadata & { event: 'CONTROL_STATUS_CHANGED'; data: ControlStatusChangedData })
+    | (AutomationEventMetadata & { event: 'CONTROL_STATUS_CHANGED'; data: PracticeStatusChangedData })
     | (AutomationEventMetadata & { event: 'POLICY_REVIEW_DUE'; data: PolicyReviewDueData })
     | (AutomationEventMetadata & { event: 'VENDOR_ASSESSMENT_OVERDUE'; data: VendorAssessmentOverdueData })
     | (AutomationEventMetadata & { event: 'ONBOARDING_STARTED'; data: OnboardingStartedData })

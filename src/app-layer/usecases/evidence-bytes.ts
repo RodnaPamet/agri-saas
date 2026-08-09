@@ -21,7 +21,7 @@
  * silently — an orphan nothing can ever find again.
  *
  * **2. Only on the LAST reference.** SHA-256 dedup means several Evidence
- * rows can share one FileRecord: uploading the same PDF to two controls
+ * rows can share one FileRecord: uploading the same PDF to two practices
  * reuses the record rather than storing it twice. Deleting bytes because one
  * of those rows was purged would break every other row still pointing at
  * them. The object goes only when no surviving evidence references it.

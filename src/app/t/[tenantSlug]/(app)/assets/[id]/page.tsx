@@ -77,7 +77,7 @@ export default function AssetDetailPage() {
         : null;
 
     // B6 +1 — canonical 7-tab strip on every detail page. Same shape
-    // as Controls / Risks: Overview holds the existing asset body;
+    // as Practices / Risks: Overview holds the existing asset body;
     // Tasks + Traceability are inline-routed to the already-mounted
     // panels; the other four explain where the related-entity surface
     // lives.
@@ -370,7 +370,7 @@ export default function AssetDetailPage() {
                         />
                     </div>
                     <div className="space-y-default">
-                        <Heading level={3}>{t('inheritedFromControls')}</Heading>
+                        <Heading level={3}>{t('inheritedFromPractices')}</Heading>
                         <InheritedEvidencePanel
                             endpoint={apiUrl(`/assets/${assetId}/evidence`)}
                             tenantHref={tenantHref}
@@ -422,7 +422,7 @@ export default function AssetDetailPage() {
                 {permissions.canWrite && (
                     <div className="flex justify-end -mt-1 -mb-2">
                         {/* B2 — icon-only edit affordance; opens the Edit
-                            Asset modal, mirroring the control overview. */}
+                            Asset modal, mirroring the practice overview. */}
                         <Tooltip content={t('editAsset')}>
                             <Button
                                 variant="secondary"

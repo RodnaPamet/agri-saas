@@ -53,7 +53,7 @@ beforeEach(() => {
 // ─── reconcileUnlinkedEvidence ─────────────────────────────────────
 
 describe('reconcileUnlinkedEvidence', () => {
-    it('queries for FILE evidence with no controlId older than the cutoff', async () => {
+    it('queries for FILE evidence with no practiceId older than the cutoff', async () => {
         (mockDb.evidence.findMany as jest.Mock).mockResolvedValue([]);
         const before = Date.now();
         await reconcileUnlinkedEvidence('tenant-1', 60);
@@ -61,7 +61,7 @@ describe('reconcileUnlinkedEvidence', () => {
         expect(args.where).toMatchObject({
             tenantId: 'tenant-1',
             type: 'FILE',
-            controlId: null,
+            practiceId: null,
             deletedAt: null,
         });
         const cutoff = args.where.createdAt.lt as Date;

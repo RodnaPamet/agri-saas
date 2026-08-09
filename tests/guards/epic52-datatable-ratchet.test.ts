@@ -68,7 +68,7 @@ describe('Epic 52 — DataTable migration ratchet', () => {
      * After Epic 52 migration batch: reduced to target below.
      * Lower this number whenever you migrate a surface.
      */
-    const RAW_TABLE_BASELINE = 13; // admin/members(2), admin/roles(2), controls/[controlId](3), tasks/[taskId](1), vendors/[vendorId](3), reports/soa/SoAClient(1) — admin/api-keys migrated to DataTable in the finishing pass; access-reviews/[reviewId]/AccessReviewDetailClient(1) — Epic G-4 master/detail with inline decision controls (same shape as AuditsClient, also excluded by table-platform-drift)
+    const RAW_TABLE_BASELINE = 13; // admin/members(2), admin/roles(2), practices/[practiceId](3), tasks/[taskId](1), vendors/[vendorId](3), reports/soa/SoAClient(1) — admin/api-keys migrated to DataTable in the finishing pass; access-reviews/[reviewId]/AccessReviewDetailClient(1) — Epic G-4 master/detail with inline decision practices (same shape as AuditsClient, also excluded by table-platform-drift)
 
     it('raw <table> count does not exceed the baseline', () => {
         const { count, files } = countRawTables();

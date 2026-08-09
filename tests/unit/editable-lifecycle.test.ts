@@ -6,7 +6,7 @@
  * Test strategy:
  * - Pure function tests — no mocks, no DB (lifecycle is side-effect-free)
  * - Uses a simple string payload for clarity; production payloads
- *   would be domain-specific objects (policy content, control description, etc.)
+ *   would be domain-specific objects (policy content, practice description, etc.)
  * - Validates all invariants: version increments, history append-only,
  *   phase transitions, error conditions
  * - Validates draft/published isolation end-to-end

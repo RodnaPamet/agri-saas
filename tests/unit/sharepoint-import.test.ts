@@ -62,12 +62,12 @@ describe('importSharePointItems', () => {
         const r = await importSharePointItems(ctx, {
             connectionId: 'c1',
             items: [{ driveId: 'd1', itemId: 'a' }, { driveId: 'd1', itemId: 'b' }],
-            controlId: 'ctrl1',
+            practiceId: 'ctrl1',
         });
         expect(r.imported).toBe(2);
         expect(r.failed).toBe(0);
         expect(mockUpload).toHaveBeenCalledTimes(2);
-        expect(mockUpload.mock.calls[0][2]).toMatchObject({ controlId: 'ctrl1' });
+        expect(mockUpload.mock.calls[0][2]).toMatchObject({ practiceId: 'ctrl1' });
         expect(mockDb.integrationSyncMapping.upsert).toHaveBeenCalledTimes(2);
         // mapping carries the SharePoint webUrl as sourceUrl
         const upsertArg = mockDb.integrationSyncMapping.upsert.mock.calls[0][0];

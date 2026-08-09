@@ -6,7 +6,7 @@
  *     <Button variant="primary" icon={<Plus />}>{Entity}</Button>
  *
  * — i.e. the visible label is JUST the entity noun (`Asset`,
- * `Risk`, `Control`, `Task`, `Vendor`, …). The `+` glyph rides the
+ * `Risk`, `Practice`, `Task`, `Vendor`, …). The `+` glyph rides the
  * `icon` slot so the Button primitive centres the icon + label as
  * one tidy unit (`[+][Asset]` centred together — see button.tsx;
  * the old icon-balance ghost was reverted 2026-05-31). A button
@@ -23,7 +23,7 @@
  *   1. The header-action i18n keys (`addX`, `newX` — by
  *      convention, the keys consumed by header trigger buttons)
  *      do NOT carry a verb prefix in their value.
- *   2. The seven canonical entity pages (Controls, Risks, Assets,
+ *   2. The seven canonical entity pages (Practices, Risks, Assets,
  *      Tasks, Policies, Vendors, Evidence) all render their
  *      header action button via the `icon={<Plus />}` slot — not
  *      via an inline `+ Entity` literal — so the `+` and the noun
@@ -94,10 +94,10 @@ describe('Action-button canonical entity label', () => {
         //  button's t()/tr() call resolves against]
         const INLINE_SITES: Array<[string, string, string, string]> = [
             [
-                'src/app/t/[tenantSlug]/(app)/controls/ControlsClient.tsx',
-                'new-control-btn',
-                'Control',
-                'controls',
+                'src/app/t/[tenantSlug]/(app)/practices/PracticesClient.tsx',
+                'new-practice-btn',
+                'Practice',
+                'practices',
             ],
             [
                 'src/app/t/[tenantSlug]/(app)/policies/PoliciesClient.tsx',
@@ -138,7 +138,7 @@ describe('Action-button canonical entity label', () => {
                 expect(lastGT).toBeGreaterThan(-1);
                 const textContent = buttonBlock.slice(lastGT + 1).trim();
                 // i18n batches T07/T09 — migrated labels route through
-                // next-intl (`{t('list.addControl')}`, `{tr('newButton')}`).
+                // next-intl (`{t('list.addPractice')}`, `{tr('newButton')}`).
                 // Accept either the bare literal noun OR a `<binding>('<key>')`
                 // call whose en.json value (under the site's namespace)
                 // resolves to the same bare noun. Binding may be t/tr/etc.

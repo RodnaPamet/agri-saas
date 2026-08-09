@@ -7,7 +7,7 @@
  *
  *   - **Empty-tenant onboarding** — first-time tenant lands on the
  *     dashboard with zero data. A ChecklistCard guides them: install
- *     a framework, add a risk, link a control, upload evidence.
+ *     a framework, add a risk, link a practice, upload evidence.
  *
  *   - **Feature-readiness gates** — pages that require prerequisites
  *     (e.g. "Before you can run access reviews, configure SSO + add

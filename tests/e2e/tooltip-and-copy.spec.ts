@@ -51,7 +51,7 @@ test.describe('Epic 56 — tooltip + copy primitives', () => {
     // coarse-pointer branch in src/components/ui/tooltip.tsx).
     test('selection-toolbar Clear tooltip exposes its hint on hover', async ({ page }) => {
         const tenantSlug = await loginAndGetTenant(page, ADMIN_USER);
-        await safeGoto(page, `/t/${tenantSlug}/controls`, {
+        await safeGoto(page, `/t/${tenantSlug}/practices`, {
             waitUntil: 'domcontentloaded',
         });
         await page.waitForLoadState('networkidle').catch(() => {});
@@ -63,7 +63,7 @@ test.describe('Epic 56 — tooltip + copy primitives', () => {
         // mismatch because Radix Checkbox already renders as <button>;
         // GAP-CI-77 changed the wrapper from role="button" to
         // role="presentation" so axe sees only the inner labelled
-        // Radix button as the canonical control). The inner checkbox
+        // Radix button as the canonical practice). The inner checkbox
         // has `pointer-events-none` so the click reaches the wrapping
         // div's handler.
         const firstRowSelect = page

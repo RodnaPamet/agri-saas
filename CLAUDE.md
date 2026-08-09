@@ -166,7 +166,7 @@ prisma/schema/         → Multi-file Prisma schema (GAP-09):
                             base.prisma         — generator + datasource (sole owners)
                             enums.prisma        — every shared enum
                             auth.prisma         — Tenant/User/Membership/Session/SSO/Billing
-                            compliance.prisma   — Control/Evidence/Framework/Policy/Asset/etc.
+                            compliance.prisma   — Practice/Evidence/Framework/Policy/Asset/etc.
                             vendor.prisma       — Vendor + assessment graph
                             audit.prisma        — AuditCycle/Pack/Auditor + AuditLog
                             automation.prisma   — AutomationRule/Execution + Notification + Integration
@@ -777,7 +777,7 @@ The codebase has two billing modes, decided by a single env var:
     Every tenant resolves to `ENTERPRISE` and per-resource limits
     are unlimited. No DB query happens for plan resolution.
 
-The decision is read once at module load. Today only `control`
+The decision is read once at module load. Today only `practice`
 creation is gated (FREE: 10, TRIAL/PRO: 100, ENTERPRISE: unlimited).
 Adding a new gated resource is a one-line change in `PLAN_LIMITS`,
 a `switch` arm in `getCurrentCount`, and one
@@ -983,9 +983,21 @@ Three codebase-hygiene invariants are held by structural guardrails
 - **Route handlers type `params` as `Promise<…>`.** Next 15+
   contract; `tests/guards/async-params-route-typing.test.ts` blocks
   a regression. The old transparent-await shim is retired.
+- **Web-platform identifiers are off-limits to renames.**
+  `tests/guards/web-platform-identifiers.test.ts` pins the canonical
+  spelling of names this codebase does not own — `Cache-Control`,
+  `Access-Control-Allow-*`, `aria-controls`, `AbortController`, the
+  `control` keyboard-modifier alias — and bans the mangled forms.
+  Every one of these is a *string literal*, so TypeScript cannot help:
+  the Control→Practice rename silently turned 39 `Cache-Control`
+  headers into `Cache-Practice` (dropping `no-store` on evidence and
+  avatar downloads) and 5 `aria-controls` into `aria-practices`, and
+  the whole suite stayed green. Before any project-wide identifier
+  sweep, add the at-risk standard names here.
 
 `tests/guards/codebase-hygiene-integrity.test.ts` is the meta-ratchet
-over these four guardrails.
+over the first three bullets' four guardrail files. The web-platform
+guard stands alone — it carries its own mutation proof instead.
 
 ## Failing tests
 
@@ -1100,7 +1112,7 @@ stands for that PR only — not as a precedent.
       a task) follow this same icon-slot rule, but if you keep a verb
       it's `Add {Entity}` (the child-attachment register).
     - **Traceability / cross-entity association** uses
-      `Link {Entity}` (`Link Asset`, `Link Control`) — the verb
+      `Link {Entity}` (`Link Asset`, `Link Practice`) — the verb
       changes the meaning (associating, not creating).
 
   Forward enforcement:
@@ -1241,7 +1253,7 @@ whenever you build a new entity page; never re-introduce the inline
 inline back-link / title / tab-bar / loading-skeleton dance.
 
 ```tsx
-// List page — controls reference impl: ControlsClient.tsx
+// List page — practices reference impl: PracticesClient.tsx
 <EntityListPage<Row>
   header={{ title, count, actions }}
   filters={{ defs, searchId, searchPlaceholder, toolbarActions }}
@@ -1250,7 +1262,7 @@ inline back-link / title / tab-bar / loading-skeleton dance.
   {/* page-level modals/sheets sit as children */}
 </EntityListPage>
 
-// Detail page — controls reference impl: controls/[controlId]/page.tsx
+// Detail page — practices reference impl: practices/[practiceId]/page.tsx
 <EntityDetailLayout
   back={{ href, label }}
   title={…}
@@ -1285,8 +1297,8 @@ and domain-specific tab bodies (e.g. `TraceabilityPanel`,
 
 **Adoption ratchet.** Each adoption is locked by a structural test
 that asserts the page mounts the shell and doesn't hand-roll the
-inline composition: `controls-client-shell-adoption.test.ts` (list)
-and `control-detail-shell-adoption.test.ts` (detail). When you
+inline composition: `practices-client-shell-adoption.test.ts` (list)
+and `practice-detail-shell-adoption.test.ts` (detail). When you
 migrate a new entity page (policies / vendors / audits /
 …), add a sibling `*-shell-adoption.test.ts` next to the existing
 two — same shape, same regression-class lock.
@@ -1441,7 +1453,7 @@ state) so commits survive client-side navigation, mirroring Gmail's
 "undo send" UX.
 
 The wired sites today: cross-entity unlink in `TraceabilityPanel`,
-control-evidence + control-requirement unlink on the control detail
+practice-evidence + practice-requirement unlink on the practice detail
 page, task link removal on the task detail page, and vendor
 document removal on the vendor detail page. The structural ratchet
 at `tests/guards/epic-67-rollout-coverage.test.ts` locks the wiring
@@ -1474,7 +1486,7 @@ Two production rollouts:
   Threshold raised from 100 → 1000 in a follow-up to scope auto-
   virtualization to genuinely large unpaginated tables (the lower
   threshold caused click-intercept regressions on medium-sized
-  tables in Playwright). `virtualize={false}` opts out (Controls
+  tables in Playwright). `virtualize={false}` opts out (Practices
   page contract). `virtualize={{ threshold: N }}` customises.
   Pages that legitimately need virtualization on smaller datasets
   should opt in explicitly. Falls back to the standard `<Table>`

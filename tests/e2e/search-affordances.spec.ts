@@ -10,11 +10,11 @@ import { test, expect } from '@playwright/test';
 import { loginAndGetTenant, safeGoto } from './e2e-utils';
 
 test.describe('Search affordances', () => {
-    test('controls search lives inside the filter dropdown; ⌘K still opens', async ({
+    test('practices search lives inside the filter dropdown; ⌘K still opens', async ({
         page,
     }) => {
         const tenantSlug = await loginAndGetTenant(page);
-        await safeGoto(page, `/t/${tenantSlug}/controls`, {
+        await safeGoto(page, `/t/${tenantSlug}/practices`, {
             waitUntil: 'domcontentloaded',
         });
         await page.waitForLoadState('networkidle').catch(() => {});
@@ -26,7 +26,7 @@ test.describe('Search affordances', () => {
 
         // Open the Filter dropdown — the live content search lives within.
         await main.locator('[data-filter-trigger]').first().click();
-        const search = page.locator('#controls-search input');
+        const search = page.locator('#practices-search input');
         await expect(search).toBeVisible();
 
         // Typing filters the table live — the query lands in the URL with

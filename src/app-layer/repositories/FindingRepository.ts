@@ -14,7 +14,7 @@ const findingListSelect = {
     owner: true,
     status: true,
     assignee: { select: { id: true, name: true, email: true } },
-    control: { select: { id: true, code: true, name: true } },
+    practice: { select: { id: true, code: true, name: true } },
 } as const;
 
 export class FindingRepository {
@@ -38,8 +38,8 @@ export class FindingRepository {
                 audit: { select: { id: true, title: true } },
                 evidenceLinks: { include: { evidence: true } },
                 assignee: { select: { id: true, name: true, email: true } },
-                control: { select: { id: true, code: true, name: true } },
-                compensatingControl: { select: { id: true, code: true, name: true } },
+                practice: { select: { id: true, code: true, name: true } },
+                compensatingPractice: { select: { id: true, code: true, name: true } },
             },
         });
     }

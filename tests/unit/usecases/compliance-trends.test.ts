@@ -12,7 +12,7 @@
  *     ends: a 0/negative request floors to 1, an overshoot ceils to
  *     365. A clamp regression either crashes the query or floods the
  *     dashboard with a 10-year scan.
- *   - the snapshot → DTO conversion, including the `controlCoverageBps
+ *   - the snapshot → DTO conversion, including the `practiceCoverageBps
  *     / 10` basis-points-to-percent maths.
  *   - `daysAvailable` reflecting the ACTUAL row count, which can be
  *     lower than `daysRequested` when snapshots are missing.
@@ -35,9 +35,9 @@ beforeEach(() => {
 function snapshotRow(overrides: Record<string, any> = {}) {
     return {
         snapshotDate: new Date('2026-05-10T00:00:00.000Z'),
-        controlCoverageBps: 925, // 92.5%
-        controlsImplemented: 37,
-        controlsApplicable: 40,
+        practiceCoverageBps: 925, // 92.5%
+        practicesImplemented: 37,
+        practicesApplicable: 40,
         evidenceOverdue: 2,
         evidenceDueSoon7d: 4,
         evidenceCurrent: 30,
@@ -84,9 +84,9 @@ describe('getComplianceTrends', () => {
         expect(payload.dataPoints).toHaveLength(1);
         const dp = payload.dataPoints[0];
         // 925 bps / 10 → 92.5 %
-        expect(dp.controlCoveragePercent).toBe(92.5);
+        expect(dp.practiceCoveragePercent).toBe(92.5);
         expect(dp.date).toBe('2026-05-10');
-        expect(dp.controlsImplemented).toBe(37);
+        expect(dp.practicesImplemented).toBe(37);
         expect(dp.findingsOpen).toBe(3);
         // asset KPI series — backs the Assets-page sparklines
         expect(dp.assetsTotal).toBe(42);

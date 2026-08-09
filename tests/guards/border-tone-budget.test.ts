@@ -83,7 +83,7 @@ const ROOT = path.resolve(__dirname, '../..');
  *
  * R20-PR-B (2026-05-15) lowered the budget from 118 → 117 by
  * migrating the date-picker trigger's rest border from
- * `border-border-default` to the new R20 control-parity token
+ * `border-border-default` to the new R20 practice-parity token
  * `--ctrl-edge-rest`. The trigger now shares its border vocabulary
  * with the migrated <Input> (and, transitively, the combobox
  * trigger which composes a <Button>), so three form controls read

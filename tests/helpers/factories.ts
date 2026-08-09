@@ -6,7 +6,7 @@
  * For integration tests: creates records via Prisma.
  *
  * Usage:
- *   import { buildTenant, buildUser, buildControl, buildRisk } from '../helpers/factories';
+ *   import { buildTenant, buildUser, buildPractice, buildRisk } from '../helpers/factories';
  *   const tenant = buildTenant();
  *   const user = buildUser({ tenantId: tenant.id });
  */
@@ -70,13 +70,13 @@ export function buildRequestContext(overrides: Record<string, unknown> = {}) {
     };
 }
 
-export function buildControl(overrides: Record<string, unknown> = {}) {
+export function buildPractice(overrides: Record<string, unknown> = {}) {
     return {
         id: nextId(),
         tenantId: overrides.tenantId ?? nextId(),
         code: `A.${Math.floor(Math.random() * 99)}.${Math.floor(Math.random() * 9)}`,
-        name: `Test Control ${counter}`,
-        description: 'Test control description',
+        name: `Test Practice ${counter}`,
+        description: 'Test practice description',
         status: 'NOT_IMPLEMENTED',
         applicability: 'APPLICABLE',
         createdAt: new Date(),
@@ -111,7 +111,7 @@ export function buildEvidence(overrides: Record<string, unknown> = {}) {
         title: `Test Evidence ${counter}`,
         type: overrides.type ?? 'DOCUMENT',
         status: overrides.status ?? 'DRAFT',
-        controlId: overrides.controlId ?? null,
+        practiceId: overrides.practiceId ?? null,
         isArchived: overrides.isArchived ?? false,
         retentionUntil: overrides.retentionUntil ?? null,
         expiredAt: overrides.expiredAt ?? null,
@@ -130,7 +130,7 @@ export function buildTask(overrides: Record<string, unknown> = {}) {
         type: overrides.type ?? 'TASK',
         status: overrides.status ?? 'OPEN',
         priority: overrides.priority ?? 'MEDIUM',
-        controlId: overrides.controlId ?? null,
+        practiceId: overrides.practiceId ?? null,
         dueAt: overrides.dueAt ?? null,
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -160,17 +160,17 @@ export function createTenantWithAdmin(overrides: Record<string, unknown> = {}) {
 }
 
 /**
- * Build a control with linked evidence.
+ * Build a practice with linked evidence.
  */
-export function createControlWithEvidence(tenantId?: string, overrides: Record<string, unknown> = {}) {
+export function createPracticeWithEvidence(tenantId?: string, overrides: Record<string, unknown> = {}) {
     const tid = tenantId ?? buildTenant().id;
-    const control = buildControl({ tenantId: tid, ...overrides });
+    const practice = buildPractice({ tenantId: tid, ...overrides });
     const evidence = buildEvidence({
         tenantId: tid,
-        controlId: control.id,
-        title: `Evidence for ${control.name}`,
+        practiceId: practice.id,
+        title: `Evidence for ${practice.name}`,
     });
-    return { control, evidence, tenantId: tid };
+    return { practice, evidence, tenantId: tid };
 }
 
 /**
@@ -197,15 +197,15 @@ export function createRiskWithScore(
  */
 export function seedMinimalTenant(role: string = 'ADMIN') {
     const { tenant, user, membership, ctx } = createTenantWithAdmin();
-    const control = buildControl({ tenantId: tenant.id, code: 'A.5.1', name: 'Access Control Policy' });
+    const practice = buildPractice({ tenantId: tenant.id, code: 'A.5.1', name: 'Access Control Policy' });
     const risk = createRiskWithScore(3, 4, { tenantId: tenant.id, name: 'Data Breach Risk' });
-    const evidence = buildEvidence({ tenantId: tenant.id, controlId: control.id });
+    const evidence = buildEvidence({ tenantId: tenant.id, practiceId: practice.id });
     const ctxWithRole = role === 'ADMIN' ? ctx : buildRequestContext({
         tenantId: tenant.id,
         userId: user.id,
         role,
     });
-    return { tenant, user, membership, ctx: ctxWithRole, control, risk, evidence };
+    return { tenant, user, membership, ctx: ctxWithRole, practice, risk, evidence };
 }
 
 // ─── DB Factories (integration tests) ───
@@ -233,9 +233,9 @@ export async function createMembership(
     });
 }
 
-export async function createControl(prisma: PrismaClient, tenantId: string, overrides: Record<string, unknown> = {}) {
-    const data = buildControl({ tenantId, ...overrides });
-    return prisma.control.create({ data: data as any }); // eslint-disable-line @typescript-eslint/no-explicit-any
+export async function createPractice(prisma: PrismaClient, tenantId: string, overrides: Record<string, unknown> = {}) {
+    const data = buildPractice({ tenantId, ...overrides });
+    return prisma.practice.create({ data: data as any }); // eslint-disable-line @typescript-eslint/no-explicit-any
 }
 
 // ─── Reset helpers ───

@@ -189,7 +189,7 @@ describe('Command palette — availability across routes', () => {
     const routes = [
         '/login',
         '/t/acme-corp/dashboard',
-        '/t/acme-corp/controls',
+        '/t/acme-corp/practices',
         '/t/acme-corp/risks/risk-123',
         '/audit/shared/some-token',
     ];

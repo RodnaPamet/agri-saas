@@ -202,7 +202,7 @@ describe('TenantCoverageCards — Epic 66 rollout', () => {
         ).toBeGreaterThan(0);
     });
 
-    it('shows control summary metrics in the kv block', () => {
+    it('shows practice summary metrics in the kv block', () => {
         const { container } = render(
             <TenantCoverageCards
                 rows={[

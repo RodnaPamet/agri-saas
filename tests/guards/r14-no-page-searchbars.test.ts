@@ -55,10 +55,10 @@
  * searchbars (cleaned by R14-PR7):
  *
  *   • policies/templates/page.tsx
- *   • controls/templates/page.tsx
+ *   • practices/templates/page.tsx
  *   • frameworks/[frameworkKey]/templates/page.tsx
  *   • admin/members/page.tsx
- *   • controls/sankey/ControlsSankeyClient.tsx
+ *   • practices/sankey/PracticesSankeyClient.tsx
  *   • reports/soa/SoAClient.tsx (main page search; modal search kept)
  *
  * If any new page reintroduces one, this ratchet fires.
@@ -97,7 +97,7 @@ const BANNED_PATTERNS: RegExp[] = [
 //
 const LIST_PAGES_REQUIRE_SEARCH = [
     'src/app/t/[tenantSlug]/(app)/assets/AssetsClient.tsx',
-    'src/app/t/[tenantSlug]/(app)/controls/ControlsClient.tsx',
+    'src/app/t/[tenantSlug]/(app)/practices/PracticesClient.tsx',
     'src/app/t/[tenantSlug]/(app)/policies/PoliciesClient.tsx',
     'src/app/t/[tenantSlug]/(app)/vendors/VendorsClient.tsx',
     // Evidence's bespoke toolbar now carries the box too, with the
@@ -207,7 +207,7 @@ describe('Live filter-scoped search on list pages', () => {
             // The SoAClient modal-picker uses a non-banned shape
             // (`<input>` without `type="search"` and without
             // `placeholder="Search ..."` — its placeholder is
-            // "Search controls…" which DOES start with "Search").
+            // "Search practices…" which DOES start with "Search").
             // The modal picker is a legitimate carve-out; the
             // structural detector would catch it if not for the
             // following per-file allow-list.

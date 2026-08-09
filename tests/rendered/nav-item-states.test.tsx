@@ -45,13 +45,13 @@ describe('<NavItem>', () => {
         it('renders the link with BASE + DEFAULT class compositions', () => {
             render(
                 <NavItem
-                    href="/t/foo/controls"
+                    href="/t/foo/practices"
                     icon={Settings}
-                    label="Controls"
+                    label="Practices"
                     active={false}
                 />,
             );
-            const link = screen.getByRole('link', { name: 'Controls' });
+            const link = screen.getByRole('link', { name: 'Practices' });
             // BASE tokens are present (sample three load-bearing pieces).
             expect(link.className).toContain('min-h-[44px]');
             expect(link.className).toContain('rounded-lg');
@@ -94,13 +94,13 @@ describe('<NavItem>', () => {
         it('renders the icon with the canonical 18×18 + flex-shrink-0', () => {
             render(
                 <NavItem
-                    href="/t/foo/controls"
+                    href="/t/foo/practices"
                     icon={Settings}
-                    label="Controls"
+                    label="Practices"
                     active={false}
                 />,
             );
-            const link = screen.getByRole('link', { name: 'Controls' });
+            const link = screen.getByRole('link', { name: 'Practices' });
             const icon = link.querySelector('svg');
             expect(icon).not.toBeNull();
             // The icon's class string EQUALS NAV_ITEM_ICON_CLASS — no
@@ -117,9 +117,9 @@ describe('<NavItem>', () => {
         it('does not render a badge when none is provided', () => {
             const { container } = render(
                 <NavItem
-                    href="/t/foo/controls"
+                    href="/t/foo/practices"
                     icon={Settings}
-                    label="Controls"
+                    label="Practices"
                     active={false}
                 />,
             );
@@ -132,13 +132,13 @@ describe('<NavItem>', () => {
         it('renders the link with BASE + ACTIVE class compositions', () => {
             render(
                 <NavItem
-                    href="/t/foo/controls"
+                    href="/t/foo/practices"
                     icon={Settings}
-                    label="Controls"
+                    label="Practices"
                     active={true}
                 />,
             );
-            const link = screen.getByRole('link', { name: 'Controls' });
+            const link = screen.getByRole('link', { name: 'Practices' });
             // Active conviction tokens — R13-evolved vocabulary.
             // Text colour (R13-PR5): brand-default (yellow/orange).
             expect(link.className).toContain(
@@ -201,13 +201,13 @@ describe('<NavItem>', () => {
         it('uses the same canonical icon class as the default state', () => {
             render(
                 <NavItem
-                    href="/t/foo/controls"
+                    href="/t/foo/practices"
                     icon={Settings}
-                    label="Controls"
+                    label="Practices"
                     active={true}
                 />,
             );
-            const link = screen.getByRole('link', { name: 'Controls' });
+            const link = screen.getByRole('link', { name: 'Practices' });
             const icon = link.querySelector('svg');
             // Lucide prepends its own `lucide lucide-<name>` prefix to
             // the SVG element. The recipe is appended after that, so

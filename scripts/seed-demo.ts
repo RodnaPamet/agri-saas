@@ -365,11 +365,11 @@ async function seedDemoPlanning(tenantId: string, locationId: string | null) {
 
 /**
  * Replicate `installPack`'s tenant-scoped writes for a scheme pack:
- * create one Control per linked ControlTemplate + its
- * ControlRequirementLink rows, so the tenant has Controls mapped to the
+ * create one Practice per linked PracticeTemplate + its
+ * PracticeRequirementLink rows, so the tenant has Practices mapped to the
  * scheme's requirements (which is what auto-evidence + readiness key on).
  * Direct prisma to avoid the createTask/BullMQ enqueue path; idempotent
- * (skips a control whose code already exists). RLS-safe enough for a seed:
+ * (skips a practice whose code already exists). RLS-safe enough for a seed:
  * every write carries the explicit tenantId.
  */
 async function installSchemePackForDemo(tenantId: string, userId: string, packKey: string) {
@@ -384,13 +384,13 @@ async function installSchemePackForDemo(tenantId: string, userId: string, packKe
         return;
     }
 
-    let controlsCreated = 0;
+    let practicesCreated = 0;
     let mappingsCreated = 0;
     for (const link of pack.templateLinks) {
         const tmpl = link.template;
-        let control = await prisma.control.findFirst({ where: { tenantId, code: tmpl.code } });
-        if (!control) {
-            control = await prisma.control.create({
+        let practice = await prisma.practice.findFirst({ where: { tenantId, code: tmpl.code } });
+        if (!practice) {
+            practice = await prisma.practice.create({
                 data: {
                     tenantId,
                     code: tmpl.code,
@@ -402,18 +402,18 @@ async function installSchemePackForDemo(tenantId: string, userId: string, packKe
                     createdByUserId: userId,
                 },
             });
-            controlsCreated++;
+            practicesCreated++;
         }
         for (const rl of tmpl.requirementLinks) {
-            await prisma.controlRequirementLink.upsert({
-                where: { controlId_requirementId: { controlId: control.id, requirementId: rl.requirementId } },
-                create: { tenantId, controlId: control.id, requirementId: rl.requirementId },
+            await prisma.practiceRequirementLink.upsert({
+                where: { practiceId_requirementId: { practiceId: practice.id, requirementId: rl.requirementId } },
+                create: { tenantId, practiceId: practice.id, requirementId: rl.requirementId },
                 update: {},
             });
             mappingsCreated++;
         }
     }
-    console.log(`✅ Installed ${packKey}: ${controlsCreated} controls, ${mappingsCreated} requirement mappings`);
+    console.log(`✅ Installed ${packKey}: ${practicesCreated} practices, ${mappingsCreated} requirement mappings`);
 }
 
 /**
@@ -440,7 +440,7 @@ async function seedSprayAutoEvidence(tenantId: string, tenantSlug: string, userI
             status: 'DONE',
             occurredAt: new Date(),
             title: 'Applied fungicide to North Field block A',
-            notes: '<p>Demo spray record — backs the plant-protection control points.</p>',
+            notes: '<p>Demo spray record — backs the plant-protection practice points.</p>',
             createdByUserId: userId,
         },
         select: { id: true },
@@ -537,8 +537,8 @@ async function main() {
 
     // ── Install the GlobalG.A.P. pack into one enterprise farm + show the
     //    spray → auto-evidence chain end-to-end. Direct prisma (Redis-free):
-    //    replicate installPack's control + ControlRequirementLink writes so
-    //    Controls mapped to the plant-protection requirements exist, then
+    //    replicate installPack's practice + PracticeRequirementLink writes so
+    //    Practices mapped to the plant-protection requirements exist, then
     //    create one INPUT_APPLICATION spray record and let
     //    attachAutoEvidenceFromLogEntry mint the SUBMITTED scheme evidence.
     const GG_PACK_KEY = 'GLOBALGAP-IFA-DEMO-BASE';

@@ -210,8 +210,8 @@ describe('getTenantServerContext', () => {
 
         // appPermissions should have the expected shape
         expect(ctx.appPermissions).toBeDefined();
-        expect(ctx.appPermissions.controls).toBeDefined();
-        expect(ctx.appPermissions.controls.view).toBe(true);
+        expect(ctx.appPermissions.practices).toBeDefined();
+        expect(ctx.appPermissions.practices.view).toBe(true);
         expect(ctx.appPermissions.admin.manage).toBe(true);
     });
 
@@ -226,7 +226,7 @@ describe('getTenantServerContext', () => {
 
         expect(ctx.appPermissions.admin.view).toBe(false);
         expect(ctx.appPermissions.admin.manage).toBe(false);
-        expect(ctx.appPermissions.controls.view).toBe(true);
-        expect(ctx.appPermissions.controls.edit).toBe(true);
+        expect(ctx.appPermissions.practices.view).toBe(true);
+        expect(ctx.appPermissions.practices.edit).toBe(true);
     });
 });

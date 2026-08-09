@@ -14,7 +14,7 @@ import { getAuditContext } from './audit-context';
 export const SOFT_DELETE_MODELS = new Set([
     // P0 — already had deletedAt
     'Asset',
-    'Control',
+    'Practice',
     'Evidence',
     'Policy',
     // P1 — added in soft-delete rollout migration
@@ -183,7 +183,7 @@ async function runRead(
 
     const where = (args as { where?: Record<string, unknown> })?.where;
     if (where?.deletedAt !== undefined) {
-        // Caller explicitly controls deletedAt — don't override
+        // Caller explicitly practices deletedAt — don't override
         return query(args);
     }
 

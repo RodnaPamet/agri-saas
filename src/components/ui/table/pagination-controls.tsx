@@ -12,7 +12,7 @@
  *     pageSize={25}
  *     totalCount={243}
  *     onPageChange={(p) => setPage(p)}
- *     resourceName={(p) => p ? "controls" : "control"}
+ *     resourceName={(p) => p ? "practices" : "practice"}
  *   />
  *
  * Usage (within DataTable):
@@ -45,7 +45,7 @@ export interface PaginationControlsProps {
   /** Callback when the page changes. */
   onPageChange: (page: number) => void;
 
-  /** Human-readable resource name (e.g., "controls"). */
+  /** Human-readable resource name (e.g., "practices"). */
   resourceName?: (plural: boolean) => string;
 
   /** Optional URL to link the total count to (e.g., "view all"). */
@@ -96,7 +96,7 @@ export function PaginationControls({
       aria-label={t("label")}
       data-testid="pagination-controls"
     >
-      {/* Range info: "Viewing 1–25 of 243 controls" */}
+      {/* Range info: "Viewing 1–25 of 243 practices" */}
       <div>
         <span className="hidden sm:inline-block">{t("viewing")}</span>{" "}
         <span className="font-medium">

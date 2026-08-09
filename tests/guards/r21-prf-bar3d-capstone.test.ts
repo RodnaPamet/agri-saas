@@ -22,7 +22,7 @@
  *      gaps in the grid, not bars with zero height.
  *   4. Bars colour-map via `tokenColor(seriesIndex, 'start'|'end')`
  *      — Three.js can't read CSS vars; tokenColor bridges.
- *   5. Floor mesh provides a neutral plane so the OrbitControls
+ *   5. Floor mesh provides a neutral plane so the OrbitPractices
  *      rotation makes geometric sense.
  *   6. ariaLabel + FallbackComponent forward through to <Chart3D>.
  *

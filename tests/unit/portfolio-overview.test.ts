@@ -69,10 +69,10 @@ function snapshotFixture(tenantId: string) {
         id: `snap-${tenantId}`,
         tenantId,
         snapshotDate: new Date('2026-04-25T00:00:00Z'),
-        controlsApplicable: 100,
-        controlsImplemented: 80,
+        practicesApplicable: 100,
+        practicesImplemented: 80,
         // bpsToPercent divides by 10, so 800 represents 80%.
-        controlCoverageBps: 800,
+        practiceCoverageBps: 800,
         risksTotal: 10,
         risksOpen: 5,
         risksCritical: 1,

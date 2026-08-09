@@ -3,28 +3,28 @@
 //
 //  Four tables — a `ProcessMap` (metadata) owns a graph of
 //  `ProcessNode`s and `ProcessEdge`s. Each edge can carry zero or
-//  more `ProcessEdgeControl` rows (the "control sits on the line
+//  more `ProcessEdgePractice` rows (the "practice sits on the line
 //  between two steps" idea documented in the R25 brief; refined in
 //  R26-PR-D with first-class semantics).
 //
 //  Why a new file (not under compliance.prisma): the graph models
-//  live entirely outside the compliance domain (no FK into Control /
+//  live entirely outside the compliance domain (no FK into Practice /
 //  Risk / Asset *today*). They are visual-documentation artefacts.
-//  PR-D adds the optional `controlId` FK to wire `ProcessEdgeControl`
-//  to a real Control row when the link is meaningful — but the
-//  TABLE itself never depends on a control existing.
+//  PR-D adds the optional `practiceId` FK to wire `ProcessEdgePractice`
+//  to a real Practice row when the link is meaningful — but the
+//  TABLE itself never depends on a practice existing.
 //
 //  Why nodes + edges live as separate tables (not as a single
 //  `graphJson Json` on ProcessMap):
-//    • Indexed queries — "find all maps that use control X" or
+//    • Indexed queries — "find all maps that use practice X" or
 //      "find every map that references this risk" need a real row,
 //      not a blob.
 //    • Future versioning — PR-B/D evolve the per-type payload; a
 //      single graphJson would couple every migration to every
 //      consumer. Per-row tables let the JSON `dataJson` slot stay
 //      forward-compatible.
-//    • Edge controls already need their own table for the future
-//      FK to Control; the rest of the graph follows the same
+//    • Edge practices already need their own table for the future
+//      FK to Practice; the rest of the graph follows the same
 //      shape for consistency.
 //
 //  Tenant isolation — direct-scoped RLS (Class A), three policies
@@ -145,7 +145,7 @@ model ProcessNode {
   // "find all children of this group" query.
   parentNodeKey String?
   // Forward-compatible per-type payload. PR-B uses this to carry
-  // typed metadata for richer node kinds (control owner, risk
+  // typed metadata for richer node kinds (practice owner, risk
   // severity, asset criticality) without further migrations.
   dataJson      Json?
   createdAt     DateTime @default(now())
@@ -184,31 +184,31 @@ model ProcessEdge {
 
   tenant     Tenant               @relation(fields: [tenantId], references: [id])
   processMap ProcessMap           @relation(fields: [processMapId, tenantId], references: [id, tenantId], onDelete: Cascade)
-  controls   ProcessEdgeControl[]
+  practices   ProcessEdgePractice[]
 
   @@unique([processMapId, edgeKey])
   @@unique([id, tenantId])
   @@index([tenantId, processMapId])
 }
 
-model ProcessEdgeControl {
+model ProcessEdgePractice {
   id           String   @id @default(cuid())
   tenantId     String
   // Denormalised from the parent ProcessMap so RLS can scope every
   // table on the same column shape. The composite FK to the parent
   // ProcessEdge already binds (edgeId, tenantId) — denormalising
-  // processMapId in addition keeps "all controls in map X" a
+  // processMapId in addition keeps "all practices in map X" a
   // direct indexed query.
   processMapId String
   edgeId       String
   // Client-stable id, scoped to the edge.
-  controlKey   String
+  practiceKey   String
   label        String
-  // Future FK to the real Control row. Nullable today so the
-  // PR-A scope can save edge-mounted controls without forcing
-  // the user to pick a Control first; PR-D wires the picker UI
+  // Future FK to the real Practice row. Nullable today so the
+  // PR-A scope can save edge-mounted practices without forcing
+  // the user to pick a Practice first; PR-D wires the picker UI
   // and may FLIP this to NOT NULL once the migration is safe.
-  controlId    String?
+  practiceId    String?
   dataJson     Json?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
@@ -216,7 +216,7 @@ model ProcessEdgeControl {
   tenant Tenant      @relation(fields: [tenantId], references: [id])
   edge   ProcessEdge @relation(fields: [edgeId, tenantId], references: [id, tenantId], onDelete: Cascade)
 
-  @@unique([edgeId, controlKey])
+  @@unique([edgeId, practiceKey])
   @@index([tenantId, processMapId])
-  @@index([tenantId, controlId])
+  @@index([tenantId, practiceId])
 }

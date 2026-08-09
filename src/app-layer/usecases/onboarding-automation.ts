@@ -5,7 +5,7 @@
  * All actions are idempotent — re-running a step never duplicates data.
  *
  * Strategy:
- * - Framework install → retired with the control-template library
+ * - Framework install → retired with the practice-template library
  * - Asset creation → upserts by name (idempotent by tenant+name uniqueness)
  * - Task/team setup → creates starter tasks only if none exist for onboarding
  */
@@ -67,7 +67,7 @@ export async function runStepAction(
         case 'ASSET_SETUP':
             return executeAssetCreation(ctx, allData);
         case 'CONTROL_BASELINE_INSTALL':
-            return executeControlInstall(ctx, allData);
+            return executePracticeInstall(ctx, allData);
         case 'TEAM_SETUP':
             return executeTeamSetup(ctx, allData);
         default:
@@ -78,8 +78,8 @@ export async function runStepAction(
 // ─── Framework Install ───
 
 async function executeFrameworkInstall(ctx: RequestContext, allData: StepData): Promise<StepActionResult> {
-    // `installPack` materialised a framework's control templates into tenant
-    // Control rows. The template library was removed with the compliance
+    // `installPack` materialised a framework's practice templates into tenant
+    // Practice rows. The template library was removed with the compliance
     // uproot, so there is nothing to install — the step reports every
     // selection as skipped rather than pretending to have done work.
     const selectedFrameworks: string[] = allData['FRAMEWORK_SELECTION']?.selectedFrameworks || [];
@@ -143,15 +143,15 @@ async function executeAssetCreation(ctx: RequestContext, allData: StepData): Pro
     return { action: 'ASSET_CREATION', created, skipped, details: `${created} assets created, ${skipped} already existed` };
 }
 
-// ─── Control Baseline Install ───
+// ─── Practice Baseline Install ───
 
-async function executeControlInstall(ctx: RequestContext, allData: StepData): Promise<StepActionResult> {
+async function executePracticeInstall(ctx: RequestContext, allData: StepData): Promise<StepActionResult> {
     const confirmed = allData['CONTROL_BASELINE_INSTALL']?.confirmed;
     if (!confirmed) {
-        return { action: 'CONTROL_INSTALL', created: 0, skipped: 0, details: 'User did not confirm control installation' };
+        return { action: 'CONTROL_INSTALL', created: 0, skipped: 0, details: 'User did not confirm practice installation' };
     }
 
-    // Re-run framework install to ensure controls exist (idempotent)
+    // Re-run framework install to ensure practices exist (idempotent)
     return executeFrameworkInstall(ctx, allData);
 }
 
@@ -162,8 +162,8 @@ async function executeTeamSetup(ctx: RequestContext, allData: StepData): Promise
     let skipped = 0;
 
     const starterTasks = [
-        { title: 'Review and assign control owners', description: 'Go through the control register and assign owners to each control. This ensures accountability.', type: 'TASK' },
-        { title: 'Schedule evidence collection cadence', description: 'Set up recurring evidence collection for key controls. Quarterly or monthly depending on control frequency.', type: 'TASK' },
+        { title: 'Review and assign practice owners', description: 'Go through the practice register and assign owners to each practice. This ensures accountability.', type: 'TASK' },
+        { title: 'Schedule evidence collection cadence', description: 'Set up recurring evidence collection for key practices. Quarterly or monthly depending on practice frequency.', type: 'TASK' },
         { title: 'Complete risk assessment review', description: 'Review the generated risk register and validate risk ratings. Adjust likelihood and impact as needed.', type: 'TASK' },
         { title: 'Define incident response procedure', description: 'Document your incident response plan including detection, containment, eradication, and recovery steps.', type: 'TASK' },
         { title: 'Set up vendor due diligence process', description: 'Establish the process for evaluating and monitoring third-party vendors for compliance.', type: 'TASK' },

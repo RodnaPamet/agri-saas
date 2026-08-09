@@ -4,13 +4,13 @@
 /**
  * Keeping derived evidence truthful.
  *
- * Auto-evidence is a CLAIM about a farm record: "this control point is met,
+ * Auto-evidence is a CLAIM about a farm record: "this practice point is met,
  * and here is the spray record that proves it". Both ways the source record
  * can move used to leave the claim behind:
  *
  *   - Edit the entry's title and the evidence kept the old one, so the same
  *     record appeared under two names with nothing to say which was current.
- *   - Soft-delete the entry and the evidence stayed, so the control kept
+ *   - Soft-delete the entry and the evidence stayed, so the practice kept
  *     reporting itself backed by a record the operator had just removed, deep-
  *     linking to a page that now 404s.
  */

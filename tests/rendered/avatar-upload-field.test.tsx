@@ -3,7 +3,7 @@
 /**
  * Rendered (Tier-2) test — `<AvatarUploadField>` (avatar roadmap P3).
  *
- * Pins the account-profile avatar control's affordances and the
+ * Pins the account-profile avatar practice's affordances and the
  * remove flow. The upload path runs through `createImageBitmap` +
  * `canvas.toBlob`, which jsdom does not implement — that path is
  * E2E-shaped and verified there, not here.

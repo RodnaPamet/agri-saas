@@ -6,7 +6,7 @@
  * DueItems for a single recipient into one consolidated email.
  *
  * Digest types:
- *   - DEADLINE_DIGEST  — controls, policies, tasks, risks, test plans
+ *   - DEADLINE_DIGEST  — practices, policies, tasks, risks, test plans
  *   - EVIDENCE_EXPIRY_DIGEST — evidence expiring/expired
  *   - VENDOR_RENEWAL_DIGEST — vendor reviews/renewals
  *
@@ -44,7 +44,7 @@ const URGENCY_LABEL: Record<DueItemUrgency, string> = {
 };
 
 const ENTITY_LABEL: Record<MonitoredEntityType, string> = {
-    CONTROL: 'Control',
+    PRACTICE: 'Practice',
     EVIDENCE: 'Evidence',
     POLICY: 'Policy',
     VENDOR: 'Vendor',
@@ -56,13 +56,13 @@ const ENTITY_LABEL: Record<MonitoredEntityType, string> = {
 };
 
 const ENTITY_PATH: Record<MonitoredEntityType, string> = {
-    CONTROL: 'controls',
+    PRACTICE: 'practices',
     EVIDENCE: 'evidence',
     POLICY: 'policies',
     VENDOR: 'vendors',
     TASK: 'tasks',
     RISK: 'risks',
-    TEST_PLAN: 'controls', // test plans live under controls
+    TEST_PLAN: 'practices', // test plans live under practices
     // Both treatment-plan + milestone deep-link to the parent risk's
     // detail page where the treatment-plan card surfaces them.
     TREATMENT_PLAN: 'risks',

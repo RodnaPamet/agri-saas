@@ -84,13 +84,13 @@ const routeArgs = { params: Promise.resolve({ tenantSlug: 'acme' }) };
 describe('hasPermission', () => {
     it('returns true when the granular flag is granted', () => {
         const perms = getPermissionsForRole('ADMIN');
-        expect(hasPermission(perms, 'controls.create')).toBe(true);
+        expect(hasPermission(perms, 'practices.create')).toBe(true);
         expect(hasPermission(perms, 'admin.scim')).toBe(true);
     });
 
     it('returns false when the granular flag is denied', () => {
         const perms = getPermissionsForRole('READER');
-        expect(hasPermission(perms, 'controls.create')).toBe(false);
+        expect(hasPermission(perms, 'practices.create')).toBe(false);
         expect(hasPermission(perms, 'admin.scim')).toBe(false);
     });
 
@@ -115,7 +115,7 @@ describe('requirePermission — allowed', () => {
         mockGetTenantCtx.mockResolvedValue(ctx);
 
         const handler = jest.fn().mockResolvedValue(new Response('ok'));
-        const wrapped = requirePermission('controls.create', handler);
+        const wrapped = requirePermission('practices.create', handler);
 
         const req = makeReq();
         const res = await wrapped(req, routeArgs);
@@ -142,7 +142,7 @@ describe('requirePermission — allowed', () => {
             return new Response('ok');
         });
 
-        await requirePermission('controls.create', handler)(makeReq(), routeArgs);
+        await requirePermission('practices.create', handler)(makeReq(), routeArgs);
         expect(handler).toHaveBeenCalled();
     });
 });
@@ -160,7 +160,7 @@ describe('requirePermission — denied', () => {
         mockGetTenantCtx.mockResolvedValue(makeCtx('READER'));
 
         const handler = jest.fn();
-        const wrapped = requirePermission('controls.create', handler);
+        const wrapped = requirePermission('practices.create', handler);
 
         await expect(wrapped(makeReq(), routeArgs)).rejects.toMatchObject({
             status: 403,
@@ -182,7 +182,7 @@ describe('requirePermission — denied', () => {
             previousHash: null,
         });
 
-        const wrapped = requirePermission('controls.create', jest.fn());
+        const wrapped = requirePermission('practices.create', jest.fn());
         await expect(
             wrapped(makeReq('POST', '/api/t/acme/risks'), routeArgs),
         ).rejects.toThrow();
@@ -194,14 +194,14 @@ describe('requirePermission — denied', () => {
             userId: 'user-1',
             actorType: 'USER',
             entity: 'Permission',
-            entityId: 'controls.create',
+            entityId: 'practices.create',
             action: 'AUTHZ_DENIED',
             requestId: 'req-test-1',
         });
         expect(entry.detailsJson).toMatchObject({
             category: 'access',
             event: 'authz_denied',
-            permissionKeys: ['controls.create'],
+            permissionKeys: ['practices.create'],
             role: 'READER',
             method: 'POST',
             path: '/api/t/acme/risks',
@@ -219,7 +219,7 @@ describe('requirePermission — denied', () => {
         });
 
         await expect(
-            requirePermission('controls.create', jest.fn())(makeReq(), routeArgs),
+            requirePermission('practices.create', jest.fn())(makeReq(), routeArgs),
         ).rejects.toThrow();
 
         expect(mockAppendAuditEntry).toHaveBeenCalledTimes(1);
@@ -233,7 +233,7 @@ describe('requirePermission — denied', () => {
         mockAppendAuditEntry.mockRejectedValue(new Error('audit DB down'));
 
         await expect(
-            requirePermission('controls.create', jest.fn())(makeReq(), routeArgs),
+            requirePermission('practices.create', jest.fn())(makeReq(), routeArgs),
         ).rejects.toMatchObject({ status: 403 });
 
         // The telemetry failure surfaces through the logger so ops can
@@ -307,7 +307,7 @@ describe('requirePermission — modes', () => {
 
         const handler = jest.fn().mockResolvedValue(new Response('ok'));
         await requireAllPermissions(
-            ['controls.create', 'evidence.upload'],
+            ['practices.create', 'evidence.upload'],
             handler,
         )(makeReq(), routeArgs);
 
@@ -324,15 +324,15 @@ describe('requirePermission — modes', () => {
 
         await expect(
             requireAllPermissions(
-                ['controls.create', 'admin.scim'],
+                ['practices.create', 'admin.scim'],
                 jest.fn(),
             )(makeReq(), routeArgs),
         ).rejects.toMatchObject({ status: 403 });
 
         const entry = mockAppendAuditEntry.mock.calls[0][0];
-        expect(entry.entityId).toBe('controls.create,admin.scim');
+        expect(entry.entityId).toBe('practices.create,admin.scim');
         expect(entry.detailsJson.permissionKeys).toEqual([
-            'controls.create',
+            'practices.create',
             'admin.scim',
         ]);
     });

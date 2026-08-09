@@ -138,9 +138,9 @@ describe('Compliance Digest — Email Content', () => {
         expect(content).toContain('data.snapshotDate');
     });
 
-    test('email covers control coverage', () => {
-        expect(content).toContain('Control Coverage');
-        expect(content).toContain('controlCoveragePercent');
+    test('email covers practice coverage', () => {
+        expect(content).toContain('Practice Coverage');
+        expect(content).toContain('practiceCoveragePercent');
     });
 
     test('email covers evidence status', () => {
@@ -200,7 +200,7 @@ describe('Compliance Digest — Trend Deltas', () => {
     const content = readFile(DIGEST_FILE);
 
     test('computes coverage delta from BPS', () => {
-        expect(content).toContain('controlCoverageBps - priorSnapshot.controlCoverageBps');
+        expect(content).toContain('practiceCoverageBps - priorSnapshot.practiceCoverageBps');
     });
 
     test('computes risks open delta', () => {
@@ -244,9 +244,9 @@ describe('Epic 22 Pipeline Coherence', () => {
 
         // Key fields that must match between writer and reader
         for (const field of [
-            'controlCoverageBps',
-            'controlsImplemented',
-            'controlsApplicable',
+            'practiceCoverageBps',
+            'practicesImplemented',
+            'practicesApplicable',
             'evidenceOverdue',
             'evidenceDueSoon7d',
             'policiesOverdueReview',

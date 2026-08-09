@@ -127,8 +127,8 @@ export const POST = withApiErrorHandling(
         });
 
         // ── Optional metadata applies to every extracted file ──────
-        const controlId =
-            (formData.get('controlId') as string | null) || null;
+        const practiceId =
+            (formData.get('practiceId') as string | null) || null;
         const retentionUntil =
             (formData.get('retentionUntil') as string | null) || null;
         const category = (formData.get('category') as string | null) || null;
@@ -139,7 +139,7 @@ export const POST = withApiErrorHandling(
             initiatedByUserId: ctx.userId,
             stagingPathKey: pathKey,
             stagingFileRecordId: fileRecord.id,
-            controlId,
+            practiceId,
             retentionUntilIso: retentionUntil,
             category,
             requestId: ctx.requestId,

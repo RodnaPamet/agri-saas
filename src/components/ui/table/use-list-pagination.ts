@@ -19,10 +19,10 @@
  *   });
  *
  *   <DataTable
- *     data={pg.slice(controls)}
+ *     data={pg.slice(practices)}
  *     pagination={pg.pagination}
  *     onPaginationChange={pg.setPagination}
- *     rowCount={controls.length}
+ *     rowCount={practices.length}
  *     ...
  *   />
  *

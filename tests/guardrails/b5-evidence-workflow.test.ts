@@ -59,11 +59,11 @@ describe('B5 — Evidence workflow completion', () => {
             expect(modal).toMatch(/\/evidence\/\$\{initial\.id\}/);
         });
 
-        it('EditEvidenceModal has Title (required) + Description + Owner + ControlId fields', () => {
+        it('EditEvidenceModal has Title (required) + Description + Owner + PracticeId fields', () => {
             expect(modal).toMatch(/edit-evidence-title-input/);
             expect(modal).toMatch(/edit-evidence-description/);
             expect(modal).toMatch(/edit-evidence-owner-input/);
-            expect(modal).toMatch(/edit-evidence-control-input/);
+            expect(modal).toMatch(/edit-evidence-practice-input/);
         });
 
         it('EvidenceClient mounts the edit modal + threads onSaved → invalidateEvidence', () => {
@@ -76,7 +76,7 @@ describe('B5 — Evidence workflow completion', () => {
 
         it('detail sheet edit button calls onEdit with the loaded values', () => {
             // The sheet's footer renders an icon-only edit button that
-            // invokes onEdit({ id, title, description, ownerUserId, controlId })
+            // invokes onEdit({ id, title, description, ownerUserId, practiceId })
             // so the client can preload the modal.
             expect(sheet).toMatch(/evidence-sheet-edit-btn/);
             expect(sheet).toMatch(/onEdit\(\{[\s\S]{0,200}id:\s*evidence\.id/);

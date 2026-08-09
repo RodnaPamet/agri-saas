@@ -4,23 +4,23 @@
  * The R25 interaction model is deliberately constrained:
  *   - Drag from palette → drop creates a node (PR-B).
  *   - Drag from node handle → connect creates an edge (PR-B).
- *   - Click on edge → "+ Add control" affordance at midpoint;
- *     click → adds ControlOnEdge with default label "Control".
+ *   - Click on edge → "+ Add practice" affordance at midpoint;
+ *     click → adds PracticeOnEdge with default label "Practice".
  *   - Standard xyflow drag for repositioning.
  *   - Standard xyflow Backspace for delete.
  *
  * Out-of-scope (and the ratchet enforces the absence):
  *   - Right-click context menus.
  *   - Inspector / properties panel.
- *   - Inline editing dialogs for control label.
+ *   - Inline editing dialogs for practice label.
  *
- * This ratchet locks the "+ Add control" affordance contract:
+ * This ratchet locks the "+ Add practice" affordance contract:
  *   1. The affordance appears ONLY when edge.selected === true.
- *   2. The affordance disappears once a control is added.
- *   3. Clicking the affordance mutates the edge's data.control via
+ *   2. The affordance disappears once a practice is added.
+ *   3. Clicking the affordance mutates the edge's data.practice via
  *      useReactFlow().setEdges.
  *   4. The affordance uses a contextual icon (ShieldPlus) distinct
- *      from the placed-control icon (ShieldCheck) so users see the
+ *      from the placed-practice icon (ShieldCheck) so users see the
  *      action vs the result.
  */
 import * as fs from "node:fs";
@@ -32,7 +32,7 @@ const EDGE_PATH = "src/components/processes/ProcessEdge.tsx";
 const SRC = fs.readFileSync(path.join(ROOT, EDGE_PATH), "utf8");
 
 describe("R25-PR-E — interaction model", () => {
-    describe("Add-control affordance", () => {
+    describe("Add-practice affordance", () => {
         it("uses useReactFlow().setEdges to mutate edge data", () => {
             // setEdges is the xyflow-blessed way to update edge
             // state from inside a custom edge component. Mutating
@@ -42,27 +42,27 @@ describe("R25-PR-E — interaction model", () => {
             expect(SRC).toMatch(/setEdges\(/);
         });
 
-        it("affordance is rendered conditionally on (selected && !control)", () => {
+        it("affordance is rendered conditionally on (selected && !practice)", () => {
             // The affordance must NOT be always-on — that would
             // clutter every edge at rest. Pattern: only show when
-            // the edge is SELECTED and does NOT yet carry a control.
+            // the edge is SELECTED and does NOT yet carry a practice.
             expect(SRC).toMatch(
-                /\{!control\s*&&\s*selected\s*&&\s*\(/,
+                /\{!practice\s*&&\s*selected\s*&&\s*\(/,
             );
         });
 
-        it("affordance click handler adds a control with the default label", () => {
-            // The constrained model: one click adds a control with
+        it("affordance click handler adds a practice with the default label", () => {
+            // The constrained model: one click adds a practice with
             // a default label. No naming dialog, no inline editing
             // (those are explicitly out of R25 scope).
             expect(SRC).toMatch(
-                /control:\s*\{\s*label:\s*t\("processEdge\.controlDefault"\)\s*\}/,
+                /practice:\s*\{\s*label:\s*t\("processEdge\.practiceDefault"\)\s*\}/,
             );
         });
 
-        it("affordance uses ShieldPlus icon (distinct from placed control's ShieldCheck)", () => {
+        it("affordance uses ShieldPlus icon (distinct from placed practice's ShieldCheck)", () => {
             // Different icons for the AFFORDANCE (action) vs the
-            // RESULT (placed control). Visual feedback that the
+            // RESULT (placed practice). Visual feedback that the
             // click did something.
             expect(SRC).toMatch(/ShieldPlus/);
             expect(SRC).toMatch(/ShieldCheck/);
@@ -70,14 +70,14 @@ describe("R25-PR-E — interaction model", () => {
 
         it("affordance positions at the edge midpoint (labelX/labelY)", () => {
             // Affordances must appear AT the connection. R27-PR-B
-            // groups the variant cycle + add-control into one
+            // groups the variant cycle + add-practice into one
             // selection cluster positioned via getBezierPath's
             // labelX/labelY midpoint.
             expect(SRC).toMatch(/translate\(\$\{labelX\}px/);
         });
 
         it("affordance marker for downstream selectors", () => {
-            expect(SRC).toMatch(/data-add-control-affordance/);
+            expect(SRC).toMatch(/data-add-practice-affordance/);
         });
     });
 
@@ -90,7 +90,7 @@ describe("R25-PR-E — interaction model", () => {
         });
 
         it("no inline label-editing input/dialog inside ProcessEdge", () => {
-            // The constrained model: control labels are not edited
+            // The constrained model: practice labels are not edited
             // inline. Adding an <input> here would expand scope
             // into label editing semantics — explicitly out.
             const stripped = SRC.replace(/\/\*[\s\S]*?\*\//g, "").replace(

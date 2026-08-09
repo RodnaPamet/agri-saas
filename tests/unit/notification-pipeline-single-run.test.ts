@@ -40,11 +40,11 @@ beforeEach(() => {
     jest.mock('@/lib/prisma', () => ({
         __esModule: true,
         default: {
-            control: { findMany: jest.fn().mockResolvedValue([]) },
+            practice: { findMany: jest.fn().mockResolvedValue([]) },
             policy: { findMany: jest.fn().mockResolvedValue([]) },
             task: { findMany: jest.fn().mockResolvedValue([]) },
             risk: { findMany: jest.fn().mockResolvedValue([]) },
-            controlTestPlan: { findMany: jest.fn().mockResolvedValue([]) },
+            practiceTestPlan: { findMany: jest.fn().mockResolvedValue([]) },
             evidence: { findMany: jest.fn().mockResolvedValue([]) },
             vendor: { findMany: jest.fn().mockResolvedValue([]) },
             // Epic 49 calendar-deadlines monitor sources.
@@ -64,11 +64,11 @@ beforeEach(() => {
             tenantNotificationSettings: { findUnique: jest.fn().mockResolvedValue(null) },
         },
         prisma: {
-            control: { findMany: jest.fn().mockResolvedValue([]) },
+            practice: { findMany: jest.fn().mockResolvedValue([]) },
             policy: { findMany: jest.fn().mockResolvedValue([]) },
             task: { findMany: jest.fn().mockResolvedValue([]) },
             risk: { findMany: jest.fn().mockResolvedValue([]) },
-            controlTestPlan: { findMany: jest.fn().mockResolvedValue([]) },
+            practiceTestPlan: { findMany: jest.fn().mockResolvedValue([]) },
             evidence: { findMany: jest.fn().mockResolvedValue([]) },
             vendor: { findMany: jest.fn().mockResolvedValue([]) },
             // Epic 49 calendar-deadlines monitor sources.
@@ -138,10 +138,10 @@ describe('notification-dispatch: precomputed items skip scanners', () => {
         );
 
         const precomputedItems = [{
-            entityType: 'CONTROL' as const,
+            entityType: 'PRACTICE' as const,
             entityId: 'ctrl-1',
             tenantId: 'tenant-1',
-            name: 'Test Control',
+            name: 'Test Practice',
             reason: 'Due in 5 days',
             urgency: 'UPCOMING' as const,
             dueDate: '2026-04-22T00:00:00Z',
@@ -206,21 +206,21 @@ describe('notification-dispatch: precomputed items skip scanners', () => {
 describe('notification-dispatch: monitors run exactly once per dispatch', () => {
     test('each monitor is invoked once, not twice', async () => {
         const prisma = require('@/lib/prisma').default;
-        const controlFindMany = prisma.control.findMany;
+        const practiceFindMany = prisma.practice.findMany;
 
         const { runNotificationDispatch } = await import(
             '../../src/app-layer/jobs/notification-dispatch'
         );
         await runNotificationDispatch({});
 
-        // deadline-monitor scans 5 entity types (control, policy, task, risk, testPlan)
+        // deadline-monitor scans 5 entity types (practice, policy, task, risk, testPlan)
         // evidence-expiry scans evidence (2 queries: retentionUntil + expired)
         // vendor scans vendor (4 queries)
         // Total: should be exactly one run of each monitor
         // The key assertion: no entity table is scanned more than its expected count
 
-        // Controls scanned once (by deadline-monitor internal to notification-dispatch)
-        expect(controlFindMany.mock.calls.length).toBeLessThanOrEqual(1);
+        // Practices scanned once (by deadline-monitor internal to notification-dispatch)
+        expect(practiceFindMany.mock.calls.length).toBeLessThanOrEqual(1);
     });
 });
 

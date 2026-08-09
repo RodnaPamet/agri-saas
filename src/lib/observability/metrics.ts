@@ -127,8 +127,8 @@ const OPAQUE_ID_RE = /\/[a-z0-9]{20,}\b/gi;
  *   - Long opaque IDs → :id
  *
  * Examples:
- *   /api/t/acme-corp/controls/550e8400-e29b-41d4-a716-446655440000
- *     → /api/t/:tenantSlug/controls/:id
+ *   /api/t/acme-corp/practices/550e8400-e29b-41d4-a716-446655440000
+ *     → /api/t/:tenantSlug/practices/:id
  *
  *   /api/t/my-tenant/evidence/abc123def456
  *     → /api/t/:tenantSlug/evidence/abc123def456  (short IDs kept — low cardinality)

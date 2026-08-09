@@ -25,15 +25,15 @@ describe('normalizeRoute — cardinality safety', () => {
     });
 
     it('should collapse UUIDs into :id', () => {
-        const route = '/api/t/acme/controls/550e8400-e29b-41d4-a716-446655440000';
+        const route = '/api/t/acme/practices/550e8400-e29b-41d4-a716-446655440000';
         const normalized = normalizeRoute(route);
-        expect(normalized).toBe('/api/t/:tenantSlug/controls/:id');
+        expect(normalized).toBe('/api/t/:tenantSlug/practices/:id');
     });
 
     it('should collapse multiple UUIDs in a path', () => {
-        const route = '/api/t/acme/controls/550e8400-e29b-41d4-a716-446655440000/evidence/660e8400-e29b-41d4-a716-446655440001';
+        const route = '/api/t/acme/practices/550e8400-e29b-41d4-a716-446655440000/evidence/660e8400-e29b-41d4-a716-446655440001';
         const normalized = normalizeRoute(route);
-        expect(normalized).toBe('/api/t/:tenantSlug/controls/:id/evidence/:id');
+        expect(normalized).toBe('/api/t/:tenantSlug/practices/:id/evidence/:id');
     });
 
     it('should normalize tenant slug to :tenantSlug', () => {
@@ -43,9 +43,9 @@ describe('normalizeRoute — cardinality safety', () => {
     });
 
     it('should handle page routes under /t/[tenantSlug]/', () => {
-        const route = '/t/acme-corp/controls';
+        const route = '/t/acme-corp/practices';
         const normalized = normalizeRoute(route);
-        expect(normalized).toBe('/t/:tenantSlug/controls');
+        expect(normalized).toBe('/t/:tenantSlug/practices');
     });
 
     it('should not modify static API routes', () => {
@@ -67,14 +67,14 @@ describe('normalizeRoute — cardinality safety', () => {
     });
 
     it('should keep short path segments (low cardinality)', () => {
-        const route = '/api/t/acme/controls';
+        const route = '/api/t/acme/practices';
         const normalized = normalizeRoute(route);
-        expect(normalized).toBe('/api/t/:tenantSlug/controls');
+        expect(normalized).toBe('/api/t/:tenantSlug/practices');
     });
 
     it('should handle case-insensitive UUIDs', () => {
-        const upper = '/api/controls/550E8400-E29B-41D4-A716-446655440000';
-        const lower = '/api/controls/550e8400-e29b-41d4-a716-446655440000';
+        const upper = '/api/practices/550E8400-E29B-41D4-A716-446655440000';
+        const lower = '/api/practices/550e8400-e29b-41d4-a716-446655440000';
         expect(normalizeRoute(upper)).toBe(normalizeRoute(lower));
     });
 
@@ -83,8 +83,8 @@ describe('normalizeRoute — cardinality safety', () => {
     });
 
     it('should produce consistent output for same logical route', () => {
-        const r1 = normalizeRoute('/api/t/tenant-a/controls/550e8400-e29b-41d4-a716-446655440000');
-        const r2 = normalizeRoute('/api/t/tenant-b/controls/660e8400-e29b-41d4-a716-446655440001');
+        const r1 = normalizeRoute('/api/t/tenant-a/practices/550e8400-e29b-41d4-a716-446655440000');
+        const r2 = normalizeRoute('/api/t/tenant-b/practices/660e8400-e29b-41d4-a716-446655440001');
         expect(r1).toBe(r2);
     });
 });
@@ -106,7 +106,7 @@ describe('recordRequestMetrics', () => {
     it('should not throw when recording metrics', () => {
         expect(() => recordRequestMetrics({
             method: 'GET',
-            route: '/api/t/acme/controls',
+            route: '/api/t/acme/practices',
             status: 200,
             durationMs: 42,
         })).not.toThrow();
@@ -115,7 +115,7 @@ describe('recordRequestMetrics', () => {
     it('should not throw with UUID-containing routes (normalization applied internally)', () => {
         expect(() => recordRequestMetrics({
             method: 'GET',
-            route: '/api/t/acme/controls/550e8400-e29b-41d4-a716-446655440000',
+            route: '/api/t/acme/practices/550e8400-e29b-41d4-a716-446655440000',
             status: 200,
             durationMs: 100,
         })).not.toThrow();
@@ -124,7 +124,7 @@ describe('recordRequestMetrics', () => {
     it('should not throw for error responses', () => {
         expect(() => recordRequestMetrics({
             method: 'POST',
-            route: '/api/t/acme/controls',
+            route: '/api/t/acme/practices',
             status: 500,
             durationMs: 500,
         })).not.toThrow();
@@ -146,7 +146,7 @@ describe('recordRequestError', () => {
     it('should not throw when recording errors', () => {
         expect(() => recordRequestError({
             method: 'GET',
-            route: '/api/t/acme/controls/550e8400-e29b-41d4-a716-446655440000',
+            route: '/api/t/acme/practices/550e8400-e29b-41d4-a716-446655440000',
             errorCode: 'INTERNAL_ERROR',
         })).not.toThrow();
     });
@@ -258,7 +258,7 @@ describe('label cardinality safety', () => {
     it('should produce a bounded set of route labels for tenant API routes', () => {
         // Simulate 100 different tenants hitting the same logical route
         const routes = Array.from({ length: 100 }, (_, i) =>
-            normalizeRoute(`/api/t/tenant-${i}/controls`)
+            normalizeRoute(`/api/t/tenant-${i}/practices`)
         );
 
         const unique = new Set(routes);
@@ -269,7 +269,7 @@ describe('label cardinality safety', () => {
         // Simulate 100 different entity UUIDs
         const routes = Array.from({ length: 100 }, (_, i) => {
             const uuid = `${String(i).padStart(8, '0')}-0000-0000-0000-000000000000`;
-            return normalizeRoute(`/api/t/acme/controls/${uuid}`);
+            return normalizeRoute(`/api/t/acme/practices/${uuid}`);
         });
 
         const unique = new Set(routes);
@@ -278,7 +278,7 @@ describe('label cardinality safety', () => {
 
     it('should never include raw tenant slugs in metric labels', () => {
         const sensitiveRoutes = [
-            '/api/t/secret-company/controls',
+            '/api/t/secret-company/practices',
             '/api/t/my-unicorn-startup/evidence',
             '/t/enterprise-client-42/dashboard',
         ];

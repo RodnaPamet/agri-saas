@@ -3,8 +3,8 @@
 /**
  * T00 — UI language selector.
  *
- * Sits as a sibling pill next to the Theme control in the admin page
- * header. Compact segmented control (matching the Theme pill's visual
+ * Sits as a sibling pill next to the Theme practice in the admin page
+ * header. Compact segmented practice (matching the Theme pill's visual
  * weight) that PUTs the chosen locale to `/api/account/language` — an
  * account-scoped (NOT tenant-scoped) endpoint that persists
  * `User.uiLanguage` and sets the `NEXT_LOCALE` cookie — then calls

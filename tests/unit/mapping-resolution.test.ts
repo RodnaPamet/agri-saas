@@ -91,8 +91,8 @@ const ISO_A52 = { reqId: 'req-a52', code: 'A.5.2', title: 'Info Security Roles',
 const NIST_GVOC01 = { reqId: 'req-gvoc01', code: 'GV.OC-01', title: 'Organizational Context', ...NIST };
 const NIST_GVRM01 = { reqId: 'req-gvrm01', code: 'GV.RM-01', title: 'Risk Management', ...NIST };
 const NIST_GVRR01 = { reqId: 'req-gvrr01', code: 'GV.RR-01', title: 'Roles & Responsibilities', ...NIST };
-const SOC2_CC1 = { reqId: 'req-cc1', code: 'CC1', title: 'Control Environment', ...SOC2 };
-const SOC2_CC5 = { reqId: 'req-cc5', code: 'CC5', title: 'Control Activities', ...SOC2 };
+const SOC2_CC1 = { reqId: 'req-cc1', code: 'CC1', title: 'Practice Environment', ...SOC2 };
+const SOC2_CC5 = { reqId: 'req-cc5', code: 'CC5', title: 'Practice Activities', ...SOC2 };
 
 // Edge database (adjacency list)
 const EDGE_DB: Record<string, ResolvedMappingEdge[]> = {
@@ -106,10 +106,10 @@ const EDGE_DB: Record<string, ResolvedMappingEdge[]> = {
     ],
     // NIST → SOC2
     'req-gvoc01': [
-        makeEdge('e4', NIST_GVOC01, SOC2_CC1, 'RELATED', 'Governance context → control env'),
+        makeEdge('e4', NIST_GVOC01, SOC2_CC1, 'RELATED', 'Governance context → practice env'),
     ],
     'req-gvrr01': [
-        makeEdge('e5', NIST_GVRR01, SOC2_CC5, 'SUPERSET', 'Roles fully covers control activities'),
+        makeEdge('e5', NIST_GVRR01, SOC2_CC5, 'SUPERSET', 'Roles fully covers practice activities'),
     ],
     // Cycle: SOC2 CC1 → NIST GV.OC-01 (creates circular reference)
     'req-cc1': [

@@ -257,23 +257,23 @@ async function main() {
     }
     console.log('✅ Assets seeded');
 
-    // ─── Seed controls ───
+    // ─── Seed practices ───
     // `code` replaced the ISO-specific `annexId` column when the
     // compliance uproot dropped the Annex-A framing.
-    const sampleControls = [
+    const samplePractices = [
         { code: 'A.5.1', name: 'Information Security Policies', intent: 'Ensure management direction and support for information security.', status: 'IMPLEMENTED' },
         { code: 'A.5.2', name: 'Information Security Roles', intent: 'Establish defined roles and responsibilities.', status: 'IMPLEMENTING' },
         { code: 'A.8.1', name: 'User Endpoint Devices', intent: 'Protect information on user endpoint devices.', status: 'IMPLEMENTED' },
         { code: 'A.8.9', name: 'Configuration Management', intent: 'Ensure correct and secure configuration of systems.', status: 'PLANNED' },
     ];
-    for (const c of sampleControls) {
-        const existing = await prisma.control.findFirst({ where: { code: c.code, tenantId: tenant.id } });
+    for (const c of samplePractices) {
+        const existing = await prisma.practice.findFirst({ where: { code: c.code, tenantId: tenant.id } });
         if (!existing) {
-            await prisma.control.create({ data: { tenantId: tenant.id, ...c } });
+            await prisma.practice.create({ data: { tenantId: tenant.id, ...c } });
         } else {
             // Reset applicability to APPLICABLE so the pill-toggle E2E
             // always finds a "Yes" row regardless of prior mutations.
-            await prisma.control.update({
+            await prisma.practice.update({
                 where: { id: existing.id },
                 data: {
                     applicability: 'APPLICABLE',
@@ -284,19 +284,19 @@ async function main() {
             });
         }
     }
-    console.log('✅ Controls seeded (applicability reset to APPLICABLE)');
+    console.log('✅ Practices seeded (applicability reset to APPLICABLE)');
 
     // ─── Policy Templates ───
     const policyTemplates = [
         { title: 'Information Security Policy', category: 'Core', tags: 'isms,governance', contentText: '# Information Security Policy\n\n## Purpose\nEstablish the organization\'s commitment to information security.\n\n## Policy Statements\n1. Information classified and protected by sensitivity.\n2. Access granted on need-to-know basis.\n3. Incidents reported and investigated promptly.' },
         { title: 'Access Control Policy', category: 'Technical', tags: 'access,authentication', contentText: '# Access Control Policy\n\n## Purpose\nEnsure authorized access and prevent unauthorized access.\n\n## Statements\n1. Least privilege principle.\n2. MFA for privileged accounts.\n3. Quarterly access reviews.' },
         { title: 'Data Classification Policy', category: 'Core', tags: 'data,classification', contentText: '# Data Classification Policy\n\n## Levels\n- Public\n- Internal\n- Confidential\n- Restricted' },
-        { title: 'Acceptable Use Policy', category: 'HR', tags: 'acceptable-use', contentText: '# Acceptable Use Policy\n\n## Statements\n1. IT resources for business purposes.\n2. No bypassing security controls.\n3. Protect credentials.' },
+        { title: 'Acceptable Use Policy', category: 'HR', tags: 'acceptable-use', contentText: '# Acceptable Use Policy\n\n## Statements\n1. IT resources for business purposes.\n2. No bypassing security practices.\n3. Protect credentials.' },
         { title: 'Incident Response Policy', category: 'Operations', tags: 'incident,response', contentText: '# Incident Response Policy\n\n## Phases\n1. Identification\n2. Containment\n3. Eradication\n4. Recovery\n5. Lessons Learned' },
         { title: 'Business Continuity Policy', category: 'Operations', tags: 'bcp,disaster-recovery', contentText: '# Business Continuity Policy\n\n## Statements\n1. Annual BIA.\n2. Defined RTO/RPO.\n3. Annual BC/DR tests.' },
         { title: 'Risk Management Policy', category: 'Core', tags: 'risk,assessment', contentText: '# Risk Management Policy\n\n## Framework\n1. Identify\n2. Assess\n3. Treat\n4. Monitor' },
         { title: 'Change Management Policy', category: 'Operations', tags: 'change,management', contentText: '# Change Management Policy\n\n## Types\n- Standard\n- Normal\n- Emergency' },
-        { title: 'Physical Security Policy', category: 'Physical', tags: 'physical,facilities', contentText: '# Physical Security Policy\n\n## Statements\n1. Appropriate entry controls.\n2. Visitor logging.\n3. Clear desk policy.' },
+        { title: 'Physical Security Policy', category: 'Physical', tags: 'physical,facilities', contentText: '# Physical Security Policy\n\n## Statements\n1. Appropriate entry practices.\n2. Visitor logging.\n3. Clear desk policy.' },
         { title: 'Human Resources Security Policy', category: 'HR', tags: 'hr,screening', contentText: '# HR Security Policy\n\n## Statements\n1. Background screening.\n2. Annual awareness training.\n3. NDA before access.' },
         { title: 'Third-Party Security Policy', category: 'Vendor', tags: 'vendor,supplier', contentText: '# Third-Party Security\n\n## Statements\n1. Security in supplier agreements.\n2. Minimum access.\n3. Monitor performance.' },
         { title: 'Logging and Monitoring Policy', category: 'Technical', tags: 'logging,monitoring', contentText: '# Logging and Monitoring\n\n## Statements\n1. Log security events.\n2. Protect logs.\n3. Automated alerting.' },
@@ -344,10 +344,10 @@ async function main() {
         ? await prisma.framework.update({ where: { id: soc2Existing.id }, data: { name: 'SOC 2', description: 'SOC 2 Trust Services Criteria' } })
         : await prisma.framework.create({ data: { key: 'SOC2', name: 'SOC 2', description: 'SOC 2 Trust Services Criteria' } });
     const soc2Reqs = [
-        { code: 'CC1.1', title: 'COSO principle 1 — Integrity and ethical values', category: 'Control Environment' },
-        { code: 'CC2.1', title: 'Information for internal controls', category: 'Communication' },
+        { code: 'CC1.1', title: 'COSO principle 1 — Integrity and ethical values', category: 'Practice Environment' },
+        { code: 'CC2.1', title: 'Information for internal practices', category: 'Communication' },
         { code: 'CC3.1', title: 'Specifies objectives', category: 'Risk Assessment' },
-        { code: 'CC5.1', title: 'Selects and develops control activities', category: 'Control Activities' },
+        { code: 'CC5.1', title: 'Selects and develops practice activities', category: 'Practice Activities' },
         { code: 'CC6.1', title: 'Logical and physical access controls', category: 'Logical Access' },
         { code: 'CC7.1', title: 'System operations monitoring', category: 'System Operations' },
         { code: 'CC8.1', title: 'Change management', category: 'Change Management' },
@@ -443,18 +443,18 @@ async function main() {
 
     // ─── Framework Packs ───
     //
-    // A pack used to be a bundle of ControlTemplates joined through
+    // A pack used to be a bundle of PracticeTemplates joined through
     // PackTemplateLink. The compliance uproot removed the template
     // library, so a pack is now just a named, versioned handle on a
     // Framework — installation is judged by whether the tenant has
-    // mapped any control to a requirement of that framework (see
+    // mapped any practice to a requirement of that framework (see
     // FrameworkRepository.isPackInstalled).
     const PACKS = [
-        { key: 'ISO27001_2022_BASE', name: 'ISO 27001:2022 Starter Pack', framework: iso27001, version: '2022', description: 'Full Annex A control set with default implementation tasks.' },
+        { key: 'ISO27001_2022_BASE', name: 'ISO 27001:2022 Starter Pack', framework: iso27001, version: '2022', description: 'Full Annex A practice set with default implementation tasks.' },
         { key: 'NIS2_BASELINE', name: 'NIS2 Baseline Pack', framework: nis2, version: '2022/2555', description: 'NIS2 directive security measures baseline.' },
-        { key: 'ISO9001_CORE', name: 'ISO 9001 Core Pack', framework: iso9001, version: '2015', description: 'ISO 9001 quality management core controls.' },
-        { key: 'ISO28000_CORE', name: 'ISO 28000 Core Pack', framework: iso28000, version: '2022', description: 'ISO 28000 supply chain security core controls.' },
-        { key: 'ISO39001_CORE', name: 'ISO 39001 Core Pack', framework: iso39001, version: '2012', description: 'ISO 39001 road traffic safety core controls.' },
+        { key: 'ISO9001_CORE', name: 'ISO 9001 Core Pack', framework: iso9001, version: '2015', description: 'ISO 9001 quality management core practices.' },
+        { key: 'ISO28000_CORE', name: 'ISO 28000 Core Pack', framework: iso28000, version: '2022', description: 'ISO 28000 supply chain security core practices.' },
+        { key: 'ISO39001_CORE', name: 'ISO 39001 Core Pack', framework: iso39001, version: '2012', description: 'ISO 39001 road traffic safety core practices.' },
     ];
     for (const p of PACKS) {
         await prisma.frameworkPack.upsert({
@@ -590,32 +590,32 @@ async function main() {
     }
 
     // ─── ISO27001 pack install (E2E: coverage metrics + reports) ───
-    // Link the seeded tenant controls to ISO27001 Annex A requirements so
+    // Link the seeded tenant practices to ISO27001 Annex A requirements so
     // the coverage report has mapped rows to render. Without this the
     // reporting.spec.ts "coverage metrics" test has no coverage data
     // available and would fall back to the legacy "not installed" skip.
-    const tenantControls = await prisma.control.findMany({ where: { tenantId: tenant.id } });
+    const tenantPractices = await prisma.practice.findMany({ where: { tenantId: tenant.id } });
     const annexMap: Record<string, string> = {};
     const annexReqs = await prisma.frameworkRequirement.findMany({
         where: { frameworkId: iso27001.id },
     });
     for (const r of annexReqs) annexMap[r.code] = r.id;
-    for (const ctrl of tenantControls) {
-        // Seed-created controls use annexId like 'A.5.1' which matches the
+    for (const ctrl of tenantPractices) {
+        // Seed-created practices use annexId like 'A.5.1' which matches the
         // requirement code directly.
         const code = ctrl.annexId ?? '';
         const reqId = annexMap[code];
         if (!reqId) continue;
-        const existing = await prisma.controlRequirementLink.findFirst({
-            where: { controlId: ctrl.id, requirementId: reqId },
+        const existing = await prisma.practiceRequirementLink.findFirst({
+            where: { practiceId: ctrl.id, requirementId: reqId },
         });
         if (!existing) {
-            await prisma.controlRequirementLink.create({
-                data: { tenantId: tenant.id, controlId: ctrl.id, requirementId: reqId },
+            await prisma.practiceRequirementLink.create({
+                data: { tenantId: tenant.id, practiceId: ctrl.id, requirementId: reqId },
             });
         }
     }
-    console.log('✅ ISO27001 control→requirement links seeded (coverage report ready)');
+    console.log('✅ ISO27001 practice→requirement links seeded (coverage report ready)');
 
     // ─── Audit cycle + frozen pack + share token (E2E prerequisites) ───
     // A sizeable portion of the E2E suite depends on a tenant having an
@@ -653,13 +653,13 @@ async function main() {
             },
         });
         // Minimal item snapshots so the pack has content to display.
-        for (let i = 0; i < tenantControls.length; i++) {
-            const c = tenantControls[i];
+        for (let i = 0; i < tenantPractices.length; i++) {
+            const c = tenantPractices[i];
             await prisma.auditPackItem.create({
                 data: {
                     tenantId: tenant.id,
                     auditPackId: seedPack.id,
-                    entityType: 'CONTROL',
+                    entityType: 'PRACTICE',
                     entityId: c.id,
                     snapshotJson: JSON.stringify({ id: c.id, annexId: c.annexId, name: c.name, status: c.status }),
                     sortOrder: i,
@@ -699,7 +699,7 @@ async function main() {
         await prisma.auditLog.createMany({
             data: [
                 { tenantId: tenant.id, userId: admin.id, entity: 'Tenant', entityId: tenant.id, action: 'TENANT_SEEDED', details: 'Initial seed', actorType: 'SYSTEM' },
-                { tenantId: tenant.id, userId: admin.id, entity: 'Control', entityId: tenantControls[0]?.id ?? '', action: 'CONTROL_CREATED', details: 'Seeded control', actorType: 'USER' },
+                { tenantId: tenant.id, userId: admin.id, entity: 'Practice', entityId: tenantPractices[0]?.id ?? '', action: 'CONTROL_CREATED', details: 'Seeded practice', actorType: 'USER' },
                 { tenantId: tenant.id, userId: admin.id, entity: 'Policy', entityId: '', action: 'POLICY_PUBLISHED', details: 'Seeded policy', actorType: 'USER' },
                 { tenantId: tenant.id, userId: admin.id, entity: 'Task', entityId: '', action: 'TASK_CREATED', details: 'Seeded task', actorType: 'USER' },
             ],

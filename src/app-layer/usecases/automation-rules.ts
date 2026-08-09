@@ -11,7 +11,7 @@
  * domain already ships dedicated RBAC (read = any member, manage = ADMIN),
  * and `/automation/` is not a `PRIVILEGED_ROOTS` entry in the
  * api-permission-coverage guard, so the usecase-policy pattern is correct
- * here (same as controls/risks/evidence).
+ * here (same as practices/risks/evidence).
  */
 import { RequestContext } from '../types';
 import {

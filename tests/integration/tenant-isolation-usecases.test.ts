@@ -50,10 +50,10 @@ describe('Tenant Isolation — runInTenantContext enforcement', () => {
         const fs = require('fs');
         const path = require('path');
         const usecasesDir = path.resolve(__dirname, '../../src/app-layer/usecases');
-        const criticalModules = ['control', 'evidence'];
+        const criticalModules = ['practice', 'evidence'];
 
         for (const mod of criticalModules) {
-            // Support both flat file (evidence.ts) and directory barrel (control/index.ts)
+            // Support both flat file (evidence.ts) and directory barrel (practice/index.ts)
             const flatPath = path.join(usecasesDir, `${mod}.ts`);
             const dirPath = path.join(usecasesDir, mod);
             let content: string;
@@ -80,7 +80,7 @@ describe('Tenant Isolation — Repository code analysis', () => {
         if (!fs.existsSync(reposDir)) return; // skip if no repos dir
 
         // Only check tenant-scoped repositories (not global ones like FrameworkRepository)
-        const tenantScopedRepos = ['RiskRepository.ts', 'ControlRepository.ts', 'EvidenceRepository.ts'];
+        const tenantScopedRepos = ['RiskRepository.ts', 'PracticeRepository.ts', 'EvidenceRepository.ts'];
         const files = fs.readdirSync(reposDir).filter((f: string) => tenantScopedRepos.includes(f));
 
         for (const file of files) {
@@ -93,7 +93,7 @@ describe('Tenant Isolation — Repository code analysis', () => {
     test('tenant-scoped repository getById methods filter by tenantId', () => {
         if (!fs.existsSync(reposDir)) return;
 
-        const tenantScopedRepos = ['RiskRepository.ts', 'ControlRepository.ts', 'EvidenceRepository.ts'];
+        const tenantScopedRepos = ['RiskRepository.ts', 'PracticeRepository.ts', 'EvidenceRepository.ts'];
         const files = fs.readdirSync(reposDir).filter((f: string) => tenantScopedRepos.includes(f));
 
         for (const file of files) {
@@ -107,7 +107,7 @@ describe('Tenant Isolation — Repository code analysis', () => {
         const usecasesDir = path.resolve(__dirname, '../../src/app-layer/usecases');
         if (!fs.existsSync(usecasesDir)) return;
 
-        const criticalFiles = ['control.ts', 'evidence.ts'];
+        const criticalFiles = ['practice.ts', 'evidence.ts'];
 
         for (const mod of criticalFiles) {
             const modName = mod.replace('.ts', '');

@@ -2,7 +2,7 @@
  * AI automation-rule suggestions (Visual Rule Editor VR-9).
  *
  * Surfaces ranked, ready-to-apply automation rules based on the tenant's live
- * compliance posture — designed for the Control page right-rail. The ranking
+ * compliance posture — designed for the Practice page right-rail. The ranking
  * is a deterministic heuristic (no LLM dependency, so it works without AI keys
  * and is fully unit-testable); the pure `rankRuleSuggestions` core is exported
  * for tests.
@@ -45,10 +45,10 @@ export function rankRuleSuggestions(posture: SuggestionPosture): RuleSuggestion[
 
     const candidates: Candidate[] = [
         {
-            id: 'control-test-failed-notify',
-            title: 'Notify the team when a control test fails',
+            id: 'practice-test-failed-notify',
+            title: 'Notify the team when a practice test fails',
             rationale:
-                'Failing control tests are the earliest signal of a slipping control — route them to an owner the moment they fail.',
+                'Failing practice tests are the earliest signal of a slipping practice — route them to an owner the moment they fail.',
             triggerEvent: 'TEST_RUN_FAILED',
             actionType: 'NOTIFY_USER',
             confidenceScore: 0.82,

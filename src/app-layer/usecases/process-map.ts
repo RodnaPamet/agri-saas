@@ -166,16 +166,16 @@ export async function setProcessMapCanvasMode(
 
 /**
  * Epic P2-PR-C — reverse lookup. Returns the process maps + edges
- * referencing a given control. Read-only; surfaces "Where is this
- * control used?" on the Control detail page.
+ * referencing a given practice. Read-only; surfaces "Where is this
+ * practice used?" on the Practice detail page.
  */
-export async function listMapsUsingControl(
+export async function listMapsUsingPractice(
     ctx: RequestContext,
-    controlId: string,
+    practiceId: string,
 ) {
     assertCanRead(ctx);
     return runInTenantContext(ctx, (db) =>
-        ProcessMapRepository.listMapsByControl(db, ctx, controlId),
+        ProcessMapRepository.listMapsByPractice(db, ctx, practiceId),
     );
 }
 

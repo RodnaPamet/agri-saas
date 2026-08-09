@@ -205,7 +205,7 @@ export default function NotificationSettingsPage() {
             ) : (
                 /* R13-PR6 — outer `cardVariants()` wrapper dropped
                    so the DataTable primitive's own bordered card is
-                   the only one (matches Controls list visually). */
+                   the only one (matches Practices list visually). */
                 <div>
                     {stats ? (() => {
                         const statsColumns = createColumns<{ label: string; pending: number; sent: number; failed: number; total: number }>([

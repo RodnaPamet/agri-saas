@@ -76,7 +76,7 @@ export async function POST(req: NextRequest) {
         const counts = {
             tenants: await prisma.tenant.count(),
             users: await prisma.user.count(),
-            controls: await prisma.control.count({ where: { tenantId: tenant.id } }),
+            practices: await prisma.practice.count({ where: { tenantId: tenant.id } }),
             frameworks: await prisma.framework.count(),
         };
 

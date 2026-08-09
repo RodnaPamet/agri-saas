@@ -4,7 +4,7 @@
  *   GET /api/org/[orgSlug]/portfolio/export
  *
  * Returns a single multi-section CSV containing the org's portfolio
- * summary plus the three drill-down lists (non-performing controls,
+ * summary plus the three drill-down lists (non-performing practices,
  * critical risks, overdue evidence). Sections are separated by blank
  * rows + section-header rows so spreadsheet apps render them cleanly.
  *
@@ -34,7 +34,7 @@ import { escapeCSV } from '@/lib/reports/csv-escape';
 import {
     getPortfolioSummary,
     getPortfolioTenantHealth,
-    getNonPerformingControls,
+    getNonPerformingPractices,
     getOverdueEvidenceAcrossOrg,
 } from '@/app-layer/usecases/portfolio';
 
@@ -76,9 +76,9 @@ export const GET = withApiErrorHandling(
             ['Tenants Total', summary.tenants.total],
             ['Tenants Snapshotted', summary.tenants.snapshotted],
             ['Tenants Pending', summary.tenants.pending],
-            ['Controls Applicable', summary.controls.applicable],
-            ['Controls Implemented', summary.controls.implemented],
-            ['Coverage %', summary.controls.coveragePercent.toFixed(1)],
+            ['Practices Applicable', summary.practices.applicable],
+            ['Practices Implemented', summary.practices.implemented],
+            ['Coverage %', summary.practices.coveragePercent.toFixed(1)],
             ['Evidence Overdue', summary.evidence.overdue],
             ['Evidence Due Soon (7d)', summary.evidence.dueSoon7d],
             ['Policies Overdue Review', summary.policies.overdueReview],
@@ -116,19 +116,19 @@ export const GET = withApiErrorHandling(
 
         // ── Sections 3-5: drill-down (only when canDrillDown) ────────
         if (ctx.permissions.canDrillDown) {
-            const [controls, evidence] = await Promise.all([
-                getNonPerformingControls(ctx),
+            const [practices, evidence] = await Promise.all([
+                getNonPerformingPractices(ctx),
                 getOverdueEvidenceAcrossOrg(ctx),
             ]);
 
             sections.push('');
-            sections.push(sectionHeader('Non-Performing Controls', CONTROLS_COLUMNS));
+            sections.push(sectionHeader('Non-Performing Practices', CONTROLS_COLUMNS));
             sections.push(
-                ['Tenant', 'Slug', 'Control', 'Code', 'Status', 'Updated At']
+                ['Tenant', 'Slug', 'Practice', 'Code', 'Status', 'Updated At']
                     .map(escapeCSV)
                     .join(','),
             );
-            for (const c of controls) {
+            for (const c of practices) {
                 sections.push(
                     [
                         escapeCSV(c.tenantName),

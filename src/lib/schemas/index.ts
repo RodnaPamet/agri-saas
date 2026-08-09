@@ -63,9 +63,9 @@ export const UpdateAssetSchema = z.object({
 });
 
 
-// ─── Controls ───
+// ─── Practices ───
 
-export const CreateControlSchema = z.object({
+export const CreatePracticeSchema = z.object({
     code: z.string().optional().nullable(),
     name: z.string().min(1, 'Name is required'),
     description: z.string().optional().nullable(),
@@ -78,11 +78,11 @@ export const CreateControlSchema = z.object({
     automationKey: z.string().optional().nullable(),
     mitigationType: z.enum(['PREVENTIVE', 'DETECTIVE', 'DETERRENT', 'CORRECTIVE', 'COMPENSATING']).optional().nullable(),
     isCustom: z.boolean().optional().default(true),
-}).strip().openapi('ControlCreateRequest', {
-    description: 'Payload for creating a control. Status defaults to NOT_STARTED. `code` carries the framework reference where one applies (e.g. ISO 27001:2022 A.5.1) and is minted as `CTL-N` for custom controls. Custom controls (isCustom=true) are tenant-specific.',
+}).strip().openapi('PracticeCreateRequest', {
+    description: 'Payload for creating a practice. Status defaults to NOT_STARTED. `code` carries the framework reference where one applies (e.g. ISO 27001:2022 A.5.1) and is minted as `CTL-N` for custom practices. Custom practices (isCustom=true) are tenant-specific.',
 });
 
-export const UpdateControlSchema = z.object({
+export const UpdatePracticeSchema = z.object({
     name: z.string().min(1).optional(),
     description: z.string().optional().nullable(),
     code: z.string().optional().nullable(),
@@ -92,46 +92,46 @@ export const UpdateControlSchema = z.object({
     evidenceSource: z.enum(['MANUAL', 'INTEGRATION']).optional().nullable(),
     automationKey: z.string().optional().nullable(),
     mitigationType: z.enum(['PREVENTIVE', 'DETECTIVE', 'DETERRENT', 'CORRECTIVE', 'COMPENSATING']).optional().nullable(),
-}).strip().openapi('ControlUpdateRequest', {
-    description: 'Partial update for a control. Status, applicability, and owner have dedicated focused endpoints; this body covers descriptive metadata only.',
+}).strip().openapi('PracticeUpdateRequest', {
+    description: 'Partial update for a practice. Status, applicability, and owner have dedicated focused endpoints; this body covers descriptive metadata only.',
 });
 
-export const SetControlStatusSchema = z.object({
+export const SetPracticeStatusSchema = z.object({
     status: z.enum(['NOT_STARTED', 'IN_PROGRESS', 'IMPLEMENTED', 'NEEDS_REVIEW']),
-}).strip().openapi('ControlSetStatusRequest', {
-    description: 'Lifecycle transition for a control. NEEDS_REVIEW signals a control whose evidence has lapsed or whose owner was removed.',
+}).strip().openapi('PracticeSetStatusRequest', {
+    description: 'Lifecycle transition for a practice. NEEDS_REVIEW signals a practice whose evidence has lapsed or whose owner was removed.',
 });
 
-export const SetControlApplicabilitySchema = z.object({
+export const SetPracticeApplicabilitySchema = z.object({
     applicability: z.enum(['APPLICABLE', 'NOT_APPLICABLE']),
     justification: z.string().optional().nullable().default(null),
-}).strip().openapi('ControlSetApplicabilityRequest', {
-    description: 'Statement-of-applicability flag for a control. NOT_APPLICABLE controls are excluded from coverage metrics and audit packs but remain queryable.',
+}).strip().openapi('PracticeSetApplicabilityRequest', {
+    description: 'Statement-of-applicability flag for a practice. NOT_APPLICABLE practices are excluded from coverage metrics and audit packs but remain queryable.',
 });
 
-export const SetControlOwnerSchema = z.object({
+export const SetPracticeOwnerSchema = z.object({
     ownerUserId: z.string().nullable(),
-}).strip().openapi('ControlSetOwnerRequest', {
-    description: 'Reassign or unassign a control owner. Pass null to clear the owner; pass a userId to assign.',
+}).strip().openapi('PracticeSetOwnerRequest', {
+    description: 'Reassign or unassign a practice owner. Pass null to clear the owner; pass a userId to assign.',
 });
 
-export const CreateControlTaskSchema = z.object({
+export const CreatePracticeTaskSchema = z.object({
     title: z.string().min(1, 'Title is required'),
     description: z.string().optional().nullable(),
     assigneeUserId: z.string().optional().nullable(),
     dueAt: z.string().optional().nullable(),
-}).strip().openapi('ControlTaskCreateRequest', {
-    description: 'Create a task on a control. Tasks are the unit of operational work — implementation steps, evidence-gathering, review cycles.',
+}).strip().openapi('PracticeTaskCreateRequest', {
+    description: 'Create a task on a practice. Tasks are the unit of operational work — implementation steps, evidence-gathering, review cycles.',
 });
 
-export const UpdateControlTaskSchema = z.object({
+export const UpdatePracticeTaskSchema = z.object({
     title: z.string().min(1).optional(),
     description: z.string().optional().nullable(),
     status: z.enum(['OPEN', 'IN_PROGRESS', 'DONE', 'BLOCKED']).optional(),
     assigneeUserId: z.string().optional().nullable(),
     dueAt: z.string().optional().nullable(),
-}).strip().openapi('ControlTaskUpdateRequest', {
-    description: 'Partial update for a control task — including status transitions and reassignment.',
+}).strip().openapi('PracticeTaskUpdateRequest', {
+    description: 'Partial update for a practice task — including status transitions and reassignment.',
 });
 
 export const LinkEvidenceSchema = z.object({
@@ -140,13 +140,13 @@ export const LinkEvidenceSchema = z.object({
     url: z.string().url().optional().nullable(),
     note: z.string().optional().nullable(),
 }).strip().openapi('EvidenceLinkRequest', {
-    description: 'Attach evidence to a control. FILE kinds reference an uploaded FileRecord by id; LINK kinds carry a URL; INTEGRATION_RESULT kinds are emitted by automation runs.',
+    description: 'Attach evidence to a practice. FILE kinds reference an uploaded FileRecord by id; LINK kinds carry a URL; INTEGRATION_RESULT kinds are emitted by automation runs.',
 });
 
 export const MapRequirementSchema = z.object({
     requirementId: z.string().min(1, 'requirementId is required'),
-}).strip().openapi('ControlRequirementMapRequest', {
-    description: 'Map a framework requirement to a control (e.g. asserting this control satisfies ISO 27001:2022 A.5.1).',
+}).strip().openapi('PracticeRequirementMapRequest', {
+    description: 'Map a framework requirement to a practice (e.g. asserting this practice satisfies ISO 27001:2022 A.5.1).',
 });
 
 export const SetApplicabilitySchema = z.object({
@@ -154,7 +154,7 @@ export const SetApplicabilitySchema = z.object({
     justification: z.string().optional().nullable(),
 }).strip().refine(
     (data) => data.applicability === 'APPLICABLE' || (data.justification && data.justification.trim().length > 0),
-    { message: 'Justification is required when marking a control as Not Applicable', path: ['justification'] }
+    { message: 'Justification is required when marking a practice as Not Applicable', path: ['justification'] }
 );
 
 // ─── Policies ───
@@ -221,7 +221,7 @@ export const PublishPolicySchema = z.object({
 // this base prevents a duplicate-component-id collision in the
 // OpenAPI document.
 const _CreateEvidenceBase = z.object({
-    controlId: z.string().optional().nullable(),
+    practiceId: z.string().optional().nullable(),
     type: z.enum(['TEXT', 'FILE', 'LINK', 'SCREENSHOT']).optional().default('TEXT'),
     title: z.string().min(1, 'Title is required'),
     content: z.string().optional(),
@@ -254,11 +254,11 @@ export const UpdateEvidenceSchema = z.object({
     // The wire name matches the column; the user-facing label is a translation
     // string and can say whatever reads best.
     content: z.string().optional(),
-    // Re-assigning evidence to a different control. The modal has always had
+    // Re-assigning evidence to a different practice. The modal has always had
     // the picker and always sent the value; without a field here `.strip()`
     // dropped it, so the picker moved and nothing changed. Nullable: clearing
     // it detaches the evidence.
-    controlId: z.string().optional().nullable(),
+    practiceId: z.string().optional().nullable(),
     category: z.string().optional().nullable(),
     // B8 follow-up — folder is editable post-create so a tenant
     // can re-organise their evidence library after the fact.
@@ -293,13 +293,13 @@ export const CreateFindingSchema = z.object({
     owner: z.string().optional().nullable(),
     // Assignee — a tenant member id (validated server-side).
     assigneeUserId: z.string().optional().nullable(),
-    // The control the finding is raised against.
-    controlId: z.string().optional().nullable(),
-    // A compensating control that mitigates the finding.
-    compensatingControlId: z.string().optional().nullable(),
+    // The practice the finding is raised against.
+    practiceId: z.string().optional().nullable(),
+    // A compensating practice that mitigates the finding.
+    compensatingPracticeId: z.string().optional().nullable(),
     dueDate: z.string().optional().nullable(),
 }).strip().openapi('FindingCreateRequest', {
-    description: 'Create an audit finding. auditId is optional — findings can be raised independently of an audit cycle. description, rootCause + analysis are encrypted at rest. assigneeUserId / controlId / compensatingControlId are validated against the tenant.',
+    description: 'Create an audit finding. auditId is optional — findings can be raised independently of an audit cycle. description, rootCause + analysis are encrypted at rest. assigneeUserId / practiceId / compensatingPracticeId are validated against the tenant.',
 });
 
 export const UpdateFindingSchema = z.object({
@@ -312,13 +312,13 @@ export const UpdateFindingSchema = z.object({
     analysis: z.string().max(20000).optional().nullable(),
     owner: z.string().optional().nullable(),
     assigneeUserId: z.string().optional().nullable(),
-    controlId: z.string().optional().nullable(),
-    compensatingControlId: z.string().optional().nullable(),
+    practiceId: z.string().optional().nullable(),
+    compensatingPracticeId: z.string().optional().nullable(),
     dueDate: z.string().optional().nullable(),
     status: z.enum(['OPEN', 'IN_PROGRESS', 'READY_FOR_VERIFICATION', 'CLOSED']).optional(),
     verificationNotes: z.string().optional().nullable(),
 }).strip().openapi('FindingUpdateRequest', {
-    description: 'Partial update for a finding — including lifecycle transitions and verification notes. Relation fields (assignee/control/compensating) are validated against the tenant.',
+    description: 'Partial update for a finding — including lifecycle transitions and verification notes. Relation fields (assignee/practice/compensating) are validated against the tenant.',
 });
 
 // ─── Audits ───
@@ -361,7 +361,7 @@ export const UpdateAuditSchema = z.object({
 
 export const CreateTaskSchema = z.object({
     title: z.string().min(1).max(500),
-    type: z.enum(['AUDIT_FINDING', 'CONTROL_GAP', 'INCIDENT', 'IMPROVEMENT', 'TASK']).optional().default('TASK'),
+    type: z.enum(['AUDIT_FINDING', 'PRACTICE_GAP', 'INCIDENT', 'IMPROVEMENT', 'TASK']).optional().default('TASK'),
     description: z.string().max(10000).nullable().optional(),
     severity: z.enum(['INFO', 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL']).optional(),
     priority: z.enum(['P0', 'P1', 'P2', 'P3']).optional(),
@@ -369,20 +369,20 @@ export const CreateTaskSchema = z.object({
     dueAt: z.string().nullable().optional(),
     assigneeUserId: z.string().nullable().optional(),
     reviewerUserId: z.string().nullable().optional(),
-    controlId: z.string().nullable().optional(),
+    practiceId: z.string().nullable().optional(),
     metadataJson: z.any().optional(),
 }).strip().openapi('TaskCreateRequest', {
-    description: 'Create a task (unified work-item type covering audit findings, control gaps, incidents, improvements, and ad-hoc tasks). The type discriminator gates which UI surfaces this work item appears in.',
+    description: 'Create a task (unified work-item type covering audit findings, practice gaps, incidents, improvements, and ad-hoc tasks). The type discriminator gates which UI surfaces this work item appears in.',
 });
 
 export const UpdateTaskSchema = z.object({
     title: z.string().min(1).max(500).optional(),
     description: z.string().max(10000).nullable().optional(),
-    type: z.enum(['TASK', 'AUDIT_FINDING', 'CONTROL_GAP', 'INCIDENT', 'IMPROVEMENT']).optional(),
+    type: z.enum(['TASK', 'AUDIT_FINDING', 'PRACTICE_GAP', 'INCIDENT', 'IMPROVEMENT']).optional(),
     severity: z.enum(['INFO', 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL']).optional(),
     priority: z.enum(['P0', 'P1', 'P2', 'P3']).optional(),
     dueAt: z.string().nullable().optional(),
-    controlId: z.string().nullable().optional(),
+    practiceId: z.string().nullable().optional(),
     reviewerUserId: z.string().nullable().optional(),
     metadataJson: z.any().optional(),
 }).strip().openapi('TaskUpdateRequest', {
@@ -417,7 +417,7 @@ export const LinkAssetEvidenceSchema = z.object({
 });
 
 export const AddTaskLinkSchema = z.object({
-    entityType: z.enum(['CONTROL', 'FRAMEWORK_REQUIREMENT', 'ASSET', 'POLICY', 'EVIDENCE', 'FILE', 'AUDIT_PACK', 'VENDOR']),
+    entityType: z.enum(['PRACTICE', 'FRAMEWORK_REQUIREMENT', 'ASSET', 'POLICY', 'EVIDENCE', 'FILE', 'AUDIT_PACK', 'VENDOR']),
     entityId: z.string().min(1),
     relation: z.enum(['RELATES_TO', 'EVIDENCE_FOR', 'BLOCKED_BY', 'CAUSED_BY', 'MITIGATED_BY']).optional(),
 }).strip().openapi('TaskLinkAddRequest', {
@@ -539,7 +539,7 @@ export const UpdateVendorSchema = z.object({
     nextReviewAt: z.string().optional().nullable(),
     contractRenewalAt: z.string().optional().nullable(),
 }).strip().openapi('VendorUpdateRequest', {
-    description: 'Partial update for a vendor. residualRisk is computed from inherentRisk + control coverage; allow direct override here for SoC analyst workflow.',
+    description: 'Partial update for a vendor. residualRisk is computed from inherentRisk + practice coverage; allow direct override here for SoC analyst workflow.',
 });
 
 export const CreateVendorDocumentSchema = z.object({
@@ -577,12 +577,12 @@ export const SetVendorReviewSchema = z.object({
 }).strip();
 
 export const AddVendorLinkSchema = z.object({
-    entityType: z.enum(['ASSET', 'ISSUE', 'CONTROL']),
+    entityType: z.enum(['ASSET', 'ISSUE', 'PRACTICE']),
     entityId: z.string().min(1),
     relation: z.enum(['USES', 'STORES_DATA_FOR', 'PROVIDES_SERVICE_TO', 'MITIGATES', 'RELATED']).optional(),
 }).strip();
 
-// ─── Control Test Schemas ───
+// ─── Practice Test Schemas ───
 
 // ─── Epic G-3 — Vendor Assessment Template Authoring ──────────────
 //

@@ -1,7 +1,7 @@
 /**
  * Button label-centering guardrail (2026-05-31).
  *
- * User report: button-styled controls rendered with their text label
+ * User report: button-styled practices rendered with their text label
  * off-centre / untidy. The Button primitive centres its WHOLE content
  * unit `[icon][gap][label]` via `justify-center` + hug-content (no
  * forced width), so `+ Asset` reads as a tidy centred unit. There are
@@ -27,7 +27,7 @@
  *      primitive's centring. `w-full` menu/list buttons are carved
  *      out (left-aligned by convention).
  *
- *   3. CONTROL-STATUS TRIGGER — hugs its content (no fixed-width void).
+ *   3. PRACTICE-STATUS TRIGGER — hugs its content (no fixed-width void).
  *
  * Behavioural companion (asserts the DOM mechanism per prop shape):
  * tests/rendered/button-label-centering.test.tsx.
@@ -36,7 +36,7 @@
  * deliberately LEFT-aligned trigger (value left, chevron right) — the
  * conventional select shape — via its own internal `justify-start`,
  * NOT via a `<Button className>` override, so it is out of this scan's
- * scope by construction. The control-status void the user reported was
+ * scope by construction. The practice-status void the user reported was
  * a fixed-width (`w-40`) misuse at one call site, removed so the
  * trigger hugs its content (no void); it is not a primitive defect.
  */
@@ -116,10 +116,10 @@ describe('Button label centering', () => {
         // the conventional menu / action-list item shape (icon + label
         // hugging the leading edge in a vertical stack — Linear /
         // Notion style). That is a deliberate, distinct intent from the
-        // header / status controls the centring contract governs, so a
+        // header / status practices the centring contract governs, so a
         // forbidden class on a `w-full` button is allowed. A fixed- or
         // content-width button that left-aligns is the bug class (the
-        // reported control-status void was effectively `w-40
+        // reported practice-status void was effectively `w-40
         // justify-start`).
         const WIDTH_FULL = /\bw-full\b/;
 
@@ -210,12 +210,12 @@ describe('Button label centering', () => {
         });
     });
 
-    describe('3. Control-status trigger hugs content (no fixed-width void)', () => {
+    describe('3. Practice-status trigger hugs content (no fixed-width void)', () => {
         it('does not pin the status combobox to a fixed width', () => {
             const page = read(
-                'src/app/t/[tenantSlug]/(app)/controls/[controlId]/page.tsx',
+                'src/app/t/[tenantSlug]/(app)/practices/[practiceId]/page.tsx',
             );
-            const idx = page.indexOf('id="control-status-select"');
+            const idx = page.indexOf('id="practice-status-select"');
             expect(idx).toBeGreaterThan(-1);
             // Inspect the Combobox element around the status select.
             const start = page.lastIndexOf('<Combobox', idx);

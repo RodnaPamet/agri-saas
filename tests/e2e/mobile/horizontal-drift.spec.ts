@@ -96,9 +96,9 @@ const PAGES: ReadonlyArray<{ label: string; path: (slug: string) => string }> = 
 const DETAIL_PAGES: ReadonlyArray<{
     label: string;
     list: (slug: string) => string;
-    entity: string; // path segment after the slug, e.g. 'controls'
+    entity: string; // path segment after the slug, e.g. 'practices'
 }> = [
-    { label: 'controls/[controlId]', list: (s) => `/t/${s}/controls`, entity: 'controls' },
+    { label: 'practices/[practiceId]', list: (s) => `/t/${s}/practices`, entity: 'practices' },
     { label: 'vendors/[vendorId]', list: (s) => `/t/${s}/vendors`, entity: 'vendors' },
     { label: 'journal/[id]', list: (s) => `/t/${s}/journal`, entity: 'journal' },
     { label: 'field/[taskId]', list: (s) => `/t/${s}/farm-tasks`, entity: 'field' },

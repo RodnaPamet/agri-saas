@@ -28,7 +28,7 @@
  * ═══════════════════════════════════════════════════════════════════════
  *
  * Scheduled:
- *   1. Cron job finds Controls where automationKey is set
+ *   1. Cron job finds Practices where automationKey is set
  *   2. Registry resolves automationKey prefix → IntegrationProvider
  *   3. Provider.runCheck() executes the check
  *   4. Result is persisted as IntegrationExecution
@@ -83,8 +83,8 @@ export interface CheckInput {
     parsed: ParsedAutomationKey;
     /** Tenant context */
     tenantId: string;
-    /** The control this check is for (if any) */
-    controlId?: string;
+    /** The practice this check is for (if any) */
+    practiceId?: string;
     /** Provider-specific connection config (decrypted) */
     connectionConfig: Record<string, unknown>;
     /** How the check was triggered */
@@ -204,7 +204,7 @@ export interface IntegrationProvider {
 
 /**
  * Provider that supports scheduled automation checks.
- * Controls with matching automationKey will route here.
+ * Practices with matching automationKey will route here.
  */
 export interface ScheduledCheckProvider extends IntegrationProvider {
     /**

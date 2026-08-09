@@ -25,7 +25,7 @@
  * many listings it posts, so moving the index requires moving a majority of
  * distinct tenants — which is what the k-anonymity floor was always assuming.
  *
- * The floor itself is unchanged: it is a PRIVACY control and it was correct.
+ * The floor itself is unchanged: it is a PRIVACY practice and it was correct.
  *
  * @module lib/market/listings-index
  */

@@ -9,7 +9,7 @@
  * Command Palette entity search — UNIFIED ENDPOINT VERSION.
  *
  * Replaces the original Epic 57 per-entity fan-out (5 parallel
- * fetches across `/controls`, `/risks`, `/policies`, `/evidence`,
+ * fetches across `/practices`, `/risks`, `/policies`, `/evidence`,
  * `/frameworks`) with a single call to the unified search API at
  * `GET /api/t/<slug>/search?q=`. Server-side ranking, per-type
  * caps, and result shape now live in one place.

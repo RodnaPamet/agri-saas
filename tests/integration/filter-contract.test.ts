@@ -14,14 +14,14 @@ describe('Filter contract tests', () => {
             // Schema-level verification — the Zod schemas are the source of truth.
             // This test documents the expected contract:
             const expectedParams = {
-                'controls': ['q', 'status', 'applicability', 'ownerUserId', 'category', 'limit', 'cursor', 'includeDeleted'],
-                'evidence': ['q', 'status', 'type', 'controlId', 'limit', 'cursor'],
-                'tasks': ['q', 'status', 'type', 'severity', 'priority', 'assigneeUserId', 'controlId', 'due', 'limit', 'cursor', 'linkedEntityType', 'linkedEntityId'],
+                'practices': ['q', 'status', 'applicability', 'ownerUserId', 'category', 'limit', 'cursor', 'includeDeleted'],
+                'evidence': ['q', 'status', 'type', 'practiceId', 'limit', 'cursor'],
+                'tasks': ['q', 'status', 'type', 'severity', 'priority', 'assigneeUserId', 'practiceId', 'due', 'limit', 'cursor', 'linkedEntityType', 'linkedEntityId'],
                 'risks': ['q', 'status', 'scoreMin', 'scoreMax', 'category', 'ownerUserId', 'limit', 'cursor', 'includeDeleted'],
                 'policies': ['q', 'status', 'category', 'language', 'limit', 'cursor', 'includeDeleted'],
                 'assets': ['q', 'status', 'type', 'criticality', 'limit', 'cursor', 'includeDeleted'],
                 'vendors': ['q', 'status', 'criticality', 'riskRating', 'reviewDue', 'limit', 'cursor'],
-                'tests/plans': ['q', 'status', 'controlId', 'due'],
+                'tests/plans': ['q', 'status', 'practiceId', 'due'],
             };
 
             // Verify each endpoint's expected params are documented

@@ -118,19 +118,19 @@ const EXEMPTIONS: Record<string, string> = {
     'vendors/[vendorId]/page.tsx':
         'detail page — DataTable is the inner documents sub-table (R11-PR7)',
 
-    // R11-PR6 — control detail page now mounts DataTable for the
+    // R11-PR6 — practice detail page now mounts DataTable for the
     // tasks sub-table. Detail page (EntityDetailLayout), not a list
     // page.
-    'controls/[controlId]/page.tsx':
+    'practices/[practiceId]/page.tsx':
         'detail page — DataTable is the inner tasks sub-table (R11-PR6)',
 
-    // R10-PR3 follow-up — control detail page evidence + mappings
+    // R10-PR3 follow-up — practice detail page evidence + mappings
     // sub-tables migrated off raw <table> to DataTable. Detail-page
     // sub-tables; the page itself is not a list page.
-    'controls/[controlId]/_tabs/EvidenceSubTable.tsx':
-        'detail page sub-table — evidence rows for one control (R10-PR3 follow-up)',
-    'controls/[controlId]/_tabs/ControlMappingsTab.tsx':
-        'detail page sub-table — framework mappings for one control (R10-PR3 follow-up)',
+    'practices/[practiceId]/_tabs/EvidenceSubTable.tsx':
+        'detail page sub-table — evidence rows for one practice (R10-PR3 follow-up)',
+    'practices/[practiceId]/_tabs/PracticeMappingsTab.tsx':
+        'detail page sub-table — framework mappings for one practice (R10-PR3 follow-up)',
 
     // Farm task detail — the single task-detail page; DataTable is the inner
     // links/traceability sub-table. Detail page (EntityDetailLayout).
@@ -220,7 +220,7 @@ describe('list-page-shell coverage ratchet', () => {
                 `${violators.length} app page(s) import DataTable without wrapping in ListPageShell:\n  ` +
                     violators.join('\n  ') +
                     '\n\nFix options:\n' +
-                    '  • Wrap the page in <ListPageShell> (see Risks/Controls/Tasks for the canonical pattern)\n' +
+                    '  • Wrap the page in <ListPageShell> (see Risks/Practices/Tasks for the canonical pattern)\n' +
                     '    and add `fillBody` to the primary DataTable.\n' +
                     '  • OR add the file path to EXEMPTIONS in this test with a one-line reason.\n',
             );

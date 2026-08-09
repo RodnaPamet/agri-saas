@@ -7,7 +7,7 @@
  * Inflect token palette, a consistent navigation header, and
  * sensible defaults (single-mode by default, outside days shown
  * only for single-month layouts). The component is UI-pure — it
- * never owns selection state; consumers control via `selected` +
+ * never owns selection state; consumers practice via `selected` +
  * `onSelect`, and the wider Single/Range picker wrappers drive
  * those props.
  *

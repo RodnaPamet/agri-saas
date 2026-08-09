@@ -9,7 +9,7 @@
  *
  * Why this matters
  *   The user explicitly asked for breadcrumbs above the page name
- *   on every list page (like /controls). Without a ratchet, the
+ *   on every list page (like /practices). Without a ratchet, the
  *   next PR that adds a new resource page will forget the
  *   breadcrumbs and we'll be back to the inconsistent state.
  *
@@ -88,7 +88,7 @@ const EXEMPT_FILES = new Set<string>([
     // ── Resource-scoped sub-pages ───────────────────────────────
     // The parent detail page already owns the breadcrumb context;
     // rendering breadcrumbs here would duplicate. Each sits under
-    // an entity detail (control, audit, framework, vendor) and
+    // an entity detail (practice, audit, framework, vendor) and
     // renders inside the parent's `<EntityDetailLayout>` context.
     "src/app/t/[tenantSlug]/(app)/admin/vendor-assessment-reviews/[assessmentId]/VendorAssessmentReviewClient.tsx",
     "src/app/t/[tenantSlug]/(app)/vendors/[vendorId]/assessment/[assessmentId]/page.tsx",
@@ -110,8 +110,8 @@ const EXEMPT_FILES = new Set<string>([
 
     // ── Visualization / report views ────────────────────────────
     // Standalone visualization or print views with their own
-    // controls. Breadcrumbs would compete with the in-page
-    // navigation (e.g. SoA filter row, controls/sankey legend).
+    // practices. Breadcrumbs would compete with the in-page
+    // navigation (e.g. SoA filter row, practices/sankey legend).
 
     // (Admin sub-pages risk-matrix, vendor-templates index +
     // builder were on this list with a "TODO migrate" label;

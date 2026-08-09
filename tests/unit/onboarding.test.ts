@@ -192,15 +192,15 @@ describe('Completion Criteria', () => {
         expect(issues).toEqual([]);
     });
 
-    test('framework selected but control install not done fails', () => {
+    test('framework selected but practice install not done fails', () => {
         const completed = ['COMPANY_PROFILE', 'FRAMEWORK_SELECTION', 'ASSET_SETUP', 'REVIEW_AND_FINISH'];
         const skipped = ['INITIAL_RISK_REGISTER', 'TEAM_SETUP'];
         const stepData = { FRAMEWORK_SELECTION: { selectedFrameworks: ['iso27001'] } };
         const issues = checkCompletionCriteria(completed, skipped, stepData);
-        expect(issues.some(i => i.includes('Control baseline'))).toBe(true);
+        expect(issues.some(i => i.includes('Practice baseline'))).toBe(true);
     });
 
-    test('framework selected and control install skipped passes', () => {
+    test('framework selected and practice install skipped passes', () => {
         const completed = ['COMPANY_PROFILE', 'FRAMEWORK_SELECTION', 'ASSET_SETUP', 'REVIEW_AND_FINISH'];
         const skipped = ['CONTROL_BASELINE_INSTALL', 'INITIAL_RISK_REGISTER', 'TEAM_SETUP'];
         const stepData = { FRAMEWORK_SELECTION: { selectedFrameworks: ['iso27001'] } };
@@ -208,7 +208,7 @@ describe('Completion Criteria', () => {
         expect(issues).toEqual([]);
     });
 
-    test('no frameworks selected means no control install needed', () => {
+    test('no frameworks selected means no practice install needed', () => {
         const completed = ['COMPANY_PROFILE', 'ASSET_SETUP', 'REVIEW_AND_FINISH'];
         const skipped = ['FRAMEWORK_SELECTION', 'INITIAL_RISK_REGISTER', 'TEAM_SETUP'];
         const issues = checkCompletionCriteria(completed, skipped, {});

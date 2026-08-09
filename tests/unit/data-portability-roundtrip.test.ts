@@ -76,23 +76,23 @@ function makeEnvelope(): ExportEnvelope {
             appVersion: '1.0.0',
         },
         entities: {
-            control: [{
-                entityType: 'control',
+            practice: [{
+                entityType: 'practice',
                 id: 'ctrl-1',
                 schemaVersion: '1.0',
                 data: { name: 'Firewall', tenantId: 'tenant-1', status: 'ACTIVE' },
             }],
-            controlTestPlan: [{
-                entityType: 'controlTestPlan',
+            practiceTestPlan: [{
+                entityType: 'practiceTestPlan',
                 id: 'tp-1',
                 schemaVersion: '1.0',
-                data: { name: 'Test Plan', tenantId: 'tenant-1', controlId: 'ctrl-1' },
+                data: { name: 'Test Plan', tenantId: 'tenant-1', practiceId: 'ctrl-1' },
             }],
         },
         relationships: [{
-            fromType: 'controlTestPlan',
+            fromType: 'practiceTestPlan',
             fromId: 'tp-1',
-            toType: 'control',
+            toType: 'practice',
             toId: 'ctrl-1',
             relationship: 'BELONGS_TO',
         }],
@@ -181,7 +181,7 @@ const auditCreateSpy = jest.fn();
 
 jest.mock('@/lib/prisma', () => {
     const models = [
-        'control', 'controlTestPlan', 'controlTestRun', 'controlRequirementLink',
+        'practice', 'practiceTestPlan', 'practiceTestRun', 'practiceRequirementLink',
         'policy', 'policyVersion', 'risk', 'evidence',
         'task', 'taskLink',
         'vendor', 'vendorAssessment', 'vendorRelationship',
@@ -297,8 +297,8 @@ describe('Data portability: usecase entrypoints', () => {
         });
 
         expect(result.success).toBe(true);
-        expect(result.imported.control).toBe(1);
-        expect(result.imported.controlTestPlan).toBe(1);
+        expect(result.imported.practice).toBe(1);
+        expect(result.imported.practiceTestPlan).toBe(1);
 
         // Audit log created
         expect(auditCreateSpy).toHaveBeenCalledWith(
@@ -395,9 +395,9 @@ describe('Data portability: export → import roundtrip', () => {
             dryRun: false,
         });
 
-        // controlTestPlan.controlId should reference the control
-        const tp = capturedData.find(c => c.model === 'controlTestPlan');
-        expect(tp?.data.controlId).toBe('ctrl-1');
+        // practiceTestPlan.practiceId should reference the practice
+        const tp = capturedData.find(c => c.model === 'practiceTestPlan');
+        expect(tp?.data.practiceId).toBe('ctrl-1');
     });
 });
 

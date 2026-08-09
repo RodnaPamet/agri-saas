@@ -54,7 +54,7 @@ describe('<InitialsAvatar>', () => {
         expect(screen.getByText('AC')).toBeInTheDocument();
     });
 
-    it('is decorative — aria-hidden, so the parent control owns the label', () => {
+    it('is decorative — aria-hidden, so the parent practice owns the label', () => {
         const { container } = render(<InitialsAvatar value="Ada Lovelace" />);
         expect(container.firstChild).toHaveAttribute('aria-hidden', 'true');
     });

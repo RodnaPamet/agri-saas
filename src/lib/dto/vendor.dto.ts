@@ -22,7 +22,7 @@ export const VendorListItemDTOSchema = z.object({
     createdAt: z.string().optional(),
     updatedAt: z.string().optional(),
 }).passthrough().openapi('VendorListItem', {
-    description: 'Vendor as shown in list views. residualRisk is the risk score after control coverage; null = not yet assessed.',
+    description: 'Vendor as shown in list views. residualRisk is the risk score after practice coverage; null = not yet assessed.',
 });
 
 export type VendorListItemDTO = z.infer<typeof VendorListItemDTOSchema>;

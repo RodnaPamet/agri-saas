@@ -25,12 +25,12 @@
  */
 
 const mockDb = {
-    control: { findFirst: jest.fn().mockResolvedValue({ id: 'ctrl-1' }) },
+    practice: { findFirst: jest.fn().mockResolvedValue({ id: 'ctrl-1' }) },
     task: { findFirst: jest.fn() },
     risk: { findFirst: jest.fn() },
     asset: { findFirst: jest.fn() },
     evidence: { create: jest.fn(), update: jest.fn() },
-    controlEvidenceLink: { createMany: jest.fn().mockResolvedValue({ count: 1 }) },
+    practiceEvidenceLink: { createMany: jest.fn().mockResolvedValue({ count: 1 }) },
 } as any;
 
 jest.mock('@/lib/db-context', () => ({

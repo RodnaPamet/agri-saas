@@ -142,11 +142,11 @@ describe('Deadline Monitor — TRIAGED tasks', () => {
         }));
         jest.mock('@/lib/prisma', () => ({
             prisma: {
-                control: { findMany: jest.fn().mockResolvedValue([]) },
+                practice: { findMany: jest.fn().mockResolvedValue([]) },
                 policy: { findMany: jest.fn().mockResolvedValue([]) },
                 task: { findMany: (...args: unknown[]) => mockTaskFindMany(...args) },
                 risk: { findMany: jest.fn().mockResolvedValue([]) },
-                controlTestPlan: { findMany: jest.fn().mockResolvedValue([]) },
+                practiceTestPlan: { findMany: jest.fn().mockResolvedValue([]) },
                 // Epic G-7
                 riskTreatmentPlan: {
                     findMany: jest.fn().mockResolvedValue([]),
@@ -308,8 +308,8 @@ describe('Codebase Scan — inline status array detection', () => {
      * Scans for the OLD broken pattern: in: ['OPEN', 'IN_PROGRESS', 'BLOCKED']
      * This was the original TRIAGED bug. Must never appear again.
      *
-     * NOTE: ControlTask uses a separate ControlTaskStatus enum (OPEN | IN_PROGRESS | DONE | BLOCKED)
-     * which does NOT have TRIAGED. Patterns near `controlTask` queries are excluded.
+     * NOTE: PracticeTask uses a separate PracticeTaskStatus enum (OPEN | IN_PROGRESS | DONE | BLOCKED)
+     * which does NOT have TRIAGED. Patterns near `practiceTask` queries are excluded.
      */
     test('no inline positive status allowlists that could miss statuses', () => {
         const srcDir = path.resolve(__dirname, '../../src/app-layer');
@@ -334,9 +334,9 @@ describe('Codebase Scan — inline status array detection', () => {
                 if (matches) {
                     for (const m of matches) {
                         if (m.includes('TRIAGED')) continue;
-                        // Exclude ControlTask model (uses different ControlTaskStatus enum)
+                        // Exclude PracticeTask model (uses different PracticeTaskStatus enum)
                         const context = lines.slice(Math.max(0, i - 5), i + 1).join('\n');
-                        if (context.includes('controlTask') || context.includes('ControlTask')) continue;
+                        if (context.includes('practiceTask') || context.includes('PracticeTask')) continue;
                         violations.push(`${path.relative(srcDir, file)}:${i + 1}: ${m}`);
                     }
                 }

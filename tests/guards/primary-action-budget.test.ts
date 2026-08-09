@@ -94,8 +94,8 @@ const PRIMARY_BUDGET: Record<string, number> = {
     // Heavy detail pages — page-header CTA + multiple modal CTAs
     // #102 item 1 dropped 2 (Map Requirement + Map) to the extracted
     // Mappings tab component below.
-    "src/app/t/[tenantSlug]/(app)/controls/[controlId]/page.tsx": 8,
-    "src/app/t/[tenantSlug]/(app)/controls/[controlId]/_tabs/ControlMappingsTab.tsx": 2,
+    "src/app/t/[tenantSlug]/(app)/practices/[practiceId]/page.tsx": 8,
+    "src/app/t/[tenantSlug]/(app)/practices/[practiceId]/_tabs/PracticeMappingsTab.tsx": 2,
     "src/app/t/[tenantSlug]/(app)/vendors/[vendorId]/page.tsx": 9,
 
     // Cross-entity link/unlink panel — multiple pairwise actions
@@ -152,7 +152,7 @@ const PRIMARY_BUDGET: Record<string, number> = {
 
     // Shared add-evidence form — the reveal trigger + the form submit
     // are two genuinely separate regions (the form only mounts once the
-    // trigger is clicked). Used identically by the Control / Task / Risk
+    // trigger is clicked). Used identically by the Practice / Task / Risk
     // / Asset evidence tabs.
     "src/components/EvidenceAddForm.tsx": 2,
 
@@ -170,12 +170,12 @@ const PRIMARY_BUDGET: Record<string, number> = {
     "src/app/t/[tenantSlug]/(app)/admin/roles/page.tsx": 2,
     "src/app/t/[tenantSlug]/(app)/admin/integrations/page.tsx": 2,
 
-    // R9-PR6 migrated the `+ Control` button-shape buttonVariants()
+    // R9-PR6 migrated the `+ Practice` button-shape buttonVariants()
     // to <Button>, which makes the existing primary visible to this
     // ratchet. Plus the templates-install Link in the same row (also
-    // primary). Two header CTAs side-by-side is the controls list
+    // primary). Two header CTAs side-by-side is the practices list
     // page's canonical shape.
-    "src/app/t/[tenantSlug]/(app)/controls/ControlsClient.tsx": 2,
+    "src/app/t/[tenantSlug]/(app)/practices/PracticesClient.tsx": 2,
 
     // B8 — Frameworks list now carries an "Import framework" CTA in
     // the page header AND a primary "Import framework" jump inside

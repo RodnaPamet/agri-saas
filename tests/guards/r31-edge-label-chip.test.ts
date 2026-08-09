@@ -13,13 +13,13 @@
  *     default bezier render ignored the field — the label
  *     written never appeared on the canvas.
  *   • R31 mounts a token-styled CHIP via `EdgeLabelRenderer`
- *     when `edge.label` is non-empty AND no control occupies the
- *     midpoint (control is the more semantic anchor; only one
+ *     when `edge.label` is non-empty AND no practice occupies the
+ *     midpoint (practice is the more semantic anchor; only one
  *     thing sits at the centre).
  *   • The chip uses the same surface vocabulary as every other
  *     canvas overlay: `bg-canvas-frame`, `border-canvas-border`,
  *     `rounded-[4px]` (one notch tighter than the 8px node /
- *     control radius — chips read smaller).
+ *     practice radius — chips read smaller).
  *
  * Selection-aware emphasis + hover-state thickening defer to a
  * future R31 bundle (or a future round of refinement).
@@ -40,12 +40,12 @@ describe("R31 (Bundle 7) — edge label chip", () => {
         expect(src).toMatch(/label,\s*\n[\s\S]{0,40}\}\s*=\s*props/);
     });
 
-    it("renders a chip via EdgeLabelRenderer when label is set + no control occupies the midpoint", () => {
+    it("renders a chip via EdgeLabelRenderer when label is set + no practice occupies the midpoint", () => {
         // Gated on both conditions:
         //   (a) typeof label === "string" && label.length > 0
-        //   (b) !control (the control overlay wins the centre)
+        //   (b) !practice (the practice overlay wins the centre)
         expect(src).toMatch(/typeof label === ["']string["'][\s\S]{0,200}label\.length > 0/);
-        expect(src).toMatch(/!control[\s\S]{0,400}typeof label/);
+        expect(src).toMatch(/!practice[\s\S]{0,400}typeof label/);
     });
 
     it("the chip surface matches the canvas chrome language", () => {
@@ -75,7 +75,7 @@ describe("R31 (Bundle 7) — edge label chip", () => {
         // text content render properly only when hoisted via
         // `<EdgeLabelRenderer>` (an absolute-positioned HTML
         // overlay).
-        // Two EdgeLabelRenderer call sites — one for the control
+        // Two EdgeLabelRenderer call sites — one for the practice
         // badge (pre-R31) + one for the new chip.
         const renderers = src.match(/<EdgeLabelRenderer>/g) ?? [];
         expect(renderers.length).toBeGreaterThanOrEqual(2);

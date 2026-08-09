@@ -35,7 +35,7 @@ export type Filter = {
   /** How `clearAllFilters` and "Reset" treat this filter. Default: `clearable`. */
   resetBehavior?: FilterResetBehavior;
   options: FilterOption[] | null;
-  /** When set to `range`, `FilterSelect` renders min/max controls instead of option list. */
+  /** When set to `range`, `FilterSelect` renders min/max practices instead of option list. */
   type?: "default" | "range";
   /** Format a bound in storage units (e.g. cents) for display. */
   formatRangeBound?: (n: number) => string;

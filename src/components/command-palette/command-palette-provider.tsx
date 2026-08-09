@@ -68,7 +68,7 @@ export function CommandPaletteProvider({ children }: { children: ReactNode }) {
 }
 
 /**
- * Access the palette's open state + controls. Safe to call outside
+ * Access the palette's open state + practices. Safe to call outside
  * the provider — returns an inert API whose mutators are no-ops, so
  * unit tests rendered without the provider don't explode.
  */

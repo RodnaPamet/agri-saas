@@ -3,7 +3,7 @@
  *
  * Walks the full hub-and-spoke flow against the production-mode
  * Next server, the seeded `acme-org` Organization, and the seeded
- * `acme-corp` child Tenant (which already has controls /
+ * `acme-corp` child Tenant (which already has practices /
  * evidence courtesy of `prisma/seed.ts`):
  *
  *   A. Login as `ciso@acme.com` (ORG_ADMIN of acme-org, AUDITOR
@@ -13,15 +13,15 @@
  *   B. Portfolio overview at `/org/acme-org` renders the four stat
  *      cards + the drill-down CTAs + the per-tenant coverage list.
  *
- *   C. Drill-down lists at `/org/acme-org/{controls,evidence}`
- *      render with tenant attribution columns. The first control row
- *      links to `/t/acme-corp/controls/{id}` and lands on the per-
+ *   C. Drill-down lists at `/org/acme-org/{practices,evidence}`
+ *      render with tenant attribution columns. The first practice row
+ *      links to `/t/acme-corp/practices/{id}` and lands on the per-
  *      tenant detail page (RLS-enforced read via the auto-
  *      provisioned AUDITOR membership).
  *
  *   D. Read-only invariant: the AUDITOR membership grants no
- *      `canWrite`, so the tenant controls list must NOT render
- *      `#new-control-btn`.
+ *      `canWrite`, so the tenant practices list must NOT render
+ *      `#new-practice-btn`.
  *
  *   E. Tenant creation via `/org/acme-org/tenants/new`. Confirms
  *      the new tenant appears in the org tenants list. We do NOT
@@ -138,23 +138,23 @@ test.describe('CISO portfolio journey (Epic O-4)', () => {
         ).toBeVisible({ timeout: 15_000 });
     });
 
-    test('C — controls drill-down lists rows with tenant attribution', async ({ page }) => {
+    test('C — practices drill-down lists rows with tenant attribution', async ({ page }) => {
         await loginAsCiso(page);
-        await safeGoto(page, `/org/${ORG_SLUG}/controls`);
+        await safeGoto(page, `/org/${ORG_SLUG}/practices`);
 
         // Either rows or the empty state — both prove the page rendered
-        // through getNonPerformingControls without an error.
-        await expect(page.locator('#org-controls-table')).toBeVisible({
+        // through getNonPerformingPractices without an error.
+        await expect(page.locator('#org-practices-table')).toBeVisible({
             timeout: 30_000,
         });
 
         const hasRow = await page
-            .locator(`[data-testid="org-control-tenant-${SEED_TENANT}"]`)
+            .locator(`[data-testid="org-practice-tenant-${SEED_TENANT}"]`)
             .first()
             .isVisible()
             .catch(() => false);
         const hasEmpty = await page
-            .getByText(/All controls performing/i)
+            .getByText(/All practices performing/i)
             .first()
             .isVisible()
             .catch(() => false);
@@ -183,7 +183,7 @@ test.describe('CISO portfolio journey (Epic O-4)', () => {
 
     test('F — read-only invariant: AUDITOR cannot create tenant-level records', async ({ page }) => {
         await loginAsCiso(page);
-        await safeGoto(page, `/t/${SEED_TENANT}/controls`);
+        await safeGoto(page, `/t/${SEED_TENANT}/practices`);
 
         // Wait for the tenant chrome to come up.
         await expect(page.locator('aside').first()).toBeVisible({
@@ -195,7 +195,7 @@ test.describe('CISO portfolio journey (Epic O-4)', () => {
         // AUDITOR never has it. Absence of the button is the read-only
         // proof. (This asserted on the risks page until the register was
         // removed; the invariant is about the ROLE, not the entity.)
-        await expect(page.locator('#new-control-btn')).toHaveCount(0);
+        await expect(page.locator('#new-practice-btn')).toHaveCount(0);
     });
 
     test('G — CISO creates a 2nd tenant via /org/{slug}/tenants/new', async ({ page }) => {

@@ -1,13 +1,13 @@
 /**
  * Audit Coherence S9 (2026-05-24) — unit tests for the tenant
- * control-implementation overlay. Pure function — no DB, no
+ * practice-implementation overlay. Pure function — no DB, no
  * mocks; we drive shaped input through and assert the
- * implementingControls annotation lands per entry.
+ * implementingPractices annotation lands per entry.
  */
 import {
     enrichWithTenantImplementations,
     type GapAnalysisResult,
-    type TenantControlImplementation,
+    type TenantPracticeImplementation,
 } from '@/app-layer/services/cross-framework-traceability';
 
 function entry(
@@ -49,13 +49,13 @@ function baseResult(): GapAnalysisResult {
 
 function impl(
     requirementId: string,
-    controlCode: string,
-): TenantControlImplementation {
+    practiceCode: string,
+): TenantPracticeImplementation {
     return {
-        controlId: `ctl-${controlCode}`,
-        controlCode,
-        controlName: `Control ${controlCode}`,
-        controlStatus: 'IMPLEMENTED',
+        practiceId: `ctl-${practiceCode}`,
+        practiceCode,
+        practiceName: `Practice ${practiceCode}`,
+        practiceStatus: 'IMPLEMENTED',
         requirementId,
     };
 }
@@ -65,11 +65,11 @@ describe('enrichWithTenantImplementations', () => {
         const out = enrichWithTenantImplementations(baseResult(), []);
         expect(out.entries).toHaveLength(3);
         for (const e of out.entries) {
-            expect(e.implementingControls).toEqual([]);
+            expect(e.implementingPractices).toEqual([]);
         }
     });
 
-    it('attaches multiple controls to the same target requirement', () => {
+    it('attaches multiple practices to the same target requirement', () => {
         const out = enrichWithTenantImplementations(baseResult(), [
             impl('r1', 'C1'),
             impl('r1', 'C2'),
@@ -84,11 +84,11 @@ describe('enrichWithTenantImplementations', () => {
         const r3 = out.entries.find(
             (e) => e.targetRequirement.requirementId === 'r3',
         )!;
-        expect(r1.implementingControls.map((c) => c.controlCode).sort()).toEqual(
+        expect(r1.implementingPractices.map((c) => c.practiceCode).sort()).toEqual(
             ['C1', 'C2'],
         );
-        expect(r2.implementingControls.map((c) => c.controlCode)).toEqual(['C3']);
-        expect(r3.implementingControls).toEqual([]);
+        expect(r2.implementingPractices.map((c) => c.practiceCode)).toEqual(['C3']);
+        expect(r3.implementingPractices).toEqual([]);
     });
 
     it('ignores implementation rows that point at requirements outside the result', () => {
@@ -97,9 +97,9 @@ describe('enrichWithTenantImplementations', () => {
             // r99 isn't in the gap-analysis entries — should silently drop.
             impl('r99', 'C-orphan'),
         ]);
-        expect(out.entries[0].implementingControls.length).toBeGreaterThan(0);
+        expect(out.entries[0].implementingPractices.length).toBeGreaterThan(0);
         for (const e of out.entries) {
-            for (const c of e.implementingControls) {
+            for (const c of e.implementingPractices) {
                 expect(['r1', 'r2', 'r3']).toContain(e.targetRequirement.requirementId);
                 expect(c.requirementId).toBe(e.targetRequirement.requirementId);
             }
@@ -118,11 +118,11 @@ describe('enrichWithTenantImplementations', () => {
         const original = baseResult();
         const originalEntriesRef = original.entries;
         enrichWithTenantImplementations(original, [impl('r1', 'C1')]);
-        // Same array reference + no implementingControls leaked back.
+        // Same array reference + no implementingPractices leaked back.
         expect(original.entries).toBe(originalEntriesRef);
         for (const e of original.entries) {
-            // The narrower input type has no implementingControls field.
-            expect('implementingControls' in e).toBe(false);
+            // The narrower input type has no implementingPractices field.
+            expect('implementingPractices' in e).toBe(false);
         }
     });
 });

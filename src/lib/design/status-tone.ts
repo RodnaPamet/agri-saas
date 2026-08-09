@@ -158,7 +158,7 @@ export function getCategoryTone(category: CalendarEventCategory): ToneBundle {
                 content: 'text-content-emphasis',
                 border: 'border-border-emphasis',
             };
-        case 'control':
+        case 'practice':
             return {
                 bg: 'bg-status-success',
                 content: 'text-content-success',

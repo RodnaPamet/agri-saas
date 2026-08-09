@@ -75,12 +75,12 @@ test.describe('DataTable Platform — Cross-page regression', () => {
         }
     }
 
-    // ── Controls ──
+    // ── Practices ──
 
-    test('Controls page renders DataTable', async ({ page }) => {
+    test('Practices page renders DataTable', async ({ page }) => {
         tenantSlug = await loginAndGetTenant(page);
-        await assertTableRendered(page, '/controls', {
-            heading: 'Controls',
+        await assertTableRendered(page, '/practices', {
+            heading: 'Practices',
             minHeaders: 3,
         });
     });
@@ -170,14 +170,14 @@ test.describe('DataTable Platform — Cross-page regression', () => {
 test.describe('DataTable Platform — Row click navigation', () => {
     let tenantSlug: string;
 
-    test('Controls row double-click navigates to detail', async ({ page }) => {
+    test('Practices row double-click navigates to detail', async ({ page }) => {
         tenantSlug = await loginAndGetTenant(page);
-        await page.goto(`/t/${tenantSlug}/controls`);
+        await page.goto(`/t/${tenantSlug}/practices`);
         await page.waitForLoadState('networkidle').catch(() => {});
         await page.waitForSelector('h1', { timeout: 15000 });
 
         // R13-PR2 — row opens on double-click, not single-click.
-        // Seed provisions 4 tenant controls; assert visibility.
+        // Seed provisions 4 tenant practices; assert visibility.
         // Target the second visible cell (the code cell), which is
         // not interactive — DataTable ignores double-clicks landing
         // on interactive children like the select checkbox or title
@@ -186,8 +186,8 @@ test.describe('DataTable Platform — Row click navigation', () => {
         await expect(rows.first()).toBeVisible({ timeout: 15_000 });
 
         await rows.first().locator('td').nth(1).dblclick();
-        await page.waitForURL(/\/controls\/[a-zA-Z0-9-]+$/, { timeout: 10_000 });
-        await expect(page.locator('#control-title')).toBeVisible({ timeout: 10_000 });
+        await page.waitForURL(/\/practices\/[a-zA-Z0-9-]+$/, { timeout: 10_000 });
+        await expect(page.locator('#practice-title')).toBeVisible({ timeout: 10_000 });
     });
 
     test('Policies row double-click navigates to detail', async ({ page }) => {
@@ -208,7 +208,7 @@ test.describe('DataTable Platform — Row click navigation', () => {
 
 // R14 (#443) removed the FilterToolbar text-search input from every list
 // page (the navbar ⌘K palette is the sole search affordance now). The
-// "Filter interaction" describe block here drove `#control-search` /
+// "Filter interaction" describe block here drove `#practice-search` /
 // `#task-search` directly and was deleted — list-page filter coverage
-// now lives in `controls-filter-epic53.spec.ts` (the FilterSelect popover
+// now lives in `practices-filter-epic53.spec.ts` (the FilterSelect popover
 // path, which is the surviving filter UI).

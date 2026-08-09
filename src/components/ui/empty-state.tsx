@@ -15,7 +15,7 @@
  *   - `no-results` — the user's search/filter matched nothing. Default
  *     icon: SearchX. Pair with a "Clear filters" secondary action.
  *   - `missing-prereqs` — view requires setup the user hasn't done
- *     (e.g., "Connect a framework before installing controls").
+ *     (e.g., "Connect a framework before installing practices").
  *     Default icon: AlertCircle. Pair with a primary action that
  *     navigates to the prerequisite flow.
  *
@@ -47,7 +47,7 @@ export interface EmptyStateAction {
     onClick?: () => void;
     /** When set, renders as `<a href>` instead of a button. */
     href?: string;
-    /** Forwarded to the underlying control (E2E selector). */
+    /** Forwarded to the underlying practice (E2E selector). */
     "data-testid"?: string;
     /** Disable the button (loading or pre-condition unmet). */
     disabled?: boolean;

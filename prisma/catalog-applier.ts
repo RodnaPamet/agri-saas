@@ -9,9 +9,9 @@ import { createHash } from 'crypto';
  *
  *   1. Framework               (upsert on `key_version`)
  *   2. FrameworkRequirement[]  (upsert on `frameworkId_code`)
- *   3. ControlTemplate[]       (create-if-missing on `code`)
- *   4. ControlTemplateTask[]   (default 5-task playbook per template)
- *   5. ControlTemplateRequirementLink[]  (template ↔ requirement edges)
+ *   3. PracticeTemplate[]       (create-if-missing on `code`)
+ *   4. PracticeTemplateTask[]   (default 5-task playbook per template)
+ *   5. PracticeTemplateRequirementLink[]  (template ↔ requirement edges)
  *   6. FrameworkPack           (upsert on `key`)
  *   7. PackTemplateLink[]      (upsert on composite key)
  *
@@ -54,7 +54,7 @@ export interface ApplyCatalogResult {
  * Hashes the framework identity plus every requirement's code, title and
  * ordering — not the raw file — so reformatting a YAML or reordering its
  * comments does not look like a revision, while adding, removing or retitling
- * a control point does.
+ * a practice point does.
  *
  * `Framework.contentHash` has existed since the model was created and nothing
  * ever set it. With it, "has this catalogue changed since we ingested it" is
@@ -152,7 +152,7 @@ export async function applyCatalogFile(
     }
 
     // ── 3. Pack ────────────────────────────────────────────────
-    // Control templates (and their tasks / requirement links / pack
+    // Practice templates (and their tasks / requirement links / pack
     // links) were removed with the compliance uproot — a catalogue file
     // now seeds the framework and its requirements only.
     let packResult: ApplyCatalogResult['pack'];

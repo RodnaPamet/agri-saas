@@ -21,8 +21,8 @@ import type { MonitoredEntityType } from '../../src/app-layer/jobs/types';
 // ═════════════════════════════════════════════════════════════════════
 
 describe('resolveDueItemOwner — resolution correctness', () => {
-    test('CONTROL: resolves ownerUserId', () => {
-        const result = resolveDueItemOwner('CONTROL', { ownerUserId: 'user-1' });
+    test('PRACTICE: resolves ownerUserId', () => {
+        const result = resolveDueItemOwner('PRACTICE', { ownerUserId: 'user-1' });
         expect(result).toBe('user-1');
     });
 
@@ -66,7 +66,7 @@ describe('resolveDueItemOwner — resolution correctness', () => {
 
 describe('resolveDueItemOwner — fallback behavior', () => {
     test('null ownerUserId returns undefined (triggers admin fallback)', () => {
-        const result = resolveDueItemOwner('CONTROL', { ownerUserId: null });
+        const result = resolveDueItemOwner('PRACTICE', { ownerUserId: null });
         expect(result).toBeUndefined();
     });
 
@@ -94,7 +94,7 @@ describe('resolveDueItemOwner — fallback behavior', () => {
 describe('OWNERSHIP_RULES — completeness', () => {
     // This is the authoritative list from types.ts
     const ALL_ENTITY_TYPES: MonitoredEntityType[] = [
-        'CONTROL', 'EVIDENCE', 'POLICY', 'VENDOR', 'TASK', 'RISK', 'TEST_PLAN',
+        'PRACTICE', 'EVIDENCE', 'POLICY', 'VENDOR', 'TASK', 'RISK', 'TEST_PLAN',
         'TREATMENT_PLAN', 'TREATMENT_MILESTONE',
     ];
 
@@ -131,7 +131,7 @@ describe('Structural: all DueItem producers wire ownerUserId', () => {
         {
             name: 'deadline-monitor',
             path: '../../src/app-layer/jobs/deadline-monitor.ts',
-            expectedEntityTypes: ['CONTROL', 'POLICY', 'TASK', 'RISK', 'TEST_PLAN'],
+            expectedEntityTypes: ['PRACTICE', 'POLICY', 'TASK', 'RISK', 'TEST_PLAN'],
         },
         {
             name: 'evidence-expiry-monitor',
@@ -192,7 +192,7 @@ describe('Structural: all DueItem producers wire ownerUserId', () => {
         }
 
         const ALL_TYPES: MonitoredEntityType[] = [
-            'CONTROL', 'EVIDENCE', 'POLICY', 'VENDOR', 'TASK', 'RISK', 'TEST_PLAN',
+            'PRACTICE', 'EVIDENCE', 'POLICY', 'VENDOR', 'TASK', 'RISK', 'TEST_PLAN',
         ];
 
         const uncovered = ALL_TYPES.filter(t => !coveredTypes.has(t));
@@ -214,8 +214,8 @@ describe('Structural: scanner queries select owner fields', () => {
         );
 
         // Each scanner should have ownerUserId: true or assigneeUserId: true in its select.
-        // Floor was 5 until the Risk + ControlTestPlan scanners went with
-        // their models; Control / Policy / Task remain.
+        // Floor was 5 until the Risk + PracticeTestPlan scanners went with
+        // their models; Practice / Policy / Task remain.
         const selectBlocks = source.match(/select:\s*\{[\s\S]*?\}/g) || [];
         expect(selectBlocks.length).toBeGreaterThanOrEqual(3);
 

@@ -17,7 +17,7 @@ export const TaskDTOSchema = z.object({
     dueAt: z.string().nullable().optional(),
     resolvedAt: z.string().nullable().optional(),
     resolution: z.string().nullable().optional(),
-    controlId: z.string().nullable().optional(),
+    practiceId: z.string().nullable().optional(),
     assigneeUserId: z.string().nullable().optional(),
     reviewerUserId: z.string().nullable().optional(),
     createdByUserId: z.string().nullable().optional(),
@@ -28,7 +28,7 @@ export const TaskDTOSchema = z.object({
     reviewer: UserRefSchema.nullable().optional(),
     createdBy: UserRefSchema.nullable().optional(),
 }).passthrough().openapi('Task', {
-    description: 'Unified work-item record covering audit findings, control gaps, incidents, improvements, and ad-hoc tasks. The type field discriminates which UI surfaces this row appears in.',
+    description: 'Unified work-item record covering audit findings, practice gaps, incidents, improvements, and ad-hoc tasks. The type field discriminates which UI surfaces this row appears in.',
 });
 
 export type TaskDTO = z.infer<typeof TaskDTOSchema>;

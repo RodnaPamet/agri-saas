@@ -8,7 +8,7 @@
  * any surface a user could reach.
  *
  * The forward direction (`attachAutoEvidenceFromLogEntry`) answers "this spray
- * record proves these control points". This answers the question an auditor
+ * record proves these practice points". This answers the question an auditor
  * actually asks, which is the other one: *show me the field records behind
  * this certification*. Same rows, opposite direction, and only one of the two
  * is a question a person asks out loud.
@@ -17,9 +17,9 @@
  *
  * ```
  * Framework (scheme)
- *   └─ FrameworkRequirement[]        the control points
- *        └─ ControlRequirementLink[] the tenant's mapping
- *             └─ Control
+ *   └─ FrameworkRequirement[]        the practice points
+ *        └─ PracticeRequirementLink[] the tenant's mapping
+ *             └─ Practice
  *                  └─ Evidence WHERE sourceLogEntryId IS NOT NULL
  *                       └─ LogEntry               ← what we return
  * ```
@@ -42,13 +42,13 @@ import type { RequestContext } from '../types';
 /** Cap — a traceability panel, not an export. The CSV path is the export. */
 const MAX_RECORDS = 200;
 
-export interface BackingFarmRecordControl {
-    controlId: string;
-    controlCode: string | null;
-    controlName: string;
-    /** Requirement codes this control is mapped to WITHIN this framework. */
+export interface BackingFarmRecordPractice {
+    practiceId: string;
+    practiceCode: string | null;
+    practiceName: string;
+    /** Requirement codes this practice is mapped to WITHIN this framework. */
     requirementCodes: string[];
-    /** Status of the evidence row linking this record to this control. */
+    /** Status of the evidence row linking this record to this practice. */
     evidenceStatus: string;
     evidenceId: string;
 }
@@ -58,8 +58,8 @@ export interface BackingFarmRecord {
     title: string;
     type: LogEntryType;
     occurredAt: string;
-    /** Every control point this one record backs. */
-    controls: BackingFarmRecordControl[];
+    /** Every practice point this one record backs. */
+    practices: BackingFarmRecordPractice[];
     /** True when at least one of its evidence rows is still unreviewed. */
     awaitingReview: boolean;
 }
@@ -74,7 +74,7 @@ export interface BackingFarmRecordsResult {
 
 /**
  * List the farm journal entries whose auto-collected evidence backs a
- * framework's control points, newest first.
+ * framework's practice points, newest first.
  */
 export async function listFarmRecordsBackingFramework(
     ctx: RequestContext,
@@ -104,43 +104,43 @@ export async function listFarmRecordsBackingFramework(
             // 2 — The tenant's mapping. A tenant that has not installed the
             //     scheme has no links, so the whole thing is an empty answer
             //     rather than an error.
-            const links = await db.controlRequirementLink.findMany({
+            const links = await db.practiceRequirementLink.findMany({
                 where: { tenantId: ctx.tenantId, requirementId: { in: [...requirementCodeById.keys()] } },
-                select: { controlId: true, requirementId: true },
+                select: { practiceId: true, requirementId: true },
             });
             if (links.length === 0) {
                 return { framework: { key: fw.key, name: fw.name }, records: [], totalRecords: 0, truncated: false };
             }
 
-            // controlId → the requirement codes it covers in THIS framework.
-            const codesByControl = new Map<string, string[]>();
+            // practiceId → the requirement codes it covers in THIS framework.
+            const codesByPractice = new Map<string, string[]>();
             for (const l of links) {
                 const code = requirementCodeById.get(l.requirementId);
                 if (!code) continue;
-                const list = codesByControl.get(l.controlId);
+                const list = codesByPractice.get(l.practiceId);
                 if (list) list.push(code);
-                else codesByControl.set(l.controlId, [code]);
+                else codesByPractice.set(l.practiceId, [code]);
             }
-            const controlIds = [...codesByControl.keys()];
+            const practiceIds = [...codesByPractice.keys()];
 
             // 3 — The evidence rows derived from a farm record. This is the
             //     query the (tenantId, sourceLogEntryId) index exists for.
             const evidence = await db.evidence.findMany({
                 where: {
                     tenantId: ctx.tenantId,
-                    controlId: { in: controlIds },
+                    practiceId: { in: practiceIds },
                     sourceLogEntryId: { not: null },
                     deletedAt: null,
                 },
                 select: {
                     id: true,
                     status: true,
-                    controlId: true,
+                    practiceId: true,
                     sourceLogEntryId: true,
-                    control: { select: { id: true, code: true, name: true } },
+                    practice: { select: { id: true, code: true, name: true } },
                 },
                 orderBy: { createdAt: 'desc' },
-                take: MAX_RECORDS * 4, // several controls per record
+                take: MAX_RECORDS * 4, // several practices per record
             });
             if (evidence.length === 0) {
                 return { framework: { key: fw.key, name: fw.name }, records: [], totalRecords: 0, truncated: false };
@@ -158,14 +158,14 @@ export async function listFarmRecordsBackingFramework(
                 take: MAX_RECORDS,
             });
 
-            const byEntry = new Map<string, BackingFarmRecordControl[]>();
+            const byEntry = new Map<string, BackingFarmRecordPractice[]>();
             for (const e of evidence) {
-                if (!e.sourceLogEntryId || !e.control) continue;
-                const row: BackingFarmRecordControl = {
-                    controlId: e.control.id,
-                    controlCode: e.control.code,
-                    controlName: e.control.name,
-                    requirementCodes: codesByControl.get(e.control.id) ?? [],
+                if (!e.sourceLogEntryId || !e.practice) continue;
+                const row: BackingFarmRecordPractice = {
+                    practiceId: e.practice.id,
+                    practiceCode: e.practice.code,
+                    practiceName: e.practice.name,
+                    requirementCodes: codesByPractice.get(e.practice.id) ?? [],
                     evidenceStatus: e.status,
                     evidenceId: e.id,
                 };
@@ -175,14 +175,14 @@ export async function listFarmRecordsBackingFramework(
             }
 
             const records: BackingFarmRecord[] = entries.map((entry) => {
-                const controls = byEntry.get(entry.id) ?? [];
+                const practices = byEntry.get(entry.id) ?? [];
                 return {
                     logEntryId: entry.id,
                     title: entry.title,
                     type: entry.type,
                     occurredAt: entry.occurredAt.toISOString(),
-                    controls,
-                    awaitingReview: controls.some((c) => c.evidenceStatus !== 'APPROVED'),
+                    practices,
+                    awaitingReview: practices.some((c) => c.evidenceStatus !== 'APPROVED'),
                 };
             });
 

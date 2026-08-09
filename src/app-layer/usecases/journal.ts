@@ -351,7 +351,7 @@ async function createLogEntryImpl(
 
         // A directly-authored INPUT_APPLICATION record (spray/fertiliser) is
         // itself the certification evidence for the plant-protection /
-        // input-record control points. Attach it to every scheme control the
+        // input-record practice points. Attach it to every scheme practice the
         // tenant has mapped — in the SAME transaction, so it's atomic with
         // the journal write. No-op when no scheme is installed. Cheap type
         // guard keeps the common (non-spray) create path untouched.
@@ -490,7 +490,7 @@ export async function deleteLogEntry(ctx: RequestContext, id: string) {
         await JournalRepository.softDelete(db, ctx, id);
 
         // Withdraw the scheme evidence derived from this record. Without it
-        // the control kept reporting itself backed by a record the operator
+        // the practice kept reporting itself backed by a record the operator
         // had just removed, deep-linking to a page that now 404s.
         await setDerivedEvidenceWithdrawn(db, ctx, id, true);
 
@@ -531,7 +531,7 @@ export async function restoreLogEntry(ctx: RequestContext, id: string) {
         const restored = await JournalRepository.restore(db, ctx, id);
 
         // Reinstate the derived scheme evidence the soft-delete withdrew.
-        // Restoring the record without its claim would leave the control
+        // Restoring the record without its claim would leave the practice
         // silently uncovered — the opposite failure, equally invisible.
         await setDerivedEvidenceWithdrawn(db, ctx, id, false);
 

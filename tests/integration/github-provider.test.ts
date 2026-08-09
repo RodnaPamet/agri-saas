@@ -66,7 +66,7 @@ function makeCheckInput(overrides?: Partial<CheckInput>): CheckInput {
         automationKey: 'github.branch_protection',
         parsed: PARSED_KEY,
         tenantId: 'tenant-1',
-        controlId: 'ctrl-1',
+        practiceId: 'ctrl-1',
         connectionConfig: {
             owner: 'acme',
             repo: 'api',

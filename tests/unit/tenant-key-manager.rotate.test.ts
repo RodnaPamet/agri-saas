@@ -1,7 +1,7 @@
 /**
  * Unit Test: per-tenant DEK rotation in tenant-key-manager.
  *
- * Pins the rotation control flow added when the Epic F.2 stub was
+ * Pins the rotation practice flow added when the Epic F.2 stub was
  * replaced with a real implementation. Sibling to
  * `tenant-key-manager.test.ts` (which covers the steady-state
  * primary-DEK path).

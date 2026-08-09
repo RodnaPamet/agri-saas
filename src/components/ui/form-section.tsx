@@ -5,7 +5,7 @@
  *
  * Forms in the product had been bare `<fieldset>` + `space-y-default`.
  * Multi-field groups (likelihood × impact for risk scoring,
- * applicability + justification for controls, file + retention for
+ * applicability + justification for practices, file + retention for
  * evidence upload) lived unframed — the user had to discover field
  * dependencies from context. Premium forms group fields under
  * eyebrow labels so the structure is visible before the fields

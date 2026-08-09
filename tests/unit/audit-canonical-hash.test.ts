@@ -103,12 +103,12 @@ describe('Hash Computation', () => {
         actorType: 'USER' as const,
         actorUserId: 'user-123',
         eventType: 'CONTROL_UPDATED',
-        entityType: 'Control',
+        entityType: 'Practice',
         entityId: 'ctrl-456',
         occurredAt: '2026-03-24T00:00:00.000Z',
         detailsJson: {
             category: 'entity_lifecycle',
-            entityName: 'Control',
+            entityName: 'Practice',
             operation: 'updated',
             changedFields: ['status'],
         },
@@ -135,12 +135,12 @@ describe('Hash Computation', () => {
             detailsJson: {
                 operation: 'updated',
                 category: 'entity_lifecycle',
-                entityName: 'Control',
+                entityName: 'Practice',
                 changedFields: ['status'],
             },
             occurredAt: '2026-03-24T00:00:00.000Z',
             entityId: 'ctrl-456',
-            entityType: 'Control',
+            entityType: 'Practice',
             eventType: 'CONTROL_UPDATED',
             actorUserId: 'user-123',
             actorType: 'USER' as const,
@@ -340,12 +340,12 @@ describe('buildAuditEntry (event builder)', () => {
             actorUserId: 'user-1',
             actorType: 'USER',
             eventType: 'CONTROL_CREATED',
-            entityType: 'Control',
+            entityType: 'Practice',
             entityId: 'ctrl-1',
             occurredAt: '2026-03-24T00:00:00.000Z',
             detailsJson: {
                 category: 'entity_lifecycle',
-                entityName: 'Control',
+                entityName: 'Practice',
                 operation: 'created',
             },
             previousHash: null,
@@ -355,13 +355,13 @@ describe('buildAuditEntry (event builder)', () => {
         expect(entry.data.tenantId).toBe('tenant-1');
         expect(entry.data.userId).toBe('user-1');
         expect(entry.data.actorType).toBe('USER');
-        expect(entry.data.entity).toBe('Control');
+        expect(entry.data.entity).toBe('Practice');
         expect(entry.data.entityId).toBe('ctrl-1');
         expect(entry.data.action).toBe('CONTROL_CREATED');
         expect(entry.data.details).toBeNull(); // legacy field
         expect(entry.data.detailsJson).toEqual({
             category: 'entity_lifecycle',
-            entityName: 'Control',
+            entityName: 'Practice',
             operation: 'created',
         });
         expect(entry.data.previousHash).toBeNull();

@@ -64,7 +64,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
  * (last-write-wins) and `isPending` stays true until all commits
  * resolve. If the first commit fails AFTER the second succeeds, the
  * overlay rolls back to the `value` prop — which is probably not what
- * you want. Callers that care about this should disable the control
+ * you want. Callers that care about this should disable the practice
  * while `isPending` is true.
  *
  * ## Usage

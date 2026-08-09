@@ -271,7 +271,7 @@ export function parseModernReports(
 
 function sanitizeUri(value: unknown): string {
     if (typeof value !== 'string') return '';
-    // Truncate long URIs and strip control characters
+    // Truncate long URIs and strip practice characters
     return value.replace(/[\x00-\x1f]/g, '').substring(0, 2048);
 }
 

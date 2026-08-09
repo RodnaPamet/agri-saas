@@ -10,7 +10,7 @@
  *
  *   <TimestampTooltip date={ev.updatedAt} />
  *   <TimestampTooltip date={task.dueAt} prefix="Due" />
- *   <TimestampTooltip date={control.createdAt} prefix="Created" />
+ *   <TimestampTooltip date={practice.createdAt} prefix="Created" />
  *
  * Visible text — relative ("2 hours ago", "in 3 days", "less than a
  * minute ago"). `prefix` prepends a label like "Updated" /

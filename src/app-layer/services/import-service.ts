@@ -152,10 +152,10 @@ function resolveForeignKeys(
  * Maps ExportEntityType → Prisma model name for persistence.
  */
 const PRISMA_MODEL_MAP: Record<ExportEntityType, string> = {
-    control: 'control',
-    controlTestPlan: 'controlTestPlan',
-    controlTestRun: 'controlTestRun',
-    controlMapping: 'controlRequirementLink',
+    practice: 'practice',
+    practiceTestPlan: 'practiceTestPlan',
+    practiceTestRun: 'practiceTestRun',
+    practiceMapping: 'practiceRequirementLink',
     policy: 'policy',
     policyVersion: 'policyVersion',
     risk: 'risk',
@@ -635,7 +635,7 @@ export async function importTenantData(
             skipped: {},
             conflicts: {},
             errors: [{
-                entityType: 'control' as ExportEntityType,
+                entityType: 'practice' as ExportEntityType,
                 entityId: '_transaction',
                 message: `Transaction failed: ${(error as Error).message}`,
                 code: hasStringCode(error) ? error.code : undefined,
@@ -704,7 +704,7 @@ function failResult(
         skipped: {},
         conflicts: {},
         errors: messages.map(msg => ({
-            entityType: 'control' as ExportEntityType, // validation-level error
+            entityType: 'practice' as ExportEntityType, // validation-level error
             entityId: '_validation',
             message: msg,
         })),

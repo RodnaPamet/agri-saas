@@ -74,7 +74,7 @@ function makeEvent(
         tenantId: 'tenant-1',
         userId: 'user-1',
         actorType: 'USER',
-        entity: 'Control',
+        entity: 'Practice',
         entityId: 'ctrl-1',
         action: 'CONTROL_CREATED',
         detailsJson: { category: 'entity_lifecycle', operation: 'created' },
@@ -133,7 +133,7 @@ describe('audit-stream — payload shape', () => {
         expect(typeof body.sentAt).toBe('string');
         expect(body.events).toHaveLength(1);
         expect(body.events[0].action).toBe('CONTROL_CREATED');
-        expect(body.events[0].entity).toBe('Control');
+        expect(body.events[0].entity).toBe('Practice');
     });
 
     it('includes structured detailsJson but never the free-text details column', async () => {

@@ -1,7 +1,7 @@
 /**
  * Button label-centering behavioural lock.
  *
- * User report (2026-05-31): button-styled controls rendered their
+ * User report (2026-05-31): button-styled practices rendered their
  * label off-centre / untidy. The fix has two parts (see
  * docs/implementation-notes/2026-05-31-button-clean-fill-centering.md):
  *

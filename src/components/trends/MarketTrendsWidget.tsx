@@ -5,14 +5,14 @@
  *
  * Cycles through every supported commodity (wheat / maize / barley / sunflower),
  * each slide showing that crop's headline latest price + a sparkline. The slide
- * auto-advances every 10s, and is manually slidable via prev/next controls, the
+ * auto-advances every 10s, and is manually slidable via prev/next practices, the
  * dot indicators, or a touch swipe. Manual navigation (and hover/focus) resets /
  * pauses the timer so the card never changes out from under the reader.
  *
  * Data-light: a single SWR read keyed by the ACTIVE crop, so only the crops the
  * user actually sees are fetched (SWR + the persistent cache keep already-seen
  * crops instant). The price/sparkline area taps through to the full Trends page;
- * the slideshow controls sit outside that link (no nested interactive elements).
+ * the slideshow practices sit outside that link (no nested interactive elements).
  *
  * The tenant dashboard is a hand-composed static page (no widget registry —
  * unlike the org dashboard), so this mounts directly in `DashboardClient.tsx`

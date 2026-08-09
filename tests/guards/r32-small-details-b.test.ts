@@ -26,7 +26,7 @@
  *      no signal as to WHY. R32 wraps the disabled state in a
  *      `<Tooltip>` explaining the rule.
  *
- *  11. Control-on-edge pill vocabulary — radius drops from
+ *  11. Practice-on-edge pill vocabulary — radius drops from
  *      `rounded-[8px]` to `rounded-[4px]` to match the edge-label
  *      chip shipped in R31 Bundle 7. Pre-R32 two pills on the
  *      same edge had two different radii.
@@ -140,22 +140,22 @@ describe("R32-PR12 — small details bundle B", () => {
         });
     });
 
-    describe("Detail #11 — control-on-edge chip vocabulary match", () => {
-        it("ControlOnEdge radius matches the edge-label chip (4px)", () => {
+    describe("Detail #11 — practice-on-edge chip vocabulary match", () => {
+        it("PracticeOnEdge radius matches the edge-label chip (4px)", () => {
             // Pre-R32 `rounded-[8px]` — twice the radius of the
             // R31-Bundle-7 edge label chip (4px). Now unified.
-            const start = edge.indexOf("function ControlOnEdge");
+            const start = edge.indexOf("function PracticeOnEdge");
             expect(start).toBeGreaterThan(0);
             const slice = edge.slice(start, start + 800);
             expect(slice).toMatch(/rounded-\[4px\]/);
             expect(slice).not.toMatch(/rounded-\[8px\]/);
         });
 
-        it("ControlOnEdge surface tokens match the edge-label chip", () => {
+        it("PracticeOnEdge surface tokens match the edge-label chip", () => {
             // Both use `bg-canvas-frame` + `border-canvas-border`.
-            // Pre-R32 the control pill used `bg-bg-elevated` +
+            // Pre-R32 the practice pill used `bg-bg-elevated` +
             // `border-border-emphasis` — different token family.
-            const start = edge.indexOf("function ControlOnEdge");
+            const start = edge.indexOf("function PracticeOnEdge");
             const slice = edge.slice(start, start + 800);
             expect(slice).toMatch(/bg-canvas-frame/);
             expect(slice).toMatch(/border-canvas-border/);

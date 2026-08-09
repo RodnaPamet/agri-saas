@@ -2,7 +2,7 @@
  * Integration Tests — Auth Gating
  *
  * Proves that:
- * 1. READER role cannot call write usecases (controls, risks)
+ * 1. READER role cannot call write usecases (practices, risks)
  * 2. READER/EDITOR cannot call admin-only usecases (delete)
  * 3. AUDITOR cannot create or modify
  * 4. Valid ADMIN/EDITOR context succeeds (baseline)
@@ -16,7 +16,7 @@
 import { buildRequestContext } from '../helpers/factories';
 
 // ── Import usecases ──
-import { createControl, deleteControl } from '@/app-layer/usecases/control';
+import { createPractice, deletePractice } from '@/app-layer/usecases/practice';
 
 // ── Auth error detection ──
 function isForbiddenError(err: unknown): boolean {
@@ -31,54 +31,54 @@ function isForbiddenError(err: unknown): boolean {
 
 // ── Tests ──
 
-describe('Auth Gating — Controls', () => {
-    test('READER cannot create a control', async () => {
+describe('Auth Gating — Practices', () => {
+    test('READER cannot create a practice', async () => {
         const ctx = buildRequestContext({ role: 'READER' });
         await expect(
-            createControl(ctx as any, { name: 'Test Control' }) // eslint-disable-line @typescript-eslint/no-explicit-any
+            createPractice(ctx as any, { name: 'Test Practice' }) // eslint-disable-line @typescript-eslint/no-explicit-any
         ).rejects.toThrow();
 
         try {
-            await createControl(ctx as any, { name: 'Test Control' }); // eslint-disable-line @typescript-eslint/no-explicit-any
+            await createPractice(ctx as any, { name: 'Test Practice' }); // eslint-disable-line @typescript-eslint/no-explicit-any
         } catch (err) {
             expect(isForbiddenError(err)).toBe(true);
         }
     });
 
-    test('AUDITOR cannot create a control', async () => {
+    test('AUDITOR cannot create a practice', async () => {
         const ctx = buildRequestContext({ role: 'AUDITOR' });
         await expect(
-            createControl(ctx as any, { name: 'Test Control' }) // eslint-disable-line @typescript-eslint/no-explicit-any
+            createPractice(ctx as any, { name: 'Test Practice' }) // eslint-disable-line @typescript-eslint/no-explicit-any
         ).rejects.toThrow();
 
         try {
-            await createControl(ctx as any, { name: 'Test Control' }); // eslint-disable-line @typescript-eslint/no-explicit-any
+            await createPractice(ctx as any, { name: 'Test Practice' }); // eslint-disable-line @typescript-eslint/no-explicit-any
         } catch (err) {
             expect(isForbiddenError(err)).toBe(true);
         }
     });
 
-    test('READER cannot delete a control', async () => {
+    test('READER cannot delete a practice', async () => {
         const ctx = buildRequestContext({ role: 'READER' });
         await expect(
-            deleteControl(ctx as any, 'any-id') // eslint-disable-line @typescript-eslint/no-explicit-any
+            deletePractice(ctx as any, 'any-id') // eslint-disable-line @typescript-eslint/no-explicit-any
         ).rejects.toThrow();
 
         try {
-            await deleteControl(ctx as any, 'any-id'); // eslint-disable-line @typescript-eslint/no-explicit-any
+            await deletePractice(ctx as any, 'any-id'); // eslint-disable-line @typescript-eslint/no-explicit-any
         } catch (err) {
             expect(isForbiddenError(err)).toBe(true);
         }
     });
 
-    test('EDITOR cannot delete a control (admin-only)', async () => {
+    test('EDITOR cannot delete a practice (admin-only)', async () => {
         const ctx = buildRequestContext({ role: 'EDITOR' });
         await expect(
-            deleteControl(ctx as any, 'any-id') // eslint-disable-line @typescript-eslint/no-explicit-any
+            deletePractice(ctx as any, 'any-id') // eslint-disable-line @typescript-eslint/no-explicit-any
         ).rejects.toThrow();
 
         try {
-            await deleteControl(ctx as any, 'any-id'); // eslint-disable-line @typescript-eslint/no-explicit-any
+            await deletePractice(ctx as any, 'any-id'); // eslint-disable-line @typescript-eslint/no-explicit-any
         } catch (err) {
             expect(isForbiddenError(err)).toBe(true);
         }

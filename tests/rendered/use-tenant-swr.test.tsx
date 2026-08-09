@@ -68,7 +68,7 @@ describe('useTenantSWR — tenant-prefixed key construction', () => {
         });
 
         const { result } = renderHook(
-            () => useTenantSWR<Array<{ id: string }>>('/controls'),
+            () => useTenantSWR<Array<{ id: string }>>('/practices'),
             { wrapper: makeWrapper() },
         );
 
@@ -76,7 +76,7 @@ describe('useTenantSWR — tenant-prefixed key construction', () => {
 
         expect(fetchMock).toHaveBeenCalledTimes(1);
         expect(fetchMock).toHaveBeenCalledWith(
-            '/api/t/acme/controls',
+            '/api/t/acme/practices',
             expect.objectContaining({ method: 'GET' }),
         );
     });
@@ -84,13 +84,13 @@ describe('useTenantSWR — tenant-prefixed key construction', () => {
     it('accepts a path without a leading slash and still prefixes correctly', async () => {
         fetchMock.mockResolvedValueOnce({ ok: true, json: async () => [] });
 
-        renderHook(() => useTenantSWR<unknown[]>('controls'), {
+        renderHook(() => useTenantSWR<unknown[]>('practices'), {
             wrapper: makeWrapper(),
         });
 
         await waitFor(() => expect(fetchMock).toHaveBeenCalled());
         expect(fetchMock).toHaveBeenCalledWith(
-            '/api/t/acme/controls',
+            '/api/t/acme/practices',
             expect.anything(),
         );
     });
@@ -161,14 +161,14 @@ describe('useTenantSWR — lifecycle states', () => {
             json: async () => ({
                 error: {
                     code: 'NOT_FOUND',
-                    message: 'control not found',
+                    message: 'practice not found',
                     requestId: 'req-x',
                 },
             }),
         });
 
         const { result } = renderHook(
-            () => useTenantSWR<unknown>('/controls/missing', {
+            () => useTenantSWR<unknown>('/practices/missing', {
                 // Disable retries so the test resolves quickly without
                 // racing the default backoff.
                 shouldRetryOnError: false,
@@ -220,16 +220,16 @@ describe('useTenantSWR — composes with CACHE_KEYS registry', () => {
 
     const { CACHE_KEYS } = require('@/lib/swr-keys') as typeof import('@/lib/swr-keys');
 
-    it('CACHE_KEYS.controls.list() resolves to /api/t/{slug}/controls', async () => {
+    it('CACHE_KEYS.practices.list() resolves to /api/t/{slug}/practices', async () => {
         fetchMock.mockResolvedValueOnce({ ok: true, json: async () => [] });
 
-        renderHook(() => useTenantSWR<unknown[]>(CACHE_KEYS.controls.list()), {
+        renderHook(() => useTenantSWR<unknown[]>(CACHE_KEYS.practices.list()), {
             wrapper: makeWrapper(),
         });
 
         await waitFor(() => expect(fetchMock).toHaveBeenCalled());
         expect(fetchMock).toHaveBeenCalledWith(
-            '/api/t/acme/controls',
+            '/api/t/acme/practices',
             expect.anything(),
         );
     });
@@ -287,20 +287,20 @@ describe('useTenantSWR — deduping', () => {
 
         const { result } = renderHook(
             () => {
-                const controls = useTenantSWR<{ url: string }>('/controls');
+                const practices = useTenantSWR<{ url: string }>('/practices');
                 const risks = useTenantSWR<{ url: string }>('/risks');
-                return { controls, risks };
+                return { practices, risks };
             },
             { wrapper: makeWrapper() },
         );
 
         await waitFor(() =>
-            expect(result.current.controls.data).toBeDefined(),
+            expect(result.current.practices.data).toBeDefined(),
         );
         await waitFor(() => expect(result.current.risks.data).toBeDefined());
 
         expect(fetchMock).toHaveBeenCalledTimes(2);
         const urls = fetchMock.mock.calls.map((c) => c[0]).sort();
-        expect(urls).toEqual(['/api/t/acme/controls', '/api/t/acme/risks']);
+        expect(urls).toEqual(['/api/t/acme/practices', '/api/t/acme/risks']);
     });
 });

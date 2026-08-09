@@ -4,7 +4,7 @@
 /**
  * Zero-coverage canvas modules, wave 8: the pure half of `src/lib/processes`.
  *
- *   canvas-clipboard · canvas-drill-filter · edge-controls
+ *   canvas-clipboard · canvas-drill-filter · edge-practices
  *   switch-canvas-mode · version-conflict-toast
  *
  * These are the modules the process canvas was decomposed INTO — extracted
@@ -34,7 +34,7 @@ import {
     __resetClipboardForTests,
 } from '@/lib/processes/canvas-clipboard';
 import { filterByDrillScope, buildDrillBreadcrumbs } from '@/lib/processes/canvas-drill-filter';
-import { edgeControlsForSave } from '@/lib/processes/edge-controls';
+import { edgePracticesForSave } from '@/lib/processes/edge-practices';
 import { patchCanvasMode } from '@/lib/processes/switch-canvas-mode';
 import { surfaceVersionConflict } from '@/lib/processes/version-conflict-toast';
 
@@ -263,52 +263,52 @@ describe('buildDrillBreadcrumbs', () => {
     });
 });
 
-// ─── edge-controls ───────────────────────────────────────────────────
+// ─── edge-practices ───────────────────────────────────────────────────
 
-describe('edgeControlsForSave', () => {
-    it('returns an empty list for a pre-P2 edge with no controls', () => {
+describe('edgePracticesForSave', () => {
+    it('returns an empty list for a pre-P2 edge with no practices', () => {
         // Tolerance for older edges is the point — a save must not throw on
-        // a graph created before edge controls existed.
-        expect(edgeControlsForSave(edge('e', 'a', 'b'))).toEqual([]);
-        expect(edgeControlsForSave(edge('e', 'a', 'b', { data: {} }))).toEqual([]);
-        expect(edgeControlsForSave(edge('e', 'a', 'b', { data: { controls: 'nope' } }))).toEqual([]);
-        expect(edgeControlsForSave(edge('e', 'a', 'b', { data: { controls: null } }))).toEqual([]);
+        // a graph created before edge practices existed.
+        expect(edgePracticesForSave(edge('e', 'a', 'b'))).toEqual([]);
+        expect(edgePracticesForSave(edge('e', 'a', 'b', { data: {} }))).toEqual([]);
+        expect(edgePracticesForSave(edge('e', 'a', 'b', { data: { practices: 'nope' } }))).toEqual([]);
+        expect(edgePracticesForSave(edge('e', 'a', 'b', { data: { practices: null } }))).toEqual([]);
     });
 
     it('serialises a full row unchanged and always adds the dataJson slot', () => {
         const e = edge('e', 'a', 'b', {
-            data: { controls: [{ controlKey: 'C-1', label: 'Temp check', controlId: 'ctl-1' }] },
+            data: { practices: [{ practiceKey: 'C-1', label: 'Temp check', practiceId: 'ctl-1' }] },
         });
 
-        expect(edgeControlsForSave(e)).toEqual([
-            { controlKey: 'C-1', label: 'Temp check', controlId: 'ctl-1', dataJson: null },
+        expect(edgePracticesForSave(e)).toEqual([
+            { practiceKey: 'C-1', label: 'Temp check', practiceId: 'ctl-1', dataJson: null },
         ]);
     });
 
-    it('defaults a missing or non-string label to the control key', () => {
+    it('defaults a missing or non-string label to the practice key', () => {
         const e = edge('e', 'a', 'b', {
-            data: { controls: [{ controlKey: 'C-1' }, { controlKey: 'C-2', label: 42 }] },
+            data: { practices: [{ practiceKey: 'C-1' }, { practiceKey: 'C-2', label: 42 }] },
         });
 
-        expect(edgeControlsForSave(e).map((r) => r.label)).toEqual(['C-1', 'C-2']);
+        expect(edgePracticesForSave(e).map((r) => r.label)).toEqual(['C-1', 'C-2']);
     });
 
-    it('normalises a non-string controlId to null', () => {
+    it('normalises a non-string practiceId to null', () => {
         const e = edge('e', 'a', 'b', {
-            data: { controls: [{ controlKey: 'C-1', controlId: 0 }] },
+            data: { practices: [{ practiceKey: 'C-1', practiceId: 0 }] },
         });
 
-        expect(edgeControlsForSave(e)[0].controlId).toBeNull();
+        expect(edgePracticesForSave(e)[0].practiceId).toBeNull();
     });
 
-    it('drops rows with no usable controlKey', () => {
-        // The key is the join back to the Control row; without it the entry
+    it('drops rows with no usable practiceKey', () => {
+        // The key is the join back to the Practice row; without it the entry
         // is unrecoverable, so it must not reach the wire.
         const e = edge('e', 'a', 'b', {
-            data: { controls: [{ label: 'orphan' }, { controlKey: 7 }, { controlKey: 'C-ok' }] },
+            data: { practices: [{ label: 'orphan' }, { practiceKey: 7 }, { practiceKey: 'C-ok' }] },
         });
 
-        expect(edgeControlsForSave(e).map((r) => r.controlKey)).toEqual(['C-ok']);
+        expect(edgePracticesForSave(e).map((r) => r.practiceKey)).toEqual(['C-ok']);
     });
 
     it.each([
@@ -324,11 +324,11 @@ describe('edgeControlsForSave', () => {
         // of malformed edge data, so it now drops the entry like any other
         // unusable row.
         const e = edge('e', 'a', 'b', {
-            data: { controls: [junk, { controlKey: 'C-ok' }] },
+            data: { practices: [junk, { practiceKey: 'C-ok' }] },
         });
 
-        expect(() => edgeControlsForSave(e)).not.toThrow();
-        expect(edgeControlsForSave(e).map((r) => r.controlKey)).toEqual(['C-ok']);
+        expect(() => edgePracticesForSave(e)).not.toThrow();
+        expect(edgePracticesForSave(e).map((r) => r.practiceKey)).toEqual(['C-ok']);
     });
 });
 

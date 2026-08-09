@@ -12,7 +12,7 @@
  *   </CopyText>
  *
  * Masking sensitive values:
- *   Consumers control what's rendered via `children`. Pass the masked
+ *   Consumers practice what's rendered via `children`. Pass the masked
  *   preview as children and the full secret as `value` — CopyText
  *   copies `value` while only displaying `children`:
  *

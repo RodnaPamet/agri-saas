@@ -49,7 +49,7 @@ export interface MetricCardProps {
     icon?: React.ElementType;
     /**
      * Eyebrow label (uppercase, tracking-wide, muted). Conventionally
-     * the resource name or KPI label ("Control Coverage", "Open Risks").
+     * the resource name or KPI label ("Practice Coverage", "Open Risks").
      */
     eyebrow: React.ReactNode;
     /**

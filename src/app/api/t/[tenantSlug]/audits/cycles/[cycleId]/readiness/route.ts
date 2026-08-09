@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getTenantCtx } from '@/app-layer/context';
 import {
-    computeReadiness, exportReadinessJson, exportUnmappedCsv, exportControlGapsCsv,
+    computeReadiness, exportReadinessJson, exportUnmappedCsv, exportPracticeGapsCsv,
 } from '@/app-layer/usecases/audit-readiness-scoring';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
@@ -24,8 +24,8 @@ export const GET = withApiErrorHandling(async (req: NextRequest, { params: param
         });
     }
 
-    if (action === 'export-control-gaps-csv') {
-        const { csv, filename } = await exportControlGapsCsv(ctx, params.cycleId);
+    if (action === 'export-practice-gaps-csv') {
+        const { csv, filename } = await exportPracticeGapsCsv(ctx, params.cycleId);
         return new NextResponse(csv, {
             headers: { 'Content-Type': 'text/csv', 'Content-Disposition': `attachment; filename="${filename}"` },
         });

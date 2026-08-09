@@ -378,7 +378,7 @@ function GanttChartInner({
                         const up = barGeometry.get(depKey);
                         const down = barGeometry.get(r.key);
                         if (!up || !down) return null;
-                        // Control-point offsets give the curve a
+                        // Practice-point offsets give the curve a
                         // gentle S-shape between rows.
                         const dx = Math.max(20, (down.x1 - up.x2) / 2);
                         const path =

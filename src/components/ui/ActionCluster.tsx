@@ -54,9 +54,9 @@ export interface ActionClusterAction {
     onClick?: () => void;
     /** When supplied, the cluster renders an `<a>` instead of a button. */
     href?: string;
-    /** Disable the underlying control. */
+    /** Disable the underlying practice. */
     disabled?: boolean;
-    /** Forwarded to the underlying control (E2E selector). */
+    /** Forwarded to the underlying practice (E2E selector). */
     "data-testid"?: string;
 }
 

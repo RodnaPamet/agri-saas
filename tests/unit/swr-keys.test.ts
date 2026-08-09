@@ -20,18 +20,18 @@
 import { CACHE_KEYS } from '@/lib/swr-keys';
 
 describe('CACHE_KEYS — key construction', () => {
-    describe('controls', () => {
-        it('list() → /controls', () => {
-            expect(CACHE_KEYS.controls.list()).toBe('/controls');
+    describe('practices', () => {
+        it('list() → /practices', () => {
+            expect(CACHE_KEYS.practices.list()).toBe('/practices');
         });
         it('detail(id) interpolates the id', () => {
-            expect(CACHE_KEYS.controls.detail('c1')).toBe('/controls/c1');
+            expect(CACHE_KEYS.practices.detail('c1')).toBe('/practices/c1');
         });
         it('exposes the dashboard sub-view', () => {
         });
         it('exposes templates and consistencyCheck', () => {
-            expect(CACHE_KEYS.controls.consistencyCheck()).toBe(
-                '/controls/consistency-check',
+            expect(CACHE_KEYS.practices.consistencyCheck()).toBe(
+                '/practices/consistency-check',
             );
         });
     });
@@ -192,9 +192,9 @@ describe('CACHE_KEYS — composability with the hook layer', () => {
         return `/api/t/${slug}${key}`;
     }
 
-    it('controls.list() composes to /api/t/{slug}/controls', () => {
-        expect(withTenant('acme', CACHE_KEYS.controls.list())).toBe(
-            '/api/t/acme/controls',
+    it('practices.list() composes to /api/t/{slug}/practices', () => {
+        expect(withTenant('acme', CACHE_KEYS.practices.list())).toBe(
+            '/api/t/acme/practices',
         );
     });
 
@@ -205,7 +205,7 @@ describe('CACHE_KEYS — composability with the hook layer', () => {
     });
 
     it('different tenants get different absolute URLs from the same key', () => {
-        const key = CACHE_KEYS.controls.consistencyCheck();
+        const key = CACHE_KEYS.practices.consistencyCheck();
         expect(withTenant('acme', key)).not.toBe(
             withTenant('globex', key),
         );

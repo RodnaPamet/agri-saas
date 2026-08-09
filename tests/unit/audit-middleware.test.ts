@@ -56,8 +56,8 @@ describe('Audit Middleware — Model Exclusion', () => {
         expect(EXCLUDED_MODELS.has('Risk')).toBe(false);
     });
 
-    it('Normal models like Control are NOT excluded', () => {
-        expect(EXCLUDED_MODELS.has('Control')).toBe(false);
+    it('Normal models like Practice are NOT excluded', () => {
+        expect(EXCLUDED_MODELS.has('Practice')).toBe(false);
     });
 });
 

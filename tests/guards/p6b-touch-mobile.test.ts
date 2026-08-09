@@ -9,7 +9,7 @@
  *   - Coarse-pointer hit-target expansion on xyflow handles +
  *     palette items via a `::before` pseudo-element (no visual
  *     change — pure pointer-events).
- *   - Larger zoom-control buttons (32px) on coarse pointer.
+ *   - Larger zoom-practice buttons (32px) on coarse pointer.
  *   - Mobile-layout marker that folds the vertical palette into
  *     a horizontal scroll strip below the `md` breakpoint.
  *
@@ -43,7 +43,7 @@ describe("Epic P6-PR-B — touch / mobile ergonomics", () => {
             );
         });
 
-        it("widens the zoom control buttons to the Apple HIG minimum (32px)", () => {
+        it("widens the zoom practice buttons to the Apple HIG minimum (32px)", () => {
             expect(src).toMatch(
                 /\.react-flow__controls-button \{[\s\S]{0,200}width:\s*32px;[\s\S]{0,200}height:\s*32px;/,
             );

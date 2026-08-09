@@ -14,7 +14,7 @@ import {
  * Promotion artwork upload / removal (#12).
  *
  * Same two gates as the sibling promotion routes: `admin.manage` is the
- * audited role floor, `assertPlatformSupport` is the isolation control. This
+ * audited role floor, `assertPlatformSupport` is the isolation practice. This
  * one matters more than most — the bytes it accepts render in EVERY tenant's
  * offers feed, so a tenant-facing writer would be a cross-tenant content
  * injection point.

@@ -54,7 +54,7 @@ const ROOT = path.resolve(__dirname, '../..');
 const PROBE = 'tests/fixtures/coverage/barrel-probe.ts';
 /** The barrel that probe imports. */
 const PROBE_BARREL = 'src/lib/observability/index.ts';
-/** A sibling the barrel re-exports — the anti-vacuity control. */
+/** A sibling the barrel re-exports — the anti-vacuity practice. */
 const PROBE_CONTROL = 'src/lib/observability/context.ts';
 
 interface ProjectConfig {

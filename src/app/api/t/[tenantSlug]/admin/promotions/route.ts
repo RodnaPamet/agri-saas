@@ -11,7 +11,7 @@ import { CreatePromotionSchema } from '@/app-layer/schemas/promotion-admin.schem
  *
  * TWO gates, both load-bearing. `requirePermission('admin.manage')` is
  * necessary but NOT sufficient — permissions resolve from Role, so every
- * tenant's admin holds it. `assertPlatformSupport(ctx)` is the actual control:
+ * tenant's admin holds it. `assertPlatformSupport(ctx)` is the actual practice:
  * it restricts this to the designated platform tenant and 404s everywhere else,
  * so an unrelated tenant's owner is not even told the console exists.
  */

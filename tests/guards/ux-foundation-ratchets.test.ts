@@ -8,7 +8,7 @@
  *
  * Concretely:
  *   1. The shared <FormField> + react-hook-form + zodResolver pattern
- *      is wired in NewControlModal — the canonical reference form. A
+ *      is wired in NewPracticeModal — the canonical reference form. A
  *      future "simplify" PR can't quietly drop RHF without bumping the
  *      reference count here in the same diff.
  *   2. window.confirm() across the tenant `/t/[tenantSlug]/(app)`
@@ -52,10 +52,10 @@ function walk(dir: string, results: string[] = []): string[] {
 describe('Epic 64 — react-hook-form reference form', () => {
     const NEW_CONTROL = path.join(
         TENANT_APP,
-        'controls/NewControlModal.tsx',
+        'practices/NewPracticeModal.tsx',
     );
 
-    it('uses zodResolver + useForm + Controller in NewControlModal', () => {
+    it('uses zodResolver + useForm + Controller in NewPracticeModal', () => {
         const src = read(NEW_CONTROL);
         expect(src).toMatch(/from\s+['"]react-hook-form['"]/);
         expect(src).toMatch(/from\s+['"]@hookform\/resolvers\/zod['"]/);
@@ -67,15 +67,15 @@ describe('Epic 64 — react-hook-form reference form', () => {
     it('keeps every stable id E2E selectors rely on', () => {
         const src = read(NEW_CONTROL);
         const ids = [
-            'control-code-input',
-            'control-name-input',
-            'control-description-input',
-            'control-category-input',
-            'control-frequency-input',
-            'control-justification-input',
-            'create-control-btn',
-            'new-control-cancel-btn',
-            'new-control-error',
+            'practice-code-input',
+            'practice-name-input',
+            'practice-description-input',
+            'practice-category-input',
+            'practice-frequency-input',
+            'practice-justification-input',
+            'create-practice-btn',
+            'new-practice-cancel-btn',
+            'new-practice-error',
         ];
         for (const id of ids) {
             expect(src).toMatch(new RegExp(`id=['"]${id}['"]`));
@@ -97,7 +97,7 @@ describe('Epic 64 — window.confirm() ceiling', () => {
     // right primitive here because the close handler must
     // SYNCHRONOUSLY decide whether to surrender the modal — the
     // async `<ConfirmDialog>` shape would require deferring the
-    // close until the user's choice resolves, a different control-
+    // close until the user's choice resolves, a different practice-
     // flow contract. Migrating to ConfirmDialog is a separate epic.
     //
     // Modal-form follow-up (2026-05-24) bumped 15 → 17 — `NewAssetModal`
@@ -108,7 +108,7 @@ describe('Epic 64 — window.confirm() ceiling', () => {
     //
     // Tasks-tab Phase 2 (2026-06-03) bumped 17 → 18 for the row-level
     // task edit surface (opened from the Tasks list + every
-    // control/asset/risk Tasks tab). That surface is now
+    // practice/asset/risk Tasks tab). That surface is now
     // `<TaskDetailSheet>` (a right-side Sheet that replaced the earlier
     // EditTaskModal); it carries the SAME unsaved-changes discard guard
     // as `NewTaskModal` — a synchronous `window.confirm` on close so a
@@ -178,8 +178,8 @@ describe('Epic 64 — window.confirm() ceiling', () => {
 
 describe('Epic 64 — breadcrumbs adoption floor', () => {
     // Snapshot at landing — 3 pages integrate Breadcrumbs:
-    //   - controls list (ControlsClient via EntityListPage.header.breadcrumbs)
-    //   - controls detail (via EntityDetailLayout.breadcrumbs)
+    //   - practices list (PracticesClient via EntityListPage.header.breadcrumbs)
+    //   - practices detail (via EntityDetailLayout.breadcrumbs)
     //   - admin/api-keys (freestanding <Breadcrumbs>)
     const BREADCRUMB_FLOOR = 3;
 

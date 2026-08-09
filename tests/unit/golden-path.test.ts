@@ -141,16 +141,16 @@ describe('Central Event Writer Contract', () => {
         const ctx = createCtx();
         const detailsJson = {
             category: 'entity_lifecycle',
-            entityName: 'Control',
+            entityName: 'Practice',
             operation: 'created',
-            summary: 'Test control created',
+            summary: 'Test practice created',
         };
 
         await logEvent({} as any, ctx, {
             action: 'CONTROL_CREATED',
-            entityType: 'Control',
+            entityType: 'Practice',
             entityId: 'ctrl-1',
-            details: 'Created control',
+            details: 'Created practice',
             detailsJson,
         });
 

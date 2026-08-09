@@ -457,7 +457,7 @@ export const buttonVariants = cva(
     // Transparent variants (`ghost`, `destructive-outline`) get
     // the halo too via the `focus-visible:shadow-[var(--ctrl-
     // edge-focus)]` line below — same vocabulary as the form
-    // controls. `outline-none` stays so the browser default
+    // practices. `outline-none` stays so the browser default
     // doesn't double up.
     "focus-visible:outline-none",
     "focus-visible:shadow-[var(--ctrl-edge-focus)]",

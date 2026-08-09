@@ -308,8 +308,8 @@ export async function processIncomingWebhook(input: WebhookInput): Promise<Webho
             // 8. Create executions/evidence for triggered automation keys
             if (processResult.triggeredKeys && processResult.triggeredKeys.length > 0) {
                 for (const automationKey of processResult.triggeredKeys) {
-                    // Find controls with this automationKey in the tenant
-                    const controls = await prisma.control.findMany({
+                    // Find practices with this automationKey in the tenant
+                    const practices = await prisma.practice.findMany({
                         where: {
                             tenantId: matchedConnection.tenantId,
                             automationKey,
@@ -318,7 +318,7 @@ export async function processIncomingWebhook(input: WebhookInput): Promise<Webho
                         select: { id: true, name: true },
                     });
 
-                    for (const control of controls) {
+                    for (const practice of practices) {
                         // Create execution record
                         const execution = await prisma.integrationExecution.create({
                             data: {
@@ -326,7 +326,7 @@ export async function processIncomingWebhook(input: WebhookInput): Promise<Webho
                                 connectionId: matchedConnection.id,
                                 provider,
                                 automationKey,
-                                controlId: control.id,
+                                practiceId: practice.id,
                                 status: 'PASSED',
                                 triggeredBy: 'webhook',
                                 resultJson: { source: 'webhook', eventId: event.id },
@@ -339,7 +339,7 @@ export async function processIncomingWebhook(input: WebhookInput): Promise<Webho
                         await prisma.evidence.create({
                             data: {
                                 tenantId: matchedConnection.tenantId,
-                                controlId: control.id,
+                                practiceId: practice.id,
                                 // Webhook-created evidence is text-based; EvidenceType enum uses FILE/LINK/TEXT.
                                 // Map to TEXT as the semantically closest value for automation-generated content.
                                 type: EvidenceType.TEXT,

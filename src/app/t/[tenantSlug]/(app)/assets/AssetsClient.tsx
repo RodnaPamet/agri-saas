@@ -58,7 +58,7 @@ interface AssetsClientProps {
         manufacturer: string;
         owner: string;
         location: string;
-        controlsCol: string;
+        practicesCol: string;
         noAssets: string;
         cancel: string;
         assetsRegistered: string;
@@ -85,7 +85,7 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
     // client-side `useTranslations('assets')` binding (`tm`).
     const tm = useTranslations('assets');
     const tGroups = useTranslations('common.filterGroups');
-    // Assets-exoskeleton — the compliance chrome (Controls + Risks link
+    // Assets-exoskeleton — the compliance chrome (Practices + Risks link
     // counts, the coverage shield) only renders for a tenant that runs a
     // compliance module. A plain farm gets a clean register.
     const { availableModules } = useTenantContext();
@@ -304,7 +304,7 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
     // R10-PR7 — column-visibility gear.
     const assetColumnList = useMemo(
         () => [
-            // First-column rule (Risk/Controls parity) — the
+            // First-column rule (Risk/Practices parity) — the
             // per-tenant `AST-N` Code leads the column DEFS, but is off by
             // default — toggle it on via the gear. Name is the default lead.
             { id: 'code', label: tm('colCode'), defaultVisible: false },
@@ -314,7 +314,7 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
             { id: 'owner', label: t.owner },
             { id: 'status', label: tm('status') },
             // Compliance-only link counts — hidden for a plain farm.
-            ...(showCompliance ? [{ id: 'controls', label: t.controlsCol }] : []),
+            ...(showCompliance ? [{ id: 'practices', label: t.practicesCol }] : []),
             { id: 'tasks', label: tm('colTasks') },
         ],
         [t, tm, showCompliance],
@@ -353,7 +353,7 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
         {
             accessorKey: 'name',
             header: t.name,
-            // B2 — match Controls table standard: title cell is a
+            // B2 — match Practices table standard: title cell is a
             // `<Link>` so single-click on the name navigates.
             cell: ({ row, getValue }: any) => (
                 <TableTitleCell
@@ -397,21 +397,21 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
             meta: { mobileCard: { slot: 'status', label: tm('status') } },
         },
         // Compliance-only link counts (assets-exoskeleton): the asset↔risk
-        // and asset↔control registers only mean something to a tenant running
+        // and asset↔practice registers only mean something to a tenant running
         // a compliance module. Gated out entirely for a plain farm.
         ...(showCompliance
             ? [
                   {
-                      id: 'controls',
-                      header: t.controlsCol,
-                      accessorFn: (a: any) => a._count?.controls || 0,
+                      id: 'practices',
+                      header: t.practicesCol,
+                      accessorFn: (a: any) => a._count?.practices || 0,
                       cell: ({ getValue }: any) => <span className="text-xs">{getValue()}</span>,
-                      meta: { mobileCard: { slot: 'meta' as const, label: t.controlsCol } },
+                      meta: { mobileCard: { slot: 'meta' as const, label: t.practicesCol } },
                   },
               ]
             : []),
         {
-            // B7 — unified linked-task count (done/total), matching Controls.
+            // B7 — unified linked-task count (done/total), matching Practices.
             id: 'tasks',
             header: tm('colTasks'),
             accessorFn: (a: any) => `${a.taskDone ?? 0}/${a.taskTotal ?? 0}`,

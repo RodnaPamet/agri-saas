@@ -1,11 +1,11 @@
 /**
- * Epic P2-PR-B — Entity pickers on nodes (control / asset).
+ * Epic P2-PR-B — Entity pickers on nodes (practice / asset).
  *
  * Brief gap #11 🟠 "Domain Entity Linking" — P2-PR-A wired the
- * edge-mode control picker (#733); P2-PR-B wires the node-mode
+ * edge-mode practice picker (#733); P2-PR-B wires the node-mode
  * pickers for the three compliance-entity node kinds:
  *
- *   - `control` node → picks a tenant Control (the same picker
+ *   - `practice` node → picks a tenant Practice (the same picker
  *     primitive as the edge mode, different mount).
  *   - `asset` node → picks a tenant Asset.
  *
@@ -58,7 +58,7 @@ describe("Epic P2-PR-B — entity pickers on nodes", () => {
         });
     });
 
-    describe("ProcessInspector — node mode mounts the picker on control/asset", () => {
+    describe("ProcessInspector — node mode mounts the picker on practice/asset", () => {
         const src = read("src/components/processes/ProcessInspector.tsx");
 
         it("imports the sibling hooks", () => {
@@ -67,7 +67,7 @@ describe("Epic P2-PR-B — entity pickers on nodes", () => {
             // multi-import form so a future rename doesn't lock the
             // import shape too tight.
             expect(src).toMatch(
-                /import\s*\{[\s\S]{0,200}useTenantControls[\s\S]{0,200}\}\s*from\s*["']@\/lib\/processes\/use-tenant-controls["']/,
+                /import\s*\{[\s\S]{0,200}useTenantPractices[\s\S]{0,200}\}\s*from\s*["']@\/lib\/processes\/use-tenant-practices["']/,
             );
             expect(src).toMatch(
                 /import\s*\{[\s\S]{0,200}useTenantAssets[\s\S]{0,200}\}\s*from\s*["']@\/lib\/processes\/use-tenant-assets["']/,
@@ -78,13 +78,13 @@ describe("Epic P2-PR-B — entity pickers on nodes", () => {
             expect(src).toMatch(/function NodeLinkedEntityPicker/);
         });
 
-        it("the picker mounts only on control/asset kinds", () => {
+        it("the picker mounts only on practice/asset kinds", () => {
             // The early-return guard is the contract that says
             // "other kinds get NO picker block". A refactor that
             // moves the picker to processStep / decision / external
             // would have to update this assertion.
             expect(src).toMatch(
-                /if\s*\(nodeKind !== "control" && nodeKind !== "asset"\)/,
+                /if\s*\(nodeKind !== "practice" && nodeKind !== "asset"\)/,
             );
         });
 

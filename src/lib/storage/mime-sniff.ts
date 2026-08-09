@@ -20,7 +20,7 @@
  * than "safe". It catches the case that matters — a file whose CONTENT is one
  * recognisable thing while its DECLARED type is another — and does not pretend
  * to validate a document's interior. AV scanning (`scanUploadedBuffer`) is the
- * separate control for that.
+ * separate practice for that.
  *
  * @module lib/storage/mime-sniff
  */

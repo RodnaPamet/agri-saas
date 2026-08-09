@@ -61,7 +61,7 @@ function makeInput(overrides?: Partial<CheckInput>): CheckInput {
         automationKey: 'github.branch_protection',
         parsed: { provider: 'github', checkType: 'branch_protection', raw: 'github.branch_protection' },
         tenantId: 'tenant-1',
-        controlId: 'ctrl-1',
+        practiceId: 'ctrl-1',
         connectionConfig: { owner: 'acme', repo: 'api', branch: 'main', token: 'ghp_test' },
         triggeredBy: 'scheduled',
         ...overrides,
@@ -141,7 +141,7 @@ describe('Integration Framework Regression Guards', () => {
             // All connection queries in usecases use tenantId filter
             const executionQuery = {
                 tenantId: 'tenant-1',
-                controlId: 'ctrl-1',
+                practiceId: 'ctrl-1',
             };
             expect(executionQuery.tenantId).toBe('tenant-1');
         });
@@ -191,8 +191,8 @@ describe('Integration Framework Regression Guards', () => {
     // ── 5. Scheduler Bounds ──
 
     describe('Scheduler bounds', () => {
-        it('batch size is capped at 500 controls', () => {
-            // findDueAutomationControls uses `take: 500`
+        it('batch size is capped at 500 practices', () => {
+            // findDueAutomationPractices uses `take: 500`
             const BATCH_LIMIT = 500;
             expect(BATCH_LIMIT).toBeLessThanOrEqual(500);
         });

@@ -4,8 +4,8 @@
  * The visual cue for a required form field — a red asterisk next
  * to the label — drifted across seven sites:
  *
- *   • src/app/t/[tenantSlug]/(app)/controls/ControlDetailSheet.tsx
- *   • src/app/t/[tenantSlug]/(app)/controls/[controlId]/_modals/EditControlModal.tsx
+ *   • src/app/t/[tenantSlug]/(app)/practices/PracticeDetailSheet.tsx
+ *   • src/app/t/[tenantSlug]/(app)/practices/[practiceId]/_modals/EditPracticeModal.tsx
  *   • src/app/t/[tenantSlug]/(app)/admin/integrations/page.tsx        (×2)
  *   • src/app/t/[tenantSlug]/(app)/evidence/UploadEvidenceModal.tsx
  *   • src/app/t/[tenantSlug]/(app)/evidence/NewEvidenceTextModal.tsx

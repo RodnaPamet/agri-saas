@@ -70,8 +70,8 @@ const MOCK_ENVELOPE: ExportEnvelope = {
         appVersion: '0.0.0',
     },
     entities: {
-        control: [
-            { entityType: 'control' as const, id: 'ctrl-1', schemaVersion: '1.0', data: { id: 'ctrl-1', name: 'Firewall' } },
+        practice: [
+            { entityType: 'practice' as const, id: 'ctrl-1', schemaVersion: '1.0', data: { id: 'ctrl-1', name: 'Firewall' } },
         ],
     },
     relationships: [],
@@ -235,7 +235,7 @@ describe('Import snapshot: read', () => {
 
         expect(envelope.formatVersion).toBe('1.0');
         expect(envelope.metadata.tenantId).toBe('tenant-1');
-        expect(envelope.entities.control).toHaveLength(1);
+        expect(envelope.entities.practice).toHaveLength(1);
     });
 
     test('read handles uncompressed snapshots', async () => {
@@ -360,7 +360,7 @@ describe('Import snapshot: roundtrip', () => {
         // Compare key fields (not exact object reference)
         expect(restored.formatVersion).toBe(mockExportResult.envelope.formatVersion);
         expect(restored.metadata.tenantId).toBe(mockExportResult.envelope.metadata.tenantId);
-        expect(restored.entities.control).toEqual(mockExportResult.envelope.entities.control);
+        expect(restored.entities.practice).toEqual(mockExportResult.envelope.entities.practice);
         expect(restored.checksum).toBe(mockExportResult.envelope.checksum);
     });
 });

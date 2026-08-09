@@ -234,7 +234,7 @@ export function isFieldAppEncrypted(model: string, field: string): boolean {
  */
 export const SOFT_DELETE_TARGETS = [
     { model: 'Asset',      hasDeletedAt: true,  priority: 'P0' },
-    { model: 'Control',    hasDeletedAt: true,  priority: 'P0' },
+    { model: 'Practice',    hasDeletedAt: true,  priority: 'P0' },
     { model: 'Evidence',   hasDeletedAt: true,  priority: 'P0' },
     { model: 'Policy',     hasDeletedAt: true,  priority: 'P0' },
     { model: 'Vendor',     hasDeletedAt: false, priority: 'P1' },

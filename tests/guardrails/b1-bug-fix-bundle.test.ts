@@ -112,7 +112,7 @@ describe('B1 — bug-fix bundle', () => {
         it('every list fetcher routes through `unwrap`', () => {
             // One fetcher per linkable entity. This asserted "at least
             // three" until the Risks arm went with the risk register,
-            // leaving controls + assets — a hard-coded count turns a
+            // leaving practices + assets — a hard-coded count turns a
             // deliberate removal into a red build and, worse, would let a
             // NEW un-unwrapped fetcher slip in as long as the total stayed
             // above the floor. Derive the expectation from the fetchers
@@ -127,7 +127,7 @@ describe('B1 — bug-fix bundle', () => {
             // The old shape never matched the cap'd response and
             // collapsed every dropdown to empty.
             expect(src).not.toMatch(/Array\.isArray\(d\)\s*\?\s*d\s*:\s*d\.risks\s*\|\|\s*\[\]/);
-            expect(src).not.toMatch(/Array\.isArray\(d\)\s*\?\s*d\s*:\s*d\.controls\s*\|\|\s*\[\]/);
+            expect(src).not.toMatch(/Array\.isArray\(d\)\s*\?\s*d\s*:\s*d\.practices\s*\|\|\s*\[\]/);
             expect(src).not.toMatch(/Array\.isArray\(d\)\s*\?\s*d\s*:\s*d\.assets\s*\|\|\s*\[\]/);
         });
     });

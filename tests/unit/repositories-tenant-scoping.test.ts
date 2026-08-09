@@ -18,11 +18,11 @@
  * assert the *query shape*, not a round trip. Three shapes matter more
  * than the rest:
  *
- *   1. The **global-or-tenant OR** on Control (`tenantId: ctx.tenantId` OR
- *      `tenantId: null`) — framework controls are global — paired with an
+ *   1. The **global-or-tenant OR** on Practice (`tenantId: ctx.tenantId` OR
+ *      `tenantId: null`) — framework practices are global — paired with an
  *      evidence include that stays strictly tenant-scoped. Widening the
  *      nested filter to match the outer OR would leak another tenant's
- *      evidence through a shared global control.
+ *      evidence through a shared global practice.
  *   2. **`AuditRepository.update`'s pre-check.** The final `db.audit.update`
  *      is keyed by id ALONE with no tenant filter. The `getById` above it
  *      *is* the tenant guard. Delete it as a redundant round trip and you
@@ -70,7 +70,7 @@ function makeDb() {
             findMany: jest.fn().mockResolvedValue([]),
             upsert: jest.fn().mockResolvedValue({ id: 'cp1' }),
         },
-        control: { findMany: jest.fn().mockResolvedValue([]) },
+        practice: { findMany: jest.fn().mockResolvedValue([]) },
         risk: { findMany: jest.fn().mockResolvedValue([]) },
         notification: {
             findMany: jest.fn().mockResolvedValue([]),

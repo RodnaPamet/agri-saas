@@ -70,27 +70,27 @@ export const CLAUSES: ClauseInfo[] = [
         title: 'Support',
         description:
             'Ensure the ISMS has the resources, competencies, awareness, communication channels, and documented information it needs to operate effectively. (Paraphrase)',
-        artifacts: 'Competency matrix, Training records, Communication plan, Document control procedure',
+        artifacts: 'Competency matrix, Training records, Communication plan, Document practice procedure',
         checklist: [
             'Determine and provide necessary resources',
             'Define competency requirements for ISMS roles',
             'Conduct security awareness training',
             'Establish internal and external communication processes',
             'Define documented information requirements',
-            'Implement document control procedures',
+            'Implement document practice procedures',
         ],
     },
     {
         number: '8',
         title: 'Operation',
         description:
-            'Execute the plans and processes needed to meet security requirements: perform risk assessments, implement risk treatment plans, and manage operational controls. (Paraphrase)',
+            'Execute the plans and processes needed to meet security requirements: perform risk assessments, implement risk treatment plans, and manage operational practices. (Paraphrase)',
         artifacts: 'Operational procedures, Risk assessment results, Risk treatment implementation records',
         checklist: [
-            'Implement operational planning and control processes',
+            'Implement operational planning and practice processes',
             'Perform risk assessments at planned intervals',
             'Implement risk treatment plan',
-            'Control outsourced processes',
+            'Practice outsourced processes',
             'Retain documented results of risk assessments',
             'Manage changes that affect the ISMS',
         ],

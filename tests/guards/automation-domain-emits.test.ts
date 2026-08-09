@@ -18,8 +18,8 @@ describe('domain-coverage emits', () => {
         }
     });
 
-    it('control status change emits CONTROL_STATUS_CHANGED', () => {
-        const src = read('src/app-layer/usecases/control/mutations.ts');
+    it('practice status change emits CONTROL_STATUS_CHANGED', () => {
+        const src = read('src/app-layer/usecases/practice/mutations.ts');
         expect(src).toMatch(/emitAutomationEvent\(/);
         expect(src).toMatch(/event: 'CONTROL_STATUS_CHANGED'/);
     });

@@ -120,7 +120,7 @@ describe('State coverage ratchet (Polish PR-10)', () => {
 
     it('the dashboard scanner finds at least the expected canonical files', () => {
         const found = findDashboardFiles();
-        // Sanity check — must find risks, tasks, controls, vendors,
+        // Sanity check — must find risks, tasks, practices, vendors,
         // tests dashboards (5 minimum) so a future code reorg doesn't
         // silently turn the ratchet into a no-op.
         // 5 → 4: the risks dashboard went with the register.

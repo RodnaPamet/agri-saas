@@ -36,10 +36,10 @@
  *       category: ...              # optional, fallback to theme/section
  *
  *   templates:                     # optional, may be []
- *     - code: A-A.5.1              # PK against `ControlTemplate.code`
+ *     - code: A-A.5.1              # PK against `PracticeTemplate.code`
  *       title: ...
  *       category: Organizational
- *       defaultFrequency: QUARTERLY  # ControlFrequency enum, default QUARTERLY
+ *       defaultFrequency: QUARTERLY  # PracticeFrequency enum, default QUARTERLY
  *       requirementCodes: [A.5.1]    # codes — resolved to FrameworkRequirement IDs
  *
  *   pack:                          # optional, single pack per file
@@ -134,11 +134,11 @@ export const CatalogFrameworkSchema = z.object({
      *
      * Every YAML shipped today says so honestly in its header comment — and a
      * header comment reaches no user. Declaring it as DATA is what lets the
-     * scheme list badge it, so a farmer who maps their practices to 7 control
+     * scheme list badge it, so a farmer who maps their practices to 7 practice
      * points is told those 7 are not GlobalG.A.P.
      */
     isDemo: z.boolean().optional(),
-    /** e.g. "7 of ~200 control points" — free text, rendered verbatim. */
+    /** e.g. "7 of ~200 practice points" — free text, rendered verbatim. */
     coverageNote: z.string().optional(),
     /**
      * Where this catalogue came from. `contentHash` and `sourceUrn` have

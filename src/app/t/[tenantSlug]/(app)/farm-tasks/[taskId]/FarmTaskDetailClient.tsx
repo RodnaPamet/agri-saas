@@ -35,10 +35,10 @@ import {
     TASK_SEVERITY_VARIANT,
 } from '@/app-layer/domain/entity-status-mapping';
 import { cardVariants } from '@/components/ui/card';
-// Shared evidence sub-table — lives under the control detail route's `_tabs/`
+// Shared evidence sub-table — lives under the practice detail route's `_tabs/`
 // (kept there so existing guard exemptions + a unit test keyed on that path
 // stay valid). Imported here via the `@/app` alias.
-import { EvidenceSubTable } from '@/app/t/[tenantSlug]/(app)/controls/[controlId]/_tabs/EvidenceSubTable';
+import { EvidenceSubTable } from '@/app/t/[tenantSlug]/(app)/practices/[practiceId]/_tabs/EvidenceSubTable';
 import { EvidenceAddForm } from '@/components/EvidenceAddForm';
 import { Pen2, CircleCheck, Trash } from '@/components/ui/icons/nucleo';
 import { cn } from '@/lib/cn';
@@ -55,9 +55,9 @@ import {
 // …/comments, …/evidence, …/links, …/activity) unchanged, so it renders any
 // Task — a FARM_TASK / FIELD_OPERATION, or a legacy compliance row reached
 // from a repointed deep-link. Farm-first: the header leads with the field-work
-// catalog type; severity / control / audit fields only surface when the row
+// catalog type; severity / practice / audit fields only surface when the row
 // actually carries them.
-const ENTITY_TYPE_OPTIONS = ['CONTROL', 'ASSET', 'EVIDENCE', 'FRAMEWORK_REQUIREMENT', 'LOCATION', 'PARCEL', 'EQUIPMENT'];
+const ENTITY_TYPE_OPTIONS = ['PRACTICE', 'ASSET', 'EVIDENCE', 'FRAMEWORK_REQUIREMENT', 'LOCATION', 'PARCEL', 'EQUIPMENT'];
 const RELATION_OPTIONS = ['RELATES_TO', 'CAUSED_BY', 'MITIGATED_BY', 'EVIDENCE_FOR'];
 const SELECTABLE_STATUSES = ['OPEN', 'TRIAGED', 'IN_PROGRESS', 'BLOCKED', 'CLOSED', 'CANCELED'];
 // Statuses a task can legally move to RESOLVED from (BLOCKED must be unblocked
@@ -558,7 +558,7 @@ export function FarmTaskDetailClient({
             activeTab={tab}
             onTabChange={(next) => setTab(next as Tab)}
         >
-            {/* Assignment controls */}
+            {/* Assignment practices */}
             {permissions.canWrite && (
                 <div className={cardVariants({ density: 'compact' })}>
                     <div className="flex items-center gap-compact flex-wrap">
@@ -675,12 +675,12 @@ export function FarmTaskDetailClient({
                             <span className="text-xs text-content-subtle uppercase">{t('created')}</span>
                             <p className="text-sm text-content-default mt-1">{formatDateTime(task.createdAt)}</p>
                         </div>
-                        {task.control && (
+                        {task.practice && (
                             <div>
-                                <span className="text-xs text-content-subtle uppercase">{t('control')}</span>
+                                <span className="text-xs text-content-subtle uppercase">{t('practice')}</span>
                                 <p className="text-sm mt-1">
-                                    <Link href={tenantHref(`/controls/${task.control.id}`)} className={textLinkVariants({ tone: 'link' })} id="task-control-link">
-                                        {task.control.code} — {task.control.name}
+                                    <Link href={tenantHref(`/practices/${task.practice.id}`)} className={textLinkVariants({ tone: 'link' })} id="task-practice-link">
+                                        {task.practice.code} — {task.practice.name}
                                     </Link>
                                 </p>
                             </div>
@@ -699,7 +699,7 @@ export function FarmTaskDetailClient({
                         )}
                     </div>
 
-                    {(task.type === 'AUDIT_FINDING' || task.type === 'CONTROL_GAP') && (metadata.findingSource || metadata.controlGapType) && (
+                    {(task.type === 'AUDIT_FINDING' || task.type === 'PRACTICE_GAP') && (metadata.findingSource || metadata.practiceGapType) && (
                         <div className="border-t border-border-default pt-4 mt-4">
                             <Heading level={3} className="mb-3">{t('auditDetails')}</Heading>
                             <div className="grid grid-cols-2 gap-default">
@@ -709,10 +709,10 @@ export function FarmTaskDetailClient({
                                         <p className="text-sm text-content-default mt-1">{te.has(`findingSource.${metadata.findingSource}`) ? te(`findingSource.${metadata.findingSource}`) : metadata.findingSource}</p>
                                     </div>
                                 )}
-                                {metadata.controlGapType && (
+                                {metadata.practiceGapType && (
                                     <div>
-                                        <span className="text-xs text-content-subtle uppercase">{t('controlGapType')}</span>
-                                        <p className="text-sm text-content-default mt-1">{te.has(`gapType.${metadata.controlGapType}`) ? te(`gapType.${metadata.controlGapType}`) : metadata.controlGapType}</p>
+                                        <span className="text-xs text-content-subtle uppercase">{t('practiceGapType')}</span>
+                                        <p className="text-sm text-content-default mt-1">{te.has(`gapType.${metadata.practiceGapType}`) ? te(`gapType.${metadata.practiceGapType}`) : metadata.practiceGapType}</p>
                                     </div>
                                 )}
                             </div>

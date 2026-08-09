@@ -52,14 +52,14 @@ export interface HeroMetricAction {
     label: string;
     onClick?: () => void;
     href?: string;
-    /** Forwarded to the underlying control. */
+    /** Forwarded to the underlying practice. */
     "data-testid"?: string;
 }
 
 export interface HeroMetricProps {
     /**
      * Eyebrow label rendered above the value. Conventionally the
-     * resource name ("Readiness", "Control Coverage").
+     * resource name ("Readiness", "Practice Coverage").
      */
     eyebrow: React.ReactNode;
     /**

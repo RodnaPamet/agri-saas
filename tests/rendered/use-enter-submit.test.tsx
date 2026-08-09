@@ -26,7 +26,7 @@ import { useEnterSubmit, type UseEnterSubmitOptions } from '@/components/ui/hook
 // ─── synthetic-event helper ──────────────────────────────────────────
 //
 // The hook reads a narrow slice of the React synthetic event, so a
-// hand-built object gives precise control over the branch inputs
+// hand-built object gives precise practice over the branch inputs
 // (isComposing, keyCode 229, the `.form` fallback) that are awkward to
 // provoke through a real render. Two real-DOM integration tests at the
 // bottom prove the same handler works against genuine React events.

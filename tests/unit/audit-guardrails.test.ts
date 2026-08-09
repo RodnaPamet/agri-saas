@@ -134,7 +134,7 @@ describe('Audit Guardrails — No Unaudited Raw SQL to Domain Tables', () => {
         ];
 
         const DOMAIN_TABLES = [
-            'Risk', 'Control', 'Asset', 'Policy', 'Vendor',
+            'Risk', 'Practice', 'Asset', 'Policy', 'Vendor',
             'Issue', 'Framework', 'Task', 'Tenant', 'User',
         ];
 

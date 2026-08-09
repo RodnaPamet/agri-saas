@@ -282,7 +282,7 @@ describe('Integration Framework', () => {
                 automationKey: 'github.branch_protection',
                 parsed: { provider: 'github', checkType: 'branch_protection', raw: 'github.branch_protection' },
                 tenantId: 'test-tenant',
-                controlId: 'ctrl-1',
+                practiceId: 'ctrl-1',
                 connectionConfig: { org: 'acme', token: 'secret' },
                 triggeredBy: 'manual',
             };

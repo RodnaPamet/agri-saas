@@ -3,7 +3,7 @@
  *
  * Public API:
  *   Filter.Select  — the command-palette filter picker
- *   Filter.List    — active filter pills with remove/operator controls
+ *   Filter.List    — active filter pills with remove/operator practices
  *
  * State management:
  *   useFilterContext / FilterProvider / useFilters

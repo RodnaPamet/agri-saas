@@ -11,11 +11,11 @@
  *   - `pendingLinks` — staging buffer for secondary POSTs after
  *     the task is minted. Not part of the canonical task body so
  *     it stays in local state.
- *   - `findingSource` / `controlGapType` — type-conditional
+ *   - `findingSource` / `practiceGapType` — type-conditional
  *     metadata that lands in `metadataJson` only when set.
  *   - `validationMessage` — derived semantic gate
- *     (AUDIT_FINDING / CONTROL_GAP require a control link;
- *     INCIDENT requires an asset / control link). Zod alone can't
+ *     (AUDIT_FINDING / PRACTICE_GAP require a practice link;
+ *     INCIDENT requires an asset / practice link). Zod alone can't
  *     express this because the link list is sibling state, not a
  *     field of the form. The hook ANDs the validation message into
  *     canSubmit so the legacy contract holds.
@@ -40,7 +40,7 @@ export interface PendingLink {
 // header). Combined with NewTaskFormValues for the field surface.
 export interface NewTaskFormExtras {
     findingSource: string;
-    controlGapType: string;
+    practiceGapType: string;
 }
 
 export type NewTaskFormFields = NewTaskFormValues & NewTaskFormExtras;
@@ -79,7 +79,7 @@ export interface UseNewTaskFormOptions {
      */
     initialDueAt?: string;
     /**
-     * Preset entity links staged on open. The control / asset / risk
+     * Preset entity links staged on open. The practice / asset / risk
      * detail pages seed this with their own entity so a task created
      * from those surfaces is linked back (and lands in the global
      * Tasks list) without the user having to add the link by hand.
@@ -96,7 +96,7 @@ const INITIAL: NewTaskFormValues = {
     dueAt: '',
     assigneeUserId: '',
     reviewerUserId: '',
-    controlId: '',
+    practiceId: '',
 };
 
 export function useNewTaskForm({
@@ -109,11 +109,11 @@ export function useNewTaskForm({
 
     // Extras kept outside Zod — see file header.
     const [findingSource, setFindingSource] = useState('');
-    const [controlGapType, setControlGapType] = useState('');
+    const [practiceGapType, setPracticeGapType] = useState('');
     const [pendingLinks, setPendingLinks] = useState<PendingLink[]>(
         initialPendingLinks ?? [],
     );
-    const [linkEntityType, setLinkEntityType] = useState('CONTROL');
+    const [linkEntityType, setLinkEntityType] = useState('PRACTICE');
     const [linkEntityId, setLinkEntityId] = useState('');
     const [extrasDirty, setExtrasDirty] = useState(false);
 
@@ -136,7 +136,7 @@ export function useNewTaskForm({
             try {
                 const metadataJson: Record<string, string> = {};
                 if (findingSource) metadataJson.findingSource = findingSource;
-                if (controlGapType) metadataJson.controlGapType = controlGapType;
+                if (practiceGapType) metadataJson.practiceGapType = practiceGapType;
 
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 const body: any = {
@@ -147,7 +147,7 @@ export function useNewTaskForm({
                     description: payload.description || undefined,
                     dueAt: payload.dueAt || undefined,
                     assigneeUserId: payload.assigneeUserId || undefined,
-                    controlId: payload.controlId || undefined,
+                    practiceId: payload.practiceId || undefined,
                     metadataJson:
                         Object.keys(metadataJson).length > 0
                             ? metadataJson
@@ -203,8 +203,8 @@ export function useNewTaskForm({
             setExtrasDirty(true);
             return;
         }
-        if (key === 'controlGapType') {
-            setControlGapType(value as string);
+        if (key === 'practiceGapType') {
+            setPracticeGapType(value as string);
             setExtrasDirty(true);
             return;
         }
@@ -217,19 +217,19 @@ export function useNewTaskForm({
     };
 
     const touchField: NewTaskFormReturn['touchField'] = (key) => {
-        if (key === 'findingSource' || key === 'controlGapType') return;
+        if (key === 'findingSource' || key === 'practiceGapType') return;
         zod.touchField(key as keyof NewTaskFormValues);
     };
 
     const fieldError: NewTaskFormReturn['fieldError'] = (key) => {
-        if (key === 'findingSource' || key === 'controlGapType') return undefined;
+        if (key === 'findingSource' || key === 'practiceGapType') return undefined;
         return zod.fieldError(key as keyof NewTaskFormValues);
     };
 
     const fields: NewTaskFormFields = {
         ...zod.values,
         findingSource,
-        controlGapType,
+        practiceGapType,
     };
 
     const addPendingLink = () => {
@@ -245,26 +245,26 @@ export function useNewTaskForm({
         setPendingLinks((prev) => prev.filter((_, i) => i !== idx));
     };
 
-    // Validation: certain types require a control or link.
-    const needsControlOrLink = ['AUDIT_FINDING', 'CONTROL_GAP'].includes(
+    // Validation: certain types require a practice or link.
+    const needsPracticeOrLink = ['AUDIT_FINDING', 'PRACTICE_GAP'].includes(
         fields.type,
     );
-    const needsAssetOrControl = fields.type === 'INCIDENT';
-    const hasControlOrLink =
-        !!fields.controlId ||
+    const needsAssetOrPractice = fields.type === 'INCIDENT';
+    const hasPracticeOrLink =
+        !!fields.practiceId ||
         pendingLinks.some((l) =>
-            ['CONTROL', 'FRAMEWORK_REQUIREMENT'].includes(l.entityType),
+            ['PRACTICE', 'FRAMEWORK_REQUIREMENT'].includes(l.entityType),
         );
-    const hasAssetOrControl =
-        !!fields.controlId ||
-        pendingLinks.some((l) => ['CONTROL', 'ASSET'].includes(l.entityType));
+    const hasAssetOrPractice =
+        !!fields.practiceId ||
+        pendingLinks.some((l) => ['PRACTICE', 'ASSET'].includes(l.entityType));
 
     const validationMessage = (() => {
-        if (needsControlOrLink && !hasControlOrLink) {
-            return 'Audit Finding / Control Gap requires a control or framework requirement link.';
+        if (needsPracticeOrLink && !hasPracticeOrLink) {
+            return 'Audit Finding / Practice Gap requires a practice or framework requirement link.';
         }
-        if (needsAssetOrControl && !hasAssetOrControl) {
-            return 'Incident requires an asset or control link.';
+        if (needsAssetOrPractice && !hasAssetOrPractice) {
+            return 'Incident requires an asset or practice link.';
         }
         return '';
     })();

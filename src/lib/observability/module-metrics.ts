@@ -56,7 +56,7 @@ export async function resolveDeviceClass(): Promise<DeviceClass> {
 
 /**
  * Record one module-gate access. Best-effort + never throws — telemetry must
- * not affect the gate's control flow.
+ * not affect the gate's practice flow.
  */
 export async function recordModuleAccess(moduleKey: ModuleKey): Promise<void> {
     try {

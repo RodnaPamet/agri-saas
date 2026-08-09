@@ -53,7 +53,7 @@ if (DB_AVAILABLE) {
 
     afterAll(async () => {
         // Clean up
-        await prisma.$executeRawUnsafe('DELETE FROM "Control" WHERE "tenantId" = $1', testTenantId).catch(() => {});
+        await prisma.$executeRawUnsafe('DELETE FROM "Practice" WHERE "tenantId" = $1', testTenantId).catch(() => {});
         await prisma.$executeRawUnsafe('DELETE FROM "Vendor" WHERE "tenantId" = $1', testTenantId).catch(() => {});
         await prisma.$executeRawUnsafe('DELETE FROM "Task" WHERE "tenantId" = $1', testTenantId).catch(() => {});
         await prisma.$executeRawUnsafe('DELETE FROM "User" WHERE "id" = $1', testUserId).catch(() => {});
@@ -67,19 +67,19 @@ describeFn('Soft-Delete & Retention', () => {
 
     describe('soft-delete on delete()', () => {
         it('sets deletedAt instead of removing the row', async () => {
-            const control = await prisma.control.create({
-                data: { tenantId: testTenantId, name: 'Control to soft-delete' },
+            const practice = await prisma.practice.create({
+                data: { tenantId: testTenantId, name: 'Practice to soft-delete' },
             });
 
-            await prisma.control.delete({ where: { id: control.id } });
+            await prisma.practice.delete({ where: { id: practice.id } });
 
             // Raw SQL confirms record still exists with deletedAt set
             const [raw] = await prisma.$queryRawUnsafe<Array<{
                 id: string;
                 deletedAt: Date | null;
             }>>(
-                'SELECT "id", "deletedAt" FROM "Control" WHERE "id" = $1',
-                control.id,
+                'SELECT "id", "deletedAt" FROM "Practice" WHERE "id" = $1',
+                practice.id,
             );
 
             expect(raw).toBeDefined();
@@ -87,34 +87,34 @@ describeFn('Soft-Delete & Retention', () => {
         });
 
         it('default queries exclude soft-deleted records', async () => {
-            const control = await prisma.control.create({
-                data: { tenantId: testTenantId, name: 'Hidden control' },
+            const practice = await prisma.practice.create({
+                data: { tenantId: testTenantId, name: 'Hidden practice' },
             });
 
-            await prisma.control.delete({ where: { id: control.id } });
+            await prisma.practice.delete({ where: { id: practice.id } });
 
             // Default findMany should NOT return it
-            const rows = await prisma.control.findMany({
-                where: { tenantId: testTenantId, name: 'Hidden control' },
+            const rows = await prisma.practice.findMany({
+                where: { tenantId: testTenantId, name: 'Hidden practice' },
             });
             expect(rows).toHaveLength(0);
 
             // Default findUnique should return null
-            const found = await prisma.control.findUnique({
-                where: { id: control.id },
+            const found = await prisma.practice.findUnique({
+                where: { id: practice.id },
             });
             expect(found).toBeNull();
         });
 
         it('withDeleted() includes soft-deleted records', async () => {
-            const control = await prisma.control.create({
+            const practice = await prisma.practice.create({
                 data: { tenantId: testTenantId, name: 'Deleted but visible' },
             });
 
-            await prisma.control.delete({ where: { id: control.id } });
+            await prisma.practice.delete({ where: { id: practice.id } });
 
-            const found = await prisma.control.findMany(withDeleted({
-                where: { id: control.id },
+            const found = await prisma.practice.findMany(withDeleted({
+                where: { id: practice.id },
             }));
             expect(found).toHaveLength(1);
             expect(found[0].deletedAt).not.toBeNull();
@@ -171,36 +171,36 @@ describeFn('Soft-Delete & Retention', () => {
 
     describe('restore', () => {
         it('restores a soft-deleted record', async () => {
-            const control = await prisma.control.create({
-                data: { tenantId: testTenantId, name: 'Control to restore' },
+            const practice = await prisma.practice.create({
+                data: { tenantId: testTenantId, name: 'Practice to restore' },
             });
 
-            await prisma.control.delete({ where: { id: control.id } });
+            await prisma.practice.delete({ where: { id: practice.id } });
 
             // Verify it's hidden
-            expect(await prisma.control.findUnique({ where: { id: control.id } })).toBeNull();
+            expect(await prisma.practice.findUnique({ where: { id: practice.id } })).toBeNull();
 
             const result = await restoreSoftDeleted(prisma, {
-                model: 'Control',
-                id: control.id,
+                model: 'Practice',
+                id: practice.id,
             });
 
-            expect(result.model).toBe('Control');
-            expect(result.id).toBe(control.id);
+            expect(result.model).toBe('Practice');
+            expect(result.id).toBe(practice.id);
 
             // Now visible in default queries
-            const found = await prisma.control.findUnique({ where: { id: control.id } });
+            const found = await prisma.practice.findUnique({ where: { id: practice.id } });
             expect(found).not.toBeNull();
             expect(found!.deletedAt).toBeNull();
         });
 
         it('throws if record is not soft-deleted', async () => {
-            const control = await prisma.control.create({
-                data: { tenantId: testTenantId, name: 'Active control' },
+            const practice = await prisma.practice.create({
+                data: { tenantId: testTenantId, name: 'Active practice' },
             });
 
             await expect(
-                restoreSoftDeleted(prisma, { model: 'Control', id: control.id }),
+                restoreSoftDeleted(prisma, { model: 'Practice', id: practice.id }),
             ).rejects.toThrow('No soft-deleted');
         });
 
@@ -215,34 +215,34 @@ describeFn('Soft-Delete & Retention', () => {
 
     describe('purge', () => {
         it('permanently removes a soft-deleted record', async () => {
-            const control = await prisma.control.create({
-                data: { tenantId: testTenantId, name: 'Control to purge' },
+            const practice = await prisma.practice.create({
+                data: { tenantId: testTenantId, name: 'Practice to purge' },
             });
 
-            await prisma.control.delete({ where: { id: control.id } });
+            await prisma.practice.delete({ where: { id: practice.id } });
 
             const result = await purgeSoftDeleted(prisma, {
-                model: 'Control',
-                id: control.id,
+                model: 'Practice',
+                id: practice.id,
             });
 
-            expect(result.model).toBe('Control');
+            expect(result.model).toBe('Practice');
 
             // Raw SQL confirms hard-deleted
             const rows = await prisma.$queryRawUnsafe<Array<{ id: string }>>(
-                'SELECT "id" FROM "Control" WHERE "id" = $1',
-                control.id,
+                'SELECT "id" FROM "Practice" WHERE "id" = $1',
+                practice.id,
             );
             expect(rows).toHaveLength(0);
         });
 
         it('throws if record is not soft-deleted', async () => {
-            const control = await prisma.control.create({
-                data: { tenantId: testTenantId, name: 'Active control for purge test' },
+            const practice = await prisma.practice.create({
+                data: { tenantId: testTenantId, name: 'Active practice for purge test' },
             });
 
             await expect(
-                purgeSoftDeleted(prisma, { model: 'Control', id: control.id }),
+                purgeSoftDeleted(prisma, { model: 'Practice', id: practice.id }),
             ).rejects.toThrow('No soft-deleted');
         });
     });
@@ -251,16 +251,16 @@ describeFn('Soft-Delete & Retention', () => {
 
     describe('listSoftDeleted', () => {
         it('returns only soft-deleted records for a tenant', async () => {
-            const c1 = await prisma.control.create({
-                data: { tenantId: testTenantId, name: 'Deleted control 1' },
+            const c1 = await prisma.practice.create({
+                data: { tenantId: testTenantId, name: 'Deleted practice 1' },
             });
-            const c2 = await prisma.control.create({
-                data: { tenantId: testTenantId, name: 'Active control' },
+            const c2 = await prisma.practice.create({
+                data: { tenantId: testTenantId, name: 'Active practice' },
             });
 
-            await prisma.control.delete({ where: { id: c1.id } });
+            await prisma.practice.delete({ where: { id: c1.id } });
 
-            const deleted = await listSoftDeleted(prisma, 'Control', testTenantId);
+            const deleted = await listSoftDeleted(prisma, 'Practice', testTenantId);
 
             const deletedIds = deleted.map((r: { id: string }) => r.id);
             expect(deletedIds).toContain(c1.id);
@@ -276,7 +276,7 @@ describeFn('Soft-Delete & Retention', () => {
             // removed; it and its mirror in `SOFT_DELETE_TARGETS` went
             // in the same diff.
             const expected = [
-                'Asset', 'Control', 'Evidence', 'Policy',
+                'Asset', 'Practice', 'Evidence', 'Policy',
                 'Vendor', 'FileRecord', 'Task', 'Finding',
                 'Audit', 'AuditCycle', 'AuditPack',
                 // Grain (2026-07-25) — see SOFT_DELETE_MODELS.

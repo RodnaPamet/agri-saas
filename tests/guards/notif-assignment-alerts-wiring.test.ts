@@ -1,19 +1,19 @@
 /**
- * 2026-05-27 — PR-A: in-app TASK_ASSIGNED + CONTROL_ASSIGNED
+ * 2026-05-27 — PR-A: in-app TASK_ASSIGNED + PRACTICE_ASSIGNED
  * notification wiring ratchet.
  *
  * Locks the four surfaces this feature crosses:
  *
- *   1. Schema enum has CONTROL_ASSIGNED (the new value).
+ *   1. Schema enum has PRACTICE_ASSIGNED (the new value).
  *   2. Migration exists that adds the enum value.
  *   3. `task.ts` calls `emitTaskAssignedNotification` after
  *      EVERY task write that may have set the assignee
  *      (createTask + assignTask). Pre-PR-A the email path
  *      fired but the in-app bell stayed silent.
- *   4. `control/mutations.ts::setControlOwner` calls
- *      `createAssignmentNotification('CONTROL_ASSIGNED', …)`
+ *   4. `practice/mutations.ts::setPracticeOwner` calls
+ *      `createAssignmentNotification('PRACTICE_ASSIGNED', …)`
  *      after committing the ownership change. Pre-PR-A
- *      control owner changes wrote only the audit row.
+ *      practice owner changes wrote only the audit row.
  *
  * Each surface anchored on a verifiable substring so a future
  * refactor that silently drops one of the four trips CI with
@@ -28,7 +28,7 @@ const read = (p: string) => readFileSync(path.join(ROOT, p), 'utf-8');
 
 describe('PR-A notification-assignment alert wiring', () => {
     describe('1. Schema + migration', () => {
-        it('NotificationType enum includes CONTROL_ASSIGNED', () => {
+        it('NotificationType enum includes PRACTICE_ASSIGNED', () => {
             const enums = read('prisma/schema/enums.prisma');
             // Anchored inside the NotificationType enum block to
             // distinguish from any other enum that might reuse the
@@ -37,7 +37,7 @@ describe('PR-A notification-assignment alert wiring', () => {
                 enums.indexOf('enum NotificationType'),
                 enums.indexOf('enum EmailNotificationType'),
             );
-            expect(block).toMatch(/CONTROL_ASSIGNED/);
+            expect(block).toMatch(/PRACTICE_ASSIGNED/);
         });
 
         it('TASK_ASSIGNED stays in the enum (we did not regress it)', () => {
@@ -49,7 +49,7 @@ describe('PR-A notification-assignment alert wiring', () => {
             expect(block).toMatch(/TASK_ASSIGNED/);
         });
 
-        it('migration directory exists for CONTROL_ASSIGNED enum add', () => {
+        it('migration directory exists for the PRACTICE_ASSIGNED enum add', () => {
             const migrationDir = path.join(
                 ROOT,
                 'prisma/migrations/20260527160000_notif_control_assigned',
@@ -59,8 +59,28 @@ describe('PR-A notification-assignment alert wiring', () => {
                 path.join(migrationDir, 'migration.sql'),
                 'utf-8',
             );
+            // Applied history, asserted verbatim. This migration added the
+            // value under its ORIGINAL name; the Control→Practice rename
+            // renamed it in place afterwards (`ALTER TYPE … RENAME VALUE`,
+            // metadata-only). Rewriting an applied migration would change
+            // its checksum and break `migrate deploy` on every existing
+            // database — the value's CURRENT name is asserted against the
+            // live schema above, and the rename itself below.
             expect(sql).toMatch(
                 /ALTER TYPE "NotificationType" ADD VALUE IF NOT EXISTS 'CONTROL_ASSIGNED'/,
+            );
+        });
+
+        it('the rename migration carries CONTROL_ASSIGNED → PRACTICE_ASSIGNED', () => {
+            const sql = readFileSync(
+                path.join(
+                    ROOT,
+                    'prisma/migrations/20260809120000_rename_control_to_practice/migration.sql',
+                ),
+                'utf-8',
+            );
+            expect(sql).toMatch(
+                /ALTER TYPE "NotificationType"\s+RENAME VALUE 'CONTROL_ASSIGNED' TO 'PRACTICE_ASSIGNED'/,
             );
         });
 
@@ -101,11 +121,11 @@ describe('PR-A notification-assignment alert wiring', () => {
             const s = src();
             expect(s).toMatch(/export async function createAssignmentNotification/);
             // 2026-05-30 — union widened to cover risk + asset
-            // assignment alongside task + control. Assert all four are
+            // assignment alongside task + practice. Assert all four are
             // present (order-independent) so a future drop trips CI.
             for (const kind of [
                 'TASK_ASSIGNED',
-                'CONTROL_ASSIGNED',
+                'PRACTICE_ASSIGNED',
                 'RISK_ASSIGNED',
                 'ASSET_ASSIGNED',
             ]) {
@@ -134,7 +154,7 @@ describe('PR-A notification-assignment alert wiring', () => {
             expect(s).toMatch(/export function buildAssignmentDedupeKey/);
             // The dedupeKey shape MUST include the day (so per-day
             // collapse works) and the KIND (so the same id under
-            // TASK + CONTROL doesn't collide).
+            // TASK + PRACTICE doesn't collide).
             expect(s).toMatch(
                 /\$\{tenantId\}:\$\{kind\}:\$\{entityId\}:\$\{userId\}:\$\{ymd\}/,
             );
@@ -197,9 +217,9 @@ describe('PR-A notification-assignment alert wiring', () => {
         });
     });
 
-    describe('4. control/mutations.ts wires CONTROL_ASSIGNED in setControlOwner', () => {
+    describe('4. practice/mutations.ts wires PRACTICE_ASSIGNED in setPracticeOwner', () => {
         const src = () =>
-            read('src/app-layer/usecases/control/mutations.ts');
+            read('src/app-layer/usecases/practice/mutations.ts');
 
         it('imports createAssignmentNotification', () => {
             expect(src()).toMatch(
@@ -207,19 +227,19 @@ describe('PR-A notification-assignment alert wiring', () => {
             );
         });
 
-        it('setControlOwner calls createAssignmentNotification with CONTROL_ASSIGNED', () => {
+        it('setPracticeOwner calls createAssignmentNotification with PRACTICE_ASSIGNED', () => {
             const s = src();
-            const start = s.indexOf('export async function setControlOwner');
+            const start = s.indexOf('export async function setPracticeOwner');
             expect(start).toBeGreaterThan(-1);
             const end = s.indexOf('// ─── Cadence', start);
             expect(end).toBeGreaterThan(start);
             const body = s.slice(start, end);
             expect(body).toMatch(
-                /createAssignmentNotification\(\s*db,\s*['"]CONTROL_ASSIGNED['"]/,
+                /createAssignmentNotification\(\s*db,\s*['"]PRACTICE_ASSIGNED['"]/,
             );
         });
 
-        it('the CONTROL_ASSIGNED write runs AFTER the parent transaction commits', () => {
+        it('the PRACTICE_ASSIGNED write runs AFTER the parent transaction commits', () => {
             // The notification write MUST be outside the
             // `runInTenantContext(...)` that does the ownership
             // update — a notification failure should never roll back
@@ -227,10 +247,10 @@ describe('PR-A notification-assignment alert wiring', () => {
             // bumpEntityCacheVersion(...)` (post-tx) appearing BEFORE
             // the createAssignmentNotification call.
             const s = src();
-            const start = s.indexOf('export async function setControlOwner');
+            const start = s.indexOf('export async function setPracticeOwner');
             const end = s.indexOf('// ─── Cadence', start);
             const body = s.slice(start, end);
-            const bumpIdx = body.indexOf("bumpEntityCacheVersion(ctx, 'control')");
+            const bumpIdx = body.indexOf("bumpEntityCacheVersion(ctx, 'practice')");
             const callIdx = body.indexOf('createAssignmentNotification(');
             expect(bumpIdx).toBeGreaterThan(-1);
             expect(callIdx).toBeGreaterThan(bumpIdx);
@@ -241,7 +261,7 @@ describe('PR-A notification-assignment alert wiring', () => {
             // the deassigned user with "you were assigned" — the
             // guard at the top of the if-block prevents it.
             const s = src();
-            const start = s.indexOf('export async function setControlOwner');
+            const start = s.indexOf('export async function setPracticeOwner');
             const end = s.indexOf('// ─── Cadence', start);
             const body = s.slice(start, end);
             expect(body).toMatch(/if \(ownerUserId && ctx\.tenantSlug\)/);

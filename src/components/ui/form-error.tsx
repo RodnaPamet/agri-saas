@@ -9,7 +9,7 @@
  *
  * Usage:
  *   - Automatic, via `<FormField error="Required">`.
- *   - Standalone, for pages that assemble their own control layouts
+ *   - Standalone, for pages that assemble their own practice layouts
  *     but still want the canonical rhythm + a11y.
  *
  * Renders nothing when `children` is empty so callers can pass

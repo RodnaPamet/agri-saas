@@ -133,7 +133,7 @@ describe('the weaker gates cannot come back', () => {
 
     it('upsertRequirements does not gate on assertCanInstallFrameworkPack', () => {
         // That gate is correct for INSTALLING a pack into your own tenant (it
-        // writes Control + ControlRequirementLink rows, both tenant-scoped)
+        // writes Practice + PracticeRequirementLink rows, both tenant-scoped)
         // and wrong for writing the catalogue every tenant reads.
         expect(stripComments(fixtures)).not.toContain('assertCanInstallFrameworkPack');
     });
@@ -168,7 +168,7 @@ describe('the detector works (mutation proof)', () => {
     });
 
     it('does NOT flag a tenant-scoped table that merely mentions the word', () => {
-        expect(check('await db.controlRequirementLink.createMany({});')).toBe(false);
+        expect(check('await db.practiceRequirementLink.createMany({});')).toBe(false);
     });
 
     it('does NOT flag a comment', () => {

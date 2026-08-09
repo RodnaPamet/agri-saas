@@ -113,7 +113,7 @@ function SheetRoot({
     } as DialogProps;
 
     // Non-modal sheets (`modal={false}`) coexist with the page beneath them —
-    // they neither inert the background (so the page's controls stay
+    // they neither inert the background (so the page's practices stay
     // operable + in the a11y tree) nor paint a blocking backdrop. Used by the
     // operator parcel sheet, which sits over the map while the map-mode
     // toolbar above it stays reachable. Default (undefined) keeps the modal

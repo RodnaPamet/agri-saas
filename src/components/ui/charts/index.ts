@@ -174,7 +174,7 @@ export type {
 //
 // `<Chart3D>` wraps react-three-fiber's <Canvas> with SSR-safe
 // dynamic import + prefers-reduced-motion fallback + constrained
-// OrbitControls. `tokenColor()` resolves a chart-series CSS var to
+// OrbitPractices. `tokenColor()` resolves a chart-series CSS var to
 // a hex string Three.js materials can consume. Three.js + drei +
 // r3f only load on routes that mount a 3D chart (~180KB gzipped,
 // dynamic-imported via `dynamicChart3D()`).

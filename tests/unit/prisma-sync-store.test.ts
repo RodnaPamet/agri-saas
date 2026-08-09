@@ -64,7 +64,7 @@ function makePrismaRow(overrides?: Partial<SyncMapping>) {
         tenantId: 'tenant-1',
         provider: 'github',
         connectionId: 'conn-1',
-        localEntityType: 'control',
+        localEntityType: 'practice',
         localEntityId: 'ctrl-1',
         remoteEntityType: 'branch_protection',
         remoteEntityId: 'main',
@@ -88,7 +88,7 @@ function makeKey(overrides?: Partial<SyncMappingKey>): SyncMappingKey {
         tenantId: 'tenant-1',
         provider: 'github',
         connectionId: 'conn-1',
-        localEntityType: 'control',
+        localEntityType: 'practice',
         localEntityId: 'ctrl-1',
         remoteEntityType: 'branch_protection',
         remoteEntityId: 'main',
@@ -116,13 +116,13 @@ describe('PrismaSyncMappingStore', () => {
             const row = makePrismaRow();
             mockIntegrationSyncMapping.findUnique.mockResolvedValue(row);
 
-            const result = await store.findByLocalEntity('tenant-1', 'github', 'control', 'ctrl-1');
+            const result = await store.findByLocalEntity('tenant-1', 'github', 'practice', 'ctrl-1');
 
             expect(result).not.toBeNull();
             expect(result!.id).toBe('sm-1');
             expect(result!.tenantId).toBe('tenant-1');
             expect(result!.provider).toBe('github');
-            expect(result!.localEntityType).toBe('control');
+            expect(result!.localEntityType).toBe('practice');
             expect(result!.localEntityId).toBe('ctrl-1');
             expect(result!.syncStatus).toBe('PENDING');
             expect(result!.conflictStrategy).toBe('REMOTE_WINS');
@@ -132,7 +132,7 @@ describe('PrismaSyncMappingStore', () => {
         it('returns null when no row exists', async () => {
             mockIntegrationSyncMapping.findUnique.mockResolvedValue(null);
 
-            const result = await store.findByLocalEntity('tenant-1', 'github', 'control', 'ctrl-999');
+            const result = await store.findByLocalEntity('tenant-1', 'github', 'practice', 'ctrl-999');
 
             expect(result).toBeNull();
         });
@@ -140,14 +140,14 @@ describe('PrismaSyncMappingStore', () => {
         it('uses the correct composite unique key in where clause', async () => {
             mockIntegrationSyncMapping.findUnique.mockResolvedValue(null);
 
-            await store.findByLocalEntity('tenant-1', 'github', 'control', 'ctrl-1');
+            await store.findByLocalEntity('tenant-1', 'github', 'practice', 'ctrl-1');
 
             expect(mockIntegrationSyncMapping.findUnique).toHaveBeenCalledWith({
                 where: {
                     tenantId_provider_localEntityType_localEntityId: {
                         tenantId: 'tenant-1',
                         provider: 'github',
-                        localEntityType: 'control',
+                        localEntityType: 'practice',
                         localEntityId: 'ctrl-1',
                     },
                 },
@@ -157,7 +157,7 @@ describe('PrismaSyncMappingStore', () => {
         it('enforces tenant isolation via withTenantDb', async () => {
             mockIntegrationSyncMapping.findUnique.mockResolvedValue(null);
 
-            await store.findByLocalEntity('tenant-42', 'github', 'control', 'ctrl-1');
+            await store.findByLocalEntity('tenant-42', 'github', 'practice', 'ctrl-1');
 
             expect(capturedTenantIds).toEqual(['tenant-42']);
         });
@@ -241,7 +241,7 @@ describe('PrismaSyncMappingStore', () => {
             expect(call.where.tenantId_provider_localEntityType_localEntityId).toEqual({
                 tenantId: 'tenant-1',
                 provider: 'github',
-                localEntityType: 'control',
+                localEntityType: 'practice',
                 localEntityId: 'ctrl-1',
             });
 
@@ -249,7 +249,7 @@ describe('PrismaSyncMappingStore', () => {
             expect(call.create.tenantId).toBe('tenant-1');
             expect(call.create.provider).toBe('github');
             expect(call.create.connectionId).toBe('conn-1');
-            expect(call.create.localEntityType).toBe('control');
+            expect(call.create.localEntityType).toBe('practice');
             expect(call.create.localEntityId).toBe('ctrl-1');
             expect(call.create.remoteEntityType).toBe('branch_protection');
             expect(call.create.remoteEntityId).toBe('main');
@@ -385,7 +385,7 @@ describe('PrismaSyncMappingStore', () => {
                 tenantId: 'tenant-1',
                 provider: 'github',
                 connectionId: 'conn-5',
-                localEntityType: 'control',
+                localEntityType: 'practice',
                 localEntityId: 'ctrl-7',
                 remoteEntityType: 'branch_protection',
                 remoteEntityId: 'develop',
@@ -403,14 +403,14 @@ describe('PrismaSyncMappingStore', () => {
             });
             mockIntegrationSyncMapping.findUnique.mockResolvedValue(row);
 
-            const result = await store.findByLocalEntity('tenant-1', 'github', 'control', 'ctrl-7');
+            const result = await store.findByLocalEntity('tenant-1', 'github', 'practice', 'ctrl-7');
 
             expect(result).toEqual({
                 id: 'sm-42',
                 tenantId: 'tenant-1',
                 provider: 'github',
                 connectionId: 'conn-5',
-                localEntityType: 'control',
+                localEntityType: 'practice',
                 localEntityId: 'ctrl-7',
                 remoteEntityType: 'branch_protection',
                 remoteEntityId: 'develop',

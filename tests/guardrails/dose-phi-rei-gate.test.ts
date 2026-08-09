@@ -71,7 +71,7 @@ describe('dose/PHI/REI structural gate', () => {
             ['Bulgarian, кг/дка', 'Нормата на внасяне е 0.5 кг/дка, разпределени равномерно.'],
             ['Bulgarian, мл/дка', 'Дозата е 150 мл/дка, разредени в достатъчно количество вода.'],
             ['English, l/ha', 'Apply 2 l/ha of the product once the pest threshold is reached.'],
-            ['English, g/ha', 'Use a rate of 400 g/ha for effective control.'],
+            ['English, g/ha', 'Use a rate of 400 g/ha for effective practice.'],
             ['English, ml/dka', 'The label rate is 150 ml/dka for this crop.'],
             ['% working solution, Bulgarian', 'Пригответе 0.2% работен разтвор преди третиране.'],
             ['% solution, English', 'Mix a 0.5% spray solution before application.'],

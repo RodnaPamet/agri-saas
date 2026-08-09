@@ -73,7 +73,7 @@ function FilterRangeHeader({
   );
 }
 
-function RangeEndControl({
+function RangeEndPractice({
   bound,
   value,
   unboundedLabel,
@@ -350,7 +350,7 @@ function FilterRangeContent({
     >
       <div className="flex items-end gap-tight">
         <div className="min-w-0 flex-1">
-          <RangeEndControl
+          <RangeEndPractice
             bound="min"
             value={min}
             unboundedLabel={t("noMin")}
@@ -368,7 +368,7 @@ function FilterRangeContent({
         <span className="shrink-0 pb-2.5 text-xs text-content-muted">{t("to")}</span>
 
         <div className="min-w-0 flex-1">
-          <RangeEndControl
+          <RangeEndPractice
             bound="max"
             value={max}
             unboundedLabel={t("noMax")}

@@ -10,7 +10,7 @@ import { dirname, resolve as resolvePath } from 'node:path';
 import { request as playwrightRequest, type APIRequestContext, type Page } from '@playwright/test';
 
 /**
- * Pick an option from one of the shared `<Combobox>` controls (Epic 55
+ * Pick an option from one of the shared `<Combobox>` practices (Epic 55
  * replaced the legacy `<select>` here). Resolves the trigger by `id`,
  * opens the popover, and clicks the option whose accessible name
  * matches `optionLabel` (regex or string).

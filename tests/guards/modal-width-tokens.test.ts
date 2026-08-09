@@ -9,7 +9,7 @@
  * `style={{ width: … }}` shenanigans.
  *
  * The user opens "Create Risk" and the modal is one width;
- * "Edit Control" is another; "Upload Evidence" a third. Even
+ * "Edit Practice" is another; "Upload Evidence" a third. Even
  * though the primitive supports a token system, anyone can
  * still pass an override className that bypasses it. This
  * ratchet shuts that door.

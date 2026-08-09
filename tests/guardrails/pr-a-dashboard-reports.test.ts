@@ -8,7 +8,7 @@
  *      `id="evidence-status"` E2E selector preserved from the
  *      pre-PR-A composition.
  *
- *   2. The Control Coverage `<ProgressCard>` accepts a `trend`
+ *   2. The Practice Coverage `<ProgressCard>` accepts a `trend`
  *      prop and the dashboard threads the coverage-over-time
  *      series into it.
  *
@@ -19,7 +19,7 @@
  *
  *   4. The Reports SoA tab table card uses the canonical
  *      `cardVariants()` density (was `density: 'none'`) so the
- *      table presentation matches the Controls / Risks / Assets
+ *      table presentation matches the Practices / Risks / Assets
  *      list pages.
  */
 import * as fs from 'node:fs';

@@ -6,7 +6,7 @@
  * `useSWR` with three project-specific concerns baked in:
  *
  *   1. **Tenant prefixing.** Callers pass a tenant-relative path
- *      (e.g. `'/controls'`) — the hook prepends `/api/t/{slug}`
+ *      (e.g. `'/practices'`) — the hook prepends `/api/t/{slug}`
  *      using the active `TenantContext`. Components stop hand-rolling
  *      `/api/t/${slug}/...` strings; the SWR key is the resolved
  *      absolute URL so cross-tenant cache entries stay isolated.
@@ -28,8 +28,8 @@
  * Usage:
  *
  *   const { data, error, isLoading, mutate } =
- *       useTenantSWR<ControlListItemDTO[]>('/controls', {
- *           schema: ControlListSchema,
+ *       useTenantSWR<PracticeListItemDTO[]>('/practices', {
+ *           schema: PracticeListSchema,
  *       });
  *
  * Conditional fetching mirrors SWR's null-key idiom — pass `null` (or
@@ -154,7 +154,7 @@ export function useTenantSWR<T>(
 
     // The SWR key MUST be the resolved absolute URL — that way:
     //   1. Two hooks pointing at the same endpoint dedupe naturally.
-    //   2. `mutate('/api/t/<slug>/controls')` from anywhere in the
+    //   2. `mutate('/api/t/<slug>/practices')` from anywhere in the
     //      app hits the same cache entry without recomputing the
     //      tenant prefix.
     //   3. Cache entries from different tenants never collide.

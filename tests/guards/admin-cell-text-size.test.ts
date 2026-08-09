@@ -7,7 +7,7 @@
  * line 54). Cells that wrap their content in
  * `<span className="text-xs …">` shrink the visible text by one
  * size step — the rows read as noticeably smaller than every
- * other list page in the product (Controls / Risks / Policies /
+ * other list page in the product (Practices / Risks / Policies /
  * Vendors / etc, none of which override text size).
  *
  * Rule: in admin + reports pages, no TanStack column `cell:`
@@ -71,7 +71,7 @@ describe('admin + reports DataTable cell text size (R13-PR8)', () => {
                 .map((o) => `  ${o.file}:${o.line}\n    ${o.text}`)
                 .join('\n');
             throw new Error(
-                `Found ${offenders.length} admin/reports DataTable cell(s) forcing \`text-xs\` — drop the override so cells render at the primitive's default \`text-sm leading-6\` (matches Controls / Risks / etc).\n\nOffender(s):\n${sample}`,
+                `Found ${offenders.length} admin/reports DataTable cell(s) forcing \`text-xs\` — drop the override so cells render at the primitive's default \`text-sm leading-6\` (matches Practices / Risks / etc).\n\nOffender(s):\n${sample}`,
             );
         }
         expect(offenders).toHaveLength(0);

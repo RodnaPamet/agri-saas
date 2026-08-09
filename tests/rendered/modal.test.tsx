@@ -41,14 +41,14 @@ function ModalHarness(props: {
             showModal={open}
             setShowModal={setOpen}
             size="md"
-            title="Edit control"
-            description="Update the control's metadata."
+            title="Edit practice"
+            description="Update the practice's metadata."
             preventDefaultClose={props.preventDefaultClose}
             desktopOnly={props.desktopOnly}
         >
             <Modal.Header
-                title="Edit control"
-                description="Update the control's metadata."
+                title="Edit practice"
+                description="Update the practice's metadata."
             />
             <Modal.Body>
                 <input id="first-input" aria-label="Name" />
@@ -67,7 +67,7 @@ describe('<Modal /> — accessibility', () => {
         render(<ModalHarness />);
         const dialog = screen.getByRole('dialog');
         expect(dialog).toBeInTheDocument();
-        expect(dialog).toHaveAccessibleName('Edit control');
+        expect(dialog).toHaveAccessibleName('Edit practice');
     });
 
     it('has no axe violations when open', async () => {
@@ -121,11 +121,11 @@ function SheetHarness() {
             open={open}
             onOpenChange={setOpen}
             size="md"
-            title="Control detail"
+            title="Practice detail"
             description="Quick edit view"
         >
             <Sheet.Header
-                title="Control detail"
+                title="Practice detail"
                 description="Quick edit view"
             />
             <Sheet.Body>
@@ -144,7 +144,7 @@ describe('<Sheet /> — accessibility', () => {
     it('renders as a dialog with accessible name', () => {
         render(<SheetHarness />);
         const dialog = screen.getByRole('dialog');
-        expect(dialog).toHaveAccessibleName('Control detail');
+        expect(dialog).toHaveAccessibleName('Practice detail');
     });
 
     it('has no axe violations when open', async () => {

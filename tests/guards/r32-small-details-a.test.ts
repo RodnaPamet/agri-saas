@@ -27,7 +27,7 @@
  *
  * Bundle B (6 of 12, R32-PR12) closes the remaining six:
  * process selector → Combobox, inline-title auto-grow, autosave
- * status placement, Group-button explanatory tooltip, control-
+ * status placement, Group-button explanatory tooltip, practice-
  * on-edge chip vocabulary match, `--canvas-grid` theme fold.
  */
 import * as fs from "node:fs";

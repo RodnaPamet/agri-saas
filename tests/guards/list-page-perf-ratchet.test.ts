@@ -59,7 +59,7 @@ const ROOT = path.resolve(__dirname, '../..');
  * so the Tasks entry was dropped from the set.
  */
 const LIST_PAGE_ENTITIES: ReadonlyArray<{ entity: string; repo: string }> = [
-    { entity: 'controls', repo: 'ControlRepository' },
+    { entity: 'practices', repo: 'PracticeRepository' },
     { entity: 'evidence', repo: 'EvidenceRepository' },
     { entity: 'audits', repo: 'AuditRepository' },
     { entity: 'policies', repo: 'PolicyRepository' },

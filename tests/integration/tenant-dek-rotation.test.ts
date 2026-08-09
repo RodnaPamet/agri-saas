@@ -4,7 +4,7 @@
  * Replaces the original `tenant-dek-rotation-stub.test.ts` (which
  * asserted the stub-throw behaviour). The CHECK-constraint assertion
  * is preserved unchanged: it locks in the schema invariant that
- * `previousEncryptedDek != encryptedDek`, which the rotation control
+ * `previousEncryptedDek != encryptedDek`, which the rotation practice
  * flow trusts (a fresh `crypto.randomBytes(32)` could in theory
  * collide; the constraint catches operator-injected mistakes too).
  *

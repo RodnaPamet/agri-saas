@@ -214,7 +214,7 @@ describe('useChartKeyboardNavigation', () => {
 
     it('keyboard focus propagates into ChartTooltipSync so peer charts echo', () => {
         // Keep the peer state in a ref so TypeScript's narrow-at-declaration
-        // control flow doesn't pin the type to `null`.
+        // practice flow doesn't pin the type to `null`.
         const peerRef: { current: ChartHoverState<DemoValues> | null } = {
             current: null,
         };

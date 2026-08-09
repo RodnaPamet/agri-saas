@@ -1,7 +1,7 @@
-/** GET /api/t/[tenantSlug]/assets/[id]/mappings — framework mappings inherited from the asset's mapped controls (read-only). */
+/** GET /api/t/[tenantSlug]/assets/[id]/mappings — framework mappings inherited from the asset's mapped practices (read-only). */
 import { NextRequest } from 'next/server';
 import { getTenantCtx } from '@/app-layer/context';
-import { getAssetInheritedMappings } from '@/app-layer/usecases/inherited-control-data';
+import { getAssetInheritedMappings } from '@/app-layer/usecases/inherited-practice-data';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
 

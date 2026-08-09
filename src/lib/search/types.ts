@@ -13,7 +13,7 @@
  *     matching). The current implementation runs targeted
  *     `WHERE field LIKE %q%` queries against a curated set of
  *     fields per entity type. Good enough for the palette's
- *     "I'm looking for that one control / risk / policy" use
+ *     "I'm looking for that one practice / risk / policy" use
  *     case; not a substitute for Algolia / Elastic when those
  *     become necessary.
  *   - a permission-evaluation surface. We don't enrich hits with
@@ -37,7 +37,7 @@
  * `SEARCH_TYPE_DEFAULTS`; downstream code is type-checked.
  */
 export type SearchHitType =
-    | 'control'
+    | 'practice'
     | 'policy'
     | 'evidence'
     | 'framework'
@@ -82,7 +82,7 @@ export interface SearchHit {
         | 'package'
         | 'check-square'
         | 'flask';
-    /** Plural display name for grouping headers ("Controls", "Risks"...). */
+    /** Plural display name for grouping headers ("Practices", "Risks"...). */
     category: string;
 }
 
@@ -97,7 +97,7 @@ export const SEARCH_TYPE_DEFAULTS: Record<
     SearchHitType,
     { iconKey: SearchHit['iconKey']; category: string }
 > = {
-    control: { iconKey: 'shield-check', category: 'Controls' },
+    practice: { iconKey: 'shield-check', category: 'Practices' },
     policy: { iconKey: 'file-text', category: 'Policies' },
     evidence: { iconKey: 'paperclip', category: 'Evidence' },
     framework: { iconKey: 'layers', category: 'Frameworks' },

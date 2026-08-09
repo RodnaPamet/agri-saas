@@ -22,7 +22,7 @@ jest.mock('@/app-layer/policies/common', () => ({
 }));
 
 // runInTenantContext hands the callback a db whose location lookup is
-// controllable (returns a row by default → "location found").
+// practicelable (returns a row by default → "location found").
 let mockLocationRow: { id: string } | null = { id: 'loc-1' };
 jest.mock('@/lib/db-context', () => ({
     runInTenantContext: jest.fn(

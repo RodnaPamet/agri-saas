@@ -11,7 +11,7 @@
  *
  *   useToast().success('Risk created')
  *   useToast().error('Save failed', { description: '…' })
- *   useToast().info('Linked control updated')
+ *   useToast().info('Linked practice updated')
  *   useToast().warning('This action cannot be undone')
  *
  * Why a hook (not a free function):

@@ -301,11 +301,11 @@ describe('Soft-Delete Targets', () => {
         expect(SOFT_DELETE_TARGETS.length).toBeGreaterThanOrEqual(12);
     });
 
-    it('Asset, Control, Evidence, Policy already have deletedAt', () => {
+    it('Asset, Practice, Evidence, Policy already have deletedAt', () => {
         const existing = SOFT_DELETE_TARGETS.filter((t) => t.hasDeletedAt);
         const names = existing.map((t) => t.model).sort();
         expect(names).toContain('Asset');
-        expect(names).toContain('Control');
+        expect(names).toContain('Practice');
         expect(names).toContain('Evidence');
         expect(names).toContain('Policy');
     });

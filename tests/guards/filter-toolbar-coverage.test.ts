@@ -2,7 +2,7 @@
  * Roadmap-7 PR-4 — FilterToolbar coverage ratchet.
  *
  * Heavy entity-level list pages — Risks, Vendors, Audits, Frameworks
- * (templates), Tasks, Evidence, Controls — wear `<FilterToolbar>` so
+ * (templates), Tasks, Evidence, Practices — wear `<FilterToolbar>` so
  * search, faceted filters, view-toggle, and primary action sit in
  * the same order, with the same spacing, on every page. New pages
  * mounting `<DataTable>` should reach for `<FilterToolbar>` before
@@ -14,7 +14,7 @@
  * faceted filters. Today's exemption list captures the empirical
  * pattern after surveying production: cross-tenant read-only
  * aggregation tables, admin sub-pages with one fixed entity-type
- * and inline controls, wizards, dashboard composites, and detail-
+ * and inline practices, wizards, dashboard composites, and detail-
  * tab sub-tables.
  *
  * The direction of travel: this list shrinks as pages organically
@@ -62,9 +62,9 @@ const EXEMPTIONS: Record<string, string> = {
     // (hundreds of rows at most, not a tenant's operational data), and support
     // works from the derived status column rather than faceted filters.
     "src/app/t/[tenantSlug]/(app)/admin/promotions/PromotionsAdminClient.tsx":
-        "Admin sub-page, one fixed entity type + inline publish/edit controls — bounded global catalogue, no faceted filtering.",
+        "Admin sub-page, one fixed entity type + inline publish/edit practices — bounded global catalogue, no faceted filtering.",
     "src/app/t/[tenantSlug]/(app)/admin/companies/CompaniesAdminClient.tsx":
-        "Admin sub-page, one fixed entity type + inline edit control — bounded supplier roster, no faceted filtering.",
+        "Admin sub-page, one fixed entity type + inline edit practice — bounded supplier roster, no faceted filtering.",
     // Journal Trash — a bounded ADMIN-only soft-deleted list reached in-page
     // from the journal toggle. Restore/purge affordances only; the parent
     // journal list owns the faceted filters.
@@ -93,8 +93,8 @@ const EXEMPTIONS: Record<string, string> = {
     // Sort + cursor pagination is the entire interaction surface.
     "src/app/org/[orgSlug]/(app)/audit/AuditLogTable.tsx":
         "Org-level cross-tenant audit log — chronological view with sort + load-more, no faceted filters appropriate at the portfolio aggregation tier.",
-    "src/app/org/[orgSlug]/(app)/controls/ControlsTable.tsx":
-        "Org-level non-performing controls digest — fixed scope (status != IMPLEMENTED) + sort, no per-tenant facets.",
+    "src/app/org/[orgSlug]/(app)/practices/PracticesTable.tsx":
+        "Org-level non-performing practices digest — fixed scope (status != IMPLEMENTED) + sort, no per-tenant facets.",
     "src/app/org/[orgSlug]/(app)/evidence/EvidenceTable.tsx":
         "Org-level overdue-evidence digest — fixed scope (review past due) + sort, no per-tenant facets.",
     "src/app/org/[orgSlug]/(app)/members/MembersTable.tsx":
@@ -106,7 +106,7 @@ const EXEMPTIONS: Record<string, string> = {
 
     // ── Admin sub-pages with one fixed entity-type ──
     // Each surface owns a small fixed entity list with inline
-    // controls (toggle / revoke / archive) baked into the page chrome.
+    // practices (toggle / revoke / archive) baked into the page chrome.
     // FilterToolbar is overkill — the entity volume sits in the
     // dozens, not the thousands.
     // R13-PR10 — audit log moved out of the admin landing into
@@ -116,7 +116,7 @@ const EXEMPTIONS: Record<string, string> = {
     "src/app/t/[tenantSlug]/(app)/admin/audit-log/AuditLogClient.tsx":
         "Chronological audit log bound to one tenant — not a faceted-filter surface.",
     "src/app/t/[tenantSlug]/(app)/admin/api-keys/page.tsx":
-        "API keys admin — small fixed list (typical: <20) with inline create + revoke controls.",
+        "API keys admin — small fixed list (typical: <20) with inline create + revoke practices.",
     "src/app/t/[tenantSlug]/(app)/admin/billing/BillingEventLog.tsx":
         "Detail-tab sub-table inside the billing page — chronological event log with fixed scope.",
     "src/app/t/[tenantSlug]/(app)/admin/ledger-integrity/LedgerIntegrityClient.tsx":
@@ -124,7 +124,7 @@ const EXEMPTIONS: Record<string, string> = {
     "src/app/t/[tenantSlug]/(app)/admin/rbac/MembersTable.tsx":
         "Members sub-table on the RBAC admin dashboard — fixed list of tenant memberships with no faceting (members admin owns the writes; RBAC is read-only matrix).",
     "src/app/t/[tenantSlug]/(app)/access-reviews/[reviewId]/AccessReviewDetailClient.tsx":
-        "Detail-page roster sub-table — fixed scope (decisions in this campaign) with inline per-row decision controls; not a faceted-filter surface.",
+        "Detail-page roster sub-table — fixed scope (decisions in this campaign) with inline per-row decision practices; not a faceted-filter surface.",
     "src/app/t/[tenantSlug]/(app)/vendors/[vendorId]/page.tsx":
         "Detail-page documents sub-table (R11-PR7) — fixed scope (documents attached to this one vendor); not a faceted-filter surface.",
     // A11y pass — location detail parcels list (a DataTable, now inside the
@@ -132,26 +132,26 @@ const EXEMPTIONS: Record<string, string> = {
     // (parcels of this one location); not a faceted-filter list surface.
     "src/app/t/[tenantSlug]/(app)/locations/[locationId]/page.tsx":
         "Detail-page parcels sub-table — fixed scope (parcels of this one location); not a faceted-filter surface.",
-    // B4 (2026-06-07): the controls DETAIL page no longer has a DataTable —
-    // the legacy 'Control tasks' sub-table was removed when the Tasks tab
+    // B4 (2026-06-07): the practices DETAIL page no longer has a DataTable —
+    // the legacy 'Practice tasks' sub-table was removed when the Tasks tab
     // was aligned to Asset/Risk (a single LinkedTasksPanel). It's no longer
     // a DataTable surface, so it drops out of this exemption list.
-    "src/app/t/[tenantSlug]/(app)/controls/[controlId]/_tabs/EvidenceSubTable.tsx":
-        "Detail-page evidence sub-table (R10-PR3 follow-up) — fixed scope (evidence links + direct evidence for this one control) with per-row unlink action; not a faceted-filter surface.",
-    "src/app/t/[tenantSlug]/(app)/controls/[controlId]/_tabs/ControlMappingsTab.tsx":
-        "Detail-page mappings sub-table (R10-PR3 follow-up) — fixed scope (framework mappings for this one control) with per-row unmap action; not a faceted-filter surface.",
+    "src/app/t/[tenantSlug]/(app)/practices/[practiceId]/_tabs/EvidenceSubTable.tsx":
+        "Detail-page evidence sub-table (R10-PR3 follow-up) — fixed scope (evidence links + direct evidence for this one practice) with per-row unlink action; not a faceted-filter surface.",
+    "src/app/t/[tenantSlug]/(app)/practices/[practiceId]/_tabs/PracticeMappingsTab.tsx":
+        "Detail-page mappings sub-table (R10-PR3 follow-up) — fixed scope (framework mappings for this one practice) with per-row unmap action; not a faceted-filter surface.",
     "src/app/t/[tenantSlug]/(app)/farm-tasks/[taskId]/FarmTaskDetailClient.tsx":
         "Detail-page links sub-table — fixed scope (cross-links from this one farm task); not a faceted-filter surface.",
     "src/app/t/[tenantSlug]/(app)/planning/[cropPlanId]/PlantingBoard.tsx":
         "Detail-page succession board — fixed scope (the plantings of this one crop plan), paired with a Gantt timeline; plan-vs-actual rows, not a faceted-filter surface.",
     "src/app/t/[tenantSlug]/(app)/admin/integrations/page.tsx":
-        "Integrations admin — small fixed catalogue with inline toggle controls.",
+        "Integrations admin — small fixed catalogue with inline toggle practices.",
     "src/app/t/[tenantSlug]/(app)/admin/members/page.tsx":
-        "Members admin — single tenant's roster with inline role + invite controls; faceting belongs to the org-level view.",
+        "Members admin — single tenant's roster with inline role + invite practices; faceting belongs to the org-level view.",
     "src/app/t/[tenantSlug]/(app)/admin/notifications/page.tsx":
-        "Notifications admin — small fixed channel list with inline rule controls.",
+        "Notifications admin — small fixed channel list with inline rule practices.",
     "src/app/t/[tenantSlug]/(app)/admin/roles/page.tsx":
-        "Custom roles admin — small fixed list with inline create + permission controls.",
+        "Custom roles admin — small fixed list with inline create + permission practices.",
 
     // ── Section dashboards / composite pages ──
     // Pages composed of multiple cards + sub-tables, where the page
@@ -160,7 +160,7 @@ const EXEMPTIONS: Record<string, string> = {
     "src/app/t/[tenantSlug]/(app)/access-reviews/AccessReviewsClient.tsx":
         "Multi-section dashboard — review cycle list lives inside a tabbed dashboard composition with per-tab filtering.",
     "src/app/t/[tenantSlug]/(app)/findings/FindingsClient.tsx":
-        "Findings list — currently uses inline filter controls; planned for FilterToolbar migration in a follow-up.",
+        "Findings list — currently uses inline filter practices; planned for FilterToolbar migration in a follow-up.",
 
     // ── Templates / sub-resource lists ──
 
@@ -210,7 +210,7 @@ describe("FilterToolbar coverage", () => {
                 .map((v) => `  ${v.file}`)
                 .join("\n");
             throw new Error(
-                `Found ${violations.length} file(s) mounting <DataTable> without <FilterToolbar>. Either wire the page through <FilterToolbar> + <FilterProvider> for a consistent toolbar shape, OR add the file to EXEMPTIONS with a written structural reason (cross-tenant aggregation, admin sub-page with inline controls, dashboard composite, wizard, sub-table — see existing entries for the vocabulary).\n\nFirst ${Math.min(15, violations.length)} offender(s):\n${sample}`,
+                `Found ${violations.length} file(s) mounting <DataTable> without <FilterToolbar>. Either wire the page through <FilterToolbar> + <FilterProvider> for a consistent toolbar shape, OR add the file to EXEMPTIONS with a written structural reason (cross-tenant aggregation, admin sub-page with inline practices, dashboard composite, wizard, sub-table — see existing entries for the vocabulary).\n\nFirst ${Math.min(15, violations.length)} offender(s):\n${sample}`,
             );
         }
         expect(violations).toHaveLength(0);

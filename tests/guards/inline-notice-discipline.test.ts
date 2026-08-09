@@ -46,7 +46,7 @@ const EXEMPT_FILES = new Set<string>([
     // The canonical primitive itself + its docstring example block.
     "src/components/ui/inline-notice.tsx",
 
-    // Stat-card cluster — four colour-coded metric panels (controls /
+    // Stat-card cluster — four colour-coded metric panels (practices /
     // policies / evidence / issues counts) inside a default audit
     // pack preview. The shape is a panel, not a notice — pulling out
     // the count-as-headline + label-below-it doesn't fit InlineNotice.
@@ -56,7 +56,7 @@ const EXEMPT_FILES = new Set<string>([
     // their background by status (PASSED → success, FAILED → error,
     // RUNNING → neutral). It's a styled row inside a list, not a
     // dismissable banner.
-    "src/app/t/[tenantSlug]/(app)/controls/[controlId]/page.tsx",
+    "src/app/t/[tenantSlug]/(app)/practices/[practiceId]/page.tsx",
 
     // Conditional status pill class string — drives an integration's
     // health pill background (HEALTHY → success, DEGRADED → error).

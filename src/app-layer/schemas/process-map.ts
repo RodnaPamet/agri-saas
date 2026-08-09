@@ -2,7 +2,7 @@
  * Roadmap-26 PR-A — Process Map Zod schemas.
  *
  * The save payload is shaped as the FULL graph (nodes + edges +
- * edge-controls) on every save. PR-A's repo layer replaces the
+ * edge-practices) on every save. PR-A's repo layer replaces the
  * graph atomically — there's no per-row update path. This keeps
  * the contract dead simple: "the canvas state is the source of
  * truth; the server persists what the canvas hands it." When the
@@ -62,12 +62,12 @@ export const ProcessEdgeInputSchema = z.object({
     edgeKind: z.string().min(1).max(64).default('flow'),
     labelOverride: z.string().max(200).optional().nullable(),
     dataJson: z.unknown().optional().nullable(),
-    controls: z
+    practices: z
         .array(
             z.object({
-                controlKey: z.string().min(1).max(128),
+                practiceKey: z.string().min(1).max(128),
                 label: z.string().max(200),
-                controlId: z.string().optional().nullable(),
+                practiceId: z.string().optional().nullable(),
                 dataJson: z.unknown().optional().nullable(),
             }),
         )

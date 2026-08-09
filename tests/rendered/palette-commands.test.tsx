@@ -3,7 +3,7 @@
  *
  * Verifies the contract for the two curated command buckets:
  *
- *   - Navigation commands (Go to Dashboard / Controls / …)
+ *   - Navigation commands (Go to Dashboard / Practices / …)
  *     render when a tenant slug is present in the URL, each carries
  *     the expected tenant-scoped `/t/<slug>/<route>` href, and
  *     selecting one calls `router.push()` + closes the palette.

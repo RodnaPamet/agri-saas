@@ -65,7 +65,7 @@ function makeWrapper() {
 
 // ── Detail patch ───────────────────────────────────────────────────────
 
-interface Control {
+interface Practice {
     id: string;
     title: string;
     status: 'OPEN' | 'CLOSED';
@@ -80,7 +80,7 @@ describe('useTenantMutation — detail patch', () => {
                 id: 'c1',
                 title: 'Old',
                 status: 'OPEN',
-            } as Control),
+            } as Practice),
         });
         // Revalidation GET after mutation — returns the server-final
         // shape (which happens to match the optimistic value).
@@ -90,7 +90,7 @@ describe('useTenantMutation — detail patch', () => {
                 id: 'c1',
                 title: 'New',
                 status: 'OPEN',
-            } as Control),
+            } as Practice),
         });
 
         const apiPatch = jest
@@ -99,16 +99,16 @@ describe('useTenantMutation — detail patch', () => {
 
         const { result } = renderHook(
             () => {
-                const read = useTenantSWR<Control>('/controls/c1');
+                const read = useTenantSWR<Practice>('/practices/c1');
                 const mutation = useTenantMutation<
-                    Control,
+                    Practice,
                     { title: string },
-                    Control
+                    Practice
                 >({
-                    key: '/controls/c1',
+                    key: '/practices/c1',
                     mutationFn: apiPatch,
                     optimisticUpdate: (current, input) => ({
-                        ...(current as Control),
+                        ...(current as Practice),
                         ...input,
                     }),
                 });
@@ -148,7 +148,7 @@ describe('useTenantMutation — detail patch', () => {
                 id: 'c1',
                 title: 'Old',
                 status: 'OPEN',
-            } as Control),
+            } as Practice),
         });
 
         const failingPatch = jest
@@ -157,16 +157,16 @@ describe('useTenantMutation — detail patch', () => {
 
         const { result } = renderHook(
             () => {
-                const read = useTenantSWR<Control>('/controls/c1');
+                const read = useTenantSWR<Practice>('/practices/c1');
                 const mutation = useTenantMutation<
-                    Control,
+                    Practice,
                     { title: string },
-                    Control
+                    Practice
                 >({
-                    key: '/controls/c1',
+                    key: '/practices/c1',
                     mutationFn: failingPatch,
                     optimisticUpdate: (current, input) => ({
-                        ...(current as Control),
+                        ...(current as Practice),
                         ...input,
                     }),
                     // Skip revalidation so we observe the rolled-back
@@ -212,7 +212,7 @@ describe('useTenantMutation — status change', () => {
                 id: 'c1',
                 title: 'Doc',
                 status: 'OPEN',
-            } as Control),
+            } as Practice),
         });
         fetchMock.mockResolvedValue({
             ok: true,
@@ -220,7 +220,7 @@ describe('useTenantMutation — status change', () => {
                 id: 'c1',
                 title: 'Doc',
                 status: 'CLOSED',
-            } as Control),
+            } as Practice),
         });
 
         const apiClose = jest.fn().mockResolvedValue({
@@ -231,16 +231,16 @@ describe('useTenantMutation — status change', () => {
 
         const { result } = renderHook(
             () => {
-                const read = useTenantSWR<Control>('/controls/c1');
+                const read = useTenantSWR<Practice>('/practices/c1');
                 const mutation = useTenantMutation<
-                    Control,
+                    Practice,
                     { status: 'OPEN' | 'CLOSED' },
-                    Control
+                    Practice
                 >({
-                    key: '/controls/c1',
+                    key: '/practices/c1',
                     mutationFn: apiClose,
                     optimisticUpdate: (current, input) => ({
-                        ...(current as Control),
+                        ...(current as Practice),
                         status: input.status,
                     }),
                 });

@@ -51,12 +51,12 @@ export const PortfolioSummarySchema = z
             })
             .strict(),
 
-        controls: z
+        practices: z
             .object({
                 applicable: NonNegInt,
                 implemented: NonNegInt,
                 /** Org-wide coverage = sum(implemented) / sum(applicable) × 100.
-                 *  0 when applicable === 0 (no applicable controls anywhere). */
+                 *  0 when applicable === 0 (no applicable practices anywhere). */
                 coveragePercent: z.number().min(0).max(100),
             })
             .strict(),
@@ -144,9 +144,9 @@ export const PortfolioTrendDataPointSchema = z
     .object({
         /** ISO date string (YYYY-MM-DD) — same shape as TrendDataPoint. */
         date: z.string().min(1),
-        controlCoveragePercent: z.number().min(0).max(100),
-        controlsImplemented: NonNegInt,
-        controlsApplicable: NonNegInt,
+        practiceCoveragePercent: z.number().min(0).max(100),
+        practicesImplemented: NonNegInt,
+        practicesApplicable: NonNegInt,
         evidenceOverdue: NonNegInt,
         evidenceDueSoon7d: NonNegInt,
         evidenceCurrent: NonNegInt,
@@ -186,7 +186,7 @@ export type PortfolioTrend = z.infer<typeof PortfolioTrendSchema>;
 // clicks → /t/{slug}/risks/{riskId} → existing tenant routing +
 // RLS take over.
 
-const ControlStatusEnum = z.enum([
+const PracticeStatusEnum = z.enum([
     'NOT_STARTED',
     'PLANNED',
     'IN_PROGRESS',
@@ -198,23 +198,23 @@ const ControlStatusEnum = z.enum([
     // query layer, and the strict enum surfaces it.
 ]);
 
-export const NonPerformingControlRowSchema = z
+export const NonPerformingPracticeRowSchema = z
     .object({
-        controlId: z.string().min(1),
+        practiceId: z.string().min(1),
         tenantId: z.string().min(1),
         tenantSlug: z.string().min(1),
         tenantName: z.string().min(1),
         name: z.string().min(1),
         code: z.string().nullable(),
-        status: ControlStatusEnum,
-        /** ISO timestamp — last time the control row was updated. */
+        status: PracticeStatusEnum,
+        /** ISO timestamp — last time the practice row was updated. */
         updatedAt: z.string().min(1),
-        /** /t/{slug}/controls/{controlId}. */
+        /** /t/{slug}/practices/{practiceId}. */
         drillDownUrl: z.string().min(1),
     })
     .strict();
 
-export type NonPerformingControlRow = z.infer<typeof NonPerformingControlRowSchema>;
+export type NonPerformingPracticeRow = z.infer<typeof NonPerformingPracticeRowSchema>;
 
 const ActiveRiskStatusEnum = z.enum([
     'OPEN',
@@ -272,7 +272,7 @@ export type OverdueEvidenceRow = z.infer<typeof OverdueEvidenceRowSchema>;
 // ── Drill-down pagination (cursor-based) ─────────────────────────────
 //
 // The dashboard summary views still consume the top-50 functions
-// (`getNonPerformingControls`, `getCriticalRisksAcrossOrg`,
+// (`getNonPerformingPractices`, `getCriticalRisksAcrossOrg`,
 // `getOverdueEvidenceAcrossOrg`) — fast, bounded, ideal for a card-
 // sized preview. The DEDICATED drill-down pages browse beyond that
 // cap via the `list*` usecase counterparts which accept a cursor
@@ -288,7 +288,7 @@ export type OverdueEvidenceRow = z.infer<typeof OverdueEvidenceRowSchema>;
 // page 1 of the paginated view matches the first 50 rows of the
 // preview byte-for-byte (modulo the optional `nextCursor`).
 //
-//   Controls  : (statusPriority DESC, updatedAt DESC, id ASC)
+//   Practices  : (statusPriority DESC, updatedAt DESC, id ASC)
 //   Risks     : (inherentScore   DESC, updatedAt DESC, id ASC)
 //   Evidence  : (nextReviewDate  ASC,  id ASC)        ← daysOverdue DESC
 //
@@ -303,7 +303,7 @@ export const PaginatedDrillDownInputSchema = z
         cursor: z.string().min(1).optional(),
         /** Max rows to return on this page. Defaults to 50; clamped
          *  to [1, 200]. The dashboard summary keeps its hard 50;
-         *  this control is for the dedicated drill-down pages. */
+         *  this practice is for the dedicated drill-down pages. */
         limit: z.number().int().min(1).max(200).optional(),
     })
     .strict();

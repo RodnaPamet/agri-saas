@@ -66,7 +66,7 @@ const ASSESSMENT_V2: VendorAssessmentPayload = {
     ],
     score: 30,
     riskRating: 'LOW',
-    notes: 'Re-assessment — vendor improved security controls',
+    notes: 'Re-assessment — vendor improved security practices',
 };
 
 const ASSESSMENT_V3: VendorAssessmentPayload = {

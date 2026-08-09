@@ -68,7 +68,7 @@ interface TenantTrackerEntry {
  * below swallows the error. Every dropped table costs a failed round
  * trip on EVERY isolated-tenant teardown, and the run's Postgres log
  * fills with `relation "X" does not exist`. Eleven names had gone
- * stale: the ten risk / control-exoskeleton tables removed by this
+ * stale: the ten risk / practice-exoskeleton tables removed by this
  * branch, plus `IntegrationEvent`, which had already been dropped
  * before it. `PolicyAcknowledgement` went too — it has no `tenantId`
  * (it hangs off `policyVersion`), so `WHERE "tenantId" = $1` could
@@ -103,13 +103,13 @@ const TENANT_CHILD_TABLES: readonly string[] = [
     'FindingEvidence',
     'Finding',
     'PolicyApproval',
-    'PolicyControlLink',
+    'PolicyPracticeLink',
     'PolicyVersion',
     'Policy',
-    'ControlAsset',
-    'ControlEvidenceLink',
-    'ControlTask',
-    'Control',
+    'PracticeAsset',
+    'PracticeEvidenceLink',
+    'PracticeTask',
+    'Practice',
     'Asset',
     'ClauseProgress',
     'AuditChecklistItem',

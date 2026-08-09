@@ -49,7 +49,7 @@ describe('R24-PR-D — State + interaction polish', () => {
         it('strips backdrop-blur under prefers-reduced-transparency: reduce', () => {
             // The OS-level "reduce transparency" setting must turn
             // off the glass blur entirely. WCAG 1.4.11; matches the
-            // behaviour macOS users expect from native controls when
+            // behaviour macOS users expect from native practices when
             // they enable "Reduce Transparency".
             expect(SRC).toMatch(
                 /\[@media\(prefers-reduced-transparency:reduce\)\]:backdrop-blur-none/,

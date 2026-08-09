@@ -6,7 +6,7 @@
  * Pre-B5 the evidence table had no way to drill into a single
  * record — every action (Submit, Approve, Reject) was inline on the
  * row, and the underlying detail fields (description, owner,
- * retention, related control) were invisible from the list.
+ * retention, related practice) were invisible from the list.
  *
  * This sheet opens on row click. It shows the read-only evidence
  * detail + the existing approval-flow buttons (which call back to
@@ -14,8 +14,8 @@
  * mutation pipeline intact) + an "Edit" button that delegates to
  * the parent to mount the EditEvidenceModal.
  *
- * Mirrors the `<ControlDetailSheet>` shape so the surface reads as
- * a sibling of the established controls drill-down.
+ * Mirrors the `<PracticeDetailSheet>` shape so the surface reads as
+ * a sibling of the established practices drill-down.
  */
 import { useMemo, type Dispatch, type SetStateAction } from 'react';
 import { useTranslations } from 'next-intl';
@@ -51,7 +51,7 @@ export interface EvidenceDetailSheetProps {
         title: string;
         description: string | null;
         ownerUserId: string | null;
-        controlId: string | null;
+        practiceId: string | null;
         /** B8 follow-up — current folder, threaded to the edit modal. */
         folder: string | null;
         /** Retention date (ISO) — edited in the modal now. */
@@ -71,8 +71,8 @@ interface EvidenceDetailPayload {
     retentionUntil: string | null;
     owner: string | null;
     ownerUserId: string | null;
-    controlId: string | null;
-    control?: { id: string; code: string | null; name: string } | null;
+    practiceId: string | null;
+    practice?: { id: string; code: string | null; name: string } | null;
     taskId: string | null;
     /** Source task / risk / asset — set when uploaded from that entity. */
     task?: { id: string; key: string | null; title: string } | null;
@@ -116,10 +116,10 @@ export function EvidenceDetailSheet({
         const rows: Array<{ label: string; value: React.ReactNode }> = [];
         rows.push({ label: t('detailSheet.metaType'), value: evidence.type });
         if (evidence.owner) rows.push({ label: t('detailSheet.metaOwner'), value: evidence.owner });
-        if (evidence.control) {
+        if (evidence.practice) {
             rows.push({
-                label: t('detailSheet.metaControl'),
-                value: `${evidence.control.code ?? ''}${evidence.control.code ? ' — ' : ''}${evidence.control.name}`,
+                label: t('detailSheet.metaPractice'),
+                value: `${evidence.practice.code ?? ''}${evidence.practice.code ? ' — ' : ''}${evidence.practice.name}`,
             });
         }
         if (evidence.task) {
@@ -286,7 +286,7 @@ export function EvidenceDetailSheet({
                                             title: evidence.title,
                                             description: evidence.description,
                                             ownerUserId: evidence.ownerUserId,
-                                            controlId: evidence.controlId,
+                                            practiceId: evidence.practiceId,
                                             // B8 follow-up — the
                                             // detail sheet fetches a
                                             // fresh evidence row;

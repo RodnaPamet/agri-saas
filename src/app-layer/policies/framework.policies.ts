@@ -14,7 +14,7 @@ export function assertCanInstallFrameworkPack(ctx: RequestContext) {
     // Epic 1 — OWNER is a superset of ADMIN per CLAUDE.md RBAC.
     //
     // This gates INSTALLING a pack into the caller's own tenant — it creates
-    // Control rows and ControlRequirementLink rows, both tenant-scoped. It is
+    // Practice rows and PracticeRequirementLink rows, both tenant-scoped. It is
     // NOT sufficient for writing the catalogue itself; see
     // `assertCanWriteCatalogue` below for why that distinction matters.
     if (ctx.role !== 'OWNER' && ctx.role !== 'ADMIN') {

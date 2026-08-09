@@ -38,7 +38,7 @@ interface CoachMarkProps {
 // browser, and an on-map / on-trigger bubble intercepts the taps the mobile
 // map + field-op specs make). Same flag + rationale as the PWA InstallPrompt
 // and the calendar badge. The wrapped children still render — only the hint
-// is withheld — so the controls under it stay clickable.
+// is withheld — so the practices under it stay clickable.
 const SUPPRESS_IN_TEST = process.env.NEXT_PUBLIC_TEST_MODE === '1';
 
 // Global kill-switch (temporary). The coach-mark bubble is an absolutely-

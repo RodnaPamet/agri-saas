@@ -13,7 +13,7 @@ import { motion } from "motion/react";
  *
  * Example:
  *
- *   <ProgressBar value={75} aria-label="Control coverage" showValue />
+ *   <ProgressBar value={75} aria-label="Practice coverage" showValue />
  *
  *   <ProgressBar
  *       value={failureRate}

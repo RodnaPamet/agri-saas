@@ -10,7 +10,7 @@
  *
  *   • `aria-hidden="true"` so screen readers don't announce a
  *     literal "asterisk" — the `aria-required="true"` on the form
- *     control is the canonical signal for assistive tech, and the
+ *     practice is the canonical signal for assistive tech, and the
  *     visual asterisk is only there for sighted users. Many drift
  *     sites omitted this, polluting screen-reader output.
  *

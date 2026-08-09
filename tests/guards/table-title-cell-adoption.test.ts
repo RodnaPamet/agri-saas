@@ -10,7 +10,7 @@
  *
  * R13-PR1 introduces `<TableTitleCell>` as the canonical title-
  * column primitive. Entity list pages migrated:
- * Controls / Risks / Policies / Evidence / Vendors /
+ * Practices / Risks / Policies / Evidence / Vendors /
  * Assets / Findings / Farm tasks.
  *
  * Ratchet locks two invariants:
@@ -29,7 +29,7 @@ import * as path from 'path';
 const ROOT = path.resolve(__dirname, '../..');
 
 const ADOPTED_PAGES = [
-    'src/app/t/[tenantSlug]/(app)/controls/ControlsClient.tsx',
+    'src/app/t/[tenantSlug]/(app)/practices/PracticesClient.tsx',
     'src/app/t/[tenantSlug]/(app)/policies/PoliciesClient.tsx',
     'src/app/t/[tenantSlug]/(app)/evidence/EvidenceClient.tsx',
     'src/app/t/[tenantSlug]/(app)/vendors/VendorsClient.tsx',

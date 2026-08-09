@@ -45,7 +45,7 @@ const mockPrisma = {
     evidence: {
         create: jest.fn(),
     },
-    control: {
+    practice: {
         findMany: jest.fn(),
         findUnique: jest.fn(),
         update: jest.fn(),
@@ -415,12 +415,12 @@ describe('PrismaLocalStore', () => {
     });
 
     describe('applyChanges', () => {
-        it('updates control entity with allowed fields', async () => {
-            mockPrisma.control.update.mockResolvedValue({ id: 'ctrl-1' });
+        it('updates practice entity with allowed fields', async () => {
+            mockPrisma.practice.update.mockResolvedValue({ id: 'ctrl-1' });
             const store = new PrismaLocalStoreReal();
             const ctx: any = { tenantId: 'tenant-1' };
 
-            const fields = await store.applyChanges(ctx, 'control', 'ctrl-1', {
+            const fields = await store.applyChanges(ctx, 'practice', 'ctrl-1', {
                 status: 'IMPLEMENTED',
                 protectionEnabled: true,
                 requiredReviewCount: 2,
@@ -445,19 +445,19 @@ describe('PrismaLocalStore', () => {
             const store = new PrismaLocalStoreReal();
             const ctx: any = { tenantId: 'tenant-1' };
 
-            const fields = await store.applyChanges(ctx, 'control', 'ctrl-1', {
+            const fields = await store.applyChanges(ctx, 'practice', 'ctrl-1', {
                 hackerField: 'DROP TABLE',
                 anotherBadField: 'exploit',
             });
 
             expect(fields).toEqual([]);
-            expect(mockPrisma.control.update).not.toHaveBeenCalled();
+            expect(mockPrisma.practice.update).not.toHaveBeenCalled();
         });
     });
 
     describe('getData', () => {
-        it('returns control data when entity exists', async () => {
-            mockPrisma.control.findUnique.mockResolvedValue({
+        it('returns practice data when entity exists', async () => {
+            mockPrisma.practice.findUnique.mockResolvedValue({
                 id: 'ctrl-1',
                 name: 'Branch Protection',
                 status: 'IMPLEMENTED',
@@ -465,7 +465,7 @@ describe('PrismaLocalStore', () => {
             const store = new PrismaLocalStoreReal();
             const ctx: any = { tenantId: 'tenant-1' };
 
-            const data = await store.getData(ctx, 'control', 'ctrl-1');
+            const data = await store.getData(ctx, 'practice', 'ctrl-1');
 
             expect(data).toBeTruthy();
             expect(data!.id).toBe('ctrl-1');
@@ -473,11 +473,11 @@ describe('PrismaLocalStore', () => {
         });
 
         it('returns null when entity does not exist', async () => {
-            mockPrisma.control.findUnique.mockResolvedValue(null);
+            mockPrisma.practice.findUnique.mockResolvedValue(null);
             const store = new PrismaLocalStoreReal();
             const ctx: any = { tenantId: 'tenant-1' };
 
-            const data = await store.getData(ctx, 'control', 'ctrl-999');
+            const data = await store.getData(ctx, 'practice', 'ctrl-999');
 
             expect(data).toBeNull();
         });
@@ -492,11 +492,11 @@ describe('PrismaLocalStore', () => {
         });
 
         it('enforces tenant isolation through withTenantDb', async () => {
-            mockPrisma.control.findUnique.mockResolvedValue(null);
+            mockPrisma.practice.findUnique.mockResolvedValue(null);
             const store = new PrismaLocalStoreReal();
             const ctx: any = { tenantId: 'tenant-42' };
 
-            await store.getData(ctx, 'control', 'ctrl-1');
+            await store.getData(ctx, 'practice', 'ctrl-1');
 
             expect(capturedTenantIds).toContain('tenant-42');
         });

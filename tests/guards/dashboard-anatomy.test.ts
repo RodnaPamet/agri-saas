@@ -5,7 +5,7 @@
  * dashboard/ directory, or its sibling Client.tsx companion)
  * mounts inside <DashboardLayout>. Before
  * this PR the executive dashboard was the only consumer; the four
- * per-domain dashboards (risks/tasks/controls/vendors) and the tests
+ * per-domain dashboards (risks/tasks/practices/vendors) and the tests
  * dashboard each hand-rolled `<div className="space-y-section
  * animate-fadeIn">` + an inline header block. Result: five front
  * doors with five different hands.

@@ -229,9 +229,9 @@ export function OfflineFieldPanel({ taskId }: { taskId: string }) {
                 selectedIds={selectedParcelId ? [selectedParcelId] : []}
                 onSelectionChange={selectParcel}
                 doneIds={doneIds}
-                showControls
+                showPractices
                 flyToOnSelect
-                controlsBottomInset={isMobile ? 76 : 12}
+                practicesBottomInset={isMobile ? 76 : 12}
                 className={isMobile
                     ? '-mx-4 h-[60vh] min-h-[20rem] overflow-hidden border-y border-border-subtle'
                     : 'h-[360px] w-full overflow-hidden rounded-lg border border-border-subtle'}

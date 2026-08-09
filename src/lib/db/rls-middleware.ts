@@ -211,7 +211,7 @@ const OWNERSHIP_CHAINED_MODELS: readonly string[] = [
     // Remaining ownership-chained tables — no `tenantId` column, RLS
     // policy walks the parent. Six ex-members of this list
     // (EvidenceReview, AuditChecklistItem, FindingEvidence,
-    // AuditorPackAccess, PolicyControlLink, PolicyApproval) were
+    // AuditorPackAccess, PolicyPracticeLink, PolicyApproval) were
     // migrated to direct-tenantId by the denorm-tenantId / promote-
     // tenant migration sequences and are now picked up by
     // `enumerateDirectTenantScopedModels()`.

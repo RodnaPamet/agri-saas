@@ -25,16 +25,16 @@ import { DynamicTooltipWrapper, Tooltip } from "../tooltip";
  * Describes a single batch action that can be plugged into the SelectionToolbar.
  *
  * Usage:
- *   const actions: BatchAction<Control>[] = [
+ *   const actions: BatchAction<Practice>[] = [
  *     {
  *       label: "Export",
  *       icon: <Download className="size-3.5" />,
- *       onClick: (rows) => exportControls(rows.map(r => r.original)),
+ *       onClick: (rows) => exportPractices(rows.map(r => r.original)),
  *     },
  *     {
  *       label: "Archive",
  *       icon: <Archive className="size-3.5" />,
- *       onClick: (rows) => archiveControls(rows.map(r => r.original.id)),
+ *       onClick: (rows) => archivePractices(rows.map(r => r.original.id)),
  *       variant: "danger",
  *     },
  *   ];
@@ -149,11 +149,11 @@ export function renderBatchActions<T>(
 
 export function SelectionToolbar<T>({
   table,
-  controls,
+  practices,
   className,
 }: {
   table: Table<T>;
-  controls?: (table: Table<T>) => ReactNode;
+  practices?: (table: Table<T>) => ReactNode;
   className?: string;
 }) {
   const t = useTranslations("ui.table");
@@ -295,7 +295,7 @@ export function SelectionToolbar<T>({
               selectedCount > 0 ? "translate-x-0" : "-translate-x-1",
             )}
           >
-            {controls?.(table)}
+            {practices?.(table)}
           </div>
         </div>
       </div>

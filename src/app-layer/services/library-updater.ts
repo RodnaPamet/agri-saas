@@ -345,7 +345,7 @@ function applyRuleOfThree(
  * High-impact changes (removals, score-affecting changes) should be reviewed.
  */
 export function requiresReview(diff: RequirementDiff): boolean {
-    // Removals always require review (may break existing control mappings)
+    // Removals always require review (may break existing practice mappings)
     if (diff.removed.length > 0) return true;
     // Large additions might warrant review
     if (diff.added.length > 10) return true;

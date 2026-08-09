@@ -202,8 +202,8 @@ export async function resetDatabase(prisma: PrismaClient): Promise<void> {
     const tables = [
         'AuditLog', 'TaskLink', 'TaskComment', 'TaskWatcher', 'Task',
         'EvidenceReview', 'Evidence', 'FileRecord',
-        'ControlRequirementLink', 'ControlRiskLink', 'ControlAssetLink',
-        'Control', 'Risk', 'Asset',
+        'PracticeRequirementLink', 'PracticeRiskLink', 'PracticeAssetLink',
+        'Practice', 'Risk', 'Asset',
         'AuditPackItem', 'AuditPack', 'AuditCycle',
         'PolicyVersion', 'Policy',
         'TestRunEvidence', 'TestRun', 'TestPlan',

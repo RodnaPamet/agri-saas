@@ -3,7 +3,7 @@
  *
  * 15a — the dashboard no longer renders a notifications button (the top-bar
  *       bell is the single canonical affordance).
- * 15b — the Controls header no longer has a standalone "Frameworks" button.
+ * 15b — the Practices header no longer has a standalone "Frameworks" button.
  * 18  — the evidence +Evidence flow is unified onto the Upload-a-file modal;
  *       the "Upload file" + "Import ZIP" icon buttons + text modal were removed.
  */
@@ -19,8 +19,8 @@ describe('UI-15 — removed buttons', () => {
         expect(src).not.toMatch(/href=\{href\('\/notifications'\)\}/);
         expect(src).not.toMatch(/unreadNotifications > 0 \?/);
     });
-    it('controls header has no Frameworks button', () => {
-        const src = read('src/app/t/[tenantSlug]/(app)/controls/ControlsClient.tsx');
+    it('practices header has no Frameworks button', () => {
+        const src = read('src/app/t/[tenantSlug]/(app)/practices/PracticesClient.tsx');
         expect(src).not.toContain('frameworks-btn');
         expect(src).not.toMatch(/aria-label="Frameworks"/);
     });

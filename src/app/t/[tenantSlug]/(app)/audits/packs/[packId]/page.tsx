@@ -24,7 +24,7 @@ import { cardVariants } from '@/components/ui/card';
 import { cn } from '@/lib/cn';
 
 const ENTITY_ICON: Record<string, AppIconName> = {
-    CONTROL: 'controls', POLICY: 'policies', EVIDENCE: 'evidence', FILE: 'overview', ISSUE: 'warning',
+    PRACTICE: 'practices', POLICY: 'policies', EVIDENCE: 'evidence', FILE: 'overview', ISSUE: 'warning',
     READINESS_REPORT: 'dashboard', FRAMEWORK_COVERAGE: 'frameworks',
 };
 

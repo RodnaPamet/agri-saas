@@ -7,7 +7,7 @@
  * only path was a browser screenshot. This module wraps
  * `html-to-image` + xyflow's `getNodesBounds` / `getViewportForBounds`
  * helpers to produce a clean image of just the canvas plane (no
- * sidebars, no chrome strip, no controls overlay).
+ * sidebars, no chrome strip, no practices overlay).
  *
  * Why html-to-image:
  *   - xyflow's official PNG/SVG recipe uses html-to-image. The
@@ -26,7 +26,7 @@
  *     one node.
  *
  * What gets EXCLUDED from the image:
- *   - The `<Controls>` zoom strip (bottom-left) — has no place in
+ *   - The `<Practices>` zoom strip (bottom-left) — has no place in
  *     an audit artefact.
  *   - The minimap — already removed (#731), so no special-case.
  *   - Hover affordances, selection rings — naturally absent
@@ -67,7 +67,7 @@ export interface CanvasExportOptions {
 /**
  * Find the xyflow viewport child of a `data-process-canvas`
  * wrapper. xyflow renders nodes inside `.react-flow__viewport`;
- * we capture that subtree so the Controls + Background siblings
+ * we capture that subtree so the Practices + Background siblings
  * stay out of the image.
  */
 function resolveViewportEl(canvasEl: HTMLElement): HTMLElement | null {

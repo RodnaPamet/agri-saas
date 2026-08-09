@@ -16,7 +16,7 @@
  *   - `deploy-production` losing its `environment: production`
  *     (the human-approval half of the gate)
  *
- * A guardrail on a release-governance control: it is not a test of
+ * A guardrail on a release-governance practice: it is not a test of
  * the deploy itself (that needs a live cluster) but a lock on the
  * workflow's STRUCTURE, which is where the gate lives.
  */

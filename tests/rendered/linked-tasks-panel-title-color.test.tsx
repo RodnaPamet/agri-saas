@@ -3,7 +3,7 @@
  *
  * Regression (2026-05-30): the linked-task row title used hard-coded
  * `text-white`, which is invisible on the light theme's light surface
- * (control → Tasks tab). It must use a theme-aware semantic content
+ * (practice → Tasks tab). It must use a theme-aware semantic content
  * token instead. Rendered with `canWrite` unset so the create modal
  * (and its heavy deps) never mount — we only need the read-only list.
  */
@@ -22,7 +22,7 @@ jest.mock('next/navigation', () => ({
         refresh: jest.fn(),
         prefetch: jest.fn(),
     }),
-    usePathname: () => '/t/acme/controls/c1',
+    usePathname: () => '/t/acme/practices/c1',
     useSearchParams: () => new URLSearchParams(),
     useParams: () => ({ tenantSlug: 'acme' }),
 }));
@@ -46,7 +46,7 @@ describe('LinkedTasksPanel — task title color', () => {
         render(
             <LinkedTasksPanel
                 apiBase="/api/t/acme"
-                entityType="CONTROL"
+                entityType="PRACTICE"
                 entityId="c1"
                 tenantHref={(p) => p}
             />,
@@ -63,7 +63,7 @@ describe('LinkedTasksPanel — task title color', () => {
         render(
             <LinkedTasksPanel
                 apiBase="/api/t/acme/"
-                entityType="CONTROL"
+                entityType="PRACTICE"
                 entityId="c1"
                 tenantHref={(p) => p}
             />,
@@ -75,6 +75,6 @@ describe('LinkedTasksPanel — task title color', () => {
         // No `//tasks` double slash (which Next 308-redirects to an
         // absolute https URL and breaks over HTTP).
         expect(url).not.toContain('//tasks');
-        expect(url).toContain('/api/t/acme/tasks?linkedEntityType=CONTROL');
+        expect(url).toContain('/api/t/acme/tasks?linkedEntityType=PRACTICE');
     });
 });

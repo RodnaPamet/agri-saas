@@ -20,10 +20,10 @@
  *     75% opacity and `backdrop-blur-sm` is applied so the
  *     underlying surface peeks through softly.
  *
- *   • FORM-CONTROL PARITY: `<Input>` migrates onto the
+ *   • FORM-PRACTICE PARITY: `<Input>` migrates onto the
  *     `--ctrl-edge-*` tokens from PR-A — same border / hover /
  *     focus vocabulary as the controlEdge recipe. The date-picker
- *     trigger gets the same treatment so all three controls
+ *     trigger gets the same treatment so all three practices
  *     (button, input, date-picker trigger) share one focus
  *     vocabulary.
  *

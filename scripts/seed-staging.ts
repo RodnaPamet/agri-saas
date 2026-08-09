@@ -113,28 +113,28 @@ async function seedStaging() {
         console.log('✅ Demo audit cycle already exists');
     }
 
-    // ── Step 6: Link controls to ISO 27001 requirements ──
-    const controls = await stagingPrisma.control.findMany({ where: { tenantId: tenant.id }, take: 4 });
+    // ── Step 6: Link practices to ISO 27001 requirements ──
+    const practices = await stagingPrisma.practice.findMany({ where: { tenantId: tenant.id }, take: 4 });
     const iso27001 = await stagingPrisma.framework.findUnique({ where: { key: 'ISO27001' } });
-    if (iso27001 && controls.length > 0) {
+    if (iso27001 && practices.length > 0) {
         const requirements = await stagingPrisma.frameworkRequirement.findMany({
             where: { frameworkId: iso27001.id }, take: 4, orderBy: { sortOrder: 'asc' },
         });
-        for (let i = 0; i < Math.min(controls.length, requirements.length); i++) {
-            await stagingPrisma.controlRequirementLink.upsert({
-                where: { controlId_requirementId: { controlId: controls[i].id, requirementId: requirements[i].id } },
-                create: { controlId: controls[i].id, requirementId: requirements[i].id },
+        for (let i = 0; i < Math.min(practices.length, requirements.length); i++) {
+            await stagingPrisma.practiceRequirementLink.upsert({
+                where: { practiceId_requirementId: { practiceId: practices[i].id, requirementId: requirements[i].id } },
+                create: { practiceId: practices[i].id, requirementId: requirements[i].id },
                 update: {},
             });
         }
-        console.log(`✅ ${Math.min(controls.length, requirements.length)} control→requirement links seeded`);
+        console.log(`✅ ${Math.min(practices.length, requirements.length)} practice→requirement links seeded`);
     }
 
     // ── Summary ──
     const counts = {
         tenants: await stagingPrisma.tenant.count(),
         users: await stagingPrisma.user.count(),
-        controls: await stagingPrisma.control.count({ where: { tenantId: tenant.id } }),
+        practices: await stagingPrisma.practice.count({ where: { tenantId: tenant.id } }),
         risks: await stagingPrisma.risk.count({ where: { tenantId: tenant.id } }),
         tasks: await stagingPrisma.task.count({ where: { tenantId: tenant.id } }),
         evidence: await stagingPrisma.evidence.count({ where: { tenantId: tenant.id } }),
@@ -147,7 +147,7 @@ async function seedStaging() {
     console.log('╠══════════════════════════════════════════╣');
     console.log(`║  Tenants:      ${String(counts.tenants).padStart(4)}                     ║`);
     console.log(`║  Users:        ${String(counts.users).padStart(4)}                     ║`);
-    console.log(`║  Controls:     ${String(counts.controls).padStart(4)}                     ║`);
+    console.log(`║  Practices:     ${String(counts.practices).padStart(4)}                     ║`);
     console.log(`║  Risks:        ${String(counts.risks).padStart(4)}                     ║`);
     console.log(`║  Tasks:        ${String(counts.tasks).padStart(4)}                     ║`);
     console.log(`║  Evidence:     ${String(counts.evidence).padStart(4)}                     ║`);

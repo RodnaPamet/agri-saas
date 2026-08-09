@@ -8,7 +8,7 @@
  * empty/operator state when the backend has no data, which is valid.
  *
  * Horizontal-drift for `/trends` is also covered by the structural ratchet in
- * `horizontal-drift.spec.ts`; this spec adds the control-interaction check.
+ * `horizontal-drift.spec.ts`; this spec adds the practice-interaction check.
  */
 import { test, expect, type Page } from '@playwright/test';
 import { safeGoto, loginAndGetTenant } from '../e2e-utils';

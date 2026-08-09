@@ -224,7 +224,7 @@ describe('Structural Guard: Tenant Isolation Conventions', () => {
         // Legacy routes are allowed as documented thin wrappers
         // that delegate to getLegacyCtx → usecases (kept for backward compat)
         const ALLOWED_LEGACY_ROUTES = new Set([
-            'assets', 'audit-log', 'audits', 'clauses', 'controls',
+            'assets', 'audit-log', 'audits', 'clauses', 'practices',
             'dashboard', 'evidence', 'files', 'findings', 'mapping',
             'notifications', 'policies', 'reports', 'risks', 'sso', 'tasks',
         ]);

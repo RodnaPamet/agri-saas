@@ -2,7 +2,7 @@ import type { MiniAreaChartVariant } from './mini-area-chart';
 
 /**
  * KPI accent palette — the single controlled home for the per-card colour
- * scheme used on KPI filter cards (Asset list today; Control / Risk / Task
+ * scheme used on KPI filter cards (Asset list today; Practice / Risk / Task
  * / Vendor / Test / Policy lists next).
  *
  * Mirrors the dashboard `<KpiCard>` look: each accent is a distinct

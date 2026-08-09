@@ -20,7 +20,7 @@
  *
  * Naming convention (deterministic, domain-prefixed, PascalCase):
  *
- *   <Domain><Variant>             — e.g. ControlListItem, RiskDetail,
+ *   <Domain><Variant>             — e.g. PracticeListItem, RiskDetail,
  *                                   EvidenceListItem
  *   <Domain>CreateRequest         — request body for POST
  *   <Domain>UpdateRequest         — request body for PATCH/PUT

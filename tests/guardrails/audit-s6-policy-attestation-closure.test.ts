@@ -100,7 +100,7 @@ describe("Audit S6 — policy attestation tracking (closure lock)", () => {
 
         it("attestPolicy is gated to PUBLISHED policy versions only", () => {
             // ISO 27001 §7.3 — a DRAFT attestation doesn't satisfy
-            // the control. The usecase rejects non-published
+            // the practice. The usecase rejects non-published
             // versions. The header comment explicitly calls this out;
             // the test pins the comment AND a `PUBLISHED` predicate
             // somewhere in the function body.

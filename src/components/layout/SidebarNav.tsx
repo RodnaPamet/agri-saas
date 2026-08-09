@@ -111,7 +111,7 @@ export function useNavSections(): NavSectionDef[] {
     // R13-PR7 — tenant sidebar restructure.
     //
     //   Board (standalone, no eyebrow)   home/dashboard
-    //   Workspace                        core entities: Asset / Risk / Control
+    //   Workspace                        core entities: Asset / Risk / Practice
     //   Comply                           daily-cadence work: Plan / Schedule / Review / Docs
     //   Manage                           governance + reporting
     //
@@ -131,7 +131,7 @@ export function useNavSections(): NavSectionDef[] {
         {
             // R13-PR11 — renamed from "Workspace" to "Govern" to
             // better describe the three core entities (assets,
-            // risks, controls) as the surfaces compliance teams
+            // risks, practices) as the surfaces compliance teams
             // govern day-to-day, distinct from the daily-cadence
             // work that sits under "Comply".
             id: 'govern',

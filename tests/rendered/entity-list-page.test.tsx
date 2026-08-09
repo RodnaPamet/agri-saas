@@ -24,7 +24,7 @@ jest.mock('next/navigation', () => ({
         refresh: jest.fn(),
         prefetch: jest.fn(),
     }),
-    usePathname: () => '/t/acme/controls',
+    usePathname: () => '/t/acme/practices',
     useSearchParams: () => new URLSearchParams(),
     useParams: () => ({ tenantSlug: 'acme' }),
 }));
@@ -97,11 +97,11 @@ describe('EntityListPage — header', () => {
             <FilterShell>
                 <EntityListPage<SampleRow>
                     header={{
-                        title: 'Controls',
-                        count: '2 controls in register',
+                        title: 'Practices',
+                        count: '2 practices in register',
                         actions: (
                             <button type="button" data-testid="header-create">
-                                + Control
+                                + Practice
                             </button>
                         ),
                     }}
@@ -117,11 +117,11 @@ describe('EntityListPage — header', () => {
         // v2-PR-5 — EntityListPage now delegates to <PageHeader>;
         // assert via the canonical page-header-* test ids.
         expect(screen.getByTestId('page-header-title').textContent).toBe(
-            'Controls',
+            'Practices',
         );
         expect(
             screen.getByTestId('page-header-description').textContent,
-        ).toBe('2 controls in register');
+        ).toBe('2 practices in register');
         expect(screen.getByTestId('header-create')).toBeInTheDocument();
         expect(
             screen.getByTestId('page-header-actions'),
@@ -151,7 +151,7 @@ describe('EntityListPage — filters', () => {
         render(
             <FilterShell>
                 <EntityListPage<SampleRow>
-                    header={{ title: 'Controls' }}
+                    header={{ title: 'Practices' }}
                     filters={{
                         defs: sampleFilterDefs,
                         searchId: 'sample-search',
@@ -197,7 +197,7 @@ describe('EntityListPage — table', () => {
         render(
             <FilterShell>
                 <EntityListPage<SampleRow>
-                    header={{ title: 'Controls' }}
+                    header={{ title: 'Practices' }}
                     table={{
                         data: sampleRows,
                         columns: sampleColumns,
@@ -217,7 +217,7 @@ describe('EntityListPage — table', () => {
         render(
             <FilterShell>
                 <EntityListPage<SampleRow>
-                    header={{ title: 'Controls' }}
+                    header={{ title: 'Practices' }}
                     table={{
                         data: sampleRows,
                         columns: sampleColumns,
@@ -238,7 +238,7 @@ describe('EntityListPage — table', () => {
         render(
             <FilterShell>
                 <EntityListPage<SampleRow>
-                    header={{ title: 'Controls' }}
+                    header={{ title: 'Practices' }}
                     table={{
                         data: [],
                         columns: sampleColumns,
@@ -257,7 +257,7 @@ describe('EntityListPage — children passthrough', () => {
         render(
             <FilterShell>
                 <EntityListPage<SampleRow>
-                    header={{ title: 'Controls' }}
+                    header={{ title: 'Practices' }}
                     table={{
                         data: sampleRows,
                         columns: sampleColumns,

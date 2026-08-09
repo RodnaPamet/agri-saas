@@ -1,7 +1,7 @@
 /**
  * Structural ratchet: `YieldClient` adopts `<EntityListPage>`.
  *
- * Mirrors `controls-client-shell-adoption.test.ts`. Locks the invariant
+ * Mirrors `practices-client-shell-adoption.test.ts`. Locks the invariant
  * that the grain Yield list page sits on the shared shell rather than
  * hand-rolling inline composition. Asserts the season/field facets thread
  * through, the create/edit modal mounts as a child, and the destructive

@@ -468,11 +468,11 @@ async function markOperationParcelImpl(
             });
 
             // The spray record is itself the certification evidence for the
-            // plant-protection / input-record control points. Attach it to
-            // every scheme control the tenant has mapped — in the SAME
+            // plant-protection / input-record practice points. Attach it to
+            // every scheme practice the tenant has mapped — in the SAME
             // transaction as the journal write, so they commit atomically.
             // No-op when the tenant hasn't installed a scheme (no mapped
-            // controls) or when JOURNAL is off (no journalEntryId).
+            // practices) or when JOURNAL is off (no journalEntryId).
             if (application?.journalEntryId) {
                 await attachAutoEvidenceFromLogEntry(db, ctx, application.journalEntryId);
 

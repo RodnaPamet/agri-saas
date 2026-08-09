@@ -7,7 +7,7 @@
  *   - When `selectionEnabled` (the default): single click owns
  *     SELECTION (checkbox + shift-click) and `onRowClick` fires on
  *     DOUBLE click — the unambiguous "open detail" gesture.
- *   - When selection is OFF (e.g. the control Tasks tab, which opens
+ *   - When selection is OFF (e.g. the practice Tasks tab, which opens
  *     a task in the right-side Sheet): there's no selection to
  *     compete with, so `onRowClick` fires on SINGLE click.
  *

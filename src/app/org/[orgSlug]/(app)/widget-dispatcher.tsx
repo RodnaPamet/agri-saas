@@ -87,11 +87,11 @@ function resolveKpiContent(
                 chartType: 'kpi',
                 config: {
                     label: widget.title ?? 'Coverage',
-                    value: data.summary.controls.coveragePercent,
+                    value: data.summary.practices.coveragePercent,
                     format,
                     gradient,
                     icon: KPI_ICONS.coverage,
-                    subtitle: `${data.summary.controls.implemented.toLocaleString()} of ${data.summary.controls.applicable.toLocaleString()} controls implemented`,
+                    subtitle: `${data.summary.practices.implemented.toLocaleString()} of ${data.summary.practices.applicable.toLocaleString()} practices implemented`,
                 },
             };
         case 'overdue-evidence':
@@ -172,8 +172,8 @@ function resolveTrendContent(
     const points = data.trends.dataPoints.map((p) => {
         let value = 0;
         switch (widget.chartType) {
-            case 'controls-coverage':
-                value = p.controlCoveragePercent;
+            case 'practices-coverage':
+                value = p.practiceCoveragePercent;
                 break;
             case 'evidence-overdue':
                 value = p.evidenceOverdue;
@@ -183,7 +183,7 @@ function resolveTrendContent(
     });
 
     const colorMap: Record<string, string> = {
-        'controls-coverage': 'text-content-success',
+        'practices-coverage': 'text-content-success',
         'evidence-overdue': 'text-content-warning',
     };
 
@@ -282,7 +282,7 @@ export function DispatchedWidget({
         }
         case 'DRILLDOWN_CTAS': {
             const cfg = widget.config as {
-                entries?: ReadonlyArray<'controls' | 'evidence'>;
+                entries?: ReadonlyArray<'practices' | 'evidence'>;
             };
             title = widget.title ?? 'Drill-down';
             body = (

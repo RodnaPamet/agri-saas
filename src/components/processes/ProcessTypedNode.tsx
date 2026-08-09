@@ -9,7 +9,7 @@
  * is driven by `data.size`.
  *
  * R27-PR-B — the shape vocabulary:
- *   • rect    — process step, control, risk, external. The
+ *   • rect    — process step, practice, risk, external. The
  *               workhorse: a rounded card.
  *   • diamond — decision. A REAL diamond (R25 shipped a fake one —
  *               a small rounded rect). Rendered as a 45°-rotated

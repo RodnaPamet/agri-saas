@@ -16,7 +16,7 @@
  */
 
 const tenantFindManyMock = jest.fn();
-const controlFindManyMock = jest.fn();
+const practiceFindManyMock = jest.fn();
 const riskFindManyMock = jest.fn();
 const evidenceFindManyMock = jest.fn();
 const tenantMembershipFindManyMock = jest.fn();
@@ -45,7 +45,7 @@ jest.mock('@/lib/db-context', () => {
         withTenantDb: jest.fn(async (tenantId: string, callback: any) => {
             withTenantDbCalls.push(tenantId);
             const fakeDb = {
-                control: { findMany: controlFindManyMock },
+                practice: { findMany: practiceFindManyMock },
                 risk: { findMany: riskFindManyMock },
                 evidence: { findMany: evidenceFindManyMock },
             };
@@ -55,7 +55,7 @@ jest.mock('@/lib/db-context', () => {
 });
 
 import {
-    getNonPerformingControls,
+    getNonPerformingPractices,
     getOverdueEvidenceAcrossOrg,
 } from '@/app-layer/usecases/portfolio';
 import type { OrgContext } from '@/app-layer/types';
@@ -85,7 +85,7 @@ const tenantC = { id: 't-c', slug: 'gamma', name: 'Gamma Co' };
 
 beforeEach(() => {
     tenantFindManyMock.mockReset();
-    controlFindManyMock.mockReset();
+    practiceFindManyMock.mockReset();
     riskFindManyMock.mockReset();
     evidenceFindManyMock.mockReset();
     tenantMembershipFindManyMock.mockReset();
@@ -100,37 +100,37 @@ beforeEach(() => {
     });
 });
 
-// ── getNonPerformingControls ──────────────────────────────────────────
+// ── getNonPerformingPractices ──────────────────────────────────────────
 
-describe('getNonPerformingControls', () => {
+describe('getNonPerformingPractices', () => {
     it('returns empty for an org with no tenants (no withTenantDb calls)', async () => {
         tenantFindManyMock.mockResolvedValue([]);
 
-        const rows = await getNonPerformingControls(ctxFor());
+        const rows = await getNonPerformingPractices(ctxFor());
 
         expect(rows).toEqual([]);
         expect(withTenantDbCalls).toHaveLength(0);
-        expect(controlFindManyMock).not.toHaveBeenCalled();
+        expect(practiceFindManyMock).not.toHaveBeenCalled();
     });
 
     it('iterates every org tenant inside withTenantDb', async () => {
         tenantFindManyMock.mockResolvedValue([tenantA, tenantB, tenantC]);
-        controlFindManyMock.mockResolvedValue([]);
+        practiceFindManyMock.mockResolvedValue([]);
 
-        await getNonPerformingControls(ctxFor());
+        await getNonPerformingPractices(ctxFor());
 
         expect(withTenantDbCalls).toEqual(['t-a', 't-b', 't-c']);
-        expect(controlFindManyMock).toHaveBeenCalledTimes(3);
+        expect(practiceFindManyMock).toHaveBeenCalledTimes(3);
     });
 
-    it('filters non-applicable + soft-deleted controls at the WHERE clause', async () => {
+    it('filters non-applicable + soft-deleted practices at the WHERE clause', async () => {
         tenantFindManyMock.mockResolvedValue([tenantA]);
-        controlFindManyMock.mockResolvedValue([]);
+        practiceFindManyMock.mockResolvedValue([]);
 
-        await getNonPerformingControls(ctxFor());
+        await getNonPerformingPractices(ctxFor());
 
-        expect(controlFindManyMock).toHaveBeenCalledTimes(1);
-        const where = controlFindManyMock.mock.calls[0][0].where;
+        expect(practiceFindManyMock).toHaveBeenCalledTimes(1);
+        const where = practiceFindManyMock.mock.calls[0][0].where;
         expect(where.tenantId).toBe('t-a');
         expect(where.applicability).toBe('APPLICABLE');
         expect(where.deletedAt).toBeNull();
@@ -139,7 +139,7 @@ describe('getNonPerformingControls', () => {
 
     it('enriches every row with tenant attribution + drill-down URL', async () => {
         tenantFindManyMock.mockResolvedValue([tenantA, tenantB]);
-        controlFindManyMock
+        practiceFindManyMock
             .mockResolvedValueOnce([
                 {
                     id: 'ctrl-a1',
@@ -159,34 +159,34 @@ describe('getNonPerformingControls', () => {
                 },
             ]);
 
-        const rows = await getNonPerformingControls(ctxFor());
+        const rows = await getNonPerformingPractices(ctxFor());
 
         expect(rows).toHaveLength(2);
         const a = rows.find((r) => r.tenantId === 't-a')!;
         expect(a.tenantSlug).toBe('alpha');
         expect(a.tenantName).toBe('Alpha Co');
-        expect(a.drillDownUrl).toBe('/t/alpha/controls/ctrl-a1');
+        expect(a.drillDownUrl).toBe('/t/alpha/practices/ctrl-a1');
         expect(a.code).toBe('AC-1');
         expect(a.status).toBe('NOT_STARTED');
         expect(a.updatedAt).toBe('2026-04-25T10:00:00.000Z');
 
         const b = rows.find((r) => r.tenantId === 't-b')!;
-        expect(b.drillDownUrl).toBe('/t/beta/controls/ctrl-b1');
+        expect(b.drillDownUrl).toBe('/t/beta/practices/ctrl-b1');
     });
 
     it('sorts by status priority (NEEDS_REVIEW > NOT_STARTED > IN_PROGRESS), then most-recent first', async () => {
         tenantFindManyMock.mockResolvedValue([tenantA]);
-        controlFindManyMock.mockResolvedValue([
+        practiceFindManyMock.mockResolvedValue([
             { id: 'c-1', name: 'C1', code: null, status: 'IN_PROGRESS',  updatedAt: new Date('2026-04-25T10:00:00Z') },
             { id: 'c-2', name: 'C2', code: null, status: 'NEEDS_REVIEW', updatedAt: new Date('2026-04-25T08:00:00Z') },
             { id: 'c-3', name: 'C3', code: null, status: 'NOT_STARTED',  updatedAt: new Date('2026-04-25T12:00:00Z') },
             { id: 'c-4', name: 'C4', code: null, status: 'NEEDS_REVIEW', updatedAt: new Date('2026-04-25T11:00:00Z') },
         ]);
 
-        const rows = await getNonPerformingControls(ctxFor());
+        const rows = await getNonPerformingPractices(ctxFor());
 
         // NEEDS_REVIEW first (newer of the two NEEDS_REVIEW first), then NOT_STARTED, then IN_PROGRESS
-        expect(rows.map((r) => r.controlId)).toEqual(['c-4', 'c-2', 'c-3', 'c-1']);
+        expect(rows.map((r) => r.practiceId)).toEqual(['c-4', 'c-2', 'c-3', 'c-1']);
     });
 
     it('caps the merged result list at 50 even when per-tenant + tenant-count exceeds it', async () => {
@@ -199,7 +199,7 @@ describe('getNonPerformingControls', () => {
         tenantFindManyMock.mockResolvedValue(tenants);
         // Each tenant returns 20 rows.
         for (let i = 0; i < tenants.length; i++) {
-            controlFindManyMock.mockResolvedValueOnce(
+            practiceFindManyMock.mockResolvedValueOnce(
                 Array.from({ length: 20 }, (_, j) => ({
                     id: `c-${i}-${j}`,
                     name: `C${i}-${j}`,
@@ -210,7 +210,7 @@ describe('getNonPerformingControls', () => {
             );
         }
 
-        const rows = await getNonPerformingControls(ctxFor());
+        const rows = await getNonPerformingPractices(ctxFor());
         expect(rows).toHaveLength(50);
     });
 });

@@ -23,7 +23,7 @@ interface ModelDelegate {
 }
 
 type SoftDeletableModel =
-    | 'Asset' | 'Risk' | 'Control' | 'Evidence' | 'Policy'
+    | 'Asset' | 'Risk' | 'Practice' | 'Evidence' | 'Policy'
     | 'Vendor' | 'FileRecord' | 'Task' | 'Finding'
     | 'Audit' | 'AuditCycle' | 'AuditPack';
 

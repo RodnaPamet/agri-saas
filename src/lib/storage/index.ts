@@ -120,7 +120,7 @@ export function getProviderByName(name: StorageProviderType): StorageProvider {
 // ─── Path Generation ───
 
 /**
- * Sanitize a filename: strip directory separators, control chars, limit length.
+ * Sanitize a filename: strip directory separators, practice chars, limit length.
  */
 export function sanitizeFileName(name: string): string {
     // path.basename on Linux doesn't treat '\' as separator,

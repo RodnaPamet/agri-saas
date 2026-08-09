@@ -3,7 +3,7 @@
 /**
  * Epic P2-PR-B — `useTenantAssets(tenantSlug)`.
  *
- * Sibling of `useTenantControls` (P2-PR-A) and `useTenantRisks`
+ * Sibling of `useTenantPractices` (P2-PR-A) and `useTenantRisks`
  * (P2-PR-B) for the inspector's asset-node picker. Assets carry a
  * `key` (short code) + `name` so the label format is "<key> · <name>"
  * when key is present, otherwise bare name.
@@ -15,7 +15,7 @@ export interface TenantAssetOption {
     key: string | null;
     name: string;
     /**
-     * PR-D polish — live status surface (parity with Controls +
+     * PR-D polish — live status surface (parity with Practices +
      * Risks). The API ships `Asset.status` on each row; we carry
      * it through so the inspector can render a tone-coloured chip.
      */
@@ -31,7 +31,7 @@ interface TenantAssetsState {
 interface UseTenantAssetsOptions {
     /**
      * PR-D polish — periodic revalidation cadence in milliseconds.
-     * See `use-tenant-controls` for the full contract.
+     * See `use-tenant-practices` for the full contract.
      */
     pollMs?: number;
 }
@@ -147,7 +147,7 @@ export function formatAssetLabel(opt: TenantAssetOption): string {
 
 /**
  * PR-D polish — locate one asset by id (parity with the
- * controls + risks `find*` helpers).
+ * practices + risks `find*` helpers).
  */
 export function findTenantAsset(
     state: TenantAssetsState,

@@ -10,8 +10,8 @@ import { z } from 'zod';
 import { CreateFindingSchema, UpdateFindingSchema } from '@/lib/schemas';
 
 /**
- * Validate that every referenced entity (assignee, control, compensating
- * control) belongs to the caller's tenant. Throws `badRequest` on any
+ * Validate that every referenced entity (assignee, practice, compensating
+ * practice) belongs to the caller's tenant. Throws `badRequest` on any
  * miss — RLS already prevents cross-tenant WRITES, but this turns a
  * silent no-op into a clear 400 and stops a finding pointing at a
  * foreign id.
@@ -21,11 +21,11 @@ async function validateFindingRefs(
     ctx: RequestContext,
     refs: {
         assigneeUserId?: string | null;
-        controlId?: string | null;
-        compensatingControlId?: string | null;
+        practiceId?: string | null;
+        compensatingPracticeId?: string | null;
     },
 ): Promise<void> {
-    const { assigneeUserId, controlId, compensatingControlId } = refs;
+    const { assigneeUserId, practiceId, compensatingPracticeId } = refs;
 
     if (assigneeUserId) {
         const member = await db.tenantMembership.findFirst({
@@ -35,23 +35,23 @@ async function validateFindingRefs(
         if (!member) throw badRequest('INVALID_ASSIGNEE', 'Assignee is not an active member of this tenant');
     }
 
-    // Validate both control refs in a single query (no N+1).
-    const controlIds = [controlId, compensatingControlId].filter(
+    // Validate both practice refs in a single query (no N+1).
+    const practiceIds = [practiceId, compensatingPracticeId].filter(
         (x): x is string => Boolean(x),
     );
-    if (controlIds.length > 0) {
-        const found = await db.control.findMany({
-            where: { id: { in: [...new Set(controlIds)] }, tenantId: ctx.tenantId },
+    if (practiceIds.length > 0) {
+        const found = await db.practice.findMany({
+            where: { id: { in: [...new Set(practiceIds)] }, tenantId: ctx.tenantId },
             select: { id: true },
         });
         const foundIds = new Set(found.map((c) => c.id));
-        if (controlId && !foundIds.has(controlId)) {
-            throw badRequest('INVALID_CONTROL', 'Linked control not found or belongs to a different tenant');
+        if (practiceId && !foundIds.has(practiceId)) {
+            throw badRequest('INVALID_CONTROL', 'Linked practice not found or belongs to a different tenant');
         }
-        if (compensatingControlId && !foundIds.has(compensatingControlId)) {
+        if (compensatingPracticeId && !foundIds.has(compensatingPracticeId)) {
             throw badRequest(
                 'INVALID_COMPENSATING_CONTROL',
-                'Compensating control not found or belongs to a different tenant',
+                'Compensating practice not found or belongs to a different tenant',
             );
         }
     }
@@ -93,8 +93,8 @@ export async function createFinding(ctx: RequestContext, data: z.infer<typeof Cr
     return runInTenantContext(ctx, async (db) => {
         await validateFindingRefs(db, ctx, {
             assigneeUserId: data.assigneeUserId,
-            controlId: data.controlId,
-            compensatingControlId: data.compensatingControlId,
+            practiceId: data.practiceId,
+            compensatingPracticeId: data.compensatingPracticeId,
         });
 
         const finding = await FindingRepository.create(db, ctx, {
@@ -114,8 +114,8 @@ export async function createFinding(ctx: RequestContext, data: z.infer<typeof Cr
             analysis: data.analysis ? sanitizePlainText(data.analysis) : data.analysis,
             owner: data.owner ? sanitizePlainText(data.owner) : data.owner,
             assigneeUserId: data.assigneeUserId || null,
-            controlId: data.controlId || null,
-            compensatingControlId: data.compensatingControlId || null,
+            practiceId: data.practiceId || null,
+            compensatingPracticeId: data.compensatingPracticeId || null,
             dueDate: data.dueDate ? new Date(data.dueDate) : null,
             status: 'OPEN',
         });
@@ -147,8 +147,8 @@ export async function updateFinding(ctx: RequestContext, id: string, data: z.inf
 
         await validateFindingRefs(db, ctx, {
             assigneeUserId: data.assigneeUserId,
-            controlId: data.controlId,
-            compensatingControlId: data.compensatingControlId,
+            practiceId: data.practiceId,
+            compensatingPracticeId: data.compensatingPracticeId,
         });
 
         const finding = await FindingRepository.update(db, ctx, id, {
@@ -165,9 +165,9 @@ export async function updateFinding(ctx: RequestContext, id: string, data: z.inf
             // Three-state for the relation FKs: undefined → don't touch,
             // null → clear, string → set.
             assigneeUserId: data.assigneeUserId === undefined ? undefined : data.assigneeUserId,
-            controlId: data.controlId === undefined ? undefined : data.controlId,
-            compensatingControlId:
-                data.compensatingControlId === undefined ? undefined : data.compensatingControlId,
+            practiceId: data.practiceId === undefined ? undefined : data.practiceId,
+            compensatingPracticeId:
+                data.compensatingPracticeId === undefined ? undefined : data.compensatingPracticeId,
             dueDate: data.dueDate ? new Date(data.dueDate) : undefined,
             status: data.status as FindingStatus | undefined,
             verificationNotes: sanitizeOptional(data.verificationNotes) ?? undefined,

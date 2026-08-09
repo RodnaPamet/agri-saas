@@ -10,7 +10,7 @@
  *   - PR-3   ErrorState on both route-level error.tsx boundaries
  *   - PR-4   Button press-feedback microinteraction
  *   - PR-5   Animation language lock (durations + easings)
- *   - PR-6   Controls detail tasks sub-table → DataTable
+ *   - PR-6   Practices detail tasks sub-table → DataTable
  *   - PR-7   Vendors detail documents sub-table → DataTable
  *   - PR-8   Tasks detail links sub-table → DataTable
  *   - PR-9   Viewport metadata + mobile-readiness ratchet
@@ -92,8 +92,8 @@ const OBSESSION_CHECKLIST: ObsessionItem[] = [
         ratchet: 'src/app/t/[tenantSlug]/(app)/farm-tasks/[taskId]/FarmTaskDetailClient.tsx',
     },
     {
-        name: 'controls detail tasks sub-table uses DataTable',
-        ratchet: 'src/app/t/[tenantSlug]/(app)/controls/[controlId]/page.tsx',
+        name: 'practices detail tasks sub-table uses DataTable',
+        ratchet: 'src/app/t/[tenantSlug]/(app)/practices/[practiceId]/page.tsx',
     },
     {
         name: 'vendor detail documents sub-table uses DataTable',

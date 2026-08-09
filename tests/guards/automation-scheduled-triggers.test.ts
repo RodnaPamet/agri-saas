@@ -32,7 +32,7 @@ describe('scheduled triggers', () => {
 
     it('the sweep only allowlists known date targets (no arbitrary entity)', () => {
         const job = read('src/app-layer/jobs/schedule-trigger-sweep.ts');
-        // ControlException / ControlTestPlan were dropped in the compliance
+        // PracticeException / PracticeTestPlan were dropped in the compliance
         // uproot; Evidence retention is the remaining date-relative target.
         // The point of this assertion is that the allowlist is CLOSED, so it
         // also checks the union type has not been widened back to a string.

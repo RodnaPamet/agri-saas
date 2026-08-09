@@ -8,7 +8,7 @@ import { jsonResponse } from '@/lib/api-response';
 
 // GET — attached-evidence payload `{ links, evidence }` (direct evidence
 // via Evidence.assetId), rendered by the shared <EvidenceSubTable>.
-// The inherited-from-controls evidence lives at the sibling /evidence route.
+// The inherited-from-practices evidence lives at the sibling /evidence route.
 export const GET = withApiErrorHandling(async (req: NextRequest, { params: paramsPromise }: { params: Promise<{ tenantSlug: string; id: string }> }) => {
     const params = await paramsPromise;
     const ctx = await getTenantCtx(params, req);

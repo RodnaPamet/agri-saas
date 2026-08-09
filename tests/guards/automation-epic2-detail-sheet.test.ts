@@ -29,7 +29,7 @@ describe('Automation Epic 2 — Rule detail sheet & toggle', () => {
         expect(src).toMatch(/<Sheet\b/);
         expect(src).toMatch(/useTenantMutation/);
         expect(src).toMatch(/optimisticUpdate/);
-        // toggle + priority quick controls
+        // toggle + priority quick practices
         expect(src).toMatch(/Switch/);
         expect(src).toMatch(/NumberStepper/);
     });

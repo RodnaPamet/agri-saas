@@ -147,7 +147,7 @@ const TEST_CONFIG: GitHubConnectionConfig = {
 
 const MAPPING_KEY: SyncMappingKey = {
     tenantId: 'tenant-1', provider: 'github',
-    localEntityType: 'control', localEntityId: 'ctrl-1',
+    localEntityType: 'practice', localEntityId: 'ctrl-1',
     remoteEntityType: 'branch_protection', remoteEntityId: 'main',
 };
 
@@ -355,7 +355,7 @@ describe('GitHub provider — sync orchestrator', () => {
         expect(result.direction).toBe('PULL');
 
         // Verify local entity was updated
-        const localData = await localStore.getData(mockCtx, 'control', 'ctrl-1');
+        const localData = await localStore.getData(mockCtx, 'practice', 'ctrl-1');
         expect(localData).toBeTruthy();
         expect(localData!.protectionEnabled).toBe(true);
         expect(localData!.requiredReviewCount).toBe(2);

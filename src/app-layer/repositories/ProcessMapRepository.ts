@@ -1,7 +1,7 @@
 /**
  * Roadmap-26 PR-A — ProcessMap repository.
  *
- * Persists the Process-Map graph (nodes + edges + edge-controls)
+ * Persists the Process-Map graph (nodes + edges + edge-practices)
  * with a full-graph replace semantic. The usecase layer above
  * calls `replaceGraph(...)` on every save; this repo deletes the
  * existing graph children inside a transaction and recreates them
@@ -71,10 +71,10 @@ export interface ProcessMapWithGraph {
         edgeKind: string;
         labelOverride: string | null;
         dataJson: unknown;
-        controls: Array<{
-            controlKey: string;
+        practices: Array<{
+            practiceKey: string;
             label: string;
-            controlId: string | null;
+            practiceId: string | null;
             dataJson: unknown;
         }>;
     }>;
@@ -144,12 +144,12 @@ export class ProcessMapRepository {
                         edgeKind: true,
                         labelOverride: true,
                         dataJson: true,
-                        controls: {
-                            orderBy: { controlKey: 'asc' },
+                        practices: {
+                            orderBy: { practiceKey: 'asc' },
                             select: {
-                                controlKey: true,
+                                practiceKey: true,
                                 label: true,
-                                controlId: true,
+                                practiceId: true,
                                 dataJson: true,
                             },
                         },
@@ -233,10 +233,10 @@ export class ProcessMapRepository {
      *      is per-map, not globally unique).
      *   3. Transactionally:
      *      a. Delete all existing nodes + edges for the map.
-     *         Cascading FK takes care of edge-controls.
+     *         Cascading FK takes care of edge-practices.
      *      b. Insert the new node set.
      *      c. Insert the new edge set.
-     *      d. Insert each edge's controls.
+     *      d. Insert each edge's practices.
      *      e. Bump version + apply metadata edits.
      */
     static async replaceGraph(
@@ -365,8 +365,8 @@ export class ProcessMapRepository {
             });
         }
 
-        // Edges and their controls. Need each edge's row id back
-        // to wire its controls, so we create one edge at a time
+        // Edges and their practices. Need each edge's row id back
+        // to wire its practices, so we create one edge at a time
         // (createMany doesn't return ids in Postgres). At the
         // bounded graph sizes the Processes page targets the
         // per-edge round trip is fine.
@@ -387,15 +387,15 @@ export class ProcessMapRepository {
                               Prisma.JsonNull,
                 },
             });
-            if (e.controls.length > 0) {
-                await db.processEdgeControl.createMany({
-                    data: e.controls.map((c) => ({
+            if (e.practices.length > 0) {
+                await db.processEdgePractice.createMany({
+                    data: e.practices.map((c) => ({
                         tenantId: ctx.tenantId,
                         processMapId: id,
                         edgeId: edge.id,
-                        controlKey: c.controlKey,
+                        practiceKey: c.practiceKey,
                         label: c.label,
-                        controlId: c.controlId ?? null,
+                        practiceId: c.practiceId ?? null,
                         dataJson:
                             c.dataJson === undefined
                                 ? Prisma.JsonNull
@@ -475,10 +475,10 @@ export class ProcessMapRepository {
                 edgeKind: e.edgeKind,
                 labelOverride: e.labelOverride ?? null,
                 dataJson: e.dataJson ?? null,
-                controls: e.controls.map((c) => ({
-                    controlKey: c.controlKey,
+                practices: e.practices.map((c) => ({
+                    practiceKey: c.practiceKey,
                     label: c.label,
-                    controlId: c.controlId ?? null,
+                    practiceId: c.practiceId ?? null,
                     dataJson: c.dataJson ?? null,
                 })),
             })),
@@ -593,18 +593,18 @@ export class ProcessMapRepository {
 
     /**
      * Epic P2-PR-C — reverse lookup: process maps referencing a
-     * given control. Returns one row per (map, edge) pairing —
-     * usually one edge per map, but the schema allows a control
+     * given practice. Returns one row per (map, edge) pairing —
+     * usually one edge per map, but the schema allows a practice
      * to gate multiple edges within the same map.
      *
-     * Uses the `@@index([tenantId, controlId])` on ProcessEdgeControl
+     * Uses the `@@index([tenantId, practiceId])` on ProcessEdgePractice
      * for the seek; bounded by the small process-map graph sizes
      * (dozens of edges per map) so no take cap is needed.
      */
-    static async listMapsByControl(
+    static async listMapsByPractice(
         db: PrismaTx,
         ctx: RequestContext,
-        controlId: string,
+        practiceId: string,
     ): Promise<
         Array<{
             mapId: string;
@@ -614,9 +614,9 @@ export class ProcessMapRepository {
             edgeLabel: string | null;
         }>
     > {
-        // P2-PR-C reverse lookup: bounded by edges referencing one control (typically <10); leading `@@index([tenantId, controlId])` gates the seek.
-        const rows = await db.processEdgeControl.findMany({ // guardrail-allow: unbounded
-            where: { tenantId: ctx.tenantId, controlId },
+        // P2-PR-C reverse lookup: bounded by edges referencing one practice (typically <10); leading `@@index([tenantId, practiceId])` gates the seek.
+        const rows = await db.processEdgePractice.findMany({ // guardrail-allow: unbounded
+            where: { tenantId: ctx.tenantId, practiceId },
             select: {
                 edge: {
                     select: {

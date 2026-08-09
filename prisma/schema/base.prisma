@@ -21,7 +21,7 @@
 //    base.prisma         (this file — generator + datasource)
 //    enums.prisma        (shared enums)
 //    auth.prisma         (User / Tenant / Membership / Session)
-//    compliance.prisma   (Control / Risk / Evidence / Framework)
+//    compliance.prisma   (Practice / Risk / Evidence / Framework)
 //    vendor.prisma       (Vendor / VendorAssessment)
 //    audit.prisma        (AuditCycle / AuditPack / AuditLog)
 //    automation.prisma   (AutomationRule / AutomationExecution / Integration)

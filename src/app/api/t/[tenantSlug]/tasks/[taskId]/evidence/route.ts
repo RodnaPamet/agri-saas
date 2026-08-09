@@ -7,7 +7,7 @@ import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
 
 // GET — task Evidence-tab payload `{ links, evidence }`, mirroring the
-// control evidence tab so the shared <EvidenceSubTable> renders it.
+// practice evidence tab so the shared <EvidenceSubTable> renders it.
 export const GET = withApiErrorHandling(async (req: NextRequest, { params: paramsPromise }: { params: Promise<{ tenantSlug: string; taskId: string }> }) => {
     const params = await paramsPromise;
     const ctx = await getTenantCtx(params, req);

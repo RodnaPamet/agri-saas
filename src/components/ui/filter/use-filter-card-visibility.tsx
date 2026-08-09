@@ -11,7 +11,7 @@
  *
  *   const cards = useMemo(() => filtersToCards(liveFilterDefs), [liveFilterDefs]);
  *   const { visibleCards, dropdown: filterGear } =
- *     useFilterCardVisibility({ storageKey: 'inflect:filter-vis:controls', cards });
+ *     useFilterCardVisibility({ storageKey: 'inflect:filter-vis:practices', cards });
  *   const visibleFilters = useMemo(
  *     () => selectVisibleFilters(visibleCards, liveFilterDefs), [...]);
  *   // <EntityListPage filters={{ defs: visibleFilters, toolbarActions: <>{filterGear}{columnsGear}</> }} />
@@ -45,7 +45,7 @@ import {
 import { EditFiltersButton } from './edit-filters-button';
 import type { Filter as FilterType } from './types';
 
-/** Discriminator for the cards a filter gear can control. */
+/** Discriminator for the cards a filter gear can practice. */
 export type CardKind = 'filter' | 'kpi' | 'preset' | 'scope';
 
 export interface CardDefinition {

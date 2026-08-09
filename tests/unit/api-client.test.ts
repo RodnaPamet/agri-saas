@@ -25,12 +25,12 @@ describe('apiGet', () => {
     it('returns parsed JSON on success', async () => {
         mockFetch.mockResolvedValueOnce({
             ok: true,
-            json: async () => ({ id: '1', name: 'Test Control' }),
+            json: async () => ({ id: '1', name: 'Test Practice' }),
         });
 
-        const result = await apiGet<{ id: string; name: string }>('http://localhost/api/controls/1');
-        expect(result).toEqual({ id: '1', name: 'Test Control' });
-        expect(mockFetch).toHaveBeenCalledWith('http://localhost/api/controls/1', { method: 'GET', signal: expect.any(AbortSignal) });
+        const result = await apiGet<{ id: string; name: string }>('http://localhost/api/practices/1');
+        expect(result).toEqual({ id: '1', name: 'Test Practice' });
+        expect(mockFetch).toHaveBeenCalledWith('http://localhost/api/practices/1', { method: 'GET', signal: expect.any(AbortSignal) });
     });
 
     it('throws ApiClientError on 404 with standard error body', async () => {
@@ -38,18 +38,18 @@ describe('apiGet', () => {
             ok: false,
             status: 404,
             json: async () => ({
-                error: { code: 'NOT_FOUND', message: 'Control not found', requestId: 'req-123' },
+                error: { code: 'NOT_FOUND', message: 'Practice not found', requestId: 'req-123' },
             }),
         });
 
         try {
-            await apiGet('http://localhost/api/controls/999');
+            await apiGet('http://localhost/api/practices/999');
             fail('Should have thrown');
         } catch (err) {
             expect(err).toBeInstanceOf(ApiClientError);
             const apiErr = err as ApiClientError;
             expect(apiErr.code).toBe('NOT_FOUND');
-            expect(apiErr.message).toBe('Control not found');
+            expect(apiErr.message).toBe('Practice not found');
             expect(apiErr.status).toBe(404);
             expect(apiErr.requestId).toBe('req-123');
         }
@@ -63,7 +63,7 @@ describe('apiGet', () => {
         });
 
         try {
-            await apiGet('http://localhost/api/controls/1');
+            await apiGet('http://localhost/api/practices/1');
             fail('Should have thrown');
         } catch (err) {
             expect(err).toBeInstanceOf(ApiClientError);
@@ -78,18 +78,18 @@ describe('apiPost', () => {
     it('sends JSON body and returns parsed response', async () => {
         mockFetch.mockResolvedValueOnce({
             ok: true,
-            json: async () => ({ id: '2', name: 'New Control' }),
+            json: async () => ({ id: '2', name: 'New Practice' }),
         });
 
         const result = await apiPost<{ id: string; name: string }>(
-            'http://localhost/api/controls',
-            { name: 'New Control' },
+            'http://localhost/api/practices',
+            { name: 'New Practice' },
         );
-        expect(result).toEqual({ id: '2', name: 'New Control' });
-        expect(mockFetch).toHaveBeenCalledWith('http://localhost/api/controls', {
+        expect(result).toEqual({ id: '2', name: 'New Practice' });
+        expect(mockFetch).toHaveBeenCalledWith('http://localhost/api/practices', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name: 'New Control' }),
+            body: JSON.stringify({ name: 'New Practice' }),
             signal: expect.any(AbortSignal),
         });
     });
@@ -108,7 +108,7 @@ describe('apiPost', () => {
         });
 
         try {
-            await apiPost('http://localhost/api/controls', {});
+            await apiPost('http://localhost/api/practices', {});
             fail('Should have thrown');
         } catch (err) {
             expect(err).toBeInstanceOf(ApiClientError);
@@ -130,11 +130,11 @@ describe('apiPatch', () => {
         });
 
         const result = await apiPatch<{ id: string; name: string }>(
-            'http://localhost/api/controls/1',
+            'http://localhost/api/practices/1',
             { name: 'Updated' },
         );
         expect(result).toEqual({ id: '1', name: 'Updated' });
-        expect(mockFetch).toHaveBeenCalledWith('http://localhost/api/controls/1', {
+        expect(mockFetch).toHaveBeenCalledWith('http://localhost/api/practices/1', {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ name: 'Updated' }),
@@ -147,8 +147,8 @@ describe('apiDelete', () => {
     it('sends DELETE request and returns void', async () => {
         mockFetch.mockResolvedValueOnce({ ok: true });
 
-        await expect(apiDelete('http://localhost/api/controls/1')).resolves.toBeUndefined();
-        expect(mockFetch).toHaveBeenCalledWith('http://localhost/api/controls/1', {
+        await expect(apiDelete('http://localhost/api/practices/1')).resolves.toBeUndefined();
+        expect(mockFetch).toHaveBeenCalledWith('http://localhost/api/practices/1', {
             method: 'DELETE',
             signal: expect.any(AbortSignal),
         });
@@ -164,7 +164,7 @@ describe('apiDelete', () => {
         });
 
         try {
-            await apiDelete('http://localhost/api/controls/1');
+            await apiDelete('http://localhost/api/practices/1');
             fail('Should have thrown');
         } catch (err) {
             expect(err).toBeInstanceOf(ApiClientError);

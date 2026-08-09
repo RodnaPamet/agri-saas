@@ -9,13 +9,13 @@
  *   - title — required, min 1.
  *   - description — optional free text.
  *   - type — one of TASK / IMPROVEMENT / AUDIT_FINDING /
- *     CONTROL_GAP / INCIDENT.
+ *     PRACTICE_GAP / INCIDENT.
  *   - severity — one of LOW / MEDIUM / HIGH / CRITICAL.
  *   - priority — one of P0 / P1 / P2 / P3.
  *   - dueAt — optional `YYYY-MM-DD`.
  *   - assigneeUserId — optional cuid.
  *   - reviewerUserId — optional cuid.
- *   - controlId — optional cuid.
+ *   - practiceId — optional cuid.
  */
 import { z } from 'zod';
 
@@ -35,7 +35,7 @@ export const NewTaskFormSchema = z.object({
         'TASK',
         'IMPROVEMENT',
         'AUDIT_FINDING',
-        'CONTROL_GAP',
+        'PRACTICE_GAP',
         'INCIDENT',
     ]),
     severity: z.enum(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']),
@@ -43,7 +43,7 @@ export const NewTaskFormSchema = z.object({
     dueAt: optionalYmd.default(''),
     assigneeUserId: optionalCuid,
     reviewerUserId: optionalCuid,
-    controlId: optionalCuid,
+    practiceId: optionalCuid,
 });
 
 export type NewTaskFormValues = z.input<typeof NewTaskFormSchema>;

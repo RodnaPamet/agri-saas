@@ -3,7 +3,7 @@
  *
  * Real-world failure: `_next/static/chunks/18at7xtdx0uoz.js`
  * loaded WITHOUT a nonce attribute in the rendered HTML of every
- * authenticated app page (dashboard, controls, risks, etc.). CSP
+ * authenticated app page (dashboard, practices, risks, etc.). CSP
  * `strict-dynamic` blocked it, breaking R16 chart code (donut
  * rendered as thin orange crescent only).
  *

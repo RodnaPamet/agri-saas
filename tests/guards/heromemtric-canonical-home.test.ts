@@ -30,7 +30,7 @@
  *     when the time comes is a one-line ratchet diff that documents
  *     the new home rather than silently widening the ban.
  *   • The 72px is a load-bearing typographic decision. Spreading
- *     it casually (e.g. a 72px control count on a detail page)
+ *     it casually (e.g. a 72px practice count on a detail page)
  *     dilutes the masthead signal.
  */
 import * as fs from "fs";

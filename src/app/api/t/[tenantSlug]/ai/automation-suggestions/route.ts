@@ -7,7 +7,7 @@ import { getAutomationSuggestions } from '@/app-layer/usecases/automation-sugges
 type Ctx = { params: Promise<{ tenantSlug: string }> };
 
 /**
- * VR-9 — ranked automation-rule suggestions for the Control-page right rail.
+ * VR-9 — ranked automation-rule suggestions for the Practice-page right rail.
  * Read-only + deterministic, so it's cheap to poll; the client can revalidate
  * on demand.
  */

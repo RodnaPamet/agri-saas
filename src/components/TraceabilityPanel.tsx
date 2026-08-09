@@ -16,14 +16,14 @@ import { DataTable, createColumns } from '@/components/ui/table';
 import { cn } from '@/lib/cn';
 
 // ── Linked-row shapes ───────────────────────────────────────────────
-// The traceability API returns link rows as `{ id, rationale, control|asset }`.
+// The traceability API returns link rows as `{ id, rationale, practice|asset }`.
 // Typed here so the DataTable column cells read `row.original.*` without
 // per-cell `any`. Assigning the `any` API arrays to these types needs no
 // cast (any is assignable to a typed target).
-interface LinkedControlRow {
+interface LinkedPracticeRow {
     id: string;
     rationale: string | null;
-    control: { id: string; code: string; name: string; status: string } | null;
+    practice: { id: string; code: string; name: string; status: string } | null;
 }
 interface LinkedAssetRow {
     id: string;
@@ -37,7 +37,7 @@ const tempRowClass = (id: string | undefined) =>
 
 interface TraceabilityPanelProps {
     apiBase: string;            // e.g. /api/t/acme-corp
-    entityType: 'control' | 'asset';
+    entityType: 'practice' | 'asset';
     entityId: string;
     canWrite: boolean;
     tenantHref: (path: string) => string;
@@ -50,7 +50,7 @@ const traceabilityKey = (tenantSlug: string, entityType: string, entityId: strin
 
 export default function TraceabilityPanel({ apiBase: apiBaseRaw, entityType, entityId, canWrite, tenantHref, tenantSlug: tenantSlugProp }: TraceabilityPanelProps) {
     // Callers pass `apiUrl('')` which yields `/api/t/<slug>/` with a
-    // trailing slash. Concatenating `${apiBase}/controls/…` then produces a
+    // trailing slash. Concatenating `${apiBase}/practices/…` then produces a
     // `//` path which Next.js middleware redirects (308) to the canonical
     // URL — the redirected request drops fetch credentials, and the
     // server-side log shows no traceability call. Strip the trailing
@@ -63,19 +63,19 @@ export default function TraceabilityPanel({ apiBase: apiBaseRaw, entityType, ent
     const triggerUndoToast = useToastWithUndo();
 
     // Add forms
-    const [showAddControl, setShowAddControl] = useState(false);
+    const [showAddPractice, setShowAddPractice] = useState(false);
     const [showAddAsset, setShowAddAsset] = useState(false);
     const [addId, setAddId] = useState('');
     const [addRationale, setAddRationale] = useState('');
 
     // Available items for dropdown
 
-    const [availableControls, setAvailableControls] = useState<any[]>([]);
+    const [availablePractices, setAvailablePractices] = useState<any[]>([]);
 
     const [availableAssets, setAvailableAssets] = useState<any[]>([]);
 
-    const traceUrl = entityType === 'control'
-        ? `${apiBase}/controls/${entityId}/traceability`
+    const traceUrl = entityType === 'practice'
+        ? `${apiBase}/practices/${entityId}/traceability`
         : `${apiBase}/assets/${entityId}/traceability`;
 
     // ─── Query: traceability data ───
@@ -94,17 +94,17 @@ export default function TraceabilityPanel({ apiBase: apiBaseRaw, entityType, ent
 
     // Fetch available items when forms open.
     //
-    // B1 — `/assets` and `/controls` both return the cap'd
+    // B1 — `/assets` and `/practices` both return the cap'd
     // `{ rows, truncated }` shape from `applyBackfillCap`. Pre-B1
     // the panel only knew about (a) bare array and (b) the
-    // entity-keyed shape `{ controls: [...] }` / etc. — neither
+    // entity-keyed shape `{ practices: [...] }` / etc. — neither
     // matched, so every linking dropdown silently rendered empty.
     // The `unwrap` helper accepts every shape the API has ever
     // returned for these endpoints; new shapes need an explicit
     // entry.
     //
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const unwrap = (d: any, entityKey: 'controls' | 'assets'): any[] => {
+    const unwrap = (d: any, entityKey: 'practices' | 'assets'): any[] => {
         if (Array.isArray(d)) return d;
         if (d && Array.isArray(d.rows)) return d.rows;
         if (d && Array.isArray(d[entityKey])) return d[entityKey];
@@ -112,24 +112,24 @@ export default function TraceabilityPanel({ apiBase: apiBaseRaw, entityType, ent
         return [];
     };
     useEffect(() => {
-        if (showAddControl) fetch(`${apiBase}/controls`).then(r => r.ok ? r.json() : []).then(d => setAvailableControls(unwrap(d, 'controls')));
-    }, [showAddControl, apiBase]);
+        if (showAddPractice) fetch(`${apiBase}/practices`).then(r => r.ok ? r.json() : []).then(d => setAvailablePractices(unwrap(d, 'practices')));
+    }, [showAddPractice, apiBase]);
     useEffect(() => {
         if (showAddAsset) fetch(`${apiBase}/assets`).then(r => r.ok ? r.json() : []).then(d => setAvailableAssets(unwrap(d, 'assets')));
     }, [showAddAsset, apiBase]);
 
     // ─── Mutation: link ───
     const linkMutation = useMutation({
-        mutationFn: async ({ type, linkedId, rationale }: { type: 'control' | 'asset'; linkedId: string; rationale?: string }) => {
+        mutationFn: async ({ type, linkedId, rationale }: { type: 'practice' | 'asset'; linkedId: string; rationale?: string }) => {
             let url = '';
 
             let body: any = {};
-            if (entityType === 'control' && type === 'asset') {
-                url = `${apiBase}/assets/${linkedId}/controls`;
-                body = { controlId: entityId, rationale: rationale || undefined };
-            } else if (entityType === 'asset' && type === 'control') {
-                url = `${apiBase}/assets/${entityId}/controls`;
-                body = { controlId: linkedId, rationale: rationale || undefined };
+            if (entityType === 'practice' && type === 'asset') {
+                url = `${apiBase}/assets/${linkedId}/practices`;
+                body = { practiceId: entityId, rationale: rationale || undefined };
+            } else if (entityType === 'asset' && type === 'practice') {
+                url = `${apiBase}/assets/${entityId}/practices`;
+                body = { practiceId: linkedId, rationale: rationale || undefined };
             }
             const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
             if (!res.ok) throw new Error('Link failed');
@@ -143,7 +143,7 @@ export default function TraceabilityPanel({ apiBase: apiBaseRaw, entityType, ent
             if (previous) {
 
                 const updated = { ...previous };
-                const section = type === 'control' ? 'controls' : 'assets';
+                const section = type === 'practice' ? 'practices' : 'assets';
                 const tempEntry = {
                     id: `temp:${crypto.randomUUID()}`,
                     rationale: rationale || null,
@@ -166,7 +166,7 @@ export default function TraceabilityPanel({ apiBase: apiBaseRaw, entityType, ent
             // links doesn't lose the second form when the first commits.
             setAddId('');
             setAddRationale('');
-            if (vars.type === 'control') setShowAddControl(false);
+            if (vars.type === 'practice') setShowAddPractice(false);
             else if (vars.type === 'asset') setShowAddAsset(false);
         },
         onSettled: (_data, _err, vars) => {
@@ -175,8 +175,8 @@ export default function TraceabilityPanel({ apiBase: apiBaseRaw, entityType, ent
             // Cross-invalidate the linked entity's traceability + list
             if (vars) {
                 queryClient.invalidateQueries({ queryKey: traceabilityKey(tenantSlug, vars.type, vars.linkedId) });
-                if (vars.type === 'control') {
-                    queryClient.invalidateQueries({ queryKey: queryKeys.controls.all(tenantSlug) });
+                if (vars.type === 'practice') {
+                    queryClient.invalidateQueries({ queryKey: queryKeys.practices.all(tenantSlug) });
                 }
             }
         },
@@ -190,23 +190,23 @@ export default function TraceabilityPanel({ apiBase: apiBaseRaw, entityType, ent
     // commit fails the snapshot also restores. Cross-entity invalidation
     // runs on commit success, mirroring the pre-Epic-67 mutation's
     // onSettled fan-out.
-    const unlinkUrl = (type: 'control' | 'asset', linkedId: string): string => {
-        if (entityType === 'control' && type === 'asset') return `${apiBase}/assets/${linkedId}/controls/${entityId}`;
-        if (entityType === 'asset' && type === 'control') return `${apiBase}/assets/${entityId}/controls/${linkedId}`;
+    const unlinkUrl = (type: 'practice' | 'asset', linkedId: string): string => {
+        if (entityType === 'practice' && type === 'asset') return `${apiBase}/assets/${linkedId}/practices/${entityId}`;
+        if (entityType === 'asset' && type === 'practice') return `${apiBase}/assets/${entityId}/practices/${linkedId}`;
         return '';
     };
 
-    const UNLINK_LABEL: Record<'control' | 'asset', string> = {
-        control: t('controlUnlinked'),
+    const UNLINK_LABEL: Record<'practice' | 'asset', string> = {
+        practice: t('practiceUnlinked'),
         asset: t('assetUnlinked'),
     };
 
-    const handleLink = (type: 'control' | 'asset') => {
+    const handleLink = (type: 'practice' | 'asset') => {
         if (!addId) return;
         linkMutation.mutate({ type, linkedId: addId, rationale: addRationale || undefined });
     };
 
-    const handleUnlink = (type: 'control' | 'asset', linkedId: string) => {
+    const handleUnlink = (type: 'practice' | 'asset', linkedId: string) => {
         const cacheKey = traceabilityKey(tenantSlug, entityType, entityId);
         // Snapshot BEFORE the optimistic write so undo restores exactly
         // what the user saw — not a stale snapshot from before some
@@ -216,7 +216,7 @@ export default function TraceabilityPanel({ apiBase: apiBaseRaw, entityType, ent
 
         if (previous) {
             const updated = { ...previous };
-            const section = type === 'control' ? 'controls' : 'assets';
+            const section = type === 'practice' ? 'practices' : 'assets';
 
             updated[section] = (updated[section] || []).filter((l: any) => {
                 const linked = l[type];
@@ -237,8 +237,8 @@ export default function TraceabilityPanel({ apiBase: apiBaseRaw, entityType, ent
                 // index pages stay correct after a commit.
                 queryClient.invalidateQueries({ queryKey: cacheKey });
                 queryClient.invalidateQueries({ queryKey: traceabilityKey(tenantSlug, type, linkedId) });
-                if (type === 'control') {
-                    queryClient.invalidateQueries({ queryKey: queryKeys.controls.all(tenantSlug) });
+                if (type === 'practice') {
+                    queryClient.invalidateQueries({ queryKey: queryKeys.practices.all(tenantSlug) });
                 }
             },
             undoAction: () => {
@@ -253,22 +253,22 @@ export default function TraceabilityPanel({ apiBase: apiBaseRaw, entityType, ent
     if (loading) return <div className="p-6 text-center text-content-subtle animate-pulse">{t('loading')}</div>;
     if (!data) return <div className="p-6 text-center text-content-subtle">{t('loadFailed')}</div>;
 
-    const controls: LinkedControlRow[] = data.controls || [];
+    const practices: LinkedPracticeRow[] = data.practices || [];
     const assets: LinkedAssetRow[] = data.assets || [];
 
     // Unlink affordance — identical Epic 67 undo flow as before, now
     // rendered as a DataTable actions column (card mode surfaces it in the
     // card footer). `stopPropagation` keeps a future row-click from firing.
     const unlinkCell = (
-        type: 'control' | 'asset',
+        type: 'practice' | 'asset',
         linkedId: string | undefined,
     ) => (
-        <Tooltip content={t(type === 'control' ? 'unlinkControl' : 'unlinkAsset')}>
+        <Tooltip content={t(type === 'practice' ? 'unlinkPractice' : 'unlinkAsset')}>
             <button
                 className="text-content-error text-xs hover:text-content-error"
                 onClick={(e) => { e.stopPropagation(); handleUnlink(type, linkedId ?? ''); }}
                 id={`unlink-${type}-${linkedId}`}
-                aria-label={t(type === 'control' ? 'unlinkControl' : 'unlinkAsset')}
+                aria-label={t(type === 'practice' ? 'unlinkPractice' : 'unlinkAsset')}
             >
                 ×
             </button>
@@ -276,13 +276,13 @@ export default function TraceabilityPanel({ apiBase: apiBaseRaw, entityType, ent
     );
 
     // ── Column defs (mobileFallback="card": each row → a tappable card) ──
-    const controlColumns = createColumns<LinkedControlRow>([
+    const practiceColumns = createColumns<LinkedPracticeRow>([
         {
             id: 'code',
             header: t('colCode'),
             cell: ({ row }) => (
                 <span className={cn('font-mono text-xs text-[var(--brand-muted)]', tempRowClass(row.original.id))}>
-                    {row.original.control?.code || '—'}
+                    {row.original.practice?.code || '—'}
                 </span>
             ),
             meta: { mobileCard: { slot: 'subtitle' } },
@@ -290,13 +290,13 @@ export default function TraceabilityPanel({ apiBase: apiBaseRaw, entityType, ent
         {
             id: 'name',
             header: t('colName'),
-            cell: ({ row }) => <span className="text-sm text-content-default">{row.original.control?.name || '—'}</span>,
+            cell: ({ row }) => <span className="text-sm text-content-default">{row.original.practice?.name || '—'}</span>,
             meta: { mobileCard: { slot: 'title' } },
         },
         {
             id: 'status',
             header: t('colStatus'),
-            cell: ({ row }) => <StatusBadge variant="info">{row.original.control?.status || '—'}</StatusBadge>,
+            cell: ({ row }) => <StatusBadge variant="info">{row.original.practice?.status || '—'}</StatusBadge>,
             meta: { mobileCard: { slot: 'status' } },
         },
         {
@@ -309,7 +309,7 @@ export default function TraceabilityPanel({ apiBase: apiBaseRaw, entityType, ent
             ? [{
                 id: 'actions',
                 header: t('colActions'),
-                cell: ({ row }: { row: { original: LinkedControlRow } }) => unlinkCell('control', row.original.control?.id),
+                cell: ({ row }: { row: { original: LinkedPracticeRow } }) => unlinkCell('practice', row.original.practice?.id),
                 meta: { mobileCard: { slot: 'actions' as const } },
             }]
             : []),
@@ -357,45 +357,45 @@ export default function TraceabilityPanel({ apiBase: apiBaseRaw, entityType, ent
     ]);
 
     // Determine which sections to show based on entity type
-    const showControls = entityType === 'asset';
-    const showAssets = entityType === 'control';
+    const showPractices = entityType === 'asset';
+    const showAssets = entityType === 'practice';
 
     return (
         <div className="space-y-section" id="traceability-panel">
-            {/* Controls section */}
-            {showControls && (
+            {/* Practices section */}
+            {showPractices && (
                 <div>
                     <div className="flex items-center justify-between mb-3">
-                        <Heading level={3} className="text-content-emphasis inline-flex items-center gap-tight"><AppIcon name="controls" size={16} /> {t('coveredByControls')} ({controls.length})</Heading>
+                        <Heading level={3} className="text-content-emphasis inline-flex items-center gap-tight"><AppIcon name="practices" size={16} /> {t('coveredByPractices')} ({practices.length})</Heading>
                         {canWrite && (
-                            <Button variant="primary" size="xs" onClick={() => { setShowAddControl(!showAddControl); setAddId(''); }} id="add-control-link-btn">{t('linkControl')}</Button>
+                            <Button variant="primary" size="xs" onClick={() => { setShowAddPractice(!showAddPractice); setAddId(''); }} id="add-practice-link-btn">{t('linkPractice')}</Button>
                         )}
                     </div>
-                    {showAddControl && canWrite && (
+                    {showAddPractice && canWrite && (
                         <div className={cn(cardVariants({ density: 'compact' }), 'mb-3 space-y-tight')}>
                             <Combobox
-                                id="control-select"
-                                selected={availableControls.map((c: any) => ({ value: c.id, label: c.code ? `${c.code} — ${c.name}` : c.name, meta: { status: c.status } })).find((o: { value: string }) => o.value === addId) ?? null}
+                                id="practice-select"
+                                selected={availablePractices.map((c: any) => ({ value: c.id, label: c.code ? `${c.code} — ${c.name}` : c.name, meta: { status: c.status } })).find((o: { value: string }) => o.value === addId) ?? null}
                                 setSelected={(opt) => setAddId(opt?.value ?? '')}
-                                options={availableControls.map((c: any) => ({ value: c.id, label: c.code ? `${c.code} — ${c.name}` : c.name, meta: { status: c.status } }))}
+                                options={availablePractices.map((c: any) => ({ value: c.id, label: c.code ? `${c.code} — ${c.name}` : c.name, meta: { status: c.status } }))}
                                 optionDescription={(o) => (o.meta?.status ? t('statusMeta', { status: o.meta.status }) : null)}
-                                placeholder={t('selectControl')}
+                                placeholder={t('selectPractice')}
                                 matchTriggerWidth
                             />
                             <input type="text" className="input w-full text-sm" placeholder={t('rationalePlaceholder')} value={addRationale} onChange={e => setAddRationale(e.target.value)} />
-                            <Button variant="primary" size="xs" disabled={!addId || linkMutation.isPending} onClick={() => handleLink('control')} id="confirm-control-link">
+                            <Button variant="primary" size="xs" disabled={!addId || linkMutation.isPending} onClick={() => handleLink('practice')} id="confirm-practice-link">
                                 {linkMutation.isPending ? t('linking') : t('link')}
                             </Button>
                         </div>
                     )}
-                    <DataTable<LinkedControlRow>
-                        data-testid="linked-controls-table"
-                        data={controls}
-                        columns={controlColumns}
+                    <DataTable<LinkedPracticeRow>
+                        data-testid="linked-practices-table"
+                        data={practices}
+                        columns={practiceColumns}
                         getRowId={(l) => l.id}
                         selectionEnabled={false}
                         mobileFallback="card"
-                        emptyState={<div className="p-6 text-center text-content-subtle text-sm" id="no-controls">{t('noControlsLinked')}</div>}
+                        emptyState={<div className="p-6 text-center text-content-subtle text-sm" id="no-practices">{t('noPracticesLinked')}</div>}
                     />
                 </div>
             )}
@@ -404,7 +404,7 @@ export default function TraceabilityPanel({ apiBase: apiBaseRaw, entityType, ent
             {showAssets && (
                 <div>
                     <div className="flex items-center justify-between mb-3">
-                        <Heading level={3} className="text-content-emphasis inline-flex items-center gap-tight"><AppIcon name="package" size={16} /> {entityType === 'control' ? t('coversAssets') : t('affectsAssets')} ({assets.length})</Heading>
+                        <Heading level={3} className="text-content-emphasis inline-flex items-center gap-tight"><AppIcon name="package" size={16} /> {entityType === 'practice' ? t('coversAssets') : t('affectsAssets')} ({assets.length})</Heading>
                         {canWrite && (
                             <Button variant="primary" size="xs" onClick={() => { setShowAddAsset(!showAddAsset); setAddId(''); }} id="add-asset-link-btn">{t('linkAsset')}</Button>
                         )}

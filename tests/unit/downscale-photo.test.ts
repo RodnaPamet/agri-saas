@@ -9,7 +9,7 @@
  */
 import { downscalePhoto } from '@/lib/image/downscale-photo';
 
-// A File whose reported byte size we control (jsdom Blob size = buffer length).
+// A File whose reported byte size we practice (jsdom Blob size = buffer length).
 function fileOfSize(bytes: number, name = 'photo.jpg', type = 'image/jpeg'): File {
     return new File([new Uint8Array(bytes)], name, { type });
 }

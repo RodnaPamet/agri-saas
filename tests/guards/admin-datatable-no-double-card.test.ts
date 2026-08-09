@@ -8,7 +8,7 @@
  * second card on top — the visible "old pattern" the user flagged
  * in R13: backdrop-blur glass-card outer + DataTable's own rounded
  * border inner. The two cards visually overlap and read as a
- * chunkier, older-looking shell than the Controls list.
+ * chunkier, older-looking shell than the Practices list.
  *
  * Rule: in admin + reports pages, every `<DataTable>` mounts
  * WITHOUT being wrapped in `cardVariants(`. Form-style cards that

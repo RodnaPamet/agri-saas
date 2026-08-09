@@ -5,7 +5,7 @@
  *
  *   1. `<EntityDetailLayout>`'s built-in tab bar — the
  *      border-b accent + emphasis-text pattern, used by every
- *      detail page (controls, risks, vendors, audits, etc.).
+ *      detail page (practices, risks, vendors, audits, etc.).
  *
  *   2. `<TabSelect>` from `@/components/ui/tab-select` — a
  *      pill / underline tab variant. NOT currently used by any

@@ -10,7 +10,7 @@
  *                                 overdue-evidence, tenants)
  *   3. RagDistributionCard      — donut breakdown of tenant RAG status
  *   5. TenantCoverageList       — per-tenant list with drill-down
- *   6. DrillDownCtas            — three navigation cards (controls /
+ *   6. DrillDownCtas            — three navigation cards (practices /
  *                                 evidence)
  *
  * The preset below is the SOURCE OF TRUTH for both:

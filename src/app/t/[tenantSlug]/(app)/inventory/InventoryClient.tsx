@@ -210,7 +210,7 @@ export function InventoryClient({ tenantSlug }: { tenantSlug: string }) {
     const [lQty, setLQty] = useState('');
     const [lExpires, setLExpires] = useState<Date | null>(null);
     const [lLocationId, setLLocationId] = useState<string>('');
-    // Move control on the lot detail. `null` means "not yet edited" so the
+    // Move practice on the lot detail. `null` means "not yet edited" so the
     // Combobox falls back to the lot's current location.
     const [moveLocationId, setMoveLocationId] = useState<string | null>(null);
     const [moving, setMoving] = useState(false);

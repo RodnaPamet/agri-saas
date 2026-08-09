@@ -61,7 +61,7 @@ export function ServiceWorkerRegistrar() {
         if (document.readyState === 'complete') register();
         else window.addEventListener('load', register, { once: true });
 
-        // The waiting worker took control (after SKIP_WAITING) → reload once so
+        // The waiting worker took practice (after SKIP_WAITING) → reload once so
         // the page runs the new assets. Guarded against a reload loop. This is
         // the fast path; `applyUpdate` adds belt-and-braces triggers because
         // `controllerchange` is documented as unreliable on some browsers

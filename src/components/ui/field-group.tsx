@@ -3,7 +3,7 @@
 /**
  * Epic 55 — shared <FieldGroup> layout primitive.
  *
- * Stacks multiple `<FormField>`s (or plain controls) with consistent
+ * Stacks multiple `<FormField>`s (or plain practices) with consistent
  * vertical rhythm and an optional section header. Replaces the ad-hoc
  * `<div className="space-y-default">` / `<div className="grid grid-cols-2 gap-default">`
  * patterns that every modal/page currently rolls its own.

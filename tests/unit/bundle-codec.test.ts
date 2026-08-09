@@ -26,12 +26,12 @@ import {
 // ─── Fixtures ───────────────────────────────────────────────────────
 
 function makeEnvelope(entityCount = 1): ExportEnvelope {
-    const controls = Array.from({ length: entityCount }, (_, i) => ({
-        entityType: 'control' as const,
+    const practices = Array.from({ length: entityCount }, (_, i) => ({
+        entityType: 'practice' as const,
         id: `ctrl-${i}`,
         schemaVersion: '1.0',
         data: {
-            name: `Control ${i}`,
+            name: `Practice ${i}`,
             tenantId: 'tenant-1',
             status: 'ACTIVE',
             description: 'A reasonably long description to make compression meaningful. '.repeat(3),
@@ -47,7 +47,7 @@ function makeEnvelope(entityCount = 1): ExportEnvelope {
             app: APP_IDENTIFIER,
             appVersion: '1.0.0',
         },
-        entities: { control: controls },
+        entities: { practice: practices },
         relationships: [],
     };
 }
@@ -169,7 +169,7 @@ describe('Bundle codec: roundtrip', () => {
         expect(restored.formatVersion).toBe(original.formatVersion);
         expect(restored.metadata.tenantId).toBe(original.metadata.tenantId);
         expect(restored.metadata.domains).toEqual(original.metadata.domains);
-        expect(restored.entities.control).toHaveLength(3);
+        expect(restored.entities.practice).toHaveLength(3);
         expect(restored.relationships).toEqual([]);
     });
 
@@ -179,7 +179,7 @@ describe('Bundle codec: roundtrip', () => {
         const restored = deserializeBundle(data);
 
         expect(restored.formatVersion).toBe(original.formatVersion);
-        expect(restored.entities.control).toHaveLength(2);
+        expect(restored.entities.practice).toHaveLength(2);
     });
 
     test('entity data survives roundtrip exactly', () => {
@@ -187,8 +187,8 @@ describe('Bundle codec: roundtrip', () => {
         const { data } = serializeBundle(original, { compress: true });
         const restored = deserializeBundle(data);
 
-        const originalCtrl = original.entities.control![0];
-        const restoredCtrl = restored.entities.control![0];
+        const originalCtrl = original.entities.practice![0];
+        const restoredCtrl = restored.entities.practice![0];
 
         expect(restoredCtrl.id).toBe(originalCtrl.id);
         expect(restoredCtrl.entityType).toBe(originalCtrl.entityType);

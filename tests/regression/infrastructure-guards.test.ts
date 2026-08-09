@@ -108,7 +108,7 @@ describe('Infrastructure Regression Guards', () => {
                 // sees and the notification they receive cannot disagree.
                 'contract-delivery-window-sweep',
                 // Epic G-2 — every-5-min repeatable scanning
-                // ControlTestPlan and enqueuing runner jobs.
+                // PracticeTestPlan and enqueuing runner jobs.
                 'daily-evidence-expiry',
                 'data-lifecycle',
                 // Flips APPROVED evidence past its nextReviewDate to
@@ -118,7 +118,7 @@ describe('Infrastructure Regression Guards', () => {
                 // stops counting it).
                 'evidence-stale-review-sweep',
                 // Epic G-5 — daily 30/14/7-day expiry reminder for
-                // control exceptions.
+                // practice exceptions.
                 // Exchange — daily global sweep flipping ACTIVE listings past
                 // their expiresAt to EXPIRED (+ audit row per transition).
                 'exchange-expiry-sweep',

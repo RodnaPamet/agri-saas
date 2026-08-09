@@ -106,9 +106,9 @@ describe('Audit Readiness', () => {
     });
 
     describe('Snapshot Structure', () => {
-        it('control snapshot includes required fields', () => {
+        it('practice snapshot includes required fields', () => {
             const snapshot = {
-                code: 'CTRL-1', name: 'Test Control', status: 'IMPLEMENTED',
+                code: 'CTRL-1', name: 'Test Practice', status: 'IMPLEMENTED',
                 taskCompletion: { total: 3, done: 2 },
                 evidenceCount: 5,
                 mappedRequirements: [{ code: 'A.5.1', title: 'Info sec policies' }],
@@ -185,15 +185,15 @@ describe('Audit Readiness', () => {
     });
 
     describe('Default Pack Selection', () => {
-        it('ISO27001 pack includes controls, policies, evidence, issues', () => {
+        it('ISO27001 pack includes practices, policies, evidence, issues', () => {
             const selection = {
-                controls: { count: 10, ids: ['c1', 'c2'] },
+                practices: { count: 10, ids: ['c1', 'c2'] },
                 policies: { count: 3, ids: ['p1'] },
                 evidence: { count: 5, ids: ['e1'] },
                 issues: { count: 2, ids: ['i1'] },
             };
-            expect(selection.controls.count).toBeGreaterThan(0);
-            expect(Object.keys(selection)).toEqual(['controls', 'policies', 'evidence', 'issues']);
+            expect(selection.practices.count).toBeGreaterThan(0);
+            expect(Object.keys(selection)).toEqual(['practices', 'policies', 'evidence', 'issues']);
         });
 
         it('NIS2 pack filters policies by keywords', () => {
@@ -212,10 +212,10 @@ describe('Audit Readiness', () => {
             expect(filtered.map(p => p.id)).toEqual(['p1', 'p3', 'p4']);
         });
 
-        it('falls back to all controls if no framework mapping', () => {
-            const controlIds: string[] = []; // no mapping
-            const allControls = [{ id: 'c1' }, { id: 'c2' }];
-            const result = controlIds.length === 0 ? allControls.map(c => c.id) : controlIds;
+        it('falls back to all practices if no framework mapping', () => {
+            const practiceIds: string[] = []; // no mapping
+            const allPractices = [{ id: 'c1' }, { id: 'c2' }];
+            const result = practiceIds.length === 0 ? allPractices.map(c => c.id) : practiceIds;
             expect(result).toEqual(['c1', 'c2']);
         });
     });
@@ -281,7 +281,7 @@ describe('Audit Readiness', () => {
             const exportData = {
                 pack: { id: 'p1', name: 'ISO27001 Pack', status: 'FROZEN', frozenAt: '2025-01-01' },
                 cycle: { frameworkKey: 'ISO27001' },
-                items: [{ entityType: 'CONTROL', entityId: 'c1', snapshot: {} }],
+                items: [{ entityType: 'PRACTICE', entityId: 'c1', snapshot: {} }],
             };
             expect(exportData).toHaveProperty('pack');
             expect(exportData).toHaveProperty('cycle');

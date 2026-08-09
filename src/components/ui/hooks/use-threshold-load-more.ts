@@ -6,7 +6,7 @@
  * The org-level tables already use `useCursorPagination` for a
  * server-cursor "Load more …" UX. Tenant tables historically render
  * the full result set in one go — fine when row counts are small,
- * but the dashboard's heaviest list pages (controls, risks,
+ * but the dashboard's heaviest list pages (practices, risks,
  * evidence, tasks) can balloon past a few hundred rows on busy
  * tenants. That dragged DOM size + scroll cost the user no
  * particular discoverability win.

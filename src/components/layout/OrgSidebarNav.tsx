@@ -35,7 +35,7 @@ import { NavSection } from './nav-section';
 // Seven entries per Epic O-4 spec, in the order the spec lists them:
 //   1. Portfolio Overview
 //   2. All Tenants
-//   3. Non-Performing Controls   ← drill-down
+//   3. Non-Performing Practices   ← drill-down
 //   5. Overdue Evidence          ← drill-down
 //   6. Members
 //   7. Settings
@@ -43,7 +43,7 @@ import { NavSection } from './nav-section';
 // `requiresDrillDown` flags the three drill-down entries — they're
 // hidden in the sidebar when the user lacks the permission (ORG_READER
 // case). Server-side authorization remains the load-bearing gate; the
-// hidden item is a UX cleanup, not a security control.
+// hidden item is a UX cleanup, not a security practice.
 
 interface OrgNavItemDef {
     href: string;
@@ -75,8 +75,8 @@ export function useOrgNavSections(): OrgNavSectionDef[] {
                 { href: orgHref('/'), label: t('portfolioOverview'), icon: LayoutDashboard },
                 { href: orgHref('/tenants'), label: t('allTenants'), icon: Building2 },
                 {
-                    href: orgHref('/controls'),
-                    label: t('nonPerformingControls'),
+                    href: orgHref('/practices'),
+                    label: t('nonPerformingPractices'),
                     icon: ShieldCheck,
                     requiresDrillDown: true,
                 },

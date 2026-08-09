@@ -65,13 +65,13 @@ export async function createAudit(ctx: RequestContext, data: {
             departments: sanitizeOptional(data.departments),
             // B8 — frameworkKey is plain-text (the Framework.key
             // column itself is plain ASCII) — sanitise to strip any
-            // injected HTML / control chars before persistence.
+            // injected HTML / practice chars before persistence.
             frameworkKey: data.frameworkKey ? sanitizePlainText(data.frameworkKey) : null,
             status: 'PLANNED',
         });
 
         if (data.generateChecklist) {
-            const controls = await db.control.findMany({
+            const practices = await db.practice.findMany({
                 where: { OR: [{ tenantId: ctx.tenantId }, { tenantId: null }] },
                 take: 20,
             });
@@ -93,9 +93,9 @@ export async function createAudit(ctx: RequestContext, data: {
                 await AuditRepository.createChecklistItem(db, ctx, audit.id, items[i], i);
             }
 
-            for (const ctrl of controls.slice(0, 10)) {
-                const prompt = `Verify control "${ctrl.name}" (${ctrl.code || 'Custom'}): Check implementation status and evidence`;
-                await AuditRepository.createChecklistItem(db, ctx, audit.id, prompt, items.length + controls.indexOf(ctrl));
+            for (const ctrl of practices.slice(0, 10)) {
+                const prompt = `Verify practice "${ctrl.name}" (${ctrl.code || 'Custom'}): Check implementation status and evidence`;
+                await AuditRepository.createChecklistItem(db, ctx, audit.id, prompt, items.length + practices.indexOf(ctrl));
             }
         }
 

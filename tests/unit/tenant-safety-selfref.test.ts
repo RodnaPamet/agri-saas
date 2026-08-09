@@ -75,55 +75,55 @@ function makeRecord(
 describe('Self-reference cycle detection', () => {
     test('no cycles in flat entity set', () => {
         const records = [
-            makeRecord('control', 'c1'),
-            makeRecord('control', 'c2'),
-            makeRecord('control', 'c3'),
+            makeRecord('practice', 'c1'),
+            makeRecord('practice', 'c2'),
+            makeRecord('practice', 'c3'),
         ];
-        const cycles = detectSelfReferenceCycles('control', records);
+        const cycles = detectSelfReferenceCycles('practice', records);
         expect(cycles).toEqual([]);
     });
 
     test('no cycles when no self-ref fields registered', () => {
         const records = [
-            makeRecord('control', 'c1', { parentId: 'c2' }),
-            makeRecord('control', 'c2', { parentId: 'c1' }),
+            makeRecord('practice', 'c1', { parentId: 'c2' }),
+            makeRecord('practice', 'c2', { parentId: 'c1' }),
         ];
-        // control has no registered self-ref fields, so no detection
-        const cycles = detectSelfReferenceCycles('control', records);
+        // practice has no registered self-ref fields, so no detection
+        const cycles = detectSelfReferenceCycles('practice', records);
         expect(cycles).toEqual([]);
     });
 
     test('detects cycle when self-ref field is registered', () => {
         // Temporarily add a self-ref field for testing
-        const original = SELF_REFERENCING_FIELDS.control;
-        SELF_REFERENCING_FIELDS.control = ['parentId'];
+        const original = SELF_REFERENCING_FIELDS.practice;
+        SELF_REFERENCING_FIELDS.practice = ['parentId'];
 
         try {
             const records = [
-                makeRecord('control', 'c1', { parentId: 'c2' }),
-                makeRecord('control', 'c2', { parentId: 'c1' }),
+                makeRecord('practice', 'c1', { parentId: 'c2' }),
+                makeRecord('practice', 'c2', { parentId: 'c1' }),
             ];
-            const cycles = detectSelfReferenceCycles('control', records);
+            const cycles = detectSelfReferenceCycles('practice', records);
             expect(cycles.length).toBeGreaterThanOrEqual(1);
         } finally {
-            SELF_REFERENCING_FIELDS.control = original;
+            SELF_REFERENCING_FIELDS.practice = original;
         }
     });
 
     test('no false positive for valid parent chain', () => {
-        const original = SELF_REFERENCING_FIELDS.control;
-        SELF_REFERENCING_FIELDS.control = ['parentId'];
+        const original = SELF_REFERENCING_FIELDS.practice;
+        SELF_REFERENCING_FIELDS.practice = ['parentId'];
 
         try {
             const records = [
-                makeRecord('control', 'root', {}),           // root (no parent)
-                makeRecord('control', 'child', { parentId: 'root' }),
-                makeRecord('control', 'grandchild', { parentId: 'child' }),
+                makeRecord('practice', 'root', {}),           // root (no parent)
+                makeRecord('practice', 'child', { parentId: 'root' }),
+                makeRecord('practice', 'grandchild', { parentId: 'child' }),
             ];
-            const cycles = detectSelfReferenceCycles('control', records);
+            const cycles = detectSelfReferenceCycles('practice', records);
             expect(cycles).toEqual([]);
         } finally {
-            SELF_REFERENCING_FIELDS.control = original;
+            SELF_REFERENCING_FIELDS.practice = original;
         }
     });
 });
@@ -135,66 +135,66 @@ describe('Self-reference cycle detection', () => {
 describe('Topological sort for self-references', () => {
     test('returns records unchanged when no self-ref fields', () => {
         const records = [
-            makeRecord('control', 'c1'),
-            makeRecord('control', 'c2'),
+            makeRecord('practice', 'c1'),
+            makeRecord('practice', 'c2'),
         ];
-        const sorted = topologicalSortSelfRefs('control', records);
+        const sorted = topologicalSortSelfRefs('practice', records);
         expect(sorted).toEqual(records);
     });
 
     test('orders parents before children', () => {
-        const original = SELF_REFERENCING_FIELDS.control;
-        SELF_REFERENCING_FIELDS.control = ['parentId'];
+        const original = SELF_REFERENCING_FIELDS.practice;
+        SELF_REFERENCING_FIELDS.practice = ['parentId'];
 
         try {
             const records = [
-                makeRecord('control', 'child', { parentId: 'root' }),
-                makeRecord('control', 'root', {}),
-                makeRecord('control', 'grandchild', { parentId: 'child' }),
+                makeRecord('practice', 'child', { parentId: 'root' }),
+                makeRecord('practice', 'root', {}),
+                makeRecord('practice', 'grandchild', { parentId: 'child' }),
             ];
-            const sorted = topologicalSortSelfRefs('control', records);
+            const sorted = topologicalSortSelfRefs('practice', records);
             const ids = sorted.map(r => r.id);
 
             expect(ids.indexOf('root')).toBeLessThan(ids.indexOf('child'));
             expect(ids.indexOf('child')).toBeLessThan(ids.indexOf('grandchild'));
         } finally {
-            SELF_REFERENCING_FIELDS.control = original;
+            SELF_REFERENCING_FIELDS.practice = original;
         }
     });
 
     test('throws on cycle', () => {
-        const original = SELF_REFERENCING_FIELDS.control;
-        SELF_REFERENCING_FIELDS.control = ['parentId'];
+        const original = SELF_REFERENCING_FIELDS.practice;
+        SELF_REFERENCING_FIELDS.practice = ['parentId'];
 
         try {
             const records = [
-                makeRecord('control', 'c1', { parentId: 'c2' }),
-                makeRecord('control', 'c2', { parentId: 'c1' }),
+                makeRecord('practice', 'c1', { parentId: 'c2' }),
+                makeRecord('practice', 'c2', { parentId: 'c1' }),
             ];
-            expect(() => topologicalSortSelfRefs('control', records)).toThrow(/Cycle detected/);
+            expect(() => topologicalSortSelfRefs('practice', records)).toThrow(/Cycle detected/);
         } finally {
-            SELF_REFERENCING_FIELDS.control = original;
+            SELF_REFERENCING_FIELDS.practice = original;
         }
     });
 
     test('handles multiple independent trees', () => {
-        const original = SELF_REFERENCING_FIELDS.control;
-        SELF_REFERENCING_FIELDS.control = ['parentId'];
+        const original = SELF_REFERENCING_FIELDS.practice;
+        SELF_REFERENCING_FIELDS.practice = ['parentId'];
 
         try {
             const records = [
-                makeRecord('control', 'a-child', { parentId: 'a-root' }),
-                makeRecord('control', 'b-child', { parentId: 'b-root' }),
-                makeRecord('control', 'a-root', {}),
-                makeRecord('control', 'b-root', {}),
+                makeRecord('practice', 'a-child', { parentId: 'a-root' }),
+                makeRecord('practice', 'b-child', { parentId: 'b-root' }),
+                makeRecord('practice', 'a-root', {}),
+                makeRecord('practice', 'b-root', {}),
             ];
-            const sorted = topologicalSortSelfRefs('control', records);
+            const sorted = topologicalSortSelfRefs('practice', records);
             const ids = sorted.map(r => r.id);
 
             expect(ids.indexOf('a-root')).toBeLessThan(ids.indexOf('a-child'));
             expect(ids.indexOf('b-root')).toBeLessThan(ids.indexOf('b-child'));
         } finally {
-            SELF_REFERENCING_FIELDS.control = original;
+            SELF_REFERENCING_FIELDS.practice = original;
         }
     });
 });
@@ -206,7 +206,7 @@ describe('Topological sort for self-references', () => {
 describe('Tenant safety: cross-tenant FK rejection', () => {
     test('clean bundle passes', () => {
         const envelope = makeEnvelope({
-            control: [makeRecord('control', 'c1')],
+            practice: [makeRecord('practice', 'c1')],
         });
         const result = validateTenantSafety(envelope, makeOptions());
         expect(result.safe).toBe(true);
@@ -215,7 +215,7 @@ describe('Tenant safety: cross-tenant FK rejection', () => {
 
     test('entity with source tenantId is safe', () => {
         const envelope = makeEnvelope({
-            control: [makeRecord('control', 'c1', { tenantId: 'source-tenant' })],
+            practice: [makeRecord('practice', 'c1', { tenantId: 'source-tenant' })],
         });
         const result = validateTenantSafety(envelope, makeOptions());
         expect(result.safe).toBe(true);
@@ -223,7 +223,7 @@ describe('Tenant safety: cross-tenant FK rejection', () => {
 
     test('entity with target tenantId is safe', () => {
         const envelope = makeEnvelope({
-            control: [makeRecord('control', 'c1', { tenantId: 'target-tenant' })],
+            practice: [makeRecord('practice', 'c1', { tenantId: 'target-tenant' })],
         });
         const result = validateTenantSafety(envelope, makeOptions());
         expect(result.safe).toBe(true);
@@ -231,7 +231,7 @@ describe('Tenant safety: cross-tenant FK rejection', () => {
 
     test('entity with foreign tenantId is rejected', () => {
         const envelope = makeEnvelope({
-            control: [makeRecord('control', 'c1', { tenantId: 'evil-tenant' })],
+            practice: [makeRecord('practice', 'c1', { tenantId: 'evil-tenant' })],
         });
         const result = validateTenantSafety(envelope, makeOptions());
         expect(result.safe).toBe(false);
@@ -241,9 +241,9 @@ describe('Tenant safety: cross-tenant FK rejection', () => {
 
     test('mixed tenantIds — one foreign — is rejected', () => {
         const envelope = makeEnvelope({
-            control: [
-                makeRecord('control', 'c1', { tenantId: 'source-tenant' }),
-                makeRecord('control', 'c2', { tenantId: 'other-tenant' }),
+            practice: [
+                makeRecord('practice', 'c1', { tenantId: 'source-tenant' }),
+                makeRecord('practice', 'c2', { tenantId: 'other-tenant' }),
             ],
         });
         const result = validateTenantSafety(envelope, makeOptions());
@@ -260,9 +260,9 @@ describe('Tenant safety: cross-tenant FK rejection', () => {
 describe('Tenant safety: duplicate ID detection', () => {
     test('unique IDs pass', () => {
         const envelope = makeEnvelope({
-            control: [
-                makeRecord('control', 'c1'),
-                makeRecord('control', 'c2'),
+            practice: [
+                makeRecord('practice', 'c1'),
+                makeRecord('practice', 'c2'),
             ],
         });
         const result = validateTenantSafety(envelope, makeOptions());
@@ -271,9 +271,9 @@ describe('Tenant safety: duplicate ID detection', () => {
 
     test('duplicate IDs within same type detected', () => {
         const envelope = makeEnvelope({
-            control: [
-                makeRecord('control', 'c1'),
-                makeRecord('control', 'c1'), // duplicate
+            practice: [
+                makeRecord('practice', 'c1'),
+                makeRecord('practice', 'c1'), // duplicate
             ],
         });
         const result = validateTenantSafety(envelope, makeOptions());
@@ -283,7 +283,7 @@ describe('Tenant safety: duplicate ID detection', () => {
 
     test('same ID in different entity types is allowed', () => {
         const envelope = makeEnvelope({
-            control: [makeRecord('control', 'shared-id')],
+            practice: [makeRecord('practice', 'shared-id')],
             policy: [makeRecord('policy', 'shared-id')],
         });
         const result = validateTenantSafety(envelope, makeOptions());
@@ -298,7 +298,7 @@ describe('Tenant safety: duplicate ID detection', () => {
 describe('Tenant safety: bundle integrity', () => {
     test('valid entities pass integrity check', () => {
         const envelope = makeEnvelope({
-            control: [makeRecord('control', 'c1', { name: 'Valid' })],
+            practice: [makeRecord('practice', 'c1', { name: 'Valid' })],
         });
         const result = validateTenantSafety(envelope, makeOptions());
         expect(result.violations.filter(v => v.rule === 'BUNDLE_INTEGRITY')).toEqual([]);
@@ -306,8 +306,8 @@ describe('Tenant safety: bundle integrity', () => {
 
     test('entity with empty id is rejected', () => {
         const envelope = makeEnvelope({
-            control: [{
-                entityType: 'control',
+            practice: [{
+                entityType: 'practice',
                 id: '',
                 schemaVersion: '1.0',
                 data: { name: 'Bad' },
@@ -327,13 +327,13 @@ describe('Tenant safety: relationship targets', () => {
     test('valid relationship passes', () => {
         const envelope = makeEnvelope(
             {
-                control: [makeRecord('control', 'c1')],
-                controlTestPlan: [makeRecord('controlTestPlan', 'tp1')],
+                practice: [makeRecord('practice', 'c1')],
+                practiceTestPlan: [makeRecord('practiceTestPlan', 'tp1')],
             },
             [{
-                fromType: 'controlTestPlan',
+                fromType: 'practiceTestPlan',
                 fromId: 'tp1',
-                toType: 'control',
+                toType: 'practice',
                 toId: 'c1',
                 relationship: 'BELONGS_TO',
             }],
@@ -345,12 +345,12 @@ describe('Tenant safety: relationship targets', () => {
     test('relationship referencing missing entity generates warning', () => {
         const envelope = makeEnvelope(
             {
-                control: [makeRecord('control', 'c1')],
+                practice: [makeRecord('practice', 'c1')],
             },
             [{
-                fromType: 'control',
+                fromType: 'practice',
                 fromId: 'c1',
-                toType: 'control',
+                toType: 'practice',
                 toId: 'c-missing',
                 relationship: 'LINKED_TO',
             }],
@@ -369,7 +369,7 @@ describe('Tenant safety: relationship targets', () => {
 
 jest.mock('@/lib/prisma', () => {
     const models = [
-        'control', 'controlTestPlan', 'controlTestRun', 'controlRequirementLink',
+        'practice', 'practiceTestPlan', 'practiceTestRun', 'practiceRequirementLink',
         'policy', 'policyVersion', 'risk', 'evidence',
         'task', 'taskLink',
         'vendor', 'vendorAssessment', 'vendorRelationship',
@@ -403,7 +403,7 @@ import { readPrismaSchema } from '../helpers/prisma-schema';
 describe('Import service: rejects unsafe bundles', () => {
     test('rejects bundle with cross-tenant references', async () => {
         const envelope = makeEnvelope({
-            control: [makeRecord('control', 'c1', { tenantId: 'evil-tenant' })],
+            practice: [makeRecord('practice', 'c1', { tenantId: 'evil-tenant' })],
         });
         const result = await importTenantData(envelope, makeOptions());
         expect(result.success).toBe(false);
@@ -412,9 +412,9 @@ describe('Import service: rejects unsafe bundles', () => {
 
     test('rejects bundle with duplicate IDs', async () => {
         const envelope = makeEnvelope({
-            control: [
-                makeRecord('control', 'dup1'),
-                makeRecord('control', 'dup1'),
+            practice: [
+                makeRecord('practice', 'dup1'),
+                makeRecord('practice', 'dup1'),
             ],
         });
         const result = await importTenantData(envelope, makeOptions());
@@ -424,7 +424,7 @@ describe('Import service: rejects unsafe bundles', () => {
 
     test('accepts clean bundle', async () => {
         const envelope = makeEnvelope({
-            control: [makeRecord('control', 'c1')],
+            practice: [makeRecord('practice', 'c1')],
         });
         const result = await importTenantData(envelope, {
             ...makeOptions(),
@@ -486,7 +486,7 @@ describe('GUARDRAIL: Prisma schema has no unregistered self-referencing models',
 
     test('SELF_REFERENCING_FIELDS covers all exportable entity types', () => {
         const entityTypes: ExportEntityType[] = [
-            'control', 'controlTestPlan', 'controlTestRun', 'controlMapping',
+            'practice', 'practiceTestPlan', 'practiceTestRun', 'practiceMapping',
             'policy', 'policyVersion', 'risk', 'evidence',
             'task', 'taskLink',
             'vendor', 'vendorReview', 'vendorSubprocessor',

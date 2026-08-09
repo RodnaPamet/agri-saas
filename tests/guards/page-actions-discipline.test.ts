@@ -3,7 +3,7 @@
  *
  * Until this PR each page hand-rolled the top-right action
  * cluster in its own way. Same logical primary action — Create
- * Risk, Create Control, New Audit, Generate Share Link — rendered
+ * Risk, Create Practice, New Audit, Generate Share Link — rendered
  * with mixed button sizes (43 sites at sm, 4 at md, 4 at lg),
  * mixed gaps, and inconsistent right-alignment. The user
  * observed the inconsistency directly.

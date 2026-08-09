@@ -3,7 +3,7 @@
  *
  * Three concerns:
  *
- *   1. **Option types carry `status`.** Controls + Assets
+ *   1. **Option types carry `status`.** Practices + Assets
  *      option types each gain a `status: string | null` field, and
  *      each hook's API-response normaliser extracts it.
  *   2. **Hooks accept a `pollMs` option.** When set, the hook
@@ -28,7 +28,7 @@ const read = (p: string) => readFileSync(path.join(ROOT, p), "utf-8");
 
 describe("PR-D polish — live entity status sync", () => {
     const hookFiles = [
-        "src/lib/processes/use-tenant-controls.ts",
+        "src/lib/processes/use-tenant-practices.ts",
         "src/lib/processes/use-tenant-assets.ts",
     ];
 
@@ -37,7 +37,7 @@ describe("PR-D polish — live entity status sync", () => {
             const src = read(file);
             // Each option type declaration must include the status
             // field. The interface name varies per file
-            // (TenantControlOption / TenantAssetOption)
+            // (TenantPracticeOption / TenantAssetOption)
             // — match the common shape.
             expect(src).toMatch(
                 /export interface Tenant\w+Option\s*\{[\s\S]*?status:\s*string \| null/,
@@ -91,14 +91,14 @@ describe("PR-D polish — live entity status sync", () => {
 
         it("imports the three find* helpers", () => {
             const src = inspector();
-            expect(src).toMatch(/findTenantControl/);
+            expect(src).toMatch(/findTenantPractice/);
             expect(src).toMatch(/findTenantAsset/);
         });
 
         it("passes pollMs to all three hooks", () => {
             const src = inspector();
             for (const hook of [
-                "useTenantControls",
+                "useTenantPractices",
                 "useTenantAssets",
             ]) {
                 expect(src).toMatch(

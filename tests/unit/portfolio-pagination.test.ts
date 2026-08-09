@@ -19,7 +19,7 @@
 
 const getOrgTenantIdsMock = jest.fn();
 const withTenantDbMock = jest.fn();
-const controlFindManyMock = jest.fn();
+const practiceFindManyMock = jest.fn();
 const riskFindManyMock = jest.fn();
 const evidenceFindManyMock = jest.fn();
 
@@ -36,7 +36,7 @@ jest.mock('@/lib/db-context', () => ({
 }));
 
 import {
-    listNonPerformingControls,
+    listNonPerformingPractices,
     listOverdueEvidenceAcrossOrg,
 } from '@/app-layer/usecases/portfolio';
 import type { OrgContext } from '@/app-layer/types';
@@ -67,7 +67,7 @@ interface CapturedQuery {
 
 beforeEach(() => {
     getOrgTenantIdsMock.mockReset();
-    controlFindManyMock.mockReset();
+    practiceFindManyMock.mockReset();
     riskFindManyMock.mockReset();
     evidenceFindManyMock.mockReset();
     withTenantDbMock.mockReset();
@@ -81,7 +81,7 @@ beforeEach(() => {
     // asserts on the captured WHERE/orderBy/take.
     withTenantDbMock.mockImplementation(async (_tenantId: string, fn: (db: unknown) => Promise<unknown>) => {
         const db = {
-            control: { findMany: controlFindManyMock },
+            practice: { findMany: practiceFindManyMock },
             risk: { findMany: riskFindManyMock },
             evidence: { findMany: evidenceFindManyMock },
         };
@@ -89,18 +89,18 @@ beforeEach(() => {
     });
 });
 
-// ── Controls ───────────────────────────────────────────────────────────
+// ── Practices ───────────────────────────────────────────────────────────
 
-describe('listNonPerformingControls — cursor pagination', () => {
+describe('listNonPerformingPractices — cursor pagination', () => {
     it('first page (no cursor) does not apply a cursor predicate', async () => {
-        controlFindManyMock.mockResolvedValue([]);
+        practiceFindManyMock.mockResolvedValue([]);
 
-        await listNonPerformingControls(ctxFor());
+        await listNonPerformingPractices(ctxFor());
 
         // Both tenants queried.
-        expect(controlFindManyMock).toHaveBeenCalledTimes(2);
+        expect(practiceFindManyMock).toHaveBeenCalledTimes(2);
         // No `OR` cursor clause merged in.
-        const where = (controlFindManyMock.mock.calls[0][0] as CapturedQuery).where;
+        const where = (practiceFindManyMock.mock.calls[0][0] as CapturedQuery).where;
         expect(where).not.toHaveProperty('OR');
         // Base filters intact.
         expect(where).toMatchObject({
@@ -111,7 +111,7 @@ describe('listNonPerformingControls — cursor pagination', () => {
 
     it('returns rows + nextCursor when there are more rows than the limit', async () => {
         // Each tenant returns one row. limit=1 → page = 1 row + 1 leftover.
-        controlFindManyMock
+        practiceFindManyMock
             .mockResolvedValueOnce([
                 {
                     id: 'c-1',
@@ -131,12 +131,12 @@ describe('listNonPerformingControls — cursor pagination', () => {
                 },
             ]);
 
-        const result = await listNonPerformingControls(ctxFor(), { limit: 1 });
+        const result = await listNonPerformingPractices(ctxFor(), { limit: 1 });
 
         expect(result.rows).toHaveLength(1);
         // Sort prefers higher priority first; both NEEDS_REVIEW (5),
         // so updatedAt DESC tiebreaker → alpha (newer) wins.
-        expect(result.rows[0].controlId).toBe('c-1');
+        expect(result.rows[0].practiceId).toBe('c-1');
         expect(result.rows[0].tenantSlug).toBe('alpha');
         expect(result.nextCursor).not.toBeNull();
         expect(typeof result.nextCursor).toBe('string');
@@ -152,11 +152,11 @@ describe('listNonPerformingControls — cursor pagination', () => {
             }),
         ).toString('base64url');
 
-        controlFindManyMock.mockResolvedValue([]);
-        await listNonPerformingControls(ctxFor(), { cursor, limit: 50 });
+        practiceFindManyMock.mockResolvedValue([]);
+        await listNonPerformingPractices(ctxFor(), { cursor, limit: 50 });
 
         // Per-tenant where now carries the cursor compound predicate.
-        const where = (controlFindManyMock.mock.calls[0][0] as CapturedQuery).where;
+        const where = (practiceFindManyMock.mock.calls[0][0] as CapturedQuery).where;
         expect(where).toHaveProperty('OR');
         const orClauses = (where.OR as Array<Record<string, unknown>>);
         // Exactly three branches: lower priority statuses; same priority
@@ -174,38 +174,38 @@ describe('listNonPerformingControls — cursor pagination', () => {
     });
 
     it('last page returns nextCursor: null', async () => {
-        controlFindManyMock.mockResolvedValue([]);
-        const result = await listNonPerformingControls(ctxFor(), { limit: 50 });
+        practiceFindManyMock.mockResolvedValue([]);
+        const result = await listNonPerformingPractices(ctxFor(), { limit: 50 });
         expect(result.rows).toEqual([]);
         expect(result.nextCursor).toBeNull();
     });
 
     it('limit is clamped to [1, 200]', async () => {
-        controlFindManyMock.mockResolvedValue([]);
+        practiceFindManyMock.mockResolvedValue([]);
         // Negative + zero clamp to 1.
-        await listNonPerformingControls(ctxFor(), { limit: -5 });
-        let take = (controlFindManyMock.mock.calls[0][0] as CapturedQuery).take;
+        await listNonPerformingPractices(ctxFor(), { limit: -5 });
+        let take = (practiceFindManyMock.mock.calls[0][0] as CapturedQuery).take;
         // Per-tenant take is `max(25, limit*2) + 1` → for limit=1, that's 26.
         expect(take).toBe(26);
 
-        controlFindManyMock.mockClear();
+        practiceFindManyMock.mockClear();
         // Large limit clamps to 200; per-tenant take = 200*2 + 1 = 401.
-        await listNonPerformingControls(ctxFor(), { limit: 5000 });
-        take = (controlFindManyMock.mock.calls[0][0] as CapturedQuery).take;
+        await listNonPerformingPractices(ctxFor(), { limit: 5000 });
+        take = (practiceFindManyMock.mock.calls[0][0] as CapturedQuery).take;
         expect(take).toBe(401);
     });
 
     it('invalid cursor (garbage string) falls back to first-page behaviour', async () => {
-        controlFindManyMock.mockResolvedValue([]);
-        await listNonPerformingControls(ctxFor(), {
+        practiceFindManyMock.mockResolvedValue([]);
+        await listNonPerformingPractices(ctxFor(), {
             cursor: 'not-base64-json-at-all',
         });
-        const where = (controlFindManyMock.mock.calls[0][0] as CapturedQuery).where;
+        const where = (practiceFindManyMock.mock.calls[0][0] as CapturedQuery).where;
         expect(where).not.toHaveProperty('OR');
     });
 
     it('preserves tenant attribution on every returned row', async () => {
-        controlFindManyMock
+        practiceFindManyMock
             .mockResolvedValueOnce([
                 {
                     id: 'c-1',
@@ -225,9 +225,9 @@ describe('listNonPerformingControls — cursor pagination', () => {
                 },
             ]);
 
-        const result = await listNonPerformingControls(ctxFor());
+        const result = await listNonPerformingPractices(ctxFor());
 
-        const byId = new Map(result.rows.map((r) => [r.controlId, r]));
+        const byId = new Map(result.rows.map((r) => [r.practiceId, r]));
         expect(byId.get('c-1')?.tenantSlug).toBe('alpha');
         expect(byId.get('c-1')?.tenantName).toBe('Alpha');
         expect(byId.get('c-1')?.tenantId).toBe('t-1');

@@ -57,7 +57,7 @@ describe('Audit Hardening', () => {
 
         it('clone should NOT copy FILE or READINESS_REPORT items', () => {
             const items = [
-                { entityType: 'CONTROL', entityId: 'c1' },
+                { entityType: 'PRACTICE', entityId: 'c1' },
                 { entityType: 'POLICY', entityId: 'p1' },
                 { entityType: 'FILE', entityId: 'f1' },
                 { entityType: 'READINESS_REPORT', entityId: 'r1' },
@@ -65,12 +65,12 @@ describe('Audit Hardening', () => {
             ];
             const filtered = items.filter(i => i.entityType !== 'FILE' && i.entityType !== 'READINESS_REPORT');
             expect(filtered.length).toBe(3);
-            expect(filtered.map(i => i.entityType)).toEqual(['CONTROL', 'POLICY', 'ISSUE']);
+            expect(filtered.map(i => i.entityType)).toEqual(['PRACTICE', 'POLICY', 'ISSUE']);
         });
 
         it('clone should NOT copy snapshots (empty for recompute on freeze)', () => {
             const clonedItems = [
-                { entityType: 'CONTROL', entityId: 'c1', snapshotJson: '' },
+                { entityType: 'PRACTICE', entityId: 'c1', snapshotJson: '' },
                 { entityType: 'POLICY', entityId: 'p1', snapshotJson: '' },
             ];
             clonedItems.forEach(i => expect(i.snapshotJson).toBe(''));

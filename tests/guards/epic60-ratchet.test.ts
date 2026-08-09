@@ -137,11 +137,11 @@ describe('Epic 60 — legacy pattern ratchet', () => {
     it('caps hand-rolled tab bars (heuristic) in src/app/**', () => {
         // Heuristic: `<button onClick={() => setTab(…)} className={\`btn …\`}>`
         // appears in the two pre-Epic-60 tab-bar patterns we migrated
-        // plus the control-detail page (7 tabs, deliberately deferred).
+        // plus the practice-detail page (7 tabs, deliberately deferred).
         // The match pattern is deliberately narrow — we grep for
         // `className={\`btn ${…}\`}` on a setTab/setFilter onClick,
         // which was the legacy pattern. Post-rollout floor: 0 (the
-        // control-detail page uses a different structure that doesn't
+        // practice-detail page uses a different structure that doesn't
         // match this pattern).
         const hits = countMatches(
             appFiles,

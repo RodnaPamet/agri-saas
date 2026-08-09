@@ -33,7 +33,7 @@
 //     inquirer, OR the seller resolved through the listing.
 //
 // Usecase-layer write guards (`ctx.tenantId === listing.sellerTenantId`)
-// remain the primary control and are unchanged. RLS is the backstop, so
+// remain the primary practice and are unchanged. RLS is the backstop, so
 // a forgotten `where` in a future repository method cannot expose one
 // tenant's private messages to another.
 // ─────────────────────────────────────────────────────────────────────

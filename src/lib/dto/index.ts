@@ -2,11 +2,11 @@
  * Barrel export for all API response DTOs.
  *
  * Usage:
- *   import { ControlDetailDTO, PolicyListItemDTO } from '@/lib/dto';
+ *   import { PracticeDetailDTO, PolicyListItemDTO } from '@/lib/dto';
  */
 
 export * from './common';
-export * from './control.dto';
+export * from './practice.dto';
 export * from './policy.dto';
 export * from './task.dto';
 export * from './vendor.dto';

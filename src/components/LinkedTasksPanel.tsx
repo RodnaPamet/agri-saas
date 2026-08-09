@@ -17,7 +17,7 @@ import { DataTable, createColumns } from '@/components/ui/table';
 import { TableTitleCell } from '@/components/ui/table-title-cell';
 import { TimestampTooltip } from '@/components/ui/timestamp-tooltip';
 // The canonical task-create modal (the SAME one the Tasks page "+ Task"
-// button opens). Reused here so a task created from a control / asset /
+// button opens). Reused here so a task created from a practice / asset /
 // risk detail page is identical to a standalone task — full fields, and
 // it lands in the global Tasks table (visible in the Tasks list) linked
 // back to this entity via TaskLink.
@@ -25,7 +25,7 @@ import { NewTaskModal } from '@/components/tasks/NewTaskModal';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-// Mirrors the Tasks page (TasksClient) maps so the control / asset /
+// Mirrors the Tasks page (TasksClient) maps so the practice / asset /
 // risk Tasks tab renders the SAME columns + tones as the global table.
 const STATUS_BADGE: Record<string, StatusBadgeVariant> = {
     OPEN: 'neutral', TRIAGED: 'info', IN_PROGRESS: 'info',
@@ -53,7 +53,7 @@ interface LinkedTasksPanelProps {
     /**
      * Domain entity the listed tasks are linked to. Drives the filter
      * query AND (when `canWrite`) the entityType passed into the create
-     * modal. Canonical values: `'ASSET' | 'CONTROL'`.
+     * modal. Canonical values: `'ASSET' | 'PRACTICE'`.
      */
     entityType: string;
     entityId: string;
@@ -111,8 +111,8 @@ export default function LinkedTasksPanel({
         void loadTasks();
     }, [loadTasks]);
 
-    const canonicalEntityType: 'ASSET' | 'CONTROL' | null =
-        entityType === 'ASSET' || entityType === 'CONTROL' ? entityType : null;
+    const canonicalEntityType: 'ASSET' | 'PRACTICE' | null =
+        entityType === 'ASSET' || entityType === 'PRACTICE' ? entityType : null;
     const showCreate = canWrite && canonicalEntityType !== null;
 
     // Columns mirror the Tasks page table so this tab reads identically.

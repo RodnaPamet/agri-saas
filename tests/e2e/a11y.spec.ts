@@ -18,12 +18,12 @@
  *
  * Authenticated (admin@acme.com → acme-corp):
  *   • /t/{slug}/dashboard    — landing page, dense KPI grid
- *   • /t/{slug}/controls     — list page (DataTable + filter shell)
+ *   • /t/{slug}/practices     — list page (DataTable + filter shell)
  *   • /t/{slug}/evidence     — list page + uploads
  *   • /t/{slug}/farm-tasks   — list page (field work)
  *
  * Modal / interactive surfaces:
- *   • Create-control modal opened from /controls
+ *   • Create-practice modal opened from /practices
  *
  * AXE CONFIG
  *
@@ -254,12 +254,12 @@ test.describe('a11y — authenticated tenant pages', () => {
         await runA11yScan(page, 'dashboard');
     });
 
-    test('controls list has no critical/serious WCAG violations', async ({ page }) => {
-        await safeGoto(page, `/t/${tenantSlug}/controls`);
+    test('practices list has no critical/serious WCAG violations', async ({ page }) => {
+        await safeGoto(page, `/t/${tenantSlug}/practices`);
         // DataTable mounts its <table> after data resolves; wait on
         // the table itself or a data-testid.
-        await page.waitForSelector('table, [data-testid="controls-table"]', { timeout: 30_000 });
-        await runA11yScan(page, 'controls list');
+        await page.waitForSelector('table, [data-testid="practices-table"]', { timeout: 30_000 });
+        await runA11yScan(page, 'practices list');
     });
 
 
@@ -280,26 +280,26 @@ test.describe('a11y — authenticated tenant pages', () => {
 // ─── Modal / interactive surfaces ────────────────────────────────
 
 test.describe('a11y — interactive overlays', () => {
-    test('create-control modal has no critical/serious WCAG violations', async ({ page }) => {
+    test('create-practice modal has no critical/serious WCAG violations', async ({ page }) => {
         const tenantSlug = await loginAndGetTenant(page);
-        await safeGoto(page, `/t/${tenantSlug}/controls`);
-        await page.waitForSelector('table, [data-testid="controls-table"]', { timeout: 30_000 });
+        await safeGoto(page, `/t/${tenantSlug}/practices`);
+        await page.waitForSelector('table, [data-testid="practices-table"]', { timeout: 30_000 });
 
-        // Open the create-control modal via the canonical id
-        // selector (`#new-control-btn`). The previous text-/data-
+        // Open the create-practice modal via the canonical id
+        // selector (`#new-practice-btn`). The previous text-/data-
         // testid-multi-selector chain raced the toolbar render in
         // some seeded states, tripping the conditional `test.skip`
         // and leaving the surface uncovered. The id is wired into
-        // ControlsClient.tsx directly and is the same selector
-        // create-control-modal.spec.ts uses.
-        const newControlBtn = page.locator('#new-control-btn');
-        await expect(newControlBtn).toBeVisible({ timeout: 30_000 });
-        await newControlBtn.click();
+        // PracticesClient.tsx directly and is the same selector
+        // create-practice-modal.spec.ts uses.
+        const newPracticeBtn = page.locator('#new-practice-btn');
+        await expect(newPracticeBtn).toBeVisible({ timeout: 30_000 });
+        await newPracticeBtn.click();
 
         // Modal renders a dialog with role="dialog". Wait for it
         // before scanning so axe sees the trapped focus + modal DOM.
         await page.waitForSelector('[role="dialog"]', { timeout: 15_000 });
 
-        await runA11yScan(page, 'create-control modal');
+        await runA11yScan(page, 'create-practice modal');
     });
 });

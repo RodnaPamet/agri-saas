@@ -1,14 +1,14 @@
 /**
- * R31 (Bundle 6) — Zoom controls (PR 7 of the roadmap).
+ * R31 (Bundle 6) — Zoom practices (PR 7 of the roadmap).
  *
  * Pre-R31 the canvas shipped without a zoom UI: on a large process
  * map the user couldn't get back to the origin. Every canvas tool
- * that has shipped in the last 15 years has +/- / fit controls.
- * R31 wired xyflow's `<Controls>` primitive as an overlay inside
+ * that has shipped in the last 15 years has +/- / fit practices.
+ * R31 wired xyflow's `<Practices>` primitive as an overlay inside
  * the canvas plane (not a new chrome strip above) and toned it to
  * match the canvas frame.
  *
- *   • Bottom-left zoom strip — `<Controls position="bottom-left"
+ *   • Bottom-left zoom strip — `<Practices position="bottom-left"
  *     showInteractive={false} />`. The `showInteractive` flag is
  *     OFF deliberately: the "lock interaction" toggle xyflow ships
  *     by default is for graph viewers, not authoring canvases.
@@ -38,7 +38,7 @@ describe("R31 (Bundle 6) — zoom controls", () => {
     const src = read("src/components/processes/PersistedProcessCanvas.tsx");
 
     it("imports xyflow's Controls primitive", () => {
-        // The Controls import drives the render branch below.
+        // The Practices import drives the render branch below.
         const importMatch = src.match(
             /import\s*\{[\s\S]{0,2000}\}\s*from\s*["']@xyflow\/react["']/,
         );
@@ -66,7 +66,7 @@ describe("R31 (Bundle 6) — zoom controls", () => {
     });
 
     it("mounts the zoom strip at the bottom-left of the canvas plane", () => {
-        // `<Controls position="bottom-left" ...>` — xyflow places
+        // `<Practices position="bottom-left" ...>` — xyflow places
         // the strip absolute-positioned inside its viewport.
         expect(src).toMatch(/<Controls\b[\s\S]{0,400}position="bottom-left"/);
         // The `showInteractive` flag is OFF deliberately — locked
@@ -79,7 +79,7 @@ describe("R31 (Bundle 6) — zoom controls", () => {
             /<Controls\b[\s\S]{0,500}bg-canvas-frame\/90/,
         );
         expect(src).toMatch(
-            /data-testid="canvas-zoom-controls"/,
+            /data-testid="canvas-zoom-practices"/,
         );
     });
 
@@ -108,7 +108,7 @@ describe("R31 (Bundle 6) — zoom controls", () => {
             );
         });
 
-        it("maps xyflow's control-button cascade onto canvas tokens", () => {
+        it("maps xyflow's practice-button cascade onto canvas tokens", () => {
             // Each of the five custom properties xyflow consults
             // for the button surface + glyph + border must be
             // mapped to a `--canvas-*` / `--content-*` token. The

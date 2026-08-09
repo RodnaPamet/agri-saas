@@ -1,7 +1,7 @@
 /**
  * Structural ratchet: `BinsClient` adopts `<EntityListPage>`.
  *
- * Mirrors `controls-client-shell-adoption.test.ts`. Locks the invariant
+ * Mirrors `practices-client-shell-adoption.test.ts`. Locks the invariant
  * that the grain Bins list page sits on the shared shell rather than
  * hand-rolling inline composition. Bins have NO delete route — the page
  * provides create + edit only, so this test does NOT assert an undo-toast

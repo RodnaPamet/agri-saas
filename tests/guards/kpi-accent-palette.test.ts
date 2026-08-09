@@ -3,7 +3,7 @@
  *
  * The KPI filter cards' colour scheme (gradient headline value + paired
  * sparkline) is defined ONCE in `src/components/ui/kpi-accent.ts` so every
- * list page — Asset today, Control / Risk / Task / Vendor / Test / Policy
+ * list page — Asset today, Practice / Risk / Task / Vendor / Test / Policy
  * next — draws from the same palette. This locks the palette's shape so a
  * future page can't quietly fork it or add an off-scheme colour.
  */

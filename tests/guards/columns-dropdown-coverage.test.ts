@@ -88,12 +88,12 @@ const EXEMPTIONS: Record<string, string> = {
         '(a) sub-component — vendor-detail documents sub-table (R11-PR7); EntityDetailLayout owns chrome.',
     'locations/[locationId]/page.tsx':
         '(a) sub-component — location-detail parcels sub-table (a11y pass, off raw table); EntityDetailLayout owns chrome.',
-    'controls/[controlId]/page.tsx':
-        '(a) sub-component — control-detail tasks sub-table (R11-PR6); EntityDetailLayout owns chrome.',
-    'controls/[controlId]/_tabs/EvidenceSubTable.tsx':
-        '(a) sub-component — control-detail evidence sub-table (R10-PR3 follow-up); EntityDetailLayout owns chrome.',
-    'controls/[controlId]/_tabs/ControlMappingsTab.tsx':
-        '(a) sub-component — control-detail mappings sub-table (R10-PR3 follow-up); EntityDetailLayout owns chrome.',
+    'practices/[practiceId]/page.tsx':
+        '(a) sub-component — practice-detail tasks sub-table (R11-PR6); EntityDetailLayout owns chrome.',
+    'practices/[practiceId]/_tabs/EvidenceSubTable.tsx':
+        '(a) sub-component — practice-detail evidence sub-table (R10-PR3 follow-up); EntityDetailLayout owns chrome.',
+    'practices/[practiceId]/_tabs/PracticeMappingsTab.tsx':
+        '(a) sub-component — practice-detail mappings sub-table (R10-PR3 follow-up); EntityDetailLayout owns chrome.',
     'farm-tasks/[taskId]/FarmTaskDetailClient.tsx':
         '(a) sub-component — farm-task-detail links sub-table; EntityDetailLayout owns chrome.',
     'planning/[cropPlanId]/PlantingBoard.tsx':
@@ -107,9 +107,9 @@ const EXEMPTIONS: Record<string, string> = {
     'admin/notifications/page.tsx':
         '(b) tabbed admin settings page — small fixed table + a form tab; column visibility isn\'t the user need.',
     'admin/integrations/page.tsx':
-        '(b) multi-section admin page — small fixed catalogue with inline controls.',
+        '(b) multi-section admin page — small fixed catalogue with inline practices.',
     'admin/roles/page.tsx':
-        '(b) custom roles admin — small fixed list with inline create + permission controls.',
+        '(b) custom roles admin — small fixed list with inline create + permission practices.',
     'access-reviews/AccessReviewsClient.tsx':
         '(b) multi-section dashboard — review cycle list inside a tabbed composition.',
 

@@ -11,12 +11,12 @@
  *
  * The tests that matter here are the ones about what the answer CONTAINS —
  * an auditor asking this question needs to know which of the records backing a
- * control point nobody has approved yet, and collapsing those into a bare list
+ * practice point nobody has approved yet, and collapsing those into a bare list
  * is how a traceability panel starts overstating a certification.
  */
 
 const mockDb = {
-    controlRequirementLink: { findMany: jest.fn() },
+    practiceRequirementLink: { findMany: jest.fn() },
     evidence: { findMany: jest.fn() },
     logEntry: { findMany: jest.fn() },
 } as any;
@@ -55,14 +55,14 @@ function givenFramework() {
 beforeEach(() => {
     jest.clearAllMocks();
     givenFramework();
-    mockDb.controlRequirementLink.findMany.mockResolvedValue([
-        { controlId: 'ctrl-1', requirementId: 'req-1' },
-        { controlId: 'ctrl-1', requirementId: 'req-2' },
+    mockDb.practiceRequirementLink.findMany.mockResolvedValue([
+        { practiceId: 'ctrl-1', requirementId: 'req-1' },
+        { practiceId: 'ctrl-1', requirementId: 'req-2' },
     ]);
     mockDb.evidence.findMany.mockResolvedValue([
         {
-            id: 'ev-1', status: 'APPROVED', controlId: 'ctrl-1', sourceLogEntryId: 'log-1',
-            control: { id: 'ctrl-1', code: 'C-1', name: 'Spray records kept' },
+            id: 'ev-1', status: 'APPROVED', practiceId: 'ctrl-1', sourceLogEntryId: 'log-1',
+            practice: { id: 'ctrl-1', code: 'C-1', name: 'Spray records kept' },
         },
     ]);
     mockDb.logEntry.findMany.mockResolvedValue([
@@ -71,7 +71,7 @@ beforeEach(() => {
 });
 
 describe('listFarmRecordsBackingFramework — the answer', () => {
-    it('returns the journal entry behind a scheme control point', async () => {
+    it('returns the journal entry behind a scheme practice point', async () => {
         const res = await listFarmRecordsBackingFramework(ctx, 'GG');
         expect(res.framework).toEqual({ key: 'GG', name: 'GlobalG.A.P.' });
         expect(res.records).toHaveLength(1);
@@ -83,24 +83,24 @@ describe('listFarmRecordsBackingFramework — the answer', () => {
         });
     });
 
-    it('names every requirement the record backs, not just the control', async () => {
-        // One control mapped to two control points. An auditor asks about the
-        // control point, so the answer has to carry the codes.
+    it('names every requirement the record backs, not just the practice', async () => {
+        // One practice mapped to two practice points. An auditor asks about the
+        // practice point, so the answer has to carry the codes.
         const res = await listFarmRecordsBackingFramework(ctx, 'GG');
-        expect(res.records[0].controls[0].requirementCodes.sort()).toEqual(['CB.7.6', 'CB.7.9']);
-        expect(res.records[0].controls[0].controlName).toBe('Spray records kept');
+        expect(res.records[0].practices[0].requirementCodes.sort()).toEqual(['CB.7.6', 'CB.7.9']);
+        expect(res.records[0].practices[0].practiceName).toBe('Spray records kept');
     });
 
     it('flags a record whose evidence nobody has approved', async () => {
         mockDb.evidence.findMany.mockResolvedValue([
             {
-                id: 'ev-1', status: 'SUBMITTED', controlId: 'ctrl-1', sourceLogEntryId: 'log-1',
-                control: { id: 'ctrl-1', code: 'C-1', name: 'Spray records kept' },
+                id: 'ev-1', status: 'SUBMITTED', practiceId: 'ctrl-1', sourceLogEntryId: 'log-1',
+                practice: { id: 'ctrl-1', code: 'C-1', name: 'Spray records kept' },
             },
         ]);
         const res = await listFarmRecordsBackingFramework(ctx, 'GG');
         expect(res.records[0].awaitingReview).toBe(true);
-        expect(res.records[0].controls[0].evidenceStatus).toBe('SUBMITTED');
+        expect(res.records[0].practices[0].evidenceStatus).toBe('SUBMITTED');
     });
 
     it('does not flag a record whose evidence is approved', async () => {
@@ -108,18 +108,18 @@ describe('listFarmRecordsBackingFramework — the answer', () => {
         expect(res.records[0].awaitingReview).toBe(false);
     });
 
-    it('groups several controls under one record', async () => {
-        mockDb.controlRequirementLink.findMany.mockResolvedValue([
-            { controlId: 'ctrl-1', requirementId: 'req-1' },
-            { controlId: 'ctrl-2', requirementId: 'req-2' },
+    it('groups several practices under one record', async () => {
+        mockDb.practiceRequirementLink.findMany.mockResolvedValue([
+            { practiceId: 'ctrl-1', requirementId: 'req-1' },
+            { practiceId: 'ctrl-2', requirementId: 'req-2' },
         ]);
         mockDb.evidence.findMany.mockResolvedValue([
-            { id: 'ev-1', status: 'APPROVED', controlId: 'ctrl-1', sourceLogEntryId: 'log-1', control: { id: 'ctrl-1', code: 'C-1', name: 'A' } },
-            { id: 'ev-2', status: 'SUBMITTED', controlId: 'ctrl-2', sourceLogEntryId: 'log-1', control: { id: 'ctrl-2', code: 'C-2', name: 'B' } },
+            { id: 'ev-1', status: 'APPROVED', practiceId: 'ctrl-1', sourceLogEntryId: 'log-1', practice: { id: 'ctrl-1', code: 'C-1', name: 'A' } },
+            { id: 'ev-2', status: 'SUBMITTED', practiceId: 'ctrl-2', sourceLogEntryId: 'log-1', practice: { id: 'ctrl-2', code: 'C-2', name: 'B' } },
         ]);
         const res = await listFarmRecordsBackingFramework(ctx, 'GG');
         expect(res.records).toHaveLength(1);
-        expect(res.records[0].controls).toHaveLength(2);
+        expect(res.records[0].practices).toHaveLength(2);
         // One unapproved among two is still "awaiting review".
         expect(res.records[0].awaitingReview).toBe(true);
     });
@@ -127,7 +127,7 @@ describe('listFarmRecordsBackingFramework — the answer', () => {
 
 describe('listFarmRecordsBackingFramework — the empty answers', () => {
     it('is empty, not an error, when the tenant has not installed the scheme', async () => {
-        mockDb.controlRequirementLink.findMany.mockResolvedValue([]);
+        mockDb.practiceRequirementLink.findMany.mockResolvedValue([]);
         const res = await listFarmRecordsBackingFramework(ctx, 'GG');
         expect(res.records).toEqual([]);
         expect(res.totalRecords).toBe(0);
@@ -138,7 +138,7 @@ describe('listFarmRecordsBackingFramework — the empty answers', () => {
         mockPrisma.frameworkRequirement.findMany.mockResolvedValue([]);
         const res = await listFarmRecordsBackingFramework(ctx, 'GG');
         expect(res.records).toEqual([]);
-        expect(mockDb.controlRequirementLink.findMany).not.toHaveBeenCalled();
+        expect(mockDb.practiceRequirementLink.findMany).not.toHaveBeenCalled();
     });
 
     it('is empty when no evidence is derived from a farm record', async () => {
@@ -163,7 +163,7 @@ describe('listFarmRecordsBackingFramework — query discipline', () => {
     it('scopes every tenant read to the tenant', async () => {
         await listFarmRecordsBackingFramework(ctx, 'GG');
         for (const call of [
-            mockDb.controlRequirementLink.findMany.mock.calls[0],
+            mockDb.practiceRequirementLink.findMany.mock.calls[0],
             mockDb.evidence.findMany.mock.calls[0],
             mockDb.logEntry.findMany.mock.calls[0],
         ]) {
@@ -186,7 +186,7 @@ describe('listFarmRecordsBackingFramework — query discipline', () => {
 
     it('walks the graph in bulk queries, never per row', async () => {
         await listFarmRecordsBackingFramework(ctx, 'GG');
-        expect(mockDb.controlRequirementLink.findMany).toHaveBeenCalledTimes(1);
+        expect(mockDb.practiceRequirementLink.findMany).toHaveBeenCalledTimes(1);
         expect(mockDb.evidence.findMany).toHaveBeenCalledTimes(1);
         expect(mockDb.logEntry.findMany).toHaveBeenCalledTimes(1);
     });

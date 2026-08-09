@@ -2,7 +2,7 @@
  * Epic 69 wave #4 — tasks bulk-mutation optimistic lifecycle.
  *
  * Pins the same optimistic-apply / rollback / revalidate contract
- * the dashboard / control-status / evidence-upload tests pin, but
+ * the dashboard / practice-status / evidence-upload tests pin, but
  * for the multi-row bulk pattern unique to the tasks list:
  *
  *   1. Selecting 3 tasks and applying "status: RESOLVED" flips

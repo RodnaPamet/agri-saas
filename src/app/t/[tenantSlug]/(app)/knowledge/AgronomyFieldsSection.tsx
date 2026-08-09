@@ -9,7 +9,7 @@
  * sanitised server-side by `sanitizeTagArray` in `usecases/knowledge.ts`);
  * an empty list means "applies to every crop / region" (see the schema
  * header in `prisma/schema/knowledge.prisma`). BBCH uses a `Switch` +
- * two `NumberStepper` controls (Epic 60 — never a raw
+ * two `NumberStepper` practices (Epic 60 — never a raw
  * `<input type="number">`) rather than a free-text pair, since it is a
  * bounded 0-99 ordinal scale and a stray value would otherwise round-trip
  * through a 400 the user can't see coming.

@@ -135,7 +135,7 @@ async function createFrameworkCoverageSnapshot(
         });
     }
     // The coverage engine (`framework/coverage`) was removed with the
-    // compliance uproot — a requirement is no longer "covered" by a Control
+    // compliance uproot — a requirement is no longer "covered" by a Practice
     // row, so there is no percentage to freeze. The snapshot keeps the
     // framework identity so the pack item still names what it refers to.
     return JSON.stringify({
@@ -145,16 +145,16 @@ async function createFrameworkCoverageSnapshot(
     });
 }
 
-async function createControlSnapshot(tdb: PrismaTx, controlId: string, tenantId: string): Promise<string> {
-    const ctrl = await tdb.control.findFirst({
-        where: { id: controlId, tenantId },
+async function createPracticeSnapshot(tdb: PrismaTx, practiceId: string, tenantId: string): Promise<string> {
+    const ctrl = await tdb.practice.findFirst({
+        where: { id: practiceId, tenantId },
         include: {
             tasks: { select: { id: true, title: true, status: true, dueAt: true } },
             evidence: { select: { id: true, title: true, status: true, type: true } },
             requirementLinks: { include: { requirement: { select: { code: true, title: true, frameworkId: true } } } },
         },
     });
-    if (!ctrl) return JSON.stringify({ error: 'Control not found', entityId: controlId });
+    if (!ctrl) return JSON.stringify({ error: 'Practice not found', entityId: practiceId });
     return JSON.stringify({
         code: ctrl.code, name: ctrl.name, status: ctrl.status,
         description: ctrl.description,
@@ -225,7 +225,7 @@ export async function freezeAuditPack(ctx: RequestContext, packId: string) {
                 try {
                     if (!snapshot || snapshot === '{}') {
                         switch (item.entityType) {
-                            case 'CONTROL': snapshot = await createControlSnapshot(tdb, item.entityId, ctx.tenantId); break;
+                            case 'PRACTICE': snapshot = await createPracticeSnapshot(tdb, item.entityId, ctx.tenantId); break;
                             case 'POLICY': snapshot = await createPolicySnapshot(tdb, item.entityId, ctx.tenantId); break;
                             case 'EVIDENCE': snapshot = await createEvidenceSnapshot(tdb, item.entityId, ctx.tenantId); break;
                             case 'ISSUE': snapshot = await createIssueSnapshot(tdb, item.entityId, ctx.tenantId); break;
@@ -261,7 +261,7 @@ export async function freezeAuditPack(ctx: RequestContext, packId: string) {
     // Phase 2: Attach the SoA snapshot as an EXPORT_ARTIFACT item.
     //
     // A Statement of Applicability used to be appended here as an
-    // EXPORT_ARTIFACT pack item. `getSoA` derived it from Control rows and
+    // EXPORT_ARTIFACT pack item. `getSoA` derived it from Practice rows and
     // their applicability decisions; both went with the compliance uproot,
     // so a frozen pack now carries its item snapshots and nothing further.
 
@@ -290,24 +290,24 @@ export async function previewDefaultPack(ctx: RequestContext, cycleId: string) {
 async function previewISO27001DefaultPack(ctx: RequestContext) {
     const fw = await runInTenantContext(ctx, (tdb) => tdb.framework.findFirst({ where: { key: 'ISO27001' } }));
 
-    // Controls mapped to ISO27001 requirements
-    let controlIds: string[] = [];
+    // Practices mapped to ISO27001 requirements
+    let practiceIds: string[] = [];
     if (fw) {
         const links = await runInTenantContext(ctx, (tdb) =>
-            tdb.controlRequirementLink.findMany({
+            tdb.practiceRequirementLink.findMany({
                 where: { tenantId: ctx.tenantId, requirement: { frameworkId: fw.id } },
-                select: { controlId: true },
+                select: { practiceId: true },
             })
         );
-        controlIds = [...new Set(links.map((l) => l.controlId))];
+        practiceIds = [...new Set(links.map((l) => l.practiceId))];
     }
 
-    // Fallback: all controls if no framework mapping
-    if (controlIds.length === 0) {
-        const controls = await runInTenantContext(ctx, (tdb) =>
-            tdb.control.findMany({ where: { tenantId: ctx.tenantId }, select: { id: true } })
+    // Fallback: all practices if no framework mapping
+    if (practiceIds.length === 0) {
+        const practices = await runInTenantContext(ctx, (tdb) =>
+            tdb.practice.findMany({ where: { tenantId: ctx.tenantId }, select: { id: true } })
         );
-        controlIds = controls.map((c) => c.id);
+        practiceIds = practices.map((c) => c.id);
     }
 
     // Policies with category "Security" or any policies
@@ -320,14 +320,14 @@ async function previewISO27001DefaultPack(ctx: RequestContext) {
     const securityPolicies = policies.filter((p) => p.category === 'Security' || p.category === 'INFORMATION_SECURITY');
     const policyIds = (securityPolicies.length > 0 ? securityPolicies : policies).map((p) => p.id);
 
-    // Evidence linked to those controls (via direct Control.evidence relation)
-    const controlsWithEvidence = await runInTenantContext(ctx, (tdb) =>
-        tdb.control.findMany({
-            where: { tenantId: ctx.tenantId, id: { in: controlIds } },
+    // Evidence linked to those practices (via direct Practice.evidence relation)
+    const practicesWithEvidence = await runInTenantContext(ctx, (tdb) =>
+        tdb.practice.findMany({
+            where: { tenantId: ctx.tenantId, id: { in: practiceIds } },
             select: { evidence: { select: { id: true } } },
         })
     );
-    const evidenceIds = [...new Set(controlsWithEvidence.flatMap((c) => c.evidence.map((e) => e.id)))];
+    const evidenceIds = [...new Set(practicesWithEvidence.flatMap((c) => c.evidence.map((e) => e.id)))];
 
     // Open issues
     const issues = await runInTenantContext(ctx, (tdb) =>
@@ -341,35 +341,35 @@ async function previewISO27001DefaultPack(ctx: RequestContext) {
     return {
         frameworkKey: 'ISO27001',
         selection: {
-            controls: { count: controlIds.length, ids: controlIds },
+            practices: { count: practiceIds.length, ids: practiceIds },
             policies: { count: policyIds.length, ids: policyIds },
             evidence: { count: evidenceIds.length, ids: evidenceIds },
             issues: { count: issueIds.length, ids: issueIds },
         },
-        totalItems: controlIds.length + policyIds.length + evidenceIds.length + issueIds.length,
+        totalItems: practiceIds.length + policyIds.length + evidenceIds.length + issueIds.length,
     };
 }
 
 async function previewNIS2DefaultPack(ctx: RequestContext) {
     const fw = await runInTenantContext(ctx, (tdb) => tdb.framework.findFirst({ where: { key: 'NIS2' } }));
 
-    // Controls mapped to NIS2 requirements (Art.21 measures)
-    let controlIds: string[] = [];
+    // Practices mapped to NIS2 requirements (Art.21 measures)
+    let practiceIds: string[] = [];
     if (fw) {
         const links = await runInTenantContext(ctx, (tdb) =>
-            tdb.controlRequirementLink.findMany({
+            tdb.practiceRequirementLink.findMany({
                 where: { tenantId: ctx.tenantId, requirement: { frameworkId: fw.id } },
-                select: { controlId: true },
+                select: { practiceId: true },
             })
         );
-        controlIds = [...new Set(links.map((l) => l.controlId))];
+        practiceIds = [...new Set(links.map((l) => l.practiceId))];
     }
 
-    if (controlIds.length === 0) {
-        const controls = await runInTenantContext(ctx, (tdb) =>
-            tdb.control.findMany({ where: { tenantId: ctx.tenantId }, select: { id: true } })
+    if (practiceIds.length === 0) {
+        const practices = await runInTenantContext(ctx, (tdb) =>
+            tdb.practice.findMany({ where: { tenantId: ctx.tenantId }, select: { id: true } })
         );
-        controlIds = controls.map((c) => c.id);
+        practiceIds = practices.map((c) => c.id);
     }
 
     // NIS2-relevant policies: incident response, BC/DR, access control, supplier security
@@ -386,14 +386,14 @@ async function previewNIS2DefaultPack(ctx: RequestContext) {
     });
     const policyIds = (nis2Policies.length > 0 ? nis2Policies : policies).map((p) => p.id);
 
-    // Evidence tied to controls (via direct Control.evidence relation)
-    const controlsWithEvidence = await runInTenantContext(ctx, (tdb) =>
-        tdb.control.findMany({
-            where: { tenantId: ctx.tenantId, id: { in: controlIds } },
+    // Evidence tied to practices (via direct Practice.evidence relation)
+    const practicesWithEvidence = await runInTenantContext(ctx, (tdb) =>
+        tdb.practice.findMany({
+            where: { tenantId: ctx.tenantId, id: { in: practiceIds } },
             select: { evidence: { select: { id: true } } },
         })
     );
-    const evidenceIds = [...new Set(controlsWithEvidence.flatMap((c) => c.evidence.map((e) => e.id)))];
+    const evidenceIds = [...new Set(practicesWithEvidence.flatMap((c) => c.evidence.map((e) => e.id)))];
 
     // Issues
     const issues = await runInTenantContext(ctx, (tdb) =>
@@ -407,12 +407,12 @@ async function previewNIS2DefaultPack(ctx: RequestContext) {
     return {
         frameworkKey: 'NIS2',
         selection: {
-            controls: { count: controlIds.length, ids: controlIds },
+            practices: { count: practiceIds.length, ids: practiceIds },
             policies: { count: policyIds.length, ids: policyIds },
             evidence: { count: evidenceIds.length, ids: evidenceIds },
             issues: { count: issueIds.length, ids: issueIds },
         },
-        totalItems: controlIds.length + policyIds.length + evidenceIds.length + issueIds.length,
+        totalItems: practiceIds.length + policyIds.length + evidenceIds.length + issueIds.length,
     };
 }
 

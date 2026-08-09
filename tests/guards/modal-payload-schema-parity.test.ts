@@ -7,10 +7,10 @@
  * the UI reports the save worked.
  *
  * The evidence edit modal sent `description` (the column is `content`) and
- * `controlId` (which had no field at all). Both were dropped on every save,
+ * `practiceId` (which had no field at all). Both were dropped on every save,
  * for as long as the modal has existed. Nothing failed: the request was
  * well-formed, the response was 200, the toast said saved. Editing an evidence
- * description simply did nothing, and re-assigning it to another control did
+ * description simply did nothing, and re-assigning it to another practice did
  * nothing, and there was no signal anywhere that either had happened.
  *
  * A type checker cannot see this — the payload is a `JSON.stringify` of an
@@ -47,7 +47,7 @@ const CONTRACTS: readonly Contract[] = [
         modal: 'src/app/t/[tenantSlug]/(app)/evidence/EditEvidenceModal.tsx',
         schemaName: 'UpdateEvidenceSchema',
         schemaFile: 'src/lib/schemas/index.ts',
-        sends: ['title', 'content', 'ownerUserId', 'controlId', 'folder'],
+        sends: ['title', 'content', 'ownerUserId', 'practiceId', 'folder'],
     },
 ];
 

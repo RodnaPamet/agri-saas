@@ -175,8 +175,8 @@ export default function CycleReadinessPage() {
                         target="_blank" rel="noopener" className={buttonVariants({ variant: 'secondary', size: 'sm' })}>{t('readinessDetail.exportJson')}</a>
                     <a href={apiUrl(`/audits/cycles/${cycleId}/readiness?action=export-unmapped-csv`)}
                         target="_blank" rel="noopener" className={buttonVariants({ variant: 'secondary', size: 'sm' })}>{t('readinessDetail.exportUnmapped')}</a>
-                    <a href={apiUrl(`/audits/cycles/${cycleId}/readiness?action=export-control-gaps-csv`)}
-                        target="_blank" rel="noopener" className={buttonVariants({ variant: 'secondary', size: 'sm' })}>{t('readinessDetail.exportControlGaps')}</a>
+                    <a href={apiUrl(`/audits/cycles/${cycleId}/readiness?action=export-practice-gaps-csv`)}
+                        target="_blank" rel="noopener" className={buttonVariants({ variant: 'secondary', size: 'sm' })}>{t('readinessDetail.exportPracticeGaps')}</a>
                 </div>
             </div>
         </EntityDetailLayout>

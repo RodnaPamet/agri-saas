@@ -37,7 +37,7 @@ import {
     type TenantHealthRow,
     type PortfolioTrend,
     type PortfolioTrendDataPoint,
-    type NonPerformingControlRow,
+    type NonPerformingPracticeRow,
     type CriticalRiskRow,
     type OverdueEvidenceRow,
     type PaginatedDrillDownInput,
@@ -61,7 +61,7 @@ function bpsToPercent(bps: number): number {
 }
 
 /** Avoid divide-by-zero for the org-wide coverage. Returns 0 when the
- *  org has no applicable controls anywhere. */
+ *  org has no applicable practices anywhere. */
 function safeCoveragePercent(implemented: number, applicable: number): number {
     if (applicable <= 0) return 0;
     return Math.min(100, Math.max(0, (implemented / applicable) * 100));
@@ -74,12 +74,12 @@ function toIsoDate(d: Date): string {
 function trendRowToDataPoint(row: SnapshotTrendRow): PortfolioTrendDataPoint {
     return {
         date: toIsoDate(row.snapshotDate),
-        controlCoveragePercent: safeCoveragePercent(
-            row.controlsImplemented,
-            row.controlsApplicable,
+        practiceCoveragePercent: safeCoveragePercent(
+            row.practicesImplemented,
+            row.practicesApplicable,
         ),
-        controlsImplemented: row.controlsImplemented,
-        controlsApplicable: row.controlsApplicable,
+        practicesImplemented: row.practicesImplemented,
+        practicesApplicable: row.practicesApplicable,
         evidenceOverdue: row.evidenceOverdue,
         evidenceDueSoon7d: row.evidenceDueSoon7d,
         evidenceCurrent: row.evidenceCurrent,
@@ -128,8 +128,8 @@ function projectPortfolioSummary(
 ): PortfolioSummary {
     const { tenants, snapshots, snapshotsByTenant } = base;
 
-    let controlsApplicable = 0;
-    let controlsImplemented = 0;
+    let practicesApplicable = 0;
+    let practicesImplemented = 0;
     let evidenceTotal = 0;
     let evidenceOverdue = 0;
     let evidenceDueSoon7d = 0;
@@ -150,8 +150,8 @@ function projectPortfolioSummary(
             pending++;
             continue;
         }
-        controlsApplicable += s.controlsApplicable;
-        controlsImplemented += s.controlsImplemented;
+        practicesApplicable += s.practicesApplicable;
+        practicesImplemented += s.practicesImplemented;
         evidenceTotal += s.evidenceTotal;
         evidenceOverdue += s.evidenceOverdue;
         evidenceDueSoon7d += s.evidenceDueSoon7d;
@@ -162,7 +162,7 @@ function projectPortfolioSummary(
         findingsOpen += s.findingsOpen;
 
         const rag = computeRag({
-            coveragePercent: bpsToPercent(s.controlCoverageBps),
+            coveragePercent: bpsToPercent(s.practiceCoverageBps),
             overdueEvidence: s.evidenceOverdue,
         });
         if (rag === 'GREEN') green++;
@@ -179,12 +179,12 @@ function projectPortfolioSummary(
             snapshotted: snapshots.length,
             pending,
         },
-        controls: {
-            applicable: controlsApplicable,
-            implemented: controlsImplemented,
+        practices: {
+            applicable: practicesApplicable,
+            implemented: practicesImplemented,
             coveragePercent: safeCoveragePercent(
-                controlsImplemented,
-                controlsApplicable,
+                practicesImplemented,
+                practicesApplicable,
             ),
         },
         evidence: {
@@ -224,7 +224,7 @@ function projectPortfolioTenantHealth(base: PortfolioBaseData): TenantHealthRow[
                 rag: null,
             };
         }
-        const coveragePercent = bpsToPercent(s.controlCoverageBps);
+        const coveragePercent = bpsToPercent(s.practiceCoverageBps);
         return {
             tenantId: t.id,
             slug: t.slug,
@@ -449,7 +449,7 @@ async function checkAuditorFanOutIntegrity(
     return { accessibleTenants, missingTenantIds };
 }
 
-// Status priority for the non-performing controls sort. Higher number
+// Status priority for the non-performing practices sort. Higher number
 // = more urgent. Locks the visual ordering: NEEDS_REVIEW first
 // (something acted-on but not finished), then NOT_STARTED (forgotten),
 // then in-flight states.
@@ -461,9 +461,9 @@ const CONTROL_STATUS_PRIORITY: Record<string, number> = {
     IMPLEMENTING: 1,
 };
 
-export async function getNonPerformingControls(
+export async function getNonPerformingPractices(
     ctx: OrgContext,
-): Promise<NonPerformingControlRow[]> {
+): Promise<NonPerformingPracticeRow[]> {
     assertCanViewPortfolio(ctx);
     // Drill-down only needs the tenant list — opt out of the
     // snapshots fetch. The tenants read still memoises in-request,
@@ -473,10 +473,10 @@ export async function getNonPerformingControls(
     });
     const integrity = await checkAuditorFanOutIntegrity(ctx, tenants);
 
-    return fanOutPerTenant<NonPerformingControlRow>(
+    return fanOutPerTenant<NonPerformingPracticeRow>(
         integrity.accessibleTenants,
         async (db, tenant) => {
-            const rows = await db.control.findMany({
+            const rows = await db.practice.findMany({
                 where: {
                     tenantId: tenant.id,
                     status: { notIn: ['IMPLEMENTED', 'NOT_APPLICABLE'] },
@@ -493,8 +493,8 @@ export async function getNonPerformingControls(
                 orderBy: { updatedAt: 'desc' },
                 take: PER_TENANT_LIMIT,
             });
-            return rows.map((c): NonPerformingControlRow => ({
-                controlId: c.id,
+            return rows.map((c): NonPerformingPracticeRow => ({
+                practiceId: c.id,
                 tenantId: tenant.id,
                 tenantSlug: tenant.slug,
                 tenantName: tenant.name,
@@ -504,9 +504,9 @@ export async function getNonPerformingControls(
                 // narrows to the non-performing subset via Zod at the API
                 // boundary. The runtime invariant matches because the
                 // findMany WHERE clause excludes the two terminal states.
-                status: c.status as NonPerformingControlRow['status'],
+                status: c.status as NonPerformingPracticeRow['status'],
                 updatedAt: c.updatedAt.toISOString(),
-                drillDownUrl: `/t/${tenant.slug}/controls/${c.id}`,
+                drillDownUrl: `/t/${tenant.slug}/practices/${c.id}`,
             }));
         },
         (rows) =>
@@ -673,7 +673,7 @@ export async function getPortfolioOverview(
 // Paginated drill-down (cursor-based)
 // ═════════════════════════════════════════════════════════════════════
 //
-// The dashboard summary (`getNonPerformingControls`,
+// The dashboard summary (`getNonPerformingPractices`,
 // `getCriticalRisksAcrossOrg`, `getOverdueEvidenceAcrossOrg`) caps at
 // `PORTFOLIO_DRILLDOWN_LIMIT` (50) and is the right shape for a
 // summary card. The dedicated drill-down pages need to browse beyond
@@ -693,7 +693,7 @@ export async function getPortfolioOverview(
 //     overall, encode `nextCursor` from the limit-th row when present.
 //
 // The cursor is opaque base64-JSON. Shape is per-entity:
-//   Controls : { p: number, d: string, i: string }   priority + updatedAt + id
+//   Practices : { p: number, d: string, i: string }   priority + updatedAt + id
 //   Risks    : { s: number, d: string, i: string }   inherentScore + updatedAt + id
 //   Evidence : { d: string, i: string }              nextReviewDate + id
 //
@@ -734,9 +734,9 @@ function decodeJson<T>(cursor: string | undefined): T | null {
     }
 }
 
-// ── Controls ─────────────────────────────────────────────────────────
+// ── Practices ─────────────────────────────────────────────────────────
 
-interface ControlsCursor {
+interface PracticesCursor {
     /** Status priority (1-5). See CONTROL_STATUS_PRIORITY. */
     p: number;
     /** ISO timestamp of the last emitted row's updatedAt. */
@@ -745,7 +745,7 @@ interface ControlsCursor {
     i: string;
 }
 
-const STATUSES_AT_PRIORITY: Record<number, NonPerformingControlRow['status'][]> = {
+const STATUSES_AT_PRIORITY: Record<number, NonPerformingPracticeRow['status'][]> = {
     5: ['NEEDS_REVIEW'],
     4: ['NOT_STARTED'],
     3: ['PLANNED'],
@@ -753,25 +753,25 @@ const STATUSES_AT_PRIORITY: Record<number, NonPerformingControlRow['status'][]> 
     1: ['IMPLEMENTING'],
 };
 
-function statusesAtOrBelow(priority: number): NonPerformingControlRow['status'][] {
-    const out: NonPerformingControlRow['status'][] = [];
+function statusesAtOrBelow(priority: number): NonPerformingPracticeRow['status'][] {
+    const out: NonPerformingPracticeRow['status'][] = [];
     for (let p = priority; p >= 1; p--) {
         out.push(...STATUSES_AT_PRIORITY[p]);
     }
     return out;
 }
 
-function statusesBelow(priority: number): NonPerformingControlRow['status'][] {
+function statusesBelow(priority: number): NonPerformingPracticeRow['status'][] {
     return statusesAtOrBelow(priority - 1);
 }
 
-export async function listNonPerformingControls(
+export async function listNonPerformingPractices(
     ctx: OrgContext,
     input: PaginatedDrillDownInput = {},
-): Promise<PaginatedDrillDownResult<NonPerformingControlRow>> {
+): Promise<PaginatedDrillDownResult<NonPerformingPracticeRow>> {
     assertCanViewPortfolio(ctx);
     const limit = clampPageLimit(input.limit);
-    const cursor = decodeJson<ControlsCursor>(input.cursor);
+    const cursor = decodeJson<PracticesCursor>(input.cursor);
     const { tenants } = await getPortfolioData(ctx.organizationId, {
         includeSnapshots: false,
     });
@@ -806,10 +806,10 @@ export async function listNonPerformingControls(
           }
         : undefined;
 
-    const merged = await fanOutPerTenant<NonPerformingControlRow>(
+    const merged = await fanOutPerTenant<NonPerformingPracticeRow>(
         tenants,
         async (db, tenant) => {
-            const rows = await db.control.findMany({
+            const rows = await db.practice.findMany({
                 where: {
                     tenantId: tenant.id,
                     status: { notIn: ['IMPLEMENTED', 'NOT_APPLICABLE'] },
@@ -827,16 +827,16 @@ export async function listNonPerformingControls(
                 orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }],
                 take: perTenantTake(limit),
             });
-            return rows.map((c): NonPerformingControlRow => ({
-                controlId: c.id,
+            return rows.map((c): NonPerformingPracticeRow => ({
+                practiceId: c.id,
                 tenantId: tenant.id,
                 tenantSlug: tenant.slug,
                 tenantName: tenant.name,
                 name: c.name,
                 code: c.code ?? null,
-                status: c.status as NonPerformingControlRow['status'],
+                status: c.status as NonPerformingPracticeRow['status'],
                 updatedAt: c.updatedAt.toISOString(),
-                drillDownUrl: `/t/${tenant.slug}/controls/${c.id}`,
+                drillDownUrl: `/t/${tenant.slug}/practices/${c.id}`,
             }));
         },
         // Identity sortAndLimit — we apply the page-limit cut below.
@@ -851,7 +851,7 @@ export async function listNonPerformingControls(
         if (pa !== pb) return pb - pa;
         const cmp = b.updatedAt.localeCompare(a.updatedAt);
         if (cmp !== 0) return cmp;
-        return a.controlId.localeCompare(b.controlId);
+        return a.practiceId.localeCompare(b.practiceId);
     });
 
     const trimmed = merged.slice(0, limit);
@@ -859,10 +859,10 @@ export async function listNonPerformingControls(
     const last = trimmed[trimmed.length - 1];
     const nextCursor =
         hasMore && last
-            ? encodeJson<ControlsCursor>({
+            ? encodeJson<PracticesCursor>({
                   p: CONTROL_STATUS_PRIORITY[last.status] ?? 0,
                   d: last.updatedAt,
-                  i: last.controlId,
+                  i: last.practiceId,
               })
             : null;
 

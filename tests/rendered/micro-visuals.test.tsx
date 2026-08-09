@@ -254,9 +254,9 @@ describe('ProgressCircle', () => {
 describe('KPI-card integration sanity', () => {
     it('the three primitives compose cleanly inside a shared card', () => {
         const { getByLabelText, getAllByRole, getByText } = render(
-            <section aria-label="Control Coverage KPI">
+            <section aria-label="Practice Coverage KPI">
                 <header>
-                    <h3>Control Coverage</h3>
+                    <h3>Practice Coverage</h3>
                     <p>75%</p>
                 </header>
                 <MiniAreaChart
@@ -285,7 +285,7 @@ describe('KPI-card integration sanity', () => {
         const circle = getByLabelText('Coverage circle');
         expect(bar.getAttribute('aria-valuenow')).toBe('75');
         expect(circle.getAttribute('aria-valuenow')).toBe('75');
-        expect(getByText('Control Coverage')).not.toBeNull();
+        expect(getByText('Practice Coverage')).not.toBeNull();
     });
 
     it('all three primitives tolerate zero / empty inputs without throwing', () => {

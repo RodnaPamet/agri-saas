@@ -1,9 +1,9 @@
 /**
  * 2026-05-27 — Notification streaming/alerts roadmap PR-A.
  *
- * In-app notifications for task + control assignment. Today the
+ * In-app notifications for task + practice assignment. Today the
  * task-assignment path enqueues only an EMAIL via the
- * NotificationOutbox; nothing reaches the bell. The control-owner
+ * NotificationOutbox; nothing reaches the bell. The practice-owner
  * path doesn't emit any notification at all. This module unifies
  * both: a single `createAssignmentNotification` function that the
  * caller drives with a typed payload.
@@ -19,7 +19,7 @@
  *     the existing TASK_ASSIGNED email idempotency.
  *
  * Fire-and-forget — callers must isolate the write in its own
- * transaction (see `assignTask` and `setControlOwner` paths) so a
+ * transaction (see `assignTask` and `setPracticeOwner` paths) so a
  * notification failure never rolls back the parent operation.
  */
 
@@ -35,7 +35,7 @@ export interface AssignmentTarget {
     entityId: string;
     /** Display label for the notification body. */
     entityLabel: string;
-    /** Optional key for the body (e.g. `T-123` for tasks, control code). */
+    /** Optional key for the body (e.g. `T-123` for tasks, practice code). */
     entityKey?: string | null;
     /** Tenant slug for the deep link. */
     tenantSlug: string;
@@ -43,7 +43,7 @@ export interface AssignmentTarget {
 
 export type AssignmentNotificationKind =
     | 'TASK_ASSIGNED'
-    | 'CONTROL_ASSIGNED'
+    | 'PRACTICE_ASSIGNED'
     | 'RISK_ASSIGNED'
     | 'ASSET_ASSIGNED';
 
@@ -59,10 +59,10 @@ const COPY: Record<AssignmentNotificationKind, AssignmentCopy> = {
         body: (label) => `${label} is now yours.`,
         linkPath: (slug, id) => `/t/${slug}/farm-tasks/${id}`,
     },
-    CONTROL_ASSIGNED: {
-        title: 'You were assigned a control',
+    PRACTICE_ASSIGNED: {
+        title: 'You were assigned a practice',
         body: (label) => `${label} is now yours.`,
-        linkPath: (slug, id) => `/t/${slug}/controls/${id}`,
+        linkPath: (slug, id) => `/t/${slug}/practices/${id}`,
     },
     RISK_ASSIGNED: {
         title: 'You were assigned a risk',

@@ -16,9 +16,9 @@ import { jsonResponse } from '@/lib/api-response';
 /**
  * Framework requirement catalogue.
  *
- * The compliance uproot removed the control layer, so the coverage /
+ * The compliance uproot removed the practice layer, so the coverage /
  * template / readiness / pack-install actions this route used to serve are
- * gone with it — a requirement is no longer "covered" by a Control row, and
+ * gone with it — a requirement is no longer "covered" by a Practice row, and
  * there is no template library to install from. What remains is the
  * catalogue itself: read the requirements, diff two versions, see which farm
  * records back them, and upsert the global fixture.
@@ -84,7 +84,7 @@ export const GET = withApiErrorHandling(
 // inside the usecase by `assertCanWriteCatalogue` (the platform-tenant gate);
 // `requirePermission('admin.manage')` wraps the handler so a denial emits an
 // audited AUTHZ_DENIED row and the route stays inside the Epic C.1 coverage
-// guardrail. It is the audited role floor, NOT the isolation control.
+// guardrail. It is the audited role floor, NOT the isolation practice.
 export const POST = withApiErrorHandling(
     requirePermission<{ tenantSlug: string; frameworkKey: string }>('admin.manage', async (req, { params }, ctx) => {
         const url = new URL(req.url);

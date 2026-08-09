@@ -173,7 +173,7 @@ describe('BullMQ Queue — Enqueue contract', () => {
             mappingKey: {
                 tenantId: 'tenant-1',
                 provider: 'github',
-                localEntityType: 'control',
+                localEntityType: 'practice',
                 localEntityId: 'ctrl-1',
                 remoteEntityType: 'branch_protection',
                 remoteEntityId: 'main',

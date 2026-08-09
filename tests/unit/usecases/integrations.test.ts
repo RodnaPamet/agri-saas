@@ -23,7 +23,7 @@
  *   3. Secrets always encrypted via encryptField — plaintext never
  *      reaches the DB column.
  *   4. CREATED / UPDATED / DISABLED audit events.
- *   5. runAutomationForControl: notFound / badRequest paths.
+ *   5. runAutomationForPractice: notFound / badRequest paths.
  *   6. handleIncomingWebhook persists raw event; "ignored" if no
  *      handler; status flip to "processed" on the happy path.
  */
@@ -68,7 +68,7 @@ jest.mock('../../../src/app-layer/events/audit', () => ({
 import {
     upsertIntegrationConnection,
     removeIntegrationConnection,
-    runAutomationForControl,
+    runAutomationForPractice,
     handleIncomingWebhook,
 } from '@/app-layer/usecases/integrations';
 import { runInTenantContext } from '@/lib/db-context';
@@ -289,23 +289,23 @@ describe('removeIntegrationConnection', () => {
     });
 });
 
-describe('runAutomationForControl — failure paths', () => {
-    it('throws notFound when the control does not exist', async () => {
+describe('runAutomationForPractice — failure paths', () => {
+    it('throws notFound when the practice does not exist', async () => {
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
             fn({
-                control: { findFirst: jest.fn().mockResolvedValue(null) },
+                practice: { findFirst: jest.fn().mockResolvedValue(null) },
             } as never),
         );
 
         await expect(
-            runAutomationForControl(makeRequestContext('EDITOR'), 'missing'),
-        ).rejects.toThrow(/Control not found/);
+            runAutomationForPractice(makeRequestContext('EDITOR'), 'missing'),
+        ).rejects.toThrow(/Practice not found/);
     });
 
-    it('throws badRequest when the control has no automationKey', async () => {
+    it('throws badRequest when the practice has no automationKey', async () => {
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
             fn({
-                control: {
+                practice: {
                     findFirst: jest.fn().mockResolvedValue({
                         id: 'c1', automationKey: null, tenantId: 'tenant-1',
                     }),
@@ -314,14 +314,14 @@ describe('runAutomationForControl — failure paths', () => {
         );
 
         await expect(
-            runAutomationForControl(makeRequestContext('EDITOR'), 'c1'),
+            runAutomationForPractice(makeRequestContext('EDITOR'), 'c1'),
         ).rejects.toThrow(/no automationKey/);
     });
 
     it('throws badRequest when no provider matches the automationKey', async () => {
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
             fn({
-                control: {
+                practice: {
                     findFirst: jest.fn().mockResolvedValue({
                         id: 'c1', automationKey: 'datadog:no-such-check', tenantId: 'tenant-1',
                     }),
@@ -331,14 +331,14 @@ describe('runAutomationForControl — failure paths', () => {
         mockResolveKey.mockReturnValue(null);
 
         await expect(
-            runAutomationForControl(makeRequestContext('EDITOR'), 'c1'),
+            runAutomationForPractice(makeRequestContext('EDITOR'), 'c1'),
         ).rejects.toThrow(/No provider/);
     });
 
     it('throws badRequest when no active connection exists for the resolved provider', async () => {
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
             fn({
-                control: {
+                practice: {
                     findFirst: jest.fn().mockResolvedValue({
                         id: 'c1', automationKey: 'datadog:check', tenantId: 'tenant-1', name: 'X',
                     }),
@@ -354,7 +354,7 @@ describe('runAutomationForControl — failure paths', () => {
         } as never);
 
         await expect(
-            runAutomationForControl(makeRequestContext('EDITOR'), 'c1'),
+            runAutomationForPractice(makeRequestContext('EDITOR'), 'c1'),
         ).rejects.toThrow(/No active connection/);
     });
 });

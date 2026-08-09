@@ -25,7 +25,7 @@ export type EvidenceReviewDTO = z.infer<typeof EvidenceReviewDTOSchema>;
 export const EvidenceListItemDTOSchema = z.object({
     id: z.string(),
     tenantId: z.string(),
-    controlId: z.string().nullable().optional(),
+    practiceId: z.string().nullable().optional(),
     type: z.string(),
     title: z.string(),
     content: z.string().nullable().optional(),
@@ -39,7 +39,7 @@ export const EvidenceListItemDTOSchema = z.object({
     status: z.string(),
     createdAt: z.string().optional(),
     updatedAt: z.string().optional(),
-    control: z.object({
+    practice: z.object({
         id: z.string(),
         name: z.string(),
         code: z.string().nullable().optional(),

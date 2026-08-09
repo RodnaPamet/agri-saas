@@ -14,7 +14,7 @@
  *   - the row-link cell uses the pre-computed `drillDownUrl` from the
  *     usecase (never a hand-built href)
  *   - tenant attribution is rendered as a column on every cross-tenant
- *     list (controls / evidence)
+ *     list (practices / evidence)
  *
  * Mirrors the org-overview-structural.test.ts template.
  */
@@ -50,15 +50,15 @@ const PAGES: PageSpec[] = [
         requiresTenantColumn: false,
     },
     {
-        name: 'controls',
-        serverPath: 'src/app/org/[orgSlug]/(app)/controls/page.tsx',
-        clientPath: 'src/app/org/[orgSlug]/(app)/controls/ControlsTable.tsx',
+        name: 'practices',
+        serverPath: 'src/app/org/[orgSlug]/(app)/practices/page.tsx',
+        clientPath: 'src/app/org/[orgSlug]/(app)/practices/PracticesTable.tsx',
         // Cursor-paginated list usecase. The non-paginated
-        // `getNonPerformingControls` remains for the dashboard
+        // `getNonPerformingPractices` remains for the dashboard
         // summary card + CSV export.
-        usecase: 'listNonPerformingControls',
+        usecase: 'listNonPerformingPractices',
         rowLinkPattern: /href=\{row\.original\.drillDownUrl\}/,
-        testIds: ['org-controls-table', 'org-control-link-', 'org-control-tenant-'],
+        testIds: ['org-practices-table', 'org-practice-link-', 'org-practice-tenant-'],
         requiresTenantColumn: true,
     },
     {
@@ -154,12 +154,12 @@ describe('Epic O-4 — cross-tenant list pages structural contract', () => {
     it('the pages collectively cover the spec entities', () => {
         // Was four; `risks` went with the risk register.
         const names = PAGES.map((p) => p.name).sort();
-        expect(names).toEqual(['controls', 'evidence', 'tenants']);
+        expect(names).toEqual(['evidence', 'practices', 'tenants']);
     });
 
     it('every cross-tenant list resourceName is plural-aware', () => {
-        // Locks consistent empty-state copy: "no controls" vs
-        // "no control" — DataTable uses the resourceName to drive
+        // Locks consistent empty-state copy: "no practices" vs
+        // "no practice" — DataTable uses the resourceName to drive
         // pagination + empty-state language.
         for (const spec of PAGES) {
             const src = read(spec.clientPath);

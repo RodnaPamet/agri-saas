@@ -8,9 +8,9 @@
  *   2. CREATE the CISO + their auto-provisioned AUDITOR membership in
  *      both tenants (mirrors what `provisionOrgAdminToTenants` does
  *      at runtime)
- *   3. SEED tenant-scoped Control + Evidence rows in each tenant —
+ *   3. SEED tenant-scoped Practice + Evidence rows in each tenant —
  *      including some that should be excluded by the drill-down
- *      filter (IMPLEMENTED control, APPROVED evidence)
+ *      filter (IMPLEMENTED practice, APPROVED evidence)
  *   4. CALL the drill-down usecases via the OrgContext
  *   5. ASSERT the returned rows are merged across both tenants,
  *      tenant-attributed, and exclude the rows that should be
@@ -34,7 +34,7 @@ import { prismaTestClient } from '../helpers/db';
 import type { PrismaClient } from '@prisma/client';
 
 import {
-    getNonPerformingControls,
+    getNonPerformingPractices,
     getOverdueEvidenceAcrossOrg,
     getPortfolioSummary,
     getPortfolioTenantHealth,
@@ -118,30 +118,30 @@ describeFn('Epic O-3 — portfolio drill-down lifecycle (DB-backed)', () => {
                 },
             });
 
-            // ── Controls ──
+            // ── Practices ──
             // One non-performing (NOT_STARTED) + one excluded (IMPLEMENTED).
-            await prisma.control.create({
+            await prisma.practice.create({
                 data: {
                     tenantId: tenant.id,
-                    name: `t${i + 1} pending control`,
+                    name: `t${i + 1} pending practice`,
                     code: `T${i + 1}-PENDING`,
                     status: 'NOT_STARTED',
                     applicability: 'APPLICABLE',
                 },
             });
-            await prisma.control.create({
+            await prisma.practice.create({
                 data: {
                     tenantId: tenant.id,
-                    name: `t${i + 1} done control`,
+                    name: `t${i + 1} done practice`,
                     code: `T${i + 1}-DONE`,
                     status: 'IMPLEMENTED',
                     applicability: 'APPLICABLE',
                 },
             });
-            await prisma.control.create({
+            await prisma.practice.create({
                 data: {
                     tenantId: tenant.id,
-                    name: `t${i + 1} N/A control`,
+                    name: `t${i + 1} N/A practice`,
                     code: `T${i + 1}-NA`,
                     status: 'NOT_STARTED',
                     applicability: 'NOT_APPLICABLE', // excluded
@@ -184,7 +184,7 @@ describeFn('Epic O-3 — portfolio drill-down lifecycle (DB-backed)', () => {
 
     afterAll(async () => {
         await prisma.evidence.deleteMany({ where: { tenantId: { in: tenantIds } } }).catch(() => {});
-        await prisma.control.deleteMany({ where: { tenantId: { in: tenantIds } } }).catch(() => {});
+        await prisma.practice.deleteMany({ where: { tenantId: { in: tenantIds } } }).catch(() => {});
         await prisma.tenantMembership.deleteMany({ where: { tenantId: { in: tenantIds } } }).catch(() => {});
         await prisma.tenant.deleteMany({ where: { id: { in: tenantIds } } }).catch(() => {});
         await prisma.orgMembership.deleteMany({ where: { organizationId: orgId } }).catch(() => {});
@@ -193,10 +193,10 @@ describeFn('Epic O-3 — portfolio drill-down lifecycle (DB-backed)', () => {
         await prisma.$disconnect();
     });
 
-    // ── Drill-down: controls ──────────────────────────────────────
+    // ── Drill-down: practices ──────────────────────────────────────
 
-    it('getNonPerformingControls returns one row per tenant, IMPLEMENTED + N/A excluded', async () => {
-        const rows = await getNonPerformingControls(ctxFor());
+    it('getNonPerformingPractices returns one row per tenant, IMPLEMENTED + N/A excluded', async () => {
+        const rows = await getNonPerformingPractices(ctxFor());
 
         // 2 tenants × 1 NOT_STARTED applicable = 2 rows.
         expect(rows).toHaveLength(2);
@@ -208,7 +208,7 @@ describeFn('Epic O-3 — portfolio drill-down lifecycle (DB-backed)', () => {
         for (const r of rows) {
             expect(r.status).toBe('NOT_STARTED');
             expect(r.code).toMatch(/PENDING/);
-            expect(r.drillDownUrl).toBe(`/t/${r.tenantSlug}/controls/${r.controlId}`);
+            expect(r.drillDownUrl).toBe(`/t/${r.tenantSlug}/practices/${r.practiceId}`);
         }
     });
 

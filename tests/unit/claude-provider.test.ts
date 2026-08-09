@@ -199,7 +199,7 @@ describe('streaming', () => {
 // ─── (d) System-prompt mapping ───
 
 describe('system-prompt mapping', () => {
-    it('maps system messages to the top-level system param with cache_control', async () => {
+    it('maps system messages to the top-level system param with cache_practice', async () => {
         mockMessagesCreate.mockResolvedValueOnce(messageResponse([{ type: 'text', text: 'ok' }]));
 
         await provider().complete({
@@ -215,7 +215,7 @@ describe('system-prompt mapping', () => {
         expect(call.system[0].type).toBe('text');
         expect(call.system[0].text).toContain('be precise');
         expect(call.system[0].text).toContain('use SI units');
-        expect(call.system[0].cache_control).toEqual({ type: 'ephemeral' });
+        expect(call.system[0].cache_practice).toEqual({ type: 'ephemeral' });
         expect(call.messages.every((m: { role: string }) => m.role !== 'system')).toBe(true);
         expect(call.messages[0]).toEqual({ role: 'user', content: 'go' });
     });

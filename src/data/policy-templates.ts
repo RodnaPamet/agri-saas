@@ -163,7 +163,7 @@ Applies to all employees, contractors, and third parties using organizational re
 ### 3.2 Prohibited Activities
 - Accessing, downloading, or distributing illegal or offensive material.
 - Attempting to gain unauthorized access to systems, accounts, or data.
-- Installing unapproved software or circumventing security controls.
+- Installing unapproved software or circumventing security practices.
 - Sharing credentials or allowing others to use your accounts.
 - Using organizational resources for personal commercial activities.
 
@@ -311,7 +311,7 @@ This policy shall be reviewed annually.`,
         content: `# Cryptography & Key Management Policy
 
 ## 1. Purpose
-To establish guidelines for the use of cryptographic controls and management of cryptographic keys to protect information.
+To establish guidelines for the use of cryptographic practices and management of cryptographic keys to protect information.
 
 ## 2. Scope
 Applies to all systems and processes that use cryptography for data protection.
@@ -339,7 +339,7 @@ Applies to all systems and processes that use cryptography for data protection.
 
 ## 4. Responsibilities
 - **Security Team**: Defining cryptographic standards and overseeing key management.
-- **System Administrators**: Implementing and maintaining cryptographic controls.
+- **System Administrators**: Implementing and maintaining cryptographic practices.
 - **Developers**: Following cryptographic coding standards.
 
 ## 5. Review

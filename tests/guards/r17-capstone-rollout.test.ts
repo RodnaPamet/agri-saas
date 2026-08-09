@@ -27,7 +27,7 @@
  *          tile).
  *   PR-8 — Risk Distribution donut filter-aware (inline focus
  *          + dim recipe).
- *   PR-9 — Generic ChartFocusWrapper applied to Control
+ *   PR-9 — Generic ChartFocusWrapper applied to Practice
  *          Coverage + Evidence Status sections.
  *   PR-10 — NextBestActionCard urgency-tinted glow (per
  *           action.id colour token).

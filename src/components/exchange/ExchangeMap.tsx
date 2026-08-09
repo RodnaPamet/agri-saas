@@ -907,7 +907,7 @@ export function ExchangeMap({
                 </div>
             )}
 
-            {/* Zoom controls (bottom-right, compact). */}
+            {/* Zoom practices (bottom-right, compact). */}
             {status === 'ready' && (
                 <div className="absolute bottom-3 right-3 flex flex-col gap-1">
                     <Button

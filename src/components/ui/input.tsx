@@ -32,11 +32,11 @@ import { Eye, EyeSlash } from "./icons";
 
 // ─── CVA ────────────────────────────────────────────────────────────
 
-// R20-PR-B — Input migrated to the R20 control-parity edge tokens.
+// R20-PR-B — Input migrated to the R20 practice-parity edge tokens.
 // Same shape as before, but the border / hover / focus channels
 // now ride `--ctrl-edge-rest` / `--ctrl-edge-hover` / `--ctrl-edge-focus`
 // so a focused Input feels like a cousin of a focused Button rather
-// than an unrelated control. The Tailwind ring is dropped in favour
+// than an unrelated practice. The Tailwind ring is dropped in favour
 // of a brand-tinted box-shadow halo on focus — the halo composes
 // cleanly with future iridescent input edges (deferred) and reads
 // as the same "warm focus glow" the R20 button family wears.

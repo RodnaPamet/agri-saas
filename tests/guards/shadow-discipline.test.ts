@@ -29,7 +29,7 @@
  *       Tooltip, Command palette, Undo toast).
  *     - Chart / graph tooltips that float above the canvas.
  *     - Hand-rolled overlay menus or toasts (admin/members
- *       overflow menu, controls/[controlId] success toast).
+ *       overflow menu, practices/[practiceId] success toast).
  *     - Moving primitives whose depth communicates state
  *       (Switch thumb).
  *
@@ -63,7 +63,7 @@ const ALLOWLIST: AllowlistEntry[] = [
     },
     {
         file: 'src/components/ui/map/MapCanvas.tsx',
-        reason: 'feat/mobile-map — floating on-map controls (zoom/locate/track) + the geolocation "blue dot" marker float over arbitrary basemap imagery; shadow-md gives the lift that keeps them legible against a busy map (same floating-control class as the FAB/popover/tooltip entries).',
+        reason: 'feat/mobile-map — floating on-map practices (zoom/locate/track) + the geolocation "blue dot" marker float over arbitrary basemap imagery; shadow-md gives the lift that keeps them legible against a busy map (same floating-practice class as the FAB/popover/tooltip entries).',
     },
     {
         file: 'src/components/ui/popover.tsx',
@@ -102,16 +102,16 @@ const ALLOWLIST: AllowlistEntry[] = [
         reason: 'Hand-rolled overflow menu floats above the row; shadow communicates lift. Future PR may migrate to Popover.',
     },
     {
-        file: 'src/app/t/[tenantSlug]/(app)/controls/[controlId]/page.tsx',
+        file: 'src/app/t/[tenantSlug]/(app)/practices/[practiceId]/page.tsx',
         reason: 'Inline success toast floats above the page; shadow communicates lift. Future PR may migrate to canonical Toast.',
     },
     {
         file: 'src/components/ui/hooks/use-pull-to-refresh.tsx',
-        reason: 'mobile-native-feel — the pull-to-refresh spinner disc floats over the page content during the drag gesture; shadow-md gives it the lift of a native refresh control (same floating-affordance class as the FAB).',
+        reason: 'mobile-native-feel — the pull-to-refresh spinner disc floats over the page content during the drag gesture; shadow-md gives it the lift of a native refresh practice (same floating-affordance class as the FAB).',
     },
     {
         file: 'src/components/ui/scroll-to-top.tsx',
-        reason: 'mobile-native-feel — floating scroll-to-top button; shadow-lg communicates lift above scrolling content (same floating-control class as the FAB entry).',
+        reason: 'mobile-native-feel — floating scroll-to-top button; shadow-lg communicates lift above scrolling content (same floating-practice class as the FAB entry).',
     },
 ];
 

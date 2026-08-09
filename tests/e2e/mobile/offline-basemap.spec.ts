@@ -10,7 +10,7 @@
  * instead of a blank void.
  *
  *   1. Load the field's Map tab online (the service worker registers +
- *      controls the page after a reload).
+ *      practices the page after a reload).
  *   2. Tap "Download offline map" → the bounded, same-origin basemap tiles
  *      are fetched and the SW stores them in its dedicated basemap cache; the
  *      success toast confirms.

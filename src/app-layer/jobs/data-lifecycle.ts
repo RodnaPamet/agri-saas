@@ -42,7 +42,7 @@ export const DEFAULT_EVIDENCE_PURGE_DAYS = 365;
  * rework (data-retention is an information-asset concept, not a machine
  * one), so it is no longer swept. */
 const RETENTION_MODELS = [
-    'Risk', 'Control', 'Evidence', 'Policy',
+    'Risk', 'Practice', 'Evidence', 'Policy',
     'Vendor', 'FileRecord', 'Task',
     // Grain marketing contracts hold commercial terms (encrypted) and a
     // counterparty name, so they are exactly the kind of row a retention

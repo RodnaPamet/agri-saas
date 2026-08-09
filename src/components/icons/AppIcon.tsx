@@ -3,7 +3,7 @@
  *
  * Usage:
  *   <AppIcon name="dashboard" />
- *   <AppIcon name="controls" size={24} className="text-[var(--brand-default)]" />
+ *   <AppIcon name="practices" size={24} className="text-[var(--brand-default)]" />
  *   <AppIcon name="warning" aria-label="Warning" />
  */
 import { ICON_MAP, ICON_DEFAULT_SIZE, type AppIconName } from './iconMap';

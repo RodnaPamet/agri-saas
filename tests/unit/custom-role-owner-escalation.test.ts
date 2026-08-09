@@ -17,7 +17,7 @@
  * OWNER/ADMIN boundary from Epic 1. The custom-role EDITOR could not do it, but
  * every ADMIN could, via the API alone.
  *
- * The UI was not the control. `roles/page.tsx` kept a hand-copied permission
+ * The UI was not the practice. `roles/page.tsx` kept a hand-copied permission
  * schema that had silently drifted — missing exactly these two keys since they
  * were added three months after it was written — so the checkboxes never
  * rendered. That accident was the only thing making the escalation curl-only.
@@ -186,7 +186,7 @@ describe('API-key scopes cannot reach OWNER-only permissions', () => {
         const wildcard = scopesToPermissions(['*']);
         expect(wildcard.admin.tenant_lifecycle).toBe(false);
         expect(wildcard.admin.owner_management).toBe(false);
-        // Positive control: the wildcard really is broad, so the assertion
+        // Positive practice: the wildcard really is broad, so the assertion
         // above is meaningful rather than passing on an empty set.
         expect(wildcard.admin.manage).toBe(true);
     });

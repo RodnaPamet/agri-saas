@@ -67,7 +67,7 @@ export interface StreamedAuditEvent {
     userId: string | null;
     /** "USER" | "API_KEY" | "SYSTEM" — narrow string union, not enforced here. */
     actorType: string;
-    /** e.g. "Control", "Permission", "UserSession". */
+    /** e.g. "Practice", "Permission", "UserSession". */
     entity: string;
     /** Identifier of the entity acted upon. */
     entityId: string;

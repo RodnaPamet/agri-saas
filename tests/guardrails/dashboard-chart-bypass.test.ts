@@ -13,7 +13,7 @@
  * This guard scans every tenant-scoped `(app)/**\/*.tsx` file — not
  * just `/dashboard/page.tsx`. Scope was broadened on 2026-04-22
  * after the `<StatusBreakdown>` rollout closed the remaining inline
- * bars on detail pages (frameworks, risks, audits, controls,
+ * bars on detail pages (frameworks, risks, audits, practices,
  * mapping, coverage) — dashboards were never the only hotspot.
  *
  * New contributors adding a raw SVG polyline, an inline

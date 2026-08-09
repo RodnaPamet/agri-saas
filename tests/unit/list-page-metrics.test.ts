@@ -48,13 +48,13 @@ describe('recordListPageRowCount', () => {
 
     test('records the row count with entity + truncated labels', () => {
         recordListPageRowCount({
-            entity: 'controls',
+            entity: 'practices',
             count: 47,
             truncated: false,
             tenantId: 't-1',
         });
         expect(histogramRecord).toHaveBeenCalledWith(47, {
-            entity: 'controls',
+            entity: 'practices',
             truncated: false,
         });
     });

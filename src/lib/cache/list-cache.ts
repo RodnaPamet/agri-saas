@@ -1,7 +1,7 @@
 /**
  * List-read cache (Redis-backed).
  *
- * Wraps the hottest list usecases — controls, risks, evidence, tasks,
+ * Wraps the hottest list usecases — practices, risks, evidence, tasks,
  * plus the slow-changing agronomy catalogs (crop types, crop
  * varieties, units) and per-planting weather-derived reads — so
  * cache hits skip the DB round-trip entirely. Mutation paths bump
@@ -69,7 +69,7 @@ const VERSION_KEY_TTL_SECONDS = 60 * 60 * 24 * 30;
  * here without wiring the writes is a correctness bug.
  */
 export type CacheableEntity =
-    | 'control'
+    | 'practice'
     | 'risk'
     | 'evidence'
     | 'task'

@@ -5,7 +5,7 @@
  * Every entity type that can generate a DueItem has an explicit rule here.
  *
  * OWNERSHIP RULES:
- *   - CONTROL   → ownerUserId
+ *   - PRACTICE   → ownerUserId
  *   - EVIDENCE  → ownerUserId (added 2026-04-17, was previously unlinked)
  *   - POLICY    → ownerUserId
  *   - VENDOR    → ownerUserId
@@ -44,10 +44,10 @@ export const OWNERSHIP_RULES: Record<MonitoredEntityType, {
     /** Human-readable description for documentation/logging */
     description: string;
 }> = {
-    CONTROL: {
+    PRACTICE: {
         ownerField: 'ownerUserId',
         adminFallbackIntended: true,
-        description: 'Control owner (assigned via control management)',
+        description: 'Practice owner (assigned via practice management)',
     },
     EVIDENCE: {
         ownerField: 'ownerUserId',
@@ -103,8 +103,8 @@ export const OWNERSHIP_RULES: Record<MonitoredEntityType, {
  * @returns The owner user ID, or undefined if no owner is set
  *
  * @example
- *   const ownerUserId = resolveDueItemOwner('CONTROL', control);
- *   // Uses control.ownerUserId
+ *   const ownerUserId = resolveDueItemOwner('PRACTICE', practice);
+ *   // Uses practice.ownerUserId
  *
  * @example
  *   const ownerUserId = resolveDueItemOwner('TASK', task);

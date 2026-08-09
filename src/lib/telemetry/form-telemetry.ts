@@ -29,7 +29,7 @@ import * as React from "react";
 export interface FormTelemetryEvent {
     type: "open" | "submit" | "success" | "error" | "abandon";
     /**
-     * Stable identifier of the form surface (e.g., "NewControlModal",
+     * Stable identifier of the form surface (e.g., "NewPracticeModal",
      * "UploadEvidenceModal"). Appears as the primary dimension on the
      * reporting side.
      */

@@ -8,7 +8,7 @@
  *
  * Usage:
  *   import { apiGet, apiPost, ApiClientError } from '@/lib/api-client';
- *   const controls = await apiGet<ControlListItemDTO[]>('/api/t/acme/controls');
+ *   const practices = await apiGet<PracticeListItemDTO[]>('/api/t/acme/practices');
  *   const risk = await apiPost<RiskDetailDTO>('/api/t/acme/risks', body);
  */
 import type { ZodSchema } from 'zod';

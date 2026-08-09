@@ -441,7 +441,7 @@ export function PromotionsAdminClient({ tenantSlug }: { tenantSlug: string }) {
                               * Artwork attaches to a SAVED promotion — the storage
                               * key is derived from its id, which does not exist
                               * until the draft is created. Saying so beats a
-                              * disabled control with no explanation.
+                              * disabled practice with no explanation.
                               */}
                             <PromotionImageField
                                 promotionId={editing?.id ?? null}
