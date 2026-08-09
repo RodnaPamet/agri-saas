@@ -6,6 +6,8 @@ import { assertModuleEnabled } from '@/app-layer/usecases/modules';
 import { CreatePolicySchema } from '@/lib/schemas';
 import * as policyUsecases from '@/app-layer/usecases/policy';
 import { z } from 'zod';
+import { csvEnumField, csvIdField } from '@/lib/validation/query-params';
+import { PolicyStatus } from '@prisma/client';
 import { normalizeQ } from '@/lib/filters/query-helpers';
 import { jsonResponse } from '@/lib/api-response';
 import { LIST_BACKFILL_CAP, applyBackfillCap } from '@/lib/list-backfill-cap';
@@ -14,8 +16,8 @@ import { recordListPageRowCount } from '@/lib/observability/list-page-metrics';
 const PolicyQuerySchema = z.object({
     limit: z.coerce.number().int().min(1).max(100).optional(),
     cursor: z.string().optional(),
-    status: z.string().optional(),
-    category: z.string().optional(),
+    status: csvEnumField(z.nativeEnum(PolicyStatus)),
+    category: csvIdField(),
     language: z.string().optional(),
     q: z.string().optional().transform(normalizeQ),
     includeDeleted: z.enum(['true', 'false']).optional(),

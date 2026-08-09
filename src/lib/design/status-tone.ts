@@ -24,7 +24,7 @@
  *   getStatusTone(value, scale)
  *     Maps a numeric value on a {ok | warn | error} scale to a tone
  *     bundle of Tailwind classes (background / content / border).
- *     The `scale` argument practices the threshold semantics —
+ *     The `scale` argument controls the threshold semantics —
  *     `score-0-25` for risk heatmaps, `pct-0-100` for coverage
  *     percentages, `count-0-N` for "any > 0 is attention" UX.
  *

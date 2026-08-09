@@ -130,7 +130,7 @@ const ctx = makeRequestContext('ADMIN');
 describe('listPractices', () => {
     it('asserts read permission BEFORE the repo call', async () => {
         (PracticeRepository.list as jest.Mock).mockResolvedValueOnce([]);
-        await listPractices(ctx, { status: 'IMPLEMENTED' });
+        await listPractices(ctx, { status: ['IMPLEMENTED'] });
         expect(policyCalls).toEqual(['read']);
     });
 

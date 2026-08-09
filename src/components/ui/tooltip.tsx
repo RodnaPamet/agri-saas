@@ -188,7 +188,7 @@ export const Tooltip = forwardRef<HTMLButtonElement, TooltipProps>(function Tool
     // ASKING us to close as well (unconditionally from its `onClick`, from
     // `onPointerDown` when it believes it is already open, from its
     // DismissableLayer), and because we pass `onOpenChange`, every one of
-    // those requests arrives somewhere we practice. `handleTouchOpenChange`
+    // those requests arrives somewhere we control. `handleTouchOpenChange`
     // is where they are filtered.
     //
     // Filtering there rather than suppressing the DOM event is the whole
@@ -293,7 +293,7 @@ export const Tooltip = forwardRef<HTMLButtonElement, TooltipProps>(function Tool
                 }
                 // Hover-or-keyboard, never auto. Radix opens the tooltip on
                 // ANY focus, so when a popover/dialog auto-focuses its first
-                // practice (e.g. the calendar's prev-month arrow, or the theme
+                // control (e.g. the calendar's prev-month arrow, or the theme
                 // toggle on a freshly-opened menu) the tooltip pops without
                 // the user hovering. We gate Radix's focus-open on
                 // `:focus-visible`: keyboard focus still opens it (the a11y

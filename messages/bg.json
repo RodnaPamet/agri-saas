@@ -373,7 +373,26 @@
         "locationNotePlaceholder": "Допълнение (напр. северен навес, задна клетка)",
         "locationNone": "Няма зададено местоположение",
         "usefulLifeYears": "Полезен живот (години)",
-        "usefulLifeHelp": "Използва се за разпределяне на покупната цена по години в страница „Разходи“."
+        "usefulLifeHelp": "Използва се за разпределяне на покупната цена по години в страница „Разходи“.",
+        "typeTRACTOR": "Трактор",
+        "typeHARVESTER": "Комбайн",
+        "typeIMPLEMENT": "Прикачен инвентар",
+        "typeVEHICLE": "Превозно средство",
+        "typeIRRIGATION": "Напоителна техника",
+        "typeBUILDING": "Сграда",
+        "typeSTORAGE": "Склад",
+        "typeLIVESTOCK_EQUIPMENT": "Животновъдно оборудване",
+        "typeTOOL": "Инструмент",
+        "typeOTHER": "Друго",
+        "statusACTIVE": "Активен",
+        "statusIN_MAINTENANCE": "В поддръжка",
+        "statusRETIRED": "Изведен от употреба",
+        "criticalityLOW": "Ниска",
+        "criticalityMEDIUM": "Средна",
+        "criticalityHIGH": "Висока",
+        "filterTypeDesc": "Какъв вид машина, сграда или инструмент е това.",
+        "statusLabel": "Статус",
+        "criticalityLabel": "Критичност"
     },
     "practices": {
         "title": "Библиотека с практики",
@@ -2513,7 +2532,7 @@
         "tree": {
             "expandAll": "Разгъване на всички",
             "collapseAll": "Свиване на всички",
-            "practicesLabel": "Практики за разгъване на дървото"
+            "controlsLabel": "Контроли за разгъване на дървото"
         },
         "frameworkBuilder": {
             "title": "Конструктор — режим на пренареждане",

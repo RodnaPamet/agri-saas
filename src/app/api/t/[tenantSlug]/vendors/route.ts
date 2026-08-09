@@ -6,6 +6,7 @@ import { withValidatedBody } from '@/lib/validation/route';
 import { CreateVendorSchema } from '@/lib/schemas';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { z } from 'zod';
+import { csvEnumField, csvIdField } from '@/lib/validation/query-params';
 import { normalizeQ } from '@/lib/filters/query-helpers';
 import { jsonResponse } from '@/lib/api-response';
 import { LIST_BACKFILL_CAP, applyBackfillCap } from '@/lib/list-backfill-cap';
@@ -14,9 +15,10 @@ import { recordListPageRowCount } from '@/lib/observability/list-page-metrics';
 const VendorQuerySchema = z.object({
     limit: z.coerce.number().int().min(1).max(100).optional(),
     cursor: z.string().optional(),
-    status: z.string().optional(),
-    criticality: z.string().optional(),
-    riskRating: z.string().optional(),
+    // multiple:true facets — split + validate each member, yield an ARRAY.
+    status: csvEnumField(z.enum(['ACTIVE', 'ONBOARDING', 'OFFBOARDING', 'OFFBOARDED'])),
+    criticality: csvEnumField(z.enum(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'])),
+    riskRating: csvIdField(),
     reviewDue: z.enum(['overdue', 'next30d']).optional(),
     q: z.string().optional().transform(normalizeQ),
 }).strip();

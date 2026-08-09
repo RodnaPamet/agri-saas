@@ -142,9 +142,9 @@ describe('listPractices', () => {
     it('forwards filters into the cache key', async () => {
         (PracticeRepository.list as jest.Mock).mockResolvedValue([]);
         (WorkItemRepository.countLinkedToPractices as jest.Mock).mockResolvedValue(new Map());
-        await listPractices(readerCtx, { status: 'IMPLEMENTED', q: 'access' });
+        await listPractices(readerCtx, { status: ['IMPLEMENTED'], q: 'access' });
         const cacheArgs = (cachedListRead as jest.Mock).mock.calls[0][0];
-        expect(cacheArgs.params).toEqual({ status: 'IMPLEMENTED', q: 'access' });
+        expect(cacheArgs.params).toEqual({ status: ['IMPLEMENTED'], q: 'access' });
     });
 });
 

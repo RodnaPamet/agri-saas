@@ -247,7 +247,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
  *                         compose the org-level dashboard. ORG_ADMIN
  *                         only. Read access to the rendered dashboard
  *                         is gated by `canViewPortfolio`; this flag
- *                         only practices the configuration layer
+ *                         only controls the configuration layer
  *                         (Epic 41 — Configurable Dashboard Widget Engine).
  */
 export type OrgPermissionSet = {

@@ -5,8 +5,8 @@ import { buildCursorWhere, CURSOR_ORDER_BY, computePageInfo, clampLimit } from '
 import type { PaginatedResponse } from '@/lib/dto/pagination';
 
 export interface PolicyFilters {
-    status?: string;
-    category?: string;
+    status?: PolicyStatus[];
+    category?: string[];
     language?: string;
     q?: string;
 }
@@ -83,8 +83,10 @@ export class PolicyRepository {
 
     private static _buildWhere(ctx: RequestContext, filters?: PolicyFilters): Prisma.PolicyWhereInput {
         const where: Prisma.PolicyWhereInput = { tenantId: ctx.tenantId };
-        if (filters?.status) where.status = filters.status as Prisma.EnumPolicyStatusFilter;
-        if (filters?.category) where.category = filters.category;
+        // Guarded on `.length`: a CLEARED facet must OMIT the filter — `{ in: [] }`
+        // matches nothing and would blank the table.
+        if (filters?.status?.length) where.status = { in: filters.status };
+        if (filters?.category?.length) where.category = { in: filters.category };
         if (filters?.language) where.language = filters.language;
         if (filters?.q) {
             where.OR = [

@@ -34,7 +34,7 @@
  * A dedicated `admin.global_catalogue` key was considered and rejected: every
  * Role would grant it exactly as it grants `admin.manage`, so it would add a
  * `PermissionSet` member, a `PERMISSION_SCHEMA` entry and a grant line per role
- * without adding any practice the slug check doesn't already provide.
+ * without adding any control the slug check doesn't already provide.
  *
  * ── Fail closed ───────────────────────────────────────────────────────────
  *

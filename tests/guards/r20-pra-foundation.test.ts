@@ -27,7 +27,7 @@
  *   4. Three form-practice parity edge tokens (rest / hover / focus)
  *      in both themes.
  *   5. A `src/components/ui/control-variants.ts` file exporting
- *      `controlEdge`, `practiceSize`, and a `practiceVariants` cva.
+ *      `controlEdge`, `controlSize`, and a `controlVariants` cva.
  *      The practice sizing scale mirrors the button sizing scale so
  *      paired-row layouts (filter toolbar) align.
  */
@@ -190,12 +190,12 @@ describe("R20-PR-A — Liquid Elegance foundation", () => {
             expect(CONTROL_VARIANTS).toMatch(/export\s+const\s+controlEdge\s*=\s*\[/);
         });
 
-        it("exports a `practiceSize` map", () => {
-            expect(CONTROL_VARIANTS).toMatch(/export\s+const\s+practiceSize\s*=/);
+        it("exports a `controlSize` map", () => {
+            expect(CONTROL_VARIANTS).toMatch(/export\s+const\s+controlSize\s*=/);
         });
 
-        it("exports a `practiceVariants` cva", () => {
-            expect(CONTROL_VARIANTS).toMatch(/export\s+const\s+practiceVariants\s*=\s*cva\(/);
+        it("exports a `controlVariants` cva", () => {
+            expect(CONTROL_VARIANTS).toMatch(/export\s+const\s+controlVariants\s*=\s*cva\(/);
         });
 
         it("`controlEdge` wires the three R20 practice tokens", () => {
@@ -209,7 +209,7 @@ describe("R20-PR-A — Liquid Elegance foundation", () => {
             expect(body).toMatch(/var\(--ctrl-edge-focus\)/);
         });
 
-        it("`practiceSize` heights match the button size scale", () => {
+        it("`controlSize` heights match the button size scale", () => {
             // Filter-toolbar rows pair Inputs and Buttons side by
             // side. If a button is `h-9` at size=md, an input must
             // be `h-9` at size=md too — otherwise the row jitters.
@@ -221,7 +221,7 @@ describe("R20-PR-A — Liquid Elegance foundation", () => {
                 lg: "h-10",
             };
             for (const [size, height] of Object.entries(expected)) {
-                // practiceSize.<size> must contain the height.
+                // controlSize.<size> must contain the height.
                 const ctrlRe = new RegExp(
                     `${size}:\\s*["'][^"']*${height}\\b[^"']*["']`,
                 );

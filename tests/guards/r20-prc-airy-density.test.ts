@@ -25,7 +25,7 @@
  * not just the buttons.
  *
  * Heights are LOCKED out of this PR. The R20-PR-A ratchet asserts
- * practiceSize + button size scales agree at xs/sm/md/lg = h-7/h-8/
+ * controlSize + button size scales agree at xs/sm/md/lg = h-7/h-8/
  * h-9/h-10, so any size-shift here would have to be paired with a
  * matching control-variants.ts shift — exactly the over-reach this
  * ratchet exists to prevent.

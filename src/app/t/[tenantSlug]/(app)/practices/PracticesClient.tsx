@@ -333,7 +333,7 @@ function PracticesPageInner({
     );
 
     // R-filter-gear (#3, 2026-06-07): the "Edit filter cards" gear now
-    // practices the QUANTIFIABLE KPI cards above the table (Total /
+    // controls the QUANTIFIABLE KPI cards above the table (Total /
     // Implemented / In Progress / Not Started) — their visibility + order —
     // not the filter categories (those live in the Filter dropdown). The
     // toolbar still gets the full `liveFilterDefs`.

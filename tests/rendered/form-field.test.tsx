@@ -218,7 +218,7 @@ describe('<FieldGroup />', () => {
 
     it('renders an InfoTooltip trigger next to the heading when hint is set (Epic 56)', () => {
         render(
-            <FieldGroup title="Retention" hint="Practices how long evidence stays searchable.">
+            <FieldGroup title="Retention" hint="Controls how long evidence stays searchable.">
                 <FormField label="Until">
                     <Input type="date" />
                 </FormField>

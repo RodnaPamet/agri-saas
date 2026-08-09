@@ -1,3 +1,4 @@
+import type { PracticeStatus } from '@prisma/client';
 import { RequestContext } from '../../types';
 import { PracticeRepository } from '../../repositories/PracticeRepository';
 import { WorkItemRepository } from '../../repositories/WorkItemRepository';
@@ -13,7 +14,7 @@ import { cachedListRead } from '@/lib/cache/list-cache';
 export async function listPractices(
     ctx: RequestContext,
     filters?: {
-        status?: string; applicability?: string; ownerUserId?: string; q?: string; category?: string;
+        status?: PracticeStatus[]; applicability?: string; ownerUserId?: string[]; q?: string; category?: string[];
     },
     options: { take?: number } = {},
 ) {
@@ -56,7 +57,7 @@ export async function listPractices(
 
 export async function listPracticesPaginated(ctx: RequestContext, params: {
     limit?: number; cursor?: string;
-    filters?: { status?: string; applicability?: string; ownerUserId?: string; q?: string; category?: string };
+    filters?: { status?: PracticeStatus[]; applicability?: string; ownerUserId?: string[]; q?: string; category?: string[] };
 }) {
     assertCanReadPractices(ctx);
     return cachedListRead({

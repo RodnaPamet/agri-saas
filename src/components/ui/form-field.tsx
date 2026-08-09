@@ -5,7 +5,7 @@
  *
  * Wraps a single form control with its Label, optional description,
  * and optional error message — and auto-wires the accessibility
- * plumbing (htmlFor on the label, id on the practice, aria-describedby
+ * plumbing (htmlFor on the label, id on the control, aria-describedby
  * chain, aria-invalid on error).
  *
  * Usage:
@@ -24,15 +24,15 @@
  * works. The wrapper injects those attributes into the single child
  * element via React.cloneElement.
  *
- * Why a composable rather than a per-practice wrapper:
+ * Why a composable rather than a per-control wrapper:
  *   - The existing Input/Textarea/Checkbox primitives each carry their
  *     own description/error props — those stay first-class for
  *     stand-alone use. FormField is the canonical shape for a full
- *     label + practice + hint row inside a form grid.
+ *     label + control + hint row inside a form grid.
  *   - Keeps <Input error="…"> + <FormField error="…"> from both
  *     double-rendering the error: <FormField> renders the error at
  *     the field level and sets `invalid` on the child, so the inner
- *     practice paints the error border without duplicating the text.
+ *     control paints the error border without duplicating the text.
  */
 
 import { cn } from "@/lib/cn";
@@ -46,7 +46,7 @@ import { RequiredMarker } from "./required-marker";
 export interface FormFieldProps {
     /** The visible label text. Omit to render a label-less field. */
     label?: React.ReactNode;
-    /** Helper text under the practice. Hidden when `error` is present. */
+    /** Helper text under the control. Hidden when `error` is present. */
     description?: React.ReactNode;
     /**
      * Contextual help surfaced via an inline info icon next to the
@@ -68,13 +68,13 @@ export interface FormFieldProps {
     required?: boolean;
     /** Forward className to the outer wrapper. */
     className?: string;
-    /** Horizontally stack label + practice (default: vertical). */
+    /** Horizontally stack label + control (default: vertical). */
     orientation?: "vertical" | "horizontal";
-    /** Single React child — the practice (Input, Textarea, Checkbox, …). */
+    /** Single React child — the control (Input, Textarea, Checkbox, …). */
     children: React.ReactElement;
 }
 
-interface InjectedPracticeProps {
+interface InjectedControlProps {
     id?: string;
     "aria-labelledby"?: string;
     "aria-describedby"?: string;
@@ -102,21 +102,21 @@ const FormField = React.forwardRef<HTMLDivElement, FormFieldProps>(
         // Preserve a caller-provided id on the child; otherwise derive
         // a deterministic one from React.useId so the label + aria ids
         // match a single element.
-        const childProps = (children.props ?? {}) as InjectedPracticeProps;
-        const practiceId = childProps.id ?? `form-field-${autoId}`;
+        const childProps = (children.props ?? {}) as InjectedControlProps;
+        const controlId = childProps.id ?? `form-field-${autoId}`;
         const hasError = Boolean(error);
 
         const descriptionId =
-            description && !hasError ? `${practiceId}-description` : undefined;
-        const errorId = hasError ? `${practiceId}-error` : undefined;
+            description && !hasError ? `${controlId}-description` : undefined;
+        const errorId = hasError ? `${controlId}-error` : undefined;
 
-        // The visible <Label> carries an id so practices that cannot
+        // The visible <Label> carries an id so controls that cannot
         // take their accessible NAME from `htmlFor` alone can point at
         // it with `aria-labelledby`.
         //
-        // `htmlFor` is enough for a native labelable practice (<input>,
+        // `htmlFor` is enough for a native labelable control (<input>,
         // <textarea>, <select>) — the accname algorithm reads the
-        // associated <label>. It is NOT enough for a practice that also
+        // associated <label>. It is NOT enough for a control that also
         // sets its own `aria-label`, because `aria-label` outranks the
         // host-language label. <Combobox> is exactly that case: it
         // computes a last-resort `aria-label` so axe's `button-name`
@@ -125,7 +125,7 @@ const FormField = React.forwardRef<HTMLDivElement, FormFieldProps>(
         // the trigger named after the SELECTED OPTION, a name that
         // drifts every time the user picks something.
         //
-        // Exposing the label id lets such a practice prefer
+        // Exposing the label id lets such a control prefer
         // `aria-labelledby` and drop its fallback, so its name is
         // stable and matches the label the user can see.
         //
@@ -133,7 +133,7 @@ const FormField = React.forwardRef<HTMLDivElement, FormFieldProps>(
         // `aria-describedby` chain below): `aria-labelledby` IS the
         // accessible name, so a caller who sets one explicitly means to
         // replace the field label, not to append to it.
-        const labelId = label ? `${practiceId}-label` : undefined;
+        const labelId = label ? `${controlId}-label` : undefined;
         const labelledBy = childProps["aria-labelledby"] ?? labelId;
 
         const describedBy =
@@ -143,12 +143,12 @@ const FormField = React.forwardRef<HTMLDivElement, FormFieldProps>(
 
         // React 19 made `cloneElement`'s overload stricter — the
         // children's prop type must match the props arg exactly. Cast
-        // the children to the InjectedPracticeProps element shape so
+        // the children to the InjectedControlProps element shape so
         // the overload picks the typed branch.
         const injectedChild = React.cloneElement(
-            children as React.ReactElement<InjectedPracticeProps>,
+            children as React.ReactElement<InjectedControlProps>,
             {
-                id: practiceId,
+                id: controlId,
                 "aria-labelledby": labelledBy,
                 "aria-describedby": describedBy,
                 "aria-invalid": hasError ? true : childProps["aria-invalid"],
@@ -181,7 +181,7 @@ const FormField = React.forwardRef<HTMLDivElement, FormFieldProps>(
                             isHorizontal && "shrink-0",
                         )}
                     >
-                        <Label id={labelId} htmlFor={practiceId}>
+                        <Label id={labelId} htmlFor={controlId}>
                             {label}
                             {required && <RequiredMarker />}
                         </Label>

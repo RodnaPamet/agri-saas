@@ -45,7 +45,7 @@ export interface FieldGroupProps
      */
     hint?: React.ReactNode;
     /**
-     * Practices the grid layout. Defaults to a single-column vertical
+     * Controls the grid layout. Defaults to a single-column vertical
      * stack (the common case for CRUD modals).
      */
     columns?: 1 | 2 | 3;

@@ -1,13 +1,13 @@
 'use client';
 
 /**
- * Epic 46 — Generic expand-all / collapse-all practice for any
+ * Epic 46 — Generic expand-all / collapse-all control for any
  * `<TreeView>` consumer.
  *
  * Reusable beyond the framework explorer: any caller that holds an
  * expansion `Set<string>` plus the total number of expandable nodes
  * can drop this in. The toggle owns no state of its own — it's a
- * tiny stateless practice that fires `onExpandAll` /
+ * tiny stateless control that fires `onExpandAll` /
  * `onCollapseAll`. The tri-state visual (none / partial / all) is
  * derived from `expandedCount` vs `totalExpandable`.
  *
@@ -68,7 +68,7 @@ export function TreeExpandCollapseToggle({
                 className,
             )}
             role="group"
-            aria-label={t('tree.practicesLabel')}
+            aria-label={t('tree.controlsLabel')}
             data-tree-toggle-id={id}
         >
             <button

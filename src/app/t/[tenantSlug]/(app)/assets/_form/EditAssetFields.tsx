@@ -14,12 +14,15 @@ import { UserCombobox } from '@/components/ui/user-combobox';
 import { DatePicker } from '@/components/ui/date-picker/date-picker';
 import { parseYMD, toYMD } from '@/components/ui/date-picker/date-utils';
 import { ASSET_CRITICALITY_OPTIONS, ASSET_STATUS_OPTIONS } from './asset-options';
-import { ASSET_TYPE_LABELS } from '../filter-defs';
+import { buildAssetTypeLabels } from '../filter-defs';
 import type { EditAssetFormReturn } from './useEditAssetForm';
 
-const TYPE_OPTIONS: ComboboxOption[] = Object.entries(ASSET_TYPE_LABELS).map(
-    ([value, label]) => ({ value, label }),
-);
+// Built at RENDER, not module load: the labels resolve through
+// next-intl now, so a Bulgarian farmer picks 'Трактор' rather than
+// 'Tractor' when registering a machine.
+function buildTypeOptions(t: (k: string) => string): ComboboxOption[] {
+    return Object.entries(buildAssetTypeLabels(t)).map(([value, label]) => ({ value, label }));
+}
 
 export function EditAssetFields({
     form,
@@ -45,13 +48,13 @@ export function EditAssetFields({
                 <Combobox
                     hideSearch
                     selected={
-                        TYPE_OPTIONS.find((o) => o.value === form.fields.type) ??
+                        buildTypeOptions(t).find((o) => o.value === form.fields.type) ??
                         null
                     }
                     setSelected={(opt) =>
                         form.setField('type', opt?.value ?? 'TRACTOR')
                     }
-                    options={TYPE_OPTIONS}
+                    options={buildTypeOptions(t)}
                     matchTriggerWidth
                     buttonProps={{ className: 'w-full' }}
                     caret

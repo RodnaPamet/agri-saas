@@ -6,9 +6,13 @@ import type { PaginatedResponse } from '@/lib/dto/pagination';
 import { MACHINE_ASSET_WHERE } from '@/lib/agriculture/machine-asset-types';
 
 export interface AssetFilters {
-    type?: string;
-    status?: string;
-    criticality?: string;
+    // ARRAYS, not `string` plus a cast. These facets are `multiple: true`
+    // in filter-defs, so the route hands over every selected member; the
+    // old scalar-plus-cast shape is what let "TRACTOR,HARVESTER" reach
+    // Prisma as an enum equality and 500 the list.
+    type?: AssetType[];
+    status?: AssetStatus[];
+    criticality?: Criticality[];
     q?: string;
 }
 
@@ -61,9 +65,12 @@ export class AssetRepository {
     private static _buildWhere(ctx: RequestContext, filters?: AssetFilters): Prisma.AssetWhereInput {
         const where: Prisma.AssetWhereInput = { tenantId: ctx.tenantId };
 
-        if (filters?.type) where.type = filters.type as AssetType;
-        if (filters?.status) where.status = filters.status as AssetStatus;
-        if (filters?.criticality) where.criticality = filters.criticality as Criticality;
+        // Guarded on `.length`: a CLEARED facet must OMIT the filter, not
+        // emit `{ in: [] }` — which matches nothing and would blank the
+        // table exactly when the user asked to see everything.
+        if (filters?.type?.length) where.type = { in: filters.type };
+        if (filters?.status?.length) where.status = { in: filters.status };
+        if (filters?.criticality?.length) where.criticality = { in: filters.criticality };
         if (filters?.q) {
             where.OR = [
                 { name: { contains: filters.q, mode: 'insensitive' } },
