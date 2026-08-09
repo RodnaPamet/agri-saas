@@ -13,11 +13,11 @@ import {
 // ─── Filters ───
 
 export interface TaskFilters {
-    status?: string;
+    status?: WorkItemStatus[];
     type?: string;
     severity?: string;
     priority?: string;
-    assigneeUserId?: string;
+    assigneeUserId?: string[];
     controlId?: string;
     due?: 'overdue' | 'next7d';
     q?: string;
@@ -276,20 +276,22 @@ export class WorkItemRepository {
         const where: Prisma.TaskWhereInput = { tenantId: ctx.tenantId };
         const and: Prisma.TaskWhereInput[] = [];
 
-        if (filters.status) where.status = filters.status as WorkItemStatus;
+        // Guarded on `.length`: a CLEARED facet must OMIT the filter —
+        // `{ in: [] }` matches nothing and would blank the table.
+        if (filters.status?.length) where.status = { in: filters.status };
         if (filters.type) where.type = filters.type as WorkItemType;
         if (filters.severity) where.severity = filters.severity as WorkItemSeverity;
         if (filters.priority) where.priority = filters.priority as WorkItemPriority;
-        if (filters.assigneeUserId) where.assigneeUserId = filters.assigneeUserId;
+        if (filters.assigneeUserId?.length) where.assigneeUserId = { in: filters.assigneeUserId };
         if (filters.controlId) where.controlId = filters.controlId;
         if (filters.due === 'overdue') {
             where.dueAt = { lt: new Date() };
-            if (!filters.status) where.status = { notIn: [...TERMINAL_WORK_ITEM_STATUSES] as WorkItemStatus[] };
+            if (!filters.status?.length) where.status = { notIn: [...TERMINAL_WORK_ITEM_STATUSES] as WorkItemStatus[] };
         } else if (filters.due === 'next7d') {
             const now = new Date();
             const in7 = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
             where.dueAt = { gte: now, lte: in7 };
-            if (!filters.status) where.status = { notIn: [...TERMINAL_WORK_ITEM_STATUSES] as WorkItemStatus[] };
+            if (!filters.status?.length) where.status = { notIn: [...TERMINAL_WORK_ITEM_STATUSES] as WorkItemStatus[] };
         }
         if (filters.q) {
             and.push({

@@ -130,7 +130,7 @@ const ctx = makeRequestContext('ADMIN');
 describe('listControls', () => {
     it('asserts read permission BEFORE the repo call', async () => {
         (ControlRepository.list as jest.Mock).mockResolvedValueOnce([]);
-        await listControls(ctx, { status: 'IMPLEMENTED' });
+        await listControls(ctx, { status: ['IMPLEMENTED'] });
         expect(policyCalls).toEqual(['read']);
     });
 

@@ -73,10 +73,10 @@ describe('ControlRepository._buildWhere', () => {
         const mockDb = { control: { findMany: mockFindMany } } as unknown as PrismaTx;
         const ctx = { tenantId: 'tenant-1', userId: 'user-1' } as unknown as RequestContext;
 
-        await ControlRepository.list(mockDb, ctx, { status: 'IMPLEMENTED' });
+        await ControlRepository.list(mockDb, ctx, { status: ['IMPLEMENTED'] });
 
         const where = mockFindMany.mock.calls[0][0].where;
-        expect(where.status).toBe('IMPLEMENTED');
+        expect(where.status).toEqual({ in: ['IMPLEMENTED'] });
     });
 
     it('combines q + status + applicability', async () => {
@@ -85,10 +85,10 @@ describe('ControlRepository._buildWhere', () => {
         const mockDb = { control: { findMany: mockFindMany } } as unknown as PrismaTx;
         const ctx = { tenantId: 'tenant-1', userId: 'user-1' } as unknown as RequestContext;
 
-        await ControlRepository.list(mockDb, ctx, { q: 'access', status: 'IN_PROGRESS', applicability: 'APPLICABLE' });
+        await ControlRepository.list(mockDb, ctx, { q: 'access', status: ['IN_PROGRESS'], applicability: 'APPLICABLE' });
 
         const where = mockFindMany.mock.calls[0][0].where;
-        expect(where.status).toBe('IN_PROGRESS');
+        expect(where.status).toEqual({ in: ['IN_PROGRESS'] });
         expect(where.applicability).toBe('APPLICABLE');
         expect(where.AND[0].OR).toBeDefined();
     });
@@ -134,11 +134,11 @@ describe('AssetRepository._buildWhere', () => {
         const mockDb = { asset: { findMany: mockFindMany } } as unknown as PrismaTx;
         const ctx = { tenantId: 'tenant-1', userId: 'user-1' } as unknown as RequestContext;
 
-        await AssetRepository.list(mockDb, ctx, { type: 'APPLICATION', status: 'ACTIVE', q: 'prod' });
+        await AssetRepository.list(mockDb, ctx, { type: ['TRACTOR'], status: ['ACTIVE'], q: 'prod' });
 
         const where = mockFindMany.mock.calls[0][0].where;
-        expect(where.type).toBe('APPLICATION');
-        expect(where.status).toBe('ACTIVE');
+        expect(where.type).toEqual({ in: ['TRACTOR'] });
+        expect(where.status).toEqual({ in: ['ACTIVE'] });
         expect(where.OR).toBeDefined();
     });
 });
@@ -267,12 +267,12 @@ describe('WorkItemRepository._buildWhere', () => {
         const mockDb = { task: { findMany: mockFindMany } } as unknown as PrismaTx;
         const ctx = { tenantId: 'tenant-1', userId: 'user-1' } as unknown as RequestContext;
 
-        await WorkItemRepository.list(mockDb, ctx, { status: 'IN_PROGRESS', priority: 'P0', assigneeUserId: 'user-5' });
+        await WorkItemRepository.list(mockDb, ctx, { status: ['IN_PROGRESS'], priority: 'P0', assigneeUserId: ['user-5'] });
 
         const where = mockFindMany.mock.calls[0][0].where;
-        expect(where.status).toBe('IN_PROGRESS');
+        expect(where.status).toEqual({ in: ['IN_PROGRESS'] });
         expect(where.priority).toBe('P0');
-        expect(where.assigneeUserId).toBe('user-5');
+        expect(where.assigneeUserId).toEqual({ in: ['user-5'] });
     });
 
     it('preserves explicit status when combined with due filter', async () => {
@@ -281,10 +281,10 @@ describe('WorkItemRepository._buildWhere', () => {
         const mockDb = { task: { findMany: mockFindMany } } as unknown as PrismaTx;
         const ctx = { tenantId: 'tenant-1', userId: 'user-1' } as unknown as RequestContext;
 
-        await WorkItemRepository.list(mockDb, ctx, { status: 'OPEN', due: 'overdue' });
+        await WorkItemRepository.list(mockDb, ctx, { status: ['OPEN'], due: 'overdue' });
 
         const where = mockFindMany.mock.calls[0][0].where;
-        expect(where.status).toBe('OPEN');
+        expect(where.status).toEqual({ in: ['OPEN'] });
         expect(where.dueAt).toBeDefined();
         expect(where.dueAt.lt).toBeInstanceOf(Date);
     });
@@ -295,10 +295,10 @@ describe('WorkItemRepository._buildWhere', () => {
         const mockDb = { task: { findMany: mockFindMany } } as unknown as PrismaTx;
         const ctx = { tenantId: 'tenant-1', userId: 'user-1' } as unknown as RequestContext;
 
-        await WorkItemRepository.list(mockDb, ctx, { status: 'IN_PROGRESS', due: 'next7d', q: 'urgent' });
+        await WorkItemRepository.list(mockDb, ctx, { status: ['IN_PROGRESS'], due: 'next7d', q: 'urgent' });
 
         const where = mockFindMany.mock.calls[0][0].where;
-        expect(where.status).toBe('IN_PROGRESS');
+        expect(where.status).toEqual({ in: ['IN_PROGRESS'] });
         expect(where.dueAt).toBeDefined();
         expect(where.AND).toEqual([{
             OR: expect.arrayContaining([
@@ -365,10 +365,10 @@ describe('PolicyRepository._buildWhere', () => {
         const mockDb = { policy: { findMany: mockFindMany } } as unknown as PrismaTx;
         const ctx = { tenantId: 'tenant-1', userId: 'user-1' } as unknown as RequestContext;
 
-        await PolicyRepository.list(mockDb, ctx, { status: 'PUBLISHED', q: 'remote' });
+        await PolicyRepository.list(mockDb, ctx, { status: ['PUBLISHED'], q: 'remote' });
 
         const where = mockFindMany.mock.calls[0][0].where;
-        expect(where.status).toBe('PUBLISHED');
+        expect(where.status).toEqual({ in: ['PUBLISHED'] });
         expect(where.OR).toBeDefined();
     });
 });

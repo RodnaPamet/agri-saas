@@ -84,6 +84,7 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
     // Inline strings not passed via the server `translations` prop use a
     // client-side `useTranslations('assets')` binding (`tm`).
     const tm = useTranslations('assets');
+    const tGroups = useTranslations('common.filterGroups');
     // Assets-exoskeleton — the compliance chrome (Controls + Risks link
     // counts, the coverage shield) only renders for a tenant that runs a
     // compliance module. A plain farm gets a clean register.
@@ -166,7 +167,9 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
             },
         });
 
-    const liveFilters = useMemo(() => buildAssetFilters(), []);
+    // Localized: the facet labels and their enum options resolve
+    // through next-intl, not the hardcoded English maps.
+    const liveFilters = useMemo(() => buildAssetFilters(tm, tGroups), [tm, tGroups]);
     // R-filter-gear (#3, 2026-06-07) — the gear controls the quantifiable
     // KPI cards (Total / Active / High criticality / Retired), not the
     // filter categories (which stay in the Filter dropdown).

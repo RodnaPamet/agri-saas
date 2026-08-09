@@ -43,14 +43,7 @@ const API = join(ROOT, 'src/app/api/t/[tenantSlug]');
  * those in one diff would make the change unreviewable. Delete an entry when
  * you fix its page — the "no stale entries" test below fails if you forget.
  */
-const KNOWN_UNFIXED: Readonly<Record<string, readonly string[]>> = {
-    assets: ['criticality', 'status', 'type'],
-    controls: ['category', 'ownerUserId', 'status'],
-    'farm-tasks': ['assigneeUserId', 'status'],
-    journal: ['crop', 'status', 'type'],
-    policies: ['category', 'status'],
-    vendors: ['criticality', 'riskRating', 'status'],
-};
+const KNOWN_UNFIXED: Readonly<Record<string, readonly string[]>> = {};
 
 /** Pages whose facets are handled somewhere other than a sibling route.ts. */
 const NO_SIBLING_ROUTE = new Set(['exchange', 'grain/yield', 'planning', 'tests']);
@@ -80,8 +73,14 @@ function multiSelectKeys(source: string): string[] {
 
 /** True when the route parses `key` as a comma-joined list. */
 function parsesCsv(routeSource: string, key: string): boolean {
-    const field = routeSource.match(new RegExp(`\\n\\s*${key}:\\s*([^\\n]*)`));
-    if (field && /csvEnumField|csvIdField/.test(field[1])) return true;
+    // EVERY occurrence, not just the first. A route file often declares the
+    // same field name in more than one schema — farm-tasks has
+    // `assigneeUserId` in its POST body schema ABOVE the query schema — and
+    // matching only the first occurrence reported a correctly-migrated facet
+    // as unparsed.
+    for (const m of routeSource.matchAll(new RegExp(`\\n\\s*${key}:\\s*([^\\n]*)`, 'g'))) {
+        if (/csvEnumField|csvIdField/.test(m[1])) return true;
+    }
     // The imperative helpers are equally valid.
     return new RegExp(`parseCsv(Enum|Id)Param\\(\\s*[^)]*${key}`).test(routeSource);
 }

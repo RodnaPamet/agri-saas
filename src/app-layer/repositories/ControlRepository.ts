@@ -1,16 +1,20 @@
 import { PrismaTx } from '@/lib/db-context';
 import { RequestContext } from '../types';
-import { Prisma } from '@prisma/client';
+import { Prisma, ControlStatus } from '@prisma/client';
 import { buildCursorWhere, CURSOR_ORDER_BY, computePageInfo, clampLimit } from '@/lib/pagination';
 import type { PaginatedResponse } from '@/lib/dto/pagination';
 import { traceRepository } from '@/lib/observability/repository-tracing';
 
 export interface ControlListFilters {
-    status?: string;
+    // ARRAYS for the `multiple: true` facets. `toApiSearchParams`
+    // comma-joins a multi-select into ONE param, so a scalar `string`
+    // here let "IMPLEMENTED,PLANNED" reach Prisma as an enum equality —
+    // a 500 the list page renders as its EMPTY state.
+    status?: ControlStatus[];
     applicability?: string;
-    ownerUserId?: string;
+    ownerUserId?: string[];
     q?: string;
-    category?: string;
+    category?: string[];
 }
 
 export interface ControlListParams {
@@ -91,12 +95,14 @@ export class ControlRepository {
             OR: [{ tenantId: ctx.tenantId }, { tenantId: null }],
         };
 
-        if (filters?.status) where.status = filters.status as Prisma.EnumControlStatusFilter;
+        // Guarded on `.length`: a CLEARED facet must OMIT the filter, not
+        // emit `{ in: [] }`, which matches nothing and would blank the table.
+        if (filters?.status?.length) where.status = { in: filters.status };
         if (filters?.applicability && (filters.applicability === 'APPLICABLE' || filters.applicability === 'NOT_APPLICABLE')) {
             where.applicability = filters.applicability;
         }
-        if (filters?.ownerUserId) where.ownerUserId = filters.ownerUserId;
-        if (filters?.category) where.category = filters.category;
+        if (filters?.ownerUserId?.length) where.ownerUserId = { in: filters.ownerUserId };
+        if (filters?.category?.length) where.category = { in: filters.category };
         if (filters?.q) {
             where.AND = [{
                 OR: [
