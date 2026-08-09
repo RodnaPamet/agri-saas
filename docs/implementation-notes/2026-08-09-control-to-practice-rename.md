@@ -124,8 +124,8 @@ not just typechecked:
   lives. A clean break is cheaper than a compatibility shim nobody
   removes.
 
-- **Homonyms are not renamed, and there are more of them than you would
-  guess.** A blind `s/control/practice/` produces a codebase that
+- **Homonyms are not renamed, and there are far more of them than you
+  would guess.** A blind `s/control/practice/` produces a codebase that
   typechecks and is subtly wrong in a dozen places. Explicitly left
   alone: `AbortController`; react-hook-form's `control` prop and
   `<Controller>`; the `controlled` / `uncontrolled` component
@@ -134,8 +134,37 @@ not just typechecked:
   selector breaks the vendor's stylesheet); `pagination-controls.tsx`;
   `control-variants.ts`; GDPR "data controller"; the persisted string
   `'Access Control'`; and `isoControlId`, which is ISO 27001's own
-  terminology for its clauses and not ours to rename. Three separate
-  over-reach rounds were caught and reverted before this landed.
+  terminology for its clauses and not ours to rename.
+
+- **The homonyms that cost the most were the ones nothing could catch.**
+  Five review rounds found identifier-level over-reach. A sixth found a
+  worse class, and only because a single E2E assertion happened to
+  execute it (`keyboard.press('Practice+KeyK')` → *Unknown key*). Every
+  member of that class is a **string literal**, invisible to TypeScript,
+  and the full suite — 26,642 tests — was green with all of them live:
+
+  | Mangled | Sites | Consequence |
+  | --- | --- | --- |
+  | `Cache-Control` → `Cache-Practice` | 39 | Unknown header ⇒ ignored. `no-store` silently stopped applying to avatar, evidence-download, file-download, farm-record, policy-export, PDF-export and access-review-evidence responses — those became cacheable by browsers and intermediaries — and `immutable` basemap/cadastre tile caching stopped working, on the rural LTE this product optimises for. |
+  | `Access-Control-Allow-*` → `Access-Practice-Allow-*` | 28 | No CORS. |
+  | `aria-controls` → `aria-practices` | 5 | React passes `aria-*` through verbatim ⇒ invalid ARIA shipped; tab→tabpanel and accordion-rail relationships broke for screen readers. |
+  | `control` modifier alias | 2 | `"control+k"` threw *unknown modifier*; the palette's modifier formatter lost its arm. |
+  | `Pest control` / `Disease control` | 2 | User-facing farm-task labels, in an agriculture product. |
+
+  Two second-order lessons. **A guardrail renamed alongside its subject
+  stops guarding**: `b7-layout-redesign.test.ts` asserted
+  `aria-practices=\{contentId\}` and passed, green about the bug.
+  And **case matters where the platform says it doesn't**: HTTP header
+  names are case-insensitive, so routes wrote `'Cache-Control'` and
+  tests read `'cache-control'`; the first repair grepped case-sensitively,
+  fixed only the writers, and CI caught two tests still asserting on
+  `headers.get('cache-practice')`.
+
+  `tests/guards/web-platform-identifiers.test.ts` is the backstop: it
+  pins the canonical spellings, bans the mangled forms **case-folded**,
+  and carries a mutation proof including the lowercase case that
+  escaped. Before the next project-wide identifier sweep, add the
+  at-risk standard names to it first.
 
 - **Historical migrations are asserted verbatim.** Two structural
   guards (`pr-asset-practice-codes`, `notif-assignment-alerts-wiring`)
