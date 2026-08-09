@@ -15,11 +15,14 @@ export const GET = withApiErrorHandling(async (req: NextRequest, { params: param
     const ctx = await getTenantCtx(params, req);
     const sp = req.nextUrl.searchParams;
     const tasks = await listTasks(ctx, {
-        status: sp.get('status') ?? undefined,
+        // WorkItem filters are ARRAYS since the multi-select fix (they are
+        // shared with the farm-tasks list). These two surfaces are
+        // single-select, so wrap rather than widen their query contract.
+        status: sp.get('status') ? [sp.get('status') as never] : undefined,
         type: sp.get('type') ?? undefined,
         severity: sp.get('severity') ?? undefined,
         priority: sp.get('priority') ?? undefined,
-        assigneeUserId: sp.get('assigneeUserId') ?? undefined,
+        assigneeUserId: sp.get('assigneeUserId') ? [sp.get('assigneeUserId') as string] : undefined,
         due: (sp.get('due') as 'overdue' | 'next7d') ?? undefined,
         q: sp.get('q') ?? undefined,
     });

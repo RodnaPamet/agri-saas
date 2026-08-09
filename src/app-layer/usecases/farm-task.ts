@@ -1,3 +1,4 @@
+import type { WorkItemStatus } from '@prisma/client';
 import { RequestContext } from '../types';
 import { badRequest } from '@/lib/errors/types';
 import { runInTenantContext } from '@/lib/db-context';
@@ -87,9 +88,10 @@ export async function createFarmTask(ctx: RequestContext, input: CreateFarmTaskI
 }
 
 export interface FarmTaskQueueOptions {
-    /** Defaults to the caller (the operator's own queue) when scope is 'mine'. */
-    assigneeUserId?: string;
-    status?: string;
+    /** Defaults to the caller (the operator's own queue) when scope is 'mine'.
+     *  An ARRAY since the assignee facet is multi-select on /farm-tasks. */
+    assigneeUserId?: string[];
+    status?: WorkItemStatus[];
     /**
      * When true, return only the operator's OUTSTANDING work — tasks that
      * still need them. Excludes terminal statuses (RESOLVED/CLOSED/CANCELED)
@@ -122,14 +124,28 @@ export async function listMyFarmTasks(ctx: RequestContext, opts: FarmTaskQueueOp
     // 'all' leaves assignee unset (unless an explicit narrowing was asked for)
     // so `listTasks` returns every tenant task of the type; 'mine' defaults to
     // the caller. `listTasks` still asserts read permission either way.
+    // 'all' honours whatever the facet selected (possibly nothing);
+    // 'mine' falls back to the caller when the facet is empty.
     const assigneeUserId =
         scope === 'all'
             ? opts.assigneeUserId
-            : (opts.assigneeUserId ?? ctx.userId ?? undefined);
+            : (opts.assigneeUserId?.length
+                ? opts.assigneeUserId
+                : ctx.userId
+                  ? [ctx.userId]
+                  : undefined);
 
     const lists = await Promise.all(
         FARM_TASK_TYPES_FILTER.map((type) =>
-            listTasks(ctx, { assigneeUserId, status: opts.status, type }, { take: 200 }),
+            listTasks(
+                ctx,
+                {
+                    assigneeUserId,
+                    status: opts.status,
+                    type,
+                },
+                { take: 200 },
+            ),
         ),
     );
     let merged = lists.flat();

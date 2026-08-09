@@ -27,7 +27,7 @@ describe('listMyFarmTasks scope', () => {
         await listMyFarmTasks(ctx);
         expect(mockedListTasks).toHaveBeenCalled();
         for (const call of mockedListTasks.mock.calls) {
-            expect((call[1] as { assigneeUserId?: string }).assigneeUserId).toBe('u-1');
+            expect((call[1] as { assigneeUserId?: string[] }).assigneeUserId).toEqual(['u-1']);
         }
     });
 
@@ -35,15 +35,15 @@ describe('listMyFarmTasks scope', () => {
         const ctx = makeRequestContext('ADMIN', { userId: 'u-1' });
         await listMyFarmTasks(ctx, { scope: 'all' });
         for (const call of mockedListTasks.mock.calls) {
-            expect((call[1] as { assigneeUserId?: string }).assigneeUserId).toBeUndefined();
+            expect((call[1] as { assigneeUserId?: string[] }).assigneeUserId).toBeUndefined();
         }
     });
 
     it("scope 'all' with an explicit assigneeUserId still narrows", async () => {
         const ctx = makeRequestContext('ADMIN', { userId: 'u-1' });
-        await listMyFarmTasks(ctx, { scope: 'all', assigneeUserId: 'u-2' });
+        await listMyFarmTasks(ctx, { scope: 'all', assigneeUserId: ['u-2'] });
         for (const call of mockedListTasks.mock.calls) {
-            expect((call[1] as { assigneeUserId?: string }).assigneeUserId).toBe('u-2');
+            expect((call[1] as { assigneeUserId?: string[] }).assigneeUserId).toEqual(['u-2']);
         }
     });
 

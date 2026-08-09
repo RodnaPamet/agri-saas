@@ -6,6 +6,8 @@ import { withValidatedBody } from '@/lib/validation/route';
 import { CreateLogEntrySchema } from '@/lib/schemas';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { z } from 'zod';
+import { csvEnumField, csvIdField } from '@/lib/validation/query-params';
+import { LogEntryType, LogEntryStatus } from '@prisma/client';
 import { normalizeQ } from '@/lib/filters/query-helpers';
 import { jsonResponse } from '@/lib/api-response';
 import { jsonWithETag } from '@/lib/http/etag';
@@ -13,15 +15,16 @@ import { jsonWithETag } from '@/lib/http/etag';
 const JournalQuerySchema = z.object({
     limit: z.coerce.number().int().min(1).max(100).optional(),
     cursor: z.string().optional(),
-    type: z.string().optional(),
-    status: z.string().optional(),
+    // multiple:true facets — split + validate each member, yield an ARRAY.
+    type: csvEnumField(z.nativeEnum(LogEntryType)),
+    status: csvEnumField(z.nativeEnum(LogEntryStatus)),
     q: z.string().optional().transform(normalizeQ),
     occurredFrom: z.string().optional(),
     occurredTo: z.string().optional(),
     // Trash view — soft-deleted entries only (ADMIN).
     deleted: z.enum(['true', 'false']).optional(),
     // dnevnik filters (#10)
-    crop: z.string().optional(),
+    crop: csvIdField(),
     locationId: z.string().optional(),
     // Scope to a crop plan's plantings (plan-detail Journal tab).
     cropPlanId: z.string().optional(),

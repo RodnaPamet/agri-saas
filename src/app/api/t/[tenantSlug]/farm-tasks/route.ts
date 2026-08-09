@@ -1,5 +1,8 @@
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
+import { csvEnumField, csvIdField } from '@/lib/validation/query-params';
+import { WorkItemStatus } from '@prisma/client';
+
 import { getTenantCtx } from '@/app-layer/context';
 import { createFarmTask, listMyFarmTasks } from '@/app-layer/usecases/farm-task';
 import { withApiErrorHandling } from '@/lib/errors/api';
@@ -31,8 +34,9 @@ const CreateFarmTaskSchema = z
 
 const FarmTaskQuerySchema = z
     .object({
-        assigneeUserId: z.string().optional(),
-        status: z.string().optional(),
+        // multiple:true facets on the farm-tasks list.
+        assigneeUserId: csvIdField(),
+        status: csvEnumField(z.nativeEnum(WorkItemStatus)),
         // `?open=1` → only the caller's outstanding work (drives "My work").
         open: z.enum(['1', 'true']).optional(),
         // `?scope=all` → the tenant-wide manager queue (drives the /farm-tasks

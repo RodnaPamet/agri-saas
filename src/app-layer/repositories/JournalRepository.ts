@@ -74,15 +74,16 @@ export interface UpdateLogEntryInput {
 }
 
 export interface LogEntryFilters {
-    type?: string;
-    status?: string;
+    // ARRAYS — multiple:true facets, parsed at the route.
+    type?: LogEntryType[];
+    status?: LogEntryStatus[];
     q?: string;
     /** ISO date — entries with occurredAt >= this. */
     occurredFrom?: string;
     /** ISO date — entries with occurredAt <= this. */
     occurredTo?: string;
     /** Filter to entries whose operation line is on a parcel of this crop (#10). */
-    crop?: string;
+    crop?: string[];
     /** Filter to entries logged against this location (#10). */
     locationId?: string;
     /**
@@ -200,8 +201,10 @@ export class JournalRepository {
     private static _buildWhere(ctx: RequestContext, filters?: LogEntryFilters): Prisma.LogEntryWhereInput {
         const where: Prisma.LogEntryWhereInput = { tenantId: ctx.tenantId, deletedAt: null };
 
-        if (filters?.type) where.type = filters.type as LogEntryType;
-        if (filters?.status) where.status = filters.status as LogEntryStatus;
+        // Guarded on `.length`: a CLEARED facet must OMIT the filter —
+        // `{ in: [] }` matches nothing and would blank the table.
+        if (filters?.type?.length) where.type = { in: filters.type };
+        if (filters?.status?.length) where.status = { in: filters.status };
         if (filters?.occurredFrom || filters?.occurredTo) {
             where.occurredAt = {
                 ...(filters.occurredFrom ? { gte: new Date(filters.occurredFrom) } : {}),
@@ -218,11 +221,11 @@ export class JournalRepository {
         // parcel of that crop. Free-hand entries (no operation line) don't
         // match, which is the intended agronomic-only scope. Accepts a
         // comma-separated multi-select.
-        if (filters?.crop) {
-            const crops = filters.crop.split(',').map((c) => c.trim()).filter(Boolean);
-            if (crops.length > 0) {
-                where.operationParcel = { is: { parcel: { is: { cropType: { in: crops } } } } };
-            }
+        // crop used to split the comma-joined param HERE; parsing now
+        // happens at the route like every other facet, so the repository
+        // only ever sees a validated array.
+        if (filters?.crop?.length) {
+            where.operationParcel = { is: { parcel: { is: { cropType: { in: filters.crop } } } } };
         }
         // Location — entries logged against a location (LogLocation join).
         if (filters?.locationId) {
