@@ -94,6 +94,23 @@ runbook. Before 2026-08-01 NEITHER stack had any backup at all, and the
 monthly restore test drilled AWS RDS — infrastructure neither product
 runs.
 
+**A snapshot restore is not the only rollback, and it is the wrong one
+for a bad migration.** `prisma migrate deploy` runs from
+`scripts/entrypoint.sh`, so shipping an image is what applies a
+migration — and pinning Watchtower back reverts the CODE while leaving
+the SCHEMA migrated. After a rename or a drop the previous image is
+querying objects that no longer exist, so an image-only rollback fails
+outright and the only remaining lever is a snapshot: up to 24 hours of
+farm data to undo a UI regression. `deploy/rollback/` holds hand-written
+inverse scripts for exactly those migrations (one transaction, and each
+deletes its own `_prisma_migrations` row so a later roll-forward
+re-applies rather than silently skipping). **Add one whenever a
+migration would break the previous image** — renames a table / column /
+enum value, drops a column still written, or rewrites persisted data
+still read. Plain additive migrations need none. See
+`deploy/rollback/README.md`; the bijection is held by
+`tests/guards/rename-rollback-inverse.test.ts`.
+
 > **The `inflect-compliance` VM is NOT this product and is NOT idle.**
 > The same GCP project runs a second GCE instance, `inflect-compliance`
 > (`/opt/inflect/`, host `inflect.34-140-180-255.sslip.io`), serving a
