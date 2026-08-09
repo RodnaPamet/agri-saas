@@ -11,7 +11,7 @@
 //  Why a dedicated file: vendor assessments have a separate UI flow,
 //  a distinct retention model, and a different review cadence from
 //  the core compliance domain. Pulling them out keeps `compliance.prisma`
-//  focused on the certification surface (controls/risks/evidence)
+//  focused on the certification surface (practices/risks/evidence)
 //  and makes vendor-specific schema changes locally reviewable.
 //
 //  This file is currently empty. Models will land here in a focused

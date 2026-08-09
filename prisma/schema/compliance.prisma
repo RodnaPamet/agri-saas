@@ -2,16 +2,14 @@
 //  GAP-09 — multi-file schema: COMPLIANCE
 //
 //  Core compliance domain. Owns:
-//    • Control + ControlEvidenceLink + ControlContributor +
-//      ControlTask + ControlTest models
-//    • Risk + RiskTemplate + RiskControl (M:N risk↔control)
+//    • Practice + PracticeEvidenceLink + PracticeTask models
 //    • Evidence + EvidenceLink + EvidencePackage
 //    • Framework + FrameworkRequirement + FrameworkMapping
 //    • Clause + ClauseEvidence
 //    • Policy + PolicyVersion + PolicyApproval + PolicyContributor
 //    • Asset + AssetEvidence + AssetCoverage
 //    • Issue + IssueComment + Finding + FindingTask
-//    • Task (work-item — distinct from ControlTask) + TaskLink +
+//    • Task (work-item — distinct from PracticeTask) + TaskLink +
 //      TaskComment + TaskWatcher
 //    • TraceabilityLink (cross-entity weave)
 //
@@ -64,7 +62,7 @@ model Task {
   createdByUserId  String
   assigneeUserId   String?
   reviewerUserId   String?
-  controlId        String?
+  practiceId        String?
   metadataJson     Json?
   // Agriculture (БАБХ farm-record) — persisted so the ДНЕВНИК generator can
   // split SPRAY rows (химични обработки) from FERTILIZE rows (торове)
@@ -86,7 +84,7 @@ model Task {
   deletedByUserId  String?
   retentionUntil   DateTime?
   assignee         User?             @relation("TaskAssignee", fields: [assigneeUserId], references: [id])
-  control          Control?          @relation(fields: [controlId], references: [id])
+  practice          Practice?          @relation(fields: [practiceId], references: [id])
   createdBy        User              @relation("TaskCreator", fields: [createdByUserId], references: [id])
   reviewer         User?             @relation("TaskReviewer", fields: [reviewerUserId], references: [id])
   tenant           Tenant            @relation(fields: [tenantId], references: [id])
@@ -94,7 +92,7 @@ model Task {
   links            TaskLink[]
   watchers         TaskWatcher[]
   // Evidence attached directly to this task — the task Evidence tab
-  // mirrors the control Evidence tab. `Evidence.taskId` is the source
+  // mirrors the practice Evidence tab. `Evidence.taskId` is the source
   // pointer that also powers the "uploaded from" back-reference on the
   // evidence detail surface.
   evidence         Evidence[]
@@ -113,10 +111,10 @@ model Task {
   @@index([tenantId, type])
   @@index([tenantId, severity])
   @@index([tenantId, assigneeUserId])
-  @@index([tenantId, controlId])
-  // #102 item 4 — the control-detail Tasks tab filters by both
-  // controlId AND status; this composite serves that hot path.
-  @@index([tenantId, controlId, status])
+  @@index([tenantId, practiceId])
+  // #102 item 4 — the practice-detail Tasks tab filters by both
+  // practiceId AND status; this composite serves that hot path.
+  @@index([tenantId, practiceId, status])
   @@index([tenantId, deletedAt])
   @@index([tenantId, priority, createdAt])
   // #102 item 4 — `[tenantId, dueAt]` dropped: it is a strict
@@ -241,9 +239,9 @@ model Asset {
   deletedByUserId     String?
   ownerUser           User?                @relation("AssetOwner", fields: [ownerUserId], references: [id])
   tenant              Tenant               @relation(fields: [tenantId], references: [id])
-  controls            ControlAsset[]
+  practices            PracticeAsset[]
   // Evidence attached directly to this asset (Evidence Library tag +
-  // the asset Evidence tab). Mirrors Control/Task.
+  // the asset Evidence tab). Mirrors Practice/Task.
   evidence            Evidence[]
   /// Journal entries this machine was used on. Repointed from the
   /// retired `Equipment` model.
@@ -332,19 +330,19 @@ model AssetKeySequence {
   lastValue Int    @default(0)
 }
 
-/// Per-tenant monotonic counter for minting `CTL-N` custom-control
-/// keys (the framework-installed controls keep their canonical
-/// annexId / supplied code). Only the `createControl` path that
+/// Per-tenant monotonic counter for minting `CTL-N` custom-practice
+/// keys (the framework-installed practices keep their canonical
+/// annexId / supplied code). Only the `createPractice` path that
 /// lacks an explicit code consumes this sequence; framework imports
 /// supply their own code/annexId and bypass the counter entirely.
-model ControlKeySequence {
+model PracticeKeySequence {
   tenantId  String @id
   lastValue Int    @default(0)
 }
 
 /// RQ-9 — daily aggregate snapshot of the whole portfolio (one per
 /// tenant per day) for portfolio trend charts.
-model Control {
+model Practice {
   id                           String                   @id @default(cuid())
   tenantId                     String?
   code                         String?
@@ -352,22 +350,22 @@ model Control {
   description                  String?
   intent                       String?
   category                     String?
-  status                       ControlStatus            @default(NOT_STARTED)
-  /// 0-100 declared control effectiveness. Read by the bow-tie
+  status                       PracticeStatus            @default(NOT_STARTED)
+  /// 0-100 declared practice effectiveness. Read by the bow-tie
   /// barrier projection and the residual-risk suggestion.
   effectiveness                Int?
   reviewCadence                ReviewCadence?
   isCustom                     Boolean                  @default(false)
   ownerUserId                  String?
   createdByUserId              String?
-  frequency                    ControlFrequency?
+  frequency                    PracticeFrequency?
   nextDueAt                    DateTime?
   evidenceSource               EvidenceSourceType?
   /// Integration binding — `<provider>.<check>` (e.g. `sharepoint.policy_doc`).
   /// Drives the scheduled integration checks that produce auto-evidence.
   automationKey                String?
   /// Barrier classification for the bow-tie projection.
-  mitigationType               ControlMitigationType?
+  mitigationType               PracticeMitigationType?
   applicability                Applicability            @default(APPLICABLE)
   applicabilityJustification   String?
   applicabilityDecidedByUserId String?
@@ -377,30 +375,32 @@ model Control {
   deletedAt                    DateTime?
   deletedByUserId              String?
   retentionUntil               DateTime?
-  applicabilityDecidedBy       User?                    @relation("ControlApplicabilityDecider", fields: [applicabilityDecidedByUserId], references: [id])
-  createdBy                    User?                    @relation("ControlCreator", fields: [createdByUserId], references: [id])
-  owner                        User?                    @relation("ControlOwner", fields: [ownerUserId], references: [id])
+  applicabilityDecidedBy       User?                    @relation("PracticeApplicabilityDecider", fields: [applicabilityDecidedByUserId], references: [id])
+  createdBy                    User?                    @relation("PracticeCreator", fields: [createdByUserId], references: [id])
+  owner                        User?                    @relation("PracticeOwner", fields: [ownerUserId], references: [id])
   tenant                       Tenant?                  @relation(fields: [tenantId], references: [id])
-  assets                       ControlAsset[]
-  evidenceLinks                ControlEvidenceLink[]
-  requirementLinks             ControlRequirementLink[]
-  controlTasks                 ControlTask[]
+  assets                       PracticeAsset[]
+  evidenceLinks                PracticeEvidenceLink[]
+  requirementLinks             PracticeRequirementLink[]
+  practiceTasks                 PracticeTask[]
   evidence                     Evidence[]
   frameworkMappings            FrameworkMapping[]
-  findings                     Finding[]                @relation("FindingControl")
-  compensatingForFindings      Finding[]                @relation("FindingCompensatingControl")
+  findings                     Finding[]                @relation("FindingPractice")
+  compensatingForFindings      Finding[]                @relation("FindingCompensatingPractice")
   integrationExecutions        IntegrationExecution[]
-  policyLinks                  PolicyControlLink[]
+  policyLinks                  PolicyPracticeLink[]
   tasks                        Task[]
-  // Epic G-5 — control exception register. Two reverse relations:
-  // (a) exceptions registered against THIS control,
-  // (b) exceptions that name THIS control as their compensating
-  //     control (i.e. "we mitigate the gap by doing this").
+  // Epic G-5 — practice exception register. Two reverse relations:
+  // (a) exceptions registered against THIS practice,
+  // (b) exceptions that name THIS practice as their compensating
+  //     practice (i.e. "we mitigate the gap by doing this").
 
   /// Composite parent key — supports the
-  /// `ControlException.(controlId, tenantId) → Control.(id, tenantId)`
-  /// FK shape, so a cross-tenant exception link is impossible at
-  /// the DB level. Same denorm-tenantId Phase-2 pattern used by
+  /// `(practiceId, tenantId) → Practice.(id, tenantId)` FK shape, so a
+  /// cross-tenant link is impossible at the DB level. (The exception
+  /// register that first needed it went with the exoskeleton; the
+  /// shape stayed because every child of Practice uses it.)
+  /// Same denorm-tenantId Phase-2 pattern used by
   /// AuditChecklistItem → Audit.
   @@unique([id, tenantId])
   @@index([tenantId, code])
@@ -420,9 +420,9 @@ model Control {
   @@index([tenantId, category])
 }
 
-model ControlAsset {
+model PracticeAsset {
   id              String       @id @default(cuid())
-  controlId       String
+  practiceId       String
   assetId         String
   tenantId        String
   coverageType    CoverageType @default(UNKNOWN)
@@ -430,32 +430,32 @@ model ControlAsset {
   createdByUserId String?
   createdAt       DateTime     @default(now())
   asset           Asset        @relation(fields: [assetId], references: [id], onDelete: Cascade)
-  control         Control      @relation(fields: [controlId], references: [id], onDelete: Cascade)
-  createdBy       User?        @relation("ControlAssetCreator", fields: [createdByUserId], references: [id])
+  practice         Practice      @relation(fields: [practiceId], references: [id], onDelete: Cascade)
+  createdBy       User?        @relation("PracticeAssetCreator", fields: [createdByUserId], references: [id])
   tenant          Tenant       @relation(fields: [tenantId], references: [id])
 
-  @@unique([tenantId, controlId, assetId])
+  @@unique([tenantId, practiceId, assetId])
   @@index([tenantId, assetId])
   @@index([tenantId])
 }
 
-model ControlTask {
+model PracticeTask {
   id             String            @id @default(cuid())
   tenantId       String
-  controlId      String
+  practiceId      String
   title          String
   description    String?
-  status         ControlTaskStatus @default(OPEN)
+  status         PracticeTaskStatus @default(OPEN)
   assigneeUserId String?
   dueAt          DateTime?
   createdAt      DateTime          @default(now())
   updatedAt      DateTime          @updatedAt
-  assignee       User?             @relation("ControlTaskAssignee", fields: [assigneeUserId], references: [id])
-  control        Control           @relation(fields: [controlId], references: [id], onDelete: Cascade)
+  assignee       User?             @relation("PracticeTaskAssignee", fields: [assigneeUserId], references: [id])
+  practice        Practice           @relation(fields: [practiceId], references: [id], onDelete: Cascade)
   tenant         Tenant            @relation(fields: [tenantId], references: [id])
 
   @@index([tenantId])
-  @@index([controlId])
+  @@index([practiceId])
   @@index([status])
   @@index([dueAt])
   // GAP-perf — backs the dashboard "overdue tasks" query
@@ -466,10 +466,10 @@ model ControlTask {
   @@index([tenantId, status, dueAt])
 }
 
-model ControlEvidenceLink {
+model PracticeEvidenceLink {
   id                  String           @id @default(cuid())
   tenantId            String
-  controlId           String
+  practiceId           String
   kind                EvidenceLinkKind
   fileId              String?
   url                 String?
@@ -478,20 +478,20 @@ model ControlEvidenceLink {
   createdByUserId     String?
   createdAt           DateTime         @default(now())
   updatedAt           DateTime         @updatedAt
-  control             Control          @relation(fields: [controlId], references: [id], onDelete: Cascade)
-  createdBy           User?            @relation("ControlEvidenceCreator", fields: [createdByUserId], references: [id])
+  practice             Practice          @relation(fields: [practiceId], references: [id], onDelete: Cascade)
+  createdBy           User?            @relation("PracticeEvidenceCreator", fields: [createdByUserId], references: [id])
   tenant              Tenant           @relation(fields: [tenantId], references: [id])
 
-  @@unique([controlId, kind, fileId])
-  @@unique([controlId, kind, url])
+  @@unique([practiceId, kind, fileId])
+  @@unique([practiceId, kind, url])
   @@index([tenantId])
-  @@index([controlId])
+  @@index([practiceId])
 }
 
 model Evidence {
   id                String                    @id @default(cuid())
   tenantId          String
-  controlId         String?
+  practiceId         String?
   // Source task — set when this evidence was uploaded/linked from a
   // task's Evidence tab. Powers the task Evidence tab AND the
   // "uploaded from" back-reference on the evidence detail surface.
@@ -529,15 +529,15 @@ model Evidence {
   folder            String?
   /// Phase-8 — auto-evidence provenance. When a farm journal record
   /// (esp. an INPUT_APPLICATION spray LogEntry) is auto-attached as
-  /// evidence to a certification-scheme requirement's control, this points
+  /// evidence to a certification-scheme requirement's practice, this points
   /// back at the source LogEntry. Scalar FK (no relation — LogEntry lives
   /// in the journal domain); drives idempotency (one auto-evidence per
-  /// (logEntry, control)) and the "which farm records back this scheme"
+  /// (logEntry, practice)) and the "which farm records back this scheme"
   /// query. NULL for hand-authored evidence.
   sourceLogEntryId  String?
   // their proof here.
   vendorAnswers     VendorAssessmentAnswer[]  @relation("VendorAnswerEvidence")
-  control           Control?                  @relation(fields: [controlId], references: [id])
+  practice           Practice?                  @relation(fields: [practiceId], references: [id])
   task              Task?                     @relation(fields: [taskId], references: [id])
   asset             Asset?                    @relation(fields: [assetId], references: [id])
   fileRecord        FileRecord?               @relation(fields: [fileRecordId], references: [id])
@@ -556,10 +556,10 @@ model Evidence {
   @@index([tenantId, ownerUserId])
   // GAP-perf — supports `status` filter (DRAFT|SUBMITTED|APPROVED|REJECTED).
   @@index([tenantId, status])
-  // GAP-perf — supports `controlId` filter ("evidence for control X").
-  // Already a heavily-used UI surface — every control detail page
-  // pulls evidence by controlId.
-  @@index([tenantId, controlId])
+  // GAP-perf — supports `practiceId` filter ("evidence for practice X").
+  // Already a heavily-used UI surface — every practice detail page
+  // pulls evidence by practiceId.
+  @@index([tenantId, practiceId])
   // Supports the task Evidence tab ("evidence for task X") + the
   // evidence "uploaded from" back-reference lookup.
   @@index([tenantId, taskId])
@@ -577,13 +577,13 @@ model Evidence {
   // evidence-review range predicate had no index; every calendar load
   // was a per-tenant seq scan of Evidence.
   @@index([tenantId, nextReviewDate])
-  // One auto-evidence row per (farm record, control). The attach job used to
+  // One auto-evidence row per (farm record, practice). The attach job used to
   // rely solely on a read-then-write check, which is TOCTOU: it runs inside a
   // transaction opened by a journal write, and a retry or a concurrent
   // field-operation save could have two callers each read "not attached" and
   // each insert. NULLs do not collide in Postgres, so hand-filed evidence
   // (sourceLogEntryId IS NULL) is unaffected.
-  @@unique([tenantId, sourceLogEntryId, controlId])
+  @@unique([tenantId, sourceLogEntryId, practiceId])
 }
 
 model FileRecord {
@@ -686,7 +686,7 @@ model Policy {
   owner                User?               @relation("PolicyOwner", fields: [ownerUserId], references: [id])
   tenant               Tenant              @relation(fields: [tenantId], references: [id])
   approvals            PolicyApproval[]
-  controlLinks         PolicyControlLink[]
+  practiceLinks         PolicyPracticeLink[]
   versions             PolicyVersion[]     @relation("PolicyVersions")
 
   @@unique([id, tenantId])
@@ -758,25 +758,25 @@ model PolicyAcknowledgement {
   @@unique([policyVersionId, userId])
 }
 
-model PolicyControlLink {
+model PolicyPracticeLink {
   // denorm-tenantId — direct tenantId + composite parent FK on the
-  // Policy side. The Control side stays single-column because
-  // Control.tenantId is intentionally nullable (library-derived
-  // controls are global). The pre-denorm chained RLS only walked
+  // Policy side. The Practice side stays single-column because
+  // Practice.tenantId is intentionally nullable (library-derived
+  // practices are global). The pre-denorm chained RLS only walked
   // via Policy too, so this matches the existing protection model
   // and additionally lifts read perf into the trivial RLS path.
   id        String  @id @default(cuid())
   tenantId  String
   policyId  String
-  controlId String
-  control   Control @relation(fields: [controlId], references: [id], onDelete: Cascade)
+  practiceId String
+  practice   Practice @relation(fields: [practiceId], references: [id], onDelete: Cascade)
   policy    Policy  @relation(fields: [policyId, tenantId], references: [id, tenantId], onDelete: Cascade)
   tenant    Tenant  @relation(fields: [tenantId], references: [id])
 
-  @@unique([policyId, controlId])
+  @@unique([policyId, practiceId])
   @@index([tenantId])
   @@index([tenantId, policyId])
-  @@index([tenantId, controlId])
+  @@index([tenantId, practiceId])
 }
 
 model PolicyTemplate {
@@ -809,10 +809,10 @@ model Finding {
   // Assignee — a tenant member accountable for the finding (supersedes
   // the legacy free-text `owner`).
   assigneeUserId        String?
-  // The control this finding is raised against.
-  controlId             String?
-  // A compensating control that mitigates the finding.
-  compensatingControlId String?
+  // The practice this finding is raised against.
+  practiceId             String?
+  // A compensating practice that mitigates the finding.
+  compensatingPracticeId String?
   dueDate               DateTime?
   status                FindingStatus     @default(OPEN)
   verificationNotes     String?
@@ -825,8 +825,8 @@ model Finding {
   audit                 Audit?            @relation(fields: [auditId], references: [id])
   tenant                Tenant            @relation(fields: [tenantId], references: [id])
   assignee              User?             @relation("FindingAssignee", fields: [assigneeUserId], references: [id])
-  control               Control?          @relation("FindingControl", fields: [controlId], references: [id], onDelete: SetNull)
-  compensatingControl   Control?          @relation("FindingCompensatingControl", fields: [compensatingControlId], references: [id], onDelete: SetNull)
+  practice               Practice?          @relation("FindingPractice", fields: [practiceId], references: [id], onDelete: SetNull)
+  compensatingPractice   Practice?          @relation("FindingCompensatingPractice", fields: [compensatingPracticeId], references: [id], onDelete: SetNull)
   evidenceLinks         FindingEvidence[]
 
   @@unique([id, tenantId])
@@ -835,8 +835,8 @@ model Finding {
   @@index([tenantId, deletedAt])
   @@index([tenantId, auditId])
   @@index([tenantId, assigneeUserId])
-  @@index([tenantId, controlId])
-  @@index([tenantId, compensatingControlId])
+  @@index([tenantId, practiceId])
+  @@index([tenantId, compensatingPracticeId])
   // Calendar (compliance-calendar loadFindingEvents) — the
   // finding-due range predicate had no index; every calendar load was
   // a per-tenant seq scan of Finding.
@@ -877,15 +877,15 @@ model Framework {
   version             String?
   /// Is this catalogue a DEMO/PARTIAL subset rather than the full standard?
   ///
-  /// The shipped catalogues are 3–8% stubs — GlobalG.A.P. carries 7 control
+  /// The shipped catalogues are 3–8% stubs — GlobalG.A.P. carries 7 practice
   /// points against ~200+, EU Organic 5 against a 61-article regulation — and
   /// the YAMLs say so honestly in their headers. Nothing surfaced it: the
   /// scheme list fetched `description` and never rendered it, so the only
   /// in-UI signal was a parenthetical in the name. A farmer who maps their
-  /// practices to 7 control points and sees "GlobalG.A.P." will believe they
+  /// practices to 7 practice points and sees "GlobalG.A.P." will believe they
   /// are covered.
   isDemo              Boolean                 @default(false)
-  /// How complete this catalogue is, when known — e.g. "7 of ~200 control
+  /// How complete this catalogue is, when known — e.g. "7 of ~200 practice
   /// points". Free text so a catalogue can be honest about its own shape
   /// without the schema having to model completeness.
   coverageNote        String?
@@ -915,7 +915,7 @@ model FrameworkRequirement {
   themeNumber             Int?
   section                 String?
   deprecatedAt            DateTime?
-  controlLinks            ControlRequirementLink[]
+  practiceLinks            PracticeRequirementLink[]
   mappingsFrom            FrameworkMapping[]               @relation("MappingFrom")
   mappingsTo              FrameworkMapping[]               @relation("MappingTo")
   requirementMappingsFrom RequirementMapping[]             @relation("ReqMappingSource")
@@ -965,13 +965,13 @@ model FrameworkMapping {
   id                String                @id @default(cuid())
   fromRequirementId String
   toRequirementId   String?
-  toControlId       String?
+  toPracticeId       String?
   rationale         String?
   fromRequirement   FrameworkRequirement  @relation("MappingFrom", fields: [fromRequirementId], references: [id])
-  toControl         Control?              @relation(fields: [toControlId], references: [id])
+  toPractice         Practice?              @relation(fields: [toPracticeId], references: [id])
   toRequirement     FrameworkRequirement? @relation("MappingTo", fields: [toRequirementId], references: [id])
 
-  @@unique([fromRequirementId, toControlId])
+  @@unique([fromRequirementId, toPracticeId])
 }
 
 model RequirementMappingSet {
@@ -1025,17 +1025,17 @@ model RequirementMapping {
   @@index([validTo])
 }
 
-model ControlRequirementLink {
+model PracticeRequirementLink {
   id            String               @id @default(cuid())
   tenantId      String
-  controlId     String
+  practiceId     String
   requirementId String
   createdAt     DateTime             @default(now())
-  control       Control              @relation(fields: [controlId], references: [id], onDelete: Cascade)
+  practice       Practice              @relation(fields: [practiceId], references: [id], onDelete: Cascade)
   requirement   FrameworkRequirement @relation(fields: [requirementId], references: [id])
   tenant        Tenant               @relation(fields: [tenantId], references: [id])
 
-  @@unique([controlId, requirementId])
+  @@unique([practiceId, requirementId])
   @@index([tenantId, requirementId])
 }
 
@@ -1049,14 +1049,14 @@ model ComplianceSnapshot {
   /// Enables clean GROUP BY / ORDER BY for trend queries.
   snapshotDate DateTime @db.Date
 
-  // ── Control Coverage ──
-  controlsTotal       Int @default(0)
-  controlsApplicable  Int @default(0)
-  controlsImplemented Int @default(0)
-  controlsInProgress  Int @default(0)
-  controlsNotStarted  Int @default(0)
+  // ── Practice Coverage ──
+  practicesTotal       Int @default(0)
+  practicesApplicable  Int @default(0)
+  practicesImplemented Int @default(0)
+  practicesInProgress  Int @default(0)
+  practicesNotStarted  Int @default(0)
   /// Cached coverage % × 10 (e.g. 753 = 75.3%). Int avoids float precision issues.
-  controlCoverageBps  Int @default(0)
+  practiceCoverageBps  Int @default(0)
 
   // ── Evidence ──
   evidenceTotal      Int @default(0)

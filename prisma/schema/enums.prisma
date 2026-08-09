@@ -96,7 +96,7 @@ enum OrgDashboardWidgetType {
   DONUT // Donut breakdown — RAG distribution and similar
   TREND // Time-series sparkline / area chart
   TENANT_LIST // Per-tenant coverage list with drill-down
-  DRILLDOWN_CTAS // Drill-down navigation cards (controls / risks / evidence)
+  DRILLDOWN_CTAS // Drill-down navigation cards (practices / risks / evidence)
 }
 
 enum ClauseStatus {
@@ -189,7 +189,7 @@ enum FairConfidence {
   HIGH // Calibrated from internal incident or actuarial data
 }
 
-enum ControlStatus {
+enum PracticeStatus {
   NOT_STARTED
   PLANNED
   IN_PROGRESS
@@ -199,10 +199,10 @@ enum ControlStatus {
   NOT_APPLICABLE
 }
 
-/// How a control mitigates a risk. Read by the bow-tie projection
+/// How a practice mitigates a risk. Read by the bow-tie projection
 /// (PREVENTIVE/DETERRENT sit left of the event, DETECTIVE/CORRECTIVE/
 /// COMPENSATING right) and by the residual-risk suggestion.
-enum ControlMitigationType {
+enum PracticeMitigationType {
   PREVENTIVE
   DETERRENT
   DETECTIVE
@@ -215,7 +215,7 @@ enum Applicability {
   NOT_APPLICABLE
 }
 
-enum ControlFrequency {
+enum PracticeFrequency {
   AD_HOC
   DAILY
   WEEKLY
@@ -247,7 +247,7 @@ enum EvidenceLinkKind {
   INTEGRATION_RESULT
 }
 
-enum ControlTaskStatus {
+enum PracticeTaskStatus {
   OPEN
   IN_PROGRESS
   DONE
@@ -504,9 +504,9 @@ enum NotificationType {
   FINDING_ASSIGNED
   FINDING_VERIFIED
   TASK_ASSIGNED
-  // 2026-05-27 — fired by `setControlOwner` (mutations.ts) when
+  // 2026-05-27 — fired by `setPracticeOwner` (mutations.ts) when
   // ownership transfers. Mirrors the TASK_ASSIGNED contract:
-  // one in-app notification per (control, new owner, day) pair,
+  // one in-app notification per (practice, new owner, day) pair,
   // routed to the bell. Email + SSE follow the same dedup.
   CONTROL_ASSIGNED
   // 2026-05-30 — fired by `updateRisk` / `updateAsset` when the
@@ -581,7 +581,7 @@ enum EmailNotificationType {
   // chase the reviewer). Same per-day dedupe shape as the reviewer
   // reminder.
   ACCESS_REVIEW_OVERDUE_ESCALATION
-  // Epic G-5 — control exception approaching expiry. Fires at the
+  // Epic G-5 — practice exception approaching expiry. Fires at the
   // 30 / 14 / 7 day calendar windows before `expiresAt`. Per-day
   // dedupe at the outbox layer prevents double-fires; the
   // calendar-day trigger condition is the spam guard.
@@ -648,7 +648,7 @@ enum FrameworkKind {
   // Phase-7 — agriculture certification schemes (Organic, GlobalGAP, LEAF,
   // Red Tractor, …). A thin `kind` discriminator over the existing Framework
   // catalog so ag schemes coexist with ISO/NIST frameworks and reuse the
-  // whole compliance engine (requirements, control links, readiness scoring).
+  // whole compliance engine (requirements, practice links, readiness scoring).
   AG_SCHEME
 }
 
@@ -892,9 +892,8 @@ enum AccessReviewDecisionType {
 /// quick free-text decision; this enum drives the structured plan
 /// shape (milestones, deadlines, tracking).
 ///
-///   MITIGATE — implement controls to reduce likelihood/impact
-///   ACCEPT   — formally accept the residual risk (paired with
-///              the Epic G-5 ControlException flow when relevant)
+///   MITIGATE — implement practices to reduce likelihood/impact
+///   ACCEPT   — formally accept the residual risk
 ///   TRANSFER — shift the risk to a third party (insurance, vendor)
 ///   AVOID    — eliminate the activity that creates the risk
 enum TreatmentStrategy {
@@ -942,8 +941,8 @@ enum ProcessCanvasMode {
 }
 
 /// RQ2-1 — what a RiskScoreEvent records.
-///   INHERENT — the pre-controls likelihood/impact assessment.
-///   RESIDUAL — the post-controls assessment (asserted or derived).
+///   INHERENT — the pre-practices likelihood/impact assessment.
+///   RESIDUAL — the post-practices assessment (asserted or derived).
 enum RiskScoreEventKind {
   INHERENT
   RESIDUAL
@@ -951,7 +950,7 @@ enum RiskScoreEventKind {
 
 /// RQ2-1 — provenance of a score change. Distinguishable forever:
 ///   USER      — a human entered/edited the values directly.
-///   DERIVED   — the system computed it (e.g. control-effectiveness
+///   DERIVED   — the system computed it (e.g. practice-effectiveness
 ///               suggestion accepted as-is, RQ2-2).
 ///   PLAN      — written by treatment-plan completion.
 ///   AI        — accepted from an AI suggestion.

@@ -11,7 +11,7 @@
 //                            that ever owns those blocks)
 //    enums.prisma         — every shared enum
 //    auth.prisma          — Tenant / User / Membership / Session / SSO / Billing
-//    compliance.prisma    — Control / Risk / Evidence / Framework / Policy /
+//    compliance.prisma    — Practice / Risk / Evidence / Framework / Policy /
 //                            Asset / Issue / Finding / Task (work-item) / Snapshot
 //    vendor.prisma        — Vendor + assessment graph
 //    audit.prisma         — Audit / AuditCycle / AuditPack / AuditorAccess /

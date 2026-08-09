@@ -166,10 +166,10 @@ model NewsDerivedEvent {
 ///
 /// DELIBERATELY NOT A `Framework`. `/schemes` is CERTIFICATION: voluntary
 /// standards a farm is AUDITED AGAINST, modelled as `Framework{kind:'AG_SCHEME'}`
-/// with requirements, controls and evidence. A subsidy is a different domain
+/// with requirements, practices and evidence. A subsidy is a different domain
 /// object — it has an application window, eligibility criteria and a payment,
 /// and there is no checklist you are audited against. Modelling it as a
-/// Framework would put "apply by 30 Sep" rows next to "control point CB.7.1" in
+/// Framework would put "apply by 30 Sep" rows next to "practice point CB.7.1" in
 /// the same table and make both harder to read.
 ///
 /// GLOBAL, like `AgriEvent` / `MarketNewsItem` / `NewsDerivedEvent` — a

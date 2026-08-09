@@ -5,7 +5,7 @@
 //    • AutomationRule + AutomationExecution + AutomationEvent
 //      (Epic 60 event-driven backbone)
 //    • IntegrationConnection + IntegrationCredential
-//    • SyncMapping (per-control external-entity mapping)
+//    • SyncMapping (per-practice external-entity mapping)
 //    • Webhook + WebhookDelivery (outbound integrations)
 //    • Notification + NotificationPreference + NotificationDelivery
 //    • NotificationRule + NotificationDispatchLog
@@ -152,7 +152,7 @@ model IntegrationExecution {
   connectionId  String?
   provider      String
   automationKey String
-  controlId     String?
+  practiceId     String?
   status        IntegrationExecutionStatus @default(PENDING)
   resultJson    Json?
   evidenceId    String?
@@ -164,12 +164,12 @@ model IntegrationExecution {
   completedAt   DateTime?
   createdAt     DateTime                   @default(now())
   connection    IntegrationConnection?     @relation(fields: [connectionId], references: [id])
-  control       Control?                   @relation(fields: [controlId], references: [id])
+  practice       Practice?                   @relation(fields: [practiceId], references: [id])
   tenant        Tenant                     @relation(fields: [tenantId], references: [id])
 
   @@index([tenantId])
   @@index([tenantId, automationKey])
-  @@index([tenantId, controlId])
+  @@index([tenantId, practiceId])
   @@index([tenantId, status])
   @@index([jobRunId])
 }
@@ -282,8 +282,9 @@ model AutomationRule {
   /// the canvas condition-pass / condition-fail edges executable.
   elseRuleId          String?
   /// PR-E — schedule config for time-based triggers (triggerEvent = 'SCHEDULE').
-  /// Shape: { kind: 'DATE_RELATIVE', target: 'Evidence'|'ControlException'|
-  /// 'ControlTestPlan', offsetDays: number }. The cron-trigger-sweep fires the
+  /// Shape: { kind: 'DATE_RELATIVE', target: 'Evidence', offsetDays: number }.
+  /// (The ControlException / ControlTestPlan targets went with the
+  /// compliance exoskeleton — see schedule-trigger-sweep.ts.) The sweep fires the
   /// rule N days before the target entity's due date. null for event-triggered
   /// rules.
   scheduleConfigJson  Json?

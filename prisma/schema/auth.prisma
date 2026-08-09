@@ -19,7 +19,7 @@
 //      on Tenant is what lives here.
 //
 //  Why keep all auth/tenancy together: the back-reference fields on
-//  Tenant span every domain (controls, risks, evidence, …). Splitting
+//  Tenant span every domain (practices, risks, evidence, …). Splitting
 //  Tenant out from User/Membership would force every domain file to
 //  re-import Tenant relations, scattering the join surface.
 //
@@ -118,12 +118,12 @@ model Tenant {
   billingAccount                    BillingAccount?
   billingEvents                     BillingEvent[]
   clauseProgress                    ClauseProgress[]
-  controls                          Control[]
-  controlEvidenceLinks              ControlEvidenceLink[]
-  controlAssets                     ControlAsset[]
-  controlRequirementLinks           ControlRequirementLink[]
+  practices                          Practice[]
+  practiceEvidenceLinks              PracticeEvidenceLink[]
+  practiceAssets                     PracticeAsset[]
+  practiceRequirementLinks           PracticeRequirementLink[]
   frameworkRequirementOrders        FrameworkRequirementOrder[]
-  controlTasks                      ControlTask[]
+  practiceTasks                      PracticeTask[]
   evidence                          Evidence[]
   fileRecords                       FileRecord[]
   findings                          Finding[]
@@ -179,18 +179,18 @@ model Tenant {
   auditChecklistItems               AuditChecklistItem[]
   findingEvidences                  FindingEvidence[]
   auditorPackAccesses               AuditorPackAccess[]
-  // PolicyControlLink denormalisation (single-table follow-on).
-  policyControlLinks                PolicyControlLink[]
+  // PolicyPracticeLink denormalisation (single-table follow-on).
+  policyPracticeLinks                PolicyPracticeLink[]
   // Epic G-4 — Access Review Campaigns.
   accessReviews                     AccessReview[]
   accessReviewDecisions             AccessReviewDecision[]
-  // Epic G-5 — control exception register.
+  // Epic G-5 — practice exception register.
   treatmentMilestones               TreatmentMilestone[]
   // Roadmap-26 PR-A — persisted process maps (xyflow canvases).
   processMaps                       ProcessMap[]
   processNodes                      ProcessNode[]
   processEdges                      ProcessEdge[]
-  processEdgeControls               ProcessEdgeControl[]
+  processEdgePractices               ProcessEdgePractice[]
   // Epic P5-PR-A — process map snapshots.
   processMapSnapshots               ProcessMapSnapshot[]
   // Hub-and-spoke (Epic O-1).
@@ -433,7 +433,7 @@ model TenantApiKey {
   name        String /// Human-friendly label, e.g. "CI/CD Pipeline"
   keyPrefix   String /// First 8 chars of the plaintext key (for identification)
   keyHash     String /// SHA-256 hash of the full plaintext key
-  scopes      Json      @default("[]") /// JSON array of scope strings, e.g. ["controls:read","evidence:write"]
+  scopes      Json      @default("[]") /// JSON array of scope strings, e.g. ["practices:read","evidence:write"]
   expiresAt   DateTime? /// Optional expiry — null = no expiry
   revokedAt   DateTime? /// Non-null = revoked
   lastUsedAt  DateTime? /// Updated on each successful auth
@@ -689,13 +689,13 @@ model User {
   auditLogs                     AuditLog[]
   auditPacksFrozen              AuditPack[]                  @relation("AuditPackFrozenBy")
   auditSharesCreated            AuditPackShare[]
-  controlApplicabilityDecisions Control[]                    @relation("ControlApplicabilityDecider")
-  createdControls               Control[]                    @relation("ControlCreator")
-  ownedControls                 Control[]                    @relation("ControlOwner")
-  controlEvidenceLinksCreated   ControlEvidenceLink[]        @relation("ControlEvidenceCreator")
+  practiceApplicabilityDecisions Practice[]                    @relation("PracticeApplicabilityDecider")
+  createdPractices               Practice[]                    @relation("PracticeCreator")
+  ownedPractices                 Practice[]                    @relation("PracticeOwner")
+  practiceEvidenceLinksCreated   PracticeEvidenceLink[]        @relation("PracticeEvidenceCreator")
   assignedFindings              Finding[]                    @relation("FindingAssignee")
-  controlAssetsCreated          ControlAsset[]               @relation("ControlAssetCreator")
-  controlTaskAssignments        ControlTask[]                @relation("ControlTaskAssignee")
+  practiceAssetsCreated          PracticeAsset[]               @relation("PracticeAssetCreator")
+  practiceTaskAssignments        PracticeTask[]                @relation("PracticeTaskAssignee")
   evidenceReviews               EvidenceReview[]
   ownedEvidence                 Evidence[]                   @relation("EvidenceOwner")
   uploadedFiles                 FileRecord[]                 @relation("FileUploader")
@@ -746,7 +746,7 @@ model User {
   accessReviewDecisionsSubject  AccessReviewDecision[]       @relation("AccessReviewDecisionSubject")
   accessReviewDecisionsDecided  AccessReviewDecision[]       @relation("AccessReviewDecisionDecider")
   accessReviewDecisionsExecuted AccessReviewDecision[]       @relation("AccessReviewDecisionExecutor")
-  // Epic G-5 — control exceptions involve up to five distinct
+  // Epic G-5 — practice exceptions involve up to five distinct
   // user-roles per row (creator, risk-acceptor, approver, rejecter,
   // deleter). Distinct relation names so Prisma can disambiguate.
   // Epic G-7 — risk treatment plans. Up to four distinct user-roles
