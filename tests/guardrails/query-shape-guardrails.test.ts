@@ -313,7 +313,13 @@ function scanNPlusOne(): NPlusOneFinding[] {
 // AssetRepository.list) + ParcelRepository.validIdsForLocation (bounded
 // in practice by the input id set). Both tenant-scoped.
 // Compliance uproot (2026-08-07): compliance uproot removed 7 unbounded findMany call sites.
-const UNBOUNDED_FINDMANY_BUDGET = 46;
+// 40 (was 56): NOT sixteen queries fixed — sixteen that were bounded all
+// along and miscounted. The detector required `take:` and so missed the
+// ES2015 object shorthand (`take,`), marking correctly-bounded reads as
+// unbounded. The budget had been ratcheting against inflated numbers,
+// which is worse than a loose budget: it made a real regression cheaper
+// to hide, because there was slack that looked like debt.
+const UNBOUNDED_FINDMANY_BUDGET = 40;
 
 /** How far the budget may sit ABOVE the live count before it is stale. */
 const UNBOUNDED_BUDGET_SLACK = 5;
@@ -346,8 +352,14 @@ function scanUnboundedFindMany(): UnboundedFinding[] {
             const openParen = m.index + m[0].length - 1;
             const argEnd = balancedEnd(text, openParen, '(', ')');
             const arg = text.slice(openParen, argEnd);
-            // `take:` anywhere in the balanced argument means bounded.
-            if (/\btake\s*:/.test(arg)) continue;
+            // `take` anywhere in the balanced argument means bounded —
+            // in EITHER spelling. This used to require the colon, so the
+            // ES2015 object shorthand (`take,` / `take` as the last
+            // property) read as UNBOUNDED and inflated the budget with
+            // queries that were correctly bounded all along
+            // (AssetRepository.listMachines was one). `\b` keeps it from
+            // matching a substring like `intake`.
+            if (/\btake\s*(?:[:,}]|$)/m.test(arg)) continue;
 
             const line = lineOf(text, m.index);
             const lineText = lines[line - 1] ?? '';
@@ -437,6 +449,31 @@ describe('query-shape-guardrails — Layer D2: unbounded findMany budget', () =>
 
     it('the repository scanner finds findMany calls (scanner sanity)', () => {
         expect(findings.length).toBeGreaterThan(10);
+    });
+
+    // The detector's own contract. It previously required `take:` and so
+    // read the ES2015 object shorthand as UNBOUNDED, inflating the budget
+    // by sixteen. A budget ratcheting against inflated numbers is worse
+    // than a loose one: the slack looks like debt, so a real regression
+    // can hide inside it.
+    it.each([
+        ['explicit  take: 50',        `{ where: {}, take: 50 }`],
+        ['explicit  take: CONST',     `{ where: {}, take: LIST_TAKE }`],
+        ['explicit  take: expr',      `{ where: {}, take: options.take ?? CAP }`],
+        ['shorthand take, (middle)',  `{ where: {}, take, orderBy: {} }`],
+        ['shorthand take  (last)',    `{ where: {}, take }`],
+        ['shorthand take (newline)',  `{\n  where: {},\n  take\n}`],
+    ])('counts %s as BOUNDED', (_label, arg) => {
+        expect(/\btake\s*(?:[:,}]|$)/m.test(arg)).toBe(true);
+    });
+
+    it.each([
+        ['no take at all',   `{ where: {}, orderBy: { id: 'asc' } }`],
+        ['a similar word',   `{ where: { intake: 5 } }`],
+    ])('still counts %s as UNBOUNDED', (_label, arg) => {
+        // `\b` must keep `intake` from masquerading as a bound — the
+        // classic way a widened regex quietly disables its own guard.
+        expect(/\btake\s*(?:[:,}]|$)/m.test(arg)).toBe(false);
     });
 
     it('unbounded repository findMany count does not exceed the budget', () => {
