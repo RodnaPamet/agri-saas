@@ -50,8 +50,18 @@ describe('GAP-05 ratchet — CI security gate strictness', () => {
         // diff to land. It REJECTS anything looser (`high`,
         // `critical`) — those are the regression classes this guard
         // exists to catch.
-        const gateMatch = ci.match(
-            /npm audit --omit=dev --audit-level=(moderate|low|info)/,
+        //
+        // The invocation moved into `scripts/audit-gate.mjs` (tracked
+        // per-advisory exemptions for advisories with no upstream fix),
+        // so the level now lives there. Both files are searched: had
+        // this ratchet kept reading only ci.yml it would have started
+        // passing vacuously the moment the command moved — the exact
+        // "green for a reason unrelated to what it claims" failure the
+        // repo documents elsewhere. CI is separately asserted to invoke
+        // the gate in tests/guardrails/audit-exemptions.test.ts.
+        const gateSource = ci + readRepoFile('scripts/audit-gate.mjs');
+        const gateMatch = gateSource.match(
+            /npm audit --omit=dev --audit-level=(moderate|low|info)|AUDIT_LEVEL = '(moderate|low|info)'/,
         );
         expect(gateMatch).not.toBeNull();
         // Regression: pre-2026-05-12 the gate was `high`; pre-GAP-05

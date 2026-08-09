@@ -1178,8 +1178,19 @@ jobs:
       # if the gate weakens. If a specific advisory genuinely cannot
       # be fixed today, add a tracked exemption with a written
       # rationale + upgrade plan rather than relaxing the global gate.
-      - name: "Gate: npm audit (moderate+ blocks merge)"
-        run: npm audit --omit=dev --audit-level=moderate
+      #
+      # Run through `scripts/audit-gate.mjs` rather than calling npm
+      # directly. The gate keeps the SAME level (moderate+, --omit=dev)
+      # and adds what npm cannot express: per-ADVISORY exemptions for
+      # advisories with no upstream fixed version. npm's gate is
+      # all-or-nothing, so one unfixable transitive advisory would block
+      # every merge in the repo — which in practice pressures someone
+      # into lowering the global level, turning one accepted risk into a
+      # blanket one. Exemptions are named GHSA ids carrying a rationale,
+      # the condition that voids them, and a review date; the gate FAILS
+      # on an expired or stale entry, and on any advisory not listed.
+      - name: "Gate: npm audit (moderate+ blocks merge, tracked exemptions)"
+        run: node scripts/audit-gate.mjs
 
       # ── Full audit (informational — dev deps included) ──
       - name: "Info: npm audit (all deps)"
