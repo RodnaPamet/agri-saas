@@ -39,7 +39,7 @@ import {
     Background,
     BackgroundVariant,
     ConnectionMode,
-    Practices,
+    Controls,
     ReactFlow,
     ReactFlowProvider,
     addEdge,
@@ -2365,7 +2365,7 @@ function Inner({
                             that has shipped in the last 15 years has
                             +/-/fit practices.
 
-                            xyflow's `<Practices>` primitive is the
+                            xyflow's `<Controls>` primitive is the
                             canonical answer; we wrap it with a
                             token-driven surface so the overlay matches
                             the canvas frame language. The original
@@ -2382,7 +2382,7 @@ function Inner({
                             to the canvas-frame token suite, so the
                             buttons read on both light and dark
                             themes. */}
-                        <Practices
+                        <Controls
                             position="bottom-left"
                             showInteractive={false}
                             className="!bg-canvas-frame/90 !border !border-canvas-border !rounded-[8px] !shadow-canvas-node backdrop-blur"

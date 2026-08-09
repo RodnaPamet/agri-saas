@@ -26,7 +26,7 @@
  *     ...
  *   />
  *
- * `PaginationPractices` renders automatically in the DataTable footer when
+ * `PaginationControls` renders automatically in the DataTable footer when
  * those three props are set.
  */
 

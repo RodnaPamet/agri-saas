@@ -981,13 +981,13 @@ describe('Pagination constants', () => {
   });
 });
 
-// ─── PaginationPractices Contract Tests ──────────────────────────────
+// ─── PaginationControls Contract Tests ──────────────────────────────
 
-describe('PaginationPractices contract', () => {
-  type PaginationPracticesProps = import('@/components/ui/table/pagination-practices').PaginationPracticesProps;
+describe('PaginationControls contract', () => {
+  type PaginationControlsProps = import('@/components/ui/table/pagination-controls').PaginationControlsProps;
 
   it('accepts the required props', () => {
-    const props: PaginationPracticesProps = {
+    const props: PaginationControlsProps = {
       page: 1,
       pageSize: 25,
       totalCount: 100,
@@ -998,7 +998,7 @@ describe('PaginationPractices contract', () => {
   });
 
   it('accepts optional resourceName', () => {
-    const props: PaginationPracticesProps = {
+    const props: PaginationControlsProps = {
       page: 1,
       pageSize: 25,
       totalCount: 100,
@@ -1010,7 +1010,7 @@ describe('PaginationPractices contract', () => {
   });
 
   it('accepts optional allRowsHref', () => {
-    const props: PaginationPracticesProps = {
+    const props: PaginationControlsProps = {
       page: 1,
       pageSize: 25,
       totalCount: 100,
@@ -1022,7 +1022,7 @@ describe('PaginationPractices contract', () => {
 
   it('onPageChange receives the next page number', () => {
     const pages: number[] = [];
-    const props: PaginationPracticesProps = {
+    const props: PaginationControlsProps = {
       page: 2,
       pageSize: 25,
       totalCount: 100,
@@ -1038,9 +1038,9 @@ describe('PaginationPractices contract', () => {
   });
 });
 
-// ─── PaginationPractices Rendering Logic Tests ───────────────────────
+// ─── PaginationControls Rendering Logic Tests ───────────────────────
 
-describe('PaginationPractices rendering logic', () => {
+describe('PaginationControls rendering logic', () => {
   it('should not render when totalCount is 0 (empty)', () => {
     const state = getPaginationState({ page: 1, pageSize: 25, totalCount: 0 });
     const shouldRender = !state.isEmpty && !state.isSinglePage;
@@ -1705,7 +1705,7 @@ describe('Table barrel export — surface completeness', () => {
     'types',
     'table-utils',
     'pagination-utils',
-    'pagination-practices',
+    'pagination-controls',
     'table-empty-state',
     'selection-toolbar',
     'column-visibility-utils',
@@ -1736,8 +1736,8 @@ describe('Table barrel export — surface completeness', () => {
 describe('No duplicate table utilities outside the table module', () => {
   const uiDir = path.resolve(__dirname, '../../src/components/ui');
 
-  it('no standalone pagination-practices.tsx in ui/ (use table/pagination-practices)', () => {
-    const duplicatePath = path.join(uiDir, 'pagination-practices.tsx');
+  it('no standalone pagination-controls.tsx in ui/ (use table/pagination-controls)', () => {
+    const duplicatePath = path.join(uiDir, 'pagination-controls.tsx');
     expect(fs.existsSync(duplicatePath)).toBe(false);
   });
 

@@ -156,7 +156,7 @@ export function NewPracticeModal({ open, setOpen, tenantSlug }: NewPracticeModal
     const {
         register,
         handleSubmit,
-        practice,
+        control,
         watch,
         reset,
         setError: setFormError,
@@ -330,7 +330,7 @@ export function NewPracticeModal({ open, setOpen, tenantSlug }: NewPracticeModal
                                 error={errors.category?.message}
                             >
                                 <Controller
-                                    practice={practice}
+                                    control={control}
                                     name="category"
                                     render={({ field }) => (
                                         <Combobox
@@ -360,7 +360,7 @@ export function NewPracticeModal({ open, setOpen, tenantSlug }: NewPracticeModal
                                 error={errors.frequency?.message}
                             >
                                 <Controller
-                                    practice={practice}
+                                    control={control}
                                     name="frequency"
                                     render={({ field }) => (
                                         <Combobox
@@ -391,7 +391,7 @@ export function NewPracticeModal({ open, setOpen, tenantSlug }: NewPracticeModal
                                 error={errors.mitigationType?.message}
                             >
                                 <Controller
-                                    practice={practice}
+                                    control={control}
                                     name="mitigationType"
                                     render={({ field }) => (
                                         <Combobox
@@ -418,7 +418,7 @@ export function NewPracticeModal({ open, setOpen, tenantSlug }: NewPracticeModal
                         </div>
                         <FormField label={t('newModal.owner')} error={errors.ownerUserId?.message}>
                             <Controller
-                                practice={practice}
+                                control={control}
                                 name="ownerUserId"
                                 render={({ field }) => (
                                     <UserCombobox

@@ -1,13 +1,13 @@
 "use client";
 
 /**
- * PaginationPractices — reusable footer pagination for all entity list pages.
+ * PaginationControls — reusable footer pagination for all entity list pages.
  *
  * Renders a "Viewing X–Y of Z items" label with Previous/Next buttons.
  * Can be used standalone or automatically rendered by the DataTable.
  *
  * Usage (standalone):
- *   <PaginationPractices
+ *   <PaginationControls
  *     page={page}
  *     pageSize={25}
  *     totalCount={243}
@@ -17,7 +17,7 @@
  *
  * Usage (within DataTable):
  *   <DataTable pagination={pagination} rowCount={243} ... />
- *   // PaginationPractices is rendered automatically in the table footer.
+ *   // PaginationControls is rendered automatically in the table footer.
  */
 
 import { cn } from "./table-utils";
@@ -32,7 +32,7 @@ import {
 
 // ── Props ───────────────────────────────────────────────────────────
 
-export interface PaginationPracticesProps {
+export interface PaginationControlsProps {
   /** Current page (1-based). */
   page: number;
 
@@ -57,7 +57,7 @@ export interface PaginationPracticesProps {
 
 // ── Component ───────────────────────────────────────────────────────
 
-export function PaginationPractices({
+export function PaginationControls({
   page,
   pageSize,
   totalCount,
@@ -65,7 +65,7 @@ export function PaginationPractices({
   resourceName,
   allRowsHref,
   className,
-}: PaginationPracticesProps) {
+}: PaginationControlsProps) {
   const t = useTranslations("ui.table.pagination");
   const meta: PaginationMeta = { page, pageSize, totalCount };
   const state = getPaginationState(meta);
@@ -94,7 +94,7 @@ export function PaginationPractices({
       )}
       role="navigation"
       aria-label={t("label")}
-      data-testid="pagination-practices"
+      data-testid="pagination-controls"
     >
       {/* Range info: "Viewing 1–25 of 243 practices" */}
       <div>

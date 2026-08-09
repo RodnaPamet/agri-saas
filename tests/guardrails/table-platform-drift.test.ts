@@ -174,8 +174,8 @@ describe('Table module integrity', () => {
         }
     });
 
-    it('no duplicate PaginationPractices outside table module', () => {
-        expect(fs.existsSync(path.join(UI_DIR, 'pagination-practices.tsx'))).toBe(false);
+    it('no duplicate PaginationControls outside table module', () => {
+        expect(fs.existsSync(path.join(UI_DIR, 'pagination-controls.tsx'))).toBe(false);
     });
 
     it('GUIDE.md exists and is non-trivial', () => {
