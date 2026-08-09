@@ -237,9 +237,9 @@ describe('listLogEntries', () => {
         (JournalRepository.list as jest.Mock).mockResolvedValue([
             { id: 'log-1', type: 'ACTIVITY', title: 'a', occurredAt: new Date() },
         ]);
-        const out = await listLogEntries(readerCtx, { type: ['ACTIVITY'] });
+        const out = await listLogEntries(readerCtx, { type: 'ACTIVITY' });
         expect(out).toHaveLength(1);
-        expect(JournalRepository.list).toHaveBeenCalledWith(mockDb, readerCtx, { type: ['ACTIVITY'] });
+        expect(JournalRepository.list).toHaveBeenCalledWith(mockDb, readerCtx, { type: 'ACTIVITY' });
     });
 });
 

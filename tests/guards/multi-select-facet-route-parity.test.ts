@@ -46,6 +46,8 @@ const API = join(ROOT, 'src/app/api/t/[tenantSlug]');
 const KNOWN_UNFIXED: Readonly<Record<string, readonly string[]>> = {
     assets: ['criticality', 'status', 'type'],
     controls: ['category', 'ownerUserId', 'status'],
+    'farm-tasks': ['assigneeUserId', 'status'],
+    journal: ['crop', 'status', 'type'],
     policies: ['category', 'status'],
     risks: ['category', 'ownerUserId', 'status'],
     vendors: ['criticality', 'riskRating', 'status'],
@@ -79,14 +81,8 @@ function multiSelectKeys(source: string): string[] {
 
 /** True when the route parses `key` as a comma-joined list. */
 function parsesCsv(routeSource: string, key: string): boolean {
-    // EVERY occurrence, not just the first. A route file often declares the
-    // same field name in more than one schema — farm-tasks has
-    // `assigneeUserId` in its POST body schema ABOVE the query schema — and
-    // matching only the first occurrence reported a correctly-migrated facet
-    // as unparsed.
-    for (const m of routeSource.matchAll(new RegExp(`\\n\\s*${key}:\\s*([^\\n]*)`, 'g'))) {
-        if (/csvEnumField|csvIdField/.test(m[1])) return true;
-    }
+    const field = routeSource.match(new RegExp(`\\n\\s*${key}:\\s*([^\\n]*)`));
+    if (field && /csvEnumField|csvIdField/.test(field[1])) return true;
     // The imperative helpers are equally valid.
     return new RegExp(`parseCsv(Enum|Id)Param\\(\\s*[^)]*${key}`).test(routeSource);
 }

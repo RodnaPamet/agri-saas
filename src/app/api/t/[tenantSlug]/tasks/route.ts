@@ -37,14 +37,11 @@ export const GET = withApiErrorHandling(async (req: NextRequest, { params: param
             limit: query.limit,
             cursor: query.cursor,
             filters: {
-        // WorkItem filters are ARRAYS since the multi-select fix (they are
-        // shared with the farm-tasks list). These two surfaces are
-        // single-select, so wrap rather than widen their query contract.
-                status: query.status ? [query.status as never] : undefined,
+                status: query.status,
                 type: query.type,
                 severity: query.severity,
                 priority: query.priority,
-                assigneeUserId: query.assigneeUserId ? [query.assigneeUserId] : undefined,
+                assigneeUserId: query.assigneeUserId,
                 controlId: query.controlId,
                 due: query.due,
                 q: query.q,
@@ -62,11 +59,11 @@ export const GET = withApiErrorHandling(async (req: NextRequest, { params: param
     const tasks = await listTasks(
         ctx,
         {
-            status: query.status ? [query.status as never] : undefined,
+            status: query.status,
             type: query.type,
             severity: query.severity,
             priority: query.priority,
-            assigneeUserId: query.assigneeUserId ? [query.assigneeUserId] : undefined,
+            assigneeUserId: query.assigneeUserId,
             controlId: query.controlId,
             due: query.due,
             q: query.q,

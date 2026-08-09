@@ -227,13 +227,13 @@ describe('JournalRepository — cross-tenant id validation', () => {
 describe('JournalRepository — filter translation', () => {
     it('passes type and status straight through', async () => {
         await JournalRepository.list(asTx(db), ctx, {
-            type: ['INPUT_APPLICATION'],
-            status: ['DONE'],
+            type: 'SPRAY',
+            status: 'DONE',
         });
 
         expect(whereOf(db.logEntry.findMany)).toMatchObject({
-            type: { in: ['INPUT_APPLICATION'] },
-            status: { in: ['DONE'] },
+            type: 'SPRAY',
+            status: 'DONE',
         });
     });
 
@@ -260,7 +260,7 @@ describe('JournalRepository — filter translation', () => {
     it('omits the date filter entirely when neither bound is given', async () => {
         // Break: an always-present empty `occurredAt: {}` would match
         // nothing on some Prisma versions.
-        await JournalRepository.list(asTx(db), ctx, { type: ['INPUT_APPLICATION'] });
+        await JournalRepository.list(asTx(db), ctx, { type: 'SPRAY' });
 
         expect(whereOf(db.logEntry.findMany)).not.toHaveProperty('occurredAt');
     });
@@ -277,7 +277,7 @@ describe('JournalRepository — filter translation', () => {
     it('accepts a comma-separated multi-select of crops, trimming each', async () => {
         // Break: not trimming makes ' maize' miss every row, so a
         // multi-select silently returns nothing for all but the first.
-        await JournalRepository.list(asTx(db), ctx, { crop: ['wheat', 'maize', 'barley'] });
+        await JournalRepository.list(asTx(db), ctx, { crop: 'wheat, maize ,barley' });
 
         expect(whereOf(db.logEntry.findMany).operationParcel).toEqual({
             is: { parcel: { is: { cropType: { in: ['wheat', 'maize', 'barley'] } } } },
@@ -287,7 +287,7 @@ describe('JournalRepository — filter translation', () => {
     it('adds no crop filter when the value is only separators', async () => {
         // Break: emitting `cropType: { in: [] }` matches nothing, so a
         // stray comma would blank the entire journal.
-        await JournalRepository.list(asTx(db), ctx, { crop: [] });
+        await JournalRepository.list(asTx(db), ctx, { crop: ' , , ' });
 
         expect(whereOf(db.logEntry.findMany)).not.toHaveProperty('operationParcel');
     });

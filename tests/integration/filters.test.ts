@@ -298,7 +298,7 @@ describe('WorkItemRepository._buildWhere', () => {
         const mockDb = { task: { findMany: mockFindMany } } as unknown as PrismaTx;
         const ctx = { tenantId: 'tenant-1', userId: 'user-1' } as unknown as RequestContext;
 
-        await WorkItemRepository.list(mockDb, ctx, { status: ['IN_PROGRESS'], priority: 'P0', assigneeUserId: ['user-5'] });
+        await WorkItemRepository.list(mockDb, ctx, { status: 'IN_PROGRESS', priority: 'P0', assigneeUserId: 'user-5' });
 
         const where = mockFindMany.mock.calls[0][0].where;
         expect(where.status).toBe('IN_PROGRESS');
@@ -312,7 +312,7 @@ describe('WorkItemRepository._buildWhere', () => {
         const mockDb = { task: { findMany: mockFindMany } } as unknown as PrismaTx;
         const ctx = { tenantId: 'tenant-1', userId: 'user-1' } as unknown as RequestContext;
 
-        await WorkItemRepository.list(mockDb, ctx, { status: ['OPEN'], due: 'overdue' });
+        await WorkItemRepository.list(mockDb, ctx, { status: 'OPEN', due: 'overdue' });
 
         const where = mockFindMany.mock.calls[0][0].where;
         expect(where.status).toBe('OPEN');
@@ -326,7 +326,7 @@ describe('WorkItemRepository._buildWhere', () => {
         const mockDb = { task: { findMany: mockFindMany } } as unknown as PrismaTx;
         const ctx = { tenantId: 'tenant-1', userId: 'user-1' } as unknown as RequestContext;
 
-        await WorkItemRepository.list(mockDb, ctx, { status: ['IN_PROGRESS'], due: 'next7d', q: 'urgent' });
+        await WorkItemRepository.list(mockDb, ctx, { status: 'IN_PROGRESS', due: 'next7d', q: 'urgent' });
 
         const where = mockFindMany.mock.calls[0][0].where;
         expect(where.status).toBe('IN_PROGRESS');
