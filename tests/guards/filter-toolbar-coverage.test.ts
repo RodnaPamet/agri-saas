@@ -47,6 +47,10 @@ const EXEMPT_FILE_PATTERNS: RegExp[] = [
  * length to stop hand-waved exemptions.
  */
 const EXEMPTIONS: Record<string, string> = {
+    // Asset maintenance tab (assets roadmap PR2).
+    "src/app/t/[tenantSlug]/(app)/assets/[id]/MaintenanceTab.tsx":
+        "detail-page sub-table — one machine's service history, not a list page. The set is bounded by MAINTENANCE_PAGE_SIZE and already ordered newest-first, which is how a service log is read; the open records a farmer is actually looking for sit at the top by construction. Faceted filtering, a column gear and viewport-clamping all add chrome without adding reach.",
+
     // Certification scheme detail (schemes roadmap PR2).
     "src/app/t/[tenantSlug]/(app)/schemes/[schemeKey]/SchemeDetailClient.tsx":
         "detail-page sub-table — the control points OF one standard, not a list page. The set is fixed by the standard (a scheme publishes its control points; a farm cannot add or remove them), already ordered by the catalogue's own sortOrder, and read top-to-bottom against the status column. Faceted filtering, a column gear and viewport-clamping all add chrome without adding reach.",

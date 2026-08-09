@@ -24,6 +24,8 @@ export interface EditAssetFormFields {
     /** "Assigned to" — real user reference (User.id), '' = unassigned. */
     ownerUserId: string;
     location: string;
+    locationId: string | null;
+    usefulLifeYears: string;
     criticality: string;
     status: string;
     externalRef: string;
@@ -62,6 +64,8 @@ const DEFAULTS: EditAssetFormFields = {
     owner: '',
     ownerUserId: '',
     location: '',
+    locationId: null,
+    usefulLifeYears: '',
     criticality: '',
     status: 'ACTIVE',
     externalRef: '',
@@ -115,6 +119,10 @@ export function useEditAssetForm({
                 ownerUserId: fields.ownerUserId,
                 externalRef: fields.externalRef.trim() === '' ? null : fields.externalRef,
                 location: fields.location,
+                locationId: fields.locationId,
+                usefulLifeYears: fields.usefulLifeYears.trim()
+                    ? Number(fields.usefulLifeYears)
+                    : null,
                 manufacturer: fields.manufacturer,
                 model: fields.model,
                 serialNumber: fields.serialNumber,

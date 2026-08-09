@@ -1,18 +1,40 @@
 // Provide mandatory env vars for src/env.ts validation during tests.
 //
-// For DATABASE_URL: shell env wins; then try .env (the normal local-dev
-// pattern — no need to re-source the file for `npm test`); then fall
-// back to a dummy URL that lets env validation pass for unit tests
-// that mock Prisma. Integration tests that actually connect will still
-// use whichever real URL we resolved here.
+// For DATABASE_URL: shell env wins (CI sets it explicitly); then
+// `.env.test`'s DATABASE_URL_TEST — the SAME base DB globalSetup
+// migrates; then `.env` as a last resort; then a dummy URL that lets env
+// validation pass for unit tests that mock Prisma.
+//
+// `.env.test` MUST outrank `.env`. It used to be the other way round,
+// with two consequences on a serial run (`--runInBand`, which is what
+// CI uses and what you reach for locally to debug):
+//   1. globalSetup migrated the test DB while the app's prisma client
+//      connected to the DEV database — so integration tests failed
+//      against a schema nobody had migrated, or worse, PASSED by
+//      writing to real development data.
+//   2. `.env`'s URL points at PgBouncer (:5433), which is not part of
+//      the test stack, so the failure surfaced as an unrelated
+//      "Can't reach database server" rather than a config problem.
 if (!process.env.DATABASE_URL) {
-  try {
-    const fs = require('fs');
-    const path = require('path');
-    const envContent = fs.readFileSync(path.resolve(__dirname, '.env'), 'utf8');
-    const match = envContent.match(/^DATABASE_URL="?([^"\n]*)"?$/m);
-    if (match && match[1]) process.env.DATABASE_URL = match[1];
-  } catch { /* no .env — fall through to dummy */ }
+  const fs = require('fs');
+  const path = require('path');
+  const readUrl = (file, key) => {
+    try {
+      const content = fs.readFileSync(path.resolve(__dirname, file), 'utf8');
+      const match = content.match(new RegExp('^' + key + '="?([^"\\n]*)"?$', 'm'));
+      return match && match[1] ? match[1] : null;
+    } catch { return null; }
+  };
+  const resolved =
+    readUrl('.env.test', 'DATABASE_URL_TEST') ||
+    readUrl('.env.test', 'DATABASE_URL') ||
+    readUrl('.env', 'DATABASE_URL');
+  if (resolved) process.env.DATABASE_URL = resolved;
+}
+// Migrations and RLS setup need a DIRECT connection (never PgBouncer's
+// transaction pooling). In tests they are the same URL.
+if (!process.env.DIRECT_DATABASE_URL) {
+  process.env.DIRECT_DATABASE_URL = process.env.DATABASE_URL;
 }
 process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgres://user:password@localhost:5432/testdb';
 

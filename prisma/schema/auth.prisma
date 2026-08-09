@@ -42,6 +42,11 @@ model Tenant {
   /// surface (ALE chips, LEC ticks, breach tasks, PDFs). One symbol
   /// per tenant; the canonical formatter takes it as its symbol arg.
   currencySymbol                    String                             @default("€")
+  /// How machinery capital is expensed into the /costs rollup.
+  /// Defaults to NONE, so an existing tenant's cost figures do not
+  /// silently change the day this ships — depreciation only appears
+  /// once a farm opts in and sets a useful life on its machines.
+  depreciationMethod                DepreciationMethod                 @default(NONE)
   industry                          String?
   scope                             String?
   context                           String?
@@ -255,6 +260,7 @@ model Tenant {
   logEntries               LogEntry[]
   logLocations             LogLocation[]
   logEquipments            LogEquipment[]
+  assetMaintenance         AssetMaintenance[]
   logEntryFiles            LogEntryFile[]
   lotLinks                 LotLink[]
   knowledgeArticles        KnowledgeArticle[]
@@ -811,6 +817,7 @@ model User {
   // Phase 1 — inventory ledger + journal.
   stockTxActed                  StockTransaction[]           @relation("StockTxActor")
   logEntriesCreated             LogEntry[]                   @relation("LogEntryCreator")
+  assetMaintenanceCreated       AssetMaintenance[]           @relation("AssetMaintenanceCreator")
   lotLinksActed                 LotLink[]                    @relation("LotLinkActor")
   knowledgeArticlesOwned        KnowledgeArticle[]           @relation("KnowledgeArticleOwner")
   knowledgeVersionsCreated      KnowledgeArticleVersion[]    @relation("KnowledgeVersionCreator")
