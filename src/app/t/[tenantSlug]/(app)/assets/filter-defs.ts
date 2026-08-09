@@ -73,6 +73,56 @@ const STATIC_DEFS = {
 export const assetFilterDefs = createTypedFilterDefs()(STATIC_DEFS);
 export const ASSET_FILTER_KEYS = assetFilterDefs.filterKeys;
 
-export function buildAssetFilters() {
-    return assetFilterDefs.filters;
+/** Surface-namespace resolver (`useTranslations('assets')`). */
+type T = (key: string) => string;
+
+/**
+ * The asset vocabulary, localized.
+ *
+ * The `ASSET_*_LABELS` maps above stay as the KEY source of truth (and
+ * the English fallback for any non-i18n caller); these builders resolve
+ * the visible text. This matters beyond chrome: the same maps feed the
+ * CREATE and EDIT dropdowns, so before this a Bulgarian farmer
+ * registered a tractor by picking English words.
+ */
+export const buildAssetTypeLabels = (t: T): Record<string, string> =>
+    Object.fromEntries(Object.keys(ASSET_TYPE_LABELS).map((k) => [k, t(`type${k}`)]));
+
+export const buildAssetStatusLabels = (t: T): Record<string, string> =>
+    Object.fromEntries(Object.keys(ASSET_STATUS_LABELS).map((k) => [k, t(`status${k}`)]));
+
+export const buildAssetCriticalityLabels = (t: T): Record<string, string> =>
+    Object.fromEntries(Object.keys(ASSET_CRITICALITY_LABELS).map((k) => [k, t(`criticality${k}`)]));
+
+/**
+ * Localized filter defs. `t` is optional so the untranslated call site
+ * keeps working during migration; pass it to get Bulgarian.
+ */
+export function buildAssetFilters(t?: T, tGroup?: (k: string) => string) {
+    if (!t) return assetFilterDefs.filters;
+    const localized = {
+        ...STATIC_DEFS,
+        type: {
+            ...STATIC_DEFS.type,
+            label: t('type'),
+            // Was 'Equipment category.' — untranslated, and named after the
+            // Equipment table that no longer exists.
+            description: t('filterTypeDesc'),
+            ...(tGroup ? { group: tGroup('attributes') } : {}),
+            options: optionsFromEnum(buildAssetTypeLabels(t)),
+        },
+        status: {
+            ...STATIC_DEFS.status,
+            label: t('statusLabel'),
+            ...(tGroup ? { group: tGroup('attributes') } : {}),
+            options: optionsFromEnum(buildAssetStatusLabels(t)),
+        },
+        criticality: {
+            ...STATIC_DEFS.criticality,
+            label: t('criticalityLabel'),
+            ...(tGroup ? { group: tGroup('quantitative') } : {}),
+            options: optionsFromEnum(buildAssetCriticalityLabels(t)),
+        },
+    };
+    return createTypedFilterDefs()(localized).filters;
 }

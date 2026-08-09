@@ -369,7 +369,7 @@ describe('WorkItemRepository — filter translation', () => {
         // Break: emitting `AND: []`. Harmless to Prisma but it makes
         // the cursor merge below take the "append" branch on a page
         // that has no filters, which is how a shape bug hides.
-        await WorkItemRepository.list(asTx(db), ctx, { status: 'OPEN' });
+        await WorkItemRepository.list(asTx(db), ctx, { status: ['OPEN'] });
 
         expect(whereOf(db.task.findMany)).not.toHaveProperty('AND');
     });
