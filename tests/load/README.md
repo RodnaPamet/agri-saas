@@ -18,8 +18,8 @@ highest-traffic authenticated paths against documented SLOs.
 | File              | What it measures                                                            |
 | ----------------- | --------------------------------------------------------------------------- |
 | `auth.js`         | Cold-start NextAuth credentials login throughput + p95 latency.             |
-| `lists.js`        | Steady-state authenticated list reads (controls / risks / evidence).        |
-| `mutations.js`    | Authenticated mutations: control creation + multipart evidence upload.      |
+| `lists.js`        | Steady-state authenticated list reads (practices / evidence).        |
+| `mutations.js`    | Authenticated mutations: practice creation + multipart evidence upload.      |
 
 - `auth.js` opens a fresh cookie jar per iteration so every iteration is
   a real cold login (csrf → callback/credentials → session).
@@ -70,7 +70,7 @@ The scripts default to `http://localhost:3006` (the port `npm start`
 uses with the production build, matching Playwright's E2E config).
 
 ```bash
-# Reset the DB to known seed state (4 controls, 4 risks, etc.)
+# Reset the DB to known seed state (4 practices, etc.)
 npm run db:reset
 
 # Start the server with the load-test escape hatches enabled.
@@ -195,10 +195,10 @@ Every latency budget carries `regime:latency`. That tag is load-bearing
 
 | Metric                                       | Budget          | Why                                  |
 | -------------------------------------------- | --------------- | ------------------------------------ |
-| `http_req_failed{op:create_control}`         | `rate < 2%`     | Mutation error budget.               |
+| `http_req_failed{op:create_practice}`         | `rate < 2%`     | Mutation error budget.               |
 | `http_req_failed{op:upload_evidence}`        | `rate < 2%`     |                                      |
-| `http_req_duration{op:create_control}`       | `p95 < 1500ms`  | One INSERT + audit log.              |
-| `http_req_duration{op:create_control}`       | `p99 < 3000ms`  |                                      |
+| `http_req_duration{op:create_practice}`       | `p95 < 1500ms`  | One INSERT + audit log.              |
+| `http_req_duration{op:create_practice}`       | `p99 < 3000ms`  |                                      |
 | `http_req_duration{op:upload_evidence}`      | `p95 < 2000ms`  | File write + 2 INSERTs + audit.      |
 | `http_req_duration{op:upload_evidence}`      | `p99 < 4000ms`  |                                      |
 | `mutation_loop_ms`                           | `p95 < 3000ms`  | Full create+upload+sleep loop.       |
@@ -215,20 +215,20 @@ the rate noticeably.
 | Metric                                       | Budget          | Why                                  |
 | -------------------------------------------- | --------------- | ------------------------------------ |
 | `http_req_failed{type:list}`                 | `rate < 1%`     | Read-path error budget.              |
-| `http_req_duration{regime:latency,endpoint:controls}` | `p95 < 800ms`  | Paginated list w/ auth + RLS. Measured: 94.6ms. |
-| `http_req_duration{regime:latency,endpoint:controls}` | `p99 < 2000ms` |                             |
+| `http_req_duration{regime:latency,endpoint:practices}` | `p95 < 800ms`  | Paginated list w/ auth + RLS. Measured: 94.6ms. |
+| `http_req_duration{regime:latency,endpoint:practices}` | `p99 < 2000ms` |                             |
 | `http_req_duration{regime:latency,endpoint:risks}`    | `p95 < 800ms`  | Measured: 68.3ms.           |
 | `http_req_duration{regime:latency,endpoint:risks}`    | `p99 < 2000ms` |                             |
 | `http_req_duration{regime:latency,endpoint:evidence}` | `p95 < 800ms`  | Measured: 49.0ms.           |
 | `http_req_duration{regime:latency,endpoint:evidence}` | `p99 < 2000ms` |                             |
 | `list_iterations{regime:saturation}`         | `count > floor` | Capacity collapse detector.         |
 | `list_success_rate`                          | `rate > 99%`    | Aggregate.                           |
-| `checks{check:controls_ok}`                  | `rate > 99%`    |                                      |
+| `checks{check:practices_ok}`                  | `rate > 99%`    |                                      |
 | `checks{check:risks_ok}`                     | `rate > 99%`    |                                      |
 | `checks{check:evidence_ok}`                  | `rate > 99%`    |                                      |
 | `http_req_failed{step:login}`                | `rate < 5%`     | Once-per-VU warm-up; 5% is generous. |
 
-These are starting budgets calibrated for the seed dataset (~4 controls,
+These are starting budgets calibrated for the seed dataset (~4 practices,
 ~4 risks). When running against a heavier seed or a populated tenant
 expect the list p95 to drift up — re-baseline before tightening.
 
@@ -261,12 +261,12 @@ npm run db:reset
 # which would only set deletedAt):
 psql "$DATABASE_URL" <<'SQL'
 DELETE FROM "Evidence"   WHERE title LIKE '[loadtest-%';
-DELETE FROM "Control"    WHERE name  LIKE '[loadtest-%';
+DELETE FROM "Practice"   WHERE name  LIKE '[loadtest-%';
 DELETE FROM "FileRecord" WHERE "pathKey" LIKE '%loadtest-%';
 SQL
 ```
 
-`/controls/[id]` and `/evidence/[id]` don't expose HTTP DELETE
+`/practices/[id]` and `/evidence/[id]` don't expose HTTP DELETE
 handlers (and `/purge` requires `deletedAt` first), so HTTP-only
 cleanup isn't possible. The SQL above is the supported path.
 
@@ -317,7 +317,7 @@ production load: thundering-herd login at the start of the workday).
 The lists scenario gates regressions in the three highest-traffic
 read endpoints.
 
-The mutations scenario closes the second half of GAP-11 — control
+The mutations scenario closes the second half of GAP-11 — practice
 creation and multipart evidence upload are the two write paths most
 likely to introduce a latency cliff (RLS, audit trail, encryption,
 storage). It runs at three scales (50/100/200 VUs) for full baselines
