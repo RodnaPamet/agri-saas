@@ -111,7 +111,7 @@ export interface AuditEntryInput {
 
     /** What happened */
     eventType: string;     // e.g., 'VENDOR_CREATED', 'CONTROL_UPDATED'
-    entityType: string;    // e.g., 'Vendor', 'Control'
+    entityType: string;    // e.g., 'Vendor', 'Practice'
     entityId: string | null;
 
     /** When it happened (ISO-8601 UTC) */

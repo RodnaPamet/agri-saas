@@ -1,23 +1,23 @@
 "use client";
 
 /**
- * PaginationControls — reusable footer pagination for all entity list pages.
+ * PaginationPractices — reusable footer pagination for all entity list pages.
  *
  * Renders a "Viewing X–Y of Z items" label with Previous/Next buttons.
  * Can be used standalone or automatically rendered by the DataTable.
  *
  * Usage (standalone):
- *   <PaginationControls
+ *   <PaginationPractices
  *     page={page}
  *     pageSize={25}
  *     totalCount={243}
  *     onPageChange={(p) => setPage(p)}
- *     resourceName={(p) => p ? "controls" : "control"}
+ *     resourceName={(p) => p ? "practices" : "practice"}
  *   />
  *
  * Usage (within DataTable):
  *   <DataTable pagination={pagination} rowCount={243} ... />
- *   // PaginationControls is rendered automatically in the table footer.
+ *   // PaginationPractices is rendered automatically in the table footer.
  */
 
 import { cn } from "./table-utils";
@@ -32,7 +32,7 @@ import {
 
 // ── Props ───────────────────────────────────────────────────────────
 
-export interface PaginationControlsProps {
+export interface PaginationPracticesProps {
   /** Current page (1-based). */
   page: number;
 
@@ -45,7 +45,7 @@ export interface PaginationControlsProps {
   /** Callback when the page changes. */
   onPageChange: (page: number) => void;
 
-  /** Human-readable resource name (e.g., "controls"). */
+  /** Human-readable resource name (e.g., "practices"). */
   resourceName?: (plural: boolean) => string;
 
   /** Optional URL to link the total count to (e.g., "view all"). */
@@ -57,7 +57,7 @@ export interface PaginationControlsProps {
 
 // ── Component ───────────────────────────────────────────────────────
 
-export function PaginationControls({
+export function PaginationPractices({
   page,
   pageSize,
   totalCount,
@@ -65,7 +65,7 @@ export function PaginationControls({
   resourceName,
   allRowsHref,
   className,
-}: PaginationControlsProps) {
+}: PaginationPracticesProps) {
   const t = useTranslations("ui.table.pagination");
   const meta: PaginationMeta = { page, pageSize, totalCount };
   const state = getPaginationState(meta);
@@ -94,9 +94,9 @@ export function PaginationControls({
       )}
       role="navigation"
       aria-label={t("label")}
-      data-testid="pagination-controls"
+      data-testid="pagination-practices"
     >
-      {/* Range info: "Viewing 1–25 of 243 controls" */}
+      {/* Range info: "Viewing 1–25 of 243 practices" */}
       <div>
         <span className="hidden sm:inline-block">{t("viewing")}</span>{" "}
         <span className="font-medium">

@@ -41,7 +41,7 @@ export interface ShimmerDotsProps {
     dotSize?: string;
     /** Override the accessible label. Defaults to "Loading". */
     'aria-label'?: string;
-    /** Class on the outer wrapper — control the bounding box height/width. */
+    /** Class on the outer wrapper — practice the bounding box height/width. */
     className?: string;
     /** Optional `data-testid` on the outer wrapper. */
     'data-testid'?: string;

@@ -14,7 +14,7 @@
  *   substring match in normalised title       →  30
  *   substring match in normalised subtitle    →  10
  *   plus per-type baseline so ties break by
- *   "user is more likely to want a control
+ *   "user is more likely to want a practice
  *    than an evidence row"                    → +0..4
  *
  * Numbers are arbitrary but spaced so the bands are visually
@@ -29,13 +29,13 @@ import type { SearchHit, SearchHitType } from './types';
 /**
  * Tiebreak hint when two hits across different kinds match the
  * query equally well. Bias toward the entities operators search
- * for most often in the palette (controls > policies >
+ * for most often in the palette (practices > policies >
  * frameworks > evidence). Magnitudes are tiny relative to the
  * match-quality bands so ranking is dominated by relevance, not
  * type bias.
  */
 const TYPE_BASELINE: Record<SearchHitType, number> = {
-    control: 7,
+    practice: 7,
     task: 5,
     policy: 4,
     asset: 2,
@@ -56,7 +56,7 @@ export interface RankInput {
     type: SearchHitType;
     title: string;
     subtitle?: string | null;
-    /** Optional code (control code, framework key) — exact-match candidate. */
+    /** Optional code (practice code, framework key) — exact-match candidate. */
     code?: string | null;
 }
 
@@ -108,7 +108,7 @@ export function capPerType(
     limit: number,
 ): { kept: SearchHit[]; perTypeCounts: Record<SearchHitType, number>; truncated: boolean } {
     const counts: Record<SearchHitType, number> = {
-        control: 0,
+        practice: 0,
         policy: 0,
         framework: 0,
         evidence: 0,

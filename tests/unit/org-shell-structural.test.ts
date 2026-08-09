@@ -82,7 +82,7 @@ describe('Epic O-4 — org shell structural contract', () => {
         const entries: [string, string][] = [
             ['portfolioOverview', 'Portfolio Overview'],
             ['allTenants', 'All Tenants'],
-            ['nonPerformingControls', 'Non-Performing Controls'],
+            ['nonPerformingPractices', 'Non-Performing Practices'],
             ['overdueEvidence', 'Overdue Evidence'],
             ['members', 'Members'],
             ['settings', 'Settings'],
@@ -98,7 +98,7 @@ describe('Epic O-4 — org shell structural contract', () => {
         // The drill-down items must carry `requiresDrillDown: true`
         // (labels now `t('<key>')` per the T04 i18n migration). Was three;
         // `criticalRisks` went with the risk register.
-        expect(src).toMatch(/label:\s*t\(['"]nonPerformingControls['"]\)[\s\S]+?requiresDrillDown:\s*true/);
+        expect(src).toMatch(/label:\s*t\(['"]nonPerformingPractices['"]\)[\s\S]+?requiresDrillDown:\s*true/);
         expect(src).toMatch(/label:\s*t\(['"]overdueEvidence['"]\)[\s\S]+?requiresDrillDown:\s*true/);
         // And the filter must check `perms.canDrillDown` for those rows.
         expect(src).toMatch(/canDrillDown/);

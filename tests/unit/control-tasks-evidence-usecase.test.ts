@@ -2,18 +2,18 @@
  * test-mock pattern; per-line typing has poor cost/benefit ratio. */
 
 /**
- * Unit tests for `src/app-layer/usecases/control/tasks.ts` and
- * `src/app-layer/usecases/control/evidence.ts`.
+ * Unit tests for `src/app-layer/usecases/practice/tasks.ts` and
+ * `src/app-layer/usecases/practice/evidence.ts`.
  *
  * Roadmap Q1 — Compliance core. Together these two files cover the
  * detail-page Tasks tab, Evidence tab (tab-lazy #102 payload), and
  * the contributor/asset linking surfaces. All are thin orchestration
- * over ControlRepository — RBAC + repo-returns-null → notFound +
+ * over PracticeRepository — RBAC + repo-returns-null → notFound +
  * audit event shape is what we're locking.
  */
 
 const mockDb = {
-    control: { findFirst: jest.fn() },
+    practice: { findFirst: jest.fn() },
     evidence: { findMany: jest.fn() },
 } as any;
 
@@ -21,8 +21,8 @@ jest.mock('@/lib/db-context', () => ({
     runInTenantContext: jest.fn(async (_ctx: any, fn: (db: any) => any) => fn(mockDb)),
 }));
 
-jest.mock('@/app-layer/repositories/ControlRepository', () => ({
-    ControlRepository: {
+jest.mock('@/app-layer/repositories/PracticeRepository', () => ({
+    PracticeRepository: {
         listTasks: jest.fn(),
         createTask: jest.fn(),
         updateTask: jest.fn(),
@@ -42,22 +42,22 @@ jest.mock('@/app-layer/events/audit', () => ({
     logEvent: jest.fn(),
 }));
 
-import { ControlRepository } from '@/app-layer/repositories/ControlRepository';
+import { PracticeRepository } from '@/app-layer/repositories/PracticeRepository';
 import { logEvent } from '@/app-layer/events/audit';
 import {
-    listControlTasks,
-    createControlTask,
-    updateControlTask,
-    deleteControlTask,
-} from '@/app-layer/usecases/control/tasks';
+    listPracticeTasks,
+    createPracticeTask,
+    updatePracticeTask,
+    deletePracticeTask,
+} from '@/app-layer/usecases/practice/tasks';
 import {
     listEvidenceLinks,
-    getControlEvidenceTab,
+    getPracticeEvidenceTab,
     linkEvidence,
     unlinkEvidence,
-    linkAssetToControl,
-    unlinkAssetFromControl,
-} from '@/app-layer/usecases/control/evidence';
+    linkAssetToPractice,
+    unlinkAssetFromPractice,
+} from '@/app-layer/usecases/practice/evidence';
 import { makeRequestContext } from '../helpers/make-context';
 
 beforeEach(() => {
@@ -67,66 +67,66 @@ beforeEach(() => {
 const editorCtx = makeRequestContext('EDITOR');
 const readerCtx = makeRequestContext('READER');
 
-// ─── control/tasks.ts ──────────────────────────────────────────────
+// ─── practice/tasks.ts ──────────────────────────────────────────────
 
-describe('listControlTasks', () => {
-    it('delegates to ControlRepository.listTasks under the read gate', async () => {
-        (ControlRepository.listTasks as jest.Mock).mockResolvedValue([{ id: 't-1' }]);
-        const rows = await listControlTasks(readerCtx, 'c-1');
+describe('listPracticeTasks', () => {
+    it('delegates to PracticeRepository.listTasks under the read gate', async () => {
+        (PracticeRepository.listTasks as jest.Mock).mockResolvedValue([{ id: 't-1' }]);
+        const rows = await listPracticeTasks(readerCtx, 'c-1');
         expect(rows).toEqual([{ id: 't-1' }]);
-        expect(ControlRepository.listTasks).toHaveBeenCalledWith(mockDb, readerCtx, 'c-1');
+        expect(PracticeRepository.listTasks).toHaveBeenCalledWith(mockDb, readerCtx, 'c-1');
     });
 });
 
-describe('createControlTask', () => {
+describe('createPracticeTask', () => {
     it('creates a task and emits CONTROL_TASK_CREATED audit', async () => {
-        (ControlRepository.createTask as jest.Mock).mockResolvedValue({ id: 't-1', title: 'X' });
-        const res = await createControlTask(editorCtx, 'c-1', { title: 'X' });
+        (PracticeRepository.createTask as jest.Mock).mockResolvedValue({ id: 't-1', title: 'X' });
+        const res = await createPracticeTask(editorCtx, 'c-1', { title: 'X' });
         expect(res).toEqual({ id: 't-1', title: 'X' });
         const payload = (logEvent as jest.Mock).mock.calls[0][2];
         expect(payload.action).toBe('CONTROL_TASK_CREATED');
         expect(payload.entityId).toBe('c-1');
     });
 
-    it('throws notFound when the control does not exist', async () => {
-        (ControlRepository.createTask as jest.Mock).mockResolvedValue(null);
-        await expect(createControlTask(editorCtx, 'missing', { title: 'X' })).rejects.toThrow(/Control not found/i);
+    it('throws notFound when the practice does not exist', async () => {
+        (PracticeRepository.createTask as jest.Mock).mockResolvedValue(null);
+        await expect(createPracticeTask(editorCtx, 'missing', { title: 'X' })).rejects.toThrow(/Practice not found/i);
     });
 
     it('rejects READER (manage-tasks gate)', async () => {
-        await expect(createControlTask(readerCtx, 'c-1', { title: 'X' })).rejects.toBeDefined();
-        expect(ControlRepository.createTask).not.toHaveBeenCalled();
+        await expect(createPracticeTask(readerCtx, 'c-1', { title: 'X' })).rejects.toBeDefined();
+        expect(PracticeRepository.createTask).not.toHaveBeenCalled();
     });
 });
 
-describe('updateControlTask', () => {
+describe('updatePracticeTask', () => {
     it('emits CONTROL_TASK_COMPLETED when status set to DONE', async () => {
-        (ControlRepository.updateTask as jest.Mock).mockResolvedValue({ id: 't-1', controlId: 'c-1', title: 'X' });
+        (PracticeRepository.updateTask as jest.Mock).mockResolvedValue({ id: 't-1', practiceId: 'c-1', title: 'X' });
 
-        await updateControlTask(editorCtx, 't-1', { status: 'DONE' });
+        await updatePracticeTask(editorCtx, 't-1', { status: 'DONE' });
 
         const payload = (logEvent as jest.Mock).mock.calls[0][2];
         expect(payload.action).toBe('CONTROL_TASK_COMPLETED');
     });
 
     it('emits CONTROL_TASK_UPDATED when status is not DONE', async () => {
-        (ControlRepository.updateTask as jest.Mock).mockResolvedValue({ id: 't-1', controlId: 'c-1', title: 'X' });
+        (PracticeRepository.updateTask as jest.Mock).mockResolvedValue({ id: 't-1', practiceId: 'c-1', title: 'X' });
 
-        await updateControlTask(editorCtx, 't-1', { title: 'New' });
+        await updatePracticeTask(editorCtx, 't-1', { title: 'New' });
 
         const payload = (logEvent as jest.Mock).mock.calls[0][2];
         expect(payload.action).toBe('CONTROL_TASK_UPDATED');
     });
 
     it('throws notFound when the task is missing', async () => {
-        (ControlRepository.updateTask as jest.Mock).mockResolvedValue(null);
-        await expect(updateControlTask(editorCtx, 'missing', { title: 'X' })).rejects.toThrow(/Task not found/i);
+        (PracticeRepository.updateTask as jest.Mock).mockResolvedValue(null);
+        await expect(updatePracticeTask(editorCtx, 'missing', { title: 'X' })).rejects.toThrow(/Task not found/i);
     });
 
     it('emits status_change category when status is in the payload', async () => {
-        (ControlRepository.updateTask as jest.Mock).mockResolvedValue({ id: 't-1', controlId: 'c-1', title: 'X' });
+        (PracticeRepository.updateTask as jest.Mock).mockResolvedValue({ id: 't-1', practiceId: 'c-1', title: 'X' });
 
-        await updateControlTask(editorCtx, 't-1', { status: 'IN_PROGRESS' });
+        await updatePracticeTask(editorCtx, 't-1', { status: 'IN_PROGRESS' });
 
         const payload = (logEvent as jest.Mock).mock.calls[0][2];
         expect(payload.detailsJson.category).toBe('status_change');
@@ -134,59 +134,59 @@ describe('updateControlTask', () => {
     });
 
     it('rejects READER (manage-tasks gate)', async () => {
-        await expect(updateControlTask(readerCtx, 't-1', { title: 'X' })).rejects.toBeDefined();
+        await expect(updatePracticeTask(readerCtx, 't-1', { title: 'X' })).rejects.toBeDefined();
     });
 });
 
-describe('deleteControlTask', () => {
+describe('deletePracticeTask', () => {
     it('returns success on delete', async () => {
-        (ControlRepository.deleteTask as jest.Mock).mockResolvedValue(true);
-        const res = await deleteControlTask(editorCtx, 't-1');
+        (PracticeRepository.deleteTask as jest.Mock).mockResolvedValue(true);
+        const res = await deletePracticeTask(editorCtx, 't-1');
         expect(res).toEqual({ success: true });
     });
 
     it('throws notFound when the task does not exist', async () => {
-        (ControlRepository.deleteTask as jest.Mock).mockResolvedValue(null);
-        await expect(deleteControlTask(editorCtx, 'missing')).rejects.toThrow(/Task not found/i);
+        (PracticeRepository.deleteTask as jest.Mock).mockResolvedValue(null);
+        await expect(deletePracticeTask(editorCtx, 'missing')).rejects.toThrow(/Task not found/i);
     });
 
     it('rejects READER (manage-tasks gate)', async () => {
-        await expect(deleteControlTask(readerCtx, 't-1')).rejects.toBeDefined();
+        await expect(deletePracticeTask(readerCtx, 't-1')).rejects.toBeDefined();
     });
 });
 
-// ─── control/evidence.ts ───────────────────────────────────────────
+// ─── practice/evidence.ts ───────────────────────────────────────────
 
 describe('listEvidenceLinks', () => {
-    it('delegates to ControlRepository.listEvidenceLinks under the read gate', async () => {
-        (ControlRepository.listEvidenceLinks as jest.Mock).mockResolvedValue([{ id: 'l-1' }]);
+    it('delegates to PracticeRepository.listEvidenceLinks under the read gate', async () => {
+        (PracticeRepository.listEvidenceLinks as jest.Mock).mockResolvedValue([{ id: 'l-1' }]);
         const rows = await listEvidenceLinks(readerCtx, 'c-1');
         expect(rows).toEqual([{ id: 'l-1' }]);
     });
 });
 
-describe('getControlEvidenceTab', () => {
+describe('getPracticeEvidenceTab', () => {
     it('returns links + direct evidence in a single bundled payload', async () => {
-        (mockDb.control.findFirst as jest.Mock).mockResolvedValue({ id: 'c-1' });
-        (ControlRepository.listEvidenceLinks as jest.Mock).mockResolvedValue([{ id: 'l-1' }]);
+        (mockDb.practice.findFirst as jest.Mock).mockResolvedValue({ id: 'c-1' });
+        (PracticeRepository.listEvidenceLinks as jest.Mock).mockResolvedValue([{ id: 'l-1' }]);
         (mockDb.evidence.findMany as jest.Mock).mockResolvedValue([{ id: 'e-1' }]);
 
-        const res = await getControlEvidenceTab(readerCtx, 'c-1');
+        const res = await getPracticeEvidenceTab(readerCtx, 'c-1');
 
         expect(res).toEqual({ links: [{ id: 'l-1' }], evidence: [{ id: 'e-1' }] });
     });
 
-    it('throws notFound when the control is missing (neither query fires)', async () => {
-        (mockDb.control.findFirst as jest.Mock).mockResolvedValue(null);
-        await expect(getControlEvidenceTab(readerCtx, 'missing')).rejects.toThrow(/Control not found/i);
-        expect(ControlRepository.listEvidenceLinks).not.toHaveBeenCalled();
+    it('throws notFound when the practice is missing (neither query fires)', async () => {
+        (mockDb.practice.findFirst as jest.Mock).mockResolvedValue(null);
+        await expect(getPracticeEvidenceTab(readerCtx, 'missing')).rejects.toThrow(/Practice not found/i);
+        expect(PracticeRepository.listEvidenceLinks).not.toHaveBeenCalled();
         expect(mockDb.evidence.findMany).not.toHaveBeenCalled();
     });
 });
 
 describe('linkEvidence', () => {
     it('creates a link and emits CONTROL_EVIDENCE_LINKED', async () => {
-        (ControlRepository.linkEvidence as jest.Mock).mockResolvedValue({ id: 'l-1' });
+        (PracticeRepository.linkEvidence as jest.Mock).mockResolvedValue({ id: 'l-1' });
 
         const res = await linkEvidence(editorCtx, 'c-1', { kind: 'FILE', fileId: 'f-1' });
 
@@ -196,9 +196,9 @@ describe('linkEvidence', () => {
         expect(payload.detailsJson.relation).toBe('FILE');
     });
 
-    it('throws notFound when the control is missing', async () => {
-        (ControlRepository.linkEvidence as jest.Mock).mockResolvedValue(null);
-        await expect(linkEvidence(editorCtx, 'missing', { kind: 'FILE' })).rejects.toThrow(/Control not found/i);
+    it('throws notFound when the practice is missing', async () => {
+        (PracticeRepository.linkEvidence as jest.Mock).mockResolvedValue(null);
+        await expect(linkEvidence(editorCtx, 'missing', { kind: 'FILE' })).rejects.toThrow(/Practice not found/i);
     });
 
     it('rejects READER (link-evidence gate)', async () => {
@@ -208,7 +208,7 @@ describe('linkEvidence', () => {
 
 describe('unlinkEvidence', () => {
     it('removes link and emits CONTROL_EVIDENCE_UNLINKED', async () => {
-        (ControlRepository.unlinkEvidence as jest.Mock).mockResolvedValue(true);
+        (PracticeRepository.unlinkEvidence as jest.Mock).mockResolvedValue(true);
 
         const res = await unlinkEvidence(editorCtx, 'c-1', 'l-1');
 
@@ -218,7 +218,7 @@ describe('unlinkEvidence', () => {
     });
 
     it('throws notFound when the link is missing', async () => {
-        (ControlRepository.unlinkEvidence as jest.Mock).mockResolvedValue(null);
+        (PracticeRepository.unlinkEvidence as jest.Mock).mockResolvedValue(null);
         await expect(unlinkEvidence(editorCtx, 'c-1', 'missing')).rejects.toThrow(/Evidence link not found/i);
     });
 
@@ -227,33 +227,33 @@ describe('unlinkEvidence', () => {
     });
 });
 
-describe('linkAssetToControl', () => {
+describe('linkAssetToPractice', () => {
     it('returns the link row when successful', async () => {
-        (ControlRepository.linkAsset as jest.Mock).mockResolvedValue({ controlId: 'c-1', assetId: 'a-1' });
-        const res = await linkAssetToControl(editorCtx, 'c-1', 'a-1');
-        expect(res).toEqual({ controlId: 'c-1', assetId: 'a-1' });
+        (PracticeRepository.linkAsset as jest.Mock).mockResolvedValue({ practiceId: 'c-1', assetId: 'a-1' });
+        const res = await linkAssetToPractice(editorCtx, 'c-1', 'a-1');
+        expect(res).toEqual({ practiceId: 'c-1', assetId: 'a-1' });
     });
 
-    it('throws notFound when the control does not exist', async () => {
-        (ControlRepository.linkAsset as jest.Mock).mockResolvedValue(null);
-        await expect(linkAssetToControl(editorCtx, 'missing', 'a-1')).rejects.toThrow(/Control not found/i);
+    it('throws notFound when the practice does not exist', async () => {
+        (PracticeRepository.linkAsset as jest.Mock).mockResolvedValue(null);
+        await expect(linkAssetToPractice(editorCtx, 'missing', 'a-1')).rejects.toThrow(/Practice not found/i);
     });
 
     it('rejects READER', async () => {
-        await expect(linkAssetToControl(readerCtx, 'c-1', 'a-1')).rejects.toBeDefined();
+        await expect(linkAssetToPractice(readerCtx, 'c-1', 'a-1')).rejects.toBeDefined();
     });
 });
 
-describe('unlinkAssetFromControl', () => {
+describe('unlinkAssetFromPractice', () => {
     it('returns success on delete', async () => {
-        (ControlRepository.unlinkAsset as jest.Mock).mockResolvedValue(true);
-        const res = await unlinkAssetFromControl(editorCtx, 'c-1', 'a-1');
+        (PracticeRepository.unlinkAsset as jest.Mock).mockResolvedValue(true);
+        const res = await unlinkAssetFromPractice(editorCtx, 'c-1', 'a-1');
         expect(res).toEqual({ success: true });
     });
 
     it('throws notFound when the row is missing', async () => {
-        (ControlRepository.unlinkAsset as jest.Mock).mockResolvedValue(null);
-        await expect(unlinkAssetFromControl(editorCtx, 'c-1', 'missing')).rejects.toThrow(/Control or asset link not found/i);
+        (PracticeRepository.unlinkAsset as jest.Mock).mockResolvedValue(null);
+        await expect(unlinkAssetFromPractice(editorCtx, 'c-1', 'missing')).rejects.toThrow(/Practice or asset link not found/i);
     });
 });
 

@@ -71,7 +71,7 @@ describe('getTracer', () => {
 describe('traceUsecase', () => {
     it('creates a span with usecase. prefix and standard context attributes', async () => {
         const ctx = makeMockCtx();
-        const result = await traceUsecase('control.list', ctx, async () => {
+        const result = await traceUsecase('practice.list', ctx, async () => {
             return [{ id: '1' }];
         });
 
@@ -79,7 +79,7 @@ describe('traceUsecase', () => {
 
         const spans = exporter.getFinishedSpans();
         expect(spans).toHaveLength(1);
-        expect(spans[0].name).toBe('usecase.control.list');
+        expect(spans[0].name).toBe('usecase.practice.list');
         expect(spans[0].attributes['app.requestId']).toBe('req-test-123');
         expect(spans[0].attributes['app.tenantId']).toBe('tenant-1');
         expect(spans[0].attributes['app.userId']).toBe('user-1');
@@ -91,7 +91,7 @@ describe('traceUsecase', () => {
         const ctx = makeMockCtx();
 
         await expect(
-            traceUsecase('control.create', ctx, async () => {
+            traceUsecase('practice.create', ctx, async () => {
                 throw new Error('DB connection failed');
             }),
         ).rejects.toThrow('DB connection failed');

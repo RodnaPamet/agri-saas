@@ -64,7 +64,7 @@ export type AppIconName =
     | 'circleDashed'
     | 'clock'
     | 'comments'
-    | 'controls'
+    | 'practices'
     | 'create'
     | 'dashboard'
     | 'download'
@@ -117,7 +117,7 @@ export const ICON_MAP: Record<AppIconName, LucideIcon> = {
     circleDashed: CircleDashed,
     clock: Clock,
     comments: MessageSquare,
-    controls: ShieldCheck,
+    practices: ShieldCheck,
     create: FilePlus,
     dashboard: BarChart3,
     download: Download,

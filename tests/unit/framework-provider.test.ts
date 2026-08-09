@@ -258,7 +258,7 @@ describe('getFrameworkMappings (YAML-backed cross-framework guidance)', () => {
         }
     });
 
-    it('should include mappings for known ISO controls', () => {
+    it('should include mappings for known ISO practices', () => {
         const mappings = getFrameworkMappings();
         const isoIds = mappings.map(m => m.isoControlId);
         expect(isoIds).toContain('A.5.1');
@@ -269,7 +269,7 @@ describe('getFrameworkMappings (YAML-backed cross-framework guidance)', () => {
         expect(isoIds).toContain('A.5.30');
     });
 
-    it('should have at least 20 ISO control mappings', () => {
+    it('should have at least 20 ISO practice mappings', () => {
         const mappings = getFrameworkMappings();
         expect(mappings.length).toBeGreaterThanOrEqual(20);
     });
@@ -306,7 +306,7 @@ describe('getFrameworkMappings (YAML-backed cross-framework guidance)', () => {
         }
     });
 
-    it('every ISO control in mappings should exist in the ISO library', () => {
+    it('every ISO practice in mappings should exist in the ISO library', () => {
         const mappings = getFrameworkMappings();
         for (const mapping of mappings) {
             const node = findNodeByRefId('ISO27001-2022', mapping.isoControlId);

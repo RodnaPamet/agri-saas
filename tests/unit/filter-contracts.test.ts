@@ -39,7 +39,7 @@ import {
   EXAMPLE_FILTER_DEFS,
   ownerOptionsFromEntities,
   statusTypedOptions,
-  type ControlStatus,
+  type PracticeStatus,
   type OwnerReference,
 } from '../../src/components/ui/filter/filter-examples';
 import { CircleDot, Flag, Activity } from 'lucide-react';
@@ -200,9 +200,9 @@ describe('Example filter definitions', () => {
   });
 
   it('typedOptionsFromEnum preserves the value type at compile time', () => {
-    // Compile-time: the array's value type is ControlStatus, not `string`.
+    // Compile-time: the array's value type is PracticeStatus, not `string`.
     const first = statusTypedOptions[0];
-    const take: ControlStatus = first.value;
+    const take: PracticeStatus = first.value;
     expect(['NOT_STARTED', 'PLANNED', 'IN_PROGRESS', 'IMPLEMENTING',
             'IMPLEMENTED', 'NEEDS_REVIEW', 'NOT_APPLICABLE']).toContain(take);
   });
@@ -295,8 +295,8 @@ describe('Active-state URL serialisation roundtrip', () => {
 
 describe('TypedActiveFilter<K, V> — generics work for every represented entity', () => {
   // Purely compile-time. Runtime just checks the structural shape exists.
-  it('narrows V to string enums (controls)', () => {
-    const f: TypedActiveFilter<'status', ControlStatus> = {
+  it('narrows V to string enums (practices)', () => {
+    const f: TypedActiveFilter<'status', PracticeStatus> = {
       key: 'status',
       values: ['IN_PROGRESS'],
       operator: 'IS',

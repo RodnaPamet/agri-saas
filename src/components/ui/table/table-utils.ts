@@ -40,7 +40,7 @@ export function deepEqual(obj1: unknown, obj2: unknown): boolean {
  * Returns true if the click target is an interactive child element
  * (button, input, textarea, or an open overlay/popper) — used to
  * ignore row-click handlers when the user clicks on an action
- * control within a row.
+ * practice within a row.
  *
  * R13-PR15 — `<a>` was REMOVED from the banned tags so clicks on
  * the title-cell link (and any other inline `<a>` in a row) bubble

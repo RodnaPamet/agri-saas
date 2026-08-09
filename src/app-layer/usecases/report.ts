@@ -10,10 +10,10 @@ export async function getReports(ctx: RequestContext) {
     logger.info('report generation started', { component: 'report' });
 
     return traceUsecase('report.generate', ctx, () => runInTenantContext(ctx, async (db) => {
-        const controls = await ReportRepository.getSOAData(db, ctx);
+        const practices = await ReportRepository.getSOAData(db, ctx);
 
-        const soa = controls.map((c) => ({
-            controlId: c.id,
+        const soa = practices.map((c) => ({
+            practiceId: c.id,
             name: c.name,
             applicable: c.applicability === 'APPLICABLE',
             status: c.status,

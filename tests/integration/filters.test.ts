@@ -3,8 +3,8 @@
  *
  * Tests that:
  * 1. normalizeQ trims, clamps, and handles edge cases
- * 2. ControlRepository._buildWhere constructs correct Prisma where clauses
- * 3. EvidenceRepository._buildWhere handles type/controlId/archived/expiring/q filters
+ * 2. PracticeRepository._buildWhere constructs correct Prisma where clauses
+ * 3. EvidenceRepository._buildWhere handles type/practiceId/archived/expiring/q filters
  * 4. RiskRepository._buildWhere searches title + description + category
  * 5. AssetRepository._buildWhere searches name + classification + owner
  * 6. WorkItemRepository._buildWhere handles status/type/severity/priority/due/q
@@ -47,14 +47,14 @@ describe('normalizeQ', () => {
 // methods with a mock DB. Since _buildWhere is private, we verify the where clause
 // through the mock's received arguments.
 
-describe('ControlRepository._buildWhere', () => {
+describe('PracticeRepository._buildWhere', () => {
     it('builds where with q using OR on name, code, description', async () => {
-        const { ControlRepository } = await import('@/app-layer/repositories/ControlRepository');
+        const { PracticeRepository } = await import('@/app-layer/repositories/PracticeRepository');
         const mockFindMany = jest.fn().mockResolvedValue([]);
-        const mockDb = { control: { findMany: mockFindMany } } as unknown as PrismaTx;
+        const mockDb = { practice: { findMany: mockFindMany } } as unknown as PrismaTx;
         const ctx = { tenantId: 'tenant-1', userId: 'user-1' } as unknown as RequestContext;
 
-        await ControlRepository.list(mockDb, ctx, { q: 'firewall' });
+        await PracticeRepository.list(mockDb, ctx, { q: 'firewall' });
 
         const where = mockFindMany.mock.calls[0][0].where;
         expect(where.AND).toBeDefined();
@@ -68,24 +68,24 @@ describe('ControlRepository._buildWhere', () => {
     });
 
     it('builds where with status filter', async () => {
-        const { ControlRepository } = await import('@/app-layer/repositories/ControlRepository');
+        const { PracticeRepository } = await import('@/app-layer/repositories/PracticeRepository');
         const mockFindMany = jest.fn().mockResolvedValue([]);
-        const mockDb = { control: { findMany: mockFindMany } } as unknown as PrismaTx;
+        const mockDb = { practice: { findMany: mockFindMany } } as unknown as PrismaTx;
         const ctx = { tenantId: 'tenant-1', userId: 'user-1' } as unknown as RequestContext;
 
-        await ControlRepository.list(mockDb, ctx, { status: 'IMPLEMENTED' });
+        await PracticeRepository.list(mockDb, ctx, { status: 'IMPLEMENTED' });
 
         const where = mockFindMany.mock.calls[0][0].where;
         expect(where.status).toBe('IMPLEMENTED');
     });
 
     it('combines q + status + applicability', async () => {
-        const { ControlRepository } = await import('@/app-layer/repositories/ControlRepository');
+        const { PracticeRepository } = await import('@/app-layer/repositories/PracticeRepository');
         const mockFindMany = jest.fn().mockResolvedValue([]);
-        const mockDb = { control: { findMany: mockFindMany } } as unknown as PrismaTx;
+        const mockDb = { practice: { findMany: mockFindMany } } as unknown as PrismaTx;
         const ctx = { tenantId: 'tenant-1', userId: 'user-1' } as unknown as RequestContext;
 
-        await ControlRepository.list(mockDb, ctx, { q: 'access', status: 'IN_PROGRESS', applicability: 'APPLICABLE' });
+        await PracticeRepository.list(mockDb, ctx, { q: 'access', status: 'IN_PROGRESS', applicability: 'APPLICABLE' });
 
         const where = mockFindMany.mock.calls[0][0].where;
         expect(where.status).toBe('IN_PROGRESS');
@@ -94,12 +94,12 @@ describe('ControlRepository._buildWhere', () => {
     });
 
     it('enforces tenant boundary', async () => {
-        const { ControlRepository } = await import('@/app-layer/repositories/ControlRepository');
+        const { PracticeRepository } = await import('@/app-layer/repositories/PracticeRepository');
         const mockFindMany = jest.fn().mockResolvedValue([]);
-        const mockDb = { control: { findMany: mockFindMany } } as unknown as PrismaTx;
+        const mockDb = { practice: { findMany: mockFindMany } } as unknown as PrismaTx;
         const ctx = { tenantId: 'tenant-1', userId: 'user-1' } as unknown as RequestContext;
 
-        await ControlRepository.list(mockDb, ctx);
+        await PracticeRepository.list(mockDb, ctx);
 
         const where = mockFindMany.mock.calls[0][0].where;
         expect(where.OR).toEqual([{ tenantId: 'tenant-1' }, { tenantId: null }]);
@@ -204,16 +204,16 @@ describe('EvidenceRepository._buildWhere', () => {
         expect(mockFindMany.mock.calls[0][0].where.type).toBeUndefined();
     });
 
-    it('filters by controlId', async () => {
+    it('filters by practiceId', async () => {
         const { EvidenceRepository } = await import('@/app-layer/repositories/EvidenceRepository');
         const mockFindMany = jest.fn().mockResolvedValue([]);
         const mockDb = { evidence: { findMany: mockFindMany } } as unknown as PrismaTx;
         const ctx = { tenantId: 'tenant-1', userId: 'user-1' } as unknown as RequestContext;
 
-        await EvidenceRepository.list(mockDb, ctx, { controlId: 'ctrl-1' });
+        await EvidenceRepository.list(mockDb, ctx, { practiceId: 'ctrl-1' });
 
         const where = mockFindMany.mock.calls[0][0].where;
-        expect(where.controlId).toBe('ctrl-1');
+        expect(where.practiceId).toBe('ctrl-1');
     });
 
     it('enforces tenant boundary', async () => {

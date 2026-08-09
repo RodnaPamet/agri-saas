@@ -4,9 +4,9 @@
  *
  * Verifies the runtime a11y wiring that source-contract tests only
  * approximated: the label's `htmlFor` really points at the injected
- * control id, `aria-describedby` chains description + error ids
+ * practice id, `aria-describedby` chains description + error ids
  * correctly, `aria-invalid` flips under error, required asterisk
- * surfaces as `aria-required` on the control.
+ * surfaces as `aria-required` on the practice.
  */
 
 import { render, screen } from '@testing-library/react';
@@ -19,7 +19,7 @@ import { FieldGroup } from '@/components/ui/field-group';
 import { Input } from '@/components/ui/input';
 
 describe('<FormField /> — a11y wiring', () => {
-    it('generates a stable id + wires label htmlFor to the control', () => {
+    it('generates a stable id + wires label htmlFor to the practice', () => {
         render(
             <FormField label="Email">
                 <Input type="email" />
@@ -165,7 +165,7 @@ describe('<FormField /> — `hint` prop (Epic 56)', () => {
         ).toBeInTheDocument();
     });
 
-    it('keeps label/control wiring intact when both hint and description are set', () => {
+    it('keeps label/practice wiring intact when both hint and description are set', () => {
         render(
             <FormField
                 label="Retention"
@@ -218,7 +218,7 @@ describe('<FieldGroup />', () => {
 
     it('renders an InfoTooltip trigger next to the heading when hint is set (Epic 56)', () => {
         render(
-            <FieldGroup title="Retention" hint="Controls how long evidence stays searchable.">
+            <FieldGroup title="Retention" hint="Practices how long evidence stays searchable.">
                 <FormField label="Until">
                     <Input type="date" />
                 </FormField>

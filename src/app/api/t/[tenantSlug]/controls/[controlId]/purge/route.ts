@@ -1,12 +1,12 @@
 import { NextRequest } from 'next/server';
 import { getTenantCtx } from '@/app-layer/context';
-import { purgeControl } from '@/app-layer/usecases/control';
+import { purgePractice } from '@/app-layer/usecases/practice';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
 
-export const POST = withApiErrorHandling(async (req: NextRequest, { params: paramsPromise }: { params: Promise<{ tenantSlug: string; controlId: string }> }) => {
+export const POST = withApiErrorHandling(async (req: NextRequest, { params: paramsPromise }: { params: Promise<{ tenantSlug: string; practiceId: string }> }) => {
     const params = await paramsPromise;
     const ctx = await getTenantCtx(params, req);
-    const result = await purgeControl(ctx, params.controlId);
+    const result = await purgePractice(ctx, params.practiceId);
     return jsonResponse(result);
 });

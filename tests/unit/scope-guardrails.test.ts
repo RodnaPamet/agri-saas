@@ -2,7 +2,7 @@
  * Guardrail test: Prevents reintroduction of the removed "Scope" concept.
  * 
  * Scope was removed in Phase 3-5 and replaced by tenant-wide certification
- * with control applicability. This test fails if any scope artifacts reappear.
+ * with practice applicability. This test fails if any scope artifacts reappear.
  */
 import path from 'path';
 import fs from 'fs';

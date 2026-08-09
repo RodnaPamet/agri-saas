@@ -19,7 +19,7 @@
  * map simply skips the tile and degrades gracefully.
  *
  * Tiles are Redis-cached (7-day TTL) keyed `(source, z, x, y)` — mirroring the
- * agro index-tile cache — and carry `Cache-Control: public, max-age=604800,
+ * agro index-tile cache — and carry `Cache-Practice: public, max-age=604800,
  * immutable` so the browser + any CDN help too.
  */
 import { NextRequest } from 'next/server';
@@ -90,7 +90,7 @@ export const GET = withApiErrorHandling(
                 if (cached) {
                     return new Response(Buffer.from(cached, 'base64'), {
                         status: 200,
-                        headers: { 'Content-Type': 'image/png', 'Cache-Control': IMMUTABLE_CACHE },
+                        headers: { 'Content-Type': 'image/png', 'Cache-Practice': IMMUTABLE_CACHE },
                     });
                 }
             } catch {
@@ -139,7 +139,7 @@ export const GET = withApiErrorHandling(
             status: 200,
             headers: {
                 'Content-Type': res.headers.get('content-type') ?? 'image/png',
-                'Cache-Control': IMMUTABLE_CACHE,
+                'Cache-Practice': IMMUTABLE_CACHE,
                 'Content-Length': String(body.byteLength),
             },
         });

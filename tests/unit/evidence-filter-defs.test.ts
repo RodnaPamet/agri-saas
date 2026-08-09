@@ -9,7 +9,7 @@ import {
 } from '../../src/components/ui/filter/filter-state';
 import {
     buildEvidenceFilters,
-    controlOptionsFromControls,
+    practiceOptionsFromPractices,
     EVIDENCE_FILTER_KEYS,
     EVIDENCE_STATUS_LABELS,
     EVIDENCE_TYPE_LABELS,
@@ -24,7 +24,7 @@ describe('Evidence filter config', () => {
         // EvidenceListFilters + repository where-builder all honour
         // `folder` end-to-end (see b8-followup-evidence-folders ratchet).
         expect([...EVIDENCE_FILTER_KEYS].sort()).toEqual(
-            ['controlId', 'folder', 'status', 'type'].sort(),
+            ['practiceId', 'folder', 'status', 'type'].sort(),
         );
     });
 
@@ -41,10 +41,10 @@ describe('Evidence filter config', () => {
         );
     });
 
-    it('controlId is an entity-ref filter (async options, shouldFilter=true)', () => {
-        const control = evidenceFilterDefs.getFilter('controlId');
-        expect(control.options).toBeNull();
-        expect(control.shouldFilter).toBe(true);
+    it('practiceId is an entity-ref filter (async options, shouldFilter=true)', () => {
+        const practice = evidenceFilterDefs.getFilter('practiceId');
+        expect(practice.options).toBeNull();
+        expect(practice.shouldFilter).toBe(true);
     });
 
     it('every filter carries group + clearable reset behaviour', () => {
@@ -55,9 +55,9 @@ describe('Evidence filter config', () => {
     });
 });
 
-describe('controlOptionsFromControls', () => {
+describe('practiceOptionsFromPractices', () => {
     it('builds a label with the code prefix and a short display label', () => {
-        const opts = controlOptionsFromControls([
+        const opts = practiceOptionsFromPractices([
             { id: 'c1', name: 'Information Classification', code: 'A.5.12' },
             { id: 'c2', name: 'Custom policy', code: 'CUST-1' },
             { id: 'c3', name: 'No prefix' },
@@ -69,7 +69,7 @@ describe('controlOptionsFromControls', () => {
     });
 
     it('dedupes by id and sorts alphabetically', () => {
-        const opts = controlOptionsFromControls([
+        const opts = practiceOptionsFromPractices([
             { id: 'zz', name: 'Zulu', code: 'Z.1' },
             { id: 'aa', name: 'Alpha', code: 'A.1' },
             { id: 'aa', name: 'Alpha duplicate', code: 'A.1' },
@@ -79,14 +79,14 @@ describe('controlOptionsFromControls', () => {
 });
 
 describe('buildEvidenceFilters', () => {
-    it('injects control options without mutating the static defs', () => {
+    it('injects practice options without mutating the static defs', () => {
         const live = buildEvidenceFilters([
             { id: 'c1', name: 'ISMS Scope', code: 'A.4.3' },
         ]);
-        const control = live.find((f) => f.key === 'controlId');
-        expect(control?.options).toHaveLength(1);
+        const practice = live.find((f) => f.key === 'practiceId');
+        expect(practice?.options).toHaveLength(1);
         // Static defs still null — a new array was constructed.
-        expect(evidenceFilterDefs.getFilter('controlId').options).toBeNull();
+        expect(evidenceFilterDefs.getFilter('practiceId').options).toBeNull();
     });
 });
 
@@ -95,12 +95,12 @@ describe('Evidence URL round-trip', () => {
         const initial: FilterState = {
             type: ['FILE'],
             status: ['APPROVED', 'SUBMITTED'],
-            controlId: ['c1', 'c2'],
+            practiceId: ['c1', 'c2'],
         };
         const params = filterStateToUrlParams(initial);
         expect(params.get('type')).toBe('FILE');
         expect(params.get('status')).toBe('APPROVED,SUBMITTED');
-        expect(params.get('controlId')).toBe('c1,c2');
+        expect(params.get('practiceId')).toBe('c1,c2');
 
         const parsed = parseUrlToFilterState(params, EVIDENCE_FILTER_KEYS);
         expect(parsed).toEqual(initial);

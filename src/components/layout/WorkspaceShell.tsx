@@ -76,7 +76,7 @@ function WorkspaceShellToolbar({ children, className }: WorkspaceShellProps) {
     // The slim top toolbar — palette, view switches, canvas-level
     // actions. Disciplined by intent: this slot should never grow
     // into a filter toolbar. Pages that overload it with too many
-    // controls have lost the canvas-centric framing.
+    // practices have lost the canvas-centric framing.
     return (
         <div
             className={cn("flex-shrink-0", className)}

@@ -10,7 +10,7 @@
  *
  *   3. The shared `<Button>` centres its content unit
  *      `[icon][gap][label]` (justify-center + hug-content) so
- *      "+ Create X" reads as a tidy, balanced control. (The original
+ *      "+ Create X" reads as a tidy, balanced practice. (The original
  *      "icon-balance ghost" was reverted 2026-05-31 — see the
  *      describe block below.)
  */

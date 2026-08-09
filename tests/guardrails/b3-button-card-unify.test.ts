@@ -5,7 +5,7 @@
  *
  *   1. Button base radius is `rounded-full` (pill) — picked as the
  *      canonical shape per the Audit/Frameworks button reference.
- *   2. Control Coverage and Risk Distribution cards both stretch
+ *   2. Practice Coverage and Risk Distribution cards both stretch
  *      to row height via `h-full flex flex-col`.
  *   3. CalendarMonth has a `selectedYmd` prop and renders a
  *      selected-state on the matching cell.
@@ -49,7 +49,7 @@ describe('B3 — button + card unify', () => {
         });
     });
 
-    describe('Move 2 — Control Coverage card height contract', () => {
+    describe('Move 2 — Practice Coverage card height contract', () => {
         const progress = read('src/components/ui/ProgressCard.tsx');
         const dashboard = read(
             'src/app/t/[tenantSlug]/(app)/dashboard/DashboardClient.tsx',

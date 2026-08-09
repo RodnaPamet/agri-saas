@@ -47,7 +47,7 @@ if (DB_AVAILABLE) {
 
     afterAll(async () => {
         await prisma.$executeRawUnsafe('DELETE FROM "AuditLog" WHERE "tenantId" = $1', testTenantId).catch(() => {});
-        await prisma.$executeRawUnsafe('DELETE FROM "Control" WHERE "tenantId" = $1', testTenantId).catch(() => {});
+        await prisma.$executeRawUnsafe('DELETE FROM "Practice" WHERE "tenantId" = $1', testTenantId).catch(() => {});
         await prisma.$executeRawUnsafe('DELETE FROM "Vendor" WHERE "tenantId" = $1', testTenantId).catch(() => {});
         await prisma.$executeRawUnsafe('DELETE FROM "Asset" WHERE "tenantId" = $1', testTenantId).catch(() => {});
         await prisma.$executeRawUnsafe('DELETE FROM "User" WHERE "id" = $1', testUserId).catch(() => {});
@@ -227,25 +227,25 @@ describeFn('Soft-Delete Guards', () => {
     });
 
     it('hard-delete only possible via raw SQL (purge path)', async () => {
-        const control = await prisma.control.create({
+        const practice = await prisma.practice.create({
             data: { tenantId: testTenantId, code: `RG-${Date.now()}`, name: 'Purge guard' },
         });
 
         // Normal delete = soft-delete
-        await prisma.control.delete({ where: { id: control.id } });
+        await prisma.practice.delete({ where: { id: practice.id } });
 
         // Still exists in DB
         let raw = await prisma.$queryRawUnsafe<Array<{ id: string }>>(
-            'SELECT "id" FROM "Control" WHERE "id" = $1', control.id,
+            'SELECT "id" FROM "Practice" WHERE "id" = $1', practice.id,
         );
         expect(raw).toHaveLength(1);
 
         // Raw SQL delete = actual hard-delete
         await prisma.$executeRawUnsafe(
-            'DELETE FROM "Control" WHERE "id" = $1', control.id,
+            'DELETE FROM "Practice" WHERE "id" = $1', practice.id,
         );
         raw = await prisma.$queryRawUnsafe<Array<{ id: string }>>(
-            'SELECT "id" FROM "Control" WHERE "id" = $1', control.id,
+            'SELECT "id" FROM "Practice" WHERE "id" = $1', practice.id,
         );
         expect(raw).toHaveLength(0);
     });

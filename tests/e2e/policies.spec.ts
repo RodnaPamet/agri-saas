@@ -35,7 +35,7 @@ async function createPolicy(page: Page, slug: string): Promise<string> {
 }
 
 test.describe('Policy Center', () => {
-    test('policies list page loads with controls', async ({
+    test('policies list page loads with practices', async ({
         authedPage,
         isolatedTenant,
     }) => {

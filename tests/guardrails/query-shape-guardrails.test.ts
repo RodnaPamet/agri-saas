@@ -115,7 +115,7 @@ function balancedEnd(text: string, openIdx: number, open: string, close: string)
 //
 // Each KNOWN_N_PLUS_ONE key is `"relative/path.ts:pattern"`. The
 // `pattern` half is the read method + accessor (e.g.
-// `findFirst:control`) — stable across small line-number shifts, so
+// `findFirst:practice`) — stable across small line-number shifts, so
 // an unrelated edit above the loop does not churn the baseline.
 //
 // Every current violation is an INTENTIONAL N+1: an idempotency
@@ -137,7 +137,7 @@ interface KnownNPlusOne {
 const KNOWN_N_PLUS_ONE: Record<string, KnownNPlusOne> = {
     'src/app-layer/jobs/automation-runner.ts:findFirst:integrationExecution': {
         reason:
-            'idempotency check inside a scheduled-job loop over due controls — looks up the most recent execution in the current window to avoid double-running. Loop is over the bounded set of automation-enabled controls; hoisting would need a per-control window join.',
+            'idempotency check inside a scheduled-job loop over due practices — looks up the most recent execution in the current window to avoid double-running. Loop is over the bounded set of automation-enabled practices; hoisting would need a per-practice window join.',
     },
     'src/app-layer/jobs/data-lifecycle.ts:findMany:delegate': {
         reason:
@@ -151,9 +151,9 @@ const KNOWN_N_PLUS_ONE: Record<string, KnownNPlusOne> = {
         reason:
             'retention-notifications batch job — fetches the ADMIN/EDITOR recipients per expiring-evidence row to address the notification. Loop is over the bounded "expiring within window" set; the per-item recipient lookup is a batch-job query, not a request path.',
     },
-    // The `findUnique:control` lookup in retention-notifications was
+    // The `findUnique:practice` lookup in retention-notifications was
     // removed by the quality-roadmap unused-variable sweep — the
-    // resolved `controlName` was never referenced in the
+    // resolved `practiceName` was never referenced in the
     // notification body. The N+1 baseline entry is now stale.
     'src/app-layer/usecases/evidence-maintenance.ts:findUnique:fileRecord': {
         reason:
@@ -187,9 +187,9 @@ const KNOWN_N_PLUS_ONE: Record<string, KnownNPlusOne> = {
         reason:
             'audit-pack freeze loop — snapshots each ASSESSMENT bundle item\'s metadata into the frozen item. Same bounded-items loop as the vendorDocument branch above.',
     },
-    'src/app-layer/usecases/webhook-processor.ts:findMany:control': {
+    'src/app-layer/usecases/webhook-processor.ts:findMany:practice': {
         reason:
-            'webhook-processor loop over the automation keys triggered by one inbound webhook — per-key lookup of the controls carrying that automation key. Loop is over the triggered-keys list, a small bounded set.',
+            'webhook-processor loop over the automation keys triggered by one inbound webhook — per-key lookup of the practices carrying that automation key. Loop is over the triggered-keys list, a small bounded set.',
     },
 };
 

@@ -2,8 +2,8 @@
  * Unit Tests — Task Type-Specific Relevance Rules
  *
  * Tests that validateTypeRelevance() enforces:
- * - AUDIT_FINDING/CONTROL_GAP: must have controlId or link to CONTROL/FRAMEWORK_REQUIREMENT
- * - INCIDENT: must have controlId or link to CONTROL/ASSET
+ * - AUDIT_FINDING/CONTROL_GAP: must have practiceId or link to CONTROL/FRAMEWORK_REQUIREMENT
+ * - INCIDENT: must have practiceId or link to CONTROL/ASSET
  * - TASK/IMPROVEMENT: no additional requirements
  */
 
@@ -16,7 +16,7 @@ describe('Task Type-Specific Relevance Rules', () => {
         test('requires no additional fields — always valid', () => {
             // TASK type has no relevance constraints
             const input = { title: 'Simple task', type: 'TASK' };
-            // No controlId, no links — should be valid
+            // No practiceId, no links — should be valid
             expect(input.type).toBe('TASK');
         });
     });
@@ -30,19 +30,19 @@ describe('Task Type-Specific Relevance Rules', () => {
     });
 
     describe('AUDIT_FINDING type', () => {
-        test('is valid with controlId', () => {
-            const input = { title: 'Finding from audit', type: 'AUDIT_FINDING', controlId: 'ctrl-1' };
-            // controlId satisfies the relevance requirement
-            expect(input.controlId).toBeTruthy();
+        test('is valid with practiceId', () => {
+            const input = { title: 'Finding from audit', type: 'AUDIT_FINDING', practiceId: 'ctrl-1' };
+            // practiceId satisfies the relevance requirement
+            expect(input.practiceId).toBeTruthy();
         });
 
-        test('is valid with CONTROL link (when no controlId)', () => {
+        test('is valid with CONTROL link (when no practiceId)', () => {
             // A CONTROL link should satisfy the requirement
             const link = { entityType: 'CONTROL', entityId: 'ctrl-2' };
             expect(link.entityType).toBe('CONTROL');
         });
 
-        test('is valid with FRAMEWORK_REQUIREMENT link (when no controlId)', () => {
+        test('is valid with FRAMEWORK_REQUIREMENT link (when no practiceId)', () => {
             // A FRAMEWORK_REQUIREMENT link should satisfy the requirement
             const link = { entityType: 'FRAMEWORK_REQUIREMENT', entityId: 'req-1' };
             expect(link.entityType).toBe('FRAMEWORK_REQUIREMENT');
@@ -50,9 +50,9 @@ describe('Task Type-Specific Relevance Rules', () => {
     });
 
     describe('CONTROL_GAP type', () => {
-        test('is valid with controlId', () => {
-            const input = { title: 'Gap in access control', type: 'CONTROL_GAP', controlId: 'ctrl-3' };
-            expect(input.controlId).toBeTruthy();
+        test('is valid with practiceId', () => {
+            const input = { title: 'Gap in access control', type: 'CONTROL_GAP', practiceId: 'ctrl-3' };
+            expect(input.practiceId).toBeTruthy();
         });
 
         test('is valid with CONTROL link', () => {
@@ -62,9 +62,9 @@ describe('Task Type-Specific Relevance Rules', () => {
     });
 
     describe('INCIDENT type', () => {
-        test('is valid with controlId', () => {
-            const input = { title: 'Security incident', type: 'INCIDENT', controlId: 'ctrl-5' };
-            expect(input.controlId).toBeTruthy();
+        test('is valid with practiceId', () => {
+            const input = { title: 'Security incident', type: 'INCIDENT', practiceId: 'ctrl-5' };
+            expect(input.practiceId).toBeTruthy();
         });
 
         test('is valid with CONTROL link', () => {

@@ -411,7 +411,7 @@ export async function runEvidenceImport(
                 });
                 const evidence = await uploadEvidenceFile(ctx, fileLike, {
                     title: basename,
-                    controlId: payload.controlId ?? null,
+                    practiceId: payload.practiceId ?? null,
                     category: payload.category ?? null,
                 });
                 evidenceIds.push(evidence.id);

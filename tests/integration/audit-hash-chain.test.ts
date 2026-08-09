@@ -306,12 +306,12 @@ describeFn('Audit Hash Chain — Integration', () => {
                 tenantId,
                 userId: null,
                 actorType: 'USER',
-                entity: 'Control',
+                entity: 'Practice',
                 entityId: 'ctrl-1',
                 action: `${structPrefix}_WITH_DETAILS`,
                 detailsJson: {
                     category: 'entity_lifecycle',
-                    entityName: 'Control',
+                    entityName: 'Practice',
                     operation: 'created',
                 },
             }, prisma);
@@ -325,7 +325,7 @@ describeFn('Audit Hash Chain — Integration', () => {
             );
             expect(row[0].detailsJson).toEqual({
                 category: 'entity_lifecycle',
-                entityName: 'Control',
+                entityName: 'Practice',
                 operation: 'created',
             });
             expect(row[0].entryHash).toBe(r1.entryHash);

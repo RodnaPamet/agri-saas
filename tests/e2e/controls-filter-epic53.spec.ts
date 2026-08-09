@@ -2,31 +2,31 @@ import { test, expect } from '@playwright/test';
 import { loginAndGetTenant, safeGoto } from './e2e-utils';
 
 /**
- * Epic 53 E2E — Controls page on the new enterprise filter system.
+ * Epic 53 E2E — Practices page on the new enterprise filter system.
  *
  * Exercises the observable migration contract:
  *   1. The consolidated FilterSelect picker opens, drills into a filter, and
  *      applies a value that lands in the URL.
  *   2. Empty-state copy renders when a filter matches nothing.
  *
- * NOTE: R14 (#443) removed the free-text `#control-search` input from
+ * NOTE: R14 (#443) removed the free-text `#practice-search` input from
  * every list page — the navbar ⌘K palette is the sole search affordance
  * now. The two search-driven tests that used to live here (q-param write,
  * clear-search) were deleted; the FilterSelect popover is the surviving
  * filter UI.
  *
- * Tenant safety: we read/assert URLs scoped under `/t/{slug}/controls` and
+ * Tenant safety: we read/assert URLs scoped under `/t/{slug}/practices` and
  * exercise real API calls — no filter-state mocking.
  */
 
-test.describe('Controls — Epic 53 filter system', () => {
+test.describe('Practices — Epic 53 filter system', () => {
     test.describe.configure({ mode: 'serial' });
 
     let tenantSlug: string;
 
     test('FilterSelect trigger opens the command palette', async ({ page }) => {
         tenantSlug = await loginAndGetTenant(page);
-        await safeGoto(page, `/t/${tenantSlug}/controls`);
+        await safeGoto(page, `/t/${tenantSlug}/practices`);
         await page.waitForLoadState('networkidle').catch(() => {});
 
         // The shared FilterSelect renders a button labelled "Filter". Click the
@@ -43,7 +43,7 @@ test.describe('Controls — Epic 53 filter system', () => {
 
     test('picking a status filter pushes it into the URL', async ({ page }) => {
         tenantSlug = await loginAndGetTenant(page);
-        await safeGoto(page, `/t/${tenantSlug}/controls`);
+        await safeGoto(page, `/t/${tenantSlug}/practices`);
         await page.waitForLoadState('networkidle').catch(() => {});
 
         await page.getByRole('button', { name: /filter/i }).first().click();
@@ -51,7 +51,7 @@ test.describe('Controls — Epic 53 filter system', () => {
 
         // Drill into Status — scope to the cmdk listbox so the lookup
         // doesn't collide with the inline <select> status pills on
-        // every control row (which expose `<option>Implemented</option>`
+        // every practice row (which expose `<option>Implemented</option>`
         // accessible names).
         const filterListbox = page.getByLabel('Suggestions');
         const statusRow = filterListbox.getByRole('option', { name: /^Status$/ });

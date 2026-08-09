@@ -32,9 +32,9 @@ describe('JSON Column Schemas', () => {
         it('accepts valid entity_lifecycle event', () => {
             const input = {
                 category: 'entity_lifecycle',
-                entityName: 'Control',
+                entityName: 'Practice',
                 operation: 'created',
-                summary: 'Control created',
+                summary: 'Practice created',
             };
             expect(AuditDetailsJsonSchema.parse(input)).toMatchObject(input);
         });
@@ -53,7 +53,7 @@ describe('JSON Column Schemas', () => {
             const input = {
                 category: 'relationship',
                 operation: 'linked',
-                sourceEntity: 'Control',
+                sourceEntity: 'Practice',
                 sourceId: 'ctrl-1',
                 targetEntity: 'Risk',
                 targetId: 'risk-1',
@@ -210,7 +210,7 @@ describe('JSON Column Schemas', () => {
 
     describe('OnboardingStepDataSchema', () => {
         it('accepts step completion map', () => {
-            const input = { framework: true, controls: false, team: true };
+            const input = { framework: true, practices: false, team: true };
             expect(OnboardingStepDataSchema.parse(input)).toEqual(input);
         });
 
@@ -225,7 +225,7 @@ describe('JSON Column Schemas', () => {
 describe('JSON Column Validation Helpers', () => {
     describe('validateAuditDetailsJson', () => {
         it('returns parsed data for valid input', () => {
-            const input = { category: 'entity_lifecycle', entityName: 'Control', operation: 'created' };
+            const input = { category: 'entity_lifecycle', entityName: 'Practice', operation: 'created' };
             expect(validateAuditDetailsJson(input)).toMatchObject(input);
         });
 

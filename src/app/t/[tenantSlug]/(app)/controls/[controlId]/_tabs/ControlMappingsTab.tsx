@@ -1,9 +1,9 @@
 'use client';
 
 /**
- * Control detail — Mappings tab (#102 item 1, tab-lazy refactor).
+ * Practice detail — Mappings tab (#102 item 1, tab-lazy refactor).
  *
- * Extracted from the 1,500-line control detail page. Fully
+ * Extracted from the 1,500-line practice detail page. Fully
  * self-contained: it owns the framework-mapping list
  * (`useTenantSWR` — fetched only because this component mounts only
  * when the Mappings tab is active), plus the framework / requirement
@@ -29,24 +29,24 @@ import { cn } from '@/lib/cn';
 import { DataTable, createColumns } from '@/components/ui/table';
 import type { FrameworkDTO, RequirementDTO, FrameworkMappingDTO } from '@/lib/dto';
 
-interface ControlMappingsTabProps {
-    controlId: string;
+interface PracticeMappingsTabProps {
+    practiceId: string;
     canWrite: boolean;
     /** Revalidate the page-data header — keeps the tab-badge current. */
     onMutated: () => void;
 }
 
-export function ControlMappingsTab({
-    controlId,
+export function PracticeMappingsTab({
+    practiceId,
     canWrite,
     onMutated,
-}: ControlMappingsTabProps) {
-    const t = useTranslations('controls');
+}: PracticeMappingsTabProps) {
+    const t = useTranslations('practices');
     const apiUrl = useTenantApiUrl();
     const triggerUndoToast = useToastWithUndo();
 
     const mappingsSWR = useTenantSWR<FrameworkMappingDTO[]>(
-        CACHE_KEYS.controls.mappings(controlId),
+        CACHE_KEYS.practices.mappings(practiceId),
     );
 
     const [showMapForm, setShowMapForm] = useState(false);
@@ -59,7 +59,7 @@ export function ControlMappingsTab({
     // Frameworks load once — the component mounts only when the
     // Mappings tab is active, so there's no tab gate to check.
     useEffect(() => {
-        fetch(apiUrl('/controls/frameworks'))
+        fetch(apiUrl('/practices/frameworks'))
             .then((r) => (r.ok ? r.json() : []))
             .then(setFrameworks)
             .catch(() => {});
@@ -72,7 +72,7 @@ export function ControlMappingsTab({
             setRequirements([]);
             return;
         }
-        fetch(apiUrl(`/controls/frameworks/${selectedFramework}/requirements`))
+        fetch(apiUrl(`/practices/frameworks/${selectedFramework}/requirements`))
             .then((r) => (r.ok ? r.json() : []))
             .then(setRequirements)
             .catch(() => {});
@@ -81,7 +81,7 @@ export function ControlMappingsTab({
     const mapRequirement = async () => {
         if (!selectedReq) return;
         setSavingMap(true);
-        await fetch(apiUrl(`/controls/${controlId}/requirements`), {
+        await fetch(apiUrl(`/practices/${practiceId}/requirements`), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ requirementId: selectedReq }),
@@ -113,7 +113,7 @@ export function ControlMappingsTab({
             undoMessage: t('mappings.undo'),
             action: async () => {
                 const res = await fetch(
-                    apiUrl(`/controls/${controlId}/requirements`),
+                    apiUrl(`/practices/${practiceId}/requirements`),
                     {
                         method: 'DELETE',
                         headers: { 'Content-Type': 'application/json' },

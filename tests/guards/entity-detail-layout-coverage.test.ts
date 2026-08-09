@@ -48,7 +48,7 @@ interface DetailPageEntry {
 const DETAIL_PAGES: DetailPageEntry[] = [
     // ── Adopted ──
     {
-        file: "src/app/t/[tenantSlug]/(app)/controls/[controlId]/page.tsx",
+        file: "src/app/t/[tenantSlug]/(app)/practices/[practiceId]/page.tsx",
         adopted: true,
         note: "Heavy detail page with multiple tabs + traceability panel; runs through the shell cleanly.",
     },

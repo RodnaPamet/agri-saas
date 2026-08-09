@@ -25,7 +25,7 @@ export class AssetRepository {
             where,
             orderBy: { createdAt: 'desc' },
             include: {
-                _count: { select: { controls: true } },
+                _count: { select: { practices: true } },
                 // B4 — resolve the structured assignee so the list Owner
                 // column can prefer the assigned user's name over the
                 // free-text keeper.
@@ -51,7 +51,7 @@ export class AssetRepository {
             where,
             orderBy: CURSOR_ORDER_BY,
             take: limit + 1,
-            include: { _count: { select: { controls: true } } },
+            include: { _count: { select: { practices: true } } },
         });
 
         const { trimmedItems, nextCursor, hasNextPage } = computePageInfo(items, limit);
@@ -80,7 +80,7 @@ export class AssetRepository {
     /**
      * One asset.
      *
-     * `withControls` is OFF by default. The compliance control mapping
+     * `withPractices` is OFF by default. The compliance practice mapping
      * used to be eagerly joined on EVERY read — including plain-farm
      * tenants where the compliance tabs are gated off entirely, and
      * including `update()`/`delete()`, which call this purely to check
@@ -91,12 +91,12 @@ export class AssetRepository {
         db: PrismaTx,
         ctx: RequestContext,
         id: string,
-        options: { withControls?: boolean } = {},
+        options: { withPractices?: boolean } = {},
     ) {
         return db.asset.findFirst({
             where: { id, tenantId: ctx.tenantId },
-            ...(options.withControls
-                ? { include: { controls: { include: { control: true } } } }
+            ...(options.withPractices
+                ? { include: { practices: { include: { practice: true } } } }
                 : {}),
         });
     }

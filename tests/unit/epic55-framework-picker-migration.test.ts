@@ -6,8 +6,8 @@
  *
  * Scope:
  *   1. Framework selector  — /audits/cycles/page.tsx  (#fw-select)
- *   3. Control linker      — UploadEvidenceModal.tsx  (#control-select)
- *   4. Control linker      — NewEvidenceTextModal.tsx (#text-evidence-control-select)
+ *   3. Practice linker      — UploadEvidenceModal.tsx  (#practice-select)
+ *   4. Practice linker      — NewEvidenceTextModal.tsx (#text-evidence-practice-select)
  *
  * Per surface we verify:
  *   - <Combobox> is imported and rendered.
@@ -57,17 +57,17 @@ const SURFACES: MigrationSurface[] = [
         insideModal: false,
     },
     {
-        label: 'UploadEvidenceModal — control linker',
+        label: 'UploadEvidenceModal — practice linker',
         src: UPLOAD_SRC,
-        pickerId: 'control-select',
-        name: 'controlId',
+        pickerId: 'practice-select',
+        name: 'practiceId',
         insideModal: true,
     },
     {
-        label: 'NewEvidenceTextModal — control linker',
+        label: 'NewEvidenceTextModal — practice linker',
         src: TEXT_EV_SRC,
-        pickerId: 'text-evidence-control-select',
-        name: 'controlId',
+        pickerId: 'text-evidence-practice-select',
+        name: 'practiceId',
         insideModal: true,
     },
 ];
@@ -146,52 +146,52 @@ describe('audits/cycles — FW_OPTIONS shape', () => {
     });
 });
 
-// ─── Control linker — UploadEvidenceModal ───────────────────────
+// ─── Practice linker — UploadEvidenceModal ───────────────────────
 
-describe('UploadEvidenceModal — control linker', () => {
-    it('drops the external controlSearch state (Combobox owns search)', () => {
-        // Word-anchored so it still catches a reintroduced `controlSearch`
+describe('UploadEvidenceModal — practice linker', () => {
+    it('drops the external practiceSearch state (Combobox owns search)', () => {
+        // Word-anchored so it still catches a reintroduced `practiceSearch`
         // state identifier, but not the T08 i18n key name
-        // `upload.controlSearchHint{Singular,Plural}` (no word boundary
+        // `upload.practiceSearchHint{Singular,Plural}` (no word boundary
         // before "Hint"), which legitimately contains the substring.
-        expect(UPLOAD_SRC).not.toMatch(/\bcontrolSearch\b/);
+        expect(UPLOAD_SRC).not.toMatch(/\bpracticeSearch\b/);
     });
 
-    it('drops the external filteredControls memo', () => {
-        expect(UPLOAD_SRC).not.toMatch(/filteredControls/);
+    it('drops the external filteredPractices memo', () => {
+        expect(UPLOAD_SRC).not.toMatch(/filteredPractices/);
     });
 
-    it('projects controls into ComboboxOption with annex/code/name folded into label', () => {
-        expect(UPLOAD_SRC).toMatch(/controlOptions\s*=\s*useMemo/);
+    it('projects practices into ComboboxOption with annex/code/name folded into label', () => {
+        expect(UPLOAD_SRC).toMatch(/practiceOptions\s*=\s*useMemo/);
         expect(UPLOAD_SRC).toMatch(
             /`\$\{c\.code \|\| 'Custom'\}: \$\{c\.name\}`/,
         );
     });
 
-    it('surfaces the control count in the FormField description', () => {
+    it('surfaces the practice count in the FormField description', () => {
         // The description copy was migrated to next-intl (T08 i18n batch):
-        // the `controls.length === 0` ternary now branches between the
-        // `upload.noControlsToLink` and `upload.controlSearchHint{Singular,Plural}`
+        // the `practices.length === 0` ternary now branches between the
+        // `upload.noPracticesToLink` and `upload.practiceSearchHint{Singular,Plural}`
         // message keys instead of inline "Search across …" template literals.
         expect(UPLOAD_SRC).toMatch(
-            /controls\.length\s*===\s*0[\s\S]{0,200}upload\.controlSearchHint/,
+            /practices\.length\s*===\s*0[\s\S]{0,200}upload\.practiceSearchHint/,
         );
     });
 });
 
-// ─── Control linker — NewEvidenceTextModal ──────────────────────
+// ─── Practice linker — NewEvidenceTextModal ──────────────────────
 
-describe('NewEvidenceTextModal — control linker', () => {
-    it('projects controls into ComboboxOption', () => {
-        expect(TEXT_EV_SRC).toMatch(/controlOptions\s*=\s*useMemo/);
+describe('NewEvidenceTextModal — practice linker', () => {
+    it('projects practices into ComboboxOption', () => {
+        expect(TEXT_EV_SRC).toMatch(/practiceOptions\s*=\s*useMemo/);
         expect(TEXT_EV_SRC).toMatch(
             /`\$\{c\.code \|\| 'Custom'\}: \$\{c\.name\}`/,
         );
     });
 
-    it('wires setSelected into the update(controlId) reducer', () => {
+    it('wires setSelected into the update(practiceId) reducer', () => {
         expect(TEXT_EV_SRC).toMatch(
-            /setSelected=\{\(option\)\s*=>\s*[\s\S]{0,80}update\(['"]controlId['"],\s*option\?\.value\s*\?\?\s*['"]['"]\)/,
+            /setSelected=\{\(option\)\s*=>\s*[\s\S]{0,80}update\(['"]practiceId['"],\s*option\?\.value\s*\?\?\s*['"]['"]\)/,
         );
     });
 });
@@ -199,8 +199,8 @@ describe('NewEvidenceTextModal — control linker', () => {
 // ─── Cross-cutting: no stale ids / no leftover native selects ───
 
 describe('Epic 55 Prompt 4 — no stale native selects for the migrated pickers', () => {
-    it('UploadEvidenceModal no longer has a control-search-input', () => {
-        expect(UPLOAD_SRC).not.toMatch(/id=["']control-search-input["']/);
+    it('UploadEvidenceModal no longer has a practice-search-input', () => {
+        expect(UPLOAD_SRC).not.toMatch(/id=["']practice-search-input["']/);
     });
 
     it('all four migrated surfaces reference the Combobox id for E2E parity', () => {

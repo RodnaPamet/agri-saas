@@ -5,7 +5,7 @@
  * validation in dev/test mode. Uses the api-client module for typed fetching.
  *
  * Usage:
- *   const { data, error, loading, refetch } = useApi<ControlListItemDTO[]>(url, schema);
+ *   const { data, error, loading, refetch } = useApi<PracticeListItemDTO[]>(url, schema);
  */
 'use client';
 

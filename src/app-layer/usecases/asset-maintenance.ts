@@ -55,7 +55,7 @@ function toDate(value: Date | string | null | undefined): Date | null | undefine
 export async function listAssetMaintenance(ctx: RequestContext, assetId: string) {
     assertCanRead(ctx);
     return runInTenantContext(ctx, async (db) => {
-        const asset = await AssetRepository.getById(db, ctx, assetId, { withControls: false });
+        const asset = await AssetRepository.getById(db, ctx, assetId, { withPractices: false });
         if (!asset) throw notFound('Asset not found');
         return AssetMaintenanceRepository.listForAsset(db, ctx, assetId);
     });
@@ -68,7 +68,7 @@ export async function createAssetMaintenance(
 ) {
     assertCanWrite(ctx);
     return runInTenantContext(ctx, async (db) => {
-        const asset = await AssetRepository.getById(db, ctx, assetId, { withControls: false });
+        const asset = await AssetRepository.getById(db, ctx, assetId, { withPractices: false });
         if (!asset) throw notFound('Asset not found');
 
         const record = await AssetMaintenanceRepository.create(db, ctx, {
@@ -141,7 +141,7 @@ export async function closeAssetMaintenance(
         // right suggestion — a machine with two open repairs is not fixed
         // because one of them finished.
         const stillOpen = await AssetMaintenanceRepository.listOpenForAsset(db, ctx, assetId);
-        const asset = await AssetRepository.getById(db, ctx, assetId, { withControls: false });
+        const asset = await AssetRepository.getById(db, ctx, assetId, { withPractices: false });
         const suggestStatus =
             stillOpen.length === 0 && asset?.status === 'IN_MAINTENANCE' ? 'ACTIVE' : null;
 

@@ -175,7 +175,7 @@ describeFn('OrgAuditLog — immutability + hash chain', () => {
     // ── Tampering detection ──────────────────────────────────────
 
     it('verifyOrgAuditChain detects a wrong-hash row in the chain', async () => {
-        // Use a fresh org so we can control the entire chain.
+        // Use a fresh org so we can practice the entire chain.
         const tamperOrg = await prisma.organization.create({
             data: { name: 'Org Audit Tamper', slug: `org-audit-tamper-${Date.now()}` },
         });

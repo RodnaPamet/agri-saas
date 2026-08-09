@@ -49,8 +49,8 @@ describe('UI roadmap capstone — audit polish (owner columns are name-only ever
 });
 
 describe('UI roadmap capstone — audit polish (tags one size smaller everywhere)', () => {
-    it('the controls Browse rail status badge is size="sm" (no stray default-md tag)', () => {
-        const src = read('src/app/t/[tenantSlug]/(app)/controls/ControlsClient.tsx');
+    it('the practices Browse rail status badge is size="sm" (no stray default-md tag)', () => {
+        const src = read('src/app/t/[tenantSlug]/(app)/practices/PracticesClient.tsx');
         // Every StatusBadge in this file (table cells + the browse-rail rows)
         // carries size="sm" — no bare `<StatusBadge variant=…>` without a size.
         const badges = src.match(/<StatusBadge[\s\S]*?>/g) ?? [];

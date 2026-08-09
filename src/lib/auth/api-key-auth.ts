@@ -13,7 +13,7 @@
  * Key format: "iflk_" + 48 random hex chars (total 53 chars)
  * Storage: SHA-256(full key) — deterministic, fast, collision-resistant
  *
- * Scope format: "resource:action" (e.g. "controls:read", "evidence:write")
+ * Scope format: "resource:action" (e.g. "practices:read", "evidence:write")
  * Special scopes:
  *   - "*" = full access (all resources, all actions)
  *   - "resource:*" = all actions on a resource
@@ -61,7 +61,7 @@ const KEY_PREFIX_DISPLAY_LENGTH = 8;
  * to the full PermissionSet internally.
  */
 const SCOPE_ACTION_MAP: Record<string, Record<string, string[]>> = {
-    controls:   { read: ['view'], write: ['create', 'edit'] },
+    practices:   { read: ['view'], write: ['create', 'edit'] },
     evidence:   { read: ['view', 'download'], write: ['upload', 'edit'] },
     policies:   { read: ['view'], write: ['create', 'edit'], admin: ['approve'] },
     tasks:      { read: ['view'], write: ['create', 'edit', 'assign'] },
@@ -164,7 +164,7 @@ export function scopesToPermissions(scopes: string[]): PermissionSet {
  * For session-authenticated requests (no apiKeyId), this is a no-op.
  *
  * @param ctx - Request context (may or may not be API-key-authenticated)
- * @param resource - The resource being accessed (e.g. "controls")
+ * @param resource - The resource being accessed (e.g. "practices")
  * @param action - The action being performed ("read" | "write" | "admin")
  */
 export function enforceApiKeyScope(

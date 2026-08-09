@@ -173,7 +173,7 @@ describe('Automation Runner', () => {
                 automationKey: 'github.branch_protection',
                 parsed: { provider: 'github', checkType: 'branch_protection', raw: 'github.branch_protection' },
                 tenantId: 'tenant-1',
-                controlId: 'ctrl-1',
+                practiceId: 'ctrl-1',
                 connectionConfig: { token: 'test' },
                 triggeredBy: 'scheduled',
                 jobRunId: 'job-1',

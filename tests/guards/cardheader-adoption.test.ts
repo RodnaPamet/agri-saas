@@ -8,7 +8,7 @@
  * heading rolled `<Heading level={3} className="mb-3">` inline.
  *
  * R9-PR2 ships three first migrations (audits/AuditsClient,
- * controls/[controlId], controls/[controlId]/tests/[planId]) +
+ * practices/[practiceId], practices/[practiceId]/tests/[planId]) +
  * locks adoption via a registry. Same shape as
  * `pageheader-adoption.test.ts` — bidirectional check catches
  * forgotten flag flips.
@@ -37,9 +37,9 @@ const CARDHEADER_PAGES: CardHeaderEntry[] = [
         note: "Audits master/detail — checklist section header migrated R9-PR2.",
     },
     {
-        file: "src/app/t/[tenantSlug]/(app)/controls/[controlId]/page.tsx",
+        file: "src/app/t/[tenantSlug]/(app)/practices/[practiceId]/page.tsx",
         adopted: false,
-        note: "B4 (2026-06-07): the only CardHeader (the legacy 'Control tasks' table) was removed when the Tasks tab was aligned to Asset/Risk (a single LinkedTasksPanel).",
+        note: "B4 (2026-06-07): the only CardHeader (the legacy 'Practice tasks' table) was removed when the Tasks tab was aligned to Asset/Risk (a single LinkedTasksPanel).",
     },
 ];
 

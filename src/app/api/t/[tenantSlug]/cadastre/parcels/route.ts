@@ -24,7 +24,7 @@
  * (200) so the map simply shows no cadastre boundaries and stays usable.
  *
  * Responses are Redis-cached (1-day TTL) keyed by the rounded bbox, and carry
- * `Cache-Control: public, max-age=86400` so the browser + any CDN help too.
+ * `Cache-Practice: public, max-age=86400` so the browser + any CDN help too.
  */
 import { NextRequest } from 'next/server';
 import { getTenantCtx } from '@/app-layer/context';
@@ -50,7 +50,7 @@ const UPSTREAM_TIMEOUT_MS = 8_000;
 /** Empty-collection 200 — the graceful-degrade payload (out-of-bounds/error). */
 function emptyResponse(): ReturnType<typeof jsonResponse<FeatureCollection>> {
     return jsonResponse(emptyFeatureCollection(), {
-        headers: { 'Cache-Control': CACHE_CONTROL },
+        headers: { 'Cache-Practice': CACHE_CONTROL },
     });
 }
 
@@ -86,7 +86,7 @@ export const GET = withApiErrorHandling(
                 const cached = await redis.get(cacheKey);
                 if (cached) {
                     return jsonResponse(JSON.parse(cached) as FeatureCollection, {
-                        headers: { 'Cache-Control': CACHE_CONTROL },
+                        headers: { 'Cache-Practice': CACHE_CONTROL },
                     });
                 }
             } catch {
@@ -134,6 +134,6 @@ export const GET = withApiErrorHandling(
             }
         }
 
-        return jsonResponse(fc, { headers: { 'Cache-Control': CACHE_CONTROL } });
+        return jsonResponse(fc, { headers: { 'Cache-Practice': CACHE_CONTROL } });
     },
 );

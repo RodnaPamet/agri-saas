@@ -55,10 +55,10 @@ function makeNotifications(): NotifFixture[] {
         {
             id: 'n1',
             type: 'TASK',
-            title: 'Control C-12 needs review',
-            message: 'A control test is overdue.',
+            title: 'Practice C-12 needs review',
+            message: 'A practice test is overdue.',
             read: false,
-            linkUrl: '/t/acme/controls/c12',
+            linkUrl: '/t/acme/practices/c12',
             createdAt: isoMinutesAgo(5), // → "5m"
         },
         {
@@ -217,7 +217,7 @@ describe('<NotificationsBell> — behavioural (Tier 2)', () => {
         // n1 has a linkUrl → it must render as a real navigable
         // anchor, not a button.
         expect(row1.tagName).toBe('A');
-        expect(row1.getAttribute('href')).toBe('/t/acme/controls/c12');
+        expect(row1.getAttribute('href')).toBe('/t/acme/practices/c12');
         // n2 has no linkUrl → renders as a button.
         expect(
             screen.getByTestId('notification-row-n2').tagName,

@@ -7,7 +7,7 @@
  * is correct, but it also means a STALE name fails silently forever.
  *
  * That is exactly what happened: eleven entries named tables that no longer
- * exist (the ten risk / control-exoskeleton tables, plus `IntegrationEvent`
+ * exist (the ten risk / practice-exoskeleton tables, plus `IntegrationEvent`
  * which had gone earlier), and `PolicyAcknowledgement` was deleted by
  * `WHERE "tenantId" = $1` on a model that has no `tenantId` column at all.
  * None of it failed a build. It just cost a failed round trip per table per

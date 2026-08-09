@@ -2,7 +2,7 @@
  * Roadmap-8 PR-6 (replacement) — ratchet-precedence documentation lock.
  *
  * R8-PR6 + PR-7 originally proposed demoting `+ X` form-toggle
- * buttons (controls/[controlId] and vendors/[vendorId]) from
+ * buttons (practices/[practiceId] and vendors/[vendorId]) from
  * `variant="primary"` to `variant="secondary"` to drop the
  * `primary-action-budget` count. Investigation revealed a conflict:
  *

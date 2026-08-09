@@ -2,7 +2,7 @@
  * Epic E.3 — CSV export request deduplication regression.
  *
  * The CSV export route composes 5 portfolio usecases in one HTTP
- * request: summary + tenant-health + 3 drill-downs (controls /
+ * request: summary + tenant-health + 3 drill-downs (practices /
  * evidence). Before E.3 each usecase fetched its own
  * tenants list (5×) and the two snapshot-driven ones each fetched
  * their own snapshots (2×) — 7 DB round-trips per export.
@@ -117,7 +117,7 @@ describe('Epic E.3 — CSV export tenants/snapshots deduplication', () => {
                 // when wiring the dedup.
                 expect(body).toContain('# Portfolio Summary');
                 expect(body).toContain('# Tenant Health');
-                expect(body).toContain('# Non-Performing Controls');
+                expect(body).toContain('# Non-Performing Practices');
                 expect(body).toContain('# Overdue Evidence');
             },
         );
@@ -149,7 +149,7 @@ describe('Epic E.3 — CSV export tenants/snapshots deduplication', () => {
                 const body = await res.text();
                 expect(body).toContain('# Portfolio Summary');
                 expect(body).toContain('# Tenant Health');
-                expect(body).not.toContain('# Non-Performing Controls');
+                expect(body).not.toContain('# Non-Performing Practices');
             },
         );
 

@@ -6,7 +6,7 @@
  */
 import {
     buildTenant, buildUser, buildMembership, buildRequestContext,
-    buildControl, buildRisk, buildEvidence, buildTask,
+    buildPractice, buildRisk, buildEvidence, buildTask,
     resetFactoryCounter,
 } from '../helpers/factories';
 
@@ -63,8 +63,8 @@ describe('Test Factories', () => {
         expect(ctx.permissions.canAudit).toBe(true);
     });
 
-    test('buildControl returns APPLICABLE, NOT_IMPLEMENTED by default', () => {
-        const c = buildControl({ tenantId: 'tid' });
+    test('buildPractice returns APPLICABLE, NOT_IMPLEMENTED by default', () => {
+        const c = buildPractice({ tenantId: 'tid' });
         expect(c.tenantId).toBe('tid');
         expect(c.applicability).toBe('APPLICABLE');
         expect(c.status).toBe('NOT_IMPLEMENTED');

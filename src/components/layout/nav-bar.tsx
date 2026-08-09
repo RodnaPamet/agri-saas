@@ -78,7 +78,7 @@ import { Menu } from 'lucide-react';
  * search anchor (28px), a user-avatar button (32px), and a
  * notifications bell (28px) — fitting all four at 56px feels
  * cramped, and the brand mark loses presence next to the
- * breadcrumbs. 64px gives each control an 8px halo of breathing
+ * breadcrumbs. 64px gives each practice an 8px halo of breathing
  * room above + below.
  *
  * `h-16` resolves to 64px in Tailwind's default spacing scale
@@ -319,9 +319,9 @@ export const NAV_BAR_SLOT_RIGHT =
  * Six load-bearing tokens, each documented:
  *
  *   (1) `h-[22px] w-[22px]` — 22×22 footprint. The compact navbar
- *       control size (stepped 32 → 28 → 22), matched across brand /
+ *       practice size (stepped 32 → 28 → 22), matched across brand /
  *       bell / user-menu / mobile-menu / tenant-switcher so the
- *       controls read as one tight set within the 64px bar.
+ *       practices read as one tight set within the 64px bar.
  *
  *   (2) `rounded-lg` — 8px corner radius. Parity with `<NavItem>`
  *       and the `<Button>` primitive (both rounded-lg). Mixing
@@ -369,8 +369,8 @@ export const NAV_BAR_SLOT_RIGHT =
  * h1 for SEO" PR has to argue against it.
  */
 export const NAV_BAR_BRAND_CLASS = [
-    // Geometry — 28px navbar control footprint (one step below the
-    // legacy 32px; matches the bell / user-menu / mobile-menu controls).
+    // Geometry — 28px navbar practice footprint (one step below the
+    // legacy 32px; matches the bell / user-menu / mobile-menu practices).
     'relative h-[22px] w-[22px] rounded-lg flex-shrink-0',
     // Flex / type
     'flex items-center justify-center',

@@ -37,17 +37,17 @@ export type FrameworkTreeNodeKind = 'section' | 'requirement';
  * Per-node compliance state.
  *
  * Sourced from authoritative backend data
- * (`ControlRequirementLink` join + `Control.status` +
- * `Control.applicability`) and computed server-side by
+ * (`PracticeRequirementLink` join + `Practice.status` +
+ * `Practice.applicability`) and computed server-side by
  * `computeNodeComplianceStatus`. The frontend never recomputes —
  * it just renders.
  *
- *   - `compliant` — every applicable mapped control is IMPLEMENTED.
- *   - `partial`   — some but not all applicable mapped controls are
+ *   - `compliant` — every applicable mapped practice is IMPLEMENTED.
+ *   - `partial`   — some but not all applicable mapped practices are
  *                   IMPLEMENTED (work in progress).
- *   - `gap`       — there are no mapped controls, OR none of the
+ *   - `gap`       — there are no mapped practices, OR none of the
  *                   applicable ones are IMPLEMENTED.
- *   - `na`        — every mapped control is NOT_APPLICABLE
+ *   - `na`        — every mapped practice is NOT_APPLICABLE
  *                   (deliberate scope-out, not a gap).
  *   - `unknown`   — the framework has been loaded without coverage
  *                   data (rare; render as neutral).
@@ -103,7 +103,7 @@ export interface FrameworkTreeNode {
     childCount: number;
     /**
      * Server-computed compliance status for this node. Set on
-     * requirements from `ControlRequirementLink` data; aggregated
+     * requirements from `PracticeRequirementLink` data; aggregated
      * upward to sections. Absent (or `unknown`) when the tree was
      * built without coverage context — the explorer falls back to
      * the cheaper mapped/unmapped indicator in that case.
@@ -167,7 +167,7 @@ export interface FrameworkTreePayload {
  * node. Caller's domain model (e.g. `FrameworkTreeNode`) must
  * structurally satisfy this — they do, by construction.
  *
- * Non-framework trees (assets, org chart, control taxonomy) can use
+ * Non-framework trees (assets, org chart, practice taxonomy) can use
  * `TreeView` directly as long as they fulfil this contract.
  */
 export interface TreeViewNode {

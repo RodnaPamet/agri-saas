@@ -1,23 +1,23 @@
 import { RequestContext } from '../../types';
-import { ControlRepository } from '../../repositories/ControlRepository';
+import { PracticeRepository } from '../../repositories/PracticeRepository';
 import { FrameworkRepository } from '../../repositories/FrameworkRepository';
-import { assertCanReadControls, assertCanMapFramework } from '../../policies/control.policies';
+import { assertCanReadPractices, assertCanMapFramework } from '../../policies/practice.policies';
 import { notFound } from '@/lib/errors/types';
 import { runInTenantContext } from '@/lib/db-context';
 
 /**
- * Requirement ↔ control mapping — the join that says "this is what we do to
+ * Requirement ↔ practice mapping — the join that says "this is what we do to
  * satisfy requirement X".
  *
- * These four functions used to live in `control/templates.ts` alongside the
- * control-template library (a pre-built catalogue of infosec controls a
+ * These four functions used to live in `practice/templates.ts` alongside the
+ * practice-template library (a pre-built catalogue of infosec practices a
  * tenant could install). The compliance uproot removed the template library;
  * the mapping itself is the part worth keeping, so it moved here rather than
  * dying with its old neighbours.
  */
 
 export async function listFrameworkRequirements(ctx: RequestContext, frameworkKey: string) {
-    assertCanReadControls(ctx);
+    assertCanReadPractices(ctx);
     return runInTenantContext(ctx, async (db) => {
         const result = await FrameworkRepository.listRequirements(db, frameworkKey);
         if (result === null) throw notFound('Framework not found');
@@ -25,39 +25,39 @@ export async function listFrameworkRequirements(ctx: RequestContext, frameworkKe
     });
 }
 
-export async function mapRequirementToControl(
+export async function mapRequirementToPractice(
     ctx: RequestContext,
-    controlId: string,
+    practiceId: string,
     requirementId: string,
 ) {
     assertCanMapFramework(ctx);
     return runInTenantContext(ctx, async (db) => {
-        const control = await db.control.findFirst({
-            where: { id: controlId, tenantId: ctx.tenantId },
+        const practice = await db.practice.findFirst({
+            where: { id: practiceId, tenantId: ctx.tenantId },
         });
-        if (!control) throw notFound('Control not found');
+        if (!practice) throw notFound('Practice not found');
 
         return db.frameworkMapping.create({
-            data: { fromRequirementId: requirementId, toControlId: controlId },
+            data: { fromRequirementId: requirementId, toPracticeId: practiceId },
             include: { fromRequirement: { include: { framework: { select: { name: true } } } } },
         });
     });
 }
 
-export async function unmapRequirementFromControl(
+export async function unmapRequirementFromPractice(
     ctx: RequestContext,
-    controlId: string,
+    practiceId: string,
     requirementId: string,
 ) {
     assertCanMapFramework(ctx);
     return runInTenantContext(ctx, async (db) => {
-        const control = await db.control.findFirst({
-            where: { id: controlId, tenantId: ctx.tenantId },
+        const practice = await db.practice.findFirst({
+            where: { id: practiceId, tenantId: ctx.tenantId },
         });
-        if (!control) throw notFound('Control not found');
+        if (!practice) throw notFound('Practice not found');
 
         const mapping = await db.frameworkMapping.findFirst({
-            where: { fromRequirementId: requirementId, toControlId: controlId },
+            where: { fromRequirementId: requirementId, toPracticeId: practiceId },
         });
         if (!mapping) throw notFound('Mapping not found');
 
@@ -67,18 +67,18 @@ export async function unmapRequirementFromControl(
 }
 
 /**
- * Framework mappings for one control (#102 item 1 — tab-lazy).
+ * Framework mappings for one practice (#102 item 1 — tab-lazy).
  *
  * The Mappings tab fetches this on demand instead of reading an eager
  * `frameworkMappings` array. The payload shape matches what the page renders.
  */
-export async function listControlMappings(ctx: RequestContext, controlId: string) {
-    assertCanReadControls(ctx);
+export async function listPracticeMappings(ctx: RequestContext, practiceId: string) {
+    assertCanReadPractices(ctx);
     return runInTenantContext(ctx, async (db) => {
-        const control = await db.control.findFirst({
-            where: { id: controlId, tenantId: ctx.tenantId },
+        const practice = await db.practice.findFirst({
+            where: { id: practiceId, tenantId: ctx.tenantId },
         });
-        if (!control) throw notFound('Control not found');
-        return ControlRepository.listFrameworkMappings(db, ctx, controlId);
+        if (!practice) throw notFound('Practice not found');
+        return PracticeRepository.listFrameworkMappings(db, ctx, practiceId);
     });
 }

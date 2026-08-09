@@ -6,7 +6,7 @@
  *      fixes "typing in the filter does not actually search".
  *
  *   2. LeftAccordionRail accepts a `persistKey` + `defaultFolded`
- *      and renders a fold/expand toggle. The Controls page wires a
+ *      and renders a fold/expand toggle. The Practices page wires a
  *      `persistKey` so each user's rail-fold preference sticks.
  *
  *   3. CalendarMonth accepts an `onDoubleClickDate` handler;
@@ -47,12 +47,12 @@ describe('PR-C — forms, filters & interactions', () => {
     });
 
     describe('LeftAccordionRail foldable behaviour', () => {
-        // 2026-05-25 — the Controls list retired its LeftAccordionRail
+        // 2026-05-25 — the Practices list retired its LeftAccordionRail
         // wiring; the orientation rail moved into an <AsidePanel> on
         // the right (verified by `b7-layout-redesign.test.ts`). The
         // primitive itself still exists in the codebase, so the
         // shape-of-the-primitive assertions below stay — only the
-        // Controls page-threading assertion was removed.
+        // Practices page-threading assertion was removed.
         const src = read('src/components/ui/left-accordion-rail.tsx');
 
         it('primitive declares persistKey + defaultFolded props', () => {

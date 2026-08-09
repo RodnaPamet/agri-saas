@@ -3,11 +3,11 @@
 /**
  * R13-PR1 — `<TableTitleCell>`: the canonical title-column cell.
  *
- * Pre-R13 every entity list page (Controls, Risks, Vendors, Tasks,
+ * Pre-R13 every entity list page (Practices, Risks, Vendors, Tasks,
  * Assets, Evidence, Policies, Findings) rendered its title cell
  * with a slightly different shape:
  *
- *   Controls   <div><Link className="font-medium text-content-emphasis ...">{code}</Link>
+ *   Practices   <div><Link className="font-medium text-content-emphasis ...">{code}</Link>
  *   Risks      <span className="font-medium text-content-emphasis text-sm">{title}</span>
  *   Policies   <Link className="font-medium text-content-emphasis ...">{title}</Link>
  *   Evidence   <div className="flex items-center gap-tight min-w-0"><Icon /><Link>...

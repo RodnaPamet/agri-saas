@@ -23,7 +23,7 @@
  *
  *   3. `<DashboardLayout>` uses the new animation. The 7 pages
  *      that consume DashboardLayout (executive dashboard, tests
- *      / risks / controls / tasks / vendors / coverage dashboards)
+ *      / risks / practices / tasks / vendors / coverage dashboards)
  *      all get the polished first-paint feel for free.
  *
  * The global `prefers-reduced-motion: reduce` rule in

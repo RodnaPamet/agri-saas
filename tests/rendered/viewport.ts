@@ -1,5 +1,5 @@
 /**
- * Explicit viewport control for the jsdom rendered suite.
+ * Explicit viewport practice for the jsdom rendered suite.
  *
  * ── Why this module exists ──────────────────────────────────────────
  *

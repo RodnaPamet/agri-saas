@@ -4,8 +4,8 @@ import { loginAndGetTenant, safeGoto } from './e2e-utils';
 /**
  * FilterToolbar contract — Tasks (farm-tasks) and Vendors.
  *
- * The Controls page has its own canonical coverage in
- * `controls-filter-epic53.spec.ts`. This spec extends that contract to
+ * The Practices page has its own canonical coverage in
+ * `practices-filter-epic53.spec.ts`. This spec extends that contract to
  * the two other migrated list pages (the farm-tasks queue, Vendors).
  *
  * The pre-Epic-53 version of this file exercised the deprecated
@@ -24,7 +24,7 @@ import { loginAndGetTenant, safeGoto } from './e2e-utils';
  * NOTE: R14 (#443) removed the free-text search input from every list
  * page — the per-page `search input writes q param` tests and the
  * `URL persistence` block (both driven by `#task-search` / `#vendor-search`
- * / `#control-search`) were deleted. The navbar ⌘K palette is the sole
+ * / `#practice-search`) were deleted. The navbar ⌘K palette is the sole
  * search affordance now.
  */
 

@@ -192,7 +192,7 @@ describe('AccessReviewsClient', () => {
         expect(adminOnly.getAttribute('data-state')).toBe('unchecked');
 
         // Clicking the LABEL (htmlFor → id) must switch the selection —
-        // the previous label-wrapped form didn't associate the control.
+        // the previous label-wrapped form didn't associate the practice.
         // i18n: useTranslations is mocked to echo the key, so the scope
         // label renders as its message key.
         fireEvent.click(screen.getByText('scopeAdminOnly'));

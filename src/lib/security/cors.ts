@@ -88,9 +88,9 @@ function isLocalhostOrigin(origin: string): boolean {
  * CORS headers to apply to a preflight (OPTIONS) response.
  */
 export const CORS_PREFLIGHT_HEADERS = {
-    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS, PATCH',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-forwarded-for, x-request-id, user-agent',
-    'Access-Control-Max-Age': '86400',
+    'Access-Practice-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS, PATCH',
+    'Access-Practice-Allow-Headers': 'Content-Type, Authorization, x-forwarded-for, x-request-id, user-agent',
+    'Access-Practice-Max-Age': '86400',
 } as const;
 
 /**
@@ -100,7 +100,7 @@ export const CORS_PREFLIGHT_HEADERS = {
  * @param origin - The validated, allowed origin to echo back
  */
 export function applyCorsHeaders(headers: Headers, origin: string): void {
-    headers.set('Access-Control-Allow-Origin', origin);
-    headers.set('Access-Control-Allow-Credentials', 'true');
+    headers.set('Access-Practice-Allow-Origin', origin);
+    headers.set('Access-Practice-Allow-Credentials', 'true');
     headers.append('Vary', 'Origin');
 }

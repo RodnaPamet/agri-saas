@@ -1,5 +1,5 @@
 /**
- * UI roadmap 13 — controls Browse right-rail expand toggle.
+ * UI roadmap 13 — practices Browse right-rail expand toggle.
  *
  * The "Expand all / Collapse all" TEXT button is now a single left-aligned
  * chevron toggle: ChevronDown when every section is expanded, ChevronLeft when
@@ -9,7 +9,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 const SRC = fs.readFileSync(
-    path.resolve(__dirname, '../../src/app/t/[tenantSlug]/(app)/controls/ControlsClient.tsx'),
+    path.resolve(__dirname, '../../src/app/t/[tenantSlug]/(app)/practices/PracticesClient.tsx'),
     'utf8',
 );
 
@@ -21,7 +21,7 @@ describe('UI-13 — browse expand toggle is a chevron, not a text button', () =>
     it('is left-aligned (justify-start), not the old right-aligned text button', () => {
         // The toggle block is left-aligned now (was justify-end).
         expect(SRC).toContain('flex justify-start');
-        expect(SRC).toContain('controls-browse-expand-all');
+        expect(SRC).toContain('practices-browse-expand-all');
         // The visible button label is no longer the literal text — it's an icon
         // with the hint on aria-label / Tooltip.
         expect(SRC).not.toMatch(/>\s*\{allExpanded \? 'Collapse all' : 'Expand all'\}\s*</);
@@ -31,10 +31,10 @@ describe('UI-13 — browse expand toggle is a chevron, not a text button', () =>
         // next-intl (`t('list.collapseAll')` / `t('list.expandAll')`);
         // assert the keys are wired AND the en.json values preserve copy.
         expect(SRC).toMatch(/<Tooltip\s+content=\{allExpanded \? t\('list\.collapseAll'\) : t\('list\.expandAll'\)\}/);
-        expect(SRC).toMatch(/data-testid="controls-browse-expand-all"/);
+        expect(SRC).toMatch(/data-testid="practices-browse-expand-all"/);
         expect(SRC).toMatch(/aria-label=\{allExpanded \? t\('list\.collapseAll'\) : t\('list\.expandAll'\)\}/);
         // eslint-disable-next-line @typescript-eslint/no-var-requires
-        const en = require('../../messages/en.json').controls.list;
+        const en = require('../../messages/en.json').practices.list;
         expect(en.collapseAll).toBe('Collapse all');
         expect(en.expandAll).toBe('Expand all');
     });

@@ -54,7 +54,7 @@ describe('EmptyState', () => {
             <EmptyState
                 variant="missing-prereqs"
                 title="Connect a framework"
-                description="You need to install a framework before adding controls."
+                description="You need to install a framework before adding practices."
             />,
         );
         expect(

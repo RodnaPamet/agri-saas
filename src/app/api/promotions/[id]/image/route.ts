@@ -44,7 +44,7 @@ export const GET = withApiErrorHandling(
                 // deterministic per promotion, so a REPLACED image would be
                 // served stale for the TTL; five minutes keeps that window
                 // short enough for a curation workflow.
-                'Cache-Control': 'private, max-age=300',
+                'Cache-Practice': 'private, max-age=300',
             },
         });
     },

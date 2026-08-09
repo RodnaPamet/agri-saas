@@ -67,16 +67,16 @@ const PARENT_MAP: Record<string, CanonicalParent> = {
     '/audits/packs/[packId]': { href: '/audits', label: 'audits' },
     '/audits/readiness': { href: '/audits', label: 'audits' },
 
-    // ── Controls ──────────────────────────────────────────────────────
-    '/controls/[controlId]': { href: '/controls', label: 'controls' },
-    // Test-plan detail lives URL-wise under a control, but the mental
+    // ── Practices ──────────────────────────────────────────────────────
+    '/practices/[practiceId]': { href: '/practices', label: 'practices' },
+    // Test-plan detail lives URL-wise under a practice, but the mental
     // model is "I'm working on a test"; canonical parent is the Tests list
-    // (the in-tab referrer still wins when drilling in from a control).
-    '/controls/[controlId]/tests/[planId]': { href: '/tests', label: 'tests' },
-    '/controls/dashboard': { href: '/controls', label: 'controls' },
-    '/controls/new': { href: '/controls', label: 'controls' },
-    '/controls/sankey': { href: '/controls', label: 'controls' },
-    '/controls/templates': { href: '/controls', label: 'controls' },
+    // (the in-tab referrer still wins when drilling in from a practice).
+    '/practices/[practiceId]/tests/[planId]': { href: '/tests', label: 'tests' },
+    '/practices/dashboard': { href: '/practices', label: 'practices' },
+    '/practices/new': { href: '/practices', label: 'practices' },
+    '/practices/sankey': { href: '/practices', label: 'practices' },
+    '/practices/templates': { href: '/practices', label: 'practices' },
 
     // ── Frameworks ────────────────────────────────────────────────────
 

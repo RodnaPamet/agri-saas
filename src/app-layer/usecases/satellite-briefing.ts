@@ -15,7 +15,7 @@
  *     activity context. `satelliteAvailable` reflects whether any real
  *     reading was obtained this run, so the card can label the data basis.
  *
- * Cost control: a successful briefing is cached per tenant per day (6h TTL)
+ * Cost practice: a successful briefing is cached per tenant per day (6h TTL)
  * in Redis, so the dashboard's frequent SWR polls cost at most one EE +
  * Haiku pass per tenant per day. Non-success (no key / generation failure)
  * is never cached, so it retries on the next load.

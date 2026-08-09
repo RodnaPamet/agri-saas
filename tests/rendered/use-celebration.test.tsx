@@ -110,7 +110,7 @@ describe('useCelebration — milestone-key path', () => {
             { description?: string },
         ];
         expect(title).toContain('100% framework coverage');
-        expect(opts?.description).toContain('Every applicable control');
+        expect(opts?.description).toContain('Every applicable practice');
     });
 
     it('dedupe — second call within the same session is a no-op', async () => {
@@ -120,7 +120,7 @@ describe('useCelebration — milestone-key path', () => {
         let api!: ReturnType<typeof useCelebration>;
         render(<Harness onReady={(a) => (api = a)} />);
         await act(async () => {
-            api.celebrate('first-control-mapped');
+            api.celebrate('first-practice-mapped');
         });
         await flush(0);
         const firstCount = calls.length;
@@ -129,7 +129,7 @@ describe('useCelebration — milestone-key path', () => {
         // Second invocation — dedupe must short-circuit BOTH the
         // toast AND the confetti.
         await act(async () => {
-            api.celebrate('first-control-mapped');
+            api.celebrate('first-practice-mapped');
         });
         await flush(0);
         expect(calls.length).toBe(firstCount);
@@ -138,7 +138,7 @@ describe('useCelebration — milestone-key path', () => {
         // Sanity: the dedupe entry exists in sessionStorage.
         expect(
             window.sessionStorage.getItem(
-                celebrationDedupeKey('first-control-mapped'),
+                celebrationDedupeKey('first-practice-mapped'),
             ),
         ).not.toBeNull();
     });
@@ -150,15 +150,15 @@ describe('useCelebration — milestone-key path', () => {
         let api!: ReturnType<typeof useCelebration>;
         render(<Harness onReady={(a) => (api = a)} />);
         await act(async () => {
-            api.celebrate('first-control-mapped');
+            api.celebrate('first-practice-mapped');
         });
         await flush(0);
         const firstCount = calls.length;
 
-        clearCelebrated('first-control-mapped');
+        clearCelebrated('first-practice-mapped');
 
         await act(async () => {
-            api.celebrate('first-control-mapped');
+            api.celebrate('first-practice-mapped');
         });
         await flush(0);
         expect(calls.length).toBeGreaterThan(firstCount);

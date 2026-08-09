@@ -220,7 +220,7 @@ export default function LocationDetailPage() {
     const activeSpec = vegetationIndexById(activeIndex);
     const imageryYmd = toYMD(imageryDate);
     // Compact trigger label ("30 Jun", no year) so the index buttons + date
-    // control stay narrow enough to sit on one row. UTC parts mirror the
+    // practice stay narrow enough to sit on one row. UTC parts mirror the
     // date-utils UTC-midnight contract (no tz drift).
     const imageryShort = imageryDate
         ? `${imageryDate.getUTCDate()} ${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][imageryDate.getUTCMonth()]}`
@@ -506,7 +506,7 @@ export default function LocationDetailPage() {
                         Map tab (it drives the map overlay) and only when an
                         operator configured an upstream. Online-only: disabled
                         with a hint offline (the overlay isn't in the offline
-                        pack). Moved here from the in-map controls row, where its
+                        pack). Moved here from the in-map practices row, where its
                         text label overflowed the row on phones. */}
                     {cadastreConfigured && tab === 'map' && (
                         <Tooltip content={t('cadastreOfflineHint')} disabled={online}>
@@ -677,7 +677,7 @@ export default function LocationDetailPage() {
                             </Button>
                             {/* Cadastre boundaries toggle moved to the header
                                 action row (icon-only, left of the download
-                                button) — its text label overflowed this controls
+                                button) — its text label overflowed this practices
                                 row on phones. */}
                             {activeSpec && (
                                 <DatePicker
@@ -689,7 +689,7 @@ export default function LocationDetailPage() {
                                     // future dates have no imagery.
                                     disabledDays={{ after: new Date() }}
                                     // Compact trigger (icon + "30 Jun") keeps the
-                                    // control narrow so it fits beside the toggles.
+                                    // practice narrow so it fits beside the toggles.
                                     trigger={({ open }) => (
                                         <Button
                                             type="button"
@@ -774,8 +774,8 @@ export default function LocationDetailPage() {
                             // Phone-native: thumb-reachable zoom + find-my-field
                             // (with live-tracking), lifted clear of the fixed
                             // bottom-tab bar.
-                            showControls
-                            controlsBottomInset={isMobile ? 76 : 12}
+                            showPractices
+                            practicesBottomInset={isMobile ? 76 : 12}
                             liveTracking
                             // Full-bleed on phones — edge-to-edge (cancel the
                             // page's px-4) and near-viewport-tall so the map is

@@ -2,7 +2,7 @@
  * Editable Lifecycle Domain Types
  *
  * Typed contracts for a reusable draft/publish lifecycle pattern.
- * Any domain entity (policies, controls, risk treatments, assessments)
+ * Any domain entity (policies, practices, risk treatments, assessments)
  * can adopt this lifecycle by defining its own TPayload shape.
  *
  * Architecture:
@@ -20,7 +20,7 @@
  * Design Principles:
  * ──────────────────
  * 1. **Generic payload** — TPayload is domain-specific (Policy content,
- *    Control description, Risk treatment plan, etc.)
+ *    Practice description, Risk treatment plan, etc.)
  * 2. **Explicit phases** — No ambiguous "status" enums; phase is one of
  *    DRAFT, PUBLISHED, or ARCHIVED.
  * 3. **Version = publish count** — Version only increments on publish,
@@ -80,7 +80,7 @@ export interface PublishedSnapshot<TPayload> {
  *
  * Type parameter TPayload defines the domain-specific content:
  * - Policy: { contentType, contentText, externalUrl }
- * - Control: { description, intent, effectiveness }
+ * - Practice: { description, intent, effectiveness }
  * - Risk treatment: { plan, notes, targetDate }
  */
 export interface EditableState<TPayload> {
@@ -160,7 +160,7 @@ export interface RevertCommand {
  * Ownership metadata needed for draft visibility decisions.
  *
  * CISO-Assistant convention: draft objects are hidden from non-owners.
- * `is_published` on AbstractBaseModel controls read-access visibility.
+ * `is_published` on AbstractBaseModel practices read-access visibility.
  *
  * This type captures the minimum ownership data needed to evaluate
  * visibility without coupling to any specific Prisma model.

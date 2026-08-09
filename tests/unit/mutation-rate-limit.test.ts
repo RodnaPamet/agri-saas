@@ -13,7 +13,7 @@ jest.mock('@/lib/observability/logger', () => ({
     logger: { warn: jest.fn(), debug: jest.fn(), info: jest.fn(), error: jest.fn() },
 }));
 
-// Controllable Upstash client + Ratelimit.
+// Practicelable Upstash client + Ratelimit.
 const mockLimit = jest.fn();
 const mockDel = jest.fn();
 const mockGetRedis = jest.fn();

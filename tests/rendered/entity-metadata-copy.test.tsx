@@ -8,7 +8,7 @@
  * without crowding the surrounding badge row.
  *
  * We mount small harnesses that mirror the JSX shape in the real pages
- * (task detail header, control detail header, asset external-ref field).
+ * (task detail header, practice detail header, asset external-ref field).
  * This keeps the test decoupled from the heavyweight react-query + data-
  * fetching plumbing in those pages while pinning the layout contract.
  */
@@ -103,16 +103,16 @@ describe('Task detail header — task.key copy affordance', () => {
     });
 });
 
-// ── Control detail header shape ─────────────────────────────────
+// ── Practice detail header shape ─────────────────────────────────
 
-function ControlDetailHeaderHarness({ code }: { code: string }) {
+function PracticeDetailHeaderHarness({ code }: { code: string }) {
     return (
         <Providers>
             <div className="flex gap-tight mt-1 flex-wrap items-center">
                 <CopyText
                     value={code}
-                    label={`Copy control code ${code}`}
-                    successMessage="Control code copied"
+                    label={`Copy practice code ${code}`}
+                    successMessage="Practice code copied"
                     className="text-xs text-slate-500"
                 >
                     {code}
@@ -128,25 +128,25 @@ function ControlDetailHeaderHarness({ code }: { code: string }) {
     );
 }
 
-describe('Control detail header — control.code copy affordance', () => {
+describe('Practice detail header — practice.code copy affordance', () => {
     it('copies the framework-style code exactly as shown', async () => {
         const writeText = jest.fn().mockResolvedValue(undefined);
         const user = setupUserWithClipboard(writeText);
 
-        render(<ControlDetailHeaderHarness code="ISO.A.5.1" />);
+        render(<PracticeDetailHeaderHarness code="ISO.A.5.1" />);
 
         const trigger = screen.getByRole('button', {
-            name: 'Copy control code ISO.A.5.1',
+            name: 'Copy practice code ISO.A.5.1',
         });
         expect(trigger).toHaveTextContent('ISO.A.5.1');
 
         await user.click(trigger);
         expect(writeText).toHaveBeenCalledWith('ISO.A.5.1');
-        expect(toastMock.success).toHaveBeenCalledWith('Control code copied');
+        expect(toastMock.success).toHaveBeenCalledWith('Practice code copied');
     });
 
     it('keeps status + applicability chips visible alongside the code', () => {
-        render(<ControlDetailHeaderHarness code="C-001" />);
+        render(<PracticeDetailHeaderHarness code="C-001" />);
         expect(screen.getByTestId('status-badge')).toBeInTheDocument();
         expect(screen.getByTestId('applicability-badge')).toBeInTheDocument();
     });
@@ -179,7 +179,7 @@ function MappingRowHarness({ code, title }: { code: string; title: string }) {
     );
 }
 
-describe('Control mappings table — requirement code copy affordance', () => {
+describe('Practice mappings table — requirement code copy affordance', () => {
     it('renders the requirement code as copyable inside the row cell', async () => {
         const writeText = jest.fn().mockResolvedValue(undefined);
         const user = setupUserWithClipboard(writeText);

@@ -9,7 +9,7 @@
  *
  * Design notes:
  *
- *   - **parallel queries** (control / policy / evidence
+ *   - **parallel queries** (practice / policy / evidence
  *     / framework). Same fan-out the client used to do; just
  *     consolidated server-side so one round-trip replaces five.
  *   - **Per-type cap before sort.** Each underlying query is
@@ -76,8 +76,8 @@ export async function getUnifiedSearch(
     const allHits: SearchHit[] = [];
 
     await runInTenantContext(ctx, async (db) => {
-        const [controls, policies, evidence, assets, tasks, knowledge] = await Promise.all([
-            db.control.findMany({
+        const [practices, policies, evidence, assets, tasks, knowledge] = await Promise.all([
+            db.practice.findMany({
                 where: {
                     tenantId,
                     OR: [
@@ -165,12 +165,12 @@ export async function getUnifiedSearch(
             }),
         ]);
 
-        for (const c of controls as Row<{
+        for (const c of practices as Row<{
             code: string | null;
             name: string;
             status: string;
         }>[]) {
-            allHits.push(buildControlHit(c, trimmed, tenantSlug));
+            allHits.push(buildPracticeHit(c, trimmed, tenantSlug));
         }
         for (const p of policies as Row<{ title: string; status: string }>[]) {
             allHits.push(buildPolicyHit(p, trimmed, tenantSlug));
@@ -245,7 +245,7 @@ function emptyResponse(query: string, limit: number): SearchResponse {
         meta: {
             query,
             perTypeCounts: {
-                control: 0,
+                practice: 0,
                 policy: 0,
                 evidence: 0,
                 framework: 0,
@@ -259,21 +259,21 @@ function emptyResponse(query: string, limit: number): SearchResponse {
     };
 }
 
-function buildControlHit(
+function buildPracticeHit(
     row: { id: string; code: string | null; name: string; status: string },
     query: string,
     slug: string,
 ): SearchHit {
-    const meta = SEARCH_TYPE_DEFAULTS.control;
+    const meta = SEARCH_TYPE_DEFAULTS.practice;
     return {
-        type: 'control',
+        type: 'practice',
         id: row.id,
         title: row.code ? `${row.code} — ${row.name}` : row.name,
         subtitle: null,
         badge: row.status,
-        href: `/t/${slug}/controls/${row.id}`,
+        href: `/t/${slug}/practices/${row.id}`,
         score: computeRankScore(query, {
-            type: 'control',
+            type: 'practice',
             title: row.name,
             code: row.code,
         }),
@@ -434,7 +434,7 @@ export type { SearchHit, SearchResponse } from '@/lib/search/types';
 // Test-only export so structural assertions can verify the
 // expected union of types without re-deriving it.
 export const __SEARCHABLE_TYPES__: ReadonlyArray<SearchHitType> = [
-    'control',
+    'practice',
     'policy',
     'evidence',
     'framework',

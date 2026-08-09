@@ -154,7 +154,7 @@ export function useTable<T extends any>(
   // R12-PR1 — select column is default-on. Pages opt out via
   // `selectionEnabled={false}`. The previous gating (require either
   // `onRowSelectionChange` or `selectionControls`) made the select
-  // column appear on exactly one page (Controls) and absent
+  // column appear on exactly one page (Practices) and absent
   // everywhere else — the structural inconsistency the round closes.
   const selectionEnabled = props.selectionEnabled ?? true;
 
@@ -544,7 +544,7 @@ const ResizableTableRow = memo(
             ? (e) => {
                 if (e.key !== "Enter" && e.key !== " ") return;
                 // A key pressed inside a nested button/link belongs to that
-                // control, not to the row.
+                // practice, not to the row.
                 if (e.target !== e.currentTarget) return;
                 e.preventDefault();
                 onRowClick(row, e as unknown as MouseEvent<HTMLTableRowElement>);
@@ -864,7 +864,7 @@ export function Table<T>({
           {selectionEnabled && (
             <SelectionToolbar
               table={table}
-              controls={selectionControls}
+              practices={selectionControls}
               className="absolute left-0 top-0 z-30 rounded-t-[inherit]"
             />
           )}

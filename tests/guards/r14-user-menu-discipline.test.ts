@@ -103,8 +103,8 @@ describe('Roadmap-14 PR-5 — UserMenu discipline', () => {
             // through the shared primitive. The button owns the round
             // click target + hover/focus chrome; the avatar owns
             // initials, fill, and image fallback. Footprint is the 22px
-            // navbar control size (`size="nav"`) — stepped 32 → 28 → 22,
-            // matched across the bar's controls.
+            // navbar practice size (`size="nav"`) — stepped 32 → 28 → 22,
+            // matched across the bar's practices.
             expect(USER_MENU_SRC).toMatch(/h-\[22px\]\s+w-\[22px\]/);
             expect(USER_MENU_SRC).toMatch(/rounded-full/);
             expect(USER_MENU_SRC).toMatch(

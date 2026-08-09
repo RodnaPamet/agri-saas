@@ -18,7 +18,7 @@ import { PrismaClient } from '@prisma/client';
 // a model that doesn't exist / isn't tenant-scoped is skipped (best-effort).
 const DOMAIN_MODELS: Record<'agri' | 'core', string[]> = {
     agri: ['parcel', 'farmJournalEntry', 'inventoryItem', 'cropPlan', 'grainLot', 'grainBin', 'sprayRecord'],
-    core: ['control', 'risk', 'vendor', 'evidence', 'policy', 'finding', 'auditCycle', 'framework'],
+    core: ['practice', 'risk', 'vendor', 'evidence', 'policy', 'finding', 'auditCycle', 'framework'],
 };
 
 async function countModel(prisma: PrismaClient, model: string, tenantId: string): Promise<number | null> {

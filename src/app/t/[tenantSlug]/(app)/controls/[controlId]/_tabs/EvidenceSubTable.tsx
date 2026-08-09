@@ -3,10 +3,10 @@
 /**
  * Shared Evidence sub-table.
  *
- * Originally extracted from the control detail `page.tsx` (R10-PR3) as
+ * Originally extracted from the practice detail `page.tsx` (R10-PR3) as
  * part of the raw-`<table>` → `<DataTable>` migration. Now SHARED — the
- * control Evidence tab AND the task Evidence tab both render through it.
- * It stays under `controls/[controlId]/_tabs/` (rather than moving to
+ * practice Evidence tab AND the task Evidence tab both render through it.
+ * It stays under `practices/[practiceId]/_tabs/` (rather than moving to
  * `@/components/`) so the existing guard exemptions + unit test keyed on
  * this path keep working; the task detail page imports it via the
  * `@/app/...` alias. Behaviour is identical across consumers; the task
@@ -15,7 +15,7 @@
  * The evidence tab interleaves two source arrays:
  *   • `links` — EvidenceLinkDTO rows (user-attached URLs / file refs)
  *   • `directEvidence` — Evidence entities attached straight to the
- *     control, deduped against the `links` set by `fileRecordId`.
+ *     practice, deduped against the `links` set by `fileRecordId`.
  *
  * Pre-migration both were rendered into one raw `<table>` with two
  * `.map()` passes. The unified row shape below preserves the rendering
@@ -69,7 +69,7 @@ export function EvidenceSubTable({
     onUnlink: (linkId: string) => void;
     /**
      * Opt-in removal for direct-evidence rows (Evidence entities, not
-     * link rows). The control evidence tab omits it — its direct
+     * link rows). The practice evidence tab omits it — its direct
      * Evidence stays read-only there. The task evidence tab passes it
      * so task-attached evidence (which IS direct, via Evidence.taskId)
      * is removable. Absent ⇒ no remove button on direct-evidence rows.
@@ -110,7 +110,7 @@ export function EvidenceSubTable({
         for (const ev of directEvidence) {
             // LINK-type evidence carries its URL in `content`; render it
             // as an external href so a task URL-evidence row reads the
-            // same as a control link row. FILE / TEXT evidence keep the
+            // same as a practice link row. FILE / TEXT evidence keep the
             // title-link-to-library treatment.
             const isUrlEvidence = ev.type === 'LINK' && !!ev.content;
             out.push({
@@ -279,7 +279,7 @@ export function EvidenceSubTable({
     // `selectionEnabled={false}` is load-bearing — DataTable defaults
     // selection to ON, which adds a leading checkbox `<button>` to
     // every row. That would make `#evidence-table tbody tr button`
-    // (used by `control-evidence.spec.ts` to find the unlink button)
+    // (used by `practice-evidence.spec.ts` to find the unlink button)
     // match the checkbox first instead of the unlink. Selection
     // would be useless on a detail sub-table anyway — no batch ops.
     if (rows.length === 0) {

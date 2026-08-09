@@ -1,20 +1,20 @@
 "use client";
 
 /**
- * Epic P2-PR-A — `useTenantControls(tenantSlug)`.
+ * Epic P2-PR-A — `useTenantPractices(tenantSlug)`.
  *
- * Lazy-fetches the tenant's full Controls list so the
- * ProcessInspector's edge-mode "Linked control" Combobox has options
+ * Lazy-fetches the tenant's full Practices list so the
+ * ProcessInspector's edge-mode "Linked practice" Combobox has options
  * to render. The fetch fires on first mount inside a canvas page;
  * subsequent inspector mounts reuse the same in-memory cache for
- * the session (a tenant doesn't grow controls fast enough for a
+ * the session (a tenant doesn't grow practices fast enough for a
  * fresh fetch per inspector open to feel responsive).
  *
  * Why a hook, not a context:
  *   The inspector is the only consumer today. Wrapping the whole
- *   Processes page in a ControlsProvider would couple the canvas's
- *   render tree to the controls fetch, which we don't want — the
- *   canvas should mount instantly + the controls dropdown can wait
+ *   Processes page in a PracticesProvider would couple the canvas's
+ *   render tree to the practices fetch, which we don't want — the
+ *   canvas should mount instantly + the practices dropdown can wait
  *   for the network. A hook keeps the dependency local to the
  *   component that actually needs it.
  *
@@ -25,13 +25,13 @@
  */
 import { useEffect, useState } from "react";
 
-export interface TenantControlOption {
+export interface TenantPracticeOption {
     id: string;
     ref: string | null;
     title: string;
     /**
      * PR-D polish — live status surface. The API ships
-     * `Control.status` on each row; we carry it through so
+     * `Practice.status` on each row; we carry it through so
      * downstream consumers can render a tone-coloured chip next
      * to the option label. Null when the row is missing the
      * field (older snapshots, edge cases).
@@ -39,16 +39,16 @@ export interface TenantControlOption {
     status: string | null;
 }
 
-interface TenantControlsState {
-    options: TenantControlOption[];
+interface TenantPracticesState {
+    options: TenantPracticeOption[];
     loading: boolean;
     error: string | null;
 }
 
-interface UseTenantControlsOptions {
+interface UseTenantPracticesOptions {
     /**
      * PR-D polish — periodic revalidation cadence in milliseconds.
-     * When set, the hook re-fetches the controls list on this
+     * When set, the hook re-fetches the practices list on this
      * interval and updates the cache + state. Omit (or pass 0)
      * for the original "fetch once, cache forever" behaviour.
      *
@@ -61,23 +61,23 @@ interface UseTenantControlsOptions {
 
 // Module-scoped cache. Survives component remounts within the same
 // tenant session; cleared on tenant slug change (different key).
-const CACHE = new Map<string, TenantControlOption[]>();
+const CACHE = new Map<string, TenantPracticeOption[]>();
 
-async function fetchTenantControls(
+async function fetchTenantPractices(
     tenantSlug: string,
-): Promise<TenantControlOption[]> {
-    const res = await fetch(`/api/t/${tenantSlug}/controls`);
+): Promise<TenantPracticeOption[]> {
+    const res = await fetch(`/api/t/${tenantSlug}/practices`);
     if (!res.ok) {
-        throw new Error(`Could not load controls (${res.status})`);
+        throw new Error(`Could not load practices (${res.status})`);
     }
     const body = (await res.json()) as unknown;
-    // The endpoint shape (`{ controls: [...] }` vs bare array)
+    // The endpoint shape (`{ practices: [...] }` vs bare array)
     // varies between paginated + non-paginated paths. Normalise
     // both shapes here.
     const rows = Array.isArray(body)
         ? (body as unknown[])
-        : Array.isArray((body as { controls?: unknown[] })?.controls)
-          ? (body as { controls: unknown[] }).controls
+        : Array.isArray((body as { practices?: unknown[] })?.practices)
+          ? (body as { practices: unknown[] }).practices
           : [];
     return rows
         .map((r) => {
@@ -98,15 +98,15 @@ async function fetchTenantControls(
                 status: typeof row.status === "string" ? row.status : null,
             };
         })
-        .filter((r): r is TenantControlOption => r !== null);
+        .filter((r): r is TenantPracticeOption => r !== null);
 }
 
-export function useTenantControls(
+export function useTenantPractices(
     tenantSlug: string,
-    options?: UseTenantControlsOptions,
-): TenantControlsState {
+    options?: UseTenantPracticesOptions,
+): TenantPracticesState {
     const cached = CACHE.get(tenantSlug);
-    const [state, setState] = useState<TenantControlsState>(() => ({
+    const [state, setState] = useState<TenantPracticesState>(() => ({
         options: cached ?? [],
         loading: cached === undefined,
         error: null,
@@ -135,7 +135,7 @@ export function useTenantControls(
         }
         const runFetch = async (isRevalidation: boolean) => {
             try {
-                const opts = await fetchTenantControls(tenantSlug);
+                const opts = await fetchTenantPractices(tenantSlug);
                 CACHE.set(tenantSlug, opts);
                 if (!cancelled) {
                     setState({
@@ -157,7 +157,7 @@ export function useTenantControls(
                     error:
                         err instanceof Error
                             ? err.message
-                            : "Could not load controls",
+                            : "Could not load practices",
                 });
             }
         };
@@ -183,10 +183,10 @@ export function useTenantControls(
 }
 
 /**
- * Format a control as a Combobox option label: prefer
+ * Format a practice as a Combobox option label: prefer
  * `<ref> · <title>` when ref is present, fall back to title alone.
  */
-export function formatControlLabel(opt: TenantControlOption): string {
+export function formatPracticeLabel(opt: TenantPracticeOption): string {
     return opt.ref ? `${opt.ref} · ${opt.title}` : opt.title;
 }
 
@@ -195,10 +195,10 @@ export function formatControlLabel(opt: TenantControlOption): string {
  * Used by the inspector to render the selected entity's live
  * status chip without re-deriving the lookup in every caller.
  */
-export function findTenantControl(
-    state: TenantControlsState,
+export function findTenantPractice(
+    state: TenantPracticesState,
     id: string | null,
-): TenantControlOption | null {
+): TenantPracticeOption | null {
     if (!id) return null;
     return state.options.find((o) => o.id === id) ?? null;
 }
@@ -207,6 +207,6 @@ export function findTenantControl(
  * Test-only hook to clear the module-scoped cache between tests.
  * Pure escape hatch; never call from production code.
  */
-export function __resetTenantControlsCacheForTests(): void {
+export function __resetTenantPracticesCacheForTests(): void {
     CACHE.clear();
 }

@@ -267,7 +267,7 @@ export function withApiErrorHandling<Context = unknown>(
                             headers: {
                                 'x-request-id': requestId,
                                 [API_VERSION_HEADER]: API_VERSION,
-                                'Cache-Control': 'no-store, max-age=0'
+                                'Cache-Practice': 'no-store, max-age=0'
                             }
                         });
                     } finally {

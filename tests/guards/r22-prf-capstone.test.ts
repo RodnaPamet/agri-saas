@@ -3,7 +3,7 @@
  *
  * Roadmap-22 (Carved Carbon) is the precision-refinement layer on
  * top of R19 (carbon language) + R20 (elegance). Five small,
- * surgical PRs across the button + control family, each landing
+ * surgical PRs across the button + practice family, each landing
  * its own structural ratchet:
  *
  *   PR-A — Radius: rounded-lg (12px) → rounded-[10px]

@@ -30,7 +30,7 @@ const ROOT = path.resolve(__dirname, '../..');
  * longer mounts a DataTable, OR carries a written reason elsewhere.
  */
 const ADOPTED_PAGES: string[] = [
-    'src/app/t/[tenantSlug]/(app)/controls/ControlsClient.tsx',
+    'src/app/t/[tenantSlug]/(app)/practices/PracticesClient.tsx',
     'src/app/t/[tenantSlug]/(app)/assets/AssetsClient.tsx',
     'src/app/t/[tenantSlug]/(app)/vendors/VendorsClient.tsx',
     'src/app/t/[tenantSlug]/(app)/evidence/EvidenceClient.tsx',

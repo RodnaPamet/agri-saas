@@ -2,7 +2,7 @@
  * Barrel export for typed domain hooks.
  *
  * Usage:
- *   import { useControls, usePolicy, useCreateRisk } from '@/lib/hooks';
+ *   import { usePractices, usePolicy, useCreateRisk } from '@/lib/hooks';
  */
 
 export { useApi, useMutation } from './use-api';
@@ -32,7 +32,7 @@ export type {
     UseKeyboardShortcutOptions,
 } from './use-keyboard-shortcut';
 
-export { useControls, useControl, useCreateControl, useUpdateControl, useDeleteControl } from './use-controls';
+export { usePractices, usePractice, useCreatePractice, useUpdatePractice, useDeletePractice } from './use-practices';
 export { usePolicies, usePolicy, useCreatePolicy, useUpdatePolicy, useDeletePolicy } from './use-policies';
 export { useTasks, useTask, useCreateTask, useUpdateTask, useDeleteTask } from './use-tasks';
 export { useAssets, useAsset, useCreateAsset, useUpdateAsset, useDeleteAsset } from './use-assets';

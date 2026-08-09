@@ -42,7 +42,7 @@ import { logger } from '@/lib/observability/logger';
 
 /**
  * Dotted permission key derived from `PermissionSet`. Examples:
- *   - "controls.create"
+ *   - "practices.create"
  *   - "evidence.upload"
  *   - "admin.scim"
  *

@@ -5,11 +5,11 @@ import { loginAndGetTenant, safeGoto } from './e2e-utils';
  * Epic 54 — cross-entity CRUD/detail smoke.
  *
  * One thin durable pass over the migrated surfaces. Per-entity specs
- * (`create-control-modal`, `control-edit-modal`, `evidence-upload-modal`,
+ * (`create-practice-modal`, `practice-edit-modal`, `evidence-upload-modal`,
  * `new-risk-modal`) already exercise the happy-paths in depth against
  * their own list pages; this spec is the cross-cutting canary that
  * verifies the Sheet-surface (which no per-entity spec tests) and the
- * `/new` redirect shims (which span Controls + Risks in one pass).
+ * `/new` redirect shims (which span Practices + Risks in one pass).
  *
  * We deliberately keep this short — running the per-entity scenarios
  * here as well was flaky under serial mode because multiple describe
@@ -22,16 +22,16 @@ test.describe('Epic 54 — CRUD/detail surfaces mount on demand', () => {
 
     let tenantSlug: string;
 
-    test('Controls — quick-edit sheet opens from the list and exposes a full-detail link', async ({ page }) => {
+    test('Practices — quick-edit sheet opens from the list and exposes a full-detail link', async ({ page }) => {
         tenantSlug = await loginAndGetTenant(page);
-        await safeGoto(page, `/t/${tenantSlug}/controls`);
-        // Wait for at least one control row to have a quick-edit icon.
-        const quickEdit = page.locator('[data-testid^="control-quick-edit-"]').first();
+        await safeGoto(page, `/t/${tenantSlug}/practices`);
+        // Wait for at least one practice row to have a quick-edit icon.
+        const quickEdit = page.locator('[data-testid^="practice-quick-edit-"]').first();
         await quickEdit.waitFor({ state: 'visible', timeout: 15000 });
 
         await quickEdit.click();
 
-        await expect(page.locator('[data-testid="control-sheet-open-full"]')).toBeVisible({
+        await expect(page.locator('[data-testid="practice-sheet-open-full"]')).toBeVisible({
             timeout: 5000,
         });
 
@@ -39,12 +39,12 @@ test.describe('Epic 54 — CRUD/detail surfaces mount on demand', () => {
         await page.keyboard.press('Escape');
     });
 
-    test('Redirect shim — /controls/new opens the modal', async ({ page }) => {
+    test('Redirect shim — /practices/new opens the modal', async ({ page }) => {
         // The paired /risks/new shim went with the risk register.
         tenantSlug = await loginAndGetTenant(page);
 
-        await safeGoto(page, `/t/${tenantSlug}/controls/new`);
-        await expect(page.locator('#control-name-input')).toBeVisible({ timeout: 15000 });
-        await expect(page).toHaveURL(/\/controls(\?|$)/);
+        await safeGoto(page, `/t/${tenantSlug}/practices/new`);
+        await expect(page.locator('#practice-name-input')).toBeVisible({ timeout: 15000 });
+        await expect(page).toHaveURL(/\/practices(\?|$)/);
     });
 });

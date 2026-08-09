@@ -6,7 +6,7 @@
  * (notification dispatch, dashboard aggregation, alerting).
  *
  * Monitored entities:
- *   - Control       → nextDueAt
+ *   - Practice       → nextDueAt
  *   - Policy        → nextReviewAt
  *   - Task          → dueAt
  *
@@ -82,9 +82,9 @@ export function classifyUrgency(
 // ─── Entity Scanners ────────────────────────────────────────────────
 
 /**
- * Scan controls with nextDueAt approaching or overdue.
+ * Scan practices with nextDueAt approaching or overdue.
  */
-async function scanControls(
+async function scanPractices(
     now: Date,
     maxWindow: number,
     tenantId?: string,
@@ -100,7 +100,7 @@ async function scanControls(
     if (tenantId) where.tenantId = tenantId;
     else where.tenantId = { not: null };
 
-    const controls = await prisma.control.findMany({
+    const practices = await prisma.practice.findMany({
         where,
         select: {
             id: true,
@@ -114,7 +114,7 @@ async function scanControls(
     });
 
     const items: DueItem[] = [];
-    for (const c of controls) {
+    for (const c of practices) {
         if (!c.tenantId || !c.nextDueAt) continue;
         const classification = classifyUrgency(c.nextDueAt, now);
         if (!classification) continue;
@@ -125,8 +125,8 @@ async function scanControls(
             tenantId: c.tenantId,
             name: c.name,
             reason: classification.urgency === 'OVERDUE'
-                ? `Control testing overdue by ${Math.abs(classification.daysRemaining)} day(s)`
-                : `Control testing due in ${classification.daysRemaining} day(s)`,
+                ? `Practice testing overdue by ${Math.abs(classification.daysRemaining)} day(s)`
+                : `Practice testing due in ${classification.daysRemaining} day(s)`,
             urgency: classification.urgency,
             dueDate: c.nextDueAt.toISOString(),
             daysRemaining: classification.daysRemaining,
@@ -278,17 +278,17 @@ export async function runDeadlineMonitor(
 
         // Run all scanners in parallel
         const [
-            controls,
+            practices,
             policies,
             tasks,
         ] = await Promise.all([
-            scanControls(now, maxWindow, options.tenantId),
+            scanPractices(now, maxWindow, options.tenantId),
             scanPolicies(now, maxWindow, options.tenantId),
             scanTasks(now, maxWindow, options.tenantId),
         ]);
 
         const items = [
-            ...controls,
+            ...practices,
             ...policies,
             ...tasks,
         ];

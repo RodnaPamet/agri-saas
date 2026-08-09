@@ -21,7 +21,7 @@
  *   4. The curated adopters import + mount it.
  *
  * Future migrations
- *   When more card headers across the product migrate (controls
+ *   When more card headers across the product migrate (practices
  *   detail "Overview" cards, vendor detail panels, audit pack
  *   sections, dashboard cards), extend the ADOPTERS list. The
  *   ratchet's coverage grows; silent rollback fails CI.
@@ -37,12 +37,12 @@ const PRIMITIVE_PATH = 'src/components/ui/card-header.tsx';
 // The risks detail page was the original proof-of-pattern adopter,
 // but its CardHeader sat on an Overview-tab Traceability section that
 // has since been removed (risk traceability now lives only on the
-// dedicated Traceability tab). B4 (2026-06-07) removed the controls
-// DETAIL page's only CardHeader (the legacy 'Control tasks' table) when
+// dedicated Traceability tab). B4 (2026-06-07) removed the practices
+// DETAIL page's only CardHeader (the legacy 'Practice tasks' table) when
 // the Tasks tab was aligned to Asset/Risk, so the anchor moved to the
-// control TEST-PLAN detail page — a stable CardHeader adopter (Test
+// practice TEST-PLAN detail page — a stable CardHeader adopter (Test
 // Procedure section header, R9-PR2).
-// Compliance uproot (2026-08-07): the control TEST-PLAN detail page was
+// Compliance uproot (2026-08-07): the practice TEST-PLAN detail page was
 // deleted with the test-plan feature, emptying this list. An empty ADOPTERS
 // array makes the "curated adopters mount CardHeader" test vacuously green,
 // so the anchor moves to the audits list — a surviving CardHeader adopter.

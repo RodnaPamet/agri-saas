@@ -88,7 +88,7 @@ function searchResponse(
         meta: {
             query,
             perTypeCounts: {
-                control: hits.filter((h) => h.type === 'control').length,
+                practice: hits.filter((h) => h.type === 'practice').length,
                 policy: hits.filter((h) => h.type === 'policy').length,
                 evidence: hits.filter((h) => h.type === 'evidence').length,
                 framework: hits.filter((h) => h.type === 'framework').length,
@@ -104,15 +104,15 @@ function searchResponse(
 
 const SAMPLE_HITS: SearchHit[] = [
     {
-        type: 'control',
+        type: 'practice',
         id: 'ctrl-1',
         title: 'Information security policies',
         subtitle: 'A.5.1',
         badge: 'IMPLEMENTED',
-        href: '/t/acme-corp/controls/ctrl-1',
+        href: '/t/acme-corp/practices/ctrl-1',
         score: 0.95,
         iconKey: 'shield-check',
-        category: 'Controls',
+        category: 'Practices',
     },
     {
         type: 'policy',
@@ -254,13 +254,13 @@ describe('CommandPalette — entity search (unified /search)', () => {
         await waitFor(() => {
             expect(
                 document.querySelector(
-                    '[data-testid="command-palette-result-control"]',
+                    '[data-testid="command-palette-result-practice"]',
                 ),
             ).not.toBeNull();
         });
 
         const row = document.querySelector(
-            '[data-testid="command-palette-result-control"]',
+            '[data-testid="command-palette-result-practice"]',
         )!;
         expect(row.textContent).toContain('A.5.1');
         expect(row.textContent).toContain('Information security policies');
@@ -302,14 +302,14 @@ describe('CommandPalette — entity search (unified /search)', () => {
         await openPaletteAndType('security');
 
         const row = await waitFor(() =>
-            getByTestId('command-palette-result-control'),
+            getByTestId('command-palette-result-practice'),
         );
         const href = row.getAttribute('data-href');
-        expect(href).toBe('/t/acme-corp/controls/ctrl-1');
+        expect(href).toBe('/t/acme-corp/practices/ctrl-1');
 
         fireEvent.click(row);
         expect(navigationMock.push).toHaveBeenCalledWith(
-            '/t/acme-corp/controls/ctrl-1',
+            '/t/acme-corp/practices/ctrl-1',
         );
         // Palette closes after navigation.
         await waitFor(() => {
@@ -338,7 +338,7 @@ describe('CommandPalette — entity search (unified /search)', () => {
     });
 
     it('stays scoped to the tenant in the current URL — cannot reach another tenant', async () => {
-        navigationMock.pathname = '/t/tenant-a/controls';
+        navigationMock.pathname = '/t/tenant-a/practices';
         render(<Shell />);
         await openPaletteAndType('foo');
 
@@ -352,7 +352,7 @@ describe('CommandPalette — entity search (unified /search)', () => {
     });
 
     it('re-scopes to the new tenant when the URL switches', async () => {
-        navigationMock.pathname = '/t/tenant-b/controls';
+        navigationMock.pathname = '/t/tenant-b/practices';
         render(<Shell />);
         await openPaletteAndType('bar');
         expect(calls.length).toBeGreaterThan(0);

@@ -5,7 +5,7 @@
  * PR-9 extracts the focus-or-dim behaviour into a reusable
  * `ChartFocusWrapper` and applies it to two more sections:
  *
- *   • Control Coverage (ProgressCard) — focused when
+ *   • Practice Coverage (ProgressCard) — focused when
  *     `selectedKpi === 'coverage'`.
  *   • Evidence Status (StatusBreakdown) — focused when
  *     `selectedKpi === 'evidence'`.
@@ -37,7 +37,7 @@
  *      `ring-2 ring-brand-default ring-offset-2` on focus, and
  *      `opacity-60` on dim. Same recipe PR-8 used inline.
  *
- *   5. ProgressCard (control-coverage) is wrapped with
+ *   5. ProgressCard (practice-coverage) is wrapped with
  *      `kpiKey="coverage"`.
  *
  *   6. EvidenceStatusSection is wrapped with `kpiKey="evidence"`.

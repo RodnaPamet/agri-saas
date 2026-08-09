@@ -30,7 +30,7 @@ describe('Audit S10 — Tenant Isolation & Authorization', () => {
             const expected = [
                 'Asset',
                 'Risk',
-                'Control',
+                'Practice',
                 'Evidence',
                 'Policy',
                 'Vendor',
@@ -72,10 +72,10 @@ describe('Audit S10 — Tenant Isolation & Authorization', () => {
             expect(validators).toMatch(/Evidence:\s*EVIDENCE_VALIDATOR/);
         });
 
-        it('Task validator checks parent control deletedAt', () => {
+        it('Task validator checks parent practice deletedAt', () => {
             const fnStart = validators.indexOf('const TASK_VALIDATOR');
             const fnBody = validators.slice(fnStart, fnStart + 800);
-            expect(fnBody).toMatch(/db\.control\.findFirst/);
+            expect(fnBody).toMatch(/db\.practice\.findFirst/);
             expect(fnBody).toMatch(/deletedAt:\s*null/);
         });
 

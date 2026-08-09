@@ -65,8 +65,8 @@ describe('MFA Enforcement', () => {
 
         it('blocks regular tenant routes', () => {
             expect(isMfaAllowedPath('/t/acme/dashboard')).toBe(false);
-            expect(isMfaAllowedPath('/t/acme/controls')).toBe(false);
-            expect(isMfaAllowedPath('/api/t/acme/controls')).toBe(false);
+            expect(isMfaAllowedPath('/t/acme/practices')).toBe(false);
+            expect(isMfaAllowedPath('/api/t/acme/practices')).toBe(false);
             expect(isMfaAllowedPath('/api/t/acme/assets')).toBe(false);
         });
 
@@ -79,11 +79,11 @@ describe('MFA Enforcement', () => {
     describe('isTenantPath', () => {
         it('identifies tenant page paths', () => {
             expect(isTenantPath('/t/acme/dashboard')).toBe(true);
-            expect(isTenantPath('/t/acme/controls')).toBe(true);
+            expect(isTenantPath('/t/acme/practices')).toBe(true);
         });
 
         it('identifies tenant API paths', () => {
-            expect(isTenantPath('/api/t/acme/controls')).toBe(true);
+            expect(isTenantPath('/api/t/acme/practices')).toBe(true);
         });
 
         it('rejects non-tenant paths', () => {
@@ -184,13 +184,13 @@ describe('MFA Enforcement', () => {
         });
 
         it('returns 403 for tenant API when pending', () => {
-            const result = simulateMiddleware('/api/t/acme/controls', true);
+            const result = simulateMiddleware('/api/t/acme/practices', true);
             expect(result.action).toBe('forbidden');
         });
 
         it('passes all routes when mfaPending is false', () => {
             expect(simulateMiddleware('/t/acme/dashboard', false).action).toBe('pass');
-            expect(simulateMiddleware('/api/t/acme/controls', false).action).toBe('pass');
+            expect(simulateMiddleware('/api/t/acme/practices', false).action).toBe('pass');
             expect(simulateMiddleware('/t/acme/admin', false).action).toBe('pass');
         });
     });

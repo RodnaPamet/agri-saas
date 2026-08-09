@@ -2,7 +2,7 @@
  * Integration tests for the task Evidence tab backend.
  *
  * Proves, against a real database, that a task can attach evidence the
- * same way a control can:
+ * same way a practice can:
  *   • linkTaskEvidence creates a LINK Evidence row pointing at the task
  *   • getTaskEvidenceTab returns it in the `{ links, evidence }` shape
  *     the shared <EvidenceSubTable> renders

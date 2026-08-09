@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * Epic 66 — `<ViewToggle>` segmented control.
+ * Epic 66 — `<ViewToggle>` segmented practice.
  *
  * Two-option Table/Cards switch designed to drop into the
  * `FilterToolbar`'s `actions` slot. Built on the existing
@@ -10,7 +10,7 @@
  *
  * Pages adopt the toggle in three lines:
  *
- *   const [view, setView] = useViewMode('controls');
+ *   const [view, setView] = useViewMode('practices');
  *   <FilterToolbar
  *     actions={<ViewToggle view={view} onChange={setView} />}
  *   />

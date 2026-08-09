@@ -123,7 +123,7 @@ export interface HealthCheckPayload {
     message?: string;
 }
 
-/** Automation runner — executes scheduled control checks */
+/** Automation runner — executes scheduled practice checks */
 export interface AutomationRunnerPayload {
     tenantId?: string;
     dryRun?: boolean;
@@ -202,7 +202,7 @@ export interface VendorRenewalCheckPayload {
     tenantId?: string;
 }
 
-/** Deadline monitor — controls, policies, tasks, risks, test plans */
+/** Deadline monitor — practices, policies, tasks, risks, test plans */
 export interface DeadlineMonitorPayload {
     tenantId?: string;
     /** Detection windows in days. Default: [30, 7, 1] */
@@ -395,8 +395,8 @@ export interface EvidenceImportPayload {
     stagingPathKey: string;
     /** Storage `FileRecord.id` of the staging upload, deleted on success. */
     stagingFileRecordId: string;
-    /** Optional control to attach every extracted evidence to. */
-    controlId?: string | null;
+    /** Optional practice to attach every extracted evidence to. */
+    practiceId?: string | null;
     /** Optional retention date applied to every extracted evidence. */
     retentionUntilIso?: string | null;
     /** Optional category tag applied to every extracted evidence. */

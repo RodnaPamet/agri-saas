@@ -34,7 +34,7 @@
  *
  *   const result = applyBackfillCap(rows);
  *   recordListPageRowCount({
- *       entity: 'controls',
+ *       entity: 'practices',
  *       count: result.rows.length,
  *       truncated: result.truncated,
  *       tenantId: ctx.tenantId,
@@ -91,7 +91,7 @@ function getTruncationCounter() {
  * entity that hasn't been considered for instrumentation.
  */
 export type ListPageEntity =
-    | 'controls'
+    | 'practices'
     | 'risks'
     | 'evidence'
     | 'audits'

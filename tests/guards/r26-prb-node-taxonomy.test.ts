@@ -45,7 +45,7 @@ function read(rel: string): string {
 const CANONICAL_KINDS = [
     "processStep",
     "decision",
-    "control",
+    "practice",
     "asset",
     "external",
     "annotation",
@@ -99,11 +99,11 @@ describe("R26-PR-B — node taxonomy", () => {
     });
 
     it("NODE_TAXONOMY_ORDER lists each PALETTE kind exactly once", () => {
-        // R26-PR-D dropped `control` from the palette (edge-first
+        // R26-PR-D dropped `practice` from the palette (edge-first
         // canonical surface) while keeping the taxonomy entry for
         // legacy-map rehydration. The palette order = canonical
-        // six MINUS control. The dedicated R26-PR-D ratchet
-        // (r26-prd-edge-controls-semantics) locks the exclusion.
+        // six MINUS practice. The dedicated R26-PR-D ratchet
+        // (r26-prd-edge-practices-semantics) locks the exclusion.
         const orderMatch = taxonomySrc.match(
             /NODE_TAXONOMY_ORDER:\s*ProcessNodeKind\[\]\s*=\s*\[([\s\S]*?)\]/,
         );
@@ -115,10 +115,10 @@ describe("R26-PR-B — node taxonomy", () => {
         // VR-1 — automation kinds live in AUTOMATION_NODE_ORDER (a
         // separate, mode-gated palette section), NOT NODE_TAXONOMY_ORDER,
         // so they're excluded from the document palette order alongside
-        // `control`.
+        // `practice`.
         const AUTOMATION_KINDS = ["trigger", "condition", "action", "slaGate"];
         const palette = CANONICAL_KINDS.filter(
-            (k) => k !== "control" && !AUTOMATION_KINDS.includes(k),
+            (k) => k !== "practice" && !AUTOMATION_KINDS.includes(k),
         );
         expect(items.sort()).toEqual([...palette].sort());
     });

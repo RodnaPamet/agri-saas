@@ -12,7 +12,7 @@
  *   </div>
  *
  * One primitive, four variants (error / success / warning / info), one
- * decision: do we want a dismiss control? The colour-pair tokens are
+ * decision: do we want a dismiss practice? The colour-pair tokens are
  * resolved internally so callers never spell `bg-bg-X border border-border-X`
  * inline again.
  *

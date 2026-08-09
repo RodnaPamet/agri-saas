@@ -13,7 +13,7 @@
  */
 import type { AutomationActionType } from '@prisma/client';
 
-export type TemplateTag = 'control' | 'task' | 'issue' | 'notify' | 'webhook';
+export type TemplateTag = 'practice' | 'task' | 'issue' | 'notify' | 'webhook';
 
 export interface AutomationTemplate {
     id: string;
@@ -35,8 +35,8 @@ export const AUTOMATION_TEMPLATES: ReadonlyArray<AutomationTemplate> = [
         trigger: 'TEST_RUN_FAILED',
         filter: null,
         actionType: 'CREATE_TASK',
-        actionConfig: { title: 'Remediate failed control test {{control.code}}', priority: 'P2' },
-        tags: ['control', 'task'],
+        actionConfig: { title: 'Remediate failed practice test {{practice.code}}', priority: 'P2' },
+        tags: ['practice', 'task'],
     },
     {
         id: 'tpl_overdue_task_escalate',
@@ -59,14 +59,14 @@ export const AUTOMATION_TEMPLATES: ReadonlyArray<AutomationTemplate> = [
         tags: ['issue', 'notify'],
     },
     {
-        id: 'tpl_evidence_control_review',
-        name: 'Move control to IN_REVIEW on evidence upload',
-        description: 'When a test run completes, set the control to IN_REVIEW.',
+        id: 'tpl_evidence_practice_review',
+        name: 'Move practice to IN_REVIEW on evidence upload',
+        description: 'When a test run completes, set the practice to IN_REVIEW.',
         trigger: 'TEST_RUN_COMPLETED',
         filter: null,
         actionType: 'UPDATE_STATUS',
-        actionConfig: { entityType: 'Control', field: 'status', toStatus: 'IN_REVIEW' },
-        tags: ['control'],
+        actionConfig: { entityType: 'Practice', field: 'status', toStatus: 'IN_REVIEW' },
+        tags: ['practice'],
     },
     {
         id: 'tpl_slack_finding_webhook',

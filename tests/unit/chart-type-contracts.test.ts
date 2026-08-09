@@ -128,11 +128,11 @@ describe('TimeSeriesDatum + typed values', () => {
     it('extends to LabeledSeries for legend / tooltip rendering', () => {
         const s: LabeledSeries<ExampleMultiValues> = {
             id: 'coverage',
-            label: 'Control coverage',
+            label: 'Practice coverage',
             valueAccessor: (d) => d.values.coverage,
             colorClassName: 'text-brand-emphasis',
         };
-        expect(s.label).toBe('Control coverage');
+        expect(s.label).toBe('Practice coverage');
     });
 });
 
@@ -213,7 +213,7 @@ describe('ProgressMetric + ProgressSegment', () => {
 describe('KpiMetric', () => {
     it('matches the top-level KpiCard shape the app already uses', () => {
         const m: KpiMetric = exampleKpiMetric;
-        expect(m.label).toBe('Control coverage');
+        expect(m.label).toBe('Practice coverage');
         expect(m.format).toBe('percent');
         expect(m.delta).toBe(2.4);
     });
@@ -298,7 +298,7 @@ describe('Chart contracts round-trip through JSON', () => {
 describe('Chart contracts carry zero domain semantics', () => {
     it('no type field in `types.ts` names a product entity', () => {
         // The audit's non-negotiable: chart contracts do not mention
-        // evidence / risk / control / policy / audit. A regression
+        // evidence / risk / practice / policy / audit. A regression
         // that adds one would fail this grep — catch it at CI time.
 
         const fs = require('fs') as typeof import('fs');
@@ -315,7 +315,7 @@ describe('Chart contracts carry zero domain semantics', () => {
         const forbidden = [
             /\bevidence[A-Z]/i,
             /\brisk[A-Z]/i,
-            /\bcontrol[A-Z]/i,
+            /\bpractice[A-Z]/i,
             /\bpolicy[A-Z]/i,
             /\baudit[A-Z]/i,
         ];

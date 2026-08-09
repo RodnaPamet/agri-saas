@@ -1,5 +1,5 @@
 /**
- * R20 — form-control parity recipes.
+ * R20 — form-practice parity recipes.
  *
  * The button primitive carries the liquid-carbon vocabulary (R19:
  * bevel + light pool + micro-grain; R20: ambient elevation,
@@ -9,12 +9,12 @@
  * different SURFACE MODEL: they are hollow containers for text,
  * not filled surfaces.
  *
- * This file is the form-control mirror of `button-variants.ts`.
- * Buttons carbon-FILL; controls carbon-EDGE. The recipes here drive
- * the input-style controls' rest / hover / focus / invalid states
+ * This file is the form-practice mirror of `button-variants.ts`.
+ * Buttons carbon-FILL; practices carbon-EDGE. The recipes here drive
+ * the input-style practices' rest / hover / focus / invalid states
  * through the same token palette (`--ctrl-edge-*`, `--btn-ambient-*`,
  * `--btn-iridescent-gradient`) so a focused input feels like a
- * cousin of a focused button rather than an unrelated control.
+ * cousin of a focused button rather than an unrelated practice.
  *
  * PR-A SCOPE: only the SCAFFOLD lands here. The recipes are exported
  * but not yet wired into `input.tsx` / `combobox/index.tsx` /
@@ -27,31 +27,31 @@
  *
  * The split into a SEPARATE file (vs extending button-variants.ts)
  * is deliberate:
- *   - Buttons and form controls are sized differently (controls
+ *   - Buttons and form controls are sized differently (practices
  *     need `read-only:` + `invalid:` states; buttons don't). A
  *     shared CVA would over-fit.
  *   - The R19 carbon RECIPES (`carbonSurface`, `carbonOnHover`,
- *     `carbonStates`) are surface-fill recipes. Form-control
+ *     `carbonStates`) are surface-fill recipes. Form-practice
  *     parity is an EDGE recipe — different channel, different
  *     contract.
- *   - Future controls (steppers, switches, segmented controls)
+ *   - Future practices (steppers, switches, segmented practices)
  *     can adopt `controlEdge` without dragging the surface-fill
  *     recipes along.
  */
 import { cva } from "class-variance-authority";
 
 /**
- * R20 — the form-control edge recipe.
+ * R20 — the form-practice edge recipe.
  *
  * Three border states driven by the same R20 token scale that
- * powers the button family. Spread into a control's cva alongside
+ * powers the button family. Spread into a practice's cva alongside
  * its size variant. Carries NO height/padding — those stay in the
- * control's own size variant (an `<Input size="md">` is `h-9`; a
+ * practice's own size variant (an `<Input size="md">` is `h-9`; a
  * combobox trigger is whatever the wrapping `<Button size>` gives
- * it). Edge-only, so it composes over any control without
+ * it). Edge-only, so it composes over any practice without
  * conflicting with its layout.
  *
- *   - `border-[var(--ctrl-edge-rest)]` — quiet at rest. The control
+ *   - `border-[var(--ctrl-edge-rest)]` — quiet at rest. The practice
  *     reads as containment, not as a competing element.
  *   - `hover:border-[var(--ctrl-edge-hover)]` — emphasis on hover.
  *     Same channel as the rest border, just lifted.
@@ -74,7 +74,7 @@ export const controlEdge = [
 ];
 
 /**
- * R20 — control sizing scale, mirrored from the button size scale.
+ * R20 — practice sizing scale, mirrored from the button size scale.
  *
  * Same heights and horizontal padding as the button family so an
  * `<Input size="md">` and a `<Button size="md">` line up perfectly
@@ -83,7 +83,7 @@ export const controlEdge = [
  * shifts, the other shifts too; the R20-PR-A ratchet asserts the
  * heights match.
  */
-export const controlSize = {
+export const practiceSize = {
     xs: "h-7 px-2.5 text-[11px] rounded-md",
     sm: "h-8 px-3 text-xs",
     md: "h-9 px-3 text-sm",
@@ -91,15 +91,15 @@ export const controlSize = {
 } as const;
 
 /**
- * R20 — the form-control CVA itself.
+ * R20 — the form-practice CVA itself.
  *
  * Composed today as the foundation for PR-B's wiring; PR-A
  * deliberately leaves `<Input>` etc. on their existing inline
  * `inputVariants` so this PR is a pure foundation drop. PR-B
- * migrates `inputVariants` to compose `controlVariants` and adds
+ * migrates `inputVariants` to compose `practiceVariants` and adds
  * the iridescent focus-ring on top.
  */
-export const controlVariants = cva(
+export const practiceVariants = cva(
     [
         // R22-PR-A — radius mirror of button-variants.ts.
         // Form controls + buttons share corner shape so a
@@ -113,7 +113,7 @@ export const controlVariants = cva(
     ],
     {
         variants: {
-            size: controlSize,
+            size: practiceSize,
             invalid: {
                 true: "border-border-error text-content-error placeholder-content-error/60 focus-visible:shadow-[0_0_0_3px_rgb(220_38_38_/_0.20)] hover:border-border-error",
                 false: "",

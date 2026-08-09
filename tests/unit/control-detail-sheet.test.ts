@@ -1,12 +1,12 @@
 /**
- * Epic 54 — Control quick-inspect / edit Sheet migration.
+ * Epic 54 — Practice quick-inspect / edit Sheet migration.
  *
  * Node-env jest source-inspects the new Sheet surface:
  *
  *   1. Sheet composition — uses shared <Sheet> primitives (no bespoke
  *      overlay), sits at size="md", provides actions with left-aligned
  *      "Open full detail" and right-aligned Cancel / Save.
- *   2. Data flow — loads via the same queryKeys.controls.detail used by
+ *   2. Data flow — loads via the same queryKeys.practices.detail used by
  *      the full detail page, PATCHes the identical endpoint the legacy
  *      edit modal used, fires the separate owner POST only when changed.
  *   3. UX invariants — unsaved-changes guard, focus on name, canSave gate,
@@ -24,12 +24,12 @@ function read(rel: string): string {
     return fs.readFileSync(path.join(ROOT, rel), 'utf-8');
 }
 
-const SHEET_SRC = read('src/app/t/[tenantSlug]/(app)/controls/ControlDetailSheet.tsx');
-const CLIENT_SRC = read('src/app/t/[tenantSlug]/(app)/controls/ControlsClient.tsx');
+const SHEET_SRC = read('src/app/t/[tenantSlug]/(app)/practices/PracticeDetailSheet.tsx');
+const CLIENT_SRC = read('src/app/t/[tenantSlug]/(app)/practices/PracticesClient.tsx');
 
 // ─── 1. Sheet composition ────────────────────────────────────────
 
-describe('ControlDetailSheet — shared Sheet composition', () => {
+describe('PracticeDetailSheet — shared Sheet composition', () => {
     it('is a client component', () => {
         expect(SHEET_SRC).toMatch(/^'use client'/);
     });
@@ -60,18 +60,18 @@ describe('ControlDetailSheet — shared Sheet composition', () => {
 
 // ─── 2. Data flow ────────────────────────────────────────────────
 
-describe('ControlDetailSheet — data flow', () => {
-    it('loads the control via queryKeys.controls.detail (shared cache with the full detail page)', () => {
-        expect(SHEET_SRC).toMatch(/queryKeys\.controls\.detail\(tenantSlug,\s*controlId\)/);
+describe('PracticeDetailSheet — data flow', () => {
+    it('loads the practice via queryKeys.practices.detail (shared cache with the full detail page)', () => {
+        expect(SHEET_SRC).toMatch(/queryKeys\.practices\.detail\(tenantSlug,\s*practiceId\)/);
     });
 
-    it('enables the query only when a controlId is selected', () => {
+    it('enables the query only when a practiceId is selected', () => {
         expect(SHEET_SRC).toMatch(/enabled:\s*open/);
     });
 
-    it('PATCHes /controls/:id with the legacy field set', () => {
+    it('PATCHes /practices/:id with the legacy field set', () => {
         expect(SHEET_SRC).toMatch(/method:\s*['"]PATCH['"]/);
-        expect(SHEET_SRC).toMatch(/apiUrl\(`\/controls\/\$\{controlId\}`\)/);
+        expect(SHEET_SRC).toMatch(/apiUrl\(`\/practices\/\$\{practiceId\}`\)/);
         for (const field of ['name', 'description', 'intent', 'category', 'frequency']) {
             expect(SHEET_SRC).toContain(field);
         }
@@ -79,26 +79,26 @@ describe('ControlDetailSheet — data flow', () => {
 
     it('fires the owner POST only when the owner actually changed', () => {
         expect(SHEET_SRC).toMatch(/draft\.owner\.trim\(\)\s*!==\s*originalOwner/);
-        expect(SHEET_SRC).toMatch(/apiUrl\(`\/controls\/\$\{controlId\}\/owner`\)/);
+        expect(SHEET_SRC).toMatch(/apiUrl\(`\/practices\/\$\{practiceId\}\/owner`\)/);
     });
 
-    it('invalidates controls.all(tenantSlug) on success — list reflects new values', () => {
-        expect(SHEET_SRC).toMatch(/invalidateQueries\(\{\s*queryKey:\s*queryKeys\.controls\.all\(tenantSlug\)/);
+    it('invalidates practices.all(tenantSlug) on success — list reflects new values', () => {
+        expect(SHEET_SRC).toMatch(/invalidateQueries\(\{\s*queryKey:\s*queryKeys\.practices\.all\(tenantSlug\)/);
     });
 
-    it('closes the Sheet on save success (setControlId(null))', () => {
-        expect(SHEET_SRC).toMatch(/setControlId\(null\)/);
+    it('closes the Sheet on save success (setPracticeId(null))', () => {
+        expect(SHEET_SRC).toMatch(/setPracticeId\(null\)/);
     });
 
     it('surfaces mutation errors into a data-testid-reachable alert', () => {
-        expect(SHEET_SRC).toMatch(/data-testid=["']control-sheet-save-error["']/);
+        expect(SHEET_SRC).toMatch(/data-testid=["']practice-sheet-save-error["']/);
         expect(SHEET_SRC).toMatch(/role=["']alert["']/);
     });
 });
 
 // ─── 3. UX invariants ────────────────────────────────────────────
 
-describe('ControlDetailSheet — UX invariants', () => {
+describe('PracticeDetailSheet — UX invariants', () => {
     it('focuses the name input shortly after open', () => {
         expect(SHEET_SRC).toMatch(/nameInputRef\.current\?\.focus\(\)/);
     });
@@ -116,14 +116,14 @@ describe('ControlDetailSheet — UX invariants', () => {
     });
 
     it('renders a read-only summary card (status / applicability / owner / code)', () => {
-        expect(SHEET_SRC).toMatch(/data-testid=["']control-sheet-summary["']/);
+        expect(SHEET_SRC).toMatch(/data-testid=["']practice-sheet-summary["']/);
         expect(SHEET_SRC).toMatch(/Applicability/);
         expect(SHEET_SRC).toMatch(/Owner/);
     });
 
-    it('"Open full detail" link routes to the canonical control page', () => {
-        expect(SHEET_SRC).toMatch(/href=\{tenantHref\(`\/controls\/\$\{control\.id\}`\)\}/);
-        expect(SHEET_SRC).toMatch(/data-testid=["']control-sheet-open-full["']/);
+    it('"Open full detail" link routes to the canonical practice page', () => {
+        expect(SHEET_SRC).toMatch(/href=\{tenantHref\(`\/practices\/\$\{practice\.id\}`\)\}/);
+        expect(SHEET_SRC).toMatch(/data-testid=["']practice-sheet-open-full["']/);
     });
 
     it('uses semantic tokens only — no raw Dub palette', () => {
@@ -138,32 +138,32 @@ describe('ControlDetailSheet — UX invariants', () => {
     });
 });
 
-// ─── 4. ControlsClient wiring ────────────────────────────────────
+// ─── 4. PracticesClient wiring ────────────────────────────────────
 
-describe('ControlsClient — Sheet entry points', () => {
-    it('imports ControlDetailSheet', () => {
+describe('PracticesClient — Sheet entry points', () => {
+    it('imports PracticeDetailSheet', () => {
         // Accept both static and dynamic imports (lazy-loading via next/dynamic)
-        const hasImport = /from ['"]\.\/ControlDetailSheet['"]/.test(CLIENT_SRC) ||
-            /import\(['"]\.\/ControlDetailSheet['"]\)/.test(CLIENT_SRC);
+        const hasImport = /from ['"]\.\/PracticeDetailSheet['"]/.test(CLIENT_SRC) ||
+            /import\(['"]\.\/PracticeDetailSheet['"]\)/.test(CLIENT_SRC);
         expect(hasImport).toBe(true);
     });
 
-    it('owns sheetControlId state (null = closed)', () => {
-        expect(CLIENT_SRC).toMatch(/sheetControlId/);
-        expect(CLIENT_SRC).toMatch(/setSheetControlId/);
+    it('owns sheetPracticeId state (null = closed)', () => {
+        expect(CLIENT_SRC).toMatch(/sheetPracticeId/);
+        expect(CLIENT_SRC).toMatch(/setSheetPracticeId/);
     });
 
-    it('mounts <ControlDetailSheet> with tenant-scoped helpers + canWrite', () => {
-        expect(CLIENT_SRC).toMatch(/<ControlDetailSheet\b/);
-        expect(CLIENT_SRC).toMatch(/controlId=\{sheetControlId\}/);
-        expect(CLIENT_SRC).toMatch(/setControlId=\{setSheetControlId\}/);
-        expect(CLIENT_SRC).toMatch(/canWrite=\{appPermissions\.controls\.edit\}/);
+    it('mounts <PracticeDetailSheet> with tenant-scoped helpers + canWrite', () => {
+        expect(CLIENT_SRC).toMatch(/<PracticeDetailSheet\b/);
+        expect(CLIENT_SRC).toMatch(/practiceId=\{sheetPracticeId\}/);
+        expect(CLIENT_SRC).toMatch(/setPracticeId=\{setSheetPracticeId\}/);
+        expect(CLIENT_SRC).toMatch(/canWrite=\{appPermissions\.practices\.edit\}/);
     });
 
     it('adds a quick-edit icon column that opens the Sheet', () => {
         expect(CLIENT_SRC).toMatch(/id:\s*['"]quick-edit['"]/);
-        expect(CLIENT_SRC).toMatch(/control-quick-edit-\$\{row\.original\.id\}/);
-        expect(CLIENT_SRC).toMatch(/setSheetControlId\(row\.original\.id\)/);
+        expect(CLIENT_SRC).toMatch(/practice-quick-edit-\$\{row\.original\.id\}/);
+        expect(CLIENT_SRC).toMatch(/setSheetPracticeId\(row\.original\.id\)/);
     });
 
     it('row-click navigation to the full detail page is preserved', () => {
@@ -176,7 +176,7 @@ describe('ControlsClient — Sheet entry points', () => {
         // logic inside the callback.
         expect(CLIENT_SRC).toMatch(/onRowClick:\s*handleRowClick/);
         expect(CLIENT_SRC).toMatch(
-            /handleRowClick\s*=\s*useCallback\([\s\S]*?router\.push\(tenantHref\(`\/controls\/\$\{row\.original\.id\}`\)\)/,
+            /handleRowClick\s*=\s*useCallback\([\s\S]*?router\.push\(tenantHref\(`\/practices\/\$\{row\.original\.id\}`\)\)/,
         );
     });
 });

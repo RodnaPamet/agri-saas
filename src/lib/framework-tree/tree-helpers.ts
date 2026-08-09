@@ -59,7 +59,7 @@ export function flattenVisible<T extends TreeViewNode>(
 /**
  * Walk every node in the tree, return the set of ids that have at
  * least one child. Useful for "Expand All" / "Collapse All"
- * controls — passing `collectExpandableIds(nodes)` into the
+ * practices — passing `collectExpandableIds(nodes)` into the
  * `expanded` set expands the whole tree.
  */
 export function collectExpandableIds<T extends TreeViewNode>(

@@ -102,7 +102,7 @@ test.describe('Audit Readiness', () => {
                 .catch(() => null);
             const previewEl = page.locator('#preview-counts');
             if (await previewEl.isVisible().catch(() => false)) {
-                await expect(page.locator('#preview-controls')).toBeVisible();
+                await expect(page.locator('#preview-practices')).toBeVisible();
                 await expect(page.locator('#preview-policies')).toBeVisible();
             }
         });

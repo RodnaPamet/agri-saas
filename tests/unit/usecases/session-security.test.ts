@@ -69,7 +69,7 @@ describe('revokeUserSessions — self vs other', () => {
 
         // Regression: a refactor that tightened the gate to canAdmin
         // for ALL revokes would prevent users from logging themselves
-        // out — the absolute baseline session-security control.
+        // out — the absolute baseline session-security practice.
         expect(mockMembershipFindUnique).not.toHaveBeenCalled();
         expect(mockUserUpdate).toHaveBeenCalledWith(
             expect.objectContaining({

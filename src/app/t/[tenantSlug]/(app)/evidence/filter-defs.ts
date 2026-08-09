@@ -7,7 +7,7 @@
  *   q          → free-text search (`useFilterContext`'s search slot)
  *   type       → EvidenceType (FILE | LINK | TEXT)
  *   status     → EvidenceStatus (DRAFT | SUBMITTED | APPROVED | REJECTED)
- *   controlId  → entity-reference (Control ID; options derived from loaded data)
+ *   practiceId  → entity-reference (Practice ID; options derived from loaded data)
  *
  * Retention buckets (`archived=true` / `expiring=true`) are *not* modelled
  * here — they're driven by the existing retention-tab UI (`tab=active|
@@ -62,12 +62,12 @@ const STATIC_DEFS = {
         multiple: true,
         resetBehavior: 'clearable',
     },
-    controlId: {
-        label: 'Linked control',
-        description: 'Only show evidence attached to this control.',
+    practiceId: {
+        label: 'Linked practice',
+        description: 'Only show evidence attached to this practice.',
         group: 'Linked',
         icon: Link2,
-        options: null, // filled at render time from the controls prop
+        options: null, // filled at render time from the practices prop
         shouldFilter: true,
         resetBehavior: 'clearable',
     },
@@ -94,22 +94,22 @@ export const EVIDENCE_FILTER_KEYS = evidenceFilterDefs.filterKeys;
 
 // ─── Runtime option builder ─────────────────────────────────────────
 
-interface ControlLike {
+interface PracticeLike {
     id: string;
     name: string;
     code?: string | null;
 }
 
 /**
- * Build Control options from the list loaded server-side. The filter row
+ * Build Practice options from the list loaded server-side. The filter row
  * displays `{ code }: name` to match the pattern used elsewhere on
  * Evidence pages, while the pill text (displayLabel) stays short.
  */
-export function controlOptionsFromControls(
-    controls: ReadonlyArray<ControlLike>,
+export function practiceOptionsFromPractices(
+    practices: ReadonlyArray<PracticeLike>,
 ): FilterOption[] {
     const seen = new Map<string, FilterOption>();
-    for (const c of controls) {
+    for (const c of practices) {
         if (!c.id || seen.has(c.id)) continue;
         const prefix = c.code || '';
         seen.set(c.id, {
@@ -154,13 +154,13 @@ export function folderOptionsFromEvidence(
 }
 
 export function buildEvidenceFilters(
-    controls: ReadonlyArray<ControlLike>,
+    practices: ReadonlyArray<PracticeLike>,
     evidence: ReadonlyArray<EvidenceFolderLike> = [],
 ) {
-    const controlOpts = controlOptionsFromControls(controls);
+    const practiceOpts = practiceOptionsFromPractices(practices);
     const folderOpts = folderOptionsFromEvidence(evidence);
     return evidenceFilterDefs.filters.map((f) => {
-        if (f.key === 'controlId') return { ...f, options: controlOpts };
+        if (f.key === 'practiceId') return { ...f, options: practiceOpts };
         if (f.key === 'folder') return { ...f, options: folderOpts };
         return f;
     });

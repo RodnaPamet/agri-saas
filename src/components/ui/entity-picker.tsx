@@ -141,7 +141,7 @@ async function fetchCandidates(
     let url: string;
     switch (kind) {
         case 'CONTROL':
-            url = `${base}/controls${qs}`;
+            url = `${base}/practices${qs}`;
             break;
         case 'ASSET':
             url = `${base}/assets${qs}`;

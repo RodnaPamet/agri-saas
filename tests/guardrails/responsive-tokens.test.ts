@@ -33,7 +33,7 @@ function findPageFiles(dir: string, acc: string[] = []): string[] {
  * Remove from this list as pages are made responsive.
  */
 const KNOWN_EXCEPTIONS = new Set([
-    'controls/[controlId]/page.tsx',
+    'practices/[practiceId]/page.tsx',
     'evidence/EvidenceClient.tsx',
     'policies/templates/page.tsx',
     'policies/[policyId]/page.tsx',

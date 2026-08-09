@@ -32,7 +32,7 @@
  *
  * Accessibility:
  *   - The default trigger is a `<Button>` that Radix Popover.Trigger
- *     augments with `aria-expanded` / `aria-controls`. We additionally
+ *     augments with `aria-expanded` / `aria-practices`. We additionally
  *     set `aria-haspopup="listbox"` so screen readers announce the
  *     select-like affordance correctly.
  *   - The trigger's accessible NAME comes from `aria-labelledby` when
@@ -112,7 +112,7 @@ type A11yProps = {
     /**
      * ID applied to the trigger element. `<FormField>` injects this so
      * the label's `htmlFor` points at the trigger. Use when the
-     * combobox is the control inside a form field.
+     * combobox is the practice inside a form field.
      */
     id?: string;
     /** Hidden form-input name; value is serialised as comma-separated. */
@@ -124,7 +124,7 @@ type A11yProps = {
     /** Explicit override; usually inferred from `invalid`. */
     "aria-invalid"?: boolean | "true" | "false";
     /**
-     * Id of the element holding this control's visible label.
+     * Id of the element holding this practice's visible label.
      * `<FormField>` injects the id of its own `<Label>`, which is what
      * gives the trigger a STABLE accessible name (see the precedence
      * comment on `triggerAriaLabel` below). Set it by hand only when
@@ -400,7 +400,7 @@ export function Combobox<
     // Compute an accessible name for the trigger. Three sources, in
     // strict precedence order:
     //
-    //   1. `buttonProps["aria-label"]` — the caller named the control
+    //   1. `buttonProps["aria-label"]` — the caller named the practice
     //      outright, so nothing outranks it.
     //   2. `aria-labelledby` — normally injected by `<FormField>`,
     //      pointing at the field's visible `<Label>`. WAI-ARIA is
@@ -417,7 +417,7 @@ export function Combobox<
     //
     // Historically (3) was the only fallback, so an unlabelled
     // combobox was named after whatever the user had just selected —
-    // a name that changed as they used the control, and one that made
+    // a name that changed as they used the practice, and one that made
     // `getByRole('combobox', { name })` useless as a locator.
     //
     // Exactly ONE of `aria-label` / `aria-labelledby` is ever emitted.
@@ -450,7 +450,7 @@ export function Combobox<
         // WAI-ARIA 1.2: a trigger that opens a listbox should carry
         // `role="combobox"` alongside `aria-haspopup="listbox"`.
         // Radix Popover.Trigger only emits `aria-expanded` /
-        // `aria-controls` — we supply the role explicitly so assistive
+        // `aria-practices` — we supply the role explicitly so assistive
         // tech announces "combobox, collapsed" / "combobox, expanded".
         role: "combobox" as const,
         "aria-haspopup": "listbox" as const,

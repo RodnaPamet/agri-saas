@@ -79,11 +79,11 @@ describe('ViewToggle — controlled', () => {
             <ViewToggle
                 view="table"
                 onChange={() => undefined}
-                ariaLabel="Controls view mode"
+                ariaLabel="Practices view mode"
             />,
         );
         expect(getByRole('radiogroup').getAttribute('aria-label')).toBe(
-            'Controls view mode',
+            'Practices view mode',
         );
     });
 });
@@ -114,7 +114,7 @@ describe('useViewMode — persistence', () => {
     it('returns the initial view (default `table`) on first render before hydration', () => {
         let api: ReturnType<typeof useViewMode> | undefined;
         render(
-            <Harness page="controls" onReady={(a) => (api = a)} />,
+            <Harness page="practices" onReady={(a) => (api = a)} />,
         );
         // Without a prior value in storage, the hook stays on the
         // initial value through hydration.
@@ -136,14 +136,14 @@ describe('useViewMode — persistence', () => {
     it('persists the chosen view to localStorage under the per-page key', () => {
         let api: ReturnType<typeof useViewMode> | undefined;
         const { container } = render(
-            <Harness page="controls" onReady={(a) => (api = a)} />,
+            <Harness page="practices" onReady={(a) => (api = a)} />,
         );
         act(() => {
             api?.[1]('cards');
         });
         // The persisted value uses the per-page namespaced key.
         const raw = window.localStorage.getItem(
-            viewModeStorageKey('controls'),
+            viewModeStorageKey('practices'),
         );
         // Stored as JSON via useLocalStorage's default serializer.
         expect(raw).toBe('"cards"');
@@ -175,7 +175,7 @@ describe('useViewMode — persistence', () => {
         let b: ReturnType<typeof useViewMode> | undefined;
         render(
             <>
-                <Harness page="controls" onReady={(x) => (a = x)} />
+                <Harness page="practices" onReady={(x) => (a = x)} />
                 <Harness page="risks" onReady={(x) => (b = x)} />
             </>,
         );
@@ -184,7 +184,7 @@ describe('useViewMode — persistence', () => {
         });
         // Other page's storage entry untouched.
         expect(
-            window.localStorage.getItem(viewModeStorageKey('controls')),
+            window.localStorage.getItem(viewModeStorageKey('practices')),
         ).toBe('"cards"');
         expect(
             window.localStorage.getItem(viewModeStorageKey('risks')),
@@ -212,7 +212,7 @@ describe('useViewMode — persistence', () => {
     it('refuses to persist a bogus mode (defensive narrowing on write)', () => {
         let api: ReturnType<typeof useViewMode> | undefined;
         render(
-            <Harness page="controls" onReady={(a) => (api = a)} />,
+            <Harness page="practices" onReady={(a) => (api = a)} />,
         );
         act(() => {
             // Caller bypasses TypeScript and passes an unknown mode.
@@ -220,7 +220,7 @@ describe('useViewMode — persistence', () => {
         });
         // The hook coerces it back to 'table' before writing.
         expect(
-            window.localStorage.getItem(viewModeStorageKey('controls')),
+            window.localStorage.getItem(viewModeStorageKey('practices')),
         ).toBe('"table"');
     });
 });
@@ -248,7 +248,7 @@ describe('ViewToggle — does not disturb sibling state', () => {
     it('switching view leaves the sibling search input value intact', () => {
         window.localStorage.clear();
         const { container, getByTestId, getByLabelText } = render(
-            <Toolbar page="controls" />,
+            <Toolbar page="practices" />,
         );
         // Type a fresh query (not the default).
         const searchInput = getByLabelText('search') as HTMLInputElement;
@@ -275,8 +275,8 @@ describe('ViewToggle — does not disturb sibling state', () => {
 
 describe('viewModeStorageKey', () => {
     it('namespaces with the inflect:view-mode: prefix', () => {
-        expect(viewModeStorageKey('controls')).toBe(
-            'inflect:view-mode:controls',
+        expect(viewModeStorageKey('practices')).toBe(
+            'inflect:view-mode:practices',
         );
     });
 });

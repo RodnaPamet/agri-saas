@@ -5,7 +5,7 @@
  * The source-contract ratchet verifies which surfaces *import and use*
  * the primitives. This test verifies the runtime contract a user with
  * a screen reader actually hears: touched-but-empty field surfaces a
- * `role="alert"` error message that is linked to the control via
+ * `role="alert"` error message that is linked to the practice via
  * `aria-describedby`, and correcting the value hides the error.
  */
 

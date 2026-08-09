@@ -31,8 +31,8 @@
  *     - isWebhookEventProvider: yes / no branch
  *     - providerImpl.verifyWebhookSignature fail → auth_failed
  *     - providerImpl.handleWebhook throws → error path
- *     - triggeredKeys empty (no controls) → 0 executions
- *     - triggeredKeys + matching control → N executions + N evidence
+ *     - triggeredKeys empty (no practices) → 0 executions
+ *     - triggeredKeys + matching practice → N executions + N evidence
  *     - integrationRegistry.has(provider) → orchestrator dispatch
  *     - orchestrator throw → swallowed (best-effort)
  *     - happy-path complete → status='processed' + counts
@@ -45,7 +45,7 @@ const mockPrisma: any = {
         update: jest.fn(),
     },
     integrationConnection: { findMany: jest.fn() },
-    control: { findMany: jest.fn() },
+    practice: { findMany: jest.fn() },
     integrationExecution: { create: jest.fn() },
     evidence: { create: jest.fn() },
 };
@@ -117,7 +117,7 @@ beforeEach(() => {
         mockPrisma.integrationWebhookEvent.create,
         mockPrisma.integrationWebhookEvent.update,
         mockPrisma.integrationConnection.findMany,
-        mockPrisma.control.findMany,
+        mockPrisma.practice.findMany,
         mockPrisma.integrationExecution.create,
         mockPrisma.evidence.create,
         mockRegistry.getProvider,
@@ -362,12 +362,12 @@ describe('processIncomingWebhook — provider dispatch', () => {
         expect(mockPrisma.evidence.create).not.toHaveBeenCalled();
     });
 
-    it('creates execution + evidence per (triggeredKey × matching control)', async () => {
+    it('creates execution + evidence per (triggeredKey × matching practice)', async () => {
         // Fan-out logic: for each triggered automationKey we find
-        // every control in the tenant with matching automationKey
+        // every practice in the tenant with matching automationKey
         // and create both an execution row + an evidence row.
         setupHappyPath({ triggeredKeys: ['build-passed', 'tests-ran'] });
-        mockPrisma.control.findMany
+        mockPrisma.practice.findMany
             .mockResolvedValueOnce([{ id: 'ctrl-1', name: 'Build OK' }])
             .mockResolvedValueOnce([
                 { id: 'ctrl-2', name: 'Tests' },
@@ -378,7 +378,7 @@ describe('processIncomingWebhook — provider dispatch', () => {
 
         const result = await processIncomingWebhook(makeInput());
 
-        // 1 + 2 = 3 controls match across the 2 keys.
+        // 1 + 2 = 3 practices match across the 2 keys.
         expect(result).toMatchObject({
             status: 'processed',
             executionsCreated: 3,

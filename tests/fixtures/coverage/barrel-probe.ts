@@ -10,7 +10,7 @@
  * The import is the entire point. `@/lib/observability` is one of the
  * `PURE_REEXPORT_BARRELS`, so loading it here is what gives the
  * exclusion something to remove — and loading it pulls in its siblings
- * (`./context`, `./logger`, …), which become the control: they MUST
+ * (`./context`, `./logger`, …), which become the practice: they MUST
  * appear in the emitted report.
  *
  * Without a real load, "the barrel is absent from coverage-summary.json"

@@ -6,7 +6,7 @@
  *   PR-A — domain model + APIs + persistence wiring
  *   PR-B — node taxonomy + richer palette
  *   PR-C — proximity auto-bind + snap
- *   PR-D — edge-first controls + semantic categories
+ *   PR-D — edge-first practices + semantic categories
  *   PR-E — editor UX (rename, duplicate, inspector)
  *   PR-F — polish (help strip, improved empty state, this ratchet)
  *
@@ -57,10 +57,10 @@ const R26_FILES_THAT_MUST_EXIST = [
 const R26_RATCHETS_THAT_MUST_EXIST = [
     "tests/guards/r25-prb-canvas-integration.test.ts",
     "tests/guards/r25-prc-process-step-node.test.ts",
-    "tests/guards/r25-prd-edge-and-control-overlay.test.ts",
+    "tests/guards/r25-prd-edge-and-practice-overlay.test.ts",
     "tests/guards/r26-prb-node-taxonomy.test.ts",
     "tests/guards/r26-prc-proximity-auto-bind.test.ts",
-    "tests/guards/r26-prd-edge-controls-semantics.test.ts",
+    "tests/guards/r26-prd-edge-practices-semantics.test.ts",
     "tests/guards/r26-pre-editor-ux.test.ts",
 ];
 

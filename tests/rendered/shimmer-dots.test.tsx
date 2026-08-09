@@ -57,9 +57,9 @@ describe('ShimmerDots — accessibility', () => {
 
     it('honours an aria-label override', () => {
         const { getByLabelText } = render(
-            <ShimmerDots aria-label="Loading control coverage" />,
+            <ShimmerDots aria-label="Loading practice coverage" />,
         );
-        expect(getByLabelText('Loading control coverage')).toBeTruthy();
+        expect(getByLabelText('Loading practice coverage')).toBeTruthy();
     });
 
     it('every dot is aria-hidden so SR announces only the wrapper', () => {

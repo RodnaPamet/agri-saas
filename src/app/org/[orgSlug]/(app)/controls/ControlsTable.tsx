@@ -12,13 +12,13 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import { Button } from '@/components/ui/button';
 import { useCursorPagination } from '@/components/ui/hooks';
 import { formatDate } from '@/lib/format-date';
-import type { NonPerformingControlRow } from '@/app-layer/schemas/portfolio';
+import type { NonPerformingPracticeRow } from '@/app-layer/schemas/portfolio';
 import { Heading } from '@/components/ui/typography';
 
 interface Props {
-    rows: NonPerformingControlRow[];
+    rows: NonPerformingPracticeRow[];
     /** Encoded cursor for the next page returned by the server's first
-     *  `listNonPerformingControls` call. Null when the first page is
+     *  `listNonPerformingPractices` call. Null when the first page is
      *  also the last. */
     nextCursor?: string | null;
     /** Org slug used to build the API endpoint for client-side
@@ -26,7 +26,7 @@ interface Props {
     orgSlug?: string;
 }
 
-const STATUS_VARIANTS: Record<NonPerformingControlRow['status'], 'warning' | 'info' | 'error'> = {
+const STATUS_VARIANTS: Record<NonPerformingPracticeRow['status'], 'warning' | 'info' | 'error'> = {
     NOT_STARTED: 'error',
     PLANNED: 'warning',
     IN_PROGRESS: 'info',
@@ -34,13 +34,13 @@ const STATUS_VARIANTS: Record<NonPerformingControlRow['status'], 'warning' | 'in
     NEEDS_REVIEW: 'warning',
 };
 
-function StatusBadgeForControl({ status }: { status: NonPerformingControlRow['status'] }) {
+function StatusBadgeForPractice({ status }: { status: NonPerformingPracticeRow['status'] }) {
     const variant = STATUS_VARIANTS[status];
     return <StatusBadge variant={variant}>{status.replace(/_/g, ' ')}</StatusBadge>;
 }
 
-export function ControlsTable({ rows: initialRows, nextCursor: initialNextCursor, orgSlug }: Props) {
-    const t = useTranslations('controls');
+export function PracticesTable({ rows: initialRows, nextCursor: initialNextCursor, orgSlug }: Props) {
+    const t = useTranslations('practices');
     const [sortBy, setSortBy] = useState<string>('tenantName');
     const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
 
@@ -48,11 +48,11 @@ export function ControlsTable({ rows: initialRows, nextCursor: initialNextCursor
     // client-side fetched subsequent pages. Replaces the older
     // `<Link href="?cursor=...">` pattern that REPLACED rather than
     // accumulated, capping the dedicated drill-down at 50 rows.
-    const pagination = useCursorPagination<NonPerformingControlRow>({
+    const pagination = useCursorPagination<NonPerformingPracticeRow>({
         initialRows,
         initialNextCursor: initialNextCursor ?? null,
         fetchUrl: (cursor) =>
-            `/api/org/${orgSlug ?? ''}/portfolio?view=controls&cursor=${encodeURIComponent(cursor)}`,
+            `/api/org/${orgSlug ?? ''}/portfolio?view=practices&cursor=${encodeURIComponent(cursor)}`,
     });
 
     const sorted = useMemo(() => {
@@ -78,14 +78,14 @@ export function ControlsTable({ rows: initialRows, nextCursor: initialNextCursor
 
     const columns = useMemo(
         () =>
-            createColumns<NonPerformingControlRow>([
+            createColumns<NonPerformingPracticeRow>([
                 {
                     id: 'tenantName',
                     header: t('orgTable.colTenant'),
                     cell: ({ row }) => (
                         <span
                             className="text-xs font-medium text-content-muted"
-                            data-testid={`org-control-tenant-${row.original.tenantSlug}`}
+                            data-testid={`org-practice-tenant-${row.original.tenantSlug}`}
                         >
                             {row.original.tenantName}
                         </span>
@@ -94,12 +94,12 @@ export function ControlsTable({ rows: initialRows, nextCursor: initialNextCursor
                 },
                 {
                     id: 'name',
-                    header: t('orgTable.colControl'),
+                    header: t('orgTable.colPractice'),
                     cell: ({ row }) => (
                         <Link
                             href={row.original.drillDownUrl}
                             className="font-medium text-content-emphasis hover:text-content-info hover:underline"
-                            data-testid={`org-control-link-${row.original.controlId}`}
+                            data-testid={`org-practice-link-${row.original.practiceId}`}
                         >
                             {row.original.name}
                         </Link>
@@ -119,7 +119,7 @@ export function ControlsTable({ rows: initialRows, nextCursor: initialNextCursor
                 {
                     id: 'status',
                     header: t('orgTable.colStatus'),
-                    cell: ({ row }) => <StatusBadgeForControl status={row.original.status} />,
+                    cell: ({ row }) => <StatusBadgeForPractice status={row.original.status} />,
                     meta: { mobileCard: { slot: 'status', label: t('orgTable.colStatus') } },
                 },
                 {
@@ -150,19 +150,19 @@ export function ControlsTable({ rows: initialRows, nextCursor: initialNextCursor
                 </div>
             </ListPageShell.Header>
             <ListPageShell.Body>
-                <DataTable<NonPerformingControlRow>
+                <DataTable<NonPerformingPracticeRow>
                     fillBody
                     mobileFallback="card"
-                    // Epic 68 — Controls is the canonical opt-out site
+                    // Epic 68 — Practices is the canonical opt-out site
                     // for auto-virtualization. The bespoke load-more
                     // pagination + per-row affordances rely on the
                     // standard non-virtualized DataTable layout. Per
-                    // product directive, card scrolling on Controls
+                    // product directive, card scrolling on Practices
                     // stays as it is.
                     virtualize={false}
                     data={sorted}
                     columns={columns}
-                    getRowId={(r) => r.controlId}
+                    getRowId={(r) => r.practiceId}
                     sortableColumns={['tenantName', 'name', 'code', 'status', 'updatedAt']}
                     sortBy={sortBy}
                     sortOrder={sortOrder}
@@ -170,7 +170,7 @@ export function ControlsTable({ rows: initialRows, nextCursor: initialNextCursor
                         if (p.sortBy) setSortBy(p.sortBy);
                         if (p.sortOrder) setSortOrder(p.sortOrder);
                     }}
-                    resourceName={(plural) => (plural ? 'controls' : 'control')}
+                    resourceName={(plural) => (plural ? 'practices' : 'practice')}
                     emptyState={
                         <TableEmptyState
                             title={t('orgTable.emptyTitle')}
@@ -178,7 +178,7 @@ export function ControlsTable({ rows: initialRows, nextCursor: initialNextCursor
                             icon={<ShieldCheck className="size-10" />}
                         />
                     }
-                    data-testid="org-controls-table"
+                    data-testid="org-practices-table"
                 />
                 {pagination.hasMore && orgSlug && (
                     <div className="flex flex-col items-center gap-tight pt-3">
@@ -186,7 +186,7 @@ export function ControlsTable({ rows: initialRows, nextCursor: initialNextCursor
                             type="button"
                             variant="secondary"
                             size="sm"
-                            data-testid="org-controls-load-more"
+                            data-testid="org-practices-load-more"
                             onClick={() => {
                                 void pagination.loadMore();
                             }}
@@ -198,7 +198,7 @@ export function ControlsTable({ rows: initialRows, nextCursor: initialNextCursor
                             <span
                                 className="text-content-error text-sm"
                                 role="alert"
-                                data-testid="org-controls-load-error"
+                                data-testid="org-practices-load-error"
                             >
                                 {t('orgTable.loadError')}
                             </span>

@@ -34,7 +34,7 @@ function makeDb() {
         processMap: model(),
         processNode: model(),
         processEdge: model(),
-        processEdgeControl: model(),
+        processEdgePractice: model(),
         // replaceGraph writes a version snapshot before returning.
         processMapSnapshot: model(),
     };
@@ -59,8 +59,8 @@ const edge = (edgeKey: string, sourceKey: string, targetKey: string) => ({
     sourceKey,
     targetKey,
     edgeKind: 'sequence',
-    // Required: the snapshot payload maps over `controls` unguarded.
-    controls: [],
+    // Required: the snapshot payload maps over `practices` unguarded.
+    practices: [],
 });
 
 /** No destructive write of any kind reached the database. */
@@ -288,10 +288,10 @@ describe('ProcessMapRepository — replaceGraph write shape', () => {
         });
     });
 
-    it('inserts a fully-populated edge with its controls attached', async () => {
+    it('inserts a fully-populated edge with its practices attached', async () => {
         // Every other fixture here leaves edges bare, which never
-        // exercises the control-attachment arm. Break: dropping the
-        // controls insert silently unlinks every control from the
+        // exercises the practice-attachment arm. Break: dropping the
+        // practices insert silently unlinks every practice from the
         // process map on the next save — the traceability panel goes
         // empty with no error anywhere.
         await ProcessMapRepository.replaceGraph(asTx(db), ctx, 'm-1', {
@@ -307,8 +307,8 @@ describe('ProcessMapRepository — replaceGraph write shape', () => {
                     edgeKind: 'sequence',
                     labelOverride: 'approves',
                     dataJson: { weight: 2 },
-                    controls: [
-                        { controlKey: 'c1', label: 'AC-1', controlId: 'ctrl-1' },
+                    practices: [
+                        { practiceKey: 'c1', label: 'AC-1', practiceId: 'ctrl-1' },
                     ],
                 },
             ],
@@ -316,23 +316,23 @@ describe('ProcessMapRepository — replaceGraph write shape', () => {
 
         // Edges are inserted one at a time rather than in a batch,
         // because each edge's generated id is needed to attach its
-        // controls in the follow-up createMany.
+        // practices in the follow-up createMany.
         expect(argOf(db.processEdge.create).data).toMatchObject({
             tenantId: 'tenant-1',
             processMapId: 'm-1',
             edgeKey: 'e1',
             labelOverride: 'approves',
         });
-        expect(argOf(db.processEdgeControl.createMany).data[0]).toMatchObject({
+        expect(argOf(db.processEdgePractice.createMany).data[0]).toMatchObject({
             tenantId: 'tenant-1',
-            controlKey: 'c1',
+            practiceKey: 'c1',
             label: 'AC-1',
-            controlId: 'ctrl-1',
+            practiceId: 'ctrl-1',
         });
-        // The snapshot payload carries the controls through verbatim.
+        // The snapshot payload carries the practices through verbatim.
         const snapshot = argOf(db.processMapSnapshot.create).data;
-        expect(snapshot.graphJson.edges[0].controls).toEqual([
-            { controlKey: 'c1', label: 'AC-1', controlId: 'ctrl-1', dataJson: null },
+        expect(snapshot.graphJson.edges[0].practices).toEqual([
+            { practiceKey: 'c1', label: 'AC-1', practiceId: 'ctrl-1', dataJson: null },
         ]);
     });
 
@@ -468,7 +468,7 @@ describe('ProcessMapRepository — snapshots', () => {
     });
 });
 
-describe('ProcessMapRepository — soft delete and control traceability', () => {
+describe('ProcessMapRepository — soft delete and practice traceability', () => {
     it('stamps the deleter and only touches a live map in the tenant', async () => {
         // Break: omitting `deletedAt: null` lets an already-deleted map
         // be "deleted" again, overwriting who removed it originally.
@@ -496,12 +496,12 @@ describe('ProcessMapRepository — soft delete and control traceability', () => 
         expect(ok).toBe(false);
     });
 
-    it('hides deleted maps from a control\'s traceability, in memory', async () => {
+    it('hides deleted maps from a practice\'s traceability, in memory', async () => {
         // The query does NOT filter deleted maps — the guard is a JS
         // `.filter()` after the fact. Break: dropping it surfaces
-        // deleted process maps in the control detail panel, which is
+        // deleted process maps in the practice detail panel, which is
         // exactly the resurfacing class soft delete exists to prevent.
-        db.processEdgeControl.findMany.mockResolvedValue([
+        db.processEdgePractice.findMany.mockResolvedValue([
             {
                 edge: {
                     edgeKey: 'e-live',
@@ -518,11 +518,11 @@ describe('ProcessMapRepository — soft delete and control traceability', () => 
             },
         ]);
 
-        const rows = await ProcessMapRepository.listMapsByControl(asTx(db), ctx, 'ctrl-1');
+        const rows = await ProcessMapRepository.listMapsByPractice(asTx(db), ctx, 'ctrl-1');
 
-        expect(whereOf(db.processEdgeControl.findMany)).toEqual({
+        expect(whereOf(db.processEdgePractice.findMany)).toEqual({
             tenantId: 'tenant-1',
-            controlId: 'ctrl-1',
+            practiceId: 'ctrl-1',
         });
         expect(rows).toHaveLength(1);
         expect(rows[0].mapId).toBe('m-1');

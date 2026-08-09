@@ -77,7 +77,7 @@ interface AppShellProps {
     appName: string;
     /**
      * Roadmap-2 PR-1 — picks which sidebar nav this shell mounts.
-     * 'tenant' = SidebarContent (Dashboard, Risks, Controls, …).
+     * 'tenant' = SidebarContent (Dashboard, Risks, Practices, …).
      * 'org'    = OrgSidebarContent (Portfolio, Tenants, Members, …).
      * Default: 'tenant' to preserve historical behaviour for callers
      * that omit the prop.

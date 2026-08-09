@@ -20,7 +20,7 @@
  * same `useTenantMutation` shape, same `optimisticUpdate` closure
  * that prepends a `PENDING_UPLOAD` row). If a future PR drifts the
  * shape, the structural ratchets in the existing
- * `tests/unit/control-detail-shell-adoption.test.ts` template
+ * `tests/unit/practice-detail-shell-adoption.test.ts` template
  * (extended below) catch it on the production component.
  */
 

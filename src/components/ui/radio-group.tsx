@@ -8,7 +8,7 @@
  * for the selected dot and border-default/-emphasis for the ring.
  *
  * Size variant aligns with Checkbox so mixed groups of radio + check
- * controls line up vertically in the same form.
+ * practices line up vertically in the same form.
  */
 
 import * as RadioGroupPrimitive from "@radix-ui/react-radio-group";

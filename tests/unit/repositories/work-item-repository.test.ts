@@ -74,7 +74,7 @@ function makeDb() {
             create: jest.fn().mockResolvedValue({ id: 'watcher-created' }),
             delete: jest.fn().mockResolvedValue({ id: 'watcher-deleted' }),
         },
-        control: {
+        practice: {
             findMany: jest.fn().mockResolvedValue([]),
         },
     };
@@ -241,7 +241,7 @@ describe('WorkItemRepository — filter translation', () => {
             severity: 'HIGH',
             priority: 'P1',
             assigneeUserId: 'user-3',
-            controlId: 'c-1',
+            practiceId: 'c-1',
         });
 
         expect(whereOf(db.task.findMany)).toEqual({
@@ -251,7 +251,7 @@ describe('WorkItemRepository — filter translation', () => {
             severity: 'HIGH',
             priority: 'P1',
             assigneeUserId: 'user-3',
-            controlId: 'c-1',
+            practiceId: 'c-1',
         });
     });
 
@@ -319,10 +319,10 @@ describe('WorkItemRepository — filter translation', () => {
         ]);
     });
 
-    it('matches a non-control entity through TaskLink only', async () => {
-        // Break: applying the control-only direct-FK arm to every
-        // entity type would match on `Task.controlId` while filtering
-        // for an ASSET — returning rows linked to an unrelated control.
+    it('matches a non-practice entity through TaskLink only', async () => {
+        // Break: applying the practice-only direct-FK arm to every
+        // entity type would match on `Task.practiceId` while filtering
+        // for an ASSET — returning rows linked to an unrelated practice.
         await WorkItemRepository.list(asTx(db), ctx, {
             linkedEntityType: 'ASSET',
             linkedEntityId: 'a-1',
@@ -333,11 +333,11 @@ describe('WorkItemRepository — filter translation', () => {
         ]);
     });
 
-    it('matches a control through EITHER the TaskLink or the direct controlId FK', async () => {
-        // Break: dropping the `{ controlId }` arm. Pack-installed tasks
+    it('matches a practice through EITHER the TaskLink or the direct practiceId FK', async () => {
+        // Break: dropping the `{ practiceId }` arm. Pack-installed tasks
         // set the FK and never create a TaskLink row, so they would
-        // vanish from the control's Tasks tab while still showing that
-        // control on their own detail page — the regression the OR was
+        // vanish from the practice's Tasks tab while still showing that
+        // practice on their own detail page — the regression the OR was
         // added to fix.
         await WorkItemRepository.list(asTx(db), ctx, {
             linkedEntityType: 'CONTROL',
@@ -348,7 +348,7 @@ describe('WorkItemRepository — filter translation', () => {
             {
                 OR: [
                     { links: { some: { entityType: 'CONTROL', entityId: 'c-1' } } },
-                    { controlId: 'c-1' },
+                    { practiceId: 'c-1' },
                 ],
             },
         ]);
@@ -534,18 +534,18 @@ describe('WorkItemRepository — listPaginated', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────
-// Linked-task counting — the control/asset/risk badges.
+// Linked-task counting — the practice/asset/risk badges.
 // ─────────────────────────────────────────────────────────────────────
 
-describe('WorkItemRepository — countLinkedToControl', () => {
+describe('WorkItemRepository — countLinkedToPractice', () => {
     it('counts the linked set with the SAME where the tab renders, and "done" as RESOLVED|CLOSED only', async () => {
-        // Break: counting `done` with CANCELED included. A control whose
+        // Break: counting `done` with CANCELED included. A practice whose
         // tasks were all abandoned would read 100% complete on the
         // readiness header — the single most misleading number the page
         // can show.
         db.task.count.mockResolvedValueOnce(4).mockResolvedValueOnce(1);
 
-        const result = await WorkItemRepository.countLinkedToControl(asTx(db), ctx, 'c-1');
+        const result = await WorkItemRepository.countLinkedToPractice(asTx(db), ctx, 'c-1');
 
         expect(result).toEqual({ total: 4, done: 1 });
         const listWhere = whereOf(db.task.count, 0);
@@ -554,7 +554,7 @@ describe('WorkItemRepository — countLinkedToControl', () => {
             {
                 OR: [
                     { links: { some: { entityType: 'CONTROL', entityId: 'c-1' } } },
-                    { controlId: 'c-1' },
+                    { practiceId: 'c-1' },
                 ],
             },
         ]);
@@ -564,11 +564,11 @@ describe('WorkItemRepository — countLinkedToControl', () => {
     });
 });
 
-describe('WorkItemRepository — countLinkedToControls (batched)', () => {
+describe('WorkItemRepository — countLinkedToPractices (batched)', () => {
     it('short-circuits an empty id set without touching the database', async () => {
         // Break: falling through emits `entityId: { in: [] }` twice on
-        // every controls page that happens to render zero rows.
-        const result = await WorkItemRepository.countLinkedToControls(asTx(db), ctx, []);
+        // every practices page that happens to render zero rows.
+        const result = await WorkItemRepository.countLinkedToPractices(asTx(db), ctx, []);
 
         expect(result.size).toBe(0);
         expect(db.task.findMany).not.toHaveBeenCalled();
@@ -577,65 +577,65 @@ describe('WorkItemRepository — countLinkedToControls (batched)', () => {
 
     it('counts a task linked BOTH ways exactly once', async () => {
         // Break: summing the two queries instead of deduping by task id.
-        // A task created from the control tab (TaskLink) that also
+        // A task created from the practice tab (TaskLink) that also
         // carries the FK would be counted twice — 2/1 progress.
         db.task.findMany.mockResolvedValue([
-            { id: 't-1', controlId: 'c-1', status: 'CLOSED' },
+            { id: 't-1', practiceId: 'c-1', status: 'CLOSED' },
         ]);
         db.taskLink.findMany.mockResolvedValue([
             { entityId: 'c-1', taskId: 't-1', task: { status: 'CLOSED' } },
         ]);
 
-        const result = await WorkItemRepository.countLinkedToControls(asTx(db), ctx, ['c-1']);
+        const result = await WorkItemRepository.countLinkedToPractices(asTx(db), ctx, ['c-1']);
 
         expect(result.get('c-1')).toEqual({ total: 1, done: 1 });
     });
 
-    it('tallies done as RESOLVED|CLOSED and never CANCELED, per control', async () => {
+    it('tallies done as RESOLVED|CLOSED and never CANCELED, per practice', async () => {
         // Break: treating every terminal status as done. CANCELED work
         // is terminal but not completed; counting it inflates coverage.
         db.task.findMany.mockResolvedValue([
-            { id: 't-1', controlId: 'c-1', status: 'RESOLVED' },
-            { id: 't-2', controlId: 'c-1', status: 'CANCELED' },
-            { id: 't-3', controlId: 'c-1', status: 'OPEN' },
-            { id: 't-4', controlId: 'c-2', status: 'CLOSED' },
+            { id: 't-1', practiceId: 'c-1', status: 'RESOLVED' },
+            { id: 't-2', practiceId: 'c-1', status: 'CANCELED' },
+            { id: 't-3', practiceId: 'c-1', status: 'OPEN' },
+            { id: 't-4', practiceId: 'c-2', status: 'CLOSED' },
         ]);
 
-        const result = await WorkItemRepository.countLinkedToControls(asTx(db), ctx, ['c-1', 'c-2']);
+        const result = await WorkItemRepository.countLinkedToPractices(asTx(db), ctx, ['c-1', 'c-2']);
 
         expect(result.get('c-1')).toEqual({ total: 3, done: 1 });
         expect(result.get('c-2')).toEqual({ total: 1, done: 1 });
     });
 
-    it('skips a direct row whose controlId came back null', async () => {
-        // Break: keying the map on a null controlId produces a "null"
+    it('skips a direct row whose practiceId came back null', async () => {
+        // Break: keying the map on a null practiceId produces a "null"
         // bucket the caller silently ignores — but only after it has
         // already displaced a real count.
         db.task.findMany.mockResolvedValue([
-            { id: 't-1', controlId: null, status: 'OPEN' },
+            { id: 't-1', practiceId: null, status: 'OPEN' },
         ]);
 
-        const result = await WorkItemRepository.countLinkedToControls(asTx(db), ctx, ['c-1']);
+        const result = await WorkItemRepository.countLinkedToPractices(asTx(db), ctx, ['c-1']);
 
         expect(result.size).toBe(0);
     });
 
-    it('omits a control with no linked tasks from the map entirely', async () => {
+    it('omits a practice with no linked tasks from the map entirely', async () => {
         // Break: pre-seeding every requested id with { total: 0 } changes
         // the caller's "no data" branch into "explicitly zero".
-        const result = await WorkItemRepository.countLinkedToControls(asTx(db), ctx, ['c-1']);
+        const result = await WorkItemRepository.countLinkedToPractices(asTx(db), ctx, ['c-1']);
 
         expect(result.has('c-1')).toBe(false);
     });
 
     it('scopes both batched queries to the tenant and to the requested ids', async () => {
         // Break: an unscoped TaskLink read counts another tenant's tasks
-        // into this tenant's control badge.
-        await WorkItemRepository.countLinkedToControls(asTx(db), ctx, ['c-1', 'c-2']);
+        // into this tenant's practice badge.
+        await WorkItemRepository.countLinkedToPractices(asTx(db), ctx, ['c-1', 'c-2']);
 
         expect(whereOf(db.task.findMany)).toEqual({
             tenantId: 'tenant-1',
-            controlId: { in: ['c-1', 'c-2'] },
+            practiceId: { in: ['c-1', 'c-2'] },
         });
         expect(whereOf(db.taskLink.findMany)).toEqual({
             tenantId: 'tenant-1',
@@ -672,7 +672,7 @@ describe('WorkItemRepository — countLinkedToEntities (batched, link-only)', ()
 
     it('dedupes by task id and tallies done as RESOLVED|CLOSED', async () => {
         // Break: counting duplicate TaskLink rows separately, or letting
-        // CANCELED count as done — same failure as the control path, and
+        // CANCELED count as done — same failure as the practice path, and
         // the two implementations are separate code.
         db.taskLink.findMany.mockResolvedValue([
             { entityId: 'r-1', taskId: 't-1', task: { status: 'RESOLVED' } },
@@ -756,7 +756,7 @@ describe('WorkItemRepository — create', () => {
             dueAt: '2026-04-01T00:00:00.000Z',
             assigneeUserId: '',
             reviewerUserId: '',
-            controlId: '',
+            practiceId: '',
             clientMutationId: '',
         });
 
@@ -764,7 +764,7 @@ describe('WorkItemRepository — create', () => {
         expect(data.dueAt).toEqual(new Date('2026-04-01T00:00:00.000Z'));
         expect(data.assigneeUserId).toBeNull();
         expect(data.reviewerUserId).toBeNull();
-        expect(data.controlId).toBeNull();
+        expect(data.practiceId).toBeNull();
         expect(data.clientMutationId).toBeNull();
     });
 
@@ -826,14 +826,14 @@ describe('WorkItemRepository — update', () => {
         // Break: the five remaining conditional spreads are written
         // identically, which makes a copy-paste slip (`severity:
         // data.priority`) invisible — a re-triage would silently write
-        // the wrong column. `controlId: null` is asserted alongside
-        // because unlinking a control goes through the same `!==
+        // the wrong column. `practiceId: null` is asserted alongside
+        // because unlinking a practice goes through the same `!==
         // undefined` gate as setting one.
         await WorkItemRepository.update(asTx(db), ctx, 't-1', {
             type: 'FIELD_OPERATION',
             severity: 'LOW',
             priority: 'P3',
-            controlId: null,
+            practiceId: null,
             reviewerUserId: 'user-4',
         });
 
@@ -841,7 +841,7 @@ describe('WorkItemRepository — update', () => {
             type: 'FIELD_OPERATION',
             severity: 'LOW',
             priority: 'P3',
-            controlId: null,
+            practiceId: null,
             reviewerUserId: 'user-4',
         });
     });
@@ -1061,7 +1061,7 @@ describe('WorkItemRepository — metrics', () => {
                 status: [{ status: 'OPEN', _count: 3 }, { status: 'CLOSED', _count: 1 }],
                 severity: [{ severity: 'HIGH', _count: 2 }],
                 type: [{ type: 'FARM_TASK', _count: 5 }],
-                controlId: [],
+                practiceId: [],
             };
             return Promise.resolve(rows[args.by[0]] ?? []);
         });
@@ -1073,47 +1073,47 @@ describe('WorkItemRepository — metrics', () => {
         expect(m.byType).toEqual({ FARM_TASK: 5 });
     });
 
-    it('resolves the top controls to code + name in ONE batched lookup', async () => {
-        // Break: reading the control per group row is an N+1 on a
+    it('resolves the top practices to code + name in ONE batched lookup', async () => {
+        // Break: reading the practice per group row is an N+1 on a
         // dashboard query; skipping the lookup leaves the panel showing
         // opaque ids.
         db.task.groupBy.mockImplementation((args: { by: string[] }) =>
             Promise.resolve(
-                args.by[0] === 'controlId'
-                    ? [{ controlId: 'c-1', _count: 4 }, { controlId: 'c-2', _count: 2 }]
+                args.by[0] === 'practiceId'
+                    ? [{ practiceId: 'c-1', _count: 4 }, { practiceId: 'c-2', _count: 2 }]
                     : [],
             ),
         );
-        db.control.findMany.mockResolvedValue([{ id: 'c-1', code: 'A.5.1', name: 'Policies' }]);
+        db.practice.findMany.mockResolvedValue([{ id: 'c-1', code: 'A.5.1', name: 'Policies' }]);
 
         const m = await WorkItemRepository.metrics(asTx(db), ctx);
 
-        expect(db.control.findMany).toHaveBeenCalledTimes(1);
-        expect(whereOf(db.control.findMany)).toEqual({ id: { in: ['c-1', 'c-2'] } });
-        expect(m.topControls[0]).toEqual({
-            controlId: 'c-1', code: 'A.5.1', name: 'Policies', openTaskCount: 4,
+        expect(db.practice.findMany).toHaveBeenCalledTimes(1);
+        expect(whereOf(db.practice.findMany)).toEqual({ id: { in: ['c-1', 'c-2'] } });
+        expect(m.topPractices[0]).toEqual({
+            practiceId: 'c-1', code: 'A.5.1', name: 'Policies', openTaskCount: 4,
         });
-        // Break: `controlMap.get(id).code` without the `?.`/`|| ''`
-        // fallback throws when a control was deleted between the two
+        // Break: `practiceMap.get(id).code` without the `?.`/`|| ''`
+        // fallback throws when a practice was deleted between the two
         // queries — the whole dashboard 500s on a race.
-        expect(m.topControls[1]).toEqual({
-            controlId: 'c-2', code: '', name: '', openTaskCount: 2,
+        expect(m.topPractices[1]).toEqual({
+            practiceId: 'c-2', code: '', name: '', openTaskCount: 2,
         });
     });
 
-    it('skips the control lookup entirely when no control has open tasks', async () => {
+    it('skips the practice lookup entirely when no practice has open tasks', async () => {
         // Break: `findMany({ where: { id: { in: [] } } })` on every
-        // dashboard load for a tenant that does not use controls.
+        // dashboard load for a tenant that does not use practices.
         const m = await WorkItemRepository.metrics(asTx(db), ctx);
 
-        expect(db.control.findMany).not.toHaveBeenCalled();
-        expect(m.topControls).toEqual([]);
+        expect(db.practice.findMany).not.toHaveBeenCalled();
+        expect(m.topPractices).toEqual([]);
     });
 
     it('pushes the top-linked-entity aggregation down to the database', async () => {
         // Break: loading every TaskLink and aggregating in JS — the
         // shape this groupBy replaced. Also pins the ASSET|RISK scope
-        // and the open-only join filter: without them a control link or
+        // and the open-only join filter: without them a practice link or
         // a closed task would crowd out live work.
         db.taskLink.groupBy.mockResolvedValue([
             { entityType: 'ASSET', entityId: 'a-1', _count: 3 },

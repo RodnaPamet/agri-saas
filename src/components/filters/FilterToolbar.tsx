@@ -67,7 +67,7 @@ export interface FilterToolbarProps {
      * Secondary slot (right side of the toolbar, before the primary
      * cluster) — typically the DataTable's `<EditColumnsButton>` so
      * column visibility lives at the same eye-line as the filter
-     * controls. Use this for icon-only ghost actions: bulk edit,
+     * practices. Use this for icon-only ghost actions: bulk edit,
      * export, column visibility, settings.
      *
      * v2-PR-7 — was the only right-edge slot. The new `primary` slot

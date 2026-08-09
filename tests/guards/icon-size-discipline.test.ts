@@ -32,7 +32,7 @@
  * What this ratchet does NOT police
  *   • `w-6 h-6` — page-title hero icons; sanctioned, scoped.
  *   • `src/components/` primitives — primitives sometimes need
- *     pixel-precise control (e.g. shimmer dots, decorative
+ *     pixel-precise practice (e.g. shimmer dots, decorative
  *     accents).
  */
 import * as fs from 'fs';

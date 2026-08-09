@@ -64,7 +64,7 @@ export function countHitsByKind<T>(
     getKind: (item: T) => SearchHitType,
 ): Record<SearchHitType, number> {
     const out: Record<SearchHitType, number> = {
-        control: 0,
+        practice: 0,
         policy: 0,
         framework: 0,
         evidence: 0,

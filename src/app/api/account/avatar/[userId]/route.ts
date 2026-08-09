@@ -46,7 +46,7 @@ export const GET = withApiErrorHandling(
                     'Content-Type': 'image/webp',
                     // Private — avatars sit behind auth. Short TTL so a
                     // changed avatar propagates within minutes.
-                    'Cache-Control': 'private, max-age=300',
+                    'Cache-Practice': 'private, max-age=300',
                 },
             },
         );

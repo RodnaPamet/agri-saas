@@ -1,42 +1,42 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- test mocks + fake DB. */
 /**
- * Unit tests for `src/app-layer/usecases/control/queries.ts` —
- * the control read + dashboard + consistency-check surface.
+ * Unit tests for `src/app-layer/usecases/practice/queries.ts` —
+ * the practice read + dashboard + consistency-check surface.
  *
  * Wave-8b / stage-3f branch coverage (paired with
  * framework-coverage in the same PR). Branch matrix:
  *
- *   listControls / listControlsPaginated: cache wrapper passthroughs
- *   getControl:        notFound vs happy
- *   getControlHeader:  notFound + doneControlTasks computed +
+ *   listPractices / listPracticesPaginated: cache wrapper passthroughs
+ *   getPractice:        notFound vs happy
+ *   getPracticeHeader:  notFound + donePracticeTasks computed +
  *                      header decorated with the count
- *   getControlActivity: control not-found vs happy (audit log read)
- *   getControlDashboard:
+ *   getPracticeActivity: practice not-found vs happy (audit log read)
+ *   getPracticeDashboard:
  *     - statusDistribution fold
  *     - applicabilityOf default 0 when group missing
  *     - implementationProgress 0-guard when applicableCount === 0
  *     - topOwners top-5 sort + owner-skip when c.owner null
- *     - openByControl null-key skip
+ *     - openByPractice null-key skip
  *   runConsistencyCheck:
  *     - RBAC: OWNER + ADMIN allowed
  *     - RBAC: AUDITOR rejected
  *     - missingCode filter + duplicateCodes grouping
  *     - overdueTasks reshape
- *   listControlsWithDeleted: assertCanAdmin gate
+ *   listPracticesWithDeleted: assertCanAdmin gate
  */
 
 const policyCalls: string[] = [];
 
-jest.mock('@/app-layer/policies/control.policies', () => ({
-    assertCanReadControls: jest.fn(() => policyCalls.push('read')),
+jest.mock('@/app-layer/policies/practice.policies', () => ({
+    assertCanReadPractices: jest.fn(() => policyCalls.push('read')),
 }));
 
 jest.mock('@/app-layer/policies/common', () => ({
     assertCanAdmin: jest.fn(() => policyCalls.push('admin')),
 }));
 
-jest.mock('@/app-layer/repositories/ControlRepository', () => ({
-    ControlRepository: {
+jest.mock('@/app-layer/repositories/PracticeRepository', () => ({
+    PracticeRepository: {
         list: jest.fn(),
         listPaginated: jest.fn(),
         getById: jest.fn(),
@@ -57,8 +57,8 @@ jest.mock('@/lib/soft-delete', () => {
 });
 
 const tenantDb: any = {
-    control: { findMany: jest.fn(), count: jest.fn(), groupBy: jest.fn() },
-    controlTask: { count: jest.fn(), groupBy: jest.fn(), findMany: jest.fn() },
+    practice: { findMany: jest.fn(), count: jest.fn(), groupBy: jest.fn() },
+    practiceTask: { count: jest.fn(), groupBy: jest.fn(), findMany: jest.fn() },
     auditLog: { findMany: jest.fn() },
 };
 jest.mock('@/lib/db-context', () => {
@@ -69,55 +69,55 @@ jest.mock('@/lib/db-context', () => {
     };
 });
 
-// getControlHeader now derives the Tasks-tab badge + progress from the
+// getPracticeHeader now derives the Tasks-tab badge + progress from the
 // unified-task count (matching LinkedTasksPanel) via this repo method.
 jest.mock('@/app-layer/repositories/WorkItemRepository', () => ({
     WorkItemRepository: {
-        countLinkedToControl: jest.fn(),
-        countLinkedToControls: jest.fn(),
+        countLinkedToPractice: jest.fn(),
+        countLinkedToPractices: jest.fn(),
     },
 }));
 
 import {
-    listControls,
-    listControlsPaginated,
-    getControl,
-    getControlHeader,
-    getControlActivity,
-    getControlDashboard,
+    listPractices,
+    listPracticesPaginated,
+    getPractice,
+    getPracticeHeader,
+    getPracticeActivity,
+    getPracticeDashboard,
     runConsistencyCheck,
-    listControlsWithDeleted,
-} from '@/app-layer/usecases/control/queries';
-import { ControlRepository } from '@/app-layer/repositories/ControlRepository';
+    listPracticesWithDeleted,
+} from '@/app-layer/usecases/practice/queries';
+import { PracticeRepository } from '@/app-layer/repositories/PracticeRepository';
 import { WorkItemRepository } from '@/app-layer/repositories/WorkItemRepository';
-import { assertCanReadControls } from '@/app-layer/policies/control.policies';
+import { assertCanReadPractices } from '@/app-layer/policies/practice.policies';
 import { assertCanAdmin } from '@/app-layer/policies/common';
 import { makeRequestContext } from '../../helpers/make-context';
 
 beforeEach(() => {
     policyCalls.length = 0;
     [
-        ControlRepository.list, ControlRepository.listPaginated,
-        ControlRepository.getById, ControlRepository.getHeaderById,
-        tenantDb.control.findMany, tenantDb.control.count, tenantDb.control.groupBy,
-        tenantDb.controlTask.count, tenantDb.controlTask.groupBy, tenantDb.controlTask.findMany,
+        PracticeRepository.list, PracticeRepository.listPaginated,
+        PracticeRepository.getById, PracticeRepository.getHeaderById,
+        tenantDb.practice.findMany, tenantDb.practice.count, tenantDb.practice.groupBy,
+        tenantDb.practiceTask.count, tenantDb.practiceTask.groupBy, tenantDb.practiceTask.findMany,
         tenantDb.auditLog.findMany,
-        WorkItemRepository.countLinkedToControl as jest.Mock,
-        WorkItemRepository.countLinkedToControls as jest.Mock,
-        assertCanReadControls as jest.Mock,
+        WorkItemRepository.countLinkedToPractice as jest.Mock,
+        WorkItemRepository.countLinkedToPractices as jest.Mock,
+        assertCanReadPractices as jest.Mock,
         assertCanAdmin as jest.Mock,
     ].forEach((m: any) => m.mockReset && m.mockReset());
-    (assertCanReadControls as jest.Mock).mockImplementation(() => policyCalls.push('read'));
+    (assertCanReadPractices as jest.Mock).mockImplementation(() => policyCalls.push('read'));
     (assertCanAdmin as jest.Mock).mockImplementation(() => policyCalls.push('admin'));
 });
 
-// `controlTask.count` (getControlHeader's legacy done count, unused
-// now) + `countLinkedToControls` (listControls' unified per-control
+// `practiceTask.count` (getPracticeHeader's legacy done count, unused
+// now) + `countLinkedToPractices` (listPractices' unified per-practice
 // counts) need addressable defaults so the cache passthrough tests
 // don't NPE on the merge.
 beforeEach(() => {
-    tenantDb.controlTask.count.mockResolvedValue(0);
-    (WorkItemRepository.countLinkedToControls as jest.Mock).mockResolvedValue(
+    tenantDb.practiceTask.count.mockResolvedValue(0);
+    (WorkItemRepository.countLinkedToPractices as jest.Mock).mockResolvedValue(
         new Map(),
     );
 });
@@ -125,32 +125,32 @@ beforeEach(() => {
 const ctx = makeRequestContext('ADMIN');
 
 // ──────────────────────────────────────────────────────────────────────
-// listControls / listControlsPaginated — cache passthrough
+// listPractices / listPracticesPaginated — cache passthrough
 // ──────────────────────────────────────────────────────────────────────
-describe('listControls', () => {
+describe('listPractices', () => {
     it('asserts read permission BEFORE the repo call', async () => {
-        (ControlRepository.list as jest.Mock).mockResolvedValueOnce([]);
-        await listControls(ctx, { status: 'IMPLEMENTED' });
+        (PracticeRepository.list as jest.Mock).mockResolvedValueOnce([]);
+        await listPractices(ctx, { status: 'IMPLEMENTED' });
         expect(policyCalls).toEqual(['read']);
     });
 
-    it('threads filters through + merges unified per-control task counts', async () => {
-        (ControlRepository.list as jest.Mock).mockResolvedValueOnce([
+    it('threads filters through + merges unified per-practice task counts', async () => {
+        (PracticeRepository.list as jest.Mock).mockResolvedValueOnce([
             { id: 'c-1' },
             { id: 'c-2' },
         ]);
         (
-            WorkItemRepository.countLinkedToControls as jest.Mock
+            WorkItemRepository.countLinkedToPractices as jest.Mock
         ).mockResolvedValueOnce(
             new Map([['c-1', { total: 4, done: 1 }]]),
         );
-        const result = await listControls(ctx, { q: 'test' }, { take: 50 });
+        const result = await listPractices(ctx, { q: 'test' }, { take: 50 });
         // c-1 gets its unified counts; c-2 (absent from the map) → 0/0.
         expect(result).toEqual([
             { id: 'c-1', taskTotal: 4, taskDone: 1 },
             { id: 'c-2', taskTotal: 0, taskDone: 0 },
         ]);
-        expect(WorkItemRepository.countLinkedToControls).toHaveBeenCalledWith(
+        expect(WorkItemRepository.countLinkedToPractices).toHaveBeenCalledWith(
             tenantDb,
             ctx,
             ['c-1', 'c-2'],
@@ -158,59 +158,59 @@ describe('listControls', () => {
     });
 });
 
-describe('listControlsPaginated', () => {
+describe('listPracticesPaginated', () => {
     it('threads limit + cursor through to the repo', async () => {
-        (ControlRepository.listPaginated as jest.Mock).mockResolvedValueOnce({ rows: [], cursor: null });
-        const result = await listControlsPaginated(ctx, { limit: 10, cursor: 'abc' });
+        (PracticeRepository.listPaginated as jest.Mock).mockResolvedValueOnce({ rows: [], cursor: null });
+        const result = await listPracticesPaginated(ctx, { limit: 10, cursor: 'abc' });
         expect(result).toEqual({ rows: [], cursor: null });
     });
 });
 
 // ──────────────────────────────────────────────────────────────────────
-// getControl / getControlHeader / getControlActivity
+// getPractice / getPracticeHeader / getPracticeActivity
 // ──────────────────────────────────────────────────────────────────────
-describe('getControl', () => {
-    it('throws notFound for a missing control', async () => {
-        (ControlRepository.getById as jest.Mock).mockResolvedValueOnce(null);
-        await expect(getControl(ctx, 'c-foreign')).rejects.toThrow(/control not found/i);
+describe('getPractice', () => {
+    it('throws notFound for a missing practice', async () => {
+        (PracticeRepository.getById as jest.Mock).mockResolvedValueOnce(null);
+        await expect(getPractice(ctx, 'c-foreign')).rejects.toThrow(/practice not found/i);
     });
 
-    it('returns the control on happy-path', async () => {
-        (ControlRepository.getById as jest.Mock).mockResolvedValueOnce({ id: 'c-1', code: 'CC1' });
-        const result = await getControl(ctx, 'c-1');
+    it('returns the practice on happy-path', async () => {
+        (PracticeRepository.getById as jest.Mock).mockResolvedValueOnce({ id: 'c-1', code: 'CC1' });
+        const result = await getPractice(ctx, 'c-1');
         expect(result).toEqual({ id: 'c-1', code: 'CC1' });
     });
 });
 
-describe('getControlHeader', () => {
-    it('throws notFound for a missing control', async () => {
-        (ControlRepository.getHeaderById as jest.Mock).mockResolvedValueOnce(null);
-        await expect(getControlHeader(ctx, 'c-foreign')).rejects.toThrow(/control not found/i);
+describe('getPracticeHeader', () => {
+    it('throws notFound for a missing practice', async () => {
+        (PracticeRepository.getHeaderById as jest.Mock).mockResolvedValueOnce(null);
+        await expect(getPracticeHeader(ctx, 'c-foreign')).rejects.toThrow(/practice not found/i);
     });
 
     it('derives the Tasks badge + progress from the unified linked-task count', async () => {
-        (ControlRepository.getHeaderById as jest.Mock).mockResolvedValueOnce({
+        (PracticeRepository.getHeaderById as jest.Mock).mockResolvedValueOnce({
             id: 'c-1',
             code: 'CC1',
-            _count: { controlTasks: 0, evidenceLinks: 1, evidence: 2, frameworkMappings: 3 },
+            _count: { practiceTasks: 0, evidenceLinks: 1, evidence: 2, frameworkMappings: 3 },
         });
-        (WorkItemRepository.countLinkedToControl as jest.Mock).mockResolvedValueOnce({
+        (WorkItemRepository.countLinkedToPractice as jest.Mock).mockResolvedValueOnce({
             total: 5,
             done: 2,
         });
 
-        const result = await getControlHeader(ctx, 'c-1');
+        const result = await getPracticeHeader(ctx, 'c-1');
 
-        // Tab badge reads `_count.controlTasks` — overridden to the
+        // Tab badge reads `_count.practiceTasks` — overridden to the
         // unified total (5), NOT the stale legacy relation count (0).
         // Other `_count` entries are preserved. Progress = done (2).
         expect(result).toEqual({
             id: 'c-1',
             code: 'CC1',
-            _count: { controlTasks: 5, evidenceLinks: 1, evidence: 2, frameworkMappings: 3 },
-            doneControlTasks: 2,
+            _count: { practiceTasks: 5, evidenceLinks: 1, evidence: 2, frameworkMappings: 3 },
+            donePracticeTasks: 2,
         });
-        expect(WorkItemRepository.countLinkedToControl).toHaveBeenCalledWith(
+        expect(WorkItemRepository.countLinkedToPractice).toHaveBeenCalledWith(
             tenantDb,
             ctx,
             'c-1',
@@ -218,52 +218,52 @@ describe('getControlHeader', () => {
     });
 });
 
-describe('getControlActivity', () => {
-    it('throws notFound when the control is missing', async () => {
-        (ControlRepository.getById as jest.Mock).mockResolvedValueOnce(null);
-        await expect(getControlActivity(ctx, 'c-foreign')).rejects.toThrow(/control not found/i);
+describe('getPracticeActivity', () => {
+    it('throws notFound when the practice is missing', async () => {
+        (PracticeRepository.getById as jest.Mock).mockResolvedValueOnce(null);
+        await expect(getPracticeActivity(ctx, 'c-foreign')).rejects.toThrow(/practice not found/i);
     });
 
-    it('returns the audit log scoped to (tenant, Control, controlId) limit 50', async () => {
-        (ControlRepository.getById as jest.Mock).mockResolvedValueOnce({ id: 'c-1' });
+    it('returns the audit log scoped to (tenant, Practice, practiceId) limit 50', async () => {
+        (PracticeRepository.getById as jest.Mock).mockResolvedValueOnce({ id: 'c-1' });
         tenantDb.auditLog.findMany.mockResolvedValueOnce([{ id: 'a-1' }]);
 
-        const result = await getControlActivity(ctx, 'c-1');
+        const result = await getPracticeActivity(ctx, 'c-1');
 
         expect(result).toEqual([{ id: 'a-1' }]);
         const args = tenantDb.auditLog.findMany.mock.calls[0][0];
-        expect(args.where).toMatchObject({ tenantId: 'tenant-1', entity: 'Control', entityId: 'c-1' });
+        expect(args.where).toMatchObject({ tenantId: 'tenant-1', entity: 'Practice', entityId: 'c-1' });
         expect(args.take).toBe(50);
     });
 });
 
 // ──────────────────────────────────────────────────────────────────────
-// getControlDashboard — branch-heavy aggregator
+// getPracticeDashboard — branch-heavy aggregator
 // ──────────────────────────────────────────────────────────────────────
-describe('getControlDashboard', () => {
+describe('getPracticeDashboard', () => {
     function setupBaseline(opts: {
         statusGroups?: any[];
         applicabilityGroups?: any[];
         implementedCount?: number;
         dueSoonCount?: number;
         overdueTasks?: number;
-        openTasksByControl?: any[];
-        controlOwners?: any[];
+        openTasksByPractice?: any[];
+        practiceOwners?: any[];
     }) {
-        tenantDb.control.groupBy
+        tenantDb.practice.groupBy
             .mockResolvedValueOnce(opts.statusGroups ?? [])
             .mockResolvedValueOnce(opts.applicabilityGroups ?? []);
-        tenantDb.control.count
+        tenantDb.practice.count
             .mockResolvedValueOnce(opts.implementedCount ?? 0)
             .mockResolvedValueOnce(opts.dueSoonCount ?? 0);
-        tenantDb.controlTask.count.mockResolvedValueOnce(opts.overdueTasks ?? 0);
-        tenantDb.controlTask.groupBy.mockResolvedValueOnce(opts.openTasksByControl ?? []);
-        tenantDb.control.findMany.mockResolvedValueOnce(opts.controlOwners ?? []);
+        tenantDb.practiceTask.count.mockResolvedValueOnce(opts.overdueTasks ?? 0);
+        tenantDb.practiceTask.groupBy.mockResolvedValueOnce(opts.openTasksByPractice ?? []);
+        tenantDb.practice.findMany.mockResolvedValueOnce(opts.practiceOwners ?? []);
     }
 
     it('returns implementationProgress=0 when applicableCount === 0 (NaN guard)', async () => {
         setupBaseline({ implementedCount: 0, applicabilityGroups: [] });
-        const result = await getControlDashboard(ctx);
+        const result = await getPracticeDashboard(ctx);
         expect(result.implementationProgress).toBe(0);
     });
 
@@ -272,7 +272,7 @@ describe('getControlDashboard', () => {
             applicabilityGroups: [{ applicability: 'APPLICABLE', _count: { _all: 10 } }],
             implementedCount: 7,
         });
-        const result = await getControlDashboard(ctx);
+        const result = await getPracticeDashboard(ctx);
         expect(result.implementationProgress).toBe(70);
         expect(result.applicableCount).toBe(10);
     });
@@ -281,32 +281,32 @@ describe('getControlDashboard', () => {
         setupBaseline({
             applicabilityGroups: [{ applicability: 'APPLICABLE', _count: { _all: 5 } }],
         });
-        const result = await getControlDashboard(ctx);
+        const result = await getPracticeDashboard(ctx);
         expect(result.applicabilityDistribution.notApplicable).toBe(0);
         expect(result.applicabilityDistribution.applicable).toBe(5);
     });
 
-    it('folds statusGroups into a Record + computes totalControls', async () => {
+    it('folds statusGroups into a Record + computes totalPractices', async () => {
         setupBaseline({
             statusGroups: [
                 { status: 'IMPLEMENTED', _count: { _all: 4 } },
                 { status: 'NOT_STARTED', _count: { _all: 6 } },
             ],
         });
-        const result = await getControlDashboard(ctx);
-        expect(result.totalControls).toBe(10);
+        const result = await getPracticeDashboard(ctx);
+        expect(result.totalPractices).toBe(10);
         expect(result.statusDistribution).toEqual({ IMPLEMENTED: 4, NOT_STARTED: 6 });
     });
 
-    it('topOwners: top 5 by openTasks, descending; skips controls with null owner', async () => {
+    it('topOwners: top 5 by openTasks, descending; skips practices with null owner', async () => {
         setupBaseline({
-            openTasksByControl: [
-                { controlId: 'c-1', _count: { _all: 10 } },
-                { controlId: 'c-2', _count: { _all: 5 } },
-                { controlId: 'c-3', _count: { _all: 100 } },
-                { controlId: null, _count: { _all: 999 } }, // null key — skipped
+            openTasksByPractice: [
+                { practiceId: 'c-1', _count: { _all: 10 } },
+                { practiceId: 'c-2', _count: { _all: 5 } },
+                { practiceId: 'c-3', _count: { _all: 100 } },
+                { practiceId: null, _count: { _all: 999 } }, // null key — skipped
             ],
-            controlOwners: [
+            practiceOwners: [
                 { id: 'c-1', owner: { id: 'u-A', name: 'Alice' } },
                 { id: 'c-2', owner: { id: 'u-A', name: 'Alice' } }, // same owner, accumulates
                 { id: 'c-3', owner: { id: 'u-B', name: 'Bob' } },
@@ -314,7 +314,7 @@ describe('getControlDashboard', () => {
             ],
         });
 
-        const result = await getControlDashboard(ctx);
+        const result = await getPracticeDashboard(ctx);
 
         expect(result.topOwners).toEqual([
             { id: 'u-B', name: 'Bob', openTasks: 100 },
@@ -324,10 +324,10 @@ describe('getControlDashboard', () => {
 
     it('owner with no name displays as "Unknown"', async () => {
         setupBaseline({
-            openTasksByControl: [{ controlId: 'c-1', _count: { _all: 3 } }],
-            controlOwners: [{ id: 'c-1', owner: { id: 'u-X', name: null } }],
+            openTasksByPractice: [{ practiceId: 'c-1', _count: { _all: 3 } }],
+            practiceOwners: [{ id: 'c-1', owner: { id: 'u-X', name: null } }],
         });
-        const result = await getControlDashboard(ctx);
+        const result = await getPracticeDashboard(ctx);
         expect(result.topOwners[0].name).toBe('Unknown');
     });
 });
@@ -349,37 +349,37 @@ describe('runConsistencyCheck', () => {
     });
 
     it('ADMIN allowed — produces all 3 issue classes (missingCode, duplicateCodes, overdueTasks)', async () => {
-        tenantDb.control.findMany.mockResolvedValueOnce([
+        tenantDb.practice.findMany.mockResolvedValueOnce([
             { id: 'c-1', code: '', name: 'No Code' },              // missingCode
             { id: 'c-2', code: 'CC1', name: 'A' },                 // duplicate of c-3
             { id: 'c-3', code: 'CC1', name: 'B' },                 // duplicate of c-2
             { id: 'c-4', code: 'CC2', name: 'Unique' },
         ]);
-        tenantDb.control.count.mockResolvedValueOnce(4);
-        tenantDb.controlTask.findMany.mockResolvedValueOnce([
+        tenantDb.practice.count.mockResolvedValueOnce(4);
+        tenantDb.practiceTask.findMany.mockResolvedValueOnce([
             { id: 't-1', title: 'Late', status: 'OPEN', dueAt: new Date('2020-01-01'),
-              controlId: 'c-2', control: { code: 'CC1' } },
+              practiceId: 'c-2', practice: { code: 'CC1' } },
         ]);
 
         const result = await runConsistencyCheck(ctx);
 
-        expect(result.totalControls).toBe(4);
+        expect(result.totalPractices).toBe(4);
         expect(result.summary).toEqual({
             missingCodeCount: 1,
             duplicateCodeCount: 1,
             overdueTaskCount: 1,
         });
         expect(result.issues.missingCode).toEqual([{ id: 'c-1', name: 'No Code' }]);
-        expect(result.issues.duplicateCodes).toEqual([{ code: 'CC1', controlIds: ['c-2', 'c-3'] }]);
+        expect(result.issues.duplicateCodes).toEqual([{ code: 'CC1', practiceIds: ['c-2', 'c-3'] }]);
         expect(result.issues.overdueTasks[0]).toMatchObject({
-            controlId: 'c-2', controlCode: 'CC1', taskTitle: 'Late',
+            practiceId: 'c-2', practiceCode: 'CC1', taskTitle: 'Late',
         });
     });
 
     it('OWNER allowed (Epic 1 — OWNER is a superset of ADMIN)', async () => {
-        tenantDb.control.findMany.mockResolvedValueOnce([]);
-        tenantDb.control.count.mockResolvedValueOnce(0);
-        tenantDb.controlTask.findMany.mockResolvedValueOnce([]);
+        tenantDb.practice.findMany.mockResolvedValueOnce([]);
+        tenantDb.practice.count.mockResolvedValueOnce(0);
+        tenantDb.practiceTask.findMany.mockResolvedValueOnce([]);
 
         const result = await runConsistencyCheck(makeRequestContext('OWNER'));
 
@@ -387,9 +387,9 @@ describe('runConsistencyCheck', () => {
     });
 
     it('empty inputs produce zero-counts shape (no NaN / no exception)', async () => {
-        tenantDb.control.findMany.mockResolvedValueOnce([]);
-        tenantDb.control.count.mockResolvedValueOnce(0);
-        tenantDb.controlTask.findMany.mockResolvedValueOnce([]);
+        tenantDb.practice.findMany.mockResolvedValueOnce([]);
+        tenantDb.practice.count.mockResolvedValueOnce(0);
+        tenantDb.practiceTask.findMany.mockResolvedValueOnce([]);
 
         const result = await runConsistencyCheck(ctx);
 
@@ -400,36 +400,36 @@ describe('runConsistencyCheck', () => {
         });
     });
 
-    it('overdueTask with null control.code is preserved (defensive null pass-through)', async () => {
-        tenantDb.control.findMany.mockResolvedValueOnce([]);
-        tenantDb.control.count.mockResolvedValueOnce(1);
-        tenantDb.controlTask.findMany.mockResolvedValueOnce([
+    it('overdueTask with null practice.code is preserved (defensive null pass-through)', async () => {
+        tenantDb.practice.findMany.mockResolvedValueOnce([]);
+        tenantDb.practice.count.mockResolvedValueOnce(1);
+        tenantDb.practiceTask.findMany.mockResolvedValueOnce([
             { id: 't-1', title: 'X', status: 'OPEN', dueAt: new Date('2020-01-01'),
-              controlId: 'c-orphan', control: null },
+              practiceId: 'c-orphan', practice: null },
         ]);
 
         const result = await runConsistencyCheck(ctx);
 
-        expect(result.issues.overdueTasks[0].controlCode).toBeNull();
+        expect(result.issues.overdueTasks[0].practiceCode).toBeNull();
     });
 });
 
 // ──────────────────────────────────────────────────────────────────────
-// listControlsWithDeleted — admin-only gate
+// listPracticesWithDeleted — admin-only gate
 // ──────────────────────────────────────────────────────────────────────
-describe('listControlsWithDeleted', () => {
+describe('listPracticesWithDeleted', () => {
     it('asserts admin permission', async () => {
-        tenantDb.control.findMany.mockResolvedValueOnce([]);
-        await listControlsWithDeleted(ctx);
+        tenantDb.practice.findMany.mockResolvedValueOnce([]);
+        await listPracticesWithDeleted(ctx);
         expect(policyCalls).toEqual(['admin']);
     });
 
     it('includes soft-deleted rows via withDeleted wrapper', async () => {
-        tenantDb.control.findMany.mockResolvedValueOnce([{ id: 'c-1' }]);
-        await listControlsWithDeleted(ctx);
+        tenantDb.practice.findMany.mockResolvedValueOnce([{ id: 'c-1' }]);
+        await listPracticesWithDeleted(ctx);
 
         // The withDeleted mock decorates the query with includeDeleted:true.
-        const args = tenantDb.control.findMany.mock.calls[0][0];
+        const args = tenantDb.practice.findMany.mock.calls[0][0];
         expect(args.includeDeleted).toBe(true);
     });
 });

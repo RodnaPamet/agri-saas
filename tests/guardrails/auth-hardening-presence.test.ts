@@ -9,7 +9,7 @@
  * collapses the email_verified branch (because it "looks redundant
  * since OAuth verifies anyway") would silently reintroduce a known
  * threat path. The Redis-required check guards the rate-limit
- * security control from silently no-op'ing in prod.
+ * security practice from silently no-op'ing in prod.
  *
  * Static structural assertion: the relevant function bodies must
  * contain the load-bearing predicates.

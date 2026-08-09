@@ -67,7 +67,7 @@ describe('API Error Handling Integration (withApiErrorHandling)', () => {
         expect(data.error.details).toHaveLength(1);
         expect(data.error.details[0].path).toEqual(['name']);
         expect(data.error.requestId).toBeDefined();
-        expect(res.headers.get('Cache-Control')).toContain('no-store');
+        expect(res.headers.get('Cache-Practice')).toContain('no-store');
     });
 
     it('catches and maps AppErrors safely (e.g. 401 UNAUTHORIZED)', async () => {

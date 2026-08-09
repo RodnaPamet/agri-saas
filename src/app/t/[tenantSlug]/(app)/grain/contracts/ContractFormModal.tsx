@@ -8,7 +8,7 @@
  *   - no `contract` prop  → POST  /grain/contracts        (create)
  *   - `contract` provided → PATCH /grain/contracts/{id}   (edit)
  *
- * Form pattern (Epic 64-FORM, mirrors NewControlModal):
+ * Form pattern (Epic 64-FORM, mirrors NewPracticeModal):
  *   - `useForm` + `zodResolver` for state + validation
  *   - `<FormField>` wraps each control
  *   - `register(...)` for plain inputs / textareas

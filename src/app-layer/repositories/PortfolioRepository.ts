@@ -7,7 +7,7 @@
  * boundaries by design and the rows being read are aggregate
  * snapshots + tenant metadata, NOT per-tenant business data.
  *
- * Drill-down into actual tenant tables (controls, evidence)
+ * Drill-down into actual tenant tables (practices, evidence)
  * MUST go through the standard `runInTenantContext` path with the
  * CISO's auto-provisioned AUDITOR membership. That's a separate
  * Epic O-3 step (cross-tenant lists). This repository covers only
@@ -32,12 +32,12 @@ export interface OrgTenantMeta {
  * Aggregated trend row — one per snapshotDate, summed across the
  * supplied tenant set. Coverage is computed downstream from the
  * implemented/applicable sums (so the org-wide percentage stays
- * weighted by control counts, not by tenant count).
+ * weighted by practice counts, not by tenant count).
  */
 export interface SnapshotTrendRow {
     snapshotDate: Date;
-    controlsApplicable: number;
-    controlsImplemented: number;
+    practicesApplicable: number;
+    practicesImplemented: number;
     evidenceOverdue: number;
     evidenceDueSoon7d: number;
     evidenceCurrent: number;
@@ -120,9 +120,9 @@ export class PortfolioRepository {
      * grouped by `snapshotDate` and summed.
      *
      * Coverage % is NOT included in the row — callers compute it
-     * downstream from `controlsImplemented / controlsApplicable` so
+     * downstream from `practicesImplemented / practicesApplicable` so
      * the math is centralised in the usecase layer (and so a future
-     * change to "weighted by tenant" vs "weighted by controls" is a
+     * change to "weighted by tenant" vs "weighted by practices" is a
      * one-place edit).
      *
      * `days` is clamped to [1, 365] to match the per-tenant
@@ -150,8 +150,8 @@ export class PortfolioRepository {
                     snapshotDate: { gte: rangeStart, lte: rangeEnd },
                 },
                 _sum: {
-                    controlsApplicable: true,
-                    controlsImplemented: true,
+                    practicesApplicable: true,
+                    practicesImplemented: true,
                     evidenceOverdue: true,
                     evidenceDueSoon7d: true,
                     evidenceCurrent: true,
@@ -169,8 +169,8 @@ export class PortfolioRepository {
 
             return grouped.map((g) => ({
                 snapshotDate: g.snapshotDate,
-                controlsApplicable: g._sum.controlsApplicable ?? 0,
-                controlsImplemented: g._sum.controlsImplemented ?? 0,
+                practicesApplicable: g._sum.practicesApplicable ?? 0,
+                practicesImplemented: g._sum.practicesImplemented ?? 0,
                 evidenceOverdue: g._sum.evidenceOverdue ?? 0,
                 evidenceDueSoon7d: g._sum.evidenceDueSoon7d ?? 0,
                 evidenceCurrent: g._sum.evidenceCurrent ?? 0,

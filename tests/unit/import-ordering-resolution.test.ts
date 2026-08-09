@@ -66,39 +66,39 @@ function makeOptions(overrides: Partial<ImportOptions> = {}): ImportOptions {
 describe('IdMap: ID resolution', () => {
     test('set and get identity mapping', () => {
         const map = new IdMap();
-        map.set('control', 'ctrl-1', 'ctrl-1');
-        expect(map.get('control', 'ctrl-1')).toBe('ctrl-1');
+        map.set('practice', 'ctrl-1', 'ctrl-1');
+        expect(map.get('practice', 'ctrl-1')).toBe('ctrl-1');
     });
 
     test('set and get remapped ID', () => {
         const map = new IdMap();
-        map.set('control', 'ctrl-1', 'new-ctrl-99');
-        expect(map.get('control', 'ctrl-1')).toBe('new-ctrl-99');
+        map.set('practice', 'ctrl-1', 'new-ctrl-99');
+        expect(map.get('practice', 'ctrl-1')).toBe('new-ctrl-99');
     });
 
     test('resolve returns mapped ID if present', () => {
         const map = new IdMap();
-        map.set('control', 'ctrl-1', 'new-id');
-        expect(map.resolve('control', 'ctrl-1')).toBe('new-id');
+        map.set('practice', 'ctrl-1', 'new-id');
+        expect(map.resolve('practice', 'ctrl-1')).toBe('new-id');
     });
 
     test('resolve falls back to original if no mapping', () => {
         const map = new IdMap();
-        expect(map.resolve('control', 'unknown-id')).toBe('unknown-id');
+        expect(map.resolve('practice', 'unknown-id')).toBe('unknown-id');
     });
 
     test('different entity types with same ID are separate', () => {
         const map = new IdMap();
-        map.set('control', 'id-1', 'ctrl-mapped');
+        map.set('practice', 'id-1', 'ctrl-mapped');
         map.set('policy', 'id-1', 'pol-mapped');
-        expect(map.resolve('control', 'id-1')).toBe('ctrl-mapped');
+        expect(map.resolve('practice', 'id-1')).toBe('ctrl-mapped');
         expect(map.resolve('policy', 'id-1')).toBe('pol-mapped');
     });
 
     test('size tracks number of mappings', () => {
         const map = new IdMap();
         expect(map.size).toBe(0);
-        map.set('control', 'a', 'b');
+        map.set('practice', 'a', 'b');
         map.set('policy', 'c', 'd');
         expect(map.size).toBe(2);
     });
@@ -115,16 +115,16 @@ describe('Import order: topological correctness', () => {
         expect(indexOf('framework')).toBeLessThan(indexOf('frameworkRequirement'));
     });
 
-    test('control before controlTestPlan', () => {
-        expect(indexOf('control')).toBeLessThan(indexOf('controlTestPlan'));
+    test('practice before practiceTestPlan', () => {
+        expect(indexOf('practice')).toBeLessThan(indexOf('practiceTestPlan'));
     });
 
-    test('controlTestPlan before controlTestRun', () => {
-        expect(indexOf('controlTestPlan')).toBeLessThan(indexOf('controlTestRun'));
+    test('practiceTestPlan before practiceTestRun', () => {
+        expect(indexOf('practiceTestPlan')).toBeLessThan(indexOf('practiceTestRun'));
     });
 
-    test('control before controlMapping', () => {
-        expect(indexOf('control')).toBeLessThan(indexOf('controlMapping'));
+    test('practice before practiceMapping', () => {
+        expect(indexOf('practice')).toBeLessThan(indexOf('practiceMapping'));
     });
 
     test('policy before policyVersion', () => {
@@ -167,7 +167,7 @@ const findUniqueSpy = jest.fn();
 
 jest.mock('@/lib/prisma', () => {
     const models = [
-        'control', 'controlTestPlan', 'controlTestRun', 'controlRequirementLink',
+        'practice', 'practiceTestPlan', 'practiceTestRun', 'practiceRequirementLink',
         'policy', 'policyVersion',
         'risk',
         'evidence',
@@ -215,10 +215,10 @@ beforeEach(() => {
 // ═════════════════════════════════════════════════════════════════════
 
 describe('Import service: valid bundle', () => {
-    test('single control imports successfully', async () => {
+    test('single practice imports successfully', async () => {
         const envelope = makeEnvelope({
-            control: [{
-                entityType: 'control',
+            practice: [{
+                entityType: 'practice',
                 id: 'ctrl-1',
                 schemaVersion: '1.0',
                 data: { name: 'Firewall', tenantId: 'source-tenant', status: 'ACTIVE' },
@@ -227,10 +227,10 @@ describe('Import service: valid bundle', () => {
 
         const result = await importTenantData(envelope, makeOptions({ dryRun: false }));
         expect(result.success).toBe(true);
-        expect(result.imported.control).toBe(1);
+        expect(result.imported.practice).toBe(1);
     });
 
-    test('control + testPlan imports in correct order', async () => {
+    test('practice + testPlan imports in correct order', async () => {
         const callOrder: string[] = [];
         createSpy.mockImplementation((model: string) => {
             callOrder.push(model);
@@ -238,30 +238,30 @@ describe('Import service: valid bundle', () => {
         });
 
         const envelope = makeEnvelope({
-            control: [{
-                entityType: 'control',
+            practice: [{
+                entityType: 'practice',
                 id: 'ctrl-1',
                 schemaVersion: '1.0',
                 data: { name: 'Ctrl', tenantId: 'source-tenant' },
             }],
-            controlTestPlan: [{
-                entityType: 'controlTestPlan',
+            practiceTestPlan: [{
+                entityType: 'practiceTestPlan',
                 id: 'tp-1',
                 schemaVersion: '1.0',
-                data: { name: 'Plan', tenantId: 'source-tenant', controlId: 'ctrl-1' },
+                data: { name: 'Plan', tenantId: 'source-tenant', practiceId: 'ctrl-1' },
             }],
         });
 
         const result = await importTenantData(envelope, makeOptions({ dryRun: false }));
         expect(result.success).toBe(true);
 
-        // control must be created before controlTestPlan
-        const ctrlIdx = callOrder.indexOf('control');
-        const tpIdx = callOrder.indexOf('controlTestPlan');
+        // practice must be created before practiceTestPlan
+        const ctrlIdx = callOrder.indexOf('practice');
+        const tpIdx = callOrder.indexOf('practiceTestPlan');
         expect(ctrlIdx).toBeLessThan(tpIdx);
     });
 
-    test('three-level chain: control → testPlan → testRun', async () => {
+    test('three-level chain: practice → testPlan → testRun', async () => {
         const callOrder: string[] = [];
         createSpy.mockImplementation((model: string) => {
             callOrder.push(model);
@@ -269,32 +269,32 @@ describe('Import service: valid bundle', () => {
         });
 
         const envelope = makeEnvelope({
-            controlTestRun: [{
-                entityType: 'controlTestRun',
+            practiceTestRun: [{
+                entityType: 'practiceTestRun',
                 id: 'tr-1',
                 schemaVersion: '1.0',
-                data: { tenantId: 'source-tenant', testPlanId: 'tp-1', controlId: 'ctrl-1' },
+                data: { tenantId: 'source-tenant', testPlanId: 'tp-1', practiceId: 'ctrl-1' },
             }],
-            control: [{
-                entityType: 'control',
+            practice: [{
+                entityType: 'practice',
                 id: 'ctrl-1',
                 schemaVersion: '1.0',
                 data: { name: 'Ctrl', tenantId: 'source-tenant' },
             }],
-            controlTestPlan: [{
-                entityType: 'controlTestPlan',
+            practiceTestPlan: [{
+                entityType: 'practiceTestPlan',
                 id: 'tp-1',
                 schemaVersion: '1.0',
-                data: { name: 'Plan', tenantId: 'source-tenant', controlId: 'ctrl-1' },
+                data: { name: 'Plan', tenantId: 'source-tenant', practiceId: 'ctrl-1' },
             }],
         });
 
         const result = await importTenantData(envelope, makeOptions({ dryRun: false }));
         expect(result.success).toBe(true);
 
-        // Order must be: control → controlTestPlan → controlTestRun
-        expect(callOrder.indexOf('control')).toBeLessThan(callOrder.indexOf('controlTestPlan'));
-        expect(callOrder.indexOf('controlTestPlan')).toBeLessThan(callOrder.indexOf('controlTestRun'));
+        // Order must be: practice → practiceTestPlan → practiceTestRun
+        expect(callOrder.indexOf('practice')).toBeLessThan(callOrder.indexOf('practiceTestPlan'));
+        expect(callOrder.indexOf('practiceTestPlan')).toBeLessThan(callOrder.indexOf('practiceTestRun'));
     });
 });
 
@@ -303,7 +303,7 @@ describe('Import service: valid bundle', () => {
 // ═════════════════════════════════════════════════════════════════════
 
 describe('Import service: FK resolution', () => {
-    test('child entity controlId is resolved via ID map', async () => {
+    test('child entity practiceId is resolved via ID map', async () => {
         const capturedData: Array<{ model: string; data: Record<string, unknown> }> = [];
         createSpy.mockImplementation((model: string, args: any) => {
             capturedData.push({ model, data: args.data });
@@ -311,17 +311,17 @@ describe('Import service: FK resolution', () => {
         });
 
         const envelope = makeEnvelope({
-            control: [{
-                entityType: 'control',
+            practice: [{
+                entityType: 'practice',
                 id: 'old-ctrl',
                 schemaVersion: '1.0',
                 data: { name: 'C', tenantId: 'source-tenant' },
             }],
-            controlTestPlan: [{
-                entityType: 'controlTestPlan',
+            practiceTestPlan: [{
+                entityType: 'practiceTestPlan',
                 id: 'old-tp',
                 schemaVersion: '1.0',
-                data: { name: 'P', tenantId: 'source-tenant', controlId: 'old-ctrl' },
+                data: { name: 'P', tenantId: 'source-tenant', practiceId: 'old-ctrl' },
             }],
         });
 
@@ -330,9 +330,9 @@ describe('Import service: FK resolution', () => {
             conflictStrategy: 'SKIP',
         }));
 
-        // The testPlan's controlId should reference the control's (preserved) ID
-        const tpCreate = capturedData.find(c => c.model === 'controlTestPlan');
-        expect(tpCreate?.data.controlId).toBe('old-ctrl');
+        // The testPlan's practiceId should reference the practice's (preserved) ID
+        const tpCreate = capturedData.find(c => c.model === 'practiceTestPlan');
+        expect(tpCreate?.data.practiceId).toBe('old-ctrl');
     });
 
     test('RENAME strategy generates new IDs and resolves FKs', async () => {
@@ -343,17 +343,17 @@ describe('Import service: FK resolution', () => {
         });
 
         const envelope = makeEnvelope({
-            control: [{
-                entityType: 'control',
+            practice: [{
+                entityType: 'practice',
                 id: 'old-ctrl',
                 schemaVersion: '1.0',
                 data: { name: 'C', tenantId: 'source-tenant' },
             }],
-            controlTestPlan: [{
-                entityType: 'controlTestPlan',
+            practiceTestPlan: [{
+                entityType: 'practiceTestPlan',
                 id: 'old-tp',
                 schemaVersion: '1.0',
-                data: { name: 'P', tenantId: 'source-tenant', controlId: 'old-ctrl' },
+                data: { name: 'P', tenantId: 'source-tenant', practiceId: 'old-ctrl' },
             }],
         });
 
@@ -362,15 +362,15 @@ describe('Import service: FK resolution', () => {
             conflictStrategy: 'RENAME',
         }));
 
-        const ctrlCreate = capturedData.find(c => c.model === 'control');
-        const tpCreate = capturedData.find(c => c.model === 'controlTestPlan');
+        const ctrlCreate = capturedData.find(c => c.model === 'practice');
+        const tpCreate = capturedData.find(c => c.model === 'practiceTestPlan');
 
         // IDs should be different from originals
         expect(ctrlCreate?.data.id).not.toBe('old-ctrl');
         expect(tpCreate?.data.id).not.toBe('old-tp');
 
-        // FK should match the NEW control ID
-        expect(tpCreate?.data.controlId).toBe(ctrlCreate?.data.id);
+        // FK should match the NEW practice ID
+        expect(tpCreate?.data.practiceId).toBe(ctrlCreate?.data.id);
     });
 });
 
@@ -387,8 +387,8 @@ describe('Import service: tenant safety', () => {
         });
 
         const envelope = makeEnvelope({
-            control: [{
-                entityType: 'control',
+            practice: [{
+                entityType: 'practice',
                 id: 'ctrl-1',
                 schemaVersion: '1.0',
                 data: { name: 'C', tenantId: 'source-tenant' },
@@ -411,8 +411,8 @@ describe('Import service: tenant safety', () => {
         });
 
         const envelope = makeEnvelope({
-            control: [{
-                entityType: 'control',
+            practice: [{
+                entityType: 'practice',
                 id: 'ctrl-1',
                 schemaVersion: '1.0',
                 data: { name: 'C1', tenantId: 'source-tenant' },
@@ -445,8 +445,8 @@ describe('Import service: conflict strategies', () => {
         findUniqueSpy.mockResolvedValue({ id: 'ctrl-1' }); // entity exists
 
         const envelope = makeEnvelope({
-            control: [{
-                entityType: 'control',
+            practice: [{
+                entityType: 'practice',
                 id: 'ctrl-1',
                 schemaVersion: '1.0',
                 data: { name: 'C', tenantId: 'source-tenant' },
@@ -458,8 +458,8 @@ describe('Import service: conflict strategies', () => {
             dryRun: false,
         }));
 
-        expect(result.skipped.control).toBe(1);
-        expect(result.imported.control).toBe(0);
+        expect(result.skipped.practice).toBe(1);
+        expect(result.imported.practice).toBe(0);
         expect(createSpy).not.toHaveBeenCalled();
     });
 
@@ -467,8 +467,8 @@ describe('Import service: conflict strategies', () => {
         findUniqueSpy.mockResolvedValue({ id: 'ctrl-1' }); // entity exists
 
         const envelope = makeEnvelope({
-            control: [{
-                entityType: 'control',
+            practice: [{
+                entityType: 'practice',
                 id: 'ctrl-1',
                 schemaVersion: '1.0',
                 data: { name: 'Updated', tenantId: 'source-tenant' },
@@ -480,7 +480,7 @@ describe('Import service: conflict strategies', () => {
             dryRun: false,
         }));
 
-        expect(result.imported.control).toBe(1);
+        expect(result.imported.practice).toBe(1);
         expect(updateSpy).toHaveBeenCalled();
     });
 
@@ -488,8 +488,8 @@ describe('Import service: conflict strategies', () => {
         findUniqueSpy.mockResolvedValue({ id: 'ctrl-1' }); // entity exists
 
         const envelope = makeEnvelope({
-            control: [{
-                entityType: 'control',
+            practice: [{
+                entityType: 'practice',
                 id: 'ctrl-1',
                 schemaVersion: '1.0',
                 data: { name: 'C', tenantId: 'source-tenant' },
@@ -502,14 +502,14 @@ describe('Import service: conflict strategies', () => {
         }));
 
         expect(result.success).toBe(false);
-        expect(result.conflicts.control).toBe(1);
+        expect(result.conflicts.practice).toBe(1);
         expect(result.errors.some(e => e.message.includes('Conflict'))).toBe(true);
     });
 
     test('RENAME creates with new IDs (no conflict)', async () => {
         const envelope = makeEnvelope({
-            control: [{
-                entityType: 'control',
+            practice: [{
+                entityType: 'practice',
                 id: 'ctrl-1',
                 schemaVersion: '1.0',
                 data: { name: 'C', tenantId: 'source-tenant' },
@@ -521,10 +521,10 @@ describe('Import service: conflict strategies', () => {
             dryRun: false,
         }));
 
-        expect(result.imported.control).toBe(1);
+        expect(result.imported.practice).toBe(1);
         // Should have used a new ID
         expect(createSpy).toHaveBeenCalledWith(
-            'control',
+            'practice',
             expect.objectContaining({
                 data: expect.objectContaining({
                     id: expect.not.stringMatching(/^ctrl-1$/),
@@ -604,8 +604,8 @@ describe('Import service: M2M relationships', () => {
 describe('Import service: deterministic re-import', () => {
     test('importing same bundle twice with SKIP produces same result', async () => {
         const envelope = makeEnvelope({
-            control: [{
-                entityType: 'control',
+            practice: [{
+                entityType: 'practice',
                 id: 'ctrl-1',
                 schemaVersion: '1.0',
                 data: { name: 'C', tenantId: 'source-tenant' },
@@ -626,8 +626,8 @@ describe('Import service: deterministic re-import', () => {
         findUniqueSpy.mockResolvedValue({ id: 'ctrl-1' });
 
         const envelope = makeEnvelope({
-            control: [{
-                entityType: 'control',
+            practice: [{
+                entityType: 'practice',
                 id: 'ctrl-1',
                 schemaVersion: '1.0',
                 data: { name: 'C', tenantId: 'source-tenant' },
@@ -654,8 +654,8 @@ describe('Import service: deterministic re-import', () => {
 describe('Import service: dry run mode', () => {
     test('dry run does not call create', async () => {
         const envelope = makeEnvelope({
-            control: [{
-                entityType: 'control',
+            practice: [{
+                entityType: 'practice',
                 id: 'ctrl-1',
                 schemaVersion: '1.0',
                 data: { name: 'C', tenantId: 'source-tenant' },
@@ -665,14 +665,14 @@ describe('Import service: dry run mode', () => {
         const result = await importTenantData(envelope, makeOptions({ dryRun: true }));
 
         expect(result.dryRun).toBe(true);
-        expect(result.imported.control).toBe(1);
+        expect(result.imported.practice).toBe(1);
         expect(createSpy).not.toHaveBeenCalled();
     });
 
     test('validateImportEnvelope uses dry run', async () => {
         const envelope = makeEnvelope({
-            control: [{
-                entityType: 'control',
+            practice: [{
+                entityType: 'practice',
                 id: 'ctrl-1',
                 schemaVersion: '1.0',
                 data: { name: 'C', tenantId: 'source-tenant' },
@@ -694,8 +694,8 @@ describe('Import service: error handling', () => {
         createSpy.mockRejectedValueOnce(new Error('DB connection failed'));
 
         const envelope = makeEnvelope({
-            control: [{
-                entityType: 'control',
+            practice: [{
+                entityType: 'practice',
                 id: 'ctrl-1',
                 schemaVersion: '1.0',
                 data: { name: 'C', tenantId: 'source-tenant' },
@@ -706,7 +706,7 @@ describe('Import service: error handling', () => {
 
         expect(result.success).toBe(false);
         expect(result.errors.length).toBe(1);
-        expect(result.errors[0].entityType).toBe('control');
+        expect(result.errors[0].entityType).toBe('practice');
         expect(result.errors[0].entityId).toBe('ctrl-1');
         expect(result.errors[0].message).toContain('DB connection failed');
     });
@@ -717,8 +717,8 @@ describe('Import service: error handling', () => {
         createSpy.mockRejectedValueOnce(p2002Error);
 
         const envelope = makeEnvelope({
-            control: [{
-                entityType: 'control',
+            practice: [{
+                entityType: 'practice',
                 id: 'ctrl-1',
                 schemaVersion: '1.0',
                 data: { name: 'C', tenantId: 'source-tenant' },
@@ -731,7 +731,7 @@ describe('Import service: error handling', () => {
         }));
 
         // P2002 with SKIP → skipped, not error
-        expect(result.skipped.control).toBe(1);
+        expect(result.skipped.practice).toBe(1);
     });
 
     test('invalid envelope fails before any persistence', async () => {

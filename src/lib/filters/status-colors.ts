@@ -1,7 +1,7 @@
 /**
  * Epic 53 — cross-entity status color map.
  *
- * Every entity in Inflect carries its own status enum (controls are
+ * Every entity in Inflect carries its own status enum (practices are
  * `NOT_STARTED | IN_PROGRESS | IMPLEMENTED | NOT_APPLICABLE`, risks
  * are `OPEN | MITIGATING | CLOSED | ACCEPTED`, evidence is
  * `DRAFT | SUBMITTED | APPROVED | REJECTED | EXPIRED`, tasks add
@@ -71,7 +71,7 @@ const TONE_CLASSES: Record<StatusTone, Omit<StatusColorClasses, 'tone'>> = {
 
 /**
  * Canonical status → tone mapping. Covers every status enum used by
- * the migrated filter-defs (controls, risks, evidence, policies,
+ * the migrated filter-defs (practices, risks, evidence, policies,
  * tasks, vendors, assets) plus a few common synonyms.
  *
  * New entity? Add the enum values here before wiring its filter-defs;

@@ -1,7 +1,7 @@
 /**
  * R17-PR6 — Dashboard chart-filter coordination context.
  *
- * The dashboard's KPI tiles (control coverage, risks, evidence,
+ * The dashboard's KPI tiles (practice coverage, risks, evidence,
  * tasks, policies, findings) and the charts below them are
  * currently siblings — each renders the same payload independently.
  * Roadmap-17's interactive layer makes them speak the same

@@ -22,10 +22,10 @@ import type { TypedFilterOption } from "./types";
 
 // ─── 1. Enum / status filter ─────────────────────────────────────────
 //
-// Mirrors Prisma's `ControlStatus` enum. Single-select, clearable, grouped
+// Mirrors Prisma's `PracticeStatus` enum. Single-select, clearable, grouped
 // under "Attributes".
 
-export type ControlStatus =
+export type PracticeStatus =
   | "NOT_STARTED"
   | "PLANNED"
   | "IN_PROGRESS"
@@ -34,7 +34,7 @@ export type ControlStatus =
   | "NEEDS_REVIEW"
   | "NOT_APPLICABLE";
 
-const CONTROL_STATUS_LABELS: Record<ControlStatus, string> = {
+const CONTROL_STATUS_LABELS: Record<PracticeStatus, string> = {
   NOT_STARTED: "Not started",
   PLANNED: "Planned",
   IN_PROGRESS: "In progress",
@@ -45,13 +45,13 @@ const CONTROL_STATUS_LABELS: Record<ControlStatus, string> = {
 };
 
 /** Typed options — use `typedOptionsFromEnum` when you want `V` to survive. */
-export const statusTypedOptions: TypedFilterOption<ControlStatus>[] =
+export const statusTypedOptions: TypedFilterOption<PracticeStatus>[] =
   typedOptionsFromEnum(CONTROL_STATUS_LABELS);
 
 /** Loose options for the existing component layer. */
 export const statusFilterExample: FilterDefInput = {
   label: "Status",
-  description: "Lifecycle stage of the control.",
+  description: "Lifecycle stage of the practice.",
   group: "Attributes",
   icon: CircleDot,
   options: optionsFromEnum(CONTROL_STATUS_LABELS),

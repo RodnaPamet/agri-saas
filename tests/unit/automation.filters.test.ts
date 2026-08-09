@@ -74,7 +74,7 @@ describe('matchesFilter', () => {
         const evt: AutomationDomainEvent = {
             event: 'TEST_RUN_COMPLETED',
             tenantId: 't',
-            entityType: 'ControlTestRun',
+            entityType: 'PracticeTestRun',
             entityId: 'r-1',
             actorUserId: null,
             emittedAt: new Date(),

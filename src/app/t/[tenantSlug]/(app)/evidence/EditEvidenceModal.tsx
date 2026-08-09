@@ -39,7 +39,7 @@ export interface EditEvidenceModalProps {
         title: string;
         description: string | null;
         ownerUserId: string | null;
-        controlId: string | null;
+        practiceId: string | null;
         /** B8 follow-up — current folder label (null = unfoldered). */
         folder?: string | null;
         /** Retention date (ISO) — edited here now (was inline in the table). */
@@ -60,7 +60,7 @@ export function EditEvidenceModal({
     const [title, setTitle] = useState('');
     const [description, setDescription] = useState('');
     const [ownerUserId, setOwnerUserId] = useState<string | null>(null);
-    const [controlId, setControlId] = useState('');
+    const [practiceId, setPracticeId] = useState('');
     // B8 follow-up — folder is editable post-create.
     const [folder, setFolder] = useState('');
     // Retention date — moved here from the inline table column. Held as a
@@ -80,7 +80,7 @@ export function EditEvidenceModal({
             setTitle(initial.title);
             setDescription(initial.description ?? '');
             setOwnerUserId(initial.ownerUserId);
-            setControlId(initial.controlId ?? '');
+            setPracticeId(initial.practiceId ?? '');
             setFolder(initial.folder ?? '');
             const ymd = initial.retentionUntil ? initial.retentionUntil.split('T')[0] : '';
             setRetentionDate(ymd);
@@ -110,11 +110,11 @@ export function EditEvidenceModal({
                     // "description" is the UI label. Sending the label name
                     // meant UpdateEvidenceSchema's `.strip()` dropped the
                     // field and the save reported success having changed
-                    // nothing — the same for `controlId`, which had no field
+                    // nothing — the same for `practiceId`, which had no field
                     // in the schema at all.
                     content: description || undefined,
                     ownerUserId: ownerUserId || null,
-                    controlId: controlId || null,
+                    practiceId: practiceId || null,
                     // B8 follow-up — empty string clears the folder
                     // (the usecase null-coerces); a non-empty value
                     // sets it. `undefined` would skip the update.
@@ -243,18 +243,18 @@ export function EditEvidenceModal({
                                     placeholder={t('edit.ownerPlaceholder')}
                                 />
                             </FormField>
-                            <FormField label={t('edit.fieldControl')}>
+                            <FormField label={t('edit.fieldPractice')}>
                                 <EntityPicker
-                                    id="edit-evidence-control-input"
+                                    id="edit-evidence-practice-input"
                                     tenantSlug={tenantSlug}
                                     entityType="CONTROL"
-                                    value={controlId}
+                                    value={practiceId}
                                     onChange={(id) => {
-                                        setControlId(id);
+                                        setPracticeId(id);
                                         markDirty();
                                     }}
-                                    placeholder={t('edit.controlPlaceholder')}
-                                    testId="edit-evidence-control-picker"
+                                    placeholder={t('edit.practicePlaceholder')}
+                                    testId="edit-evidence-practice-picker"
                                 />
                             </FormField>
                         </div>

@@ -53,7 +53,7 @@ const TASK_CREATED_DATA = {
     severity: 'MEDIUM',
     priority: 'NORMAL',
     assigneeUserId: null,
-    controlId: null,
+    practiceId: null,
 } as const;
 
 describe('Automation Bus', () => {

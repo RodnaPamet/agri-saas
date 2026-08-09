@@ -6,7 +6,7 @@
  * the button family ALL the way to `rounded-full` (pill) — the
  * canonical shape chosen from the Audit/Frameworks button.
  *
- * The form-control family (Input / date-picker trigger / combobox
+ * The form-practice family (Input / date-picker trigger / combobox
  * trigger) stays at `rounded-[8px]` per the B3 design decision —
  * text-entry surfaces remain rectangular by convention. This
  * ratchet now enforces the SPLIT:
@@ -116,7 +116,7 @@ describe('R22-PR-A — Radius calibration (post-B3 pill canonicalisation)', () =
         });
     });
 
-    describe('inline form-control radius mirrors', () => {
+    describe('inline form-practice radius mirrors', () => {
         // input.tsx + date-picker/trigger.tsx don't yet wire
         // through control-variants — they roll their own radius
         // literal. R22-PR-A keeps them in lockstep with the cva
@@ -140,7 +140,7 @@ describe('R22-PR-A — Radius calibration (post-B3 pill canonicalisation)', () =
         it('no `rounded-lg` literal anywhere in the family', () => {
             // R22's original intent — "not the inflated 12px shape" —
             // stands across both the button family (now pill) and
-            // the form-control family (still 8px).
+            // the form-practice family (still 8px).
             for (const src of [
                 BUTTON_VARIANTS,
                 CONTROL_VARIANTS,

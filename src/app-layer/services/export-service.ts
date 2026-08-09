@@ -84,10 +84,10 @@ export interface ExportServiceResult {
  * Bump when the exported shape of an entity changes.
  */
 const ENTITY_SCHEMA_VERSIONS: Record<ExportEntityType, string> = {
-    control: '1.0',
-    controlTestPlan: '1.0',
-    controlTestRun: '1.0',
-    controlMapping: '1.0',
+    practice: '1.0',
+    practiceTestPlan: '1.0',
+    practiceTestRun: '1.0',
+    practiceMapping: '1.0',
     policy: '1.0',
     policyVersion: '1.0',
     risk: '1.0',
@@ -125,7 +125,7 @@ function redactSensitiveFields(data: Record<string, unknown>): Record<string, un
  * The traversal starts from these entity types.
  */
 const DOMAIN_ROOTS: Record<Exclude<ExportDomain, 'FULL_TENANT'>, ExportEntityType> = {
-    CONTROLS: 'control',
+    CONTROLS: 'practice',
     POLICIES: 'policy',
     RISKS: 'risk',
     EVIDENCE: 'evidence',
@@ -138,10 +138,10 @@ const DOMAIN_ROOTS: Record<Exclude<ExportDomain, 'FULL_TENANT'>, ExportEntityTyp
  * Prisma model name for each root entity type.
  */
 const ROOT_PRISMA_MODELS: Record<ExportEntityType, string> = {
-    control: 'control',
-    controlTestPlan: 'controlTestPlan',
-    controlTestRun: 'controlTestRun',
-    controlMapping: 'controlRequirementLink',
+    practice: 'practice',
+    practiceTestPlan: 'practiceTestPlan',
+    practiceTestRun: 'practiceTestRun',
+    practiceMapping: 'practiceRequirementLink',
     policy: 'policy',
     policyVersion: 'policyVersion',
     risk: 'risk',
@@ -235,7 +235,7 @@ async function fetchRootEntities(
     }
 
     // Soft-delete filter (models with deletedAt)
-    if (['control', 'policy', 'risk', 'evidence', 'task', 'vendor'].includes(entityType)) {
+    if (['practice', 'policy', 'risk', 'evidence', 'task', 'vendor'].includes(entityType)) {
         where.deletedAt = null;
     }
 

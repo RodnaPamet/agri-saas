@@ -3,7 +3,7 @@
  *
  * Mounts the real `<TraceabilityPanel>` (entityType=asset) and asserts:
  *
- *   1. Committing the Link Control form closes THAT form and POSTs the
+ *   1. Committing the Link Practice form closes THAT form and POSTs the
  *      link. This descends from a regression where the shared
  *      `linkMutation.onSuccess` closed every `showAdd*` flag
  *      unconditionally; the original test proved a second, still-open
@@ -13,7 +13,7 @@
  *      testable, and what the regression was really about, is that
  *      onSuccess closes the form it committed and fires the right POST.
  *
- *   2. Control / asset options in the Combobox are rendered via
+ *   2. Practice / asset options in the Combobox are rendered via
  *      `optionDescription` so the cmdk row uses the wrapping
  *      (description-mode) layout — i.e. no `truncate` class on the
  *      label span — keeping long names readable.
@@ -66,7 +66,7 @@ beforeEach(() => {
         fetchMock as unknown as typeof fetch;
 });
 
-const EMPTY_TRACE = { controls: [], assets: [] };
+const EMPTY_TRACE = { practices: [], assets: [] };
 
 const AVAILABLE_CONTROLS = [
     {
@@ -93,8 +93,8 @@ function setupRoutes(): void {
     fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
         const url = typeof input === "string" ? input : (input as URL).toString();
         if (url.endsWith("/assets/asset-1/traceability")) return Promise.resolve(ok(EMPTY_TRACE));
-        if (url.endsWith("/controls")) return Promise.resolve(ok(AVAILABLE_CONTROLS));
-        if (init?.method === "POST" && url.endsWith("/assets/asset-1/controls")) {
+        if (url.endsWith("/practices")) return Promise.resolve(ok(AVAILABLE_CONTROLS));
+        if (init?.method === "POST" && url.endsWith("/assets/asset-1/practices")) {
             return Promise.resolve(ok({ id: "link-1" }));
         }
         return Promise.resolve(ok({}));
@@ -128,29 +128,29 @@ describe("TraceabilityPanel — link form regressions", () => {
         mountPanel();
 
         await waitFor(() => {
-            expect(screen.getByText("No controls linked")).toBeInTheDocument();
+            expect(screen.getByText("No practices linked")).toBeInTheDocument();
         });
 
-        await user.click(screen.getByRole("button", { name: "Link Control" }));
+        await user.click(screen.getByRole("button", { name: "Link Practice" }));
 
-        // Wait for the available-controls fetch to populate so the
+        // Wait for the available-practices fetch to populate so the
         // combobox has options to render.
         await waitFor(() => {
             const calls = fetchMock.mock.calls.map(([u]) =>
                 typeof u === "string" ? u : (u as URL).toString(),
             );
-            expect(calls.some((u) => u.endsWith("/controls"))).toBe(true);
+            expect(calls.some((u) => u.endsWith("/practices"))).toBe(true);
         });
 
-        // Open the Control popover and pick ctrl-2.
-        const controlTrigger = document.getElementById("control-select") as HTMLButtonElement;
-        await user.click(controlTrigger);
+        // Open the Practice popover and pick ctrl-2.
+        const practiceTrigger = document.getElementById("practice-select") as HTMLButtonElement;
+        await user.click(practiceTrigger);
         // Label format is `${code} — ${name}` since the fix.
         const option = await screen.findByText("AC-3 — Account management");
         await user.click(option);
 
         // Confirm the link.
-        const confirm = document.getElementById("confirm-control-link") as HTMLButtonElement;
+        const confirm = document.getElementById("confirm-practice-link") as HTMLButtonElement;
         await waitFor(() => {
             expect(confirm).not.toBeDisabled();
         });
@@ -160,41 +160,41 @@ describe("TraceabilityPanel — link form regressions", () => {
 
         // After success the committed form closes...
         await waitFor(() => {
-            expect(document.getElementById("control-select")).not.toBeInTheDocument();
+            expect(document.getElementById("practice-select")).not.toBeInTheDocument();
         });
-        // ...and the link actually went to the asset↔control endpoint.
+        // ...and the link actually went to the asset↔practice endpoint.
         const posts = fetchMock.mock.calls.filter(
             ([, init]) => (init as RequestInit | undefined)?.method === "POST",
         );
         expect(posts).toHaveLength(1);
-        expect(posts[0]?.[0]).toBe("/api/t/acme/assets/asset-1/controls");
+        expect(posts[0]?.[0]).toBe("/api/t/acme/assets/asset-1/practices");
         expect(
             JSON.parse((posts[0]?.[1] as RequestInit).body as string),
-        ).toMatchObject({ controlId: "ctrl-2" });
+        ).toMatchObject({ practiceId: "ctrl-2" });
     });
 
-    it("control combobox options render with optionDescription (no truncate on label)", async () => {
+    it("practice combobox options render with optionDescription (no truncate on label)", async () => {
         const user = userEvent.setup();
         mountPanel();
 
         await waitFor(() => {
-            expect(screen.getByText("No controls linked")).toBeInTheDocument();
+            expect(screen.getByText("No practices linked")).toBeInTheDocument();
         });
 
-        await user.click(screen.getByRole("button", { name: "Link Control" }));
+        await user.click(screen.getByRole("button", { name: "Link Practice" }));
 
-        // Wait for the available-controls fetch to populate.
+        // Wait for the available-practices fetch to populate.
         await waitFor(() => {
             const calls = fetchMock.mock.calls.map(([u]) =>
                 typeof u === "string" ? u : (u as URL).toString(),
             );
-            expect(calls.some((u) => u.endsWith("/controls"))).toBe(true);
+            expect(calls.some((u) => u.endsWith("/practices"))).toBe(true);
         });
 
-        const controlTrigger = document.getElementById("control-select") as HTMLButtonElement;
-        await user.click(controlTrigger);
+        const practiceTrigger = document.getElementById("practice-select") as HTMLButtonElement;
+        await user.click(practiceTrigger);
 
-        // The long control name renders; locate the label span — it must
+        // The long practice name renders; locate the label span — it must
         // NOT carry the `truncate` class (the description-mode branch in
         // Combobox suppresses it), and the description ("Status: …")
         // must appear as a separate node.

@@ -1,18 +1,18 @@
 /**
- * Asset code column + Asset/Control code-generation ratchet.
+ * Asset code column + Asset/Practice code-generation ratchet.
  *
  *   1. Asset gains a `key` field (`AST-N`) minted atomically via
  *      `AssetKeySequence.upsert`. The Assets list page leads with
  *      the new Code column.
  *
- *   2. Control gains a `ControlKeySequence` counter, with the
- *      `createControl` usecase minting `CTL-N` for the custom-
- *      control create path (`isCustom && !code`). Framework-
- *      installed controls always supply their own `code` /
+ *   2. Practice gains a `PracticeKeySequence` counter, with the
+ *      `createPractice` usecase minting `CTL-N` for the custom-
+ *      practice create path (`isCustom && !code`). Framework-
+ *      installed practices always supply their own `code` /
  *      `code` from the catalogue and bypass the counter.
  *
  *   3. The first-column registry flips Assets from `name` to
- *      `code` (Risk/Controls parity) and adds a written note.
+ *      `code` (Risk/Practices parity) and adds a written note.
  *
  * Mirrors `pr-b-tables-buttons.test.ts` for the Risk equivalent.
  * Adding a new key-minted entity ⇒ add a sibling ratchet here.
@@ -23,7 +23,7 @@ import * as path from 'node:path';
 const ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 
-describe('Asset Code column + Asset/Control code generation', () => {
+describe('Asset Code column + Asset/Practice code generation', () => {
     describe('Asset key field + AssetKeySequence schema', () => {
         const schema = read('prisma/schema/compliance.prisma');
 
@@ -52,12 +52,12 @@ describe('Asset Code column + Asset/Control code generation', () => {
         });
     });
 
-    describe('Control key sequence schema', () => {
+    describe('Practice key sequence schema', () => {
         const schema = read('prisma/schema/compliance.prisma');
 
-        it('ControlKeySequence model exists', () => {
-            expect(schema).toMatch(/model ControlKeySequence/);
-            const start = schema.indexOf('model ControlKeySequence');
+        it('PracticeKeySequence model exists', () => {
+            expect(schema).toMatch(/model PracticeKeySequence/);
+            const start = schema.indexOf('model PracticeKeySequence');
             const block = schema.slice(start, start + 400);
             expect(block).toMatch(/tenantId\s+String\s+@id/);
             expect(block).toMatch(/lastValue\s+Int\s+@default\(0\)/);
@@ -89,16 +89,16 @@ describe('Asset Code column + Asset/Control code generation', () => {
             );
         });
 
-        it('creates ControlKeySequence with Class A RLS', () => {
-            expect(migration).toMatch(/CREATE TABLE "ControlKeySequence"/);
+        it('creates PracticeKeySequence with Class A RLS', () => {
+            expect(migration).toMatch(/CREATE TABLE "PracticeKeySequence"/);
             expect(migration).toMatch(
-                /CREATE POLICY tenant_isolation ON "ControlKeySequence"/,
+                /CREATE POLICY tenant_isolation ON "PracticeKeySequence"/,
             );
             expect(migration).toMatch(
-                /CREATE POLICY tenant_isolation_insert ON "ControlKeySequence"/,
+                /CREATE POLICY tenant_isolation_insert ON "PracticeKeySequence"/,
             );
             expect(migration).toMatch(
-                /CREATE POLICY superuser_bypass ON "ControlKeySequence"/,
+                /CREATE POLICY superuser_bypass ON "PracticeKeySequence"/,
             );
         });
 
@@ -107,7 +107,7 @@ describe('Asset Code column + Asset/Control code generation', () => {
                 /ALTER TABLE "AssetKeySequence" FORCE ROW LEVEL SECURITY/,
             );
             expect(migration).toMatch(
-                /ALTER TABLE "ControlKeySequence" FORCE ROW LEVEL SECURITY/,
+                /ALTER TABLE "PracticeKeySequence" FORCE ROW LEVEL SECURITY/,
             );
         });
 
@@ -130,17 +130,17 @@ describe('Asset Code column + Asset/Control code generation', () => {
         });
     });
 
-    describe('createControl usecase mints CTL-N for custom controls', () => {
-        const usecase = read('src/app-layer/usecases/control/mutations.ts');
+    describe('createPractice usecase mints CTL-N for custom practices', () => {
+        const usecase = read('src/app-layer/usecases/practice/mutations.ts');
 
-        it('mints CTL-N via controlKeySequence.upsert', () => {
-            expect(usecase).toMatch(/controlKeySequence\.upsert/);
+        it('mints CTL-N via practiceKeySequence.upsert', () => {
+            expect(usecase).toMatch(/practiceKeySequence\.upsert/);
             expect(usecase).toMatch(/`CTL-\$\{seq\.lastValue\}`/);
         });
 
         it('only mints when isCustom AND no explicit code supplied', () => {
             // The gate is `!code && isCustom` — both must hold for
-            // the counter to advance. Framework-installed controls
+            // the counter to advance. Framework-installed practices
             // (`isCustom: false`) never consume the sequence.
             expect(usecase).toMatch(/if\s*\(!code\s*&&\s*isCustom\)\s*\{/);
         });

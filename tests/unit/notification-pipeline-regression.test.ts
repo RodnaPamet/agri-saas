@@ -41,11 +41,11 @@ const mockLogger = {
 
 // ── Prisma spies for query counting ─────────────────────────────────
 const spies = {
-    control:         jest.fn().mockResolvedValue([]),
+    practice:         jest.fn().mockResolvedValue([]),
     policy:          jest.fn().mockResolvedValue([]),
     task:            jest.fn().mockResolvedValue([]),
     risk:            jest.fn().mockResolvedValue([]),
-    controlTestPlan: jest.fn().mockResolvedValue([]),
+    practiceTestPlan: jest.fn().mockResolvedValue([]),
     evidence:        jest.fn().mockResolvedValue([]),
     vendor:          jest.fn().mockResolvedValue([]),
     // Epic 49 — calendar-deadlines monitor adds three entity sources
@@ -72,11 +72,11 @@ beforeEach(() => {
     Object.values(spies).forEach(s => s.mockClear());
 
     // Reset return values
-    spies.control.mockResolvedValue([]);
+    spies.practice.mockResolvedValue([]);
     spies.policy.mockResolvedValue([]);
     spies.task.mockResolvedValue([]);
     spies.risk.mockResolvedValue([]);
-    spies.controlTestPlan.mockResolvedValue([]);
+    spies.practiceTestPlan.mockResolvedValue([]);
     spies.evidence.mockResolvedValue([]);
     spies.vendor.mockResolvedValue([]);
     spies.auditCycle.mockResolvedValue([]);
@@ -96,11 +96,11 @@ beforeEach(() => {
     }));
 
     const prismaMock = {
-        control:          { findMany: (...a: unknown[]) => spies.control(...a) },
+        practice:          { findMany: (...a: unknown[]) => spies.practice(...a) },
         policy:           { findMany: (...a: unknown[]) => spies.policy(...a) },
         task:             { findMany: (...a: unknown[]) => spies.task(...a) },
         risk:             { findMany: (...a: unknown[]) => spies.risk(...a) },
-        controlTestPlan:  { findMany: (...a: unknown[]) => spies.controlTestPlan(...a) },
+        practiceTestPlan:  { findMany: (...a: unknown[]) => spies.practiceTestPlan(...a) },
         evidence:         { findMany: (...a: unknown[]) => spies.evidence(...a) },
         vendor:           { findMany: (...a: unknown[]) => spies.vendor(...a) },
         // Epic 49 calendar-deadlines monitor sources.
@@ -133,11 +133,11 @@ beforeEach(() => {
 describe('REGRESSION: query budget per notification-dispatch run', () => {
     /**
      * Expected query counts per entity table for ONE full dispatch:
-     *   - control:         1 (deadline-monitor)
+     *   - practice:         1 (deadline-monitor)
      *   - policy:          1 (deadline-monitor)
      *   - task:            1 (deadline-monitor)
      *   - risk:            1 (deadline-monitor)
-     *   - controlTestPlan: 1 (deadline-monitor)
+     *   - practiceTestPlan: 1 (deadline-monitor)
      *   - evidence:        3 (evidence-expiry-monitor: retentionUntil + expired
      *                          + nextReviewDate). The third is a deliberate
      *                          budget raise, not drift: retention asks "may we
@@ -154,11 +154,11 @@ describe('REGRESSION: query budget per notification-dispatch run', () => {
      * If any of these double, someone reintroduced a second scan path.
      */
     const QUERY_BUDGET: Record<string, { spy: keyof typeof spies; maxCalls: number; source: string }> = {
-        control:         { spy: 'control',         maxCalls: 1, source: 'deadline-monitor' },
+        practice:         { spy: 'practice',         maxCalls: 1, source: 'deadline-monitor' },
         policy:          { spy: 'policy',          maxCalls: 1, source: 'deadline-monitor' },
         task:            { spy: 'task',            maxCalls: 1, source: 'deadline-monitor' },
         risk:            { spy: 'risk',            maxCalls: 1, source: 'deadline-monitor' },
-        controlTestPlan: { spy: 'controlTestPlan', maxCalls: 1, source: 'deadline-monitor' },
+        practiceTestPlan: { spy: 'practiceTestPlan', maxCalls: 1, source: 'deadline-monitor' },
         evidence:        { spy: 'evidence',        maxCalls: 3, source: 'evidence-expiry-monitor' },
         vendor:          { spy: 'vendor',          maxCalls: 4, source: 'vendor-renewal-check' },
         auditCycle:      { spy: 'auditCycle',      maxCalls: 1, source: 'calendar-deadlines' },
@@ -188,11 +188,11 @@ describe('REGRESSION: query budget per notification-dispatch run', () => {
     });
 
     test.each(Object.entries({
-        control:         { spy: 'control' as const,         maxCalls: 1 },
+        practice:         { spy: 'practice' as const,         maxCalls: 1 },
         policy:          { spy: 'policy' as const,          maxCalls: 1 },
         task:            { spy: 'task' as const,            maxCalls: 1 },
         risk:            { spy: 'risk' as const,            maxCalls: 1 },
-        controlTestPlan: { spy: 'controlTestPlan' as const, maxCalls: 1 },
+        practiceTestPlan: { spy: 'practiceTestPlan' as const, maxCalls: 1 },
         evidence:        { spy: 'evidence' as const,        maxCalls: 3 },
         vendor:          { spy: 'vendor' as const,          maxCalls: 4 },
         auditCycle:      { spy: 'auditCycle' as const,      maxCalls: 1 },
@@ -229,11 +229,11 @@ describe('REGRESSION: precomputed items produce zero source-entity queries', () 
         });
 
         // Source entity tables must NOT be touched
-        expect(spies.control.mock.calls.length).toBe(0);
+        expect(spies.practice.mock.calls.length).toBe(0);
         expect(spies.policy.mock.calls.length).toBe(0);
         expect(spies.task.mock.calls.length).toBe(0);
         expect(spies.risk.mock.calls.length).toBe(0);
-        expect(spies.controlTestPlan.mock.calls.length).toBe(0);
+        expect(spies.practiceTestPlan.mock.calls.length).toBe(0);
         expect(spies.evidence.mock.calls.length).toBe(0);
         expect(spies.vendor.mock.calls.length).toBe(0);
     });
@@ -253,11 +253,11 @@ describe('REGRESSION: precomputed items produce zero source-entity queries', () 
         });
 
         // Deadline entities NOT queried (precomputed)
-        expect(spies.control.mock.calls.length).toBe(0);
+        expect(spies.practice.mock.calls.length).toBe(0);
         expect(spies.policy.mock.calls.length).toBe(0);
         expect(spies.task.mock.calls.length).toBe(0);
         expect(spies.risk.mock.calls.length).toBe(0);
-        expect(spies.controlTestPlan.mock.calls.length).toBe(0);
+        expect(spies.practiceTestPlan.mock.calls.length).toBe(0);
 
         // Evidence and vendor ARE queried (not precomputed)
         expect(spies.evidence.mock.calls.length).toBeGreaterThan(0);
@@ -274,8 +274,8 @@ describe('REGRESSION: digest-dispatcher does not query source-entity tables', ()
     const { resolve } = require('path');
 
     const SOURCE_ENTITY_MODELS = [
-        'control', 'policy', 'task', 'risk',
-        'controlTestPlan', 'evidence', 'vendor',
+        'practice', 'policy', 'task', 'risk',
+        'practiceTestPlan', 'evidence', 'vendor',
     ];
 
     test('dispatcher source code does not reference source entity models', () => {

@@ -2,7 +2,7 @@
  * R23-PR-A — KpiFilterCard primitive.
  *
  * Extracts the Risks-page KPI card pattern into a reusable shared
- * component. Six other list pages (Assets, Controls, Tasks, Evidence,
+ * component. Six other list pages (Assets, Practices, Tasks, Evidence,
  * Policies, Vendors) need the same look + interaction, so the
  * primitive lives here and the Risks page becomes its first consumer.
  *

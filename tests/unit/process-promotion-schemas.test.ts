@@ -85,7 +85,7 @@ describe('process-map schemas', () => {
             expect(r.success).toBe(true);
             if (r.success) {
                 expect(r.data.edgeKind).toBe('flow');
-                expect(r.data.controls).toEqual([]);
+                expect(r.data.practices).toEqual([]);
             }
         });
 
@@ -94,11 +94,11 @@ describe('process-map schemas', () => {
             expect(ProcessEdgeInputSchema.safeParse(edge({ targetKey: '' })).success).toBe(false);
         });
 
-        it('caps attached controls at 64', () => {
-            const controls = (n: number) =>
-                Array.from({ length: n }, (_, i) => ({ controlKey: `c${i}`, label: `C${i}` }));
-            expect(ProcessEdgeInputSchema.safeParse(edge({ controls: controls(64) })).success).toBe(true);
-            expect(ProcessEdgeInputSchema.safeParse(edge({ controls: controls(65) })).success).toBe(false);
+        it('caps attached practices at 64', () => {
+            const practices = (n: number) =>
+                Array.from({ length: n }, (_, i) => ({ practiceKey: `c${i}`, label: `C${i}` }));
+            expect(ProcessEdgeInputSchema.safeParse(edge({ practices: practices(64) })).success).toBe(true);
+            expect(ProcessEdgeInputSchema.safeParse(edge({ practices: practices(65) })).success).toBe(false);
         });
     });
 

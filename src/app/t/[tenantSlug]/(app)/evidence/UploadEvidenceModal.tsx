@@ -12,7 +12,7 @@
  *
  * Business contract is preserved byte-for-byte:
  *   - `POST /api/t/:slug/evidence/uploads` with `FormData` carrying
- *     `file`, `title?`, `controlId?`. Each queued file is uploaded
+ *     `file`, `title?`, `practiceId?`. Each queued file is uploaded
  *     individually; the same metadata fields apply to every file in
  *     the batch.
  *   - Optimistic pending row inserted into the SWR cache for
@@ -30,7 +30,7 @@
  *
  * E2E selectors preserved:
  *   - `#upload-form`, `#upload-evidence-cancel-btn`, `#submit-upload-btn`,
- *     `#file-input`, `#upload-title-input`, `#control-select`,
+ *     `#file-input`, `#upload-title-input`, `#practice-select`,
  *     `#retention-date-input`, `#upload-error`. The dropzone forwards
  *     `inputId="file-input"` so `setInputFiles('#file-input', …)`
  *     keeps working unchanged.
@@ -96,7 +96,7 @@ const EVIDENCE_ACCEPT =
 
 // ─── Types ──────────────────────────────────────────────────────────
 
-interface ControlOption {
+interface PracticeOption {
     id: string;
     name: string;
     code?: string | null;
@@ -107,7 +107,7 @@ export interface UploadEvidenceModalProps {
     setOpen: Dispatch<SetStateAction<boolean>>;
     tenantSlug: string;
     apiUrl: (path: string) => string;
-    controls: ControlOption[];
+    practices: PracticeOption[];
 }
 
 // ─── Component ──────────────────────────────────────────────────────
@@ -118,7 +118,7 @@ export function UploadEvidenceModal({
 
     tenantSlug: _tenantSlug,
     apiUrl,
-    controls,
+    practices,
 }: UploadEvidenceModalProps) {
     const t = useTranslations('evidence');
     const close = useCallback(() => setOpen(false), [setOpen]);
@@ -126,7 +126,7 @@ export function UploadEvidenceModal({
     const dropzoneRef = useRef<FileDropzoneHandle>(null);
 
     const [title, setTitle] = useState('');
-    const [controlId, setControlId] = useState('');
+    const [practiceId, setPracticeId] = useState('');
     // B8 follow-up — free-text folder label applied to every file
     // in the upload batch. Datalist below seeds it with values
     // already in use on existing evidence.
@@ -166,7 +166,7 @@ export function UploadEvidenceModal({
                     body: JSON.stringify({
                         connectionId: spConnId,
                         items: items.map((i) => ({ driveId: i.driveId, itemId: i.itemId, name: i.name })),
-                        controlId: controlId || undefined,
+                        practiceId: practiceId || undefined,
                     }),
                 });
                 if (!res.ok) {
@@ -180,32 +180,32 @@ export function UploadEvidenceModal({
                 setError(t('upload.sharePointNetworkFailed'));
             }
         },
-        [apiUrl, spConnId, controlId, swrMutate, setOpen, t],
+        [apiUrl, spConnId, practiceId, swrMutate, setOpen, t],
     );
 
     // Reset on every open so a previous cancel doesn't leak state.
     useEffect(() => {
         if (!open) return;
         setTitle('');
-        setControlId('');
+        setPracticeId('');
         setRetentionUntil('');
         setError('');
         setQueuedCount(0);
         setUploadingAll(false);
     }, [open]);
 
-    // Project controls into ComboboxOption shape. The code +
+    // Project practices into ComboboxOption shape. The code +
     // name are all folded into the label so cmdk's fuzzy-match scoring
     // hits on any of them — typing "A.5.1" or "access review" or the
-    // raw control code all filter to the same row.
-    const controlOptions = useMemo<ComboboxOption<ControlOption>[]>(
+    // raw practice code all filter to the same row.
+    const practiceOptions = useMemo<ComboboxOption<PracticeOption>[]>(
         () =>
-            controls.map((c) => ({
+            practices.map((c) => ({
                 value: c.id,
                 label: `${c.code || 'Custom'}: ${c.name}`,
                 meta: c,
             })),
-        [controls],
+        [practices],
     );
 
     const telemetry = useFormTelemetry('UploadEvidenceModal');
@@ -234,7 +234,7 @@ export function UploadEvidenceModal({
     interface UploadVars {
         file: File;
         applyTitle: boolean;
-        controlId: string;
+        practiceId: string;
         /** B8 follow-up — folder label applied to every uploaded file. */
         folder: string;
         retentionUntil: string;
@@ -253,7 +253,7 @@ export function UploadEvidenceModal({
             // (multi-file uploads just take the filename — different
             // titles would all land on the same string otherwise).
             if (applyTitle && title) formData.append('title', title);
-            if (vars.controlId) formData.append('controlId', vars.controlId);
+            if (vars.practiceId) formData.append('practiceId', vars.practiceId);
             // B8 follow-up — folder rides every uploaded row in the
             // batch. The /uploads route forwards it to createEvidence.
             if (vars.folder) formData.append('folder', vars.folder.trim());
@@ -298,8 +298,8 @@ export function UploadEvidenceModal({
                 type: 'FILE',
                 status: 'PENDING_UPLOAD',
                 owner: null,
-                control: null,
-                controlId: null,
+                practice: null,
+                practiceId: null,
                 retentionUntil: null,
                 isArchived: false,
                 expiredAt: null,
@@ -332,7 +332,7 @@ export function UploadEvidenceModal({
                 const uploaded = await mutation.trigger({
                     file,
                     applyTitle,
-                    controlId,
+                    practiceId,
                     folder,
                     retentionUntil,
                     onProgress: ctx.onProgress,
@@ -375,7 +375,7 @@ export function UploadEvidenceModal({
         },
         [
             mutation,
-            controlId,
+            practiceId,
             folder,
             retentionUntil,
             telemetry,
@@ -419,7 +419,7 @@ export function UploadEvidenceModal({
         telemetry.trackSubmit({
             count: queued.length,
             hasTitle: title.trim().length > 0,
-            hasControlLink: Boolean(controlId),
+            hasPracticeLink: Boolean(practiceId),
             hasRetention: Boolean(retentionUntil),
         });
         setUploadingAll(true);
@@ -461,7 +461,7 @@ export function UploadEvidenceModal({
             isDirty={
                 queuedCount > 0 ||
                 title.trim().length > 0 ||
-                controlId.length > 0 ||
+                practiceId.length > 0 ||
                 folder.trim().length > 0 ||
                 retentionUntil.length > 0
             }
@@ -591,32 +591,32 @@ export function UploadEvidenceModal({
                             </div>
                         </div>
 
-                        {/* Control link — Epic 55: searchable Combobox */}
+                        {/* Practice link — Epic 55: searchable Combobox */}
                         <FormField
-                            label={t('upload.linkToControl')}
+                            label={t('upload.linkToPractice')}
                             description={
-                                controls.length === 0
-                                    ? t('upload.controlsEmptyHint')
-                                    : controls.length === 1
-                                        ? t('upload.controlSearchHintSingular', { count: controls.length })
-                                        : t('upload.controlSearchHintPlural', { count: controls.length })
+                                practices.length === 0
+                                    ? t('upload.practicesEmptyHint')
+                                    : practices.length === 1
+                                        ? t('upload.practiceSearchHintSingular', { count: practices.length })
+                                        : t('upload.practiceSearchHintPlural', { count: practices.length })
                             }
                         >
-                            <Combobox<false, ControlOption>
-                                id="control-select"
-                                name="controlId"
-                                options={controlOptions}
+                            <Combobox<false, PracticeOption>
+                                id="practice-select"
+                                name="practiceId"
+                                options={practiceOptions}
                                 selected={
-                                    controlOptions.find(
-                                        (o) => o.value === controlId,
+                                    practiceOptions.find(
+                                        (o) => o.value === practiceId,
                                     ) ?? null
                                 }
                                 setSelected={(option) =>
-                                    setControlId(option?.value ?? '')
+                                    setPracticeId(option?.value ?? '')
                                 }
-                                placeholder={t('upload.controlPlaceholder')}
-                                searchPlaceholder={t('upload.searchControls')}
-                                emptyState={t('upload.noControlsMatch')}
+                                placeholder={t('upload.practicePlaceholder')}
+                                searchPlaceholder={t('upload.searchPractices')}
+                                emptyState={t('upload.noPracticesMatch')}
                                 matchTriggerWidth
                                 buttonProps={{ className: 'w-full' }}
                                 caret

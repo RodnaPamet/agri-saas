@@ -4,7 +4,7 @@
  * 28 source files in `src/app` mount raw `<label>` tags directly
  * instead of routing through the `<FormField>` primitive. The
  * primitive owns the field's vertical rhythm — label, optional
- * description, control, optional error — with one set of paddings,
+ * description, practice, optional error — with one set of paddings,
  * one weight, one focus contract. Hand-rolled labels drift across
  * pages: spacing, label styling, error placement, all per-page.
  *
@@ -52,7 +52,7 @@ const EXEMPT_FILE_PATTERNS: RegExp[] = [
  * (Roadmap-7 PR-7, 2026-05-10) at 34. Roadmap-8 PR-10 narrowed the
  * detection regex to only `<label htmlFor=>` (the actual <FormField>-
  * replaceable shape) — the budget drops to 2 as a result
- * (login/page.tsx + EditControlModal). The 32 false-positives the
+ * (login/page.tsx + EditPracticeModal). The 32 false-positives the
  * original regex caught were display labels and radio/checkbox-
  * wrapper labels, neither of which need <FormField>. Future PRs
  * migrate the two genuine htmlFor offenders and drop the budget
@@ -88,9 +88,9 @@ function hasRawLabel(content: string): boolean {
     // above code blocks, above metadata strips) — which don't need
     // <FormField> because they're not form labels at all — or
     // RADIO/CHECKBOX wrappers `<label><input type="radio"></label>`
-    // which is a valid pattern (the label wraps its control). The
+    // which is a valid pattern (the label wraps its practice). The
     // narrowed regex matches the actual offending shape: a label
-    // pointing at a separate control via htmlFor — that's the
+    // pointing at a separate practice via htmlFor — that's the
     // pattern <FormField> replaces.
     return /<label\s+htmlFor=/.test(content);
 }

@@ -227,7 +227,7 @@ it('fetches upstream + caches on a cache miss', async () => {
     const res = await call(14, SOFIA.x, SOFIA.y);
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toBe('image/png');
-    expect(res.headers.get('cache-control')).toBe('public, max-age=604800, immutable');
+    expect(res.headers.get('cache-practice')).toBe('public, max-age=604800, immutable');
     // The upstream WMS URL is built from the configured base + the tile bbox.
     const fetchedUrl = (global.fetch as jest.Mock).mock.calls[0][0] as string;
     expect(fetchedUrl).toContain('https://cadastre.example/wms?');

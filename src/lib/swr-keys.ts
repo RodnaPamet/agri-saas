@@ -4,7 +4,7 @@
  * Single source of truth for every tenant-scoped SWR cache key the
  * client uses. Without this, adoption of `useTenantSWR` /
  * `useTenantMutation` is one good-intentions PR away from drift —
- * three components writing `/controls`, `/control`, `/Controls` and
+ * three components writing `/practices`, `/practice`, `/Practices` and
  * none of them invalidating each other.
  *
  * Convention
@@ -18,7 +18,7 @@
  *
  *   - Every resource exposes `list()` and (where the API has a
  *     detail route) `detail(id)`. Sub-views are named methods
- *     beneath the resource (`controls.consistencyCheck()`,
+ *     beneath the resource (`practices.consistencyCheck()`,
  *     `tasks.metrics()`, …) — never deeply nested objects, never
  *     a generic templating DSL.
  *
@@ -85,25 +85,25 @@ function makeResource(base: string): ResourceKeys {
 
 export const CACHE_KEYS = {
     // ─── Compliance core ─────────────────────────────────────────
-    controls: {
-        ...makeResource('controls'),
-        consistencyCheck: () => '/controls/consistency-check' as const,
+    practices: {
+        ...makeResource('practices'),
+        consistencyCheck: () => '/practices/consistency-check' as const,
         /**
-         * Combined detail-page payload — `/controls/{id}/page-data`
+         * Combined detail-page payload — `/practices/{id}/page-data`
          * collapses the prior detail + sync-status waterfall into
          * one round-trip. Used as the single SWR cache key for the
          * detail page; mutations on the detail page invalidate this
          * (not `detail(id)`) since the page never reads the bare
          * detail endpoint.
          */
-        pageData: (id: string) => `/controls/${id}/page-data` as const,
-        activity: (id: string) => `/controls/${id}/activity` as const,
+        pageData: (id: string) => `/practices/${id}/page-data` as const,
+        activity: (id: string) => `/practices/${id}/activity` as const,
         // #102 item 1 — per-tab lazy fetches. The detail page's
         // Tasks / Evidence / Mappings tabs each read their own slice
         // on demand instead of off the eager page-data payload.
-        tasks: (id: string) => `/controls/${id}/tasks` as const,
-        evidence: (id: string) => `/controls/${id}/evidence` as const,
-        mappings: (id: string) => `/controls/${id}/requirements` as const,
+        tasks: (id: string) => `/practices/${id}/tasks` as const,
+        evidence: (id: string) => `/practices/${id}/evidence` as const,
+        mappings: (id: string) => `/practices/${id}/requirements` as const,
     },
     risks: makeResource('risks'),
     evidence: {
@@ -181,7 +181,7 @@ export const CACHE_KEYS = {
         executions: {
             live: () => '/automation/executions/live' as const,
         },
-        // VR-9 — AI rule suggestions (Control-page right rail).
+        // VR-9 — AI rule suggestions (Practice-page right rail).
         suggestions: () => '/ai/automation-suggestions' as const,
     },
 

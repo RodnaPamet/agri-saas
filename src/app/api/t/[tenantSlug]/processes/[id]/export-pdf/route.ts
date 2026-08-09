@@ -109,7 +109,7 @@ export const POST = withApiErrorHandling(
                 'Content-Type': 'application/pdf',
                 'Content-Disposition': `attachment; filename="${filename}"`,
                 'Content-Length': String(pdfBuffer.length),
-                'Cache-Control': 'no-store, max-age=0',
+                'Cache-Practice': 'no-store, max-age=0',
             },
         });
     },

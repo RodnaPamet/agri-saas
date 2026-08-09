@@ -50,7 +50,7 @@ export const GET = withApiErrorHandling(
                 'Content-Type': 'application/vnd.mapbox-vector-tile',
                 // Tenant-scoped + auth'd, and parcels can change — private +
                 // short TTL so an edit shows up within minutes.
-                'Cache-Control': 'private, max-age=300',
+                'Cache-Practice': 'private, max-age=300',
                 'Content-Length': String(tile.length),
             },
         });

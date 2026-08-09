@@ -38,7 +38,7 @@ const policyListSelect = {
     createdAt: true,
     owner: { select: { id: true, name: true, email: true } },
     currentVersion: { select: { id: true, versionNumber: true } },
-    _count: { select: { versions: true, controlLinks: true, approvals: true } },
+    _count: { select: { versions: true, practiceLinks: true, approvals: true } },
 } as const;
 
 export class PolicyRepository {
@@ -117,9 +117,9 @@ export class PolicyRepository {
                         },
                     },
                 },
-                controlLinks: {
+                practiceLinks: {
                     include: {
-                        control: { select: { id: true, name: true, code: true } },
+                        practice: { select: { id: true, name: true, code: true } },
                     },
                 },
             },

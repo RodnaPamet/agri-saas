@@ -117,7 +117,7 @@ const EXCLUDED_ROUTES: ReadonlyArray<{ relPath: string; reason: string }> = [
     // ── Catalogue READS (#P1) ───────────────────────────────────────
     // The frameworks + schemes roots are in scope because their WRITES reach
     // the global catalogue. These three are read-only: browsing a standard's
-    // control points is not a privileged act, and every role may do it
+    // practice points is not a privileged act, and every role may do it
     // (`assertCanViewFrameworks` admits any authenticated member). Gating them
     // on `admin.manage` would hide the catalogue from the readers it exists
     // for. Each handler still resolves ctx via `getTenantCtx`, so tenant

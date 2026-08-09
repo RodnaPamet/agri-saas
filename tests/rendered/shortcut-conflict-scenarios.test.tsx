@@ -189,7 +189,7 @@ describe('Command palette — availability across routes', () => {
     const routes = [
         '/login',
         '/t/acme-corp/dashboard',
-        '/t/acme-corp/controls',
+        '/t/acme-corp/practices',
         '/t/acme-corp/risks/risk-123',
         '/audit/shared/some-token',
     ];
@@ -271,7 +271,7 @@ describe('Shortcut safety — input hijack', () => {
         render(
             <Shell>
                 <Binding />
-                <button role="combobox" aria-controls="status-listbox" aria-expanded="false" aria-label="Status" />
+                <button role="combobox" aria-practices="status-listbox" aria-expanded="false" aria-label="Status" />
             </Shell>,
         );
         const el = document.querySelector(

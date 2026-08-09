@@ -19,7 +19,7 @@
  *   1. Overdue evidence → "Refresh overdue evidence"
  *   2. Overdue tasks    → "Resolve overdue tasks"
  *   3. High-severity risks (count > 0) → "Review high-severity risks"
- *   4. Coverage < 80%   → "Improve control coverage"
+ *   4. Coverage < 80%   → "Improve practice coverage"
  *   5. Default          → "Run readiness check"
  *
  * Below the primary CTA: a quiet 3-link "quick adds" row in muted

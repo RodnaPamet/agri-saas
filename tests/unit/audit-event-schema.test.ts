@@ -31,12 +31,12 @@ describe('Audit Event Schema', () => {
         test('accepts payload with all optional fields', () => {
             const payload = {
                 category: 'entity_lifecycle' as const,
-                entityName: 'Control',
+                entityName: 'Practice',
                 operation: 'updated' as const,
                 changedFields: ['status', 'effectiveness'],
                 before: { status: 'NOT_STARTED' },
                 after: { status: 'IN_PROGRESS' },
-                summary: 'Control status updated',
+                summary: 'Practice status updated',
             };
             const result = EntityLifecycleSchema.safeParse(payload);
             expect(result.success).toBe(true);
@@ -132,7 +132,7 @@ describe('Audit Event Schema', () => {
             const payload = {
                 category: 'relationship' as const,
                 operation: 'linked' as const,
-                sourceEntity: 'Control',
+                sourceEntity: 'Practice',
                 sourceId: 'ctrl-123',
                 targetEntity: 'Risk',
                 targetId: 'risk-456',
@@ -159,7 +159,7 @@ describe('Audit Event Schema', () => {
             const payload = {
                 category: 'relationship',
                 operation: 'linked',
-                sourceEntity: 'Control',
+                sourceEntity: 'Practice',
                 sourceId: 'ctrl-123',
                 targetEntity: 'Risk',
             };
@@ -274,7 +274,7 @@ describe('Audit Event Schema', () => {
         test('correctly routes status_change category', () => {
             const payload = {
                 category: 'status_change',
-                entityName: 'Control',
+                entityName: 'Practice',
                 fromStatus: 'NOT_STARTED',
                 toStatus: 'IN_PROGRESS',
             };

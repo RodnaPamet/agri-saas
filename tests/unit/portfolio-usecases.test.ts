@@ -79,9 +79,9 @@ function makeSnapshot(
     tenantId: string,
     overrides: Partial<{
         snapshotDate: Date;
-        controlsApplicable: number;
-        controlsImplemented: number;
-        controlCoverageBps: number;
+        practicesApplicable: number;
+        practicesImplemented: number;
+        practiceCoverageBps: number;
         risksOpen: number;
         risksCritical: number;
         risksHigh: number;
@@ -100,12 +100,12 @@ function makeSnapshot(
         id: `snap-${tenantId}`,
         tenantId,
         snapshotDate: overrides.snapshotDate ?? new Date('2026-04-26'),
-        controlsTotal: 100,
-        controlsApplicable: overrides.controlsApplicable ?? 100,
-        controlsImplemented: overrides.controlsImplemented ?? 90,
-        controlsInProgress: 5,
-        controlsNotStarted: 5,
-        controlCoverageBps: overrides.controlCoverageBps ?? 900, // 90.0%
+        practicesTotal: 100,
+        practicesApplicable: overrides.practicesApplicable ?? 100,
+        practicesImplemented: overrides.practicesImplemented ?? 90,
+        practicesInProgress: 5,
+        practicesNotStarted: 5,
+        practiceCoverageBps: overrides.practiceCoverageBps ?? 900, // 90.0%
         risksMitigating: 1,
         risksAccepted: 2,
         risksClosed: 3,
@@ -145,7 +145,7 @@ describe('getPortfolioSummary', () => {
         const summary = await getPortfolioSummary(ctxFor());
 
         expect(summary.tenants).toEqual({ total: 0, snapshotted: 0, pending: 0 });
-        expect(summary.controls.coveragePercent).toBe(0);
+        expect(summary.practices.coveragePercent).toBe(0);
         expect(summary.rag).toEqual({ green: 0, amber: 0, red: 0, pending: 0 });
         expect(summary.organizationId).toBe('org-1');
         expect(summary.organizationSlug).toBe('acme-org');
@@ -162,7 +162,7 @@ describe('getPortfolioSummary', () => {
 
         expect(summary.tenants).toEqual({ total: 2, snapshotted: 0, pending: 2 });
         expect(summary.rag).toEqual({ green: 0, amber: 0, red: 0, pending: 2 });
-        expect(summary.controls.applicable).toBe(0);
+        expect(summary.practices.applicable).toBe(0);
     });
 
     it('aggregates totals + RAG buckets across mixed-state tenants', async () => {
@@ -175,18 +175,18 @@ describe('getPortfolioSummary', () => {
         complianceSnapshotFindManyMock.mockResolvedValue([
             // GREEN: cov=95%, no criticals, no overdue
             makeSnapshot('t-green', {
-                controlsApplicable: 100, controlsImplemented: 95,
-                controlCoverageBps: 950, evidenceOverdue: 0,
+                practicesApplicable: 100, practicesImplemented: 95,
+                practiceCoverageBps: 950, evidenceOverdue: 0,
             }),
             // AMBER: cov=70%, no criticals, no overdue
             makeSnapshot('t-amber', {
-                controlsApplicable: 100, controlsImplemented: 70,
-                controlCoverageBps: 700, evidenceOverdue: 0,
+                practicesApplicable: 100, practicesImplemented: 70,
+                practiceCoverageBps: 700, evidenceOverdue: 0,
             }),
             // RED: cov=50%, no criticals, no overdue
             makeSnapshot('t-red', {
-                controlsApplicable: 100, controlsImplemented: 50,
-                controlCoverageBps: 500, evidenceOverdue: 0,
+                practicesApplicable: 100, practicesImplemented: 50,
+                practiceCoverageBps: 500, evidenceOverdue: 0,
             }),
         ]);
 
@@ -195,9 +195,9 @@ describe('getPortfolioSummary', () => {
         expect(summary.tenants).toEqual({ total: 4, snapshotted: 3, pending: 1 });
         expect(summary.rag).toEqual({ green: 1, amber: 1, red: 1, pending: 1 });
         // Org-wide coverage = (95 + 70 + 50) / (100 + 100 + 100) = 71.667…%
-        expect(summary.controls.applicable).toBe(300);
-        expect(summary.controls.implemented).toBe(215);
-        expect(summary.controls.coveragePercent).toBeCloseTo(71.6667, 2);
+        expect(summary.practices.applicable).toBe(300);
+        expect(summary.practices.implemented).toBe(215);
+        expect(summary.practices.coveragePercent).toBeCloseTo(71.6667, 2);
     });
 });
 
@@ -211,7 +211,7 @@ describe('getPortfolioTenantHealth', () => {
         ]);
         complianceSnapshotFindManyMock.mockResolvedValue([
             makeSnapshot('t-1', {
-                controlCoverageBps: 850, risksCritical: 0,
+                practiceCoverageBps: 850, risksCritical: 0,
                 evidenceOverdue: 0,
             }),
         ]);
@@ -274,8 +274,8 @@ describe('getPortfolioTrends', () => {
             {
                 snapshotDate: new Date('2026-04-25'),
                 _sum: {
-                    controlsApplicable: 200,
-                    controlsImplemented: 150, // 75% risksOpen: 8, risksCritical: 1, risksHigh: 3,
+                    practicesApplicable: 200,
+                    practicesImplemented: 150, // 75% risksOpen: 8, risksCritical: 1, risksHigh: 3,
                     evidenceOverdue: 2, evidenceDueSoon7d: 5, evidenceCurrent: 100,
                     policiesTotal: 10, policiesOverdueReview: 1,
                     tasksOpen: 12, tasksOverdue: 1,
@@ -286,8 +286,8 @@ describe('getPortfolioTrends', () => {
             {
                 snapshotDate: new Date('2026-04-26'),
                 _sum: {
-                    controlsApplicable: 200,
-                    controlsImplemented: 170, // 85% risksOpen: 6, risksCritical: 0, risksHigh: 2,
+                    practicesApplicable: 200,
+                    practicesImplemented: 170, // 85% risksOpen: 6, risksCritical: 0, risksHigh: 2,
                     evidenceOverdue: 1, evidenceDueSoon7d: 4, evidenceCurrent: 110,
                     policiesTotal: 10, policiesOverdueReview: 0,
                     tasksOpen: 10, tasksOverdue: 0,
@@ -302,9 +302,9 @@ describe('getPortfolioTrends', () => {
         expect(trend.daysAvailable).toBe(2);
         expect(trend.tenantsAggregated).toBe(2);
         expect(trend.dataPoints[0].date).toBe('2026-04-25');
-        expect(trend.dataPoints[0].controlCoveragePercent).toBe(75);
+        expect(trend.dataPoints[0].practiceCoveragePercent).toBe(75);
         expect(trend.dataPoints[1].date).toBe('2026-04-26');
-        expect(trend.dataPoints[1].controlCoveragePercent).toBe(85);
+        expect(trend.dataPoints[1].practiceCoveragePercent).toBe(85);
     });
 
     it('caps days to 365', async () => {

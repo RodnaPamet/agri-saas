@@ -70,12 +70,12 @@ beforeEach(() => {
 
 // ─── Test harness ───────────────────────────────────────────────────
 
-// A control's traceability shows its linked ASSETS. (It used to show
+// A practice's traceability shows its linked ASSETS. (It used to show
 // linked Risks; that arm went with the risk register, so this suite
 // exercises the same Epic 67 delayed-commit wiring through the
-// surviving control→asset link.)
+// surviving practice→asset link.)
 const TRACE_DATA = {
-    controls: [],
+    practices: [],
     assets: [
         {
             id: "trace-link-1",
@@ -101,7 +101,7 @@ function ok(json: unknown) {
 function setupRoute(): void {
     fetchMock.mockImplementation((input: RequestInfo | URL) => {
         const url = typeof input === "string" ? input : (input as URL).toString();
-        if (url.endsWith("/controls/ctrl-1/traceability")) return Promise.resolve(ok(TRACE_DATA));
+        if (url.endsWith("/practices/ctrl-1/traceability")) return Promise.resolve(ok(TRACE_DATA));
         return Promise.resolve(ok({}));
     });
 }
@@ -116,7 +116,7 @@ function mountPanel() {
             <TooltipProvider delayDuration={0}>
                 <TraceabilityPanel
                     apiBase="/api/t/acme/"
-                    entityType="control"
+                    entityType="practice"
                     entityId="ctrl-1"
                     canWrite
                     tenantHref={(p) => p}
@@ -224,7 +224,7 @@ describe("TraceabilityPanel — unlink delayed-commit", () => {
                 ([, init]) => (init as RequestInit | undefined)?.method === "DELETE",
             );
             expect(after).toHaveLength(1);
-            expect(after[0]?.[0]).toBe("/api/t/acme/assets/asset-7/controls/ctrl-1");
+            expect(after[0]?.[0]).toBe("/api/t/acme/assets/asset-7/practices/ctrl-1");
         } finally {
             jest.useRealTimers();
         }

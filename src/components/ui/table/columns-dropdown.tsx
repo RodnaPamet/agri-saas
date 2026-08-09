@@ -12,7 +12,7 @@
  * primitive; `useColumnsDropdown` owns the order+visibility state and maps
  * it into `items`.
  *
- * Sits SECOND (right) in the toolbar actions slot — it controls the table
+ * Sits SECOND (right) in the toolbar actions slot — it practices the table
  * below, secondary to the filter gear.
  */
 

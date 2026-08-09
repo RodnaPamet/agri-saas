@@ -4,7 +4,7 @@
  * Bug class (recurring): a foreground colour hard-coded to one theme's
  * value is invisible/wrong in the OTHER theme. `text-white` looks fine
  * on the dark default theme but disappears on the light theme. It bit
- * `LinkedTasksPanel` (#771), then the control → Traceability /
+ * `LinkedTasksPanel` (#771), then the practice → Traceability /
  * TestPlans panels + ForbiddenPage. The fix is always a semantic token
  * (`text-content-emphasis` / `-default` / `-muted`) which flips with
  * the theme.

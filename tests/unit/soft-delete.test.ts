@@ -80,14 +80,14 @@ describe('Soft-Delete Middleware', () => {
             expect(result.args.data.deletedAt).toBeDefined();
         });
 
-        test('delete on Control becomes update with deletedAt', () => {
-            const result = simulateMiddleware('Control', 'delete', { where: { id: 'r1' } });
+        test('delete on Practice becomes update with deletedAt', () => {
+            const result = simulateMiddleware('Practice', 'delete', { where: { id: 'r1' } });
             expect(result.action).toBe('update');
             expect(result.args.data.deletedAt).toBeDefined();
         });
 
-        test('delete on Control becomes update with deletedAt', () => {
-            const result = simulateMiddleware('Control', 'delete', { where: { id: 'c1' } });
+        test('delete on Practice becomes update with deletedAt', () => {
+            const result = simulateMiddleware('Practice', 'delete', { where: { id: 'c1' } });
             expect(result.action).toBe('update');
             expect(result.args.data.deletedAt).toBeDefined();
         });
@@ -110,8 +110,8 @@ describe('Soft-Delete Middleware', () => {
             expect(result.args.data.deletedAt).toBeDefined();
         });
 
-        test('deleteMany on Control becomes updateMany with deletedAt', () => {
-            const result = simulateMiddleware('Control', 'deleteMany', { where: { tenantId: 't1' } });
+        test('deleteMany on Practice becomes updateMany with deletedAt', () => {
+            const result = simulateMiddleware('Practice', 'deleteMany', { where: { tenantId: 't1' } });
             expect(result.action).toBe('updateMany');
             expect(result.args.data.deletedAt).toBeDefined();
         });
@@ -124,12 +124,12 @@ describe('Soft-Delete Middleware', () => {
         });
 
         test('findFirst on Risk adds deletedAt:null filter', () => {
-            const result = simulateMiddleware('Control', 'findFirst', { where: { id: 'r1' } });
+            const result = simulateMiddleware('Practice', 'findFirst', { where: { id: 'r1' } });
             expect(result.args.where.deletedAt).toBeNull();
         });
 
-        test('findUnique on Control adds deletedAt:null filter', () => {
-            const result = simulateMiddleware('Control', 'findUnique', { where: { id: 'c1' } });
+        test('findUnique on Practice adds deletedAt:null filter', () => {
+            const result = simulateMiddleware('Practice', 'findUnique', { where: { id: 'c1' } });
             expect(result.args.where.deletedAt).toBeNull();
         });
 
@@ -206,7 +206,7 @@ describe('Soft-Delete Middleware', () => {
         test('contains exactly the expected models', () => {
             // P0 models
             expect(SOFT_DELETE_MODELS.has('Asset')).toBe(true);
-            expect(SOFT_DELETE_MODELS.has('Control')).toBe(true);
+            expect(SOFT_DELETE_MODELS.has('Practice')).toBe(true);
             expect(SOFT_DELETE_MODELS.has('Evidence')).toBe(true);
             expect(SOFT_DELETE_MODELS.has('Policy')).toBe(true);
             // P1 models

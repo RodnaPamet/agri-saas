@@ -15,7 +15,7 @@
  *   - dueAt — optional `YYYY-MM-DD`.
  *   - assigneeUserId — optional cuid.
  *   - reviewerUserId — optional cuid.
- *   - controlId — optional cuid.
+ *   - practiceId — optional cuid.
  */
 import { z } from 'zod';
 
@@ -43,7 +43,7 @@ export const NewTaskFormSchema = z.object({
     dueAt: optionalYmd.default(''),
     assigneeUserId: optionalCuid,
     reviewerUserId: optionalCuid,
-    controlId: optionalCuid,
+    practiceId: optionalCuid,
 });
 
 export type NewTaskFormValues = z.input<typeof NewTaskFormSchema>;

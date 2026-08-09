@@ -10,14 +10,14 @@
  *
  * Covers:
  *   - validateFindingRefs — tenant-isolation validator for assignee,
- *     control, compensatingControl. Each error path has its own
+ *     practice, compensatingPractice. Each error path has its own
  *     assertion.
  *   - listFindings / getFinding — read paths.
  *   - createFinding — Epic D.2 sanitisation across every free-text
  *     column, audit shape.
  *   - updateFinding — three-state sanitiseOptional contract for free-
- *     text, three-state on FK relations (assigneeUserId / controlId /
- *     compensatingControlId)
+ *     text, three-state on FK relations (assigneeUserId / practiceId /
+ *     compensatingPracticeId)
  *     (undefined = no touch, [] = clear all, [...] = replace),
  *     verifiedAt + verifiedBy auto-population on CLOSED, status-change
  *     vs entity-lifecycle audit branch.
@@ -25,7 +25,7 @@
 
 const mockDb = {
     tenantMembership: { findFirst: jest.fn() },
-    control: { findMany: jest.fn() },
+    practice: { findMany: jest.fn() },
 } as any;
 
 jest.mock('@/lib/db-context', () => ({
@@ -107,17 +107,17 @@ describe('createFinding — reference validation', () => {
         } as any)).rejects.toThrow(/INVALID_ASSIGNEE/);
     });
 
-    it('rejects an inaccessible controlId (INVALID_CONTROL)', async () => {
-        (mockDb.control.findMany as jest.Mock).mockResolvedValue([]);
+    it('rejects an inaccessible practiceId (INVALID_CONTROL)', async () => {
+        (mockDb.practice.findMany as jest.Mock).mockResolvedValue([]);
         await expect(createFinding(editorCtx, {
-            title: 'F', severity: 'HIGH', type: 'GAP', controlId: 'foreign-control',
+            title: 'F', severity: 'HIGH', type: 'GAP', practiceId: 'foreign-practice',
         } as any)).rejects.toThrow(/INVALID_CONTROL/);
     });
 
-    it('rejects an inaccessible compensatingControlId (INVALID_COMPENSATING_CONTROL)', async () => {
-        (mockDb.control.findMany as jest.Mock).mockResolvedValue([{ id: 'c-1' }]); // only one of two matches
+    it('rejects an inaccessible compensatingPracticeId (INVALID_COMPENSATING_CONTROL)', async () => {
+        (mockDb.practice.findMany as jest.Mock).mockResolvedValue([{ id: 'c-1' }]); // only one of two matches
         await expect(createFinding(editorCtx, {
-            title: 'F', severity: 'HIGH', type: 'GAP', controlId: 'c-1', compensatingControlId: 'c-ghost',
+            title: 'F', severity: 'HIGH', type: 'GAP', practiceId: 'c-1', compensatingPracticeId: 'c-ghost',
         } as any)).rejects.toThrow(/INVALID_COMPENSATING_CONTROL/);
     });
 
@@ -189,13 +189,13 @@ describe('updateFinding — three-state contract', () => {
         (FindingRepository.update as jest.Mock).mockResolvedValue({ id: 'f-1' });
 
         await updateFinding(editorCtx, 'f-1', {
-            assigneeUserId: null, controlId: null, compensatingControlId: null,
+            assigneeUserId: null, practiceId: null, compensatingPracticeId: null,
         } as any);
 
         const updateArgs = (FindingRepository.update as jest.Mock).mock.calls[0][3];
         expect(updateArgs.assigneeUserId).toBeNull();
-        expect(updateArgs.controlId).toBeNull();
-        expect(updateArgs.compensatingControlId).toBeNull();
+        expect(updateArgs.practiceId).toBeNull();
+        expect(updateArgs.compensatingPracticeId).toBeNull();
     });
 
 

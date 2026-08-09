@@ -1,7 +1,7 @@
 /**
  * Audit Issue Schema Tests — Updated for unified Task model.
  * 
- * Issue-specific fields (findingSource, controlGapType, remediationPlan, etc.)
+ * Issue-specific fields (findingSource, practiceGapType, remediationPlan, etc.)
  * are no longer part of the schema — they're stored in metadataJson.
  * 
  * Tests updated to reflect the new unified CreateTaskSchema (aliased as CreateIssueSchema).
@@ -64,10 +64,10 @@ describe('Audit Issue Schemas', () => {
             expect(result.success).toBe(false);
         });
 
-        it('accepts controlId', () => {
+        it('accepts practiceId', () => {
             const result = CreateIssueSchema.safeParse({
                 title: 'Finding 5', type: 'AUDIT_FINDING',
-                controlId: 'ctrl-1',
+                practiceId: 'ctrl-1',
             });
             expect(result.success).toBe(true);
         });
@@ -79,13 +79,13 @@ describe('Audit Issue Schemas', () => {
             expect(result.success).toBe(true);
         });
 
-        it('accepts controlId update', () => {
-            const result = UpdateIssueSchema.safeParse({ controlId: 'ctrl-2' });
+        it('accepts practiceId update', () => {
+            const result = UpdateIssueSchema.safeParse({ practiceId: 'ctrl-2' });
             expect(result.success).toBe(true);
         });
 
-        it('accepts null controlId', () => {
-            const result = UpdateIssueSchema.safeParse({ controlId: null });
+        it('accepts null practiceId', () => {
+            const result = UpdateIssueSchema.safeParse({ practiceId: null });
             expect(result.success).toBe(true);
         });
     });

@@ -62,7 +62,7 @@ describe('getCategoryTone', () => {
             'policy',
             'vendor',
             'audit',
-            'control',
+            'practice',
             'task',
             'risk',
             'finding',
@@ -75,8 +75,8 @@ describe('getCategoryTone', () => {
         }
     });
 
-    it('control returns success-toned bg', () => {
-        expect(getCategoryTone('control').bg).toBe('bg-status-success');
+    it('practice returns success-toned bg', () => {
+        expect(getCategoryTone('practice').bg).toBe('bg-status-success');
     });
 
     it('risk returns danger-toned bg', () => {

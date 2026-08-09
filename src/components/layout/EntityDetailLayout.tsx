@@ -3,7 +3,7 @@
 /**
  * `EntityDetailLayout` — reusable detail-page shell.
  *
- * Inflect's domain detail pages (controls, risks, policies, vendors,
+ * Inflect's domain detail pages (practices, risks, policies, vendors,
  * audits, …) share a structural pattern even though their content
  * differs sharply: a back link, a title, a meta row of badges, a
  * right-side action area, an optional tab bar, and a content slot
@@ -15,7 +15,7 @@
  *
  *   - A JSON-driven generic "render any entity" meta-framework.
  *     Domain-specific panels (TraceabilityPanel, LinkedTasksPanel,
- *     TestPlansPanel, the controls-overview metadata grid, the
+ *     TestPlansPanel, the practices-overview metadata grid, the
  *     risk inherent-vs-residual scorer) STAY in the page that
  *     owns them. The shell carries layout, not business content.
  *
@@ -27,7 +27,7 @@
  *     resulting `loading` / `error` / `empty` flags to the shell.
  *
  * Visual: stays inside the existing token vocabulary (no new colour
- * scales). Header layout matches the prior controls page. Tabs use
+ * scales). Header layout matches the prior practices page. Tabs use
  * the same active-bar pattern (border-b accent + emphasis text).
  *
  * The same shell handles the "no tabs" case (simply omit the `tabs`
@@ -395,7 +395,7 @@ export function EntityDetailLayout<TKey extends string = string>({
                                 type="button"
                                 role="tab"
                                 aria-selected={isActive}
-                                aria-controls={`tabpanel-${t.key}`}
+                                aria-practices={`tabpanel-${t.key}`}
                                 disabled={t.disabled}
                                 className={cn(
                                     'px-5 py-2.5 text-base font-medium transition border-b-2 whitespace-nowrap',

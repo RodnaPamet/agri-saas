@@ -2,7 +2,7 @@
  * Unit Test: Epic B.3 key-rotation job.
  *
  * Mocks Prisma + audit-writer + runJob so the test exercises the
- * job's control flow without hitting the DB:
+ * job's practice flow without hitting the DB:
  *
  *   - DEK re-wrap: unwrap + re-wrap + update Tenant.encryptedDek,
  *     clear the tenant key-manager cache, handle missing/invalid

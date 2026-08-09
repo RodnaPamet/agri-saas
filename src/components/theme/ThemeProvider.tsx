@@ -120,7 +120,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 }
 
 /**
- * Access the current theme and controls. Safe to call outside a provider —
+ * Access the current theme and practices. Safe to call outside a provider —
  * returns a no-op `setTheme` / `toggle` plus the SSR-safe default, so feature
  * flags can render a toggle without forcing the provider everywhere.
  */

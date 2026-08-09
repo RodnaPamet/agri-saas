@@ -26,7 +26,7 @@ import { prisma } from '@/lib/prisma';
 import { buildFrameworkTree } from '@/lib/framework-tree/build';
 import {
     decorateTreeWithCompliance,
-    type ControlForCompliance,
+    type PracticeForCompliance,
 } from '@/lib/framework-tree/compliance';
 import {
     applySortOrderOverlay,
@@ -84,33 +84,33 @@ export async function getFrameworkTree(
     );
     const requirements = applySortOrderOverlay(requirementsRaw, overlay);
 
-    // Epic 46.3 — pull every tenant control linked to one of these
+    // Epic 46.3 — pull every tenant practice linked to one of these
     // requirements + its status & applicability. Run inside the
     // tenant RLS context so the join is provably scoped to the
     // calling tenant. Frameworks themselves are global, but
-    // ControlRequirementLink.tenantId is the load-bearing scope.
+    // PracticeRequirementLink.tenantId is the load-bearing scope.
     const reqIds = requirements.map((r) => r.id);
     const links = reqIds.length
         ? await runInTenantContext(ctx, (tdb) =>
-              tdb.controlRequirementLink.findMany({
+              tdb.practiceRequirementLink.findMany({
                   where: { tenantId: ctx.tenantId, requirementId: { in: reqIds } },
                   select: {
                       requirementId: true,
-                      control: { select: { status: true, applicability: true } },
+                      practice: { select: { status: true, applicability: true } },
                   },
               }),
           )
         : [];
 
     // Group by requirementId for the compliance decorator.
-    const controlsByReqId = new Map<string, ControlForCompliance[]>();
+    const practicesByReqId = new Map<string, PracticeForCompliance[]>();
     for (const l of links) {
-        const list = controlsByReqId.get(l.requirementId) ?? [];
+        const list = practicesByReqId.get(l.requirementId) ?? [];
         list.push({
-            status: l.control.status,
-            applicability: l.control.applicability,
+            status: l.practice.status,
+            applicability: l.practice.applicability,
         });
-        controlsByReqId.set(l.requirementId, list);
+        practicesByReqId.set(l.requirementId, list);
     }
 
     const baseTree = buildFrameworkTree(
@@ -126,7 +126,7 @@ export async function getFrameworkTree(
     );
     const decoratedNodes = decorateTreeWithCompliance(
         baseTree.nodes,
-        controlsByReqId,
+        practicesByReqId,
     );
     return { ...baseTree, nodes: decoratedNodes };
 }

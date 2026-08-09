@@ -5,7 +5,7 @@
  * `<aside>` with hand-rolled chrome — no collapse-to-spine, no
  * `<Sheet>` fallback below xl, no resizable handle, no
  * `?aside=…` deep-link, no `surfaceKey`-persisted user
- * preferences. The Risks list (R28) and Controls list (#714)
+ * preferences. The Risks list (R28) and Practices list (#714)
  * had already converged on the canonical `<AsidePanel>`
  * primitive; the Processes page was the odd one out.
  *

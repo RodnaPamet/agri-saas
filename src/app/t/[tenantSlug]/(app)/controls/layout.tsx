@@ -2,7 +2,7 @@ import { getTenantCtx } from '@/app-layer/context';
 import { requireModule } from '@/lib/security/require-module';
 
 /**
- * Module gate for the `controls` (compliance / GRC) route group.
+ * Module gate for the `practices` (compliance / GRC) route group.
  *
  * Gated behind the CERTIFICATION module: a tenant that cannot access it
  * — either its plan doesn't reach the CERTIFICATION tier, or the module is
@@ -11,7 +11,7 @@ import { requireModule } from '@/lib/security/require-module';
  * layout covers every nested page with a single server-side check, the
  * redirect twin of the API's `assertModuleEnabled`.
  */
-export default async function ControlsGroupLayout({
+export default async function PracticesGroupLayout({
     children,
     params,
 }: {

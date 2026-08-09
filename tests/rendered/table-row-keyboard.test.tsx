@@ -108,7 +108,7 @@ describe('clickable rows are keyboard-operable', () => {
         expect(rowFor('Spray record, block A')).not.toHaveAttribute('role', 'button');
     });
 
-    it('a key pressed inside a nested control belongs to that control', () => {
+    it('a key pressed inside a nested practice belongs to that practice', () => {
         const onRowClick = jest.fn();
         const onButton = jest.fn();
         render(

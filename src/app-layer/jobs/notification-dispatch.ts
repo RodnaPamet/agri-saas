@@ -20,7 +20,7 @@
  * INVARIANT — ONE-PASS DETECTION:
  *   Detection happens ONCE per dispatch run. The digest-dispatcher
  *   consumes the generated DueItem[] findings — it must NEVER rescan
- *   source entity tables (control, policy, evidence, vendor, etc.).
+ *   source entity tables (practice, policy, evidence, vendor, etc.).
  *   If you need to add a new entity monitor, add it HERE and pass
  *   its DueItem[] to dispatchDigest(). Do NOT schedule it separately.
  *   Regression guard: tests/unit/notification-pipeline-regression.test.ts
@@ -106,7 +106,7 @@ export async function runNotificationDispatch(
                 });
             } else {
                 // The base deadline-monitor covers
-                // Control/Policy/Task/Risk/TestPlan. Epic 49 adds the
+                // Practice/Policy/Task/Risk/TestPlan. Epic 49 adds the
                 // calendar-deadlines monitor for AuditCycle /
                 // VendorDocument / Finding — three sources that
                 // weren't previously scanned. Run them in parallel and

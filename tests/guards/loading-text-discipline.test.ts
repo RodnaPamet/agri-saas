@@ -6,8 +6,8 @@
  *
  *   policies/templates  "Loading templates..."
  *   policies/[id]       "Loading activity..."
- *   controls/[id]       "Loading activity..."
- *   controls/templates  "Loading templates..."
+ *   practices/[id]       "Loading activity..."
+ *   practices/templates  "Loading templates..."
  *   frameworks/[key]    "Loading tree..." × 2
  *   frameworks/.../diff "Loading diff..."
  *   TraceabilityPanel   "Loading traceability..."

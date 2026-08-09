@@ -44,9 +44,9 @@ interface DigestData {
     tenantName: string;
     snapshotDate: string;
     // Current KPIs (from latest snapshot)
-    controlCoveragePercent: number;
-    controlsImplemented: number;
-    controlsApplicable: number;
+    practiceCoveragePercent: number;
+    practicesImplemented: number;
+    practicesApplicable: number;
     evidenceOverdue: number;
     evidenceDueSoon7d: number;
     policiesOverdueReview: number;
@@ -151,9 +151,9 @@ async function generateAndSendDigest(
     const data: DigestData = {
         tenantName: tenant.name,
         snapshotDate: latestSnapshot.snapshotDate.toISOString().slice(0, 10),
-        controlCoveragePercent: latestSnapshot.controlCoverageBps / 100,
-        controlsImplemented: latestSnapshot.controlsImplemented,
-        controlsApplicable: latestSnapshot.controlsApplicable,
+        practiceCoveragePercent: latestSnapshot.practiceCoverageBps / 100,
+        practicesImplemented: latestSnapshot.practicesImplemented,
+        practicesApplicable: latestSnapshot.practicesApplicable,
         evidenceOverdue: latestSnapshot.evidenceOverdue,
         evidenceDueSoon7d: latestSnapshot.evidenceDueSoon7d,
         policiesOverdueReview: latestSnapshot.policiesOverdueReview,
@@ -161,7 +161,7 @@ async function generateAndSendDigest(
         tasksOverdue: latestSnapshot.tasksOverdue,
         findingsOpen: latestSnapshot.findingsOpen,
         coverageDelta: priorSnapshot
-            ? (latestSnapshot.controlCoverageBps - priorSnapshot.controlCoverageBps) / 100
+            ? (latestSnapshot.practiceCoverageBps - priorSnapshot.practiceCoverageBps) / 100
             : null,
         evidenceOverdueDelta: priorSnapshot
             ? latestSnapshot.evidenceOverdue - priorSnapshot.evidenceOverdue
@@ -247,8 +247,8 @@ function renderDigestEmail(data: DigestData, trendDays: number): { subject: stri
         `Weekly Compliance Digest — ${data.tenantName}`,
         `Report Date: ${data.snapshotDate}`,
         ``,
-        `── Control Coverage ──`,
-        `  Coverage: ${data.controlCoveragePercent.toFixed(1)}% (${data.controlsImplemented}/${data.controlsApplicable})`,
+        `── Practice Coverage ──`,
+        `  Coverage: ${data.practiceCoveragePercent.toFixed(1)}% (${data.practicesImplemented}/${data.practicesApplicable})`,
         `  ${trendDays}d change: ${formatDelta(data.coverageDelta, 'pp')}`,
         ``,
         `── Evidence & Deadlines ──`,
@@ -281,14 +281,14 @@ function renderDigestEmail(data: DigestData, trendDays: number): { subject: stri
 
   <!-- Coverage -->
   <div style="background:rgba(30,41,59,0.8);border:1px solid rgba(51,65,85,0.5);border-radius:12px;padding:16px;margin-bottom:12px;">
-    <div style="font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">Control Coverage</div>
+    <div style="font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">Practice Coverage</div>
     <div style="display:flex;align-items:baseline;gap:8px;">
-      <span style="font-size:28px;font-weight:700;color:#22c55e;">${data.controlCoveragePercent.toFixed(1)}%</span>
-      <span style="font-size:13px;color:#94a3b8;">${data.controlsImplemented} of ${data.controlsApplicable}</span>
+      <span style="font-size:28px;font-weight:700;color:#22c55e;">${data.practiceCoveragePercent.toFixed(1)}%</span>
+      <span style="font-size:13px;color:#94a3b8;">${data.practicesImplemented} of ${data.practicesApplicable}</span>
       <span style="font-size:12px;color:${deltaColor(data.coverageDelta, true)};margin-left:auto;">${formatDelta(data.coverageDelta, 'pp')}</span>
     </div>
     <div style="background:#1e293b;border-radius:999px;height:6px;margin-top:8px;overflow:hidden;">
-      <div style="background:linear-gradient(90deg,#6366f1,#22c55e);height:100%;border-radius:999px;width:${Math.min(data.controlCoveragePercent, 100)}%;"></div>
+      <div style="background:linear-gradient(90deg,#6366f1,#22c55e);height:100%;border-radius:999px;width:${Math.min(data.practiceCoveragePercent, 100)}%;"></div>
     </div>
   </div>
 

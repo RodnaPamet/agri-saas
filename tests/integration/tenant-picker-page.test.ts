@@ -23,7 +23,7 @@ jest.mock('@/auth', () => ({
 
 // We need to import `auth` AFTER jest.mock is hoisted.
 // The page imports auth at the top of its module, so we must
-// reset the module registry before each test to control the mock.
+// reset the module registry before each test to practice the mock.
 // We test the logic inline rather than importing the page component,
 // to avoid React server component hydration requirements in Jest.
 

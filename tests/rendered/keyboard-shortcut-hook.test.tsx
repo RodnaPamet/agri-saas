@@ -228,7 +228,7 @@ describe('useKeyboardShortcut — text-input safety', () => {
         const spy = jest.fn();
         const { getByTestId } = render(
             <KeyboardShortcutProvider>
-                <button data-testid="cb" role="combobox" aria-controls="cb-listbox" aria-expanded="false" />
+                <button data-testid="cb" role="combobox" aria-practices="cb-listbox" aria-expanded="false" />
                 <Binding keys="k" onHit={spy} />
             </KeyboardShortcutProvider>,
         );

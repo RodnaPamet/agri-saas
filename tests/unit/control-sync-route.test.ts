@@ -7,20 +7,20 @@
  * tests/guards/helm-chart-foundation.test.ts and
  * tests/integration/audit-middleware.test.ts). */
 /**
- * Unit Tests: Control Sync Route
+ * Unit Tests: Practice Sync Route
  *
- * Tests for POST /api/t/[tenantSlug]/controls/[controlId]/sync
- * and    GET  /api/t/[tenantSlug]/controls/[controlId]/sync
+ * Tests for POST /api/t/[tenantSlug]/practices/[practiceId]/sync
+ * and    GET  /api/t/[tenantSlug]/practices/[practiceId]/sync
  *
  * Covers:
  *   POST:
- *     1. Triggers runAutomationForControl with triggeredBy='manual'
+ *     1. Triggers runAutomationForPractice with triggeredBy='manual'
  *     2. Returns execution result on success
  *     3. Rejects requests without write permission (403)
  *     4. Returns error shape when automation fails
  *
  *   GET:
- *     5. Returns syncStatus=null when control has no automationKey
+ *     5. Returns syncStatus=null when practice has no automationKey
  *     6. Returns syncStatus from mapping when one exists
  *     7. Returns syncStatus=null when no mapping found for the key
  *     8. Derives provider from automationKey prefix correctly
@@ -33,7 +33,7 @@ jest.mock('@/app-layer/context', () => ({
 }));
 
 jest.mock('@/app-layer/usecases/integrations', () => ({
-    runAutomationForControl: jest.fn(),
+    runAutomationForPractice: jest.fn(),
 }));
 
 jest.mock('@/lib/errors/types', () => ({
@@ -59,7 +59,7 @@ jest.mock('@/lib/db-context', () => ({
 // ─── Imports (after mocks) ────────────────────────────────────────────────────
 
 import { getTenantCtx } from '@/app-layer/context';
-import { runAutomationForControl } from '@/app-layer/usecases/integrations';
+import { runAutomationForPractice } from '@/app-layer/usecases/integrations';
 import { PrismaSyncMappingStore } from '@/app-layer/integrations/prisma-sync-store';
 import { runInTenantContext } from '@/lib/db-context';
 import type { Role } from '@prisma/client';
@@ -93,24 +93,24 @@ const readerCtx = {
 // ─── Route handler under test (tested via its usecase layer, not HTTP) ────────
 // We test the underlying logic called by the route handler, not the Next.js
 // route itself (which would require a full fetch test infra). This matches
-// the project's established pattern (see control-applicability.test.ts).
+// the project's established pattern (see practice-applicability.test.ts).
 
-// ─── POST: runAutomationForControl happy path ─────────────────────────────────
+// ─── POST: runAutomationForPractice happy path ─────────────────────────────────
 
-describe('POST /controls/[controlId]/sync — usecase integration', () => {
+describe('POST /practices/[practiceId]/sync — usecase integration', () => {
     beforeEach(() => {
         jest.clearAllMocks();
     });
 
-    it('calls runAutomationForControl with triggeredBy=manual', async () => {
+    it('calls runAutomationForPractice with triggeredBy=manual', async () => {
         (getTenantCtx as jest.Mock).mockResolvedValue(adminCtx);
-        (runAutomationForControl as jest.Mock).mockResolvedValue({
+        (runAutomationForPractice as jest.Mock).mockResolvedValue({
             execution: { id: 'exec-1', status: 'PASSED', summary: 'OK', durationMs: 120 },
         });
 
-        const result = await runAutomationForControl(adminCtx, 'ctrl-1', { triggeredBy: 'manual' });
+        const result = await runAutomationForPractice(adminCtx, 'ctrl-1', { triggeredBy: 'manual' });
 
-        expect(runAutomationForControl).toHaveBeenCalledWith(
+        expect(runAutomationForPractice).toHaveBeenCalledWith(
             adminCtx,
             'ctrl-1',
             { triggeredBy: 'manual' },
@@ -120,7 +120,7 @@ describe('POST /controls/[controlId]/sync — usecase integration', () => {
     });
 
     it('propagates execution result including durationMs and evidenceId', async () => {
-        (runAutomationForControl as jest.Mock).mockResolvedValue({
+        (runAutomationForPractice as jest.Mock).mockResolvedValue({
             execution: {
                 id: 'exec-2',
                 status: 'FAILED',
@@ -130,17 +130,17 @@ describe('POST /controls/[controlId]/sync — usecase integration', () => {
             },
         });
 
-        const result = await runAutomationForControl(adminCtx, 'ctrl-1', { triggeredBy: 'manual' });
+        const result = await runAutomationForPractice(adminCtx, 'ctrl-1', { triggeredBy: 'manual' });
         expect(result.execution.status).toBe('FAILED');
         expect(result.execution.durationMs).toBe(350);
     });
 
     it('returns ERROR status when the provider throws', async () => {
-        (runAutomationForControl as jest.Mock).mockResolvedValue({
+        (runAutomationForPractice as jest.Mock).mockResolvedValue({
             execution: { id: 'exec-3', status: 'ERROR', errorMessage: 'Network timeout', durationMs: 0 },
         });
 
-        const result = await runAutomationForControl(adminCtx, 'ctrl-1', { triggeredBy: 'manual' });
+        const result = await runAutomationForPractice(adminCtx, 'ctrl-1', { triggeredBy: 'manual' });
         expect(result.execution.status).toBe('ERROR');
         expect((result.execution as any).errorMessage).toBe('Network timeout');
     });
@@ -148,7 +148,7 @@ describe('POST /controls/[controlId]/sync — usecase integration', () => {
 
 // ─── POST: permission guard ────────────────────────────────────────────────────
 
-describe('POST /controls/[controlId]/sync — permission guard', () => {
+describe('POST /practices/[practiceId]/sync — permission guard', () => {
     beforeEach(() => {
         jest.clearAllMocks();
     });
@@ -178,26 +178,26 @@ describe('POST /controls/[controlId]/sync — permission guard', () => {
 
 // ─── GET: sync status lookup ───────────────────────────────────────────────────
 
-describe('GET /controls/[controlId]/sync — sync status', () => {
+describe('GET /practices/[practiceId]/sync — sync status', () => {
     beforeEach(() => {
         jest.clearAllMocks();
     });
 
-    it('returns syncStatus=null when control has no automationKey', async () => {
-        // runInTenantContext resolves with a control that has no automationKey
+    it('returns syncStatus=null when practice has no automationKey', async () => {
+        // runInTenantContext resolves with a practice that has no automationKey
         (runInTenantContext as jest.Mock).mockImplementation(async (_ctx: unknown, fn: (db: unknown) => unknown) => {
             const db = {
-                control: {
+                practice: {
                     findFirst: jest.fn().mockResolvedValue({ id: 'ctrl-1', automationKey: null }),
                 },
             };
             return fn(db);
         });
 
-        const control = await (runInTenantContext as jest.Mock)(adminCtx, async (db: { control: { findFirst: () => Promise<{ id: string; automationKey: null }> } }) =>
-            db.control.findFirst()
+        const practice = await (runInTenantContext as jest.Mock)(adminCtx, async (db: { practice: { findFirst: () => Promise<{ id: string; automationKey: null }> } }) =>
+            db.practice.findFirst()
         );
-        expect(control.automationKey).toBeNull();
+        expect(practice.automationKey).toBeNull();
         // Route handler returns { syncStatus: null, provider: null } in this case
     });
 
@@ -215,7 +215,7 @@ describe('GET /controls/[controlId]/sync — sync status', () => {
         }));
 
         const store = new PrismaSyncMappingStore();
-        const mapping = await store.findByLocalEntity('tenant-1', 'github', 'control', 'ctrl-1');
+        const mapping = await store.findByLocalEntity('tenant-1', 'github', 'practice', 'ctrl-1');
 
         expect(mapping?.syncStatus).toBe('SYNCED');
         expect(mapping?.lastSyncDirection).toBe('PULL');
@@ -229,14 +229,14 @@ describe('GET /controls/[controlId]/sync — sync status', () => {
         }));
 
         const store = new PrismaSyncMappingStore();
-        const mapping = await store.findByLocalEntity('tenant-1', 'github', 'control', 'ctrl-1');
+        const mapping = await store.findByLocalEntity('tenant-1', 'github', 'practice', 'ctrl-1');
 
         // Route handler: mapping?.syncStatus ?? null → null
         expect(mapping?.syncStatus ?? null).toBeNull();
     });
 
     it('correctly extracts provider prefix from automationKey', () => {
-        // Route handler: const [provider] = control.automationKey.split('.')
+        // Route handler: const [provider] = practice.automationKey.split('.')
         const cases: Array<[string, string]> = [
             ['github.branch_protection', 'github'],
             ['aws.s3.bucket_encryption', 'aws'],
@@ -263,7 +263,7 @@ describe('GET /controls/[controlId]/sync — sync status', () => {
         }));
 
         const store = new PrismaSyncMappingStore();
-        const mapping = await store.findByLocalEntity('tenant-1', 'github', 'control', 'ctrl-1');
+        const mapping = await store.findByLocalEntity('tenant-1', 'github', 'practice', 'ctrl-1');
 
         expect(mapping?.syncStatus).toBe('CONFLICT');
         expect(mapping?.errorMessage).toContain('Both local and remote changed');
@@ -283,7 +283,7 @@ describe('GET /controls/[controlId]/sync — sync status', () => {
         }));
 
         const store = new PrismaSyncMappingStore();
-        const mapping = await store.findByLocalEntity('tenant-1', 'github', 'control', 'ctrl-1');
+        const mapping = await store.findByLocalEntity('tenant-1', 'github', 'practice', 'ctrl-1');
 
         expect(mapping?.syncStatus).toBe('FAILED');
         expect(mapping?.errorMessage).toBe('GitHub API rate limit exceeded');

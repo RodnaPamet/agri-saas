@@ -3,7 +3,7 @@
  *
  * The farm queue is the sole task UI, so it exposes the manager-relevant
  * subset of the task filters: status, assignee, and a due-date shortcut.
- * Compliance-only axes (type / severity / linked-control) live on the retired
+ * Compliance-only axes (type / severity / linked-practice) live on the retired
  * /tasks list and are intentionally omitted here.
  *
  * Filtering is applied CLIENT-SIDE over the bounded queue (the endpoint

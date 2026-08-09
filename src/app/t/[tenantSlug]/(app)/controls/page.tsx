@@ -1,12 +1,12 @@
 import { getTenantCtx } from '@/app-layer/context';
-import { listControls } from '@/app-layer/usecases/control';
-import { ControlsClient } from './ControlsClient';
+import { listPractices } from '@/app-layer/usecases/practice';
+import { PracticesClient } from './PracticesClient';
 
 export const dynamic = 'force-dynamic';
 
 // SSR fetch is capped at the most-relevant SSR_PAGE_LIMIT rows so
 // the initial HTML payload + DB query stay bounded as tenants
-// accumulate controls. The Epic 69 SWR client immediately fetches
+// accumulate practices. The Epic 69 SWR client immediately fetches
 // the unbounded list in the background (the existing API GET path),
 // and SWR's keepPreviousData swaps it in transparently. UX is
 // "first 100 instantly, rest within ~500 ms" — never a blank flash.
@@ -14,11 +14,11 @@ export const dynamic = 'force-dynamic';
 const SSR_PAGE_LIMIT = 100;
 
 /**
- * Controls — Server Component.
- * Fetches controls list server-side (with URL filters applied),
+ * Practices — Server Component.
+ * Fetches practices list server-side (with URL filters applied),
  * delegates all interaction to client island.
  */
-export default async function ControlsPage({
+export default async function PracticesPage({
     params,
     searchParams,
 }: {
@@ -30,8 +30,8 @@ export default async function ControlsPage({
     const ctx = await getTenantCtx({ tenantSlug });
 
     // Build filters from searchParams for server-side data fetch.
-    // Keys here must stay in sync with the Controls filter config
-    // (`src/app/t/[tenantSlug]/(app)/controls/filter-defs.ts`) so SSR and
+    // Keys here must stay in sync with the Practices filter config
+    // (`src/app/t/[tenantSlug]/(app)/practices/filter-defs.ts`) so SSR and
     // client filter state agree on the first paint.
     const filters: Record<string, string> = {};
     for (const key of ['q', 'status', 'applicability', 'ownerUserId', 'category']) {
@@ -39,20 +39,20 @@ export default async function ControlsPage({
         if (typeof val === 'string' && val) filters[key] = val;
     }
 
-    const controls = await listControls(
+    const practices = await listPractices(
         ctx,
         Object.keys(filters).length > 0 ? filters : undefined,
         { take: SSR_PAGE_LIMIT },
     );
 
     return (
-        <ControlsClient
-            initialControls={JSON.parse(JSON.stringify(controls))}
+        <PracticesClient
+            initialPractices={JSON.parse(JSON.stringify(practices))}
             initialFilters={filters}
             tenantSlug={tenantSlug}
             permissions={ctx.permissions}
             appPermissions={{
-                controls: ctx.appPermissions.controls,
+                practices: ctx.appPermissions.practices,
             }}
         />
     );

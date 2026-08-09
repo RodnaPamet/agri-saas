@@ -76,7 +76,7 @@ describe('Empty-state copy tone (Roadmap-3 PR-6)', () => {
                 'admin.noNotifications', // already canonical, no period
                 'clauses.notStarted',    // not an empty-state — passes the regex but isn't one
                 'clauses.notApplicable', // not an empty-state
-                'controls.notApplicable',
+                'practices.notApplicable',
                 'tests.notTested',
                 // T04 i18n migration — pre-existing inline empty-state
                 // MESSAGES (full sentences with legitimate terminal
@@ -93,7 +93,7 @@ describe('Empty-state copy tone (Roadmap-3 PR-6)', () => {
                 'automationSuggestions.noSuggestions',
                 'commandPalette.noMatchesInCategories',
                 'commandPalette.noResults',
-                'frameworkExplorer.noMappedControls',
+                'frameworkExplorer.noMappedPractices',
                 'switcher.noWorkspaces',
                 'switcher.noOrganizations',
                 'onboarding.noFrameworksSelected',
@@ -126,8 +126,8 @@ describe('Empty-state copy tone (Roadmap-3 PR-6)', () => {
                 // sentences with legitimate terminal punctuation, not terse
                 // EmptyState titles — same rationale as the T04/T05
                 // exemptions above.
-                'newRisk.noControlsToLink',
-                'riskAssessment.noControlsLinked',
+                'newRisk.noPracticesToLink',
+                'riskAssessment.noPracticesLinked',
                 'riskAssessment.noDerivableResidual',
                 'riskAi.noAssetsFound',
                 'riskCorrelations.noRisks',
@@ -138,17 +138,17 @@ describe('Empty-state copy tone (Roadmap-3 PR-6)', () => {
                 'riskReports.noReports',
                 'riskScenarios.noScenarios',
                 'riskDashboard.noSimulation',
-                // T07 i18n migration (controls batch) — pre-existing inline
-                // empty-state text migrated verbatim from the controls
+                // T07 i18n migration (practices batch) — pre-existing inline
+                // empty-state text migrated verbatim from the practices
                 // pages' hardcoded JSX. These render as inline `<p>` subtle
                 // text / EmptyState description fields (NOT terse EmptyState
                 // titles), so their terminal punctuation is legitimate and
                 // matches origin/main — same rationale as the T04/T05/T06
                 // exemptions above.
-                'controls.list.noCategorised',
-                'controls.detail.noDescription',
-                'controls.detail.noActivityDesc',
-                'controls.testPlan.noRuns',
+                'practices.list.noCategorised',
+                'practices.detail.noDescription',
+                'practices.detail.noActivityDesc',
+                'practices.testPlan.noRuns',
                 // T09 i18n migration (policies/vendors batch) — pre-existing
                 // inline empty-state MESSAGES migrated verbatim from the
                 // policy detail page's hardcoded JSX (inline `<p>` / `<Card>`

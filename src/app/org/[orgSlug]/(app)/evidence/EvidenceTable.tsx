@@ -43,7 +43,7 @@ export function EvidenceTable({ rows: initialRows, nextCursor: initialNextCursor
     const [sortBy, setSortBy] = useState<string>('daysOverdue');
     const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
-    // Epic E — Load-more accumulator. See ControlsTable for design.
+    // Epic E — Load-more accumulator. See PracticesTable for design.
     const pagination = useCursorPagination<OverdueEvidenceRow>({
         initialRows,
         initialNextCursor: initialNextCursor ?? null,

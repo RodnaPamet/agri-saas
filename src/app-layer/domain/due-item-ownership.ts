@@ -47,7 +47,7 @@ export const OWNERSHIP_RULES: Record<MonitoredEntityType, {
     CONTROL: {
         ownerField: 'ownerUserId',
         adminFallbackIntended: true,
-        description: 'Control owner (assigned via control management)',
+        description: 'Practice owner (assigned via practice management)',
     },
     EVIDENCE: {
         ownerField: 'ownerUserId',
@@ -103,8 +103,8 @@ export const OWNERSHIP_RULES: Record<MonitoredEntityType, {
  * @returns The owner user ID, or undefined if no owner is set
  *
  * @example
- *   const ownerUserId = resolveDueItemOwner('CONTROL', control);
- *   // Uses control.ownerUserId
+ *   const ownerUserId = resolveDueItemOwner('CONTROL', practice);
+ *   // Uses practice.ownerUserId
  *
  * @example
  *   const ownerUserId = resolveDueItemOwner('TASK', task);

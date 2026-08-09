@@ -73,8 +73,8 @@ const mockTdb: any = {
     },
     auditCycle: { findFirst: jest.fn() },
     framework: { findFirst: jest.fn() },
-    controlRequirementLink: { findMany: jest.fn() },
-    control: { findFirst: jest.fn(), findMany: jest.fn() },
+    practiceRequirementLink: { findMany: jest.fn() },
+    practice: { findFirst: jest.fn(), findMany: jest.fn() },
     policy: { findFirst: jest.fn(), findMany: jest.fn() },
     evidence: { findFirst: jest.fn() },
     task: { findFirst: jest.fn(), findMany: jest.fn() },
@@ -120,8 +120,8 @@ beforeEach(() => {
         mockTdb.auditPackItem.create, mockTdb.auditPackItem.findFirst,
         mockTdb.auditCycle.findFirst,
         mockTdb.framework.findFirst,
-        mockTdb.controlRequirementLink.findMany,
-        mockTdb.control.findFirst, mockTdb.control.findMany,
+        mockTdb.practiceRequirementLink.findMany,
+        mockTdb.practice.findFirst, mockTdb.practice.findMany,
         mockTdb.policy.findFirst, mockTdb.policy.findMany,
         mockTdb.evidence.findFirst,
         mockTdb.task.findFirst, mockTdb.task.findMany,
@@ -352,7 +352,7 @@ describe('freezeAuditPack', () => {
             id: 'p-1', status: 'DRAFT',
             items: [{ id: 'i-1', entityType: 'CONTROL', entityId: 'c-1', snapshotJson: '{}' }],
         });
-        mockTdb.control.findFirst.mockResolvedValueOnce({
+        mockTdb.practice.findFirst.mockResolvedValueOnce({
             id: 'c-1', code: 'CC1', name: 't', status: 'ACTIVE', tasks: [], evidence: [], requirementLinks: [],
         });
         mockTdb.auditPack.update.mockResolvedValueOnce({ id: 'p-1', status: 'FROZEN' });
@@ -381,7 +381,7 @@ describe('freezeAuditPack', () => {
         await freezeAuditPack(ctx, 'p-1');
 
         // Pre-baked snapshot path = no entity lookup needed
-        expect(mockTdb.control.findFirst).not.toHaveBeenCalled();
+        expect(mockTdb.practice.findFirst).not.toHaveBeenCalled();
         // ALSO: no update on the item (the existing snapshot is kept)
         expect(mockTdb.auditPackItem.update).not.toHaveBeenCalled();
     });
@@ -391,8 +391,8 @@ describe('freezeAuditPack', () => {
             id: 'p-1', status: 'DRAFT',
             items: [{ id: 'i-1', entityType: 'CONTROL', entityId: 'c-1', snapshotJson: '{}' }],
         });
-        mockTdb.control.findFirst.mockResolvedValueOnce({
-            id: 'c-1', code: 'CC1', name: 'Control Env', status: 'ACTIVE',
+        mockTdb.practice.findFirst.mockResolvedValueOnce({
+            id: 'c-1', code: 'CC1', name: 'Practice Env', status: 'ACTIVE',
             tasks: [{ status: 'RESOLVED' }, { status: 'OPEN' }],
             evidence: [{ id: 'e-1' }],
             requirementLinks: [{ requirement: { code: 'A.1', title: 'X' } }],
@@ -512,17 +512,17 @@ describe('previewDefaultPack', () => {
         await expect(previewDefaultPack(ctx, 'c-1')).rejects.toThrow(/no default pack template for framework: soc1/i);
     });
 
-    it('ISO27001: uses framework-mapped controls + security-category policies', async () => {
+    it('ISO27001: uses framework-mapped practices + security-category policies', async () => {
         mockTdb.auditCycle.findFirst.mockResolvedValueOnce({ id: 'c-1', frameworkKey: 'ISO27001' });
         mockTdb.framework.findFirst.mockResolvedValueOnce({ id: 'fw-iso' });
-        mockTdb.controlRequirementLink.findMany.mockResolvedValueOnce([
-            { controlId: 'ctrl-1' }, { controlId: 'ctrl-2' }, { controlId: 'ctrl-1' /* dupe */ },
+        mockTdb.practiceRequirementLink.findMany.mockResolvedValueOnce([
+            { practiceId: 'ctrl-1' }, { practiceId: 'ctrl-2' }, { practiceId: 'ctrl-1' /* dupe */ },
         ]);
         mockTdb.policy.findMany.mockResolvedValueOnce([
             { id: 'pol-sec', category: 'Security' },
             { id: 'pol-other', category: 'HR' },
         ]);
-        mockTdb.control.findMany.mockResolvedValueOnce([
+        mockTdb.practice.findMany.mockResolvedValueOnce([
             { evidence: [{ id: 'e-1' }, { id: 'e-2' }] },
             { evidence: [{ id: 'e-1' /* dupe */ }] },
         ]);
@@ -531,20 +531,20 @@ describe('previewDefaultPack', () => {
         const result = await previewDefaultPack(ctx, 'c-1');
 
         expect(result.frameworkKey).toBe('ISO27001');
-        expect(result.selection.controls.count).toBe(2);
+        expect(result.selection.practices.count).toBe(2);
         expect(result.selection.policies.count).toBe(1); // only Security
         expect(result.selection.evidence.count).toBe(2);
         expect(result.selection.issues.count).toBe(1);
         expect(result.totalItems).toBe(2 + 1 + 2 + 1);
     });
 
-    it('ISO27001 fallback: when NO mapped controls exist, uses ALL tenant controls', async () => {
+    it('ISO27001 fallback: when NO mapped practices exist, uses ALL tenant practices', async () => {
         mockTdb.auditCycle.findFirst.mockResolvedValueOnce({ id: 'c-1', frameworkKey: 'ISO27001' });
         mockTdb.framework.findFirst.mockResolvedValueOnce({ id: 'fw-iso' });
-        mockTdb.controlRequirementLink.findMany.mockResolvedValueOnce([]); // no mappings
-        // The fallback path queries control.findMany for ALL tenant
-        // controls without the {in: controlIds} filter.
-        mockTdb.control.findMany
+        mockTdb.practiceRequirementLink.findMany.mockResolvedValueOnce([]); // no mappings
+        // The fallback path queries practice.findMany for ALL tenant
+        // practices without the {in: practiceIds} filter.
+        mockTdb.practice.findMany
             .mockResolvedValueOnce([{ id: 'c-all-1' }, { id: 'c-all-2' }, { id: 'c-all-3' }])
             .mockResolvedValueOnce([]); // second findMany — evidence join
         mockTdb.policy.findMany.mockResolvedValueOnce([]);
@@ -552,18 +552,18 @@ describe('previewDefaultPack', () => {
 
         const result = await previewDefaultPack(ctx, 'c-1');
 
-        expect(result.selection.controls.count).toBe(3);
+        expect(result.selection.practices.count).toBe(3);
     });
 
     it('ISO27001 policy fallback: when no Security policies, uses ALL policies', async () => {
         mockTdb.auditCycle.findFirst.mockResolvedValueOnce({ id: 'c-1', frameworkKey: 'ISO27001' });
         mockTdb.framework.findFirst.mockResolvedValueOnce({ id: 'fw-iso' });
-        mockTdb.controlRequirementLink.findMany.mockResolvedValueOnce([{ controlId: 'c-1' }]);
+        mockTdb.practiceRequirementLink.findMany.mockResolvedValueOnce([{ practiceId: 'c-1' }]);
         mockTdb.policy.findMany.mockResolvedValueOnce([
             { id: 'pol-hr', category: 'HR' },
             { id: 'pol-finance', category: 'Finance' },
         ]);
-        mockTdb.control.findMany.mockResolvedValueOnce([]);
+        mockTdb.practice.findMany.mockResolvedValueOnce([]);
         mockTdb.task.findMany.mockResolvedValueOnce([]);
 
         const result = await previewDefaultPack(ctx, 'c-1');
@@ -574,14 +574,14 @@ describe('previewDefaultPack', () => {
     it('NIS2: filters policies by NIS2-specific keywords', async () => {
         mockTdb.auditCycle.findFirst.mockResolvedValueOnce({ id: 'c-1', frameworkKey: 'NIS2' });
         mockTdb.framework.findFirst.mockResolvedValueOnce({ id: 'fw-nis2' });
-        mockTdb.controlRequirementLink.findMany.mockResolvedValueOnce([{ controlId: 'c-1' }]);
+        mockTdb.practiceRequirementLink.findMany.mockResolvedValueOnce([{ practiceId: 'c-1' }]);
         mockTdb.policy.findMany.mockResolvedValueOnce([
             { id: 'pol-1', title: 'Incident Response', category: '' },
             { id: 'pol-2', title: 'AUP', category: '' },
             { id: 'pol-3', title: 'Supplier Security', category: '' },
             { id: 'pol-4', title: 'Vacation Policy', category: '' },
         ]);
-        mockTdb.control.findMany.mockResolvedValueOnce([]);
+        mockTdb.practice.findMany.mockResolvedValueOnce([]);
         mockTdb.task.findMany.mockResolvedValueOnce([]);
 
         const result = await previewDefaultPack(ctx, 'c-1');
@@ -593,11 +593,11 @@ describe('previewDefaultPack', () => {
     it('NIS2 fallback: when no keyword-matching policy, uses all', async () => {
         mockTdb.auditCycle.findFirst.mockResolvedValueOnce({ id: 'c-1', frameworkKey: 'NIS2' });
         mockTdb.framework.findFirst.mockResolvedValueOnce({ id: 'fw-nis2' });
-        mockTdb.controlRequirementLink.findMany.mockResolvedValueOnce([{ controlId: 'c-1' }]);
+        mockTdb.practiceRequirementLink.findMany.mockResolvedValueOnce([{ practiceId: 'c-1' }]);
         mockTdb.policy.findMany.mockResolvedValueOnce([
             { id: 'pol-1', title: 'AUP', category: 'HR' },
         ]);
-        mockTdb.control.findMany.mockResolvedValueOnce([]);
+        mockTdb.practice.findMany.mockResolvedValueOnce([]);
         mockTdb.task.findMany.mockResolvedValueOnce([]);
 
         const result = await previewDefaultPack(ctx, 'c-1');

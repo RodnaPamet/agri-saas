@@ -116,7 +116,7 @@ const GITHUB_PROTECTION_STATUS_CONTEXTS_CHANGED = {
 };
 
 /**
- * Local control state that corresponds to GITHUB_PROTECTION_BASELINE
+ * Local practice state that corresponds to GITHUB_PROTECTION_BASELINE
  * after the mapper has converted it.
  */
 const LOCAL_CONTROL_BASELINE = {
@@ -144,7 +144,7 @@ const mockCtx: RequestContext = {
     role: 'ADMIN',
     permissions: { canRead: true, canWrite: true, canAdmin: true, canAudit: true, canExport: true },
     appPermissions: {
-        controls: { view: true, create: true, edit: true },
+        practices: { view: true, create: true, edit: true },
         evidence: { view: true, upload: true, edit: true, download: true },
         policies: { view: true, create: true, edit: true, approve: true },
         tasks: { view: true, create: true, edit: true, assign: true },
@@ -300,7 +300,7 @@ function makeSyncedGitHubMapping(
         tenantId: 'tenant-1',
         provider: 'github-stub',
         connectionId: null,
-        localEntityType: 'control',
+        localEntityType: 'practice',
         localEntityId: 'ctrl-1',
         remoteEntityType: 'branch_protection',
         remoteEntityId: 'main',
@@ -573,7 +573,7 @@ describe('checkForConflict — deep nested PULL conflict detection', () => {
     test('no conflict on first sync (PENDING status)', async () => {
         const mapping = await store.findOrCreate({
             tenantId: 'tenant-1', provider: 'github-stub',
-            localEntityType: 'control', localEntityId: 'ctrl-new',
+            localEntityType: 'practice', localEntityId: 'ctrl-new',
             remoteEntityType: 'branch_protection', remoteEntityId: 'develop',
         }, { syncStatus: 'PENDING' });
 
@@ -699,7 +699,7 @@ describe('checkForConflict — PUSH path', () => {
             ctx: mockCtx,
             mappingKey: {
                 tenantId: 'tenant-1', provider: 'github-stub',
-                localEntityType: 'control', localEntityId: 'ctrl-1',
+                localEntityType: 'practice', localEntityId: 'ctrl-1',
                 remoteEntityType: 'branch_protection', remoteEntityId: 'main',
             },
             localData: localModified,
@@ -754,7 +754,7 @@ describe('Full pull cycle — nested GitHub payload integration', () => {
         store = new InMemoryMappingStore();
         orch = new GitHubStubOrchestrator(store);
         // Seed local entity with baseline state
-        orch.localEntities.set('control:ctrl-1', { ...LOCAL_CONTROL_BASELINE });
+        orch.localEntities.set('practice:ctrl-1', { ...LOCAL_CONTROL_BASELINE });
     });
 
     test('clean pull with same content (reordered keys) does not produce conflict', async () => {
@@ -795,7 +795,7 @@ describe('Full pull cycle — nested GitHub payload integration', () => {
             ctx: mockCtx,
             mappingKey: {
                 tenantId: 'tenant-1', provider: 'github-stub',
-                localEntityType: 'control', localEntityId: 'ctrl-1',
+                localEntityType: 'practice', localEntityId: 'ctrl-1',
                 remoteEntityType: 'branch_protection', remoteEntityId: 'main',
             },
             remoteData: GITHUB_PROTECTION_REVIEW_CHANGED,
@@ -820,7 +820,7 @@ describe('Full pull cycle — nested GitHub payload integration', () => {
             ctx: mockCtx,
             mappingKey: {
                 tenantId: 'tenant-1', provider: 'github-stub',
-                localEntityType: 'control', localEntityId: 'ctrl-1',
+                localEntityType: 'practice', localEntityId: 'ctrl-1',
                 remoteEntityType: 'branch_protection', remoteEntityId: 'main',
             },
             remoteData: GITHUB_PROTECTION_REVIEW_CHANGED,
@@ -833,7 +833,7 @@ describe('Full pull cycle — nested GitHub payload integration', () => {
         expect(result.mapping.syncStatus).toBe('SYNCED');
 
         // Local entity should now reflect remote's reduced review count
-        const local = orch.localEntities.get('control:ctrl-1');
+        const local = orch.localEntities.get('practice:ctrl-1');
         expect(local!.requiredReviewCount).toBe(1);
     });
 
@@ -848,14 +848,14 @@ describe('Full pull cycle — nested GitHub payload integration', () => {
             ctx: mockCtx,
             mappingKey: {
                 tenantId: 'tenant-1', provider: 'github-stub',
-                localEntityType: 'control', localEntityId: 'ctrl-1',
+                localEntityType: 'practice', localEntityId: 'ctrl-1',
                 remoteEntityType: 'branch_protection', remoteEntityId: 'main',
             },
             remoteData: GITHUB_PROTECTION_STATUS_CONTEXTS_CHANGED,
             remoteUpdatedAt: new Date(),
         });
 
-        const local = orch.localEntities.get('control:ctrl-1');
+        const local = orch.localEntities.get('practice:ctrl-1');
         expect(local!.statusCheckContexts).toEqual(['ci/build', 'ci/test', 'security/scan']);
     });
 });

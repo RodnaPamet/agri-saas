@@ -19,11 +19,11 @@
  *     mentions `<select>` (e.g. in status-badge.tsx / combobox/index.tsx)
  *     is not a false positive.
  *
- * Baseline is 0. It was 2 until the control-exoskeleton removal: both
+ * Baseline is 0. It was 2 until the practice-exoskeleton removal: both
  * remaining native `<select>`s lived in `TestPlansPanel`, which was
- * deleted along with the test-of-control surface (and with it the
+ * deleted along with the test-of-practice surface (and with it the
  * `page.selectOption('#test-plan-frequency-select', …)` interaction in
- * the since-removed `tests/e2e/control-tests.spec.ts`). The budget
+ * the since-removed `tests/e2e/practice-tests.spec.ts`). The budget
  * ratchets down with them, so a NEW native select now fails CI rather
  * than sliding into a two-slot allowance nothing occupies. Everything
  * else had already migrated:
@@ -31,7 +31,7 @@
  *   - access-reviews decision picker → ToggleGroup; its modal target-role
  *     picker → Combobox.
  *   - admin/members row-action menu → Popover (never a native select).
- * Note: ControlsClient's dense inline pickers, referenced by earlier
+ * Note: PracticesClient's dense inline pickers, referenced by earlier
  * versions of this comment as "4 native selects", are now button-based
  * StatusBadge triggers — they contribute ZERO native selects today.
  */
@@ -130,8 +130,8 @@ describe('Epic 55 — native <select> ratchet', () => {
 describe('Epic 55 — migrated surfaces must not regress to native <select>', () => {
     const APP_MIGRATED = [
         'audits/cycles/page.tsx',
-        'controls/NewControlModal.tsx',
-        'controls/ControlDetailSheet.tsx',
+        'practices/NewPracticeModal.tsx',
+        'practices/PracticeDetailSheet.tsx',
         'evidence/UploadEvidenceModal.tsx',
         'evidence/NewEvidenceTextModal.tsx',
         'vendors/new/page.tsx',
@@ -141,7 +141,7 @@ describe('Epic 55 — migrated surfaces must not regress to native <select>', ()
         // Session 2 — Batch 1 migrated files
         'assets/[id]/page.tsx',
         'assets/AssetsClient.tsx',
-        'controls/[controlId]/page.tsx',
+        'practices/[practiceId]/page.tsx',
         'admin/members/page.tsx',
         'admin/roles/page.tsx',
         'admin/api-keys/page.tsx',

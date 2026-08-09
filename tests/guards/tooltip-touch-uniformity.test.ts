@@ -17,7 +17,7 @@
  * path LEAKING OUT of the primitive: a call site that re-implements
  * tap-to-toggle with its own `matchMedia('(pointer: coarse)')`, a prop that
  * lets one caller opt out of it, a delegating component that intercepts the
- * trigger's pointer events. Any of those and the same control behaves
+ * trigger's pointer events. Any of those and the same practice behaves
  * differently depending on where it appears — which is exactly what the
  * standing requirement forbids: tooltips must be uniform, canonical, and
  * must not differentiate from each other.
@@ -124,7 +124,7 @@ const TOUCH_OWNER = 'src/components/ui/tooltip.tsx';
 /**
  * Components whose entire job is to hand a trigger to `<Tooltip>`. They
  * must stay pass-throughs — the moment one of them owns a gesture, the
- * control it wraps behaves differently from every other tooltip in the
+ * practice it wraps behaves differently from every other tooltip in the
  * app. `Tooltip` itself is listed because `InfoTooltip` and
  * `DynamicTooltipWrapper` live in the same file.
  *
@@ -525,7 +525,7 @@ describe('tooltip touch path — one owner', () => {
             throw new Error(
                 'Touch handling for tooltips lives in ' +
                     `${TOUCH_OWNER} and nowhere else. These files consume <Tooltip> and ` +
-                    'also branch on pointer class, which is how the same control ends up ' +
+                    'also branch on pointer class, which is how the same practice ends up ' +
                     'behaving differently depending on where it appears:\n' +
                     offenders
                         .map((o) => `  ${o.file}\n    ${o.tokens.join('\n    ')}`)
@@ -576,7 +576,7 @@ describe('tooltip touch path — derived, never supplied', () => {
         // element type. If `TooltipProps` ever widened to
         // `React.ComponentProps<'button'>`, a call site could pass its own
         // `onPointerDown` straight through to the Trigger and race the
-        // tap-toggle on that one control.
+        // tap-toggle on that one practice.
         expect(src).toMatch(/export interface TooltipProps \{/);
         expect(src).not.toMatch(/export interface TooltipProps\s+extends\b/);
         const body = tooltipPropsBody(src);
@@ -701,7 +701,7 @@ describe('tooltip touch path — delegates pass through', () => {
                 // A delegate adding its own pointer handler to the trigger
                 // races the primitive's tap-toggle, and the ordering between
                 // them is Radix Slot's business, not ours. That is one
-                // control behaving differently from every other tooltip.
+                // practice behaving differently from every other tooltip.
                 expect(stripComments(src)).not.toMatch(/\bonPointerDown\s*=/);
                 expect(stripComments(src)).not.toMatch(/\bonPointerUp\s*=/);
             });

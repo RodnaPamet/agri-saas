@@ -87,10 +87,10 @@ describe('GAP-10 step 3 — generated OpenAPI 3.1 spec', () => {
         const expectedRequests = [
             // Asset
             'AssetCreateRequest', 'AssetUpdateRequest',
-            // Control
-            'ControlCreateRequest', 'ControlUpdateRequest',
-            'ControlSetStatusRequest', 'ControlSetApplicabilityRequest',
-            'ControlSetOwnerRequest',
+            // Practice
+            'PracticeCreateRequest', 'PracticeUpdateRequest',
+            'PracticeSetStatusRequest', 'PracticeSetApplicabilityRequest',
+            'PracticeSetOwnerRequest',
             // Policy
             'PolicyCreateRequest', 'PolicyMetadataUpdateRequest',
             'PolicyVersionCreateRequest', 'PolicyPublishRequest',
@@ -119,7 +119,7 @@ describe('GAP-10 step 3 — generated OpenAPI 3.1 spec', () => {
             // Cross-cutting
             'UserRef', 'UserRefShort', 'ErrorResponse', 'AuditLogEntry', 'SuccessResponse',
             // Domain DTOs
-            'ControlListItem', 'ControlDetail', 'ControlDashboard',
+            'PracticeListItem', 'PracticeDetail', 'PracticeDashboard',
             'EvidenceListItem', 'EvidenceDetail', 'EvidenceReview',
             'PolicyListItem', 'PolicyDetail',
             'Audit',

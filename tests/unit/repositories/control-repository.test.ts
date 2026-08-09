@@ -1,18 +1,18 @@
 /**
- * Coverage wave 22 — `ControlRepository`.
+ * Coverage wave 22 — `PracticeRepository`.
  *
  * 24 uncovered functions at 11.11% (20.25% lines): the densest remaining
  * file in `src/app-layer/repositories`. Every usecase test in the repo
  * `jest.mock`s this class away, so the query shapes it owns — including
  * the tenant predicate — have never been executed.
  *
- * Controls are the one entity with a SHARED tier: `tenantId: null` rows
+ * Practices are the one entity with a SHARED tier: `tenantId: null` rows
  * are the platform-provided catalogue every tenant reads. That makes the
  * isolation contract asymmetric and easy to get wrong, which is exactly
  * why it is asserted here rather than assumed:
  *
  *   - READS accept `tenantId = mine OR tenantId IS NULL`
- *   - WRITES require `tenantId = mine` (a shared control is not editable)
+ *   - WRITES require `tenantId = mine` (a shared practice is not editable)
  *   - nested `evidence` on a read is STRICTLY mine, never the null tier
  *
  * These assert the QUERY the repository emits, not Prisma's behaviour —
@@ -21,7 +21,7 @@
  * run for real, because their interaction with the repository is part of
  * what is under test.
  */
-import { ControlRepository } from '@/app-layer/repositories/ControlRepository';
+import { PracticeRepository } from '@/app-layer/repositories/PracticeRepository';
 import { makeRequestContext } from '../../helpers/make-context';
 import { encodeCursor, MAX_LIMIT, DEFAULT_LIMIT } from '@/lib/pagination';
 import type { PrismaTx } from '@/lib/db-context';
@@ -38,11 +38,11 @@ function makeDb() {
         delete: jest.fn().mockResolvedValue({ id: 'deleted' }),
     });
     return {
-        control: model(),
-        controlContributor: model(),
-        controlTask: model(),
-        controlEvidenceLink: model(),
-        controlAsset: model(),
+        practice: model(),
+        practiceContributor: model(),
+        practiceTask: model(),
+        practiceEvidenceLink: model(),
+        practiceAsset: model(),
         frameworkMapping: model(),
     };
 }
@@ -57,7 +57,7 @@ const whereOf = (fn: jest.Mock) => fn.mock.calls[0][0].where;
 /** The `data` of the first call. */
 const dataOf = (fn: jest.Mock) => fn.mock.calls[0][0].data;
 
-/** A control row shaped for `computePageInfo`. */
+/** A practice row shaped for `computePageInfo`. */
 const row = (id: string, iso: string) => ({ id, createdAt: new Date(iso) });
 
 let db: FakeDb;
@@ -69,16 +69,16 @@ beforeEach(() => {
 // Tenant predicate — the shared-catalogue asymmetry
 // ─────────────────────────────────────────────────────────────────────
 
-describe('ControlRepository — the read tenant predicate', () => {
+describe('PracticeRepository — the read tenant predicate', () => {
     it('admits the calling tenant AND the shared (null) tier, nothing else', async () => {
         // Break: dropping the `tenantId: ctx.tenantId` arm leaves only the
         // shared catalogue (the page goes blank); dropping the OR entirely
-        // returns every tenant's controls to whoever asks. Both are one
+        // returns every tenant's practices to whoever asks. Both are one
         // deleted line, and only an assertion on the emitted predicate
         // distinguishes them.
-        await ControlRepository.list(asTx(db), ctx);
+        await PracticeRepository.list(asTx(db), ctx);
 
-        expect(whereOf(db.control.findMany)).toEqual({
+        expect(whereOf(db.practice.findMany)).toEqual({
             OR: [{ tenantId: 'tenant-1' }, { tenantId: null }],
         });
     });
@@ -87,9 +87,9 @@ describe('ControlRepository — the read tenant predicate', () => {
         // Break: hoisting the predicate to a module constant, or caching
         // it across requests. Naming one tenant in a single test cannot
         // catch that; two can.
-        await ControlRepository.list(asTx(db), OTHER_TENANT);
+        await PracticeRepository.list(asTx(db), OTHER_TENANT);
 
-        expect(whereOf(db.control.findMany)).toEqual({
+        expect(whereOf(db.practice.findMany)).toEqual({
             OR: [{ tenantId: 'tenant-2' }, { tenantId: null }],
         });
     });
@@ -97,32 +97,32 @@ describe('ControlRepository — the read tenant predicate', () => {
     it('keeps the tenant predicate when filters are also applied', async () => {
         // Break: building `where` from the filters and then forgetting to
         // seed it with the tenant arms — a filtered list would go global.
-        await ControlRepository.list(asTx(db), ctx, { status: 'IMPLEMENTED' });
+        await PracticeRepository.list(asTx(db), ctx, { status: 'IMPLEMENTED' });
 
-        expect(whereOf(db.control.findMany)).toMatchObject({
+        expect(whereOf(db.practice.findMany)).toMatchObject({
             OR: [{ tenantId: 'tenant-1' }, { tenantId: null }],
             status: 'IMPLEMENTED',
         });
     });
 });
 
-describe('ControlRepository — list filters', () => {
+describe('PracticeRepository — list filters', () => {
     it('applies owner and category filters verbatim', async () => {
-        await ControlRepository.list(asTx(db), ctx, {
+        await PracticeRepository.list(asTx(db), ctx, {
             ownerUserId: 'user-9',
             category: 'Access Control',
         });
 
-        expect(whereOf(db.control.findMany)).toMatchObject({
+        expect(whereOf(db.practice.findMany)).toMatchObject({
             ownerUserId: 'user-9',
             category: 'Access Control',
         });
     });
 
     it('accepts the two real applicability values', async () => {
-        await ControlRepository.list(asTx(db), ctx, { applicability: 'NOT_APPLICABLE' });
+        await PracticeRepository.list(asTx(db), ctx, { applicability: 'NOT_APPLICABLE' });
 
-        expect(whereOf(db.control.findMany)).toMatchObject({ applicability: 'NOT_APPLICABLE' });
+        expect(whereOf(db.practice.findMany)).toMatchObject({ applicability: 'NOT_APPLICABLE' });
     });
 
     it('drops an applicability value outside the enum instead of forwarding it', async () => {
@@ -130,19 +130,19 @@ describe('ControlRepository — list filters', () => {
         // column, so a query-string value like `?applicability=ALL` would
         // reach the driver and blow the whole list page up with a
         // validation error rather than being ignored.
-        await ControlRepository.list(asTx(db), ctx, { applicability: 'ALL' });
+        await PracticeRepository.list(asTx(db), ctx, { applicability: 'ALL' });
 
-        expect(whereOf(db.control.findMany)).not.toHaveProperty('applicability');
+        expect(whereOf(db.practice.findMany)).not.toHaveProperty('applicability');
     });
 
     it('searches name, code and description case-insensitively for a text query', async () => {
         // Break: narrowing the search to `name` only. Users search
-        // controls by their code ("A.8.1") far more often than by name,
+        // practices by their code ("A.8.1") far more often than by name,
         // and the regression is invisible — the page still works, it
         // just stops finding things.
-        await ControlRepository.list(asTx(db), ctx, { q: 'encryption' });
+        await PracticeRepository.list(asTx(db), ctx, { q: 'encryption' });
 
-        expect(whereOf(db.control.findMany).AND).toEqual([
+        expect(whereOf(db.practice.findMany).AND).toEqual([
             {
                 OR: [
                     { name: { contains: 'encryption', mode: 'insensitive' } },
@@ -154,22 +154,22 @@ describe('ControlRepository — list filters', () => {
     });
 
     it('adds no filter keys at all when no filters are supplied', async () => {
-        await ControlRepository.list(asTx(db), ctx, {});
+        await PracticeRepository.list(asTx(db), ctx, {});
 
-        expect(Object.keys(whereOf(db.control.findMany))).toEqual(['OR']);
+        expect(Object.keys(whereOf(db.practice.findMany))).toEqual(['OR']);
     });
 });
 
-describe('ControlRepository.list — shape', () => {
+describe('PracticeRepository.list — shape', () => {
     it('orders by code and selects the list projection', async () => {
         // `annexId` used to be the tiebreak here. It was dropped with the
-        // control exoskeleton, and because Prisma argument objects are not
+        // practice exoskeleton, and because Prisma argument objects are not
         // excess-property checked, the stale `orderBy` typechecked while
-        // throwing at runtime — it 500'd /controls and /evidence until CI
+        // throwing at runtime — it 500'd /practices and /evidence until CI
         // E2E caught it. Assert the surviving single-key order.
-        await ControlRepository.list(asTx(db), ctx);
+        await PracticeRepository.list(asTx(db), ctx);
 
-        const arg = argOf(db.control.findMany);
+        const arg = argOf(db.practice.findMany);
         expect(arg.orderBy).toEqual([{ code: 'asc' }]);
         // `createdAt` is not rendered but IS required by computePageInfo —
         // dropping it from the projection breaks cursor pagination.
@@ -179,16 +179,16 @@ describe('ControlRepository.list — shape', () => {
 
     it('omits `take` entirely when no cap is requested', async () => {
         // Break: defaulting `take` to a number would silently truncate the
-        // Controls page, which is unpaginated by contract.
-        await ControlRepository.list(asTx(db), ctx);
+        // Practices page, which is unpaginated by contract.
+        await PracticeRepository.list(asTx(db), ctx);
 
-        expect(argOf(db.control.findMany)).not.toHaveProperty('take');
+        expect(argOf(db.practice.findMany)).not.toHaveProperty('take');
     });
 
     it('forwards an explicit take', async () => {
-        await ControlRepository.list(asTx(db), ctx, undefined, { take: 5 });
+        await PracticeRepository.list(asTx(db), ctx, undefined, { take: 5 });
 
-        expect(argOf(db.control.findMany).take).toBe(5);
+        expect(argOf(db.practice.findMany).take).toBe(5);
     });
 });
 
@@ -196,12 +196,12 @@ describe('ControlRepository.list — shape', () => {
 // Cursor pagination
 // ─────────────────────────────────────────────────────────────────────
 
-describe('ControlRepository.listPaginated', () => {
+describe('PracticeRepository.listPaginated', () => {
     it('over-fetches by one so hasNextPage can be decided without a count', async () => {
-        await ControlRepository.listPaginated(asTx(db), ctx, { limit: 10 });
+        await PracticeRepository.listPaginated(asTx(db), ctx, { limit: 10 });
 
-        expect(argOf(db.control.findMany).take).toBe(11);
-        expect(argOf(db.control.findMany).orderBy).toEqual([
+        expect(argOf(db.practice.findMany).take).toBe(11);
+        expect(argOf(db.practice.findMany).orderBy).toEqual([
             { createdAt: 'desc' },
             { id: 'desc' },
         ]);
@@ -210,21 +210,21 @@ describe('ControlRepository.listPaginated', () => {
     it('clamps an absent limit to the default and an oversized one to the max', async () => {
         // Break: passing `params.limit` straight through lets a caller ask
         // for ?limit=1000000 and pull the whole table into memory.
-        await ControlRepository.listPaginated(asTx(db), ctx, {});
-        expect(argOf(db.control.findMany).take).toBe(DEFAULT_LIMIT + 1);
+        await PracticeRepository.listPaginated(asTx(db), ctx, {});
+        expect(argOf(db.practice.findMany).take).toBe(DEFAULT_LIMIT + 1);
 
         db = makeDb();
-        await ControlRepository.listPaginated(asTx(db), ctx, { limit: 10_000 });
-        expect(argOf(db.control.findMany).take).toBe(MAX_LIMIT + 1);
+        await PracticeRepository.listPaginated(asTx(db), ctx, { limit: 10_000 });
+        expect(argOf(db.practice.findMany).take).toBe(MAX_LIMIT + 1);
     });
 
     it('trims the over-fetched row and emits a cursor when more pages exist', async () => {
         const items = Array.from({ length: 4 }, (_, i) =>
             row(`c-${i}`, `2026-01-0${i + 1}T00:00:00.000Z`),
         );
-        db.control.findMany.mockResolvedValue(items);
+        db.practice.findMany.mockResolvedValue(items);
 
-        const res = await ControlRepository.listPaginated(asTx(db), ctx, { limit: 3 });
+        const res = await PracticeRepository.listPaginated(asTx(db), ctx, { limit: 3 });
 
         expect(res.items).toHaveLength(3);
         expect(res.pageInfo.hasNextPage).toBe(true);
@@ -236,9 +236,9 @@ describe('ControlRepository.listPaginated', () => {
     it('reports the last page with no cursor', async () => {
         // Break: emitting a cursor on the final page makes the client
         // request a page that is always empty — an infinite "load more".
-        db.control.findMany.mockResolvedValue([row('c-0', '2026-01-01T00:00:00.000Z')]);
+        db.practice.findMany.mockResolvedValue([row('c-0', '2026-01-01T00:00:00.000Z')]);
 
-        const res = await ControlRepository.listPaginated(asTx(db), ctx, { limit: 3 });
+        const res = await PracticeRepository.listPaginated(asTx(db), ctx, { limit: 3 });
 
         expect(res.pageInfo.hasNextPage).toBe(false);
         expect(res.pageInfo.nextCursor).toBeUndefined();
@@ -251,9 +251,9 @@ describe('ControlRepository.listPaginated', () => {
         // and invisible unless both filters are present at once.
         const cursor = encodeCursor({ createdAt: '2026-01-02T00:00:00.000Z', id: 'c-9' });
 
-        await ControlRepository.listPaginated(asTx(db), ctx, { cursor, filters: { q: 'audit' } });
+        await PracticeRepository.listPaginated(asTx(db), ctx, { cursor, filters: { q: 'audit' } });
 
-        const and = whereOf(db.control.findMany).AND;
+        const and = whereOf(db.practice.findMany).AND;
         expect(and).toHaveLength(2);
         expect(and[0].OR[1]).toEqual({ code: { contains: 'audit', mode: 'insensitive' } });
         expect(and[1].OR[0]).toEqual({
@@ -262,18 +262,18 @@ describe('ControlRepository.listPaginated', () => {
     });
 
     it('leaves AND unset when there is neither a cursor nor a text query', async () => {
-        await ControlRepository.listPaginated(asTx(db), ctx, {});
+        await PracticeRepository.listPaginated(asTx(db), ctx, {});
 
-        expect(whereOf(db.control.findMany).AND).toBeUndefined();
+        expect(whereOf(db.practice.findMany).AND).toBeUndefined();
     });
 
     it('ignores a corrupt cursor rather than throwing', async () => {
         // Break: letting decodeCursor's failure propagate. A stale or
         // hand-edited `?cursor=` in a bookmarked URL would 500 the list
         // instead of restarting at page one.
-        await ControlRepository.listPaginated(asTx(db), ctx, { cursor: 'not-base64-json' });
+        await PracticeRepository.listPaginated(asTx(db), ctx, { cursor: 'not-base64-json' });
 
-        expect(whereOf(db.control.findMany).AND).toBeUndefined();
+        expect(whereOf(db.practice.findMany).AND).toBeUndefined();
     });
 });
 
@@ -281,26 +281,26 @@ describe('ControlRepository.listPaginated', () => {
 // Detail reads
 // ─────────────────────────────────────────────────────────────────────
 
-describe('ControlRepository — detail reads', () => {
-    it('requires id AND the tenant-or-shared predicate to read a control', async () => {
-        // Break: looking up by id alone makes every tenant's control
+describe('PracticeRepository — detail reads', () => {
+    it('requires id AND the tenant-or-shared predicate to read a practice', async () => {
+        // Break: looking up by id alone makes every tenant's practice
         // readable by anyone who can guess or leak an id.
-        await ControlRepository.getById(asTx(db), ctx, 'c-1');
+        await PracticeRepository.getById(asTx(db), ctx, 'c-1');
 
-        expect(whereOf(db.control.findFirst)).toEqual({
+        expect(whereOf(db.practice.findFirst)).toEqual({
             id: 'c-1',
             OR: [{ tenantId: 'tenant-1' }, { tenantId: null }],
         });
     });
 
-    it('scopes the nested evidence of a control STRICTLY to the caller', async () => {
+    it('scopes the nested evidence of a practice STRICTLY to the caller', async () => {
         // Break: reusing the outer `OR: [mine, null]` for the nested
-        // `evidence` relation. Controls have a shared tier; EVIDENCE never
-        // does. On a shared (tenantId: null) control that mistake would
+        // `evidence` relation. Practices have a shared tier; EVIDENCE never
+        // does. On a shared (tenantId: null) practice that mistake would
         // hand one tenant another tenant's uploaded evidence.
-        await ControlRepository.getById(asTx(db), ctx, 'c-1');
+        await PracticeRepository.getById(asTx(db), ctx, 'c-1');
 
-        expect(argOf(db.control.findFirst).include.evidence.where).toEqual({
+        expect(argOf(db.practice.findFirst).include.evidence.where).toEqual({
             tenantId: 'tenant-1',
         });
     });
@@ -309,17 +309,17 @@ describe('ControlRepository — detail reads', () => {
         // Break: re-adding the arrays to `getHeaderById` re-introduces the
         // payload blow-up the tab-lazy split (#102) removed, while the tab
         // endpoints keep fetching them — double the work, silently.
-        await ControlRepository.getHeaderById(asTx(db), ctx, 'c-1');
+        await PracticeRepository.getHeaderById(asTx(db), ctx, 'c-1');
 
-        const include = argOf(db.control.findFirst).include;
-        expect(include).not.toHaveProperty('controlTasks');
+        const include = argOf(db.practice.findFirst).include;
+        expect(include).not.toHaveProperty('practiceTasks');
         expect(include).not.toHaveProperty('evidenceLinks');
         expect(include).not.toHaveProperty('evidence');
         expect(include).not.toHaveProperty('frameworkMappings');
         // ...but the badge counts must still be there, or every tab
         // renders "(0)".
         expect(include._count.select).toEqual({
-            controlTasks: true,
+            practiceTasks: true,
             evidenceLinks: true,
             evidence: true,
             frameworkMappings: true,
@@ -327,24 +327,24 @@ describe('ControlRepository — detail reads', () => {
     });
 
     it('applies the same tenant predicate on the header read as on the full read', async () => {
-        await ControlRepository.getHeaderById(asTx(db), OTHER_TENANT, 'c-1');
+        await PracticeRepository.getHeaderById(asTx(db), OTHER_TENANT, 'c-1');
 
-        expect(whereOf(db.control.findFirst)).toEqual({
+        expect(whereOf(db.practice.findFirst)).toEqual({
             id: 'c-1',
             OR: [{ tenantId: 'tenant-2' }, { tenantId: null }],
         });
     });
 
-    it('reaches framework mappings through the control tenant, not the mapping row', async () => {
-        // Break: `where: { toControlId }` alone. FrameworkMapping carries
+    it('reaches framework mappings through the practice tenant, not the mapping row', async () => {
+        // Break: `where: { toPracticeId }` alone. FrameworkMapping carries
         // no tenant column of its own, so the relation filter is the ONLY
-        // thing stopping a leaked control id from listing another tenant's
+        // thing stopping a leaked practice id from listing another tenant's
         // mappings.
-        await ControlRepository.listFrameworkMappings(asTx(db), ctx, 'c-1');
+        await PracticeRepository.listFrameworkMappings(asTx(db), ctx, 'c-1');
 
         expect(whereOf(db.frameworkMapping.findMany)).toEqual({
-            toControlId: 'c-1',
-            toControl: { tenantId: 'tenant-1' },
+            toPracticeId: 'c-1',
+            toPractice: { tenantId: 'tenant-1' },
         });
     });
 });
@@ -353,11 +353,11 @@ describe('ControlRepository — detail reads', () => {
 // Writes
 // ─────────────────────────────────────────────────────────────────────
 
-describe('ControlRepository.create', () => {
+describe('PracticeRepository.create', () => {
     it('stamps the calling tenant', async () => {
-        await ControlRepository.create(asTx(db), ctx, { code: 'A.5.1', name: 'Policy' } as never);
+        await PracticeRepository.create(asTx(db), ctx, { code: 'A.5.1', name: 'Policy' } as never);
 
-        expect(dataOf(db.control.create)).toMatchObject({
+        expect(dataOf(db.practice.create)).toMatchObject({
             code: 'A.5.1',
             tenantId: 'tenant-1',
         });
@@ -367,92 +367,92 @@ describe('ControlRepository.create', () => {
         // Break: spreading `...data` AFTER `tenantId`. The create payload
         // originates in a request body, so that ordering flip is a direct
         // write-into-another-tenant primitive.
-        await ControlRepository.create(asTx(db), ctx, {
+        await PracticeRepository.create(asTx(db), ctx, {
             code: 'A.5.1',
             tenantId: 'tenant-2',
         } as never);
 
-        expect(dataOf(db.control.create).tenantId).toBe('tenant-1');
+        expect(dataOf(db.practice.create).tenantId).toBe('tenant-1');
     });
 });
 
-describe('ControlRepository.update', () => {
+describe('PracticeRepository.update', () => {
     it('checks ownership with a STRICT tenant match before writing', async () => {
         // Break: reusing the read predicate (`OR: [mine, null]`) here would
         // let any tenant edit the shared platform catalogue for everyone.
         // Asserting only "update was not called" would NOT catch that — the
         // where-clause itself is the contract.
-        db.control.findFirst.mockResolvedValue({ id: 'c-1' });
+        db.practice.findFirst.mockResolvedValue({ id: 'c-1' });
 
-        await ControlRepository.update(asTx(db), ctx, 'c-1', { name: 'New' });
+        await PracticeRepository.update(asTx(db), ctx, 'c-1', { name: 'New' });
 
-        expect(whereOf(db.control.findFirst)).toEqual({ id: 'c-1', tenantId: 'tenant-1' });
-        expect(dataOf(db.control.update)).toEqual({ name: 'New' });
+        expect(whereOf(db.practice.findFirst)).toEqual({ id: 'c-1', tenantId: 'tenant-1' });
+        expect(dataOf(db.practice.update)).toEqual({ name: 'New' });
     });
 
-    it('returns null and issues no write when the control is not the caller’s', async () => {
-        const res = await ControlRepository.update(asTx(db), ctx, 'c-1', { name: 'New' });
+    it('returns null and issues no write when the practice is not the caller’s', async () => {
+        const res = await PracticeRepository.update(asTx(db), ctx, 'c-1', { name: 'New' });
 
         expect(res).toBeNull();
-        expect(db.control.update).not.toHaveBeenCalled();
+        expect(db.practice.update).not.toHaveBeenCalled();
     });
 });
 
-describe('ControlRepository.setApplicability', () => {
+describe('PracticeRepository.setApplicability', () => {
     beforeEach(() => {
-        db.control.findFirst.mockResolvedValue({ id: 'c-1' });
+        db.practice.findFirst.mockResolvedValue({ id: 'c-1' });
     });
 
     it('keeps the justification when marking NOT_APPLICABLE and stamps the decider', async () => {
-        await ControlRepository.setApplicability(asTx(db), ctx, 'c-1', 'NOT_APPLICABLE', 'No cloud estate');
+        await PracticeRepository.setApplicability(asTx(db), ctx, 'c-1', 'NOT_APPLICABLE', 'No cloud estate');
 
-        expect(dataOf(db.control.update)).toMatchObject({
+        expect(dataOf(db.practice.update)).toMatchObject({
             applicability: 'NOT_APPLICABLE',
             applicabilityJustification: 'No cloud estate',
             applicabilityDecidedByUserId: 'user-1',
         });
-        expect(dataOf(db.control.update).applicabilityDecidedAt).toBeInstanceOf(Date);
+        expect(dataOf(db.practice.update).applicabilityDecidedAt).toBeInstanceOf(Date);
     });
 
-    it('clears a stale justification when the control becomes APPLICABLE again', async () => {
+    it('clears a stale justification when the practice becomes APPLICABLE again', async () => {
         // Break: writing `justification` unconditionally. The Statement of
-        // Applicability would then show an APPLICABLE control still
+        // Applicability would then show an APPLICABLE practice still
         // carrying its old "not applicable because…" text — an auditor-
         // facing contradiction in the exported SoA.
-        await ControlRepository.setApplicability(asTx(db), ctx, 'c-1', 'APPLICABLE', 'stale reason');
+        await PracticeRepository.setApplicability(asTx(db), ctx, 'c-1', 'APPLICABLE', 'stale reason');
 
-        expect(dataOf(db.control.update).applicabilityJustification).toBeNull();
+        expect(dataOf(db.practice.update).applicabilityJustification).toBeNull();
     });
 
-    it('refuses on a control the caller does not own', async () => {
-        db.control.findFirst.mockResolvedValue(null);
+    it('refuses on a practice the caller does not own', async () => {
+        db.practice.findFirst.mockResolvedValue(null);
 
-        expect(await ControlRepository.setApplicability(asTx(db), ctx, 'c-1', 'APPLICABLE', null)).toBeNull();
-        expect(db.control.update).not.toHaveBeenCalled();
+        expect(await PracticeRepository.setApplicability(asTx(db), ctx, 'c-1', 'APPLICABLE', null)).toBeNull();
+        expect(db.practice.update).not.toHaveBeenCalled();
     });
 });
 
-describe('ControlRepository.setOwner', () => {
+describe('PracticeRepository.setOwner', () => {
     it('tenant-checks, then writes the owner', async () => {
-        db.control.findFirst.mockResolvedValue({ id: 'c-1' });
+        db.practice.findFirst.mockResolvedValue({ id: 'c-1' });
 
-        await ControlRepository.setOwner(asTx(db), ctx, 'c-1', 'user-7');
+        await PracticeRepository.setOwner(asTx(db), ctx, 'c-1', 'user-7');
 
-        expect(whereOf(db.control.findFirst)).toEqual({ id: 'c-1', tenantId: 'tenant-1' });
-        expect(dataOf(db.control.update)).toEqual({ ownerUserId: 'user-7' });
+        expect(whereOf(db.practice.findFirst)).toEqual({ id: 'c-1', tenantId: 'tenant-1' });
+        expect(dataOf(db.practice.update)).toEqual({ ownerUserId: 'user-7' });
     });
 
     it('supports clearing the owner', async () => {
-        db.control.findFirst.mockResolvedValue({ id: 'c-1' });
+        db.practice.findFirst.mockResolvedValue({ id: 'c-1' });
 
-        await ControlRepository.setOwner(asTx(db), ctx, 'c-1', null);
+        await PracticeRepository.setOwner(asTx(db), ctx, 'c-1', null);
 
-        expect(dataOf(db.control.update)).toEqual({ ownerUserId: null });
+        expect(dataOf(db.practice.update)).toEqual({ ownerUserId: null });
     });
 
-    it('refuses on a foreign control', async () => {
-        expect(await ControlRepository.setOwner(asTx(db), ctx, 'c-1', 'user-7')).toBeNull();
-        expect(db.control.update).not.toHaveBeenCalled();
+    it('refuses on a foreign practice', async () => {
+        expect(await PracticeRepository.setOwner(asTx(db), ctx, 'c-1', 'user-7')).toBeNull();
+        expect(db.practice.update).not.toHaveBeenCalled();
     });
 });
 
@@ -464,30 +464,30 @@ describe('ControlRepository.setOwner', () => {
 // Tasks
 // ─────────────────────────────────────────────────────────────────────
 
-describe('ControlRepository — tasks', () => {
-    it('lists a control’s tasks tenant-scoped, oldest first', async () => {
-        await ControlRepository.listTasks(asTx(db), ctx, 'c-1');
+describe('PracticeRepository — tasks', () => {
+    it('lists a practice’s tasks tenant-scoped, oldest first', async () => {
+        await PracticeRepository.listTasks(asTx(db), ctx, 'c-1');
 
-        expect(whereOf(db.controlTask.findMany)).toEqual({ controlId: 'c-1', tenantId: 'tenant-1' });
-        expect(argOf(db.controlTask.findMany).orderBy).toEqual({ createdAt: 'asc' });
+        expect(whereOf(db.practiceTask.findMany)).toEqual({ practiceId: 'c-1', tenantId: 'tenant-1' });
+        expect(argOf(db.practiceTask.findMany).orderBy).toEqual({ createdAt: 'asc' });
     });
 
     it('parses the due date and normalises blank optionals to null on create', async () => {
         // Break: forwarding `dueAt` as the raw ISO string. Prisma rejects a
         // string for a DateTime column, so every task created with a due
         // date would fail at the driver.
-        db.control.findFirst.mockResolvedValue({ id: 'c-1' });
+        db.practice.findFirst.mockResolvedValue({ id: 'c-1' });
 
-        await ControlRepository.createTask(asTx(db), ctx, 'c-1', {
+        await PracticeRepository.createTask(asTx(db), ctx, 'c-1', {
             title: 'Collect logs',
             dueAt: '2026-03-01T00:00:00.000Z',
         });
 
-        const data = dataOf(db.controlTask.create);
+        const data = dataOf(db.practiceTask.create);
         expect(data.dueAt).toEqual(new Date('2026-03-01T00:00:00.000Z'));
         expect(data).toMatchObject({
             tenantId: 'tenant-1',
-            controlId: 'c-1',
+            practiceId: 'c-1',
             title: 'Collect logs',
             description: null,
             assigneeUserId: null,
@@ -495,42 +495,42 @@ describe('ControlRepository — tasks', () => {
     });
 
     it('stores a null due date when none is given', async () => {
-        db.control.findFirst.mockResolvedValue({ id: 'c-1' });
+        db.practice.findFirst.mockResolvedValue({ id: 'c-1' });
 
-        await ControlRepository.createTask(asTx(db), ctx, 'c-1', { title: 'T' });
+        await PracticeRepository.createTask(asTx(db), ctx, 'c-1', { title: 'T' });
 
-        expect(dataOf(db.controlTask.create).dueAt).toBeNull();
+        expect(dataOf(db.practiceTask.create).dueAt).toBeNull();
     });
 
-    it('refuses to create a task under a foreign control', async () => {
-        expect(await ControlRepository.createTask(asTx(db), ctx, 'c-1', { title: 'T' })).toBeNull();
-        expect(db.controlTask.create).not.toHaveBeenCalled();
+    it('refuses to create a task under a foreign practice', async () => {
+        expect(await PracticeRepository.createTask(asTx(db), ctx, 'c-1', { title: 'T' })).toBeNull();
+        expect(db.practiceTask.create).not.toHaveBeenCalled();
     });
 
     it('patches only the keys actually supplied', async () => {
         // Break: building `data` from the object directly. `status` and
         // `assigneeUserId` would then be written as `undefined`/null on
         // every rename, silently unassigning the task.
-        db.controlTask.findFirst.mockResolvedValue({ id: 't-1' });
+        db.practiceTask.findFirst.mockResolvedValue({ id: 't-1' });
 
-        await ControlRepository.updateTask(asTx(db), ctx, 't-1', { title: 'Renamed' });
+        await PracticeRepository.updateTask(asTx(db), ctx, 't-1', { title: 'Renamed' });
 
-        expect(dataOf(db.controlTask.update)).toEqual({ title: 'Renamed' });
+        expect(dataOf(db.practiceTask.update)).toEqual({ title: 'Renamed' });
     });
 
     it('distinguishes an explicit null from an omitted field', async () => {
         // Break: an `if (data.assigneeUserId)` truthiness check instead of
         // an `!== undefined` check would make "unassign" impossible.
-        db.controlTask.findFirst.mockResolvedValue({ id: 't-1' });
+        db.practiceTask.findFirst.mockResolvedValue({ id: 't-1' });
 
-        await ControlRepository.updateTask(asTx(db), ctx, 't-1', {
+        await PracticeRepository.updateTask(asTx(db), ctx, 't-1', {
             assigneeUserId: null,
             description: null,
             dueAt: null,
             status: 'DONE',
         });
 
-        expect(dataOf(db.controlTask.update)).toEqual({
+        expect(dataOf(db.practiceTask.update)).toEqual({
             assigneeUserId: null,
             description: null,
             dueAt: null,
@@ -543,36 +543,36 @@ describe('ControlRepository — tasks', () => {
         // create path parses it. Creating a task with a due date would
         // work and rescheduling one would fail — the asymmetry is what
         // makes this worth its own assertion.
-        db.controlTask.findFirst.mockResolvedValue({ id: 't-1' });
+        db.practiceTask.findFirst.mockResolvedValue({ id: 't-1' });
 
-        await ControlRepository.updateTask(asTx(db), ctx, 't-1', {
+        await PracticeRepository.updateTask(asTx(db), ctx, 't-1', {
             dueAt: '2026-06-30T00:00:00.000Z',
         });
 
-        expect(dataOf(db.controlTask.update).dueAt).toEqual(new Date('2026-06-30T00:00:00.000Z'));
+        expect(dataOf(db.practiceTask.update).dueAt).toEqual(new Date('2026-06-30T00:00:00.000Z'));
     });
 
     it('tenant-checks the task itself before patching it', async () => {
-        db.controlTask.findFirst.mockResolvedValue({ id: 't-1' });
+        db.practiceTask.findFirst.mockResolvedValue({ id: 't-1' });
 
-        await ControlRepository.updateTask(asTx(db), ctx, 't-1', { title: 'x' });
+        await PracticeRepository.updateTask(asTx(db), ctx, 't-1', { title: 'x' });
 
-        expect(whereOf(db.controlTask.findFirst)).toEqual({ id: 't-1', tenantId: 'tenant-1' });
+        expect(whereOf(db.practiceTask.findFirst)).toEqual({ id: 't-1', tenantId: 'tenant-1' });
     });
 
     it('refuses to patch or delete a foreign task', async () => {
-        expect(await ControlRepository.updateTask(asTx(db), ctx, 't-1', { title: 'x' })).toBeNull();
-        expect(db.controlTask.update).not.toHaveBeenCalled();
+        expect(await PracticeRepository.updateTask(asTx(db), ctx, 't-1', { title: 'x' })).toBeNull();
+        expect(db.practiceTask.update).not.toHaveBeenCalled();
 
-        expect(await ControlRepository.deleteTask(asTx(db), ctx, 't-1')).toBeNull();
-        expect(db.controlTask.delete).not.toHaveBeenCalled();
+        expect(await PracticeRepository.deleteTask(asTx(db), ctx, 't-1')).toBeNull();
+        expect(db.practiceTask.delete).not.toHaveBeenCalled();
     });
 
     it('deletes an owned task', async () => {
-        db.controlTask.findFirst.mockResolvedValue({ id: 't-1' });
+        db.practiceTask.findFirst.mockResolvedValue({ id: 't-1' });
 
-        expect(await ControlRepository.deleteTask(asTx(db), ctx, 't-1')).toBe(true);
-        expect(whereOf(db.controlTask.delete)).toEqual({ id: 't-1' });
+        expect(await PracticeRepository.deleteTask(asTx(db), ctx, 't-1')).toBe(true);
+        expect(whereOf(db.practiceTask.delete)).toEqual({ id: 't-1' });
     });
 });
 
@@ -580,31 +580,31 @@ describe('ControlRepository — tasks', () => {
 // Evidence links
 // ─────────────────────────────────────────────────────────────────────
 
-describe('ControlRepository — evidence links', () => {
+describe('PracticeRepository — evidence links', () => {
     it('lists evidence links tenant-scoped, newest first', async () => {
-        await ControlRepository.listEvidenceLinks(asTx(db), ctx, 'c-1');
+        await PracticeRepository.listEvidenceLinks(asTx(db), ctx, 'c-1');
 
-        expect(whereOf(db.controlEvidenceLink.findMany)).toEqual({
-            controlId: 'c-1',
+        expect(whereOf(db.practiceEvidenceLink.findMany)).toEqual({
+            practiceId: 'c-1',
             tenantId: 'tenant-1',
         });
-        expect(argOf(db.controlEvidenceLink.findMany).orderBy).toEqual({ createdAt: 'desc' });
+        expect(argOf(db.practiceEvidenceLink.findMany).orderBy).toEqual({ createdAt: 'desc' });
     });
 
     it('records who attached the evidence', async () => {
         // Break: dropping `createdByUserId`. Evidence provenance is the
         // point of the audit trail — an attachment with no attributable
         // author is not evidence an auditor will accept.
-        db.control.findFirst.mockResolvedValue({ id: 'c-1' });
+        db.practice.findFirst.mockResolvedValue({ id: 'c-1' });
 
-        await ControlRepository.linkEvidence(asTx(db), ctx, 'c-1', {
+        await PracticeRepository.linkEvidence(asTx(db), ctx, 'c-1', {
             kind: 'LINK',
             url: 'https://example.invalid/report',
         });
 
-        expect(dataOf(db.controlEvidenceLink.create)).toEqual({
+        expect(dataOf(db.practiceEvidenceLink.create)).toEqual({
             tenantId: 'tenant-1',
-            controlId: 'c-1',
+            practiceId: 'c-1',
             kind: 'LINK',
             fileId: null,
             url: 'https://example.invalid/report',
@@ -619,15 +619,15 @@ describe('ControlRepository — evidence links', () => {
         // Prisma treats undefined as "do not set", so on the create path
         // the column falls to its default rather than an explicit null —
         // and the evidence renderer branches on `url === null`.
-        db.control.findFirst.mockResolvedValue({ id: 'c-1' });
+        db.practice.findFirst.mockResolvedValue({ id: 'c-1' });
 
-        await ControlRepository.linkEvidence(asTx(db), ctx, 'c-1', {
+        await PracticeRepository.linkEvidence(asTx(db), ctx, 'c-1', {
             kind: 'FILE',
             fileId: 'f-1',
             note: 'Q1 export',
         });
 
-        expect(dataOf(db.controlEvidenceLink.create)).toMatchObject({
+        expect(dataOf(db.practiceEvidenceLink.create)).toMatchObject({
             kind: 'FILE',
             fileId: 'f-1',
             url: null,
@@ -635,31 +635,31 @@ describe('ControlRepository — evidence links', () => {
         });
     });
 
-    it('refuses to link evidence to a foreign control', async () => {
+    it('refuses to link evidence to a foreign practice', async () => {
         expect(
-            await ControlRepository.linkEvidence(asTx(db), ctx, 'c-1', { kind: 'LINK' }),
+            await PracticeRepository.linkEvidence(asTx(db), ctx, 'c-1', { kind: 'LINK' }),
         ).toBeNull();
-        expect(db.controlEvidenceLink.create).not.toHaveBeenCalled();
+        expect(db.practiceEvidenceLink.create).not.toHaveBeenCalled();
     });
 
-    it('requires the link to belong to BOTH the named control and the tenant', async () => {
+    it('requires the link to belong to BOTH the named practice and the tenant', async () => {
         // Break: matching on `id` alone. The unlink endpoint takes the link
-        // id from the URL, so without the `controlId` arm a caller could
-        // detach evidence from a control they are not even looking at.
-        db.controlEvidenceLink.findFirst.mockResolvedValue({ id: 'l-1' });
+        // id from the URL, so without the `practiceId` arm a caller could
+        // detach evidence from a practice they are not even looking at.
+        db.practiceEvidenceLink.findFirst.mockResolvedValue({ id: 'l-1' });
 
-        expect(await ControlRepository.unlinkEvidence(asTx(db), ctx, 'c-1', 'l-1')).toBe(true);
-        expect(whereOf(db.controlEvidenceLink.findFirst)).toEqual({
+        expect(await PracticeRepository.unlinkEvidence(asTx(db), ctx, 'c-1', 'l-1')).toBe(true);
+        expect(whereOf(db.practiceEvidenceLink.findFirst)).toEqual({
             id: 'l-1',
-            controlId: 'c-1',
+            practiceId: 'c-1',
             tenantId: 'tenant-1',
         });
-        expect(whereOf(db.controlEvidenceLink.delete)).toEqual({ id: 'l-1' });
+        expect(whereOf(db.practiceEvidenceLink.delete)).toEqual({ id: 'l-1' });
     });
 
     it('is a no-op when the evidence link is not found', async () => {
-        expect(await ControlRepository.unlinkEvidence(asTx(db), ctx, 'c-1', 'l-1')).toBeNull();
-        expect(db.controlEvidenceLink.delete).not.toHaveBeenCalled();
+        expect(await PracticeRepository.unlinkEvidence(asTx(db), ctx, 'c-1', 'l-1')).toBeNull();
+        expect(db.practiceEvidenceLink.delete).not.toHaveBeenCalled();
     });
 });
 
@@ -667,48 +667,48 @@ describe('ControlRepository — evidence links', () => {
 // Asset links
 // ─────────────────────────────────────────────────────────────────────
 
-describe('ControlRepository — asset links', () => {
-    it('verifies the control before creating the asset join row', async () => {
-        db.control.findFirst.mockResolvedValue({ id: 'c-1' });
+describe('PracticeRepository — asset links', () => {
+    it('verifies the practice before creating the asset join row', async () => {
+        db.practice.findFirst.mockResolvedValue({ id: 'c-1' });
 
-        await ControlRepository.linkAsset(asTx(db), ctx, 'c-1', 'a-1');
+        await PracticeRepository.linkAsset(asTx(db), ctx, 'c-1', 'a-1');
 
-        expect(whereOf(db.control.findFirst)).toEqual({ id: 'c-1', tenantId: 'tenant-1' });
-        expect(dataOf(db.controlAsset.create)).toEqual({
+        expect(whereOf(db.practice.findFirst)).toEqual({ id: 'c-1', tenantId: 'tenant-1' });
+        expect(dataOf(db.practiceAsset.create)).toEqual({
             tenantId: 'tenant-1',
-            controlId: 'c-1',
+            practiceId: 'c-1',
             assetId: 'a-1',
         });
     });
 
-    it('refuses to link an asset to a foreign control', async () => {
-        expect(await ControlRepository.linkAsset(asTx(db), ctx, 'c-1', 'a-1')).toBeNull();
-        expect(db.controlAsset.create).not.toHaveBeenCalled();
+    it('refuses to link an asset to a foreign practice', async () => {
+        expect(await PracticeRepository.linkAsset(asTx(db), ctx, 'c-1', 'a-1')).toBeNull();
+        expect(db.practiceAsset.create).not.toHaveBeenCalled();
     });
 
-    it('locates the join row by control, asset AND tenant before deleting it', async () => {
-        db.control.findFirst.mockResolvedValue({ id: 'c-1' });
-        db.controlAsset.findFirst.mockResolvedValue({ id: 'ca-1' });
+    it('locates the join row by practice, asset AND tenant before deleting it', async () => {
+        db.practice.findFirst.mockResolvedValue({ id: 'c-1' });
+        db.practiceAsset.findFirst.mockResolvedValue({ id: 'ca-1' });
 
-        expect(await ControlRepository.unlinkAsset(asTx(db), ctx, 'c-1', 'a-1')).toBe(true);
-        expect(whereOf(db.controlAsset.findFirst)).toEqual({
-            controlId: 'c-1',
+        expect(await PracticeRepository.unlinkAsset(asTx(db), ctx, 'c-1', 'a-1')).toBe(true);
+        expect(whereOf(db.practiceAsset.findFirst)).toEqual({
+            practiceId: 'c-1',
             assetId: 'a-1',
             tenantId: 'tenant-1',
         });
-        expect(whereOf(db.controlAsset.delete)).toEqual({ id: 'ca-1' });
+        expect(whereOf(db.practiceAsset.delete)).toEqual({ id: 'ca-1' });
     });
 
     it('is a no-op when the asset link does not exist', async () => {
-        db.control.findFirst.mockResolvedValue({ id: 'c-1' });
-        db.controlAsset.findFirst.mockResolvedValue(null);
+        db.practice.findFirst.mockResolvedValue({ id: 'c-1' });
+        db.practiceAsset.findFirst.mockResolvedValue(null);
 
-        expect(await ControlRepository.unlinkAsset(asTx(db), ctx, 'c-1', 'a-1')).toBeNull();
-        expect(db.controlAsset.delete).not.toHaveBeenCalled();
+        expect(await PracticeRepository.unlinkAsset(asTx(db), ctx, 'c-1', 'a-1')).toBeNull();
+        expect(db.practiceAsset.delete).not.toHaveBeenCalled();
     });
 
-    it('refuses to unlink an asset from a foreign control', async () => {
-        expect(await ControlRepository.unlinkAsset(asTx(db), ctx, 'c-1', 'a-1')).toBeNull();
-        expect(db.controlAsset.findFirst).not.toHaveBeenCalled();
+    it('refuses to unlink an asset from a foreign practice', async () => {
+        expect(await PracticeRepository.unlinkAsset(asTx(db), ctx, 'c-1', 'a-1')).toBeNull();
+        expect(db.practiceAsset.findFirst).not.toHaveBeenCalled();
     });
 });

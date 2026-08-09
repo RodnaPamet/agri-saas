@@ -83,14 +83,14 @@ describe('status-variant lookup tables', () => {
         expect(RISK_STATUS_VARIANT.CLOSED).toBe('success');
     });
 
-    test('control status: terminal IMPLEMENTED is success, NEEDS_REVIEW is warning', () => {
+    test('practice status: terminal IMPLEMENTED is success, NEEDS_REVIEW is warning', () => {
         expect(CONTROL_STATUS_VARIANT.NOT_STARTED).toBe('neutral');
         expect(CONTROL_STATUS_VARIANT.IN_PROGRESS).toBe('info');
         expect(CONTROL_STATUS_VARIANT.IMPLEMENTED).toBe('success');
         expect(CONTROL_STATUS_VARIANT.NEEDS_REVIEW).toBe('warning');
     });
 
-    test('control applicability: only APPLICABLE draws attention', () => {
+    test('practice applicability: only APPLICABLE draws attention', () => {
         expect(CONTROL_APPLICABILITY_VARIANT.APPLICABLE).toBe('info');
         expect(CONTROL_APPLICABILITY_VARIANT.NOT_APPLICABLE).toBe('neutral');
         expect(CONTROL_APPLICABILITY_VARIANT.EXCLUDED).toBe('neutral');

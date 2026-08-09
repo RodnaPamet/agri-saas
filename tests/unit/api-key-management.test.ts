@@ -72,14 +72,14 @@ beforeEach(() => {
 
 describe('API Key Scopes — Validation', () => {
     it('accepts valid scopes', () => {
-        expect(validateScopes(['controls:read'])).toEqual([]);
+        expect(validateScopes(['practices:read'])).toEqual([]);
         expect(validateScopes(['*'])).toEqual([]);
-        expect(validateScopes(['controls:read', 'evidence:write'])).toEqual([]);
-        expect(validateScopes(['controls:*'])).toEqual([]);
+        expect(validateScopes(['practices:read', 'evidence:write'])).toEqual([]);
+        expect(validateScopes(['practices:*'])).toEqual([]);
     });
 
     it('rejects non-array', () => {
-        expect(validateScopes('controls:read')).toContainEqual(expect.stringMatching(/array/i));
+        expect(validateScopes('practices:read')).toContainEqual(expect.stringMatching(/array/i));
     });
 
     it('rejects empty array', () => {
@@ -94,9 +94,9 @@ describe('API Key Scopes — Validation', () => {
 
     it('VALID_SCOPES contains expected scopes', () => {
         expect(VALID_SCOPES).toContain('*');
-        expect(VALID_SCOPES).toContain('controls:read');
-        expect(VALID_SCOPES).toContain('controls:write');
-        expect(VALID_SCOPES).toContain('controls:*');
+        expect(VALID_SCOPES).toContain('practices:read');
+        expect(VALID_SCOPES).toContain('practices:write');
+        expect(VALID_SCOPES).toContain('practices:*');
         expect(VALID_SCOPES).toContain('evidence:read');
         expect(VALID_SCOPES).toContain('admin:write');
     });
@@ -111,25 +111,25 @@ describe('API Key Scopes — scopesToPermissions', () => {
         expect(perms).toEqual(adminPerms);
     });
 
-    it('controls:read grants only controls.view', () => {
-        const perms = scopesToPermissions(['controls:read']);
-        expect(perms.controls.view).toBe(true);
-        expect(perms.controls.create).toBe(false);
-        expect(perms.controls.edit).toBe(false);
+    it('practices:read grants only practices.view', () => {
+        const perms = scopesToPermissions(['practices:read']);
+        expect(perms.practices.view).toBe(true);
+        expect(perms.practices.create).toBe(false);
+        expect(perms.practices.edit).toBe(false);
     });
 
-    it('controls:write grants controls.create and controls.edit', () => {
-        const perms = scopesToPermissions(['controls:write']);
-        expect(perms.controls.create).toBe(true);
-        expect(perms.controls.edit).toBe(true);
-        expect(perms.controls.view).toBe(false); // read not included in write
+    it('practices:write grants practices.create and practices.edit', () => {
+        const perms = scopesToPermissions(['practices:write']);
+        expect(perms.practices.create).toBe(true);
+        expect(perms.practices.edit).toBe(true);
+        expect(perms.practices.view).toBe(false); // read not included in write
     });
 
-    it('controls:* grants all controls actions', () => {
-        const perms = scopesToPermissions(['controls:*']);
-        expect(perms.controls.view).toBe(true);
-        expect(perms.controls.create).toBe(true);
-        expect(perms.controls.edit).toBe(true);
+    it('practices:* grants all practices actions', () => {
+        const perms = scopesToPermissions(['practices:*']);
+        expect(perms.practices.view).toBe(true);
+        expect(perms.practices.create).toBe(true);
+        expect(perms.practices.edit).toBe(true);
     });
 
     it('evidence:read grants view and download', () => {
@@ -140,9 +140,9 @@ describe('API Key Scopes — scopesToPermissions', () => {
     });
 
     it('multiple scopes combine correctly', () => {
-        const perms = scopesToPermissions(['controls:read', 'evidence:write']);
-        expect(perms.controls.view).toBe(true);
-        expect(perms.controls.create).toBe(false);
+        const perms = scopesToPermissions(['practices:read', 'evidence:write']);
+        expect(perms.practices.view).toBe(true);
+        expect(perms.practices.create).toBe(false);
         expect(perms.evidence.upload).toBe(true);
         expect(perms.evidence.edit).toBe(true);
         expect(perms.evidence.view).toBe(false); // read not granted
@@ -151,7 +151,7 @@ describe('API Key Scopes — scopesToPermissions', () => {
     it('grants nothing for empty scopes', () => {
         const perms = scopesToPermissions([]);
         // All should be false
-        expect(perms.controls.view).toBe(false);
+        expect(perms.practices.view).toBe(false);
         expect(perms.evidence.upload).toBe(false);
         expect(perms.admin.manage).toBe(false);
     });
@@ -163,25 +163,25 @@ describe('API Key Scopes — enforceApiKeyScope', () => {
     it('no-op for session-authenticated requests (no apiKeyId)', () => {
         const ctx = makeCtx();
         // Should not throw
-        expect(() => enforceApiKeyScope(ctx, 'controls', 'read')).not.toThrow();
+        expect(() => enforceApiKeyScope(ctx, 'practices', 'read')).not.toThrow();
     });
 
     it('allows access when scope matches', () => {
         const ctx = makeCtx('ADMIN', {
             apiKeyId: 'ak-1',
-            apiKeyScopes: ['controls:read', 'evidence:write'],
+            apiKeyScopes: ['practices:read', 'evidence:write'],
         });
-        expect(() => enforceApiKeyScope(ctx, 'controls', 'read')).not.toThrow();
+        expect(() => enforceApiKeyScope(ctx, 'practices', 'read')).not.toThrow();
         expect(() => enforceApiKeyScope(ctx, 'evidence', 'write')).not.toThrow();
     });
 
     it('blocks access when scope is missing', () => {
         const ctx = makeCtx('ADMIN', {
             apiKeyId: 'ak-1',
-            apiKeyScopes: ['controls:read'],
+            apiKeyScopes: ['practices:read'],
         });
         expect(() => enforceApiKeyScope(ctx, 'evidence', 'write')).toThrow(/does not have scope/);
-        expect(() => enforceApiKeyScope(ctx, 'controls', 'write')).toThrow(/does not have scope/);
+        expect(() => enforceApiKeyScope(ctx, 'practices', 'write')).toThrow(/does not have scope/);
     });
 
     it('full access (*) allows everything', () => {
@@ -189,17 +189,17 @@ describe('API Key Scopes — enforceApiKeyScope', () => {
             apiKeyId: 'ak-1',
             apiKeyScopes: ['*'],
         });
-        expect(() => enforceApiKeyScope(ctx, 'controls', 'read')).not.toThrow();
+        expect(() => enforceApiKeyScope(ctx, 'practices', 'read')).not.toThrow();
         expect(() => enforceApiKeyScope(ctx, 'admin', 'write')).not.toThrow();
     });
 
-    it('resource wildcard (controls:*) allows all actions on resource', () => {
+    it('resource wildcard (practices:*) allows all actions on resource', () => {
         const ctx = makeCtx('ADMIN', {
             apiKeyId: 'ak-1',
-            apiKeyScopes: ['controls:*'],
+            apiKeyScopes: ['practices:*'],
         });
-        expect(() => enforceApiKeyScope(ctx, 'controls', 'read')).not.toThrow();
-        expect(() => enforceApiKeyScope(ctx, 'controls', 'write')).not.toThrow();
+        expect(() => enforceApiKeyScope(ctx, 'practices', 'read')).not.toThrow();
+        expect(() => enforceApiKeyScope(ctx, 'practices', 'write')).not.toThrow();
         expect(() => enforceApiKeyScope(ctx, 'evidence', 'read')).toThrow(/does not have scope/);
     });
 });
@@ -241,7 +241,7 @@ describe('API Key Management — Create', () => {
 
         const result = await createApiKey(makeCtx(), {
             name: 'CI Key',
-            scopes: ['controls:read'],
+            scopes: ['practices:read'],
         });
 
         expect(result.name).toBe('CI Key');

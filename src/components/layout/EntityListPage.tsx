@@ -42,7 +42,7 @@
  *   - A JSON-driven generic table. Columns are typed React nodes
  *     the page builds with full TanStack power.
  *   - A data fetcher. Pages run their queries — see
- *     `ControlsClient` for the canonical React Query shape.
+ *     `PracticesClient` for the canonical React Query shape.
  *   - A wrapper that hides DataTable's prop surface. Most table
  *     props pass through directly so a feature added to DataTable
  *     (sorting, batch actions, column visibility) is reachable
@@ -71,7 +71,7 @@ export interface EntityListPageHeader {
     /**
      * Optional uppercase eyebrow rendered above the title (v2-PR-12).
      * Conventionally the resource name in screaming-quiet caps —
-     * e.g. "Controls" above a "Compliance register" title. The trio
+     * e.g. "Practices" above a "Compliance register" title. The trio
      * (eyebrow + title + description) gives every list page the same
      * 3-line composition signature.
      */

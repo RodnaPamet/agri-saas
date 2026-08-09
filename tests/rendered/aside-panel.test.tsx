@@ -15,7 +15,7 @@ import * as React from 'react';
 import { AsidePanel } from '@/components/ui/aside-panel';
 
 // `<AsidePanel>` reads `?aside` via `useSearchParams` (Phase 4
-// deep-link). A controllable mock — tests set `mockSearchParams`
+// deep-link). A practicelable mock — tests set `mockSearchParams`
 // before render; the `mock` prefix lets the hoisted factory close
 // over it.
 let mockSearchParams = new URLSearchParams();

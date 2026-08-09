@@ -32,7 +32,7 @@ const ALLOWLIST = [
     // asserting the `fromCompactFilterState` / `toCompactFilterState`
     // round-trip still works. The utility function names (and therefore
     // the string) are kept for backwards-compat with stored URL params.
-    'tests/unit/controls-filter-defs.test.ts',
+    'tests/unit/practices-filter-defs.test.ts',
     'tests/unit/filter-foundation.test.ts',
     // This guard file itself.
     'tests/guardrails/no-compact-filter-bar.test.ts',

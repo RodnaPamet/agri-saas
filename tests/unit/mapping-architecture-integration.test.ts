@@ -91,7 +91,7 @@ const nistGvRm = { reqId: 'nist-gvrm01', code: 'GV.RM-01', title: 'Risk Manageme
 const nistPrAa = { reqId: 'nist-praa01', code: 'PR.AA-01', title: 'Access Auth', ...NIST };
 const nistRsMa = { reqId: 'nist-rsma01', code: 'RS.MA-01', title: 'Incident Mgmt', ...NIST };
 
-const soc2Cc1 = { reqId: 'soc2-cc1', code: 'CC1', title: 'Control Environment', ...SOC2 };
+const soc2Cc1 = { reqId: 'soc2-cc1', code: 'CC1', title: 'Practice Environment', ...SOC2 };
 
 const INTEGRATION_EDGES: Record<string, ResolvedMappingEdge[]> = {
     'iso-a51':    [makeEdge('e1', isoA51, nistGvOc, 'EQUAL', 'Equivalent governance')],
@@ -190,7 +190,7 @@ describe('Mapping Architecture Integration', () => {
             expect(equalEntries).toHaveLength(0);
         });
 
-        it('all source refs look like ISO controls', () => {
+        it('all source refs look like ISO practices', () => {
             for (const entry of stored.mapping_entries) {
                 expect(entry.source_ref).toMatch(/^A\.\d+\.\d+$/);
             }
@@ -318,7 +318,7 @@ describe('Mapping Architecture Integration', () => {
             }
         });
 
-        it('all target refs look like ISO Annex A controls', () => {
+        it('all target refs look like ISO Annex A practices', () => {
             for (const entry of stored.mapping_entries) {
                 expect(entry.target_ref).toMatch(/^A\.\d+\.\d+$/);
             }

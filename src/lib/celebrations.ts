@@ -50,7 +50,7 @@ export type MilestoneKey =
     | 'framework-100'
     | 'evidence-all-current'
     | 'audit-pack-complete'
-    | 'first-control-mapped'
+    | 'first-practice-mapped'
     // ─── Agriculture milestones (feat/delight-celebrations) ───
     | 'first-field-mapped'
     | 'spray-job-complete'
@@ -79,7 +79,7 @@ export const MILESTONES: Record<MilestoneKey, MilestoneDefinition> = {
         key: 'framework-100',
         preset: 'fireworks',
         message: '100% framework coverage 🎯',
-        description: 'Every applicable control is implemented.',
+        description: 'Every applicable practice is implemented.',
     },
     'evidence-all-current': {
         key: 'evidence-all-current',
@@ -93,10 +93,10 @@ export const MILESTONES: Record<MilestoneKey, MilestoneDefinition> = {
         message: 'Audit pack ready 📦',
         description: 'Frozen and shareable with your auditor.',
     },
-    'first-control-mapped': {
-        key: 'first-control-mapped',
+    'first-practice-mapped': {
+        key: 'first-practice-mapped',
         preset: 'burst',
-        message: 'First control mapped 🚀',
+        message: 'First practice mapped 🚀',
         description: "You're on your way — keep going.",
     },
 
@@ -303,7 +303,7 @@ export type CelebrateInput = MilestoneKey | CelebrateAdHocInput;
  * route param) so refreshes keep dedupe state consistent.
  *
  * For milestones that are intrinsically tenant-wide (no scope makes
- * sense — `evidence-all-current`, `first-control-mapped`), call
+ * sense — `evidence-all-current`, `first-practice-mapped`), call
  * `celebrate('milestone-key')` directly instead of going through
  * this builder.
  */

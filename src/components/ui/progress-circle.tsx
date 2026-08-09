@@ -17,7 +17,7 @@ import { type ReactNode } from "react";
  *       progress={coverage}
  *       variant={coverage >= 0.8 ? 'success' : 'warning'}
  *       size="sm"
- *       aria-label="Control coverage"
+ *       aria-label="Practice coverage"
  *   />
  */
 

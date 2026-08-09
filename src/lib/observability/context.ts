@@ -22,7 +22,7 @@ export interface RequestContextData {
     tenantId?: string;
     /** Authenticated user ID */
     userId?: string;
-    /** Request route pattern (e.g. /api/t/[tenantSlug]/controls) */
+    /** Request route pattern (e.g. /api/t/[tenantSlug]/practices) */
     route?: string;
     /** High-resolution start time for duration calculation */
     startTime: number;

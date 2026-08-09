@@ -23,7 +23,7 @@
  *   • FORM-CONTROL PARITY: `<Input>` migrates onto the
  *     `--ctrl-edge-*` tokens from PR-A — same border / hover /
  *     focus vocabulary as the controlEdge recipe. The date-picker
- *     trigger gets the same treatment so all three controls
+ *     trigger gets the same treatment so all three practices
  *     (button, input, date-picker trigger) share one focus
  *     vocabulary.
  *
@@ -208,7 +208,7 @@ describe('R20-PR-B — Liquid edges', () => {
         });
     });
 
-    describe('form-control parity — Input wired to controlEdge tokens', () => {
+    describe('form-practice parity — Input wired to controlEdge tokens', () => {
         it('Input uses `--ctrl-edge-rest` for the rest border', () => {
             expect(INPUT).toMatch(/border-\[var\(--ctrl-edge-rest\)\]/);
         });
@@ -233,7 +233,7 @@ describe('R20-PR-B — Liquid edges', () => {
         });
     });
 
-    describe('form-control parity — date-picker trigger wired to controlEdge tokens', () => {
+    describe('form-practice parity — date-picker trigger wired to controlEdge tokens', () => {
         it('rest border uses `--ctrl-edge-rest`', () => {
             expect(DATE_TRIGGER).toMatch(/border-\[var\(--ctrl-edge-rest\)\]/);
         });

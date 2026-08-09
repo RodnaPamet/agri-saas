@@ -7,8 +7,8 @@
  * tests/guards/helm-chart-foundation.test.ts and
  * tests/integration/audit-middleware.test.ts). */
 /**
- * Unit tests: setControlApplicability usecase
- * Tests: permissions, audit log, justification enforcement, global control protection
+ * Unit tests: setPracticeApplicability usecase
+ * Tests: permissions, audit log, justification enforcement, global practice protection
  */
 
 const mockDb = {} as any;
@@ -17,8 +17,8 @@ jest.mock('@/lib/db-context', () => ({
     runInTenantContext: jest.fn(async (_ctx: any, fn: (db: any) => any) => fn(mockDb)),
 }));
 
-jest.mock('@/app-layer/repositories/ControlRepository', () => ({
-    ControlRepository: {
+jest.mock('@/app-layer/repositories/PracticeRepository', () => ({
+    PracticeRepository: {
         getById: jest.fn(),
         setApplicability: jest.fn(),
         list: jest.fn(),
@@ -38,9 +38,9 @@ jest.mock('@/app-layer/events/audit', () => ({
 
 import { RequestContext } from '@/app-layer/types';
 import { getPermissionsForRole } from '@/lib/permissions';
-import { ControlRepository } from '@/app-layer/repositories/ControlRepository';
+import { PracticeRepository } from '@/app-layer/repositories/PracticeRepository';
 import { logEvent } from '@/app-layer/events/audit';
-import { setControlApplicability, listControls } from '@/app-layer/usecases/control';
+import { setPracticeApplicability, listPractices } from '@/app-layer/usecases/practice';
 
 const adminCtx: RequestContext = {
     requestId: 'req-test',
@@ -60,34 +60,34 @@ const readerCtx: RequestContext = {
     appPermissions: getPermissionsForRole('READER'),
 };
 
-describe('setControlApplicability', () => {
+describe('setPracticeApplicability', () => {
     beforeEach(() => {
         jest.clearAllMocks();
     });
 
-    it('marks a control as NOT_APPLICABLE with justification', async () => {
-        const existing = { id: 'ctrl-1', tenantId: 'tenant-1', applicability: 'APPLICABLE', name: 'Test Control' };
+    it('marks a practice as NOT_APPLICABLE with justification', async () => {
+        const existing = { id: 'ctrl-1', tenantId: 'tenant-1', applicability: 'APPLICABLE', name: 'Test Practice' };
         const updated = { ...existing, applicability: 'NOT_APPLICABLE', applicabilityJustification: 'Cloud-only' };
 
-        (ControlRepository.getById as jest.Mock).mockResolvedValue(existing);
-        (ControlRepository.setApplicability as jest.Mock).mockResolvedValue(updated);
+        (PracticeRepository.getById as jest.Mock).mockResolvedValue(existing);
+        (PracticeRepository.setApplicability as jest.Mock).mockResolvedValue(updated);
 
-        const result = await setControlApplicability(adminCtx, 'ctrl-1', 'NOT_APPLICABLE', 'Cloud-only');
+        const result = await setPracticeApplicability(adminCtx, 'ctrl-1', 'NOT_APPLICABLE', 'Cloud-only');
 
         expect(result.applicability).toBe('NOT_APPLICABLE');
-        expect(ControlRepository.setApplicability).toHaveBeenCalledWith(
+        expect(PracticeRepository.setApplicability).toHaveBeenCalledWith(
             mockDb, adminCtx, 'ctrl-1', 'NOT_APPLICABLE', 'Cloud-only'
         );
     });
 
-    it('marks a control as APPLICABLE (re-applies)', async () => {
-        const existing = { id: 'ctrl-1', tenantId: 'tenant-1', applicability: 'NOT_APPLICABLE', name: 'Test Control' };
+    it('marks a practice as APPLICABLE (re-applies)', async () => {
+        const existing = { id: 'ctrl-1', tenantId: 'tenant-1', applicability: 'NOT_APPLICABLE', name: 'Test Practice' };
         const updated = { ...existing, applicability: 'APPLICABLE', applicabilityJustification: null };
 
-        (ControlRepository.getById as jest.Mock).mockResolvedValue(existing);
-        (ControlRepository.setApplicability as jest.Mock).mockResolvedValue(updated);
+        (PracticeRepository.getById as jest.Mock).mockResolvedValue(existing);
+        (PracticeRepository.setApplicability as jest.Mock).mockResolvedValue(updated);
 
-        const result = await setControlApplicability(adminCtx, 'ctrl-1', 'APPLICABLE', null);
+        const result = await setPracticeApplicability(adminCtx, 'ctrl-1', 'APPLICABLE', null);
 
         expect(result.applicability).toBe('APPLICABLE');
     });
@@ -96,14 +96,14 @@ describe('setControlApplicability', () => {
         const existing = { id: 'ctrl-1', tenantId: 'tenant-1', applicability: 'APPLICABLE', name: 'Test' };
         const updated = { ...existing, applicability: 'NOT_APPLICABLE' };
 
-        (ControlRepository.getById as jest.Mock).mockResolvedValue(existing);
-        (ControlRepository.setApplicability as jest.Mock).mockResolvedValue(updated);
+        (PracticeRepository.getById as jest.Mock).mockResolvedValue(existing);
+        (PracticeRepository.setApplicability as jest.Mock).mockResolvedValue(updated);
 
-        await setControlApplicability(adminCtx, 'ctrl-1', 'NOT_APPLICABLE', 'Reason');
+        await setPracticeApplicability(adminCtx, 'ctrl-1', 'NOT_APPLICABLE', 'Reason');
 
         expect(logEvent).toHaveBeenCalledWith(mockDb, adminCtx, expect.objectContaining({
             action: 'CONTROL_APPLICABILITY_CHANGED',
-            entityType: 'Control',
+            entityType: 'Practice',
             entityId: 'ctrl-1',
             metadata: expect.objectContaining({
                 oldApplicability: 'APPLICABLE',
@@ -115,51 +115,51 @@ describe('setControlApplicability', () => {
 
     it('throws forbidden when READER tries to set applicability', async () => {
         await expect(
-            setControlApplicability(readerCtx, 'ctrl-1', 'NOT_APPLICABLE', 'Reason')
+            setPracticeApplicability(readerCtx, 'ctrl-1', 'NOT_APPLICABLE', 'Reason')
         ).rejects.toThrow(/permission/i);
     });
 
-    it('throws notFound when control does not exist', async () => {
-        (ControlRepository.getById as jest.Mock).mockResolvedValue(null);
+    it('throws notFound when practice does not exist', async () => {
+        (PracticeRepository.getById as jest.Mock).mockResolvedValue(null);
 
         await expect(
-            setControlApplicability(adminCtx, 'nonexistent', 'NOT_APPLICABLE', 'Reason')
+            setPracticeApplicability(adminCtx, 'nonexistent', 'NOT_APPLICABLE', 'Reason')
         ).rejects.toThrow(/not found/i);
     });
 
-    it('throws forbidden for global library control (tenantId=null)', async () => {
-        const globalControl = { id: 'ctrl-lib', tenantId: null, applicability: 'APPLICABLE', name: 'Library Control' };
-        (ControlRepository.getById as jest.Mock).mockResolvedValue(globalControl);
+    it('throws forbidden for global library practice (tenantId=null)', async () => {
+        const globalPractice = { id: 'ctrl-lib', tenantId: null, applicability: 'APPLICABLE', name: 'Library Practice' };
+        (PracticeRepository.getById as jest.Mock).mockResolvedValue(globalPractice);
 
         await expect(
-            setControlApplicability(adminCtx, 'ctrl-lib', 'NOT_APPLICABLE', 'Reason')
+            setPracticeApplicability(adminCtx, 'ctrl-lib', 'NOT_APPLICABLE', 'Reason')
         ).rejects.toThrow(/global library/i);
     });
 });
 
-describe('listControls with applicability filter', () => {
+describe('listPractices with applicability filter', () => {
     beforeEach(() => {
         jest.clearAllMocks();
     });
 
     it('passes applicability filter to repository', async () => {
-        (ControlRepository.list as jest.Mock).mockResolvedValue([]);
+        (PracticeRepository.list as jest.Mock).mockResolvedValue([]);
 
-        await listControls(adminCtx, { applicability: 'NOT_APPLICABLE' });
+        await listPractices(adminCtx, { applicability: 'NOT_APPLICABLE' });
 
         // Fourth arg is the SSR-cap options bag added in the
         // interim pagination work; default `{}` when no take is set.
-        expect(ControlRepository.list).toHaveBeenCalledWith(
+        expect(PracticeRepository.list).toHaveBeenCalledWith(
             mockDb, adminCtx, { applicability: 'NOT_APPLICABLE' }, {}
         );
     });
 
     it('works without filter', async () => {
-        (ControlRepository.list as jest.Mock).mockResolvedValue([]);
+        (PracticeRepository.list as jest.Mock).mockResolvedValue([]);
 
-        await listControls(adminCtx);
+        await listPractices(adminCtx);
 
-        expect(ControlRepository.list).toHaveBeenCalledWith(
+        expect(PracticeRepository.list).toHaveBeenCalledWith(
             mockDb, adminCtx, undefined, {}
         );
     });

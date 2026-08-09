@@ -17,7 +17,7 @@
  *   2. Areas — the primitive behind all 4 TrendCards. Gets the
  *      two-layer paint (ChartGloss def + a gloss overlay
  *      motion.path tracking the colour layer's `d` morph).
- *   3. ProgressCard — the Control Coverage bar. Its HTML-div
+ *   3. ProgressCard — the Practice Coverage bar. Its HTML-div
  *      track gets an `::after` gloss sheen (a CSS white→
  *      transparent ramp).
  *

@@ -95,11 +95,11 @@ describe('useCanvasHistory', () => {
         const { result } = renderHook(() => useCanvasHistory());
         const live = {
             nodes: [node('a')],
-            edges: [{ id: 'e1', source: 'a', target: 'b', data: { controls: ['C-1'] } }] as any,
+            edges: [{ id: 'e1', source: 'a', target: 'b', data: { practices: ['C-1'] } }] as any,
         };
 
         act(() => result.current.push(live));
-        live.edges[0].data.controls.push('C-2-added-after-copy');
+        live.edges[0].data.practices.push('C-2-added-after-copy');
 
         let popped: any;
         act(() => {

@@ -9,8 +9,8 @@
  *   - Vendor         (nextReviewAt, contractRenewalAt)
  *   - VendorDocument (validTo)
  *   - AuditCycle     (periodStartAt → periodEndAt — the only duration source today)
- *   - Control        (nextDueAt)
- *   - ControlTestPlan(nextDueAt)
+ *   - Practice        (nextDueAt)
+ *   - PracticeTestPlan(nextDueAt)
  *   - Task           (dueAt — FARM_TASK rows split into their own category)
  *   - Risk           (nextReviewAt, targetDate)
  *   - Finding        (dueDate)
@@ -105,7 +105,7 @@ const CALENDAR_SOURCE_NAMES = [
     'vendor',
     'vendorDocument',
     'auditCycle',
-    'control',
+    'practice',
     'testPlan',
     'task',
     'risk',
@@ -181,7 +181,7 @@ export async function getComplianceCalendarEvents(
                 loadVendorEvents(db, ctx, range, now, limit),
                 loadVendorDocumentEvents(db, ctx, range, now, limit),
                 loadAuditCycleEvents(db, ctx, range, now, limit),
-                loadControlEvents(db, ctx, range, now, limit),
+                loadPracticeEvents(db, ctx, range, now, limit),
                 loadTaskEvents(db, ctx, range, now, limit),
                 loadFindingEvents(db, ctx, range, now, limit),
                 // Epic G-7 — milestones contribute one event per milestone;
@@ -594,14 +594,14 @@ async function loadAuditCycleEvents(
     return { events, truncated };
 }
 
-async function loadControlEvents(
+async function loadPracticeEvents(
     db: PrismaTx,
     ctx: RequestContext,
     range: DateRange,
     now: Date,
     limit: number,
 ): Promise<SourceResult> {
-    const rawRows = await db.control.findMany({
+    const rawRows = await db.practice.findMany({
         where: {
             tenantId: ctx.tenantId,
             deletedAt: null,
@@ -625,16 +625,16 @@ async function loadControlEvents(
             const date = r.nextDueAt as Date;
             const isDone = r.status === 'IMPLEMENTED';
             return {
-                id: `CONTROL:${r.id}:control-review`,
-                type: 'control-review',
-                category: 'control',
-                titleKey: 'controlReview',
+                id: `CONTROL:${r.id}:practice-review`,
+                type: 'practice-review',
+                category: 'practice',
+                titleKey: 'practiceReview',
                 titleParams: { name: r.name },
                 date: date.toISOString(),
                 status: classifyStatus(date, now, isDone),
                 entityType: 'CONTROL',
                 entityId: r.id,
-                href: tenantHrefFromCtx(ctx, `/controls/${r.id}`),
+                href: tenantHrefFromCtx(ctx, `/practices/${r.id}`),
                 ownerUserId: r.ownerUserId ?? undefined,
             };
         });
@@ -819,7 +819,7 @@ export async function getUpcomingDeadlineCount(
     // `take: MAX_BADGE_COUNT + 1` pattern lets us know if the real
     // number exceeds the cap without doing a full COUNT. Wrapped in
     // `runInTenantContext` so the read goes through RLS-bound `app_user`.
-    const [tasks, controls, evidence, policies, vendors] =
+    const [tasks, practices, evidence, policies, vendors] =
         await runInTenantContext(ctx, (db) =>
             Promise.all([
                 db.task.count({
@@ -841,7 +841,7 @@ export async function getUpcomingDeadlineCount(
                     },
                     take: MAX_BADGE_COUNT + 1,
                 }),
-                db.control.count({
+                db.practice.count({
                     where: {
                         tenantId: ctx.tenantId,
                         deletedAt: null,
@@ -886,7 +886,7 @@ export async function getUpcomingDeadlineCount(
 
     return Math.min(
         MAX_BADGE_COUNT + 1,
-        tasks + controls + evidence + policies + vendors,
+        tasks + practices + evidence + policies + vendors,
     );
 }
 

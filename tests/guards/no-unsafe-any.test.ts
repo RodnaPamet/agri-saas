@@ -106,7 +106,7 @@ describe('No unsafe any — CI Guardrails', () => {
     test('response DTO files exist for all core domains', () => {
         const dtoDir = path.join(SRC_DIR, 'lib', 'dto');
         const required = [
-            'control.dto.ts',
+            'practice.dto.ts',
             'policy.dto.ts',
             'task.dto.ts',
             'vendor.dto.ts',
@@ -124,7 +124,7 @@ describe('No unsafe any — CI Guardrails', () => {
         const hooksDir = path.join(SRC_DIR, 'lib', 'hooks');
         const required = [
             'use-api.ts',
-            'use-controls.ts',
+            'use-practices.ts',
             'use-policies.ts',
             'use-tasks.ts',
             'use-assets.ts',

@@ -1,8 +1,8 @@
 /**
  * Elevation PR-2 — first decomposition extraction.
  *
- * The control detail page (`page.tsx`) was 1506 lines. This file
- * extracts the Edit Control modal into a presentational sub-
+ * The practice detail page (`page.tsx`) was 1506 lines. This file
+ * extracts the Edit Practice modal into a presentational sub-
  * component. The page still owns the mutation + state; the modal
  * is a thin renderer.
  *
@@ -24,7 +24,7 @@ import { Modal } from '@/components/ui/modal';
 import { RequiredMarker } from '@/components/ui/required-marker';
 import { UserCombobox } from '@/components/ui/user-combobox';
 
-export interface EditControlForm {
+export interface EditPracticeForm {
     name: string;
     description: string;
     intent: string;
@@ -42,11 +42,11 @@ const MITIGATION_TYPE_OPTIONS: ComboboxOption[] = [
     { value: 'COMPENSATING', label: 'Compensating' },
 ];
 
-export interface EditControlModalProps {
+export interface EditPracticeModalProps {
     open: boolean;
     setOpen: (next: boolean) => void;
-    form: EditControlForm;
-    setForm: React.Dispatch<React.SetStateAction<EditControlForm>>;
+    form: EditPracticeForm;
+    setForm: React.Dispatch<React.SetStateAction<EditPracticeForm>>;
     saving: boolean;
     error: string;
     /** Tenant slug for the owner UserCombobox roster lookup. */
@@ -57,7 +57,7 @@ export interface EditControlModalProps {
     onSubmit: (e: React.FormEvent) => void | Promise<void>;
 }
 
-export function EditControlModal({
+export function EditPracticeModal({
     open,
     setOpen,
     form,
@@ -69,8 +69,8 @@ export function EditControlModal({
     frequencyOptions,
     onCancel,
     onSubmit,
-}: EditControlModalProps) {
-    const t = useTranslations('controls');
+}: EditPracticeModalProps) {
+    const t = useTranslations('practices');
     return (
         <Modal
             showModal={open}
@@ -90,8 +90,8 @@ export function EditControlModal({
             />
             <Modal.Form
                 onSubmit={onSubmit}
-                id="control-edit-dialog"
-                data-testid="control-edit-dialog"
+                id="practice-edit-dialog"
+                data-testid="practice-edit-dialog"
             >
                 <Modal.Body>
                     {error && (

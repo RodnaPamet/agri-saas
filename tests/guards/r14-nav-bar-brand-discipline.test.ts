@@ -72,9 +72,9 @@ describe('Roadmap-14 PR-3 — NavBar brand mark discipline', () => {
         });
 
         it('footprint is 22×22 (`h-[22px] w-[22px]`)', () => {
-            // 22px navbar control footprint — stepped 32 → 28 → 22,
+            // 22px navbar practice footprint — stepped 32 → 28 → 22,
             // matched across brand / bell / user-menu / mobile-menu /
-            // tenant-switcher so the controls read as one tight set
+            // tenant-switcher so the practices read as one tight set
             // within the 64px bar.
             expect(brandRegion).toContain('w-[22px]');
             expect(brandRegion).toContain('h-[22px]');

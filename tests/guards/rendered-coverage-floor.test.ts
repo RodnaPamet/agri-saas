@@ -112,7 +112,7 @@ const ROOT = path.resolve(__dirname, '../..');
 // the conflict resolution is 225, the live count with both suites present.
 // Lowered 225 → 223 in the compliance uproot (2026-08-07): four rendered
 // suites were deleted alongside the components they verify —
-// control-roi-card, control-exceptions-panel, test-plan-schedule-section and
+// practice-roi-card, practice-exceptions-panel, test-plan-schedule-section and
 // test-dashboard-g2-section. This is the documented exception the ratchet
 // contemplates ("if a test was legitimately merged or renamed, account for
 // it").
@@ -130,7 +130,7 @@ const ROOT = path.resolve(__dirname, '../..');
 //   charts + rails whose only consumer was a risk surface (4):
 //     loss-exceedance-reference-lines, sankey-chart, ai-assist-rail,
 //     org-drilldown-load-more
-//   control exoskeleton, already accounted for above (4)
+//   practice exoskeleton, already accounted for above (4)
 //   schemes-disclosure (1) — the certification /schemes page it asserted on
 //     was replaced by the support-measures page.
 // No surviving component lost its rendered coverage. The floor resumes its
@@ -141,7 +141,7 @@ const RENDERED_TEST_FLOOR = 207;
 // wholly about the deleted register; the specs that merely REFERENCED a
 // risk route were edited rather than deleted, and one of them —
 // ciso-portfolio's AUDITOR read-only invariant — was repointed to the
-// controls page because the assertion is about the ROLE, not the entity.
+// practices page because the assertion is about the ROLE, not the entity.
 // Net: 56 → 54. The floor resumes its upward-only ratchet from 54.
 //
 // Lowered again 54 → 52 once CI's E2E job produced a real signal for the
@@ -150,13 +150,13 @@ const RENDERED_TEST_FLOOR = 207;
 //   frameworks.spec.ts    — drove `/t/<slug>/frameworks` (the certification
 //                           catalogue UI), which is gone; only the
 //                           `GET /frameworks` API it never called survives.
-//   control-tests.spec.ts — drove the test-of-control plan/run UI
+//   practice-tests.spec.ts — drove the test-of-practice plan/run UI
 //                           (`#create-test-plan-btn`, `#test-plan-*`),
-//                           deleted with the control exoskeleton.
+//                           deleted with the practice exoskeleton.
 // Everything else that merely REFERENCED a dead route was repointed, not
 // deleted, and so still counts: core-flow's steps D-F moved from Risk onto
 // Asset, entity-detail-layout's representative surface moved from Risk to
-// Control, reporting.spec.ts kept its audit-cycle scenario (E-G) and lost
+// Practice, reporting.spec.ts kept its audit-cycle scenario (E-G) and lost
 // only the three read-only tests whose pages are gone, and
 // mobile/horizontal-drift dropped three risk rows from its path table.
 // No surviving surface lost its E2E coverage. Upward-only from 52.

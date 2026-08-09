@@ -23,7 +23,7 @@
  *
  * This file is intentionally narrow in scope. It only enumerates
  * privileged routes (admin, key rotation, member management, etc.).
- * Read-mostly tenant routes (controls, evidence, risks, reports,
+ * Read-mostly tenant routes (practices, evidence, risks, reports,
  * etc.) continue to authorise via the existing usecase-layer policy
  * helpers (`assertCanRead/Write/Admin/Audit`) — Epic C.2 will widen
  * the route-map to those once the granular policy keys settle.
@@ -95,7 +95,7 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
         permission: 'admin.members',
         note:
             'Listing + revoking active user sessions for the tenant. ' +
-            'Treated as a member-management action since it controls ' +
+            'Treated as a member-management action since it practices ' +
             'who currently has live access.',
     },
 
@@ -105,7 +105,7 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
         permission: 'admin.scim',
         note:
             'Generating, listing and revoking SCIM bearer tokens — ' +
-            'controls automated provisioning from the IdP.',
+            'practices automated provisioning from the IdP.',
     },
 
     // ── Custom RBAC roles ───────────────────────────────────────────
@@ -173,7 +173,7 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
         note:
             'Global promotions feed — content published to EVERY tenant. ' +
             'Platform-tenant gated in-handler; admin.manage is the audited ' +
-            'role floor, not the isolation control.',
+            'role floor, not the isolation practice.',
     },
     {
         path: new RegExp(`^${T}\\/admin\\/companies(\\/.*)?$`),
@@ -181,7 +181,7 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
         note:
             'Global supplier catalogue, incl. DECRYPTED contact PII. ' +
             'Platform-tenant gated in-handler; admin.manage is the audited ' +
-            'role floor, not the isolation control.',
+            'role floor, not the isolation practice.',
     },
     {
         path: new RegExp(`^${T}\\/schemes(\\/.*)?$`),
@@ -193,7 +193,7 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             '(browsing the catalogue is not privileged), hence the method ' +
             'list. Platform-tenant gated in-handler via ' +
             'assertCanWriteCatalogue; admin.manage is the audited role ' +
-            'floor, not the isolation control.',
+            'floor, not the isolation practice.',
     },
     {
         path: new RegExp(`^${T}\\/frameworks(\\/.*)?$`),

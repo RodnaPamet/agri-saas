@@ -10,7 +10,7 @@
  * Out-of-scope at PR-A — covered by later R26 PRs:
  *   - Richer node taxonomy (PR-B)
  *   - Proximity auto-bind (PR-C)
- *   - First-class on-edge controls + risk/asset semantics (PR-D)
+ *   - First-class on-edge practices + risk/asset semantics (PR-D)
  *   - Full editor UX: inspector, alignment, undo-redo (PR-E)
  *   - Polish: empty-state onboarding cues, performance (PR-F)
  */

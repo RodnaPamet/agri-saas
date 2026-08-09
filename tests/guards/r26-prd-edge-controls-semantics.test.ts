@@ -1,16 +1,16 @@
 /**
- * R26-PR-D — Edge-mounted controls + asset semantics ratchet.
+ * R26-PR-D — Edge-mounted practices + asset semantics ratchet.
  *
  * Locks the THREE structural commitments PR-D makes:
  *
- *   1. CONTROL IS EDGE-FIRST. The `control` kind is intentionally
+ *   1. CONTROL IS EDGE-FIRST. The `practice` kind is intentionally
  *      ABSENT from `NODE_TAXONOMY_ORDER` — the palette no longer
- *      offers a Control stamp. The canonical entry point is the
- *      "Add control" affordance on the edge selection.
+ *      offers a Practice stamp. The canonical entry point is the
+ *      "Add practice" affordance on the edge selection.
  *
  *   2. THE TAXONOMY ENTRY SURVIVES. The kind stays in
  *      `NODE_TAXONOMY` so legacy map data (R25 / R26-PR-A through
- *      PR-C) carrying `nodeType: 'control'` still rehydrates
+ *      PR-C) carrying `nodeType: 'practice'` still rehydrates
  *      correctly. A future PR dropping the entry would silently
  *      break older maps.
  *
@@ -32,10 +32,10 @@ function read(rel: string): string {
     return fs.readFileSync(path.join(ROOT, rel), "utf8");
 }
 
-describe("R26-PR-D — edge-first controls + semantic categories", () => {
+describe("R26-PR-D — edge-first practices + semantic categories", () => {
     const taxonomySrc = read(TAXONOMY_PATH);
 
-    it("'control' is OMITTED from NODE_TAXONOMY_ORDER (edge-first)", () => {
+    it("'practice' is OMITTED from NODE_TAXONOMY_ORDER (edge-first)", () => {
         const match = taxonomySrc.match(
             /NODE_TAXONOMY_ORDER:\s*ProcessNodeKind\[\]\s*=\s*\[([\s\S]*?)\]/,
         );
@@ -44,7 +44,7 @@ describe("R26-PR-D — edge-first controls + semantic categories", () => {
         const items =
             order.match(/['"](\w+)['"]/g)?.map((s) => s.replace(/['"]/g, "")) ??
             [];
-        expect(items).not.toContain("control");
+        expect(items).not.toContain("practice");
         // Sanity — the other six are still there. A future PR
         // dropping additional kinds without intent would surface
         // here.
@@ -59,19 +59,19 @@ describe("R26-PR-D — edge-first controls + semantic categories", () => {
         }
     });
 
-    it("'control' SURVIVES in NODE_TAXONOMY (legacy maps rehydrate)", () => {
+    it("'practice' SURVIVES in NODE_TAXONOMY (legacy maps rehydrate)", () => {
         // The kind must remain defined so legacy `nodeType:
-        // 'control'` rows don't fall through to the unknown-kind
+        // 'practice'` rows don't fall through to the unknown-kind
         // fallback (which would re-render them as plain process
         // steps and silently rebrand the data).
-        expect(taxonomySrc).toMatch(/^\s*control:\s*\{/m);
+        expect(taxonomySrc).toMatch(/^\s*practice:\s*\{/m);
     });
 
     it("every kind declares a semantic category", () => {
         for (const kind of [
             "processStep",
             "decision",
-            "control",
+            "practice",
             "asset",
             "external",
             "annotation",
@@ -97,8 +97,8 @@ describe("R26-PR-D — edge-first controls + semantic categories", () => {
         }
     });
 
-    it("context kinds: control + asset + external", () => {
-        for (const contextKind of ["control", "asset", "external"]) {
+    it("context kinds: practice + asset + external", () => {
+        for (const contextKind of ["practice", "asset", "external"]) {
             const re = new RegExp(
                 `^\\s*${contextKind}:\\s*\\{[\\s\\S]*?\\bcategory:\\s*['"]context['"]`,
                 "m",
@@ -127,24 +127,24 @@ describe("R26-PR-D — renderer branches on category", () => {
     });
 });
 
-describe("R26-PR-D — edge-mounted control affordance preserved", () => {
+describe("R26-PR-D — edge-mounted practice affordance preserved", () => {
     const edgeSrc = read(EDGE_PATH);
 
-    it("ControlOnEdge component exists + carries the shield icon", () => {
-        // R25-PR-D landed the edge-mounted control overlay; PR-D
-        // makes it the canonical control surface. The component
+    it("PracticeOnEdge component exists + carries the shield icon", () => {
+        // R25-PR-D landed the edge-mounted practice overlay; PR-D
+        // makes it the canonical practice surface. The component
         // + its visual signature MUST persist.
-        expect(edgeSrc).toMatch(/export function ControlOnEdge\b/);
+        expect(edgeSrc).toMatch(/export function PracticeOnEdge\b/);
         expect(edgeSrc).toMatch(/ShieldCheck/);
     });
 
-    it("the 'Add control' affordance fires on selected, control-less edges", () => {
+    it("the 'Add practice' affordance fires on selected, practice-less edges", () => {
         // The contextual affordance is the entry point users
         // discover. Removing the gating would make the button
         // always-on (cluttering); removing the affordance
-        // entirely would leave no way to add a control without
+        // entirely would leave no way to add a practice without
         // an inspector panel (PR-E future work).
-        expect(edgeSrc).toMatch(/!control && selected/);
-        expect(edgeSrc).toMatch(/Add control/);
+        expect(edgeSrc).toMatch(/!practice && selected/);
+        expect(edgeSrc).toMatch(/Add practice/);
     });
 });

@@ -2,7 +2,7 @@
  * @jest-environment jsdom
  */
 /**
- * PR-D polish — Behavioural coverage for `useTenantControls`'s
+ * PR-D polish — Behavioural coverage for `useTenantPractices`'s
  * polling mode. Locked invariants:
  *
  *   1. The initial fetch fires once on mount; subsequent
@@ -19,9 +19,9 @@
 
 import { renderHook, act, waitFor } from "@testing-library/react";
 import {
-    useTenantControls,
-    __resetTenantControlsCacheForTests,
-} from "@/lib/processes/use-tenant-controls";
+    useTenantPractices,
+    __resetTenantPracticesCacheForTests,
+} from "@/lib/processes/use-tenant-practices";
 
 const originalFetch = globalThis.fetch;
 
@@ -42,9 +42,9 @@ function mockFetchError() {
     })) as unknown as typeof fetch;
 }
 
-describe("useTenantControls — polling mode", () => {
+describe("useTenantPractices — polling mode", () => {
     beforeEach(() => {
-        __resetTenantControlsCacheForTests();
+        __resetTenantPracticesCacheForTests();
         jest.useFakeTimers();
     });
 
@@ -54,13 +54,13 @@ describe("useTenantControls — polling mode", () => {
     });
 
     it("re-fetches at the pollMs cadence and updates options + status", async () => {
-        // Initial fetch — control with status DONE.
+        // Initial fetch — practice with status DONE.
         mockFetchOnce([
-            { id: "c1", ref: "AC-1", title: "Access control", status: "DONE" },
+            { id: "c1", ref: "AC-1", title: "Access Control", status: "DONE" },
         ]);
 
         const { result } = renderHook(() =>
-            useTenantControls("acme", { pollMs: 30_000 }),
+            useTenantPractices("acme", { pollMs: 30_000 }),
         );
 
         await waitFor(() => expect(result.current.loading).toBe(false));
@@ -72,7 +72,7 @@ describe("useTenantControls — polling mode", () => {
             {
                 id: "c1",
                 ref: "AC-1",
-                title: "Access control",
+                title: "Access Control",
                 status: "IN_PROGRESS",
             },
         ]);
@@ -90,7 +90,7 @@ describe("useTenantControls — polling mode", () => {
         ]);
 
         const { result } = renderHook(() =>
-            useTenantControls("acme", { pollMs: 10_000 }),
+            useTenantPractices("acme", { pollMs: 10_000 }),
         );
         await waitFor(() => expect(result.current.options).toHaveLength(1));
 
@@ -116,7 +116,7 @@ describe("useTenantControls — polling mode", () => {
         }));
         globalThis.fetch = fetchSpy as unknown as typeof fetch;
 
-        renderHook(() => useTenantControls("acme"));
+        renderHook(() => useTenantPractices("acme"));
         await waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1));
 
         // Advance time well past any reasonable poll cadence — no
@@ -138,7 +138,7 @@ describe("useTenantControls — polling mode", () => {
         globalThis.fetch = fetchSpy as unknown as typeof fetch;
 
         const { result, unmount } = renderHook(() =>
-            useTenantControls("acme", { pollMs: 5_000 }),
+            useTenantPractices("acme", { pollMs: 5_000 }),
         );
         await waitFor(() => expect(result.current.options).toHaveLength(1));
         const callsBeforeUnmount = fetchSpy.mock.calls.length;

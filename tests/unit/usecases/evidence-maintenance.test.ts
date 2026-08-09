@@ -142,7 +142,7 @@ describe('reconcileUnlinkedEvidence', () => {
         // four guards are the load-bearing filters and must not drift.
         expect(where.tenantId).toBe('tenant-1');
         expect(where.type).toBe('FILE');
-        expect(where.controlId).toBeNull();
+        expect(where.practiceId).toBeNull();
         expect(where.deletedAt).toBeNull();
     });
 });

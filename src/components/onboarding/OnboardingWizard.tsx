@@ -36,7 +36,7 @@ import { cn } from '@/lib/cn';
 // render in the canonical state colours (muted at rest, brand when
 // active, success when completed).
 // The farm onboarding is intentionally minimal: just the company profile
-// and the team. (The compliance-era steps — frameworks, assets, controls,
+// and the team. (The compliance-era steps — frameworks, assets, practices,
 // risks, review — were dropped from the flow; their step-content
 // components remain below but are no longer reachable.)
 const STEPS = [
@@ -432,7 +432,7 @@ function StepContent({ step, data, onUpdate, completedSteps, allData }: {
     switch (step) {
         case 'COMPANY_PROFILE': return <CompanyProfileStep data={data} onUpdate={onUpdate} />;
         case 'FRAMEWORK_SELECTION': return <FrameworkSelectionStep data={data} onUpdate={onUpdate} />;
-        case 'CONTROL_BASELINE_INSTALL': return <ControlInstallStep data={data} onUpdate={onUpdate} allData={allData} />;
+        case 'CONTROL_BASELINE_INSTALL': return <PracticeInstallStep data={data} onUpdate={onUpdate} allData={allData} />;
         case 'TEAM_SETUP': return <TeamSetupStep data={data} onUpdate={onUpdate} />;
         case 'REVIEW_AND_FINISH': return <ReviewStep completedSteps={completedSteps} allData={allData} />;
         default: return <p className="text-content-muted">{t('unknownStep')}</p>;
@@ -544,14 +544,14 @@ function FrameworkSelectionStep({ data, onUpdate }: { data: StepData; onUpdate: 
 
 // ─── CONTROL_BASELINE_INSTALL ───
 
-function ControlInstallStep({ data, onUpdate, allData }: { data: StepData; onUpdate: (d: StepData) => void; allData: StepData }) {
+function PracticeInstallStep({ data, onUpdate, allData }: { data: StepData; onUpdate: (d: StepData) => void; allData: StepData }) {
     const t = useTranslations('onboarding');
     const selectedFrameworks: string[] = allData['FRAMEWORK_SELECTION']?.selectedFrameworks || [];
     const fwLabels: Record<string, string> = { iso27001: t('fwIso'), nis2: t('fwNis2') };
 
     return (
         <div className="space-y-default max-w-lg animate-fadeIn">
-            <p className="text-sm text-content-muted mb-4">{t('controlIntro')}</p>
+            <p className="text-sm text-content-muted mb-4">{t('practiceIntro')}</p>
             {selectedFrameworks.length === 0 ? (
                 <InlineNotice variant="warning" icon={null}>
                     {t('noFrameworksSelected')}
@@ -635,7 +635,7 @@ function ReviewStep({ completedSteps, allData }: { completedSteps: string[]; all
         { key: 'COMPANY_PROFILE', label: t('summaryCompanyProfile'), detail: allData['COMPANY_PROFILE']?.name || t('detailNotConfigured') },
         { key: 'FRAMEWORK_SELECTION', label: t('summaryFrameworks'), detail: (allData['FRAMEWORK_SELECTION']?.selectedFrameworks || []).join(', ') || t('detailNoneSelected') },
         { key: 'ASSET_SETUP', label: t('summaryAssets'), detail: t('detailAssetsAdded', { count: (allData['ASSET_SETUP']?.assets || []).length }) },
-        { key: 'CONTROL_BASELINE_INSTALL', label: t('summaryControls'), detail: allData['CONTROL_BASELINE_INSTALL']?.confirmed ? t('detailBaselineConfirmed') : t('detailPendingConfirmation') },
+        { key: 'CONTROL_BASELINE_INSTALL', label: t('summaryPractices'), detail: allData['CONTROL_BASELINE_INSTALL']?.confirmed ? t('detailBaselineConfirmed') : t('detailPendingConfirmation') },
         { key: 'TEAM_SETUP', label: t('summaryTeam'), detail: t('detailInvitationsPending', { count: (allData['TEAM_SETUP']?.inviteEmails || []).length }) },
     ];
 

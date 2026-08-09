@@ -72,7 +72,7 @@ function prettyKey(raw: string, isMac: boolean): string {
                 case "command":
                     return "⌘";
                 case "ctrl":
-                case "control":
+                case "practice":
                     return "Ctrl";
                 case "alt":
                 case "option":

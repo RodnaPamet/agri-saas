@@ -66,7 +66,7 @@ import { enqueue } from '../jobs/queue';
  * Design: create vs update are intentionally separated.
  *   - `findOrCreate` sets identity + safe defaults only
  *   - `updateStatus` updates operational fields with a narrow typed input
- *   - Control-plane fields (e.g. `conflictStrategy`) cannot be
+ *   - Practice-plane fields (e.g. `conflictStrategy`) cannot be
  *     accidentally overwritten through either path
  */
 export interface SyncMappingStore {
@@ -87,7 +87,7 @@ export interface SyncMappingStore {
     /**
      * Find an existing mapping by key, or create one with safe defaults.
      *
-     * On create: identity fields come from `key`, control-plane fields
+     * On create: identity fields come from `key`, practice-plane fields
      * get safe defaults (conflictStrategy=REMOTE_WINS, version=1).
      * Only `syncStatus` and `errorMessage` can be set via `defaults`.
      *
@@ -100,7 +100,7 @@ export interface SyncMappingStore {
      * Update operational status of an existing mapping.
      *
      * The `extra` payload is narrowly typed to prevent accidental
-     * overwrites of identity and control-plane fields.
+     * overwrites of identity and practice-plane fields.
      */
     updateStatus(
         id: string,
@@ -190,7 +190,7 @@ export abstract class BaseSyncOrchestrator {
      * Called during pull operations after mapping.
      *
      * @param ctx            - The request context
-     * @param localEntityType - Entity type (e.g. 'task', 'control')
+     * @param localEntityType - Entity type (e.g. 'task', 'practice')
      * @param localEntityId   - Entity ID
      * @param localData       - Mapped data to apply
      * @returns Updated fields for audit

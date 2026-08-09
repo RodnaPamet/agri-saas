@@ -14,7 +14,7 @@
  * EditableState. No side effects, no database calls, no I/O.
  *
  * This service does NOT know about Prisma, tenants, or specific domain
- * entities. Domain-specific usecases (policy.ts, control.ts, etc.) are
+ * entities. Domain-specific usecases (policy.ts, practice.ts, etc.) are
  * responsible for:
  * 1. Loading EditableState from their Prisma model
  * 2. Calling lifecycle functions

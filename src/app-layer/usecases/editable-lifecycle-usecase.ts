@@ -68,7 +68,7 @@ import { logger } from '@/lib/observability/logger';
  * Contract that domain repositories implement to participate in the
  * editable lifecycle.
  *
- * Each domain (Policy, Control, Risk) provides its own implementation
+ * Each domain (Policy, Practice, Risk) provides its own implementation
  * that maps between Prisma models and `EditableState<TPayload>`.
  *
  * The lifecycle usecase calls these methods during transitions —
@@ -100,7 +100,7 @@ export interface EditableRepository<TPayload> {
  *
  * Examples:
  * - Policy: "contentText must not be empty"
- * - Control: "description is required before publish"
+ * - Practice: "description is required before publish"
  */
 export type PublishValidator<TPayload> = (
     draft: TPayload,
@@ -114,7 +114,7 @@ export type PublishValidator<TPayload> = (
  * Domain usecases provide this to customize entity-specific audit actions.
  */
 export interface LifecycleAuditConfig {
-    /** The entity type name for audit logs (e.g. 'Policy', 'Control') */
+    /** The entity type name for audit logs (e.g. 'Policy', 'Practice') */
     readonly entityType: string;
     /** Custom action prefix. Defaults to entity type uppercased.
      *  E.g. 'POLICY' produces actions like POLICY_DRAFT_UPDATED, POLICY_PUBLISHED */

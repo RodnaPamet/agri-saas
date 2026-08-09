@@ -135,7 +135,7 @@ describe('SWRDevToolsImpl — cache visibility', () => {
         fetchMock.mockResolvedValue({ ok: true, json: async () => [] });
 
         function Harness() {
-            useTenantSWR<unknown[]>('/controls');
+            useTenantSWR<unknown[]>('/practices');
             useTenantSWR<unknown[]>('/risks');
             return <SWRDevToolsImpl />;
         }
@@ -156,7 +156,7 @@ describe('SWRDevToolsImpl — cache visibility', () => {
 
         await waitFor(() => {
             expect(
-                screen.getByTestId('swr-devtools-row-/api/t/acme/controls'),
+                screen.getByTestId('swr-devtools-row-/api/t/acme/practices'),
             ).toBeInTheDocument();
             expect(
                 screen.getByTestId('swr-devtools-row-/api/t/acme/risks'),

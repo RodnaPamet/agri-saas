@@ -268,58 +268,58 @@ export interface GapAnalysisResult {
     };
 }
 
-// ─── Tenant Control-Implementation Overlay ───────────────────────────
+// ─── Tenant Practice-Implementation Overlay ───────────────────────────
 //
 // Audit Coherence S9 (2026-05-24).
 //
 // Mapping rows are global reference data (NIST → SOC2 mappings are
 // the same for every tenant). But the gap report is only useful
-// when the auditor can see WHICH tenant controls already implement
+// when the auditor can see WHICH tenant practices already implement
 // the target requirements. Pre-S9, that join had to happen on the
-// frontend by re-querying ControlRequirementLink — and most pages
+// frontend by re-querying PracticeRequirementLink — and most pages
 // just didn't bother.
 //
 // `enrichWithTenantImplementations` accepts a gap-analysis result
-// + a snapshot of the tenant's ControlRequirementLink rows for the
+// + a snapshot of the tenant's PracticeRequirementLink rows for the
 // target framework and returns the same result with each entry
-// carrying an `implementingControls` array. Pure function; the
+// carrying an `implementingPractices` array. Pure function; the
 // caller owns the DB query.
 
-/** A tenant control that implements a specific target requirement. */
-export interface TenantControlImplementation {
-    readonly controlId: string;
-    readonly controlCode: string;
-    readonly controlName: string;
-    readonly controlStatus: string;
+/** A tenant practice that implements a specific target requirement. */
+export interface TenantPracticeImplementation {
+    readonly practiceId: string;
+    readonly practiceCode: string;
+    readonly practiceName: string;
+    readonly practiceStatus: string;
     readonly requirementId: string;
 }
 
-/** A gap-analysis entry annotated with the tenant's implementing controls. */
+/** A gap-analysis entry annotated with the tenant's implementing practices. */
 export interface GapAnalysisEntryWithImplementations
     extends GapAnalysisEntry {
-    readonly implementingControls: readonly TenantControlImplementation[];
+    readonly implementingPractices: readonly TenantPracticeImplementation[];
 }
 
-/** A gap-analysis result annotated with the tenant's implementing controls. */
+/** A gap-analysis result annotated with the tenant's implementing practices. */
 export interface GapAnalysisResultWithImplementations
     extends Omit<GapAnalysisResult, 'entries'> {
     readonly entries: readonly GapAnalysisEntryWithImplementations[];
 }
 
 /**
- * Annotate every gap-analysis entry with the tenant's controls
+ * Annotate every gap-analysis entry with the tenant's practices
  * that already implement the target requirement (via
- * ControlRequirementLink rows).
+ * PracticeRequirementLink rows).
  *
  * Pure function: the caller queries the link table — typically via
- * `db.controlRequirementLink.findMany({ where: { tenantId, requirement: { frameworkKey } } })`
+ * `db.practiceRequirementLink.findMany({ where: { tenantId, requirement: { frameworkKey } } })`
  * — and passes the result here.
  */
 export function enrichWithTenantImplementations(
     result: GapAnalysisResult,
-    implementations: ReadonlyArray<TenantControlImplementation>,
+    implementations: ReadonlyArray<TenantPracticeImplementation>,
 ): GapAnalysisResultWithImplementations {
-    const byReq = new Map<string, TenantControlImplementation[]>();
+    const byReq = new Map<string, TenantPracticeImplementation[]>();
     for (const impl of implementations) {
         const list = byReq.get(impl.requirementId);
         if (list) list.push(impl);
@@ -330,7 +330,7 @@ export function enrichWithTenantImplementations(
         ...result,
         entries: result.entries.map((e) => ({
             ...e,
-            implementingControls:
+            implementingPractices:
                 byReq.get(e.targetRequirement.requirementId) ?? [],
         })),
     };
@@ -374,7 +374,7 @@ export function generateExplanation(path: MappingPath): TraceabilityExplanation 
                 summary: `Partial coverage — gap remains${transitiveNote}`,
                 detail: `The source requirement is narrower than the target. ` +
                     `Implementing the source only partially satisfies the target. ` +
-                    `Additional controls or evidence may be needed.${transitiveNote}`,
+                    `Additional practices or evidence may be needed.${transitiveNote}`,
                 actionRequired: true,
                 suggestedAction: 'Identify and address the gaps not covered by the source requirement.',
             };

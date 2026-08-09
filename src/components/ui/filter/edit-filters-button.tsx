@@ -8,7 +8,7 @@
  * / ring / reset behaviour lives in the shared primitive. The companion
  * `useFilterCardVisibility` hook owns the state and renders this.
  *
- * Sits FIRST (leftmost) in the toolbar's actions slot — it controls the
+ * Sits FIRST (leftmost) in the toolbar's actions slot — it practices the
  * primary toolbar content. The columns gear (`Columns3`) sits second.
  */
 import { useTranslations } from 'next-intl';

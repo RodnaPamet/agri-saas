@@ -64,8 +64,8 @@ const EXEMPTIONS: Record<string, string> = {
         '(a) cross-tab matrix — Resource × Action editor',
 
     // ─── (b) Detail-page sub-tables ──────────────────────────────────
-    // (Previously exempt: controls/page.tsx evidence,
-    // ControlMappingsTab mappings, vendors/page.tsx assessments +
+    // (Previously exempt: practices/page.tsx evidence,
+    // PracticeMappingsTab mappings, vendors/page.tsx assessments +
     // subprocessors. All migrated to <DataTable> in the R10-PR3
     // follow-up PR — no longer exempt; the file references in the
     // sibling test would now offend if not removed.)

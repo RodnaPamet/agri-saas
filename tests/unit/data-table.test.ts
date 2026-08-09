@@ -87,7 +87,7 @@ function createTestColumns<T>(
   return columns;
 }
 
-interface MockControl {
+interface MockPractice {
   id: string;
   code: string;
   name: string;
@@ -96,7 +96,7 @@ interface MockControl {
 }
 
 describe('Column definition contracts', () => {
-  const controlColumns = createTestColumns<MockControl>([
+  const practiceColumns = createTestColumns<MockPractice>([
     { accessorKey: 'code', header: 'Code', size: 120 },
     { accessorKey: 'name', header: 'Name' },
     {
@@ -121,32 +121,32 @@ describe('Column definition contracts', () => {
   ]);
 
   it('column definitions cover typical entity table pattern', () => {
-    expect(controlColumns).toHaveLength(5);
+    expect(practiceColumns).toHaveLength(5);
   });
 
   it('accessorKey columns have correct keys', () => {
-    expect(controlColumns[0]).toHaveProperty('accessorKey', 'code');
-    expect(controlColumns[1]).toHaveProperty('accessorKey', 'name');
-    expect(controlColumns[2]).toHaveProperty('accessorKey', 'status');
+    expect(practiceColumns[0]).toHaveProperty('accessorKey', 'code');
+    expect(practiceColumns[1]).toHaveProperty('accessorKey', 'name');
+    expect(practiceColumns[2]).toHaveProperty('accessorKey', 'status');
   });
 
   it('accessorFn columns use computed values', () => {
-    const ownerCol = controlColumns[3];
+    const ownerCol = practiceColumns[3];
     expect(ownerCol).toHaveProperty('id', 'owner');
     expect(ownerCol).toHaveProperty('accessorFn');
-    const mockWithOwner: MockControl = { id: '1', code: 'AC-001', name: 'Test', status: 'IMPLEMENTED', owner: { name: 'Alice' } };
-    const mockNoOwner: MockControl = { id: '2', code: 'AC-002', name: 'Test', status: 'IN_PROGRESS' };
+    const mockWithOwner: MockPractice = { id: '1', code: 'AC-001', name: 'Test', status: 'IMPLEMENTED', owner: { name: 'Alice' } };
+    const mockNoOwner: MockPractice = { id: '2', code: 'AC-002', name: 'Test', status: 'IN_PROGRESS' };
     expect((ownerCol as any).accessorFn(mockWithOwner)).toBe('Alice');
     expect((ownerCol as any).accessorFn(mockNoOwner)).toBe('—');
   });
 
   it('action column uses id instead of accessorKey', () => {
-    expect(controlColumns[4]).toHaveProperty('id', 'actions');
-    expect(controlColumns[4]).not.toHaveProperty('accessorKey');
+    expect(practiceColumns[4]).toHaveProperty('id', 'actions');
+    expect(practiceColumns[4]).not.toHaveProperty('accessorKey');
   });
 
   it('cell renderers transform values correctly', () => {
-    const statusCol = controlColumns[2];
+    const statusCol = practiceColumns[2];
     const cellFn = (statusCol as any).cell;
     expect(cellFn({ getValue: () => 'IN_PROGRESS' })).toBe('IN PROGRESS');
     expect(cellFn({ getValue: () => 'NOT_STARTED' })).toBe('NOT STARTED');
@@ -154,12 +154,12 @@ describe('Column definition contracts', () => {
   });
 
   it('meta.disableTruncate is supported on columns', () => {
-    const actionCol = controlColumns[4];
+    const actionCol = practiceColumns[4];
     expect((actionCol as any).meta?.disableTruncate).toBe(true);
   });
 
   it('columns can have size constraints', () => {
-    expect(controlColumns[0]).toHaveProperty('size', 120);
+    expect(practiceColumns[0]).toHaveProperty('size', 120);
   });
 });
 
@@ -362,7 +362,7 @@ describe('Multi-entity column patterns', () => {
 
 describe('Type contracts', () => {
   it('UseTableProps accepts the base required fields', () => {
-    type UseTableProps = import('@/components/ui/table/types').UseTableProps<MockControl>;
+    type UseTableProps = import('@/components/ui/table/types').UseTableProps<MockPractice>;
 
     const props: UseTableProps = {
       data: [],
@@ -372,7 +372,7 @@ describe('Type contracts', () => {
   });
 
   it('UseTableProps accepts pagination discriminated union', () => {
-    type UseTableProps = import('@/components/ui/table/types').UseTableProps<MockControl>;
+    type UseTableProps = import('@/components/ui/table/types').UseTableProps<MockPractice>;
 
     const withPag: UseTableProps = {
       data: [],
@@ -385,7 +385,7 @@ describe('Type contracts', () => {
   });
 
   it('UseTableProps accepts all optional features', () => {
-    type UseTableProps = import('@/components/ui/table/types').UseTableProps<MockControl>;
+    type UseTableProps = import('@/components/ui/table/types').UseTableProps<MockPractice>;
 
     const full: UseTableProps = {
       data: [],
@@ -402,7 +402,7 @@ describe('Type contracts', () => {
   });
 
   it('TableProps requires table instance', () => {
-    type TableProps = import('@/components/ui/table/types').TableProps<MockControl>;
+    type TableProps = import('@/components/ui/table/types').TableProps<MockPractice>;
 
     // Type-level check — verify the type shape exists
     const check: Partial<TableProps> = {
@@ -950,13 +950,13 @@ describe('formatPageRange', () => {
   });
 
   it('formats with custom resource name', () => {
-    const name = (plural: boolean) => plural ? 'controls' : 'control';
-    expect(formatPageRange({ from: 1, to: 25, total: 100 }, name)).toBe('1–25 of 100 controls');
+    const name = (plural: boolean) => plural ? 'practices' : 'practice';
+    expect(formatPageRange({ from: 1, to: 25, total: 100 }, name)).toBe('1–25 of 100 practices');
   });
 
   it('formats singular resource name', () => {
-    const name = (plural: boolean) => plural ? 'controls' : 'control';
-    expect(formatPageRange({ from: 1, to: 1, total: 1 }, name)).toBe('1–1 of 1 control');
+    const name = (plural: boolean) => plural ? 'practices' : 'practice';
+    expect(formatPageRange({ from: 1, to: 1, total: 1 }, name)).toBe('1–1 of 1 practice');
   });
 
   it('returns empty string for empty range', () => {
@@ -981,13 +981,13 @@ describe('Pagination constants', () => {
   });
 });
 
-// ─── PaginationControls Contract Tests ──────────────────────────────
+// ─── PaginationPractices Contract Tests ──────────────────────────────
 
-describe('PaginationControls contract', () => {
-  type PaginationControlsProps = import('@/components/ui/table/pagination-controls').PaginationControlsProps;
+describe('PaginationPractices contract', () => {
+  type PaginationPracticesProps = import('@/components/ui/table/pagination-practices').PaginationPracticesProps;
 
   it('accepts the required props', () => {
-    const props: PaginationControlsProps = {
+    const props: PaginationPracticesProps = {
       page: 1,
       pageSize: 25,
       totalCount: 100,
@@ -998,7 +998,7 @@ describe('PaginationControls contract', () => {
   });
 
   it('accepts optional resourceName', () => {
-    const props: PaginationControlsProps = {
+    const props: PaginationPracticesProps = {
       page: 1,
       pageSize: 25,
       totalCount: 100,
@@ -1010,19 +1010,19 @@ describe('PaginationControls contract', () => {
   });
 
   it('accepts optional allRowsHref', () => {
-    const props: PaginationControlsProps = {
+    const props: PaginationPracticesProps = {
       page: 1,
       pageSize: 25,
       totalCount: 100,
       onPageChange: () => {},
-      allRowsHref: '/controls?view=all',
+      allRowsHref: '/practices?view=all',
     };
-    expect(props.allRowsHref).toBe('/controls?view=all');
+    expect(props.allRowsHref).toBe('/practices?view=all');
   });
 
   it('onPageChange receives the next page number', () => {
     const pages: number[] = [];
-    const props: PaginationControlsProps = {
+    const props: PaginationPracticesProps = {
       page: 2,
       pageSize: 25,
       totalCount: 100,
@@ -1038,9 +1038,9 @@ describe('PaginationControls contract', () => {
   });
 });
 
-// ─── PaginationControls Rendering Logic Tests ───────────────────────
+// ─── PaginationPractices Rendering Logic Tests ───────────────────────
 
-describe('PaginationControls rendering logic', () => {
+describe('PaginationPractices rendering logic', () => {
   it('should not render when totalCount is 0 (empty)', () => {
     const state = getPaginationState({ page: 1, pageSize: 25, totalCount: 0 });
     const shouldRender = !state.isEmpty && !state.isSinglePage;
@@ -1088,10 +1088,10 @@ describe('TableEmptyState contract', () => {
 
   it('accepts title and description', () => {
     const props: TableEmptyStateProps = {
-      title: 'No controls found',
-      description: 'Create your first control to get started.',
+      title: 'No practices found',
+      description: 'Create your first practice to get started.',
     };
-    expect(props.title).toBe('No controls found');
+    expect(props.title).toBe('No practices found');
     expect(props.description).toBeDefined();
   });
 
@@ -1138,9 +1138,9 @@ describe('Loading state contract', () => {
     const props: Partial<DataTableProps<Item>> = {
       data: [],
       columns: [],
-      error: 'Failed to load controls',
+      error: 'Failed to load practices',
     };
-    expect(props.error).toBe('Failed to load controls');
+    expect(props.error).toBe('Failed to load practices');
   });
 
   it('DataTable accepts emptyState prop', () => {
@@ -1440,8 +1440,8 @@ describe('hasCustomVisibility', () => {
 
 describe('getVisibilityStorageKey', () => {
   it('prefixes with the standard namespace', () => {
-    const key = getVisibilityStorageKey('controls');
-    expect(key).toBe(`${COLUMN_VISIBILITY_PREFIX}controls`);
+    const key = getVisibilityStorageKey('practices');
+    expect(key).toBe(`${COLUMN_VISIBILITY_PREFIX}practices`);
   });
 
   it('handles entity-specific IDs', () => {
@@ -1450,7 +1450,7 @@ describe('getVisibilityStorageKey', () => {
   });
 
   it('keys are unique per table', () => {
-    const k1 = getVisibilityStorageKey('controls');
+    const k1 = getVisibilityStorageKey('practices');
     const k2 = getVisibilityStorageKey('risks');
     expect(k1).not.toBe(k2);
   });
@@ -1705,7 +1705,7 @@ describe('Table barrel export — surface completeness', () => {
     'types',
     'table-utils',
     'pagination-utils',
-    'pagination-controls',
+    'pagination-practices',
     'table-empty-state',
     'selection-toolbar',
     'column-visibility-utils',
@@ -1736,8 +1736,8 @@ describe('Table barrel export — surface completeness', () => {
 describe('No duplicate table utilities outside the table module', () => {
   const uiDir = path.resolve(__dirname, '../../src/components/ui');
 
-  it('no standalone pagination-controls.tsx in ui/ (use table/pagination-controls)', () => {
-    const duplicatePath = path.join(uiDir, 'pagination-controls.tsx');
+  it('no standalone pagination-practices.tsx in ui/ (use table/pagination-practices)', () => {
+    const duplicatePath = path.join(uiDir, 'pagination-practices.tsx');
     expect(fs.existsSync(duplicatePath)).toBe(false);
   });
 

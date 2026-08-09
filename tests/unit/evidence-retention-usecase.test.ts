@@ -18,7 +18,7 @@
  *     write when already-in-state), audit, notFound, RBAC.
  *   - `runRetentionSweepUsecase` — admin gate + dryRun forwarding to
  *     the job runner.
- *   - `getRetentionMetrics` — three counts + top-controls aggregation
+ *   - `getRetentionMetrics` — three counts + top-practices aggregation
  *     (the dedup + sort + slice).
  *   - `assertNotArchived` — gate semantics + notFound.
  */
@@ -323,15 +323,15 @@ describe('runRetentionSweepUsecase', () => {
 // ─── getRetentionMetrics ──────────────────────────────────────────
 
 describe('getRetentionMetrics', () => {
-    it('returns expiring + archived + expired counts plus top-controls aggregation', async () => {
+    it('returns expiring + archived + expired counts plus top-practices aggregation', async () => {
         (mockDb.evidence.count as jest.Mock)
             .mockResolvedValueOnce(5)   // expiringCount
             .mockResolvedValueOnce(2)   // archivedCount
             .mockResolvedValueOnce(1);  // expiredCount
         (mockDb.evidence.findMany as jest.Mock).mockResolvedValue([
-            { controlId: 'c-1', control: { id: 'c-1', name: 'Access control', code: 'A.5' } },
-            { controlId: 'c-1', control: { id: 'c-1', name: 'Access control', code: 'A.5' } },
-            { controlId: 'c-2', control: { id: 'c-2', name: 'Backups', code: 'A.8' } },
+            { practiceId: 'c-1', practice: { id: 'c-1', name: 'Access Control', code: 'A.5' } },
+            { practiceId: 'c-1', practice: { id: 'c-1', name: 'Access Control', code: 'A.5' } },
+            { practiceId: 'c-2', practice: { id: 'c-2', name: 'Backups', code: 'A.8' } },
         ]);
 
         const res = await getRetentionMetrics(readerCtx);
@@ -339,39 +339,39 @@ describe('getRetentionMetrics', () => {
         expect(res.expiringCount).toBe(5);
         expect(res.archivedCount).toBe(2);
         expect(res.expiredCount).toBe(1);
-        expect(res.topControlsWithExpiringEvidence).toEqual([
-            { controlId: 'c-1', name: 'Access control', code: 'A.5', count: 2 },
-            { controlId: 'c-2', name: 'Backups', code: 'A.8', count: 1 },
+        expect(res.topPracticesWithExpiringEvidence).toEqual([
+            { practiceId: 'c-1', name: 'Access Control', code: 'A.5', count: 2 },
+            { practiceId: 'c-2', name: 'Backups', code: 'A.8', count: 1 },
         ]);
     });
 
-    it('drops rows whose controlId is null from the top-controls aggregation', async () => {
+    it('drops rows whose practiceId is null from the top-practices aggregation', async () => {
         (mockDb.evidence.count as jest.Mock).mockResolvedValueOnce(0).mockResolvedValueOnce(0).mockResolvedValueOnce(0);
         (mockDb.evidence.findMany as jest.Mock).mockResolvedValue([
-            { controlId: null, control: null },
+            { practiceId: null, practice: null },
         ]);
         const res = await getRetentionMetrics(readerCtx);
-        expect(res.topControlsWithExpiringEvidence).toEqual([]);
+        expect(res.topPracticesWithExpiringEvidence).toEqual([]);
     });
 
     it('caps the leaderboard at 10 entries', async () => {
         (mockDb.evidence.count as jest.Mock).mockResolvedValueOnce(0).mockResolvedValueOnce(0).mockResolvedValueOnce(0);
         const rows = [];
         for (let i = 0; i < 15; i++) {
-            rows.push({ controlId: `c-${i}`, control: { id: `c-${i}`, name: `n${i}`, code: '' } });
+            rows.push({ practiceId: `c-${i}`, practice: { id: `c-${i}`, name: `n${i}`, code: '' } });
         }
         (mockDb.evidence.findMany as jest.Mock).mockResolvedValue(rows);
         const res = await getRetentionMetrics(readerCtx);
-        expect(res.topControlsWithExpiringEvidence).toHaveLength(10);
+        expect(res.topPracticesWithExpiringEvidence).toHaveLength(10);
     });
 
-    it('handles missing control relation with Unknown fallback', async () => {
+    it('handles missing practice relation with Unknown fallback', async () => {
         (mockDb.evidence.count as jest.Mock).mockResolvedValueOnce(0).mockResolvedValueOnce(0).mockResolvedValueOnce(0);
         (mockDb.evidence.findMany as jest.Mock).mockResolvedValue([
-            { controlId: 'c-orphan', control: null },
+            { practiceId: 'c-orphan', practice: null },
         ]);
         const res = await getRetentionMetrics(readerCtx);
-        expect(res.topControlsWithExpiringEvidence[0].name).toBe('Unknown');
+        expect(res.topPracticesWithExpiringEvidence[0].name).toBe('Unknown');
     });
 });
 
@@ -395,7 +395,7 @@ describe('assertNotArchived', () => {
     });
 
     // assertNotArchived is intentionally not RBAC-gated — callers
-    // (e.g. control linking) are gated themselves at their own
+    // (e.g. practice linking) are gated themselves at their own
     // boundary. This is a documented sentinel — pinning behaviour.
     it('is reachable from any role context (callers gate themselves)', async () => {
         (mockDb.evidence.findFirst as jest.Mock).mockResolvedValue({ id: 'ev-1', isArchived: false });

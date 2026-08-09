@@ -49,20 +49,20 @@ function req(qs: string = ''): NextRequest {
 const samplePayload = {
     hits: [
         {
-            type: 'control',
+            type: 'practice',
             id: 'c1',
             title: 'A.5.1 — Information security policies',
             subtitle: null,
             badge: 'IMPLEMENTED',
-            href: '/t/acme/controls/c1',
+            href: '/t/acme/practices/c1',
             score: 104,
             iconKey: 'shield-check',
-            category: 'Controls',
+            category: 'Practices',
         },
     ],
     meta: {
         query: 'policy',
-        perTypeCounts: { control: 1, risk: 0, policy: 0, evidence: 0, framework: 0 },
+        perTypeCounts: { practice: 1, risk: 0, policy: 0, evidence: 0, framework: 0 },
         truncated: false,
         perTypeLimit: 5,
     },

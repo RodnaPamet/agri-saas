@@ -1,6 +1,6 @@
 /**
  * `<EvidenceAddForm>` — the single shared add-evidence surface used by
- * the Control / Task / Risk / Asset evidence tabs.
+ * the Practice / Task / Risk / Asset evidence tabs.
  *
  * Locks the canonical shape so the four tabs stay EXACTLY the same:
  * a Title field (always), a brand-tinted file input, a URL + note pair,
@@ -53,7 +53,7 @@ function Harness(props: Partial<React.ComponentProps<typeof EvidenceAddForm>>) {
 describe('EvidenceAddForm — canonical shape', () => {
     it('renders Title, file, URL and note fields + trigger/submit', () => {
         render(<Harness />);
-        // Trigger + submit both read "Add Evidence" (matches the Control tab).
+        // Trigger + submit both read "Add Evidence" (matches the Practice tab).
         expect(document.getElementById('t-trigger')?.textContent).toContain('Add Evidence');
         // The always-present Title field (the difference the Task tab lacked).
         expect(document.getElementById('t-title')).not.toBeNull();

@@ -1,11 +1,11 @@
 /**
- * Hydration-fetch ratchet for the controls list page.
+ * Hydration-fetch ratchet for the practices list page.
  *
  * The SSR path returns the initial list, hydrates the client, and
  * the client's `useQuery` is supposed to honour that payload until
  * `staleTime` elapses. If `initialDataUpdatedAt` is set to `0` (or
- * `staleTime` is unset on controls), React Query treats the SSR data
- * as instantly stale and fires a duplicate `GET /controls` on
+ * `staleTime` is unset on practices), React Query treats the SSR data
+ * as instantly stale and fires a duplicate `GET /practices` on
  * hydration. The page also narrows the server-side `_count` aggregate
  * to the two keys the list view actually reads — bloating it back to
  * six is a silent perf regression.
@@ -27,42 +27,42 @@ function read(rel: string): string {
 }
 
 describe('list-page hydration shape', () => {
-    const controlsClient = read(
-        'src/app/t/[tenantSlug]/(app)/controls/ControlsClient.tsx',
+    const practicesClient = read(
+        'src/app/t/[tenantSlug]/(app)/practices/PracticesClient.tsx',
     );
 
-    test('ControlsClient sets initialDataUpdatedAt + staleTime on the list useQuery', () => {
-        expect(controlsClient).toMatch(/initialDataUpdatedAt:\s*filtersMatchInitial\s*\?\s*Date\.now\(\)/);
-        expect(controlsClient).toMatch(/staleTime:\s*30_000/);
+    test('PracticesClient sets initialDataUpdatedAt + staleTime on the list useQuery', () => {
+        expect(practicesClient).toMatch(/initialDataUpdatedAt:\s*filtersMatchInitial\s*\?\s*Date\.now\(\)/);
+        expect(practicesClient).toMatch(/staleTime:\s*30_000/);
     });
 
-    test('the controls client does not use the regression shape `initialDataUpdatedAt: 0` standalone', () => {
+    test('the practices client does not use the regression shape `initialDataUpdatedAt: 0` standalone', () => {
         // The literal "initialDataUpdatedAt: 0," with no ternary is the
         // pre-fix shape. Allow it to appear only inside the ternary fallback.
         const badShape = /initialDataUpdatedAt:\s*0\s*[,\n}]/;
-        expect(controlsClient).not.toMatch(badShape);
+        expect(practicesClient).not.toMatch(badShape);
     });
 });
 
-describe('ControlRepository list `_count` projection', () => {
-    const repo = read('src/app-layer/repositories/ControlRepository.ts');
+describe('PracticeRepository list `_count` projection', () => {
+    const repo = read('src/app-layer/repositories/PracticeRepository.ts');
 
     // Both `list()` and `listPaginated()` feed the same client surface
-    // (ControlsClient renders `_count?.controlTasks` and
-    // `_count?.evidenceLinks` only — see ControlsClient.tsx:411,616).
+    // (PracticesClient renders `_count?.practiceTasks` and
+    // `_count?.evidenceLinks` only — see PracticesClient.tsx:411,616).
     // Fetching the other four (`evidence`, `risks`, `assets`,
     // `contributors`) costs a correlated subquery per row and the
     // values are dropped. Lock the projection.
     //
-    // PR-3 hoisted the list-shape into a shared `controlListSelect`
+    // PR-3 hoisted the list-shape into a shared `practiceListSelect`
     // constant referenced by both functions, so the literal now
     // appears once at module scope rather than twice in line. The
     // anti-bloat invariant (only the two consumed keys) is unchanged.
-    const ALLOWED = /_count:\s*\{\s*select:\s*\{\s*controlTasks:\s*true,\s*evidenceLinks:\s*true\s*\}\s*\}/g;
+    const ALLOWED = /_count:\s*\{\s*select:\s*\{\s*practiceTasks:\s*true,\s*evidenceLinks:\s*true\s*\}\s*\}/g;
 
-    test('list-shape exposes only the consumed _count keys (controlTasks + evidenceLinks)', () => {
+    test('list-shape exposes only the consumed _count keys (practiceTasks + evidenceLinks)', () => {
         const matches = repo.match(ALLOWED) ?? [];
-        // One declaration in the shared `controlListSelect` constant.
+        // One declaration in the shared `practiceListSelect` constant.
         expect(matches.length).toBeGreaterThanOrEqual(1);
     });
 
@@ -73,7 +73,7 @@ describe('ControlRepository list `_count` projection', () => {
         const listFnIndex = repo.indexOf('static async list(');
         const detailIndex = repo.indexOf('static async getById(');
         const listSection = repo.slice(listFnIndex, detailIndex);
-        const refs = listSection.match(/controlListSelect/g) ?? [];
+        const refs = listSection.match(/practiceListSelect/g) ?? [];
         expect(refs.length).toBe(2);
     });
 

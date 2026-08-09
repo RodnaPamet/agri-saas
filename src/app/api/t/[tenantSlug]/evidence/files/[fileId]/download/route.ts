@@ -25,7 +25,7 @@ export const GET = withApiErrorHandling(async (req: NextRequest, { params: param
         return NextResponse.redirect(result.downloadUrl, {
             status: 302,
             headers: {
-                'Cache-Control': 'private, no-cache, no-store',
+                'Cache-Practice': 'private, no-cache, no-store',
                 'X-Content-SHA256': result.sha256,
             },
         });
@@ -51,7 +51,7 @@ export const GET = withApiErrorHandling(async (req: NextRequest, { params: param
             'Content-Disposition': `attachment; filename="${safeName}"`,
             'Content-Length': String(result.sizeBytes),
             'X-Content-SHA256': result.sha256,
-            'Cache-Control': 'private, no-cache',
+            'Cache-Practice': 'private, no-cache',
         },
     });
 });

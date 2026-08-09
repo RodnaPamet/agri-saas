@@ -7,7 +7,7 @@
  *   2. <FormError>       — canonical error alert primitive.
  *   3. <FieldGroup>      — grid/vertical layout primitive with optional
  *                          section header and a11y `role="group"`.
- *   4. <FormField>       — composes the three above with Label + control
+ *   4. <FormField>       — composes the three above with Label + practice
  *                          and auto-wires a11y props into the child.
  *
  * Standardised rules asserted:
@@ -238,10 +238,10 @@ describe('FormField — composition with FormDescription + FormError', () => {
     });
 });
 
-// ─── Composition with every shared control primitive ───────────
+// ─── Composition with every shared practice primitive ───────────
 
-describe('FormField — composes with every Epic 55 control', () => {
-    // The wrapper relies on each control accepting the standard
+describe('FormField — composes with every Epic 55 practice', () => {
+    // The wrapper relies on each practice accepting the standard
     // injected props. Smoke-test each primitive's source file for
     // matching prop acceptance so the full stack stays coherent.
 
@@ -252,7 +252,7 @@ describe('FormField — composes with every Epic 55 control', () => {
     const SWITCH_SRC = read('src/components/ui/switch.tsx');
     const COMBOBOX_SRC = read('src/components/ui/combobox/index.tsx');
 
-    const controls = [
+    const practices = [
         { label: 'Input', src: INPUT_SRC },
         { label: 'Textarea', src: TEXTAREA_SRC },
         { label: 'Checkbox', src: CHECKBOX_SRC },
@@ -261,7 +261,7 @@ describe('FormField — composes with every Epic 55 control', () => {
         { label: 'Combobox', src: COMBOBOX_SRC },
     ];
 
-    it.each(controls)('$label accepts an `invalid` prop', ({ src }) => {
+    it.each(practices)('$label accepts an `invalid` prop', ({ src }) => {
         expect(src).toMatch(/invalid\?:\s*boolean/);
     });
 });

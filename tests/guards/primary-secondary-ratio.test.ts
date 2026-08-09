@@ -8,7 +8,7 @@
  *
  * IC's ratio today after R8: 55 primary / 56 secondary in src/app
  * — close to 1:1. The R8 round dropped many primaries (Audits/
- * Evidence/Findings status flips, vendor + control form-toggles
+ * Evidence/Findings status flips, vendor + practice form-toggles
  * before being reverted under create-button-uniformity, several
  * other targeted demotions), but the product is still loud at the
  * action layer.

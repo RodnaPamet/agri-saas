@@ -225,7 +225,7 @@ export default function AdminIntegrationsPage() {
                 {/* Connections list. R13-PR6 — outer
                     `cardVariants({ density: 'none' })` wrapper
                     dropped so the DataTable primitive's own bordered
-                    card is the only one (matches Controls list
+                    card is the only one (matches Practices list
                     visually). The "Configured Connections" heading +
                     Add button hoist above the table. */}
                 <div>

@@ -41,7 +41,7 @@ function buildFakeEvent(
             return {
                 ...base,
                 event: name,
-                data: { name: 'n', controlId: 'c' },
+                data: { name: 'n', practiceId: 'c' },
             };
         case 'TEST_PLAN_UPDATED':
             return { ...base, event: name, data: { changedFields: [] } };
@@ -67,13 +67,13 @@ function buildFakeEvent(
             return {
                 ...base,
                 event: name,
-                data: { title: 'e', controlId: null, retentionUntil: null },
+                data: { title: 'e', practiceId: null, retentionUntil: null },
             };
         case 'EVIDENCE_EXPIRED':
             return {
                 ...base,
                 event: name,
-                data: { title: 'e', controlId: null, expiredAt: null },
+                data: { title: 'e', practiceId: null, expiredAt: null },
             };
         case 'SCHEDULE':
             return {
@@ -104,7 +104,7 @@ function buildFakeEvent(
                     severity: 'MEDIUM',
                     priority: 'P2',
                     assigneeUserId: null,
-                    controlId: null,
+                    practiceId: null,
                 },
             };
         case 'TASK_STATUS_CHANGED':
@@ -204,10 +204,10 @@ describe('Automation event contracts', () => {
         // the full event.
         const input: EmitAutomationEvent = {
             event: 'TEST_PLAN_CREATED',
-            entityType: 'ControlTestPlan',
+            entityType: 'PracticeTestPlan',
             entityId: 'p-1',
             actorUserId: null,
-            data: { name: 'n', controlId: 'c' },
+            data: { name: 'n', practiceId: 'c' },
         };
         expect('tenantId' in input).toBe(false);
         expect('emittedAt' in input).toBe(false);

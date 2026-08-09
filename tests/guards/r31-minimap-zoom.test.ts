@@ -1,14 +1,14 @@
 /**
- * R31 (Bundle 6) — Zoom controls (PR 7 of the roadmap).
+ * R31 (Bundle 6) — Zoom practices (PR 7 of the roadmap).
  *
  * Pre-R31 the canvas shipped without a zoom UI: on a large process
  * map the user couldn't get back to the origin. Every canvas tool
- * that has shipped in the last 15 years has +/- / fit controls.
- * R31 wired xyflow's `<Controls>` primitive as an overlay inside
+ * that has shipped in the last 15 years has +/- / fit practices.
+ * R31 wired xyflow's `<Practices>` primitive as an overlay inside
  * the canvas plane (not a new chrome strip above) and toned it to
  * match the canvas frame.
  *
- *   • Bottom-left zoom strip — `<Controls position="bottom-left"
+ *   • Bottom-left zoom strip — `<Practices position="bottom-left"
  *     showInteractive={false} />`. The `showInteractive` flag is
  *     OFF deliberately: the "lock interaction" toggle xyflow ships
  *     by default is for graph viewers, not authoring canvases.
@@ -18,7 +18,7 @@
  * rounded-[8px], backdrop-blur — so it reads as part of one
  * coherent chrome language. The +/- glyph + button surface colours
  * are themed via a `globals.css` rule that wires xyflow's
- * `--xy-controls-button-*` cascade to the canvas-frame token suite
+ * `--xy-practices-button-*` cascade to the canvas-frame token suite
  * (xyflow's built-in `.dark` class flip never fires on our trees
  * since we theme via `[data-theme]` on `<html>` instead).
  *
@@ -34,16 +34,16 @@ import * as path from "node:path";
 const ROOT = path.resolve(__dirname, "../..");
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), "utf8");
 
-describe("R31 (Bundle 6) — zoom controls", () => {
+describe("R31 (Bundle 6) — zoom practices", () => {
     const src = read("src/components/processes/PersistedProcessCanvas.tsx");
 
-    it("imports xyflow's Controls primitive", () => {
-        // The Controls import drives the render branch below.
+    it("imports xyflow's Practices primitive", () => {
+        // The Practices import drives the render branch below.
         const importMatch = src.match(
             /import\s*\{[\s\S]{0,2000}\}\s*from\s*["']@xyflow\/react["']/,
         );
         expect(importMatch).not.toBeNull();
-        expect(importMatch![0]).toMatch(/\bControls\b/);
+        expect(importMatch![0]).toMatch(/\bPractices\b/);
     });
 
     it("does NOT import the MiniMap primitive (removed 2026-05-26)", () => {
@@ -66,9 +66,9 @@ describe("R31 (Bundle 6) — zoom controls", () => {
     });
 
     it("mounts the zoom strip at the bottom-left of the canvas plane", () => {
-        // `<Controls position="bottom-left" ...>` — xyflow places
+        // `<Practices position="bottom-left" ...>` — xyflow places
         // the strip absolute-positioned inside its viewport.
-        expect(src).toMatch(/<Controls\b[\s\S]{0,400}position="bottom-left"/);
+        expect(src).toMatch(/<Practices\b[\s\S]{0,400}position="bottom-left"/);
         // The `showInteractive` flag is OFF deliberately — locked
         // here so a future "show the lock toggle" PR has to make
         // the case in writing.
@@ -76,10 +76,10 @@ describe("R31 (Bundle 6) — zoom controls", () => {
         // Token-driven surface so the overlay matches the canvas
         // frame language.
         expect(src).toMatch(
-            /<Controls\b[\s\S]{0,500}bg-canvas-frame\/90/,
+            /<Practices\b[\s\S]{0,500}bg-canvas-frame\/90/,
         );
         expect(src).toMatch(
-            /data-testid="canvas-zoom-controls"/,
+            /data-testid="canvas-zoom-practices"/,
         );
     });
 
@@ -89,10 +89,10 @@ describe("R31 (Bundle 6) — zoom controls", () => {
         // use elsewhere in the canvas. The overlay vocabulary is
         // one language, not a per-overlay invention.
         expect(src).toMatch(
-            /<Controls\b[\s\S]{0,500}rounded-\[8px\]/,
+            /<Practices\b[\s\S]{0,500}rounded-\[8px\]/,
         );
         expect(src).toMatch(
-            /<Controls\b[\s\S]{0,500}backdrop-blur/,
+            /<Practices\b[\s\S]{0,500}backdrop-blur/,
         );
     });
 
@@ -101,14 +101,14 @@ describe("R31 (Bundle 6) — zoom controls", () => {
 
         it("scopes the wire-up to the Processes canvas", () => {
             // The rule lives under `[data-process-canvas="true"]
-            // .react-flow__controls` so the GraphExplorer's xyflow
+            // .react-flow__practices` so the GraphExplorer's xyflow
             // tree (different surface vocabulary) is untouched.
             expect(css).toMatch(
-                /\[data-process-canvas="true"\]\s+\.react-flow__controls\s*\{/,
+                /\[data-process-canvas="true"\]\s+\.react-flow__practices\s*\{/,
             );
         });
 
-        it("maps xyflow's control-button cascade onto canvas tokens", () => {
+        it("maps xyflow's practice-button cascade onto canvas tokens", () => {
             // Each of the five custom properties xyflow consults
             // for the button surface + glyph + border must be
             // mapped to a `--canvas-*` / `--content-*` token. The
@@ -118,24 +118,24 @@ describe("R31 (Bundle 6) — zoom controls", () => {
             // Locked together to catch a "fix one but forget the
             // hover" partial revert.
             const rule = css.match(
-                /\[data-process-canvas="true"\]\s+\.react-flow__controls\s*\{[^}]+\}/,
+                /\[data-process-canvas="true"\]\s+\.react-flow__practices\s*\{[^}]+\}/,
             );
             expect(rule).not.toBeNull();
             const body = rule![0];
             expect(body).toMatch(
-                /--xy-controls-button-background-color:\s*var\(--canvas-frame\)/,
+                /--xy-practices-button-background-color:\s*var\(--canvas-frame\)/,
             );
             expect(body).toMatch(
-                /--xy-controls-button-background-color-hover:\s*var\(--canvas-node\)/,
+                /--xy-practices-button-background-color-hover:\s*var\(--canvas-node\)/,
             );
             expect(body).toMatch(
-                /--xy-controls-button-color:\s*var\(--content-default\)/,
+                /--xy-practices-button-color:\s*var\(--content-default\)/,
             );
             expect(body).toMatch(
-                /--xy-controls-button-color-hover:\s*var\(--content-default\)/,
+                /--xy-practices-button-color-hover:\s*var\(--content-default\)/,
             );
             expect(body).toMatch(
-                /--xy-controls-button-border-color:\s*var\(--canvas-border\)/,
+                /--xy-practices-button-border-color:\s*var\(--canvas-border\)/,
             );
         });
     });

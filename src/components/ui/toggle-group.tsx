@@ -16,7 +16,7 @@ import {
 /**
  * Epic 60 polish primitive — ToggleGroup.
  *
- * Segmented control for a small set of mutually-exclusive choices
+ * Segmented practice for a small set of mutually-exclusive choices
  * (time range: 7d/30d/90d/custom; view mode: list/grid/kanban; status
  * filter: all/open/closed). Sits in dense toolbars where a full
  * Combobox would be overkill and a Radio list would waste vertical
@@ -25,7 +25,7 @@ import {
  * ## Variants
  *
  *   - `size: default` — 12px vertical padding, reads as a prominent
- *     control on top of a card.
+ *     practice on top of a card.
  *   - `size: sm` — compact 6px vertical padding for dense filter bars.
  *
  * ## Accessibility

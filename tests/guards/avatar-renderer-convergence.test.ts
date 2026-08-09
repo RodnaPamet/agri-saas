@@ -14,7 +14,7 @@
  * every converged surface upgrades for free.
  *
  * This ratchet locks the two P1 conversions. It does NOT police every
- * avatar in the app — the Controls / Policies owner-column circles
+ * avatar in the app — the Practices / Policies owner-column circles
  * use a different (neutral) visual tone and are a deliberate,
  * separately-scoped follow-up.
  */

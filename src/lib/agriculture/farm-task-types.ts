@@ -54,8 +54,8 @@ export const FARM_TASK_TYPES: readonly FarmTaskType[] = [
     { key: 'MULCHING', name: 'Mulching', category: 'CROP_CARE' },
     // Pest / disease
     { key: 'SCOUTING', name: 'Scouting', category: 'PEST_DISEASE' },
-    { key: 'PEST_CONTROL', name: 'Pest control', category: 'PEST_DISEASE' },
-    { key: 'DISEASE_CONTROL', name: 'Disease control', category: 'PEST_DISEASE' },
+    { key: 'PEST_CONTROL', name: 'Pest practice', category: 'PEST_DISEASE' },
+    { key: 'DISEASE_CONTROL', name: 'Disease practice', category: 'PEST_DISEASE' },
     // Irrigation
     { key: 'IRRIGATION', name: 'Irrigation', category: 'IRRIGATION' },
     { key: 'IRRIGATION_REPAIR', name: 'Irrigation repair', category: 'IRRIGATION' },

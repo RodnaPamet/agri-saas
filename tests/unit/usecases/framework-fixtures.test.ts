@@ -28,7 +28,7 @@
  *       • changed — title / section / description differs
  *       • section fallback to category when section is null
  *       • unmappedNewRequirements > 0 path (calls
- *         runInTenantContext + controlRequirementLink.findMany)
+ *         runInTenantContext + practiceRequirementLink.findMany)
  *       • added.length === 0 → mapping check skipped
  */
 
@@ -59,7 +59,7 @@ jest.mock('@/lib/prisma', () => ({
 }));
 
 const tenantDb: any = {
-    controlRequirementLink: { findMany: jest.fn() },
+    practiceRequirementLink: { findMany: jest.fn() },
 };
 jest.mock('@/lib/db-context', () => {
     const actual = jest.requireActual('@/lib/db-context');
@@ -80,7 +80,7 @@ beforeEach(() => {
     prismaMock.frameworkRequirement.update.mockReset();
     prismaMock.frameworkRequirement.updateMany.mockReset();
     prismaMock.frameworkRequirement.findMany.mockReset();
-    tenantDb.controlRequirementLink.findMany.mockReset();
+    tenantDb.practiceRequirementLink.findMany.mockReset();
 });
 
 const ctx = makeRequestContext('ADMIN');
@@ -96,7 +96,7 @@ describe('upsertRequirements — guard rails', () => {
         prismaMock.frameworkRequirement.findUnique.mockResolvedValue(null);
         prismaMock.frameworkRequirement.create.mockResolvedValue({ id: 'r-1' });
         await upsertRequirements(ctx, 'iso', [
-            { code: 'A.5.1', title: 'Access control' },
+            { code: 'A.5.1', title: 'Access Control' },
         ]);
         expect(policyCalls[0]).toBe('catalogue');
     });
@@ -138,12 +138,12 @@ describe('upsertRequirements — create/update paths', () => {
         prismaMock.frameworkRequirement.findUnique.mockResolvedValue(null);
         prismaMock.frameworkRequirement.create.mockResolvedValue({ id: 'r-1' });
         const result = await upsertRequirements(ctx, 'iso', [
-            { code: 'A.5.1', title: 'Access control' },
+            { code: 'A.5.1', title: 'Access Control' },
         ]);
         expect(prismaMock.frameworkRequirement.create).toHaveBeenCalledWith({
             data: expect.objectContaining({
                 code: 'A.5.1',
-                title: 'Access control',
+                title: 'Access Control',
                 sortOrder: 0,
             }),
         });
@@ -164,12 +164,12 @@ describe('upsertRequirements — create/update paths', () => {
         });
         prismaMock.frameworkRequirement.update.mockResolvedValue({ id: 'r-existing' });
         const result = await upsertRequirements(ctx, 'iso', [
-            { code: 'A.5.1', title: 'Access control (revised)' },
+            { code: 'A.5.1', title: 'Access Control (revised)' },
         ]);
         expect(prismaMock.frameworkRequirement.update).toHaveBeenCalledWith({
             where: { id: 'r-existing' },
             data: expect.objectContaining({
-                title: 'Access control (revised)',
+                title: 'Access Control (revised)',
                 // Falls back to existing.sortOrder when the fixture
                 // omits the field.
                 sortOrder: 42,
@@ -283,7 +283,7 @@ describe('computeRequirementsDiff — diff computation', () => {
                 { id: 'rt-3', code: 'A.3', title: 'Same', section: 'S3', category: null, description: 'd3' },
                 { id: 'rt-4', code: 'A.4', title: 'Added', section: 'S4', category: null, description: 'd4' },
             ]);
-        tenantDb.controlRequirementLink.findMany.mockResolvedValue([]);
+        tenantDb.practiceRequirementLink.findMany.mockResolvedValue([]);
 
         const diff = await computeRequirementsDiff(ctx, 'iso-2013', 'iso-2022');
 
@@ -318,7 +318,7 @@ describe('computeRequirementsDiff — diff computation', () => {
             .mockResolvedValueOnce([
                 { id: 'rt-1', code: 'A.1', title: 'Same', section: 'Y', category: null, description: 'd2' },
             ]);
-        tenantDb.controlRequirementLink.findMany.mockResolvedValue([]);
+        tenantDb.practiceRequirementLink.findMany.mockResolvedValue([]);
 
         const diff = await computeRequirementsDiff(ctx, 'iso-2013', 'iso-2022');
         expect(diff.changed).toHaveLength(1);
@@ -337,8 +337,8 @@ describe('computeRequirementsDiff — diff computation', () => {
                 { id: 'rt-1', code: 'A.1', title: 'Same', section: null, category: null, description: 'd' },
             ]);
         const out = await computeRequirementsDiff(ctx, 'iso-2013', 'iso-2022');
-        // controlRequirementLink lookup never runs when added.length===0.
-        expect(tenantDb.controlRequirementLink.findMany).not.toHaveBeenCalled();
+        // practiceRequirementLink lookup never runs when added.length===0.
+        expect(tenantDb.practiceRequirementLink.findMany).not.toHaveBeenCalled();
         expect(out.summary.unmappedNewRequirements).toBe(0);
     });
 
@@ -352,8 +352,8 @@ describe('computeRequirementsDiff — diff computation', () => {
                 { id: 'rf-1', code: 'A.1', title: 'X', section: null, category: null, description: 'd' },
                 { id: 'rt-2', code: 'A.2', title: 'Added', section: null, category: null, description: 'd2' },
             ]);
-        // Tenant ALREADY has a control mapped to the new requirement.
-        tenantDb.controlRequirementLink.findMany.mockResolvedValue([
+        // Tenant ALREADY has a practice mapped to the new requirement.
+        tenantDb.practiceRequirementLink.findMany.mockResolvedValue([
             { requirementId: 'rt-2' },
         ]);
         const out = await computeRequirementsDiff(ctx, 'iso-2013', 'iso-2022');

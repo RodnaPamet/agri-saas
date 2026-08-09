@@ -50,7 +50,7 @@ describe("Epic P3-PR-A — canvas export (PNG / SVG)", () => {
 
         it("walks down to the xyflow viewport child for capture", () => {
             // The xyflow viewport (.react-flow__viewport) is the
-            // node+edge subtree; capturing IT excludes the Controls
+            // node+edge subtree; capturing IT excludes the Practices
             // overlay + Background siblings. A refactor that
             // captures the wrapper itself would include the zoom
             // strip — wrong for evidence artefacts.

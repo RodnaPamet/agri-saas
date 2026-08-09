@@ -36,7 +36,7 @@ const MIGRATED_PAGES: Array<{
     /** Set when the page uses useUrlFilters for a non-filter view slot. */
     allowLegacyUrlFilterScope?: string[];
 }> = [
-    { dir: 'controls', client: 'ControlsClient.tsx' },
+    { dir: 'practices', client: 'PracticesClient.tsx' },
     { dir: 'evidence', client: 'EvidenceClient.tsx', allowLegacyUrlFilterScope: ['tab', 'view'] },
     { dir: 'policies', client: 'PoliciesClient.tsx' },
     { dir: 'farm-tasks', client: 'FarmTasksClient.tsx' },

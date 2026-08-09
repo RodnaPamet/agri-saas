@@ -239,7 +239,7 @@ describe('Epic 41 — WidgetPicker', () => {
             .getAllByRole('option')
             .map((o) => o.textContent);
         expect(optionTexts).toContain('Open risks');
-        expect(optionTexts).toContain('Controls coverage');
+        expect(optionTexts).toContain('Practices coverage');
         expect(optionTexts).not.toContain('Coverage'); // KPI-only
 
         // Days field is rendered.

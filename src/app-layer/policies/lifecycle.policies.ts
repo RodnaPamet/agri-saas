@@ -33,7 +33,7 @@
  * - **History/version access requires canRead + canAudit** — Version history
  *   contains prior authoritative states. canAudit ensures only users with
  *   audit permissions can access historical snapshots, matching the
- *   audit trail access pattern used by `getControlActivity` and `getPolicyActivity`.
+ *   audit trail access pattern used by `getPracticeActivity` and `getPolicyActivity`.
  *
  * - **Archive requires canAdmin** — Archiving is an irreversible operation
  *   that freezes the entity. Only admins can perform this action.

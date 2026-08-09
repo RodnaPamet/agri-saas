@@ -152,7 +152,7 @@ describe('ColumnsDropdown + shared primitive — source contract', () => {
 
 describe('Epic 52 adoption — migrated pages wire column visibility', () => {
     // The list-page-shell work (commits c71556e / 9d7b76d / fa3105d)
-    // moved Controls / Risks / Evidence from paginated rendering to
+    // moved Practices / Risks / Evidence from paginated rendering to
     // viewport-clamped internal scroll inside <ListPageShell.Body>
     // with <DataTable fillBody>. The pagination wiring was removed
     // because all filtered rows now render inside the table card and
@@ -164,9 +164,9 @@ describe('Epic 52 adoption — migrated pages wire column visibility', () => {
     // setting independent of how rows are paged.
     const MIGRATED = [
         {
-            dir: 'controls',
-            client: 'ControlsClient.tsx',
-            storageKey: 'inflect:col-vis:controls',
+            dir: 'practices',
+            client: 'PracticesClient.tsx',
+            storageKey: 'inflect:col-vis:practices',
         },
         {
             dir: 'evidence',

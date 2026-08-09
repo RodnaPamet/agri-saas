@@ -12,9 +12,9 @@ import { useParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Heading } from '@/components/ui/typography';
-import { EditControlModal } from './_modals/EditControlModal';
-import { ControlReverseLookupModal } from '@/components/controls/ControlReverseLookupModal';
-import { ControlMappingsTab } from './_tabs/ControlMappingsTab';
+import { EditPracticeModal } from './_modals/EditPracticeModal';
+import { PracticeReverseLookupModal } from '@/components/practices/PracticeReverseLookupModal';
+import { PracticeMappingsTab } from './_tabs/PracticeMappingsTab';
 import { EvidenceSubTable } from './_tabs/EvidenceSubTable';
 import { EvidenceAddForm } from '@/components/EvidenceAddForm';
 import { MetaStrip } from '@/components/ui/meta-strip';
@@ -50,7 +50,7 @@ const LinkedTasksPanel = dynamic(() => import('@/components/LinkedTasksPanel'), 
     ssr: false,
 });
 import type {
-    ControlDetailDTO, EvidenceLinkDTO,
+    PracticeDetailDTO, EvidenceLinkDTO,
     AuditLogEntry,
 } from '@/lib/dto';
 
@@ -81,9 +81,9 @@ const STATUS_CB_OPTIONS: ComboboxOption[] = Object.entries(STATUS_LABELS).map(([
 type Tab = 'overview' | 'tasks' | 'evidence' | 'mappings' | 'traceability' | 'activity';
 
 /**
- * Evidence-tab payload — `GET /controls/{id}/evidence` (#102 item 1).
+ * Evidence-tab payload — `GET /practices/{id}/evidence` (#102 item 1).
  * Carries both the manual evidence links and the `Evidence` entities
- * attached directly to the control.
+ * attached directly to the practice.
  */
 interface EvidenceTabData {
     links: EvidenceLinkDTO[];
@@ -101,35 +101,35 @@ const EVENT_LABELS: Record<string, string> = {
     CONTROL_INSTALLED_FROM_TEMPLATE: 'Installed from Template',
 };
 
-export default function ControlDetailPage() {
-    const t = useTranslations('controls');
+export default function PracticeDetailPage() {
+    const t = useTranslations('practices');
     const params = useParams();
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
     const { permissions, tenantSlug } = useTenantContext();
-    const controlId = params?.controlId as string;
+    const practiceId = params?.practiceId as string;
     const triggerUndoToast = useToastWithUndo();
 
     // ─── Page data — Epic 69 SWR-first read ──────────────────────────
     //
-    // Hits `/controls/:id/page-data` which collapses the prior
-    // serial waterfall (GET /controls/:id THEN GET /controls/:id/sync)
+    // Hits `/practices/:id/page-data` which collapses the prior
+    // serial waterfall (GET /practices/:id THEN GET /practices/:id/sync)
     // into one round-trip. The sync sub-payload is `null` for
-    // controls without an `automationKey` or when the mapping lookup
+    // practices without an `automationKey` or when the mapping lookup
     // fails — the page renders the conflict badge unconditionally
     // against it.
     //
     // Epic 69 migration: this read used to flow through TanStack
-    // React Query (`useQuery` + `queryKeys.controls.detail`). It's
-    // now a `useTenantSWR` against `CACHE_KEYS.controls.pageData(id)`
+    // React Query (`useQuery` + `queryKeys.practices.detail`). It's
+    // now a `useTenantSWR` against `CACHE_KEYS.practices.pageData(id)`
     // so the status mutation below can apply optimistic updates that
     // the rest of the UI sees immediately. Other pages on this
     // codebase still use React Query — that migration is incremental.
-    interface ControlPageDataDTO {
-        // `_count` carries the tab badge counts; `doneControlTasks`
+    interface PracticePageDataDTO {
+        // `_count` carries the tab badge counts; `donePracticeTasks`
         // backs the Overview "Tasks Progress" widget (#102 item 1) —
         // the heavy relation arrays no longer ride on this payload.
-        control: ControlDetailDTO & { doneControlTasks?: number };
+        practice: PracticeDetailDTO & { donePracticeTasks?: number };
         syncStatus: {
             syncStatus: string | null;
             lastSyncedAt: string | null;
@@ -137,15 +137,15 @@ export default function ControlDetailPage() {
             provider: string | null;
         } | null;
     }
-    const pageDataKey = controlId
-        ? CACHE_KEYS.controls.pageData(controlId)
+    const pageDataKey = practiceId
+        ? CACHE_KEYS.practices.pageData(practiceId)
         : null;
-    const pageDataQuery = useTenantSWR<ControlPageDataDTO>(pageDataKey);
-    const control = pageDataQuery.data?.control ?? null;
+    const pageDataQuery = useTenantSWR<PracticePageDataDTO>(pageDataKey);
+    const practice = pageDataQuery.data?.practice ?? null;
     const loading = pageDataQuery.isLoading;
     const error =
         pageDataQuery.error
-            ? pageDataQuery.error.message || 'Control not found'
+            ? pageDataQuery.error.message || 'Practice not found'
             : '';
     // Stable revalidation handle that mirrors the prior `refetch()`
     // contract — `mutate(undefined)` re-runs the fetcher for this
@@ -163,14 +163,14 @@ export default function ControlDetailPage() {
     // The Tasks / Evidence / Mappings tab bodies each fetch their own
     // slice on demand. The SWR key is `null` until that tab is the
     // active one, so nothing loads until the user opens the tab — and
-    // `getControlHeader` no longer eager-loads these four arrays into
+    // `getPracticeHeader` no longer eager-loads these four arrays into
     // the page-data payload. Mirrors the existing Activity /
     // Traceability / Tests panels, which already self-fetch.
-    // B4 — the legacy control-task fetch was removed; the Tasks tab's
+    // B4 — the legacy practice-task fetch was removed; the Tasks tab's
     // <LinkedTasksPanel> self-fetches the unified tasks.
     const evidenceSWR = useTenantSWR<EvidenceTabData>(
-        controlId && tab === 'evidence'
-            ? CACHE_KEYS.controls.evidence(controlId)
+        practiceId && tab === 'evidence'
+            ? CACHE_KEYS.practices.evidence(practiceId)
             : null,
     );
 
@@ -182,7 +182,7 @@ export default function ControlDetailPage() {
     const [appChoice, setAppChoice] = useState('APPLICABLE');
     const [appJustification, setAppJustification] = useState('');
     const [savingApp, setSavingApp] = useState(false);
-    // Epic P2-PR-C — reverse-lookup modal. "Where is this control
+    // Epic P2-PR-C — reverse-lookup modal. "Where is this practice
     // used in process maps?" — opens from a header button.
     const [reverseLookupOpen, setReverseLookupOpen] = useState(false);
 
@@ -194,7 +194,7 @@ export default function ControlDetailPage() {
     const [evidenceNote, setEvidenceNote] = useState('');
     const [savingEvidence, setSavingEvidence] = useState(false);
 
-    // File upload for this control (folded into the "+ Evidence" form)
+    // File upload for this practice (folded into the "+ Evidence" form)
     const [fileToUpload, setFileToUpload] = useState<File | null>(null);
     const [fileUploadTitle, setFileUploadTitle] = useState('');
     const [fileUploading, setFileUploading] = useState(false);
@@ -218,20 +218,20 @@ export default function ControlDetailPage() {
     const [editError, setEditError] = useState('');
     const [editSuccess, setEditSuccess] = useState(false);
 
-    // (fetchControl replaced by useQuery above — use refetch() below)
+    // (fetchPractice replaced by useQuery above — use refetch() below)
 
     // ─── Edit modal handlers ───
 
     const openEditModal = () => {
-        if (!control) return;
+        if (!practice) return;
         setEditForm({
-            name: control.name || '',
-            description: control.description || '',
-            intent: control.intent || '',
-            category: control.category || '',
-            frequency: control.frequency || '',
-            owner: control.ownerUserId || '',
-            mitigationType: control.mitigationType || '',
+            name: practice.name || '',
+            description: practice.description || '',
+            intent: practice.intent || '',
+            category: practice.category || '',
+            frequency: practice.frequency || '',
+            owner: practice.ownerUserId || '',
+            mitigationType: practice.mitigationType || '',
         });
         setEditError('');
         setEditSuccess(false);
@@ -239,23 +239,23 @@ export default function ControlDetailPage() {
     };
 
 
-    // ─── Mutation: edit control ─────────────────────────────────────
+    // ─── Mutation: edit practice ─────────────────────────────────────
     //
     // Epic 69 migration — the prior React Query `useMutation` with
     // `onMutate` / `onError` rollback hooks is now a single
     // `useTenantMutation`. The optimistic update walks the cached
-    // page-data shape (control nested under `pageData.control`)
+    // page-data shape (practice nested under `pageData.practice`)
     // because the SWR cache holds the whole envelope, not the bare
     // detail. Rollback is automatic on throw via SWR's
     // `rollbackOnError: true` default.
     const editMutation = useTenantMutation<
-        ControlPageDataDTO,
+        PracticePageDataDTO,
         typeof editForm,
         unknown
     >({
         key: pageDataKey ?? '',
         mutationFn: async (form) => {
-            const res = await fetch(apiUrl(`/controls/${controlId}`), {
+            const res = await fetch(apiUrl(`/practices/${practiceId}`), {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -273,10 +273,10 @@ export default function ControlDetailPage() {
                 throw new Error(extractMutationError(err, 'Update failed'));
             }
             // If owner changed, call the separate owner endpoint
-            const originalOwner = control?.ownerUserId || '';
+            const originalOwner = practice?.ownerUserId || '';
             if (form.owner.trim() !== originalOwner) {
                 const ownerRes = await fetch(
-                    apiUrl(`/controls/${controlId}/owner`),
+                    apiUrl(`/practices/${practiceId}/owner`),
                     {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -300,8 +300,8 @@ export default function ControlDetailPage() {
             current
                 ? {
                       ...current,
-                      control: {
-                          ...current.control,
+                      practice: {
+                          ...current.practice,
                           name: form.name.trim(),
                           description: form.description.trim() || null,
                           intent: form.intent.trim() || null,
@@ -309,10 +309,10 @@ export default function ControlDetailPage() {
                           frequency: form.frequency || null,
                       },
                   }
-                : (current as unknown as ControlPageDataDTO),
-        // Refresh the list cache too — the controls list page shows
+                : (current as unknown as PracticePageDataDTO),
+        // Refresh the list cache too — the practices list page shows
         // these same fields.
-        invalidate: [CACHE_KEYS.controls.list()],
+        invalidate: [CACHE_KEYS.practices.list()],
     });
 
     const handleEditSave = async (e: React.FormEvent) => {
@@ -345,11 +345,11 @@ export default function ControlDetailPage() {
         if (tab !== 'activity') return;
         // eslint-disable-next-line react-hooks/set-state-in-effect
         setActivityLoading(true);
-        fetch(apiUrl(`/controls/${controlId}/activity`)).then(r => r.ok ? r.json() : []).then(setActivity).catch(() => { }).finally(() => setActivityLoading(false));
-    }, [tab, apiUrl, controlId]);
+        fetch(apiUrl(`/practices/${practiceId}/activity`)).then(r => r.ok ? r.json() : []).then(setActivity).catch(() => { }).finally(() => setActivityLoading(false));
+    }, [tab, apiUrl, practiceId]);
 
     // Hydrate sync status from the page-data response (one round-trip
-    // instead of the previous control-then-sync waterfall). The
+    // instead of the previous practice-then-sync waterfall). The
     // dependency on the data identity — not just on automationKey —
     // ensures the badge updates after `refetch()` lands a fresh
     // page-data payload (e.g. after Sync Now or after an edit that
@@ -367,7 +367,7 @@ export default function ControlDetailPage() {
         setSyncError(initialSyncStatus.errorMessage ?? null);
     }, [initialSyncStatus]);
 
-    // ─── Mutation: change control status (Epic 69 pilot #2) ────────
+    // ─── Mutation: change practice status (Epic 69 pilot #2) ────────
     //
     // The headline migration of this file. The previous flow was
     // `fetch(POST /status) → await refetch() → invalidateQueries(list)`,
@@ -376,28 +376,28 @@ export default function ControlDetailPage() {
     //
     // The new flow uses `useTenantMutation`:
     //
-    //   1. `optimisticUpdate` flips `control.status` in the cached
+    //   1. `optimisticUpdate` flips `practice.status` in the cached
     //      page-data envelope synchronously — the badge re-renders
     //      with the predicted value before the POST is sent.
     //   2. `mutationFn` performs the POST. A non-2xx response throws.
     //   3. On success, SWR background-revalidates the page-data key
-    //      (re-fetches `/controls/{id}/page-data`) — confirming the
+    //      (re-fetches `/practices/{id}/page-data`) — confirming the
     //      server agrees with the prediction. The `invalidate`
-    //      sibling (`/controls`) refreshes the list page in parallel.
+    //      sibling (`/practices`) refreshes the list page in parallel.
     //   4. On failure, `rollbackOnError: true` (the default) restores
-    //      the prior `control.status` automatically — the badge
+    //      the prior `practice.status` automatically — the badge
     //      flips back to the original value with no spinner thrash.
     //
     // No `router.refresh()` involved. No coarse page reload. No
     // imperative `refetch()` chained behind state setters.
     const statusMutation = useTenantMutation<
-        ControlPageDataDTO,
+        PracticePageDataDTO,
         { status: string },
         unknown
     >({
         key: pageDataKey ?? '',
         mutationFn: async ({ status }) => {
-            const res = await fetch(apiUrl(`/controls/${controlId}/status`), {
+            const res = await fetch(apiUrl(`/practices/${practiceId}/status`), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ status }),
@@ -416,11 +416,11 @@ export default function ControlDetailPage() {
             current
                 ? {
                       ...current,
-                      control: { ...current.control, status },
+                      practice: { ...current.practice, status },
                   }
-                : (current as unknown as ControlPageDataDTO),
+                : (current as unknown as PracticePageDataDTO),
         // List page shows status badges too — keep it in sync.
-        invalidate: [CACHE_KEYS.controls.list()],
+        invalidate: [CACHE_KEYS.practices.list()],
     });
 
     const changeStatus = async (status: string) => {
@@ -439,7 +439,7 @@ export default function ControlDetailPage() {
     const saveApplicability = async () => {
         if (appChoice === 'NOT_APPLICABLE' && !appJustification.trim()) return;
         setSavingApp(true);
-        await fetch(apiUrl(`/controls/${controlId}/applicability`), {
+        await fetch(apiUrl(`/practices/${practiceId}/applicability`), {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ applicability: appChoice, justification: appChoice === 'NOT_APPLICABLE' ? appJustification : null }),
         });
@@ -448,9 +448,9 @@ export default function ControlDetailPage() {
         setShowApplicability(false);
     };
 
-    // B4 (2026-06-07): the legacy control-scoped task flow
-    // (updateTaskStatus + controlTaskColumns + the tasksSWR fetch) was
-    // removed with the legacy "Control tasks" DataTable — the Control Tasks
+    // B4 (2026-06-07): the legacy practice-scoped task flow
+    // (updateTaskStatus + practiceTaskColumns + the tasksSWR fetch) was
+    // removed with the legacy "Practice tasks" DataTable — the Practice Tasks
     // tab is now a single <LinkedTasksPanel>, matching Asset + Risk.
 
     const resetEvidenceForm = () => {
@@ -466,8 +466,8 @@ export default function ControlDetailPage() {
     // Unified "+ Evidence" submit. The single form supports BOTH a file
     // upload (browse + title) and a URL link. A chosen file takes
     // precedence: it uploads via /evidence/uploads (FileRecord +
-    // Evidence(FILE) + ControlEvidenceLink); otherwise a non-empty URL
-    // links a LINK evidence record. Both land in this control's Evidence
+    // Evidence(FILE) + PracticeEvidenceLink); otherwise a non-empty URL
+    // links a LINK evidence record. Both land in this practice's Evidence
     // tab + the Evidence Library.
     const addEvidence = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -479,7 +479,7 @@ export default function ControlDetailPage() {
                 const formData = new FormData();
                 formData.append('file', fileToUpload);
                 if (fileUploadTitle) formData.append('title', fileUploadTitle);
-                formData.append('controlId', controlId);
+                formData.append('practiceId', practiceId);
                 const res = await fetch(apiUrl('/evidence/uploads'), { method: 'POST', body: formData });
                 if (!res.ok) {
                     const err = await res.json().catch(() => ({ error: 'Upload failed' }));
@@ -501,7 +501,7 @@ export default function ControlDetailPage() {
         }
         setSavingEvidence(true);
         try {
-            const res = await fetch(apiUrl(`/controls/${controlId}/evidence`), {
+            const res = await fetch(apiUrl(`/practices/${practiceId}/evidence`), {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ kind: 'LINK', url: evidenceUrl, note: evidenceNote || undefined }),
             });
@@ -547,7 +547,7 @@ export default function ControlDetailPage() {
             undoMessage: t('detail.undo'),
             action: async () => {
                 const res = await fetch(
-                    apiUrl(`/controls/${controlId}/evidence/${linkId}`),
+                    apiUrl(`/practices/${practiceId}/evidence/${linkId}`),
                     { method: 'DELETE' },
                 );
                 if (!res.ok) throw new Error('Unlink failed');
@@ -588,7 +588,7 @@ export default function ControlDetailPage() {
             </EntityDetailLayout>
         );
     }
-    if (!control) {
+    if (!practice) {
         return (
             <EntityDetailLayout empty={{ message: t('detail.notFound') }} title="">
                 {null}
@@ -601,8 +601,8 @@ export default function ControlDetailPage() {
     // ride on page-data. The Evidence badge is `links + evidence`
     // counts; the prior exact de-dup of file-backed evidence already
     // linked is dropped — a badge tolerates the rare double-count.
-    const totalTasks = control._count?.controlTasks ?? 0;
-    const doneTasks = control.doneControlTasks ?? 0;
+    const totalTasks = practice._count?.practiceTasks ?? 0;
+    const doneTasks = practice.donePracticeTasks ?? 0;
     const tabs: { key: Tab; label: string; count?: number }[] = [
         { key: 'overview', label: t('detail.tabOverview') },
         { key: 'tasks', label: t('detail.tabTasks'), count: totalTasks },
@@ -610,10 +610,10 @@ export default function ControlDetailPage() {
             key: 'evidence',
             label: t('detail.tabEvidence'),
             count:
-                (control._count?.evidenceLinks ?? 0) +
-                (control._count?.evidence ?? 0),
+                (practice._count?.evidenceLinks ?? 0) +
+                (practice._count?.evidence ?? 0),
         },
-        { key: 'mappings', label: t('detail.tabMappings'), count: control._count?.frameworkMappings ?? 0 },
+        { key: 'mappings', label: t('detail.tabMappings'), count: practice._count?.frameworkMappings ?? 0 },
         { key: 'traceability', label: t('detail.tabTraceability') },
         { key: 'activity', label: t('detail.tabActivity') },
     ];
@@ -624,23 +624,23 @@ export default function ControlDetailPage() {
     // primitive. Sync-state indicators (CONFLICT / FAILED / SYNCED)
     // moved OUT of meta into a per-page InlineNotice — they're
     // alerts, not metadata. The exception badge stays as a
-    // status-shaped meta entry; the per-control code stays as a
+    // status-shaped meta entry; the per-practice code stays as a
     // copyable text entry.
     const headerMeta = (
         <MetaStrip
             items={[
-                ...(control.code
+                ...(practice.code
                     ? [
                           {
                               label: t('detail.codeLabel'),
                               value: (
                                   <CopyText
-                                      value={control.code}
-                                      label={t('detail.copyCode', { code: control.code })}
+                                      value={practice.code}
+                                      label={t('detail.copyCode', { code: practice.code })}
                                       successMessage={t('detail.codeCopied')}
                                       className="text-xs text-content-subtle"
                                   >
-                                      {control.code}
+                                      {practice.code}
                                   </CopyText>
                               ),
                           } as const,
@@ -648,22 +648,22 @@ export default function ControlDetailPage() {
                     : []),
                 {
                     kind: 'status' as const,
-                    id: 'control-status',
+                    id: 'practice-status',
                     label: t('detail.status'),
-                    value: STATUS_LABELS[control.status] ?? control.status,
+                    value: STATUS_LABELS[practice.status] ?? practice.status,
                     variant:
-                        CONTROL_STATUS_VARIANT[control.status] ?? 'neutral',
+                        CONTROL_STATUS_VARIANT[practice.status] ?? 'neutral',
                 },
                 {
                     kind: 'status' as const,
-                    id: 'control-applicability',
+                    id: 'practice-applicability',
                     label: t('detail.applicability'),
                     value:
-                        control.applicability === 'NOT_APPLICABLE'
+                        practice.applicability === 'NOT_APPLICABLE'
                             ? t('detail.notApplicable')
                             : t('detail.applicable'),
                     variant:
-                        control.applicability === 'NOT_APPLICABLE'
+                        practice.applicability === 'NOT_APPLICABLE'
                             ? 'warning'
                             : 'success',
                 },
@@ -717,8 +717,8 @@ export default function ControlDetailPage() {
             <Button
                 variant="secondary"
                 onClick={() => setReverseLookupOpen(true)}
-                id="control-where-used-btn"
-                data-testid="control-where-used-btn"
+                id="practice-where-used-btn"
+                data-testid="practice-where-used-btn"
             >
                 {t('detail.whereUsed')}
             </Button>
@@ -726,15 +726,15 @@ export default function ControlDetailPage() {
                 <>
                     <Combobox
                         hideSearch
-                        id="control-status-select"
-                        selected={STATUS_CB_OPTIONS.find(o => o.value === control.status) ?? null}
+                        id="practice-status-select"
+                        selected={STATUS_CB_OPTIONS.find(o => o.value === practice.status) ?? null}
                         setSelected={(opt) => { if (opt) changeStatus(opt.value); }}
                         options={STATUS_CB_OPTIONS}
                         disabled={changingStatus}
                         placeholder={t('detail.statusPlaceholder')}
                         buttonProps={{ className: 'text-sm' }}
                     />
-                    <Button variant="secondary" onClick={() => { setAppChoice(control.applicability); setAppJustification(control.applicabilityJustification || ''); setShowApplicability(!showApplicability); }} id="toggle-applicability-btn">
+                    <Button variant="secondary" onClick={() => { setAppChoice(practice.applicability); setAppJustification(practice.applicabilityJustification || ''); setShowApplicability(!showApplicability); }} id="toggle-applicability-btn">
                         {t('detail.applicability')}
                     </Button>
                 </>
@@ -744,13 +744,13 @@ export default function ControlDetailPage() {
 
     return (
         <EntityDetailLayout
-            id="control-detail-page"
+            id="practice-detail-page"
             breadcrumbs={[
                 { label: t('detail.breadcrumbDashboard'), href: tenantHref('/dashboard') },
-                { label: t('detail.breadcrumbControls'), href: tenantHref('/controls') },
-                { label: control.name },
+                { label: t('detail.breadcrumbPractices'), href: tenantHref('/practices') },
+                { label: practice.name },
             ]}
-            title={<span id="control-title">{control.name}</span>}
+            title={<span id="practice-title">{practice.name}</span>}
             meta={headerMeta}
             actions={headerActions}
             tabs={tabs}
@@ -759,7 +759,7 @@ export default function ControlDetailPage() {
             rail={
                 <AsidePanel
                     title={t('detail.aiSuggestions')}
-                    surfaceKey="controls-detail-ai"
+                    surfaceKey="practices-detail-ai"
                     defaultCollapsed
                     icon={<Sparkle3 className="h-4 w-4" />}
                 >
@@ -770,7 +770,7 @@ export default function ControlDetailPage() {
             {/* Sync state + exception badges (moved out of meta strip
                 in Polish PR-1). Renders inline above tab content. */}
             {(syncStatus !== 'NONE' || true) && (
-                <div className="flex flex-wrap gap-tight" data-testid="control-sync-banner">
+                <div className="flex flex-wrap gap-tight" data-testid="practice-sync-banner">
                     {syncBanner}
                 </div>
             )}
@@ -808,10 +808,10 @@ export default function ControlDetailPage() {
                                 variant="secondary"
                                 size="icon"
                                 onClick={openEditModal}
-                                data-testid="control-edit-button"
-                                id="control-edit-button"
-                                aria-label={t('detail.editControlAria')}
-                                title={t('detail.editControlAria')}
+                                data-testid="practice-edit-button"
+                                id="practice-edit-button"
+                                aria-label={t('detail.editPracticeAria')}
+                                title={t('detail.editPracticeAria')}
                             >
                                 {/* B2 — icon-only edit affordance,
                                     canonical unified pattern. */}
@@ -822,50 +822,50 @@ export default function ControlDetailPage() {
                     <div className="grid grid-cols-2 gap-section">
                         <div>
                             <span className="text-xs text-content-subtle uppercase">{t('detail.fieldDescription')}</span>
-                            <p className="text-sm text-content-default mt-1">{control.description || t('detail.noDescription')}</p>
+                            <p className="text-sm text-content-default mt-1">{practice.description || t('detail.noDescription')}</p>
                         </div>
                         <div>
                             <span className="text-xs text-content-subtle uppercase">{t('detail.fieldIntent')}</span>
-                            <p className="text-sm text-content-default mt-1">{control.intent || '—'}</p>
+                            <p className="text-sm text-content-default mt-1">{practice.intent || '—'}</p>
                         </div>
                         <div>
                             <span className="text-xs text-content-subtle uppercase">{t('detail.fieldCategory')}</span>
-                            <p className="text-sm text-content-default mt-1">{control.category || '—'}</p>
+                            <p className="text-sm text-content-default mt-1">{practice.category || '—'}</p>
                         </div>
                         <div>
                             <span className="text-xs text-content-subtle uppercase">{t('detail.fieldFrequency')}</span>
-                            <p className="text-sm text-content-default mt-1">{control.frequency ? FREQ_LABELS[control.frequency] || control.frequency : '—'}</p>
+                            <p className="text-sm text-content-default mt-1">{practice.frequency ? FREQ_LABELS[practice.frequency] || practice.frequency : '—'}</p>
                         </div>
                         <div>
                             <span className="text-xs text-content-subtle uppercase">{t('detail.fieldMitigationType')}</span>
-                            <p className="text-sm text-content-default mt-1">{control.mitigationType ? MITIGATION_TYPE_LABELS[control.mitigationType] || control.mitigationType : '—'}</p>
+                            <p className="text-sm text-content-default mt-1">{practice.mitigationType ? MITIGATION_TYPE_LABELS[practice.mitigationType] || practice.mitigationType : '—'}</p>
                         </div>
                         <div>
                             <span className="text-xs text-content-subtle uppercase">{t('detail.fieldOwner')}</span>
-                            <p className="text-sm text-content-default mt-1">{control.owner?.name || '—'}</p>
+                            <p className="text-sm text-content-default mt-1">{practice.owner?.name || '—'}</p>
                         </div>
                         <div>
                             <span className="text-xs text-content-subtle uppercase">{t('detail.tasksProgress')}</span>
                             <p className="text-sm text-content-default mt-1">{t('detail.tasksCompleted', { done: doneTasks, total: totalTasks })}</p>
                         </div>
-                        {control.applicability === 'NOT_APPLICABLE' && control.applicabilityJustification && (
+                        {practice.applicability === 'NOT_APPLICABLE' && practice.applicabilityJustification && (
                             <div className="col-span-2">
                                 <span className="text-xs text-content-subtle uppercase">{t('detail.naJustification')}</span>
-                                <p className="text-sm text-content-warning mt-1">{control.applicabilityJustification}</p>
+                                <p className="text-sm text-content-warning mt-1">{practice.applicabilityJustification}</p>
                             </div>
                         )}
                         <div>
                             <span className="text-xs text-content-subtle uppercase">{t('detail.nextDue')}</span>
-                            <p className="text-sm text-content-default mt-1">{control.nextDueAt ? formatDate(control.nextDueAt) : '—'}</p>
+                            <p className="text-sm text-content-default mt-1">{practice.nextDueAt ? formatDate(practice.nextDueAt) : '—'}</p>
                         </div>
                     </div>
                 </div>
             )}
 
-            {/* Edit Control Modal — extracted to _modals/EditControlModal.tsx
+            {/* Edit Practice Modal — extracted to _modals/EditPracticeModal.tsx
                 in Elevation PR-2. Page still owns state + mutation; the
                 modal is presentational. */}
-            <EditControlModal
+            <EditPracticeModal
                 open={showEditModal}
                 setOpen={setShowEditModal}
                 form={editForm}
@@ -880,8 +880,8 @@ export default function ControlDetailPage() {
             />
 
             {/* Epic P2-PR-C — Where used (process maps) modal */}
-            <ControlReverseLookupModal
-                controlId={control.id}
+            <PracticeReverseLookupModal
+                practiceId={practice.id}
                 tenantSlug={tenantSlug}
                 open={reverseLookupOpen}
                 onOpenChange={setReverseLookupOpen}
@@ -890,22 +890,22 @@ export default function ControlDetailPage() {
             {/* Success toast */}
             {editSuccess && (
                 <div className="fixed bottom-6 right-6 z-50 bg-bg-success-emphasis text-content-inverted px-4 py-2 rounded-lg shadow-lg animate-fadeIn text-sm" id="edit-success-toast">
-                    {t('detail.controlUpdated')}
+                    {t('detail.practiceUpdated')}
                 </div>
             )}
 
             {tab === 'tasks' && (
-                // B4 (2026-06-07): the Control Tasks tab now matches the
+                // B4 (2026-06-07): the Practice Tasks tab now matches the
                 // Asset + Risk Tasks tabs exactly — a single card-wrapped
-                // <LinkedTasksPanel>. The divergent legacy "Control tasks
-                // (legacy)" DataTable (the old per-control ControlTask
+                // <LinkedTasksPanel>. The divergent legacy "Practice tasks
+                // (legacy)" DataTable (the old per-practice PracticeTask
                 // model) was removed; tasks live in the unified Tasks table,
                 // linked back via TaskLink.
-                <div className={cardVariants()} id="control-tasks-tab">
+                <div className={cardVariants()} id="practice-tasks-tab">
                     <LinkedTasksPanel
                         apiBase={apiUrl('')}
                         entityType="CONTROL"
-                        entityId={controlId}
+                        entityId={practiceId}
                         tenantHref={tenantHref}
                         canWrite={permissions.canWrite}
                     />
@@ -917,12 +917,12 @@ export default function ControlDetailPage() {
                     <EvidenceAddForm
                         ids={{
                             trigger: 'link-evidence-btn',
-                            form: 'control-evidence-form',
-                            title: 'control-upload-title',
-                            file: 'control-file-input',
+                            form: 'practice-evidence-form',
+                            title: 'practice-upload-title',
+                            file: 'practice-file-input',
                             url: 'evidence-url-input',
                             note: 'evidence-note-input',
-                            error: 'control-evidence-error',
+                            error: 'practice-evidence-error',
                             submit: 'submit-evidence-btn',
                         }}
                         canWrite={permissions.canWrite}
@@ -962,8 +962,8 @@ export default function ControlDetailPage() {
             )}
 
             {tab === 'mappings' && (
-                <ControlMappingsTab
-                    controlId={controlId}
+                <PracticeMappingsTab
+                    practiceId={practiceId}
                     canWrite={permissions.canWrite}
                     onMutated={refetch}
                 />
@@ -972,8 +972,8 @@ export default function ControlDetailPage() {
             {tab === 'traceability' && (
                 <TraceabilityPanel
                     apiBase={apiUrl('')}
-                    entityType="control"
-                    entityId={controlId}
+                    entityType="practice"
+                    entityId={practiceId}
                     canWrite={permissions.canWrite}
                     tenantHref={tenantHref}
                 />

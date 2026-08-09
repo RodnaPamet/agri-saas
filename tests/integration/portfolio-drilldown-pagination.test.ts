@@ -21,7 +21,7 @@ import { prismaTestClient } from '../helpers/db';
 import type { PrismaClient } from '@prisma/client';
 
 import {
-    listNonPerformingControls,
+    listNonPerformingPractices,
     listOverdueEvidenceAcrossOrg,
 } from '@/app-layer/usecases/portfolio';
 import type { OrgContext } from '@/app-layer/types';
@@ -98,14 +98,14 @@ describeFn('Portfolio drill-down — cursor pagination (DB-backed)', () => {
                 },
             });
 
-            // Seed 8 non-performing controls per tenant. Stable
+            // Seed 8 non-performing practices per tenant. Stable
             // updatedAt offsets so the sort order is deterministic.
             const baseDate = new Date('2026-04-01T00:00:00Z').getTime();
             for (let n = 0; n < 8; n++) {
-                await prisma.control.create({
+                await prisma.practice.create({
                     data: {
                         tenantId: tenant.id,
-                        name: `t${i + 1} pending control ${n}`,
+                        name: `t${i + 1} pending practice ${n}`,
                         code: `T${i + 1}-PEND-${n}`,
                         status: 'NOT_STARTED',
                         applicability: 'APPLICABLE',
@@ -133,7 +133,7 @@ describeFn('Portfolio drill-down — cursor pagination (DB-backed)', () => {
 
     afterAll(async () => {
         await prisma.evidence.deleteMany({ where: { tenantId: { in: tenantIds } } }).catch(() => {});
-        await prisma.control.deleteMany({ where: { tenantId: { in: tenantIds } } }).catch(() => {});
+        await prisma.practice.deleteMany({ where: { tenantId: { in: tenantIds } } }).catch(() => {});
         await prisma.tenantMembership.deleteMany({ where: { tenantId: { in: tenantIds } } }).catch(() => {});
         await prisma.tenant.deleteMany({ where: { id: { in: tenantIds } } }).catch(() => {});
         await prisma.orgMembership.deleteMany({ where: { organizationId: orgId } }).catch(() => {});
@@ -142,9 +142,9 @@ describeFn('Portfolio drill-down — cursor pagination (DB-backed)', () => {
         await prisma.$disconnect();
     });
 
-    // ── Controls ─────────────────────────────────────────────────────
+    // ── Practices ─────────────────────────────────────────────────────
 
-    it('controls: pages through all 16 rows (8 per tenant) without dropping or duplicating', async () => {
+    it('practices: pages through all 16 rows (8 per tenant) without dropping or duplicating', async () => {
         const seen = new Set<string>();
         let cursor: string | undefined = undefined;
         let pages = 0;
@@ -152,26 +152,26 @@ describeFn('Portfolio drill-down — cursor pagination (DB-backed)', () => {
 
         while (pages < 10) {
             // Hard cap to avoid runaway loops on a regression.
-            const result = await listNonPerformingControls(ctxFor(), { cursor, limit });
+            const result = await listNonPerformingPractices(ctxFor(), { cursor, limit });
             for (const row of result.rows) {
-                expect(seen.has(row.controlId)).toBe(false);
-                seen.add(row.controlId);
+                expect(seen.has(row.practiceId)).toBe(false);
+                seen.add(row.practiceId);
                 expect(tenantSlugs).toContain(row.tenantSlug);
-                expect(row.drillDownUrl).toBe(`/t/${row.tenantSlug}/controls/${row.controlId}`);
+                expect(row.drillDownUrl).toBe(`/t/${row.tenantSlug}/practices/${row.practiceId}`);
             }
             pages++;
             if (!result.nextCursor) break;
             cursor = result.nextCursor;
         }
 
-        // 8 controls per tenant × 2 tenants = 16. With limit=5 →
+        // 8 practices per tenant × 2 tenants = 16. With limit=5 →
         // pages of 5, 5, 5, 1 — 4 pages.
         expect(seen.size).toBe(16);
         expect(pages).toBe(4);
     });
 
-    it('controls: invalid cursor lands on page 1 (lenient on read)', async () => {
-        const result = await listNonPerformingControls(ctxFor(), {
+    it('practices: invalid cursor lands on page 1 (lenient on read)', async () => {
+        const result = await listNonPerformingPractices(ctxFor(), {
             cursor: '!!! not a valid base64 json !!!',
             limit: 50,
         });
@@ -218,7 +218,7 @@ describeFn('Portfolio drill-down — cursor pagination (DB-backed)', () => {
 
     it('a single page holding every row matches the multi-page walk', async () => {
         // limit=16 → all rows in one page → nextCursor null.
-        const paginated = await listNonPerformingControls(ctxFor(), { limit: 16 });
+        const paginated = await listNonPerformingPractices(ctxFor(), { limit: 16 });
         expect(paginated.rows.length).toBe(16);
         expect(paginated.nextCursor).toBeNull();
 
@@ -226,11 +226,11 @@ describeFn('Portfolio drill-down — cursor pagination (DB-backed)', () => {
         const walked: string[] = [];
         let cursor: string | undefined = undefined;
         for (let page = 0; page < 10; page++) {
-            const result = await listNonPerformingControls(ctxFor(), { cursor, limit: 5 });
-            walked.push(...result.rows.map((r) => r.controlId));
+            const result = await listNonPerformingPractices(ctxFor(), { cursor, limit: 5 });
+            walked.push(...result.rows.map((r) => r.practiceId));
             if (!result.nextCursor) break;
             cursor = result.nextCursor;
         }
-        expect(walked).toEqual(paginated.rows.map((r) => r.controlId));
+        expect(walked).toEqual(paginated.rows.map((r) => r.practiceId));
     });
 });

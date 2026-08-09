@@ -4,9 +4,9 @@
  * LinkedTaskCreateModal — shared create-task modal used by the
  * Asset detail page's Tasks tab (via LinkedTasksPanel).
  *
- * Mirrors `NewControlTaskModal` (the Control detail page's modal)
- * with one key difference: the Control flow has a dedicated
- * `POST /controls/<id>/tasks` endpoint that auto-links the task,
+ * Mirrors `NewPracticeTaskModal` (the Practice detail page's modal)
+ * with one key difference: the Practice flow has a dedicated
+ * `POST /practices/<id>/tasks` endpoint that auto-links the task,
  * while ASSET doesn't. This modal therefore does TWO calls
  * sequentially on submit:
  *
@@ -22,7 +22,7 @@
  * implementation today.
  *
  * Why a sibling module of LinkedTasksPanel (not nested in
- * `_modals/` like Control's): the panel is shared across consumer
+ * `_modals/` like Practice's): the panel is shared across consumer
  * pages, so the modal lives alongside it in `src/components/` for
  * shared visibility.
  */

@@ -12,7 +12,7 @@
  * wiring debounce + abort + race-resolution at every call site is
  * boilerplate. UserCombobox (`user-combobox.tsx`) solved this for the
  * tenant-members case via React Query; AsyncCombobox generalises the
- * pattern to any source — search-by-name on Controls, Risks, Vendors,
+ * pattern to any source — search-by-name on Practices, Risks, Vendors,
  * Tags, Frameworks, etc.
  *
  * What it adds over Combobox:

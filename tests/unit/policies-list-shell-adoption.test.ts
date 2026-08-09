@@ -9,7 +9,7 @@
  *      listed `RETIRED` but the schema enum is `ARCHIVED`, so
  *      filtering by "Retired" matched zero rows).
  *
- * Mirrors the controls / risks shell-adoption ratchets — one
+ * Mirrors the practices / risks shell-adoption ratchets — one
  * canonical pattern, one place to update when the contract changes.
  */
 

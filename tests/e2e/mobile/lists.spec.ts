@@ -112,7 +112,7 @@ test.describe('mobile lists — card fallback @mobile', () => {
         await expect(page.getByRole('dialog')).toBeVisible({ timeout: 10_000 });
     });
 
-    // NOTE: a multi-page walk (risks / controls / vendors / evidence /
+    // NOTE: a multi-page walk (risks / practices / vendors / evidence /
     // findings) asserting card-mode + chevron + tap-through across every
     // rolled-out list once lived here. It was dropped: the E2E job runs
     // serially and sits at ~46 min against a hard 50-min ceiling (CLAUDE.md

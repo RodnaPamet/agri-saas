@@ -15,7 +15,7 @@
  * @example
  * ```tsx
  * <KpiCard
- *     label="Control Coverage"
+ *     label="Practice Coverage"
  *     value={75.3}
  *     format="percent"
  *     icon={ShieldCheck}
@@ -82,7 +82,7 @@ export interface KpiCardProps {
      *   - `down-good` — negative delta is GREEN (overdue evidence,
      *                   critical risks, open incidents).
      *   - `neutral`   — colour always subtle (tenant count, total
-     *                   controls — direction has no semantic).
+     *                   practices — direction has no semantic).
      *
      * Picking the wrong polarity displays "growth in critical
      * risks" as a green arrow, which is actively harmful — hence

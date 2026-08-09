@@ -30,9 +30,9 @@ describe('Middleware security hardening', () => {
         expect(content).not.toContain('origin.startsWith("http://localhost:');
     });
 
-    test('middleware does NOT set wildcard Access-Control-Allow-Origin', () => {
-        expect(content).not.toContain("'Access-Control-Allow-Origin', '*'");
-        expect(content).not.toContain('"Access-Control-Allow-Origin", "*"');
+    test('middleware does NOT set wildcard Access-Practice-Allow-Origin', () => {
+        expect(content).not.toContain("'Access-Practice-Allow-Origin', '*'");
+        expect(content).not.toContain('"Access-Practice-Allow-Origin", "*"');
     });
 
     test('middleware applies CORS headers through centralized module', () => {

@@ -5,7 +5,7 @@
  *
  * R25 mounted the canvas with zero persistence. R26-PR-A adds:
  *   - the existing process list, selectable from a slim header
- *     control
+ *     practice
  *   - a "New process" affordance that POSTs to the create endpoint
  *   - a "Save" button that PUTs the canvas state back to the
  *     selected map's endpoint

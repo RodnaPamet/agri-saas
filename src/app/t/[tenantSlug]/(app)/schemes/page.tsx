@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
  * measures with an application window and a payment).
  *
  * This route used to host the CERTIFICATION scheme catalog (voluntary
- * standards a farm is audited against, with control points and evidence).
+ * standards a farm is audited against, with practice points and evidence).
  * That surface was removed with the compliance uproot and `/schemes` now
  * belongs to support measures — the thing a Bulgarian farm actually files
  * against a deadline.

@@ -41,7 +41,7 @@ const SECTION_LABELS: Record<string, string> = {
     '/audits': 'audits',
     '/calendar': 'calendar',
     '/clauses': 'clauses',
-    '/controls': 'controls',
+    '/practices': 'practices',
     '/dashboard': 'dashboard',
     '/evidence': 'evidence',
     '/farm-tasks': 'farmTasks',

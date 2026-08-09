@@ -30,7 +30,7 @@ const REPO_ROOT = path.resolve(__dirname, '../..');
 type TelemetrySurface = { label: string; files: string[] };
 
 const EXPECTED_SURFACES: TelemetrySurface[] = [
-    { label: 'controls/NewControlModal.tsx', files: ['src/app/t/[tenantSlug]/(app)/controls/NewControlModal.tsx'] },
+    { label: 'practices/NewPracticeModal.tsx', files: ['src/app/t/[tenantSlug]/(app)/practices/NewPracticeModal.tsx'] },
     { label: 'evidence/UploadEvidenceModal.tsx', files: ['src/app/t/[tenantSlug]/(app)/evidence/UploadEvidenceModal.tsx'] },
     { label: 'evidence/NewEvidenceTextModal.tsx', files: ['src/app/t/[tenantSlug]/(app)/evidence/NewEvidenceTextModal.tsx'] },
     {

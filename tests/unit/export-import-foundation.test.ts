@@ -49,9 +49,9 @@ function makeValidEnvelope(overrides: Partial<ExportEnvelope> = {}): ExportEnvel
             appVersion: '1.0.0',
         },
         entities: {
-            control: [
+            practice: [
                 {
-                    entityType: 'control',
+                    entityType: 'practice',
                     id: 'ctrl-1',
                     schemaVersion: '1.0',
                     data: { name: 'Firewall Policy', status: 'ACTIVE' },
@@ -60,9 +60,9 @@ function makeValidEnvelope(overrides: Partial<ExportEnvelope> = {}): ExportEnvel
         },
         relationships: [
             {
-                fromType: 'controlTestPlan',
+                fromType: 'practiceTestPlan',
                 fromId: 'tp-1',
-                toType: 'control',
+                toType: 'practice',
                 toId: 'ctrl-1',
                 relationship: 'BELONGS_TO',
             },
@@ -151,8 +151,8 @@ describe('Export envelope validation', () => {
 
     test('entity record missing id rejected', () => {
         const envelope = makeValidEnvelope();
-        envelope.entities.control = [
-            { entityType: 'control', id: '', schemaVersion: '1.0', data: { name: 'x' } },
+        envelope.entities.practice = [
+            { entityType: 'practice', id: '', schemaVersion: '1.0', data: { name: 'x' } },
         ];
         const result = validateExportEnvelope(envelope);
         expect(result.valid).toBe(false);
@@ -160,18 +160,18 @@ describe('Export envelope validation', () => {
 
     test('entity record with wrong entityType rejected', () => {
         const envelope = makeValidEnvelope();
-        envelope.entities.control = [
+        envelope.entities.practice = [
             { entityType: 'policy' as any, id: 'ctrl-1', schemaVersion: '1.0', data: {} },
         ];
         const result = validateExportEnvelope(envelope);
         expect(result.valid).toBe(false);
-        expect(result.errors.some(e => e.includes("must be 'control'"))).toBe(true);
+        expect(result.errors.some(e => e.includes("must be 'practice'"))).toBe(true);
     });
 
     test('invalid relationship type rejected', () => {
         const envelope = makeValidEnvelope();
         envelope.relationships = [
-            { fromType: 'control', fromId: 'a', toType: 'policy', toId: 'b', relationship: 'INVALID' as any },
+            { fromType: 'practice', fromId: 'a', toType: 'policy', toId: 'b', relationship: 'INVALID' as any },
         ];
         const result = validateExportEnvelope(envelope);
         expect(result.valid).toBe(false);
@@ -247,7 +247,7 @@ describe('Import options validation', () => {
         const result = validateImportOptions({
             targetTenantId: 'x',
             conflictStrategy: 'SKIP',
-            includeEntityTypes: ['control', 'policy'],
+            includeEntityTypes: ['practice', 'policy'],
         });
         expect(result.valid).toBe(true);
     });
@@ -384,9 +384,9 @@ describe('Import ordering', () => {
     test('parent types come before child types', () => {
         const indexOf = (t: ExportEntityType) => IMPORT_ORDER.indexOf(t);
 
-        // Controls before test plans/runs
-        expect(indexOf('control')).toBeLessThan(indexOf('controlTestPlan'));
-        expect(indexOf('control')).toBeLessThan(indexOf('controlTestRun'));
+        // Practices before test plans/runs
+        expect(indexOf('practice')).toBeLessThan(indexOf('practiceTestPlan'));
+        expect(indexOf('practice')).toBeLessThan(indexOf('practiceTestRun'));
 
         // Policies before versions
         expect(indexOf('policy')).toBeLessThan(indexOf('policyVersion'));
@@ -415,7 +415,7 @@ describe('Import ordering', () => {
 // Mock dependencies for import service
 jest.mock('@/lib/prisma', () => {
     const models = [
-        'control', 'controlTestPlan', 'controlTestRun', 'controlRequirementLink',
+        'practice', 'practiceTestPlan', 'practiceTestRun', 'practiceRequirementLink',
         'policy', 'policyVersion',
         'risk',
         'evidence',
@@ -484,7 +484,7 @@ describe('Import service: validation and rejection', () => {
             makeValidOptions(),
         );
         expect(result.success).toBe(true);
-        expect(result.imported.control).toBe(1);
+        expect(result.imported.practice).toBe(1);
     });
 });
 
@@ -500,7 +500,7 @@ describe('Import service: dry-run mode', () => {
         );
         expect(result.success).toBe(true);
         expect(result.dryRun).toBe(true);
-        expect(result.imported.control).toBe(1);
+        expect(result.imported.practice).toBe(1);
     });
 
     test('validateImportEnvelope uses dry run', async () => {
@@ -529,7 +529,7 @@ describe('Import service: entity filtering', () => {
         }));
 
         expect(result.imported.policy).toBe(1);
-        expect(result.imported.control).toBeUndefined();
+        expect(result.imported.practice).toBeUndefined();
     });
 
     test('excludeEntityTypes removes types from import', async () => {
@@ -539,11 +539,11 @@ describe('Import service: entity filtering', () => {
         ];
 
         const result = await importTenantData(envelope, makeValidOptions({
-            excludeEntityTypes: ['control'],
+            excludeEntityTypes: ['practice'],
         }));
 
         expect(result.imported.policy).toBe(1);
-        expect(result.imported.control).toBeUndefined();
+        expect(result.imported.practice).toBeUndefined();
     });
 });
 

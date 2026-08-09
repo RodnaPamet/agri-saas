@@ -1,21 +1,21 @@
 "use client";
 
 /**
- * Epic P2-PR-C — "Where is this control used?" modal.
+ * Epic P2-PR-C — "Where is this practice used?" modal.
  *
- * Opens from the Control detail page's header actions and lists
- * every process map that gates an edge with this control. Each
+ * Opens from the Practice detail page's header actions and lists
+ * every process map that gates an edge with this practice. Each
  * row deep-links to `/t/<slug>/processes?activeId=<mapId>` so the
  * user can jump to the map in the canvas.
  *
  * Why a modal (not a tab):
- *   - The control detail page already carries 6 tabs (Overview /
+ *   - The practice detail page already carries 6 tabs (Overview /
  *     Evidence / Tests / Requirements / Risks / Comments). Adding
  *     a "Process Maps" tab would weight a low-frequency view on
  *     par with daily-use tabs.
  *   - A modal is the right disclosure level for "look up where
  *     this is referenced, then jump" — short read, return to the
- *     control.
+ *     practice.
  *
  * Why read-only (no edit affordance here):
  *   - The picker on each map's canvas is the canonical write
@@ -38,18 +38,18 @@ interface MapRef {
     edgeLabel: string | null;
 }
 
-export function ControlReverseLookupModal({
-    controlId,
+export function PracticeReverseLookupModal({
+    practiceId,
     tenantSlug,
     open,
     onOpenChange,
 }: {
-    controlId: string;
+    practiceId: string;
     tenantSlug: string;
     open: boolean;
     onOpenChange: (next: boolean) => void;
 }) {
-    const t = useTranslations("controlReverseLookup");
+    const t = useTranslations("practiceReverseLookup");
     const [maps, setMaps] = useState<MapRef[] | null>(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -65,7 +65,7 @@ export function ControlReverseLookupModal({
         (async () => {
             try {
                 const res = await fetch(
-                    `/api/t/${tenantSlug}/controls/${controlId}/process-maps`,
+                    `/api/t/${tenantSlug}/practices/${practiceId}/process-maps`,
                 );
                 if (!res.ok) {
                     throw new Error(t("lookupFailed", { status: res.status }));
@@ -91,7 +91,7 @@ export function ControlReverseLookupModal({
         // `t` is a stable next-intl binding; omitted so opening the modal
         // doesn't refetch on unrelated re-renders.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [open, tenantSlug, controlId]);
+    }, [open, tenantSlug, practiceId]);
 
     // Group rows by map — multiple edges within the same map
     // collapse into one row with a count.
@@ -137,7 +137,7 @@ export function ControlReverseLookupModal({
             />
             <Modal.Body>
                 <div
-                    data-testid="control-reverse-lookup-body"
+                    data-testid="practice-reverse-lookup-body"
                     className="flex flex-col gap-default"
                 >
                     {loading && (
@@ -147,7 +147,7 @@ export function ControlReverseLookupModal({
                     )}
                     {!loading && error && (
                         <div
-                            data-testid="control-reverse-lookup-error"
+                            data-testid="practice-reverse-lookup-error"
                             className="text-sm text-danger-default"
                         >
                             {error}
@@ -155,7 +155,7 @@ export function ControlReverseLookupModal({
                     )}
                     {!loading && !error && groups.length === 0 && (
                         <p
-                            data-testid="control-reverse-lookup-empty"
+                            data-testid="practice-reverse-lookup-empty"
                             className="text-sm text-content-subtle"
                         >
                             {t("empty")}
@@ -166,7 +166,7 @@ export function ControlReverseLookupModal({
                             {groups.map((g) => (
                                 <li
                                     key={g.mapId}
-                                    data-testid="control-reverse-lookup-row"
+                                    data-testid="practice-reverse-lookup-row"
                                     className="flex items-center justify-between rounded-[8px] border border-border-subtle px-default py-2"
                                 >
                                     <div className="flex flex-col">
@@ -191,7 +191,7 @@ export function ControlReverseLookupModal({
                     <Button
                         variant="secondary"
                         onClick={() => onOpenChange(false)}
-                        data-testid="control-reverse-lookup-close"
+                        data-testid="practice-reverse-lookup-close"
                     >
                         {t("close")}
                     </Button>

@@ -8,7 +8,7 @@
  *
  * The intent was always three:
  *   - lg   for surfaces (cards, modals, tables, popovers)
- *   - md   for controls (buttons, inputs, chips, menu items)
+ *   - md   for practices (buttons, inputs, chips, menu items)
  *   - full for pills (status badges, avatars, ring indicators)
  *
  * Anything off-scale was drift.
@@ -152,7 +152,7 @@ describe('Radius scale discipline (Roadmap-5 PR-3)', () => {
                 .map((o) => `  ${o.file}:${o.line}\n    ${o.snippet}`)
                 .join('\n');
             throw new Error(
-                `Off-scale radius use detected. The product converges on rounded-lg (surfaces) / rounded-md (controls) / rounded-full (pills). Add the file to ALLOWLIST in this ratchet with a written reason if a special case is genuinely needed:\n${lines}`,
+                `Off-scale radius use detected. The product converges on rounded-lg (surfaces) / rounded-md (practices) / rounded-full (pills). Add the file to ALLOWLIST in this ratchet with a written reason if a special case is genuinely needed:\n${lines}`,
             );
         }
         expect(offenders).toEqual([]);

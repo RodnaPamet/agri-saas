@@ -2,11 +2,11 @@ import { test, expect } from '@playwright/test';
 import { loginAndGetTenant } from './e2e-utils';
 
 /**
- * Controls list — read-only Status + Applicability badges.
+ * Practices list — read-only Status + Applicability badges.
  *
  * 2026-05-19 — the inline-edit `<select>` dropdowns on the
- * Controls list table were retired at the user's request. Status
- * changes now route through the detail page (Edit Control sheet)
+ * Practices list table were retired at the user's request. Status
+ * changes now route through the detail page (Edit Practice sheet)
  * or the bulk-set toolbar; applicability changes route through
  * the detail page where the justification modal lives.
  *
@@ -20,18 +20,18 @@ import { loginAndGetTenant } from './e2e-utils';
  * for downstream selectors + non-`<select>` shape) so a future
  * regression that re-introduces the inline editor on the list
  * fails CI; the transition flows themselves are covered by the
- * per-control detail-page specs.
+ * per-practice detail-page specs.
  */
 
-test.describe('Controls list — read-only status/applicability badges', () => {
+test.describe('Practices list — read-only status/applicability badges', () => {
     test.describe.configure({ mode: 'serial' });
 
     test('status pill renders as a <span> (NOT a <select>)', async ({ page }) => {
         const tenantSlug = await loginAndGetTenant(page);
-        await page.goto(`/t/${tenantSlug}/controls`);
-        await page.waitForSelector('#controls-table', { timeout: 15000 });
+        await page.goto(`/t/${tenantSlug}/practices`);
+        await page.waitForSelector('#practices-table', { timeout: 15000 });
 
-        const firstRow = page.locator('#controls-table tbody tr').first();
+        const firstRow = page.locator('#practices-table tbody tr').first();
         const statusPill = firstRow.locator('[id^="status-pill-"]');
         await expect(statusPill).toBeVisible({ timeout: 5000 });
 
@@ -46,10 +46,10 @@ test.describe('Controls list — read-only status/applicability badges', () => {
 
     test('applicability pill renders as a <span> (NOT a <select>)', async ({ page }) => {
         const tenantSlug = await loginAndGetTenant(page);
-        await page.goto(`/t/${tenantSlug}/controls`);
-        await page.waitForSelector('#controls-table', { timeout: 15000 });
+        await page.goto(`/t/${tenantSlug}/practices`);
+        await page.waitForSelector('#practices-table', { timeout: 15000 });
 
-        const firstRow = page.locator('#controls-table tbody tr').first();
+        const firstRow = page.locator('#practices-table tbody tr').first();
         const applicabilityPill = firstRow.locator(
             '[id^="applicability-pill-"]',
         );
@@ -66,8 +66,8 @@ test.describe('Controls list — read-only status/applicability badges', () => {
         // modal here. The modal infrastructure moved to the
         // detail page; the list no longer carries it.
         const tenantSlug = await loginAndGetTenant(page);
-        await page.goto(`/t/${tenantSlug}/controls`);
-        await page.waitForSelector('#controls-table', { timeout: 15000 });
+        await page.goto(`/t/${tenantSlug}/practices`);
+        await page.waitForSelector('#practices-table', { timeout: 15000 });
 
         await expect(page.locator('#justification-input')).toHaveCount(0);
         await expect(page.locator('#justification-save-btn')).toHaveCount(0);

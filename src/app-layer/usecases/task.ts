@@ -28,8 +28,8 @@ type TaskType = 'AUDIT_FINDING' | 'CONTROL_GAP' | 'INCIDENT' | 'IMPROVEMENT' | '
 
 /**
  * Validate type-specific relevance rules.
- * - AUDIT_FINDING / CONTROL_GAP: must have controlId OR a link to CONTROL/FRAMEWORK_REQUIREMENT
- * - INCIDENT: must have controlId OR a link to CONTROL/ASSET
+ * - AUDIT_FINDING / CONTROL_GAP: must have practiceId OR a link to CONTROL/FRAMEWORK_REQUIREMENT
+ * - INCIDENT: must have practiceId OR a link to CONTROL/ASSET
  * - TASK / IMPROVEMENT: no additional requirement
  */
 async function validateTypeRelevance(
@@ -37,11 +37,11 @@ async function validateTypeRelevance(
     ctx: RequestContext,
     taskId: string,
     type: TaskType,
-    controlId: string | null | undefined,
+    practiceId: string | null | undefined,
 ) {
     if (type === 'TASK' || type === 'IMPROVEMENT') return;
 
-    if (controlId) return; // controlId satisfies all type constraints
+    if (practiceId) return; // practiceId satisfies all type constraints
 
     // Check links
     const links = await TaskLinkRepository.listByTask(db, ctx, taskId);
@@ -50,7 +50,7 @@ async function validateTypeRelevance(
     if (type === 'AUDIT_FINDING' || type === 'CONTROL_GAP') {
         if (!linkEntityTypes.includes('CONTROL') && !linkEntityTypes.includes('FRAMEWORK_REQUIREMENT')) {
             throw badRequest(
-                `${type} tasks must have a controlId or a link to CONTROL or FRAMEWORK_REQUIREMENT.`
+                `${type} tasks must have a practiceId or a link to CONTROL or FRAMEWORK_REQUIREMENT.`
             );
         }
     }
@@ -58,7 +58,7 @@ async function validateTypeRelevance(
     if (type === 'INCIDENT') {
         if (!linkEntityTypes.includes('CONTROL') && !linkEntityTypes.includes('ASSET')) {
             throw badRequest(
-                'INCIDENT tasks must have a controlId or a link to CONTROL or ASSET.'
+                'INCIDENT tasks must have a practiceId or a link to CONTROL or ASSET.'
             );
         }
     }
@@ -130,7 +130,7 @@ export async function createTask(ctx: RequestContext, input: {
     dueAt?: string | null;
     assigneeUserId?: string | null;
     reviewerUserId?: string | null;
-    controlId?: string | null;
+    practiceId?: string | null;
     clientMutationId?: string | null;
     metadataJson?: unknown;
 }) {
@@ -143,12 +143,12 @@ export async function createTask(ctx: RequestContext, input: {
         const task = await WorkItemRepository.create(db, ctx, input);
 
         // Type-specific validation (deferred: allow creation, then check after links can be added)
-        // For create, we validate immediately since controlId is already set
+        // For create, we validate immediately since practiceId is already set
         const type = (input.type || 'TASK') as TaskType;
         if (type !== 'TASK' && type !== 'IMPROVEMENT') {
-            // Only validate if controlId is required and not provided
-            // Links can't exist yet at creation time, so we only enforce controlId here
-            if (!input.controlId && (type === 'AUDIT_FINDING' || type === 'CONTROL_GAP' || type === 'INCIDENT')) {
+            // Only validate if practiceId is required and not provided
+            // Links can't exist yet at creation time, so we only enforce practiceId here
+            if (!input.practiceId && (type === 'AUDIT_FINDING' || type === 'CONTROL_GAP' || type === 'INCIDENT')) {
                 // Don't fail — allow creation; validation happens on status transitions
                 // Store a warning in metadataJson
             }
@@ -176,7 +176,7 @@ export async function createTask(ctx: RequestContext, input: {
                 severity: task.severity,
                 priority: task.priority,
                 assigneeUserId: task.assigneeUserId,
-                controlId: task.controlId,
+                practiceId: task.practiceId,
             },
         });
 
@@ -210,7 +210,7 @@ export async function updateTask(ctx: RequestContext, taskId: string, patch: {
     severity?: string;
     priority?: string;
     dueAt?: string | null;
-    controlId?: string | null;
+    practiceId?: string | null;
     reviewerUserId?: string | null;
     metadataJson?: unknown;
 }) {
@@ -347,7 +347,7 @@ export async function setTaskStatus(ctx: RequestContext, taskId: string, status:
         }
 
         if (['RESOLVED', 'CLOSED'].includes(status)) {
-            await validateTypeRelevance(db, ctx, taskId, existing.type as TaskType, existing.controlId);
+            await validateTypeRelevance(db, ctx, taskId, existing.type as TaskType, existing.practiceId);
         }
 
         const task = await WorkItemRepository.setStatus(db, ctx, taskId, status, resolution);
@@ -640,15 +640,15 @@ export async function removeTaskLink(ctx: RequestContext, linkId: string) {
 
 // ─── Evidence ───
 //
-// Task evidence mirrors the control Evidence tab. A task attaches
+// Task evidence mirrors the practice Evidence tab. A task attaches
 // Evidence entities directly via `Evidence.taskId` (no separate link
-// table — unlike controls, which carry a ControlEvidenceLink bridge).
+// table — unlike practices, which carry a PracticeEvidenceLink bridge).
 // The shared <EvidenceSubTable> renders the `{ links, evidence }`
 // payload identically; for tasks `links` is always empty.
 
 /**
  * Task Evidence tab payload — same `{ links, evidence }` shape the
- * control Evidence tab returns, so the shared sub-table can render it
+ * practice Evidence tab returns, so the shared sub-table can render it
  * unchanged.
  */
 export async function getTaskEvidenceTab(ctx: RequestContext, taskId: string) {
@@ -668,10 +668,10 @@ export async function getTaskEvidenceTab(ctx: RequestContext, taskId: string) {
 }
 
 /**
- * Attach a URL as evidence on a task — mirrors the control "+ Evidence"
+ * Attach a URL as evidence on a task — mirrors the practice "+ Evidence"
  * URL path. Creates a LINK-type Evidence row pointing at the task. File
  * uploads go through `/evidence/uploads` (uploadEvidenceFile) with a
- * `taskId`, exactly like controls.
+ * `taskId`, exactly like practices.
  */
 export async function linkTaskEvidence(
     ctx: RequestContext,
@@ -714,7 +714,7 @@ export async function linkTaskEvidence(
 /**
  * Detach evidence from a task — clears `Evidence.taskId` so the row
  * stays in the Evidence Library but no longer shows on this task's
- * Evidence tab (mirrors control evidence unlink: the association is
+ * Evidence tab (mirrors practice evidence unlink: the association is
  * removed, the evidence survives).
  */
 export async function unlinkTaskEvidence(
@@ -926,18 +926,18 @@ export async function bulkSetTaskDueDate(ctx: RequestContext, taskIds: string[],
     return outcome;
 }
 
-// ─── By Control ───
+// ─── By Practice ───
 
-export async function listTasksByControl(ctx: RequestContext, controlId: string) {
+export async function listTasksByPractice(ctx: RequestContext, practiceId: string) {
     assertCanReadTasks(ctx);
     return cachedListRead({
         ctx,
         entity: 'task',
-        operation: 'listByControl',
-        params: { controlId },
+        operation: 'listByPractice',
+        params: { practiceId },
         loader: () =>
             runInTenantContext(ctx, (db) =>
-                WorkItemRepository.list(db, ctx, { controlId }),
+                WorkItemRepository.list(db, ctx, { practiceId }),
             ),
     });
 }

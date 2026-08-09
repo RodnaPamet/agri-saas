@@ -1,9 +1,9 @@
 /**
- * Controls Center — mutating E2E.
+ * Practices Center — mutating E2E.
  *
  * Isolation: each `test()` runs against its own fresh, empty tenant
  * via the `isolatedTenant` fixture (see `./fixtures`). A test that
- * needs a pre-existing control creates one in its own body — no
+ * needs a pre-existing practice creates one in its own body — no
  * resource id is carried across tests in a module-level `let`, so a
  * failed setup step degrades to a single red test instead of
  * cascading through the file.
@@ -19,73 +19,73 @@ import { loginAndGetTenant } from './e2e-utils';
 const READER_USER = { email: 'viewer@acme.com', password: 'password123' };
 
 /**
- * Create a control on the current (isolated) tenant and return its
+ * Create a practice on the current (isolated) tenant and return its
  * detail-page path. Self-contained setup helper so every test that
- * needs a control mints its own — nothing is shared across tests.
+ * needs a practice mints its own — nothing is shared across tests.
  */
-async function createControl(page: Page, slug: string): Promise<string> {
+async function createPractice(page: Page, slug: string): Promise<string> {
     const uid = `${Date.now().toString(36)}-${randomUUID().slice(0, 8)}`;
-    await page.goto(`/t/${slug}/controls/new`);
-    await page.waitForSelector('#control-name-input', { timeout: 15000 });
-    await page.fill('#control-name-input', `E2E Control ${uid}`);
-    await page.fill('#control-code-input', `CTRL-${uid}`);
-    await page.fill('#control-description-input', 'Test control from e2e');
-    await page.click('#create-control-btn');
-    await page.waitForSelector('#control-title', { timeout: 15000 });
+    await page.goto(`/t/${slug}/practices/new`);
+    await page.waitForSelector('#practice-name-input', { timeout: 15000 });
+    await page.fill('#practice-name-input', `E2E Practice ${uid}`);
+    await page.fill('#practice-code-input', `CTRL-${uid}`);
+    await page.fill('#practice-description-input', 'Test practice from e2e');
+    await page.click('#create-practice-btn');
+    await page.waitForSelector('#practice-title', { timeout: 15000 });
     return new URL(page.url()).pathname;
 }
 
-test.describe('Controls Center', () => {
-    test('controls list page loads with filters and CTAs', async ({
+test.describe('Practices Center', () => {
+    test('practices list page loads with filters and CTAs', async ({
         authedPage,
         isolatedTenant,
     }) => {
         const { tenantSlug } = isolatedTenant;
-        await authedPage.goto(`/t/${tenantSlug}/controls`);
+        await authedPage.goto(`/t/${tenantSlug}/practices`);
         await authedPage.waitForLoadState('networkidle').catch(() => {});
         await authedPage.waitForSelector('h1', { timeout: 15000 });
-        await expect(authedPage.locator('#new-control-btn')).toBeVisible({ timeout: 5000 });
+        await expect(authedPage.locator('#new-practice-btn')).toBeVisible({ timeout: 5000 });
         // R14 (#443) removed the FilterToolbar text-search input from every
-        // list page — no `#control-search` element to assert.
-        // Epic 53: the per-field `#control-status-filter` dropdown has been
+        // list page — no `#practice-search` element to assert.
+        // Epic 53: the per-field `#practice-status-filter` dropdown has been
         // replaced by the consolidated FilterSelect picker.
         await expect(
             authedPage.getByRole('button', { name: /filter/i }).first(),
         ).toBeVisible();
     });
 
-    test('create a new control and see detail', async ({ authedPage, isolatedTenant }) => {
+    test('create a new practice and see detail', async ({ authedPage, isolatedTenant }) => {
         const { tenantSlug } = isolatedTenant;
         const uid = Date.now().toString(36);
-        await authedPage.goto(`/t/${tenantSlug}/controls/new`);
-        await authedPage.waitForSelector('#control-name-input', { timeout: 10000 });
+        await authedPage.goto(`/t/${tenantSlug}/practices/new`);
+        await authedPage.waitForSelector('#practice-name-input', { timeout: 10000 });
 
-        await authedPage.fill('#control-name-input', `E2E Control ${uid}`);
-        await authedPage.fill('#control-code-input', `CTRL-${uid}`);
-        await authedPage.fill('#control-description-input', 'Test control from e2e');
-        await authedPage.click('#create-control-btn');
+        await authedPage.fill('#practice-name-input', `E2E Practice ${uid}`);
+        await authedPage.fill('#practice-code-input', `CTRL-${uid}`);
+        await authedPage.fill('#practice-description-input', 'Test practice from e2e');
+        await authedPage.click('#create-practice-btn');
 
-        await authedPage.waitForSelector('#control-title', { timeout: 15000 });
-        await expect(authedPage.locator('#control-title')).toContainText(
-            `E2E Control ${uid}`,
+        await authedPage.waitForSelector('#practice-title', { timeout: 15000 });
+        await expect(authedPage.locator('#practice-title')).toContainText(
+            `E2E Practice ${uid}`,
             { timeout: 5000 },
         );
-        await expect(authedPage.locator('#control-status')).toBeVisible();
+        await expect(authedPage.locator('#practice-status')).toBeVisible();
     });
 
-    test('open control → create task via the unified modal → appears in linked tasks', async ({ authedPage, isolatedTenant }) => {
+    test('open practice → create task via the unified modal → appears in linked tasks', async ({ authedPage, isolatedTenant }) => {
         const { tenantSlug } = isolatedTenant;
-        // Self-contained: create the control this test operates on.
-        await createControl(authedPage, tenantSlug);
+        // Self-contained: create the practice this test operates on.
+        await createPractice(authedPage, tenantSlug);
         const uid = Date.now().toString(36);
         const title = `E2E Task ${uid}`;
 
         // Go to tasks tab — task creation uses the canonical NewTaskModal
         // (via the shared LinkedTasksPanel), and the created compliance
-        // task lands in the control's linked-tasks table. (The retired
+        // task lands in the practice's linked-tasks table. (The retired
         // /tasks global list once verified here is gone; the farm-tasks
         // queue only surfaces FARM_TASK / FIELD_OPERATION rows, so a
-        // control-linked TASK is asserted at the control, not there.)
+        // practice-linked TASK is asserted at the practice, not there.)
         await authedPage.click('#tab-tasks');
         await authedPage.waitForSelector('#linked-task-create-btn', { timeout: 5000 });
         await authedPage.click('#linked-task-create-btn');
@@ -101,7 +101,7 @@ test.describe('Controls Center', () => {
             authedPage.click('#create-task-btn'),
         ]);
 
-        // The new task shows in the control's linked-tasks table.
+        // The new task shows in the practice's linked-tasks table.
         // (The Tasks tab is a DataTable — rows no longer carry a per-row
         // `linked-task-<id>` id, so assert on the row text within the
         // table itself.)
@@ -114,9 +114,9 @@ test.describe('Controls Center', () => {
 
     test('attach evidence → see it listed', async ({ authedPage, isolatedTenant }) => {
         const { tenantSlug } = isolatedTenant;
-        const controlDetailPath = await createControl(authedPage, tenantSlug);
-        await authedPage.goto(controlDetailPath);
-        await authedPage.waitForSelector('#control-title', { timeout: 15000 });
+        const practiceDetailPath = await createPractice(authedPage, tenantSlug);
+        await authedPage.goto(practiceDetailPath);
+        await authedPage.waitForSelector('#practice-title', { timeout: 15000 });
 
         // Go to evidence tab
         await authedPage.click('#tab-evidence');
@@ -150,9 +150,9 @@ test.describe('Controls Center', () => {
         isolatedTenant,
     }) => {
         const { tenantSlug } = isolatedTenant;
-        const controlDetailPath = await createControl(authedPage, tenantSlug);
-        await authedPage.goto(controlDetailPath);
-        await authedPage.waitForSelector('#control-title', { timeout: 15000 });
+        const practiceDetailPath = await createPractice(authedPage, tenantSlug);
+        await authedPage.goto(practiceDetailPath);
+        await authedPage.waitForSelector('#practice-title', { timeout: 15000 });
 
         // Click applicability toggle
         await authedPage.click('#toggle-applicability-btn');
@@ -182,7 +182,7 @@ test.describe('Controls Center', () => {
             saveBtn.click(),
         ]);
 
-        await expect(authedPage.locator('#control-applicability')).toContainText(
+        await expect(authedPage.locator('#practice-applicability')).toContainText(
             'Not Applicable',
             { timeout: 10000 },
         );
@@ -193,12 +193,12 @@ test.describe('Controls Center', () => {
     // OWNER, so it cannot exercise a READER. This test logs in as the
     // seeded `viewer@acme.com` READER and only navigates + asserts —
     // it never writes, so it cannot pollute the shared tenant.
-    test('reader user sees view-only controls', async ({ page }) => {
+    test('reader user sees view-only practices', async ({ page }) => {
         const tenantSlug = await loginAndGetTenant(page, READER_USER);
-        await page.goto(`/t/${tenantSlug}/controls`);
+        await page.goto(`/t/${tenantSlug}/practices`);
         await page.waitForSelector('h1', { timeout: 10000 });
 
         // Reader should NOT see create buttons.
-        await expect(page.locator('#new-control-btn')).not.toBeVisible({ timeout: 3000 });
+        await expect(page.locator('#new-practice-btn')).not.toBeVisible({ timeout: 3000 });
     });
 });

@@ -1,7 +1,7 @@
 /**
  * Roadmap-9 PR-3 — Tab primitive adoption registry.
  *
- * Detail pages with tab bars (controls/[id], vendors/[id], policies/
+ * Detail pages with tab bars (practices/[id], vendors/[id], policies/
  * [id], audits/cycles/[id], tasks/[id], etc.) all hand-roll
  * `tab === 'overview'` switch logic with bespoke tab-UI rendering.
  * `<TabSelect>` (Epic 60 polish primitive) exists with locked focus-
@@ -35,9 +35,9 @@ interface TabPageEntry {
 
 const TAB_PAGES: TabPageEntry[] = [
     {
-        file: "src/app/t/[tenantSlug]/(app)/controls/[controlId]/page.tsx",
+        file: "src/app/t/[tenantSlug]/(app)/practices/[practiceId]/page.tsx",
         migrated: false,
-        note: "Controls detail — tabs for Overview / Tests / Tasks / Evidence / Mappings / Activity. Migration target.",
+        note: "Practices detail — tabs for Overview / Tests / Tasks / Evidence / Mappings / Activity. Migration target.",
     },
     {
         file: "src/app/t/[tenantSlug]/(app)/vendors/[vendorId]/page.tsx",

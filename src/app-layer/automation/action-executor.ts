@@ -66,7 +66,7 @@ const STATUS_ALLOWLIST: Record<string, { field: string; values: ReadonlySet<stri
         field: 'status',
         values: new Set(['OPEN', 'TRIAGED', 'IN_PROGRESS', 'BLOCKED', 'RESOLVED', 'CLOSED', 'CANCELED']),
     },
-    Control: {
+    Practice: {
         field: 'status',
         values: new Set([
             'NOT_STARTED', 'PLANNED', 'IN_PROGRESS', 'IMPLEMENTING',
@@ -141,9 +141,9 @@ async function createTask(db: Db, rule: ExecutableRule, event: ActionEvent): Pro
     const cfg = rule.actionConfigJson as CreateTaskActionConfig;
     const createdByUserId = event.actorUserId ?? rule.createdByUserId;
     if (!createdByUserId) return { ok: false, summary: 'No actor to own the created task' };
-    // Resolve an optional linked control from the event payload.
-    const controlId =
-        cfg.linkEntityType === 'Control' && cfg.linkEntityIdField
+    // Resolve an optional linked practice from the event payload.
+    const practiceId =
+        cfg.linkEntityType === 'Practice' && cfg.linkEntityIdField
             ? (event.data?.[cfg.linkEntityIdField] as string | undefined) ?? null
             : null;
     // Dedupe: a rule firing repeatedly on the same entity shouldn't spawn a new
@@ -174,7 +174,7 @@ async function createTask(db: Db, rule: ExecutableRule, event: ActionEvent): Pro
             key: dedupeKey,
             createdByUserId,
             assigneeUserId: cfg.assigneeUserId ?? null,
-            controlId,
+            practiceId,
         },
     });
     return { ok: true, summary: `Created task ${task.id}`, detail: { taskId: task.id } };
@@ -216,8 +216,8 @@ async function updateStatus(db: Db, rule: ExecutableRule, event: ActionEvent): P
                 },
             })).count;
             break;
-        case 'Control':
-            updated = (await db.control.updateMany({ where, data })).count;
+        case 'Practice':
+            updated = (await db.practice.updateMany({ where, data })).count;
             break;
         default:
             // 'Issue' has no standalone model (issues are Tasks via WorkItemType)

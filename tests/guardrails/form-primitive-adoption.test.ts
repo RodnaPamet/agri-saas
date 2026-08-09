@@ -32,8 +32,8 @@ type FormSurface = { label: string; files: string[] };
 
 const FORM_FIELD_SURFACES: FormSurface[] = [
     { label: 'audits/cycles/page.tsx', files: ['src/app/t/[tenantSlug]/(app)/audits/cycles/page.tsx'] },
-    { label: 'controls/ControlDetailSheet.tsx', files: ['src/app/t/[tenantSlug]/(app)/controls/ControlDetailSheet.tsx'] },
-    { label: 'controls/NewControlModal.tsx', files: ['src/app/t/[tenantSlug]/(app)/controls/NewControlModal.tsx'] },
+    { label: 'practices/PracticeDetailSheet.tsx', files: ['src/app/t/[tenantSlug]/(app)/practices/PracticeDetailSheet.tsx'] },
+    { label: 'practices/NewPracticeModal.tsx', files: ['src/app/t/[tenantSlug]/(app)/practices/NewPracticeModal.tsx'] },
     { label: 'evidence/NewEvidenceTextModal.tsx', files: ['src/app/t/[tenantSlug]/(app)/evidence/NewEvidenceTextModal.tsx'] },
     { label: 'evidence/UploadEvidenceModal.tsx', files: ['src/app/t/[tenantSlug]/(app)/evidence/UploadEvidenceModal.tsx'] },
     {
@@ -62,7 +62,7 @@ const FORM_FIELD_SURFACES: FormSurface[] = [
 ];
 
 const FORM_ERROR_SURFACES: FormSurface[] = [
-    { label: 'controls/NewControlModal.tsx', files: ['src/app/t/[tenantSlug]/(app)/controls/NewControlModal.tsx'] },
+    { label: 'practices/NewPracticeModal.tsx', files: ['src/app/t/[tenantSlug]/(app)/practices/NewPracticeModal.tsx'] },
     // UploadEvidenceModal renders a form-level upload-error banner
     // (`#upload-error`) rather than per-field validation errors, so
     // `<FormError>` is not the right primitive — the ratchet was stale

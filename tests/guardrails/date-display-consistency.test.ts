@@ -54,7 +54,7 @@ const SCAN_DIRS = [
  */
 const ALLOWED_LOCALE_FILES = new Set<string>([
     path.join(ROOT, 'src/lib/format-date.ts'),
-    path.join(ROOT, 'src/components/ui/table/pagination-controls.tsx'),
+    path.join(ROOT, 'src/components/ui/table/pagination-practices.tsx'),
     path.join(ROOT, 'src/components/ui/table/pagination-utils.ts'),
     path.join(ROOT, 'src/components/ui/table/table.tsx'),
     path.join(ROOT, 'src/components/ui/KpiCard.tsx'),

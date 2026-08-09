@@ -55,7 +55,7 @@ const DOC_TYPE_FILTER_OPTIONS: ComboboxOption[] = [
 ];
 const VENDOR_LINK_TYPE_OPTIONS: ComboboxOption[] = [
     { value: 'ASSET', label: 'Asset' },
-    { value: 'ISSUE', label: 'Issue' }, { value: 'CONTROL', label: 'Control' },
+    { value: 'ISSUE', label: 'Issue' }, { value: 'CONTROL', label: 'Practice' },
 ];
 const VENDOR_LINK_RELATION_OPTIONS: ComboboxOption[] = [
     { value: 'RELATED', label: 'Related' }, { value: 'USES', label: 'Uses' },
@@ -401,7 +401,7 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
                         Pre-B4 the docs tab had only the primary
                         action button on the right; list pages
                         elsewhere in the product carry search + filter
-                        controls on the LEFT and the action button on
+                        practices on the LEFT and the action button on
                         the right. The compact filter row below
                         mirrors that pattern: search input + type
                         filter on the left, "Add document" button on

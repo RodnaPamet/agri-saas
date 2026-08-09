@@ -45,7 +45,7 @@ import {
 // ─── Migration Strategies ────────────────────────────────────────────
 
 /**
- * Migration strategies control how framework requirement changes
+ * Migration strategies practice how framework requirement changes
  * are applied to existing data.
  */
 export type MigrationStrategy = 'preserve' | 'clamp' | 'reset' | 'rule-of-three';
@@ -233,7 +233,7 @@ export function computeRequirementDiff(
 /**
  * Apply a migration strategy to a RequirementDiff.
  *
- * Strategies modify the diff to control what actually gets applied:
+ * Strategies modify the diff to practice what actually gets applied:
  * - 'preserve': pass-through (no modifications to the diff)
  * - 'clamp': pass-through (clamping is applied at score level, not diff level)
  * - 'reset': pass-through (reset is applied at tenant data level)
@@ -345,7 +345,7 @@ function applyRuleOfThree(
  * High-impact changes (removals, score-affecting changes) should be reviewed.
  */
 export function requiresReview(diff: RequirementDiff): boolean {
-    // Removals always require review (may break existing control mappings)
+    // Removals always require review (may break existing practice mappings)
     if (diff.removed.length > 0) return true;
     // Large additions might warrant review
     if (diff.added.length > 10) return true;

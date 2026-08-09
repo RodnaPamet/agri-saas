@@ -1,26 +1,26 @@
 import { NextRequest } from 'next/server';
 import { getTenantCtx } from '@/app-layer/context';
-import { runAutomationForControl } from '@/app-layer/usecases/integrations';
+import { runAutomationForPractice } from '@/app-layer/usecases/integrations';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { forbidden } from '@/lib/errors/types';
 import { jsonResponse } from '@/lib/api-response';
 
 /**
- * POST /api/t/[tenantSlug]/controls/[controlId]/sync
+ * POST /api/t/[tenantSlug]/practices/[practiceId]/sync
  *
- * Manually trigger an automation sync (check) for a control.
- * Requires an active integration connection for the control's provider.
+ * Manually trigger an automation sync (check) for a practice.
+ * Requires an active integration connection for the practice's provider.
  * Returns the execution result immediately (synchronous for now).
  */
 export const POST = withApiErrorHandling(async (
     req: NextRequest,
-    { params: paramsPromise }: { params: Promise<{ tenantSlug: string; controlId: string }> }
+    { params: paramsPromise }: { params: Promise<{ tenantSlug: string; practiceId: string }> }
 ) => {
     const params = await paramsPromise;
     const ctx = await getTenantCtx(params, req);
     if (!ctx.permissions?.canWrite) throw forbidden('Write permission required');
 
-    const result = await runAutomationForControl(ctx, params.controlId, {
+    const result = await runAutomationForPractice(ctx, params.practiceId, {
         triggeredBy: 'manual',
     });
 
@@ -28,14 +28,14 @@ export const POST = withApiErrorHandling(async (
 });
 
 /**
- * GET /api/t/[tenantSlug]/controls/[controlId]/sync
+ * GET /api/t/[tenantSlug]/practices/[practiceId]/sync
  *
- * Returns the current sync mapping status for this control.
- * Used to drive the conflict badge on the control detail page.
+ * Returns the current sync mapping status for this practice.
+ * Used to drive the conflict badge on the practice detail page.
  */
 export const GET = withApiErrorHandling(async (
     req: NextRequest,
-    { params: paramsPromise }: { params: Promise<{ tenantSlug: string; controlId: string }> }
+    { params: paramsPromise }: { params: Promise<{ tenantSlug: string; practiceId: string }> }
 ) => {
     const params = await paramsPromise;
     const ctx = await getTenantCtx(params, req);
@@ -43,27 +43,27 @@ export const GET = withApiErrorHandling(async (
     const { PrismaSyncMappingStore } = await import('@/app-layer/integrations/prisma-sync-store');
     const { runInTenantContext } = await import('@/lib/db-context');
 
-    // Fetch the control's automationKey to derive the provider
-    const control = await runInTenantContext(ctx, async (db) => {
+    // Fetch the practice's automationKey to derive the provider
+    const practice = await runInTenantContext(ctx, async (db) => {
 
-        return db.control.findFirst({
-            where: { id: params.controlId, tenantId: ctx.tenantId, deletedAt: null },
+        return db.practice.findFirst({
+            where: { id: params.practiceId, tenantId: ctx.tenantId, deletedAt: null },
             select: { id: true, automationKey: true },
         });
     });
 
-    if (!control?.automationKey) {
+    if (!practice?.automationKey) {
         return jsonResponse({ syncStatus: null, provider: null });
     }
 
-    const [provider] = control.automationKey.split('.');
+    const [provider] = practice.automationKey.split('.');
     const store = new PrismaSyncMappingStore();
 
     const mapping = await store.findByLocalEntity(
         ctx.tenantId,
         provider,
-        'control',
-        params.controlId,
+        'practice',
+        params.practiceId,
     );
 
     return jsonResponse({

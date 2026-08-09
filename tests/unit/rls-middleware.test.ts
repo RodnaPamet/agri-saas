@@ -43,13 +43,13 @@ describe('TENANT_SCOPED_MODELS catalogue', () => {
         // Spot-check critical names across the three classes.
         const mustInclude = [
             // Class A (direct tenantId)
-            'Control', 'Asset', 'Policy', 'Evidence', 'AuditLog',
+            'Practice', 'Asset', 'Policy', 'Evidence', 'AuditLog',
             'Task', 'Vendor', 'TenantMembership', 'TenantApiKey',
             'TenantSecuritySettings', 'UserMfaEnrollment',
             'IntegrationConnection', 'AutomationRule', 'AutomationExecution',
             // Class A (direct tenantId — migrated from ownership-chained)
             'EvidenceReview', 'PolicyApproval', 'AuditChecklistItem',
-            'FindingEvidence', 'AuditorPackAccess', 'PolicyControlLink',
+            'FindingEvidence', 'AuditorPackAccess', 'PolicyPracticeLink',
             // Class E (ownership-chained — no direct tenantId column)
             'PolicyAcknowledgement',
         ];
@@ -61,7 +61,7 @@ describe('TENANT_SCOPED_MODELS catalogue', () => {
     it('excludes global / shared tables', () => {
         const mustExclude = [
             'Tenant', 'User', 'Account', 'AuthSession',
-            'VerificationToken', 'Clause', 'ControlTemplate',
+            'VerificationToken', 'Clause', 'PracticeTemplate',
             'Framework', 'FrameworkRequirement', 'PolicyTemplate',
             'QuestionnaireTemplate',
         ];
@@ -73,7 +73,7 @@ describe('TENANT_SCOPED_MODELS catalogue', () => {
     it('isTenantScopedModel handles undefined/unknown gracefully', () => {
         expect(isTenantScopedModel(undefined)).toBe(false);
         expect(isTenantScopedModel('NotAModel')).toBe(false);
-        expect(isTenantScopedModel('Control')).toBe(true);
+        expect(isTenantScopedModel('Practice')).toBe(true);
     });
 });
 
@@ -184,7 +184,7 @@ describe('withRlsTripwireExtension', () => {
         const { handler } = captureHandler();
         const query = jest.fn().mockResolvedValue('result');
 
-        await handler({ model: 'Control', operation: 'findMany', args: undefined, query });
+        await handler({ model: 'Practice', operation: 'findMany', args: undefined, query });
 
         expect(query).toHaveBeenCalled();
         expect(logger.warn).not.toHaveBeenCalled();
@@ -198,7 +198,7 @@ describe('withRlsTripwireExtension', () => {
             const { handler } = captureHandler();
             const query = jest.fn().mockResolvedValue('result');
 
-            await handler({ model: 'Control', operation: 'create', args: undefined, query });
+            await handler({ model: 'Practice', operation: 'create', args: undefined, query });
 
             expect(query).toHaveBeenCalled();
             expect(logger.warn).not.toHaveBeenCalled();
@@ -210,14 +210,14 @@ describe('withRlsTripwireExtension', () => {
         const { handler } = captureHandler();
         const query = jest.fn().mockResolvedValue('result');
 
-        const result = await handler({ model: 'Control', operation: 'update', args: undefined, query });
+        const result = await handler({ model: 'Practice', operation: 'update', args: undefined, query });
 
         expect(result).toBe('result');
         expect(query).toHaveBeenCalled();
         expect(logger.warn).toHaveBeenCalledWith(
             'rls-middleware.missing_tenant_context',
             expect.objectContaining({
-                model: 'Control',
+                model: 'Practice',
                 action: 'update',
             })
         );
@@ -228,11 +228,11 @@ describe('withRlsTripwireExtension', () => {
         const { handler } = captureHandler();
         const query = jest.fn().mockResolvedValue([]);
 
-        await handler({ model: 'Control', operation: 'findMany', args: undefined, query });
+        await handler({ model: 'Practice', operation: 'findMany', args: undefined, query });
 
         expect(logger.debug).toHaveBeenCalledWith(
             'rls-middleware.missing_tenant_context',
-            expect.objectContaining({ model: 'Control', action: 'findMany' })
+            expect.objectContaining({ model: 'Practice', action: 'findMany' })
         );
         expect(logger.warn).not.toHaveBeenCalled();
     });
@@ -243,7 +243,7 @@ describe('withRlsTripwireExtension', () => {
         const query = jest.fn().mockResolvedValue('result');
 
         await handler({
-            model: 'Control',
+            model: 'Practice',
             operation: 'update',
             args: { where: { id: 'secret-id' }, data: { title: 'PII here' } },
             query,
@@ -263,7 +263,7 @@ describe('withRlsTripwireExtension', () => {
         const query = jest.fn().mockRejectedValue(new Error('db down'));
 
         await expect(
-            handler({ model: 'Control', operation: 'findMany', args: undefined, query }),
+            handler({ model: 'Practice', operation: 'findMany', args: undefined, query }),
         ).rejects.toThrow('db down');
     });
 });

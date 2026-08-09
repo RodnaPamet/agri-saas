@@ -26,7 +26,7 @@ jest.mock('@/lib/offline/outbox', () => {
     return { ...actual, getOutboxStore: () => store, __store: store };
 });
 
-// Controllable SWR return (the field-op the panel loads).
+// Practicelable SWR return (the field-op the panel loads).
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let swrReturn: any = { data: undefined, isLoading: false, mutate: jest.fn(async () => {}) };
 jest.mock('@/lib/hooks/use-tenant-swr', () => ({ useTenantSWR: () => swrReturn }));

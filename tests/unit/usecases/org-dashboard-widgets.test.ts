@@ -79,7 +79,7 @@ const widgetRow = {
     type: 'KPI_CARD',
     chartType: 'count',
     title: 'My widget',
-    config: { metric: 'controls' },
+    config: { metric: 'practices' },
     position: { x: 0, y: 0 },
     size: { w: 4, h: 2 },
     enabled: true,
@@ -129,7 +129,7 @@ describe('createOrgDashboardWidget', () => {
             createOrgDashboardWidget(readCtx, {
                 type: 'KPI_CARD' as any,
                 chartType: 'count',
-                config: { metric: 'controls' },
+                config: { metric: 'practices' },
                 position: { x: 0, y: 0 } as any,
                 size: { w: 4, h: 2 } as any,
             } as any),
@@ -142,7 +142,7 @@ describe('createOrgDashboardWidget', () => {
         await createOrgDashboardWidget(writeCtx, {
             type: 'KPI_CARD' as any,
             chartType: 'count',
-            config: { metric: 'controls' },
+            config: { metric: 'practices' },
             position: { x: 0, y: 0 } as any,
             size: { w: 4, h: 2 } as any,
         } as any);

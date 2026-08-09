@@ -1,8 +1,8 @@
 /**
- * Epic 53 — Controls list page filter integration.
+ * Epic 53 — Practices list page filter integration.
  *
  * Verifies:
- *   1. The Controls filter config produces a Filter[] with the documented
+ *   1. The Practices filter config produces a Filter[] with the documented
  *      key set, icons, groups, and reset semantics.
  *   2. Owner & category options are derived correctly from loaded rows
  *      (dedupe, sort, fallback labels).
@@ -26,25 +26,25 @@ import {
 } from '../../src/components/ui/filter/filter-state';
 import {
     APPLICABILITY_LABELS,
-    buildControlFilters,
-    categoryOptionsFromControls,
-    controlFilterDefs,
+    buildPracticeFilters,
+    categoryOptionsFromPractices,
+    practiceFilterDefs,
     CONTROL_FILTER_KEYS,
     CONTROL_STATUS_LABELS,
-    ownerOptionsFromControls,
-} from '../../src/app/t/[tenantSlug]/(app)/controls/filter-defs';
+    ownerOptionsFromPractices,
+} from '../../src/app/t/[tenantSlug]/(app)/practices/filter-defs';
 
 // ─── 1. Filter config shape ──────────────────────────────────────────
 
-describe('Controls filter config', () => {
-    it('exposes the expected key set aligned with the Controls API schema', () => {
+describe('Practices filter config', () => {
+    it('exposes the expected key set aligned with the Practices API schema', () => {
         expect(CONTROL_FILTER_KEYS.sort()).toEqual(
             ['applicability', 'category', 'ownerUserId', 'status'].sort(),
         );
     });
 
     it('produces a FilterDef[] via createTypedFilterDefs', () => {
-        const bundle = controlFilterDefs;
+        const bundle = practiceFilterDefs;
         expect(bundle.filters.map((f) => f.key).sort()).toEqual(
             ['applicability', 'category', 'ownerUserId', 'status'].sort(),
         );
@@ -56,15 +56,15 @@ describe('Controls filter config', () => {
     });
 
     it('tags every filter with a group and a clearable reset behaviour', () => {
-        for (const f of controlFilterDefs.filters) {
+        for (const f of practiceFilterDefs.filters) {
             expect(f.group).toBeDefined();
             expect(f.resetBehavior).toBe('clearable');
         }
     });
 
     it('status & applicability are enum filters with statically-defined options', () => {
-        const status = controlFilterDefs.getFilter('status');
-        const app = controlFilterDefs.getFilter('applicability');
+        const status = practiceFilterDefs.getFilter('status');
+        const app = practiceFilterDefs.getFilter('applicability');
         expect(Array.isArray(status.options)).toBe(true);
         expect(Array.isArray(app.options)).toBe(true);
         // Enum values round-trip via the documented CONTROL_STATUS_LABELS map.
@@ -75,12 +75,12 @@ describe('Controls filter config', () => {
     });
 
     it('owner & category are async entity-ref / free-form filters (options: null)', () => {
-        expect(controlFilterDefs.getFilter('ownerUserId').options).toBeNull();
-        expect(controlFilterDefs.getFilter('category').options).toBeNull();
+        expect(practiceFilterDefs.getFilter('ownerUserId').options).toBeNull();
+        expect(practiceFilterDefs.getFilter('category').options).toBeNull();
     });
 
     it('status is multi-select and status.label is "Status"', () => {
-        const status = controlFilterDefs.getFilter('status');
+        const status = practiceFilterDefs.getFilter('status');
         expect(status.multiple).toBe(true);
         expect(status.label).toBe('Status');
     });
@@ -88,14 +88,14 @@ describe('Controls filter config', () => {
 
 // ─── 2. Runtime option derivation ────────────────────────────────────
 
-describe('ownerOptionsFromControls', () => {
-    it('returns an empty array when no control has an owner', () => {
-        expect(ownerOptionsFromControls([])).toEqual([]);
-        expect(ownerOptionsFromControls([{ owner: null }])).toEqual([]);
+describe('ownerOptionsFromPractices', () => {
+    it('returns an empty array when no practice has an owner', () => {
+        expect(ownerOptionsFromPractices([])).toEqual([]);
+        expect(ownerOptionsFromPractices([{ owner: null }])).toEqual([]);
     });
 
     it('dedupes owners by id and produces a sortable label', () => {
-        const opts = ownerOptionsFromControls([
+        const opts = ownerOptionsFromPractices([
             { owner: { id: 'u1', name: 'Ada', email: 'ada@acme.com' } },
             { owner: { id: 'u1', name: 'Ada', email: 'ada@acme.com' } },
             { owner: { id: 'u2', name: 'Linus', email: 'linus@acme.com' } },
@@ -106,7 +106,7 @@ describe('ownerOptionsFromControls', () => {
     });
 
     it('sorts alphabetically by full label (stable across renders)', () => {
-        const opts = ownerOptionsFromControls([
+        const opts = ownerOptionsFromPractices([
             { owner: { id: 'zz', name: 'Zoe', email: 'z@acme.com' } },
             { owner: { id: 'aa', name: 'Ada', email: 'a@acme.com' } },
         ]);
@@ -114,7 +114,7 @@ describe('ownerOptionsFromControls', () => {
     });
 
     it('falls back to email, then "Unknown", when the name is missing', () => {
-        const opts = ownerOptionsFromControls([
+        const opts = ownerOptionsFromPractices([
             { owner: { id: 'u1', name: null, email: 'ops@acme.com' } },
             { owner: { id: 'u2', name: null, email: null } },
         ]);
@@ -125,14 +125,14 @@ describe('ownerOptionsFromControls', () => {
     });
 });
 
-describe('categoryOptionsFromControls', () => {
-    it('returns an empty array when no control has a category', () => {
-        expect(categoryOptionsFromControls([])).toEqual([]);
-        expect(categoryOptionsFromControls([{ category: null }])).toEqual([]);
+describe('categoryOptionsFromPractices', () => {
+    it('returns an empty array when no practice has a category', () => {
+        expect(categoryOptionsFromPractices([])).toEqual([]);
+        expect(categoryOptionsFromPractices([{ category: null }])).toEqual([]);
     });
 
     it('dedupes + sorts free-form category strings', () => {
-        const opts = categoryOptionsFromControls([
+        const opts = categoryOptionsFromPractices([
             { category: 'Technical' },
             { category: 'Operational' },
             { category: 'Technical' },
@@ -144,7 +144,7 @@ describe('categoryOptionsFromControls', () => {
 
     it('skips empty / whitespace-only categories', () => {
         expect(
-            categoryOptionsFromControls([
+            categoryOptionsFromPractices([
                 { category: '' },
                 { category: '   ' },
                 { category: undefined as unknown as null },
@@ -153,9 +153,9 @@ describe('categoryOptionsFromControls', () => {
     });
 });
 
-describe('buildControlFilters — options injected at render time', () => {
+describe('buildPracticeFilters — options injected at render time', () => {
     it('swaps in runtime options without mutating the static defs', () => {
-        const live = buildControlFilters([
+        const live = buildPracticeFilters([
             { owner: { id: 'u1', name: 'Ada', email: 'ada@acme.com' }, category: 'Tech' },
         ]);
         const owner = live.find((f) => f.key === 'ownerUserId');
@@ -163,18 +163,18 @@ describe('buildControlFilters — options injected at render time', () => {
         expect(owner?.options).toHaveLength(1);
         expect(category?.options).toEqual([{ value: 'Tech', label: 'Tech' }]);
         // Static defs remain null — the component built a new filter array.
-        expect(controlFilterDefs.getFilter('ownerUserId').options).toBeNull();
-        expect(controlFilterDefs.getFilter('category').options).toBeNull();
+        expect(practiceFilterDefs.getFilter('ownerUserId').options).toBeNull();
+        expect(practiceFilterDefs.getFilter('category').options).toBeNull();
     });
 
     it('leaves status/applicability options untouched', () => {
-        const live = buildControlFilters([]);
+        const live = buildPracticeFilters([]);
         const status = live.find((f) => f.key === 'status');
-        expect(status?.options).toBe(controlFilterDefs.getFilter('status').options);
+        expect(status?.options).toBe(practiceFilterDefs.getFilter('status').options);
     });
 
     it('preserves all static metadata when injecting options (group, reset, icon)', () => {
-        const live = buildControlFilters([
+        const live = buildPracticeFilters([
             { owner: { id: 'u1', name: 'Ada', email: 'ada@acme.com' }, category: 'Tech' },
         ]);
         const owner = live.find((f) => f.key === 'ownerUserId');
@@ -186,7 +186,7 @@ describe('buildControlFilters — options injected at render time', () => {
 
 // ─── 3. URL round-trip (pagination-safe) ─────────────────────────────
 
-describe('Controls filter URL serialisation', () => {
+describe('Practices filter URL serialisation', () => {
     it('roundtrips a full filter state through URL → state → URL', () => {
         const initial: FilterState = {
             status: ['IN_PROGRESS', 'IMPLEMENTED'],
@@ -259,16 +259,16 @@ describe('Compat bridge — legacy CompactFilterBar ↔ FilterState', () => {
 
 // ─── 5. Empty-state behaviour ────────────────────────────────────────
 
-describe('Controls filter — empty state', () => {
-    it('buildControlFilters with zero controls still returns the full filter set', () => {
-        const live = buildControlFilters([]);
+describe('Practices filter — empty state', () => {
+    it('buildPracticeFilters with zero practices still returns the full filter set', () => {
+        const live = buildPracticeFilters([]);
         expect(live.map((f) => f.key).sort()).toEqual(
             ['applicability', 'category', 'ownerUserId', 'status'].sort(),
         );
     });
 
     it('owner/category options are empty arrays when no data is loaded yet', () => {
-        const live = buildControlFilters([]);
+        const live = buildPracticeFilters([]);
         const owner = live.find((f) => f.key === 'ownerUserId');
         const category = live.find((f) => f.key === 'category');
         expect(owner?.options).toEqual([]);

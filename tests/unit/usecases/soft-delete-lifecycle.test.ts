@@ -21,7 +21,7 @@ jest.mock('@/lib/soft-delete', () => {
     const actual = jest.requireActual('@/lib/soft-delete');
     return {
         ...actual,
-        SOFT_DELETE_MODELS: new Set(['Control', 'Risk', 'Evidence']),
+        SOFT_DELETE_MODELS: new Set(['Practice', 'Risk', 'Evidence']),
         withDeleted: (q: any) => ({ ...q, _withDeleted: true }),
     };
 });
@@ -53,26 +53,26 @@ function makeTx(delegates: Record<string, any>) {
 // ──────────────────────────────────────────────────────────────────────
 describe('restoreSoftDeleted', () => {
     it('rejects models not in SOFT_DELETE_MODELS', async () => {
-        const tx = makeTx({ control: makeDelegate() });
+        const tx = makeTx({ practice: makeDelegate() });
         await expect(
             restoreSoftDeleted(tx, { model: 'UnsupportedModel', id: 'x' }),
         ).rejects.toThrow(/does not support soft-delete/i);
     });
 
     it('throws when the Prisma delegate for the model key is missing', async () => {
-        // `Control` is in SOFT_DELETE_MODELS but no `control` key on
+        // `Practice` is in SOFT_DELETE_MODELS but no `practice` key on
         // the tx object — defensive guard against rename mismatch.
         const tx = makeTx({}); // no delegates
         await expect(
-            restoreSoftDeleted(tx, { model: 'Control', id: 'x' }),
+            restoreSoftDeleted(tx, { model: 'Practice', id: 'x' }),
         ).rejects.toThrow(/prisma delegate not found/i);
     });
 
     it('throws notFound when the record is not soft-deleted (or missing)', async () => {
-        const tx = makeTx({ control: makeDelegate() });
+        const tx = makeTx({ practice: makeDelegate() });
         await expect(
-            restoreSoftDeleted(tx, { model: 'Control', id: 'c-gone' }),
-        ).rejects.toThrow(/no soft-deleted control found/i);
+            restoreSoftDeleted(tx, { model: 'Practice', id: 'c-gone' }),
+        ).rejects.toThrow(/no soft-deleted practice found/i);
     });
 
     it('clears deletedAt + deletedByUserId on happy path', async () => {
@@ -80,12 +80,12 @@ describe('restoreSoftDeleted', () => {
             findFirst: jest.fn().mockResolvedValue({ id: 'c-1', deletedAt: new Date(), deletedByUserId: 'u-1' }),
             update: jest.fn().mockResolvedValue({}),
         });
-        const tx = makeTx({ control: delegate });
+        const tx = makeTx({ practice: delegate });
 
-        const result = await restoreSoftDeleted(tx, { model: 'Control', id: 'c-1' });
+        const result = await restoreSoftDeleted(tx, { model: 'Practice', id: 'c-1' });
 
         expect(result.id).toBe('c-1');
-        expect(result.model).toBe('Control');
+        expect(result.model).toBe('Practice');
         // The withDeleted wrapper was applied to the findFirst lookup.
         expect(delegate.findFirst).toHaveBeenCalledWith(
             expect.objectContaining({ _withDeleted: true }),
@@ -103,7 +103,7 @@ describe('restoreSoftDeleted', () => {
 // ──────────────────────────────────────────────────────────────────────
 describe('purgeSoftDeleted', () => {
     it('rejects models not in SOFT_DELETE_MODELS', async () => {
-        const tx = makeTx({ control: makeDelegate() });
+        const tx = makeTx({ practice: makeDelegate() });
         await expect(
             purgeSoftDeleted(tx, { model: 'UnsupportedModel', id: 'x' }),
         ).rejects.toThrow(/does not support soft-delete/i);
@@ -113,9 +113,9 @@ describe('purgeSoftDeleted', () => {
         // The findFirst lookup uses `deletedAt: { not: null }` —
         // a not-yet-soft-deleted record returns null and the
         // function bails BEFORE the raw DELETE fires.
-        const tx = makeTx({ control: makeDelegate() });
+        const tx = makeTx({ practice: makeDelegate() });
         await expect(
-            purgeSoftDeleted(tx, { model: 'Control', id: 'c-live' }),
+            purgeSoftDeleted(tx, { model: 'Practice', id: 'c-live' }),
         ).rejects.toThrow(/only soft-deleted records can be purged/i);
         // Critical regression: the executeRawUnsafe MUST NOT have fired.
         expect(tx.$executeRawUnsafe).not.toHaveBeenCalled();
@@ -125,15 +125,15 @@ describe('purgeSoftDeleted', () => {
         const delegate = makeDelegate({
             findFirst: jest.fn().mockResolvedValue({ id: 'c-1', deletedAt: new Date() }),
         });
-        const tx = makeTx({ control: delegate });
+        const tx = makeTx({ practice: delegate });
 
-        const result = await purgeSoftDeleted(tx, { model: 'Control', id: 'c-1' });
+        const result = await purgeSoftDeleted(tx, { model: 'Practice', id: 'c-1' });
 
         expect(result.id).toBe('c-1');
-        expect(result.model).toBe('Control');
+        expect(result.model).toBe('Practice');
         // Raw SQL bypasses middleware (load-bearing for true hard-delete).
         expect(tx.$executeRawUnsafe).toHaveBeenCalledWith(
-            'DELETE FROM "Control" WHERE "id" = $1',
+            'DELETE FROM "Practice" WHERE "id" = $1',
             'c-1',
         );
     });
@@ -152,9 +152,9 @@ describe('listSoftDeleted', () => {
 
     it('defaults take=50, skip=0 when no options', async () => {
         const delegate = makeDelegate();
-        const tx = makeTx({ control: delegate });
+        const tx = makeTx({ practice: delegate });
 
-        await listSoftDeleted(tx, 'Control', 'tenant-1');
+        await listSoftDeleted(tx, 'Practice', 'tenant-1');
 
         const args = delegate.findMany.mock.calls[0][0];
         expect(args.take).toBe(50);
@@ -168,9 +168,9 @@ describe('listSoftDeleted', () => {
 
     it('respects explicit take + skip', async () => {
         const delegate = makeDelegate();
-        const tx = makeTx({ control: delegate });
+        const tx = makeTx({ practice: delegate });
 
-        await listSoftDeleted(tx, 'Control', 'tenant-1', { take: 200, skip: 100 });
+        await listSoftDeleted(tx, 'Practice', 'tenant-1', { take: 200, skip: 100 });
 
         const args = delegate.findMany.mock.calls[0][0];
         expect(args.take).toBe(200);
@@ -179,9 +179,9 @@ describe('listSoftDeleted', () => {
 
     it('orders by deletedAt DESC (most-recent deletes first for admin view)', async () => {
         const delegate = makeDelegate();
-        const tx = makeTx({ control: delegate });
+        const tx = makeTx({ practice: delegate });
 
-        await listSoftDeleted(tx, 'Control', 'tenant-1');
+        await listSoftDeleted(tx, 'Practice', 'tenant-1');
 
         const args = delegate.findMany.mock.calls[0][0];
         expect(args.orderBy).toEqual({ deletedAt: 'desc' });

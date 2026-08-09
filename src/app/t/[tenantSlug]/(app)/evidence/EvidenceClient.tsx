@@ -82,7 +82,7 @@ const STATUS_BADGE: Record<string, StatusBadgeVariant> = {
 };
 
 // Shared icon-only action button (Edit / Archive / Download columns) —
-// mirrors the control-table quick-edit affordance.
+// mirrors the practice-table quick-edit affordance.
 const ICON_ACTION_CLASS =
     'inline-flex h-7 w-7 items-center justify-center rounded-md text-content-muted transition-colors hover:bg-bg-muted hover:text-content-emphasis focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
 
@@ -108,7 +108,7 @@ interface EvidenceClientProps {
 
     initialEvidence: any[];
 
-    initialControls: any[];
+    initialPractices: any[];
     tenantSlug: string;
     permissions: Permissions;
     translations: Record<string, string>;
@@ -119,7 +119,7 @@ interface EvidenceClientProps {
  * Data arrives pre-fetched from the server component, hydrated into React Query.
  *
  * Filter architecture (Epic 53):
- *   - `q`, `type`, `status`, `controlId` flow through `useFilterContext`
+ *   - `q`, `type`, `status`, `practiceId` flow through `useFilterContext`
  *     (URL-synced via the shared context).
  *   - `tab` (retention view: active | expiring | archived) stays on
  *     `useUrlFilters` since it's a view selector, not a filter.
@@ -133,7 +133,7 @@ export function EvidenceClient(props: EvidenceClientProps) {
     );
 }
 
-function EvidencePageInner({ initialEvidence, initialControls, tenantSlug, permissions, translations: t }: EvidenceClientProps) {
+function EvidencePageInner({ initialEvidence, initialPractices, tenantSlug, permissions, translations: t }: EvidenceClientProps) {
     const tr = useTranslations('evidence');
     // Stabilise across renders so dependent useCallbacks don't get a
     // fresh identity every cycle (was a real exhaustive-deps warning).
@@ -219,7 +219,7 @@ function EvidencePageInner({ initialEvidence, initialControls, tenantSlug, permi
             },
         });
 
-    const [controls] = useState<any[]>(initialControls);
+    const [practices] = useState<any[]>(initialPractices);
     const retentionFilter = (filters.tab || 'active') as RetentionFilter;
     const { celebrate } = useCelebration();
     const viewMode: 'list' | 'gallery' =
@@ -235,7 +235,7 @@ function EvidencePageInner({ initialEvidence, initialControls, tenantSlug, permi
         title: string;
         description: string | null;
         ownerUserId: string | null;
-        controlId: string | null;
+        practiceId: string | null;
         // B8 follow-up — folder is editable in the modal; threaded
         // through here so the modal seeds the input with the
         // current value.
@@ -476,7 +476,7 @@ function EvidencePageInner({ initialEvidence, initialControls, tenantSlug, permi
         type Sortable = {
             title?: string | null;
             type?: string | null;
-            control?: {
+            practice?: {
                 code?: string | null;
                 name?: string | null;
             } | null;
@@ -491,8 +491,8 @@ function EvidencePageInner({ initialEvidence, initialControls, tenantSlug, permi
                     return ev.title || '';
                 case 'type':
                     return ev.type || '';
-                case 'control':
-                    return ev.control?.code || ev.control?.name || '';
+                case 'practice':
+                    return ev.practice?.code || ev.practice?.name || '';
                 case 'retention':
                     return ev.retentionUntil || '';
                 case 'status':
@@ -512,7 +512,7 @@ function EvidencePageInner({ initialEvidence, initialControls, tenantSlug, permi
         });
     }, [displayEvidence, sortBy, sortOrder]);
     const sortableEvidenceColumns = useMemo(
-        () => ['title', 'type', 'control', 'retention', 'status', 'owner'],
+        () => ['title', 'type', 'practice', 'retention', 'status', 'owner'],
         [],
     );
     const {
@@ -558,7 +558,7 @@ function EvidencePageInner({ initialEvidence, initialControls, tenantSlug, permi
         () => [
             { id: 'title', label: t.evidenceTitle },
             { id: 'type', label: t.type },
-            { id: 'control', label: t.control },
+            { id: 'practice', label: t.practice },
             // B8 follow-up — Folder column. Hidden by default
             // (`defaultHidden: true` would be ideal but the dropdown
             // primitive doesn't carry that yet) — the user reveals
@@ -590,10 +590,10 @@ function EvidencePageInner({ initialEvidence, initialControls, tenantSlug, permi
     const evidenceFilters: FilterType[] = useMemo(
         () =>
             buildEvidenceFilters(
-                controls as Parameters<typeof buildEvidenceFilters>[0],
+                practices as Parameters<typeof buildEvidenceFilters>[0],
                 evidence,
             ),
-        [controls, evidence],
+        [practices, evidence],
     );
     const filterCards = useMemo(
         () => filtersToCards(evidenceFilters),
@@ -693,11 +693,11 @@ function EvidencePageInner({ initialEvidence, initialControls, tenantSlug, permi
             },
         },
         {
-            id: 'control',
-            header: t.control,
-            meta: { mobileCard: { slot: 'meta', label: t.control } },
+            id: 'practice',
+            header: t.practice,
+            meta: { mobileCard: { slot: 'meta', label: t.practice } },
 
-            accessorFn: (ev: any) => ev.control ? `${ev.control.code || ''} ${ev.control.name}` : '\u2014',
+            accessorFn: (ev: any) => ev.practice ? `${ev.practice.code || ''} ${ev.practice.name}` : '\u2014',
             cell: ({ getValue }: { getValue: () => string }) => (
                 <span className="text-xs text-content-muted">{getValue()}</span>
             ),
@@ -793,7 +793,7 @@ function EvidencePageInner({ initialEvidence, initialControls, tenantSlug, permi
                 <span className="text-xs">{getValue()}</span>
             ),
         },
-        // Edit — icon-only column (Control-table parity). Opens the
+        // Edit — icon-only column (Practice-table parity). Opens the
         // SAME EditEvidenceModal the detail side-sheet's edit icon does.
         {
             id: 'edit',
@@ -816,7 +816,7 @@ function EvidencePageInner({ initialEvidence, initialControls, tenantSlug, permi
                                     title: ev.title,
                                     description: ev.content ?? null,
                                     ownerUserId: ev.ownerUserId ?? null,
-                                    controlId: ev.control?.id ?? null,
+                                    practiceId: ev.practice?.id ?? null,
                                     folder: ev.folder ?? null,
                                     retentionUntil: ev.retentionUntil ?? null,
                                 });
@@ -966,7 +966,7 @@ function EvidencePageInner({ initialEvidence, initialControls, tenantSlug, permi
                         setOpen={setShowUpload}
                         tenantSlug={tenantSlug}
                         apiUrl={apiUrl}
-                        controls={controls}
+                        practices={practices}
                     />
                 </>
             )}

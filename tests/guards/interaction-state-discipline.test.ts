@@ -81,10 +81,10 @@ describe("PR-7 interaction state discipline", () => {
   });
 
   describe("Pagination footer overlap fade", () => {
-    const standaloneSrc = read("src/components/ui/table/pagination-controls.tsx");
+    const standaloneSrc = read("src/components/ui/table/pagination-practices.tsx");
     const inlineSrc = read("src/components/ui/table/table.tsx");
 
-    it("standalone PaginationControls paints the gradient fade above the footer", () => {
+    it("standalone PaginationPractices paints the gradient fade above the footer", () => {
       expect(standaloneSrc).toMatch(/before:bg-gradient-to-t/);
       expect(standaloneSrc).toMatch(/before:from-bg-default/);
       expect(standaloneSrc).toMatch(/before:to-transparent/);

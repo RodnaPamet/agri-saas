@@ -20,7 +20,7 @@ import type { RequestContext } from '../types';
 /** Fire-and-forget automation trigger — never blocks the notification job. */
 function emitEvidenceTrigger(
     event: 'EVIDENCE_EXPIRING' | 'EVIDENCE_EXPIRED',
-    ev: { id: string; tenantId: string; title: string; controlId: string | null },
+    ev: { id: string; tenantId: string; title: string; practiceId: string | null },
     dateIso: string | null,
 ): Promise<void> {
     // The bus only reads ctx.tenantId + ctx.userId; a full context isn't
@@ -32,13 +32,13 @@ function emitEvidenceTrigger(
             ? emitAutomationEvent(ctx, {
                   event: 'EVIDENCE_EXPIRING',
                   ...meta,
-                  data: { title: ev.title, controlId: ev.controlId, retentionUntil: dateIso },
+                  data: { title: ev.title, practiceId: ev.practiceId, retentionUntil: dateIso },
                   stableKey: `evidence-expiring-${ev.id}`,
               })
             : emitAutomationEvent(ctx, {
                   event: 'EVIDENCE_EXPIRED',
                   ...meta,
-                  data: { title: ev.title, controlId: ev.controlId, expiredAt: dateIso },
+                  data: { title: ev.title, practiceId: ev.practiceId, expiredAt: dateIso },
                   stableKey: `evidence-expired-${ev.id}`,
               });
     return p.catch(() => {
@@ -73,7 +73,7 @@ export async function runEvidenceRetentionNotifications(
     const expiring = await prisma.evidence.findMany({
         where,
         select: {
-            id: true, tenantId: true, title: true, owner: true, controlId: true,
+            id: true, tenantId: true, title: true, owner: true, practiceId: true,
             retentionUntil: true,
         },
     });
@@ -117,7 +117,7 @@ export async function runEvidenceRetentionNotifications(
                 description: `Evidence "${ev.title}" expires in ${daysLeft} days (${formatDate(ev.retentionUntil)}). Please upload refreshed evidence or extend the retention date.`,
                 status: 'OPEN',
                 priority: daysLeft <= 7 ? 'HIGH' : 'MEDIUM',
-                ...(ev.controlId ? { controlId: ev.controlId } : {}),
+                ...(ev.practiceId ? { practiceId: ev.practiceId } : {}),
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- createdByUserId missing: background job has no actor; requires system-user id (tracked #BUG-retention-task-creator)
             } as any,
         });
@@ -149,14 +149,14 @@ export async function runEvidenceRetentionNotifications(
                     include: { user: { select: { email: true, name: true } } },
                 });
 
-                // `controlName` was previously looked up here but
+                // `practiceName` was previously looked up here but
                 // never referenced in the notification body —
                 // CodeQL `js/useless-assignment-to-local` caught it.
                 // Removed the dead lookup; if a future template wants
-                // the control name, surface it through a single
-                // `include: { control: { select: { name: true } } }`
+                // the practice name, surface it through a single
+                // `include: { practice: { select: { name: true } } }`
                 // on the parent evidence query instead of a per-row
-                // extra `prisma.control.findUnique`.
+                // extra `prisma.practice.findUnique`.
 
                 for (const m of members) {
                     if (!m.user.email) continue;
@@ -209,7 +209,7 @@ export async function runEvidenceRetentionNotifications(
     if (options.tenantId) expiredWhere.tenantId = options.tenantId;
     const expired = await prisma.evidence.findMany({
         where: expiredWhere,
-        select: { id: true, tenantId: true, title: true, controlId: true, expiredAt: true },
+        select: { id: true, tenantId: true, title: true, practiceId: true, expiredAt: true },
         take: 1000,
     });
     for (const ev of expired) {

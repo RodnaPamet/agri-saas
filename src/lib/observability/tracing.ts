@@ -38,10 +38,10 @@ function contextAttributes(ctx: RequestContext): Record<string, string> {
  * Wrap a usecase function in an OTel span with standard context attributes.
  *
  * @example
- *   export async function listControls(ctx: RequestContext, filters?: Filters) {
- *       return traceUsecase('control.list', ctx, () => {
- *           assertCanReadControls(ctx);
- *           return runInTenantContext(ctx, (db) => ControlRepository.list(db, ctx, filters));
+ *   export async function listPractices(ctx: RequestContext, filters?: Filters) {
+ *       return traceUsecase('practice.list', ctx, () => {
+ *           assertCanReadPractices(ctx);
+ *           return runInTenantContext(ctx, (db) => PracticeRepository.list(db, ctx, filters));
  *       });
  *   }
  */

@@ -49,7 +49,7 @@ const MODULE_GATED_ROUTES: ReadonlyArray<{
     // below the CERTIFICATION tier, or the module toggled off) gets a 403
     // here, the API twin of the route-group `requireModule` page redirect.
     {
-        file: 'src/app/api/t/[tenantSlug]/controls/route.ts',
+        file: 'src/app/api/t/[tenantSlug]/practices/route.ts',
         module: 'CERTIFICATION',
     },
     {

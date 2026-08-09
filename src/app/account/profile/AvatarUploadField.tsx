@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * `<AvatarUploadField>` — the account-profile avatar upload control.
+ * `<AvatarUploadField>` — the account-profile avatar upload practice.
  * Avatar roadmap P3.
  *
  * The picked file is resized + cover-cropped to a 256×256 WebP through

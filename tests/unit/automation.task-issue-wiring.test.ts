@@ -87,7 +87,7 @@ describe('Task + Issue usecase emission', () => {
             priority: 'P0',
             status: 'OPEN',
             assigneeUserId: 'user-2',
-            controlId: null,
+            practiceId: null,
         });
 
         const captured: AutomationDomainEvent[] = [];
@@ -117,7 +117,7 @@ describe('Task + Issue usecase emission', () => {
                 severity: 'CRITICAL',
                 priority: 'P0',
                 assigneeUserId: 'user-2',
-                controlId: null,
+                practiceId: null,
             });
         }
     });
@@ -129,7 +129,7 @@ describe('Task + Issue usecase emission', () => {
             id: 'task-1',
             status: 'RESOLVED',
             type: 'TASK',
-            controlId: null,
+            practiceId: null,
         });
         (WorkItemRepository.setStatus as jest.Mock).mockResolvedValue({
             id: 'task-1',

@@ -26,11 +26,11 @@ export interface FrameworkInfo {
 
 // ─── SOC 2 Trust Services Criteria (paraphrased) ───
 export const SOC2_REQUIREMENTS: FrameworkInfo[] = [
-    { code: 'CC1', title: 'Control Environment', description: 'The organization demonstrates commitment to integrity and ethical values, exercises oversight, establishes structures and authority, and attracts and develops competent individuals. (Paraphrase)', category: 'Security' },
-    { code: 'CC2', title: 'Communication & Information', description: 'The organization generates and uses quality information, communicates internally and externally about the functioning of controls. (Paraphrase)', category: 'Security' },
-    { code: 'CC3', title: 'Risk Assessment', description: 'The organization identifies and assesses risks to achieving its objectives, including fraud risk and changes that could impact internal controls. (Paraphrase)', category: 'Security' },
-    { code: 'CC4', title: 'Monitoring Activities', description: 'The organization selects, develops, and performs evaluations to check whether controls are present and functioning effectively. (Paraphrase)', category: 'Security' },
-    { code: 'CC5', title: 'Control Activities', description: 'The organization selects and develops control activities that mitigate risks, including technology controls and policy deployment. (Paraphrase)', category: 'Security' },
+    { code: 'CC1', title: 'Practice Environment', description: 'The organization demonstrates commitment to integrity and ethical values, exercises oversight, establishes structures and authority, and attracts and develops competent individuals. (Paraphrase)', category: 'Security' },
+    { code: 'CC2', title: 'Communication & Information', description: 'The organization generates and uses quality information, communicates internally and externally about the functioning of practices. (Paraphrase)', category: 'Security' },
+    { code: 'CC3', title: 'Risk Assessment', description: 'The organization identifies and assesses risks to achieving its objectives, including fraud risk and changes that could impact internal practices. (Paraphrase)', category: 'Security' },
+    { code: 'CC4', title: 'Monitoring Activities', description: 'The organization selects, develops, and performs evaluations to check whether practices are present and functioning effectively. (Paraphrase)', category: 'Security' },
+    { code: 'CC5', title: 'Practice Activities', description: 'The organization selects and develops practice activities that mitigate risks, including technology practices and policy deployment. (Paraphrase)', category: 'Security' },
     { code: 'CC6', title: 'Logical & Physical Access', description: 'The organization restricts logical and physical access to systems and data, manages credentials, and protects against unauthorized access. (Paraphrase)', category: 'Security' },
     { code: 'CC7', title: 'System Operations', description: 'The organization detects and monitors for anomalies and events that represent actual or potential compromises, and responds to incidents. (Paraphrase)', category: 'Security' },
     { code: 'CC8', title: 'Change Management', description: 'The organization manages authorization, design, development, configuration, testing, and approval of changes to infrastructure and software. (Paraphrase)', category: 'Security' },
@@ -58,7 +58,7 @@ export const NIS2_REQUIREMENTS: FrameworkInfo[] = [
 ];
 
 /**
- * Guidance mappings from ISO 27001 Annex A controls to SOC 2 Trust Services Categories and NIS2 Areas.
+ * Guidance mappings from ISO 27001 Annex A practices to SOC 2 Trust Services Categories and NIS2 Areas.
  * These are approximate guidance mappings — NOT guarantees of compliance.
  */
 export interface GuidanceMapping {
@@ -69,15 +69,15 @@ export interface GuidanceMapping {
 }
 
 export const FRAMEWORK_MAPPINGS: GuidanceMapping[] = [
-    { isoControlId: 'A.5.1', soc2Codes: ['CC1', 'CC5'], nis2Codes: ['NIS2-GOV'], rationale: 'Security policies form the foundation for SOC 2 control environment and NIS2 governance requirements. (Guidance)' },
+    { isoControlId: 'A.5.1', soc2Codes: ['CC1', 'CC5'], nis2Codes: ['NIS2-GOV'], rationale: 'Security policies form the foundation for SOC 2 practice environment and NIS2 governance requirements. (Guidance)' },
     { isoControlId: 'A.5.2', soc2Codes: ['CC1'], nis2Codes: ['NIS2-GOV'], rationale: 'Role assignments support organizational structure requirements in SOC 2 and NIS2 governance accountability. (Guidance)' },
-    { isoControlId: 'A.5.3', soc2Codes: ['CC5', 'CC6'], nis2Codes: ['NIS2-AM'], rationale: 'Segregation of duties is a core control activity in SOC 2 and supports NIS2 access management. (Guidance)' },
+    { isoControlId: 'A.5.3', soc2Codes: ['CC5', 'CC6'], nis2Codes: ['NIS2-AM'], rationale: 'Segregation of duties is a core practice activity in SOC 2 and supports NIS2 access management. (Guidance)' },
     { isoControlId: 'A.5.7', soc2Codes: ['CC3', 'CC7'], nis2Codes: ['NIS2-RM'], rationale: 'Threat intelligence feeds into risk assessment and system monitoring activities. (Guidance)' },
     { isoControlId: 'A.5.9', soc2Codes: ['CC6', 'C1'], nis2Codes: ['NIS2-RM'], rationale: 'Asset inventory is foundational for logical access controls and risk management. (Guidance)' },
-    { isoControlId: 'A.5.12', soc2Codes: ['C1'], nis2Codes: ['NIS2-RM'], rationale: 'Information classification directly supports confidentiality controls. (Guidance)' },
+    { isoControlId: 'A.5.12', soc2Codes: ['C1'], nis2Codes: ['NIS2-RM'], rationale: 'Information classification directly supports confidentiality practices. (Guidance)' },
     { isoControlId: 'A.5.14', soc2Codes: ['CC6', 'C1'], nis2Codes: ['NIS2-CR'], rationale: 'Secure information transfer addresses confidentiality and logical access controls. (Guidance)' },
-    { isoControlId: 'A.5.15', soc2Codes: ['CC6'], nis2Codes: ['NIS2-AM'], rationale: 'Access control is a primary SOC 2 and NIS2 security requirement. (Guidance)' },
-    { isoControlId: 'A.5.17', soc2Codes: ['CC6'], nis2Codes: ['NIS2-AM'], rationale: 'Authentication management directly maps to access security controls. (Guidance)' },
+    { isoControlId: 'A.5.15', soc2Codes: ['CC6'], nis2Codes: ['NIS2-AM'], rationale: 'Access Control is a primary SOC 2 and NIS2 security requirement. (Guidance)' },
+    { isoControlId: 'A.5.17', soc2Codes: ['CC6'], nis2Codes: ['NIS2-AM'], rationale: 'Authentication management directly maps to access security practices. (Guidance)' },
     { isoControlId: 'A.5.19', soc2Codes: ['CC9'], nis2Codes: ['NIS2-SC'], rationale: 'Supplier management aligns with risk mitigation and supply chain security. (Guidance)' },
     { isoControlId: 'A.5.20', soc2Codes: ['CC9'], nis2Codes: ['NIS2-SC'], rationale: 'Supplier agreements address vendor risk management requirements. (Guidance)' },
     { isoControlId: 'A.5.23', soc2Codes: ['CC6', 'CC9'], nis2Codes: ['NIS2-SC'], rationale: 'Cloud service security addresses both access control and supply chain concerns. (Guidance)' },
@@ -86,7 +86,7 @@ export const FRAMEWORK_MAPPINGS: GuidanceMapping[] = [
     { isoControlId: 'A.5.29', soc2Codes: ['A1'], nis2Codes: ['NIS2-BC'], rationale: 'Disruption preparedness supports availability and business continuity requirements. (Guidance)' },
     { isoControlId: 'A.5.30', soc2Codes: ['A1'], nis2Codes: ['NIS2-BC'], rationale: 'ICT readiness for continuity directly addresses availability commitments. (Guidance)' },
     { isoControlId: 'A.5.34', soc2Codes: ['P1'], nis2Codes: ['NIS2-GOV'], rationale: 'Privacy and PII protection maps to SOC 2 privacy criteria. (Guidance)' },
-    { isoControlId: 'A.6.3', soc2Codes: ['CC1'], nis2Codes: ['NIS2-CH'], rationale: 'Security awareness training supports control environment and cyber hygiene. (Guidance)' },
+    { isoControlId: 'A.6.3', soc2Codes: ['CC1'], nis2Codes: ['NIS2-CH'], rationale: 'Security awareness training supports practice environment and cyber hygiene. (Guidance)' },
     { isoControlId: 'A.7.1', soc2Codes: ['CC6'], nis2Codes: ['NIS2-RM'], rationale: 'Physical security perimeters support logical and physical access controls. (Guidance)' },
     { isoControlId: 'A.8.1', soc2Codes: ['CC6'], nis2Codes: ['NIS2-AM'], rationale: 'Endpoint device security is part of access control and authentication. (Guidance)' },
     { isoControlId: 'A.8.2', soc2Codes: ['CC6'], nis2Codes: ['NIS2-AM'], rationale: 'Privileged access management is a key access control requirement. (Guidance)' },

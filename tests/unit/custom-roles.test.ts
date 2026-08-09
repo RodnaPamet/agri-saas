@@ -152,7 +152,7 @@ describe('Custom Roles — Create', () => {
             createCustomRole(makeCtx(), {
                 name: 'Bad Role',
                 baseRole: 'READER',
-                permissionsJson: { controls: 'not-an-object' },
+                permissionsJson: { practices: 'not-an-object' },
             })
         ).rejects.toThrow(/Invalid permissions/);
     });
@@ -186,7 +186,7 @@ describe('Custom Roles — Create', () => {
             createCustomRole(makeCtx(), {
                 name: 'Incomplete',
                 baseRole: 'READER',
-                permissionsJson: { controls: { view: true, create: false, edit: false } },
+                permissionsJson: { practices: { view: true, create: false, edit: false } },
             })
         ).rejects.toThrow(/Invalid permissions/);
     });
@@ -234,7 +234,7 @@ describe('Custom Roles — Update', () => {
 
         await expect(
             updateCustomRole(makeCtx(), 'cr-1', {
-                permissionsJson: { controls: 'invalid' },
+                permissionsJson: { practices: 'invalid' },
             })
         ).rejects.toThrow(/Invalid permissions/);
     });

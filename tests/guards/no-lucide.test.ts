@@ -38,7 +38,7 @@ const SCAN_ROOT = path.join(ROOT, 'src');
 // exists. Default answer: migrate to Nucleo.
 const LEGACY_LUCIDE_USERS = new Set<string>([
     'src/app/org/[orgSlug]/(app)/audit/AuditLogTable.tsx',
-    'src/app/org/[orgSlug]/(app)/controls/ControlsTable.tsx',
+    'src/app/org/[orgSlug]/(app)/practices/PracticesTable.tsx',
     'src/app/org/[orgSlug]/(app)/dashboard-sections.tsx',
     'src/app/org/[orgSlug]/(app)/evidence/EvidenceTable.tsx',
     'src/app/org/[orgSlug]/(app)/members/MembersTable.tsx',
@@ -84,8 +84,8 @@ const LEGACY_LUCIDE_USERS = new Set<string>([
     'src/app/t/[tenantSlug]/(app)/audits/readiness/page.tsx',
     'src/app/t/[tenantSlug]/(app)/auth/mfa/page.tsx',
     'src/app/t/[tenantSlug]/(app)/calendar/CalendarClient.tsx',
-    'src/app/t/[tenantSlug]/(app)/controls/ControlsClient.tsx',
-    'src/app/t/[tenantSlug]/(app)/controls/filter-defs.ts',
+    'src/app/t/[tenantSlug]/(app)/practices/PracticesClient.tsx',
+    'src/app/t/[tenantSlug]/(app)/practices/filter-defs.ts',
     'src/app/t/[tenantSlug]/(app)/evidence/filter-defs.ts',
     'src/app/t/[tenantSlug]/(app)/policies/filter-defs.ts',
     // Roadmap-2 PR-12 — moved a single `Download` icon import
@@ -160,7 +160,7 @@ const LEGACY_LUCIDE_USERS = new Set<string>([
     // the palette + typed-node renderer consume icons via the
     // taxonomy meta and no longer carry direct lucide imports.
     // ProcessEdge keeps its lucide ShieldCheck for the
-    // control-on-edge overlay (R25-PR-D). Same precedent as
+    // practice-on-edge overlay (R25-PR-D). Same precedent as
     // GraphExplorer — xyflow-based canvas pages use diagramming-
     // specific icons not yet covered by Nucleo.
     'src/components/processes/ProcessEdge.tsx',

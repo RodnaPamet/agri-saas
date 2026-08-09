@@ -12,7 +12,7 @@ import { withTenantDb } from '@/lib/db-context';
 import { getProviderByName } from '@/lib/storage';
 
 /**
- * Find FILE evidence not linked to any control after N minutes.
+ * Find FILE evidence not linked to any practice after N minutes.
  * Emits EVIDENCE_UNLINKED_WARNING events for admin review.
  */
 export async function reconcileUnlinkedEvidence(
@@ -26,7 +26,7 @@ export async function reconcileUnlinkedEvidence(
             where: {
                 tenantId,
                 type: 'FILE',
-                controlId: null,
+                practiceId: null,
                 createdAt: { lt: cutoff },
                 deletedAt: null,
             },

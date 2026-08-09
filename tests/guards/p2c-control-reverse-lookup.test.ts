@@ -1,18 +1,18 @@
 /**
- * Epic P2-PR-C — Control reverse-lookup ratchet.
+ * Epic P2-PR-C — Practice reverse-lookup ratchet.
  *
  * Brief gap #11 🟠 closes here for the read direction: "Where is
- * this control used?". The chain:
+ * this practice used?". The chain:
  *
- *   1. ProcessMapRepository.listMapsByControl(ctx, controlId) —
- *      reads ProcessEdgeControl rows for the (tenant, controlId)
- *      pair via the existing `@@index([tenantId, controlId])`,
+ *   1. ProcessMapRepository.listMapsByPractice(ctx, practiceId) —
+ *      reads ProcessEdgePractice rows for the (tenant, practiceId)
+ *      pair via the existing `@@index([tenantId, practiceId])`,
  *      filters out soft-deleted parents, returns (map, edge) rows.
- *   2. process-map usecase.listMapsUsingControl(ctx, controlId) —
+ *   2. process-map usecase.listMapsUsingPractice(ctx, practiceId) —
  *      thin orchestration; requires canRead.
- *   3. /api/t/<slug>/controls/<id>/process-maps — GET route
+ *   3. /api/t/<slug>/practices/<id>/process-maps — GET route
  *      wrapped with withApiErrorHandling, returns `{ maps }`.
- *   4. <ControlReverseLookupModal> — opens from the Control detail
+ *   4. <PracticeReverseLookupModal> — opens from the Practice detail
  *      page's "Where used" button; fetches lazily on open;
  *      groups multi-edge results by map; deep-links to the canvas.
  *
@@ -28,15 +28,15 @@ const ROOT = path.resolve(__dirname, "../..");
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), "utf8");
 const exists = (rel: string) => fs.existsSync(path.join(ROOT, rel));
 
-describe("Epic P2-PR-C — control reverse-lookup", () => {
-    describe("Repository — listMapsByControl", () => {
+describe("Epic P2-PR-C — practice reverse-lookup", () => {
+    describe("Repository — listMapsByPractice", () => {
         const src = read(
             "src/app-layer/repositories/ProcessMapRepository.ts",
         );
 
         it("declares the method with the canonical signature + return shape", () => {
             expect(src).toMatch(
-                /static async listMapsByControl\(\s*db:\s*PrismaTx,[\s\S]{0,200}ctx:\s*RequestContext,[\s\S]{0,200}controlId:\s*string,?/,
+                /static async listMapsByPractice\(\s*db:\s*PrismaTx,[\s\S]{0,200}ctx:\s*RequestContext,[\s\S]{0,200}practiceId:\s*string,?/,
             );
             // The return shape — (mapId, mapName, mapStatus, edgeKey,
             // edgeLabel) — is the contract the route + modal both
@@ -52,13 +52,13 @@ describe("Epic P2-PR-C — control reverse-lookup", () => {
             }
         });
 
-        it("queries ProcessEdgeControl with the canonical (tenantId, controlId) filter", () => {
+        it("queries ProcessEdgePractice with the canonical (tenantId, practiceId) filter", () => {
             // This is the seek that the schema's
-            // `@@index([tenantId, controlId])` supports. Anchored
+            // `@@index([tenantId, practiceId])` supports. Anchored
             // here so a future refactor that filters on edge.id or
             // forgets tenantId trips the ratchet.
             expect(src).toMatch(
-                /db\.processEdgeControl\.findMany\(\{[\s\S]{0,400}where:\s*\{\s*tenantId:\s*ctx\.tenantId,\s*controlId\s*\}/,
+                /db\.processEdgePractice\.findMany\(\{[\s\S]{0,400}where:\s*\{\s*tenantId:\s*ctx\.tenantId,\s*practiceId\s*\}/,
             );
         });
 
@@ -73,30 +73,30 @@ describe("Epic P2-PR-C — control reverse-lookup", () => {
         });
     });
 
-    describe("Usecase — listMapsUsingControl", () => {
+    describe("Usecase — listMapsUsingPractice", () => {
         const src = read("src/app-layer/usecases/process-map.ts");
 
         it("exports the usecase + gates on canRead", () => {
             expect(src).toMatch(
-                /export async function listMapsUsingControl\([\s\S]{0,200}controlId:\s*string,?\s*\)/,
+                /export async function listMapsUsingPractice\([\s\S]{0,200}practiceId:\s*string,?\s*\)/,
             );
             // The usecase MUST call assertCanRead — reverse-lookup is
             // an information surface, not a write, but tenant
             // isolation still gates access.
             const fn = src.match(
-                /export async function listMapsUsingControl[\s\S]+?\n\}/,
+                /export async function listMapsUsingPractice[\s\S]+?\n\}/,
             );
             expect(fn).not.toBeNull();
             expect(fn![0]).toMatch(/assertCanRead\(ctx\)/);
             expect(fn![0]).toMatch(
-                /ProcessMapRepository\.listMapsByControl\(db,\s*ctx,\s*controlId\)/,
+                /ProcessMapRepository\.listMapsByPractice\(db,\s*ctx,\s*practiceId\)/,
             );
         });
     });
 
-    describe("Route — /api/t/<slug>/controls/<id>/process-maps", () => {
+    describe("Route — /api/t/<slug>/practices/<id>/process-maps", () => {
         const path =
-            "src/app/api/t/[tenantSlug]/controls/[controlId]/process-maps/route.ts";
+            "src/app/api/t/[tenantSlug]/practices/[practiceId]/process-maps/route.ts";
 
         it("exists at the canonical Next.js path", () => {
             expect(exists(path)).toBe(true);
@@ -108,27 +108,27 @@ describe("Epic P2-PR-C — control reverse-lookup", () => {
                 /export const GET = withApiErrorHandling\b/,
             );
             expect(src).toMatch(
-                /listMapsUsingControl\(ctx,\s*params\.controlId\)/,
+                /listMapsUsingPractice\(ctx,\s*params\.practiceId\)/,
             );
             expect(src).toMatch(/jsonResponse\(\s*\{\s*maps\s*\}\s*\)/);
         });
     });
 
-    describe("UI — ControlReverseLookupModal", () => {
+    describe("UI — PracticeReverseLookupModal", () => {
         const src = read(
-            "src/components/controls/ControlReverseLookupModal.tsx",
+            "src/components/practices/PracticeReverseLookupModal.tsx",
         );
 
         it("exports the component with the canonical props", () => {
             expect(src).toMatch(
-                /export function ControlReverseLookupModal\(\{[\s\S]{0,300}controlId,[\s\S]{0,100}tenantSlug,[\s\S]{0,100}open,[\s\S]{0,100}onOpenChange,?/,
+                /export function PracticeReverseLookupModal\(\{[\s\S]{0,300}practiceId,[\s\S]{0,100}tenantSlug,[\s\S]{0,100}open,[\s\S]{0,100}onOpenChange,?/,
             );
         });
 
         it("fetches lazily — only when `open` is true", () => {
             // The useEffect MUST gate on `open` first; an
             // unconditional fetch would hit the API on every
-            // control detail page mount.
+            // practice detail page mount.
             expect(src).toMatch(
                 /useEffect\(\(\)\s*=>\s*\{[\s\S]{0,200}if\s*\(!open\)\s*return/,
             );
@@ -136,7 +136,7 @@ describe("Epic P2-PR-C — control reverse-lookup", () => {
 
         it("hits the canonical reverse-lookup URL", () => {
             expect(src).toMatch(
-                /\/api\/t\/\$\{tenantSlug\}\/controls\/\$\{controlId\}\/process-maps/,
+                /\/api\/t\/\$\{tenantSlug\}\/practices\/\$\{practiceId\}\/process-maps/,
             );
         });
 
@@ -159,26 +159,26 @@ describe("Epic P2-PR-C — control reverse-lookup", () => {
 
         it("carries the canonical testids for the three states", () => {
             for (const id of [
-                "control-reverse-lookup-body",
-                "control-reverse-lookup-empty",
-                "control-reverse-lookup-row",
-                "control-reverse-lookup-close",
+                "practice-reverse-lookup-body",
+                "practice-reverse-lookup-empty",
+                "practice-reverse-lookup-row",
+                "practice-reverse-lookup-close",
             ]) {
                 expect(src).toMatch(new RegExp(`data-testid="${id}"`));
             }
         });
     });
 
-    describe("Control detail page — wires the modal + button", () => {
+    describe("Practice detail page — wires the modal + button", () => {
         const src = read(
-            "src/app/t/[tenantSlug]/(app)/controls/[controlId]/page.tsx",
+            "src/app/t/[tenantSlug]/(app)/practices/[practiceId]/page.tsx",
         );
 
         it("imports the modal + mounts it with state", () => {
             expect(src).toMatch(
-                /import\s*\{\s*ControlReverseLookupModal\s*\}\s*from\s*['"]@\/components\/controls\/ControlReverseLookupModal['"]/,
+                /import\s*\{\s*PracticeReverseLookupModal\s*\}\s*from\s*['"]@\/components\/practices\/PracticeReverseLookupModal['"]/,
             );
-            expect(src).toMatch(/<ControlReverseLookupModal\b/);
+            expect(src).toMatch(/<PracticeReverseLookupModal\b/);
             expect(src).toMatch(/reverseLookupOpen,?/);
         });
 
@@ -187,12 +187,12 @@ describe("Epic P2-PR-C — control reverse-lookup", () => {
             // readers) need it most. The button must NOT live inside
             // the `permissions.canWrite ? (...) : null` group.
             expect(src).toMatch(
-                /data-testid="control-where-used-btn"/,
+                /data-testid="practice-where-used-btn"/,
             );
             // The headerActions block now always renders the button
-            // and gates only the write-controls below it.
+            // and gates only the write-practices below it.
             expect(src).toMatch(
-                /const headerActions = \(\s*<>[\s\S]{0,500}control-where-used-btn[\s\S]{0,400}permissions\.canWrite\s*&&/,
+                /const headerActions = \(\s*<>[\s\S]{0,500}practice-where-used-btn[\s\S]{0,400}permissions\.canWrite\s*&&/,
             );
         });
     });

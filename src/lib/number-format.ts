@@ -33,7 +33,7 @@ const TRAILING_ZEROS = /\.0+$|(\.[0-9]*[1-9])0+$/;
 /**
  * Compact human number formatter: `1500 → "1.5K"`, `2_000_000 → "2M"`.
  * `opts.full` formats with grouping separators instead (`"2,000,000"`).
- * `opts.digits` controls fractional precision (default 1).
+ * `opts.digits` practices fractional precision (default 1).
  */
 export function nFormatter(
     value?: number | bigint,

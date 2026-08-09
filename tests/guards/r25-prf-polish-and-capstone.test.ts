@@ -18,7 +18,7 @@ const ALL_R25_RATCHETS = [
     "tests/guards/r25-pra-route-and-shell.test.ts",
     "tests/guards/r25-prb-canvas-integration.test.ts",
     "tests/guards/r25-prc-process-step-node.test.ts",
-    "tests/guards/r25-prd-edge-and-control-overlay.test.ts",
+    "tests/guards/r25-prd-edge-and-practice-overlay.test.ts",
     "tests/guards/r25-pre-interaction-model.test.ts",
     "tests/guards/r25-prf-polish-and-capstone.test.ts",
 ] as const;
@@ -60,11 +60,11 @@ describe("R25-PR-F — Polish + capstone", () => {
             expect(canvasSrc).not.toMatch(/<MiniMap\b/);
         });
 
-        it("Controls (pan/zoom toolbar) deliberately NOT mounted", () => {
+        it("Practices (pan/zoom toolbar) deliberately NOT mounted", () => {
             // Trackpad + scroll-zoom carry the interaction. The
-            // explicit Controls component reads as a busy debug
+            // explicit Practices component reads as a busy debug
             // affordance.
-            expect(canvasSrc).not.toMatch(/<Controls\b/);
+            expect(canvasSrc).not.toMatch(/<Practices\b/);
         });
     });
 

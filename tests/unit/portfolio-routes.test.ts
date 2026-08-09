@@ -16,10 +16,10 @@ const getOrgCtxMock = jest.fn();
 const getPortfolioSummaryMock = jest.fn();
 const getPortfolioTenantHealthMock = jest.fn();
 const getPortfolioTrendsMock = jest.fn();
-const getNonPerformingControlsMock = jest.fn();
+const getNonPerformingPracticesMock = jest.fn();
 const getOverdueEvidenceAcrossOrgMock = jest.fn();
 // Paginated counterparts — the drill-down API now uses these.
-const listNonPerformingControlsMock = jest.fn();
+const listNonPerformingPracticesMock = jest.fn();
 const listOverdueEvidenceAcrossOrgMock = jest.fn();
 
 jest.mock('@/app-layer/context', () => ({
@@ -32,9 +32,9 @@ jest.mock('@/app-layer/usecases/portfolio', () => ({
     getPortfolioSummary: (...a: unknown[]) => getPortfolioSummaryMock(...a),
     getPortfolioTenantHealth: (...a: unknown[]) => getPortfolioTenantHealthMock(...a),
     getPortfolioTrends: (...a: unknown[]) => getPortfolioTrendsMock(...a),
-    getNonPerformingControls: (...a: unknown[]) => getNonPerformingControlsMock(...a),
+    getNonPerformingPractices: (...a: unknown[]) => getNonPerformingPracticesMock(...a),
     getOverdueEvidenceAcrossOrg: (...a: unknown[]) => getOverdueEvidenceAcrossOrgMock(...a),
-    listNonPerformingControls: (...a: unknown[]) => listNonPerformingControlsMock(...a),
+    listNonPerformingPractices: (...a: unknown[]) => listNonPerformingPracticesMock(...a),
     listOverdueEvidenceAcrossOrg: (...a: unknown[]) => listOverdueEvidenceAcrossOrgMock(...a),
 }));
 
@@ -78,9 +78,9 @@ beforeEach(() => {
     getPortfolioSummaryMock.mockReset();
     getPortfolioTenantHealthMock.mockReset();
     getPortfolioTrendsMock.mockReset();
-    getNonPerformingControlsMock.mockReset();
+    getNonPerformingPracticesMock.mockReset();
     getOverdueEvidenceAcrossOrgMock.mockReset();
-    listNonPerformingControlsMock.mockReset();
+    listNonPerformingPracticesMock.mockReset();
     listOverdueEvidenceAcrossOrgMock.mockReset();
 });
 
@@ -165,38 +165,38 @@ describe('GET /api/org/[orgSlug]/portfolio', () => {
         expect(res.status).toBe(400);
     });
 
-    it('drill-down view "controls" is allowed for ORG_ADMIN (canDrillDown=true)', async () => {
+    it('drill-down view "practices" is allowed for ORG_ADMIN (canDrillDown=true)', async () => {
         getOrgCtxMock.mockResolvedValue(adminCtx);
-        listNonPerformingControlsMock.mockResolvedValue({
-            rows: [{ controlId: 'c-1' }],
+        listNonPerformingPracticesMock.mockResolvedValue({
+            rows: [{ practiceId: 'c-1' }],
             nextCursor: null,
         });
 
         const res = await viewGET(
-            makeRequest('/api/org/acme-org/portfolio?view=controls'),
+            makeRequest('/api/org/acme-org/portfolio?view=practices'),
             { params: Promise.resolve({ orgSlug: 'acme-org' }) },
         );
         const body = await res.json();
-        expect(body.rows).toEqual([{ controlId: 'c-1' }]);
+        expect(body.rows).toEqual([{ practiceId: 'c-1' }]);
         expect(body.nextCursor).toBeNull();
     });
 
-    it('drill-down view "controls" forwards cursor + limit query params to the usecase', async () => {
+    it('drill-down view "practices" forwards cursor + limit query params to the usecase', async () => {
         getOrgCtxMock.mockResolvedValue(adminCtx);
-        listNonPerformingControlsMock.mockResolvedValue({
+        listNonPerformingPracticesMock.mockResolvedValue({
             rows: [],
             nextCursor: 'cursor-page-3',
         });
 
         const res = await viewGET(
             makeRequest(
-                '/api/org/acme-org/portfolio?view=controls&cursor=opaque-cursor&limit=25',
+                '/api/org/acme-org/portfolio?view=practices&cursor=opaque-cursor&limit=25',
             ),
             { params: Promise.resolve({ orgSlug: 'acme-org' }) },
         );
         expect(res.status).toBe(200);
-        expect(listNonPerformingControlsMock).toHaveBeenCalledTimes(1);
-        const args = listNonPerformingControlsMock.mock.calls[0];
+        expect(listNonPerformingPracticesMock).toHaveBeenCalledTimes(1);
+        const args = listNonPerformingPracticesMock.mock.calls[0];
         expect(args[1]).toEqual({ cursor: 'opaque-cursor', limit: 25 });
 
         const body = await res.json();
@@ -206,14 +206,14 @@ describe('GET /api/org/[orgSlug]/portfolio', () => {
     it('drill-down views are blocked for ORG_READER with 403 — usecase NOT called', async () => {
         getOrgCtxMock.mockResolvedValue(readerCtx);
 
-        for (const v of ['controls', 'evidence']) {
+        for (const v of ['practices', 'evidence']) {
             const res = await viewGET(
                 makeRequest(`/api/org/acme-org/portfolio?view=${v}`),
                 { params: Promise.resolve({ orgSlug: 'acme-org' }) },
             );
             expect(res.status).toBe(403);
         }
-        expect(listNonPerformingControlsMock).not.toHaveBeenCalled();
+        expect(listNonPerformingPracticesMock).not.toHaveBeenCalled();
         expect(listOverdueEvidenceAcrossOrgMock).not.toHaveBeenCalled();
     });
 
@@ -251,15 +251,15 @@ describe('GET /api/org/[orgSlug]/portfolio', () => {
 
     it('drill-down ignores invalid limit parameter (lenient on read)', async () => {
         getOrgCtxMock.mockResolvedValue(adminCtx);
-        listNonPerformingControlsMock.mockResolvedValue({ rows: [], nextCursor: null });
+        listNonPerformingPracticesMock.mockResolvedValue({ rows: [], nextCursor: null });
 
         const res = await viewGET(
-            makeRequest('/api/org/acme-org/portfolio?view=controls&limit=not-a-number'),
+            makeRequest('/api/org/acme-org/portfolio?view=practices&limit=not-a-number'),
             { params: Promise.resolve({ orgSlug: 'acme-org' }) },
         );
         expect(res.status).toBe(200);
         // No `limit` key in the call args → usecase falls back to default.
-        const args = listNonPerformingControlsMock.mock.calls[0];
+        const args = listNonPerformingPracticesMock.mock.calls[0];
         expect(args[1].limit).toBeUndefined();
     });
 });
@@ -273,7 +273,7 @@ describe('GET /api/org/[orgSlug]/portfolio/export', () => {
             organizationSlug: 'acme-org',
             generatedAt: '2026-04-26T00:00:00Z',
             tenants: { total: 2, snapshotted: 1, pending: 1 },
-            controls: { applicable: 100, implemented: 75, coveragePercent: 75 },
+            practices: { applicable: 100, implemented: 75, coveragePercent: 75 },
             evidence: { total: 50, overdue: 3, dueSoon7d: 4 },
             policies: { total: 5, overdueReview: 1 },
             tasks: { open: 12, overdue: 2 },
@@ -301,7 +301,7 @@ describe('GET /api/org/[orgSlug]/portfolio/export', () => {
         getOrgCtxMock.mockResolvedValue(adminCtx);
         getPortfolioSummaryMock.mockResolvedValue(summaryFixture());
         getPortfolioTenantHealthMock.mockResolvedValue(healthFixture());
-        getNonPerformingControlsMock.mockResolvedValue([]);
+        getNonPerformingPracticesMock.mockResolvedValue([]);
         getOverdueEvidenceAcrossOrgMock.mockResolvedValue([]);
 
         const res = await exportGET(
@@ -319,9 +319,9 @@ describe('GET /api/org/[orgSlug]/portfolio/export', () => {
         getOrgCtxMock.mockResolvedValue(adminCtx);
         getPortfolioSummaryMock.mockResolvedValue(summaryFixture());
         getPortfolioTenantHealthMock.mockResolvedValue(healthFixture());
-        getNonPerformingControlsMock.mockResolvedValue([
+        getNonPerformingPracticesMock.mockResolvedValue([
             {
-                controlId: 'c-1',
+                practiceId: 'c-1',
                 tenantName: 'Alpha Co',
                 tenantSlug: 'alpha',
                 name: 'AC-1',
@@ -340,7 +340,7 @@ describe('GET /api/org/[orgSlug]/portfolio/export', () => {
         // Section banners present
         expect(body).toContain('# Portfolio Summary');
         expect(body).toContain('# Tenant Health');
-        expect(body).toContain('# Non-Performing Controls');
+        expect(body).toContain('# Non-Performing Practices');
         expect(body).toContain('# Overdue Evidence');
         // Summary values present
         expect(body).toContain('Coverage %,75.0');
@@ -363,13 +363,13 @@ describe('GET /api/org/[orgSlug]/portfolio/export', () => {
         const body = await res.text();
         expect(body).toContain('# Portfolio Summary');
         expect(body).toContain('# Tenant Health');
-        expect(body).not.toContain('# Non-Performing Controls');
+        expect(body).not.toContain('# Non-Performing Practices');
         expect(body).not.toContain('# Overdue Evidence');
 
         // The drill-down usecases must NOT have been called for the
         // partial-export branch — saves DB round-trips when canDrillDown
         // is false.
-        expect(getNonPerformingControlsMock).not.toHaveBeenCalled();
+        expect(getNonPerformingPracticesMock).not.toHaveBeenCalled();
         expect(getOverdueEvidenceAcrossOrgMock).not.toHaveBeenCalled();
     });
 
@@ -402,7 +402,7 @@ describe('GET /api/org/[orgSlug]/portfolio/export', () => {
                 name: 'Alpha, Inc. "Special"',
             },
         ]);
-        getNonPerformingControlsMock.mockResolvedValue([]);
+        getNonPerformingPracticesMock.mockResolvedValue([]);
         getOverdueEvidenceAcrossOrgMock.mockResolvedValue([]);
 
         const res = await exportGET(

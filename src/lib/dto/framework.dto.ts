@@ -23,7 +23,7 @@ export const RequirementDTOSchema = z.object({
     section: z.string().nullable().optional(),
     category: z.string().nullable().optional(),
 }).passthrough().openapi('Requirement', {
-    description: 'A single requirement within a framework (e.g. ISO 27001:2022 A.5.1). Mapped to controls via ControlRequirementMapRequest.',
+    description: 'A single requirement within a framework (e.g. ISO 27001:2022 A.5.1). Mapped to practices via PracticeRequirementMapRequest.',
 });
 
 export type RequirementDTO = z.infer<typeof RequirementDTOSchema>;

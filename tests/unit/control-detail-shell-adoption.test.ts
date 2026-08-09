@@ -1,8 +1,8 @@
 /**
- * Structural ratchet — controls detail page composes via EntityDetailLayout.
+ * Structural ratchet — practices detail page composes via EntityDetailLayout.
  *
  * Static-file checks (no jsdom). Locks the load-bearing properties
- * of the controls detail page after the EntityDetailLayout refactor:
+ * of the practices detail page after the EntityDetailLayout refactor:
  *
  *   - The page imports + renders <EntityDetailLayout>
  *   - It still references all three domain-specific panels —
@@ -22,10 +22,10 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 const ROOT = path.resolve(__dirname, '../..');
-const PAGE_PATH = 'src/app/t/[tenantSlug]/(app)/controls/[controlId]/page.tsx';
+const PAGE_PATH = 'src/app/t/[tenantSlug]/(app)/practices/[practiceId]/page.tsx';
 const read = () => fs.readFileSync(path.join(ROOT, PAGE_PATH), 'utf-8');
 
-describe('Controls detail page — EntityDetailLayout adoption', () => {
+describe('Practices detail page — EntityDetailLayout adoption', () => {
     it('imports EntityDetailLayout from @/components/layout', () => {
         const src = read();
         expect(src).toMatch(
@@ -69,20 +69,20 @@ describe('Controls detail page — EntityDetailLayout adoption', () => {
     });
 
     it('preserves the Edit modal', () => {
-        // Elevation PR-2 — modal extracted to _modals/EditControlModal.tsx.
-        // The page renders <EditControlModal>; the modal sub-component
-        // owns the inner <Modal> + 'control-edit-dialog' id.
+        // Elevation PR-2 — modal extracted to _modals/EditPracticeModal.tsx.
+        // The page renders <EditPracticeModal>; the modal sub-component
+        // owns the inner <Modal> + 'practice-edit-dialog' id.
         const src = read();
-        expect(src).toContain('<EditControlModal');
+        expect(src).toContain('<EditPracticeModal');
         const modalSrc = fs.readFileSync(
             path.resolve(
                 __dirname,
                 '../..',
-                'src/app/t/[tenantSlug]/(app)/controls/[controlId]/_modals/EditControlModal.tsx',
+                'src/app/t/[tenantSlug]/(app)/practices/[practiceId]/_modals/EditPracticeModal.tsx',
             ),
             'utf8',
         );
-        expect(modalSrc).toContain('control-edit-dialog');
+        expect(modalSrc).toContain('practice-edit-dialog');
         expect(modalSrc).toMatch(/<Modal\b/);
     });
 
@@ -116,7 +116,7 @@ describe('Controls detail page — EntityDetailLayout adoption', () => {
 
 // ─── Epic 69 — SWR-first migration pins ──────────────────────────────
 
-describe('Controls detail page — Epic 69 SWR migration', () => {
+describe('Practices detail page — Epic 69 SWR migration', () => {
     /**
      * Strip block + line comments so prose mentions of TanStack /
      * `router.refresh()` in the migration's docstrings don't trip
@@ -129,11 +129,11 @@ describe('Controls detail page — Epic 69 SWR migration', () => {
             .replace(/^\s*\/\/.*$/gm, '');
     }
 
-    it('reads via useTenantSWR keyed at CACHE_KEYS.controls.pageData()', () => {
+    it('reads via useTenantSWR keyed at CACHE_KEYS.practices.pageData()', () => {
         const src = read();
         expect(src).toContain("from '@/lib/hooks/use-tenant-swr'");
         expect(src).toContain('useTenantSWR');
-        expect(src).toContain('CACHE_KEYS.controls.pageData(');
+        expect(src).toContain('CACHE_KEYS.practices.pageData(');
     });
 
     it('writes status via useTenantMutation with an optimistic updater', () => {
@@ -148,11 +148,11 @@ describe('Controls detail page — Epic 69 SWR migration', () => {
         expect(src.match(/optimisticUpdate:/g)?.length ?? 0).toBeGreaterThanOrEqual(2);
     });
 
-    it('invalidates the controls list cache after the status mutation', () => {
+    it('invalidates the practices list cache after the status mutation', () => {
         const src = read();
         // The list page must refresh after the status flip — pin
         // that the `invalidate` array references the list key.
-        expect(src).toContain('CACHE_KEYS.controls.list()');
+        expect(src).toContain('CACHE_KEYS.practices.list()');
     });
 
     it('does NOT use TanStack React Query (queryKeys / useQuery / useMutation / useQueryClient)', () => {

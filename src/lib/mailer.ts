@@ -173,7 +173,7 @@ export async function sendEmail(msg: EmailMessage): Promise<void> {
  * src/env.ts. Production should ALWAYS set RESEND_FROM / SMTP_FROM to a
  * verified sender on its own domain — this default is a dev convenience, and
  * `initMailerFromEnv` warns when prod runs on it (deliverability suffers when
- * the From address isn't a domain the operator controls / has SPF+DKIM for).
+ * the From address isn't a domain the operator practices / has SPF+DKIM for).
  */
 const DEFAULT_SENDER = 'noreply@agrent.bg';
 

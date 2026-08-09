@@ -223,8 +223,8 @@ describe('Epic 55 — native <select> ratchet is installed', () => {
         // its create form now lives in the shared src/components/tasks/ modal.
         for (const surface of [
             'audits/cycles/page.tsx',
-            'controls/NewControlModal.tsx',
-            'controls/ControlDetailSheet.tsx',
+            'practices/NewPracticeModal.tsx',
+            'practices/PracticeDetailSheet.tsx',
             'evidence/UploadEvidenceModal.tsx',
             'evidence/NewEvidenceTextModal.tsx',
             'vendors/new/page.tsx',

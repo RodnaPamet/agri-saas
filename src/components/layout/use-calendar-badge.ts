@@ -23,7 +23,7 @@
  * effects can double them again under `next dev`. On a slow CI
  * runner, that handful of in-flight requests is enough to keep
  * `page.waitForLoadState('networkidle')` from settling within the
- * 180s test timeout — observed as the 3-min control-edit-modal
+ * 180s test timeout — observed as the 3-min practice-edit-modal
  * hang. The badge is a vanity counter; it's fine to skip the fetch
  * under `NEXT_PUBLIC_TEST_MODE=1`. The flag is the same one that
  * suppresses the Driver.js onboarding tour in

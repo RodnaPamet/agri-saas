@@ -42,7 +42,7 @@ export const COLUMN_VISIBILITY_PREFIX = "inflect:col-vis:";
 /**
  * Build a localStorage key for a table's column visibility.
  *
- * @param tableId - Unique identifier for the table (e.g., "controls", "risks").
+ * @param tableId - Unique identifier for the table (e.g., "practices", "risks").
  */
 export function getVisibilityStorageKey(tableId: string): string {
   return `${COLUMN_VISIBILITY_PREFIX}${tableId}`;

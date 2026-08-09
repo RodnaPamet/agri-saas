@@ -95,7 +95,7 @@ describe('GET /api/docs — Swagger UI gating', () => {
 
         const res = await GET(fakeRequest(), {});
 
-        expect(res.headers.get('Cache-Control')).toBe('no-store');
+        expect(res.headers.get('Cache-Practice')).toBe('no-store');
         expect(res.headers.get('X-Robots-Tag')).toMatch(/noindex/);
     });
 

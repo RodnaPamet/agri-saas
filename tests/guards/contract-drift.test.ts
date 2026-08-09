@@ -13,7 +13,7 @@
 
 describe('Contract Drift — DTO integrity', () => {
     const dtoPaths = [
-        { module: 'control.dto', schemas: ['ControlListItemDTOSchema', 'ControlDetailDTOSchema', 'ControlDashboardDTOSchema'] },
+        { module: 'practice.dto', schemas: ['PracticeListItemDTOSchema', 'PracticeDetailDTOSchema', 'PracticeDashboardDTOSchema'] },
         { module: 'policy.dto', schemas: ['PolicyListItemDTOSchema', 'PolicyDetailDTOSchema'] },
         { module: 'task.dto', schemas: ['TaskDTOSchema'] },
         { module: 'vendor.dto', schemas: ['VendorListItemDTOSchema', 'VendorDetailDTOSchema'] },
@@ -33,10 +33,10 @@ describe('Contract Drift — DTO integrity', () => {
         }
     });
 
-    test('ControlListItemDTOSchema parses a valid control shape', () => {
+    test('PracticeListItemDTOSchema parses a valid practice shape', () => {
 
-        const { ControlListItemDTOSchema } = require('../../src/lib/dto/control.dto');
-        const validControl = {
+        const { PracticeListItemDTOSchema } = require('../../src/lib/dto/practice.dto');
+        const validPractice = {
             id: 'ctl_123',
             tenantId: 'ten_1',
             code: 'A.5.1',
@@ -52,7 +52,7 @@ describe('Contract Drift — DTO integrity', () => {
             owner: { id: 'usr_1', name: 'Admin', email: 'admin@acme.com' },
             _count: { evidence: 3, risks: 1 },
         };
-        const result = ControlListItemDTOSchema.safeParse(validControl);
+        const result = PracticeListItemDTOSchema.safeParse(validPractice);
         expect(result.success).toBe(true);
     });
 
@@ -88,11 +88,11 @@ describe('Contract Drift — DTO integrity', () => {
         expect(result.success).toBe(true);
     });
 
-    test('ControlListItemDTOSchema rejects invalid shape (missing required)', () => {
+    test('PracticeListItemDTOSchema rejects invalid shape (missing required)', () => {
 
-        const { ControlListItemDTOSchema } = require('../../src/lib/dto/control.dto');
+        const { PracticeListItemDTOSchema } = require('../../src/lib/dto/practice.dto');
         const invalid = { id: 'ctl_1' }; // missing name, status, applicability
-        const result = ControlListItemDTOSchema.safeParse(invalid);
+        const result = PracticeListItemDTOSchema.safeParse(invalid);
         expect(result.success).toBe(false);
     });
 
@@ -100,7 +100,7 @@ describe('Contract Drift — DTO integrity', () => {
 
         const dtoIndex = require('../../src/lib/dto/index');
         const expectedExports = [
-            'ControlListItemDTOSchema', 'ControlDetailDTOSchema',
+            'PracticeListItemDTOSchema', 'PracticeDetailDTOSchema',
             'PolicyListItemDTOSchema', 'PolicyDetailDTOSchema',
             'TaskDTOSchema',
             'VendorListItemDTOSchema', 'VendorDetailDTOSchema',

@@ -6,7 +6,7 @@
  * pages broke uniformity by rendering BLOCK elements inside their
  * title cell — Policies had a `<p>` description below the title
  * link, pushing rows to ~60px. Users compared Policies side-by-side
- * with Controls and saw "the tables look different."
+ * with Practices and saw "the tables look different."
  *
  * R12-PR2 fixes the visible drift (Policies title cell drops the
  * block-level description) and locks two invariants:
@@ -36,7 +36,7 @@ describe('DataTable uniform row height (R12-PR2)', () => {
         // tokens that together determine row height (~44px):
         //   py-2.5      → 10px vertical padding (top+bottom)
         //   leading-6   → 24px line-height
-        //   text-sm     → 14px font size (controls actual line box)
+        //   text-sm     → 14px font size (practices actual line box)
         expect(src).toMatch(/py-2\.5/);
         expect(src).toMatch(/leading-6/);
         expect(src).toMatch(/text-sm/);
@@ -62,7 +62,7 @@ describe('DataTable uniform row height (R12-PR2)', () => {
         // </Link>...<p` shape is the regression we lock against.
         const titleCellPages = [
             'src/app/t/[tenantSlug]/(app)/risks/RisksClient.tsx',
-            'src/app/t/[tenantSlug]/(app)/controls/ControlsClient.tsx',
+            'src/app/t/[tenantSlug]/(app)/practices/PracticesClient.tsx',
             'src/app/t/[tenantSlug]/(app)/policies/PoliciesClient.tsx',
             'src/app/t/[tenantSlug]/(app)/evidence/EvidenceClient.tsx',
             'src/app/t/[tenantSlug]/(app)/vendors/VendorsClient.tsx',

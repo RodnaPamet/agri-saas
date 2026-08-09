@@ -4,7 +4,7 @@
  * Roadmap-16 PR-9 — `<RadarChart>` primitive.
  *
  * The R16 radar chart. Visualises a multi-axis profile (e.g.
- * control coverage by domain, risk profile by category) as a
+ * practice coverage by domain, risk profile by category) as a
  * polygon mesh inside a circular grid.
  *
  * Renders:
@@ -109,14 +109,14 @@ interface RadarChartProps {
  *
  * Consumer pattern:
  *
- *     const state = useControlCoverageByDomain();  // ChartState<RadarAxisDatum[]>
+ *     const state = usePracticeCoverageByDomain();  // ChartState<RadarAxisDatum[]>
  *     return (
  *       <RadarChart
  *         state={state}
  *         seriesIndex={2}
  *         maxValue={100}
- *         testId="control-coverage-radar"
- *         ariaLabel="Control coverage by domain"
+ *         testId="practice-coverage-radar"
+ *         ariaLabel="Practice coverage by domain"
  *       />
  *     );
  */

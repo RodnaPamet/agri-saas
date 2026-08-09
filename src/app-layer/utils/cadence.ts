@@ -1,14 +1,14 @@
 /**
- * Cadence utility for computing next due dates based on control frequency.
+ * Cadence utility for computing next due dates based on practice frequency.
  */
 
-type ControlFrequency = 'AD_HOC' | 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'QUARTERLY' | 'ANNUALLY';
+type PracticeFrequency = 'AD_HOC' | 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'QUARTERLY' | 'ANNUALLY';
 
 /**
  * Compute the next due date based on frequency and a reference date.
  * AD_HOC returns null (no automatic scheduling).
  */
-export function computeNextDueAt(frequency: ControlFrequency | string | null | undefined, fromDate: Date = new Date()): Date | null {
+export function computeNextDueAt(frequency: PracticeFrequency | string | null | undefined, fromDate: Date = new Date()): Date | null {
     if (!frequency || frequency === 'AD_HOC') return null;
 
     const next = new Date(fromDate);

@@ -28,7 +28,7 @@ export const AssetListItemDTOSchema = z.object({
     updatedAt: z.string().optional(),
     ownerUser: UserRefSchema.nullable().optional(),
     _count: z.object({
-        controls: z.number().optional(),
+        practices: z.number().optional(),
         risks: z.number().optional(),
     }).optional(),
 }).passthrough().openapi('AssetListItem', {
@@ -40,9 +40,9 @@ export type AssetListItemDTO = z.infer<typeof AssetListItemDTOSchema>;
 // ─── Asset Detail ───
 
 export const AssetDetailDTOSchema = AssetListItemDTOSchema.extend({
-    controls: z.array(z.object({
+    practices: z.array(z.object({
         id: z.string(),
-        control: z.object({
+        practice: z.object({
             id: z.string(),
             name: z.string(),
             status: z.string(),
@@ -57,7 +57,7 @@ export const AssetDetailDTOSchema = AssetListItemDTOSchema.extend({
         }).passthrough(),
     }).passthrough()).optional(),
 }).openapi('AssetDetail', {
-    description: 'Asset with linked controls and risks. Returned by GET /assets/{id}.',
+    description: 'Asset with linked practices and risks. Returned by GET /assets/{id}.',
 });
 
 export type AssetDetailDTO = z.infer<typeof AssetDetailDTOSchema>;

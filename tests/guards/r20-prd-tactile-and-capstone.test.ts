@@ -32,8 +32,8 @@
  *
  *   4. Enriched `--ctrl-edge-focus` carries a 3-stop shadow: the
  *      brand-tinted 3px ring PLUS a 2-stop ambient drop, so a
- *      focused control reads "warm AND raised" the way a focused
- *      button does. Form-control parity.
+ *      focused practice reads "warm AND raised" the way a focused
+ *      button does. Form-practice parity.
  *
  * Part 2 — the R20 capstone:
  *
@@ -176,7 +176,7 @@ describe('R20-PR-D — Tactile press', () => {
         });
     });
 
-    describe('enriched `--ctrl-edge-focus` — 3-stop form-control focus', () => {
+    describe('enriched `--ctrl-edge-focus` — 3-stop form-practice focus', () => {
         it('dark theme: 3 stops (brand ring + 2-stop ambient drop)', () => {
             const m = TOKENS.match(/:root \{[\s\S]*?--ctrl-edge-focus:\s*([^;]+);/);
             expect(m).toBeTruthy();

@@ -51,7 +51,7 @@ jest.mock('@/lib/tenant-context-provider', () => ({
 }));
 
 import { useApi, useMutation } from '@/lib/hooks/use-api';
-import * as controls from '@/lib/hooks/use-controls';
+import * as practices from '@/lib/hooks/use-practices';
 import * as policies from '@/lib/hooks/use-policies';
 import * as tasks from '@/lib/hooks/use-tasks';
 import * as assets from '@/lib/hooks/use-assets';
@@ -72,7 +72,7 @@ describe('useApi', () => {
     it('fetches on mount and reports the loading lifecycle', async () => {
         mockApiGet.mockResolvedValue([{ id: 'c1' }]);
 
-        const { result } = renderHook(() => useApi<unknown[]>('/api/t/acme/controls'));
+        const { result } = renderHook(() => useApi<unknown[]>('/api/t/acme/practices'));
 
         // Starts loading immediately — `useState(!!url)`, so there is no
         // first frame that claims "loaded and empty".
@@ -102,7 +102,7 @@ describe('useApi', () => {
         const err = new FakeApiClientError('Forbidden', 403);
         mockApiGet.mockRejectedValue(err);
 
-        const { result } = renderHook(() => useApi<unknown>('/api/t/acme/controls'));
+        const { result } = renderHook(() => useApi<unknown>('/api/t/acme/practices'));
 
         await waitFor(() => expect(result.current.loading).toBe(false));
         // The typed error must survive — callers branch on `.status`.
@@ -115,7 +115,7 @@ describe('useApi', () => {
         // make `error.message` undefined at every call site.
         mockApiGet.mockRejectedValue('gateway timeout');
 
-        const { result } = renderHook(() => useApi<unknown>('/api/t/acme/controls'));
+        const { result } = renderHook(() => useApi<unknown>('/api/t/acme/practices'));
 
         await waitFor(() => expect(result.current.error).toBeInstanceOf(Error));
         expect(result.current.error?.message).toBe('gateway timeout');
@@ -124,7 +124,7 @@ describe('useApi', () => {
     it('clears a previous error on a successful refetch', async () => {
         mockApiGet.mockRejectedValueOnce(new Error('boom')).mockResolvedValueOnce(['ok']);
 
-        const { result } = renderHook(() => useApi<unknown[]>('/api/t/acme/controls'));
+        const { result } = renderHook(() => useApi<unknown[]>('/api/t/acme/practices'));
         await waitFor(() => expect(result.current.error).not.toBeNull());
 
         await act(async () => {
@@ -139,25 +139,25 @@ describe('useApi', () => {
         // The ref-as-mailbox: `refetch` is memoised on `[schema]` only, so
         // without the ref it would keep fetching the URL it closed over.
         const { result, rerender } = renderHook(({ url }) => useApi<unknown>(url), {
-            initialProps: { url: '/api/t/acme/controls/c1' },
+            initialProps: { url: '/api/t/acme/practices/c1' },
         });
         await waitFor(() => expect(result.current.loading).toBe(false));
 
-        rerender({ url: '/api/t/acme/controls/c2' });
+        rerender({ url: '/api/t/acme/practices/c2' });
         await waitFor(() => expect(mockApiGet).toHaveBeenCalledTimes(2));
-        expect(mockApiGet).toHaveBeenLastCalledWith('/api/t/acme/controls/c2', undefined);
+        expect(mockApiGet).toHaveBeenLastCalledWith('/api/t/acme/practices/c2', undefined);
 
         mockApiGet.mockClear();
         await act(async () => {
             await result.current.refetch();
         });
-        expect(mockApiGet).toHaveBeenCalledWith('/api/t/acme/controls/c2', undefined);
+        expect(mockApiGet).toHaveBeenCalledWith('/api/t/acme/practices/c2', undefined);
     });
 
     it('refetch is a no-op once the url has gone away', async () => {
         const { result, rerender } = renderHook(
             ({ url }: { url: string | null }) => useApi<unknown>(url),
-            { initialProps: { url: '/api/t/acme/controls' as string | null } },
+            { initialProps: { url: '/api/t/acme/practices' as string | null } },
         );
         await waitFor(() => expect(result.current.loading).toBe(false));
 
@@ -174,10 +174,10 @@ describe('useApi', () => {
     it('forwards the zod schema to the client for dev-mode validation', async () => {
         const schema = { parse: jest.fn() } as never;
 
-        renderHook(() => useApi<unknown>('/api/t/acme/controls', schema));
+        renderHook(() => useApi<unknown>('/api/t/acme/practices', schema));
 
         await waitFor(() =>
-            expect(mockApiGet).toHaveBeenCalledWith('/api/t/acme/controls', schema),
+            expect(mockApiGet).toHaveBeenCalledWith('/api/t/acme/practices', schema),
         );
     });
 });
@@ -250,7 +250,7 @@ describe('useMutation', () => {
  * TypeScript cannot see either — so that is what is asserted.
  */
 const DOMAINS = [
-    { name: 'controls', mod: controls, path: 'controls', list: 'useControls', detail: 'useControl', create: 'useCreateControl', update: 'useUpdateControl', remove: 'useDeleteControl' },
+    { name: 'practices', mod: practices, path: 'practices', list: 'usePractices', detail: 'usePractice', create: 'useCreatePractice', update: 'useUpdatePractice', remove: 'useDeletePractice' },
     { name: 'policies', mod: policies, path: 'policies', list: 'usePolicies', detail: 'usePolicy', create: 'useCreatePolicy', update: 'useUpdatePolicy', remove: 'useDeletePolicy' },
     { name: 'tasks', mod: tasks, path: 'tasks', list: 'useTasks', detail: 'useTask', create: 'useCreateTask', update: 'useUpdateTask', remove: 'useDeleteTask' },
     { name: 'assets', mod: assets, path: 'assets', list: 'useAssets', detail: 'useAsset', create: 'useCreateAsset', update: 'useUpdateAsset', remove: 'useDeleteAsset' },

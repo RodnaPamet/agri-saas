@@ -72,12 +72,12 @@ describe('Export graph: edge structure', () => {
 // ═════════════════════════════════════════════════════════════════════
 
 describe('Export graph: reachability', () => {
-    test('control reaches test plans, test runs, and mappings', () => {
-        const reachable = getReachableTypes('control');
-        expect(reachable.has('control')).toBe(true);
-        expect(reachable.has('controlTestPlan')).toBe(true);
-        expect(reachable.has('controlTestRun')).toBe(true);
-        expect(reachable.has('controlMapping')).toBe(true);
+    test('practice reaches test plans, test runs, and mappings', () => {
+        const reachable = getReachableTypes('practice');
+        expect(reachable.has('practice')).toBe(true);
+        expect(reachable.has('practiceTestPlan')).toBe(true);
+        expect(reachable.has('practiceTestRun')).toBe(true);
+        expect(reachable.has('practiceMapping')).toBe(true);
     });
 
     test('policy reaches versions', () => {
@@ -123,10 +123,10 @@ describe('Export graph: reachability', () => {
 // ═════════════════════════════════════════════════════════════════════
 
 describe('Export graph: edge lookup', () => {
-    test('getEdgesFrom returns outgoing edges for control', () => {
-        const edges = getEdgesFrom('control');
+    test('getEdgesFrom returns outgoing edges for practice', () => {
+        const edges = getEdgesFrom('practice');
         expect(edges.length).toBeGreaterThanOrEqual(2);
-        expect(edges.every(e => e.from === 'control')).toBe(true);
+        expect(edges.every(e => e.from === 'practice')).toBe(true);
     });
 
     test('getEdgesFrom returns empty for leaf entities', () => {
@@ -146,7 +146,7 @@ describe('Export graph: edge lookup', () => {
 
 describe('Export graph: domain coverage', () => {
     const DOMAIN_ROOTS: Record<string, ExportEntityType> = {
-        CONTROLS: 'control',
+        CONTROLS: 'practice',
         POLICIES: 'policy',
         RISKS: 'risk',
         EVIDENCE: 'evidence',
@@ -178,7 +178,7 @@ describe('Export graph: domain coverage', () => {
 // Create spies for each model
 const spies: Record<string, jest.Mock> = {};
 const modelNames = [
-    'control', 'controlTestPlan', 'controlTestRun', 'controlRequirementLink',
+    'practice', 'practiceTestPlan', 'practiceTestRun', 'practiceRequirementLink',
     'policy', 'policyVersion',
     'risk',
     'evidence',
@@ -224,20 +224,20 @@ beforeEach(() => {
 });
 
 describe('Export service: dependency-aware traversal', () => {
-    test('control domain traverses to test plans and test runs', async () => {
-        // Root: 1 control
-        spies.control.mockResolvedValue([
+    test('practice domain traverses to test plans and test runs', async () => {
+        // Root: 1 practice
+        spies.practice.mockResolvedValue([
             { id: 'ctrl-1', tenantId: 't1', name: 'Firewall', status: 'ACTIVE' },
         ]);
 
         // Child: 1 test plan linked to ctrl-1
-        spies.controlTestPlan.mockResolvedValue([
-            { id: 'tp-1', tenantId: 't1', controlId: 'ctrl-1', name: 'Firewall Test' },
+        spies.practiceTestPlan.mockResolvedValue([
+            { id: 'tp-1', tenantId: 't1', practiceId: 'ctrl-1', name: 'Firewall Test' },
         ]);
 
         // Grandchild: 1 test run linked to tp-1
-        spies.controlTestRun.mockResolvedValue([
-            { id: 'tr-1', tenantId: 't1', testPlanId: 'tp-1', controlId: 'ctrl-1', status: 'PASSED' },
+        spies.practiceTestRun.mockResolvedValue([
+            { id: 'tr-1', tenantId: 't1', testPlanId: 'tp-1', practiceId: 'ctrl-1', status: 'PASSED' },
         ]);
 
         const result = await exportTenantData({
@@ -245,19 +245,19 @@ describe('Export service: dependency-aware traversal', () => {
             domains: ['CONTROLS'],
         });
 
-        // Should have 3 entities: control, testPlan, testRun
-        expect(result.envelope.entities.control?.length).toBe(1);
-        expect(result.envelope.entities.controlTestPlan?.length).toBe(1);
-        expect(result.envelope.entities.controlTestRun?.length).toBe(1);
+        // Should have 3 entities: practice, testPlan, testRun
+        expect(result.envelope.entities.practice?.length).toBe(1);
+        expect(result.envelope.entities.practiceTestPlan?.length).toBe(1);
+        expect(result.envelope.entities.practiceTestRun?.length).toBe(1);
         expect(result.stats.entityCount).toBe(3);
     });
 
     test('relationships are emitted for each traversed edge', async () => {
-        spies.control.mockResolvedValue([
+        spies.practice.mockResolvedValue([
             { id: 'ctrl-1', tenantId: 't1', name: 'Ctrl' },
         ]);
-        spies.controlTestPlan.mockResolvedValue([
-            { id: 'tp-1', tenantId: 't1', controlId: 'ctrl-1', name: 'Plan' },
+        spies.practiceTestPlan.mockResolvedValue([
+            { id: 'tp-1', tenantId: 't1', practiceId: 'ctrl-1', name: 'Plan' },
         ]);
 
         const result = await exportTenantData({
@@ -321,15 +321,15 @@ describe('Export service: dependency-aware traversal', () => {
 
 describe('Export service: tenant isolation', () => {
     test('queries are scoped to the specified tenantId', async () => {
-        spies.control.mockResolvedValue([]);
+        spies.practice.mockResolvedValue([]);
 
         await exportTenantData({
             tenantId: 'tenant-abc',
             domains: ['CONTROLS'],
         });
 
-        // Verify the control query was called with tenantId filter
-        expect(spies.control).toHaveBeenCalledWith(
+        // Verify the practice query was called with tenantId filter
+        expect(spies.practice).toHaveBeenCalledWith(
             expect.objectContaining({
                 where: expect.objectContaining({
                     tenantId: 'tenant-abc',
@@ -354,10 +354,10 @@ describe('Export service: tenant isolation', () => {
 
 describe('Export service: entity deduplication', () => {
     test('same entity reached via multiple paths is exported once', async () => {
-        // Multi-domain export where control appears in both CONTROLS and via TASKS→control linkage
-        spies.control.mockResolvedValue([
-            { id: 'ctrl-1', tenantId: 't1', name: 'Shared Control' },
-            { id: 'ctrl-1', tenantId: 't1', name: 'Shared Control' }, // duplicate
+        // Multi-domain export where practice appears in both CONTROLS and via TASKS→practice linkage
+        spies.practice.mockResolvedValue([
+            { id: 'ctrl-1', tenantId: 't1', name: 'Shared Practice' },
+            { id: 'ctrl-1', tenantId: 't1', name: 'Shared Practice' }, // duplicate
         ]);
 
         const result = await exportTenantData({
@@ -366,8 +366,8 @@ describe('Export service: entity deduplication', () => {
         });
 
         // ctrl-1 should appear exactly once
-        const controls = result.envelope.entities.control ?? [];
-        const ids = controls.map(c => c.id);
+        const practices = result.envelope.entities.practice ?? [];
+        const ids = practices.map(c => c.id);
         const uniqueIds = [...new Set(ids)];
         expect(ids.length).toBe(uniqueIds.length);
     });
@@ -379,11 +379,11 @@ describe('Export service: entity deduplication', () => {
 
 describe('Export service: field redaction', () => {
     test('sensitive fields are stripped from exported entities', async () => {
-        spies.control.mockResolvedValue([
+        spies.practice.mockResolvedValue([
             {
                 id: 'ctrl-1',
                 tenantId: 't1',
-                name: 'Safe Control',
+                name: 'Safe Practice',
                 password: 'secret123',
                 apiKey: 'key-456',
                 accessToken: 'tok-789',
@@ -395,8 +395,8 @@ describe('Export service: field redaction', () => {
             domains: ['CONTROLS'],
         });
 
-        const data = result.envelope.entities.control?.[0]?.data as Record<string, unknown>;
-        expect(data.name).toBe('Safe Control');
+        const data = result.envelope.entities.practice?.[0]?.data as Record<string, unknown>;
+        expect(data.name).toBe('Safe Practice');
         expect(data.password).toBeUndefined();
         expect(data.apiKey).toBeUndefined();
         expect(data.accessToken).toBeUndefined();

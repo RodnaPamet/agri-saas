@@ -42,14 +42,14 @@ function fakeReq(headers: Record<string, string> = {}): NextRequest {
 
 describe('isApiReadRateLimited (match logic)', () => {
     it('matches GET on /api/t/<slug>/<resource>', () => {
-        expect(isApiReadRateLimited('GET', '/api/t/acme-corp/controls')).toBe(true);
+        expect(isApiReadRateLimited('GET', '/api/t/acme-corp/practices')).toBe(true);
         expect(isApiReadRateLimited('GET', '/api/t/acme-corp/risks?limit=50')).toBe(true);
         expect(isApiReadRateLimited('GET', '/api/t/acme-corp/evidence/abc123')).toBe(true);
     });
 
     it('does NOT match non-GET methods (mutations have their own tier)', () => {
         for (const method of ['POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD']) {
-            expect(isApiReadRateLimited(method, '/api/t/acme-corp/controls')).toBe(false);
+            expect(isApiReadRateLimited(method, '/api/t/acme-corp/practices')).toBe(false);
         }
     });
 
@@ -80,7 +80,7 @@ describe('isApiReadRateLimited (match logic)', () => {
 
 describe('extractTenantSlug', () => {
     it('returns the slug for tenant-scoped paths', () => {
-        expect(extractTenantSlug('/api/t/acme-corp/controls')).toBe('acme-corp');
+        expect(extractTenantSlug('/api/t/acme-corp/practices')).toBe('acme-corp');
         expect(extractTenantSlug('/api/t/with-dashes/risks?q=foo')).toBe('with-dashes');
     });
 

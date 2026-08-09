@@ -21,7 +21,7 @@
  *   <InlineEmptyState
  *     icon={Paperclip}
  *     title="No links yet"
- *     description="Cross-link tasks, controls, or evidence by clicking + Link."
+ *     description="Cross-link tasks, practices, or evidence by clicking + Link."
  *   />
  *
  * Vertical rhythm — `py-8` (32px) when there's an icon; `py-6` when

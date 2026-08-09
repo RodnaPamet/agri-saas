@@ -226,7 +226,7 @@ it('an ACCEPTED inquiry shows the buyer’s contact, copyable', () => {
     expect(screen.getByText(/accepted — contact the buyer/i)).toBeInTheDocument();
     expect(screen.getByText(BUYER_CONTACT)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /copy buyer contact/i })).toBeInTheDocument();
-    // No accept/decline controls remain on an answered inquiry.
+    // No accept/decline practices remain on an answered inquiry.
     expect(screen.queryByRole('button', { name: /^Accept$/i })).not.toBeInTheDocument();
 });
 

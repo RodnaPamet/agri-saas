@@ -6,16 +6,16 @@
  *
  * `attachAutoEvidenceFromLogEntry(db, ctx, logEntryId)` walks a farm
  * LogEntry → the scheme requirement(s) it satisfies → the tenant's
- * Controls mapped to those requirements → one Evidence row per control
+ * Practices mapped to those requirements → one Evidence row per practice
  * (status SUBMITTED, back-referenced via sourceLogEntryId). Mocks the
  * tenant-bound `db` handle, the audit emitter, and the sanitiser.
  *
  * Covers:
- *   - rule match for INPUT_APPLICATION → resolves requirements + controls,
+ *   - rule match for INPUT_APPLICATION → resolves requirements + practices,
  *     creates SUBMITTED evidence with sourceLogEntryId + sanitised title.
  *   - no-op for an unmapped LogEntry type.
- *   - no-op when there is no ControlRequirementLink (scheme not installed).
- *   - idempotency: existing (sourceLogEntryId, controlId) → skipped.
+ *   - no-op when there is no PracticeRequirementLink (scheme not installed).
+ *   - idempotency: existing (sourceLogEntryId, practiceId) → skipped.
  *   - logEvent emitted per evidence created with the entity-lifecycle shape.
  */
 
@@ -41,7 +41,7 @@ const ctx = makeRequestContext('EDITOR', {
     tenantSlug: 'acme',
 });
 
-/** Build a mock tenant-bound Prisma handle with controllable returns. */
+/** Build a mock tenant-bound Prisma handle with practicelable returns. */
 function makeDb(overrides: {
     logEntry?: any;
     requirements?: any[];
@@ -59,8 +59,8 @@ function makeDb(overrides: {
         frameworkRequirement: {
             findMany: jest.fn().mockResolvedValue(overrides.requirements ?? [{ id: 'req-1' }, { id: 'req-2' }]),
         },
-        controlRequirementLink: {
-            findMany: jest.fn().mockResolvedValue(overrides.links ?? [{ controlId: 'ctrl-1' }, { controlId: 'ctrl-1' }, { controlId: 'ctrl-2' }]),
+        practiceRequirementLink: {
+            findMany: jest.fn().mockResolvedValue(overrides.links ?? [{ practiceId: 'ctrl-1' }, { practiceId: 'ctrl-1' }, { practiceId: 'ctrl-2' }]),
         },
         evidence: {
             // Two reads now: the idempotency fast-path, then the id
@@ -69,8 +69,8 @@ function makeDb(overrides: {
             findMany: jest.fn()
                 .mockResolvedValueOnce(overrides.existingEvidence ?? [])
                 .mockImplementation(({ where }: any) => {
-                    const ids: string[] = where.controlId?.in ?? [];
-                    return Promise.resolve(ids.map((controlId) => ({ id: `ev-${controlId}`, controlId })));
+                    const ids: string[] = where.practiceId?.in ?? [];
+                    return Promise.resolve(ids.map((practiceId) => ({ id: `ev-${practiceId}`, practiceId })));
                 }),
             // One statement for the whole batch — the database, not a
             // read-then-write check, is the authority on idempotency.
@@ -78,7 +78,7 @@ function makeDb(overrides: {
                 Promise.resolve({ count: args.data.length }),
             ),
         },
-        controlEvidenceLink: {
+        practiceEvidenceLink: {
             // createMany, not create — the bridge resolves duplicates with
             // ON CONFLICT DO NOTHING rather than by catching a 23505 that
             // would already have aborted the enclosing transaction.
@@ -104,12 +104,12 @@ describe('AUTO_EVIDENCE_RULES', () => {
 });
 
 describe('attachAutoEvidenceFromLogEntry', () => {
-    it('creates SUBMITTED evidence per distinct control with sourceLogEntryId + sanitised title', async () => {
+    it('creates SUBMITTED evidence per distinct practice with sourceLogEntryId + sanitised title', async () => {
         const db = makeDb();
         const result = await attachAutoEvidenceFromLogEntry(db, ctx, 'log-1');
 
-        // Two distinct controls (ctrl-1 deduped) → two evidence rows.
-        // Two distinct controls (ctrl-1 deduped) → two rows, ONE statement.
+        // Two distinct practices (ctrl-1 deduped) → two evidence rows.
+        // Two distinct practices (ctrl-1 deduped) → two rows, ONE statement.
         expect(result).toEqual({ created: 2 });
         expect(db.evidence.createMany).toHaveBeenCalledTimes(1);
         const batch = db.evidence.createMany.mock.calls[0][0];
@@ -119,7 +119,7 @@ describe('attachAutoEvidenceFromLogEntry', () => {
         const firstData = batch.data[0];
         expect(firstData).toMatchObject({
             tenantId: 'tenant-1',
-            controlId: 'ctrl-1',
+            practiceId: 'ctrl-1',
             sourceLogEntryId: 'log-1',
             type: 'LINK',
             // The title is the entry's own. It used to be persisted as
@@ -137,20 +137,20 @@ describe('attachAutoEvidenceFromLogEntry', () => {
 
         // Requirement resolution is a single findMany (no per-requirement loop).
         expect(db.frameworkRequirement.findMany).toHaveBeenCalledTimes(1);
-        // Control resolution is a single findMany.
-        expect(db.controlRequirementLink.findMany).toHaveBeenCalledTimes(1);
+        // Practice resolution is a single findMany.
+        expect(db.practiceRequirementLink.findMany).toHaveBeenCalledTimes(1);
     });
 
-    it('mirrors the control↔evidence bridge link', async () => {
+    it('mirrors the practice↔evidence bridge link', async () => {
         const db = makeDb();
         await attachAutoEvidenceFromLogEntry(db, ctx, 'log-1');
         // ONE statement for both links, matching the evidence batch above.
-        expect(db.controlEvidenceLink.createMany).toHaveBeenCalledTimes(1);
-        const first = db.controlEvidenceLink.createMany.mock.calls[0][0];
+        expect(db.practiceEvidenceLink.createMany).toHaveBeenCalledTimes(1);
+        const first = db.practiceEvidenceLink.createMany.mock.calls[0][0];
         expect(first.data).toHaveLength(2);
         expect(first.data[0]).toMatchObject({
             tenantId: 'tenant-1',
-            controlId: 'ctrl-1',
+            practiceId: 'ctrl-1',
             kind: 'LINK',
             url: '/t/acme/journal/log-1',
         });
@@ -170,7 +170,7 @@ describe('attachAutoEvidenceFromLogEntry', () => {
             category: 'entity_lifecycle',
             entityName: 'Evidence',
             operation: 'created',
-            after: { sourceLogEntryId: 'log-1', controlId: 'ctrl-1', status: 'SUBMITTED' },
+            after: { sourceLogEntryId: 'log-1', practiceId: 'ctrl-1', status: 'SUBMITTED' },
         });
     });
 
@@ -191,11 +191,11 @@ describe('attachAutoEvidenceFromLogEntry', () => {
         expect(db.frameworkRequirement.findMany).not.toHaveBeenCalled();
     });
 
-    it('is a no-op when no ControlRequirementLink exists (scheme not installed)', async () => {
+    it('is a no-op when no PracticeRequirementLink exists (scheme not installed)', async () => {
         const db = makeDb({ links: [] });
         const result = await attachAutoEvidenceFromLogEntry(db, ctx, 'log-1');
         expect(result).toEqual({ created: 0 });
-        // Resolved requirements but found no mapped controls → never creates.
+        // Resolved requirements but found no mapped practices → never creates.
         expect(db.frameworkRequirement.findMany).toHaveBeenCalledTimes(1);
         expect(db.evidence.findMany).not.toHaveBeenCalled();
         expect(db.evidence.createMany).not.toHaveBeenCalled();
@@ -205,11 +205,11 @@ describe('attachAutoEvidenceFromLogEntry', () => {
         const db = makeDb({ requirements: [] });
         const result = await attachAutoEvidenceFromLogEntry(db, ctx, 'log-1');
         expect(result).toEqual({ created: 0 });
-        expect(db.controlRequirementLink.findMany).not.toHaveBeenCalled();
+        expect(db.practiceRequirementLink.findMany).not.toHaveBeenCalled();
     });
 
-    it('skips controls that already carry auto-evidence for this LogEntry (idempotent)', async () => {
-        const db = makeDb({ existingEvidence: [{ controlId: 'ctrl-1' }] });
+    it('skips practices that already carry auto-evidence for this LogEntry (idempotent)', async () => {
+        const db = makeDb({ existingEvidence: [{ practiceId: 'ctrl-1' }] });
         const result = await attachAutoEvidenceFromLogEntry(db, ctx, 'log-1');
 
         // ctrl-1 already attached → only ctrl-2 gets new evidence.
@@ -217,10 +217,10 @@ describe('attachAutoEvidenceFromLogEntry', () => {
         expect(db.evidence.createMany).toHaveBeenCalledTimes(1);
         const batch = db.evidence.createMany.mock.calls[0][0];
         expect(batch.data).toHaveLength(1);
-        expect(batch.data[0].controlId).toBe('ctrl-2');
+        expect(batch.data[0].practiceId).toBe('ctrl-2');
     });
 
-    it('tolerates a duplicate control↔evidence link — in the statement, not in a catch', async () => {
+    it('tolerates a duplicate practice↔evidence link — in the statement, not in a catch', async () => {
         // The old version of this test mocked the create as REJECTING and
         // asserted the attach survived, which is the behaviour a mock can
         // produce and a real transaction cannot: a 23505 aborts the
@@ -228,11 +228,11 @@ describe('attachAutoEvidenceFromLogEntry', () => {
         // died with 25P02. The duplicate is now absorbed by ON CONFLICT DO
         // NOTHING — the statement succeeds and inserts zero rows.
         const db = makeDb();
-        db.controlEvidenceLink.createMany.mockResolvedValue({ count: 0 });
+        db.practiceEvidenceLink.createMany.mockResolvedValue({ count: 0 });
         const result = await attachAutoEvidenceFromLogEntry(db, ctx, 'log-1');
         expect(result).toEqual({ created: 2 });
         expect(db.evidence.createMany).toHaveBeenCalledTimes(1);
-        for (const call of db.controlEvidenceLink.createMany.mock.calls) {
+        for (const call of db.practiceEvidenceLink.createMany.mock.calls) {
             expect(call[0].skipDuplicates).toBe(true);
         }
     });
@@ -241,9 +241,9 @@ describe('attachAutoEvidenceFromLogEntry', () => {
         // The other half of the contract. `skipDuplicates` absorbs exactly
         // one thing — a unique collision. A bad FK or an RLS denial must
         // still take the attach down rather than leave evidence rows behind
-        // that the control tab will never show.
+        // that the practice tab will never show.
         const db = makeDb();
-        db.controlEvidenceLink.createMany.mockRejectedValue(new Error('FK violation'));
+        db.practiceEvidenceLink.createMany.mockRejectedValue(new Error('FK violation'));
         await expect(attachAutoEvidenceFromLogEntry(db, ctx, 'log-1')).rejects.toThrow(
             /FK violation/,
         );

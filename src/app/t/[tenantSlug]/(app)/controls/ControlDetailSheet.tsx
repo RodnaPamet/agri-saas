@@ -6,10 +6,10 @@
 
 /* eslint-disable react-hooks/exhaustive-deps -- Various useEffect/useMemo dep arrays in this file deliberately omit identity-unstable callbacks (handlers recreated each render) or use selector functions whose change-detection happens elsewhere. Adding the deps would either trigger unnecessary re-runs OR cause infinite render loops; the proper structural fix is to wrap parent-level callbacks in useCallback. Tracked as follow-up. */
 /**
- * Epic 54 — Control quick-inspect / edit Sheet.
+ * Epic 54 — Practice quick-inspect / edit Sheet.
  *
  * Side-panel detail view for the common-case inspect + edit flow on the
- * Controls list. The full control detail page (`/controls/[controlId]`)
+ * Practices list. The full practice detail page (`/practices/[practiceId]`)
  * keeps ownership of the deep tabs (evidence, tasks, related, applicability
  * workflows) — this Sheet is the *fast* contextual path that replaces
  * full-page navigation for routine edits: name, description, intent,
@@ -17,9 +17,9 @@
  * filters, scroll position, and pagination survive the edit.
  *
  * Business behaviour is identical to the legacy modal on the detail page:
- *   - PATCH /controls/:id with name/description/intent/category/frequency.
- *   - POST  /controls/:id/owner when the owner actually changed.
- *   - Success → invalidate controls.all(tenantSlug) so the list reflects
+ *   - PATCH /practices/:id with name/description/intent/category/frequency.
+ *   - POST  /practices/:id/owner when the owner actually changed.
+ *   - Success → invalidate practices.all(tenantSlug) so the list reflects
  *     the new name/owner immediately, then close the Sheet.
  *
  * The Sheet is a "edit-first" model: fields are rendered as standard
@@ -47,7 +47,7 @@ import { extractMutationError } from '@/lib/mutations';
 
 // ─── Types ──────────────────────────────────────────────────────────
 
-interface ControlDetailResponse {
+interface PracticeDetailResponse {
     id: string;
     code: string | null;
     name: string;
@@ -106,42 +106,42 @@ const CATEGORY_OPTIONS: ComboboxOption[] = [
 
 // ─── Props ──────────────────────────────────────────────────────────
 
-export interface ControlDetailSheetProps {
-    /** Open when non-null; the value is the control id being edited. */
-    controlId: string | null;
-    setControlId: Dispatch<SetStateAction<string | null>>;
+export interface PracticeDetailSheetProps {
+    /** Open when non-null; the value is the practice id being edited. */
+    practiceId: string | null;
+    setPracticeId: Dispatch<SetStateAction<string | null>>;
     tenantSlug: string;
     /** Helper to build tenant-scoped API URLs. */
     apiUrl: (path: string) => string;
     /** Helper to build tenant-scoped app URLs (for "Open full detail"). */
     tenantHref: (path: string) => string;
-    /** Gate the edit controls behind the caller's write permission. */
+    /** Gate the edit practices behind the caller's write permission. */
     canWrite: boolean;
 }
 
 // ─── Component ──────────────────────────────────────────────────────
 
-export function ControlDetailSheet({
-    controlId,
-    setControlId,
+export function PracticeDetailSheet({
+    practiceId,
+    setPracticeId,
     tenantSlug,
     apiUrl,
     tenantHref,
     canWrite,
-}: ControlDetailSheetProps) {
-    const t = useTranslations('controls');
-    const open = controlId !== null;
+}: PracticeDetailSheetProps) {
+    const t = useTranslations('practices');
+    const open = practiceId !== null;
     const queryClient = useQueryClient();
     const nameInputRef = useRef<HTMLInputElement>(null);
 
-    // ── Load the control ──
-    const detailQuery = useQuery<ControlDetailResponse>({
-        queryKey: controlId
-            ? queryKeys.controls.detail(tenantSlug, controlId)
-            : ['control-sheet', 'idle'],
+    // ── Load the practice ──
+    const detailQuery = useQuery<PracticeDetailResponse>({
+        queryKey: practiceId
+            ? queryKeys.practices.detail(tenantSlug, practiceId)
+            : ['practice-sheet', 'idle'],
         queryFn: async () => {
-            const res = await fetch(apiUrl(`/controls/${controlId}`));
-            if (!res.ok) throw new Error('Failed to load control');
+            const res = await fetch(apiUrl(`/practices/${practiceId}`));
+            if (!res.ok) throw new Error('Failed to load practice');
             return res.json();
         },
         enabled: open,
@@ -150,7 +150,7 @@ export function ControlDetailSheet({
         staleTime: 30_000,
     });
 
-    const control = detailQuery.data;
+    const practice = detailQuery.data;
 
     // ── Local edit state, seeded from server data on each (re)open ──
     const [form, setForm] = useState<EditForm>({
@@ -165,26 +165,26 @@ export function ControlDetailSheet({
     const [error, setError] = useState('');
 
     useEffect(() => {
-        if (!control) return;
+        if (!practice) return;
         // eslint-disable-next-line react-hooks/set-state-in-effect
         setForm({
-            name: control.name || '',
-            description: control.description || '',
-            intent: control.intent || '',
-            category: control.category || '',
-            frequency: control.frequency || '',
-            owner: control.ownerUserId || '',
+            name: practice.name || '',
+            description: practice.description || '',
+            intent: practice.intent || '',
+            category: practice.category || '',
+            frequency: practice.frequency || '',
+            owner: practice.ownerUserId || '',
         });
         setDirty(false);
         setError('');
-    }, [control?.id, control?.name, control?.description, control?.intent, control?.category, control?.frequency, control?.ownerUserId]);
+    }, [practice?.id, practice?.name, practice?.description, practice?.intent, practice?.category, practice?.frequency, practice?.ownerUserId]);
 
     // Focus the name input shortly after open so users can start typing.
     useEffect(() => {
-        if (!open || !control) return;
+        if (!open || !practice) return;
         const t = setTimeout(() => nameInputRef.current?.focus(), 80);
         return () => clearTimeout(t);
-    }, [open, control?.id]);
+    }, [open, practice?.id]);
 
     const update = (field: keyof EditForm, value: string) => {
         setForm((prev) => ({ ...prev, [field]: value }));
@@ -194,8 +194,8 @@ export function ControlDetailSheet({
     // ── Mutation: save edits ──
     const mutation = useMutation({
         mutationFn: async (draft: EditForm) => {
-            if (!controlId) throw new Error('No control selected');
-            const res = await fetch(apiUrl(`/controls/${controlId}`), {
+            if (!practiceId) throw new Error('No practice selected');
+            const res = await fetch(apiUrl(`/practices/${practiceId}`), {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -211,9 +211,9 @@ export function ControlDetailSheet({
                 throw new Error(extractMutationError(data, 'Update failed'));
             }
             // Owner lives on a dedicated endpoint — only fire when it changed.
-            const originalOwner = control?.ownerUserId || '';
+            const originalOwner = practice?.ownerUserId || '';
             if (draft.owner.trim() !== originalOwner) {
-                const ownerRes = await fetch(apiUrl(`/controls/${controlId}/owner`), {
+                const ownerRes = await fetch(apiUrl(`/practices/${practiceId}/owner`), {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ ownerUserId: draft.owner.trim() || null }),
@@ -229,8 +229,8 @@ export function ControlDetailSheet({
             // Refresh the list (so the new name / owner show without a full
             // refetch wait) and the detail cache (so if the user opens the
             // full detail page next, it's pre-warmed).
-            queryClient.invalidateQueries({ queryKey: queryKeys.controls.all(tenantSlug) });
-            setControlId(null);
+            queryClient.invalidateQueries({ queryKey: queryKeys.practices.all(tenantSlug) });
+            setPracticeId(null);
         },
         onError: (err) => {
             setError(err instanceof Error ? err.message : 'Update failed');
@@ -255,41 +255,41 @@ export function ControlDetailSheet({
                 : true;
             if (!ok) return;
         }
-        setControlId(null);
+        setPracticeId(null);
     };
 
     // ── Summary chips (read-only context) ──
     const summary = useMemo(() => {
-        if (!control) return [] as { label: string; value: string; badge?: StatusBadgeVariant }[];
+        if (!practice) return [] as { label: string; value: string; badge?: StatusBadgeVariant }[];
         const rows: { label: string; value: string; badge?: StatusBadgeVariant }[] = [];
-        if (control.code) {
-            rows.push({ label: t('sheet.labelCode'), value: control.code || '—' });
+        if (practice.code) {
+            rows.push({ label: t('sheet.labelCode'), value: practice.code || '—' });
         }
         rows.push({
             label: t('sheet.labelStatus'),
-            value: control.status.replace(/_/g, ' '),
-            badge: STATUS_BADGE[control.status] || 'neutral',
+            value: practice.status.replace(/_/g, ' '),
+            badge: STATUS_BADGE[practice.status] || 'neutral',
         });
         rows.push({
             label: t('sheet.labelApplicability'),
-            value: control.applicability === 'NOT_APPLICABLE' ? 'N/A' : 'Yes',
-            badge: control.applicability === 'NOT_APPLICABLE' ? 'warning' : 'success',
+            value: practice.applicability === 'NOT_APPLICABLE' ? 'N/A' : 'Yes',
+            badge: practice.applicability === 'NOT_APPLICABLE' ? 'warning' : 'success',
         });
-        if (control.owner?.name) {
-            rows.push({ label: t('sheet.labelOwner'), value: control.owner.name });
+        if (practice.owner?.name) {
+            rows.push({ label: t('sheet.labelOwner'), value: practice.owner.name });
         }
         return rows;
-    }, [control, t]);
+    }, [practice, t]);
 
     return (
         <Sheet
             open={open}
             onOpenChange={handleOpenChange}
             size="md"
-            title={control?.name ?? t('sheet.detailTitle')}
-            description={control?.description ?? undefined}
+            title={practice?.name ?? t('sheet.detailTitle')}
+            description={practice?.description ?? undefined}
         >
-            {detailQuery.isLoading || !control ? (
+            {detailQuery.isLoading || !practice ? (
                 <>
                     <Sheet.Header title={t('sheet.loading')} />
                     <Sheet.Body>
@@ -300,12 +300,12 @@ export function ControlDetailSheet({
                 </>
             ) : detailQuery.isError ? (
                 <>
-                    <Sheet.Header title={t('sheet.controlTitle')} />
+                    <Sheet.Header title={t('sheet.practiceTitle')} />
                     <Sheet.Body>
                         <div
                             className="rounded-lg border border-border-error bg-bg-error px-3 py-2 text-sm text-content-error"
                             role="alert"
-                            data-testid="control-sheet-error"
+                            data-testid="practice-sheet-error"
                         >
                             {detailQuery.error instanceof Error
                                 ? detailQuery.error.message
@@ -316,19 +316,19 @@ export function ControlDetailSheet({
             ) : (
                 <>
                     <Sheet.Header
-                        title={control.name}
-                        description={control.code || undefined}
+                        title={practice.name}
+                        description={practice.code || undefined}
                     />
                     <form
                         onSubmit={handleSubmit}
                         className="flex flex-1 flex-col overflow-hidden"
-                        data-testid="control-sheet-form"
+                        data-testid="practice-sheet-form"
                     >
                         <Sheet.Body>
                             {/* Read-only summary */}
                             <section
                                 className="mb-5 grid grid-cols-2 gap-compact rounded-lg border border-border-subtle bg-bg-subtle px-4 py-3"
-                                data-testid="control-sheet-summary"
+                                data-testid="practice-sheet-summary"
                             >
                                 {summary.map((row) => (
                                     <div key={row.label} className="flex flex-col gap-0.5">
@@ -352,7 +352,7 @@ export function ControlDetailSheet({
                                 <div
                                     className="mb-4 rounded-lg border border-border-error bg-bg-error px-3 py-2 text-sm text-content-error"
                                     role="alert"
-                                    data-testid="control-sheet-save-error"
+                                    data-testid="practice-sheet-save-error"
                                 >
                                     {error}
                                 </div>
@@ -466,8 +466,8 @@ export function ControlDetailSheet({
                                             update('owner', userId ?? '')
                                         }
                                         placeholder={
-                                            control.owner?.name ||
-                                            control.owner?.email ||
+                                            practice.owner?.name ||
+                                            practice.owner?.email ||
                                             t('sheet.unassigned')
                                         }
                                     />
@@ -476,10 +476,10 @@ export function ControlDetailSheet({
                         </Sheet.Body>
                         <Sheet.Actions align="between">
                             <Link
-                                href={tenantHref(`/controls/${control.id}`)}
+                                href={tenantHref(`/practices/${practice.id}`)}
                                 className={buttonVariants({ variant: 'ghost', size: 'sm' })}
-                                data-testid="control-sheet-open-full"
-                                onClick={() => setControlId(null)}
+                                data-testid="practice-sheet-open-full"
+                                onClick={() => setPracticeId(null)}
                             >
                                 {t('sheet.openFull')}
                             </Link>
@@ -489,7 +489,7 @@ export function ControlDetailSheet({
                                         type="button"
                                         variant="secondary"
                                         size="sm"
-                                        data-testid="control-sheet-cancel"
+                                        data-testid="practice-sheet-cancel"
                                         text={t('sheet.cancel')}
                                     />
                                 </Sheet.Close>
@@ -497,7 +497,7 @@ export function ControlDetailSheet({
                                     type="submit"
                                     variant="primary"
                                     size="sm"
-                                    data-testid="control-sheet-save"
+                                    data-testid="practice-sheet-save"
                                     disabled={!canSave}
                                     text={mutation.isPending ? t('sheet.saving') : t('sheet.saveChanges')}
                                 />

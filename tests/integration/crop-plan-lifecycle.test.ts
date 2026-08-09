@@ -7,7 +7,7 @@
  *      that left the create-plan modal on a dead `noSeasons` placeholder.
  *   2. A plan moves through its lifecycle via updateCropPlan
  *      (DRAFT → ACTIVE → COMPLETED) — the transitions the detail-page
- *      status control drives, and which make the COMPLETED/CANCELLED
+ *      status practice drives, and which make the COMPLETED/CANCELLED
  *      filter options reachable.
  *   3. updateSeason edits a season (the newly-wired PATCH path).
  *   4. deleteCropPlan soft-deletes — the plan drops out of listCropPlans /

@@ -97,7 +97,7 @@ describe('Soft-Delete Operations', () => {
         });
 
         test('the P0 models support soft delete operations', () => {
-            const models = ['Asset', 'Control', 'Evidence', 'Policy'];
+            const models = ['Asset', 'Practice', 'Evidence', 'Policy'];
             for (const model of models) {
                 expect(SOFT_DELETE_MODELS.has(model)).toBe(true);
             }
@@ -108,7 +108,7 @@ describe('Soft-Delete Operations', () => {
         const entities = [
             { name: 'assets', idParam: 'id' },
             { name: 'risks', idParam: 'riskId' },
-            { name: 'controls', idParam: 'controlId' },
+            { name: 'practices', idParam: 'practiceId' },
             { name: 'evidence', idParam: 'id' },
             { name: 'policies', idParam: 'id' },
         ];

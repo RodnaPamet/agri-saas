@@ -93,11 +93,11 @@ describe('filter-presets — list/save/delete', () => {
     it('isolates presets per tenant + page', () => {
         savePreset({ tenantSlug: 'acme', page: 'risks', name: 'A', state: {} });
         savePreset({ tenantSlug: 'beta', page: 'risks', name: 'B', state: {} });
-        savePreset({ tenantSlug: 'acme', page: 'controls', name: 'C', state: {} });
+        savePreset({ tenantSlug: 'acme', page: 'practices', name: 'C', state: {} });
 
         expect(listPresets('acme', 'risks').map((p) => p.name)).toEqual(['A']);
         expect(listPresets('beta', 'risks').map((p) => p.name)).toEqual(['B']);
-        expect(listPresets('acme', 'controls').map((p) => p.name)).toEqual(['C']);
+        expect(listPresets('acme', 'practices').map((p) => p.name)).toEqual(['C']);
     });
 
     it('deletePreset is idempotent', () => {

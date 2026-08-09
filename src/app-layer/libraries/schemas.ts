@@ -63,7 +63,7 @@ export const ScoreDefinitionSchema = z.object({
 export type ScoreDefinition = z.infer<typeof ScoreDefinitionSchema>;
 
 // ─── Requirement Node ────────────────────────────────────────────────
-// A single requirement, control, or criterion within a framework.
+// A single requirement, practice, or criterion within a framework.
 // Nodes form a tree via parent_urn references.
 
 export const RequirementNodeSchema = z.object({

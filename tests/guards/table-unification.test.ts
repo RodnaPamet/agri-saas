@@ -1,8 +1,8 @@
 /**
- * Roadmap-9 PR-4 — DataTable unification (Controls as the canonical reference).
+ * Roadmap-9 PR-4 — DataTable unification (Practices as the canonical reference).
  *
- * User directive locked 2026-05-11: the Controls page DataTable
- * (`src/app/t/[tenantSlug]/(app)/controls/ControlsClient.tsx`) is
+ * User directive locked 2026-05-11: the Practices page DataTable
+ * (`src/app/t/[tenantSlug]/(app)/practices/PracticesClient.tsx`) is
  * the reference shape every other table unifies around. Four rules
  * follow:
  *
@@ -18,7 +18,7 @@
  *      that wires `onRowClick`.
  *
  *   3. **First column = Code.** Where the entity has a code/
- *      identifier (controls, risks, frameworks, policies, audits,
+ *      identifier (practices, risks, frameworks, policies, audits,
  *      assets), the first column should be `id: 'code'`. Migration
  *      target — coverage ratchet registers candidate tables.
  *
@@ -37,7 +37,7 @@ import * as path from "path";
 
 const ROOT = path.resolve(__dirname, "../..");
 
-describe("DataTable unification — Controls as the canonical shape", () => {
+describe("DataTable unification — Practices as the canonical shape", () => {
     it("row-select Checkbox in table.tsx is rounded-full (circular select)", () => {
         const src = fs.readFileSync(
             path.join(ROOT, "src/components/ui/table/table.tsx"),
@@ -84,23 +84,23 @@ describe("DataTable unification — Controls as the canonical shape", () => {
         );
     });
 
-    it("Controls table — the canonical reference — sets the four locked traits", () => {
+    it("Practices table — the canonical reference — sets the four locked traits", () => {
         const src = fs.readFileSync(
             path.join(
                 ROOT,
-                "src/app/t/[tenantSlug]/(app)/controls/ControlsClient.tsx",
+                "src/app/t/[tenantSlug]/(app)/practices/PracticesClient.tsx",
             ),
             "utf8",
         );
         // 1. First column is `id: 'code'`.
         expect(src).toMatch(/id:\s*['"]code['"]/);
         // 2. getRowId is set. Right-rail Phase 2 extracted the row-id
-        //    fn to a stable `useCallback` (`getControlRowId`) so a
+        //    fn to a stable `useCallback` (`getPracticeRowId`) so a
         //    selection-toggle re-render doesn't rebuild the table
         //    model — assert both the wiring and the definition.
-        expect(src).toMatch(/getRowId:\s*getControlRowId/);
+        expect(src).toMatch(/getRowId:\s*getPracticeRowId/);
         expect(src).toMatch(
-            /getControlRowId\s*=\s*useCallback\(\(c:[^)]*\)\s*=>\s*c\.id/,
+            /getPracticeRowId\s*=\s*useCallback\(\(c:[^)]*\)\s*=>\s*c\.id/,
         );
         // 3. onRowClick wires the canonical primitive hover.
         expect(src).toMatch(/onRowClick:/);
@@ -113,7 +113,7 @@ describe("DataTable unification — Controls as the canonical shape", () => {
 //
 // R10-PR4 reframed the R9-PR4 "first column = Code" principle. The
 // underlying rule is: every list-page table should open with the
-// entity's canonical, scannable identifier. For Controls that's the
+// entity's canonical, scannable identifier. For Practices that's the
 // code (`AC-1`); for Risks it's the title (Risks have no separate
 // code field — see prisma/schema/compliance.prisma); for Frameworks
 // it's the name. The label varies; the principle (canonical
@@ -136,10 +136,10 @@ interface FirstColumnEntry {
 
 const FIRST_COLUMN_TABLES: FirstColumnEntry[] = [
     {
-        file: "src/app/t/[tenantSlug]/(app)/controls/ControlsClient.tsx",
+        file: "src/app/t/[tenantSlug]/(app)/practices/PracticesClient.tsx",
         firstColumnId: "code",
         adopted: true,
-        note: "Controls — the canonical reference. First column is `id: 'code'` accessing `c.code || ''`.",
+        note: "Practices — the canonical reference. First column is `id: 'code'` accessing `c.code || ''`.",
     },
     // R10-PR5 — registry expansion across the remaining list-page
     // tables. Every entity converges on the same shape: column 0 is
@@ -148,7 +148,7 @@ const FIRST_COLUMN_TABLES: FirstColumnEntry[] = [
         file: "src/app/t/[tenantSlug]/(app)/assets/AssetsClient.tsx",
         firstColumnId: "code",
         adopted: true,
-        note: "Assets list — per-tenant `AST-N` code minted via AssetKeySequence is the canonical identifier (Risk/Controls parity); Name comes second.",
+        note: "Assets list — per-tenant `AST-N` code minted via AssetKeySequence is the canonical identifier (Risk/Practices parity); Name comes second.",
     },
     {
         file: "src/app/t/[tenantSlug]/(app)/evidence/EvidenceClient.tsx",

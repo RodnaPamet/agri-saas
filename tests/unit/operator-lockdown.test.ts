@@ -49,7 +49,7 @@ describe('isOperatorAllowedPath — blocked surfaces', () => {
     it('blocks every other tenant API (403)', () => {
         for (const p of [
             '/api/t/acme/risks',
-            '/api/t/acme/controls',
+            '/api/t/acme/practices',
             '/api/t/acme/evidence',
             '/api/t/acme/admin/members',
             '/api/t/acme/dashboard/ag',

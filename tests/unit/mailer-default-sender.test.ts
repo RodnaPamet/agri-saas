@@ -1,7 +1,7 @@
 /**
  * Unit test: the mailer WARNs when production falls back to the built-in
  * default sender (Roadmap-5 PR3). Deliverability suffers when the From address
- * isn't a domain the operator controls (SPF/DKIM), so prod must set
+ * isn't a domain the operator practices (SPF/DKIM), so prod must set
  * RESEND_FROM / SMTP_FROM explicitly.
  */
 jest.mock('@/lib/observability/logger', () => ({

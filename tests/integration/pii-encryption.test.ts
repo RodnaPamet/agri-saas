@@ -14,7 +14,7 @@ import { encryptField, decryptField, hashForLookup, isEncryptedValue } from '@/l
 import { withPiiEncryptionExtension } from '@/lib/security/pii-middleware';
 import { DB_URL, DB_AVAILABLE } from './db-helper';
 
-// Use a separate client so we control middleware registration
+// Use a separate client so we practice middleware registration
 const prisma = withPiiEncryptionExtension(new PrismaClient({
     adapter: new PrismaPg({ connectionString: DB_URL }),
 }));

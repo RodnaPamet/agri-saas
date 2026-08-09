@@ -2,7 +2,7 @@
  * GET /api/auth/ui-config
  *
  * Returns the small set of auth-related flags the login page needs to
- * decide which controls to render. Client fetches this on mount.
+ * decide which practices to render. Client fetches this on mount.
  *
  * Why a runtime endpoint rather than a `NEXT_PUBLIC_*` env var:
  * `NEXT_PUBLIC_*` values are inlined at `next build` time — toggling

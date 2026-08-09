@@ -21,7 +21,7 @@ jest.mock('next/navigation', () => ({
         refresh: jest.fn(),
         prefetch: jest.fn(),
     }),
-    usePathname: () => '/t/acme/controls',
+    usePathname: () => '/t/acme/practices',
     useSearchParams: () => new URLSearchParams(),
     useParams: () => ({ tenantSlug: 'acme' }),
 }));

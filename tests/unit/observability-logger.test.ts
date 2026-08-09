@@ -78,7 +78,7 @@ describe('Structured Logger (Pino) — log()', () => {
 
     it('auto-enriches from ALS context when available', () => {
         runWithRequestContext(
-            { requestId: 'ctx-req-1', startTime: 0, route: '/api/controls', tenantId: 't-1', userId: 'u-1' },
+            { requestId: 'ctx-req-1', startTime: 0, route: '/api/practices', tenantId: 't-1', userId: 'u-1' },
             () => {
                 log('info', 'enriched log');
             },
@@ -88,7 +88,7 @@ describe('Structured Logger (Pino) — log()', () => {
         expect(entries[0].requestId).toBe('ctx-req-1');
         expect(entries[0].tenantId).toBe('t-1');
         expect(entries[0].userId).toBe('u-1');
-        expect(entries[0].route).toBe('/api/controls');
+        expect(entries[0].route).toBe('/api/practices');
     });
 
     it('routes to correct Pino level method — error', () => {

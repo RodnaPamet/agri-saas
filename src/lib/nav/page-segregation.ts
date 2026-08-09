@@ -26,7 +26,7 @@ export const BACK_AFFORDANCE_EXEMPT_SUBPAGES: readonly string[] = [
     '/assets/new',          // redirect shim
     '/audits/new',          // redirect shim
     '/auth/mfa',            // auth flow — back would bypass MFA challenge
-    '/controls/new',        // redirect shim
+    '/practices/new',        // redirect shim
     '/issues/[issueId]',    // legacy redirect → /farm-tasks/[taskId]
     '/issues/dashboard',    // legacy redirect
     '/issues/new',          // legacy redirect
@@ -49,7 +49,7 @@ export const MAIN_PAGES: readonly string[] = [
     '/audits',
     '/calendar',
     '/clauses',
-    '/controls',
+    '/practices',
     '/dashboard',
     '/evidence',
     '/farm-tasks',
@@ -115,9 +115,9 @@ export const SUBPAGES: readonly string[] = [
     // Auth (in-app)
     '/auth/mfa',
 
-    // Controls
-    '/controls/[controlId]',
-    '/controls/new',
+    // Practices
+    '/practices/[practiceId]',
+    '/practices/new',
 
     // Field operator view
     '/field/[taskId]',

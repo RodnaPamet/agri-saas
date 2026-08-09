@@ -17,8 +17,8 @@
  * What it carries forward from the old flat view:
  *   - Search box (now filters the tree, expanding ancestors of any
  *     match so hits stay visible)
- *   - Mapped/unmapped indicator + control count badge per row
- *   - Drilldown into mapped controls for a selected requirement
+ *   - Mapped/unmapped indicator + practice count badge per row
+ *   - Drilldown into mapped practices for a selected requirement
  *
  * What it adds:
  *   - Real hierarchy with section / requirement / sub-requirement
@@ -27,7 +27,7 @@
  *   - Keyboard navigation + ARIA tree semantics inherited from
  *     `<TreeView>`
  *   - Stable side-panel detail view with description + linked
- *     controls
+ *     practices
  *
  * Coverage data is reused from the existing
  * `/frameworks/<key>?action=coverage` endpoint — no new server
@@ -58,14 +58,14 @@ import { cn } from '@/lib/cn';
 
 // ─── Coverage shapes (subset of the existing coverage usecase output) ──
 
-interface ControlMapping {
+interface PracticeMapping {
     requirementCode: string;
-    controlCode: string;
-    controlName: string;
-    controlStatus: string;
+    practiceCode: string;
+    practiceName: string;
+    practiceStatus: string;
 }
 interface CoveragePayload {
-    controlMappings?: ControlMapping[];
+    practiceMappings?: PracticeMapping[];
 }
 
 // ─── Props ─────────────────────────────────────────────────────────────
@@ -89,12 +89,12 @@ export function FrameworkExplorer({
     onRequirementSelected,
 }: FrameworkExplorerProps) {
     const t = useTranslations('frameworkExplorer');
-    // ── Derived: per-requirement control mappings, keyed by code. ────
+    // ── Derived: per-requirement practice mappings, keyed by code. ────
     // The coverage usecase keys by `requirementCode` (not id), so we
     // build a lookup once and reuse it on every selection.
-    const controlsByCode = useMemo(() => {
-        const map = new Map<string, ControlMapping[]>();
-        for (const m of coverage?.controlMappings ?? []) {
+    const practicesByCode = useMemo(() => {
+        const map = new Map<string, PracticeMapping[]>();
+        for (const m of coverage?.practiceMappings ?? []) {
             const list = map.get(m.requirementCode) ?? [];
             list.push(m);
             map.set(m.requirementCode, list);
@@ -195,9 +195,9 @@ export function FrameworkExplorer({
     const isMapped = useCallback(
         (code: string | undefined) => {
             if (!code) return false;
-            return controlsByCode.has(code);
+            return practicesByCode.has(code);
         },
-        [controlsByCode],
+        [practicesByCode],
     );
 
     // Ref to the tree's scroll container so the minimap can both
@@ -290,7 +290,7 @@ export function FrameworkExplorer({
                                 ctx={ctx}
                                 isMapped={isMapped(node.code)}
                                 mappedCount={
-                                    node.code ? controlsByCode.get(node.code)?.length ?? 0 : 0
+                                    node.code ? practicesByCode.get(node.code)?.length ?? 0 : 0
                                 }
                                 onToggle={() => {
                                     if (trimmed) return; // honour the search-active gate
@@ -330,7 +330,7 @@ export function FrameworkExplorer({
                 ) : (
                     <RequirementDetail
                         node={selectedNode}
-                        controls={controlsByCode.get(selectedNode.code ?? '') ?? []}
+                        practices={practicesByCode.get(selectedNode.code ?? '') ?? []}
                     />
                 )}
             </div>
@@ -378,9 +378,9 @@ function FrameworkTreeRow({
     if (isSection) {
         // Sections show the aggregated status as a small dot plus
         // the descendant count. Avoids the "Mapped (37)" green-bias
-        // bug where a section with 30 in-progress controls looked
+        // bug where a section with 30 in-progress practices looked
         // green just because every requirement had at least one
-        // mapped control.
+        // mapped practice.
         if (status) {
             indicator = (
                 <ComplianceStatusIndicator status={status} mode="dot" />
@@ -393,7 +393,7 @@ function FrameworkTreeRow({
         );
     } else {
         // Requirement rows: the dot encodes compliance status; the
-        // meta badge shows the mapped-controls count when there is
+        // meta badge shows the mapped-practices count when there is
         // one, otherwise the explicit "Unmapped" pill.
         if (status) {
             indicator = (
@@ -477,10 +477,10 @@ function SectionDetail({ node }: { node: FrameworkTreeNode }) {
 
 function RequirementDetail({
     node,
-    controls,
+    practices,
 }: {
     node: FrameworkTreeNode;
-    controls: ControlMapping[];
+    practices: PracticeMapping[];
 }) {
     const t = useTranslations('frameworkExplorer');
     return (
@@ -532,35 +532,35 @@ function RequirementDetail({
             <div>
                 <div className="flex items-center justify-between mb-2">
                     <p className="text-xs font-semibold text-content-subtle">
-                        {t('mappedControls', { count: controls.length })}
+                        {t('mappedPractices', { count: practices.length })}
                     </p>
-                    {controls.length === 0 && (
+                    {practices.length === 0 && (
                         <span className="text-[10px] text-content-warning">{t('unmapped')}</span>
                     )}
                 </div>
-                {controls.length === 0 ? (
+                {practices.length === 0 ? (
                     <p className="text-xs text-content-subtle italic">
-                        {t('noMappedControls')}
+                        {t('noMappedPractices')}
                     </p>
                 ) : (
                     <ul className="space-y-1.5">
-                        {controls.map((c, i) => (
+                        {practices.map((c, i) => (
                             <li
-                                key={`${c.controlCode}-${i}`}
+                                key={`${c.practiceCode}-${i}`}
                                 className="flex items-center gap-tight text-xs"
                             >
                                 <code className="font-mono text-[var(--brand-default)] truncate max-w-trunc-tight">
-                                    {c.controlCode}
+                                    {c.practiceCode}
                                 </code>
                                 <span className="text-content-default flex-1 truncate">
-                                    {c.controlName}
+                                    {c.practiceName}
                                 </span>
-                                <StatusBadge variant={c.controlStatus === 'IMPLEMENTED'
+                                <StatusBadge variant={c.practiceStatus === 'IMPLEMENTED'
                                             ? 'success'
-                                            : c.controlStatus === 'IN_PROGRESS'
+                                            : c.practiceStatus === 'IN_PROGRESS'
                                               ? 'warning'
                                               : 'info'} size="sm">
-                                    {c.controlStatus}
+                                    {c.practiceStatus}
                                 </StatusBadge>
                             </li>
                         ))}

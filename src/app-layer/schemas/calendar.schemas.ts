@@ -36,7 +36,7 @@ export const CALENDAR_EVENT_CATEGORIES = [
     'policy',
     'vendor',
     'audit',
-    'control',
+    'practice',
     'task',
     'risk',
     'finding',
@@ -83,8 +83,8 @@ export const CALENDAR_EVENT_TYPES = [
     'vendor-document-expiry',
     // audit
     'audit-cycle',
-    // control
-    'control-review',
+    // practice
+    'practice-review',
     // task
     'task-due',
     // farm-task — Task rows with type: 'FARM_TASK'. Same source model as

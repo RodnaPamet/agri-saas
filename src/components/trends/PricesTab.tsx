@@ -264,8 +264,8 @@ export function PricesTab() {
         return { ec, listings, reference };
     }, [data]);
 
-    // ── Controls (always visible so a user can switch even on empty) ──
-    const controls = (
+    // ── Practices (always visible so a user can switch even on empty) ──
+    const practices = (
         <div className="flex flex-col gap-default sm:flex-row sm:items-end sm:justify-between">
             <div className="w-full sm:max-w-[220px]">
                 <FormField label={t('commodityLabel')}>
@@ -301,7 +301,7 @@ export function PricesTab() {
 
     return (
         <div className="space-y-section" id="trends-prices-panel">
-            {controls}
+            {practices}
 
             {isLoading ? (
                 <div className="space-y-default" data-testid="trends-loading">

@@ -1,29 +1,29 @@
 import { NextRequest } from 'next/server';
 import { getTenantCtx } from '@/app-layer/context';
-import { mapRequirementToControl, unmapRequirementFromControl, listControlMappings } from '@/app-layer/usecases/control';
+import { mapRequirementToPractice, unmapRequirementFromPractice, listPracticeMappings } from '@/app-layer/usecases/practice';
 import { withValidatedBody } from '@/lib/validation/route';
 import { MapRequirementSchema } from '@/lib/schemas';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
 
-// GET — framework mappings for the control (#102 item 1, Mappings tab).
-export const GET = withApiErrorHandling(async (req: NextRequest, { params: paramsPromise }: { params: Promise<{ tenantSlug: string; controlId: string }> }) => {
+// GET — framework mappings for the practice (#102 item 1, Mappings tab).
+export const GET = withApiErrorHandling(async (req: NextRequest, { params: paramsPromise }: { params: Promise<{ tenantSlug: string; practiceId: string }> }) => {
     const params = await paramsPromise;
     const ctx = await getTenantCtx(params, req);
-    const mappings = await listControlMappings(ctx, params.controlId);
+    const mappings = await listPracticeMappings(ctx, params.practiceId);
     return jsonResponse(mappings);
 });
 
-export const POST = withApiErrorHandling(withValidatedBody(MapRequirementSchema, async (req, { params: paramsPromise }: { params: Promise<{ tenantSlug: string; controlId: string }> }, body) => {
+export const POST = withApiErrorHandling(withValidatedBody(MapRequirementSchema, async (req, { params: paramsPromise }: { params: Promise<{ tenantSlug: string; practiceId: string }> }, body) => {
     const params = await paramsPromise;
     const ctx = await getTenantCtx(params, req);
-    const mapping = await mapRequirementToControl(ctx, params.controlId, body.requirementId);
+    const mapping = await mapRequirementToPractice(ctx, params.practiceId, body.requirementId);
     return jsonResponse(mapping, { status: 201 });
 }));
 
-export const DELETE = withApiErrorHandling(withValidatedBody(MapRequirementSchema, async (req, { params: paramsPromise }: { params: Promise<{ tenantSlug: string; controlId: string }> }, body) => {
+export const DELETE = withApiErrorHandling(withValidatedBody(MapRequirementSchema, async (req, { params: paramsPromise }: { params: Promise<{ tenantSlug: string; practiceId: string }> }, body) => {
     const params = await paramsPromise;
     const ctx = await getTenantCtx(params, req);
-    await unmapRequirementFromControl(ctx, params.controlId, body.requirementId);
+    await unmapRequirementFromPractice(ctx, params.practiceId, body.requirementId);
     return jsonResponse({ success: true });
 }));

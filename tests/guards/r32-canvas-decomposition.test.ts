@@ -7,7 +7,7 @@
  *
  *   • `<CanvasDocumentBar>` — the inline toolbar JSX
  *   • `<CanvasLeftPalette>` — already separate (`<ProcessPalette>`)
- *   • `<CanvasMinimap>` + `<CanvasZoomControls>` — already xyflow
+ *   • `<CanvasMinimap>` + `<CanvasZoomPractices>` — already xyflow
  *     primitives mounted inline
  *   • `<CanvasCommandPalette>` — shipped Bundle 8 (#724)
  *   • `<CanvasInspector>` — already separate (`<ProcessInspector>`)
@@ -130,8 +130,8 @@ describe("R32-PR10 — canvas decomposition (document bar)", () => {
             //     `src/lib/processes/version-conflict-toast.ts`
             //     (the canvas wires the helper but doesn't own
             //     the toast-message + body-parse boilerplate);
-            //   - Epic P2-PR-A — `edgeControlsForSave` extracted
-            //     to `src/lib/processes/edge-controls.ts` (the
+            //   - Epic P2-PR-A — `edgePracticesForSave` extracted
+            //     to `src/lib/processes/edge-practices.ts` (the
             //     canvas calls one function instead of declaring
             //     a 50-line peeler inline).
             //
@@ -139,7 +139,7 @@ describe("R32-PR10 — canvas decomposition (document bar)", () => {
             // come paired with a written justification rather than
             // silently floating. Current cap: 2150. Bumps:
             //   - 1900 → 1925 (Epic P1 + P2-PR-A) — concurrency
-            //     check + edge control picker.
+            //     check + edge practice picker.
             //   - 1925 → 1950 (Epic P2-PR-B) — node entity
             //     pickers + linkedEntityId dataJson round-trip.
             //   - 1950 → 1975 (Epic P3-PR-A) — PNG/SVG export

@@ -73,8 +73,8 @@ const ISO_A515 = { reqId: 'req-a515', code: 'A.5.15', title: 'Access Control', .
 const NIST_GVOC01 = { reqId: 'req-gvoc01', code: 'GV.OC-01', title: 'Org Context', ...NIST };
 const NIST_GVRM01 = { reqId: 'req-gvrm01', code: 'GV.RM-01', title: 'Risk Management', ...NIST };
 
-const SOC2_CC1 = { reqId: 'req-cc1', code: 'CC1', title: 'Control Environment', ...SOC2 };
-const SOC2_CC5 = { reqId: 'req-cc5', code: 'CC5', title: 'Control Activities', ...SOC2 };
+const SOC2_CC1 = { reqId: 'req-cc1', code: 'CC1', title: 'Practice Environment', ...SOC2 };
+const SOC2_CC5 = { reqId: 'req-cc5', code: 'CC5', title: 'Practice Activities', ...SOC2 };
 const SOC2_CC6 = { reqId: 'req-cc6', code: 'CC6', title: 'Logical Access', ...SOC2 };
 
 // Edge database with varying strengths
@@ -511,7 +511,7 @@ describe('Gap Analysis', () => {
 
         it('handles RELATED mapping → REVIEW_NEEDED status', async () => {
             const soc2Targets = [
-                { requirementId: 'req-cc1', requirementCode: 'CC1', requirementTitle: 'Control Environment', frameworkKey: 'SOC2', frameworkName: 'SOC 2' },
+                { requirementId: 'req-cc1', requirementCode: 'CC1', requirementTitle: 'Practice Environment', frameworkKey: 'SOC2', frameworkName: 'SOC 2' },
             ];
 
             const result = await analyzeGaps(
@@ -551,7 +551,7 @@ describe('Gap Analysis', () => {
     describe('Conservative gap claims', () => {
         it('RELATED mapping does not produce COVERED status', async () => {
             const soc2Targets = [
-                { requirementId: 'req-cc1', requirementCode: 'CC1', requirementTitle: 'Control Environment', frameworkKey: 'SOC2', frameworkName: 'SOC 2' },
+                { requirementId: 'req-cc1', requirementCode: 'CC1', requirementTitle: 'Practice Environment', frameworkKey: 'SOC2', frameworkName: 'SOC 2' },
             ];
 
             const result = await analyzeGaps(
@@ -615,7 +615,7 @@ describe('Gap Analysis', () => {
             // SUPERSET (transitive: A.5.1 →EQUAL→ GV.OC-01 →SUPERSET→ CC5, effective=SUPERSET)
             const supersetResult = await analyzeGaps(
                 ['req-a51'],
-                [{ requirementId: 'req-cc5', requirementCode: 'CC5', requirementTitle: 'Control Activities', frameworkKey: 'SOC2', frameworkName: 'SOC 2' }],
+                [{ requirementId: 'req-cc5', requirementCode: 'CC5', requirementTitle: 'Practice Activities', frameworkKey: 'SOC2', frameworkName: 'SOC 2' }],
                 'ISO27001',
                 'SOC2',
                 testLoader,

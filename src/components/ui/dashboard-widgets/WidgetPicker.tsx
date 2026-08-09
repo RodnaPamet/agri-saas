@@ -11,7 +11,7 @@
  *
  * Flow:
  *
- *   1. Open the modal via `open` / `onOpenChange` (parent controls
+ *   1. Open the modal via `open` / `onOpenChange` (parent practices
  *      lifecycle so the trigger button + the dialog stay decoupled).
  *
  *   2. The user picks a widget TYPE (radio group: KPI / DONUT / TREND /
@@ -112,7 +112,7 @@ const WIDGET_TYPES: ReadonlyArray<WidgetTypeOption> = [
 const CHART_TYPE_OPTIONS: Record<WidgetTypeKey, ReadonlyArray<string>> = {
     KPI: ['coverage', 'critical-risks', 'overdue-evidence', 'tenants'],
     DONUT: ['rag-distribution'],
-    TREND: ['risks-open', 'controls-coverage', 'evidence-overdue'],
+    TREND: ['risks-open', 'practices-coverage', 'evidence-overdue'],
     TENANT_LIST: ['coverage'],
     DRILLDOWN_CTAS: ['default'],
 };
@@ -209,7 +209,7 @@ export function WidgetPicker({
         tenants: t('widgetPicker.chartTenants'),
         'rag-distribution': t('widgetPicker.chartRagDistribution'),
         'risks-open': t('widgetPicker.chartOpenRisks'),
-        'controls-coverage': t('widgetPicker.chartControlsCoverage'),
+        'practices-coverage': t('widgetPicker.chartPracticesCoverage'),
         'evidence-overdue': t('widgetPicker.chartOverdueEvidence'),
         default: t('widgetPicker.chartDefault'),
     };

@@ -7,7 +7,7 @@
  * trap documented in data-entry.spec.ts).
  *
  * Proves the feat/mobile-map contract at a phone viewport:
- *   1. On-map thumb controls (locate-me + zoom ±) render and are ≥44px
+ *   1. On-map thumb practices (locate-me + zoom ±) render and are ≥44px
  *      (WCAG 2.5.5) touch targets.
  *   2. "Locate me" recenters on the device GPS — with geolocation granted
  *      + mocked, tapping it drops the blue user-location dot.
@@ -30,7 +30,7 @@ const SQUARE = {
 test.describe('mobile map — phone-native operator map @mobile', () => {
     test.describe.configure({ retries: 0 });
 
-    test('on-map controls, locate-me, and the parcel bottom-sheet work on a phone', async ({
+    test('on-map practices, locate-me, and the parcel bottom-sheet work on a phone', async ({
         authedPage,
         isolatedTenant,
     }) => {
@@ -64,7 +64,7 @@ test.describe('mobile map — phone-native operator map @mobile', () => {
             main.getByRole('heading', { name: 'Home Farm' }).first(),
         ).toBeVisible({ timeout: 30_000 });
 
-        // ── Map tab: on-map thumb controls ───────────────────────────
+        // ── Map tab: on-map thumb practices ───────────────────────────
         await main.getByRole('tab', { name: 'Map' }).click();
 
         const findField = page.getByTestId('map-find-field');
@@ -74,14 +74,14 @@ test.describe('mobile map — phone-native operator map @mobile', () => {
         await expect(zoomIn).toBeVisible();
         await expect(zoomOut).toBeVisible();
 
-        // Each is a 36px control (min-h-[36px] min-w-[36px]) — above the WCAG
+        // Each is a 36px practice (min-h-[36px] min-w-[36px]) — above the WCAG
         // 2.5.8 AA 24px minimum. (Deliberately below the 44px AAA size: the
-        // controls read as oversized on the map.) Round for sub-pixel layout.
+        // practices read as oversized on the map.) Round for sub-pixel layout.
         for (const [label, ctrl] of [['find-field', findField], ['zoom-in', zoomIn], ['zoom-out', zoomOut]] as const) {
             const box = await ctrl.boundingBox();
-            expect(box, `${label} control has a box`).not.toBeNull();
-            expect(Math.round(box!.height), `${label} control ≥36px tall`).toBeGreaterThanOrEqual(36);
-            expect(Math.round(box!.width), `${label} control ≥36px wide`).toBeGreaterThanOrEqual(36);
+            expect(box, `${label} practice has a box`).not.toBeNull();
+            expect(Math.round(box!.height), `${label} practice ≥36px tall`).toBeGreaterThanOrEqual(36);
+            expect(Math.round(box!.width), `${label} practice ≥36px wide`).toBeGreaterThanOrEqual(36);
         }
 
         // The full-bleed map must not introduce horizontal overflow.
@@ -94,7 +94,7 @@ test.describe('mobile map — phone-native operator map @mobile', () => {
             `full-bleed map should not overflow (${overflow.scrollWidth} vs ${overflow.clientWidth})`,
         ).toBeLessThanOrEqual(overflow.clientWidth + 1);
 
-        // ── Find-my-field frames a field (no GPS) — the control stays
+        // ── Find-my-field frames a field (no GPS) — the practice stays
         //    usable so the operator can tap again to cycle to the next. ──
         await findField.click();
         await expect(findField).toBeVisible();

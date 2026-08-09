@@ -55,7 +55,7 @@ export interface PortfolioBaseData {
 export interface GetPortfolioDataOptions {
     /**
      * When false, skip the latest-snapshots fetch. Drill-down
-     * usecases (controls / risks / evidence list) only need the
+     * usecases (practices / risks / evidence list) only need the
      * tenant list and should pass this to avoid unnecessary
      * snapshot reads. Default true (the summary + health path).
      */

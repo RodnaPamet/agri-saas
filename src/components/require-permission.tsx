@@ -17,7 +17,7 @@ type RequirePermissionProps<R extends Resource> = {
  * It strictly types the `resource` and `action` against the `PermissionSet` to prevent typos.
  *
  * Usage:
- * <RequirePermission resource="controls" action="edit" fallback={<span>Read Only</span>}>
+ * <RequirePermission resource="practices" action="edit" fallback={<span>Read Only</span>}>
  *   <EditButton />
  * </RequirePermission>
  */

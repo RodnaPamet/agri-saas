@@ -57,9 +57,9 @@ interface DetailPageEntry {
  */
 const DETAIL_PAGES: DetailPageEntry[] = [
     {
-        file: "src/app/t/[tenantSlug]/(app)/controls/[controlId]/page.tsx",
+        file: "src/app/t/[tenantSlug]/(app)/practices/[practiceId]/page.tsx",
         adopted: true,
-        note: "Controls detail — uses <MetaStrip> for status / framework / owner / last-updated. Heaviest detail page in the product.",
+        note: "Practices detail — uses <MetaStrip> for status / framework / owner / last-updated. Heaviest detail page in the product.",
     },
     {
         file: "src/app/t/[tenantSlug]/(app)/vendors/[vendorId]/page.tsx",

@@ -88,7 +88,7 @@ describe('Epic G-4 — access-review API + UI wiring', () => {
         expect(evidenceRoute).toContain('readStream');
         expect(evidenceRoute).toContain('Content-Disposition');
         // Privacy: never cache the artifact in shared caches.
-        expect(evidenceRoute).toContain("Cache-Control");
+        expect(evidenceRoute).toContain("Cache-Practice");
         expect(evidenceRoute).toContain('private, no-store');
     });
 

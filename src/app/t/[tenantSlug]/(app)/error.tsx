@@ -10,7 +10,7 @@ import { useChunkErrorRecovery } from '@/lib/pwa/use-chunk-error-recovery';
  * Error boundary for the tenant-scoped app shell.
  *
  * Catches errors that occur inside any page within (app)/ — e.g. tasks,
- * controls, policies — and renders a recovery UI *inside* the sidebar layout.
+ * practices, policies — and renders a recovery UI *inside* the sidebar layout.
  * Without this, errors bubble up to the root error.tsx, which unmounts
  * the entire app shell (leaving users on a blank page with no navigation).
  *

@@ -125,7 +125,7 @@ export async function generateSnapshotForTenant(
     await withTenantDb(tenantId, async (db) => {
         // Run all aggregation queries in parallel within the transaction
         const [
-            controlCoverage,
+            practiceCoverage,
             evidenceExpiry,
             policySummary,
             taskSummary,
@@ -133,7 +133,7 @@ export async function generateSnapshotForTenant(
             assetSummary,
             findingsOpen,
         ] = await Promise.all([
-            DashboardRepository.getControlCoverage(db, ctx),
+            DashboardRepository.getPracticeCoverage(db, ctx),
             DashboardRepository.getEvidenceExpiry(db, ctx),
             DashboardRepository.getPolicySummary(db, ctx),
             DashboardRepository.getTaskSummary(db, ctx),
@@ -143,16 +143,16 @@ export async function generateSnapshotForTenant(
         ]);
 
         // Coverage BPS = coveragePercent × 10 (e.g. 75.3% → 753)
-        const controlCoverageBps = Math.round(controlCoverage.coveragePercent * 10);
+        const practiceCoverageBps = Math.round(practiceCoverage.coveragePercent * 10);
 
         const data = {
-            // Controls
-            controlsTotal: controlCoverage.total,
-            controlsApplicable: controlCoverage.applicable,
-            controlsImplemented: controlCoverage.implemented,
-            controlsInProgress: controlCoverage.inProgress,
-            controlsNotStarted: controlCoverage.notStarted,
-            controlCoverageBps,
+            // Practices
+            practicesTotal: practiceCoverage.total,
+            practicesApplicable: practiceCoverage.applicable,
+            practicesImplemented: practiceCoverage.implemented,
+            practicesInProgress: practiceCoverage.inProgress,
+            practicesNotStarted: practiceCoverage.notStarted,
+            practiceCoverageBps,
 
             // Risks
             // The GRC risk register was removed with the compliance uproot.

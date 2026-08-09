@@ -5,12 +5,12 @@
  *
  * Replaces the inline create form on the findings list with a modal that
  * captures the full finding shape: title/description/type/severity/due
- * date PLUS an assignee (tenant member), a linked control, a compensating
- * control, and a free-text analysis.
+ * date PLUS an assignee (tenant member), a linked practice, a compensating
+ * practice, and a free-text analysis.
  *
  * Business contract — POST /api/t/:slug/findings with
  *   { title, description, severity, type, dueDate?, analysis?,
- *     assigneeUserId?, controlId?, compensatingControlId? }
+ *     assigneeUserId?, practiceId?, compensatingPracticeId? }
  * The server validates every referenced id against the tenant. On success
  * the findings list cache is invalidated.
  */
@@ -43,7 +43,7 @@ import {
 import { useFormTelemetry } from '@/lib/telemetry/form-telemetry';
 import { useTranslations } from 'next-intl';
 
-interface ControlOption {
+interface PracticeOption {
     id: string;
     code: string | null;
     name: string;
@@ -68,8 +68,8 @@ const EMPTY_FORM = {
     severity: 'MEDIUM',
     type: 'OBSERVATION',
     assigneeUserId: '',
-    controlId: '',
-    compensatingControlId: '',
+    practiceId: '',
+    compensatingPracticeId: '',
     analysis: '',
     dueDate: '',
 };
@@ -101,30 +101,30 @@ export function CreateFindingModal({
         setForm((prev) => ({ ...prev, [field]: value }));
 
     // ── Lookups load while the modal is open ──
-    const controlsQuery = useQuery<ControlOption[]>({
-        queryKey: ['findings', tenantSlug, 'controls-for-new-finding'],
+    const practicesQuery = useQuery<PracticeOption[]>({
+        queryKey: ['findings', tenantSlug, 'practices-for-new-finding'],
         enabled: open,
         queryFn: async () => {
-            const res = await fetch(apiUrl('/controls'));
-            if (!res.ok) throw new Error(`Controls: ${res.status}`);
+            const res = await fetch(apiUrl('/practices'));
+            if (!res.ok) throw new Error(`Practices: ${res.status}`);
             const data = await res.json();
             if (!Array.isArray(data)) return [];
-            return data.map((c: ControlOption) => ({
+            return data.map((c: PracticeOption) => ({
                 id: c.id,
                 code: c.code ?? null,
                 name: c.name,
             }));
         },
     });
-    const controls = useMemo(() => controlsQuery.data ?? [], [controlsQuery.data]);
+    const practices = useMemo(() => practicesQuery.data ?? [], [practicesQuery.data]);
 
-    const controlOptions = useMemo<ComboboxOption[]>(
+    const practiceOptions = useMemo<ComboboxOption[]>(
         () =>
-            controls.map((c) => ({
+            practices.map((c) => ({
                 value: c.id,
                 label: c.code ? `${c.code} · ${c.name}` : c.name,
             })),
-        [controls],
+        [practices],
     );
 
     // ── Reset + focus on open ──
@@ -152,8 +152,8 @@ export function CreateFindingModal({
             severity: form.severity,
             type: form.type,
             hasAssignee: Boolean(form.assigneeUserId),
-            hasControl: Boolean(form.controlId),
-            hasCompensatingControl: Boolean(form.compensatingControlId),
+            hasPractice: Boolean(form.practiceId),
+            hasCompensatingPractice: Boolean(form.compensatingPracticeId),
         });
         try {
             const payload: Record<string, unknown> = {
@@ -162,8 +162,8 @@ export function CreateFindingModal({
                 severity: form.severity,
                 type: form.type,
                 assigneeUserId: form.assigneeUserId || undefined,
-                controlId: form.controlId || undefined,
-                compensatingControlId: form.compensatingControlId || undefined,
+                practiceId: form.practiceId || undefined,
+                compensatingPracticeId: form.compensatingPracticeId || undefined,
                 analysis: form.analysis.trim() || undefined,
             };
             if (form.dueDate) payload.dueDate = form.dueDate;
@@ -298,43 +298,43 @@ export function CreateFindingModal({
                             </FormField>
                         </FormSection>
 
-                        <FormSection eyebrow={t('sectionControls')}>
+                        <FormSection eyebrow={t('sectionPractices')}>
                             <div className="grid grid-cols-1 gap-default sm:grid-cols-2">
                                 <FormField
-                                    label={t('fieldLinkedControl')}
-                                    description={t('linkedControlDescription')}
+                                    label={t('fieldLinkedPractice')}
+                                    description={t('linkedPracticeDescription')}
                                 >
                                     <Combobox
-                                        id="finding-control"
-                                        name="controlId"
-                                        options={controlOptions}
-                                        selected={controlOptions.find((o) => o.value === form.controlId) ?? null}
-                                        setSelected={(o) => update('controlId', o?.value ?? '')}
-                                        loading={controlsQuery.isLoading}
-                                        placeholder={t('controlNone')}
-                                        searchPlaceholder={t('controlSearch')}
-                                        emptyState={t('controlEmpty')}
+                                        id="finding-practice"
+                                        name="practiceId"
+                                        options={practiceOptions}
+                                        selected={practiceOptions.find((o) => o.value === form.practiceId) ?? null}
+                                        setSelected={(o) => update('practiceId', o?.value ?? '')}
+                                        loading={practicesQuery.isLoading}
+                                        placeholder={t('practiceNone')}
+                                        searchPlaceholder={t('practiceSearch')}
+                                        emptyState={t('practiceEmpty')}
                                         matchTriggerWidth
                                         buttonProps={{ className: 'w-full' }}
                                         caret
                                     />
                                 </FormField>
                                 <FormField
-                                    label={t('fieldCompensatingControl')}
-                                    description={t('compensatingControlDescription')}
+                                    label={t('fieldCompensatingPractice')}
+                                    description={t('compensatingPracticeDescription')}
                                 >
                                     <Combobox
-                                        id="finding-compensating-control"
-                                        name="compensatingControlId"
-                                        options={controlOptions}
+                                        id="finding-compensating-practice"
+                                        name="compensatingPracticeId"
+                                        options={practiceOptions}
                                         selected={
-                                            controlOptions.find((o) => o.value === form.compensatingControlId) ?? null
+                                            practiceOptions.find((o) => o.value === form.compensatingPracticeId) ?? null
                                         }
-                                        setSelected={(o) => update('compensatingControlId', o?.value ?? '')}
-                                        loading={controlsQuery.isLoading}
-                                        placeholder={t('controlNone')}
-                                        searchPlaceholder={t('controlSearch')}
-                                        emptyState={t('controlEmpty')}
+                                        setSelected={(o) => update('compensatingPracticeId', o?.value ?? '')}
+                                        loading={practicesQuery.isLoading}
+                                        placeholder={t('practiceNone')}
+                                        searchPlaceholder={t('practiceSearch')}
+                                        emptyState={t('practiceEmpty')}
                                         matchTriggerWidth
                                         buttonProps={{ className: 'w-full' }}
                                         caret

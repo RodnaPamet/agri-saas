@@ -1,7 +1,7 @@
 import type { Role, OrgRole } from '@prisma/client';
 
 export type PermissionSet = {
-    controls: { view: boolean; create: boolean; edit: boolean };
+    practices: { view: boolean; create: boolean; edit: boolean };
     evidence: { view: boolean; upload: boolean; edit: boolean; download: boolean };
     policies: { view: boolean; create: boolean; edit: boolean; approve: boolean };
     tasks: { view: boolean; create: boolean; edit: boolean; assign: boolean };
@@ -68,7 +68,7 @@ export const OWNER_ONLY_PERMISSIONS: ReadonlyArray<{ domain: keyof PermissionSet
  * the only reason the escalation below was not one click away in the UI.
  */
 export const PERMISSION_SCHEMA: Record<keyof PermissionSet, string[]> = {
-    controls: ['view', 'create', 'edit'],
+    practices: ['view', 'create', 'edit'],
     evidence: ['view', 'upload', 'edit', 'download'],
     policies: ['view', 'create', 'edit', 'approve'],
     tasks: ['view', 'create', 'edit', 'assign'],
@@ -96,7 +96,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
             // Only role that can delete the tenant, rotate DEK, transfer
             // ownership, invite/remove other OWNERs, or assign OWNER role.
             return {
-                controls: { view: true, create: true, edit: true },
+                practices: { view: true, create: true, edit: true },
                 evidence: { view: true, upload: true, edit: true, download: true },
                 policies: { view: true, create: true, edit: true, approve: true },
                 tasks: { view: true, create: true, edit: true, assign: true },
@@ -113,7 +113,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
             };
         case 'ADMIN':
             return {
-                controls: { view: true, create: true, edit: true },
+                practices: { view: true, create: true, edit: true },
                 evidence: { view: true, upload: true, edit: true, download: true },
                 policies: { view: true, create: true, edit: true, approve: true },
                 tasks: { view: true, create: true, edit: true, assign: true },
@@ -132,7 +132,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
             };
         case 'EDITOR':
             return {
-                controls: { view: true, create: true, edit: true },
+                practices: { view: true, create: true, edit: true },
                 evidence: { view: true, upload: true, edit: true, download: true },
                 // Editors cannot approve policies usually, or maybe they can?
                 // Aligning with standard EDITOR: can't approve or admin.
@@ -148,7 +148,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
             };
         case 'AUDITOR':
             return {
-                controls: { view: true, create: false, edit: false },
+                practices: { view: true, create: false, edit: false },
                 // Auditors can often download evidence but not upload/edit
                 evidence: { view: true, upload: false, edit: false, download: true },
                 policies: { view: true, create: false, edit: false, approve: false },
@@ -174,7 +174,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
             // is load-bearing — without it MECHANISATOR would fall through
             // to the READER default below and silently see every screen.
             return {
-                controls: { view: false, create: false, edit: false },
+                practices: { view: false, create: false, edit: false },
                 evidence: { view: false, upload: false, edit: false, download: false },
                 policies: { view: false, create: false, edit: false, approve: false },
                 tasks: { view: true, create: false, edit: true, assign: false },
@@ -191,7 +191,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
         case 'READER':
         default:
             return {
-                controls: { view: true, create: false, edit: false },
+                practices: { view: true, create: false, edit: false },
                 evidence: { view: true, upload: false, edit: false, download: true },
                 policies: { view: true, create: false, edit: false, approve: false },
                 tasks: { view: true, create: false, edit: false, assign: false },
@@ -210,9 +210,9 @@ export function getPermissionsForRole(role: Role): PermissionSet {
 //
 // Org-level permissions are deliberately KEPT SEPARATE from the tenant-
 // level `PermissionSet` rather than nested inside it. The two govern
-// different domains: tenant `PermissionSet` controls per-tenant
-// resource access (controls, evidence, risks, etc.); `OrgPermissionSet`
-// controls portfolio-level access (the org dashboard, tenant lifecycle
+// different domains: tenant `PermissionSet` practices per-tenant
+// resource access (practices, evidence, risks, etc.); `OrgPermissionSet`
+// practices portfolio-level access (the org dashboard, tenant lifecycle
 // under the org, org member management).
 //
 // They never mix: a request resolves EITHER `RequestContext` (tenant
@@ -247,7 +247,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
  *                         compose the org-level dashboard. ORG_ADMIN
  *                         only. Read access to the rendered dashboard
  *                         is gated by `canViewPortfolio`; this flag
- *                         only controls the configuration layer
+ *                         only practices the configuration layer
  *                         (Epic 41 — Configurable Dashboard Widget Engine).
  */
 export type OrgPermissionSet = {

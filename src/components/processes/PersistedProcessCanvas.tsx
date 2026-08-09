@@ -39,7 +39,7 @@ import {
     Background,
     BackgroundVariant,
     ConnectionMode,
-    Controls,
+    Practices,
     ReactFlow,
     ReactFlowProvider,
     addEdge,
@@ -138,7 +138,7 @@ import { useTranslations } from "next-intl";
 import { useToast } from "@/components/ui/hooks";
 import { useMediaQuery } from "@/components/ui/hooks/use-media-query";
 import { surfaceVersionConflict } from "@/lib/processes/version-conflict-toast";
-import { edgeControlsForSave } from "@/lib/processes/edge-controls";
+import { edgePracticesForSave } from "@/lib/processes/edge-practices";
 
 /**
  * Reserved edge id for the in-flight proximity preview. The
@@ -199,7 +199,7 @@ function nodeDataJson(n: Node): {
             : typeof dataH === "number"
               ? dataH
               : null;
-    // Epic P2-PR-B — entity FK on risk / asset / control nodes.
+    // Epic P2-PR-B — entity FK on risk / asset / practice nodes.
     const linkedEntityId = (n.data as { linkedEntityId?: unknown } | undefined)
         ?.linkedEntityId;
     const out: {
@@ -473,8 +473,8 @@ function Inner({
                         targetKey: string;
                         edgeKind: string;
                         labelOverride: string | null;
-                        // Epic P2-PR-A — controls round-trip on the edge.
-                        controls?: Array<{ controlKey: string; label: string; controlId: string | null; dataJson: unknown }>;
+                        // Epic P2-PR-A — practices round-trip on the edge.
+                        practices?: Array<{ practiceKey: string; label: string; practiceId: string | null; dataJson: unknown }>;
                     }>;
                 };
                 if (cancelled) return;
@@ -545,11 +545,11 @@ function Inner({
                     source: e.sourceKey,
                     target: e.targetKey,
                     type: PROCESS_EDGE_TYPE,
-                    // R27-PR-B — variant rides in edgeKind. P2-PR-A — controls in data.controls.
+                    // R27-PR-B — variant rides in edgeKind. P2-PR-A — practices in data.practices.
                     data: {
                         variant: isProcessEdgeVariant(e.edgeKind) ? e.edgeKind : "flow",
-                        ...(Array.isArray(e.controls) && e.controls.length > 0
-                            ? { controls: e.controls.map((c) => ({ controlKey: c.controlKey, label: c.label, controlId: c.controlId })) }
+                        ...(Array.isArray(e.practices) && e.practices.length > 0
+                            ? { practices: e.practices.map((c) => ({ practiceKey: c.practiceKey, label: c.label, practiceId: c.practiceId })) }
                             : {}),
                     },
                     ...(e.labelOverride ? { label: e.labelOverride } : {}),
@@ -629,7 +629,7 @@ function Inner({
                     edgeKind: edgeKindOf(e),
                     labelOverride:
                         typeof e.label === "string" ? e.label : null,
-                    controls: edgeControlsForSave(e),
+                    practices: edgePracticesForSave(e),
                 })),
                 // Epic P1 — version we last loaded/saved; server
                 // refuses on mismatch (409 / STALE_DATA).
@@ -786,7 +786,7 @@ function Inner({
                     edgeKind: edgeKindOf(e),
                     labelOverride:
                         typeof e.label === "string" ? e.label : null,
-                    controls: edgeControlsForSave(e),
+                    practices: edgePracticesForSave(e),
                 })),
             };
             const res = await fetch(
@@ -885,7 +885,7 @@ function Inner({
                             edgeKind: edgeKindOf(e),
                             labelOverride:
                                 typeof e.label === "string" ? e.label : null,
-                            controls: edgeControlsForSave(e),
+                            practices: edgePracticesForSave(e),
                         })),
                     }),
                 },
@@ -1127,8 +1127,8 @@ function Inner({
             patch: {
                 label?: string | null;
                 variant?: ProcessEdgeVariant;
-                // Epic P2-PR-A — Linked-control picker patch.
-                controls?: Array<{ controlKey: string; label: string; controlId: string | null }>;
+                // Epic P2-PR-A — Linked-practice picker patch.
+                practices?: Array<{ practiceKey: string; label: string; practiceId: string | null }>;
             },
         ) => {
             history.push({ nodes, edges });
@@ -1154,14 +1154,14 @@ function Inner({
                         >;
                         next.data = { ...prevData, variant: patch.variant };
                     }
-                    if (patch.controls !== undefined) {
+                    if (patch.practices !== undefined) {
                         const prevData = (next.data ?? e.data ?? {}) as Record<
                             string,
                             unknown
                         >;
                         next.data = {
                             ...prevData,
-                            controls: patch.controls,
+                            practices: patch.practices,
                         };
                     }
                     return next;
@@ -2125,7 +2125,7 @@ function Inner({
                         R32-PR12 — explanatory <Tooltip> on the
                         disabled state surfaces WHY the button can't
                         be clicked. Per the design verdict: "never
-                        let a control fail silently". */}
+                        let a practice fail silently". */}
                     {(() => {
                         const groupDisabled = nodes
                             .filter((n) => selectedNodeIds.includes(n.id))
@@ -2314,7 +2314,7 @@ function Inner({
                         // on whether the resulting pair is allowed.
                         connectionMode={ConnectionMode.Loose}
                         // R28 — snap to grid. Toggled by the
-                        // toolbar control; persisted per tenant in
+                        // toolbar practice; persisted per tenant in
                         // localStorage. 16px grid is one Background
                         // dot step ÷ 1.5 — fine enough to feel
                         // precise, loose enough that snapping is
@@ -2363,9 +2363,9 @@ function Inner({
                             on a large process map the user couldn't
                             tell how to get back. Every canvas tool
                             that has shipped in the last 15 years has
-                            +/-/fit controls.
+                            +/-/fit practices.
 
-                            xyflow's `<Controls>` primitive is the
+                            xyflow's `<Practices>` primitive is the
                             canonical answer; we wrap it with a
                             token-driven surface so the overlay matches
                             the canvas frame language. The original
@@ -2378,16 +2378,16 @@ function Inner({
                             Zoom-button icon + surface colours come
                             from `globals.css` `[data-process-canvas]`
                             overrides that wire xyflow's
-                            `--xy-controls-button-*` cascade through
+                            `--xy-practices-button-*` cascade through
                             to the canvas-frame token suite, so the
                             buttons read on both light and dark
                             themes. */}
-                        <Controls
+                        <Practices
                             position="bottom-left"
                             showInteractive={false}
                             className="!bg-canvas-frame/90 !border !border-canvas-border !rounded-[8px] !shadow-canvas-node backdrop-blur"
-                            data-testid="canvas-zoom-controls"
-                            aria-label={t("persistedCanvas.zoomControls")}
+                            data-testid="canvas-zoom-practices"
+                            aria-label={t("persistedCanvas.zoomPractices")}
                         />
                     </ReactFlow>
                 </div>

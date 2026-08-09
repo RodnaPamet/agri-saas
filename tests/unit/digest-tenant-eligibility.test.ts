@@ -55,7 +55,7 @@ function makeDueItem(overrides: Partial<DueItem> = {}): DueItem {
         entityId: 'ctrl-1',
         tenantId: 'tenant-enabled',
         name: 'Firewall Review',
-        reason: 'Control testing overdue by 5 day(s)',
+        reason: 'Practice testing overdue by 5 day(s)',
         urgency: 'OVERDUE',
         dueDate: '2026-04-12T00:00:00Z',
         daysRemaining: -5,

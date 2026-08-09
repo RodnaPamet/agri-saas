@@ -1,7 +1,7 @@
 /**
  * Server→client serialization boundary ratchet for org list pages.
  *
- * The org drill-down pages (controls / evidence / tenants)
+ * The org drill-down pages (practices / evidence / tenants)
  * each cross the RSC boundary by passing usecase result rows into a
  * client-component table. The convention is:
  *
@@ -47,9 +47,9 @@ interface PageSpec {
 
 const PAGES: PageSpec[] = [
     {
-        name: 'controls',
-        page: 'src/app/org/[orgSlug]/(app)/controls/page.tsx',
-        tableTag: 'ControlsTable',
+        name: 'practices',
+        page: 'src/app/org/[orgSlug]/(app)/practices/page.tsx',
+        tableTag: 'PracticesTable',
     },
     {
         name: 'evidence',

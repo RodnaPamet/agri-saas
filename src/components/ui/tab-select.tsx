@@ -31,7 +31,7 @@ import { ArrowUpRight } from "./icons";
  *     the neutral dashboard chrome. Use for in-page section nav.
  *   - `accent` — blue accent, higher emphasis. Use sparingly when the
  *     tab selection drives the whole page's content (e.g. "Overview /
- *     Findings / Evidence" at the top of a control page).
+ *     Findings / Evidence" at the top of a practice page).
  *
  * ## Links vs. callbacks
  *

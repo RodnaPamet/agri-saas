@@ -22,7 +22,7 @@
  *      auditees/departments (when supplied) on create AND update.
  *   3. status='PLANNED' default on create.
  *   4. generateChecklist=true creates 10 standard items + up to 10
- *      control-derived items.
+ *      practice-derived items.
  *   5. updateAudit: notFound on missing audit; checklistUpdates
  *      sanitises notes per element (encrypted column).
  *   6. CREATE / UPDATE audit emit.
@@ -76,9 +76,9 @@ beforeEach(() => {
     mockUpdate.mockResolvedValue({ id: 'a1' } as never);
 });
 
-function fakeDbWithControls(controls: { id: string; name: string; code?: string }[] = []) {
+function fakeDbWithPractices(practices: { id: string; name: string; code?: string }[] = []) {
     return {
-        control: { findMany: jest.fn().mockResolvedValue(controls) },
+        practice: { findMany: jest.fn().mockResolvedValue(practices) },
     };
 }
 
@@ -97,7 +97,7 @@ describe('createAudit', () => {
     });
 
     it('sanitises title + every encrypted free-text field', async () => {
-        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(fakeDbWithControls() as never));
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(fakeDbWithPractices() as never));
 
         await createAudit(makeRequestContext('EDITOR'), {
             title: '<b>Q4</b>',
@@ -122,19 +122,19 @@ describe('createAudit', () => {
     });
 
     it('persists status=PLANNED by default', async () => {
-        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(fakeDbWithControls() as never));
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(fakeDbWithPractices() as never));
 
         await createAudit(makeRequestContext('EDITOR'), { title: 'Q4' });
 
         expect(mockCreate.mock.calls[0][2].status).toBe('PLANNED');
     });
 
-    it('generateChecklist=true creates 10 standard items + control-derived items', async () => {
-        const controls = Array.from({ length: 5 }, (_, i) => ({
-            id: `c${i}`, name: `Control ${i}`, code: `A.${i}`,
+    it('generateChecklist=true creates 10 standard items + practice-derived items', async () => {
+        const practices = Array.from({ length: 5 }, (_, i) => ({
+            id: `c${i}`, name: `Practice ${i}`, code: `A.${i}`,
         }));
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
-            fn(fakeDbWithControls(controls) as never),
+            fn(fakeDbWithPractices(practices) as never),
         );
 
         await createAudit(makeRequestContext('EDITOR'), {
@@ -142,12 +142,12 @@ describe('createAudit', () => {
             generateChecklist: true,
         });
 
-        // 10 baseline + 5 control-derived = 15
+        // 10 baseline + 5 practice-derived = 15
         expect(mockCreateItem).toHaveBeenCalledTimes(15);
     });
 
     it('generateChecklist=false (default) creates NO checklist items', async () => {
-        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(fakeDbWithControls() as never));
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(fakeDbWithPractices() as never));
 
         await createAudit(makeRequestContext('EDITOR'), { title: 'Q4' });
 
@@ -155,7 +155,7 @@ describe('createAudit', () => {
     });
 
     it('emits CREATE Audit audit', async () => {
-        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(fakeDbWithControls() as never));
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(fakeDbWithPractices() as never));
 
         await createAudit(makeRequestContext('EDITOR'), { title: 'Q4' });
 

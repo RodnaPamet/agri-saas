@@ -212,28 +212,28 @@ function decryptConnectionSecrets(secretEncrypted: string | null): Record<string
 }
 
 /**
- * Run an automation check for a specific Control.
- * Resolves the Control's automationKey → provider → executes check → persists result.
+ * Run an automation check for a specific Practice.
+ * Resolves the Practice's automationKey → provider → executes check → persists result.
  */
-export async function runAutomationForControl(
+export async function runAutomationForPractice(
     ctx: RequestContext,
-    controlId: string,
+    practiceId: string,
     options: { triggeredBy?: 'scheduled' | 'manual' | 'webhook'; jobRunId?: string } = {}
 ) {
     const triggeredBy = options.triggeredBy ?? 'manual';
 
     return runInTenantContext(ctx, async (db) => {
-        // 1. Fetch control + automationKey
-        const control = await db.control.findFirst({
-            where: { id: controlId, tenantId: ctx.tenantId, deletedAt: null },
+        // 1. Fetch practice + automationKey
+        const practice = await db.practice.findFirst({
+            where: { id: practiceId, tenantId: ctx.tenantId, deletedAt: null },
             select: { id: true, automationKey: true, tenantId: true, name: true },
         });
-        if (!control) throw notFound('Control not found');
-        if (!control.automationKey) throw badRequest('Control has no automationKey');
+        if (!practice) throw notFound('Practice not found');
+        if (!practice.automationKey) throw badRequest('Practice has no automationKey');
 
         // 2. Resolve provider
-        const resolution = registry.resolveByAutomationKey(control.automationKey);
-        if (!resolution) throw badRequest(`No provider for automationKey: ${control.automationKey}`);
+        const resolution = registry.resolveByAutomationKey(practice.automationKey);
+        if (!resolution) throw badRequest(`No provider for automationKey: ${practice.automationKey}`);
 
         const { provider, parsed } = resolution;
         if (!isScheduledCheckProvider(provider)) {
@@ -256,8 +256,8 @@ export async function runAutomationForControl(
                 tenantId: ctx.tenantId,
                 connectionId: connection.id,
                 provider: parsed.provider,
-                automationKey: control.automationKey,
-                controlId: control.id,
+                automationKey: practice.automationKey,
+                practiceId: practice.id,
                 status: 'RUNNING',
                 triggeredBy,
                 jobRunId: options.jobRunId,
@@ -271,10 +271,10 @@ export async function runAutomationForControl(
         try {
             const secrets = decryptConnectionSecrets(connection.secretEncrypted);
             result = await provider.runCheck({
-                automationKey: control.automationKey,
+                automationKey: practice.automationKey,
                 parsed,
                 tenantId: ctx.tenantId,
-                controlId: control.id,
+                practiceId: practice.id,
                 connectionConfig: {
                     ...(connection.configJson as Record<string, unknown>),
                     ...secrets,
@@ -300,8 +300,8 @@ export async function runAutomationForControl(
             logger.error('Integration check execution error', {
                 component: 'integrations',
                 provider: parsed.provider,
-                automationKey: control.automationKey,
-                controlId: control.id,
+                automationKey: practice.automationKey,
+                practiceId: practice.id,
                 error: errorMessage,
             });
 
@@ -317,10 +317,10 @@ export async function runAutomationForControl(
         if (result.status === 'PASSED' || result.status === 'FAILED') {
             const evidencePayload: EvidencePayload | null = provider.mapResultToEvidence(
                 {
-                    automationKey: control.automationKey,
+                    automationKey: practice.automationKey,
                     parsed,
                     tenantId: ctx.tenantId,
-                    controlId: control.id,
+                    practiceId: practice.id,
                     connectionConfig: {},
                     triggeredBy,
                 },
@@ -331,7 +331,7 @@ export async function runAutomationForControl(
                 const evidence = await db.evidence.create({
                     data: {
                         tenantId: ctx.tenantId,
-                        controlId: control.id,
+                        practiceId: practice.id,
                         // Integration EvidencePayload.type uses a wider vocabulary
                         // (DOCUMENT/SCREENSHOT/LOG/CONFIGURATION/REPORT) than the
                         // Prisma EvidenceType enum (FILE/LINK/TEXT). Integration-created
@@ -363,7 +363,7 @@ export async function runAutomationForControl(
         logger.info('Integration check completed', {
             component: 'integrations',
             provider: parsed.provider,
-            automationKey: control.automationKey,
+            automationKey: practice.automationKey,
             status: result.status,
             durationMs,
         });
@@ -441,16 +441,16 @@ export async function handleIncomingWebhook(
 // ─── Execution History ───────────────────────────────────────────────
 
 /**
- * List recent executions for a control.
+ * List recent executions for a practice.
  */
-export async function listExecutionsForControl(
+export async function listExecutionsForPractice(
     ctx: RequestContext,
-    controlId: string,
+    practiceId: string,
     options: { limit?: number } = {}
 ) {
     return runInTenantContext(ctx, (db) =>
         db.integrationExecution.findMany({
-            where: { tenantId: ctx.tenantId, controlId },
+            where: { tenantId: ctx.tenantId, practiceId },
             select: {
                 id: true,
                 provider: true,
@@ -472,7 +472,7 @@ export async function listExecutionsForControl(
 
 /**
  * List all automation keys available in the registry.
- * Used by the UI to populate control automationKey dropdowns.
+ * Used by the UI to populate practice automationKey dropdowns.
  */
 export function listAvailableAutomationKeys(): string[] {
     return registry.listAllAutomationKeys();

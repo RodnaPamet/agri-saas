@@ -4,7 +4,7 @@ export * from "./use-columns-dropdown";
 export * from "./data-table";
 export * from "./mobile-card-list";
 export * from "./edit-columns-button";
-export * from "./pagination-controls";
+export * from "./pagination-practices";
 export * from "./pagination-utils";
 export * from "./selection-toolbar";
 export * from "./use-bulk-delete";

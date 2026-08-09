@@ -144,7 +144,7 @@ describeFn('framework:import CLI — integration', () => {
         expect(parsed.requirements.upserted).toBe(4);
 
         // Idempotency check: re-run, framework not re-created.
-        // The control-template half of the catalogue went with the
+        // The practice-template half of the catalogue went with the
         // compliance uproot — the applier now reports a constant
         // `templates: { created: 0, existing: 0 }` and seeds the
         // framework, its requirements and the pack only. Idempotency is

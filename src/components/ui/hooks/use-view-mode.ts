@@ -5,7 +5,7 @@
  * `localStorage` via the existing `useLocalStorage` primitive.
  * Pages that adopt the toggle do:
  *
- *   const [view, setView] = useViewMode('controls', 'table');
+ *   const [view, setView] = useViewMode('practices', 'table');
  *   …
  *   <FilterToolbar
  *     actions={<ViewToggle view={view} onChange={setView} />}

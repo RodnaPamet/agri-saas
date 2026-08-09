@@ -418,13 +418,13 @@ export async function findOverdueIssuesAndEmitEvents(ctx: RequestContext) {
     });
 }
 
-// ─── Control Gap Linking ───
+// ─── Practice Gap Linking ───
 
-export async function listIssuesByControl(ctx: RequestContext, controlId: string) {
+export async function listIssuesByPractice(ctx: RequestContext, practiceId: string) {
     assertCanReadIssues(ctx);
     return runInTenantContext(ctx, async (db) => {
         const links = await db.taskLink.findMany({
-            where: { tenantId: ctx.tenantId, entityType: TaskLinkEntityType.CONTROL, entityId: controlId },
+            where: { tenantId: ctx.tenantId, entityType: TaskLinkEntityType.CONTROL, entityId: practiceId },
             include: {
                 task: {
                     include: {

@@ -19,14 +19,14 @@
  *   });
  *
  *   <DataTable
- *     data={pg.slice(controls)}
+ *     data={pg.slice(practices)}
  *     pagination={pg.pagination}
  *     onPaginationChange={pg.setPagination}
- *     rowCount={controls.length}
+ *     rowCount={practices.length}
  *     ...
  *   />
  *
- * `PaginationControls` renders automatically in the DataTable footer when
+ * `PaginationPractices` renders automatically in the DataTable footer when
  * those three props are set.
  */
 

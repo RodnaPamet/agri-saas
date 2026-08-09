@@ -74,7 +74,7 @@ export function DashboardLayout({
             // vertical motion reads as "the dashboard composes
             // itself" rather than "the page popped in." Affects
             // all 7 DashboardLayout consumers (executive dashboard,
-            // tests / risks / controls / tasks / vendors dashboards,
+            // tests / risks / practices / tasks / vendors dashboards,
             // CoverageClient) — one consistent first-paint feel
             // across every dashboard surface.
             className={cn("space-y-section animate-dashboard-rise-in", className)}

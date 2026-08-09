@@ -16,7 +16,7 @@
  *   1. the `no-results` variant renders (the variant a filtered-empty
  *      list uses);
  *   2. the "Clear filters" CTA actually RENDERS as an interactive
- *      control and FIRES its handler when clicked — not just that the
+ *      practice and FIRES its handler when clicked — not just that the
  *      label string is in source;
  *   3. the CTA copy uses canonical vocabulary the user reads.
  *
@@ -59,7 +59,7 @@ describe('<EmptyState> cleared-filters CTA — behavioural (Tier 2)', () => {
         ).toBeInTheDocument();
     });
 
-    it('the "Clear filters" CTA renders as a reachable control and FIRES its handler', async () => {
+    it('the "Clear filters" CTA renders as a reachable practice and FIRES its handler', async () => {
         const user = userEvent.setup();
         const clearFilters = jest.fn();
         render(
@@ -79,7 +79,7 @@ describe('<EmptyState> cleared-filters CTA — behavioural (Tier 2)', () => {
 
         // Clicking it must run the clear-filters callback. THIS is the
         // behaviour a structural ratchet can never verify — that the
-        // prop is actually wired to the rendered control.
+        // prop is actually wired to the rendered practice.
         await user.click(cta);
         expect(clearFilters).toHaveBeenCalledTimes(1);
     });
@@ -116,7 +116,7 @@ describe('<EmptyState> cleared-filters CTA — behavioural (Tier 2)', () => {
                 secondaryAction={{ label: 'Reset search', onClick: resetSearch }}
             />,
         );
-        // Both controls render and are independently addressable by
+        // Both practices render and are independently addressable by
         // accessible name — the filtered-empty state often offers
         // both "clear filters" and "reset search".
         const clearCta = screen.getByRole('button', {
@@ -151,7 +151,7 @@ describe('<EmptyState> cleared-filters CTA — behavioural (Tier 2)', () => {
         expect(cta).toBeDisabled();
         await user.click(cta);
         // A disabled CTA must be inert — the behavioural contract of
-        // the `disabled` prop, verified at the rendered control.
+        // the `disabled` prop, verified at the rendered practice.
         expect(clearFilters).not.toHaveBeenCalled();
     });
 

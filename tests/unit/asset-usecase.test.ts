@@ -18,7 +18,7 @@
  *     delegation + audit + notFound.
  *   - listAssetsWithDeleted — admin gate + withDeleted wrapper.
  *   - getAssetEvidenceTab / linkAssetEvidence / unlinkAssetEvidence —
- *     the asset Evidence-tab path (parallel to Risk/Control patterns).
+ *     the asset Evidence-tab path (parallel to Risk/Practice patterns).
  */
 
 const mockDb = {

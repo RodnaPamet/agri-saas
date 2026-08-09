@@ -4,7 +4,7 @@
  * Defines the typed envelope, entity records, and relationship references
  * used by the export/import services. All exports are:
  *   - tenant-scoped (never cross-tenant)
- *   - domain-scoped (control bundle, policy bundle, etc.)
+ *   - domain-scoped (practice bundle, policy bundle, etc.)
  *   - versioned (format version tracked for migration between app versions)
  *
  * VERSIONING STRATEGY:
@@ -18,7 +18,7 @@
  *   │ ExportEnvelope                                             │
  *   │  ├── formatVersion: '1.0'                                  │
  *   │  ├── metadata: { tenant, exportedAt, domain, appVersion }  │
- *   │  ├── entities: { controls: [...], policies: [...], ... }   │
+ *   │  ├── entities: { practices: [...], policies: [...], ... }   │
  *   │  └── relationships: [ { from, to, type } ]                │
  *   └─────────────────────────────────────────────────────────────┘
  *
@@ -40,7 +40,7 @@ export const APP_IDENTIFIER = 'inflect-compliance' as const;
  * Each domain defines a rooted subgraph of the data model.
  */
 export type ExportDomain =
-    | 'CONTROLS'        // Controls + test plans + test runs + evidence links
+    | 'CONTROLS'        // Practices + test plans + test runs + evidence links
     | 'POLICIES'        // Policies + versions + approvals
     | 'RISKS'           // Risks + risk assessments
     | 'EVIDENCE'        // Evidence items + file metadata + retention
@@ -67,9 +67,9 @@ export const FULL_TENANT_DOMAINS: ExportDomain[] = [
  * Used as keys in the ExportEnvelope.entities map.
  */
 export type ExportEntityType =
-    | 'control'
-    | 'controlTestPlan'
-    | 'controlTestRun'
+    | 'practice'
+    | 'practiceTestPlan'
+    | 'practiceTestRun'
     | 'policy'
     | 'policyVersion'
     | 'risk'
@@ -81,7 +81,7 @@ export type ExportEntityType =
     | 'vendorSubprocessor'
     | 'framework'
     | 'frameworkRequirement'
-    | 'controlMapping';
+    | 'practiceMapping';
 
 // ─── Envelope Types ─────────────────────────────────────────────────
 
@@ -112,7 +112,7 @@ export interface ExportMetadata {
  * Wraps the entity data with type/version metadata.
  */
 export interface ExportEntityRecord<T = Record<string, unknown>> {
-    /** Entity type (e.g. 'control', 'policy'). */
+    /** Entity type (e.g. 'practice', 'policy'). */
     entityType: ExportEntityType;
     /** Original entity ID (used for relationship resolution). */
     id: string;
@@ -140,9 +140,9 @@ export interface ExportRelationship {
 }
 
 export type ExportRelationshipType =
-    | 'BELONGS_TO'      // Child → parent (e.g. testPlan → control)
+    | 'BELONGS_TO'      // Child → parent (e.g. testPlan → practice)
     | 'LINKED_TO'       // Soft link (e.g. taskLink → evidence)
-    | 'MAPS_TO'         // Mapping (e.g. control → requirement)
+    | 'MAPS_TO'         // Mapping (e.g. practice → requirement)
     | 'VERSION_OF'      // Version chain (e.g. policyVersion → policy)
     | 'REVIEWS';        // Review relationship (e.g. vendorReview → vendor)
 
@@ -225,13 +225,13 @@ const VALID_DOMAINS: Set<string> = new Set([
 
 /** All valid entity type values. */
 const VALID_ENTITY_TYPES: Set<string> = new Set([
-    'control', 'controlTestPlan', 'controlTestRun',
+    'practice', 'practiceTestPlan', 'practiceTestRun',
     'policy', 'policyVersion',
     'risk',
     'evidence',
     'task', 'taskLink',
     'vendor', 'vendorReview', 'vendorSubprocessor',
-    'framework', 'frameworkRequirement', 'controlMapping',
+    'framework', 'frameworkRequirement', 'practiceMapping',
 ]);
 
 /** All valid relationship types. */
@@ -499,7 +499,7 @@ export function isFormatVersionSupported(version: string): boolean {
  * Defines which entity types belong to each export domain.
  */
 export const DOMAIN_ENTITY_MAP: Record<ExportDomain, ExportEntityType[]> = {
-    CONTROLS: ['control', 'controlTestPlan', 'controlTestRun', 'controlMapping'],
+    CONTROLS: ['practice', 'practiceTestPlan', 'practiceTestRun', 'practiceMapping'],
     POLICIES: ['policy', 'policyVersion'],
     RISKS: ['risk'],
     EVIDENCE: ['evidence'],
@@ -507,7 +507,7 @@ export const DOMAIN_ENTITY_MAP: Record<ExportDomain, ExportEntityType[]> = {
     VENDORS: ['vendor', 'vendorReview', 'vendorSubprocessor'],
     FRAMEWORKS: ['framework', 'frameworkRequirement'],
     FULL_TENANT: [
-        'control', 'controlTestPlan', 'controlTestRun', 'controlMapping',
+        'practice', 'practiceTestPlan', 'practiceTestRun', 'practiceMapping',
         'policy', 'policyVersion',
         'risk',
         'evidence',
@@ -527,15 +527,15 @@ export const IMPORT_ORDER: ExportEntityType[] = [
     'framework',
     'frameworkRequirement',
     // 2. Core compliance entities
-    'control',
+    'practice',
     'policy',
     'risk',
     'evidence',
     'vendor',
     // 3. Child entities (depend on parents above)
-    'controlTestPlan',
-    'controlTestRun',
-    'controlMapping',
+    'practiceTestPlan',
+    'practiceTestRun',
+    'practiceMapping',
     'policyVersion',
     'vendorReview',
     'vendorSubprocessor',

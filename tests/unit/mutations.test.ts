@@ -80,7 +80,7 @@ describe('optimisticListUpdate', () => {
         name: string;
         done?: boolean;
     }
-    const KEY = ['controls', 'list'] as const;
+    const KEY = ['practices', 'list'] as const;
 
     function makeClient(seed?: Row[]): QueryClient {
         const qc = new QueryClient();

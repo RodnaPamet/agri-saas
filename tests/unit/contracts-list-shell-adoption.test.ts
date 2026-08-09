@@ -1,7 +1,7 @@
 /**
  * Structural ratchet: `ContractsClient` adopts `<EntityListPage>`.
  *
- * Mirrors `controls-client-shell-adoption.test.ts`. Locks the invariant
+ * Mirrors `practices-client-shell-adoption.test.ts`. Locks the invariant
  * that the grain Contracts list page sits on the shared shell rather
  * than hand-rolling inline `<ListPageShell>` + `<FilterToolbar>` +
  * `<DataTable>` composition. Also asserts the create/edit modal mounts

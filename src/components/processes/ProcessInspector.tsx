@@ -38,10 +38,10 @@ import { ToggleGroup } from "@/components/ui/toggle-group";
 import { AsidePanel } from "@/components/ui/aside-panel";
 import { Combobox, type ComboboxOption } from "@/components/ui/combobox";
 import {
-    findTenantControl,
-    formatControlLabel,
-    useTenantControls,
-} from "@/lib/processes/use-tenant-controls";
+    findTenantPractice,
+    formatPracticeLabel,
+    useTenantPractices,
+} from "@/lib/processes/use-tenant-practices";
 import {
     findTenantAsset,
     formatAssetLabel,
@@ -50,7 +50,7 @@ import {
 
 /**
  * PR-D polish — refresh cadence for linked-entity status. 30s
- * balances "live enough that an admin changing a control's status
+ * balances "live enough that an admin changing a practice's status
  * in another tab reflects on the canvas" against API hammering.
  */
 const ENTITY_STATUS_POLL_MS = 30_000;
@@ -96,18 +96,18 @@ import {
 } from "./ProcessEdge";
 
 /**
- * Epic P2-PR-A — shape of an edge-attached control reference.
+ * Epic P2-PR-A — shape of an edge-attached practice reference.
  * One per edge today (the inspector picks ONE); the underlying
- * `ProcessEdgeControl` table supports multiple per edge for future
- * "two controls gate this edge" use cases.
+ * `ProcessEdgePractice` table supports multiple per edge for future
+ * "two practices gate this edge" use cases.
  */
-export interface EdgeControlRef {
+export interface EdgePracticeRef {
     /** Stable per-edge identifier — survives saves + reloads. */
-    controlKey: string;
+    practiceKey: string;
     /** Human label rendered on the in-canvas pill. */
     label: string;
-    /** Optional FK to a tenant Control. Null = unbound label. */
-    controlId: string | null;
+    /** Optional FK to a tenant Practice. Null = unbound label. */
+    practiceId: string | null;
 }
 
 export interface ProcessInspectorProps {
@@ -122,7 +122,7 @@ export interface ProcessInspectorProps {
     edge?: Edge | null;
     /**
      * Tenant slug — Epic P2-PR-A — used by the edge inspector to
-     * fetch the tenant's Controls list for the picker. Optional:
+     * fetch the tenant's Practices list for the picker. Optional:
      * the node-mode panel doesn't need it, and absence in edge mode
      * gracefully hides the picker (rendered tests + storybook
      * stages without the canvas surrounding context keep working).
@@ -134,7 +134,7 @@ export interface ProcessInspectorProps {
      * its nodes state.
      *
      * Epic P2-PR-B — `linkedEntityId` carries the FK to whichever
-     * entity matches the node's kind (control / asset). The
+     * entity matches the node's kind (practice / asset). The
      * picker is conditional on `data.kind`, so a single shared field
      * suffices — kind disambiguates on read.
      */
@@ -150,15 +150,15 @@ export interface ProcessInspectorProps {
     /**
      * R28 + Epic P2-PR-A — commit an edge edit. The canvas applies
      * the patch to the edge's `label` (top-level on xyflow) +
-     * `data.variant` + `data.controls` (P2-PR-A — linked tenant
-     * Control).
+     * `data.variant` + `data.practices` (P2-PR-A — linked tenant
+     * Practice).
      */
     onEdgeUpdate?: (
         edgeId: string,
         patch: {
             label?: string | null;
             variant?: ProcessEdgeVariant;
-            controls?: EdgeControlRef[];
+            practices?: EdgePracticeRef[];
         },
     ) => void;
 }
@@ -249,7 +249,7 @@ export function ProcessInspector({
     };
 
     // R31 Bundle 5 (PR 6) — Inspector chrome now flows through the
-    // canonical `<AsidePanel>` primitive (Controls parity).
+    // canonical `<AsidePanel>` primitive (Practices parity).
     // The pre-R31 bespoke 260px `<aside>` is gone; the new shell
     // gives the inspector collapse-to-spine, resize, deep-link
     // (`?aside=processes-inspector`), and a `<Sheet>` fallback
@@ -326,7 +326,7 @@ export function ProcessInspector({
                 />
             </div>
             {/* Epic P2-PR-B — Linked-entity picker. Mounts only on
-                nodes whose kind matches a compliance entity (control
+                nodes whose kind matches a compliance entity (practice
                 / asset). The selection writes the FK into
                 `data.linkedEntityId`; the canvas's `nodeDataJson`
                 serialiser persists it via the existing `dataJson`
@@ -351,7 +351,7 @@ export function ProcessInspector({
     );
 }
 
-// ─── Epic P2-PR-B — Linked-entity picker (control / asset) ──
+// ─── Epic P2-PR-B — Linked-entity picker (practice / asset) ──
 
 function NodeLinkedEntityPicker({
     nodeKind,
@@ -374,23 +374,23 @@ function NodeLinkedEntityPicker({
     // is shared module-scoped, so the 30s poll runs once per
     // tenant even with three concurrent hook mounts.
     const slug = tenantSlug ?? "";
-    const controls = useTenantControls(slug, { pollMs: ENTITY_STATUS_POLL_MS });
+    const practices = useTenantPractices(slug, { pollMs: ENTITY_STATUS_POLL_MS });
     const assets = useTenantAssets(slug, { pollMs: ENTITY_STATUS_POLL_MS });
 
-    if (nodeKind !== "control" && nodeKind !== "asset") {
+    if (nodeKind !== "practice" && nodeKind !== "asset") {
         return null;
     }
 
     const active =
-        nodeKind === "control"
+        nodeKind === "practice"
             ? {
-                  label: t("processInspector.linkedControl"),
-                  options: controls.options.map((c) => ({
+                  label: t("processInspector.linkedPractice"),
+                  options: practices.options.map((c) => ({
                       value: c.id,
-                      label: formatControlLabel(c),
+                      label: formatPracticeLabel(c),
                   })),
-                  loading: controls.loading,
-                  emptyHint: t("processInspector.noControls"),
+                  loading: practices.loading,
+                  emptyHint: t("processInspector.noPractices"),
               }
             : {
                     label: t("processInspector.linkedAsset"),
@@ -410,8 +410,8 @@ function NodeLinkedEntityPicker({
     // entity. Reads from the same hook state the picker reads;
     // the 30s polling cadence above keeps the value live.
     const liveStatus =
-        nodeKind === "control"
-            ? findTenantControl(controls, selectedId)?.status ?? null
+        nodeKind === "practice"
+            ? findTenantPractice(practices, selectedId)?.status ?? null
             : findTenantAsset(assets, selectedId)?.status ?? null;
 
     return (
@@ -480,52 +480,52 @@ function EdgeInspectorBody({
         setLabel(typeof edge.label === "string" ? edge.label : "");
     }, [edge.id, edge.label]);
 
-    // Epic P2-PR-A — controls attached to this edge. PR-A allows
-    // ONE per edge in the inspector; the underlying ProcessEdgeControl
-    // table supports many for future "two controls gate this edge"
+    // Epic P2-PR-A — practices attached to this edge. PR-A allows
+    // ONE per edge in the inspector; the underlying ProcessEdgePractice
+    // table supports many for future "two practices gate this edge"
     // shapes.
-    const existingControls = readEdgeControls(edge);
-    const selectedControl = existingControls[0] ?? null;
+    const existingPractices = readEdgePractices(edge);
+    const selectedPractice = existingPractices[0] ?? null;
     // Passing the empty string short-circuits the hook to a no-op
     // ({ options: [], loading: false }); the picker block below
     // also gates on `tenantSlug` so absence cleanly hides the
     // affordance.
-    const { options: tenantControls, loading: controlsLoading } =
-        useTenantControls(tenantSlug ?? "");
+    const { options: tenantPractices, loading: practicesLoading } =
+        useTenantPractices(tenantSlug ?? "");
 
-    const controlOptions = useMemo<ComboboxOption[]>(
+    const practiceOptions = useMemo<ComboboxOption[]>(
         () =>
-            tenantControls.map((c) => ({
+            tenantPractices.map((c) => ({
                 value: c.id,
-                label: formatControlLabel(c),
+                label: formatPracticeLabel(c),
             })),
-        [tenantControls],
+        [tenantPractices],
     );
-    const selectedControlOption = useMemo<ComboboxOption | null>(() => {
-        if (!selectedControl?.controlId) return null;
+    const selectedPracticeOption = useMemo<ComboboxOption | null>(() => {
+        if (!selectedPractice?.practiceId) return null;
         return (
-            controlOptions.find((o) => o.value === selectedControl.controlId) ??
+            practiceOptions.find((o) => o.value === selectedPractice.practiceId) ??
             null
         );
-    }, [controlOptions, selectedControl]);
+    }, [practiceOptions, selectedPractice]);
 
-    const commitLinkedControl = (option: ComboboxOption | null) => {
+    const commitLinkedPractice = (option: ComboboxOption | null) => {
         if (!onEdgeUpdate) return;
         if (option === null) {
-            // Clear: drop every control attached to this edge.
-            onEdgeUpdate(edge.id, { controls: [] });
+            // Clear: drop every practice attached to this edge.
+            onEdgeUpdate(edge.id, { practices: [] });
             return;
         }
-        const ref = tenantControls.find((c) => c.id === option.value);
+        const ref = tenantPractices.find((c) => c.id === option.value);
         if (!ref) return;
-        const next: EdgeControlRef = {
-            controlKey:
-                selectedControl?.controlKey ??
+        const next: EdgePracticeRef = {
+            practiceKey:
+                selectedPractice?.practiceKey ??
                 `ctrl-${edge.id}-${Date.now().toString(36)}`,
-            controlId: ref.id,
-            label: formatControlLabel(ref),
+            practiceId: ref.id,
+            label: formatPracticeLabel(ref),
         };
-        onEdgeUpdate(edge.id, { controls: [next] });
+        onEdgeUpdate(edge.id, { practices: [next] });
     };
 
     const commit = () => {
@@ -593,34 +593,34 @@ function EdgeInspectorBody({
                     {t(`processEdge.variantDescription.${variant}`)}
                 </span>
             </div>
-            {/* Epic P2-PR-A — Linked control picker. Mounts a tenant-
-                wide Controls combobox so the user can attach a real
-                compliance control to this edge. The selection writes
-                ProcessEdgeControl rows on the next save; the canvas
-                already round-trips the controls on load. */}
+            {/* Epic P2-PR-A — Linked practice picker. Mounts a tenant-
+                wide Practices combobox so the user can attach a real
+                compliance practice to this edge. The selection writes
+                ProcessEdgePractice rows on the next save; the canvas
+                already round-trips the practices on load. */}
             <div
                 className="flex flex-col gap-tight"
-                data-testid="inspector-edge-control-picker"
+                data-testid="inspector-edge-practice-picker"
             >
                 <span className="text-[10px] uppercase tracking-wide text-content-muted">
-                    {t("processInspector.linkedControl")}
+                    {t("processInspector.linkedPractice")}
                 </span>
                 <Combobox
-                    selected={selectedControlOption}
-                    setSelected={commitLinkedControl}
-                    options={controlOptions}
-                    disabled={controlsLoading || tenantControls.length === 0}
-                    aria-label={t("processInspector.linkedControl")}
+                    selected={selectedPracticeOption}
+                    setSelected={commitLinkedPractice}
+                    options={practiceOptions}
+                    disabled={practicesLoading || tenantPractices.length === 0}
+                    aria-label={t("processInspector.linkedPractice")}
                     placeholder={
-                        controlsLoading
-                            ? t("processInspector.loadingControls")
-                            : tenantControls.length === 0
-                              ? t("processInspector.noControls")
-                              : t("processInspector.pickControl")
+                        practicesLoading
+                            ? t("processInspector.loadingPractices")
+                            : tenantPractices.length === 0
+                              ? t("processInspector.noPractices")
+                              : t("processInspector.pickPractice")
                     }
                 />
                 <span className="text-[10px] text-content-subtle">
-                    {t("processInspector.auditorsSeeControl")}
+                    {t("processInspector.auditorsSeePractice")}
                 </span>
             </div>
                 <p className="text-[10px] text-content-subtle">
@@ -632,29 +632,29 @@ function EdgeInspectorBody({
 }
 
 /**
- * Epic P2-PR-A — read the typed control list off an edge's `data`.
- * Tolerant of pre-P2 edges whose data omits the controls array.
+ * Epic P2-PR-A — read the typed practice list off an edge's `data`.
+ * Tolerant of pre-P2 edges whose data omits the practices array.
  */
-function readEdgeControls(edge: Edge): EdgeControlRef[] {
-    const raw = (edge.data as { controls?: unknown } | undefined)?.controls;
+function readEdgePractices(edge: Edge): EdgePracticeRef[] {
+    const raw = (edge.data as { practices?: unknown } | undefined)?.practices;
     if (!Array.isArray(raw)) return [];
     return raw
         .map((r) => {
             const row = r as {
-                controlKey?: unknown;
+                practiceKey?: unknown;
                 label?: unknown;
-                controlId?: unknown;
+                practiceId?: unknown;
             };
-            if (typeof row.controlKey !== "string") return null;
+            if (typeof row.practiceKey !== "string") return null;
             return {
-                controlKey: row.controlKey,
+                practiceKey: row.practiceKey,
                 label:
-                    typeof row.label === "string" ? row.label : row.controlKey,
-                controlId:
-                    typeof row.controlId === "string"
-                        ? row.controlId
+                    typeof row.label === "string" ? row.label : row.practiceKey,
+                practiceId:
+                    typeof row.practiceId === "string"
+                        ? row.practiceId
                         : null,
-            } satisfies EdgeControlRef;
+            } satisfies EdgePracticeRef;
         })
-        .filter((r): r is EdgeControlRef => r !== null);
+        .filter((r): r is EdgePracticeRef => r !== null);
 }

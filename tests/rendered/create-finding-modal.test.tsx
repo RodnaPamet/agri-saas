@@ -3,7 +3,7 @@
  *
  * Asserts the create-finding modal exposes the full field set the feature
  * requires (title, type, severity, assignee, due date, description, linked
- * control, compensating control, analysis) and that the
+ * practice, compensating practice, analysis) and that the
  * submit button gates on the required title + description.
  */
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
@@ -20,7 +20,7 @@ jest.mock('next/navigation', () => ({
 import { CreateFindingModal } from '@/app/t/[tenantSlug]/(app)/findings/CreateFindingModal';
 
 beforeEach(() => {
-    // Every lookup (controls / assignable members) resolves empty.
+    // Every lookup (practices / assignable members) resolves empty.
     global.fetch = jest.fn(() =>
         Promise.resolve({ ok: true, json: () => Promise.resolve([]) }),
     ) as unknown as typeof fetch;
@@ -42,8 +42,8 @@ const FIELD_IDS = [
     'finding-severity',
     'finding-assignee',
     'finding-description',
-    'finding-control',
-    'finding-compensating-control',
+    'finding-practice',
+    'finding-compensating-practice',
     'finding-analysis',
     'submit-finding',
 ];

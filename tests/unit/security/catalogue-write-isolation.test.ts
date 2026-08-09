@@ -116,7 +116,7 @@ describe('upsertRequirements — the requirement wipe', () => {
 
     it('audits the mutation, naming how many requirements it deprecated', async () => {
         // There was no audit anywhere in fixtures.ts. `deprecated` is the
-        // number that matters: it counts the control points that just stopped
+        // number that matters: it counts the practice points that just stopped
         // counting for EVERY tenant.
         mockPrisma.frameworkRequirement.updateMany.mockResolvedValue({ count: 6 });
         await upsertRequirements(platformAdmin(), 'GG', FIXTURE, { deprecateMissing: true });

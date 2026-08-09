@@ -1,20 +1,20 @@
 /**
- * Epic 53 — Controls list page filter configuration.
+ * Epic 53 — Practices list page filter configuration.
  *
- * Declarative filter defs for the Controls list toolbar. Keys map 1:1 onto
- * the API query parameters accepted by `GET /api/t/:slug/controls`:
+ * Declarative filter defs for the Practices list toolbar. Keys map 1:1 onto
+ * the API query parameters accepted by `GET /api/t/:slug/practices`:
  *
  *   q             → free-text search (managed by useFilterContext's search slot)
- *   status        → ControlStatus enum
+ *   status        → PracticeStatus enum
  *   applicability → APPLICABLE | NOT_APPLICABLE
  *   ownerUserId   → entity-ref (user IDs; options derived client-side from loaded rows)
  *   category      → free-form string (options derived client-side from loaded rows)
  *
  * `framework` is intentionally excluded — it would require a subquery across
- * `FrameworkMapping` which the controls API does not expose today. Adding it
+ * `FrameworkMapping` which the practices API does not expose today. Adding it
  * will be a follow-on server + repo change; left as a migration note.
  *
- * This module is the single source of truth for the Controls filter contract.
+ * This module is the single source of truth for the Practices filter contract.
  * Do not scatter filter logic back into the page; extend the config instead.
  */
 
@@ -32,7 +32,7 @@ import {
 import type { FilterOption } from '@/components/ui/filter/types';
 import { CircleDot, Tag, UserCircle2, ShieldCheck } from 'lucide-react';
 
-// ─── Static labels (enum copy lives here, not in ControlsClient) ─────
+// ─── Static labels (enum copy lives here, not in PracticesClient) ─────
 
 export const CONTROL_STATUS_LABELS = {
     NOT_STARTED: 'Not Started',
@@ -58,7 +58,7 @@ const STATIC_DEFS = {
     status: {
         label: 'Status',
         labelPlural: 'Statuses',
-        description: 'Lifecycle stage of the control.',
+        description: 'Lifecycle stage of the practice.',
         group: 'Attributes',
         icon: CircleDot,
         options: optionsFromEnum(CONTROL_STATUS_LABELS),
@@ -67,7 +67,7 @@ const STATIC_DEFS = {
     },
     applicability: {
         label: 'Applicability',
-        description: 'Whether the control applies in the current SoA scope.',
+        description: 'Whether the practice applies in the current SoA scope.',
         group: 'Attributes',
         icon: ShieldCheck,
         options: optionsFromEnum(APPLICABILITY_LABELS),
@@ -76,10 +76,10 @@ const STATIC_DEFS = {
     ownerUserId: {
         label: 'Owner',
         labelPlural: 'Owners',
-        description: 'User accountable for this control.',
+        description: 'User accountable for this practice.',
         group: 'People',
         icon: UserCircle2,
-        options: null, // filled in at render time from loaded controls
+        options: null, // filled in at render time from loaded practices
         multiple: true,
         shouldFilter: true, // cmdk filters the (client-derived) label text
         resetBehavior: 'clearable',
@@ -87,10 +87,10 @@ const STATIC_DEFS = {
     category: {
         label: 'Category',
         labelPlural: 'Categories',
-        description: 'Free-form grouping assigned to the control.',
+        description: 'Free-form grouping assigned to the practice.',
         group: 'Attributes',
         icon: Tag,
-        options: null, // filled in at render time from loaded controls
+        options: null, // filled in at render time from loaded practices
         multiple: true,
         resetBehavior: 'clearable',
     },
@@ -103,11 +103,11 @@ const STATIC_DEFS = {
  * Page authors iterate `filters` for FilterSelect and hand `filterKeys` to
  * `useFilterContext` so URL round-tripping knows which params to manage.
  */
-export const controlFilterDefs = createTypedFilterDefs()(STATIC_DEFS);
+export const practiceFilterDefs = createTypedFilterDefs()(STATIC_DEFS);
 
-/** URL param keys managed by the Controls filter set. `q` is the separate
+/** URL param keys managed by the Practices filter set. `q` is the separate
  * search slot owned by `useFilterContext`. */
-export const CONTROL_FILTER_KEYS = controlFilterDefs.filterKeys;
+export const CONTROL_FILTER_KEYS = practiceFilterDefs.filterKeys;
 
 // ─── Runtime option builders ─────────────────────────────────────────
 
@@ -118,14 +118,14 @@ interface OwnerLike {
 }
 
 /**
- * Build owner options from the controls currently loaded on the page.
+ * Build owner options from the practices currently loaded on the page.
  * Dedupes by `owner.id` and sorts by display label. Skips rows with no owner.
  */
-export function ownerOptionsFromControls(
-    controls: ReadonlyArray<{ owner?: OwnerLike | null }>,
+export function ownerOptionsFromPractices(
+    practices: ReadonlyArray<{ owner?: OwnerLike | null }>,
 ): FilterOption[] {
     const seen = new Map<string, FilterOption>();
-    for (const c of controls) {
+    for (const c of practices) {
         const o = c.owner;
         if (!o?.id) continue;
         if (seen.has(o.id)) continue;
@@ -142,15 +142,15 @@ export function ownerOptionsFromControls(
 }
 
 /**
- * Build category options from the controls currently loaded on the page.
- * `category` is free-form on the Control model, so we dedupe on the raw
+ * Build category options from the practices currently loaded on the page.
+ * `category` is free-form on the Practice model, so we dedupe on the raw
  * string and surface the same string as both value and label.
  */
-export function categoryOptionsFromControls(
-    controls: ReadonlyArray<{ category?: string | null }>,
+export function categoryOptionsFromPractices(
+    practices: ReadonlyArray<{ category?: string | null }>,
 ): FilterOption[] {
     const seen = new Set<string>();
-    for (const c of controls) {
+    for (const c of practices) {
         const cat = c.category?.trim();
         if (cat) seen.add(cat);
     }
@@ -164,15 +164,15 @@ export function categoryOptionsFromControls(
  * the owner/category defs replaced by the runtime-derived lists. Returns
  * the same `FilterDef[]` shape (options is the only field that changes).
  */
-export function buildControlFilters(
+export function buildPracticeFilters(
     loaded: ReadonlyArray<{
         owner?: OwnerLike | null;
         category?: string | null;
     }>,
 ): FilterDef[] {
-    const ownerOpts = ownerOptionsFromControls(loaded);
-    const categoryOpts = categoryOptionsFromControls(loaded);
-    return controlFilterDefs.filters.map((f) => {
+    const ownerOpts = ownerOptionsFromPractices(loaded);
+    const categoryOpts = categoryOptionsFromPractices(loaded);
+    return practiceFilterDefs.filters.map((f) => {
         if (f.key === 'ownerUserId') return { ...f, options: ownerOpts };
         if (f.key === 'category') return { ...f, options: categoryOpts };
         return f;

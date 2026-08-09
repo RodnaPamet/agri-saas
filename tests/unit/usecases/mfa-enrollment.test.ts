@@ -216,7 +216,7 @@ describe('removeMfaEnrollment', () => {
         // Regression: privilege-escalation route — a buggy permission
         // check would let any user wipe another user's MFA, leaving
         // them in an MFA-required-but-unenrolled lockout AND opening
-        // a re-enrolment window the attacker controls.
+        // a re-enrolment window the attacker practices.
         expect(mockEnrollDelete).not.toHaveBeenCalled();
     });
 

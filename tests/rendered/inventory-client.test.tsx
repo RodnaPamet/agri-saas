@@ -149,7 +149,7 @@ const page = (items: unknown[], nextCursor: string | null = null) => ({
 
 const user = () => userEvent.setup({ delay: null, pointerEventsCheck: 0 });
 
-// ─── Viewport control ────────────────────────────────────────────────
+// ─── Viewport practice ────────────────────────────────────────────────
 //
 // The default jsdom viewport reads as a PHONE, so the desktop
 // `<DataTable>` branch is unreachable unless a test says otherwise. The

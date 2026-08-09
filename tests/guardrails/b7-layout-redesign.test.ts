@@ -13,8 +13,8 @@
  *      `leftRail` slots; the rails sit OUTSIDE the table card
  *      via `gap-section` separation, not the legacy
  *      `gap-default` flush positioning.
- *   4. The canonical Controls list mounts a "Browse" AsidePanel that
- *      groups controls by framework-tagged CATEGORY in a collapsible
+ *   4. The canonical Practices list mounts a "Browse" AsidePanel that
+ *      groups practices by framework-tagged CATEGORY in a collapsible
  *      accordion (was: Status / Type / Owner filter sections). The
  *      rail navigates; it no longer filters the table.
  */
@@ -66,9 +66,9 @@ describe('B7 — layout redesign', () => {
             expect(src).not.toMatch(/onFocus=\{[\s\S]{0,80}toggle\(/);
         });
 
-        it('renders aria-expanded + aria-controls (a11y)', () => {
+        it('renders aria-expanded + aria-practices (a11y)', () => {
             expect(src).toMatch(/aria-expanded=\{isOpen\}/);
-            expect(src).toMatch(/aria-controls=\{contentId\}/);
+            expect(src).toMatch(/aria-practices=\{contentId\}/);
         });
     });
 
@@ -103,19 +103,19 @@ describe('B7 — layout redesign', () => {
         });
     });
 
-    describe('Controls list mounts a category-accordion browse aside', () => {
+    describe('Practices list mounts a category-accordion browse aside', () => {
         // 2026-06-05 — the Browse rail was reworked from Status / Type
         // / Owner FILTER sections into a CATEGORY accordion. Each
-        // control's framework-native category is derived via
-        // `categorizeControl` (ISO 27001 → granular Annex domain;
+        // practice's framework-native category is derived via
+        // `categorizePractice` (ISO 27001 → granular Annex domain;
         // other frameworks → their persisted category); the rail
         // renders one collapsible <Accordion> section per category,
         // tagged with the framework it belongs to. Expanding a
-        // section reveals the controls in it — each with a status tag
-        // and a click-to-navigate to the control detail page. The
+        // section reveals the practices in it — each with a status tag
+        // and a click-to-navigate to the practice detail page. The
         // rail NAVIGATES; it no longer filters the table.
         const src = read(
-            'src/app/t/[tenantSlug]/(app)/controls/ControlsClient.tsx',
+            'src/app/t/[tenantSlug]/(app)/practices/PracticesClient.tsx',
         );
 
         it('mounts an AsidePanel browse rail (NOT a LeftAccordionRail)', () => {
@@ -124,7 +124,7 @@ describe('B7 — layout redesign', () => {
             // value preserves the "Browse" copy.
             expect(src).toMatch(/<AsidePanel\b[\s\S]{0,200}title=\{t\('list\.browse'\)\}/);
             // eslint-disable-next-line @typescript-eslint/no-var-requires
-            expect(require('../../messages/en.json').controls.list.browse).toBe('Browse');
+            expect(require('../../messages/en.json').practices.list.browse).toBe('Browse');
             // The legacy left-rail wiring is gone — the import +
             // the JSX must both disappear so a future "move it back
             // left" PR fails this ratchet loudly.
@@ -139,25 +139,25 @@ describe('B7 — layout redesign', () => {
             expect(src).toMatch(/aside=\{composedAside\}/);
         });
 
-        it('groups controls by framework-tagged category in an accordion', () => {
+        it('groups practices by framework-tagged category in an accordion', () => {
             // Categories are DERIVED (not a stored single string) via
             // the shared taxonomy module, then rendered as collapsible
             // accordion sections. Each section carries its framework
-            // tag so a multi-framework control set stays legible.
+            // tag so a multi-framework practice set stays legible.
             expect(src).toMatch(
-                /import\s*\{[\s\S]{0,120}categorizeControl[\s\S]{0,120}\}\s*from\s*['"]@\/lib\/controls\/control-taxonomy['"]/,
+                /import\s*\{[\s\S]{0,120}categorizePractice[\s\S]{0,120}\}\s*from\s*['"]@\/lib\/practices\/practice-taxonomy['"]/,
             );
             expect(src).toMatch(/<Accordion\s+type="multiple"/);
             expect(src).toMatch(/data-category-group=/);
             expect(src).toMatch(/data-framework-tag=/);
         });
 
-        it('rail NAVIGATES (status tag per control) — it does not filter', () => {
-            // Status is now a per-control tag (StatusBadge) inside the
-            // expanded rows; clicking a row routes to the control
+        it('rail NAVIGATES (status tag per practice) — it does not filter', () => {
+            // Status is now a per-practice tag (StatusBadge) inside the
+            // expanded rows; clicking a row routes to the practice
             // detail page. The legacy filter wiring is gone, so a
             // future "make the rail filter again" PR fails CI.
-            expect(src).toMatch(/data-control-id=\{c\.id\}/);
+            expect(src).toMatch(/data-practice-id=\{c\.id\}/);
             // <AccordionContent appears once — the next StatusBadge /
             // router.push after it is unambiguously the rail's.
             expect(src).toMatch(/<AccordionContent[\s\S]{0,1600}StatusBadge/);
@@ -167,17 +167,17 @@ describe('B7 — layout redesign', () => {
         });
     });
 
-    describe('Controls table — `Category` column (framework-tagged)', () => {
+    describe('Practices table — `Category` column (framework-tagged)', () => {
         const src = read(
-            'src/app/t/[tenantSlug]/(app)/controls/ControlsClient.tsx',
+            'src/app/t/[tenantSlug]/(app)/practices/PracticesClient.tsx',
         );
 
         it('column-visibility list includes Category before Status', () => {
-            // Anchor on the controlColumnList block — the Category
+            // Anchor on the practiceColumnList block — the Category
             // entry must appear before the Status entry so the
             // default-visible column order reads Code · Title ·
             // Category · Status.
-            const start = src.indexOf('const controlColumnList');
+            const start = src.indexOf('const practiceColumnList');
             expect(start).toBeGreaterThan(0);
             const slice = src.slice(start, start + 1200);
             const catIdx = slice.indexOf("id: 'category'");
@@ -186,8 +186,8 @@ describe('B7 — layout redesign', () => {
             expect(statusIdx).toBeGreaterThan(catIdx);
         });
 
-        it('column derives the category via categorizeControl under header "Category"', () => {
-            // The category is DERIVED per-control (framework-tagged
+        it('column derives the category via categorizePractice under header "Category"', () => {
+            // The category is DERIVED per-practice (framework-tagged
             // granular domain), not read from a single stored string —
             // so the column matches the Browse rail's grouping.
             // T07 i18n — the header moved to t('list.colCategory'); assert
@@ -195,9 +195,9 @@ describe('B7 — layout redesign', () => {
             expect(src).toMatch(
                 /id:\s*['"]category['"][\s\S]{0,200}header:\s*t\(['"]list\.colCategory['"]\)/,
             );
-            expect(JSON.parse(read('messages/en.json')).controls.list.colCategory).toBe('Category');
+            expect(JSON.parse(read('messages/en.json')).practices.list.colCategory).toBe('Category');
             expect(src).toMatch(
-                /accessorFn:\s*\(c\)\s*=>\s*categorizeControl\(c\)/,
+                /accessorFn:\s*\(c\)\s*=>\s*categorizePractice\(c\)/,
             );
         });
     });

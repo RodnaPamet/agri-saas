@@ -18,7 +18,7 @@ export interface EvidenceListFilters {
     type?: EvidenceType[];
     /** EvidenceStatus: DRAFT | SUBMITTED | APPROVED | REJECTED */
     status?: EvidenceStatus[];
-    controlId?: string;
+    practiceId?: string;
     /**
      * B8 follow-up — folder filter. `__none__` is the sentinel for
      * "evidence with NULL or empty folder"; any other value is an
@@ -77,7 +77,7 @@ const evidenceListSelect = {
     // `createdAt` is required by the cursor-pagination helper
     // (`computePageInfo`) — it's not rendered in the table.
     createdAt: true,
-    control: { select: { id: true, name: true, code: true } },
+    practice: { select: { id: true, name: true, code: true } },
     fileRecord: { select: { id: true, mimeType: true } },
 } as const;
 
@@ -139,8 +139,8 @@ export class EvidenceRepository {
         if (filters?.status && filters.status.length > 0) {
             where.status = { in: filters.status };
         }
-        if (filters?.controlId) {
-            where.controlId = filters.controlId;
+        if (filters?.practiceId) {
+            where.practiceId = filters.practiceId;
         }
         if (filters?.folder) {
             // B8 follow-up — `__none__` matches rows with a NULL
@@ -185,7 +185,7 @@ export class EvidenceRepository {
             return db.evidence.findFirst({
                 where: { id, tenantId: ctx.tenantId },
                 include: {
-                    control: true,
+                    practice: true,
                     // Source task / risk / asset — powers the "uploaded
                     // from" back-reference on the evidence detail sheet.
                     task: { select: { id: true, key: true, title: true } },

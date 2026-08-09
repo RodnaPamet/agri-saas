@@ -1,5 +1,5 @@
 /**
- * VR-9 — Control-page AI rule-suggestions ratchet.
+ * VR-9 — Practice-page AI rule-suggestions ratchet.
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -8,7 +8,7 @@ const ROOT = path.resolve(__dirname, '../..');
 const read = (p: string) => fs.readFileSync(path.join(ROOT, p), 'utf8');
 const exists = (p: string) => fs.existsSync(path.join(ROOT, p));
 
-describe('VR-9 — control AI suggestions', () => {
+describe('VR-9 — practice AI suggestions', () => {
     it('the suggester usecase + route exist', () => {
         expect(exists('src/app-layer/usecases/automation-suggestions.ts')).toBe(true);
         expect(
@@ -21,12 +21,12 @@ describe('VR-9 — control AI suggestions', () => {
         expect(uc).toMatch(/coveredEvents/);
     });
 
-    it('the rail component is mounted in the Control detail page right rail', () => {
+    it('the rail component is mounted in the Practice detail page right rail', () => {
         const rail = 'src/components/automation/AutomationSuggestionsRail.tsx';
         expect(exists(rail)).toBe(true);
-        const page = read('src/app/t/[tenantSlug]/(app)/controls/[controlId]/page.tsx');
+        const page = read('src/app/t/[tenantSlug]/(app)/practices/[practiceId]/page.tsx');
         expect(page).toMatch(/AutomationSuggestionsRail/);
         expect(page).toMatch(/rail=\{/);
-        expect(page).toMatch(/surfaceKey="controls-detail-ai"/);
+        expect(page).toMatch(/surfaceKey="practices-detail-ai"/);
     });
 });

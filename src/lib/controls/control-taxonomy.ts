@@ -1,16 +1,16 @@
 /**
- * Control taxonomy — the single source of truth for "what category
- * does this control belong to, and which framework does that category
+ * Practice taxonomy — the single source of truth for "what category
+ * does this practice belong to, and which framework does that category
  * come from".
  *
- * The product groups controls by *framework-native category* in the
- * Controls "Browse" rail. A control's category is derived from its
+ * The product groups practices by *framework-native category* in the
+ * Practices "Browse" rail. A practice's category is derived from its
  * framework + clause/code rather than stored as a single free-form
  * string, so:
  *
- *   - it works retroactively for controls that were created before any
+ *   - it works retroactively for practices that were created before any
  *     category was assigned (no migration / backfill needed);
- *   - the same control set can surface categories from MULTIPLE
+ *   - the same practice set can surface categories from MULTIPLE
  *     frameworks (each category carries its framework tag); and
  *   - the granular ISO 27001 domain taxonomy lives in ONE place that
  *     both the runtime rail and the catalog seed import.
@@ -21,27 +21,27 @@
  * relative `require`s, not the `@/` path alias).
  */
 
-export interface ControlCategory {
+export interface PracticeCategory {
     /** Stable framework slug — used as the grouping key prefix. */
     frameworkKey: string;
     /** Human label shown as the category's framework tag (e.g. "ISO 27001"). */
     frameworkLabel: string;
-    /** Granular control domain / category (e.g. "Access control"). */
+    /** Granular practice domain / category (e.g. "Access Control"). */
     category: string;
 }
 
-/** Minimal shape the categorizer needs off a control row. */
-export interface CategorizableControl {
+/** Minimal shape the categorizer needs off a practice row. */
+export interface CategorizablePractice {
     code?: string | null;
     category?: string | null;
 }
 
 // ─── ISO 27001:2022 Annex A granular domains ──────────────────────────
 //
-// ISO 27001:2022 reorganised the 114 legacy controls into 93 controls
+// ISO 27001:2022 reorganised the 114 legacy practices into 93 practices
 // under four broad THEMES (Organizational / People / Physical /
 // Technological). Those four themes are too coarse for a browse rail —
-// the user wants the functional domains ("Access control", "Physical &
+// the user wants the functional domains ("Access Control", "Physical &
 // environmental", "Cryptography", …) that practitioners actually reason
 // in. The map below assigns every one of the 93 Annex A clauses to a
 // granular domain following the ISO 27002:2022 functional grouping
@@ -51,7 +51,7 @@ export interface CategorizableControl {
 export const ISO27001_DOMAIN = {
     GOVERNANCE: 'Governance & policies',
     ASSET_MGMT: 'Asset management',
-    ACCESS_CONTROL: 'Access control',
+    ACCESS_CONTROL: 'Access Control',
     SUPPLIER: 'Supplier relationships',
     INCIDENT: 'Incident management',
     CONTINUITY: 'Business continuity',
@@ -102,7 +102,7 @@ export const ISO27001_CLAUSE_DOMAIN: Record<string, string> = {
     '5.12': ISO27001_DOMAIN.ASSET_MGMT, // Classification of information
     '5.13': ISO27001_DOMAIN.ASSET_MGMT, // Labelling of information
     '5.14': ISO27001_DOMAIN.ASSET_MGMT, // Information transfer
-    '5.15': ISO27001_DOMAIN.ACCESS_CONTROL, // Access control
+    '5.15': ISO27001_DOMAIN.ACCESS_CONTROL, // Access Control
     '5.16': ISO27001_DOMAIN.ACCESS_CONTROL, // Identity management
     '5.17': ISO27001_DOMAIN.ACCESS_CONTROL, // Authentication information
     '5.18': ISO27001_DOMAIN.ACCESS_CONTROL, // Access rights
@@ -206,7 +206,7 @@ export const UNCATEGORIZED_LABEL = 'Uncategorized';
 
 /**
  * Extract an ISO 27001:2022 Annex A clause ("5.15", "8.34", …) from a
- * control code. Accepts the forms the codebase uses:
+ * practice code. Accepts the forms the codebase uses:
  *   "A.5.15"  "A-5.15"  "5.15"
  * Returns null for anything that isn't a bare ISO annex reference — so
  * SOC 2 "CC5.1" / "NIS2-3" / etc. fall through to their own detectors.
@@ -226,25 +226,25 @@ export function iso27001Domain(
 }
 
 /**
- * Resolve a control to its framework-tagged category.
+ * Resolve a practice to its framework-tagged category.
  *
  * Resolution order:
  *   1. ISO 27001 by Annex clause parsed from `code` → granular domain.
- *   2. Known framework by code prefix → the control's persisted
+ *   2. Known framework by code prefix → the practice's persisted
  *      framework-native `category` (SOC 2 TSC, NIS2/ISO section, …).
  *   3. Any persisted `category` with no detectable framework → an
  *      untagged "other" bucket.
- *   4. Otherwise null (the control is excluded from category grouping).
+ *   4. Otherwise null (the practice is excluded from category grouping).
  */
-export function categorizeControl(
-    control: CategorizableControl,
-): ControlCategory | null {
-    const code = (control.code ?? '').trim();
-    const persisted = (control.category ?? '').trim();
+export function categorizePractice(
+    practice: CategorizablePractice,
+): PracticeCategory | null {
+    const code = (practice.code ?? '').trim();
+    const persisted = (practice.category ?? '').trim();
 
     // 1. ISO 27001 — an ISO-shaped code ("A.5.15" / "A-5.15" / "5.15").
     // The dedicated `annexId` column that used to lead this lookup was
-    // dropped with the control exoskeleton; `code` carries the Annex
+    // dropped with the practice exoskeleton; `code` carries the Annex
     // reference now, and `parseIsoClause` already accepts every form it
     // was written in.
     const isoDomain = iso27001Domain(code);

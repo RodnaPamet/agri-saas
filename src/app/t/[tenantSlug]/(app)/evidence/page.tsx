@@ -1,13 +1,13 @@
 import { getTranslations } from 'next-intl/server';
 import { getTenantCtx } from '@/app-layer/context';
 import { listEvidence } from '@/app-layer/usecases/evidence';
-import { listControls } from '@/app-layer/usecases/control';
+import { listPractices } from '@/app-layer/usecases/practice';
 import { EvidenceClient } from './EvidenceClient';
 
 export const dynamic = 'force-dynamic';
 
 // SSR fetch caps at SSR_PAGE_LIMIT rows for both evidence and the
-// supporting controls list (used to populate filters / dropdowns).
+// supporting practices list (used to populate filters / dropdowns).
 // The Epic 69 SWR client immediately fetches the unbounded list in
 // the background, swapped in by SWR's keepPreviousData. Mirrors
 // the PR #146 Tasks pattern.
@@ -15,7 +15,7 @@ const SSR_PAGE_LIMIT = 100;
 
 /**
  * Evidence — Server Component wrapper.
- * Fetches evidence + controls server-side, delegates all interaction to client island.
+ * Fetches evidence + practices server-side, delegates all interaction to client island.
  */
 export default async function EvidencePage({
     params,
@@ -32,15 +32,15 @@ export default async function EvidencePage({
     ]);
 
     // Data fetches depend on ctx but are independent of each other
-    const [evidence, controls] = await Promise.all([
+    const [evidence, practices] = await Promise.all([
         listEvidence(ctx, undefined, { take: SSR_PAGE_LIMIT }),
-        listControls(ctx, undefined, { take: SSR_PAGE_LIMIT }),
+        listPractices(ctx, undefined, { take: SSR_PAGE_LIMIT }),
     ]);
 
     return (
         <EvidenceClient
             initialEvidence={JSON.parse(JSON.stringify(evidence))}
-            initialControls={JSON.parse(JSON.stringify(controls))}
+            initialPractices={JSON.parse(JSON.stringify(practices))}
             tenantSlug={tenantSlug}
             permissions={ctx.permissions}
             translations={{
@@ -49,7 +49,7 @@ export default async function EvidencePage({
                 evidenceItems: t('evidenceItems', { count: 0 }),
                 evidenceTitle: t('evidenceTitle'),
                 type: t('type'),
-                control: t('control'),
+                practice: t('practice'),
                 status: t('status'),
                 ownerLabel: t('ownerLabel'),
                 noEvidence: t('noEvidence'),

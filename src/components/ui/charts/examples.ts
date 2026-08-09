@@ -74,7 +74,7 @@ export const exampleProgressMetric: ProgressMetric = {
     current: 72,
     target: 100,
     unit: '%',
-    label: 'Control coverage',
+    label: 'Practice coverage',
 };
 
 export const exampleProgressSegments: ProgressSegment[] = [
@@ -101,7 +101,7 @@ export const exampleProgressSegments: ProgressSegment[] = [
 // ─── KPI metric ──────────────────────────────────────────────────────
 
 export const exampleKpiMetric: KpiMetric = {
-    label: 'Control coverage',
+    label: 'Practice coverage',
     value: 75.3,
     format: 'percent',
     delta: 2.4,

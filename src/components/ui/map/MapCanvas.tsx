@@ -148,7 +148,7 @@ export interface MapCanvasProps {
      */
     cadastreParcels?: { url: string } | null;
     /**
-     * On-map thumb controls (zoom ±, find-my-field). Opt-in so the read-only
+     * On-map thumb practices (zoom ±, find-my-field). Opt-in so the read-only
      * operator/prescription paths are unchanged unless they ask for it.
      * Each button is a 36px target (comfortably above the WCAG 2.5.8 AA
      * 24px minimum; the earlier 44px AAA size read as oversized on the
@@ -157,17 +157,17 @@ export interface MapCanvasProps {
      * wants to jump to their fields, not their own position). Only renders
      * when there is at least one parcel with geometry.
      */
-    showControls?: boolean;
+    showPractices?: boolean;
     /**
-     * Lift the control stack this many px off the map's bottom edge so it
+     * Lift the practice stack this many px off the map's bottom edge so it
      * clears a fixed bottom-tab bar on phones. Defaults to 12px.
      */
-    controlsBottomInset?: number;
+    practicesBottomInset?: number;
     /**
      * Stretch — add a live-tracking toggle next to locate-me.
      * `watchPosition()` follows the device and draws a breadcrumb trail;
      * battery-aware (high-accuracy only while tracking, watch cleared on
-     * stop/unmount). Requires `showControls`.
+     * stop/unmount). Requires `showPractices`.
      */
     liveTracking?: boolean;
     /**
@@ -255,8 +255,8 @@ export function MapCanvas({
     indexOverlay = null,
     cadastreOverlay = null,
     cadastreParcels = null,
-    showControls = false,
-    controlsBottomInset = 12,
+    showPractices = false,
+    practicesBottomInset = 12,
     liveTracking = false,
     flyToOnSelect = false,
     vectorTileUrl,
@@ -590,7 +590,7 @@ export function MapCanvas({
             : [],
     }), [trail]);
 
-    const controlBtn =
+    const practiceBtn =
         'flex min-h-[36px] min-w-[36px] items-center justify-center bg-bg-default text-content-default ' +
         'transition-colors hover:bg-bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset';
 
@@ -756,7 +756,7 @@ export function MapCanvas({
             aria-label={t('parcelMap', { mode: modeLabel })}
             tabIndex={0}
             className={cn(
-                // `relative` anchors the absolutely-positioned on-map control
+                // `relative` anchors the absolutely-positioned on-map practice
                 // overlay + the geolocation error toast.
                 'relative',
                 // Focusable region always carries a visible focus ring
@@ -830,7 +830,7 @@ export function MapCanvas({
                     on top and stay legible. `minzoom={10}` mirrors the proxy's
                     zoom floor so MapLibre never requests a tile the route would
                     refuse. Reduced opacity keeps the own-parcel strokes clear.
-                    Attribution is surfaced via MapLibre's attribution control. */}
+                    Attribution is surfaced via MapLibre's attribution practice. */}
                 {cadastreActive && (
                     <Source
                         id="cadastre-wms"
@@ -851,7 +851,7 @@ export function MapCanvas({
                     BELOW the parcels source below, so the operator's own field
                     fills sit on top and stay legible. Empty until the first
                     viewport fetch resolves; renders nothing below the zoom
-                    floor. Attribution via MapLibre's attribution control. */}
+                    floor. Attribution via MapLibre's attribution practice. */}
                 {cadastreParcelsActive && (
                     <Source
                         id="cadastre-parcels"
@@ -1041,15 +1041,15 @@ export function MapCanvas({
                 )}
             </Map>
 
-            {/* ── On-map thumb controls (opt-in) ──────────────────────────
+            {/* ── On-map thumb practices (opt-in) ──────────────────────────
                 Bottom-right thumb zone; each button a ≥44px touch target.
                 The container is pointer-events-none so map panning is
                 unaffected; only the buttons capture taps. */}
-            {showControls && (
+            {showPractices && (
                 <div className="pointer-events-none absolute inset-0 z-10">
                     <div
                         className="pointer-events-auto absolute right-3 flex flex-col items-end gap-tight"
-                        style={{ bottom: controlsBottomInset }}
+                        style={{ bottom: practicesBottomInset }}
                     >
                         {parcels.some((p) => p.geometry) && (
                             <button
@@ -1057,7 +1057,7 @@ export function MapCanvas({
                                 onClick={handleFindField}
                                 aria-label={t('findMyField')}
                                 data-testid="map-find-field"
-                                className={cn(controlBtn, 'rounded-lg border border-border-subtle shadow-md')}
+                                className={cn(practiceBtn, 'rounded-lg border border-border-subtle shadow-md')}
                             >
                                 <Crosshairs3 className="size-4" aria-hidden="true" />
                             </button>
@@ -1066,14 +1066,14 @@ export function MapCanvas({
                             is on — the tracking toggle below uses the same
                             MapPosition glyph, so showing both reads as two
                             identical buttons. Callers without live-tracking
-                            still get this single locate control. */}
+                            still get this single locate practice. */}
                         {geoAvailable && !liveTracking && (
                             <button
                                 type="button"
                                 onClick={() => void locateOnce()}
                                 aria-label={t('locateMe')}
                                 data-testid="map-locate"
-                                className={cn(controlBtn, 'rounded-lg border border-border-subtle shadow-md')}
+                                className={cn(practiceBtn, 'rounded-lg border border-border-subtle shadow-md')}
                             >
                                 <MapPosition className="size-4" aria-hidden="true" />
                             </button>
@@ -1086,7 +1086,7 @@ export function MapCanvas({
                                 aria-pressed={tracking}
                                 data-testid="map-track"
                                 className={cn(
-                                    controlBtn,
+                                    practiceBtn,
                                     'rounded-lg border shadow-md',
                                     tracking
                                         ? 'border-border-emphasis text-content-emphasis ring-2 ring-ring'
@@ -1102,7 +1102,7 @@ export function MapCanvas({
                                 onClick={() => mapRef.current?.zoomIn()}
                                 aria-label={t('zoomIn')}
                                 data-testid="map-zoom-in"
-                                className={controlBtn}
+                                className={practiceBtn}
                             >
                                 <Plus className="size-4" aria-hidden="true" />
                             </button>
@@ -1111,7 +1111,7 @@ export function MapCanvas({
                                 onClick={() => mapRef.current?.zoomOut()}
                                 aria-label={t('zoomOut')}
                                 data-testid="map-zoom-out"
-                                className={controlBtn}
+                                className={practiceBtn}
                             >
                                 <Minus className="size-4" aria-hidden="true" />
                             </button>

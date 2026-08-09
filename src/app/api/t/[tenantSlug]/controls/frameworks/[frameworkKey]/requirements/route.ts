@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { getTenantCtx } from '@/app-layer/context';
-import { listFrameworkRequirements } from '@/app-layer/usecases/control';
+import { listFrameworkRequirements } from '@/app-layer/usecases/practice';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
 

@@ -120,7 +120,7 @@ describe('Epic 41 — widget Zod schemas', () => {
         it('accepts every canonical TREND chartType + days', () => {
             for (const chartType of [
                 'risks-open',
-                'controls-coverage',
+                'practices-coverage',
                 'evidence-overdue',
             ]) {
                 const r = WidgetTypedShapeSchema.safeParse({
@@ -176,7 +176,7 @@ describe('Epic 41 — widget Zod schemas', () => {
             const r = WidgetTypedShapeSchema.safeParse({
                 type: 'DRILLDOWN_CTAS',
                 chartType: 'default',
-                config: { entries: ['controls', 'risks'] },
+                config: { entries: ['practices', 'risks'] },
             });
             expect(r.success).toBe(true);
         });

@@ -8,7 +8,7 @@
  *   - VendorDocument (validTo)        — document expiry
  *   - Finding (dueDate)               — remediation deadline
  *
- * The existing `deadline-monitor` already handles Control/Policy/Task/
+ * The existing `deadline-monitor` already handles Practice/Policy/Task/
  * Risk/TestPlan; `evidence-expiry-monitor` handles Evidence retention;
  * `vendor-renewal-check` handles Vendor renewals. Adding a parallel
  * source here would double-count those entities, so we narrow to the

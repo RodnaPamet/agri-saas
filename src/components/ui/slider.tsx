@@ -34,7 +34,7 @@ import { ReactNode } from "react";
  *
  * ## When NOT to use
  *
- * A slider is the wrong control for discrete choices with ≤5 steps or
+ * A slider is the wrong practice for discrete choices with ≤5 steps or
  * non-numeric options — use ToggleGroup or RadioGroup. Sliders also
  * struggle on touch without a visible numeric value; if the user
  * needs to pick precisely, pair with NumberStepper.

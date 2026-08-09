@@ -13,8 +13,8 @@ jest.mock('@/lib/prisma', () => ({
     prisma: {
         automationRule: { findMany: jest.fn() },
         evidence: { findMany: jest.fn() },
-        controlException: { findMany: jest.fn() },
-        controlTestPlan: { findMany: jest.fn() },
+        practiceException: { findMany: jest.fn() },
+        practiceTestPlan: { findMany: jest.fn() },
     },
 }));
 

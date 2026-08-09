@@ -17,7 +17,7 @@ import { DataTable, createColumns } from '@/components/ui/table';
 import { TableTitleCell } from '@/components/ui/table-title-cell';
 import { TimestampTooltip } from '@/components/ui/timestamp-tooltip';
 // The canonical task-create modal (the SAME one the Tasks page "+ Task"
-// button opens). Reused here so a task created from a control / asset /
+// button opens). Reused here so a task created from a practice / asset /
 // risk detail page is identical to a standalone task — full fields, and
 // it lands in the global Tasks table (visible in the Tasks list) linked
 // back to this entity via TaskLink.
@@ -25,7 +25,7 @@ import { NewTaskModal } from '@/components/tasks/NewTaskModal';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-// Mirrors the Tasks page (TasksClient) maps so the control / asset /
+// Mirrors the Tasks page (TasksClient) maps so the practice / asset /
 // risk Tasks tab renders the SAME columns + tones as the global table.
 const STATUS_BADGE: Record<string, StatusBadgeVariant> = {
     OPEN: 'neutral', TRIAGED: 'info', IN_PROGRESS: 'info',

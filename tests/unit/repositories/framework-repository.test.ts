@@ -9,8 +9,8 @@
  * enters at exactly two points, and both are the interesting ones:
  *
  *   - `getCoverage` joins the global requirement list against the
- *     tenant's OWN control mappings to compute the SoA coverage figure;
- *   - `isPackInstalled` counts the tenant's OWN controls matching the
+ *     tenant's OWN practice mappings to compute the SoA coverage figure;
+ *   - `isPackInstalled` counts the tenant's OWN practices matching the
  *     pack's template codes.
  *
  * A missing tenant filter in either does not leak rows to a user, but it
@@ -38,7 +38,7 @@ function makeDb() {
         frameworkRequirement: model(),
         frameworkMapping: model(),
         frameworkPack: model(),
-        control: model(),
+        practice: model(),
     };
 }
 
@@ -113,9 +113,9 @@ describe('FrameworkRepository.getCoverage', () => {
         db.framework.findFirst.mockResolvedValue({ id: 'fw-1' });
     });
 
-    it('counts only mappings whose control belongs to the asking tenant', async () => {
-        // Break: dropping `toControl: { tenantId }`. Coverage would then
-        // count every customer's mappings, so a tenant with zero controls
+    it('counts only mappings whose practice belongs to the asking tenant', async () => {
+        // Break: dropping `toPractice: { tenantId }`. Coverage would then
+        // count every customer's mappings, so a tenant with zero practices
         // could be shown "87% covered" — a false assurance number that
         // ends up in an audit pack.
         db.frameworkRequirement.findMany.mockResolvedValue([req('r-1', 'A.5.1')]);
@@ -124,7 +124,7 @@ describe('FrameworkRepository.getCoverage', () => {
 
         expect(whereOf(db.frameworkMapping.findMany)).toEqual({
             fromRequirement: { frameworkId: 'fw-1' },
-            toControl: { tenantId: 'tenant-1' },
+            toPractice: { tenantId: 'tenant-1' },
         });
     });
 
@@ -135,7 +135,7 @@ describe('FrameworkRepository.getCoverage', () => {
             req('r-3', 'A.5.3'),
         ]);
         db.frameworkMapping.findMany.mockResolvedValue([
-            { fromRequirementId: 'r-1', toControlId: 'c-1' },
+            { fromRequirementId: 'r-1', toPracticeId: 'c-1' },
         ]);
 
         const res = await FrameworkRepository.getCoverage(asTx(db), 'iso27001', 'tenant-1');
@@ -145,16 +145,16 @@ describe('FrameworkRepository.getCoverage', () => {
         expect(res!.unmapped.map((r) => r.code)).toEqual(['A.5.2', 'A.5.3']);
     });
 
-    it('counts a requirement once even when several controls map to it', async () => {
+    it('counts a requirement once even when several practices map to it', async () => {
         // Break: computing `mappedCount` from `mappings.length` instead of
-        // the deduplicated requirement set. Mapping three controls onto
+        // the deduplicated requirement set. Mapping three practices onto
         // one requirement would report 300% coverage of a single-
         // requirement framework.
         db.frameworkRequirement.findMany.mockResolvedValue([req('r-1', 'A.5.1'), req('r-2', 'A.5.2')]);
         db.frameworkMapping.findMany.mockResolvedValue([
-            { fromRequirementId: 'r-1', toControlId: 'c-1' },
-            { fromRequirementId: 'r-1', toControlId: 'c-2' },
-            { fromRequirementId: 'r-1', toControlId: 'c-3' },
+            { fromRequirementId: 'r-1', toPracticeId: 'c-1' },
+            { fromRequirementId: 'r-1', toPracticeId: 'c-2' },
+            { fromRequirementId: 'r-1', toPracticeId: 'c-3' },
         ]);
 
         const res = await FrameworkRepository.getCoverage(asTx(db), 'iso27001', 'tenant-1');

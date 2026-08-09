@@ -14,12 +14,12 @@ import type { PrismaTx } from '@/lib/db-context';
 import { makeRequestContext } from '../../helpers/make-context';
 
 function mockDb(overrides: Partial<{
-    control: { findFirst: jest.Mock };
+    practice: { findFirst: jest.Mock };
     auditCycle: { findFirst: jest.Mock };
     tenantMembership: { findFirst: jest.Mock };
 }> = {}): PrismaTx {
     return {
-        control: { findFirst: jest.fn() },
+        practice: { findFirst: jest.fn() },
         auditCycle: { findFirst: jest.fn() },
         tenantMembership: { findFirst: jest.fn() },
         ...overrides,
@@ -31,19 +31,19 @@ describe('Task restore validator', () => {
     const ctx = makeRequestContext('ADMIN');
     const validator = getRestoreValidator('Task');
 
-    it('accepts a task with no controlId (no parent to check)', async () => {
+    it('accepts a task with no practiceId (no parent to check)', async () => {
         const db = mockDb();
         await expect(
-            validator(ctx, db, { controlId: null }),
+            validator(ctx, db, { practiceId: null }),
         ).resolves.toBeUndefined();
     });
 
-    it('accepts a task whose parent control is alive', async () => {
+    it('accepts a task whose parent practice is alive', async () => {
         const findFirst = jest.fn().mockResolvedValueOnce({ id: 'ctl-1' });
-        const db = mockDb({ control: { findFirst } });
+        const db = mockDb({ practice: { findFirst } });
 
         await expect(
-            validator(ctx, db, { controlId: 'ctl-1' }),
+            validator(ctx, db, { practiceId: 'ctl-1' }),
         ).resolves.toBeUndefined();
         expect(findFirst).toHaveBeenCalledWith(
             expect.objectContaining({
@@ -55,13 +55,13 @@ describe('Task restore validator', () => {
         );
     });
 
-    it('refuses when the parent control has been deleted', async () => {
+    it('refuses when the parent practice has been deleted', async () => {
         const findFirst = jest.fn().mockResolvedValueOnce(null);
-        const db = mockDb({ control: { findFirst } });
+        const db = mockDb({ practice: { findFirst } });
 
         await expect(
-            validator(ctx, db, { controlId: 'ctl-deleted' }),
-        ).rejects.toThrow(/parent control has been deleted/);
+            validator(ctx, db, { practiceId: 'ctl-deleted' }),
+        ).rejects.toThrow(/parent practice has been deleted/);
     });
 });
 
@@ -162,7 +162,7 @@ describe('Registry totality', () => {
         const expected: ReadonlyArray<RM> = [
             'Asset',
             'Risk',
-            'Control',
+            'Practice',
             'Evidence',
             'Policy',
             'Vendor',
@@ -188,7 +188,7 @@ describe('Registry totality', () => {
         // Confirm no parent lookup was issued.
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const dbAny = db as any;
-        expect(dbAny.control.findFirst).not.toHaveBeenCalled();
+        expect(dbAny.practice.findFirst).not.toHaveBeenCalled();
         expect(dbAny.auditCycle.findFirst).not.toHaveBeenCalled();
         expect(dbAny.tenantMembership.findFirst).not.toHaveBeenCalled();
     });

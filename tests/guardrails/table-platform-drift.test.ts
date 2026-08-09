@@ -27,14 +27,14 @@ const EXCLUDED_PAGES: Record<string, string> = {
     // Per-row inline dropdown + decision dialog sit on the row;
     // same architectural shape as AuditsClient.
     'AccessReviewDetailClient.tsx':
-        'Master/detail with inline decision controls — list inside a parent record, not a list page.',
+        'Master/detail with inline decision practices — list inside a parent record, not a list page.',
 };
 
 /**
  * Client pages that have been migrated and must NOT regress.
  */
 const MIGRATED_PAGES = [
-    'controls/ControlsClient.tsx',
+    'practices/PracticesClient.tsx',
     'evidence/EvidenceClient.tsx',
     'policies/PoliciesClient.tsx',
     // /tasks compliance UI retired 2026-07-25 → the farm-tasks list is the
@@ -174,8 +174,8 @@ describe('Table module integrity', () => {
         }
     });
 
-    it('no duplicate PaginationControls outside table module', () => {
-        expect(fs.existsSync(path.join(UI_DIR, 'pagination-controls.tsx'))).toBe(false);
+    it('no duplicate PaginationPractices outside table module', () => {
+        expect(fs.existsSync(path.join(UI_DIR, 'pagination-practices.tsx'))).toBe(false);
     });
 
     it('GUIDE.md exists and is non-trivial', () => {
@@ -242,7 +242,7 @@ describe('Migration progress', () => {
     });
 
     it('migrated pages collectively cover all entity types', () => {
-        const entityNames = ['control', 'evidence', 'polic', 'task', 'vendor', 'asset', 'finding'];
+        const entityNames = ['practice', 'evidence', 'polic', 'task', 'vendor', 'asset', 'finding'];
         for (const entity of entityNames) {
             const covered = MIGRATED_PAGES.some(p => p.toLowerCase().includes(entity));
             expect(covered).toBe(true);
@@ -255,7 +255,7 @@ describe('Migration progress', () => {
 // The MIGRATED_PAGES list above only knows about `*Client.tsx` files.
 // The Epic 52 finishing guide also targets detail pages and admin
 // routes that aren't named `*Client.tsx` — `admin/api-keys/page.tsx`,
-// `admin/roles/page.tsx`, `controls/[controlId]/page.tsx`, etc. This
+// `admin/roles/page.tsx`, `practices/[practiceId]/page.tsx`, etc. This
 // ratchet caps the total count of `<table>` occurrences across the
 // whole tenant surface so those pages can only migrate in one
 // direction.
@@ -271,7 +271,7 @@ const RATCHET_ALLOWLIST = new Set<string>([
 // the total). Lower only.
 //
 // Remaining hotspots (occurrences per file, post-api-keys migration):
-//   3  controls/[controlId]/page.tsx    evidence + mappings + activity
+//   3  practices/[practiceId]/page.tsx    evidence + mappings + activity
 //   3  vendors/[vendorId]/page.tsx      docs + assessments + links
 //   2  admin/members/page.tsx           members + pending invites
 //   2  admin/rbac/page.tsx              permission matrix + roles

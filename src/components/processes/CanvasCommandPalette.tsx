@@ -14,7 +14,7 @@
  * into the app-wide Cmd+K palette?
  *   • The app palette (`<CommandPalette>` under
  *     `command-palette/command-palette.tsx`) is tenant-scoped +
- *     navigation-shaped: it knows about controls, risks, policies,
+ *     navigation-shaped: it knows about practices, risks, policies,
  *     etc. Canvas verbs (Group selected, Align left, …) only have
  *     meaning when you're standing on the canvas, with a selection
  *     state that lives ENTIRELY inside this subtree.

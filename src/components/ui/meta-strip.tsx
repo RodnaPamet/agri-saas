@@ -4,7 +4,7 @@
  * A horizontal grid of label-on-top, value-below pairs that lives
  * between the page header and the tab bar on every entity detail
  * page. Standardises the "entity facts at a glance" surface so a
- * user crossing detail pages — Risk → Control → Task → Vendor —
+ * user crossing detail pages — Risk → Practice → Task → Vendor —
  * always sees status / owner / dates / framework in the same
  * typographic register, in the same place.
  *
@@ -13,12 +13,12 @@
  *   PageHeader's free-form `meta` slot:
  *     - risks/[id] used a hardcoded STATUS_VARIANT object literal
  *       inside the page
- *     - controls/[id] rendered a 5-cell info grid as part of an
+ *     - practices/[id] rendered a 5-cell info grid as part of an
  *       overview card
  *     - tasks/[id] rendered owner + dates inline next to the title
  *     - vendors/[id], policies/[id], audits/[id] each invented their
  *       own shape
- *   Result: opening a Risk, a Control, and a Task felt like reading
+ *   Result: opening a Risk, a Practice, and a Task felt like reading
  *   three pages of three different products.
  *
  * Composition contract

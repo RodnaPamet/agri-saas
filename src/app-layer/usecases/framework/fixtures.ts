@@ -106,7 +106,7 @@ export async function upsertRequirements(
     // Audit. There was NO audit anywhere in this file, so the most
     // destructive operation in the catalogue left no trace of who ran it or
     // what it removed. `deprecated` is the number that matters: it is the
-    // count of control points that just stopped counting for every tenant.
+    // count of practice points that just stopped counting for every tenant.
     await logEvent(prisma, ctx, {
         action: 'FRAMEWORK_REQUIREMENTS_UPSERTED',
         entityType: 'Framework',
@@ -205,7 +205,7 @@ export async function computeRequirementsDiff(
         }).filter((id): id is string => id !== undefined);
 
         const existingMappings = await runInTenantContext(ctx, (tdb) =>
-            tdb.controlRequirementLink.findMany({
+            tdb.practiceRequirementLink.findMany({
                 where: { tenantId: ctx.tenantId, requirementId: { in: newReqIds } },
                 select: { requirementId: true },
             })

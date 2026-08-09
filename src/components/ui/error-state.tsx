@@ -45,7 +45,7 @@ export interface ErrorStateAction {
     onClick?: () => void;
     /** When set, renders as `<a href>` instead of a button. */
     href?: string;
-    /** Forwarded to the underlying control (E2E selector). */
+    /** Forwarded to the underlying practice (E2E selector). */
     "data-testid"?: string;
     /** Disable the button (e.g. while a retry is in flight). */
     disabled?: boolean;

@@ -57,18 +57,18 @@ describe('getBillingMode', () => {
 });
 
 describe('getLimit', () => {
-    it('returns 10 controls for FREE', async () => {
+    it('returns 10 practices for FREE', async () => {
         const mod = await loadEntitlements(undefined);
-        expect(mod.getLimit('FREE', 'control')).toBe(10);
+        expect(mod.getLimit('FREE', 'practice')).toBe(10);
     });
-    it('returns 100 controls for PRO and TRIAL', async () => {
+    it('returns 100 practices for PRO and TRIAL', async () => {
         const mod = await loadEntitlements(undefined);
-        expect(mod.getLimit('PRO', 'control')).toBe(100);
-        expect(mod.getLimit('TRIAL', 'control')).toBe(100);
+        expect(mod.getLimit('PRO', 'practice')).toBe(100);
+        expect(mod.getLimit('TRIAL', 'practice')).toBe(100);
     });
     it('returns null (unlimited) for ENTERPRISE', async () => {
         const mod = await loadEntitlements(undefined);
-        expect(mod.getLimit('ENTERPRISE', 'control')).toBeNull();
+        expect(mod.getLimit('ENTERPRISE', 'practice')).toBeNull();
     });
     it('caps users + locations for FREE (startup-farmer tier)', async () => {
         const mod = await loadEntitlements(undefined);
@@ -139,14 +139,14 @@ describe('assertWithinLimit — exchange_listing', () => {
 // `getEffectivePlan` and `assertWithinLimit` both depend on the
 // shared db-context wrapper. We mock `runInTenantContext` to
 // hand the inner callback a stub `db` whose shape covers just
-// `billingAccount.findUnique` and `control.count`.
+// `billingAccount.findUnique` and `practice.count`.
 
 jest.mock('@/lib/db-context', () => {
     const stub = {
         billingAccount: {
             findUnique: jest.fn(),
         },
-        control: {
+        practice: {
             count: jest.fn(),
         },
         exchangeListing: {
@@ -214,22 +214,22 @@ describe('getEffectivePlan', () => {
     });
 });
 
-describe('assertWithinLimit — control', () => {
+describe('assertWithinLimit — practice', () => {
     it('SELFHOSTED: passes regardless of count (no DB count query)', async () => {
         const mod = await loadEntitlements(undefined);
         const dbCtx = (await import('@/lib/db-context')) as unknown as {
             __stub: {
-                control: { count: jest.MockedFunction<(args: unknown) => Promise<number>> };
+                practice: { count: jest.MockedFunction<(args: unknown) => Promise<number>> };
             };
         };
         // Even if there are millions of rows, ENTERPRISE is unlimited.
-        dbCtx.__stub.control.count.mockResolvedValue(9_999_999);
+        dbCtx.__stub.practice.count.mockResolvedValue(9_999_999);
 
         await expect(
-            mod.assertWithinLimit(makeRequestContext('ADMIN'), 'control'),
+            mod.assertWithinLimit(makeRequestContext('ADMIN'), 'practice'),
         ).resolves.toBeUndefined();
         // Unlimited path — count not even queried.
-        expect(dbCtx.__stub.control.count).not.toHaveBeenCalled();
+        expect(dbCtx.__stub.practice.count).not.toHaveBeenCalled();
     });
 
     it('SAAS FREE: passes when current < 10', async () => {
@@ -239,14 +239,14 @@ describe('assertWithinLimit — control', () => {
                 billingAccount: {
                     findUnique: jest.MockedFunction<(args: unknown) => Promise<unknown>>;
                 };
-                control: { count: jest.MockedFunction<(args: unknown) => Promise<number>> };
+                practice: { count: jest.MockedFunction<(args: unknown) => Promise<number>> };
             };
         };
         dbCtx.__stub.billingAccount.findUnique.mockResolvedValue({ plan: 'FREE' });
-        dbCtx.__stub.control.count.mockResolvedValue(9);
+        dbCtx.__stub.practice.count.mockResolvedValue(9);
 
         await expect(
-            mod.assertWithinLimit(makeRequestContext('ADMIN'), 'control'),
+            mod.assertWithinLimit(makeRequestContext('ADMIN'), 'practice'),
         ).resolves.toBeUndefined();
     });
 
@@ -257,14 +257,14 @@ describe('assertWithinLimit — control', () => {
                 billingAccount: {
                     findUnique: jest.MockedFunction<(args: unknown) => Promise<unknown>>;
                 };
-                control: { count: jest.MockedFunction<(args: unknown) => Promise<number>> };
+                practice: { count: jest.MockedFunction<(args: unknown) => Promise<number>> };
             };
         };
         dbCtx.__stub.billingAccount.findUnique.mockResolvedValue({ plan: 'FREE' });
-        dbCtx.__stub.control.count.mockResolvedValue(10);
+        dbCtx.__stub.practice.count.mockResolvedValue(10);
 
         await expect(
-            mod.assertWithinLimit(makeRequestContext('ADMIN'), 'control'),
+            mod.assertWithinLimit(makeRequestContext('ADMIN'), 'practice'),
         ).rejects.toThrow(/plan_limit_exceeded/);
     });
 
@@ -275,15 +275,15 @@ describe('assertWithinLimit — control', () => {
                 billingAccount: {
                     findUnique: jest.MockedFunction<(args: unknown) => Promise<unknown>>;
                 };
-                control: { count: jest.MockedFunction<(args: unknown) => Promise<number>> };
+                practice: { count: jest.MockedFunction<(args: unknown) => Promise<number>> };
             };
         };
         dbCtx.__stub.billingAccount.findUnique.mockResolvedValue({ plan: 'FREE' });
-        dbCtx.__stub.control.count.mockResolvedValue(42);
+        dbCtx.__stub.practice.count.mockResolvedValue(42);
 
         await expect(
-            mod.assertWithinLimit(makeRequestContext('ADMIN'), 'control'),
-        ).rejects.toThrow(/FREE plan allows 10 control/);
+            mod.assertWithinLimit(makeRequestContext('ADMIN'), 'practice'),
+        ).rejects.toThrow(/FREE plan allows 10 practice/);
     });
 
     it('SAAS PRO: passes at 50 (below 100)', async () => {
@@ -293,14 +293,14 @@ describe('assertWithinLimit — control', () => {
                 billingAccount: {
                     findUnique: jest.MockedFunction<(args: unknown) => Promise<unknown>>;
                 };
-                control: { count: jest.MockedFunction<(args: unknown) => Promise<number>> };
+                practice: { count: jest.MockedFunction<(args: unknown) => Promise<number>> };
             };
         };
         dbCtx.__stub.billingAccount.findUnique.mockResolvedValue({ plan: 'PRO' });
-        dbCtx.__stub.control.count.mockResolvedValue(50);
+        dbCtx.__stub.practice.count.mockResolvedValue(50);
 
         await expect(
-            mod.assertWithinLimit(makeRequestContext('ADMIN'), 'control'),
+            mod.assertWithinLimit(makeRequestContext('ADMIN'), 'practice'),
         ).resolves.toBeUndefined();
     });
 
@@ -311,7 +311,7 @@ describe('assertWithinLimit — control', () => {
                 billingAccount: {
                     findUnique: jest.MockedFunction<(args: unknown) => Promise<unknown>>;
                 };
-                control: { count: jest.MockedFunction<(args: unknown) => Promise<number>> };
+                practice: { count: jest.MockedFunction<(args: unknown) => Promise<number>> };
             };
         };
         dbCtx.__stub.billingAccount.findUnique.mockResolvedValue({ plan: 'ENTERPRISE' });
@@ -319,9 +319,9 @@ describe('assertWithinLimit — control', () => {
         // never gets called rather than mocking a value.
 
         await expect(
-            mod.assertWithinLimit(makeRequestContext('ADMIN'), 'control'),
+            mod.assertWithinLimit(makeRequestContext('ADMIN'), 'practice'),
         ).resolves.toBeUndefined();
-        expect(dbCtx.__stub.control.count).not.toHaveBeenCalled();
+        expect(dbCtx.__stub.practice.count).not.toHaveBeenCalled();
     });
 
     it('error message includes plan, limit, and current count for billing-UI parsing', async () => {
@@ -331,14 +331,14 @@ describe('assertWithinLimit — control', () => {
                 billingAccount: {
                     findUnique: jest.MockedFunction<(args: unknown) => Promise<unknown>>;
                 };
-                control: { count: jest.MockedFunction<(args: unknown) => Promise<number>> };
+                practice: { count: jest.MockedFunction<(args: unknown) => Promise<number>> };
             };
         };
         dbCtx.__stub.billingAccount.findUnique.mockResolvedValue({ plan: 'FREE' });
-        dbCtx.__stub.control.count.mockResolvedValue(13);
+        dbCtx.__stub.practice.count.mockResolvedValue(13);
 
         try {
-            await mod.assertWithinLimit(makeRequestContext('ADMIN'), 'control');
+            await mod.assertWithinLimit(makeRequestContext('ADMIN'), 'practice');
             fail('expected throw');
         } catch (err) {
             const msg = (err as Error).message;

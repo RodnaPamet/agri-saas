@@ -214,8 +214,8 @@ describe('Structural: scanner queries select owner fields', () => {
         );
 
         // Each scanner should have ownerUserId: true or assigneeUserId: true in its select.
-        // Floor was 5 until the Risk + ControlTestPlan scanners went with
-        // their models; Control / Policy / Task remain.
+        // Floor was 5 until the Risk + PracticeTestPlan scanners went with
+        // their models; Practice / Policy / Task remain.
         const selectBlocks = source.match(/select:\s*\{[\s\S]*?\}/g) || [];
         expect(selectBlocks.length).toBeGreaterThanOrEqual(3);
 

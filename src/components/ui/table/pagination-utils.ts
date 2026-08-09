@@ -2,7 +2,7 @@
  * Pagination utilities — pure functions for computing pagination state.
  *
  * These are framework-agnostic and can be used by both the pagination hook
- * and the PaginationControls component. They are also fully testable without
+ * and the PaginationPractices component. They are also fully testable without
  * any React or DOM dependency.
  */
 
@@ -94,7 +94,7 @@ export function getPageRange(meta: PaginationMeta): PaginationRange {
 
 /**
  * Compute the full pagination state from pagination metadata.
- * This is the primary function used by PaginationControls.
+ * This is the primary function used by PaginationPractices.
  */
 export function getPaginationState(meta: PaginationMeta): PaginationState {
   const pageCount = getPageCount(meta.totalCount, meta.pageSize);

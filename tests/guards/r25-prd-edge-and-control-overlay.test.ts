@@ -1,5 +1,5 @@
 /**
- * R25-PR-D — ProcessEdge + ControlOnEdge ratchet.
+ * R25-PR-D — ProcessEdge + PracticeOnEdge ratchet.
  *
  * Locks five invariants:
  *   1. `<ProcessEdge>` exists at the canonical path + exports the
@@ -9,11 +9,11 @@
  *      default xyflow stroke.
  *   3. Stroke is token-backed (`var(--border-default)` rest,
  *      `var(--brand-default)` selected) — no hex literals.
- *   4. `<ControlOnEdge>` renders via `EdgeLabelRenderer` (so the
+ *   4. `<PracticeOnEdge>` renders via `EdgeLabelRenderer` (so the
  *      overlay positions correctly at the edge midpoint AND
  *      supports React-component children with native hover/focus).
  *      Visually distinct from `<ProcessStepNode>` (no card recipe,
- *      no handles) — the control reads as belonging to the edge,
+ *      no handles) — the practice reads as belonging to the edge,
  *      not as another node hanging in space.
  *   5. ProcessCanvas registers PROCESS_EDGE_TYPE in EDGE_TYPES AND
  *      uses it as the default `type` on new connections.
@@ -32,7 +32,7 @@ function read(rel: string): string {
     return fs.readFileSync(path.join(ROOT, rel), "utf8");
 }
 
-describe("R25-PR-D — ProcessEdge + ControlOnEdge", () => {
+describe("R25-PR-D — ProcessEdge + PracticeOnEdge", () => {
     describe("Component file", () => {
         it("exists at the canonical path", () => {
             expect(fs.existsSync(path.join(ROOT, EDGE_PATH))).toBe(true);
@@ -50,8 +50,8 @@ describe("R25-PR-D — ProcessEdge + ControlOnEdge", () => {
             );
         });
 
-        it("exports the ControlOnEdge component", () => {
-            expect(src).toMatch(/export function ControlOnEdge\b/);
+        it("exports the PracticeOnEdge component", () => {
+            expect(src).toMatch(/export function PracticeOnEdge\b/);
         });
 
         it("uses memo on the edge component", () => {
@@ -82,7 +82,7 @@ describe("R25-PR-D — ProcessEdge + ControlOnEdge", () => {
         });
     });
 
-    describe("ControlOnEdge overlay", () => {
+    describe("PracticeOnEdge overlay", () => {
         const src = read(EDGE_PATH);
 
         it("positions overlay via EdgeLabelRenderer", () => {
@@ -101,21 +101,21 @@ describe("R25-PR-D — ProcessEdge + ControlOnEdge", () => {
             expect(src).toMatch(/translate\([^)]*labelX/);
         });
 
-        it("ControlOnEdge has no Handle (it's not a node)", () => {
-            // A control overlay must NOT carry connection handles
+        it("PracticeOnEdge has no Handle (it's not a node)", () => {
+            // A practice overlay must NOT carry connection handles
             // — that would let users connect to it like a node and
             // collapse the visual distinction. The handle import is
             // node-only.
-            const controlBlock = src.slice(src.indexOf("function ControlOnEdge"));
-            expect(controlBlock).not.toMatch(/<Handle\b/);
+            const practiceBlock = src.slice(src.indexOf("function PracticeOnEdge"));
+            expect(practiceBlock).not.toMatch(/<Handle\b/);
         });
 
         it("uses a shield icon (governance vocabulary)", () => {
             expect(src).toMatch(/ShieldCheck/);
         });
 
-        it("control overlay carries data-control-on-edge-badge marker", () => {
-            expect(src).toMatch(/data-control-on-edge-badge/);
+        it("practice overlay carries data-practice-on-edge-badge marker", () => {
+            expect(src).toMatch(/data-practice-on-edge-badge/);
         });
     });
 
@@ -145,24 +145,24 @@ describe("R25-PR-D — ProcessEdge + ControlOnEdge", () => {
         });
     });
 
-    describe("Control + node visual distinction", () => {
-        // Critical R25 contract: the control overlay must NOT
+    describe("Practice + node visual distinction", () => {
+        // Critical R25 contract: the practice overlay must NOT
         // accidentally adopt node card classes. A future
         // copy-paste from ProcessStepNode that brings `min-w-`,
-        // card recipe, or Handle into ControlOnEdge would
+        // card recipe, or Handle into PracticeOnEdge would
         // collapse the distinction.
         const edgeSrc = read(EDGE_PATH);
         const nodeSrc = read(NODE_PATH);
 
-        it("ControlOnEdge does not use the same min-w-[Xpx] card sizing as nodes", () => {
+        it("PracticeOnEdge does not use the same min-w-[Xpx] card sizing as nodes", () => {
             // Process nodes use min-w card sizing (R27-PR-B md rect
-            // is min-w-[180px]). The control overlay must NOT — it's
+            // is min-w-[180px]). The practice overlay must NOT — it's
             // a pill, not a card.
             expect(nodeSrc).toMatch(/min-w-\[180px\]/);
-            const controlBlock = edgeSrc.slice(
-                edgeSrc.indexOf("function ControlOnEdge"),
+            const practiceBlock = edgeSrc.slice(
+                edgeSrc.indexOf("function PracticeOnEdge"),
             );
-            expect(controlBlock).not.toMatch(/min-w-\[\d+px\]/);
+            expect(practiceBlock).not.toMatch(/min-w-\[\d+px\]/);
         });
     });
 });

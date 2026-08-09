@@ -90,7 +90,7 @@ export interface LeftAccordionRailProps {
      * folded/expanded state persists across sessions. When omitted
      * the rail stays controlled-by-default-expanded and forgets the
      * fold state on remount. Setting a stable key per page (e.g.
-     * `inflect:rail-folded:controls`) gives the user the "leave it
+     * `inflect:rail-folded:practices`) gives the user the "leave it
      * folded next time" experience.
      */
     persistKey?: string;
@@ -272,7 +272,7 @@ export function LeftAccordionRail({
                                 type="button"
                                 id={triggerId}
                                 data-rail-section-trigger={section.id}
-                                aria-controls={contentId}
+                                aria-practices={contentId}
                                 aria-expanded={isOpen}
                                 onClick={() => toggle(section.id)}
                                 onKeyDown={(e) => handleKeyDown(e, idx)}

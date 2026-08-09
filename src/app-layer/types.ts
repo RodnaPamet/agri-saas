@@ -32,7 +32,7 @@ export interface RequestContext {
     /** Present when the request was authenticated via API key (M2M) */
     apiKeyId?: string;
 
-    /** Scopes granted to the API key (e.g. ["controls:read", "evidence:write"]) */
+    /** Scopes granted to the API key (e.g. ["practices:read", "evidence:write"]) */
     apiKeyScopes?: string[];
 }
 

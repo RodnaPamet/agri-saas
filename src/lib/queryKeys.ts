@@ -9,12 +9,12 @@
  */
 
 export const queryKeys = {
-    controls: {
-        all: (tenantSlug: string) => ['controls', tenantSlug] as const,
+    practices: {
+        all: (tenantSlug: string) => ['practices', tenantSlug] as const,
         list: (tenantSlug: string, filters?: Record<string, string>) =>
-            ['controls', tenantSlug, 'list', filters ?? {}] as const,
-        detail: (tenantSlug: string, controlId: string) =>
-            ['controls', tenantSlug, 'detail', controlId] as const,
+            ['practices', tenantSlug, 'list', filters ?? {}] as const,
+        detail: (tenantSlug: string, practiceId: string) =>
+            ['practices', tenantSlug, 'detail', practiceId] as const,
     },
     evidence: {
         all: (tenantSlug: string) => ['evidence', tenantSlug] as const,

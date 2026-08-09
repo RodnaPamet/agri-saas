@@ -9,7 +9,7 @@
  *
  * Usage:
  *   // In your page component:
- *   const filterCtx = useFilterContext(controlFilterDefs, { syncUrl: true });
+ *   const filterCtx = useFilterContext(practiceFilterDefs, { syncUrl: true });
  *
  *   <FilterProvider value={filterCtx}>
  *     <FilterBar />

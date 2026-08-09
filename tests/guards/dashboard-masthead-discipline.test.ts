@@ -6,7 +6,7 @@
  *   • `/dashboard`               — main / executive (uses
  *                                   `<HeroMetric>` + `<KPIStat>`)
  *   • `/risks/dashboard`         — per-resource (uses `<KPIStat>`)
- *   • `/controls/dashboard`      — per-resource (uses `<KPIStat>`)
+ *   • `/practices/dashboard`      — per-resource (uses `<KPIStat>`)
  *   • `/vendors/dashboard`       — per-resource (uses `<KPIStat>`
  *                                   via a local `MetricCard`
  *                                   wrapper — adds click-nav)

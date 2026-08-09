@@ -36,15 +36,15 @@ const SITE_CONTRACTS: ReadonlyArray<SiteContract> = [
         handlers: ['handleUnlink'],
     },
     {
-        file: 'src/app/t/[tenantSlug]/(app)/controls/[controlId]/page.tsx',
-        name: 'Control evidence unlink (control detail)',
+        file: 'src/app/t/[tenantSlug]/(app)/practices/[practiceId]/page.tsx',
+        name: 'Practice evidence unlink (practice detail)',
         handlers: ['unlinkEvidence'],
     },
     {
         // #102 item 1 extracted the Mappings tab — and its
         // requirement-unmap undo flow — into its own component.
-        file: 'src/app/t/[tenantSlug]/(app)/controls/[controlId]/_tabs/ControlMappingsTab.tsx',
-        name: 'Control requirement unmap (Mappings tab)',
+        file: 'src/app/t/[tenantSlug]/(app)/practices/[practiceId]/_tabs/PracticeMappingsTab.tsx',
+        name: 'Practice requirement unmap (Mappings tab)',
         handlers: ['unmapRequirement'],
     },
     {

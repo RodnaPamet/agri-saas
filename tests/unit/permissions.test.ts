@@ -5,7 +5,7 @@ describe('Permissions Map', () => {
         const permissions = getPermissionsForRole('ADMIN');
 
         // Check a random sample of critical permissions
-        expect(permissions.controls.edit).toBe(true);
+        expect(permissions.practices.edit).toBe(true);
         expect(permissions.policies.approve).toBe(true);
         expect(permissions.admin.manage).toBe(true);
         expect(permissions.audits.freeze).toBe(true);
@@ -16,7 +16,7 @@ describe('Permissions Map', () => {
         const permissions = getPermissionsForRole('EDITOR');
 
         // Editors can create/edit but not approve/admin
-        expect(permissions.controls.edit).toBe(true);
+        expect(permissions.practices.edit).toBe(true);
         expect(permissions.evidence.upload).toBe(true);
 
         expect(permissions.policies.approve).toBe(false);
@@ -28,10 +28,10 @@ describe('Permissions Map', () => {
         const permissions = getPermissionsForRole('AUDITOR');
 
         // Auditors can view and download, but not edit
-        expect(permissions.controls.view).toBe(true);
+        expect(permissions.practices.view).toBe(true);
         expect(permissions.evidence.download).toBe(true);
 
-        expect(permissions.controls.edit).toBe(false);
+        expect(permissions.practices.edit).toBe(false);
         expect(permissions.evidence.upload).toBe(false);
 
         // Auditors can share audits
@@ -49,7 +49,7 @@ describe('Permissions Map', () => {
         // Every other domain is fully hidden — the opposite of READER's
         // "view everything". This is the load-bearing lockdown at the UI
         // permission layer.
-        expect(permissions.controls.view).toBe(false);
+        expect(permissions.practices.view).toBe(false);
         expect(permissions.evidence.view).toBe(false);
         expect(permissions.evidence.download).toBe(false);
         expect(permissions.vendors.view).toBe(false);
@@ -62,10 +62,10 @@ describe('Permissions Map', () => {
     it('grants strict read-only access to READER', () => {
         const permissions = getPermissionsForRole('READER');
 
-        expect(permissions.controls.view).toBe(true);
+        expect(permissions.practices.view).toBe(true);
         expect(permissions.evidence.download).toBe(true);
 
-        expect(permissions.controls.edit).toBe(false);
+        expect(permissions.practices.edit).toBe(false);
         expect(permissions.policies.approve).toBe(false);
         expect(permissions.admin.manage).toBe(false);
         expect(permissions.reports.export).toBe(false);

@@ -116,13 +116,13 @@ export interface Chart3DProps {
      */
     idleRotateSpeed?: number;
     /**
-     * Minimum polar angle for OrbitControls (in radians). Default
+     * Minimum polar angle for OrbitPractices (in radians). Default
      * `Math.PI / 6` — prevents the user from rotating BELOW the
      * scene's floor.
      */
     minPolarAngle?: number;
     /**
-     * Maximum polar angle for OrbitControls. Default `Math.PI / 2`
+     * Maximum polar angle for OrbitPractices. Default `Math.PI / 2`
      * — prevents the user from looking from ABOVE (which produces
      * a top-down 2D-equivalent view that defeats the 3D purpose).
      */

@@ -1,11 +1,11 @@
 /**
  * Ratchet: no "paste an entity ID here" free-text inputs.
  *
- * Linking a task/evidence/etc. to a control/risk/asset/vendor must go
+ * Linking a task/evidence/etc. to a practice/risk/asset/vendor must go
  * through a typeahead picker (`<EntityPicker>` / `<Combobox>` /
  * `<UserCombobox>`), never a free-text box that asks the operator to
  * paste a cuid by hand — users never know their cuids. Several legacy
- * forms did this ("Paste control ID to link"); they've been migrated.
+ * forms did this ("Paste practice ID to link"); they've been migrated.
  *
  * This guard fails if a new free-text entity-id box reappears: a
  * placeholder of the shape "Paste <thing> ID …" anywhere under

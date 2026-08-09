@@ -11,7 +11,7 @@
  * Reusable beyond frameworks — any data shape that satisfies
  * `TreeViewNode` (id + optional children + optional hasChildren) can
  * render through this component. The framework viewer (next prompts
- * in this PR) is the first consumer, but asset hierarchies, control
+ * in this PR) is the first consumer, but asset hierarchies, practice
  * taxonomies, and org charts can drop in without changes.
  *
  * Key design decisions:

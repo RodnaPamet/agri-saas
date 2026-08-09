@@ -27,7 +27,7 @@ const mockPolicyFindMany = jest.fn();
 const mockVendorFindMany = jest.fn();
 const mockVendorDocFindMany = jest.fn();
 const mockAuditCycleFindMany = jest.fn();
-const mockControlFindMany = jest.fn();
+const mockPracticeFindMany = jest.fn();
 const mockTaskFindMany = jest.fn();
 const mockFindingFindMany = jest.fn();
 
@@ -45,7 +45,7 @@ const mockLocationFindMany = jest.fn();
 const mockParcelFindMany = jest.fn();
 
 const mockTaskCount = jest.fn().mockResolvedValue(0);
-const mockControlCount = jest.fn().mockResolvedValue(0);
+const mockPracticeCount = jest.fn().mockResolvedValue(0);
 const mockEvidenceCount = jest.fn().mockResolvedValue(0);
 const mockPolicyCount = jest.fn().mockResolvedValue(0);
 const mockVendorCount = jest.fn().mockResolvedValue(0);
@@ -59,7 +59,7 @@ beforeEach(() => {
         mockVendorFindMany,
         mockVendorDocFindMany,
         mockAuditCycleFindMany,
-        mockControlFindMany,
+        mockPracticeFindMany,
         mockTaskFindMany,
         mockFindingFindMany,
         mockAgriEventFindMany,
@@ -73,7 +73,7 @@ beforeEach(() => {
     ].forEach((m) => m.mockReset().mockResolvedValue([]));
     [
         mockTaskCount,
-        mockControlCount,
+        mockPracticeCount,
         mockEvidenceCount,
         mockPolicyCount,
         mockVendorCount,
@@ -102,9 +102,9 @@ beforeEach(() => {
         auditCycle: {
             findMany: (...a: unknown[]) => mockAuditCycleFindMany(...a),
         },
-        control: {
-            findMany: (...a: unknown[]) => mockControlFindMany(...a),
-            count: (...a: unknown[]) => mockControlCount(...a),
+        practice: {
+            findMany: (...a: unknown[]) => mockPracticeFindMany(...a),
+            count: (...a: unknown[]) => mockPracticeCount(...a),
         },
         task: {
             findMany: (...a: unknown[]) => mockTaskFindMany(...a),
@@ -208,7 +208,7 @@ describe('getComplianceCalendarEvents — aggregation', () => {
             mockVendorFindMany,
             mockVendorDocFindMany,
             mockAuditCycleFindMany,
-            mockControlFindMany,
+            mockPracticeFindMany,
             mockTaskFindMany,
                 mockFindingFindMany,
                     // Agriculture data sources (PR 2) — all four ARE tenant-scoped.
@@ -731,7 +731,7 @@ describe('getComplianceCalendarEvents — aggregation', () => {
 describe('getUpcomingDeadlineCount — sidebar badge', () => {
     it('sums per-source counts and caps at 99+', async () => {
         mockTaskCount.mockResolvedValue(50);
-        mockControlCount.mockResolvedValue(40);
+        mockPracticeCount.mockResolvedValue(40);
         mockEvidenceCount.mockResolvedValue(20);
         mockPolicyCount.mockResolvedValue(0);
         mockVendorCount.mockResolvedValue(0);
@@ -745,7 +745,7 @@ describe('getUpcomingDeadlineCount — sidebar badge', () => {
 
     it('returns the real total when below the cap', async () => {
         mockTaskCount.mockResolvedValue(3);
-        mockControlCount.mockResolvedValue(2);
+        mockPracticeCount.mockResolvedValue(2);
         mockEvidenceCount.mockResolvedValue(1);
         const { getUpcomingDeadlineCount } = await import(
             '@/app-layer/usecases/compliance-calendar'

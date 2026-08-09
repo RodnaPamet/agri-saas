@@ -15,7 +15,7 @@
  * coupling. The house pattern is:
  *
  *     const form = useZodForm({
- *         schema: CreateControlSchema.pick({ name: true, description: true, category: true }),
+ *         schema: CreatePracticeSchema.pick({ name: true, description: true, category: true }),
  *         defaults: { name: '', description: '', category: '' },
  *     });
  *

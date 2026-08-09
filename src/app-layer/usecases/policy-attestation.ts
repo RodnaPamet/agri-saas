@@ -15,7 +15,7 @@
  *     who has attested.
  *
  * Only PUBLISHED policies can be attested; attesting a DRAFT or
- * ARCHIVED version doesn't satisfy the ISO control.
+ * ARCHIVED version doesn't satisfy the ISO practice.
  */
 import { RequestContext } from '../types';
 import { runInTenantContext } from '@/lib/db-context';

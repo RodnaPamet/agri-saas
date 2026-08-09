@@ -1,25 +1,25 @@
 /**
- * Unit tests for src/app-layer/usecases/control/mutations.ts
+ * Unit tests for src/app-layer/usecases/practice/mutations.ts
  *
- * Wave 4 of GAP-02. Controls are the core compliance primitive.
- * The single load-bearing invariant: tenant-scoped controls live in
+ * Wave 4 of GAP-02. Practices are the core compliance primitive.
+ * The single load-bearing invariant: tenant-scoped practices live in
  * the same table as the global library (`tenantId IS NULL`), so every
  * mutation MUST refuse to touch a row whose `tenantId` is null. A
  * regression here is a global-library mutation by an end-user — every
  * other tenant inherits the change.
  *
  * Behaviours protected:
- *   1. assertCanCreateControl / assertCanUpdateControl /
+ *   1. assertCanCreatePractice / assertCanUpdatePractice /
  *      assertCanSetApplicability gates.
- *   2. assertCanAdmin gate on deleteControl (separate from canWrite).
- *   3. updateControl / setControlStatus / setControlApplicability /
- *      markControlTestCompleted / deleteControl all REFUSE to act on
+ *   2. assertCanAdmin gate on deletePractice (separate from canWrite).
+ *   3. updatePractice / setPracticeStatus / setPracticeApplicability /
+ *      markPracticeTestCompleted / deletePractice all REFUSE to act on
  *      a row with `tenantId === null` — even if the caller's tenant
  *      can otherwise see the row.
- *   4. setControlApplicability: NOT_APPLICABLE requires a justification.
- *   5. setControlOwner: validates user exists before linking
+ *   4. setPracticeApplicability: NOT_APPLICABLE requires a justification.
+ *   5. setPracticeOwner: validates user exists before linking
  *      (prevents dangling FK + a confusing UI null-state).
- *   6. markControlTestCompleted: rejects when applicability is
+ *   6. markPracticeTestCompleted: rejects when applicability is
  *      NOT_APPLICABLE.
  */
 
@@ -27,8 +27,8 @@ jest.mock('@/lib/db-context', () => ({
     runInTenantContext: jest.fn(),
 }));
 
-jest.mock('@/app-layer/repositories/ControlRepository', () => ({
-    ControlRepository: {
+jest.mock('@/app-layer/repositories/PracticeRepository', () => ({
+    PracticeRepository: {
         getById: jest.fn(),
         create: jest.fn(),
         update: jest.fn(),
@@ -51,25 +51,25 @@ jest.mock('../../../src/app-layer/events/audit', () => ({
 }));
 
 import {
-    createControl,
-    updateControl,
-    setControlStatus,
-    setControlApplicability,
-    setControlOwner,
-    markControlTestCompleted,
-    deleteControl,
-} from '@/app-layer/usecases/control/mutations';
+    createPractice,
+    updatePractice,
+    setPracticeStatus,
+    setPracticeApplicability,
+    setPracticeOwner,
+    markPracticeTestCompleted,
+    deletePractice,
+} from '@/app-layer/usecases/practice/mutations';
 import { runInTenantContext } from '@/lib/db-context';
-import { ControlRepository } from '@/app-layer/repositories/ControlRepository';
+import { PracticeRepository } from '@/app-layer/repositories/PracticeRepository';
 import { logEvent } from '@/app-layer/events/audit';
 import { makeRequestContext } from '../../helpers/make-context';
 
 const mockRunInTx = runInTenantContext as jest.MockedFunction<typeof runInTenantContext>;
-const mockGetById = ControlRepository.getById as jest.MockedFunction<typeof ControlRepository.getById>;
-const mockCreate = ControlRepository.create as jest.MockedFunction<typeof ControlRepository.create>;
-const mockUpdate = ControlRepository.update as jest.MockedFunction<typeof ControlRepository.update>;
-const mockSetApplicability = ControlRepository.setApplicability as jest.MockedFunction<typeof ControlRepository.setApplicability>;
-const mockSetOwner = ControlRepository.setOwner as jest.MockedFunction<typeof ControlRepository.setOwner>;
+const mockGetById = PracticeRepository.getById as jest.MockedFunction<typeof PracticeRepository.getById>;
+const mockCreate = PracticeRepository.create as jest.MockedFunction<typeof PracticeRepository.create>;
+const mockUpdate = PracticeRepository.update as jest.MockedFunction<typeof PracticeRepository.update>;
+const mockSetApplicability = PracticeRepository.setApplicability as jest.MockedFunction<typeof PracticeRepository.setApplicability>;
+const mockSetOwner = PracticeRepository.setOwner as jest.MockedFunction<typeof PracticeRepository.setOwner>;
 const mockLog = logEvent as jest.MockedFunction<typeof logEvent>;
 
 beforeEach(() => {
@@ -78,27 +78,27 @@ beforeEach(() => {
     mockUpdate.mockResolvedValue({ id: 'c1' } as never);
 });
 
-describe('createControl', () => {
-    it('rejects READER (canCreateControl gate)', async () => {
+describe('createPractice', () => {
+    it('rejects READER (canCreatePractice gate)', async () => {
         await expect(
-            createControl(makeRequestContext('READER'), { name: 'X' }),
+            createPractice(makeRequestContext('READER'), { name: 'X' }),
         ).rejects.toThrow();
         expect(mockRunInTx).not.toHaveBeenCalled();
     });
 
     it('emits CONTROL_CREATED audit', async () => {
-        // The custom-control mint path calls
-        // `db.controlKeySequence.upsert` to allocate `CTL-N` before
+        // The custom-practice mint path calls
+        // `db.practiceKeySequence.upsert` to allocate `CTL-N` before
         // the repository write — stub it on the in-test db handle
         // so the usecase resolves to the CONTROL_CREATED audit.
         const db = {
-            controlKeySequence: {
+            practiceKeySequence: {
                 upsert: jest.fn().mockResolvedValue({ lastValue: 1 }),
             },
         };
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(db as never));
 
-        await createControl(makeRequestContext('EDITOR'), { name: 'X' });
+        await createPractice(makeRequestContext('EDITOR'), { name: 'X' });
 
         expect(mockLog).toHaveBeenCalledWith(
             expect.anything(),
@@ -107,12 +107,12 @@ describe('createControl', () => {
         );
     });
 
-    it('mints CTL-N via controlKeySequence.upsert when isCustom AND no code', async () => {
+    it('mints CTL-N via practiceKeySequence.upsert when isCustom AND no code', async () => {
         const upsertMock = jest.fn().mockResolvedValue({ lastValue: 42 });
-        const db = { controlKeySequence: { upsert: upsertMock } };
+        const db = { practiceKeySequence: { upsert: upsertMock } };
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(db as never));
 
-        await createControl(makeRequestContext('EDITOR'), { name: 'X' });
+        await createPractice(makeRequestContext('EDITOR'), { name: 'X' });
 
         // Counter advanced exactly once.
         expect(upsertMock).toHaveBeenCalledTimes(1);
@@ -126,10 +126,10 @@ describe('createControl', () => {
 
     it('bypasses the counter when a code IS supplied', async () => {
         const upsertMock = jest.fn();
-        const db = { controlKeySequence: { upsert: upsertMock } };
+        const db = { practiceKeySequence: { upsert: upsertMock } };
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(db as never));
 
-        await createControl(makeRequestContext('EDITOR'), {
+        await createPractice(makeRequestContext('EDITOR'), {
             name: 'X',
             code: 'EXTERNAL-CODE',
         });
@@ -145,21 +145,21 @@ describe('createControl', () => {
 
     it('bypasses the counter when isCustom is false (framework install)', async () => {
         const upsertMock = jest.fn();
-        const db = { controlKeySequence: { upsert: upsertMock } };
+        const db = { practiceKeySequence: { upsert: upsertMock } };
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(db as never));
 
-        await createControl(makeRequestContext('EDITOR'), {
+        await createPractice(makeRequestContext('EDITOR'), {
             name: 'X',
             isCustom: false,
         });
 
-        // Framework-installed controls never mint — their code /
+        // Framework-installed practices never mint — their code /
         // the code comes from the catalogue.
         expect(upsertMock).not.toHaveBeenCalled();
     });
 });
 
-describe('updateControl — global-library guard', () => {
+describe('updatePractice — global-library guard', () => {
     it('throws forbidden when the row exists but belongs to the global library (tenantId === null)', async () => {
         // Repository returns null on update because the where filter
         // excluded global rows; the usecase then re-checks via getById
@@ -169,10 +169,10 @@ describe('updateControl — global-library guard', () => {
         mockGetById.mockResolvedValueOnce({ id: 'c1', tenantId: null } as never);
 
         await expect(
-            updateControl(makeRequestContext('EDITOR'), 'c1', { name: 'New' }),
-        ).rejects.toThrow(/global library controls/);
+            updatePractice(makeRequestContext('EDITOR'), 'c1', { name: 'New' }),
+        ).rejects.toThrow(/global library practices/);
         // Regression: a refactor that dropped this check would let any
-        // EDITOR rename a global library control — every other tenant
+        // EDITOR rename a global library practice — every other tenant
         // would see the rename downstream.
     });
 
@@ -182,28 +182,28 @@ describe('updateControl — global-library guard', () => {
         mockGetById.mockResolvedValueOnce(null as never);
 
         await expect(
-            updateControl(makeRequestContext('EDITOR'), 'missing', { name: 'X' }),
-        ).rejects.toThrow(/Control not found/);
+            updatePractice(makeRequestContext('EDITOR'), 'missing', { name: 'X' }),
+        ).rejects.toThrow(/Practice not found/);
     });
 });
 
-describe('setControlStatus — global-library guard', () => {
-    it('throws forbidden when the control is in the global library', async () => {
+describe('setPracticeStatus — global-library guard', () => {
+    it('throws forbidden when the practice is in the global library', async () => {
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn({} as never));
         mockGetById.mockResolvedValueOnce({
             id: 'c1', tenantId: null, status: 'NOT_STARTED',
         } as never);
 
         await expect(
-            setControlStatus(makeRequestContext('EDITOR'), 'c1', 'IN_PROGRESS'),
+            setPracticeStatus(makeRequestContext('EDITOR'), 'c1', 'IN_PROGRESS'),
         ).rejects.toThrow(/global library/);
     });
 });
 
-describe('setControlApplicability', () => {
+describe('setPracticeApplicability', () => {
     it('rejects NOT_APPLICABLE without a justification', async () => {
         await expect(
-            setControlApplicability(
+            setPracticeApplicability(
                 makeRequestContext('ADMIN'),
                 'c1',
                 'NOT_APPLICABLE',
@@ -211,19 +211,19 @@ describe('setControlApplicability', () => {
             ),
         ).rejects.toThrow(/Justification is required/);
         // Regression: skipping this gate hides the audit-readiness
-        // signal that explains WHY a control is not in scope. The
+        // signal that explains WHY a practice is not in scope. The
         // external auditor's first question is "show me the
-        // justification" — without it, the control gets re-flagged.
+        // justification" — without it, the practice gets re-flagged.
     });
 
-    it('throws forbidden when targeting a global-library control', async () => {
+    it('throws forbidden when targeting a global-library practice', async () => {
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn({} as never));
         mockGetById.mockResolvedValueOnce({
             id: 'c1', tenantId: null,
         } as never);
 
         await expect(
-            setControlApplicability(
+            setPracticeApplicability(
                 makeRequestContext('ADMIN'),
                 'c1',
                 'APPLICABLE',
@@ -239,7 +239,7 @@ describe('setControlApplicability', () => {
         } as never);
         mockSetApplicability.mockResolvedValueOnce({ id: 'c1' } as never);
 
-        await setControlApplicability(
+        await setPracticeApplicability(
             makeRequestContext('ADMIN'),
             'c1',
             'NOT_APPLICABLE',
@@ -254,7 +254,7 @@ describe('setControlApplicability', () => {
     });
 });
 
-describe('setControlOwner — user existence validation', () => {
+describe('setPracticeOwner — user existence validation', () => {
     it('rejects when the ownerUserId does not exist in the User table', async () => {
         const queryRawUnsafe = jest.fn().mockResolvedValueOnce([]);
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
@@ -262,7 +262,7 @@ describe('setControlOwner — user existence validation', () => {
         );
 
         await expect(
-            setControlOwner(
+            setPracticeOwner(
                 makeRequestContext('EDITOR'),
                 'c1',
                 'no-such-user',
@@ -282,7 +282,7 @@ describe('setControlOwner — user existence validation', () => {
         );
         mockSetOwner.mockResolvedValueOnce({ id: 'c1' } as never);
 
-        await setControlOwner(makeRequestContext('EDITOR'), 'c1', null);
+        await setPracticeOwner(makeRequestContext('EDITOR'), 'c1', null);
 
         // The User-lookup query is gated on `ownerUserId` truthiness —
         // null clears MUST not run the query.
@@ -290,8 +290,8 @@ describe('setControlOwner — user existence validation', () => {
     });
 });
 
-describe('markControlTestCompleted', () => {
-    it('rejects when the control is NOT_APPLICABLE', async () => {
+describe('markPracticeTestCompleted', () => {
+    it('rejects when the practice is NOT_APPLICABLE', async () => {
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn({} as never));
         mockGetById.mockResolvedValueOnce({
             id: 'c1',
@@ -301,15 +301,15 @@ describe('markControlTestCompleted', () => {
         } as never);
 
         await expect(
-            markControlTestCompleted(makeRequestContext('EDITOR'), 'c1'),
+            markPracticeTestCompleted(makeRequestContext('EDITOR'), 'c1'),
         ).rejects.toThrow(/NOT_APPLICABLE/);
-        // Regression: marking NOT_APPLICABLE controls "tested" would
+        // Regression: marking NOT_APPLICABLE practices "tested" would
         // re-introduce them into the audit-readiness scoring (they
         // would have a recent lastTested) — defeating the whole point
         // of marking them out-of-scope.
     });
 
-    it('throws forbidden on global-library controls', async () => {
+    it('throws forbidden on global-library practices', async () => {
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn({} as never));
         mockGetById.mockResolvedValueOnce({
             id: 'c1',
@@ -319,41 +319,41 @@ describe('markControlTestCompleted', () => {
         } as never);
 
         await expect(
-            markControlTestCompleted(makeRequestContext('EDITOR'), 'c1'),
+            markPracticeTestCompleted(makeRequestContext('EDITOR'), 'c1'),
         ).rejects.toThrow(/global library/);
     });
 });
 
-describe('deleteControl', () => {
+describe('deletePractice', () => {
     it('rejects EDITOR — delete requires canAdmin (separate from canWrite)', async () => {
         await expect(
-            deleteControl(makeRequestContext('EDITOR'), 'c1'),
+            deletePractice(makeRequestContext('EDITOR'), 'c1'),
         ).rejects.toThrow();
     });
 
-    it('throws forbidden on global-library controls', async () => {
+    it('throws forbidden on global-library practices', async () => {
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
-            fn({ control: { delete: jest.fn() } } as never),
+            fn({ practice: { delete: jest.fn() } } as never),
         );
         mockGetById.mockResolvedValueOnce({
             id: 'c1', tenantId: null,
         } as never);
 
         await expect(
-            deleteControl(makeRequestContext('ADMIN'), 'c1'),
+            deletePractice(makeRequestContext('ADMIN'), 'c1'),
         ).rejects.toThrow(/global library/);
     });
 
     it('emits SOFT_DELETE audit on success', async () => {
         const deleteSpy = jest.fn();
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
-            fn({ control: { delete: deleteSpy } } as never),
+            fn({ practice: { delete: deleteSpy } } as never),
         );
         mockGetById.mockResolvedValueOnce({
             id: 'c1', tenantId: 'tenant-1', code: 'CTRL', name: 'X',
         } as never);
 
-        await deleteControl(makeRequestContext('ADMIN'), 'c1');
+        await deletePractice(makeRequestContext('ADMIN'), 'c1');
 
         expect(deleteSpy).toHaveBeenCalled();
         expect(mockLog).toHaveBeenCalledWith(

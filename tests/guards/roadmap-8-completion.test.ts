@@ -12,7 +12,7 @@
  *   PR-3  EntityDetailLayout sweep + ratchet smarting
  *   PR-4  metadata-strip ratchet correction       (track MetaStrip)
  *   PR-5  badge density ratchet + demotions
- *   PR-6  controls/[controlId] structural cleanup (10 → 7 primaries)
+ *   PR-6  practices/[practiceId] structural cleanup (10 → 7 primaries)
  *   PR-7  vendors/[vendorId] structural cleanup   (9 → 6 primaries)
  *   PR-8  DashboardLayout coverage registry
  *   PR-9  Coverage migration to DashboardLayout
@@ -67,7 +67,7 @@ describe("Roadmap-8 round completion", () => {
 
     it("primary-action budget exists", () => {
         // Primary-action budget map is the canonical home for the
-        // R8-PR6/PR-7 controls/[controlId] + vendors/[vendorId]
+        // R8-PR6/PR-7 practices/[practiceId] + vendors/[vendorId]
         // reductions. Once both PRs merge to main, the values will
         // be 7 and 6 respectively. This soft assertion locks the
         // existence of the map without tightly coupling to PR

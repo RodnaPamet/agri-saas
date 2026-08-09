@@ -1,15 +1,15 @@
 'use client';
 
 /**
- * Epic 54 — Create Control modal.
+ * Epic 54 — Create Practice modal.
  *
- * Modal-based version of the legacy `/controls/new` full-page form.
- * Mounts inside the Controls list so users don't lose their table
- * state, filters, or scroll position when opening "New Control".
+ * Modal-based version of the legacy `/practices/new` full-page form.
+ * Mounts inside the Practices list so users don't lose their table
+ * state, filters, or scroll position when opening "New Practice".
  *
  * Form pattern (Epic 64-FORM):
  *   - `useForm` + `zodResolver` for state + validation
- *   - `<FormField>` wraps each control (Label + error + a11y wiring)
+ *   - `<FormField>` wraps each practice (Label + error + a11y wiring)
  *   - `register(...)` for plain inputs / textareas
  *   - `<Controller>` for the Combobox primitives (they own their own
  *     value/onChange contract)
@@ -19,11 +19,11 @@
  * `NewRiskModal`, `NewTaskPage`, etc.
  *
  * Business behaviour is unchanged from the previous useState shape:
- *   - POST /api/t/:slug/controls with the same payload
- *   - Optional NOT_APPLICABLE applicability update on the created control
+ *   - POST /api/t/:slug/practices with the same payload
+ *   - Optional NOT_APPLICABLE applicability update on the created practice
  *   - On success, invalidate the React-Query cache and route to the
- *     new control's detail page
- *   - Form IDs (#control-name-input, …, #create-control-btn) are
+ *     new practice's detail page
+ *   - Form IDs (#practice-name-input, …, #create-practice-btn) are
  *     preserved so existing E2E suites pass untouched.
  */
 
@@ -62,7 +62,7 @@ const FREQUENCY_OPTIONS: ComboboxOption[] = [
     { value: 'ANNUALLY', label: 'Annually' },
 ];
 
-// Mirror of EditControlModal's classification options (the Prisma
+// Mirror of EditPracticeModal's classification options (the Prisma
 // enum is the source of truth — keep these two lists in sync).
 const MITIGATION_TYPE_OPTIONS: ComboboxOption[] = [
     { value: 'PREVENTIVE', label: 'Preventive' },
@@ -88,7 +88,7 @@ const CATEGORY_OPTIONS: ComboboxOption[] = [
 // ─── Schema ──────────────────────────────────────────────────────────
 //
 // Zod schema is the source of truth for the form contract. Server-side
-// validation lives in `src/app-layer/schemas/control.schemas.ts`; the
+// validation lives in `src/app-layer/schemas/practice.schemas.ts`; the
 // client form intentionally enforces a SUBSET (name required + the
 // not-applicable-needs-justification rule). Cross-field validation runs
 // in `superRefine` so the error is attached to the right field.
@@ -113,7 +113,7 @@ const formSchema = z
             ctx.addIssue({
                 code: z.ZodIssueCode.custom,
                 path: ['justification'],
-                message: 'Justification is required for non-applicable controls.',
+                message: 'Justification is required for non-applicable practices.',
             });
         }
     });
@@ -134,7 +134,7 @@ const DEFAULT_VALUES: FormValues = {
 
 // ─── Component ───────────────────────────────────────────────────────
 
-export interface NewControlModalProps {
+export interface NewPracticeModalProps {
     open: boolean;
     setOpen: Dispatch<SetStateAction<boolean>>;
     /**
@@ -144,19 +144,19 @@ export interface NewControlModalProps {
     tenantSlug: string;
 }
 
-export function NewControlModal({ open, setOpen, tenantSlug }: NewControlModalProps) {
-    const t = useTranslations('controls');
+export function NewPracticeModal({ open, setOpen, tenantSlug }: NewPracticeModalProps) {
+    const t = useTranslations('practices');
     const close = useCallback(() => setOpen(false), [setOpen]);
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
     const router = useRouter();
     const queryClient = useQueryClient();
-    const telemetry = useFormTelemetry('NewControlModal');
+    const telemetry = useFormTelemetry('NewPracticeModal');
 
     const {
         register,
         handleSubmit,
-        control,
+        practice,
         watch,
         reset,
         setError: setFormError,
@@ -213,7 +213,7 @@ export function NewControlModal({ open, setOpen, tenantSlug }: NewControlModalPr
                 mitigationType: values.mitigationType || undefined,
                 isCustom: true,
             };
-            const res = await fetch(apiUrl('/controls'), {
+            const res = await fetch(apiUrl('/practices'), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(body),
@@ -223,7 +223,7 @@ export function NewControlModal({ open, setOpen, tenantSlug }: NewControlModalPr
                 const msg =
                     typeof data.error === 'string'
                         ? data.error
-                        : data.message || 'Failed to create control';
+                        : data.message || 'Failed to create practice';
                 throw new Error(msg);
             }
             const created = await res.json();
@@ -232,7 +232,7 @@ export function NewControlModal({ open, setOpen, tenantSlug }: NewControlModalPr
                 values.applicability === 'NOT_APPLICABLE' &&
                 values.justification?.trim()
             ) {
-                await fetch(apiUrl(`/controls/${created.id}/applicability`), {
+                await fetch(apiUrl(`/practices/${created.id}/applicability`), {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -243,12 +243,12 @@ export function NewControlModal({ open, setOpen, tenantSlug }: NewControlModalPr
             }
 
             queryClient.invalidateQueries({
-                queryKey: queryKeys.controls.all(tenantSlug),
+                queryKey: queryKeys.practices.all(tenantSlug),
             });
 
-            telemetry.trackSuccess({ controlId: created.id });
+            telemetry.trackSuccess({ practiceId: created.id });
             close();
-            router.push(tenantHref(`/controls/${created.id}`));
+            router.push(tenantHref(`/practices/${created.id}`));
         } catch (err) {
             telemetry.trackError(err);
             // Surface API errors via RHF's root-error slot so the same
@@ -258,7 +258,7 @@ export function NewControlModal({ open, setOpen, tenantSlug }: NewControlModalPr
                 message:
                     err instanceof Error
                         ? err.message
-                        : 'Failed to create control',
+                        : 'Failed to create practice',
             });
         }
     };
@@ -283,7 +283,7 @@ export function NewControlModal({ open, setOpen, tenantSlug }: NewControlModalPr
                     {apiError && (
                         <div
                             className="mb-4 rounded-lg border border-border-error bg-bg-error px-3 py-2 text-sm text-content-error"
-                            id="new-control-error"
+                            id="new-practice-error"
                             role="alert"
                         >
                             {apiError}
@@ -293,7 +293,7 @@ export function NewControlModal({ open, setOpen, tenantSlug }: NewControlModalPr
                     <div className="space-y-default">
                         <FormField label={t('newModal.code')} error={errors.code?.message}>
                             <Input
-                                id="control-code-input"
+                                id="practice-code-input"
                                 type="text"
                                 placeholder={t('newModal.phCode')}
                                 autoComplete="off"
@@ -306,7 +306,7 @@ export function NewControlModal({ open, setOpen, tenantSlug }: NewControlModalPr
                             error={errors.name?.message}
                         >
                             <Input
-                                id="control-name-input"
+                                id="practice-name-input"
                                 type="text"
                                 placeholder={t('newModal.phName')}
                                 autoComplete="off"
@@ -318,7 +318,7 @@ export function NewControlModal({ open, setOpen, tenantSlug }: NewControlModalPr
                             error={errors.description?.message}
                         >
                             <Textarea
-                                id="control-description-input"
+                                id="practice-description-input"
                                 rows={3}
                                 placeholder={t('newModal.phDescription')}
                                 {...register('description')}
@@ -330,11 +330,11 @@ export function NewControlModal({ open, setOpen, tenantSlug }: NewControlModalPr
                                 error={errors.category?.message}
                             >
                                 <Controller
-                                    control={control}
+                                    practice={practice}
                                     name="category"
                                     render={({ field }) => (
                                         <Combobox
-                                            id="control-category-input"
+                                            id="practice-category-input"
                                             name="category"
                                             options={CATEGORY_OPTIONS}
                                             selected={
@@ -360,11 +360,11 @@ export function NewControlModal({ open, setOpen, tenantSlug }: NewControlModalPr
                                 error={errors.frequency?.message}
                             >
                                 <Controller
-                                    control={control}
+                                    practice={practice}
                                     name="frequency"
                                     render={({ field }) => (
                                         <Combobox
-                                            id="control-frequency-input"
+                                            id="practice-frequency-input"
                                             name="frequency"
                                             options={FREQUENCY_OPTIONS}
                                             selected={
@@ -391,11 +391,11 @@ export function NewControlModal({ open, setOpen, tenantSlug }: NewControlModalPr
                                 error={errors.mitigationType?.message}
                             >
                                 <Controller
-                                    control={control}
+                                    practice={practice}
                                     name="mitigationType"
                                     render={({ field }) => (
                                         <Combobox
-                                            id="control-mitigation-type-input"
+                                            id="practice-mitigation-type-input"
                                             name="mitigationType"
                                             options={MITIGATION_TYPE_OPTIONS}
                                             selected={
@@ -418,11 +418,11 @@ export function NewControlModal({ open, setOpen, tenantSlug }: NewControlModalPr
                         </div>
                         <FormField label={t('newModal.owner')} error={errors.ownerUserId?.message}>
                             <Controller
-                                control={control}
+                                practice={practice}
                                 name="ownerUserId"
                                 render={({ field }) => (
                                     <UserCombobox
-                                        id="control-owner-input"
+                                        id="practice-owner-input"
                                         name="ownerUserId"
                                         tenantSlug={tenantSlug}
                                         selectedId={field.value || null}
@@ -473,7 +473,7 @@ export function NewControlModal({ open, setOpen, tenantSlug }: NewControlModalPr
                                     className="mt-2"
                                 >
                                     <Textarea
-                                        id="control-justification-input"
+                                        id="practice-justification-input"
                                         rows={2}
                                         placeholder={t('newModal.justificationPlaceholder')}
                                         aria-label={t('newModal.justificationAria')}
@@ -488,7 +488,7 @@ export function NewControlModal({ open, setOpen, tenantSlug }: NewControlModalPr
                     <Button
                         variant="secondary"
                         size="sm"
-                        id="new-control-cancel-btn"
+                        id="new-practice-cancel-btn"
                         onClick={() => {
                             if (!isSubmitting) close();
                         }}
@@ -500,7 +500,7 @@ export function NewControlModal({ open, setOpen, tenantSlug }: NewControlModalPr
                         type="submit"
                         variant="primary"
                         size="sm"
-                        id="create-control-btn"
+                        id="create-practice-btn"
                         disabled={submitDisabled}
                     >
                         {isSubmitting ? t('newModal.creating') : t('newModal.create')}

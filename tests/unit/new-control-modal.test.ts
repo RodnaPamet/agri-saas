@@ -1,5 +1,5 @@
 /**
- * Epic 54 — Create Control modal migration contract.
+ * Epic 54 — Create Practice modal migration contract.
  *
  * Node-env jest can't render .tsx, so this suite source-inspects the
  * migrated surface:
@@ -12,7 +12,7 @@
  *      follow-up, same post-create navigation, same React-Query cache
  *      invalidation.
  *      so deep links keep working against the modal-based flow.
- *   5. ControlsClient wires the trigger + auto-opens on `?create=1`.
+ *   5. PracticesClient wires the trigger + auto-opens on `?create=1`.
  */
 
 import * as fs from 'fs';
@@ -23,12 +23,12 @@ function read(rel: string): string {
     return fs.readFileSync(path.join(ROOT, rel), 'utf-8');
 }
 
-const MODAL_SRC = read('src/app/t/[tenantSlug]/(app)/controls/NewControlModal.tsx');
-const CLIENT_SRC = read('src/app/t/[tenantSlug]/(app)/controls/ControlsClient.tsx');
+const MODAL_SRC = read('src/app/t/[tenantSlug]/(app)/practices/NewPracticeModal.tsx');
+const CLIENT_SRC = read('src/app/t/[tenantSlug]/(app)/practices/PracticesClient.tsx');
 
 // ─── 1. Modal composition ────────────────────────────────────────
 
-describe('NewControlModal — shared Modal composition', () => {
+describe('NewPracticeModal — shared Modal composition', () => {
     it('is a client component', () => {
         expect(MODAL_SRC).toMatch(/^'use client'/);
     });
@@ -55,9 +55,9 @@ describe('NewControlModal — shared Modal composition', () => {
         expect(MODAL_SRC).toMatch(/title=\{t\(['"]newModal\.title['"]\)\}/);
         expect(MODAL_SRC).toMatch(/description=\{t\(['"]newModal\.description['"]\)\}/);
         // eslint-disable-next-line @typescript-eslint/no-var-requires
-        const en = require('../../messages/en.json').controls.newModal;
-        expect(en.title).toBe('New control');
-        expect(en.description).toBe('Create a custom control for your register.');
+        const en = require('../../messages/en.json').practices.newModal;
+        expect(en.title).toBe('New practice');
+        expect(en.description).toBe('Create a custom practice for your register.');
     });
 
     it('guards close-during-save via preventDefaultClose tied to RHF isSubmitting', () => {
@@ -73,15 +73,15 @@ describe('NewControlModal — shared Modal composition', () => {
 
 // ─── 2. E2E ID preservation ──────────────────────────────────────
 
-describe('NewControlModal — preserved E2E IDs', () => {
+describe('NewPracticeModal — preserved E2E IDs', () => {
     const REQUIRED_IDS = [
-        'control-name-input',
-        'control-code-input',
-        'control-description-input',
-        'control-category-input',
-        'control-frequency-input',
-        'control-justification-input',
-        'create-control-btn',
+        'practice-name-input',
+        'practice-code-input',
+        'practice-description-input',
+        'practice-category-input',
+        'practice-frequency-input',
+        'practice-justification-input',
+        'create-practice-btn',
     ];
 
     it.each(REQUIRED_IDS)('preserves id="%s"', (id) => {
@@ -89,15 +89,15 @@ describe('NewControlModal — preserved E2E IDs', () => {
     });
 
     it('adds a cancel affordance with a dedicated id', () => {
-        expect(MODAL_SRC).toMatch(/id=["']new-control-cancel-btn["']/);
+        expect(MODAL_SRC).toMatch(/id=["']new-practice-cancel-btn["']/);
     });
 });
 
 // ─── 3. Business behaviour preserved ─────────────────────────────
 
-describe('NewControlModal — business behaviour preserved', () => {
-    it('POSTs to /controls with the documented payload shape', () => {
-        expect(MODAL_SRC).toMatch(/apiUrl\(['"]\/controls['"]\)/);
+describe('NewPracticeModal — business behaviour preserved', () => {
+    it('POSTs to /practices with the documented payload shape', () => {
+        expect(MODAL_SRC).toMatch(/apiUrl\(['"]\/practices['"]\)/);
         expect(MODAL_SRC).toMatch(/method:\s*['"]POST['"]/);
         // Same fields as the legacy page: name, optional code, description,
         // category, frequency, isCustom=true. After the RHF migration the
@@ -113,34 +113,34 @@ describe('NewControlModal — business behaviour preserved', () => {
     it('follows up with the applicability POST when user chose NOT_APPLICABLE', () => {
         // After RHF migration, the conditional reads from `values.applicability`
         // rather than the local useState; the resulting record id is bound to
-        // either `control` (legacy) or `created` (new).
+        // either `practice` (legacy) or `created` (new).
         expect(MODAL_SRC).toMatch(
             /(applicability|values\.applicability)\s*===\s*['"]NOT_APPLICABLE['"]/,
         );
         expect(MODAL_SRC).toMatch(
-            /apiUrl\(`\/controls\/\$\{(control|created)\.id\}\/applicability`\)/,
+            /apiUrl\(`\/practices\/\$\{(practice|created)\.id\}\/applicability`\)/,
         );
     });
 
-    it('invalidates the Controls react-query cache on success', () => {
+    it('invalidates the Practices react-query cache on success', () => {
         expect(MODAL_SRC).toMatch(/queryClient\.invalidateQueries/);
-        expect(MODAL_SRC).toMatch(/queryKeys\.controls\.all\(tenantSlug\)/);
+        expect(MODAL_SRC).toMatch(/queryKeys\.practices\.all\(tenantSlug\)/);
     });
 
-    it('navigates to the new control detail page after create (preserves downstream E2E chain)', () => {
-        // `control` was the legacy variable name; `created` is the RHF-era
+    it('navigates to the new practice detail page after create (preserves downstream E2E chain)', () => {
+        // `practice` was the legacy variable name; `created` is the RHF-era
         // name. Either is acceptable as long as the navigation target is
         // the new entity's detail page.
         expect(MODAL_SRC).toMatch(
-            /router\.push\(tenantHref\(`\/controls\/\$\{(control|created)\.id\}`\)\)/,
+            /router\.push\(tenantHref\(`\/practices\/\$\{(practice|created)\.id\}`\)\)/,
         );
     });
 
     it('surfaces API error messages in an alert region', () => {
         expect(MODAL_SRC).toMatch(/role=["']alert["']/);
-        expect(MODAL_SRC).toMatch(/id=["']new-control-error["']/);
-        // Falls back to the shared "Failed to create control" message.
-        expect(MODAL_SRC).toMatch(/Failed to create control/);
+        expect(MODAL_SRC).toMatch(/id=["']new-practice-error["']/);
+        // Falls back to the shared "Failed to create practice" message.
+        expect(MODAL_SRC).toMatch(/Failed to create practice/);
     });
 
     it('enforces required-name + NA-needs-justification via Zod', () => {

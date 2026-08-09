@@ -29,7 +29,7 @@ import { registry } from '@/lib/openapi/registry';
 import * as requestSchemas from '@/lib/schemas';
 // All annotated schemas — response DTO side
 import * as commonDTOs from '@/lib/dto/common';
-import * as controlDTOs from '@/lib/dto/control.dto';
+import * as practiceDTOs from '@/lib/dto/practice.dto';
 import * as evidenceDTOs from '@/lib/dto/evidence.dto';
 import * as policyDTOs from '@/lib/dto/policy.dto';
 import * as auditDTOs from '@/lib/dto/audit.dto';
@@ -108,10 +108,10 @@ describe('GAP-10 foundation — annotated schemas have metadata', () => {
             'AuditLogEntrySchema',
             'SuccessResponseSchema',
         ],
-        '@/lib/dto/control.dto': [
-            'ControlListItemDTOSchema',
-            'ControlDetailDTOSchema',
-            'ControlDashboardDTOSchema',
+        '@/lib/dto/practice.dto': [
+            'PracticeListItemDTOSchema',
+            'PracticeDetailDTOSchema',
+            'PracticeDashboardDTOSchema',
         ],
         '@/lib/dto/evidence.dto': [
             'EvidenceReviewDTOSchema',
@@ -136,7 +136,7 @@ describe('GAP-10 foundation — annotated schemas have metadata', () => {
         '@/lib/schemas': [
             // Canonical CRUD pairs across the 9 domains
             'CreateAssetSchema', 'UpdateAssetSchema',
-            'CreateControlSchema', 'UpdateControlSchema',
+            'CreatePracticeSchema', 'UpdatePracticeSchema',
             'CreatePolicySchema', 'UpdatePolicyMetadataSchema',
             'CreateEvidenceSchema', 'UpdateEvidenceSchema',
             'CreateAuditSchema', 'UpdateAuditSchema',
@@ -144,15 +144,15 @@ describe('GAP-10 foundation — annotated schemas have metadata', () => {
             'CreateVendorSchema', 'UpdateVendorSchema',
             'CreateFindingSchema', 'UpdateFindingSchema',
             // Focused mutation requests
-            'SetControlStatusSchema',
-            'SetControlApplicabilitySchema', 'SetTaskStatusSchema',
+            'SetPracticeStatusSchema',
+            'SetPracticeApplicabilitySchema', 'SetTaskStatusSchema',
             'EvidenceReviewSchema', 'PublishPolicySchema',
         ],
     };
 
     const moduleSources: Record<string, Record<string, unknown>> = {
         '@/lib/dto/common': commonDTOs,
-        '@/lib/dto/control.dto': controlDTOs,
+        '@/lib/dto/practice.dto': practiceDTOs,
         '@/lib/dto/evidence.dto': evidenceDTOs,
         '@/lib/dto/policy.dto': policyDTOs,
         '@/lib/dto/audit.dto': auditDTOs,
@@ -189,7 +189,7 @@ describe('GAP-10 foundation — component IDs are globally unique', () => {
         // schema with another.
         const sources = [
             { ns: commonDTOs, name: 'common' },
-            { ns: controlDTOs, name: 'control.dto' },
+            { ns: practiceDTOs, name: 'practice.dto' },
             { ns: evidenceDTOs, name: 'evidence.dto' },
             { ns: policyDTOs, name: 'policy.dto' },
             { ns: auditDTOs, name: 'audit.dto' },

@@ -11,14 +11,14 @@ import { useTranslations } from 'next-intl';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type { Row, RowSelectionState } from '@tanstack/react-table';
 import { useRouter, useSearchParams } from 'next/navigation';
-// NewControlModal and ControlDetailSheet were previously lazy-loaded
+// NewPracticeModal and PracticeDetailSheet were previously lazy-loaded
 // via next/dynamic, but the JIT race in `next dev` made the modals
 // occasionally fail to mount in serial-mode E2E runs (Playwright
 // clicked the trigger before the chunk finished compiling). Static
 // imports — the bundle cost is negligible and the E2E suite becomes
 // deterministic.
-import { NewControlModal } from './NewControlModal';
-import { ControlDetailSheet } from './ControlDetailSheet';
+import { NewPracticeModal } from './NewPracticeModal';
+import { PracticeDetailSheet } from './PracticeDetailSheet';
 import { queryKeys } from '@/lib/queryKeys';
 import { ownerDisplayName } from '@/lib/owner-display';
 import { AppIcon } from '@/components/icons/AppIcon';
@@ -53,15 +53,15 @@ import {
     AccordionTrigger,
 } from '@/components/ui/accordion';
 import {
-    categorizeControl,
+    categorizePractice,
     ISO27001_DOMAIN_ORDER,
-} from '@/lib/controls/control-taxonomy';
+} from '@/lib/practices/practice-taxonomy';
 import { KpiFilterCard } from '@/components/ui/kpi-filter-card';
 import { useKpiFilter, type KpiFilterDef } from '@/components/ui/kpi-filter';
 import type { CappedList } from '@/lib/list-backfill-cap';
 import { TruncationBanner } from '@/components/ui/TruncationBanner';
 import {
-    buildControlFilters,
+    buildPracticeFilters,
     CONTROL_FILTER_KEYS,
     CONTROL_STATUS_LABELS,
 } from './filter-defs';
@@ -91,7 +91,7 @@ const FREQ_LABELS: Record<string, string> = {
 
 // ─── Types ───
 
-interface ControlListItem {
+interface PracticeListItem {
     id: string;
     code: string | null;
     name: string;
@@ -102,21 +102,21 @@ interface ControlListItem {
     frequency: string | null;
     /** Widened to include id/email so the owner filter can resolve + display. */
     owner: { id: string; name: string | null; email: string | null } | null;
-    _count?: { controlTasks?: number; evidenceLinks?: number };
-    controlTasks?: Array<{ status: string }>;
+    _count?: { practiceTasks?: number; evidenceLinks?: number };
+    practiceTasks?: Array<{ status: string }>;
     /**
      * Unified linked-task counts (TaskLink CONTROL link OR the
-     * `controlId` FK), supplied by `listControls`. The Tasks column
-     * reads these — the legacy `_count.controlTasks` / `controlTasks[]`
-     * counted the old ControlTask relation and read 0/0 for unified
+     * `practiceId` FK), supplied by `listPractices`. The Tasks column
+     * reads these — the legacy `_count.practiceTasks` / `practiceTasks[]`
+     * counted the old PracticeTask relation and read 0/0 for unified
      * tasks.
      */
     taskTotal?: number;
     taskDone?: number;
 }
 
-interface ControlsClientProps {
-    initialControls: ControlListItem[];
+interface PracticesClientProps {
+    initialPractices: PracticeListItem[];
     initialFilters?: Record<string, string>;
     tenantSlug: string;
     permissions: {
@@ -127,26 +127,26 @@ interface ControlsClientProps {
         canExport: boolean;
     };
     appPermissions: {
-        controls: { create: boolean; edit: boolean };
+        practices: { create: boolean; edit: boolean };
     };
 }
 
 /**
- * Client island for controls — handles filters, status cycling, applicability mutations.
+ * Client island for practices — handles filters, status cycling, applicability mutations.
  * Data arrives pre-fetched from the server component, hydrated into React Query.
  *
  * Filter architecture (Epic 53):
  *   - `useFilterContext` manages state + URL sync for everything except search.
  *   - `search` is the `q` param, owned by the same context.
- *   - Owner / Category options are derived client-side from loaded controls so
+ *   - Owner / Category options are derived client-side from loaded practices so
  *     the picker reflects reality without an extra API call.
  */
-export function ControlsClient(props: ControlsClientProps) {
+export function PracticesClient(props: PracticesClientProps) {
     // Build the filter context at the outer boundary so the provider can wrap
     // the inner tree — the inner component consumes via `useFilters()`.
     const filterCtx = useFilterContext(
         // Static filter defs — options are patched in inside the inner component
-        // where `controls` are available. Outer uses the static shape for keys.
+        // where `practices` are available. Outer uses the static shape for keys.
         [],
         CONTROL_FILTER_KEYS,
         { serverFilters: props.initialFilters },
@@ -154,19 +154,19 @@ export function ControlsClient(props: ControlsClientProps) {
 
     return (
         <FilterProvider value={filterCtx}>
-            <ControlsPageInner {...props} />
+            <PracticesPageInner {...props} />
         </FilterProvider>
     );
 }
 
-function ControlsPageInner({
-    initialControls,
+function PracticesPageInner({
+    initialPractices,
     initialFilters,
     tenantSlug,
     appPermissions,
     permissions,
-}: ControlsClientProps) {
-    const t = useTranslations('controls');
+}: PracticesClientProps) {
+    const t = useTranslations('practices');
     // Stable across renders — selection-toggle re-renders (Phase 2)
     // must NOT hand the DataTable fresh `columns` / `onRowClick` /
     // `getRowId` references, or it rebuilds the whole table model
@@ -187,12 +187,12 @@ function ControlsPageInner({
 
     // Justification modal state
 
-    // Detail / edit Sheet state — selected control id or null for closed.
-    const [sheetControlId, setSheetControlId] = useState<string | null>(null);
+    // Detail / edit Sheet state — selected practice id or null for closed.
+    const [sheetPracticeId, setSheetPracticeId] = useState<string | null>(null);
 
-    // Create-control modal state. Auto-opens when the page is reached via
-    // `/controls?create=1` — the `/controls/new` page redirects here so
-    // deep links and E2E tests that `page.goto('/controls/new')` keep
+    // Create-practice modal state. Auto-opens when the page is reached via
+    // `/practices?create=1` — the `/practices/new` page redirects here so
+    // deep links and E2E tests that `page.goto('/practices/new')` keep
     // working against the modal-based flow.
     const [isCreateOpen, setIsCreateOpen] = useState(false);
     const searchParams = useSearchParams();
@@ -205,7 +205,7 @@ function ControlsPageInner({
             const next = new URLSearchParams(searchParams.toString());
             next.delete('create');
             const qs = next.toString();
-            router.replace(`/t/${tenantSlug}/controls${qs ? `?${qs}` : ''}`, { scroll: false });
+            router.replace(`/t/${tenantSlug}/practices${qs ? `?${qs}` : ''}`, { scroll: false });
         }
         // Only run on first mount of the inner component; subsequent URL
         // edits are driven by filter state (which does its own sync).
@@ -227,7 +227,7 @@ function ControlsPageInner({
         return obj;
     }, [filtersForQuery]);
 
-    // ─── Query: controls list (hydrated with server data) ───
+    // ─── Query: practices list (hydrated with server data) ───
 
     // When server provides initialFilters, the data is already filtered server-side.
     // Only use initialData when the live filter state still matches what the server saw.
@@ -246,16 +246,16 @@ function ControlsPageInner({
     // with `truncated: false` because the SSR cap (100) is well below
     // the backfill cap (5000), so the SSR slice never trips truncation
     // by itself.
-    const controlsQuery = useQuery<CappedList<ControlListItem>>({
-        queryKey: queryKeys.controls.list(tenantSlug, queryKeyFilters),
+    const practicesQuery = useQuery<CappedList<PracticeListItem>>({
+        queryKey: queryKeys.practices.list(tenantSlug, queryKeyFilters),
         queryFn: async () => {
             const qs = filtersForQuery.toString();
-            const res = await fetch(apiUrl(`/controls${qs ? `?${qs}` : ''}`));
-            if (!res.ok) throw new Error('Failed to fetch controls');
+            const res = await fetch(apiUrl(`/practices${qs ? `?${qs}` : ''}`));
+            if (!res.ok) throw new Error('Failed to fetch practices');
             return res.json();
         },
         initialData: filtersMatchInitial
-            ? { rows: initialControls, truncated: false }
+            ? { rows: initialPractices, truncated: false }
             : undefined,
         // `initialDataUpdatedAt: Date.now()` tells React Query the SSR
         // payload is "fresh as of now" so it doesn't immediately
@@ -266,12 +266,12 @@ function ControlsPageInner({
         staleTime: 30_000,
     });
 
-    const rawControls = controlsQuery.data?.rows ?? [];
-    const truncated = controlsQuery.data?.truncated ?? false;
-    const loading = controlsQuery.isLoading && !controlsQuery.data;
+    const rawPractices = practicesQuery.data?.rows ?? [];
+    const truncated = practicesQuery.data?.truncated ?? false;
+    const loading = practicesQuery.isLoading && !practicesQuery.data;
 
     // ─── PR-1: org-parity sortable headers ───
-    // Client-side sort over the loaded controls. The server returns
+    // Client-side sort over the loaded practices. The server returns
     // by its canonical order (code asc); when the user
     // clicks a sortable header the page re-orders the in-memory
     // slice without a refetch. `sortBy` + `sortOrder` flow into
@@ -280,9 +280,9 @@ function ControlsPageInner({
     const [sortOrder, setSortOrder] = useState<'asc' | 'desc' | undefined>(
         undefined,
     );
-    const controls = useMemo(() => {
-        if (!sortBy) return rawControls;
-        const accessor = (c: ControlListItem): string | number => {
+    const practices = useMemo(() => {
+        if (!sortBy) return rawPractices;
+        const accessor = (c: PracticeListItem): string | number => {
             switch (sortBy) {
                 case 'code':
                     return (c.code || '').toString();
@@ -301,13 +301,13 @@ function ControlsPageInner({
             }
         };
         const dir = sortOrder === 'asc' ? 1 : -1;
-        return [...rawControls].sort((a, b) => {
+        return [...rawPractices].sort((a, b) => {
             const av = accessor(a);
             const bv = accessor(b);
             if (av === bv) return 0;
             return av > bv ? dir : -dir;
         });
-    }, [rawControls, sortBy, sortOrder]);
+    }, [rawPractices, sortBy, sortOrder]);
     const sortableColumns = useMemo(
         () => ['code', 'name', 'status', 'category', 'frequency', 'owner'],
         [],
@@ -320,20 +320,20 @@ function ControlsPageInner({
     // resetting happens on a fresh mount only (re-filtering keeps
     // the window so a narrowed result stays fully visible).
     const {
-        visibleRows: visibleControls,
-        totalCount: totalControlsCount,
-        hasMore: hasMoreControls,
-        loadMore: loadMoreControls,
-    } = useThresholdLoadMore(controls);
+        visibleRows: visiblePractices,
+        totalCount: totalPracticesCount,
+        hasMore: hasMorePractices,
+        loadMore: loadMorePractices,
+    } = useThresholdLoadMore(practices);
 
     // ─── Filter defs with runtime-derived owner/category options ───
     const liveFilterDefs: FilterType[] = useMemo(
-        () => buildControlFilters(controls),
-        [controls],
+        () => buildPracticeFilters(practices),
+        [practices],
     );
 
     // R-filter-gear (#3, 2026-06-07): the "Edit filter cards" gear now
-    // controls the QUANTIFIABLE KPI cards above the table (Total /
+    // practices the QUANTIFIABLE KPI cards above the table (Total /
     // Implemented / In Progress / Not Started) — their visibility + order —
     // not the filter categories (those live in the Filter dropdown). The
     // toolbar still gets the full `liveFilterDefs`.
@@ -348,31 +348,31 @@ function ControlsPageInner({
     );
     const { visibleCards: visibleKpiCards, dropdown: filtersDropdown } =
         useFilterCardVisibility({
-            storageKey: 'inflect:filter-vis:controls',
+            storageKey: 'inflect:filter-vis:practices',
             cards: kpiCards,
         });
 
-    // ─── R23-PR-D — KPI definitions for the Controls page ───
+    // ─── R23-PR-D — KPI definitions for the Practices page ───
     // Status-based buckets aligned to the existing `status` filter.
     // The "In Progress" KPI buckets IN_PROGRESS + IMPLEMENTING under
     // one label visually, but the filter API sets only IN_PROGRESS;
     // pages that want a multi-status KPI extend the predicate.
-    type ControlKpiId = 'total' | 'implemented' | 'inProgress' | 'notStarted';
+    type PracticeKpiId = 'total' | 'implemented' | 'inProgress' | 'notStarted';
     // guardrail-ignore: KPI counts across the loaded page, not a refilter.
-    const totalControls = controls.length;
+    const totalPractices = practices.length;
     // guardrail-ignore: KPI count, not a refilter.
-    const implementedControls = controls.filter(
+    const implementedPractices = practices.filter(
         (c) => c.status === 'IMPLEMENTED',
     ).length;
     // guardrail-ignore: KPI count, not a refilter.
-    const inProgressControls = controls.filter(
+    const inProgressPractices = practices.filter(
         (c) => c.status === 'IN_PROGRESS' || c.status === 'IMPLEMENTING',
     ).length;
     // guardrail-ignore: KPI count, not a refilter.
-    const notStartedControls = controls.filter(
+    const notStartedPractices = practices.filter(
         (c) => c.status === 'NOT_STARTED',
     ).length;
-    const controlKpiDefs: ReadonlyArray<KpiFilterDef<ControlKpiId>> = useMemo(
+    const practiceKpiDefs: ReadonlyArray<KpiFilterDef<PracticeKpiId>> = useMemo(
         () => [
             {
                 id: 'total',
@@ -400,18 +400,18 @@ function ControlsPageInner({
         ],
         [],
     );
-    const { activeKpiId: activeControlKpi, toggle: toggleControlKpi } =
-        useKpiFilter(controlKpiDefs);
+    const { activeKpiId: activePracticeKpi, toggle: togglePracticeKpi } =
+        useKpiFilter(practiceKpiDefs);
 
     // ─── Column visibility (Epic 52 / R10-PR6) ───
     // Pagination removed — internal scroll inside the table card
     // (ListPageShell.Body + DataTable fillBody) shows all rows.
-    const controlColumnList = useMemo(
+    const practiceColumnList = useMemo(
         () => [
             { id: 'code', label: t('list.colCode'), defaultVisible: false },
             { id: 'name', label: t('list.colTitle') },
             // Framework + Category, split into two columns (2026-06-07).
-            // Both derived per-control via `categorizeControl` (ISO 27001
+            // Both derived per-practice via `categorizePractice` (ISO 27001
             // granular Annex domain, or the framework-native category) —
             // mirrors the Browse rail's grouping.
             { id: 'framework', label: t('list.colFramework') },
@@ -431,14 +431,14 @@ function ControlsPageInner({
         orderColumns,
         dropdown: columnsDropdown,
     } = useColumnsDropdown({
-        storageKey: 'inflect:col-vis:controls',
-        columns: controlColumnList,
+        storageKey: 'inflect:col-vis:practices',
+        columns: practiceColumnList,
     });
     // ─── Mutation: status cycle ───
 
     const statusMutation = useMutation({
-        mutationFn: async ({ controlId, newStatus }: { controlId: string; newStatus: string }) => {
-            const res = await fetch(apiUrl(`/controls/${controlId}/status`), {
+        mutationFn: async ({ practiceId, newStatus }: { practiceId: string; newStatus: string }) => {
+            const res = await fetch(apiUrl(`/practices/${practiceId}/status`), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ status: newStatus }),
@@ -446,22 +446,22 @@ function ControlsPageInner({
             if (!res.ok) throw new Error('Status update failed');
             return res.json();
         },
-        onMutate: async ({ controlId, newStatus }) => {
-            await queryClient.cancelQueries({ queryKey: queryKeys.controls.all(tenantSlug) });
+        onMutate: async ({ practiceId, newStatus }) => {
+            await queryClient.cancelQueries({ queryKey: queryKeys.practices.all(tenantSlug) });
 
-            const listKey = queryKeys.controls.list(tenantSlug, queryKeyFilters);
-            // PR-5 — cache value is `CappedList<ControlListItem>` (the API
+            const listKey = queryKeys.practices.list(tenantSlug, queryKeyFilters);
+            // PR-5 — cache value is `CappedList<PracticeListItem>` (the API
             // returns `{ rows, truncated }`); preserve the `truncated` flag
             // and only rewrite `rows`.
-            const previousList = queryClient.getQueryData<CappedList<ControlListItem>>(listKey);
+            const previousList = queryClient.getQueryData<CappedList<PracticeListItem>>(listKey);
 
             if (previousList) {
-                queryClient.setQueryData<CappedList<ControlListItem>>(listKey, (old) =>
+                queryClient.setQueryData<CappedList<PracticeListItem>>(listKey, (old) =>
                     old
                         ? {
                               ...old,
                               rows: old.rows.map(c =>
-                                  c.id === controlId ? { ...c, status: newStatus } : c,
+                                  c.id === practiceId ? { ...c, status: newStatus } : c,
                               ),
                           }
                         : old,
@@ -476,7 +476,7 @@ function ControlsPageInner({
             }
         },
         onSettled: () => {
-            queryClient.invalidateQueries({ queryKey: queryKeys.controls.all(tenantSlug) });
+            queryClient.invalidateQueries({ queryKey: queryKeys.practices.all(tenantSlug) });
         },
     });
 
@@ -510,10 +510,10 @@ function ControlsPageInner({
         () => Object.keys(settledSelection).filter((id) => settledSelection[id]),
         [settledSelection],
     );
-    const canEditControls = appPermissions.controls.edit;
+    const canEditPractices = appPermissions.practices.edit;
     const bulkSetStatus = (newStatus: string) => {
         for (const id of selectedIds) {
-            statusMutation.mutate({ controlId: id, newStatus });
+            statusMutation.mutate({ practiceId: id, newStatus });
         }
     };
 
@@ -522,29 +522,29 @@ function ControlsPageInner({
     // referentially stable means a selection-toggle re-render does not
     // rebuild the table's column model.
     const handleRowClick = useCallback(
-        (row: Row<ControlListItem>) =>
-            router.push(tenantHref(`/controls/${row.original.id}`)),
+        (row: Row<PracticeListItem>) =>
+            router.push(tenantHref(`/practices/${row.original.id}`)),
         [router, tenantHref],
     );
-    const getControlRowId = useCallback((c: ControlListItem) => c.id, []);
+    const getPracticeRowId = useCallback((c: PracticeListItem) => c.id, []);
 
     // Bulk-delete via the selection action-row (ADMIN-gated, like single delete).
-    const { batchAction: controlBulkDelete, dialog: controlDeleteDialog } =
-        useBulkDelete<ControlListItem>({
-            entitySingular: 'control',
-            entityPlural: 'controls',
-            onDelete: async (controlIds) => {
-                const res = await fetch(apiUrl('/controls/bulk/delete'), {
+    const { batchAction: practiceBulkDelete, dialog: practiceDeleteDialog } =
+        useBulkDelete<PracticeListItem>({
+            entitySingular: 'practice',
+            entityPlural: 'practices',
+            onDelete: async (practiceIds) => {
+                const res = await fetch(apiUrl('/practices/bulk/delete'), {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ controlIds }),
+                    body: JSON.stringify({ practiceIds }),
                 });
-                if (!res.ok) throw new Error('Failed to delete controls');
-                await controlsQuery.refetch();
+                if (!res.ok) throw new Error('Failed to delete practices');
+                await practicesQuery.refetch();
             },
         });
     const handleRowSelectionChange = useCallback(
-        (rows: Row<ControlListItem>[]) =>
+        (rows: Row<PracticeListItem>[]) =>
             setRowSelection(
                 Object.fromEntries(rows.map((r) => [r.id, true])),
             ),
@@ -553,22 +553,22 @@ function ControlsPageInner({
 
     // ─── Helpers ───
 
-    const taskStats = useCallback((c: ControlListItem) => {
-        // Unified linked-task counts from `listControls` (TaskLink
-        // CONTROL link OR the controlId FK). Falls back to the legacy
-        // ControlTask relation only if the new fields are absent (older
+    const taskStats = useCallback((c: PracticeListItem) => {
+        // Unified linked-task counts from `listPractices` (TaskLink
+        // CONTROL link OR the practiceId FK). Falls back to the legacy
+        // PracticeTask relation only if the new fields are absent (older
         // cached payload), so the column never regresses to a crash.
-        const total = c.taskTotal ?? c._count?.controlTasks ?? 0;
+        const total = c.taskTotal ?? c._count?.practiceTasks ?? 0;
         const done =
             c.taskDone ??
             // guardrail-ignore: legacy fallback over the row's own array.
-            c.controlTasks?.filter((t) => t.status === 'DONE').length ??
+            c.practiceTasks?.filter((t) => t.status === 'DONE').length ??
             0;
         return { total, done };
     }, []);
 
     // ── Column definitions ──
-    const controlColumns = useMemo(() => createColumns<ControlListItem>([
+    const practiceColumns = useMemo(() => createColumns<PracticeListItem>([
         {
             accessorFn: (c) => c.code || '',
             id: 'code',
@@ -583,8 +583,8 @@ function ControlsPageInner({
             header: t('list.colTitle'),
             cell: ({ row }) => (
                 <TableTitleCell
-                    href={tenantHref(`/controls/${row.original.id}`)}
-                    id={`control-link-${row.original.id}`}
+                    href={tenantHref(`/practices/${row.original.id}`)}
+                    id={`practice-link-${row.original.id}`}
                 >
                     {row.original.name}
                 </TableTitleCell>
@@ -593,13 +593,13 @@ function ControlsPageInner({
         },
         {
             // Framework column — split out of `category` (2026-06-07).
-            // The framework a control belongs to, derived via
-            // `categorizeControl`, as a small uppercase tag.
+            // The framework a practice belongs to, derived via
+            // `categorizePractice`, as a small uppercase tag.
             id: 'framework',
             header: t('list.colFramework'),
-            accessorFn: (c) => categorizeControl(c)?.frameworkLabel || '',
+            accessorFn: (c) => categorizePractice(c)?.frameworkLabel || '',
             cell: ({ row }) => {
-                const label = categorizeControl(row.original)?.frameworkLabel;
+                const label = categorizePractice(row.original)?.frameworkLabel;
                 if (!label) {
                     return <span className="text-xs text-content-subtle">—</span>;
                 }
@@ -612,14 +612,14 @@ function ControlsPageInner({
         },
         {
             // Category badge only — the framework now lives in its own
-            // `framework` column (split 2026-06-07). `categorizeControl`:
+            // `framework` column (split 2026-06-07). `categorizePractice`:
             // ISO 27001 → granular Annex domain; other frameworks → their
             // persisted TSC / section category. No category → `—`.
             id: 'category',
             header: t('list.colCategory'),
-            accessorFn: (c) => categorizeControl(c)?.category || '',
+            accessorFn: (c) => categorizePractice(c)?.category || '',
             cell: ({ row }) => {
-                const cat = categorizeControl(row.original);
+                const cat = categorizePractice(row.original);
                 if (!cat) {
                     return <span className="text-xs text-content-subtle">—</span>;
                 }
@@ -633,8 +633,8 @@ function ControlsPageInner({
                 const c = row.original;
                 // 2026-05-19 — inline-edit dropdown retired. The
                 // cell is now a read-only badge; status changes
-                // route through the per-control detail page (Edit
-                // Control sheet) or the bulk-set toolbar actions
+                // route through the per-practice detail page (Edit
+                // Practice sheet) or the bulk-set toolbar actions
                 // (Mark Implemented / Needs Review / Not Applicable).
                 // Keeping the well-known `#status-pill-{id}` id on
                 // the badge so existing E2E selectors stay valid.
@@ -657,7 +657,7 @@ function ControlsPageInner({
                 const c = row.original;
                 // 2026-05-19 — inline-edit dropdown retired alongside
                 // Status (see comment above). Applicability changes
-                // route through the per-control detail page; the
+                // route through the per-practice detail page; the
                 // justification modal is preserved there. Selector
                 // id `#applicability-pill-{id}` kept for E2E parity.
                 return (
@@ -687,7 +687,7 @@ function ControlsPageInner({
                 return (
                     <span
                         className="inline-flex items-center gap-1.5"
-                        data-testid={`control-owner-${c.id}`}
+                        data-testid={`practice-owner-${c.id}`}
                     >
                         <span
                             aria-hidden
@@ -739,7 +739,7 @@ function ControlsPageInner({
                 return (
                     <span
                         className={`inline-flex items-center gap-1 text-xs ${n > 0 ? 'text-content-emphasis' : 'text-content-subtle'}`}
-                        data-testid={`control-evidence-${row.original.id}`}
+                        data-testid={`practice-evidence-${row.original.id}`}
                     >
                         <Paperclip
                             size={12}
@@ -756,15 +756,15 @@ function ControlsPageInner({
             header: '',
             enableHiding: false,
             cell: ({ row }) => (
-                appPermissions.controls.edit ? (
+                appPermissions.practices.edit ? (
                     <button
                         type="button"
                         aria-label={t('list.quickEditAria')}
                         className="inline-flex h-7 w-7 items-center justify-center rounded-md text-content-muted transition-colors hover:bg-bg-muted hover:text-content-emphasis focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                        data-testid={`control-quick-edit-${row.original.id}`}
+                        data-testid={`practice-quick-edit-${row.original.id}`}
                         onClick={(e) => {
                             e.stopPropagation();
-                            setSheetControlId(row.original.id);
+                            setSheetPracticeId(row.original.id);
                         }}
                     >
                         <AppIcon name="edit" size={14} />
@@ -778,8 +778,8 @@ function ControlsPageInner({
     // header-row selection toolbar (`batchActions`) — the row-select action
     // bar that pops over the column-names row — NOT a right-rail. The
     // selection-summary AsidePanel was removed.
-    const controlBatchActionsArr = [
-        ...(canEditControls
+    const practiceBatchActionsArr = [
+        ...(canEditPractices
             ? [
                   {
                       label: t('list.markImplemented'),
@@ -801,21 +801,21 @@ function ControlsPageInner({
             : []),
         // Delete is ADMIN-gated (the usecase asserts canAdmin), unlike the
         // edit-gated status verbs above.
-        ...(permissions.canAdmin ? [controlBulkDelete] : []),
+        ...(permissions.canAdmin ? [practiceBulkDelete] : []),
     ];
-    const controlBatchActions =
-        controlBatchActionsArr.length > 0 ? controlBatchActionsArr : undefined;
+    const practiceBatchActions =
+        practiceBatchActionsArr.length > 0 ? practiceBatchActionsArr : undefined;
 
-    // Browse rail — category accordion. The loaded controls are
+    // Browse rail — category accordion. The loaded practices are
     // grouped by their framework-native category, derived via
-    // `categorizeControl`: ISO 27001 → granular Annex domain (Access
-    // control, Physical & environmental, Cryptography, …); other
+    // `categorizePractice`: ISO 27001 → granular Annex domain (Access
+    // practice, Physical & environmental, Cryptography, …); other
     // frameworks → their persisted TSC / section category. Each
     // category is a collapsible <Accordion> section TAGGED with the
-    // framework it belongs to; expanding it reveals the controls in
+    // framework it belongs to; expanding it reveals the practices in
     // that category, each carrying a status tag and linking to its
     // detail page. The rail NAVIGATES — it no longer filters the table.
-    // When the tenant's controls span multiple frameworks, each
+    // When the tenant's practices span multiple frameworks, each
     // framework's categories appear as their own tagged groups.
     const categoryGroups = useMemo(() => {
         type Group = {
@@ -823,22 +823,22 @@ function ControlsPageInner({
             frameworkKey: string;
             frameworkLabel: string;
             category: string;
-            controls: ControlListItem[];
+            practices: PracticeListItem[];
         };
         const map = new Map<string, Group>();
-        for (const c of controls) {
-            const cat = categorizeControl(c);
+        for (const c of practices) {
+            const cat = categorizePractice(c);
             if (!cat) continue;
             const key = `${cat.frameworkKey}::${cat.category}`;
             let g = map.get(key);
             if (!g) {
-                g = { key, ...cat, controls: [] };
+                g = { key, ...cat, practices: [] };
                 map.set(key, g);
             }
-            g.controls.push(c);
+            g.practices.push(c);
         }
         // Stable order: framework label A→Z, then the canonical ISO
-        // domain order for ISO groups, then descending control count,
+        // domain order for ISO groups, then descending practice count,
         // then category name as the final tie-break.
         const isoIndex = (name: string) => {
             const i = ISO27001_DOMAIN_ORDER.indexOf(name);
@@ -850,11 +850,11 @@ function ControlsPageInner({
             const ai = isoIndex(a.category);
             const bi = isoIndex(b.category);
             if (ai !== bi) return ai - bi;
-            if (b.controls.length !== a.controls.length)
-                return b.controls.length - a.controls.length;
+            if (b.practices.length !== a.practices.length)
+                return b.practices.length - a.practices.length;
             return a.category.localeCompare(b.category);
         });
-    }, [controls]);
+    }, [practices]);
 
     const railRowClass =
         'flex w-full items-center justify-between gap-tight rounded-md px-2 py-1 text-left text-xs text-content-default hover:bg-bg-muted/50 focus-visible:outline-none focus-visible:bg-bg-muted';
@@ -873,11 +873,11 @@ function ControlsPageInner({
     const browseAside = (
         <AsidePanel
             title={t('list.browse')}
-            surfaceKey="controls-list-browse"
+            surfaceKey="practices-list-browse"
             defaultWidth={480}
-            icon={<AppIcon name="controls" size={16} />}
+            icon={<AppIcon name="practices" size={16} />}
         >
-            <div data-testid="controls-browse-aside" className="space-y-default">
+            <div data-testid="practices-browse-aside" className="space-y-default">
                 {categoryGroups.length === 0 ? (
                     <p className="px-2 py-1 text-xs text-content-subtle">
                         {t('list.noCategorised')}
@@ -901,7 +901,7 @@ function ControlsPageInner({
                                         )
                                     }
                                     className="flex items-center justify-center rounded-md p-1 text-content-muted hover:bg-bg-muted/50 hover:text-content-emphasis focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&_svg]:h-4 [&_svg]:w-4"
-                                    data-testid="controls-browse-expand-all"
+                                    data-testid="practices-browse-expand-all"
                                     aria-label={allExpanded ? t('list.collapseAll') : t('list.expandAll')}
                                     aria-expanded={allExpanded}
                                 >
@@ -943,7 +943,7 @@ function ControlsPageInner({
                                             )}
                                         </span>
                                         <span className="shrink-0 tabular-nums text-content-subtle">
-                                            {g.controls.length}
+                                            {g.practices.length}
                                         </span>
                                     </span>
                                 </AccordionTrigger>
@@ -952,16 +952,16 @@ function ControlsPageInner({
                                         className="flex flex-col gap-0.5 pb-1"
                                         role="list"
                                     >
-                                        {g.controls.map((c) => (
+                                        {g.practices.map((c) => (
                                             <li key={c.id}>
                                                 <button
                                                     type="button"
                                                     className={railRowClass}
-                                                    data-control-id={c.id}
+                                                    data-practice-id={c.id}
                                                     onClick={() =>
                                                         router.push(
                                                             tenantHref(
-                                                                `/controls/${c.id}`,
+                                                                `/practices/${c.id}`,
                                                             ),
                                                         )
                                                     }
@@ -1006,7 +1006,7 @@ function ControlsPageInner({
     );
 
     return (
-        <EntityListPage<ControlListItem>
+        <EntityListPage<PracticeListItem>
             className="animate-fadeIn gap-section"
             aside={composedAside}
             banner={<TruncationBanner truncated={truncated} />}
@@ -1017,12 +1017,12 @@ function ControlsPageInner({
             // narrowing filter).
             tableFooter={
                 <TableLoadMoreFooter
-                    hasMore={hasMoreControls}
-                    visibleCount={visibleControls.length}
-                    totalCount={totalControlsCount}
-                    onLoadMore={loadMoreControls}
-                    resourceName="controls"
-                    testId="tenant-controls-load-more"
+                    hasMore={hasMorePractices}
+                    visibleCount={visiblePractices.length}
+                    totalCount={totalPracticesCount}
+                    onLoadMore={loadMorePractices}
+                    resourceName="practices"
+                    testId="tenant-practices-load-more"
                 />
             }
             header={{
@@ -1033,14 +1033,14 @@ function ControlsPageInner({
                     // page in a perpetual "fetch in flight" state and made
                     // `waitForLoadState('networkidle')` hang for the full
                     // 180s test timeout in every Playwright spec on this
-                    // page (create-control-modal, controls-filter-epic53,
-                    // control-edit-modal, controls-enhanced).
+                    // page (create-practice-modal, practices-filter-epic53,
+                    // practice-edit-modal, practices-enhanced).
                     { label: t('list.breadcrumbDashboard'), href: tenantHref('/dashboard') },
-                    { label: t('list.breadcrumbControls') },
+                    { label: t('list.breadcrumbPractices') },
                 ],
                 title: (
                     <>
-                        <AppIcon name="controls" className="inline-block mr-2 align-text-bottom" />
+                        <AppIcon name="practices" className="inline-block mr-2 align-text-bottom" />
                         {' '}
                         {t('list.title')}
                     </>
@@ -1055,17 +1055,17 @@ function ControlsPageInner({
                     <>
                         {/* Sankey is read-only and informational — keep it
                             outside the create-permission gate so READERs
-                            can still glance at the asset → risk → control
+                            can still glance at the asset → risk → practice
                             flow. */}
-                        {appPermissions.controls.create && (
+                        {appPermissions.practices.create && (
                             <>
                                 <Button
                                     variant="primary"
                                     icon={<Plus className="-ml-0.5 -mr-2.5" />}
-                                    id="new-control-btn"
+                                    id="new-practice-btn"
                                     onClick={() => setIsCreateOpen(true)}
                                 >
-                                    {t('list.addControl')}
+                                    {t('list.addPractice')}
                                 </Button>
                             </>
                         )}
@@ -1091,19 +1091,19 @@ function ControlsPageInner({
                                     | 'default';
                             }
                         > = {
-                            total: { value: totalControls },
+                            total: { value: totalPractices },
                             implemented: {
-                                value: implementedControls,
+                                value: implementedPractices,
                                 tone: 'success',
                             },
                             inProgress: {
-                                value: inProgressControls,
+                                value: inProgressPractices,
                                 tone: 'attention',
                             },
                             notStarted: {
-                                value: notStartedControls,
+                                value: notStartedPractices,
                                 tone:
-                                    notStartedControls > 0
+                                    notStartedPractices > 0
                                         ? 'critical'
                                         : 'default',
                             },
@@ -1117,9 +1117,9 @@ function ControlsPageInner({
                                 value={c.value}
                                 tone={c.tone}
                                 onClick={() =>
-                                    toggleControlKpi(card.id as ControlKpiId)
+                                    togglePracticeKpi(card.id as PracticeKpiId)
                                 }
-                                selected={activeControlKpi === card.id}
+                                selected={activePracticeKpi === card.id}
                             />
                         );
                     })}
@@ -1127,7 +1127,7 @@ function ControlsPageInner({
             }
             filters={{
                 defs: liveFilterDefs,
-                searchId: 'controls-search',
+                searchId: 'practices-search',
                 searchPlaceholder: t('searchPlaceholder'),
                 toolbarActions: (
                     <>
@@ -1141,10 +1141,10 @@ function ControlsPageInner({
                 // table never paints more than the windowed rows at
                 // once. The footer (see `tableFooter` below) handles
                 // progressive disclosure.
-                data: visibleControls,
-                columns: orderColumns(controlColumns),
+                data: visiblePractices,
+                columns: orderColumns(practiceColumns),
                 loading,
-                getRowId: getControlRowId,
+                getRowId: getPracticeRowId,
                 // PR-1 — sortable headers, matching the org-level
                 // tables (with up/down arrow indicators baked into
                 // the shared table primitive).
@@ -1155,9 +1155,9 @@ function ControlsPageInner({
                     setSortBy(nextBy);
                     setSortOrder(nextOrder);
                 },
-                // Epic 68 — Controls page is the canonical opt-out
+                // Epic 68 — Practices page is the canonical opt-out
                 // for auto-virtualization. Per product directive the
-                // existing card scrolling on Controls stays as it is;
+                // existing card scrolling on Practices stays as it is;
                 // bespoke per-row affordances + the JS whole-row clip
                 // depend on the standard <table> layout.
                 virtualize: false,
@@ -1181,45 +1181,45 @@ function ControlsPageInner({
                         title={t('list.emptyTitle')}
                         description={t('list.emptyDesc')}
                         primaryAction={{
-                            label: t('list.createControl'),
+                            label: t('list.createPractice'),
                             onClick: () => setIsCreateOpen(true),
                         }}
                     />
                 ),
-                resourceName: (p) => (p ? 'controls' : 'control'),
+                resourceName: (p) => (p ? 'practices' : 'practice'),
                 columnVisibility,
                 onColumnVisibilityChange: setColumnVisibility,
-                'data-testid': 'controls-table',
+                'data-testid': 'practices-table',
                 className: 'hover:bg-bg-muted',
                 // B1 — selection is page-controlled; the bulk-status verbs
                 // render in the header-row selection toolbar via
                 // `batchActions`. For viewers without edit permission,
                 // selection is left off entirely (no checkboxes, no bar).
-                batchActions: controlBatchActions,
+                batchActions: practiceBatchActions,
                 // Selection (checkboxes) is on whenever there's a batch action —
                 // edit-gated status verbs OR the admin-gated bulk delete.
-                selectedRows: controlBatchActions ? rowSelection : undefined,
-                onRowSelectionChange: controlBatchActions
+                selectedRows: practiceBatchActions ? rowSelection : undefined,
+                onRowSelectionChange: practiceBatchActions
                     ? handleRowSelectionChange
                     : undefined,
             }}
         >
-            {/* Create Control Modal (Epic 54) */}
-            <NewControlModal
+            {/* Create Practice Modal (Epic 54) */}
+            <NewPracticeModal
                 open={isCreateOpen}
                 setOpen={setIsCreateOpen}
                 tenantSlug={tenantSlug}
             />
-            {controlDeleteDialog}
+            {practiceDeleteDialog}
 
-            {/* Control Detail / Edit Sheet (Epic 54) */}
-            <ControlDetailSheet
-                controlId={sheetControlId}
-                setControlId={setSheetControlId}
+            {/* Practice Detail / Edit Sheet (Epic 54) */}
+            <PracticeDetailSheet
+                practiceId={sheetPracticeId}
+                setPracticeId={setSheetPracticeId}
                 tenantSlug={tenantSlug}
                 apiUrl={apiUrl}
                 tenantHref={tenantHref}
-                canWrite={appPermissions.controls.edit}
+                canWrite={appPermissions.practices.edit}
             />
 
         </EntityListPage>

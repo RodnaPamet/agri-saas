@@ -24,7 +24,7 @@ export const SP_IMPORT_MAX_ITEMS = 20;
 export interface SpImportInput {
     connectionId: string;
     items: Array<{ driveId: string; itemId: string; name?: string }>;
-    controlId?: string;
+    practiceId?: string;
     category?: string;
 }
 export interface SpImportResult {
@@ -40,7 +40,7 @@ async function importOne(
     client: SharePointClient,
     connectionId: string,
     sel: { driveId: string; itemId: string; name?: string },
-    target: { controlId?: string; category?: string },
+    target: { practiceId?: string; category?: string },
 ): Promise<string> {
     const item = await client.getItem(sel.driveId, sel.itemId);
     const name = sel.name ?? item.name ?? 'sharepoint-file';
@@ -50,7 +50,7 @@ async function importOne(
 
     const evidence = await uploadEvidenceFile(ctx, file, {
         title: name,
-        controlId: target.controlId ?? null,
+        practiceId: target.practiceId ?? null,
         category: target.category ?? null,
     });
 
@@ -141,7 +141,7 @@ export async function importSharePointItems(
         try {
             evidenceIds.push(
                 await importOne(ctx, client, input.connectionId, sel, {
-                    controlId: input.controlId,
+                    practiceId: input.practiceId,
                     category: input.category,
                 }),
             );

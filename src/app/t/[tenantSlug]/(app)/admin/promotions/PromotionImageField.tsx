@@ -19,7 +19,7 @@
  * entirely (the server validates, it never decodes).
  *
  * The server still re-checks size and the webp magic number, and scans the
- * bytes. This component is ergonomics; it is not the control.
+ * bytes. This component is ergonomics; it is not the practice.
  */
 import { useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';

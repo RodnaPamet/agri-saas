@@ -102,11 +102,11 @@ describe('UploadEvidenceModal — preserved E2E IDs', () => {
     const REQUIRED_PLAIN_IDS = [
         'upload-form',
         'upload-title-input',
-        // Epic 55 Prompt 4: `control-search-input` was removed when the
+        // Epic 55 Prompt 4: `practice-search-input` was removed when the
         // paired input + native <select> was migrated to a searchable
-        // <Combobox>. The Combobox keeps `id="control-select"` (below)
+        // <Combobox>. The Combobox keeps `id="practice-select"` (below)
         // and exposes its own search via cmdk's Command.Input.
-        'control-select',
+        'practice-select',
         'retention-date-input',
         'submit-upload-btn',
         'upload-error',
@@ -137,8 +137,8 @@ describe('UploadEvidenceModal — business contract preserved', () => {
         // After the FileDropzone migration, retention is sent via a
         // separate POST (see `fires the follow-up retention POST` test
         // below) — NOT in the upload's FormData. The upload payload
-        // still carries file + title + controlId.
-        for (const field of ['file', 'title', 'controlId']) {
+        // still carries file + title + practiceId.
+        for (const field of ['file', 'title', 'practiceId']) {
             // Allow for whitespace/newlines between the paren and the
             // field name — prettier may wrap long appends.
             expect(UPLOAD_MODAL_SRC).toMatch(
@@ -226,7 +226,7 @@ describe('UploadEvidenceModal — UX invariants', () => {
 
     it('fieldset disables every field during an in-flight upload', () => {
         // Accept either the legacy mutation.isPending or the dropzone-
-        // era uploadingAll flag — both stop interactive controls
+        // era uploadingAll flag — both stop interactive practices
         // mid-upload.
         expect(UPLOAD_MODAL_SRC).toMatch(
             /<fieldset[\s\S]*?disabled=\{(mutation\.isPending|uploadingAll)\}/,
@@ -316,13 +316,13 @@ describe('EvidenceClient — modal entry points', () => {
         expect(hasText).toBe(false);
     });
 
-    it('mounts <UploadEvidenceModal> with tenant helpers and controls', () => {
+    it('mounts <UploadEvidenceModal> with tenant helpers and practices', () => {
         expect(CLIENT_SRC).toMatch(/<UploadEvidenceModal\b/);
         expect(CLIENT_SRC).toMatch(/open=\{showUpload\}/);
         expect(CLIENT_SRC).toMatch(/setOpen=\{setShowUpload\}/);
         expect(CLIENT_SRC).toMatch(/tenantSlug=\{tenantSlug\}/);
         expect(CLIENT_SRC).toMatch(/apiUrl=\{apiUrl\}/);
-        expect(CLIENT_SRC).toMatch(/controls=\{controls\}/);
+        expect(CLIENT_SRC).toMatch(/practices=\{practices\}/);
     });
 
     it('UI-18: the text + bulk-import modals are no longer mounted in the client', () => {

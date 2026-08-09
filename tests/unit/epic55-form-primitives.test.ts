@@ -168,7 +168,7 @@ describe('Label — contract', () => {
         expect(LABEL_SRC).toMatch(/text-content-emphasis/);
     });
 
-    it('has a peer-disabled rule so disabled controls dim the label', () => {
+    it('has a peer-disabled rule so disabled practices dim the label', () => {
         expect(LABEL_SRC).toMatch(/peer-disabled:/);
     });
 });
@@ -302,12 +302,12 @@ describe('FormField — composition + a11y', () => {
         expect(FIELD_SRC).toMatch(/from ["']\.\/label["']/);
     });
 
-    it('uses React.useId to derive a stable control id', () => {
+    it('uses React.useId to derive a stable practice id', () => {
         expect(FIELD_SRC).toMatch(/React\.useId\(\)/);
     });
 
-    it('links the label to the control via htmlFor', () => {
-        expect(FIELD_SRC).toMatch(/htmlFor=\{controlId\}/);
+    it('links the label to the practice via htmlFor', () => {
+        expect(FIELD_SRC).toMatch(/htmlFor=\{practiceId\}/);
     });
 
     it('chains the aria-describedby with description + error ids', () => {
@@ -316,7 +316,7 @@ describe('FormField — composition + a11y', () => {
         expect(FIELD_SRC).toMatch(/-error/);
     });
 
-    it('sets aria-invalid on the child control when error is present', () => {
+    it('sets aria-invalid on the child practice when error is present', () => {
         expect(FIELD_SRC).toMatch(
             /["']aria-invalid["']:\s*hasError\s*\?\s*true/,
         );

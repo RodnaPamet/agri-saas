@@ -109,7 +109,7 @@ interface ChartLinearGradientProps {
      * Optional alpha applied to BOTH stops via `stop-opacity`.
      * Used for area-under-line fills that need to fade to
      * transparent — combine with a 0% end-stop opacity in a
-     * future PR if more control is needed.
+     * future PR if more practice is needed.
      */
     opacity?: number;
 }

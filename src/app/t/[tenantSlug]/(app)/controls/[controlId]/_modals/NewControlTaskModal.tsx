@@ -1,6 +1,6 @@
 /**
- * Control detail page — Tasks tab — "+ Task" affordance migrates
- * from an inline `<form>` to a modal. Matches the EditControlModal
+ * Practice detail page — Tasks tab — "+ Task" affordance migrates
+ * from an inline `<form>` to a modal. Matches the EditPracticeModal
  * extraction pattern: the page still owns state + mutation, the
  * modal is a thin presentational renderer that takes everything
  * via props.
@@ -19,7 +19,7 @@
  * Why a sibling module under `_modals/`:
  *   The parent page is already 1200+ lines and Next.js skips
  *   `_<dirname>/` so it doesn't treat the file as a route. Same
- *   pattern as EditControlModal — keep extractions adjacent to
+ *   pattern as EditPracticeModal — keep extractions adjacent to
  *   the page they came from.
  */
 'use client';
@@ -31,7 +31,7 @@ import { FormField } from '@/components/ui/form-field';
 import { Modal } from '@/components/ui/modal';
 import { parseYMD, startOfUtcDay, toYMD } from '@/components/ui/date-picker/date-utils';
 
-export interface NewControlTaskModalProps {
+export interface NewPracticeTaskModalProps {
     open: boolean;
     setOpen: (next: boolean) => void;
     /** Bound to the page's task-title state. */
@@ -51,7 +51,7 @@ export interface NewControlTaskModalProps {
     onCancel: () => void;
 }
 
-export function NewControlTaskModal({
+export function NewPracticeTaskModal({
     open,
     setOpen,
     title,
@@ -63,8 +63,8 @@ export function NewControlTaskModal({
     saving,
     onSubmit,
     onCancel,
-}: NewControlTaskModalProps) {
-    const t = useTranslations('controls');
+}: NewPracticeTaskModalProps) {
+    const t = useTranslations('practices');
     return (
         <Modal
             showModal={open}
@@ -84,8 +84,8 @@ export function NewControlTaskModal({
             />
             <Modal.Form
                 onSubmit={onSubmit}
-                id="control-task-create-dialog"
-                data-testid="control-task-create-dialog"
+                id="practice-task-create-dialog"
+                data-testid="practice-task-create-dialog"
             >
                 <Modal.Body>
                     <fieldset className="space-y-default" disabled={saving}>

@@ -35,7 +35,7 @@ export interface UseCursorPaginationOptions<TRow> {
     initialNextCursor: string | null;
     /**
      * Build the fully-formed URL for the next page given the current
-     * cursor. Caller controls cursor encoding (URL-safe by contract;
+     * cursor. Caller practices cursor encoding (URL-safe by contract;
      * encodeURIComponent is the recommended path) and any extra query
      * params (limit, view, etc.).
      */

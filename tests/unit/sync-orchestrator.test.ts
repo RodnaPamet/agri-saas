@@ -63,7 +63,7 @@ export const mockCtx: RequestContext = {
     role: 'ADMIN' as Role,
     permissions: { canRead: true, canWrite: true, canAdmin: true, canAudit: true, canExport: true },
     appPermissions: {
-        controls: { view: true, create: true, edit: true },
+        practices: { view: true, create: true, edit: true },
         evidence: { view: true, upload: true, edit: true, download: true },
         policies: { view: true, create: true, edit: true, approve: true },
         tasks: { view: true, create: true, edit: true, assign: true },

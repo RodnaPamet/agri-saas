@@ -14,7 +14,7 @@
  *      / `placeholder="Entity ID *"` input.
  *
  *   3. Each migrated site mounts `<EntityPicker>` with a stable
- *      testId so E2E specs can find the new control.
+ *      testId so E2E specs can find the new practice.
  *
  *   4. The legacy `linkEntityId` / `linkForm.entityId` /
  *      `subForm.subprocessorVendorId` state shape is preserved —

@@ -9,7 +9,7 @@
  *      tenants for that user
  *   4. Add a third user as ORG_READER → no fan-out
  *   5. Pre-stage a manual ADMIN row in tenant-1 for the ORG_READER
- *      to prove deprovision wouldn't touch it (control)
+ *      to prove deprovision wouldn't touch it (practice)
  *   6. Remove the second user (ORG_ADMIN) → AUDITOR rows for THAT
  *      user are deleted in all 3 tenants; the creator's OWNER rows
  *      and the manual ADMIN row are untouched

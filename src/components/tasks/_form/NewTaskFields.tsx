@@ -33,7 +33,7 @@ import type { NewTaskFormFields, NewTaskFormReturn } from './useNewTaskForm';
 const TYPE_OPTIONS: ComboboxOption[] = [
     { value: 'TASK', label: 'Task' },
     { value: 'AUDIT_FINDING', label: 'Audit Finding' },
-    { value: 'CONTROL_GAP', label: 'Control Gap' },
+    { value: 'CONTROL_GAP', label: 'Practice Gap' },
     { value: 'INCIDENT', label: 'Incident' },
     { value: 'IMPROVEMENT', label: 'Improvement' },
 ];
@@ -51,7 +51,7 @@ const PRIORITY_OPTIONS: ComboboxOption[] = [
     { value: 'P3', label: 'P3 — Low' },
 ];
 const LINK_ENTITY_OPTIONS: ComboboxOption[] = [
-    { value: 'CONTROL', label: 'Control' },
+    { value: 'CONTROL', label: 'Practice' },
     { value: 'FRAMEWORK_REQUIREMENT', label: 'Framework Requirement' },
     { value: 'ASSET', label: 'Asset' },
     { value: 'EVIDENCE', label: 'Evidence' },
@@ -201,15 +201,15 @@ export function NewTaskFields({
                 </FormField>
             </div>
 
-            <FormField label={t('control')}>
+            <FormField label={t('practice')}>
                 <EntityPicker
-                    id="task-control-input"
+                    id="task-practice-input"
                     tenantSlug={tenantSlug}
                     entityType="CONTROL"
-                    value={form.fields.controlId ?? ''}
-                    onChange={(id) => form.setField('controlId', id)}
-                    placeholder={t('controlPlaceholder')}
-                    testId="task-control-picker"
+                    value={form.fields.practiceId ?? ''}
+                    onChange={(id) => form.setField('practiceId', id)}
+                    placeholder={t('practicePlaceholder')}
+                    testId="task-practice-picker"
                 />
             </FormField>
 
@@ -240,25 +240,25 @@ export function NewTaskFields({
                             />
                         </FormField>
                         {form.fields.type === 'CONTROL_GAP' && (
-                            <FormField label={t('controlGapType')}>
+                            <FormField label={t('practiceGapType')}>
                                 <Combobox
                                     id="gap-type-select"
-                                    name="controlGapType"
+                                    name="practiceGapType"
                                     options={GAP_TYPE_OPTIONS}
                                     selected={
                                         GAP_TYPE_OPTIONS.find(
                                             (o) =>
                                                 o.value ===
-                                                form.fields.controlGapType,
+                                                form.fields.practiceGapType,
                                         ) ?? null
                                     }
                                     setSelected={(o) =>
                                         form.setField(
-                                            'controlGapType',
+                                            'practiceGapType',
                                             o?.value ?? '',
                                         )
                                     }
-                                    placeholder={t('controlGapTypePlaceholder')}
+                                    placeholder={t('practiceGapTypePlaceholder')}
                                     hideSearch
                                     matchTriggerWidth
                                     buttonProps={{ className: 'w-full' }}

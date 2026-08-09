@@ -12,7 +12,7 @@
  *   modules that are still live.
  *
  *   Gap C — `enrichWithTenantImplementations` overlays the
- *   tenant's ControlRequirementLink rows onto the gap-analysis
+ *   tenant's PracticeRequirementLink rows onto the gap-analysis
  *   result so the frontend stops having to re-query the link table.
  */
 import * as fs from 'node:fs';
@@ -33,7 +33,7 @@ describe('Audit S9 — Cross-Framework Traceability', () => {
             // Pull the model block out.
             const block = schema.slice(
                 schema.indexOf('model RequirementMapping'),
-                schema.indexOf('model ControlRequirementLink'),
+                schema.indexOf('model PracticeRequirementLink'),
             );
             expect(block).toMatch(
                 /validFrom\s+DateTime\s+@default\(now\(\)\)/,
@@ -85,14 +85,14 @@ describe('Audit S9 — Cross-Framework Traceability', () => {
         });
     });
 
-    describe('Gap C — tenant control-implementation overlay', () => {
+    describe('Gap C — tenant practice-implementation overlay', () => {
         const src = read(
             'src/app-layer/services/cross-framework-traceability.ts',
         );
 
         it('exports the overlay types + function', () => {
             expect(src).toMatch(
-                /export interface TenantControlImplementation/,
+                /export interface TenantPracticeImplementation/,
             );
             expect(src).toMatch(
                 /export interface GapAnalysisEntryWithImplementations/,
@@ -111,7 +111,7 @@ describe('Audit S9 — Cross-Framework Traceability', () => {
             const fnStart = src.indexOf('export function enrichWithTenantImplementations');
             const fnBody = src.slice(fnStart, fnStart + 800);
             expect(fnBody).not.toMatch(/\bprisma\./);
-            expect(fnBody).not.toMatch(/\bdb\.controlRequirementLink/);
+            expect(fnBody).not.toMatch(/\bdb\.practiceRequirementLink/);
             expect(fnBody).not.toMatch(/\.findMany\(/);
         });
 
@@ -119,7 +119,7 @@ describe('Audit S9 — Cross-Framework Traceability', () => {
             const block = src.slice(
                 src.indexOf('export function enrichWithTenantImplementations'),
             );
-            expect(block).toMatch(/new Map<string,\s*TenantControlImplementation/);
+            expect(block).toMatch(/new Map<string,\s*TenantPracticeImplementation/);
             expect(block).toMatch(/byReq\.get\(e\.targetRequirement\.requirementId\)/);
         });
     });

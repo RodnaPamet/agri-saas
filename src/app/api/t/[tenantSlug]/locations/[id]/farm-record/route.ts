@@ -76,7 +76,7 @@ export const POST = withApiErrorHandling(
             headers: {
                 'Content-Type': 'application/pdf',
                 'Content-Disposition': `attachment; filename="${fileName}"`,
-                'Cache-Control': 'no-store',
+                'Cache-Practice': 'no-store',
                 'Content-Length': String(pdfBuffer.length),
             },
         });

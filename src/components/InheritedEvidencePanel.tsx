@@ -2,10 +2,10 @@
 
 /**
  * Read-only evidence list for Asset / Risk detail pages. Evidence
- * attaches only to controls, so an asset/risk inherits it from the
- * controls it is mapped to. This panel fetches the aggregated rows
- * (each tagged with its owning control) and renders them — no
- * add/upload/unlink, since the evidence lives on the control.
+ * attaches only to practices, so an asset/risk inherits it from the
+ * practices it is mapped to. This panel fetches the aggregated rows
+ * (each tagged with its owning practice) and renders them — no
+ * add/upload/unlink, since the evidence lives on the practice.
  */
 import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
@@ -16,7 +16,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { TimestampTooltip } from '@/components/ui/timestamp-tooltip';
 
-interface ControlRef {
+interface PracticeRef {
     id: string;
     code: string | null;
     name: string;
@@ -27,7 +27,7 @@ interface InheritedEvidenceRow {
     type: string;
     status: string | null;
     createdAt: string;
-    control: ControlRef | null;
+    practice: PracticeRef | null;
 }
 
 const STATUS_BADGE: Record<string, StatusBadgeVariant> = {
@@ -95,12 +95,12 @@ export function InheritedEvidencePanel({
                 ),
         },
         {
-            id: 'control',
-            header: t('colControl'),
+            id: 'practice',
+            header: t('colPractice'),
             cell: ({ row }) =>
-                row.original.control ? (
-                    <TableTitleCell href={tenantHref(`/controls/${row.original.control.id}`)}>
-                        {row.original.control.code || row.original.control.name}
+                row.original.practice ? (
+                    <TableTitleCell href={tenantHref(`/practices/${row.original.practice.id}`)}>
+                        {row.original.practice.code || row.original.practice.name}
                     </TableTitleCell>
                 ) : (
                     <span className="text-xs text-content-subtle">—</span>

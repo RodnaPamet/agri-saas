@@ -45,7 +45,7 @@ const API = join(ROOT, 'src/app/api/t/[tenantSlug]');
  */
 const KNOWN_UNFIXED: Readonly<Record<string, readonly string[]>> = {
     assets: ['criticality', 'status', 'type'],
-    controls: ['category', 'ownerUserId', 'status'],
+    practices: ['category', 'ownerUserId', 'status'],
     'farm-tasks': ['assigneeUserId', 'status'],
     journal: ['crop', 'status', 'type'],
     policies: ['category', 'status'],

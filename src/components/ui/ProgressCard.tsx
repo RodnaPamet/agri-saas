@@ -7,7 +7,7 @@
  * @example
  * ```tsx
  * <ProgressCard
- *     label="Control Coverage"
+ *     label="Practice Coverage"
  *     value={75.3}
  *     max={100}
  *     segments={[
@@ -37,7 +37,7 @@ export interface ProgressSegment {
  * PR-A — optional trend line chart rendered below the segment
  * legend. Same shape as `<TrendCard>`'s data prop. Drives the
  * "more informative + visually substantial" requirement on the
- * Control Coverage card without forcing every consumer to grow.
+ * Practice Coverage card without forcing every consumer to grow.
  */
 export interface ProgressCardTrend {
     label: string;
@@ -100,7 +100,7 @@ export default function ProgressCard({
                 and carries a `::after` gloss sheen (a top-down
                 white→transparent CSS ramp) so the filled bar
                 reads as a glossy surface, not a flat painted
-                strip. The Control Coverage ProgressCard is one of
+                strip. The Practice Coverage ProgressCard is one of
                 the dashboard's most-looked-at charts and R18
                 missed it entirely (it polished the SVG chart
                 primitives, not this HTML-div bar). The `::after`

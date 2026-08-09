@@ -25,8 +25,8 @@
  * ```ts
  * import { test, expect } from './fixtures';
  *
- * test('create a control', async ({ authedPage, isolatedTenant }) => {
- *     await authedPage.goto(`/t/${isolatedTenant.tenantSlug}/controls/new`);
+ * test('create a practice', async ({ authedPage, isolatedTenant }) => {
+ *     await authedPage.goto(`/t/${isolatedTenant.tenantSlug}/practices/new`);
  *     // …the tenant is empty; create what you need here.
  * });
  * ```

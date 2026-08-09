@@ -24,8 +24,8 @@ describe('Evidence Bundle Integration', () => {
             expect(existsSync(join(apiBase, '[issueId]/bundles/[bundleId]/items/route.ts'))).toBe(true);
         });
 
-        it('issues-by-control route exists', () => {
-            expect(existsSync(join(apiBase, '../issues/by-control/[controlId]/route.ts'))).toBe(true);
+        it('issues-by-practice route exists', () => {
+            expect(existsSync(join(apiBase, '../issues/by-practice/[practiceId]/route.ts'))).toBe(true);
         });
     });
 

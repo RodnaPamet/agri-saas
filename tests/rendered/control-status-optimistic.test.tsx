@@ -1,7 +1,7 @@
 /**
- * Epic 69 pilot #2 — control-status optimistic mutation behaviour.
+ * Epic 69 pilot #2 — practice-status optimistic mutation behaviour.
  *
- * The control detail page used to flip `control.status` via
+ * The practice detail page used to flip `practice.status` via
  * `fetch(POST) → await refetch() → invalidateQueries(list)`. The
  * badge stayed on the OLD value for the entire round-trip, which
  * produced the "did the click land?" UX problem on slow networks.
@@ -12,7 +12,7 @@
  * having to mount the full 1300-line page:
  *
  *   1. **Optimistic apply.** As soon as `trigger({ status: NEW })`
- *      fires, every `useTenantSWR(CACHE_KEYS.controls.pageData(id))`
+ *      fires, every `useTenantSWR(CACHE_KEYS.practices.pageData(id))`
  *      consumer re-renders with the predicted status — synchronously,
  *      before the API responds.
  *
@@ -27,9 +27,9 @@
  *      may differ from the optimistic prediction in the corner
  *      case where the server applied additional side effects).
  *
- * The test exercises a tiny `<StatusControl>` harness that mirrors
+ * The test exercises a tiny `<StatusPractice>` harness that mirrors
  * the real component shape — read via `useTenantSWR` against
- * `CACHE_KEYS.controls.pageData(id)`, write via `useTenantMutation`.
+ * `CACHE_KEYS.practices.pageData(id)`, write via `useTenantMutation`.
  * Pinning the contract here, instead of mounting the whole detail
  * page, keeps the test fast and the assertions targeted at exactly
  * the migration behaviour.
@@ -52,13 +52,13 @@ import { CACHE_KEYS } from '@/lib/swr-keys';
 
 // ── Fixtures ───────────────────────────────────────────────────────────
 
-interface ControlPageDataDTO {
-    control: { id: string; name: string; status: string };
+interface PracticePageDataDTO {
+    practice: { id: string; name: string; status: string };
     syncStatus: null;
 }
 
-const buildPayload = (status: string): ControlPageDataDTO => ({
-    control: { id: 'ctrl-1', name: 'Access logging', status },
+const buildPayload = (status: string): PracticePageDataDTO => ({
+    practice: { id: 'ctrl-1', name: 'Access logging', status },
     syncStatus: null,
 });
 
@@ -92,19 +92,19 @@ function makeWrapper() {
 // renders only the status badge + a button per status so the test
 // can assert badge text changes without dragging the whole page in.
 
-function StatusControl({ controlId }: { controlId: string }) {
-    const key = CACHE_KEYS.controls.pageData(controlId);
-    const read = useTenantSWR<ControlPageDataDTO>(key);
+function StatusPractice({ practiceId }: { practiceId: string }) {
+    const key = CACHE_KEYS.practices.pageData(practiceId);
+    const read = useTenantSWR<PracticePageDataDTO>(key);
 
     const mutation = useTenantMutation<
-        ControlPageDataDTO,
+        PracticePageDataDTO,
         { status: string },
         unknown
     >({
         key,
         mutationFn: async ({ status }) => {
             const res = await fetch(
-                `/api/t/acme/controls/${controlId}/status`,
+                `/api/t/acme/practices/${practiceId}/status`,
                 {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -116,15 +116,15 @@ function StatusControl({ controlId }: { controlId: string }) {
         },
         optimisticUpdate: (current, { status }) =>
             current
-                ? { ...current, control: { ...current.control, status } }
-                : (current as unknown as ControlPageDataDTO),
-        invalidate: [CACHE_KEYS.controls.list()],
+                ? { ...current, practice: { ...current.practice, status } }
+                : (current as unknown as PracticePageDataDTO),
+        invalidate: [CACHE_KEYS.practices.list()],
     });
 
     return (
         <div>
             <span data-testid="status-badge">
-                {read.data?.control.status ?? '...'}
+                {read.data?.practice.status ?? '...'}
             </span>
             {['NOT_STARTED', 'IN_PROGRESS', 'IMPLEMENTED'].map((s) => (
                 <button
@@ -146,7 +146,7 @@ function StatusControl({ controlId }: { controlId: string }) {
 
 // ── Tests ──────────────────────────────────────────────────────────────
 
-describe('Control status — optimistic mutation lifecycle', () => {
+describe('Practice status — optimistic mutation lifecycle', () => {
     it('flips the badge synchronously on click before the POST resolves (optimistic apply)', async () => {
         // Initial GET returns NOT_STARTED.
         fetchMock.mockResolvedValueOnce({
@@ -177,7 +177,7 @@ describe('Control status — optimistic mutation lifecycle', () => {
             json: async () => buildPayload('IMPLEMENTED'),
         });
 
-        render(<StatusControl controlId="ctrl-1" />, { wrapper: makeWrapper() });
+        render(<StatusPractice practiceId="ctrl-1" />, { wrapper: makeWrapper() });
 
         await waitFor(() =>
             expect(screen.getByTestId('status-badge').textContent).toBe(
@@ -215,7 +215,7 @@ describe('Control status — optimistic mutation lifecycle', () => {
             json: async () => ({ error: 'upstream 500' }),
         });
 
-        render(<StatusControl controlId="ctrl-1" />, { wrapper: makeWrapper() });
+        render(<StatusPractice practiceId="ctrl-1" />, { wrapper: makeWrapper() });
 
         await waitFor(() =>
             expect(screen.getByTestId('status-badge').textContent).toBe(
@@ -255,7 +255,7 @@ describe('Control status — optimistic mutation lifecycle', () => {
             json: async () => buildPayload('IN_PROGRESS_2'),
         });
 
-        render(<StatusControl controlId="ctrl-1" />, { wrapper: makeWrapper() });
+        render(<StatusPractice practiceId="ctrl-1" />, { wrapper: makeWrapper() });
 
         await waitFor(() =>
             expect(screen.getByTestId('status-badge').textContent).toBe(

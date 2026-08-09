@@ -38,12 +38,12 @@ describe('useFormTelemetry', () => {
     it('emits `submit` with durationMs + fields', () => {
         const { result } = renderHook(() => useFormTelemetry('Demo'));
         act(() => {
-            result.current.trackSubmit({ controlId: 'abc' });
+            result.current.trackSubmit({ practiceId: 'abc' });
         });
         const submit = events.find((e) => e.type === 'submit');
         expect(submit).toBeDefined();
         expect(submit?.surface).toBe('Demo');
-        expect(submit?.fields).toEqual({ controlId: 'abc' });
+        expect(submit?.fields).toEqual({ practiceId: 'abc' });
         expect(typeof submit?.durationMs).toBe('number');
     });
 

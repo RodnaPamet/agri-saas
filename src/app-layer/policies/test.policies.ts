@@ -1,5 +1,5 @@
 /**
- * Control Test RBAC policies.
+ * Practice Test RBAC policies.
  */
 import { RequestContext } from '../types';
 import { forbidden } from '@/lib/errors/types';

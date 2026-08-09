@@ -8,7 +8,7 @@
  *   - Single-select closes on commit; multi-select stays open and toggles.
  *   - `invalid` prop paints the error-border class on the trigger.
  *   - `aria-haspopup`, `aria-expanded`, `aria-invalid`, and
- *     `aria-controls` flow through from Radix + our Combobox wiring.
+ *     `aria-practices` flow through from Radix + our Combobox wiring.
  *   - axe-core finds zero WCAG 2.1 AA violations on the opened picker.
  */
 

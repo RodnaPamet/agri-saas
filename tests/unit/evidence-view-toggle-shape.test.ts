@@ -3,7 +3,7 @@
  *
  * The toggle is in URL-only state via `useUrlFilters(['tab', 'view'])`,
  * NOT in `filterCtx`. Switching list ↔ gallery therefore cannot
- * disturb the filter state (`q` / `type` / `status` / `controlId` /
+ * disturb the filter state (`q` / `type` / `status` / `practiceId` /
  * retention pills) because both renderers consume the SAME
  * `displayEvidence` array which is computed off `filterCtx`.
  *
@@ -40,7 +40,7 @@ describe('Epic 43.2 — view toggle wiring', () => {
     it('extends useUrlFilters to include the view selector (alongside tab)', () => {
         // useUrlFilters now manages BOTH tab and view — the view value
         // flips the renderer, the tab value flips the retention slice.
-        // Filter pills (q / type / status / controlId) live in
+        // Filter pills (q / type / status / practiceId) live in
         // `filterCtx` and aren't touched by either.
         expect(src).toMatch(/useUrlFilters\(\[['"]tab['"],\s*['"]view['"]\]\)/);
     });

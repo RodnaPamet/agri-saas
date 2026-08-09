@@ -15,7 +15,7 @@
  *     consumers is one of xyflow's common failure modes.
  *   - Keeps the `<ReactFlowProvider>` mounting at one place so
  *     downstream hooks (`useReactFlow`, `useUpdateNodeInternals`)
- *     can be used freely by the palette / control overlays.
+ *     can be used freely by the palette / practice overlays.
  *
  * Why `'use client'` + dynamic import in the page: xyflow uses
  * browser-only APIs (ResizeObserver, getBoundingClientRect on
@@ -114,7 +114,7 @@ function ProcessCanvasInner({
     const onConnect = useCallback<OnConnect>(
         (connection: Connection) =>
             // R25-PR-D — new connections render with the custom
-            // ProcessEdge (bezier stroke + optional control-on-edge
+            // ProcessEdge (bezier stroke + optional practice-on-edge
             // overlay). Without the explicit `type`, xyflow falls
             // back to the default thin grey edge.
             setEdges((eds) =>
@@ -230,7 +230,7 @@ export interface ProcessCanvasProps {
 export function ProcessCanvas(props: ProcessCanvasProps) {
     // ReactFlowProvider must wrap any consumer of `useReactFlow`.
     // The page mounts this single provider at the top; downstream
-    // PRs (custom nodes, control overlays) can use the hook for
+    // PRs (custom nodes, practice overlays) can use the hook for
     // free.
     return (
         <ReactFlowProvider>

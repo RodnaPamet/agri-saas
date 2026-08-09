@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * PR-2 — `<OrgWorkspaceSwitcher>` — context-switching control for
+ * PR-2 — `<OrgWorkspaceSwitcher>` — context-switching practice for
  * org pages.
  *
  * The tenant variant of the chrome already mounts

@@ -66,7 +66,7 @@ export interface AsidePanelProps {
     /**
      * Stable key for this rail surface. The expand/collapse state and
      * the width are persisted under `aside:collapsed:<surfaceKey>` /
-     * `aside:width:<surfaceKey>` so each surface (a control detail
+     * `aside:width:<surfaceKey>` so each surface (a practice detail
      * page, the risks list, …) remembers independently. It also
      * doubles as the `?aside=<surfaceKey>` deep-link target.
      */
@@ -89,7 +89,7 @@ export interface AsidePanelProps {
     /**
      * Initial expanded width (px) before the user has dragged a
      * preference for this `surfaceKey`. Clamped to [MIN_WIDTH,
-     * MAX_WIDTH]. Use for a content-dense rail (e.g. the controls
+     * MAX_WIDTH]. Use for a content-dense rail (e.g. the practices
      * category browser) that wants more room than the 320px default.
      * Once the user resizes, that choice persists and wins.
      */
@@ -122,7 +122,7 @@ export function AsidePanel({
     // ── Deep link ──────────────────────────────────────────────────
     // `?aside=<surfaceKey>` force-expands this panel once on arrival,
     // so a teammate's shared link can open a specific rail. One-shot
-    // (a ref guards re-runs): after it fires the user controls the
+    // (a ref guards re-runs): after it fires the user practices the
     // panel normally and the param never round-trips back into the
     // URL — collapse state stays localStorage-only by design.
     const searchParams = useSearchParams();

@@ -5,7 +5,7 @@
  * wizard. The architectural decision worth pinning is the two-phase
  * step completion: lightweight DB writes inside a transaction +
  * heavy automation (e.g. installing framework packs with hundreds of
- * controls) AFTER the transaction commits. A regression that pulled
+ * practices) AFTER the transaction commits. A regression that pulled
  * the automation back inside the transaction would trip Prisma's
  * 5-second interactive-tx timeout under load.
  *
@@ -212,7 +212,7 @@ describe('checkCompletionCriteria — pure function', () => {
             { FRAMEWORK_SELECTION: { selectedFrameworks: ['ISO27001'] } },
         );
         expect(issues).toEqual(expect.arrayContaining([
-            expect.stringMatching(/Control baseline install/),
+            expect.stringMatching(/Practice baseline install/),
         ]));
     });
 
@@ -223,7 +223,7 @@ describe('checkCompletionCriteria — pure function', () => {
             { FRAMEWORK_SELECTION: { selectedFrameworks: [] } },
         );
         // Regression: a refactor that flagged this case would force
-        // the user to install controls for frameworks they explicitly
+        // the user to install practices for frameworks they explicitly
         // chose NOT to select — a UX regression.
         expect(issues).toEqual([]);
     });

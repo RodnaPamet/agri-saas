@@ -24,7 +24,7 @@ describe('toPlainJson', () => {
             count: 42,
             active: true,
             tags: ['a', 'b'],
-            meta: { kind: 'control', score: 7.5 },
+            meta: { kind: 'practice', score: 7.5 },
         };
         const out = toPlainJson(input);
         expect(out).toEqual(input);
@@ -88,7 +88,7 @@ describe('toPlainJson', () => {
         // shape-preserving round-trip.
         const rows = [
             {
-                controlId: 'c-1',
+                practiceId: 'c-1',
                 tenantId: 't-1',
                 tenantSlug: 'alpha',
                 tenantName: 'Alpha Co',
@@ -96,10 +96,10 @@ describe('toPlainJson', () => {
                 code: 'AC-1',
                 status: 'NOT_STARTED',
                 updatedAt: '2026-04-25T10:00:00.000Z',
-                drillDownUrl: '/t/alpha/controls/c-1',
+                drillDownUrl: '/t/alpha/practices/c-1',
             },
             {
-                controlId: 'c-2',
+                practiceId: 'c-2',
                 tenantId: 't-2',
                 tenantSlug: 'beta',
                 tenantName: 'Beta Co',
@@ -107,7 +107,7 @@ describe('toPlainJson', () => {
                 code: null,
                 status: 'NEEDS_REVIEW',
                 updatedAt: '2026-04-25T11:00:00.000Z',
-                drillDownUrl: '/t/beta/controls/c-2',
+                drillDownUrl: '/t/beta/practices/c-2',
             },
         ];
         const out = toPlainJson(rows);

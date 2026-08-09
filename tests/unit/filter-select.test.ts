@@ -331,7 +331,7 @@ describe('FilterSelect — component public contract', () => {
 
     it('is config-driven — no page-specific filter keys hardcoded in the source', () => {
         // Guard against someone smuggling in entity-specific logic.
-        for (const token of ['controls', 'risks', 'policies', 'vendors', 'evidence', 'tasks']) {
+        for (const token of ['practices', 'risks', 'policies', 'vendors', 'evidence', 'tasks']) {
             // Allow the literal word in comments, but not as a hardcoded key branch.
             expect(SELECT_SRC).not.toMatch(
                 new RegExp(`(selectedFilterKey|filter\\.key)\\s*===\\s*['\"]${token}['\"]`),

@@ -13,7 +13,7 @@ export interface DashboardStats {
     // ── Entity totals ──
     assets: number;
     risks: number;
-    controls: number;
+    practices: number;
     evidence: number;
     openTasks: number;
     openFindings: number;
@@ -57,13 +57,13 @@ export interface RiskByStatus {
 }
 
 /**
- * Control coverage metrics.
+ * Practice coverage metrics.
  *
- * "Coverage" = the percentage of applicable controls that have reached
- * IMPLEMENTED status. Controls marked NOT_APPLICABLE (via the
+ * "Coverage" = the percentage of applicable practices that have reached
+ * IMPLEMENTED status. Practices marked NOT_APPLICABLE (via the
  * applicability field) are excluded from the denominator.
  */
-export interface ControlCoverage {
+export interface PracticeCoverage {
     total: number;
     applicable: number;
     implemented: number;
@@ -76,9 +76,9 @@ export interface ControlCoverage {
 }
 
 /**
- * Control status distribution — for pie/bar charts.
+ * Practice status distribution — for pie/bar charts.
  */
-export interface ControlByStatus {
+export interface PracticeByStatus {
     status: string;
     count: number;
 }
@@ -188,8 +188,8 @@ export interface TreatmentPlanSummary {
  */
 export interface ExecutiveDashboardPayload {
     stats: DashboardStats;
-    controlCoverage: ControlCoverage;
-    controlsByStatus: ControlByStatus[];
+    practiceCoverage: PracticeCoverage;
+    practicesByStatus: PracticeByStatus[];
     riskBySeverity: RiskBySeverity;
     riskByStatus: RiskByStatus;
     evidenceExpiry: EvidenceExpiry;
@@ -216,21 +216,21 @@ export class DashboardRepository {
      */
 
     /**
-     * Control coverage — the executive KPI.
+     * Practice coverage — the executive KPI.
      *
-     * Coverage % = (IMPLEMENTED controls / applicable controls) × 100
+     * Coverage % = (IMPLEMENTED practices / applicable practices) × 100
      *
      * Uses groupBy aggregation to count all statuses in a single query.
-     * Controls with applicability NOT_APPLICABLE are excluded.
-     * Soft-deleted controls are excluded.
+     * Practices with applicability NOT_APPLICABLE are excluded.
+     * Soft-deleted practices are excluded.
      *
      * Query: 1 groupBy (single DB round trip)
      */
-    static async getControlCoverage(db: PrismaTx, ctx: RequestContext): Promise<ControlCoverage> {
+    static async getPracticeCoverage(db: PrismaTx, ctx: RequestContext): Promise<PracticeCoverage> {
         const tenantId = ctx.tenantId;
 
-        // Group applicable, non-deleted controls by status
-        const groups = await db.control.groupBy({
+        // Group applicable, non-deleted practices by status
+        const groups = await db.practice.groupBy({
             by: ['status'],
             where: {
                 OR: [{ tenantId }, { tenantId: null }],
@@ -254,7 +254,7 @@ export class DashboardRepository {
         const needsReview = statusCounts['NEEDS_REVIEW'] ?? 0;
 
         // Total including not-applicable (for reference)
-        const total = await db.control.count({
+        const total = await db.practice.count({
             where: {
                 OR: [{ tenantId }, { tenantId: null }],
                 deletedAt: null,
@@ -278,12 +278,12 @@ export class DashboardRepository {
     }
 
     /**
-     * Controls grouped by status — for visualization.
+     * Practices grouped by status — for visualization.
      *
      * Query: 1 groupBy
      */
-    static async getControlsByStatus(db: PrismaTx, ctx: RequestContext): Promise<ControlByStatus[]> {
-        const groups = await db.control.groupBy({
+    static async getPracticesByStatus(db: PrismaTx, ctx: RequestContext): Promise<PracticeByStatus[]> {
+        const groups = await db.practice.groupBy({
             by: ['status'],
             where: {
                 OR: [{ tenantId: ctx.tenantId }, { tenantId: null }],

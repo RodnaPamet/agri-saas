@@ -6,7 +6,7 @@
  *      tenant-scoped React Query key, projects them into Combobox
  *      options, and exposes a narrow single-vs-multi API.
  *   2. Three free-text UUID inputs are gone — replaced by UserCombobox:
- *        a. ControlDetailSheet   (#sheet-owner-input)
+ *        a. PracticeDetailSheet   (#sheet-owner-input)
  *        b. NewTaskPage          (#task-assignee-input)
  *        c. TaskDetailPage       (#task-assignee-input)
  *   3. Tenant safety: the shared queryKeys.members entry is namespaced
@@ -25,7 +25,7 @@ function read(rel: string): string {
 const USER_COMBO_SRC = read('src/components/ui/user-combobox.tsx');
 const QUERY_KEYS_SRC = read('src/lib/queryKeys.ts');
 const SHEET_SRC = read(
-    'src/app/t/[tenantSlug]/(app)/controls/ControlDetailSheet.tsx',
+    'src/app/t/[tenantSlug]/(app)/practices/PracticeDetailSheet.tsx',
 );
 // Modal-form P1 (2026-05-24) — `tasks/new/page.tsx` was decomposed
 // into page wrapper + `_form/useNewTaskForm.ts` + `_form/NewTaskFields.tsx`.
@@ -175,9 +175,9 @@ describe('queryKeys.members — tenant scoping', () => {
     });
 });
 
-// ─── 3. ControlDetailSheet — owner picker migration ─────────────
+// ─── 3. PracticeDetailSheet — owner picker migration ─────────────
 
-describe('ControlDetailSheet — owner UserCombobox', () => {
+describe('PracticeDetailSheet — owner UserCombobox', () => {
     it('imports UserCombobox + FormField', () => {
         expect(SHEET_SRC).toMatch(
             /from ["']@\/components\/ui\/user-combobox["']/,
@@ -312,7 +312,7 @@ describe('TaskDetailPage — inline assign UserCombobox', () => {
 // ─── 6. Drift sentinel — no regression in payload contract ──────
 
 describe('Epic 55 Prompt 5 — payload contracts preserved', () => {
-    it('ControlDetailSheet still POSTs ownerUserId to /controls/:id/owner', () => {
+    it('PracticeDetailSheet still POSTs ownerUserId to /practices/:id/owner', () => {
         expect(SHEET_SRC).toMatch(
             /ownerUserId:\s*draft\.owner\.trim\(\)\s*\|\|\s*null/,
         );

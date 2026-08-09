@@ -125,7 +125,7 @@ describe("Typography eradication ratchet", () => {
         .map((o) => `  ${o.file}:${o.line}  ${o.match}`)
         .join("\n");
       throw new Error(
-        `Found ${offenders.length} inline heading(s). Use <Heading level={1|2|3}> / <Eyebrow> / <Caption> from @/components/ui/typography instead.\n\nFirst ${Math.min(20, offenders.length)} offender(s):\n${sample}\n\nIf the heading genuinely needs raw-class control (print view, dark-themed onboarding background), add it to EXEMPT_FILES with a written reason.`,
+        `Found ${offenders.length} inline heading(s). Use <Heading level={1|2|3}> / <Eyebrow> / <Caption> from @/components/ui/typography instead.\n\nFirst ${Math.min(20, offenders.length)} offender(s):\n${sample}\n\nIf the heading genuinely needs raw-class practice (print view, dark-themed onboarding background), add it to EXEMPT_FILES with a written reason.`,
       );
     }
     expect(offenders).toHaveLength(0);

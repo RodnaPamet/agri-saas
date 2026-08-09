@@ -30,7 +30,7 @@ interface DownloadBasemapButtonProps {
     className?: string;
     /**
      * Render just the download icon (no text label). The label still names
-     * the control via `aria-label`, so screen readers + the button-name a11y
+     * the practice via `aria-label`, so screen readers + the button-name a11y
      * rule are satisfied. Used where the button sits in a compact action row
      * (e.g. the location-detail header).
      */

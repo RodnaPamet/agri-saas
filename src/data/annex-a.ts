@@ -1,7 +1,7 @@
 /**
  * @deprecated — LEGACY HARDCODED ANNEX A DATA
  *
- * This file is retained as reference data. The primary source for Annex A controls
+ * This file is retained as reference data. The primary source for Annex A practices
  * is now the YAML library at `src/data/libraries/iso27001-2022.yaml`.
  *
  * New code should use `getLibraryByRefId('ISO27001-2022')` from `@/app-layer/libraries`.
@@ -10,18 +10,18 @@
  * once migration validation is complete.
  *
  * Original description:
- * ISO 27001:2022 Annex A Control Library — ORIGINAL paraphrases.
+ * ISO 27001:2022 Annex A Practice Library — ORIGINAL paraphrases.
  * IDs follow the standard numbering; descriptions are NOT verbatim ISO text.
  */
-export interface AnnexAControl {
+export interface AnnexAPractice {
     annexId: string;
     name: string;
     intent: string;
     category: string;
 }
 
-export const ANNEX_A_CONTROLS: AnnexAControl[] = [
-    // A.5 — Organizational controls
+export const ANNEX_A_CONTROLS: AnnexAPractice[] = [
+    // A.5 — Organizational practices
     { annexId: 'A.5.1', name: 'Information Security Policies', intent: 'Establish and maintain a set of policies for information security, approved by management and communicated to relevant parties. (Paraphrase)', category: 'Organizational' },
     { annexId: 'A.5.2', name: 'Information Security Roles', intent: 'Define and assign information security roles and responsibilities to ensure accountability. (Paraphrase)', category: 'Organizational' },
     { annexId: 'A.5.3', name: 'Segregation of Duties', intent: 'Separate conflicting duties to reduce unauthorized or unintended modification or misuse of assets. (Paraphrase)', category: 'Organizational' },
@@ -36,9 +36,9 @@ export const ANNEX_A_CONTROLS: AnnexAControl[] = [
     { annexId: 'A.5.12', name: 'Classification of Information', intent: 'Classify information according to its sensitivity and criticality to the organization. (Paraphrase)', category: 'Organizational' },
     { annexId: 'A.5.13', name: 'Labelling of Information', intent: 'Develop procedures for labelling information in line with the classification scheme. (Paraphrase)', category: 'Organizational' },
     { annexId: 'A.5.14', name: 'Information Transfer', intent: 'Protect information during transfer between entities using appropriate security measures. (Paraphrase)', category: 'Organizational' },
-    { annexId: 'A.5.15', name: 'Access Control', intent: 'Establish and enforce rules to control logical and physical access to information. (Paraphrase)', category: 'Organizational' },
+    { annexId: 'A.5.15', name: 'Access Control', intent: 'Establish and enforce rules to practice logical and physical access to information. (Paraphrase)', category: 'Organizational' },
     { annexId: 'A.5.16', name: 'Identity Management', intent: 'Manage the full lifecycle of identities to ensure proper access. (Paraphrase)', category: 'Organizational' },
-    { annexId: 'A.5.17', name: 'Authentication Information', intent: 'Control the allocation and management of authentication credentials. (Paraphrase)', category: 'Organizational' },
+    { annexId: 'A.5.17', name: 'Authentication Information', intent: 'Practice the allocation and management of authentication credentials. (Paraphrase)', category: 'Organizational' },
     { annexId: 'A.5.18', name: 'Access Rights', intent: 'Provision, review, and revoke access rights in accordance with policy. (Paraphrase)', category: 'Organizational' },
     { annexId: 'A.5.19', name: 'Supplier Relationships Security', intent: 'Define and implement processes to manage security risks from supplier relationships. (Paraphrase)', category: 'Organizational' },
     { annexId: 'A.5.20', name: 'Supplier Agreements Security', intent: 'Include relevant security requirements in agreements with suppliers. (Paraphrase)', category: 'Organizational' },
@@ -48,7 +48,7 @@ export const ANNEX_A_CONTROLS: AnnexAControl[] = [
     { annexId: 'A.5.24', name: 'Incident Management Planning', intent: 'Plan and prepare for managing information security incidents effectively. (Paraphrase)', category: 'Organizational' },
     { annexId: 'A.5.25', name: 'Incident Assessment & Decision', intent: 'Assess security events and decide whether to classify them as incidents. (Paraphrase)', category: 'Organizational' },
     { annexId: 'A.5.26', name: 'Incident Response', intent: 'Respond to information security incidents according to documented procedures. (Paraphrase)', category: 'Organizational' },
-    { annexId: 'A.5.27', name: 'Learning from Incidents', intent: 'Use knowledge gained from incidents to strengthen security controls. (Paraphrase)', category: 'Organizational' },
+    { annexId: 'A.5.27', name: 'Learning from Incidents', intent: 'Use knowledge gained from incidents to strengthen security practices. (Paraphrase)', category: 'Organizational' },
     { annexId: 'A.5.28', name: 'Evidence Collection', intent: 'Establish procedures for collecting and preserving evidence related to incidents. (Paraphrase)', category: 'Organizational' },
     { annexId: 'A.5.29', name: 'Disruption Preparedness', intent: 'Plan for maintaining information security during disruptions to business operations. (Paraphrase)', category: 'Organizational' },
     { annexId: 'A.5.30', name: 'ICT Readiness for Business Continuity', intent: 'Ensure ICT readiness to support business operations during and after disruption. (Paraphrase)', category: 'Organizational' },
@@ -60,7 +60,7 @@ export const ANNEX_A_CONTROLS: AnnexAControl[] = [
     { annexId: 'A.5.36', name: 'Compliance with Policies & Standards', intent: 'Ensure compliance with established information security policies, rules, and standards. (Paraphrase)', category: 'Organizational' },
     { annexId: 'A.5.37', name: 'Documented Operating Procedures', intent: 'Document and make available operating procedures for information processing facilities. (Paraphrase)', category: 'Organizational' },
 
-    // A.6 — People controls
+    // A.6 — People practices
     { annexId: 'A.6.1', name: 'Screening', intent: 'Conduct background verification checks on personnel before and during employment. (Paraphrase)', category: 'People' },
     { annexId: 'A.6.2', name: 'Terms of Employment', intent: 'Include information security responsibilities in employment agreements. (Paraphrase)', category: 'People' },
     { annexId: 'A.6.3', name: 'Security Awareness & Training', intent: 'Ensure personnel receive appropriate awareness education and training on security policies. (Paraphrase)', category: 'People' },
@@ -70,9 +70,9 @@ export const ANNEX_A_CONTROLS: AnnexAControl[] = [
     { annexId: 'A.6.7', name: 'Remote Working', intent: 'Implement security measures for persons working remotely to protect information. (Paraphrase)', category: 'People' },
     { annexId: 'A.6.8', name: 'Security Event Reporting', intent: 'Provide a mechanism for personnel to report observed security events and weaknesses. (Paraphrase)', category: 'People' },
 
-    // A.7 — Physical controls
+    // A.7 — Physical practices
     { annexId: 'A.7.1', name: 'Physical Security Perimeters', intent: 'Define and use security perimeters to protect areas containing information and assets. (Paraphrase)', category: 'Physical' },
-    { annexId: 'A.7.2', name: 'Physical Entry Controls', intent: 'Protect secure areas with appropriate entry controls to allow only authorized access. (Paraphrase)', category: 'Physical' },
+    { annexId: 'A.7.2', name: 'Physical Entry Practices', intent: 'Protect secure areas with appropriate entry practices to allow only authorized access. (Paraphrase)', category: 'Physical' },
     { annexId: 'A.7.3', name: 'Securing Offices & Facilities', intent: 'Design and apply physical security for offices, rooms, and facilities. (Paraphrase)', category: 'Physical' },
     { annexId: 'A.7.4', name: 'Physical Security Monitoring', intent: 'Continuously monitor premises for unauthorized physical access. (Paraphrase)', category: 'Physical' },
     { annexId: 'A.7.5', name: 'Environmental Threats Protection', intent: 'Design protection against natural disasters and physical environmental threats. (Paraphrase)', category: 'Physical' },
@@ -86,14 +86,14 @@ export const ANNEX_A_CONTROLS: AnnexAControl[] = [
     { annexId: 'A.7.13', name: 'Equipment Maintenance', intent: 'Maintain equipment correctly to ensure continued availability and integrity. (Paraphrase)', category: 'Physical' },
     { annexId: 'A.7.14', name: 'Secure Equipment Disposal', intent: 'Securely dispose of or re-use equipment containing storage media. (Paraphrase)', category: 'Physical' },
 
-    // A.8 — Technological controls
+    // A.8 — Technological practices
     { annexId: 'A.8.1', name: 'User Endpoint Devices', intent: 'Protect information stored on, processed by, or accessible via user endpoint devices. (Paraphrase)', category: 'Technological' },
     { annexId: 'A.8.2', name: 'Privileged Access Rights', intent: 'Restrict and manage the allocation and use of privileged access rights. (Paraphrase)', category: 'Technological' },
     { annexId: 'A.8.3', name: 'Information Access Restriction', intent: 'Restrict access to information and application functions in accordance with access control policy. (Paraphrase)', category: 'Technological' },
     { annexId: 'A.8.4', name: 'Source Code Access', intent: 'Manage access to source code, development tools, and software libraries appropriately. (Paraphrase)', category: 'Technological' },
     { annexId: 'A.8.5', name: 'Secure Authentication', intent: 'Implement secure authentication technologies and procedures. (Paraphrase)', category: 'Technological' },
     { annexId: 'A.8.6', name: 'Capacity Management', intent: 'Monitor and adjust resource usage to ensure required system capacity. (Paraphrase)', category: 'Technological' },
-    { annexId: 'A.8.7', name: 'Malware Protection', intent: 'Implement detection, prevention, and recovery controls for malware. (Paraphrase)', category: 'Technological' },
+    { annexId: 'A.8.7', name: 'Malware Protection', intent: 'Implement detection, prevention, and recovery practices for malware. (Paraphrase)', category: 'Technological' },
     { annexId: 'A.8.8', name: 'Technical Vulnerability Management', intent: 'Obtain information about technical vulnerabilities and take appropriate remediation actions. (Paraphrase)', category: 'Technological' },
     { annexId: 'A.8.9', name: 'Configuration Management', intent: 'Establish, document, implement, and review security configurations for hardware, software, and networks. (Paraphrase)', category: 'Technological' },
     { annexId: 'A.8.10', name: 'Information Deletion', intent: 'Delete information stored in systems and devices when no longer required. (Paraphrase)', category: 'Technological' },
@@ -104,9 +104,9 @@ export const ANNEX_A_CONTROLS: AnnexAControl[] = [
     { annexId: 'A.8.15', name: 'Logging', intent: 'Produce, store, protect, and analyze logs recording activities and security events. (Paraphrase)', category: 'Technological' },
     { annexId: 'A.8.16', name: 'Monitoring Activities', intent: 'Monitor networks, systems, and applications for anomalous behavior and take appropriate action. (Paraphrase)', category: 'Technological' },
     { annexId: 'A.8.17', name: 'Clock Synchronization', intent: 'Synchronize clocks of information processing systems to approved time sources. (Paraphrase)', category: 'Technological' },
-    { annexId: 'A.8.18', name: 'Privileged Utility Programs', intent: 'Restrict and tightly control the use of utility programs that can override system controls. (Paraphrase)', category: 'Technological' },
-    { annexId: 'A.8.19', name: 'Software Installation on Operational Systems', intent: 'Control the installation of software on operational systems with appropriate procedures. (Paraphrase)', category: 'Technological' },
-    { annexId: 'A.8.20', name: 'Networks Security', intent: 'Manage and control network infrastructure to protect information in systems and applications. (Paraphrase)', category: 'Technological' },
+    { annexId: 'A.8.18', name: 'Privileged Utility Programs', intent: 'Restrict and tightly practice the use of utility programs that can override system practices. (Paraphrase)', category: 'Technological' },
+    { annexId: 'A.8.19', name: 'Software Installation on Operational Systems', intent: 'Practice the installation of software on operational systems with appropriate procedures. (Paraphrase)', category: 'Technological' },
+    { annexId: 'A.8.20', name: 'Networks Security', intent: 'Manage and practice network infrastructure to protect information in systems and applications. (Paraphrase)', category: 'Technological' },
     { annexId: 'A.8.21', name: 'Web Services Security', intent: 'Secure web-based services to protect against attacks and unauthorized access. (Paraphrase)', category: 'Technological' },
     { annexId: 'A.8.22', name: 'Network Segregation', intent: 'Segregate networks into groups of information services, users, and systems as appropriate. (Paraphrase)', category: 'Technological' },
     { annexId: 'A.8.23', name: 'Web Filtering', intent: 'Filter access to external websites to reduce exposure to malicious content. (Paraphrase)', category: 'Technological' },

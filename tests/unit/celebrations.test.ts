@@ -23,7 +23,7 @@ const ALL_KEYS: MilestoneKey[] = [
     'framework-100',
     'evidence-all-current',
     'audit-pack-complete',
-    'first-control-mapped',
+    'first-practice-mapped',
 ];
 
 describe('MILESTONES registry', () => {
@@ -48,7 +48,7 @@ describe('MILESTONES registry', () => {
         expect(Object.keys(MILESTONES).sort()).toEqual([
             'audit-pack-complete',
             'evidence-all-current',
-            'first-control-mapped',
+            'first-practice-mapped',
             // feat/delight-celebrations — agriculture milestones.
             'first-field-mapped',
             'first-harvest',

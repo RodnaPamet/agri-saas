@@ -63,22 +63,22 @@ export interface ExportEdge {
  * Each entry defines a traversable edge from parent → child.
  *
  * CONTROLS domain:
- *   Control → ControlTestPlan → ControlTestRun → ControlTestEvidenceLink
- *   Control → ControlTestRun (direct)
- *   Control → ControlEvidenceLink
- *   Control → ControlTask
- *   Control → ControlContributor
- *   Control → ControlAsset (join to Asset)
- *   Control → ControlRequirementLink (join to FrameworkRequirement)
- *   Control → RiskControl (join to Risk)
- *   Control → PolicyControlLink (join to Policy)
+ *   Practice → PracticeTestPlan → PracticeTestRun → PracticeTestEvidenceLink
+ *   Practice → PracticeTestRun (direct)
+ *   Practice → PracticeEvidenceLink
+ *   Practice → PracticeTask
+ *   Practice → PracticeContributor
+ *   Practice → PracticeAsset (join to Asset)
+ *   Practice → PracticeRequirementLink (join to FrameworkRequirement)
+ *   Practice → RiskPractice (join to Risk)
+ *   Practice → PolicyPracticeLink (join to Policy)
  *
  * POLICIES domain:
  *   Policy → PolicyVersion → PolicyApproval
- *   Policy → PolicyControlLink (join to Control)
+ *   Policy → PolicyPracticeLink (join to Practice)
  *
  * RISKS domain:
- *   Risk → RiskControl (join to Control)
+ *   Risk → RiskPractice (join to Practice)
  *
  * EVIDENCE domain:
  *   Evidence → EvidenceReview
@@ -102,29 +102,29 @@ export interface ExportEdge {
 export const EXPORT_EDGES: ExportEdge[] = [
     // ── CONTROLS ────────────────────────────────────────────────────
     {
-        from: 'control',
-        to: 'controlTestPlan',
+        from: 'practice',
+        to: 'practiceTestPlan',
         kind: 'HAS_MANY',
-        prismaModel: 'controlTestPlan',
-        foreignKey: 'controlId',
+        prismaModel: 'practiceTestPlan',
+        foreignKey: 'practiceId',
         relationship: 'BELONGS_TO',
         tenantScoped: true,
     },
     {
-        from: 'controlTestPlan',
-        to: 'controlTestRun',
+        from: 'practiceTestPlan',
+        to: 'practiceTestRun',
         kind: 'HAS_MANY',
-        prismaModel: 'controlTestRun',
+        prismaModel: 'practiceTestRun',
         foreignKey: 'testPlanId',
         relationship: 'BELONGS_TO',
         tenantScoped: true,
     },
     {
-        from: 'control',
-        to: 'controlMapping',
+        from: 'practice',
+        to: 'practiceMapping',
         kind: 'JOIN',
-        prismaModel: 'controlRequirementLink',
-        foreignKey: 'controlId',
+        prismaModel: 'practiceRequirementLink',
+        foreignKey: 'practiceId',
         targetKey: 'requirementId',
         targetModel: 'frameworkRequirement',
         relationship: 'MAPS_TO',

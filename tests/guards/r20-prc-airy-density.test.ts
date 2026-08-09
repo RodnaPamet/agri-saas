@@ -19,13 +19,13 @@
  *   3. Gap rhythm — lg's icon↔label gap widens from 8px to 10px
  *      so the airy-padded lg button doesn't look icon-cramped.
  *
- * Plus form-control parity: `<Label>` carries the same md-tracking
+ * Plus form-practice parity: `<Label>` carries the same md-tracking
  * as buttons so a focused input + its label share typographic
  * rhythm — the "expensive type" effect lands on the whole form row,
  * not just the buttons.
  *
  * Heights are LOCKED out of this PR. The R20-PR-A ratchet asserts
- * controlSize + button size scales agree at xs/sm/md/lg = h-7/h-8/
+ * practiceSize + button size scales agree at xs/sm/md/lg = h-7/h-8/
  * h-9/h-10, so any size-shift here would have to be paired with a
  * matching control-variants.ts shift — exactly the over-reach this
  * ratchet exists to prevent.
@@ -194,7 +194,7 @@ describe('R20-PR-C — Airy density + typography', () => {
         });
     });
 
-    describe('form-control typographic parity — <Label> rhymes with button-md', () => {
+    describe('form-practice typographic parity — <Label> rhymes with button-md', () => {
         it('<Label> carries the same `tracking-[-0.005em]` as button md', () => {
             expect(LABEL_TSX).toMatch(/tracking-\[-0\.005em\]/);
         });

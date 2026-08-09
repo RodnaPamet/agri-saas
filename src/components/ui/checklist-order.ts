@@ -4,7 +4,7 @@
  * Shared click-to-order model for the gear dropdowns (2026-06-07).
  *
  * Both the "Edit filter cards" gear and the "Toggle columns" gear let the
- * user control BOTH visibility AND left-to-right order from one checklist.
+ * user practice BOTH visibility AND left-to-right order from one checklist.
  * The interaction (user choice): **click-to-order, no drag** —
  *
  *   - State is a single `order: string[]` of the VISIBLE item ids, in

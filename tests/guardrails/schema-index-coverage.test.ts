@@ -173,11 +173,11 @@ const FK_INDEX_EXEMPT: Record<string, string> = {
     'TaskComment.createdByUserId': R_ACTOR,
     'TaskWatcher.userId': R_ACTOR,
     'Asset.ownerUserId': R_ACTOR,
-    'Control.applicabilityDecidedByUserId': R_ACTOR,
-    'Control.createdByUserId': R_ACTOR,
-    'ControlAsset.createdByUserId': R_ACTOR,
-    'ControlTask.assigneeUserId': R_ACTOR,
-    'ControlEvidenceLink.createdByUserId': R_ACTOR,
+    'Practice.applicabilityDecidedByUserId': R_ACTOR,
+    'Practice.createdByUserId': R_ACTOR,
+    'PracticeAsset.createdByUserId': R_ACTOR,
+    'PracticeTask.assigneeUserId': R_ACTOR,
+    'PracticeEvidenceLink.createdByUserId': R_ACTOR,
     'Evidence.fileRecordId': R_ONE_TO_ONE,
     'FileRecord.uploadedByUserId': R_ACTOR,
     'EvidenceReview.reviewerId': R_ACTOR,
@@ -187,7 +187,7 @@ const FK_INDEX_EXEMPT: Record<string, string> = {
     'PolicyApproval.requestedByUserId': R_ACTOR,
     'PolicyAcknowledgement.userId': R_ACTOR,
     'FrameworkPack.frameworkId': R_LIBRARY_TABLE,
-    'FrameworkMapping.toControlId': R_REVERSE_RARE,
+    'FrameworkMapping.toPracticeId': R_REVERSE_RARE,
     'FrameworkMapping.toRequirementId': R_REVERSE_RARE,
     'TreatmentMilestone.completedByUserId': R_ACTOR,
     'ProcessMap.createdByUserId': R_ACTOR,
@@ -281,17 +281,17 @@ const LIST_QUERY_INDEXES: readonly CompositeIndex[] = [
         justification:
             'listMachines / validMachineIds filter tenantId + type IN (machine-shaped) + status != RETIRED — the equipment-picker query that `Equipment` used to serve.',
     },
-    // ── Control (from list-query-indexes.test.ts) ───────────────────
+    // ── Practice (from list-query-indexes.test.ts) ───────────────────
     {
-        model: 'Control',
+        model: 'Practice',
         fields: ['tenantId', 'ownerUserId'],
         justification:
-            'ControlListFilters.ownerUserId (existing [ownerUserId] is not tenant-prefixed)',
+            'PracticeListFilters.ownerUserId (existing [ownerUserId] is not tenant-prefixed)',
     },
     {
-        model: 'Control',
+        model: 'Practice',
         fields: ['tenantId', 'category'],
-        justification: 'ControlListFilters.category',
+        justification: 'PracticeListFilters.category',
     },
     // ── Evidence (from list-query-indexes.test.ts) ──────────────────
     {
@@ -301,18 +301,18 @@ const LIST_QUERY_INDEXES: readonly CompositeIndex[] = [
     },
     {
         model: 'Evidence',
-        fields: ['tenantId', 'controlId'],
+        fields: ['tenantId', 'practiceId'],
         justification:
-            'EvidenceListFilters.controlId — control-detail evidence pull',
+            'EvidenceListFilters.practiceId — practice-detail evidence pull',
     },
     {
         model: 'Evidence',
         fields: ['tenantId', 'type'],
         justification: 'EvidenceListFilters.type',
     },
-    // ── ControlTask (from list-query-indexes.test.ts) ───────────────
+    // ── PracticeTask (from list-query-indexes.test.ts) ───────────────
     {
-        model: 'ControlTask',
+        model: 'PracticeTask',
         fields: ['tenantId', 'status', 'dueAt'],
         justification:
             'Dashboard overdue-tasks predicate + runConsistencyCheck overdue lookup',
@@ -466,11 +466,11 @@ const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
         'join table — fetched by tenantId plus a leading-indexed FK; Layers A/B cover its query shapes; no curated composite index needed.',
     ComplianceSnapshot:
         'time-series snapshot rows — read tenant-scoped and time-ordered; Layers A/B cover it; no curated composite index needed today.',
-    ControlAsset:
+    PracticeAsset:
         'join table — fetched by tenantId plus a leading-indexed FK; Layers A/B cover its query shapes; no curated composite index needed.',
-    ControlEvidenceLink:
+    PracticeEvidenceLink:
         'join table — fetched by tenantId plus a leading-indexed FK; Layers A/B cover its query shapes; no curated composite index needed.',
-    ControlRequirementLink:
+    PracticeRequirementLink:
         'join table — fetched by tenantId plus a leading-indexed FK; Layers A/B cover its query shapes; no curated composite index needed.',
     FileRecord:
         'filtered only by tenantId plus leading-indexed FK / status columns — Layers A/B cover its query shapes; no curated composite index needed today.',
@@ -494,8 +494,8 @@ const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
         'listPending filters by tenantId + status only (the [tenantId, policyId] / [tenantId, policyVersionId] composites are FK reverse-lookup indexes) — Layers A/B cover its query shapes; no curated composite index needed today.',
     PolicyVersion:
         'fetched per policy via a leading-indexed FK; Layers A/B cover its query shapes; no curated composite index needed today.',
-    ProcessEdgeControl:
-        'Epic P2-PR-C reverse-lookup: filtered by (tenantId, controlId) which is the model\'s leading `@@index([tenantId, controlId])`. Result set bounded by the number of edges referencing one control (typically <10) — Layer A already covers it.',
+    ProcessEdgePractice:
+        'Epic P2-PR-C reverse-lookup: filtered by (tenantId, practiceId) which is the model\'s leading `@@index([tenantId, practiceId])`. Result set bounded by the number of edges referencing one practice (typically <10) — Layer A already covers it.',
     ProcessMap:
         'filtered only by tenantId plus leading-indexed FK / status columns — Layers A/B cover its query shapes; no curated composite index needed today.',
     ProcessMapSnapshot:
@@ -679,9 +679,9 @@ describe('schema-index-coverage — parser sanity', () => {
         // Fixture model: any tenant-scoped model with a field-level @id
         // and a `tenant Tenant @relation(fields: [tenantId], ...)`. This
         // was Risk until the risk register was removed.
-        const control = MODEL_BY_NAME.get('Control');
-        expect(control?.fieldIdName).toBe('id');
-        expect(control?.relationFkFieldGroups).toContainEqual(['tenantId']);
+        const practice = MODEL_BY_NAME.get('Practice');
+        expect(practice?.fieldIdName).toBe('id');
+        expect(practice?.relationFkFieldGroups).toContainEqual(['tenantId']);
     });
 });
 

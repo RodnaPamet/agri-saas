@@ -1,56 +1,56 @@
 /**
- * Control usecase barrel export.
+ * Practice usecase barrel export.
  *
  * All public functions are re-exported here so existing imports
- * from '@/app-layer/usecases/control' continue to work unchanged.
+ * from '@/app-layer/usecases/practice' continue to work unchanged.
  */
 export {
-    listControls,
-    listControlsPaginated,
-    getControl,
-    getControlHeader,
-    getControlActivity,
-    getControlDashboard,
+    listPractices,
+    listPracticesPaginated,
+    getPractice,
+    getPracticeHeader,
+    getPracticeActivity,
+    getPracticeDashboard,
     runConsistencyCheck,
-    listControlsWithDeleted,
+    listPracticesWithDeleted,
 } from './queries';
 
 export {
-    createControl,
-    updateControl,
-    setControlStatus,
-    setControlApplicability,
-    setControlOwner,
-    markControlTestCompleted,
-    deleteControl,
-    bulkDeleteControl,
-    restoreControl,
-    purgeControl,
+    createPractice,
+    updatePractice,
+    setPracticeStatus,
+    setPracticeApplicability,
+    setPracticeOwner,
+    markPracticeTestCompleted,
+    deletePractice,
+    bulkDeletePractice,
+    restorePractice,
+    purgePractice,
 } from './mutations';
 
 export {
-    listControlTasks,
-    createControlTask,
-    updateControlTask,
-    deleteControlTask,
+    listPracticeTasks,
+    createPracticeTask,
+    updatePracticeTask,
+    deletePracticeTask,
 } from './tasks';
 
 export {
     listEvidenceLinks,
-    getControlEvidenceTab,
+    getPracticeEvidenceTab,
     linkEvidence,
     unlinkEvidence,
-    linkAssetToControl,
-    unlinkAssetFromControl,
+    linkAssetToPractice,
+    unlinkAssetFromPractice,
 } from './evidence';
 
-// Page-data orchestration (collapses control + sync waterfall on detail page)
-export { getControlPageData, type ControlPageDataPayload, type SyncStatusPayload } from './page-data';
+// Page-data orchestration (collapses practice + sync waterfall on detail page)
+export { getPracticePageData, type PracticePageDataPayload, type SyncStatusPayload } from './page-data';
 
-// Requirement ↔ control mapping (survivor of the removed template library)
+// Requirement ↔ practice mapping (survivor of the removed template library)
 export {
     listFrameworkRequirements,
-    mapRequirementToControl,
-    unmapRequirementFromControl,
-    listControlMappings,
+    mapRequirementToPractice,
+    unmapRequirementFromPractice,
+    listPracticeMappings,
 } from './requirements';

@@ -12,7 +12,7 @@
  *      - findOrCreate only accepts SyncMappingCreateData (narrow type)
  *      - updateStatus only accepts SyncMappingStatusUpdate (narrow type)
  *
- *   3. Control-plane field protection
+ *   3. Practice-plane field protection
  *      - conflictStrategy cannot be set via findOrCreate
  *      - conflictStrategy cannot be set via updateStatus
  *      - version cannot be freely set via findOrCreate
@@ -41,7 +41,7 @@ function makeMappingKey(overrides?: Partial<SyncMappingKey>): SyncMappingKey {
     return {
         tenantId: 'tenant-1',
         provider: 'test',
-        localEntityType: 'control',
+        localEntityType: 'practice',
         localEntityId: 'ctrl-1',
         remoteEntityType: 'protection',
         remoteEntityId: 'main',
@@ -56,7 +56,7 @@ function makeFullMapping(overrides?: Partial<SyncMapping>): SyncMapping {
         tenantId: 'tenant-1',
         provider: 'test',
         connectionId: null,
-        localEntityType: 'control',
+        localEntityType: 'practice',
         localEntityId: 'ctrl-1',
         remoteEntityType: 'protection',
         remoteEntityId: 'main',
@@ -280,10 +280,10 @@ describe('SyncMappingStore — findOrCreate vs updateStatus', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════
-// 3. Control-Plane Field Protection
+// 3. Practice-Plane Field Protection
 // ═══════════════════════════════════════════════════════════════════════
 
-describe('Control-plane field protection', () => {
+describe('Practice-plane field protection', () => {
     let store: ContractTestStore;
 
     beforeEach(() => {
@@ -328,7 +328,7 @@ describe('Control-plane field protection', () => {
             id: 'protect-2',
             tenantId: 'tenant-1',
             provider: 'test',
-            localEntityType: 'control',
+            localEntityType: 'practice',
             localEntityId: 'ctrl-1',
         }));
 
@@ -345,7 +345,7 @@ describe('Control-plane field protection', () => {
 
         // Identity fields MUST remain unchanged
         expect(updated.provider).toBe('test');
-        expect(updated.localEntityType).toBe('control');
+        expect(updated.localEntityType).toBe('practice');
         expect(updated.localEntityId).toBe('ctrl-1');
     });
 

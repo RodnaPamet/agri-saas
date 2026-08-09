@@ -11,7 +11,7 @@
  * the ORDERED ids (the same order the list shows) + an href builder; the
  * component finds the current id's neighbours and disables the ends.
  *
- * Reusable across Asset / Risk / Control / … detail pages — pass that
+ * Reusable across Asset / Risk / Practice / … detail pages — pass that
  * entity's ordered id list + `hrefFor`.
  */
 import { useRouter } from 'next/navigation';

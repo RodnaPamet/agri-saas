@@ -146,7 +146,7 @@ function PermissionGrid({
                                     // them greyed with a reason is honest about the
                                     // role model; hiding them is what let the gap
                                     // go unnoticed. The server refuses them either
-                                    // way — this is signage, not the control.
+                                    // way — this is signage, not the practice.
                                     const ownerOnly = isOwnerOnly(resource, action);
                                     return (
                                         <td key={action} className="text-center">
@@ -674,7 +674,7 @@ export default function CustomRolesPage() {
             <ListPageShell.Body>
                 {/* R13-PR5 — outer `cardVariants` wrapper dropped so
                     the DataTable's own bordered card is the only one
-                    (matches Controls list visually). The wrapper div
+                    (matches Practices list visually). The wrapper div
                     stays so the `roles-table-card` id is preserved
                     for the E2E + analytics selectors that depend on
                     it. */}

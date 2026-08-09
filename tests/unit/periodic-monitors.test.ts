@@ -31,13 +31,13 @@ jest.mock('@/lib/observability/job-runner', () => ({
     runJob: jest.fn(async (_name: string, fn: () => Promise<unknown>) => fn()),
 }));
 
-// Mock Prisma with controllable findMany results
+// Mock Prisma with practicelable findMany results
 const mockPrisma = {
-    control: { findMany: jest.fn().mockResolvedValue([]) },
+    practice: { findMany: jest.fn().mockResolvedValue([]) },
     policy: { findMany: jest.fn().mockResolvedValue([]) },
     task: { findMany: jest.fn().mockResolvedValue([]) },
     risk: { findMany: jest.fn().mockResolvedValue([]) },
-    controlTestPlan: { findMany: jest.fn().mockResolvedValue([]) },
+    practiceTestPlan: { findMany: jest.fn().mockResolvedValue([]) },
     evidence: { findMany: jest.fn().mockResolvedValue([]) },
     // Epic G-7: Phase 0 transition + scanners.
     riskTreatmentPlan: {
@@ -151,7 +151,7 @@ describe('DueItem contract', () => {
             entityId: 'ctrl-123',
             tenantId: 'tenant-abc',
             name: 'Access Control Review',
-            reason: 'Control testing overdue by 5 day(s)',
+            reason: 'Practice testing overdue by 5 day(s)',
             urgency: 'OVERDUE',
             dueDate: '2026-04-12T00:00:00Z',
             daysRemaining: -5,
@@ -191,11 +191,11 @@ describe('Deadline Monitor', () => {
     beforeEach(() => {
         jest.clearAllMocks();
         // Reset all mocked findMany to return empty by default
-        mockPrisma.control.findMany.mockResolvedValue([]);
+        mockPrisma.practice.findMany.mockResolvedValue([]);
         mockPrisma.policy.findMany.mockResolvedValue([]);
         mockPrisma.task.findMany.mockResolvedValue([]);
         mockPrisma.risk.findMany.mockResolvedValue([]);
-        mockPrisma.controlTestPlan.findMany.mockResolvedValue([]);
+        mockPrisma.practiceTestPlan.findMany.mockResolvedValue([]);
     });
 
     test('returns empty items when no entities are due', async () => {
@@ -208,8 +208,8 @@ describe('Deadline Monitor', () => {
         expect(result.itemsScanned).toBe(0);
     });
 
-    test('detects overdue controls', async () => {
-        mockPrisma.control.findMany.mockResolvedValue([
+    test('detects overdue practices', async () => {
+        mockPrisma.practice.findMany.mockResolvedValue([
             {
                 id: 'ctrl-1',
                 tenantId: 'tenant-1',
@@ -274,27 +274,27 @@ describe('Deadline Monitor', () => {
 
 
     test('tenant isolation: filters by tenantId when provided', async () => {
-        mockPrisma.control.findMany.mockResolvedValue([]);
+        mockPrisma.practice.findMany.mockResolvedValue([]);
 
         const { runDeadlineMonitor } = await import('../../src/app-layer/jobs/deadline-monitor');
         await runDeadlineMonitor({ now, tenantId: 'tenant-specific' });
 
-        // Verify control query included tenantId filter
-        const whereClause = mockPrisma.control.findMany.mock.calls[0]?.[0]?.where;
+        // Verify practice query included tenantId filter
+        const whereClause = mockPrisma.practice.findMany.mock.calls[0]?.[0]?.where;
         expect(whereClause.tenantId).toBe('tenant-specific');
     });
 
     test('idempotent: same input produces same output', async () => {
-        const controls = [
+        const practices = [
             {
                 id: 'ctrl-1',
                 tenantId: 'tenant-1',
-                name: 'Test Control',
+                name: 'Test Practice',
                 nextDueAt: new Date('2026-04-20T00:00:00Z'),
                 ownerUserId: 'user-1',
             },
         ];
-        mockPrisma.control.findMany.mockResolvedValue(controls);
+        mockPrisma.practice.findMany.mockResolvedValue(practices);
 
         const { runDeadlineMonitor } = await import('../../src/app-layer/jobs/deadline-monitor');
 
@@ -309,7 +309,7 @@ describe('Deadline Monitor', () => {
     });
 
     test('sorts OVERDUE before URGENT before UPCOMING', async () => {
-        mockPrisma.control.findMany.mockResolvedValue([
+        mockPrisma.practice.findMany.mockResolvedValue([
             { id: 'c1', tenantId: 't', name: 'Upcoming', nextDueAt: new Date('2026-05-10T00:00:00Z'), ownerUserId: null },
         ]);
         mockPrisma.task.findMany.mockResolvedValue([
@@ -329,7 +329,7 @@ describe('Deadline Monitor', () => {
     });
 
     test('counts by entity type are computed correctly', async () => {
-        mockPrisma.control.findMany.mockResolvedValue([
+        mockPrisma.practice.findMany.mockResolvedValue([
             { id: 'c1', tenantId: 't', name: 'C1', nextDueAt: new Date('2026-04-10T00:00:00Z'), ownerUserId: null },
             { id: 'c2', tenantId: 't', name: 'C2', nextDueAt: new Date('2026-04-20T00:00:00Z'), ownerUserId: null },
         ]);
@@ -378,7 +378,7 @@ describe('Evidence Expiry Monitor', () => {
                     title: 'SOC 2 Report 2025',
                     retentionUntil: new Date('2026-04-22T00:00:00Z'), // 5 days
                     owner: 'John Doe',
-                    controlId: 'ctrl-1',
+                    practiceId: 'ctrl-1',
                 },
             ])
             .mockResolvedValueOnce([]); // no already-expired
@@ -403,7 +403,7 @@ describe('Evidence Expiry Monitor', () => {
                     title: 'Old Pentest Report',
                     expiredAt: new Date('2026-04-10T00:00:00Z'), // 7 days ago
                     owner: null,
-                    controlId: null,
+                    practiceId: null,
                 },
             ]);
 
@@ -423,7 +423,7 @@ describe('Evidence Expiry Monitor', () => {
             retentionUntil: new Date('2026-04-10T00:00:00Z'),
             expiredAt: new Date('2026-04-10T00:00:00Z'),
             owner: null,
-            controlId: null,
+            practiceId: null,
         };
 
         mockPrisma.evidence.findMany
@@ -456,7 +456,7 @@ describe('Evidence Expiry Monitor', () => {
                 title: 'Evidence',
                 retentionUntil: new Date('2026-04-20T00:00:00Z'),
                 owner: null,
-                controlId: null,
+                practiceId: null,
             },
         ];
         // Three reads per run since the monitor gained a review-due scan
@@ -485,7 +485,7 @@ describe('Evidence Expiry Monitor', () => {
                     title: 'Expired Evidence',
                     retentionUntil: new Date('2026-04-05T00:00:00Z'), // 12 days ago
                     owner: null,
-                    controlId: null,
+                    practiceId: null,
                 },
             ])
             .mockResolvedValueOnce([]);

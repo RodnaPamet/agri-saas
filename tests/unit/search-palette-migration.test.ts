@@ -3,7 +3,7 @@
  * unified search endpoint.
  *
  * The original Epic 57 hook fanned out to 5 per-entity routes
- * (`/controls`, `/risks`, `/policies`, `/evidence`,
+ * (`/practices`, `/risks`, `/policies`, `/evidence`,
  * `/frameworks`) and merged the results client-side. The
  * migration consolidates that into ONE round-trip to
  * `/api/t/<slug>/search?q=`.
@@ -55,10 +55,10 @@ describe('Command palette — uses the unified search endpoint', () => {
 
     it('does not touch any of the legacy per-entity routes', () => {
         // Catches the explicit mistake where someone re-adds a
-        // call to `/controls`, `/risks`, etc. The unified endpoint
+        // call to `/practices`, `/risks`, etc. The unified endpoint
         // is the contract; per-entity hits are forbidden inside
         // this hook.
-        expect(hook).not.toMatch(/\/api\/t\/[^"'`]*\/(controls|risks|policies|evidence|frameworks)\?/);
+        expect(hook).not.toMatch(/\/api\/t\/[^"'`]*\/(practices|risks|policies|evidence|frameworks)\?/);
     });
 
     it('imports the typed SearchResponse from the search lib', () => {
@@ -153,7 +153,7 @@ describe('Search route + usecase — structural shape', () => {
         // Mirrors the SearchHitType union; if a new type is added
         // there, the usecase must add a query branch + this test
         // grows. Catches accidental drops.
-        expect(usecase).toMatch(/db\.control\.findMany/);
+        expect(usecase).toMatch(/db\.practice\.findMany/);
         expect(usecase).toMatch(/db\.policy\.findMany/);
         expect(usecase).toMatch(/db\.evidence\.findMany/);
         expect(usecase).toMatch(/prisma\.framework\.findMany/);

@@ -70,7 +70,7 @@ export interface AppendAuditInput {
     tenantId: string;
     userId: string | null;
     actorType?: string;           // defaults to 'USER'
-    entity: string;               // e.g., 'Control', 'Asset'
+    entity: string;               // e.g., 'Practice', 'Asset'
     entityId: string;             // e.g., 'ctrl-123' or 'batch'
     action: string;               // e.g., 'CONTROL_CREATED', 'UPDATE'
 

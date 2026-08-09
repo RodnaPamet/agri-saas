@@ -4,9 +4,9 @@
  * Wave 2 of GAP-02. Existing tests cover plumbing; this file locks
  * in the security-load-bearing review-flow assertions:
  *
- *   1. Cross-tenant control id rejection on createEvidence — admin
- *      in tenant A cannot link evidence to tenant B's control even
- *      if A knows B's controlId.
+ *   1. Cross-tenant practice id rejection on createEvidence — admin
+ *      in tenant A cannot link evidence to tenant B's practice even
+ *      if A knows B's practiceId.
  *   2. reviewEvidence step gates: SUBMITTED requires canWrite,
  *      APPROVED / REJECTED require canAdmin (separation of duty).
  *      An unknown action errors out — no silent transition.
@@ -56,10 +56,10 @@ beforeEach(() => {
     jest.clearAllMocks();
 });
 
-describe('createEvidence — cross-tenant control rejection', () => {
-    it('rejects when controlId points at a control NOT in caller tenant', async () => {
+describe('createEvidence — cross-tenant practice rejection', () => {
+    it('rejects when practiceId points at a practice NOT in caller tenant', async () => {
         const fakeDb = {
-            control: { findFirst: jest.fn().mockResolvedValue(null) },
+            practice: { findFirst: jest.fn().mockResolvedValue(null) },
         };
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(fakeDb as never));
 
@@ -69,14 +69,14 @@ describe('createEvidence — cross-tenant control rejection', () => {
                 {
                     type: 'LINK',
                     title: 'Bad cross-tenant evidence',
-                    controlId: 'tenant-B-control',
+                    practiceId: 'tenant-B-practice',
                     content: 'https://example.com/file',
                 },
             ),
         ).rejects.toThrow(/INVALID_CONTROL/);
         // Regression: a bug that drops `tenantId` from the WHERE on
-        // control.findFirst would let admin in A attach evidence to a
-        // control in tenant B — cross-tenant linkage in the audit
+        // practice.findFirst would let admin in A attach evidence to a
+        // practice in tenant B — cross-tenant linkage in the audit
         // surface.
         expect(mockCreate).not.toHaveBeenCalled();
     });
@@ -92,8 +92,8 @@ describe('createEvidence — cross-tenant control rejection', () => {
 
     it('persists status=DRAFT by default', async () => {
         const fakeDb = {
-            control: { findFirst: jest.fn() },
-            controlEvidenceLink: { create: jest.fn() },
+            practice: { findFirst: jest.fn() },
+            practiceEvidenceLink: { create: jest.fn() },
         };
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(fakeDb as never));
         mockCreate.mockResolvedValue({ id: 'e1', fileRecordId: null } as never);

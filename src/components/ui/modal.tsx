@@ -476,7 +476,7 @@ function Actions({
 
 /**
  * Convenience wrapper that renders a `<form>` inside the modal body so
- * the body controls scroll while form submission flows through a single
+ * the body practices scroll while form submission flows through a single
  * `onSubmit` handler. Pair with `<Modal.Actions>` for Cancel/Save.
  */
 function Form({

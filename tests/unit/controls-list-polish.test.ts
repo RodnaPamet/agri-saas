@@ -1,5 +1,5 @@
 /**
- * Structural ratchet — Controls list UX polish.
+ * Structural ratchet — Practices list UX polish.
  *
  * Locks the visible-change deltas applied after Epic 91's
  * structural-only refactor:
@@ -20,7 +20,7 @@
  *      floating `batchActions` toolbar in favour of the docked rail.
  *
  * This is a string-scan ratchet — same shape as
- * `controls-client-shell-adoption.test.ts`. It runs in the node
+ * `practices-client-shell-adoption.test.ts`. It runs in the node
  * project so it doesn't need a jsdom mount.
  */
 
@@ -29,17 +29,17 @@ import path from 'node:path';
 
 const CONTROLS_CLIENT = path.resolve(
     __dirname,
-    '../../src/app/t/[tenantSlug]/(app)/controls/ControlsClient.tsx',
+    '../../src/app/t/[tenantSlug]/(app)/practices/PracticesClient.tsx',
 );
 const source = readFileSync(CONTROLS_CLIENT, 'utf8');
 
-describe('Controls list — UX polish', () => {
+describe('Practices list — UX polish', () => {
     describe('Owner column', () => {
         it('renders a name-only chip with initial avatar (no email)', () => {
             // Avatar circle uses the first character of the display
             // string; locking this so a future "tidy-up" can't drop
             // the avatar back to a plain text cell.
-            expect(source).toContain("data-testid={`control-owner-${c.id}`}");
+            expect(source).toContain("data-testid={`practice-owner-${c.id}`}");
             expect(source).toMatch(/charAt\(0\)\.toUpperCase\(\)/);
             // UI-14: name-only via ownerDisplayName (name → email local-part as
             // username); the full email address is no longer rendered.
@@ -54,7 +54,7 @@ describe('Controls list — UX polish', () => {
             // The inline-edit `<select>` was retired 2026-05-19 at
             // the user's request. The cell is now a read-only badge
             // for every viewer; status changes route through the
-            // per-control detail page or the bulk-set toolbar
+            // per-practice detail page or the bulk-set toolbar
             // actions. E2E selector `#status-pill-{id}` preserved
             // on the badge for parity with existing tests.
             expect(source).toMatch(
@@ -74,14 +74,14 @@ describe('Controls list — UX polish', () => {
             // `<select>` for editors, read-only badge for readers).
             // The new shape is single-branch; the permission gate
             // is gone for this cell. A future PR that re-adds an
-            // `if (!appPermissions.controls.edit)` inside the
+            // `if (!appPermissions.practices.edit)` inside the
             // Status accessor would regress the simplification.
             const statusCell = source.match(
                 /accessorKey: 'status',[\s\S]+?\}\,\s+\{/,
             );
             expect(statusCell).not.toBeNull();
             expect(statusCell![0]).not.toMatch(
-                /appPermissions\.controls\.edit/,
+                /appPermissions\.practices\.edit/,
             );
         });
     });
@@ -98,7 +98,7 @@ describe('Controls list — UX polish', () => {
 
         it('justification modal infrastructure removed from the list page', () => {
             // The Not-Applicable justification flow now lives on the
-            // per-control detail page only. The list page no longer
+            // per-practice detail page only. The list page no longer
             // mounts the modal, the applicability mutation, or any
             // of the supporting state.
             expect(source).not.toContain('setJustificationModal');
@@ -113,7 +113,7 @@ describe('Controls list — UX polish', () => {
                 /import\s*\{[^}]*\bPaperclip\b[^}]*\}\s*from\s*['"]lucide-react['"]/,
             );
             expect(source).toMatch(/<Paperclip\s/);
-            expect(source).toContain("data-testid={`control-evidence-${row.original.id}`}");
+            expect(source).toContain("data-testid={`practice-evidence-${row.original.id}`}");
         });
     });
 
@@ -123,7 +123,7 @@ describe('Controls list — UX polish', () => {
             // DataTable's header-row selection toolbar via `batchActions`
             // (the row-select bar that pops over the column-names row),
             // NOT the retired SelectionSummaryPanel right-rail.
-            expect(source).toMatch(/batchActions:\s*controlBatchActions/);
+            expect(source).toMatch(/batchActions:\s*practiceBatchActions/);
             // i18n batch T07 — the bulk-status verb labels route through
             // next-intl; assert the keys are wired AND the en.json values
             // preserve the copy.
@@ -131,7 +131,7 @@ describe('Controls list — UX polish', () => {
             expect(source).toContain("label: t('list.markNeedsReview')");
             expect(source).toContain("label: t('list.markNotApplicable')");
             // eslint-disable-next-line @typescript-eslint/no-var-requires
-            const en = require('../../messages/en.json').controls.list;
+            const en = require('../../messages/en.json').practices.list;
             expect(en.markImplemented).toBe('Mark Implemented');
             expect(en.markNeedsReview).toBe('Mark Needs Review');
             expect(en.markNotApplicable).toBe('Mark Not Applicable');
@@ -152,13 +152,13 @@ describe('Controls list — UX polish', () => {
             // collapses to `undefined` (no selection) when the viewer can do
             // neither — so a READER still gets no batch actions.
             expect(source).toMatch(
-                /canEditControls[\s\S]{0,200}label: t\('list\.markImplemented'\)/,
+                /canEditPractices[\s\S]{0,200}label: t\('list\.markImplemented'\)/,
             );
             expect(source).toMatch(
-                /permissions\.canAdmin\s*\?\s*\[controlBulkDelete\]/,
+                /permissions\.canAdmin\s*\?\s*\[practiceBulkDelete\]/,
             );
             expect(source).toMatch(
-                /controlBatchActionsArr\.length\s*>\s*0\s*\?\s*controlBatchActionsArr\s*:\s*undefined/,
+                /practiceBatchActionsArr\.length\s*>\s*0\s*\?\s*practiceBatchActionsArr\s*:\s*undefined/,
             );
         });
     });

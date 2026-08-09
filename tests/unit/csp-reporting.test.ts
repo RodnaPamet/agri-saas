@@ -76,7 +76,7 @@ describe('parseLegacyReport', () => {
         expect(result!.sourceFile).toBe('');
     });
 
-    it('sanitizes control characters in URIs', () => {
+    it('sanitizes practice characters in URIs', () => {
         const payload = {
             'csp-report': {
                 'document-uri': 'https://example.com/\x00\x01\x02page',

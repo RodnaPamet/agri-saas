@@ -85,7 +85,7 @@ export default function MappingPage() {
                                     aria-label={`${item.name} coverage`}
                                 />
                             </div>
-                            <span className="text-xs text-content-subtle">{t('controls', { implemented: item.implementedCount, total: item.controlCount })}</span>
+                            <span className="text-xs text-content-subtle">{t('practices', { implemented: item.implementedCount, total: item.practiceCount })}</span>
                         </div>
                     </Card>
                 ))}

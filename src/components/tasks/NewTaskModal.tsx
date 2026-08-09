@@ -6,7 +6,7 @@
  * Mounts the P1-extracted `useNewTaskForm` hook + `<NewTaskFields>`
  * markup inside `<Modal>`. The hook owns the pending-links staging
  * buffer + the per-type validation (`AUDIT_FINDING` / `CONTROL_GAP`
- * requires a control or link); the modal just chrome's it.
+ * requires a practice or link); the modal just chrome's it.
  *
  * Shared create-task modal, consumed by the calendar and the Epic-67
  * LinkedTasksPanel. The compliance /tasks list was retired; the default
@@ -38,7 +38,7 @@ export interface NewTaskModalProps {
      */
     onCreated?: () => void;
     /**
-     * Preset entity links staged on open. The control / asset / risk
+     * Preset entity links staged on open. The practice / asset / risk
      * detail surfaces seed this with their own entity so the task is
      * linked back (and shows in their tasks panel) on create.
      */

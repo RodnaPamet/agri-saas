@@ -118,10 +118,10 @@ describe("R27-PR-B — edge connection language", () => {
         expect(EDGE).toMatch(/data-edge-variant-affordance/);
     });
 
-    it("preserves the control-on-edge affordance", () => {
-        expect(EDGE).toMatch(/!control && selected/);
-        expect(EDGE).toMatch(/Add control/);
-        expect(EDGE).toMatch(/data-control-on-edge-badge/);
+    it("preserves the practice-on-edge affordance", () => {
+        expect(EDGE).toMatch(/!practice && selected/);
+        expect(EDGE).toMatch(/Add practice/);
+        expect(EDGE).toMatch(/data-practice-on-edge-badge/);
     });
 });
 
@@ -137,7 +137,7 @@ describe("R27-PR-B — persistence", () => {
         expect(CANVAS).toMatch(/dataJson:\s*nodeDataJson\(n\)/);
     });
 
-    it("the inspector exposes the size control", () => {
+    it("the inspector exposes the size practice", () => {
         expect(INSPECTOR).toMatch(/ToggleGroup/);
         expect(INSPECTOR).toMatch(/processInspector\.nodeSize/);
     });

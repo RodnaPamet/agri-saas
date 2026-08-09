@@ -44,7 +44,7 @@ describe('evidence-expiry-monitor: ownerUserId in DueItems', () => {
         retentionUntil: new Date('2025-05-15'), // expired
         owner: 'John Doe',  // legacy free-text
         ownerUserId: OWNER_USER_ID, // real user FK
-        controlId: null,
+        practiceId: null,
     };
 
     const evidenceWithoutOwner = {
@@ -54,7 +54,7 @@ describe('evidence-expiry-monitor: ownerUserId in DueItems', () => {
         retentionUntil: new Date('2025-05-20'), // expired
         owner: null,
         ownerUserId: null,
-        controlId: null,
+        practiceId: null,
     };
 
     const evidenceWithOnlyLegacy = {
@@ -64,7 +64,7 @@ describe('evidence-expiry-monitor: ownerUserId in DueItems', () => {
         retentionUntil: new Date('2025-05-25'), // expired
         owner: 'Legacy Name',
         ownerUserId: null, // no real owner
-        controlId: null,
+        practiceId: null,
     };
 
     const mockEvidenceFindMany = jest.fn();

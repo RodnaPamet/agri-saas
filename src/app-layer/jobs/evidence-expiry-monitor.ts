@@ -81,7 +81,7 @@ async function scanExpiringEvidence(
             retentionUntil: true,
             owner: true,
             ownerUserId: true,
-            controlId: true,
+            practiceId: true,
         },
         orderBy: { retentionUntil: 'asc' },
         take: 1000,
@@ -105,7 +105,7 @@ async function scanExpiringEvidence(
             expiredAt: true,
             owner: true,
             ownerUserId: true,
-            controlId: true,
+            practiceId: true,
         },
         orderBy: { expiredAt: 'asc' },
         take: 1000,
@@ -191,7 +191,7 @@ async function scanExpiringEvidence(
  *
  * Deliberately a SEPARATE scan from the retention one above. Retention asks
  * "may we still keep this?"; review asks "is this still true?" — different
- * dates, different remedies, and a control point can be well inside its
+ * dates, different remedies, and a practice point can be well inside its
  * retention window while its proof has gone a year unlooked-at.
  */
 async function scanEvidenceDueForReview(
@@ -219,7 +219,7 @@ async function scanEvidenceDueForReview(
             nextReviewDate: true,
             owner: true,
             ownerUserId: true,
-            controlId: true,
+            practiceId: true,
         },
         orderBy: { nextReviewDate: 'asc' },
         take: 1000,

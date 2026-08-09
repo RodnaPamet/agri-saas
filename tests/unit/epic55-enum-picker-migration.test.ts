@@ -3,8 +3,8 @@
  *
  * Asserts the primitive-fit across the five migrated surfaces:
  *   1. tasks/new                  → Combobox hideSearch × 3 (type/severity/priority)
- *   2. controls/NewControlModal   → Combobox × 2 (category/frequency, freq hideSearch)
- *   3. controls/ControlDetailSheet → Combobox × 2 (category/frequency, freq hideSearch)
+ *   2. practices/NewPracticeModal   → Combobox × 2 (category/frequency, freq hideSearch)
+ *   3. practices/PracticeDetailSheet → Combobox × 2 (category/frequency, freq hideSearch)
  *   5. vendors/new                → RadioGroup × 1 (status) + Combobox hideSearch × 2
  *
  * Primitive rules verified:
@@ -12,7 +12,7 @@
  *   - 4–7 enum options where search adds no value        → Combobox `hideSearch`.
  *   - ≥8 options OR dynamic list                         → Combobox with search.
  *
- * Every migrated control preserves its legacy id for E2E parity and
+ * Every migrated practice preserves its legacy id for E2E parity and
  * its `name` attribute for native `<form onSubmit>` serialisation.
  */
 
@@ -37,10 +37,10 @@ const TASK_NEW_SRC =
     '\n' +
     read('src/components/tasks/_form/useNewTaskForm.ts');
 const CONTROL_MODAL_SRC = read(
-    'src/app/t/[tenantSlug]/(app)/controls/NewControlModal.tsx',
+    'src/app/t/[tenantSlug]/(app)/practices/NewPracticeModal.tsx',
 );
 const CONTROL_SHEET_SRC = read(
-    'src/app/t/[tenantSlug]/(app)/controls/ControlDetailSheet.tsx',
+    'src/app/t/[tenantSlug]/(app)/practices/PracticeDetailSheet.tsx',
 );
 const VENDORS_NEW_SRC =
     read('src/app/t/[tenantSlug]/(app)/vendors/new/page.tsx') +
@@ -101,16 +101,16 @@ describe('tasks/new — type / severity / priority Combobox', () => {
     });
 });
 
-// ─── 2. NewControlModal — category + frequency ────────────────────
+// ─── 2. NewPracticeModal — category + frequency ────────────────────
 
-describe('NewControlModal — category + frequency Comboboxes', () => {
+describe('NewPracticeModal — category + frequency Comboboxes', () => {
     it('imports Combobox', () => {
         expect(CONTROL_MODAL_SRC).toMatch(
             /from ["']@\/components\/ui\/combobox["']/,
         );
     });
 
-    it.each(['control-category-input', 'control-frequency-input'])(
+    it.each(['practice-category-input', 'practice-frequency-input'])(
         'no native <select id="%s">',
         (id) => {
             expect(CONTROL_MODAL_SRC).not.toMatch(
@@ -119,7 +119,7 @@ describe('NewControlModal — category + frequency Comboboxes', () => {
         },
     );
 
-    it.each(['control-category-input', 'control-frequency-input'])(
+    it.each(['practice-category-input', 'practice-frequency-input'])(
         'Combobox preserves id="%s"',
         (id) => {
             expect(CONTROL_MODAL_SRC).toMatch(
@@ -133,13 +133,13 @@ describe('NewControlModal — category + frequency Comboboxes', () => {
         // T07 i18n — searchPlaceholder moved to t('newModal.searchCategories');
         // assert the t() reference AND the en.json value stays "Search categories…".
         expect(CONTROL_MODAL_SRC).toMatch(
-            /id=["']control-category-input["'][\s\S]{0,800}searchPlaceholder=\{t\(['"]newModal\.searchCategories['"]\)\}/,
+            /id=["']practice-category-input["'][\s\S]{0,800}searchPlaceholder=\{t\(['"]newModal\.searchCategories['"]\)\}/,
         );
         expect(
-            JSON.parse(read('messages/en.json')).controls.newModal.searchCategories,
+            JSON.parse(read('messages/en.json')).practices.newModal.searchCategories,
         ).toMatch(/^Search categories/);
         expect(CONTROL_MODAL_SRC).toMatch(
-            /id=["']control-frequency-input["'][\s\S]{0,800}hideSearch/,
+            /id=["']practice-frequency-input["'][\s\S]{0,800}hideSearch/,
         );
     });
 
@@ -163,9 +163,9 @@ describe('NewControlModal — category + frequency Comboboxes', () => {
     });
 });
 
-// ─── 3. ControlDetailSheet — category + frequency ─────────────────
+// ─── 3. PracticeDetailSheet — category + frequency ─────────────────
 
-describe('ControlDetailSheet — category + frequency Comboboxes', () => {
+describe('PracticeDetailSheet — category + frequency Comboboxes', () => {
     it('imports Combobox', () => {
         expect(CONTROL_SHEET_SRC).toMatch(
             /from ["']@\/components\/ui\/combobox["']/,

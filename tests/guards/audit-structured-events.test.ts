@@ -119,10 +119,10 @@ describe('Audit Structured Events — Regression Guards', () => {
         test('entity_lifecycle payload validates', () => {
             const payload = {
                 category: 'entity_lifecycle',
-                entityName: 'Control',
+                entityName: 'Practice',
                 operation: 'created',
-                after: { name: 'Test Control' },
-                summary: 'Created control',
+                after: { name: 'Test Practice' },
+                summary: 'Created practice',
             };
             const result = AuditDetailsSchema.safeParse(payload);
             expect(result.success).toBe(true);

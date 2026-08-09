@@ -37,7 +37,7 @@ import type { AgDashboardPayload } from '@/app-layer/usecases/ag-dashboard';
  *   - Onboarding nudge → hidden once both steps are complete (derived from
  *     real data, never a manual checkbox) or once dismissed.
  *   - Sample-data banner → shown WHENEVER sample data exists, even after
- *     dismiss/completion, so the "Clear sample data" control is always
+ *     dismiss/completion, so the "Clear sample data" practice is always
  *     reachable (loading sample rows makes the farm look "set up", which
  *     would otherwise hide the only place to undo it).
  *

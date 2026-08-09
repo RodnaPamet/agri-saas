@@ -37,7 +37,7 @@ import { queryKeys } from '@/lib/queryKeys';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import { useFormTelemetry } from '@/lib/telemetry/form-telemetry';
 
-interface ControlOption {
+interface PracticeOption {
     id: string;
     name: string;
     code?: string | null;
@@ -48,7 +48,7 @@ export interface NewEvidenceTextModalProps {
     setOpen: Dispatch<SetStateAction<boolean>>;
     tenantSlug: string;
     apiUrl: (path: string) => string;
-    controls: ControlOption[];
+    practices: PracticeOption[];
 }
 
 export function NewEvidenceTextModal({
@@ -56,7 +56,7 @@ export function NewEvidenceTextModal({
     setOpen,
     tenantSlug,
     apiUrl,
-    controls,
+    practices,
 }: NewEvidenceTextModalProps) {
     const tr = useTranslations('evidence');
     const close = useCallback(() => setOpen(false), [setOpen]);
@@ -75,7 +75,7 @@ export function NewEvidenceTextModal({
     const [form, setForm] = useState({
         title: '',
         content: '',
-        controlId: '',
+        practiceId: '',
         category: '',
         // B8 follow-up — free-text folder label. Datalist below
         // seeds it with values already in use on existing evidence.
@@ -90,7 +90,7 @@ export function NewEvidenceTextModal({
         setForm({
             title: '',
             content: '',
-            controlId: '',
+            practiceId: '',
             category: '',
             folder: '',
             owner: '',
@@ -105,14 +105,14 @@ export function NewEvidenceTextModal({
         value: (typeof form)[K],
     ) => setForm((prev) => ({ ...prev, [field]: value }));
 
-    const controlOptions = useMemo<ComboboxOption<ControlOption>[]>(
+    const practiceOptions = useMemo<ComboboxOption<PracticeOption>[]>(
         () =>
-            controls.map((c) => ({
+            practices.map((c) => ({
                 value: c.id,
                 label: `${c.code || 'Custom'}: ${c.name}`,
                 meta: c,
             })),
-        [controls],
+        [practices],
     );
 
     const mutation = useMutation({
@@ -172,7 +172,7 @@ export function NewEvidenceTextModal({
         if (!canSubmit) return;
         setError('');
         telemetry.trackSubmit({
-            hasControlLink: Boolean(form.controlId),
+            hasPracticeLink: Boolean(form.practiceId),
             contentLength: form.content?.length ?? 0,
         });
         mutation.mutate(form);
@@ -229,22 +229,22 @@ export function NewEvidenceTextModal({
                                     autoComplete="off"
                                 />
                             </div>
-                            <FormField label={tr('textModal.linkToControl')}>
-                                <Combobox<false, ControlOption>
-                                    id="text-evidence-control-select"
-                                    name="controlId"
-                                    options={controlOptions}
+                            <FormField label={tr('textModal.linkToPractice')}>
+                                <Combobox<false, PracticeOption>
+                                    id="text-evidence-practice-select"
+                                    name="practiceId"
+                                    options={practiceOptions}
                                     selected={
-                                        controlOptions.find(
-                                            (o) => o.value === form.controlId,
+                                        practiceOptions.find(
+                                            (o) => o.value === form.practiceId,
                                         ) ?? null
                                     }
                                     setSelected={(option) =>
-                                        update('controlId', option?.value ?? '')
+                                        update('practiceId', option?.value ?? '')
                                     }
-                                    placeholder={tr('textModal.controlPlaceholder')}
-                                    searchPlaceholder={tr('textModal.searchControls')}
-                                    emptyState={tr('textModal.noControlsMatch')}
+                                    placeholder={tr('textModal.practicePlaceholder')}
+                                    searchPlaceholder={tr('textModal.searchPractices')}
+                                    emptyState={tr('textModal.noPracticesMatch')}
                                     matchTriggerWidth
                                     buttonProps={{ className: 'w-full' }}
                                     caret

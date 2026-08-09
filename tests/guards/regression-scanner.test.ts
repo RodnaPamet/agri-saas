@@ -191,7 +191,7 @@ describe('Regression: Schema integrity', () => {
         const content = readPrismaSchema();
 
         // These models MUST have tenantId
-        const tenantScopedModels = ['Risk', 'Control', 'Evidence', 'Task', 'Asset'];
+        const tenantScopedModels = ['Risk', 'Practice', 'Evidence', 'Task', 'Asset'];
 
         for (const model of tenantScopedModels) {
             const modelMatch = content.match(new RegExp(`model\\s+${model}\\s*\\{([^}]+)\\}`, 's'));
@@ -204,7 +204,7 @@ describe('Regression: Schema integrity', () => {
     test('Prisma schema has deletedAt on soft-deletable models', () => {
         const content = readPrismaSchema();
 
-        const softDeleteModels = ['Risk', 'Control'];
+        const softDeleteModels = ['Risk', 'Practice'];
 
         for (const model of softDeleteModels) {
             const modelMatch = content.match(new RegExp(`model\\s+${model}\\s*\\{([^}]+)\\}`, 's'));

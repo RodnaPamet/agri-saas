@@ -35,7 +35,7 @@
  *     replace the MID-scale (5/7/8/9), not the micro (1/2/3/4)
  *     or the section-equivalent (6).
  *   • Spacing inside `src/components/` — primitives sometimes
- *     need precise control for visual fidelity.
+ *     need precise practice for visual fidelity.
  */
 import * as fs from 'fs';
 import * as path from 'path';

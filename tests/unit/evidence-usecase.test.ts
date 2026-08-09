@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- test mocks
  * mirror runtime Prisma/repo contracts; per-line typing has poor
  * cost/benefit ratio in test files (same standard pattern as
- * tests/unit/control-applicability.test.ts). */
+ * tests/unit/practice-applicability.test.ts). */
 
 /**
  * Unit tests for `src/app-layer/usecases/evidence.ts`.
@@ -34,7 +34,7 @@ const mockDb = {
     user: { findUnique: jest.fn() },
     notification: { create: jest.fn() },
     evidence: { delete: jest.fn(), findMany: jest.fn() },
-    controlEvidenceLink: { create: jest.fn() },
+    practiceEvidenceLink: { create: jest.fn() },
     // SP audit — getEvidence now looks up an optional SharePoint sync mapping.
     integrationSyncMapping: { findFirst: jest.fn().mockResolvedValue(null) },
 } as any;

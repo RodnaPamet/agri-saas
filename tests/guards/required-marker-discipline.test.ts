@@ -4,8 +4,8 @@
  * The visual cue for a required form field — a red asterisk next
  * to the label — drifted across seven sites:
  *
- *   • src/app/t/[tenantSlug]/(app)/controls/ControlDetailSheet.tsx
- *   • src/app/t/[tenantSlug]/(app)/controls/[controlId]/_modals/EditControlModal.tsx
+ *   • src/app/t/[tenantSlug]/(app)/practices/PracticeDetailSheet.tsx
+ *   • src/app/t/[tenantSlug]/(app)/practices/[practiceId]/_modals/EditPracticeModal.tsx
  *   • src/app/t/[tenantSlug]/(app)/admin/integrations/page.tsx        (×2)
  *   • src/app/t/[tenantSlug]/(app)/evidence/UploadEvidenceModal.tsx
  *   • src/app/t/[tenantSlug]/(app)/evidence/NewEvidenceTextModal.tsx
@@ -17,7 +17,7 @@
  *   1. Accessibility — the inline shape omitted `aria-hidden="true"`
  *      so screen readers announced a literal "asterisk" before each
  *      required field. The `aria-required="true"` on the form
- *      control is the canonical signal for assistive tech; the
+ *      practice is the canonical signal for assistive tech; the
  *      visual asterisk is sighted-only and must be hidden from AT.
  *
  *   2. Visual rhythm — three flavours rendered in the codebase:

@@ -3,7 +3,7 @@
  *
  * Forms used to be `<fieldset className="space-y-default">` with no
  * eyebrow grouping. Field dependencies (likelihood × impact for
- * scoring, applicability + justification for controls) lived
+ * scoring, applicability + justification for practices) lived
  * unframed. After PR-6, every form ≥ 6 fields wraps its content
  * in `<FormSection>` so the structure is visible before fields
  * are read.
@@ -17,7 +17,7 @@
  *      a flat-fieldset shape and the visual rhythm regresses.
  *
  * Future modal migrations
- *   When NewControlModal, EditControlModal, UploadEvidenceModal,
+ *   When NewPracticeModal, EditPracticeModal, UploadEvidenceModal,
  *   and the vendor-assessment forms migrate, extend the
  *   `ADOPTERS` array in this ratchet. A migration PR that adds
  *   the import + mount is the trigger to extend the curated

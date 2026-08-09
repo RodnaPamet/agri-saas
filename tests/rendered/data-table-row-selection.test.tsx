@@ -7,7 +7,7 @@
  * always equal → the row never re-rendered → `data-selected` stayed
  * `false` and the circular checkbox stayed unchecked (the
  * "selecting a row doesn't highlight" bug, most visible on the
- * control Tasks tab where the row highlight is the only selection
+ * practice Tasks tab where the row highlight is the only selection
  * feedback). The fix threads an `isSelected` SNAPSHOT prop captured
  * at parent-render time and compares THAT. These tests lock it in.
  */

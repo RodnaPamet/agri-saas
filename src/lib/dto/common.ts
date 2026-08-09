@@ -36,7 +36,7 @@ export const ApiErrorResponseSchema = z
     .object({
         error: z.object({
             code: z.string().openapi({ example: 'NOT_FOUND' }),
-            message: z.string().openapi({ example: 'Control not found' }),
+            message: z.string().openapi({ example: 'Practice not found' }),
             requestId: z.string().optional().openapi({ example: 'req_01HG7…' }),
             details: z.unknown().optional(),
         }),
@@ -60,7 +60,7 @@ export const AuditLogEntrySchema = z
     .object({
         id: z.string(),
         action: z.string().openapi({ example: 'CONTROL_CREATED' }),
-        entity: z.string().optional().openapi({ example: 'Control' }),
+        entity: z.string().optional().openapi({ example: 'Practice' }),
         entityId: z.string().optional(),
         details: z.string().nullable(),
         createdAt: z.string().openapi({ example: '2026-04-28T07:42:11.000Z' }),

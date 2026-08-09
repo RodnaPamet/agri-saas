@@ -29,7 +29,7 @@ export const env = createEnv({
         // (mirrors the GAP-03 DATA_ENCRYPTION_KEY pattern).
         //
         // GAP-13 — Redis is REQUIRED in production. Without it three
-        // production-load-bearing controls collapse into no-ops:
+        // production-load-bearing practices collapse into no-ops:
         //   - login brute-force throttle (Epic A.3)
         //   - invite-redemption rate limit
         //   - email-dispatch rate limit

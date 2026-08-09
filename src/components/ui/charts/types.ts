@@ -111,7 +111,7 @@ export type ChartTooltipContext<T extends Datum = any> = {
 // consumer-facing shapes every chart surface in Inflect should speak
 // — sparklines, bar charts, progress widgets, KPI cards, and any
 // future reporting component. They carry zero domain semantics
-// (evidence / risk / control / audit stay out of `charts/`) and no
+// (evidence / risk / practice / audit stay out of `charts/`) and no
 // visx dependency, so non-chart consumers (tooltip content, export
 // serialisers, API clients) can import them without pulling a d3
 // transitive.
@@ -220,7 +220,7 @@ export interface TooltipPayload<T extends Datum = Datum> {
  * A single progress measurement the `ProgressCard` / dashboard KPI
  * widgets render. `current` + `target` are the two values the bar
  * fills from; `unit` is the optional trailing display unit (e.g.
- * "%", "controls", "days"). When `target` is omitted, consumers
+ * "%", "practices", "days"). When `target` is omitted, consumers
  * default to 100 — the common percent-coverage case.
  */
 export interface ProgressMetric {

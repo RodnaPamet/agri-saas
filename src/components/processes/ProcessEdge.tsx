@@ -1,10 +1,10 @@
 "use client";
 
 /**
- * R25-PR-D / R27-PR-B — ProcessEdge + ControlOnEdge overlay.
+ * R25-PR-D / R27-PR-B — ProcessEdge + PracticeOnEdge overlay.
  *
  * Custom xyflow edge with a token-backed bezier stroke, a three-tier
- * connection LANGUAGE, and an optional edge-mounted Control overlay.
+ * connection LANGUAGE, and an optional edge-mounted Practice overlay.
  *
  * Edge variants (R27-PR-B) — a deliberately minimal hierarchy. One
  * line style per meaning; three is the whole vocabulary:
@@ -22,12 +22,12 @@
  * affordance. A selected edge keeps its dash signature (only the
  * colour + weight lift) so the variant stays legible while active.
  *
- * The control-on-edge treatment is the R25 architectural commit:
- * controls are governance objects placed BETWEEN process steps,
+ * The practice-on-edge treatment is the R25 architectural commit:
+ * practices are governance objects placed BETWEEN process steps,
  * not separate nodes hanging in space.
  *
  * Data-shape contract:
- *   edge.data.control:  { label: string } | undefined
+ *   edge.data.practice:  { label: string } | undefined
  *   edge.data.variant:  'flow' | 'conditional' | 'reference' | undefined
  *   edge.data.isPreview: true while a proximity auto-bind is in flight
  */
@@ -79,8 +79,8 @@ export function isProcessEdgeVariant(v: unknown): v is ProcessEdgeVariant {
 }
 
 export interface ProcessEdgeData {
-    /** Optional control placed on this connection. */
-    control?: {
+    /** Optional practice placed on this connection. */
+    practice?: {
         label: string;
     };
     /**
@@ -187,15 +187,15 @@ function ProcessEdgeImpl(props: EdgeProps) {
     });
 
     const edgeData = data as ProcessEdgeData | undefined;
-    const control = edgeData?.control;
+    const practice = edgeData?.practice;
     const isPreview = edgeData?.isPreview === true;
     const variant: ProcessEdgeVariant = isProcessEdgeVariant(edgeData?.variant)
         ? edgeData.variant
         : "flow";
     const { setEdges } = useReactFlow();
 
-    // R25-PR-E — single-click "Add control" affordance.
-    const addControl = useCallback(() => {
+    // R25-PR-E — single-click "Add practice" affordance.
+    const addPractice = useCallback(() => {
         setEdges((eds) =>
             eds.map((edge) =>
                 edge.id === id
@@ -203,7 +203,7 @@ function ProcessEdgeImpl(props: EdgeProps) {
                           ...edge,
                           data: {
                               ...(edge.data as ProcessEdgeData | undefined),
-                              control: { label: t("processEdge.controlDefault") },
+                              practice: { label: t("processEdge.practiceDefault") },
                           },
                       }
                     : edge,
@@ -213,7 +213,7 @@ function ProcessEdgeImpl(props: EdgeProps) {
 
     // R27-PR-B — cycle the connection variant
     // flow → conditional → reference → flow. One affordance, no
-    // dialog: visual authoring, consistent with the add-control UX.
+    // dialog: visual authoring, consistent with the add-practice UX.
     const cycleVariant = useCallback(() => {
         setEdges((eds) =>
             eds.map((edge) => {
@@ -262,7 +262,7 @@ function ProcessEdgeImpl(props: EdgeProps) {
     const edgeStyle: CSSProperties = edgeDimmed
         ? { ...baseStyle, opacity: 0.3 }
         : baseStyle;
-    // The automation kind's chip shows when there's no explicit label/control.
+    // The automation kind's chip shows when there's no explicit label/practice.
     const autoLabel =
         autoStyle?.label && autoStyle.label.length > 0 && autoKind
             ? t(`processEdge.autoLabel.${autoKind}`)
@@ -279,7 +279,7 @@ function ProcessEdgeImpl(props: EdgeProps) {
                 // composes the emphasis-dim opacity on top.
                 style={edgeStyle}
             />
-            {control && (
+            {practice && (
                 // EdgeLabelRenderer pulls the overlay OUT of the SVG
                 // so React components render natively at the midpoint.
                 <EdgeLabelRenderer>
@@ -290,13 +290,13 @@ function ProcessEdgeImpl(props: EdgeProps) {
                             pointerEvents: "all",
                         }}
                         className="nodrag nopan"
-                        data-control-on-edge="true"
+                        data-practice-on-edge="true"
                     >
-                        <ControlOnEdge label={control.label} />
+                        <PracticeOnEdge label={practice.label} />
                     </div>
                 </EdgeLabelRenderer>
             )}
-            {!control && typeof label === "string" && label.length > 0 && (
+            {!practice && typeof label === "string" && label.length > 0 && (
                 // R31 Bundle 7 (PR 5 minimum viable) — chip-styled
                 // edge label. Pre-R31, the inspector's edge-label
                 // edit set `edge.label` but xyflow's default text
@@ -304,8 +304,8 @@ function ProcessEdgeImpl(props: EdgeProps) {
                 // a custom mount. This pulls a token-driven chip
                 // at the midpoint so labels stay readable when
                 // edges overlap (raw text on a dense graph is
-                // unreadable). If a control already occupies the
-                // midpoint, the label suppresses — the control is
+                // unreadable). If a practice already occupies the
+                // midpoint, the label suppresses — the practice is
                 // the more semantic anchor.
                 <EdgeLabelRenderer>
                     <div
@@ -323,7 +323,7 @@ function ProcessEdgeImpl(props: EdgeProps) {
                     </div>
                 </EdgeLabelRenderer>
             )}
-            {!control &&
+            {!practice &&
                 !(typeof label === "string" && label.length > 0) &&
                 autoLabel && (
                     // VR-5 — semantic automation edge-kind chip.
@@ -345,14 +345,14 @@ function ProcessEdgeImpl(props: EdgeProps) {
                 )}
             {selected && (
                 // R27-PR-B — selection affordances. Sits just above
-                // the midpoint when a control badge occupies it, so
+                // the midpoint when a practice badge occupies it, so
                 // the two never collide. The variant cycle is always
-                // offered; "Add control" only when none exists yet.
+                // offered; "Add practice" only when none exists yet.
                 <EdgeLabelRenderer>
                     <div
                         style={{
                             position: "absolute",
-                            transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY - (control ? 28 : 0)}px)`,
+                            transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY - (practice ? 28 : 0)}px)`,
                             pointerEvents: "all",
                         }}
                         className="nodrag nopan flex items-center gap-1"
@@ -373,18 +373,18 @@ function ProcessEdgeImpl(props: EdgeProps) {
                             />
                             <span>{t(`processEdge.variantLabel.${variant}`)}</span>
                         </button>
-                        {!control && selected && (
+                        {!practice && selected && (
                             <button
                                 type="button"
-                                onClick={addControl}
+                                onClick={addPractice}
                                 className="inline-flex items-center gap-1 rounded-[8px] border border-border-emphasis bg-canvas-frame px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-content-emphasis transition-colors hover:bg-bg-muted"
-                                data-add-control-affordance="true"
+                                data-add-practice-affordance="true"
                             >
                                 <ShieldPlus
                                     className="h-3 w-3 shrink-0 text-[color:var(--brand-default)]"
                                     aria-hidden="true"
                                 />
-                                <span>{t("processEdge.addControl")}</span>
+                                <span>{t("processEdge.addPractice")}</span>
                             </button>
                         )}
                     </div>
@@ -402,29 +402,29 @@ export const ProcessEdge = memo(ProcessEdgeImpl);
 export const PROCESS_EDGE_TYPE = "processEdge";
 
 /**
- * R25-PR-D — ControlOnEdge.
+ * R25-PR-D — PracticeOnEdge.
  *
- * Visual representation of a control inserted into a process
+ * Visual representation of a practice inserted into a process
  * connection. Deliberately distinct from a process node: a small
  * pill, shield-check icon, no handles, elevated tint — it reads as
- * "a control ON this connection", not another step.
+ * "a practice ON this connection", not another step.
  */
-interface ControlOnEdgeProps {
+interface PracticeOnEdgeProps {
     label: string;
 }
 
-export function ControlOnEdge({ label }: ControlOnEdgeProps) {
-    // R32-PR12 — chip vocabulary match. Pre-R32 the control pill
+export function PracticeOnEdge({ label }: PracticeOnEdgeProps) {
+    // R32-PR12 — chip vocabulary match. Pre-R32 the practice pill
     // had a larger radius than the edge-label chip shipped in
     // R31 Bundle 7. Two pills on the same edge with two
     // different radii — every edge-mounted artefact now reads as
     // one consistent shape language. Same bg-canvas-frame as the
     // label chip; the brand-coloured icon is what distinguishes
-    // the control affordance.
+    // the practice affordance.
     return (
         <div
             className="inline-flex items-center gap-1 rounded-[4px] border border-canvas-border bg-canvas-frame px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-content-emphasis"
-            data-control-on-edge-badge="true"
+            data-practice-on-edge-badge="true"
         >
             <ShieldCheck className="h-3 w-3 shrink-0 text-[color:var(--brand-default)]" />
             <span className="max-w-trunc-tight truncate">{label}</span>

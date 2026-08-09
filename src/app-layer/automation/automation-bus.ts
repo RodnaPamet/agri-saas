@@ -182,10 +182,10 @@ export function resetAutomationBus(): void {
  *
  *   await emitAutomationEvent(ctx, {
  *       event: 'TEST_PLAN_CREATED',
- *       entityType: 'ControlTestPlan',
+ *       entityType: 'PracticeTestPlan',
  *       entityId: plan.id,
  *       actorUserId: ctx.userId,
- *       data: { name: plan.name, controlId: plan.controlId },
+ *       data: { name: plan.name, practiceId: plan.practiceId },
  *   });
  */
 export async function emitAutomationEvent(

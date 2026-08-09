@@ -98,7 +98,7 @@ export const GET = withApiErrorHandling(
                 // immutable per tile — long-lived cache so a downloaded pack
                 // stays warm. The SW's dedicated basemap cache is the offline
                 // store; this header lets the HTTP cache help too.
-                'Cache-Control': 'public, max-age=604800, immutable',
+                'Cache-Practice': 'public, max-age=604800, immutable',
                 'Content-Length': String(body.byteLength),
             },
         });

@@ -61,13 +61,13 @@ export interface EvidenceExpiringPayload {
     evidenceTitle: string;
     daysRemaining: number;
     retentionUntil: string;
-    controlName?: string | null;
+    practiceName?: string | null;
     recipientName: string;
     tenantSlug: string;
 }
 
 export function buildEvidenceExpiringEmail(payload: EvidenceExpiringPayload): EmailTemplateResult {
-    const { evidenceTitle, daysRemaining, retentionUntil, controlName, recipientName, tenantSlug } = payload;
+    const { evidenceTitle, daysRemaining, retentionUntil, practiceName, recipientName, tenantSlug } = payload;
     const urgency = daysRemaining <= 7 ? '⚠️ ' : '';
     const link = absoluteUrl(`/t/${tenantSlug}/evidence`);
 
@@ -77,7 +77,7 @@ export function buildEvidenceExpiringEmail(payload: EvidenceExpiringPayload): Em
             `Hi ${recipientName},`,
             '',
             `Evidence "${evidenceTitle}" is expiring in ${daysRemaining} day(s) (${retentionUntil}).`,
-            ...(controlName ? [`Control: ${controlName}`] : []),
+            ...(practiceName ? [`Practice: ${practiceName}`] : []),
             '',
             'Please upload refreshed evidence or extend the retention date.',
             '',
@@ -90,7 +90,7 @@ export function buildEvidenceExpiringEmail(payload: EvidenceExpiringPayload): Em
   <h2 style="color: #1a1a2e; font-size: 18px; margin-bottom: 16px;">${escapeHtml(urgency)}Evidence expiring soon</h2>
   <p style="color: #444; line-height: 1.5;">Hi ${escapeHtml(recipientName)},</p>
   <p style="color: #444; line-height: 1.5;">Evidence <strong>"${escapeHtml(evidenceTitle)}"</strong> is expiring in <strong>${daysRemaining} day(s)</strong> (${escapeHtml(retentionUntil)}).</p>
-  ${controlName ? `<p style="color: #666; line-height: 1.5;">Control: <strong>${escapeHtml(controlName)}</strong></p>` : ''}
+  ${practiceName ? `<p style="color: #666; line-height: 1.5;">Practice: <strong>${escapeHtml(practiceName)}</strong></p>` : ''}
   <p style="color: #444; line-height: 1.5;">Please upload refreshed evidence or extend the retention date.</p>
   <a href="${escapeHtml(link)}" style="display: inline-block; background: #4f46e5; color: #fff; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: 500;">View Evidence</a>
   <p style="color: #999; font-size: 12px; margin-top: 24px;">— Agrent</p>
@@ -550,7 +550,7 @@ export function buildAccessReviewOverdueEscalationEmail(
             '',
             `Open the campaign: ${link}`,
             '',
-            'Severely overdue campaigns appear in SOC 2 evidence reviews as control failures — closing this out is high-priority.',
+            'Severely overdue campaigns appear in SOC 2 evidence reviews as practice failures — closing this out is high-priority.',
             '',
             '— Agrent',
         ].join('\n'),
@@ -566,7 +566,7 @@ export function buildAccessReviewOverdueEscalationEmail(
     <tr><td style="color: #888; padding: 4px 0;">Days overdue</td><td style="color: #b91c1c;"><strong>${daysOverdue}</strong></td></tr>
   </table>
   <a href="${escapeHtml(link)}" style="display: inline-block; background: #b91c1c; color: #fff; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: 500;">Open campaign</a>
-  <p style="color: #999; font-size: 12px; margin-top: 24px;">Severely overdue campaigns appear in SOC 2 evidence reviews as control failures.</p>
+  <p style="color: #999; font-size: 12px; margin-top: 24px;">Severely overdue campaigns appear in SOC 2 evidence reviews as practice failures.</p>
   <p style="color: #999; font-size: 12px; margin-top: 8px;">— Agrent</p>
 </div>`.trim(),
     };
@@ -576,17 +576,17 @@ export function buildAccessReviewOverdueEscalationEmail(
 
 export interface ExceptionExpiringPayload {
     recipientName: string;
-    /// Control identity surfaces in the subject + body so the
+    /// Practice identity surfaces in the subject + body so the
     /// recipient can identify which exception without opening.
-    controlName: string;
-    controlCode?: string | null;
+    practiceName: string;
+    practiceCode?: string | null;
     daysRemaining: 30 | 14 | 7;
     expiresAtIso: string;
     tenantSlug: string;
     /// Linked exception id — drops the recipient straight into the
-    /// review surface on the control detail page.
+    /// review surface on the practice detail page.
     exceptionId: string;
-    controlId: string;
+    practiceId: string;
 }
 
 export function buildExceptionExpiringEmail(
@@ -594,34 +594,34 @@ export function buildExceptionExpiringEmail(
 ): EmailTemplateResult {
     const {
         recipientName,
-        controlName,
-        controlCode,
+        practiceName,
+        practiceCode,
         daysRemaining,
         expiresAtIso,
         tenantSlug,
         exceptionId,
-        controlId,
+        practiceId,
     } = payload;
-    const link = absoluteUrl(`/t/${tenantSlug}/controls/${controlId}#exceptions`);
-    const controlLabel = controlCode
-        ? `${controlCode} — ${controlName}`
-        : controlName;
+    const link = absoluteUrl(`/t/${tenantSlug}/practices/${practiceId}#exceptions`);
+    const practiceLabel = practiceCode
+        ? `${practiceCode} — ${practiceName}`
+        : practiceName;
     const dueLabel = formatIsoDate(expiresAtIso);
     const urgencyTag = daysRemaining <= 7 ? '⏰ ' : '';
 
     return {
-        subject: `${urgencyTag}Control exception expires in ${daysRemaining} days: ${controlLabel}`,
+        subject: `${urgencyTag}Practice exception expires in ${daysRemaining} days: ${practiceLabel}`,
         bodyText: [
             `Hi ${recipientName},`,
             '',
-            `A control exception is approaching its review deadline.`,
+            `A practice exception is approaching its review deadline.`,
             '',
-            `  Control: ${controlLabel}`,
+            `  Practice: ${practiceLabel}`,
             `  Expires: ${dueLabel} (${daysRemaining} days)`,
             '',
             `Open the exception: ${link}`,
             '',
-            'Renew the exception or accept that the control becomes',
+            'Renew the exception or accept that the practice becomes',
             'in-effect again on the expiry date. Auditors expect every',
             'expired exception to either have a renewal record or a',
             'closing remediation note.',
@@ -630,11 +630,11 @@ export function buildExceptionExpiringEmail(
         ].join('\n'),
         bodyHtml: `
 <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px;">
-  <h2 style="color: #1a1a2e; font-size: 18px; margin-bottom: 16px;">Control exception expires in ${daysRemaining} days</h2>
+  <h2 style="color: #1a1a2e; font-size: 18px; margin-bottom: 16px;">Practice exception expires in ${daysRemaining} days</h2>
   <p style="color: #444; line-height: 1.5;">Hi ${escapeHtml(recipientName)},</p>
-  <p style="color: #444; line-height: 1.5;">A control exception is approaching its review deadline.</p>
+  <p style="color: #444; line-height: 1.5;">A practice exception is approaching its review deadline.</p>
   <table style="width: 100%; border-collapse: collapse; margin: 16px 0;">
-    <tr><td style="color: #888; padding: 4px 0; width: 100px;">Control</td><td style="color: #444;"><strong>${escapeHtml(controlLabel)}</strong></td></tr>
+    <tr><td style="color: #888; padding: 4px 0; width: 100px;">Practice</td><td style="color: #444;"><strong>${escapeHtml(practiceLabel)}</strong></td></tr>
     <tr><td style="color: #888; padding: 4px 0;">Expires</td><td style="color: #444;"><strong>${escapeHtml(dueLabel)}</strong> (${daysRemaining} days)</td></tr>
     <tr><td style="color: #888; padding: 4px 0;">Exception</td><td style="color: #444;">${escapeHtml(exceptionId)}</td></tr>
   </table>

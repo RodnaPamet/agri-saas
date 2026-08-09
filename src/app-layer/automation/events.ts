@@ -14,7 +14,7 @@
  */
 
 export const AUTOMATION_EVENTS = {
-    // ─── Control testing ───
+    // ─── Practice testing ───
     TEST_PLAN_CREATED: 'TEST_PLAN_CREATED',
     TEST_PLAN_UPDATED: 'TEST_PLAN_UPDATED',
     TEST_PLAN_PAUSED: 'TEST_PLAN_PAUSED',
@@ -55,7 +55,7 @@ export const AUTOMATION_EVENTS = {
     SCHEDULE: 'SCHEDULE',
 
     // ─── Domain coverage fill (cycle-2 follow-up) — three high-value triggers
-    //     the audit flagged as missing: control lifecycle, policy governance,
+    //     the audit flagged as missing: practice lifecycle, policy governance,
     //     and vendor-risk deadlines. ───
     CONTROL_STATUS_CHANGED: 'CONTROL_STATUS_CHANGED',
     POLICY_REVIEW_DUE: 'POLICY_REVIEW_DUE',

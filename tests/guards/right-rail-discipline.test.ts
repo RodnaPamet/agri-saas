@@ -20,7 +20,7 @@
  *
  * What this ratchet does NOT police
  *   The exact rail content (linked tasks, activity, quick actions)
- *   stays under the page's editorial control. The ratchet only
+ *   stays under the page's editorial practice. The ratchet only
  *   asserts the rail SLOT is filled, not what fills it.
  */
 import * as fs from 'fs';
@@ -42,7 +42,7 @@ const ENTITY_LIST_PAGE_PATH = 'src/components/layout/EntityListPage.tsx';
 const SELECTION_PANEL_PATH =
     'src/components/ui/selection-summary-panel.tsx';
 const CONTROLS_CLIENT_PATH =
-    'src/app/t/[tenantSlug]/(app)/controls/ControlsClient.tsx';
+    'src/app/t/[tenantSlug]/(app)/practices/PracticesClient.tsx';
 
 const ASIDE_PANEL_PATH = 'src/components/ui/aside-panel.tsx';
 
@@ -109,7 +109,7 @@ describe('Right-rail master-detail discipline (Roadmap-2 PR-5)', () => {
  * `aside` slot for the multi-select selection-summary use case. The
  * canonical content is `<SelectionSummaryPanel>` (count + batch verbs
  * + clear), docked inside an `<AsidePanel>`. This block locks the slot
- * shape, the a11y wrapper, the xl-only docking, and the controls-page
+ * shape, the a11y wrapper, the xl-only docking, and the practices-page
  * proof-of-pattern adoption — same regression-class lock as Phase 1.
  */
 describe('Right-rail list-page aside discipline (Phase 2)', () => {
@@ -158,8 +158,8 @@ describe('Right-rail list-page aside discipline (Phase 2)', () => {
         expect(src).toMatch(/clearSelection/);
     });
 
-    it('controls list page uses the header-row selection bar (B1), keeping the browse/AI rails', () => {
-        // B1 (2026-06-07): the controls selection actions moved from the
+    it('practices list page uses the header-row selection bar (B1), keeping the browse/AI rails', () => {
+        // B1 (2026-06-07): the practices selection actions moved from the
         // SelectionSummaryPanel right-rail INTO the DataTable's header-row
         // `batchActions` bar (the row-select bar that pops over the
         // column-names row). The aside slot persists for the browse + AI
@@ -167,7 +167,7 @@ describe('Right-rail list-page aside discipline (Phase 2)', () => {
         const src = read(CONTROLS_CLIENT_PATH);
         expect(src).toMatch(/<EntityListPage[\s\S]*?\baside=\{/);
         expect(src).not.toContain('<SelectionSummaryPanel');
-        expect(src).toMatch(/batchActions:\s*controlBatchActions/);
+        expect(src).toMatch(/batchActions:\s*practiceBatchActions/);
     });
 });
 

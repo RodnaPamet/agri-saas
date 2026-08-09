@@ -6,7 +6,7 @@
  * Filter.Select/Filter.List components and the URL state system.
  *
  * Usage:
- *   const controlFilters = createFilterDefs<Control>({
+ *   const practiceFilters = createFilterDefs<Practice>({
  *     status: {
  *       label: "Status",
  *       icon: CircleDot,
@@ -198,7 +198,7 @@ export function optionsFromArray(values: string[]): FilterOption[] {
  * kept for legacy call sites that rely on its loose `Record<string, …>` shape.
  *
  * Usage:
- *   const defs = createTypedFilterDefs<Control>()({
+ *   const defs = createTypedFilterDefs<Practice>()({
  *     status:   { label: "Status",   icon: CircleDot, options: STATUS_OPTIONS },
  *     severity: { label: "Severity", icon: Flag,      options: SEV_OPTIONS    },
  *   });

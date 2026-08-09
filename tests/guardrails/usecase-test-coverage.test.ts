@@ -14,7 +14,7 @@
  *     repo seam) or `tests/integration/` (DB-backed) that imports
  *     the usecase via its canonical `@/app-layer/usecases/<name>`
  *     specifier. Importing via the domain barrel
- *     (`@/app-layer/usecases/control`) also counts.
+ *     (`@/app-layer/usecases/practice`) also counts.
  *
  * Currently untested files are listed in `EXEMPTIONS` with a written
  * reason. The list can only shrink — a CI assertion below enforces
@@ -49,10 +49,10 @@ const TEST_DIRS = [
 const EXEMPTIONS: Record<string, string> = {
     // Q1 — Compliance core targets in roadmap. clause/mapping back the
     // framework + cross-framework projection layer; tested today
-    // transitively via control.queries integration tests but the
+    // transitively via practice.queries integration tests but the
     // ratchet asks for a direct import.
     'src/app-layer/usecases/clause.ts':
-        'Roadmap Q1 — exercised transitively via control/framework tests; direct unit tests pending.',
+        'Roadmap Q1 — exercised transitively via practice/framework tests; direct unit tests pending.',
     'src/app-layer/usecases/framework/catalog.ts':
         'Roadmap Q1 — fixtures-driven catalog loader, currently exercised only via framework.install integration.',
     'src/app-layer/usecases/framework/tree.ts':
@@ -69,12 +69,12 @@ const EXEMPTIONS: Record<string, string> = {
         'Roadmap Q3 — notification dispatch; covered indirectly by deadline-monitor + automation tests.',
 
     // Inherited data / vendor-audit / traceability-graph — supporting domains
-    'src/app-layer/usecases/inherited-control-data.ts':
-        'Roadmap Q3 — vendor → tenant inherited control denormalisation, indirectly exercised by vendor.assessment tests.',
+    'src/app-layer/usecases/inherited-practice-data.ts':
+        'Roadmap Q3 — vendor → tenant inherited practice denormalisation, indirectly exercised by vendor.assessment tests.',
     'src/app-layer/usecases/vendor-audit.ts':
         'Roadmap Q2 — vendor audit cycle, pending direct unit tests in Vendor PR.',
     'src/app-layer/usecases/traceability.ts':
-        'Asset ↔ control mapping verbs, exercised end-to-end through the control detail page; pending direct unit tests. (Replaced the traceability-graph.ts entry, which went with the risk register.)',
+        'Asset ↔ practice mapping verbs, exercised end-to-end through the practice detail page; pending direct unit tests. (Replaced the traceability-graph.ts entry, which went with the risk register.)',
 
     // Test-internal hardening — last priority, low blast radius.
 };
@@ -124,8 +124,8 @@ function isImported(usecaseRel: string, testSource: string): boolean {
     const noExt = usecaseRel.replace(/\.ts$/, '');
     const modulePath = noExt.replace('src/app-layer/usecases/', '@/app-layer/usecases/');
     // Domain barrel — when the file lives in a folder, an import of
-    // the parent (e.g. `@/app-layer/usecases/control` for files under
-    // `usecases/control/`) is the canonical re-export channel.
+    // the parent (e.g. `@/app-layer/usecases/practice` for files under
+    // `usecases/practice/`) is the canonical re-export channel.
     const lastSlash = modulePath.lastIndexOf('/');
     const parent = lastSlash > 0 ? modulePath.slice(0, lastSlash) : null;
 

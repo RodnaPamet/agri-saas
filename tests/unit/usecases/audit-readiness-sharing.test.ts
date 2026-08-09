@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- test mocks + fake DB. */
 /**
  * Unit tests for `src/app-layer/usecases/audit-readiness/sharing.ts` —
- * the share-link + auditor-account access-control surface.
+ * the share-link + auditor-account access-practice surface.
  *
  * Wave-3 branch coverage. Compliance-critical: a bug here either
  *   - lets a stale token through after the pack was revoked, OR

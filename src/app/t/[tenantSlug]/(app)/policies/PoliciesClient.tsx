@@ -78,7 +78,7 @@ interface PoliciesClientProps {
  *
  * Epic 45.1 — page sits on the unified `<EntityListPage>` shell
  * (Epic 91) so the layout chrome (header, filters, body, modals
- * passthrough) stays consistent with controls + risks.
+ * passthrough) stays consistent with practices + risks.
  */
 export function PoliciesClient(props: PoliciesClientProps) {
     const filterCtx = useFilterContext([], POLICY_FILTER_KEYS, {

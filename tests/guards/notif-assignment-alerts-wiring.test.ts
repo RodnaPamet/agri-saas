@@ -10,10 +10,10 @@
  *      EVERY task write that may have set the assignee
  *      (createTask + assignTask). Pre-PR-A the email path
  *      fired but the in-app bell stayed silent.
- *   4. `control/mutations.ts::setControlOwner` calls
+ *   4. `practice/mutations.ts::setPracticeOwner` calls
  *      `createAssignmentNotification('CONTROL_ASSIGNED', …)`
  *      after committing the ownership change. Pre-PR-A
- *      control owner changes wrote only the audit row.
+ *      practice owner changes wrote only the audit row.
  *
  * Each surface anchored on a verifiable substring so a future
  * refactor that silently drops one of the four trips CI with
@@ -101,7 +101,7 @@ describe('PR-A notification-assignment alert wiring', () => {
             const s = src();
             expect(s).toMatch(/export async function createAssignmentNotification/);
             // 2026-05-30 — union widened to cover risk + asset
-            // assignment alongside task + control. Assert all four are
+            // assignment alongside task + practice. Assert all four are
             // present (order-independent) so a future drop trips CI.
             for (const kind of [
                 'TASK_ASSIGNED',
@@ -197,9 +197,9 @@ describe('PR-A notification-assignment alert wiring', () => {
         });
     });
 
-    describe('4. control/mutations.ts wires CONTROL_ASSIGNED in setControlOwner', () => {
+    describe('4. practice/mutations.ts wires CONTROL_ASSIGNED in setPracticeOwner', () => {
         const src = () =>
-            read('src/app-layer/usecases/control/mutations.ts');
+            read('src/app-layer/usecases/practice/mutations.ts');
 
         it('imports createAssignmentNotification', () => {
             expect(src()).toMatch(
@@ -207,9 +207,9 @@ describe('PR-A notification-assignment alert wiring', () => {
             );
         });
 
-        it('setControlOwner calls createAssignmentNotification with CONTROL_ASSIGNED', () => {
+        it('setPracticeOwner calls createAssignmentNotification with CONTROL_ASSIGNED', () => {
             const s = src();
-            const start = s.indexOf('export async function setControlOwner');
+            const start = s.indexOf('export async function setPracticeOwner');
             expect(start).toBeGreaterThan(-1);
             const end = s.indexOf('// ─── Cadence', start);
             expect(end).toBeGreaterThan(start);
@@ -227,10 +227,10 @@ describe('PR-A notification-assignment alert wiring', () => {
             // bumpEntityCacheVersion(...)` (post-tx) appearing BEFORE
             // the createAssignmentNotification call.
             const s = src();
-            const start = s.indexOf('export async function setControlOwner');
+            const start = s.indexOf('export async function setPracticeOwner');
             const end = s.indexOf('// ─── Cadence', start);
             const body = s.slice(start, end);
-            const bumpIdx = body.indexOf("bumpEntityCacheVersion(ctx, 'control')");
+            const bumpIdx = body.indexOf("bumpEntityCacheVersion(ctx, 'practice')");
             const callIdx = body.indexOf('createAssignmentNotification(');
             expect(bumpIdx).toBeGreaterThan(-1);
             expect(callIdx).toBeGreaterThan(bumpIdx);
@@ -241,7 +241,7 @@ describe('PR-A notification-assignment alert wiring', () => {
             // the deassigned user with "you were assigned" — the
             // guard at the top of the if-block prevents it.
             const s = src();
-            const start = s.indexOf('export async function setControlOwner');
+            const start = s.indexOf('export async function setPracticeOwner');
             const end = s.indexOf('// ─── Cadence', start);
             const body = s.slice(start, end);
             expect(body).toMatch(/if \(ownerUserId && ctx\.tenantSlug\)/);

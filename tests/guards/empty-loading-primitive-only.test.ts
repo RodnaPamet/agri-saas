@@ -24,8 +24,8 @@
  *
  * Today's offenders are six known tab-body inline empty messages:
  * three on the task detail page (No links yet · No comments yet ·
- * No activity yet), one on the control detail page (No tasks yet),
- * and two on the controls/templates page (twin "No templates found"
+ * No activity yet), one on the practice detail page (No tasks yet),
+ * and two on the practices/templates page (twin "No templates found"
  * messages). They sit in EXEMPTIONS as `migrated: false` with the
  * direction of travel being one-way: future PRs migrate sites to
  * `<EmptyState>` / `<InlineEmptyState>` and remove the entry.

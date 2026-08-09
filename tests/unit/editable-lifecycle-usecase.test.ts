@@ -636,24 +636,24 @@ describe('Editable Lifecycle Usecase — Publish Workflow', () => {
     // ─── Custom Action Prefix ────────────────────────────────────
     describe('custom audit configuration', () => {
         it('uses custom action prefix', async () => {
-            const controlConfig: LifecycleAuditConfig = {
-                entityType: 'Control',
+            const practiceConfig: LifecycleAuditConfig = {
+                entityType: 'Practice',
                 actionPrefix: 'CTRL',
             };
 
-            repo.store.set('c1', createEditableState<TestPayload>({ content: 'control draft' }));
+            repo.store.set('c1', createEditableState<TestPayload>({ content: 'practice draft' }));
 
             await publishWithAudit(
                 MOCK_DB, TEST_CTX, 'c1',
                 { publishedBy: 'user-1' },
-                repo, controlConfig,
+                repo, practiceConfig,
             );
 
             expect(mockLogEvent).toHaveBeenCalledWith(
                 MOCK_DB, TEST_CTX,
                 expect.objectContaining({
                     action: 'CTRL_PUBLISHED',
-                    entityType: 'Control',
+                    entityType: 'Practice',
                 }),
             );
         });

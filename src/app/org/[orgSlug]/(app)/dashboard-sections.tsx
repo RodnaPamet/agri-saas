@@ -160,7 +160,7 @@ export function CoverageBar({
 // Card-based representation of the same `TenantHealthRow[]` data
 // `<TenantCoverageList>` consumes. Designed for the portfolio
 // dashboard's `TENANT_LIST` widget when the operator wants a richer
-// per-tenant summary (RAG badge + sparkline + control count + last
+// per-tenant summary (RAG badge + sparkline + practice count + last
 // activity) instead of the dense list. Built on the shared
 // `<CardList>` compound primitives so the layout, hover, focus,
 // and selection affordances stay consistent with every other
@@ -326,15 +326,15 @@ export function DrillDownCtas({
 }: {
     summary: PortfolioSummary;
     orgSlug: string;
-    entries?: ReadonlyArray<'controls' | 'evidence'>;
+    entries?: ReadonlyArray<'practices' | 'evidence'>;
 }) {
     const t = useTranslations('org.sections');
     const all = [
         {
-            key: 'controls' as const,
-            label: t('ctaControls'),
-            count: summary.controls.applicable - summary.controls.implemented,
-            href: `/org/${orgSlug}/controls`,
+            key: 'practices' as const,
+            label: t('ctaPractices'),
+            count: summary.practices.applicable - summary.practices.implemented,
+            href: `/org/${orgSlug}/practices`,
             icon: ShieldCheck,
             tone: 'rose',
         },

@@ -64,8 +64,8 @@ describe('buildContext', () => {
     });
 
     it('includes the question', () => {
-        const prompt = buildContext([chunk()], '  how to control blight?  ');
-        expect(prompt).toContain('how to control blight?');
+        const prompt = buildContext([chunk()], '  how to practice blight?  ');
+        expect(prompt).toContain('how to practice blight?');
     });
 
     it('handles the empty-source case without throwing', () => {
