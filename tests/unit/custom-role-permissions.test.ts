@@ -45,15 +45,19 @@ describe('getPermissionsForRole', () => {
         expect(perms.admin.manage).toBe(false);
     });
 
-    test('all four roles produce valid PermissionSet shapes', () => {
+    test('every role produces a valid PermissionSet shape', () => {
         const roles = ['ADMIN', 'EDITOR', 'AUDITOR', 'READER', 'MECHANISATOR'] as const;
         for (const role of roles) {
             const perms = getPermissionsForRole(role);
-            // Every PermissionSet must have all 10 domains
-            // (11 → 10: `risks` went with the risk register).
+            // Every PermissionSet must have all 11 domains. `knowledge`
+            // joined the set with the KB ask surface — a role that resolves
+            // without it would fail open or closed depending on the caller,
+            // so the shape is asserted exhaustively rather than by subset.
+            // `risks` left it with the risk register: 12 → 11.
             expect(Object.keys(perms).sort()).toEqual([
                 'admin', 'audits', 'controls', 'evidence', 'frameworks',
-                'policies', 'reports', 'tasks', 'tests', 'vendors',
+                'knowledge', 'policies', 'reports', 'tasks', 'tests',
+                'vendors',
             ]);
         }
     });

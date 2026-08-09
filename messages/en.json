@@ -179,7 +179,8 @@
             "basisRecords": "Based on your farm records",
             "priorityHigh": "High",
             "priorityMedium": "Medium",
-            "priorityLow": "Low"
+            "priorityLow": "Low",
+            "sourcesLabel": "Sources"
         },
         "firstRun": {
             "sampleTitle": "You’re exploring with sample data",
@@ -1902,6 +1903,7 @@
                 "frameworks": "Frameworks",
                 "audits": "Audits",
                 "reports": "Reports",
+                "knowledge": "Knowledge",
                 "admin": "Admin"
             },
             "granted": "granted",
@@ -5759,6 +5761,18 @@
         "clearFilters": "Clear filters",
         "emptyTitle": "No articles yet",
         "emptyDesc": "Capture the operating knowledge your team depends on — field SOPs, equipment guides, compliance how-tos.",
+        "ask": {
+            "trigger": "Ask",
+            "title": "Ask the knowledge base",
+            "description": "Ask a question and get an answer grounded in your SOPs and the agronomy catalogue — with its sources.",
+            "queryLabel": "Question",
+            "queryPlaceholder": "e.g. What should I check before spring wheat emergence?",
+            "submit": "Ask",
+            "genericError": "Couldn't reach the knowledge base. Try again in a moment.",
+            "noResultsTitle": "Nothing in the knowledge base yet",
+            "noResultsDescription": "No article or catalogue entry matches this question. Try rephrasing it, or add an article covering this topic.",
+            "sourcesLabel": "Sources"
+        },
         "modal": {
             "title": "New article",
             "description": "Capture operating knowledge your team can reference and acknowledge.",
@@ -6697,6 +6711,7 @@
     "satelliteImagery": {
         "title": "Satellite imagery guide",
         "intro": "The map can shade each field by a satellite index — a per-pixel measure derived from Sentinel-2 imagery. Each index answers a different question about the crop. Pick the one that matches what you're checking; here's what each shows and how to read its colour scale.",
+        "searchableInKnowledgeBase": "This guide is also searchable in the Knowledge Base ↗",
         "back": "Back",
         "tocLabel": "On this page",
         "ndvi": {

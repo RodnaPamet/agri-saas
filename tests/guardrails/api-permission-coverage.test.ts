@@ -90,6 +90,20 @@ const PRIVILEGED_ROOTS: ReadonlyArray<{
             'tenant reads, and burns a globally-unique key with no delete ' +
             'path. Platform-tenant gated in the usecase.',
     },
+    // KB wire-up PR (W3/#91). Deliberately scoped to `knowledge/ask` only —
+    // the sibling article CRUD routes (`GET/POST /knowledge`, etc.) stay on
+    // the usecase-layer `assertCanRead/Write` gate like every other
+    // read-mostly tenant surface; widening the whole `knowledge` root here
+    // would force `requirePermission` onto routes that were deliberately
+    // left off it. This one route is different: it is a per-request LLM
+    // completion over a user-supplied string, so it gets the audited
+    // permission gate (on top of its own rate limit) rather than riding
+    // the coarse read/write role check alone.
+    {
+        relPath: 'src/app/api/t/[tenantSlug]/knowledge/ask',
+        why: 'RAG Q&A over the knowledge base — an LLM-cost surface that ' +
+            'warrants an audited AUTHZ_DENIED trail on top of its rate limit.',
+    },
 ];
 
 /**
