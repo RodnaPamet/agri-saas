@@ -196,14 +196,32 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
     // KPI's own key (status / criticality), so sibling filters
     // survive.
     type AssetKpiId = 'total' | 'active' | 'critical' | 'retired';
-    // guardrail-ignore: KPI counts across the loaded page, not a refilter.
-    const totalAssets = assets.length;
-    // guardrail-ignore: KPI count, not a refilter.
-    const activeAssets = assets.filter((a: any) => a.status === 'ACTIVE').length;
-    // guardrail-ignore: KPI count, not a refilter.
-    const criticalAssets = assets.filter((a: any) => a.criticality === 'HIGH').length;
-    // guardrail-ignore: KPI count, not a refilter.
-    const retiredAssets = assets.filter((a: any) => a.status === 'RETIRED').length;
+
+    // Counted SERVER-side over the whole filtered set, not derived from
+    // the loaded rows. The old client-side derivation was correct only
+    // because the list is unbounded; the moment it pages, "Total" becomes
+    // "total on this page" — a wrong number that looks right. Same filter
+    // params as the list, so the cards always describe the set on screen.
+    const kpiQuery = useQuery({
+        queryKey: [...queryKeys.assets.list(tenantSlug, queryKeyFilters), 'kpi'],
+        queryFn: async () => {
+            const qs = fetchParams.toString();
+            const res = await fetch(apiUrl(`/assets/kpi${qs ? `?${qs}` : ''}`));
+            if (!res.ok) throw new Error('Failed to fetch asset counts');
+            return res.json() as Promise<{
+                total: number; active: number; critical: number; retired: number;
+            }>;
+        },
+    });
+    // While the counts are in flight, fall back to the loaded rows rather
+    // than flashing zeros — a momentary 0 reads as "you have no machines".
+    const totalAssets = kpiQuery.data?.total ?? assets.length;
+    const activeAssets =
+        kpiQuery.data?.active ?? assets.filter((a: any) => a.status === 'ACTIVE').length;
+    const criticalAssets =
+        kpiQuery.data?.critical ?? assets.filter((a: any) => a.criticality === 'HIGH').length;
+    const retiredAssets =
+        kpiQuery.data?.retired ?? assets.filter((a: any) => a.status === 'RETIRED').length;
 
     // Sparkline data per KPI — cumulative count by `createdAt`, so each
     // tile shows how its current number was built up over time. Derived
@@ -514,6 +532,17 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
                     searchPlaceholder={tm('searchPlaceholder')}
                     actions={<>{columnsDropdown}{filtersDropdown}</>}
                 />
+                {/* The flat list is capped at ASSET_LIST_CAP. Say so rather
+                    than letting a truncated table look complete — the KPI
+                    total comes from the server, so we can always tell. */}
+                {kpiQuery.data && assets.length < kpiQuery.data.total && (
+                    <p className="text-sm text-content-muted" id="assets-truncated-notice">
+                        {tm('listTruncated', {
+                            shown: assets.length,
+                            total: kpiQuery.data.total,
+                        })}
+                    </p>
+                )}
             </ListPageShell.Filters>
 
             <ListPageShell.Body>

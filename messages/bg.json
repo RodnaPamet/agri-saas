@@ -392,7 +392,8 @@
         "criticalityHIGH": "Висока",
         "filterTypeDesc": "Какъв вид машина, сграда или инструмент е това.",
         "statusLabel": "Статус",
-        "criticalityLabel": "Критичност"
+        "criticalityLabel": "Критичност",
+        "listTruncated": "Показани са първите {shown} от {total} машини. Уточнете филтрите, за да стесните списъка."
     },
     "controls": {
         "title": "Библиотека с контроли",
