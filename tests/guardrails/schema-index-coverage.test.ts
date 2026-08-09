@@ -232,6 +232,7 @@ const FK_INDEX_EXEMPT: Record<string, string> = {
     'StockTransaction.actorUserId': R_ACTOR,
     'LotLink.actorUserId': R_ACTOR,
     'LogEntry.createdByUserId': R_ACTOR,
+    'AssetMaintenance.createdByUserId': R_ACTOR,
     // ─── Field Journal ───
     // LogEntryFile.fileRecordId — the photo/document link is always read
     // through the parent LogEntry's `files` include (LogEntry.getById),
@@ -445,6 +446,8 @@ const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
         'filtered only by tenantId plus leading-indexed FK / status columns — Layers A/B cover its query shapes; no curated composite index needed today.',
     AccessReviewDecision:
         'filtered only by tenantId plus leading-indexed FK / status columns — Layers A/B cover its query shapes; no curated composite index needed today.',
+    AssetMaintenance:
+        'listForAsset / listOpenForAsset filter tenantId + assetId (+ closedAt IS NULL) ordered by openedAt DESC — covered by @@index([tenantId, assetId, openedAt]) and @@index([tenantId, closedAt]); both take-bounded at MAINTENANCE_PAGE_SIZE.',
     Audit:
         'filtered only by tenantId plus leading-indexed FK / status columns — Layers A/B cover its query shapes; no curated composite index needed today.',
     AuditCycle:

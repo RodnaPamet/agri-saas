@@ -15,6 +15,7 @@ import { useTenantMembers } from '@/components/ui/user-combobox';
 import { useToastWithUndo } from '@/components/ui/hooks';
 import dynamic from 'next/dynamic';
 import LinkedTasksPanel from '@/components/LinkedTasksPanel';
+import { MaintenanceTab } from './MaintenanceTab';
 import { InlineEmptyState } from '@/components/ui/inline-empty-state';
 import { CopyText } from '@/components/ui/copy-text';
 import { Button } from '@/components/ui/button';
@@ -83,6 +84,7 @@ export default function AssetDetailPage() {
     type Tab =
         | 'overview'
         | 'tasks'
+        | 'maintenance'
         | 'evidence'
         | 'mappings'
         | 'traceability'
@@ -91,6 +93,10 @@ export default function AssetDetailPage() {
     const tabs: ReadonlyArray<{ key: Tab; label: string }> = [
         { key: 'overview', label: t('tabOverview') },
         { key: 'tasks', label: t('tabTasks') },
+        // UNGATED on purpose: Evidence / Mappings / Traceability below are
+        // compliance-era surfaces a plain farm hides, but every farm
+        // services its machines.
+        { key: 'maintenance', label: t('tabMaintenance') },
         ...(showCompliance
             ? ([
                   { key: 'evidence', label: t('tabEvidence') },
@@ -308,6 +314,26 @@ export default function AssetDetailPage() {
                     initial={editInitial}
                     onSaved={(updated) => setAsset(updated)}
                 />
+            )}
+
+            {activeTab === 'maintenance' && (
+                <div id="asset-maintenance-tab">
+                    <MaintenanceTab
+                        assetId={assetId}
+                        canWrite={permissions.canWrite}
+                        assetStatus={asset?.status ?? 'ACTIVE'}
+                        onStatusChange={async (status) => {
+                            // The prompt already asked; this is the accepted
+                            // change, not an automatic side effect.
+                            const res = await fetch(apiUrl(`/assets/${assetId}`), {
+                                method: 'PATCH',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ status }),
+                            });
+                            if (res.ok) await fetchAsset();
+                        }}
+                    />
+                </div>
             )}
 
             {activeTab === 'tasks' && (

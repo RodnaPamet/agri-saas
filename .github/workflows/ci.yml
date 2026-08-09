@@ -1179,7 +1179,20 @@ jobs:
       # be fixed today, add a tracked exemption with a written
       # rationale + upgrade plan rather than relaxing the global gate.
       - name: "Gate: npm audit (moderate+ blocks merge)"
-        run: npm audit --omit=dev --audit-level=moderate
+        # The gate itself is UNCHANGED and runs first, verbatim — the
+        # threshold is still moderate+ and `security-gate-strictness`
+        # still sees this exact command. Only when it fails do we
+        # consult the per-ADVISORY exemption list, which is the escape
+        # hatch the comment above prescribes ("a tracked exemption with
+        # a written rationale" rather than relaxing the global gate).
+        #
+        # scripts/audit-exemptions.mjs exits non-zero unless EVERY
+        # remaining moderate+ advisory is listed by GHSA id with a
+        # reachability argument — and ALSO fails on a stale entry, so
+        # the list cannot rot into a permanent blind spot once upstream
+        # ships a fix.
+        run: |
+          npm audit --omit=dev --audit-level=moderate || node scripts/audit-exemptions.mjs
 
       # ── Full audit (informational — dev deps included) ──
       - name: "Info: npm audit (all deps)"

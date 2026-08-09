@@ -78,6 +78,8 @@ export async function createAsset(ctx: RequestContext, data: any) {
             year: data.year ?? null,
             purchaseDate: normalizePurchaseDate(data.purchaseDate) ?? null,
             purchaseCost: data.purchaseCost ?? null,
+            locationId: data.locationId ?? null,
+            usefulLifeYears: data.usefulLifeYears ?? null,
         });
 
         await logEvent(db, ctx, {
@@ -130,6 +132,12 @@ export async function updateAsset(ctx: RequestContext, id: string, data: any) {
             year: data.year,
             purchaseDate: normalizePurchaseDate(data.purchaseDate),
             purchaseCost: data.purchaseCost,
+            // undefined leaves untouched (partial update); '' / null clears
+            // — an empty string would be an invalid FK, same as ownerUserId.
+            locationId:
+                data.locationId === undefined ? undefined : data.locationId || null,
+            usefulLifeYears:
+                data.usefulLifeYears === undefined ? undefined : data.usefulLifeYears || null,
         });
 
         if (!asset) throw notFound('Asset not found');

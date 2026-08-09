@@ -56,6 +56,8 @@ model Vendor {
   links               VendorLink[]
   primaryOf           VendorRelationship[]   @relation("PrimaryRelation")
   subprocessorOf      VendorRelationship[]   @relation("SubprocessorRelation")
+  /// Service/repair jobs this vendor performed on a machine.
+  assetMaintenance    AssetMaintenance[]
 
   @@unique([tenantId, name])
   @@index([tenantId])

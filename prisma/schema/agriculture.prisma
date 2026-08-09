@@ -364,6 +364,8 @@ model Location {
   dataStreams         DataStream[]
   agroSignals         AgroSignal[]
   yieldRecords        YieldRecord[]
+  /// Machines parked/kept at this location (Asset.locationId).
+  assets              Asset[]
 
   @@unique([id, tenantId])
   @@unique([tenantId, key])

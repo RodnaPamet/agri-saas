@@ -77,10 +77,27 @@ export class AssetRepository {
         return where;
     }
 
-    static async getById(db: PrismaTx, ctx: RequestContext, id: string) {
+    /**
+     * One asset.
+     *
+     * `withControls` is OFF by default. The compliance control mapping
+     * used to be eagerly joined on EVERY read — including plain-farm
+     * tenants where the compliance tabs are gated off entirely, and
+     * including `update()`/`delete()`, which call this purely to check
+     * the row exists. Only the callers that actually render the
+     * Mappings tab ask for it.
+     */
+    static async getById(
+        db: PrismaTx,
+        ctx: RequestContext,
+        id: string,
+        options: { withControls?: boolean } = {},
+    ) {
         return db.asset.findFirst({
             where: { id, tenantId: ctx.tenantId },
-            include: { controls: { include: { control: true } } },
+            ...(options.withControls
+                ? { include: { controls: { include: { control: true } } } }
+                : {}),
         });
     }
 

@@ -8,6 +8,7 @@
  * it inside Modal.Body. State + submit live in `useEditAssetForm`.
  */
 import { useTranslations } from 'next-intl';
+import { AssetLocationField } from './AssetLocationField';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { UserCombobox } from '@/components/ui/user-combobox';
 import { DatePicker } from '@/components/ui/date-picker/date-picker';
@@ -150,14 +151,12 @@ export function EditAssetFields({
                     placeholder={t('keeperPlaceholder')}
                 />
             </div>
-            <div>
-                <label className="input-label">{t('location')}</label>
-                <input
-                    className="input"
-                    value={form.fields.location}
-                    onChange={(e) => form.setField('location', e.target.value)}
-                />
-            </div>
+            <AssetLocationField
+                locationId={form.fields.locationId}
+                onLocationIdChange={(id) => form.setField('locationId', id)}
+                note={form.fields.location}
+                onNoteChange={(v) => form.setField('location', v)}
+            />
             <div>
                 <label className="input-label">{t('externalRef')}</label>
                 <input

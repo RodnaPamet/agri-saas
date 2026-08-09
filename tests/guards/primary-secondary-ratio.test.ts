@@ -281,7 +281,15 @@ const MIN_SECONDARY_TO_PRIMARY_RATIO = 0.9;
 // modal's own Cancel is secondary and the detail page's new "Edit"
 // header trigger + "Unarchive" action are secondary/ghost, so the
 // secondary:primary ratio direction still holds.
-const MAX_PRIMARY_COUNT = 174;
+// 175 (was 174): AddMaintenanceModal's "Record" CTA — the maintenance
+// modal's confirm button on the asset detail page. A modal's confirm is
+// the canonical primary per docs/ui-buttons.md, matching
+// EditArticleModal / EditCropPlanModal / EditEvidenceModal above. The
+// tab's own "+ Record" header trigger is deliberately SECONDARY (a
+// sub-surface action inside a detail tab, not an entity-list create) and
+// the modal's Cancel is ghost, so this adds exactly one primary and the
+// secondary:primary ratio direction still holds.
+const MAX_PRIMARY_COUNT = 175;
 
 describe("primary:secondary ratio direction", () => {
     const counts = (() => {

@@ -39,6 +39,10 @@ const SCAN_DIR = 'src/app/t/[tenantSlug]/(app)';
  * absence of a gear; PRs that mount a gear should REMOVE the entry.
  */
 const EXEMPTIONS: Record<string, string> = {
+    // Asset maintenance tab (assets roadmap PR2).
+    "assets/[id]/MaintenanceTab.tsx":
+        "(a) detail-page sub-table — one machine's service history, not a list page. The set is bounded by MAINTENANCE_PAGE_SIZE and already ordered newest-first, which is how a service log is read; the open records a farmer is actually looking for sit at the top by construction. Faceted filtering, a column gear and viewport-clamping all add chrome without adding reach.",
+
     // Certification scheme detail (schemes roadmap PR2).
 
     // Grain bin detail (bins roadmap PR2).

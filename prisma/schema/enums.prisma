@@ -137,6 +137,32 @@ enum AssetStatus {
   RETIRED
 }
 
+/// What a maintenance record on a machine represents.
+///   SERVICE    — planned, scheduled work (oil, filters, greasing).
+///   REPAIR     — corrective work after something went wrong.
+///   INSPECTION — a check with no work implied (safety, roadworthiness,
+///                the annual technical inspection Bulgarian machinery
+///                registration requires).
+///   BREAKDOWN  — an unplanned stoppage. Distinct from REPAIR so
+///                "how often does this machine fail" stays answerable
+///                separately from "how often do we work on it".
+enum AssetMaintenanceKind {
+  SERVICE
+  REPAIR
+  INSPECTION
+  BREAKDOWN
+}
+
+/// How a tenant expenses machinery capital over its useful life.
+///   NONE          — the default. Purchase cost is recorded on the asset
+///                   register but never enters a cost rollup, and the
+///                   /costs page says so rather than implying zero.
+///   STRAIGHT_LINE — cost ÷ useful life, charged evenly per year.
+enum DepreciationMethod {
+  NONE
+  STRAIGHT_LINE
+}
+
 enum CoverageType {
   FULL
   PARTIAL
