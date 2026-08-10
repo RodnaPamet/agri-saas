@@ -5558,7 +5558,14 @@
                 "TRANSPLANT": "Запиши разсаждане",
                 "HARVEST": "Запиши прибиране"
             },
-            "gddTooltipTarget": "База {temp}°C · {target} GDD до зрялост"
+            "gddTooltipTarget": "База {temp}°C · {target} GDD до зрялост",
+            "plannedYield": {
+                "colHeader": "Очакван добив (кг/дка)",
+                "fieldLabel": "Очакван добив (кг/дка)",
+                "aria": "Задайте очакван добив за последователност {num}",
+                "save": "Запази",
+                "clear": "Изчисти"
+            }
         },
         "detail": {
             "methodDirectSow": "Директно засяване",

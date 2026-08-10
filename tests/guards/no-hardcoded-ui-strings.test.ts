@@ -49,10 +49,12 @@ const USER_FACING_PROPS = new Set([
     'heading', 'subtitle', 'description',
 ]);
 
-/** Current floor for JSX copy (measured 2026-07-10). Can only go DOWN as
- *  strings are extracted to the catalog — every extraction PR lowers this
- *  in the same diff. */
-const CURRENT_BASELINE = 20;
+/** Current floor for JSX copy (measured 2026-08-10 — the planned-yield PR
+ *  added zero new hard-coded strings, so this ratchets down to the real
+ *  count instead of carrying stale slack). Can only go DOWN as strings
+ *  are extracted to the catalog — every extraction PR lowers this in the
+ *  same diff. */
+const CURRENT_BASELINE = 17;
 
 /**
  * Separate floor for the `.ts` CONFIG-PROPERTY class (2026-07-25).

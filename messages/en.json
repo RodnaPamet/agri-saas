@@ -5558,7 +5558,14 @@
                 "TRANSPLANT": "Record transplant",
                 "HARVEST": "Record harvest"
             },
-            "gddTooltipTarget": "Base {temp}°C · {target} GDD to maturity"
+            "gddTooltipTarget": "Base {temp}°C · {target} GDD to maturity",
+            "plannedYield": {
+                "colHeader": "Planned yield (кг/дка)",
+                "fieldLabel": "Planned yield (кг/дка)",
+                "aria": "Set planned yield for succession {num}",
+                "save": "Save",
+                "clear": "Clear"
+            }
         },
         "detail": {
             "methodDirectSow": "Direct sow",
