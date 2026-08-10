@@ -36,6 +36,7 @@
  * runtime with the same params so markers land on the right province.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { makeProjector } from '@/lib/geo/bg-projection';
 import { useLocale, useTranslations } from 'next-intl';
 import { Plus, Minus } from '@/components/ui/icons/nucleo';
 import { cn } from '@/lib/cn';
@@ -212,11 +213,11 @@ interface Model {
 
 /** Project listings, tag the national best per crop, and pre-aggregate. */
 function buildModel(listings: ExchangeMapListing[], geom: Geometry, locale: string): Model {
-    const { proj } = geom;
-    const project = (lon: number, lat: number): [number, number] => [
-        proj.ox + (lon - proj.minX) * proj.cos * proj.s,
-        proj.oy + (proj.maxY - lat) * proj.s,
-    ];
+    // The transform now lives in @/lib/geo/bg-projection — a second
+    // consumer (the parcel-overview map) needs the identical arithmetic,
+    // and two copies of a projection drift into markers in the wrong
+    // field. Behaviour is pinned by tests/unit/geo/bg-projection.test.ts.
+    const project = makeProjector(geom.proj);
 
     const offers: POffer[] = listings.map((l) => {
         const [px, py] = project(l.lon, l.lat);
