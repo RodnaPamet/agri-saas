@@ -177,6 +177,87 @@ How it is wired:
 > and run `docker compose up -d worker`. Until then, no scheduled
 > job runs on that host.
 
+### Knowledge-base seeding (production)
+
+Seeding the Knowledge Base (`/knowledge` — growing-guide articles) and
+the RAG corpus (`KnowledgeChunk`, the AI advisor's cited source
+material) used to be `tsx`-only: `npm run import:knowledge`,
+`npm run rag:ingest:satellite`, `npm run rag:ingest`. The production
+runtime image ships neither `tsx` nor the source `scripts/` tree
+(devDependencies, including `tsx` and `esbuild`, are pruned before the
+runner stage — see the Dockerfile), so none of those three could run
+against the deployed database. The only way to seed content used to be
+copying a one-off applier script into the container by hand.
+
+`scripts/seed.ts` — one operator-facing CLI with four subcommands —
+closes that gap the same way `scripts/worker.ts` already does: esbuild
+bundles it into a self-contained `dist/seed.mjs` (`npm run build:seed`,
+wired into the Dockerfile right after `build:worker`, before the
+dev-dependency prune), and the existing `COPY --from=builder
+.../app/dist ./dist` ships it in the runtime image — no separate COPY
+needed. `tests/guards/seed-deployment.test.ts` fails CI if the build
+step, the entrypoint, or the `dist` COPY is dropped.
+
+**Run it on the `agrent` VM:**
+
+```bash
+gcloud compute ssh agrent --zone europe-west1-b --command \
+  "cd /opt/agrent && sudo docker compose -f docker-compose.vm.yml exec app node dist/seed.mjs <subcommand>"
+```
+
+Subcommands:
+
+- **`knowledge [--tenant <slug>]`** — seeds the eight Bulgarian arable-crop
+  growing-guide articles (wheat/barley/maize/sunflower, bg + en) into ONE
+  tenant (the oldest active tenant by default, or `--tenant <slug>`).
+  Idempotent per `(tenantId, slug)` — run it again per tenant as new
+  tenants onboard.
+- **`satellite`** — seeds the ten GLOBAL satellite-imagery guide articles
+  (NDVI/NDMI/NDRE/GNDVI/EVI, bg + en, `tenantId` NULL) — every tenant sees
+  these for free, no per-tenant step. Idempotent on `(tenantId: null,
+  slug)`.
+- **`corpus`** — seeds the GLOBAL RAG corpus (~34 licensed/original
+  agronomy chunks, WITH embeddings) that the AI advisor cites from.
+  Idempotent on `(source, sourceRef)`. **Requires a configured embeddings
+  backend** — `AI_EMBED_BASE_URL` + `AI_EMBED_API_KEY` (or `AI_BASE_URL`
+  as a fallback for a self-hosted Ollama-serves-both deploy) — see the
+  `AI_EMBED_*` block in `deploy/env.prod.example`. As of this writing
+  NEITHER is set on the `agrent` VM's `.env` (no Ollama runs there, by
+  design — a 768-dim embedding model alongside 7 other Compose services
+  is a memory risk that VM doesn't need to take), so `corpus` currently
+  exits non-zero with a message naming the missing env var. It never
+  silently writes a chunk with no usable embedding. Configure a hosted
+  embeddings endpoint (e.g. OpenAI) before running this subcommand.
+- **`all [--tenant <slug>]`** — runs all three, each attempted and
+  reported independently (one step's failure does not skip the others).
+  Exits non-zero if any step failed.
+
+**What "already seeded" looks like** — every step is a safe no-op on a
+re-run, reporting skips instead of creating duplicates:
+
+```
+[knowledge] OK — tenant <id>: 0 created, 8 already present.
+[satellite] OK — GLOBAL: 0 created, 10 already present.
+[corpus] FAILED — RAG corpus ingestion needs an embeddings backend, but
+AI_EMBED_BASE_URL and AI_EMBED_API_KEY are not set (AI_BASE_URL is not
+set either, ...). Set AI_EMBED_BASE_URL + AI_EMBED_API_KEY to a hosted,
+OpenAI-compatible embeddings endpoint before running this step — see
+deploy/env.prod.example.
+
+2/3 step(s) OK, 1/3 step(s) failed.
+```
+
+(That is the ACTUAL state of the `agrent` VM as of 2026-08-10 — the
+`knowledge` + `satellite` content was seeded by hand before this CLI
+existed, and `corpus` has never successfully run.)
+
+Local dev keeps the original `tsx`-based scripts (`npm run
+import:knowledge`, `npm run rag:ingest:satellite`, `npm run rag:ingest`)
+— `scripts/seed.ts` calls the exact same idempotent, exported functions,
+so there is only one implementation to keep correct; `npm run seed --
+<subcommand>` runs the consolidated CLI itself via `tsx` for local
+parity with the production `dist/seed.mjs` invocation.
+
 ---
 
 ## Railway

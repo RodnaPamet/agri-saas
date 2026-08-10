@@ -42,7 +42,15 @@ async function main(): Promise<number> {
     }
 }
 
-if (require.main === module) {
+// `typeof module !== 'undefined'` guards this CJS entry-point check for
+// callers that import this file's named exports from a real ESM
+// context (scripts/seed.ts, bundled by esbuild into dist/seed.mjs —
+// `module` is not a defined identifier there, and a bare
+// `require.main === module` throws `ReferenceError: module is not
+// defined in ES module scope`). Under tsx and ts-jest (both of which
+// shim `require`/`module` as CJS-interop globals) this behaves exactly
+// as before.
+if (typeof module !== 'undefined' && require.main === module) {
     main().then((code) => process.exit(code)).catch((err) => {
         console.error('RAG corpus ingestion failed:', err);
         process.exit(1);

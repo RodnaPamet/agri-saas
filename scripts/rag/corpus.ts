@@ -611,6 +611,52 @@ export const GLOBAL_CORPUS: CorpusEntry[] = [
 ];
 
 /**
+ * Preflight guard for `ingestGlobalCorpus` — refuse to even start
+ * (never mind write a chunk) unless a real embeddings backend is
+ * actually configured, instead of silently falling back to the zod
+ * schema default `AI_BASE_URL=http://localhost:11434/v1`, which
+ * nothing listens on outside a local Ollama dev box. That exact
+ * failure mode is what #496 fixed for `retrieve()` and the
+ * `embed-chunks` job (see
+ * docs/implementation-notes/2026-08-07-rag-embedding-provider-split.md)
+ * by introducing `getEmbeddingProvider()` — this ingestion path was
+ * the one caller that fix missed, so it kept calling the completion
+ * provider (`getAiProvider()`) instead.
+ *
+ * The documented production path is a dedicated `AI_EMBED_BASE_URL` +
+ * `AI_EMBED_API_KEY` pair (`deploy/env.prod.example`); an explicitly
+ * set `AI_BASE_URL` is also accepted — that is `getEmbeddingProvider`'s
+ * own fallback, for a self-hosted deploy where one Ollama instance
+ * serves both completions and embeddings.
+ *
+ * Raw `process.env` (not the validated `env` from `src/env.ts`) is
+ * used deliberately: `env.AI_BASE_URL` always has a value (the zod
+ * default), so it can't distinguish "operator set this" from
+ * "nothing configured, defaulted to an unreachable localhost". This
+ * mirrors every other script in this directory, which already reads
+ * `process.env` directly (there is no Next.js boot to validate against
+ * out here).
+ */
+export function assertEmbeddingBackendConfigured(): void {
+    const embedBaseSet = Boolean(process.env.AI_EMBED_BASE_URL);
+    const embedKeySet = Boolean(process.env.AI_EMBED_API_KEY);
+    if ((embedBaseSet && embedKeySet) || process.env.AI_BASE_URL) return;
+
+    const missing = [
+        !embedBaseSet && 'AI_EMBED_BASE_URL',
+        !embedKeySet && 'AI_EMBED_API_KEY',
+    ].filter((v): v is string => Boolean(v));
+    throw new Error(
+        `RAG corpus ingestion needs an embeddings backend, but ${missing.join(' and ')} ` +
+            `${missing.length > 1 ? 'are' : 'is'} not set (AI_BASE_URL is not set either, so ` +
+            'embeddings would otherwise silently fall back to the unreachable Ollama default ' +
+            'http://localhost:11434/v1). Set AI_EMBED_BASE_URL + AI_EMBED_API_KEY to a hosted, ' +
+            'OpenAI-compatible embeddings endpoint before running this step — see ' +
+            'deploy/env.prod.example.',
+    );
+}
+
+/**
  * Write one batch of GLOBAL (tenantId NULL) chunks WITH embeddings.
  *
  * Runs via the supplied raw PrismaClient (the ingestion scripts use the
@@ -623,12 +669,19 @@ export const GLOBAL_CORPUS: CorpusEntry[] = [
  * embedding is written via raw `$executeRaw` (the Unsupported vector
  * column). Embeds in one batch.
  *
+ * `assertEmbeddingBackendConfigured()` runs FIRST, before any Prisma
+ * read/write — an unconfigured environment must fail loudly and name
+ * the missing env var, never silently create a chunk with no usable
+ * embedding.
+ *
  * Idempotent on (source, sourceRef): existing GLOBAL chunks are skipped.
  */
 export async function ingestGlobalCorpus(
     prisma: PrismaClient,
     entries: CorpusEntry[],
 ): Promise<{ created: number; skipped: number }> {
+    assertEmbeddingBackendConfigured();
+
     for (const e of entries) {
         assertLicensedSource(e.source);
         assertNoUnregisteredRegulatedContent(e.text, e.sourceRef);
