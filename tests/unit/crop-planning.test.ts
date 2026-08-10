@@ -24,7 +24,13 @@
 
 const mockDb = {
     cropPlan: { findFirst: jest.fn(), create: jest.fn(), update: jest.fn(), findMany: jest.fn() },
-    planting: { deleteMany: jest.fn(), createMany: jest.fn(), update: jest.fn(), findMany: jest.fn() },
+    planting: {
+        deleteMany: jest.fn(),
+        createMany: jest.fn(),
+        update: jest.fn(),
+        findMany: jest.fn(),
+        findFirst: jest.fn(),
+    },
     taskLink: { findMany: jest.fn() },
     logPlanting: { findMany: jest.fn() },
     // A recorded yield is ALSO a harvest actual — see the fold in
@@ -84,8 +90,10 @@ import {
     getCropPlan,
     updateCropPlan,
     listPlantings,
+    updatePlanting,
 } from '@/app-layer/usecases/crop-planning';
 import { generateSuccessions } from '@/lib/planning/succession';
+import { summarizePlannedYield } from '@/lib/planning/planned-yield';
 import { makeRequestContext } from '../helpers/make-context';
 
 const adminCtx = makeRequestContext('ADMIN', { userId: 'user-admin', tenantId: 'tenant-1' });
@@ -476,6 +484,35 @@ describe('getCropPlanProgress', () => {
         expect(where.harvestedAt).toEqual({ not: null });
         expect(where.tenantId).toBe('tenant-1');
     });
+
+    // ─── plannedYieldKgPerHa: propagates, and null stays null ──────────
+    it('propagates plannedYieldKgPerHa as a plain number, unmangled', async () => {
+        mockDb.planting.findMany.mockResolvedValue([
+            { ...plantings[0], areaM2: { toString: () => '10000' }, plannedYieldKgPerHa: { toString: () => '5000' } },
+            { ...plantings[1], areaM2: { toString: () => '10000' }, plannedYieldKgPerHa: null },
+        ]);
+        const rows = await getCropPlanProgress(readerCtx, 'plan-1');
+        expect(rows[0].plannedYieldKgPerHa).toBe(5000);
+        expect(rows[0].areaM2).toBe(10000);
+        // Unset stays NULL — never coerced to 0 on the way out of the DB.
+        expect(rows[1].plannedYieldKgPerHa).toBeNull();
+        expect(rows[1].plannedYieldKgPerHa).not.toBe(0);
+    });
+
+    it('downstream: summarizePlannedYield excludes the unset planting from the plan total', async () => {
+        // planting-1: 1 ha at 5000 kg/ha = 5000 kg. planting-2: no estimate.
+        mockDb.planting.findMany.mockResolvedValue([
+            { ...plantings[0], areaM2: { toString: () => '10000' }, plannedYieldKgPerHa: { toString: () => '5000' } },
+            { ...plantings[1], areaM2: { toString: () => '10000' }, plannedYieldKgPerHa: null },
+        ]);
+        const rows = await getCropPlanProgress(readerCtx, 'plan-1');
+        const summary = summarizePlannedYield(
+            rows.map((r) => ({ id: r.plantingId, areaM2: r.areaM2, plannedYieldKgPerHa: r.plannedYieldKgPerHa })),
+        );
+        expect(summary.totalPlannedYieldKg).toBe(5000);
+        expect(summary.includedPlantingIds).toEqual(['planting-1']);
+        expect(summary.excludedPlantingIds).toEqual(['planting-2']);
+    });
 });
 
 // ─── read/write gating on the CRUD surface ──────────────────────────
@@ -787,6 +824,48 @@ describe('getCropPlan / updateCropPlan / listPlantings', () => {
             cropPlanId: 'plan-1',
             status: 'SOWN',
         });
+    });
+});
+
+// ─── updatePlanting — plannedYieldKgPerHa, null-is-not-zero ──────────
+describe('updatePlanting', () => {
+    it('writes plannedYieldKgPerHa and audits it', async () => {
+        mockDb.planting.findFirst.mockResolvedValue({ id: 'planting-1' });
+        mockDb.planting.update.mockResolvedValue({ id: 'planting-1', plannedYieldKgPerHa: 5000 });
+        const planting = await updatePlanting(editorCtx, 'planting-1', { plannedYieldKgPerHa: 5000 });
+        expect(planting.plannedYieldKgPerHa).toBe(5000);
+        expect(mockDb.planting.update.mock.calls[0][0].data).toMatchObject({ plannedYieldKgPerHa: 5000 });
+        expect(logEvent).toHaveBeenCalledTimes(1);
+    });
+
+    it('writes an explicit null WITHOUT coercing it to 0 (clearing an estimate)', async () => {
+        mockDb.planting.findFirst.mockResolvedValue({ id: 'planting-1' });
+        mockDb.planting.update.mockResolvedValue({ id: 'planting-1', plannedYieldKgPerHa: null });
+        const planting = await updatePlanting(editorCtx, 'planting-1', { plannedYieldKgPerHa: null });
+        // The write itself carries `null`, never `0` — a cleared estimate
+        // and a zero estimate are different claims (see the field's schema
+        // doc + `summarizePlannedYield`).
+        expect(mockDb.planting.update.mock.calls[0][0].data).toMatchObject({ plannedYieldKgPerHa: null });
+        expect(mockDb.planting.update.mock.calls[0][0].data.plannedYieldKgPerHa).not.toBe(0);
+        expect(planting.plannedYieldKgPerHa).toBeNull();
+    });
+
+    it('omits plannedYieldKgPerHa from the update payload when not provided (partial update)', async () => {
+        mockDb.planting.findFirst.mockResolvedValue({ id: 'planting-1' });
+        mockDb.planting.update.mockResolvedValue({ id: 'planting-1' });
+        await updatePlanting(editorCtx, 'planting-1', {});
+        expect(mockDb.planting.update.mock.calls[0][0].data).not.toHaveProperty('plannedYieldKgPerHa');
+    });
+
+    it('throws notFound for a missing planting', async () => {
+        mockDb.planting.findFirst.mockResolvedValue(null);
+        await expect(updatePlanting(editorCtx, 'nope', { plannedYieldKgPerHa: 100 })).rejects.toThrow(/not found/i);
+        expect(mockDb.planting.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses a reader (write gate)', async () => {
+        await expect(updatePlanting(readerCtx, 'planting-1', { plannedYieldKgPerHa: 100 })).rejects.toThrow();
+        expect(mockDb.planting.findFirst).not.toHaveBeenCalled();
     });
 });
 
