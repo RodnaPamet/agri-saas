@@ -1,7 +1,10 @@
 # 2026-08-10 — crop-plans multi-select facet, a blind route-parity guard, and audit-exemption review-date expiry
 
-**Commit:** see the four commits on `fix/crop-plans-facets-and-audit-expiry`
-(one per fix below — this note covers all of them).
+**Commits** (one per fix, on `fix/crop-plans-facets-and-audit-expiry`):
+- `4c52b93d` fix(planning): crop-plans multi-select status facet no longer 500s
+- `0e3306ef` fix(guards): resolve nested routes in multi-select-facet-route-parity
+- `0910e6c0` fix(security): audit-exemptions fails once an exemption's review date passes
+- `f3f9247c` fix(rag): corpus ingestion resolves embeddings via getEmbeddingProvider
 
 ## Design
 
