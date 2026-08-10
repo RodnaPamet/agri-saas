@@ -762,6 +762,33 @@ NextAuth v4.24.14 (stable) is configured in `src/auth.ts`. Providers: Google OAu
 
 Job definitions are in `src/app-layer/jobs/`. The executor registry is `src/app-layer/jobs/executor-registry.ts`. Jobs run inside `traceUsecase` spans and inherit request context.
 
+### Knowledge-base / RAG seeding
+
+`scripts/import-knowledge.ts`, `scripts/rag/ingest-satellite-guide.ts`,
+and `scripts/rag/ingest-corpus.ts` are DEV-ONLY via their `npm run
+import:knowledge` / `rag:ingest:satellite` / `rag:ingest` `tsx`
+scripts — the production runtime image ships no `tsx` and no source
+`scripts/` tree (devDependencies are pruned before the runner stage),
+so none of the three can run there directly. **Production seeding goes
+through `dist/seed.mjs`** — `scripts/seed.ts`, one CLI with
+`knowledge`/`satellite`/`corpus`/`all` subcommands, calling the exact
+same idempotent exported functions as the three scripts above. It is
+esbuild-bundled by `npm run build:seed` (mirroring `build:worker`
+exactly — same mechanism, same esbuild config shape), wired into the
+Dockerfile right after `build:worker`, before the dev-dependency
+prune; the existing whole-directory `COPY --from=builder .../app/dist
+./dist` ships it, no separate COPY needed.
+`tests/guards/seed-deployment.test.ts` fails CI if the build step, the
+entrypoint, or the `dist` COPY is dropped. The `corpus` subcommand
+requires a configured embeddings backend (`AI_EMBED_BASE_URL` +
+`AI_EMBED_API_KEY`, or `AI_BASE_URL` as a self-hosted-Ollama fallback)
+and fails loudly, naming the missing var, instead of silently writing
+a chunk with no usable embedding — see
+`assertEmbeddingBackendConfigured` in `scripts/rag/corpus.ts`. Run it
+on the `agrent` VM via `docker compose exec app node dist/seed.mjs
+<subcommand>`. **See the "Knowledge-base seeding (production)" section
+of `docs/deployment.md`** for the full operator runbook.
+
 ### Billing & entitlements (GAP-18)
 
 The codebase has two billing modes, decided by a single env var:
