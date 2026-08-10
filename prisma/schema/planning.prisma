@@ -198,29 +198,39 @@ model CropPlan {
 /// computed seed/allocation. Actual sow/transplant/harvest come from
 /// linked journal LogEntries (LogPlanting). Tenant-scoped.
 model Planting {
-  id                String         @id @default(cuid())
-  tenantId          String
-  cropPlanId        String
-  cropVarietyId     String?
-  locationId        String?
-  parcelId          String?
-  successionNumber  Int
-  method            PlantingMethod
+  id                  String         @id @default(cuid())
+  tenantId            String
+  cropPlanId          String
+  cropVarietyId       String?
+  locationId          String?
+  parcelId            String?
+  successionNumber    Int
+  method              PlantingMethod
   // PLANNED dates from the succession engine.
-  sowDate           DateTime?
-  transplantDate    DateTime?
-  harvestStartDate  DateTime?
-  harvestEndDate    DateTime?
-  seedQuantityGrams Decimal?        @db.Decimal(12, 2)
-  plantCount        Int?
-  areaM2            Decimal?        @db.Decimal(12, 2)
-  status            PlantingStatus  @default(PLANNED)
-  notes             String?
-  createdAt         DateTime        @default(now())
-  updatedAt         DateTime        @updatedAt
-  deletedAt         DateTime?
-  deletedByUserId   String?
-  retentionUntil    DateTime?
+  sowDate             DateTime?
+  transplantDate      DateTime?
+  harvestStartDate    DateTime?
+  harvestEndDate      DateTime?
+  seedQuantityGrams   Decimal?       @db.Decimal(12, 2)
+  plantCount          Int?
+  areaM2              Decimal?       @db.Decimal(12, 2)
+  /// Expected yield PER HECTARE, entered by the grower — always
+  /// displayed/entered as кг/дка at the UI boundary (`haToDca`/`dcaToHa`
+  /// in `src/lib/agro/rate-calc.ts`) but stored per hectare like every
+  /// other area-basis figure in this schema (`Parcel.areaHa`,
+  /// `YieldRecord.areaHa`). Nullable ON PURPOSE: an unset expectation is
+  /// not the same claim as "expect zero" — same principle as
+  /// `YieldRecord.netTonnesStd` being null when unmeasured. Downstream
+  /// consumers (a future yield-vs-actual calculator) MUST treat null as
+  /// an explicit exclusion, never coerce it to 0.
+  plannedYieldKgPerHa Decimal?       @db.Decimal(10, 2)
+  status              PlantingStatus @default(PLANNED)
+  notes               String?
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+  deletedAt           DateTime?
+  deletedByUserId     String?
+  retentionUntil      DateTime?
 
   tenant       Tenant        @relation(fields: [tenantId], references: [id])
   cropPlan     CropPlan      @relation(fields: [cropPlanId, tenantId], references: [id, tenantId], onDelete: Cascade)
