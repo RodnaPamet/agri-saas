@@ -1,4 +1,4 @@
-import { Prisma, type PlantingStatus } from '@prisma/client';
+import { Prisma, type PlantingStatus, type CropPlanStatus } from '@prisma/client';
 import { RequestContext } from '../types';
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { assertCanRead, assertCanWrite, assertCanAdmin } from '../policies/common';
@@ -405,9 +405,25 @@ export interface UpdateCropPlanInput {
     notes?: string | null;
 }
 
+/**
+ * List filters. `status` is MULTI-select in the UI (`filter-defs.ts` sets
+ * `multiple: true`), so it arrives as an array and queries with
+ * `{ in: [...] }`. The route validates every member against the Prisma
+ * enum before calling in — this field is typed to the enum precisely so
+ * an unvalidated string can no longer reach Prisma (which is what turned
+ * a two-status filter into a 500 the list page rendered as "no crop
+ * plans"). `seasonId` / `cropTypeId` are single-select ids, so a plain
+ * equality is correct for them.
+ */
+export interface CropPlanListFilters {
+    seasonId?: string;
+    cropTypeId?: string;
+    status?: CropPlanStatus[];
+}
+
 export async function listCropPlans(
     ctx: RequestContext,
-    filters: { seasonId?: string; cropTypeId?: string; status?: string } = {},
+    filters: CropPlanListFilters = {},
     opts: { take?: number } = {},
 ) {
     assertCanRead(ctx);
@@ -418,7 +434,9 @@ export async function listCropPlans(
                 deletedAt: null,
                 ...(filters.seasonId ? { seasonId: filters.seasonId } : {}),
                 ...(filters.cropTypeId ? { cropTypeId: filters.cropTypeId } : {}),
-                ...(filters.status ? { status: filters.status as Prisma.EnumCropPlanStatusFilter['equals'] } : {}),
+                // Guarded on `.length` so a CLEARED facet omits the filter
+                // rather than emitting `{ in: [] }`, which matches nothing.
+                ...(filters.status?.length ? { status: { in: filters.status } } : {}),
             },
             orderBy: [{ createdAt: 'desc' }],
             include: CROP_PLAN_INCLUDE,

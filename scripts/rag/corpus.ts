@@ -44,7 +44,7 @@
  * ════════════════════════════════════════════════════════════════════
  */
 import type { PrismaClient } from '@prisma/client';
-import { getAiProvider } from '../../src/app-layer/ai/provider';
+import { getEmbeddingProvider } from '../../src/app-layer/ai/provider';
 import { toVectorLiteral } from '../../src/lib/db/embeddings';
 import { assertNoUnregisteredRegulatedContent } from './dose-phi-guard';
 
@@ -644,7 +644,14 @@ export async function ingestGlobalCorpus(
     const todo = entries.filter((e) => !seen.has(`${e.source}::${e.sourceRef}`));
     if (todo.length === 0) return { created: 0, skipped: entries.length };
 
-    const embeddings = await getAiProvider().embed({ texts: todo.map((e) => e.text) });
+    // getEmbeddingProvider(), NOT getAiProvider() — this resolves the EMBEDDING
+    // role independently of AI_BACKEND (see provider/index.ts doc comment).
+    // This is a one-shot ingestion script with an operator watching, so a
+    // failure here MUST throw rather than degrade: writing chunks with a
+    // missing/garbage embedding would report success while leaving retrieval
+    // silently keyword-only. That's the opposite tradeoff from
+    // `rag/retrieve.ts`, which degrades gracefully on a request path.
+    const embeddings = await getEmbeddingProvider().embed({ texts: todo.map((e) => e.text) });
 
     let created = 0;
     for (let i = 0; i < todo.length; i++) {
