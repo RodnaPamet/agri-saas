@@ -43,6 +43,26 @@
  * Each consumer labels its metric with the name below, so a reader who sees
  * two different numbers can tell WHY they differ instead of assuming one is
  * broken.
+ *
+ * ─── The fourth metric ──────────────────────────────────────────────
+ *
+ * `GRAIN_NET_WORTH` (`src/app-layer/usecases/grain-net-worth.ts`) is a
+ * FOURTH definition, and deliberately not a fourth spelling of one of the
+ * three above: it is the first to fold in OVERHEADS — land rent
+ * (`ParcelLease`, via `resolveRentBasis`) and payroll/labour spend
+ * (`PayrollExpense`) — alongside the attributed field/stock cost it
+ * reuses verbatim from `ATTRIBUTED_CROP_COST`.
+ *
+ * **State this plainly wherever the figure is shown: `GRAIN_NET_WORTH`'s
+ * cost side will NOT match `ATTRIBUTED_CROP_COST` for the same season**,
+ * even though it starts from the exact same `getCostRollupByPlanting`
+ * output — rent and payroll are real farm cost that never had a column in
+ * the cost-rollup movement-type policy, so adding them is intentional
+ * growth, not drift. A reader who sees the costs page and the net-worth
+ * page disagree on "what did this crop cost" is seeing two honestly
+ * different questions, not a bug — the whole reason this module exists is
+ * to make that difference nameable instead of silently shipping a FOURTH
+ * unnamed cost number under the same word "cost".
  */
 
 export const COST_METRICS = {
@@ -52,6 +72,13 @@ export const COST_METRICS = {
     TENANT_ACTIVITY_SPEND: 'tenant-activity-spend',
     /** Field-event cost inside a season's date window. */
     SEASON_ACTIVITY_COST: 'season-activity-cost',
+    /**
+     * Attributed crop cost PLUS overheads (land rent + payroll) that none
+     * of the three metrics above include — see the module docblock's
+     * "fourth metric" section. Will NOT equal `ATTRIBUTED_CROP_COST` for
+     * the same season whenever rent or payroll is present.
+     */
+    GRAIN_NET_WORTH: 'grain-net-worth',
 } as const;
 
 export type CostMetric = (typeof COST_METRICS)[keyof typeof COST_METRICS];
@@ -64,4 +91,5 @@ export const COST_METRIC_LABEL_KEYS: Record<CostMetric, string> = {
     [COST_METRICS.ATTRIBUTED_CROP_COST]: 'metricAttributedCropCost',
     [COST_METRICS.TENANT_ACTIVITY_SPEND]: 'metricTenantActivitySpend',
     [COST_METRICS.SEASON_ACTIVITY_COST]: 'metricSeasonActivityCost',
+    [COST_METRICS.GRAIN_NET_WORTH]: 'metricGrainNetWorth',
 };
