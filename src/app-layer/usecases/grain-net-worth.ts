@@ -1,0 +1,882 @@
+import type { RequestContext } from '../types';
+import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
+import { assertCanRead } from '../policies/common';
+import { getCostRollupByPlanting } from './cost-rollup';
+import { getMarketReferences } from './trends';
+import {
+    CANONICAL_COMMODITIES,
+    isCanonicalCommodity,
+    normalizeCommodity,
+    type CanonicalCommodity,
+} from '@/lib/market/commodity-vocabulary';
+import { summarizePlannedYield, type PlannedYieldInputRow } from '@/lib/planning/planned-yield';
+import { resolveRentBasis, type RentBasisLease } from '@/lib/grain/rent-basis';
+import { canConvert, convert } from '@/lib/units/unit-conversion';
+
+/**
+ * Grain net worth — COST_METRICS.GRAIN_NET_WORTH (src/lib/grain/cost-metrics.ts).
+ *
+ * The fourth cost definition this product reports, and the first to include
+ * OVERHEADS: land rent (`ParcelLease`, via `resolveRentBasis`) and payroll
+ * (`PayrollExpense`) alongside the attributed field/stock cost reused
+ * verbatim from `getCostRollupByPlanting`. Its cost figure will NOT match
+ * `COST_METRICS.ATTRIBUTED_CROP_COST` for the same season whenever rent or
+ * payroll is present — see cost-metrics.ts's "fourth metric" section for why
+ * that is intentional, not a bug.
+ *
+ * Per commodity, this reports:
+ *
+ *   1. STANDING CROP (expected) — `plannedYieldKgPerHa × Σ areaHa` over the
+ *      plantings growing that commodity, valued at the current market price.
+ *      Reuses `summarizePlannedYield`, called once PER commodity group so a
+ *      planting with no estimate is excluded (not zeroed) from its own
+ *      commodity's total — never silently dropped.
+ *   2. GRAIN ON HAND (actual) — `InventoryLot.quantityOnHand` for
+ *      HARVESTED_PRODUCE lots, converted to tonnes via the lot's OWN unit
+ *      (`@/lib/units/unit-conversion`), never assumed to already be tonnes.
+ *      A lot whose unit cannot be resolved to a WEIGHT unit is excluded and
+ *      named, not coerced.
+ *   3. COSTS — three sources, kept as separate figures rather than folded
+ *      into one silently-blended number:
+ *        - `attributedCropCost` is `getCostRollupByPlanting`'s OWN output,
+ *          summed per commodity. This is a REUSE, not a re-implementation —
+ *          see cost-rollup.ts's movement-type policy docblock for why only
+ *          CONSUMPTION counts. Its currency/mixed flags are passed through
+ *          AS-IS: this module does not claim a currency strictness that
+ *          cost-rollup's own "first non-null currency, magnitudes still
+ *          sum" composition does not have.
+ *        - `rentCostMoneyAmount` / `rentCostProduceKg` — a lease's rent,
+ *          resolved to an annual per-hectare figure by `resolveRentBasis`
+ *          and attributed `ParcelLease.parcelId → Parcel → Planting`, split
+ *          pro-rata by area across the parcel's plantings when more than
+ *          one shares it. `ParcelLease` carries NO currency column (see
+ *          rent-basis.ts), so money rent's currency is genuinely unknown —
+ *          it is reported separately and never assumed to match the cost
+ *          currency (see the currency section below).
+ *        - `payrollCost` — `PayrollExpense` rows. Directly-linked
+ *          (`plantingId`/`seasonId`) rows attribute straight to that
+ *          planting/season; unattributed rows allocate pro-rata by AREA
+ *          SHARE across the plantings in scope, and `payrollAllocated` is
+ *          set on the commodity row so a reader can tell an allocation from
+ *          a measurement.
+ *   4. PRICE — `getMarketReferences` (src/app-layer/usecases/trends.ts),
+ *      the SAME commodity-vocabulary bridge `contract.ts` already uses.
+ *      This module does not re-derive the commodity→price join.
+ *   5. CURRENCY — no FX rate is ever invented. `attributedCropCost` passes
+ *      through cost-rollup's own blend (its `currencyMixed` flag is
+ *      surfaced, not hidden). `payrollCost` DOES track its own currencies
+ *      precisely, because this module reads the raw `PayrollExpense` rows
+ *      itself. Money rent's currency is unknown by construction (no column
+ *      on `ParcelLease`) and is folded into `cashCostCurrencies` under the
+ *      literal sentinel `'UNKNOWN'` rather than assumed to match anything —
+ *      that keeps it visible in `cashCostCurrencyMixed` without inventing a
+ *      label. `netWorth` is computed ONLY when the cash-cost currencies are
+ *      a single, known currency that equals the market price's currency;
+ *      otherwise it is `null` with `netWorthUnavailableReason` stating why.
+ *   6. PAYROLL ALLOCATION — see (3) above.
+ *   7. EXCLUSIONS — every named exclusion in `GrainNetWorthExclusions` is a
+ *      COUNT, never a silent zero: plantings with no yield estimate,
+ *      plantings whose crop has no canonical commodity, lots whose unit
+ *      didn't resolve to a mass, commodities with no price, leases whose
+ *      rent unit didn't resolve, leases with nothing to attribute their
+ *      rent to, produce-denominated rent that could not be valued (no price
+ *      for its commodity — produce rent IS valued via the price series when
+ *      one exists, per the brief: "you hold prices, so you are the right
+ *      layer to value it"), and payroll rows with nothing to allocate
+ *      against.
+ *   8. QUERY SHAPE — every read here is a single BOUNDED `findMany`/batched
+ *      `id: { in: [...] }` lookup; nothing reads inside a loop (see the
+ *      inline comments at each call site).
+ *
+ * `getCostRollupByPlanting` and `getMarketReferences` are called as SIBLING
+ * usecases (their own I/O), not nested inside this module's own
+ * `runInTenantContext` — nesting two `$transaction` calls would hold two
+ * pool connections for one logical read. This mirrors how `contract.ts`
+ * composes `getMarketReferences` and how `portfolio-grain.ts` composes
+ * `getPortfolioData`: usecases compose other usecases' RESULTS, not their
+ * transactions.
+ */
+
+// ─── Bounds (read one past the cap, slice, report `truncated`) ──────────
+const PLANTING_TAKE = 2000;
+const LOT_TAKE = 2000;
+const LEASE_TAKE = 2000;
+const PAYROLL_TAKE = 2000;
+const UNIT_TAKE = 200;
+
+/** `InventoryLot.unitId` target — `Location.capacityTonnes` / grain figures are tonnes. */
+const TONNES_UNIT_KEY = 't';
+const KG_PER_TONNE = 1000;
+
+/**
+ * Sentinel for money rent's currency. `ParcelLease` carries no currency
+ * column (see rent-basis.ts) — this is NOT an ISO code, and is never
+ * treated as one; it only makes an unknown-currency cost visible in
+ * `cashCostCurrencies` / `cashCostCurrencyMixed` instead of silently
+ * assumed to match another figure's currency.
+ */
+const UNKNOWN_RENT_CURRENCY = 'UNKNOWN';
+
+/** Prisma `Decimal | number | null | undefined` → plain number (0 for nullish). */
+function dec(v: unknown): number {
+    if (v == null) return 0;
+    if (typeof v === 'number') return v;
+    const n = Number((v as { toString(): string }).toString());
+    return Number.isFinite(n) ? n : 0;
+}
+
+/** Same nullish-preserving coercion as `dec`, but keeps `null` as `null`. */
+function decOrNull(v: unknown): number | null {
+    if (v == null) return null;
+    return dec(v);
+}
+
+function round2(n: number): number {
+    return Math.round(n * 100) / 100;
+}
+function round3(n: number): number {
+    return Math.round(n * 1000) / 1000;
+}
+
+/** Sort commodities in the product's canonical catalogue order. */
+function byCanonicalOrder(a: CanonicalCommodity, b: CanonicalCommodity): number {
+    return CANONICAL_COMMODITIES.indexOf(a) - CANONICAL_COMMODITIES.indexOf(b);
+}
+
+// ─── Exclusions ───────────────────────────────────────────────────────
+
+export interface GrainNetWorthExclusions {
+    /** Plantings with a known commodity but no `plannedYieldKgPerHa` or no
+     *  `areaM2` — excluded, not zeroed, from standing crop. */
+    plantingsMissingYieldEstimate: string[];
+    /** Plantings (touched by standing crop, cost, rent, or payroll
+     *  attribution) whose crop names no canonical commodity. */
+    plantingsUnknownCommodity: string[];
+    /** HARVESTED_PRODUCE lots whose unit did not resolve to a WEIGHT unit
+     *  convertible to tonnes. */
+    lotsUnresolvedUnit: Array<{ lotId: string; unitKey: string | null }>;
+    /** HARVESTED_PRODUCE lots whose item name names no canonical commodity. */
+    lotsUnknownCommodity: string[];
+    /** Commodities this calculation touched with NO current market price —
+     *  nothing here could be valued in money. */
+    commoditiesWithNoPrice: string[];
+    /** Leases whose rent could not be resolved to a per-hectare figure —
+     *  `resolveRentBasis`'s own refusal reason. */
+    leasesUnresolvedRent: Array<{ leaseId: string; reason: string }>;
+    /** Leases whose parcel has no in-scope planting with a known commodity
+     *  to attribute the resolved rent to. */
+    leasesUnattributed: string[];
+    /** Leases paying produce rent (кг/дка) whose commodity has no market
+     *  price — the mass could not be valued, so it is excluded from cost
+     *  rather than blended with money. */
+    leasesProduceRentUnpriced: string[];
+    /** Payroll rows with no in-scope planting (direct link or pro-rata
+     *  target) to attribute to any commodity. */
+    payrollUnattributable: string[];
+}
+
+function emptyExclusions(): GrainNetWorthExclusions {
+    return {
+        plantingsMissingYieldEstimate: [],
+        plantingsUnknownCommodity: [],
+        lotsUnresolvedUnit: [],
+        lotsUnknownCommodity: [],
+        commoditiesWithNoPrice: [],
+        leasesUnresolvedRent: [],
+        leasesUnattributed: [],
+        leasesProduceRentUnpriced: [],
+        payrollUnattributable: [],
+    };
+}
+
+// ─── Result shape ─────────────────────────────────────────────────────
+
+export interface CommodityNetWorthRow {
+    commodity: CanonicalCommodity;
+
+    /** Latest market reference, per tonne — from `getMarketReferences`. */
+    pricePerTonne: number | null;
+    priceCurrency: string | null;
+    priceObservedAt: string | null;
+    priceSource: string | null;
+
+    // ── 1. Standing crop (expected) ──
+    standingCropAreaHa: number;
+    standingCropExpectedKg: number;
+    standingCropPlantingIds: string[];
+    /** `standingCropExpectedKg / 1000 × pricePerTonne`; null with no price. */
+    standingCropValue: number | null;
+
+    // ── 2. Grain on hand (actual) ──
+    grainOnHandTonnes: number;
+    grainOnHandLotIds: string[];
+    /** `grainOnHandTonnes × pricePerTonne`; null with no price. */
+    grainOnHandValue: number | null;
+
+    // ── 3. Costs ──
+    /** Reused verbatim from `getCostRollupByPlanting`, summed per commodity. */
+    attributedCropCost: number;
+    attributedCropCostCurrencies: string[];
+    /** True when the underlying rollup rows themselves mixed currencies —
+     *  passed through, not re-derived. */
+    attributedCropCostCurrencyMixed: boolean;
+
+    /** Money-denominated (лв/дка) rent attributed to this commodity's
+     *  plantings. Currency is UNKNOWN — see `UNKNOWN_RENT_CURRENCY`. */
+    rentCostMoneyAmount: number;
+    /** Produce-denominated (кг/дка) rent attributed to this commodity's
+     *  plantings, in kilograms — a MASS, never added to money directly. */
+    rentCostProduceKg: number;
+    /** `rentCostProduceKg / 1000 × pricePerTonne`; null when kg > 0 but no
+     *  price exists (see `leasesProduceRentUnpriced`); 0 when there is no
+     *  produce rent to value. */
+    rentCostProduceValue: number | null;
+
+    payrollCost: number;
+    payrollCostCurrencies: string[];
+    payrollCostCurrencyMixed: boolean;
+    /** True when ANY part of `payrollCost` came from pro-rata allocation
+     *  rather than a direct plantingId/seasonId link. */
+    payrollAllocated: boolean;
+
+    /** `attributedCropCost + rentCostMoneyAmount + payrollCost` — a
+     *  magnitude sum, same "sum regardless of mix, flag the mix" contract
+     *  cost-rollup itself uses. NEVER assume this shares a currency with
+     *  `pricePerTonne` — check `cashCostCurrencies`. */
+    cashCostTotal: number;
+    /** Every currency contributing to `cashCostTotal`. May contain the
+     *  literal `'UNKNOWN'` sentinel for money rent (see module docblock). */
+    cashCostCurrencies: string[];
+    cashCostCurrencyMixed: boolean;
+
+    /** `standingCropValue + grainOnHandValue - rentCostProduceValue`, all
+     *  in `priceCurrency`. Null when `pricePerTonne` is null. */
+    netAssetPosition: number | null;
+    /** `netAssetPosition - cashCostTotal`, computed ONLY when the cash
+     *  costs are a single known currency equal to `priceCurrency` — no FX
+     *  is ever invented. Null otherwise; see `netWorthUnavailableReason`. */
+    netWorth: number | null;
+    netWorthUnavailableReason: string | null;
+}
+
+export interface GrainNetWorthResult {
+    generatedAt: string;
+    seasonId: string | null;
+    rows: CommodityNetWorthRow[];
+    exclusions: GrainNetWorthExclusions;
+    /** True when any batched read hit its cap — the figures below cover
+     *  only part of the farm. */
+    truncated: boolean;
+}
+
+// ─── Internal working shapes ──────────────────────────────────────────
+
+interface PlantingInfo {
+    id: string;
+    commodity: CanonicalCommodity | null;
+    areaM2: number | null;
+    areaHa: number;
+    parcelId: string | null;
+    seasonId: string | null;
+    plannedYieldKgPerHa: number | null;
+}
+
+interface CommodityAcc {
+    standingCropExpectedKg: number;
+    standingCropAreaHa: number;
+    standingCropPlantingIds: string[];
+    grainOnHandTonnes: number;
+    grainOnHandLotIds: string[];
+    attributedCropCost: number;
+    attributedCropCostCurrencies: Set<string>;
+    attributedCropCostCurrencyMixed: boolean;
+    rentCostMoneyAmount: number;
+    rentCostProduceKg: number;
+    produceRentLeaseIds: Set<string>;
+    payrollCost: number;
+    payrollCostCurrencies: Set<string>;
+    payrollAllocated: boolean;
+}
+
+function newAcc(): CommodityAcc {
+    return {
+        standingCropExpectedKg: 0,
+        standingCropAreaHa: 0,
+        standingCropPlantingIds: [],
+        grainOnHandTonnes: 0,
+        grainOnHandLotIds: [],
+        attributedCropCost: 0,
+        attributedCropCostCurrencies: new Set(),
+        attributedCropCostCurrencyMixed: false,
+        rentCostMoneyAmount: 0,
+        rentCostProduceKg: 0,
+        produceRentLeaseIds: new Set(),
+        payrollCost: 0,
+        payrollCostCurrencies: new Set(),
+        payrollAllocated: false,
+    };
+}
+
+function ensureAcc(map: Map<CanonicalCommodity, CommodityAcc>, commodity: CanonicalCommodity): CommodityAcc {
+    let acc = map.get(commodity);
+    if (!acc) {
+        acc = newAcc();
+        map.set(commodity, acc);
+    }
+    return acc;
+}
+
+/**
+ * Area-share weights for a set of targets — pro-rata by `areaHa`, falling
+ * back to an EVEN split when the total area is zero/unknown (mirrors
+ * cost-rollup's own even-split fallback for exactly the same reason: a
+ * predictable default beats one that silently favours whichever row
+ * happens to carry an area).
+ */
+function computeAreaWeights(targets: readonly { id: string; areaHa: number }[]): Map<string, number> {
+    const weights = new Map<string, number>();
+    if (targets.length === 0) return weights;
+    const totalArea = targets.reduce((sum, t) => sum + (t.areaHa > 0 ? t.areaHa : 0), 0);
+    if (totalArea > 0) {
+        for (const t of targets) weights.set(t.id, (t.areaHa > 0 ? t.areaHa : 0) / totalArea);
+    } else {
+        const even = 1 / targets.length;
+        for (const t of targets) weights.set(t.id, even);
+    }
+    return weights;
+}
+
+/** Batched-read row shapes (subset of the Prisma select). */
+interface PlantingRow {
+    id: string;
+    areaM2: unknown;
+    plannedYieldKgPerHa: unknown;
+    parcelId: string | null;
+    cropPlan: { seasonId: string | null; cropType: { commodityCanonical: string | null } | null } | null;
+}
+interface LotRow {
+    id: string;
+    quantityOnHand: unknown;
+    unitId: string;
+    item: { name: string } | null;
+}
+interface UnitRow {
+    id: string;
+    key: string;
+}
+interface LeaseRow {
+    id: string;
+    parcelId: string;
+    rentAmount: unknown;
+    rentUnit: string | null;
+    rentUnitRaw: string | null;
+    parcel: { areaHa: unknown } | null;
+}
+interface PayrollRow {
+    id: string;
+    amount: unknown;
+    currency: string;
+    plantingId: string | null;
+    seasonId: string | null;
+}
+
+/** Resolve a `CropType.commodityCanonical` string to a validated slug, or null. */
+function resolveCanonical(raw: string | null | undefined): CanonicalCommodity | null {
+    return raw != null && isCanonicalCommodity(raw) ? raw : null;
+}
+
+function buildPlantingInfo(rows: readonly PlantingRow[]): Map<string, PlantingInfo> {
+    const map = new Map<string, PlantingInfo>();
+    for (const p of rows) {
+        const areaM2 = decOrNull(p.areaM2);
+        map.set(p.id, {
+            id: p.id,
+            commodity: resolveCanonical(p.cropPlan?.cropType?.commodityCanonical),
+            areaM2,
+            areaHa: areaM2 != null ? areaM2 / 10_000 : 0,
+            parcelId: p.parcelId,
+            seasonId: p.cropPlan?.seasonId ?? null,
+            plannedYieldKgPerHa: decOrNull(p.plannedYieldKgPerHa),
+        });
+    }
+    return map;
+}
+
+/**
+ * 1. STANDING CROP — grouped by commodity, `summarizePlannedYield` called
+ * once PER GROUP so an excluded planting is attributed to the right
+ * commodity's exclusion list rather than a single tenant-wide bucket.
+ */
+function computeStandingCrop(
+    plantings: readonly PlantingInfo[],
+    acc: Map<CanonicalCommodity, CommodityAcc>,
+    exclusions: GrainNetWorthExclusions,
+): void {
+    const byCommodity = new Map<CanonicalCommodity, PlantingInfo[]>();
+    for (const p of plantings) {
+        if (p.commodity == null) {
+            exclusions.plantingsUnknownCommodity.push(p.id);
+            continue;
+        }
+        let group = byCommodity.get(p.commodity);
+        if (!group) {
+            group = [];
+            byCommodity.set(p.commodity, group);
+        }
+        group.push(p);
+    }
+
+    for (const [commodity, group] of byCommodity) {
+        const inputRows: PlannedYieldInputRow[] = group.map((p) => ({
+            id: p.id,
+            areaM2: p.areaM2,
+            plannedYieldKgPerHa: p.plannedYieldKgPerHa,
+        }));
+        const summary = summarizePlannedYield(inputRows);
+        exclusions.plantingsMissingYieldEstimate.push(...summary.excludedPlantingIds);
+
+        const included = new Set(summary.includedPlantingIds);
+        const areaHa = group
+            .filter((p) => included.has(p.id))
+            .reduce((sum, p) => sum + p.areaHa, 0);
+
+        const a = ensureAcc(acc, commodity);
+        a.standingCropExpectedKg = summary.totalPlannedYieldKg;
+        a.standingCropAreaHa = round3(areaHa);
+        a.standingCropPlantingIds = summary.includedPlantingIds;
+    }
+}
+
+/**
+ * 2. GRAIN ON HAND — HARVESTED_PRODUCE lots converted to tonnes via their
+ * OWN unit. A lot in a non-WEIGHT (or unresolvable) unit is excluded and
+ * named rather than assumed to already be tonnes (the exact bug class the
+ * brief calls out for `quantityOnHand`).
+ */
+function computeGrainOnHand(
+    lots: readonly LotRow[],
+    unitById: Map<string, UnitRow>,
+    acc: Map<CanonicalCommodity, CommodityAcc>,
+    exclusions: GrainNetWorthExclusions,
+): void {
+    for (const lot of lots) {
+        const unit = unitById.get(lot.unitId);
+        if (!unit || !canConvert(unit.key, TONNES_UNIT_KEY)) {
+            exclusions.lotsUnresolvedUnit.push({ lotId: lot.id, unitKey: unit?.key ?? null });
+            continue;
+        }
+        const commodity = normalizeCommodity(lot.item?.name);
+        if (commodity == null) {
+            exclusions.lotsUnknownCommodity.push(lot.id);
+            continue;
+        }
+        const tonnes = convert(dec(lot.quantityOnHand), unit.key, TONNES_UNIT_KEY);
+        const a = ensureAcc(acc, commodity);
+        a.grainOnHandTonnes += tonnes;
+        a.grainOnHandLotIds.push(lot.id);
+    }
+}
+
+/**
+ * 3a. ATTRIBUTED CROP COST — `getCostRollupByPlanting`'s own rows, summed
+ * per commodity. Reused verbatim; never re-derives `costAmount`.
+ */
+function computeAttributedCost(
+    rollupRows: readonly { plantingId: string; totalCost: number; currencies: string[]; currencyMixed: boolean }[],
+    plantingInfo: Map<string, PlantingInfo>,
+    acc: Map<CanonicalCommodity, CommodityAcc>,
+    exclusions: GrainNetWorthExclusions,
+): void {
+    for (const row of rollupRows) {
+        const info = plantingInfo.get(row.plantingId);
+        const commodity = info?.commodity ?? null;
+        if (commodity == null) {
+            exclusions.plantingsUnknownCommodity.push(row.plantingId);
+            continue;
+        }
+        const a = ensureAcc(acc, commodity);
+        a.attributedCropCost = round2(a.attributedCropCost + row.totalCost);
+        for (const c of row.currencies) a.attributedCropCostCurrencies.add(c);
+        a.attributedCropCostCurrencyMixed = a.attributedCropCostCurrencyMixed || row.currencyMixed;
+    }
+}
+
+/**
+ * 3b. RENT — `resolveRentBasis` per lease, attributed
+ * `ParcelLease.parcelId → Parcel → Planting`. A parcel with more than one
+ * in-scope (known-commodity) planting splits pro-rata by area share.
+ */
+function computeRent(
+    leases: readonly LeaseRow[],
+    plantingsByParcel: Map<string, PlantingInfo[]>,
+    acc: Map<CanonicalCommodity, CommodityAcc>,
+    exclusions: GrainNetWorthExclusions,
+): void {
+    for (const lease of leases) {
+        const areaHa = decOrNull(lease.parcel?.areaHa);
+        const rentAmount = decOrNull(lease.rentAmount);
+        const leaseInput: RentBasisLease = { rentAmount, rentUnit: lease.rentUnit, rentUnitRaw: lease.rentUnitRaw };
+        const basis = resolveRentBasis(leaseInput, areaHa);
+        if (!basis.resolved) {
+            exclusions.leasesUnresolvedRent.push({ leaseId: lease.id, reason: basis.reason });
+            continue;
+        }
+
+        const candidates = plantingsByParcel.get(lease.parcelId) ?? [];
+        const known = candidates.filter((p) => p.commodity != null) as (PlantingInfo & {
+            commodity: CanonicalCommodity;
+        })[];
+        if (known.length === 0) {
+            exclusions.leasesUnattributed.push(lease.id);
+            continue;
+        }
+
+        const weights = computeAreaWeights(known.map((p) => ({ id: p.id, areaHa: p.areaHa })));
+        // areaHa is guaranteed non-null/positive here — `resolveRentBasis`
+        // only resolves when the parcel area is a finite, positive number.
+        const parcelAreaHa = areaHa as number;
+
+        if (basis.kind === 'money') {
+            const totalForParcel = basis.perHa * parcelAreaHa;
+            for (const p of known) {
+                const share = totalForParcel * (weights.get(p.id) ?? 0);
+                ensureAcc(acc, p.commodity).rentCostMoneyAmount += share;
+            }
+        } else {
+            const totalKgForParcel = basis.kgPerHa * parcelAreaHa;
+            for (const p of known) {
+                const share = totalKgForParcel * (weights.get(p.id) ?? 0);
+                const a = ensureAcc(acc, p.commodity);
+                a.rentCostProduceKg += share;
+                a.produceRentLeaseIds.add(lease.id);
+            }
+        }
+    }
+}
+
+/**
+ * 3c/6. PAYROLL — direct `plantingId`/`seasonId` links attribute straight
+ * through; unattributed rows allocate pro-rata by area share across the
+ * plantings in scope (season-scoped when the row carries one, tenant-wide
+ * otherwise). `payrollAllocated` marks any commodity that received an
+ * allocated (not directly linked) share.
+ */
+function computePayroll(
+    rows: readonly PayrollRow[],
+    plantingInfo: Map<string, PlantingInfo>,
+    plantingsBySeason: Map<string | null, PlantingInfo[]>,
+    allKnownPlantings: PlantingInfo[],
+    acc: Map<CanonicalCommodity, CommodityAcc>,
+    exclusions: GrainNetWorthExclusions,
+): void {
+    for (const row of rows) {
+        const amount = dec(row.amount);
+
+        if (row.plantingId) {
+            const info = plantingInfo.get(row.plantingId);
+            if (!info || info.commodity == null) {
+                exclusions.plantingsUnknownCommodity.push(row.plantingId);
+                exclusions.payrollUnattributable.push(row.id);
+                continue;
+            }
+            const a = ensureAcc(acc, info.commodity);
+            a.payrollCost += amount;
+            a.payrollCostCurrencies.add(row.currency);
+            continue;
+        }
+
+        const targets = (row.seasonId != null ? plantingsBySeason.get(row.seasonId) : allKnownPlantings) ?? [];
+        if (targets.length === 0) {
+            exclusions.payrollUnattributable.push(row.id);
+            continue;
+        }
+
+        const weights = computeAreaWeights(targets.map((p) => ({ id: p.id, areaHa: p.areaHa })));
+        for (const p of targets) {
+            if (p.commodity == null) continue; // filtered into `targets` only when known — defensive.
+            const share = amount * (weights.get(p.id) ?? 0);
+            const a = ensureAcc(acc, p.commodity);
+            a.payrollCost += share;
+            a.payrollCostCurrencies.add(row.currency);
+            a.payrollAllocated = true;
+        }
+    }
+}
+
+/**
+ * Finalize one commodity's accumulator into its DTO row — values the
+ * priced quantities, resolves `netAssetPosition` / `netWorth`, and names
+ * unpriced produce rent.
+ */
+function finalizeRow(
+    commodity: CanonicalCommodity,
+    a: CommodityAcc,
+    reference: { pricePerTonne: number; currency: string; observedAt: string; source: string } | null,
+    exclusions: GrainNetWorthExclusions,
+): CommodityNetWorthRow {
+    const pricePerTonne = reference?.pricePerTonne ?? null;
+    const priceCurrency = reference?.currency ?? null;
+
+    if (pricePerTonne == null) {
+        exclusions.commoditiesWithNoPrice.push(commodity);
+    }
+
+    const standingCropValue =
+        pricePerTonne != null ? round2((a.standingCropExpectedKg / KG_PER_TONNE) * pricePerTonne) : null;
+    const grainOnHandValue = pricePerTonne != null ? round2(a.grainOnHandTonnes * pricePerTonne) : null;
+
+    let rentCostProduceValue: number | null = 0;
+    if (a.rentCostProduceKg > 0) {
+        if (pricePerTonne != null) {
+            rentCostProduceValue = round2((a.rentCostProduceKg / KG_PER_TONNE) * pricePerTonne);
+        } else {
+            rentCostProduceValue = null;
+            exclusions.leasesProduceRentUnpriced.push(...a.produceRentLeaseIds);
+        }
+    }
+
+    const cashCostTotal = round2(a.attributedCropCost + a.rentCostMoneyAmount + a.payrollCost);
+    const cashCostCurrencies = new Set<string>([
+        ...a.attributedCropCostCurrencies,
+        ...a.payrollCostCurrencies,
+        ...(a.rentCostMoneyAmount > 0 ? [UNKNOWN_RENT_CURRENCY] : []),
+    ]);
+    const cashCostCurrencyMixed =
+        a.attributedCropCostCurrencyMixed || cashCostCurrencies.size > 1;
+
+    const netAssetPosition =
+        pricePerTonne != null
+            ? round2((standingCropValue ?? 0) + (grainOnHandValue ?? 0) - (rentCostProduceValue ?? 0))
+            : null;
+
+    let netWorth: number | null = null;
+    let netWorthUnavailableReason: string | null = null;
+    if (pricePerTonne == null) {
+        netWorthUnavailableReason = `No market price is available for ${commodity}.`;
+    } else if (cashCostCurrencyMixed) {
+        netWorthUnavailableReason =
+            'Cash costs were recorded in more than one currency; blending them into net worth would misstate the total.';
+    } else if (cashCostCurrencies.size === 0) {
+        netWorth = netAssetPosition;
+    } else {
+        const onlyCurrency = [...cashCostCurrencies][0];
+        if (onlyCurrency === UNKNOWN_RENT_CURRENCY) {
+            netWorthUnavailableReason =
+                'Rent cost currency is not recorded on the lease (ParcelLease has no currency column); it cannot be combined with market-priced assets without inventing one.';
+        } else if (onlyCurrency !== priceCurrency) {
+            netWorthUnavailableReason = `Cost currency (${onlyCurrency}) does not match the market price currency (${priceCurrency}); no currency conversion is performed.`;
+        } else {
+            netWorth = round2((netAssetPosition ?? 0) - cashCostTotal);
+        }
+    }
+
+    return {
+        commodity,
+        pricePerTonne,
+        priceCurrency,
+        priceObservedAt: reference?.observedAt ?? null,
+        priceSource: reference?.source ?? null,
+
+        standingCropAreaHa: a.standingCropAreaHa,
+        standingCropExpectedKg: a.standingCropExpectedKg,
+        standingCropPlantingIds: a.standingCropPlantingIds,
+        standingCropValue,
+
+        grainOnHandTonnes: round3(a.grainOnHandTonnes),
+        grainOnHandLotIds: a.grainOnHandLotIds,
+        grainOnHandValue,
+
+        attributedCropCost: a.attributedCropCost,
+        attributedCropCostCurrencies: [...a.attributedCropCostCurrencies].sort(),
+        attributedCropCostCurrencyMixed: a.attributedCropCostCurrencyMixed,
+
+        rentCostMoneyAmount: round2(a.rentCostMoneyAmount),
+        rentCostProduceKg: round2(a.rentCostProduceKg),
+        rentCostProduceValue,
+
+        payrollCost: round2(a.payrollCost),
+        payrollCostCurrencies: [...a.payrollCostCurrencies].sort(),
+        payrollCostCurrencyMixed: a.payrollCostCurrencies.size > 1,
+        payrollAllocated: a.payrollAllocated,
+
+        cashCostTotal,
+        cashCostCurrencies: [...cashCostCurrencies].sort(),
+        cashCostCurrencyMixed,
+
+        netAssetPosition,
+        netWorth,
+        netWorthUnavailableReason,
+    };
+}
+
+/** All BOUNDED, batched reads this usecase owns — one `runInTenantContext`
+ *  transaction, no read inside a loop (query-shape guardrail D1/D2). */
+async function loadTenantRows(db: PrismaTx, ctx: RequestContext, seasonId: string | undefined) {
+    const plantingRows = await db.planting.findMany({
+        where: {
+            tenantId: ctx.tenantId,
+            deletedAt: null,
+            ...(seasonId ? { cropPlan: { is: { seasonId } } } : {}),
+        },
+        select: {
+            id: true,
+            areaM2: true,
+            plannedYieldKgPerHa: true,
+            parcelId: true,
+            cropPlan: { select: { seasonId: true, cropType: { select: { commodityCanonical: true } } } },
+        },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        take: PLANTING_TAKE + 1,
+    });
+    const plantingsTruncated = plantingRows.length > PLANTING_TAKE;
+    const plantings = plantingsTruncated ? plantingRows.slice(0, PLANTING_TAKE) : plantingRows;
+
+    // Grain on hand is a POINT-IN-TIME stock read, not season-scoped —
+    // there is no season concept on InventoryLot.
+    const lotRows = await db.inventoryLot.findMany({
+        where: { tenantId: ctx.tenantId, deletedAt: null, item: { is: { category: 'HARVESTED_PRODUCE' } } },
+        select: { id: true, quantityOnHand: true, unitId: true, item: { select: { name: true } } },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        take: LOT_TAKE + 1,
+    });
+    const lotsTruncated = lotRows.length > LOT_TAKE;
+    const lots = lotsTruncated ? lotRows.slice(0, LOT_TAKE) : lotRows;
+
+    // ONE batched Unit lookup for every distinct unit the lots use — never
+    // a read per lot.
+    const unitIds = [...new Set(lots.map((l) => l.unitId))];
+    const units = unitIds.length
+        ? await db.unit.findMany({ where: { id: { in: unitIds } }, select: { id: true, key: true }, take: UNIT_TAKE })
+        : [];
+
+    // Active leases only (mirrors rent-roll.ts): not yet ended.
+    const leaseRows = await db.parcelLease.findMany({
+        where: {
+            tenantId: ctx.tenantId,
+            deletedAt: null,
+            OR: [{ endDate: null }, { endDate: { gte: new Date() } }],
+            parcel: { deletedAt: null },
+        },
+        select: {
+            id: true,
+            parcelId: true,
+            rentAmount: true,
+            rentUnit: true,
+            rentUnitRaw: true,
+            parcel: { select: { areaHa: true } },
+        },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        take: LEASE_TAKE + 1,
+    });
+    const leasesTruncated = leaseRows.length > LEASE_TAKE;
+    const leases = leasesTruncated ? leaseRows.slice(0, LEASE_TAKE) : leaseRows;
+
+    // Payroll: scoped to the season directly OR via one of this season's
+    // plantings — both bounded by the id set already loaded above.
+    const plantingIds = plantings.map((p) => p.id);
+    const payrollRows = await db.payrollExpense.findMany({
+        where: {
+            tenantId: ctx.tenantId,
+            deletedAt: null,
+            ...(seasonId
+                ? { OR: [{ seasonId }, ...(plantingIds.length ? [{ plantingId: { in: plantingIds } }] : [])] }
+                : {}),
+        },
+        select: { id: true, amount: true, currency: true, plantingId: true, seasonId: true },
+        orderBy: [{ incurredOn: 'desc' }, { id: 'desc' }],
+        take: PAYROLL_TAKE + 1,
+    });
+    const payrollTruncated = payrollRows.length > PAYROLL_TAKE;
+    const payroll = payrollTruncated ? payrollRows.slice(0, PAYROLL_TAKE) : payrollRows;
+
+    return {
+        plantings,
+        lots,
+        units,
+        leases,
+        payroll,
+        truncated: plantingsTruncated || lotsTruncated || leasesTruncated || payrollTruncated,
+    };
+}
+
+export async function getGrainNetWorth(
+    ctx: RequestContext,
+    opts: { seasonId?: string } = {},
+): Promise<GrainNetWorthResult> {
+    assertCanRead(ctx);
+    const seasonId = opts.seasonId;
+
+    const fetched = await runInTenantContext(ctx, (db) => loadTenantRows(db, ctx, seasonId));
+
+    // Sibling usecase calls — their own transactions/global reads, not
+    // nested inside ours (see module docblock).
+    const costRollup = await getCostRollupByPlanting(ctx, { seasonId, take: PLANTING_TAKE });
+
+    const exclusions = emptyExclusions();
+    const acc = new Map<CanonicalCommodity, CommodityAcc>();
+
+    const plantingInfo = buildPlantingInfo(fetched.plantings);
+    const allPlantings = [...plantingInfo.values()];
+
+    // ── 1. Standing crop ──
+    computeStandingCrop(allPlantings, acc, exclusions);
+
+    // ── 2. Grain on hand ──
+    const unitById = new Map(fetched.units.map((u) => [u.id, u]));
+    computeGrainOnHand(fetched.lots, unitById, acc, exclusions);
+
+    // ── 3a. Attributed crop cost (reused from cost-rollup) ──
+    computeAttributedCost(costRollup.rows, plantingInfo, acc, exclusions);
+
+    // ── 3b. Rent, attributed parcel → planting ──
+    const plantingsByParcel = new Map<string, PlantingInfo[]>();
+    for (const p of allPlantings) {
+        if (!p.parcelId) continue;
+        let group = plantingsByParcel.get(p.parcelId);
+        if (!group) {
+            group = [];
+            plantingsByParcel.set(p.parcelId, group);
+        }
+        group.push(p);
+    }
+    computeRent(fetched.leases, plantingsByParcel, acc, exclusions);
+
+    // ── 3c/6. Payroll, direct + pro-rata by area ──
+    const knownCommodityPlantings = allPlantings.filter((p) => p.commodity != null);
+    const plantingsBySeason = new Map<string | null, PlantingInfo[]>();
+    for (const p of knownCommodityPlantings) {
+        let group = plantingsBySeason.get(p.seasonId);
+        if (!group) {
+            group = [];
+            plantingsBySeason.set(p.seasonId, group);
+        }
+        group.push(p);
+    }
+    computePayroll(fetched.payroll, plantingInfo, plantingsBySeason, knownCommodityPlantings, acc, exclusions);
+
+    // ── 4. Price — one batched lookup for every commodity touched ──
+    const commodities = [...acc.keys()].sort(byCanonicalOrder);
+    const references = await getMarketReferences(commodities);
+
+    const rows = commodities.map((commodity) =>
+        finalizeRow(commodity, acc.get(commodity) ?? newAcc(), references.get(commodity) ?? null, exclusions),
+    );
+
+    // De-duplicate + sort every exclusion list — several sources can name
+    // the same planting/lease (e.g. a planting with no yield estimate AND
+    // an unknown commodity would only ever land in ONE of the two lists,
+    // but a planting can be pushed by both cost and payroll attribution).
+    exclusions.plantingsUnknownCommodity = [...new Set(exclusions.plantingsUnknownCommodity)].sort();
+    exclusions.plantingsMissingYieldEstimate = [...new Set(exclusions.plantingsMissingYieldEstimate)].sort();
+    exclusions.leasesProduceRentUnpriced = [...new Set(exclusions.leasesProduceRentUnpriced)].sort();
+    exclusions.payrollUnattributable = [...new Set(exclusions.payrollUnattributable)].sort();
+    exclusions.commoditiesWithNoPrice = [...new Set(exclusions.commoditiesWithNoPrice)].sort();
+
+    return {
+        generatedAt: new Date().toISOString(),
+        seasonId: seasonId ?? null,
+        rows,
+        exclusions,
+        truncated: fetched.truncated || costRollup.truncated,
+    };
+}
