@@ -25,16 +25,28 @@
  *      the advisory stops appearing, the exemption must be deleted in
  *      the same PR that upgrades — otherwise the list rots into a
  *      permanent blind spot.
+ *   4. An EXPIRED entry fails the build too. `review` used to be
+ *      write-only — printed on a passing run, never compared against
+ *      today — so an exemption could outlive the date its own author
+ *      promised to revisit it, and an accepted-for-now risk quietly
+ *      became a forgotten one. Once `review` has passed AND the
+ *      advisory still appears, the build fails until someone either
+ *      re-argues the exemption (delete + re-add with a new `review`
+ *      date) or removes it and fixes the advisory for real.
  *
- * Exit 0 = every remaining moderate+ advisory is exempt.
- * Exit 1 = something is not exempt, or an exemption is stale.
+ * Exit 0 = every remaining moderate+ advisory is exempt AND every
+ *          exemption's review date is still in the future.
+ * Exit 1 = something is not exempt, an exemption is stale, or an
+ *          exemption's review date has passed.
  */
 import { execSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
 
 /**
  * @type {Array<{id: string, package: string, reason: string, review: string}>}
  */
-const EXEMPT = [
+const REAL_EXEMPT = [
     // Intentionally empty.
     //
     // The two `image-size` advisories (GHSA-w3rx-r6r6-pgpr,
@@ -55,7 +67,27 @@ const EXEMPT = [
     // invariant instead: the dependency may not come back silently.
 ];
 
+// Test-only override, same shape as `AUDIT_JSON_OVERRIDE` below — lets
+// `tests/unit/audit-exemptions.test.ts` exercise the stale / expired /
+// valid classification against a fixture exemption list (a future
+// `review` date, a past one, an advisory that's since been fixed)
+// without touching `REAL_EXEMPT`, which stays empty. Never set outside
+// a test.
+const EXEMPT = process.env.EXEMPT_OVERRIDE
+    ? JSON.parse(readFileSync(process.env.EXEMPT_OVERRIDE, 'utf8'))
+    : REAL_EXEMPT;
+
 function auditJson() {
+    // Test-only escape hatch: `tests/unit/audit-exemptions.test.ts` spawns
+    // this script as a subprocess (mirroring `sync-chart-version.mjs`'s
+    // `CHART_PATH_OVERRIDE` pattern) and points this at a fixture JSON file
+    // instead of shelling out to a real `npm audit` — which would be slow,
+    // network-dependent, and describe whatever the CURRENT lockfile
+    // happens to contain rather than the specific scenario under test.
+    // Never set outside a test.
+    if (process.env.AUDIT_JSON_OVERRIDE) {
+        return JSON.parse(readFileSync(process.env.AUDIT_JSON_OVERRIDE, 'utf8'));
+    }
     try {
         // Non-zero exit is expected here — we are parsing the report,
         // not gating on it. The gate already ran and failed upstream.
@@ -70,54 +102,120 @@ function auditJson() {
 
 const BLOCKING = new Set(['moderate', 'high', 'critical']);
 
-const report = auditJson();
-const found = new Map(); // GHSA id → { severity, package }
-
-for (const [pkg, v] of Object.entries(report.vulnerabilities ?? {})) {
-    if (!BLOCKING.has(v.severity)) continue;
-    for (const via of v.via ?? []) {
-        if (typeof via === 'object' && via.url) {
-            const m = via.url.match(/(GHSA-[\w-]+)/);
-            if (m) found.set(m[1], { severity: v.severity, package: pkg });
+/** Extract every blocking-severity GHSA advisory from an `npm audit --json` report. */
+export function findAdvisories(report) {
+    const found = new Map(); // GHSA id → { severity, package }
+    for (const [pkg, v] of Object.entries(report.vulnerabilities ?? {})) {
+        if (!BLOCKING.has(v.severity)) continue;
+        for (const via of v.via ?? []) {
+            if (typeof via === 'object' && via.url) {
+                const m = via.url.match(/(GHSA-[\w-]+)/);
+                if (m) found.set(m[1], { severity: v.severity, package: pkg });
+            }
         }
     }
+    return found;
 }
 
-const exemptIds = new Set(EXEMPT.map((e) => e.id));
-const unexplained = [...found.entries()].filter(([id]) => !exemptIds.has(id));
-const stale = EXEMPT.filter((e) => !found.has(e.id));
+/**
+ * Pure classification, given the currently-found advisories, the exempt
+ * list, and "today". Kept separate from `main()`'s I/O + reporting so the
+ * decision itself reads in one place; see `EXEMPT_OVERRIDE` /
+ * `AUDIT_JSON_OVERRIDE` above for how the unit test drives this end-to-end
+ * through the CLI without a real `npm audit` or waiting for the system
+ * clock to cross a boundary.
+ *
+ *   - `unexplained` — a blocking advisory with no matching exemption.
+ *   - `stale`       — an exemption for an advisory that no longer appears.
+ *   - `expired`     — an exemption whose `review` date has passed AND the
+ *                     advisory it covers still appears (a stale entry is
+ *                     reported as stale, not also as expired).
+ *
+ * `review` is parsed as a calendar date (midnight UTC) so "today IS the
+ * review date" still passes — the entry is due for review, not yet
+ * overdue; it expires the day AFTER.
+ */
+export function classifyExemptions(exempt, found, today = new Date()) {
+    const exemptIds = new Set(exempt.map((e) => e.id));
+    const unexplained = [...found.entries()].filter(([id]) => !exemptIds.has(id));
+    const stale = exempt.filter((e) => !found.has(e.id));
+    // Compare CALENDAR DATES, not instants: `today` is "right now" (some
+    // time after 00:00:00 UTC), so comparing it directly against a
+    // midnight-anchored `review` date would mark an entry expired the
+    // moment the clock ticks past midnight on its own review day — the
+    // entry becomes due, not overdue, until the day after.
+    const todayDateOnly = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
+    const expired = exempt.filter((e) => found.has(e.id) && new Date(`${e.review}T00:00:00Z`) < todayDateOnly);
+    return { unexplained, stale, expired };
+}
 
-let failed = false;
+function main() {
+    const report = auditJson();
+    const found = findAdvisories(report);
+    const { unexplained, stale, expired } = classifyExemptions(EXEMPT, found, new Date());
 
-if (unexplained.length) {
-    failed = true;
-    console.error('\n✖ npm audit: moderate+ advisories with NO exemption:\n');
-    for (const [id, meta] of unexplained) {
-        console.error(`    ${id}  ${meta.severity.padEnd(8)} ${meta.package}`);
+    let failed = false;
+
+    if (unexplained.length) {
+        failed = true;
+        console.error('\n✖ npm audit: moderate+ advisories with NO exemption:\n');
+        for (const [id, meta] of unexplained) {
+            console.error(`    ${id}  ${meta.severity.padEnd(8)} ${meta.package}`);
+        }
+        console.error(
+            '\n  Fix the vulnerability, or add a tracked entry to EXEMPT in\n' +
+            '  scripts/audit-exemptions.mjs with a written reachability argument.\n' +
+            '  Do NOT lower --audit-level.\n',
+        );
     }
-    console.error(
-        '\n  Fix the vulnerability, or add a tracked entry to EXEMPT in\n' +
-        '  scripts/audit-exemptions.mjs with a written reachability argument.\n' +
-        '  Do NOT lower --audit-level.\n',
-    );
-}
 
-if (stale.length) {
-    failed = true;
-    console.error('\n✖ STALE exemptions — these advisories no longer appear:\n');
-    for (const e of stale) console.error(`    ${e.id}  (${e.package})`);
-    console.error(
-        '\n  Upstream fixed them. Delete the entry in the same PR as the\n' +
-        '  upgrade, so the list never rots into a permanent blind spot.\n',
-    );
-}
-
-if (!failed) {
-    console.log('\n✓ npm audit: every remaining moderate+ advisory is tracked and exempt:\n');
-    for (const e of EXEMPT) {
-        console.log(`    ${e.id}  ${e.package}  (review by ${e.review})`);
+    if (stale.length) {
+        failed = true;
+        console.error('\n✖ STALE exemptions — these advisories no longer appear:\n');
+        for (const e of stale) console.error(`    ${e.id}  (${e.package})`);
+        console.error(
+            '\n  Upstream fixed them. Delete the entry in the same PR as the\n' +
+            '  upgrade, so the list never rots into a permanent blind spot.\n',
+        );
     }
-    console.log('');
+
+    if (expired.length) {
+        failed = true;
+        console.error('\n✖ EXPIRED exemptions — the review date has passed:\n');
+        for (const e of expired) {
+            console.error(`    ${e.id}  ${e.package}  (review was due ${e.review})`);
+        }
+        console.error(
+            '\n  Re-argue the exemption (re-check the reachability argument still\n' +
+            '  holds, then bump `review` to a new date), or remove the entry and\n' +
+            '  fix the advisory for real. An exemption is an accepted risk with a\n' +
+            "  promised check-in date, not a permanent pass — don't just push the\n" +
+            '  date out without re-checking it.\n',
+        );
+    }
+
+    if (!failed) {
+        console.log('\n✓ npm audit: every remaining moderate+ advisory is tracked and exempt:\n');
+        for (const e of EXEMPT) {
+            console.log(`    ${e.id}  ${e.package}  (review by ${e.review})`);
+        }
+        console.log('');
+    }
+
+    process.exit(failed ? 1 : 0);
 }
 
-process.exit(failed ? 1 : 0);
+// Only run the CLI when this file is executed directly (`node
+// scripts/audit-exemptions.mjs`), guarding against an unconditional
+// `process.exit()` (plus a real `npm audit` shell-out) as a side effect
+// of merely loading the module. `tests/unit/audit-exemptions.test.ts`
+// exercises this script exclusively by spawning it as a subprocess
+// (same convention as `tests/unit/sync-chart-version.test.ts` for
+// `sync-chart-version.mjs`, the other `import.meta.url` CLI script in
+// this repo) rather than importing it — ts-jest's CommonJS transform
+// doesn't support `import.meta`, so a direct `import` from a test fails
+// with "Cannot use import statement outside a module" regardless of
+// which export is consumed.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+    main();
+}

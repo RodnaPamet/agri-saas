@@ -68,6 +68,15 @@ RUN npx next build --webpack
 # external) — the `worker` compose service runs these.
 RUN npm run build:worker
 
+# Build the standalone knowledge-base seed CLI (knowledge/satellite/
+# corpus/all subcommands). Same reasoning + same esbuild mechanism as
+# build:worker above — MUST also run before the prune below. Produces
+# dist/seed.mjs, picked up by the `COPY --from=builder .../dist ./dist`
+# below (whole-directory copy, no separate COPY needed). Run it on the
+# VM via `docker compose exec app node dist/seed.mjs <subcommand>` —
+# see docs/deployment.md.
+RUN npm run build:seed
+
 # Prune dev dependencies before the runner stage copies node_modules.
 # Without this, the runtime image carries ts-jest, semantic-release,
 # playwright, and friends — including their transitive CVEs (e.g.

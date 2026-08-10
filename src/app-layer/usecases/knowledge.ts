@@ -3,7 +3,7 @@ import { KnowledgeRepository, KnowledgeFilters } from '../repositories/Knowledge
 import { KnowledgeVersionRepository } from '../repositories/KnowledgeVersionRepository';
 import { assertCanRead, assertCanWrite, assertCanAdmin } from '../policies/common';
 import { logEvent } from '../events/audit';
-import { notFound, badRequest } from '@/lib/errors/types';
+import { notFound, badRequest, forbidden } from '@/lib/errors/types';
 import { runInTenantContext } from '@/lib/db-context';
 import { sanitizePlainText, sanitizeRichTextHtml } from '@/lib/security/sanitize';
 import { enqueue } from '../jobs/queue';
@@ -33,6 +33,27 @@ function sanitizeContent(contentType: 'HTML' | 'MARKDOWN', text: string | null |
 function sanitizeOptional<T extends string | null | undefined>(value: T): T {
     if (value === undefined || value === null) return value;
     return sanitizePlainText(value as string) as T;
+}
+
+/**
+ * GLOBAL articles (`tenantId === null`, W5 task — platform-authored,
+ * e.g. the satellite-imagery guide) are read-only for every tenant. No
+ * tenant-facing usecase may create, edit, publish, archive, unarchive,
+ * delete, or acknowledge one — this is the usecase-layer half of that
+ * invariant; RLS's `WITH CHECK (own)` backs it up at the DB layer, and
+ * (for acknowledgement specifically) `KnowledgeAcknowledgement`'s
+ * composite FK to `KnowledgeArticleVersion(id, tenantId)` makes the
+ * write structurally impossible regardless — see the migration
+ * 20260809130000_knowledge_global_articles header. Called AFTER the
+ * `notFound` check in every write usecase below, so a bogus id and a
+ * real GLOBAL id fail with the right respective error.
+ */
+function assertTenantOwned(article: { tenantId: string | null }): void {
+    if (article.tenantId === null) {
+        throw forbidden(
+            'Global knowledge-base articles are platform-authored and read-only — they cannot be edited, published, archived, or acknowledged by a tenant.',
+        );
+    }
 }
 
 /** Cap on the number of crop tags / regions an article can carry — a
@@ -244,6 +265,7 @@ export async function updateArticleMetadata(
     return runInTenantContext(ctx, async (db) => {
         const article = await KnowledgeRepository.getById(db, ctx, articleId);
         if (!article) throw notFound('Article not found');
+        assertTenantOwned(article);
 
         const title = data.title !== undefined ? sanitizePlainText(data.title) : undefined;
         if (title !== undefined && !title) throw badRequest('Title is required');
@@ -293,6 +315,7 @@ export async function createArticleVersion(ctx: RequestContext, articleId: strin
     return runInTenantContext(ctx, async (db) => {
         const article = await KnowledgeRepository.getById(db, ctx, articleId);
         if (!article) throw notFound('Article not found');
+        assertTenantOwned(article);
         if (article.status === 'ARCHIVED') throw badRequest('Cannot add a version to an archived article');
         if (!data.contentText?.trim()) throw badRequest('contentText is required');
 
@@ -337,6 +360,7 @@ export async function publishArticle(ctx: RequestContext, articleId: string, ver
     const result = await runInTenantContext(ctx, async (db) => {
         const article = await KnowledgeRepository.getById(db, ctx, articleId);
         if (!article) throw notFound('Article not found');
+        assertTenantOwned(article);
         const version = await KnowledgeVersionRepository.getById(db, ctx, versionId);
         if (!version || version.article.id !== articleId) {
             throw badRequest('Version does not belong to this article');
@@ -377,6 +401,7 @@ export async function archiveArticle(ctx: RequestContext, articleId: string) {
     const result = await runInTenantContext(ctx, async (db) => {
         const article = await KnowledgeRepository.getById(db, ctx, articleId);
         if (!article) throw notFound('Article not found');
+        assertTenantOwned(article);
         await KnowledgeRepository.updateStatus(db, ctx, articleId, 'ARCHIVED');
         await logEvent(db, ctx, {
             action: 'KNOWLEDGE_ARTICLE_ARCHIVED',
@@ -423,6 +448,7 @@ export async function unarchiveArticle(ctx: RequestContext, articleId: string) {
     const result = await runInTenantContext(ctx, async (db) => {
         const article = await KnowledgeRepository.getById(db, ctx, articleId);
         if (!article) throw notFound('Article not found');
+        assertTenantOwned(article);
         if (article.status !== 'ARCHIVED') return article; // idempotent
 
         const restoredStatus = article.lifecycleVersion > 1 ? 'PUBLISHED' : 'DRAFT';
@@ -470,12 +496,20 @@ export interface AcknowledgeResult {
  * Record the caller's acknowledgement of a published article's current
  * version. Any reader can acknowledge; only PUBLISHED articles are
  * acknowledgeable. Idempotent via @@unique([articleVersionId, userId]).
+ *
+ * GLOBAL articles are rejected (`assertTenantOwned`) — an acknowledgement
+ * row always belongs to the ACTING tenant, and `KnowledgeAcknowledgement`'s
+ * composite FK to `KnowledgeArticleVersion(id, tenantId)` would refuse the
+ * write at the DB layer anyway (a GLOBAL version's tenantId is NULL, which
+ * never matches an acting tenantId) — see the migration
+ * 20260809130000_knowledge_global_articles header.
  */
 export async function acknowledgeArticle(ctx: RequestContext, articleId: string): Promise<AcknowledgeResult> {
     assertCanRead(ctx);
     return runInTenantContext(ctx, async (db) => {
         const article = await KnowledgeRepository.getById(db, ctx, articleId);
         if (!article) throw notFound('Article not found');
+        assertTenantOwned(article);
         if (article.status !== 'PUBLISHED') {
             throw badRequest(`Only PUBLISHED articles can be acknowledged. ${articleId} is ${article.status}.`);
         }
@@ -541,4 +575,32 @@ export async function listAcknowledgements(ctx: RequestContext, articleId: strin
             take: 500,
         });
     });
+}
+
+// ─── Satellite-imagery guide (W5 task) ───
+
+/**
+ * Category pivot for the satellite-imagery guide's GLOBAL articles — MUST
+ * match the `category` seeded by `scripts/rag/ingest-satellite-guide.ts`
+ * and the client-side `SATELLITE_ARTICLE_CATEGORY` constant on
+ * `/knowledge/satellite/page.tsx`. Kept as a literal in each file rather
+ * than a shared import — same reasoning as `AGRONOMY_SOURCE` in
+ * `scripts/import-knowledge.ts`: no import-time coupling between a
+ * server usecase, a client page, and a standalone seed script.
+ */
+const SATELLITE_ARTICLE_CATEGORY = 'Satellite Imagery';
+
+/**
+ * The satellite-imagery guide's GLOBAL (platform-authored) articles for
+ * one language, WITH content — powers `/knowledge/satellite`'s
+ * article-model integration (W5 task). Always PUBLISHED-only and
+ * GLOBAL-only regardless of the caller's permission tier (see
+ * `KnowledgeRepository.listGlobalByCategory`) — this is a small,
+ * always-public documentation surface, not the general article list.
+ */
+export async function getSatelliteGuideArticles(ctx: RequestContext, language: string) {
+    assertCanRead(ctx);
+    return runInTenantContext(ctx, (db) =>
+        KnowledgeRepository.listGlobalByCategory(db, SATELLITE_ARTICLE_CATEGORY, language),
+    );
 }
