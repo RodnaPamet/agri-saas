@@ -98,6 +98,10 @@ const RICH_TEXT_COVERAGE: Readonly<
     // safe content.
     Contract: { usecases: ['src/app-layer/usecases/contract.ts'], sanitizer: 'sanitizePlainText' },
     YieldRecord: { usecases: ['src/app-layer/usecases/yield-record.ts'], sanitizer: 'sanitizePlainText' },
+    // Enterprise-grain — PayrollExpense.description (can name an employee
+    // or contractor) is encrypted at rest AND sanitised before the write,
+    // same shape as Contract / YieldRecord above.
+    PayrollExpense: { usecases: ['src/app-layer/usecases/payroll-expense.ts'], sanitizer: 'sanitizePlainText' },
     // БАБХ farm-record — FarmProfile.egn/eik are encrypted at rest (Epic B
     // manifest) AND sanitised at the upsertFarmProfile write seam before the
     // middleware persists them, so every renderer that decrypts them (the

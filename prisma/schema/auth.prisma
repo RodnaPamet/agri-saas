@@ -223,6 +223,7 @@ model Tenant {
   contracts                Contract[]
   yieldRecords             YieldRecord[]
   grainDeliveries          GrainDelivery[]
+  payrollExpenses          PayrollExpense[]
   // Phase 1 — inventory ledger + journal.
   inventoryLots            InventoryLot[]
   stockTransactions        StockTransaction[]
@@ -772,6 +773,8 @@ model User {
   knowledgeArticlesOwned        KnowledgeArticle[]           @relation("KnowledgeArticleOwner")
   knowledgeVersionsCreated      KnowledgeArticleVersion[]    @relation("KnowledgeVersionCreator")
   knowledgeAcks                 KnowledgeAcknowledgement[]
+  // Enterprise-grain — payroll/labour cost register.
+  payrollExpensesCreated        PayrollExpense[]             @relation("PayrollExpenseCreator")
 }
 
 model Account {

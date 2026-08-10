@@ -164,6 +164,16 @@ const MODULE_GATED_ROUTES: ReadonlyArray<{
         file: 'src/app/api/t/[tenantSlug]/grain/costs/route.ts',
         module: 'GRAIN',
     },
+    // Payroll / labour-cost register — first-class cost alongside the
+    // field-event + stock costs the Costs rollup already aggregates.
+    {
+        file: 'src/app/api/t/[tenantSlug]/grain/payroll/route.ts',
+        module: 'GRAIN',
+    },
+    {
+        file: 'src/app/api/t/[tenantSlug]/grain/payroll/[payrollExpenseId]/route.ts',
+        module: 'GRAIN',
+    },
     {
         file: 'src/app/api/t/[tenantSlug]/exchange/listings/route.ts',
         module: 'EXCHANGE',

@@ -236,3 +236,46 @@ export const BlendLotsSchema = z
     .strip();
 
 export type BlendLotsInput = z.infer<typeof BlendLotsSchema>;
+
+// ═════════════════════════════════════════════════════════════════════
+//  Payroll expenses (labour cost register)
+// ═════════════════════════════════════════════════════════════════════
+
+/**
+ * `amount` is bounded to what `Decimal(14, 2)` can hold — same rationale
+ * as `BoundedNumber` above — and strictly POSITIVE: a zero-amount payroll
+ * row logs nothing, mirroring `CreateGrainDeliverySchema.tonnes`.
+ */
+const MAX_PAYROLL_AMOUNT = 999_999_999_999;
+
+const RequiredPositiveAmount = z
+    .number()
+    .finite()
+    .positive('amount must be greater than zero')
+    .max(MAX_PAYROLL_AMOUNT, `amount must be ${MAX_PAYROLL_AMOUNT} or less`);
+
+export const CreatePayrollExpenseSchema = z
+    .object({
+        amount: RequiredPositiveAmount,
+        currency: ShortText(8),
+        incurredOn: z.string().min(8),
+        description: OptionalText(8000),
+        plantingId: z.string().min(1).nullable().optional(),
+        seasonId: z.string().min(1).nullable().optional(),
+    })
+    .strip();
+
+export type CreatePayrollExpenseInput = z.infer<typeof CreatePayrollExpenseSchema>;
+
+export const UpdatePayrollExpenseSchema = z
+    .object({
+        amount: RequiredPositiveAmount.optional(),
+        currency: z.string().min(1).max(8).optional(),
+        incurredOn: z.string().min(8).optional(),
+        description: OptionalText(8000),
+        plantingId: z.string().min(1).nullable().optional(),
+        seasonId: z.string().min(1).nullable().optional(),
+    })
+    .strip();
+
+export type UpdatePayrollExpenseInput = z.infer<typeof UpdatePayrollExpenseSchema>;

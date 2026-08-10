@@ -21,13 +21,14 @@ import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/cn';
 
-export type GrainSection = 'contracts' | 'yield' | 'bins' | 'costs';
+export type GrainSection = 'contracts' | 'yield' | 'bins' | 'costs' | 'payroll';
 
 const SECTIONS: ReadonlyArray<{ key: GrainSection; path: string }> = [
     { key: 'contracts', path: '/grain/contracts' },
     { key: 'yield', path: '/grain/yield' },
     { key: 'bins', path: '/grain/bins' },
     { key: 'costs', path: '/grain/costs' },
+    { key: 'payroll', path: '/grain/payroll' },
 ];
 
 export function GrainSectionNav({
