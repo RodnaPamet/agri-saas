@@ -876,12 +876,12 @@ jobs:
   #  Job 6.5: Load Smoke — k6 mutation smoke (10 VUs × 30s)
   #
   #  Runs on every PR + push to main. Catches obvious latency / error
-  #  regressions in the highest-traffic mutation paths (control create,
+  #  regressions in the highest-traffic mutation paths (practice create,
   #  evidence upload) before merge. Full-scale baselines stay in the
   #  on-demand load-test.yml workflow (50 / 100 / 200 VU).
   #
   #  Thresholds (from tests/load/mutations.js, must stay in sync):
-  #    p95 < 1500ms (create_control), 2000ms (upload_evidence)
+  #    p95 < 1500ms (create_practice), 2000ms (upload_evidence)
   #    p99 < 3000ms / 4000ms
   #    error-rate < 2% per op, check-rate > 98%
   #
