@@ -22,6 +22,24 @@ export function haToDca(areaHa: number): number {
 }
 
 /**
+ * Convert a decare area to hectares — the inverse of {@link haToDca}.
+ * Same `DCA_PER_HA` factor (divide instead of multiply), so a value
+ * round-trips through both functions unchanged.
+ *
+ * Also the correct operation for the OTHER direction a rate travels at
+ * the UI boundary: a кг/дка figure the user typed is per-decare, and a
+ * per-hectare rate is a LARGER number for the same physical total (a
+ * hectare holds ten decares' worth). Converting кг/дка → кг/ha is a
+ * `× DCA_PER_HA`, i.e. `haToDca`; converting a stored кг/ha value BACK
+ * to кг/дка for display is `÷ DCA_PER_HA`, i.e. this function. See
+ * `PlannedYieldField` in the planting UI for the call site.
+ */
+export function dcaToHa(areaDca: number): number {
+    if (!Number.isFinite(areaDca)) return 0;
+    return areaDca / DCA_PER_HA;
+}
+
+/**
  * Total amount needed for an area = per-decare rate × the area's decares.
  * Returns 0 for non-finite inputs so callers can render a tidy "—"/0.
  */

@@ -4,6 +4,7 @@
 import {
     DCA_PER_HA,
     haToDca,
+    dcaToHa,
     totalForArea,
     amountUnitOf,
     areaBasisOf,
@@ -22,6 +23,37 @@ describe('haToDca', () => {
     });
     it('returns 0 for non-finite area', () => {
         expect(haToDca(NaN)).toBe(0);
+    });
+});
+
+describe('dcaToHa', () => {
+    it('converts decares to hectares (fixed known values)', () => {
+        expect(dcaToHa(100)).toBe(10);
+        expect(dcaToHa(10)).toBe(1);
+        expect(dcaToHa(5)).toBe(0.5);
+        expect(dcaToHa(0)).toBe(0);
+    });
+    it('returns 0 for non-finite area', () => {
+        expect(dcaToHa(NaN)).toBe(0);
+    });
+    it('round-trips through haToDca (both directions, not just a no-op)', () => {
+        // A round trip alone would pass even if BOTH directions carried the
+        // same wrong factor — pair it with the fixed-value assertions above,
+        // which pin the actual factor of 10, not just self-consistency.
+        for (const areaHa of [1, 10, 2.5, 0, 137.4]) {
+            expect(dcaToHa(haToDca(areaHa))).toBeCloseTo(areaHa, 10);
+        }
+        for (const areaDca of [1, 100, 25, 0, 1374]) {
+            expect(haToDca(dcaToHa(areaDca))).toBeCloseTo(areaDca, 10);
+        }
+    });
+    it('is the true inverse of haToDca, not an identity in disguise', () => {
+        // Catches the failure mode where someone "fixes" dcaToHa by making
+        // it also multiply (a copy-paste of haToDca) — round trip alone
+        // would still look fine only if BOTH were wrong the same way, but
+        // this pins the actual, non-1:1 relationship directly.
+        expect(dcaToHa(100)).not.toBe(100);
+        expect(dcaToHa(100)).toBe(haToDca(1));
     });
 });
 

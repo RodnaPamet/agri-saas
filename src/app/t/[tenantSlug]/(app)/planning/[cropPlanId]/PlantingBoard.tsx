@@ -11,16 +11,19 @@
  *      lifecycle reads as task-like work, so each row maps to a
  *      `task`-category CalendarEvent).
  *   2. A <DataTable> — succession #, planned + actual sow / transplant
- *      / harvest dates, seed grams, plant count, status. The actual
- *      column shows the journal-recorded date where a LogPlanting
- *      exists, so the farmer sees plan vs reality at a glance.
+ *      / harvest dates, seed grams, plant count, planned yield, status.
+ *      The actual column shows the journal-recorded date where a
+ *      LogPlanting exists, so the farmer sees plan vs reality at a
+ *      glance. Planned yield (`PlannedYieldCell`) is entered/displayed
+ *      as кг/дка and stored per hectare — see
+ *      `Planting.plannedYieldKgPerHa`'s schema doc.
  */
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useTenantApiUrl, useTenantContext } from '@/lib/tenant-context-provider';
-import { apiPost } from '@/lib/api-client';
+import { apiPatch, apiPost } from '@/lib/api-client';
 import { createColumns, DataTable } from '@/components/ui/table';
 import { GanttTimeline } from '@/components/ui/GanttTimeline';
 import { AgStatusBadge } from '@/components/ag/ag-status';
@@ -32,10 +35,12 @@ import { Heading } from '@/components/ui/typography';
 import { Tooltip } from '@/components/ui/tooltip';
 import { Button } from '@/components/ui/button';
 import { Popover } from '@/components/ui/popover';
-import { CircleCheck, Plus } from '@/components/ui/icons/nucleo';
+import { NumberStepper } from '@/components/ui/number-stepper';
+import { CircleCheck, Pen2, Plus } from '@/components/ui/icons/nucleo';
 import { formatDate } from '@/lib/format-date';
 import { cardVariants } from '@/components/ui/card';
 import { cn } from '@/lib/cn';
+import { dcaToHa, haToDca, trimNumber } from '@/lib/agro/rate-calc';
 import type { CalendarEvent } from '@/app-layer/schemas/calendar.schemas';
 
 /** Lifecycle stage a "record actual" click realises. */
@@ -65,6 +70,14 @@ interface PlantingProgressRow {
         TRANSPLANT: string | null;
         HARVEST: string | null;
     };
+    /**
+     * Grower-entered expected yield, PER HECTARE (the stored/wire
+     * representation). `null` means no estimate was entered — NOT
+     * "expect zero" (see `Planting.plannedYieldKgPerHa`'s schema doc).
+     * `PlannedYieldCell` converts to/from кг/дка at this UI boundary
+     * only, via `haToDca`/`dcaToHa`.
+     */
+    plannedYieldKgPerHa: number | null;
 }
 
 interface PlantingDetail {
@@ -254,6 +267,117 @@ function RecordActualMenu({
     );
 }
 
+/**
+ * Per-row planned-yield editor — the grower's expected yield, entered
+ * and displayed as кг/дка (the Bulgarian convention this product shows
+ * everywhere else, e.g. `ParcelDetailSheet`). The stored/wire value is
+ * ALWAYS per hectare (`row.plannedYieldKgPerHa`); conversion happens
+ * ONLY here, via the shared `haToDca`/`dcaToHa` pair — never a local
+ * `× 10` / `÷ 10`, so the factor of 10 stays in exactly one place
+ * (`src/lib/agro/rate-calc.ts`).
+ *
+ * `null` (no estimate entered) renders as "—" and is never defaulted to
+ * 0 in the draft — opening the editor on an unset planting starts the
+ * stepper at 0 for TYPING convenience only; leaving it untouched and
+ * saving would write a real `0`, which is why the Popover also offers
+ * "Clear" to explicitly write back `null` without going through 0.
+ */
+function PlannedYieldCell({
+    row,
+    onSaved,
+}: {
+    row: PlantingProgressRow;
+    onSaved: () => Promise<unknown>;
+}) {
+    const t = useTranslations('planning.board');
+    const buildUrl = useTenantApiUrl();
+    const [open, setOpen] = useState(false);
+    const [busy, setBusy] = useState(false);
+
+    const storedKgPerHa = row.plannedYieldKgPerHa;
+    // Display/edit boundary: stored (кг/ha) → кг/дка is ÷10 (`dcaToHa` —
+    // see its doc for why the "dca→ha" name is the right operation here).
+    const displayKgPerDca = storedKgPerHa != null ? dcaToHa(storedKgPerHa) : null;
+    const [draft, setDraft] = useState(displayKgPerDca ?? 0);
+
+    // Reseed the draft from the current value every time the popover opens
+    // — same pattern (and same lint carve-out) as NumberStepper's own
+    // prop-resync effect.
+    useEffect(() => {
+        if (open) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect
+            setDraft(displayKgPerDca ?? 0);
+        }
+    }, [open, displayKgPerDca]);
+
+    const patch = async (plannedYieldKgPerHa: number | null) => {
+        if (busy) return;
+        setBusy(true);
+        try {
+            await apiPatch(buildUrl(`/planning/plantings/${row.plantingId}`), { plannedYieldKgPerHa });
+            setOpen(false);
+            await onSaved();
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    // Entry boundary: typed кг/дка → stored кг/ha is ×10 (`haToDca` — the
+    // arithmetic is the same "×DCA_PER_HA" whether the caller means an
+    // area or, as here, a per-decare RATE; see its doc).
+    const save = () => patch(haToDca(draft));
+    const clear = () => patch(null);
+
+    return (
+        <Popover
+            openPopover={open}
+            setOpenPopover={setOpen}
+            align="end"
+            content={
+                <div className="w-52 space-y-default p-2">
+                    <p className="text-xs font-medium text-content-muted">{t('plannedYield.fieldLabel')}</p>
+                    <NumberStepper
+                        value={draft}
+                        onChange={setDraft}
+                        min={0}
+                        max={100_000}
+                        step={10}
+                        size="sm"
+                        disabled={busy}
+                        ariaLabel={t('plannedYield.fieldLabel')}
+                    />
+                    <div className="flex gap-1.5">
+                        <Button
+                            variant="primary"
+                            size="xs"
+                            loading={busy}
+                            onClick={() => void save()}
+                            className="flex-1"
+                        >
+                            {t('plannedYield.save')}
+                        </Button>
+                        {displayKgPerDca != null ? (
+                            <Button variant="ghost" size="xs" disabled={busy} onClick={() => void clear()}>
+                                {t('plannedYield.clear')}
+                            </Button>
+                        ) : null}
+                    </div>
+                </div>
+            }
+        >
+            <Button
+                variant="ghost"
+                size="xs"
+                icon={<Pen2 className="h-3 w-3" aria-hidden />}
+                aria-label={t('plannedYield.aria', { num: row.successionNumber })}
+                id={`planned-yield-${row.plantingId}`}
+            >
+                {displayKgPerDca != null ? trimNumber(displayKgPerDca) : '—'}
+            </Button>
+        </Popover>
+    );
+}
+
 export function PlantingBoard({
     tenantSlug,
     cropPlanId,
@@ -407,6 +531,22 @@ export function PlantingBoard({
                             </span>
                         );
                     },
+                },
+                {
+                    id: 'plannedYield',
+                    header: t('plannedYield.colHeader'),
+                    accessorFn: (r) => r.plannedYieldKgPerHa ?? '',
+                    cell: ({ row }) =>
+                        canWrite ? (
+                            <PlannedYieldCell row={row.original} onSaved={onRecorded} />
+                        ) : (
+                            <span className="text-xs text-content-muted tabular-nums">
+                                {row.original.plannedYieldKgPerHa != null
+                                    ? trimNumber(dcaToHa(row.original.plannedYieldKgPerHa))
+                                    : '—'}
+                            </span>
+                        ),
+                    meta: { disableTruncate: true },
                 },
                 {
                     id: 'gdd',
