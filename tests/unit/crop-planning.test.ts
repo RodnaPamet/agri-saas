@@ -490,6 +490,27 @@ describe('crop-plan CRUD gating', () => {
         expect(where.tenantId).toBe('tenant-1');
     });
 
+    // `status` is a `multiple: true` facet (CropPlansClient / filter-defs.ts)
+    // comma-joined into an array by the route's `csvEnumField`. Regression
+    // coverage for the crop-plans 500: a bare string equality on a
+    // multi-value status threw PrismaClientValidationError, which the list
+    // page rendered as "no crop plans".
+    it('listCropPlans queries a multi-value status filter with `in`, not equality', async () => {
+        mockDb.cropPlan.findMany.mockResolvedValue([]);
+        await listCropPlans(readerCtx, { status: ['DRAFT', 'ACTIVE'] });
+        const where = mockDb.cropPlan.findMany.mock.calls[0][0].where;
+        expect(where.status).toEqual({ in: ['DRAFT', 'ACTIVE'] });
+    });
+
+    it('listCropPlans OMITS the status filter entirely when the facet is cleared (empty array)', async () => {
+        mockDb.cropPlan.findMany.mockResolvedValue([]);
+        await listCropPlans(readerCtx, { status: [] });
+        const where = mockDb.cropPlan.findMany.mock.calls[0][0].where;
+        // `{ in: [] }` would match nothing — a cleared facet must show
+        // every plan again, not an empty table.
+        expect(where.status).toBeUndefined();
+    });
+
     it('createCropPlan refuses a reader', async () => {
         await expect(
             createCropPlan(readerCtx, {
