@@ -29,6 +29,7 @@ import {
     Warehouse,
     LineChart,
     Coins,
+    Banknote,
     ArrowLeftRight,
     CloudSun,
     CalendarClock,
@@ -193,6 +194,10 @@ export function useNavSections(): NavSectionDef[] {
                 { href: tenantHref('/grain/bins'), label: t('bins'), icon: Warehouse, visible: grainAvailable },
                 { href: tenantHref('/grain/yield'), label: t('yield'), icon: LineChart, visible: grainAvailable },
                 { href: tenantHref('/grain/costs'), label: t('costs'), icon: Coins, visible: grainAvailable },
+                // Payroll (labour cost register) — a first-class cost
+                // alongside the field-event/stock costs the Costs rollup
+                // already aggregates. Reuses no other glyph on this list.
+                { href: tenantHref('/grain/payroll'), label: t('payroll'), icon: Banknote, visible: grainAvailable },
             ]),
         },
         {

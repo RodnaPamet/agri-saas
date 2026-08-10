@@ -228,6 +228,17 @@ export const ENCRYPTED_FIELDS: Readonly<Record<string, readonly string[]>> = {
     //  (no incidental cross-model name collision).
     Contract: ['terms', 'pricingNotes'],
     YieldRecord: ['valuationNotes'],
+
+    // ─── Enterprise-grain — payroll / labour cost ──────────
+    //  PayrollExpense.description can name an employee or contractor
+    //  ("Overtime, combine operator I. Petrov, harvest week") — personal
+    //  as well as commercial detail. `amount` stays plaintext Decimal so
+    //  a future labour-cost rollup can SUM it in-DB (an encrypted column
+    //  cannot be). `description` is shared with several other models
+    //  (Finding, Vendor, VendorEvidenceBundle, AccessReview) — this entry
+    //  is what makes the middleware treat PayrollExpense.description as
+    //  encrypted; every other model's `description` field is unaffected.
+    PayrollExpense: ['description'],
 } as const;
 
 /** Set of model names with at least one encrypted field. Fast-path check. */

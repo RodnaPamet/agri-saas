@@ -135,10 +135,11 @@ model Season {
   deletedByUserId String?
   retentionUntil  DateTime?
 
-  tenant       Tenant        @relation(fields: [tenantId], references: [id])
-  cropPlans    CropPlan[]
-  contracts    Contract[]
-  yieldRecords YieldRecord[]
+  tenant          Tenant           @relation(fields: [tenantId], references: [id])
+  cropPlans       CropPlan[]
+  contracts       Contract[]
+  yieldRecords    YieldRecord[]
+  payrollExpenses PayrollExpense[]
 
   @@unique([id, tenantId])
   @@unique([tenantId, key])
@@ -232,14 +233,15 @@ model Planting {
   deletedByUserId     String?
   retentionUntil      DateTime?
 
-  tenant       Tenant        @relation(fields: [tenantId], references: [id])
-  cropPlan     CropPlan      @relation(fields: [cropPlanId, tenantId], references: [id, tenantId], onDelete: Cascade)
-  variety      CropVariety?  @relation(fields: [cropVarietyId, tenantId], references: [id, tenantId])
-  location     Location?     @relation(fields: [locationId, tenantId], references: [id, tenantId])
-  parcel       Parcel?       @relation(fields: [parcelId, tenantId], references: [id, tenantId])
-  logPlantings LogPlanting[]
-  agroSignals  AgroSignal[]
-  yieldRecords YieldRecord[]
+  tenant          Tenant           @relation(fields: [tenantId], references: [id])
+  cropPlan        CropPlan         @relation(fields: [cropPlanId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  variety         CropVariety?     @relation(fields: [cropVarietyId, tenantId], references: [id, tenantId])
+  location        Location?        @relation(fields: [locationId, tenantId], references: [id, tenantId])
+  parcel          Parcel?          @relation(fields: [parcelId, tenantId], references: [id, tenantId])
+  logPlantings    LogPlanting[]
+  agroSignals     AgroSignal[]
+  yieldRecords    YieldRecord[]
+  payrollExpenses PayrollExpense[]
 
   @@unique([id, tenantId])
   // Stable identity for a succession within a plan — regenerate UPSERTS

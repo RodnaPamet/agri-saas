@@ -244,6 +244,11 @@ const FK_INDEX_EXEMPT: Record<string, string> = {
     // ─── Knowledge Base (mirrors Policy actor FKs) ───
     'KnowledgeArticle.ownerUserId': R_ACTOR,
     'KnowledgeArticleVersion.createdById': R_ACTOR,
+    // ─── Enterprise-grain — payroll / labour cost ───
+    // plantingId / seasonId are covered by their own [tenantId, fk]
+    // composites (Layer B's tenant-composite rule) — only the actor FK
+    // needs an exemption here.
+    'PayrollExpense.createdByUserId': R_ACTOR,
 };
 
 // ─────────────────────────────────────────────────────────────────────
@@ -347,6 +352,12 @@ const LIST_QUERY_INDEXES: readonly CompositeIndex[] = [
         model: 'YieldRecord',
         fields: ['tenantId', 'seasonId'],
         justification: 'listYieldRecords season filter',
+    },
+    {
+        model: 'PayrollExpense',
+        fields: ['tenantId', 'incurredOn'],
+        justification:
+            'listPayrollExpenses default sort: orderBy [{ incurredOn: "desc" }, { createdAt: "desc" }]',
     },
 ];
 
