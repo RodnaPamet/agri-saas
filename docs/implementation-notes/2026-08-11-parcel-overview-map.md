@@ -160,11 +160,72 @@ That left a hole, reported from the running app as *"I don't see a
 button for the 2d map"*: the page **opens on the Map tab**
 (`page.tsx:157`), so the only signpost to the locator was a tab labelled
 "Overview" — which does not say "here is how you find a parcel among a
-hundred". The Map tab's toolbar now carries a **Parcel groups** button
-that switches to it. Placement beside Merge rather than beside the
-index/soil toggles is deliberate: those are data layers on the current
-map, this is a different view. A view that has to be stumbled upon may
-as well not ship.
+hundred". A view that has to be stumbled upon may as well not ship.
+
+So the Map tab hosts the locator too, and there the brief's original
+shape is the right one: **one slot, two renderers, toggled.** The
+header action row carries an icon-only **Parcel groups** toggle
+(`aria-pressed`, tooltip + `aria-label` for the name), and pressing it
+unmounts `MapCanvas` and mounts the locator in its place. Unmounting
+rather than stacking is deliberate — it drops the WebGL context and the
+tile fetches with it.
+
+*A first attempt put the button at the end of the index/soil chip row
+and justified it as "beside Merge, not beside the toggles". That
+distinction existed only in the DOM: the toolbar is one wrapping flex
+row, so on a phone it rendered as an orphaned seventh chip under six
+layer toggles. If a rationale does not survive to the screen, it is not
+a rationale.*
+
+**Every satellite-only control hides while the locator holds the slot** —
+the five index chips, the soil toggle, the imagery date picker, the
+index status line, the soil legend and the cadastre overlay toggle. They
+drive overlays on a raster that is no longer on screen, and a switch
+wired to nothing is worse than no switch. They are removed from the DOM
+rather than hidden with a class: jsdom loads no CSS, so a class-based
+hide would pass its test while shipping visible dead controls.
+
+Both mount points share ONE filter state (it lives in the URL), so a
+group picked on the Map tab is already applied when the operator moves
+to Overview to read the narrowed list.
+
+### Parcels are drawn as parcels
+
+The first cut drew every parcel as a **circle**. That was wrong in a way
+that only shows when you use it: the locator's job is recognising a
+field, and a field is recognised by its shape. Circles at farm scale are
+a chart, not a map.
+
+Outlines now come from the SAME GeoJSON the satellite renderer gets —
+`mapParcels`, already on the page from `/locations/:id/parcels`, so
+there is no second read and no payload change. One `Path2D` per parcel,
+built in world space and rebuilt only when the fit or the geometry
+changes, which is what keeps `isPointInPath` cheap enough to hit-test on
+every click.
+
+Consequences worth recording:
+
+- **The frame comes from the outlines, not the centroids.** The clusters
+  payload's `bbox` spans `ST_PointOnSurface` points, so fitting to it
+  drew the edge fields half off-canvas. `polygonBBox` spans the real
+  rings and the payload `bbox` is now only a fallback for the moment
+  before geometry arrives.
+- **A single bad vertex rejects its whole ring**, rather than being
+  skipped. Skipping closes the outline through the wrong neighbours and
+  draws a boundary confidently in the wrong place — and a wrong boundary
+  is worse than an absent one, because nothing on screen says it is
+  wrong. Same reasoning the endpoint applies when a non-finite
+  coordinate makes a parcel *unpositioned* rather than *mis-positioned*.
+- **Cluster bubbles survive, parcel dots do not.** The bubbles are the
+  aggregate affordance — they carry the settlement label and the
+  click-to-filter target — and are drawn over the outlines at cluster
+  pitch. Past the clustering floor they give way and the shapes carry
+  their own names. Hit-testing tries the bubbles first, then falls
+  through to `isPointInPath` on the outlines, so clicking a field opens
+  that field.
+- **The Map-tab mount matches `MapCanvas`'s sizing byte for byte.** It
+  is the same slot; a locator that opens noticeably smaller reads as a
+  preview of the map rather than as the map.
 
 ### Cluster identity survives zooming — because the URL carries the pitch
 

@@ -265,6 +265,14 @@ function LocationDetailBody() {
     // below the tenant's own parcels, so it coexists rather than being mutually
     // exclusive. Online-only (WMS is live, not in the offline pack).
     const [cadastreOn, setCadastreOn] = useState(false);
+    // Map tab: swap the satellite renderer for the 2D parcel-group locator.
+    // A view switch, not a layer — the two are different libraries and only
+    // one can occupy the slot. Every satellite-only control (index chips,
+    // soil toggle, imagery date, cadastre overlay, the index legend and the
+    // soil legend) hides while the locator is up: they drive a raster that
+    // is no longer on screen, and leaving them would offer the operator
+    // switches wired to nothing.
+    const [showLocator, setShowLocator] = useState(false);
     // `online` gates the cadastre toggle (offline → disabled with a hint). The
     // offline primitive is the canonical connectivity source in the operator PWA.
     const { online } = useOfflineSync();
@@ -284,10 +292,13 @@ function LocationDetailBody() {
     // Recall + weather + crop-plan suggestions for this field (editable;
     // powers the spray-window/next-task banner + the wizard prefills).
     const smartQ = useTenantSWR<LocationSmartDefaults>(`/locations/${locationId}/smart-defaults`);
-    // Proximity clusters for the overview map. Overview tab only — the Map
-    // tab draws parcels themselves and has no use for a locator.
+    // Proximity clusters for the locator. Fetched wherever it can actually
+    // be on screen — above the parcels table on Overview, or holding the
+    // map slot on the Map tab — and nowhere else, so the satellite view
+    // pays nothing for a view it is not showing.
+    const locatorVisible = tab === 'overview' || (tab === 'map' && showLocator);
     const overviewQ = useTenantSWR<ParcelOverview>(
-        tab === 'overview' ? `/locations/${locationId}/parcel-clusters?zoom=${fetchZoomTier}` : null,
+        locatorVisible ? `/locations/${locationId}/parcel-clusters?zoom=${fetchZoomTier}` : null,
     );
     // Active-index tiles (GEE) — fetched only when the Map tab is open AND an
     // index is selected, re-fetched when the index OR the inspection date
@@ -636,7 +647,25 @@ function LocationDetailBody() {
                         with a hint offline (the overlay isn't in the offline
                         pack). Moved here from the in-map practices row, where its
                         text label overflowed the row on phones. */}
-                    {cadastreConfigured && tab === 'map' && (
+                    {/* Parcel-group locator — a VIEW switch for the map slot,
+                        so it lives with the page-level actions rather than
+                        among the index/soil chips, which are data layers on
+                        the satellite raster. Icon-only to fit the row; the
+                        tooltip and aria-label carry the name. */}
+                    {tab === 'map' && parcels.length > 0 && (
+                        <Tooltip content={t('overviewMapTitle')}>
+                            <Button
+                                variant={showLocator ? 'primary' : 'secondary'}
+                                size="sm"
+                                className="min-h-[44px]"
+                                icon={<LocationPin className="size-4" aria-hidden="true" />}
+                                onClick={() => setShowLocator((on) => !on)}
+                                aria-pressed={showLocator}
+                                aria-label={t('overviewMapTitle')}
+                            />
+                        </Tooltip>
+                    )}
+                    {cadastreConfigured && tab === 'map' && !showLocator && (
                         <Tooltip content={t('cadastreOfflineHint')} disabled={online}>
                             <Button
                                 variant={cadastreOn ? 'primary' : 'secondary'}
@@ -714,6 +743,7 @@ function LocationDetailBody() {
                             loading={overviewQ.isLoading && !overviewQ.data}
                             error={Boolean(overviewQ.error)}
                             parcelNames={parcelNames}
+                            parcelShapes={mapParcels}
                             selection={clusterSelection}
                             onSelect={handleClusterSelect}
                             onParcelOpen={setSheetParcelId}
@@ -790,6 +820,11 @@ function LocationDetailBody() {
                             drives whichever is active. The buttons are
                             config-driven from VEGETATION_INDICES so adding an
                             index is one catalogue entry. */}
+                        {/* Satellite-only controls. They drive overlays on the
+                            MapLibre raster, so they hide entirely while the 2D
+                            locator holds the map slot — a toggle wired to a
+                            layer that is not on screen is worse than no toggle. */}
+                        {!showLocator && (
                         <div className="flex shrink-0 flex-wrap items-center gap-compact">
                             {VEGETATION_INDICES.map((idx) => {
                                 const on = activeIndex === idx.id;
@@ -858,23 +893,6 @@ function LocationDetailBody() {
                                 />
                             )}
                         </div>
-                        {/* Route to the parcel-group locator.
-                            The page opens on THIS tab, and the locator lives
-                            in Overview beside the table it filters — so
-                            without this, the only signpost to it is the tab
-                            bar, which says "Overview", not "here is how you
-                            find a parcel among a hundred". A view that has to
-                            be stumbled upon may as well not ship. */}
-                        {parcels.length > 0 && (
-                            <Button
-                                variant="secondary"
-                                size="sm"
-                                className="min-h-[44px]"
-                                icon={<LocationPin className="size-4" aria-hidden="true" />}
-                                onClick={() => setTab('overview')}
-                            >
-                                {t('overviewMapTitle')}
-                            </Button>
                         )}
                         {selected.length >= 2 && (
                             <Button
@@ -889,7 +907,7 @@ function LocationDetailBody() {
                     {/* Active-index status line: loading / not-configured /
                         legend / error / no-imagery. Driven by the active
                         index's config (label, ramp, low/high captions). */}
-                    {activeSpec && (
+                    {activeSpec && !showLocator && (
                         <div className="flex items-center gap-compact text-xs text-content-subtle">
                             {indexLoading ? (
                                 <span>{t('loadingImagery', { index: activeSpec.label })}</span>
@@ -932,6 +950,40 @@ function LocationDetailBody() {
                         </div>
                     )}
                     <div className={cn('gap-section', !isMobile && 'grid grid-cols-1 md:grid-cols-[1fr_320px]')}>
+                        {/* One slot, two renderers. MapLibre GL and the 2D
+                            canvas have different rendering models — there is
+                            no single canvas that is both — so they swap
+                            rather than stack. MapCanvas is unmounted while
+                            the locator is up, which also drops its WebGL
+                            context and tile fetches. */}
+                        {showLocator ? (
+                            <ParcelOverviewMap
+                                overview={overviewQ.data ?? null}
+                                loading={overviewQ.isLoading && !overviewQ.data}
+                                error={Boolean(overviewQ.error)}
+                                parcelNames={parcelNames}
+                                parcelShapes={mapParcels}
+                                selection={clusterSelection}
+                                onSelect={handleClusterSelect}
+                                onParcelOpen={setSheetParcelId}
+                                zoomTier={viewZoomTier}
+                                onZoomTierChange={setViewZoomTier}
+                                // Byte-for-byte the satellite renderer's own
+                                // sizing: it is the same slot, and a locator
+                                // that opens noticeably smaller reads as a
+                                // preview of the map rather than as the map.
+                                // Class ORDER matches MapCanvas's own string,
+                                // not just its values: `overflow-hidden` has to
+                                // ride with the `-mx-4` (the negative margin is
+                                // what would push the page sideways on a phone,
+                                // the clip is what stops it), and sharing the
+                                // signature keeps both map slots under the one
+                                // documented entry in the horizontal-drift guard.
+                                canvasClassName={isMobile
+                                    ? '-mx-4 h-[calc(100dvh-15rem)] min-h-[22rem] overflow-hidden'
+                                    : 'h-[360px] w-full md:h-[480px]'}
+                            />
+                        ) : (
                         <MapCanvas
                             parcels={mapParcels}
                             bounds={bounds}
@@ -1007,12 +1059,13 @@ function LocationDetailBody() {
                             soilColorById={soilColorById}
                             cropById={cropById}
                         />
+                        )}
                         {/* Side column: soil legend (soil view only). Sits in
                             the desktop side column, or stacks under the map on
                             phones. (The crop legend that also lived here was
                             removed — crops are already conveyed by the on-map
                             glyphs + the crop filter above the map.) */}
-                        {soilView && (
+                        {soilView && !showLocator && (
                             <div className="space-y-default md:col-start-2">
                                 <SoilLegend classes={soilClasses} hasPending={soilHasPending} />
                             </div>

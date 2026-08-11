@@ -98,6 +98,20 @@ const NAMES = new Map([
     ['p4', 'Нива 4'],
 ]);
 
+// Real outlines, as the page hands them over. jsdom implements no
+// `Path2D`, so these are never rasterised here — the geometry maths that
+// consumes them is executed in the model unit tests instead.
+const SHAPES = [
+    {
+        id: 'p1',
+        geometry: {
+            type: 'MultiPolygon',
+            coordinates: [[[[26.9, 43.11], [26.91, 43.11], [26.91, 43.12], [26.9, 43.12], [26.9, 43.11]]]],
+        },
+    },
+    { id: 'p2', geometry: null },
+];
+
 function renderMap(props: Partial<React.ComponentProps<typeof ParcelOverviewMap>> = {}) {
     const onSelect = jest.fn();
     const onParcelOpen = jest.fn();
@@ -108,6 +122,7 @@ function renderMap(props: Partial<React.ComponentProps<typeof ParcelOverviewMap>
             loading={false}
             error={false}
             parcelNames={NAMES}
+            parcelShapes={SHAPES}
             selection={null}
             onSelect={onSelect}
             onParcelOpen={onParcelOpen}

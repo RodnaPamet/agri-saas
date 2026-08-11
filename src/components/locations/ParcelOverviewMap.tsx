@@ -53,6 +53,8 @@ import type { ParcelOverview } from '@/app-layer/usecases/parcel-overview';
 import {
     bboxSpanMetres,
     composeBridgeTransform,
+    polygonBBox,
+    polygonRings,
     projectionBridge,
     shouldDrawParcels,
     zoomTierForSpan,
@@ -74,18 +76,20 @@ const C_OUTLINE = 'rgba(148,163,184,.32)';
 const C_CLUSTER = '#4ade80';
 const C_CLUSTER_SELECTED = '#facc15';
 const C_PARCEL = '#38bdf8';
+const C_PARCEL_FILL = 'rgba(56,189,248,.22)';
+const C_PARCEL_FILL_DIM = 'rgba(56,189,248,.07)';
+const C_PARCEL_DIM = 'rgba(56,189,248,.35)';
+const C_SELECTED_FILL = 'rgba(250,204,21,.28)';
 const C_LABEL = '#e2e8f0';
 const C_LABEL_SHADOW = 'rgba(4,8,12,.85)';
 
+/** A drawn cluster marker, kept from the last frame so hit-testing reads exactly what was painted. */
 interface MapItem {
-    kind: 'cluster' | 'parcel';
-    id: string;
     sx: number;
     sy: number;
     r: number;
     label: string;
-    selected: boolean;
-    cluster: ParcelCluster | null;
+    cluster: ParcelCluster;
 }
 
 export interface ParcelOverviewMapProps {
@@ -94,6 +98,15 @@ export interface ParcelOverviewMapProps {
     error: boolean;
     /** Parcel display names by id — the map holds ids, the page holds names. */
     parcelNames: ReadonlyMap<string, string>;
+    /**
+     * Parcel outlines, drawn as the shapes they are.
+     *
+     * The same GeoJSON the satellite renderer gets, so the two views
+     * frame identical ground and a field is recognisable by its shape in
+     * both. It is already on the page — no second read — which is why the
+     * clusters payload carries points and not geometry.
+     */
+    parcelShapes: ReadonlyArray<{ id: string; geometry: unknown }>;
     selection: ClusterSelection | null;
     /** Filter the list to a group, or clear it with `null`. */
     onSelect: (selection: ClusterSelection | null) => void;
@@ -103,6 +116,16 @@ export interface ParcelOverviewMapProps {
     zoomTier: number;
     onZoomTierChange: (tier: number) => void;
     className?: string;
+    /**
+     * Height classes for the canvas pane, replacing the default.
+     *
+     * Two mount points want two sizes: a compact locator above the parcels
+     * table on the Overview tab, and the full map slot on the Map tab when
+     * it takes the satellite renderer's place. The pane owns a definite
+     * height either way — the canvas measures its wrapper, and a wrapper
+     * that collapses to zero gives a backing store of zero.
+     */
+    canvasClassName?: string;
 }
 
 export function ParcelOverviewMap({
@@ -110,12 +133,14 @@ export function ParcelOverviewMap({
     loading,
     error,
     parcelNames,
+    parcelShapes,
     selection,
     onSelect,
     onParcelOpen,
     zoomTier,
     onZoomTierChange,
     className,
+    canvasClassName,
 }: ParcelOverviewMapProps) {
     const t = useTranslations('locations.detail');
 
@@ -144,7 +169,17 @@ export function ParcelOverviewMap({
         };
     }, []);
 
-    const bbox = overview?.bbox ?? null;
+    /**
+     * Frame the real outlines when we have them.
+     *
+     * The payload's `bbox` spans parcel CENTROIDS, so fitting to it draws
+     * the edge parcels half off-canvas. Falling back to it matters only
+     * for a holding whose geometry has not loaded yet.
+     */
+    const bbox = useMemo(
+        () => polygonBBox(parcelShapes) ?? overview?.bbox ?? null,
+        [parcelShapes, overview],
+    );
 
     /**
      * The farm-scale projection, in the geometry's own 1000×600 world
@@ -175,6 +210,33 @@ export function ParcelOverviewMap({
         () => new Set(selection?.parcelIds ?? []),
         [selection],
     );
+
+    /**
+     * One `Path2D` per parcel, in world space, rebuilt only when the fit
+     * or the geometry changes — never per frame. That is what keeps
+     * `isPointInPath` cheap enough to hit-test on every click, and it is
+     * the pattern `ExchangeMap` uses for the oblast outlines.
+     */
+    const parcelPaths = useMemo(() => {
+        if (!fitted || typeof Path2D === 'undefined') return [];
+        const project = makeProjector(fitted);
+        const out: Array<{ id: string; path: Path2D }> = [];
+        for (const p of parcelShapes) {
+            const rings = polygonRings(p.geometry);
+            if (rings.length === 0) continue;
+            const path = new Path2D();
+            for (const ring of rings) {
+                for (let i = 0; i < ring.length; i++) {
+                    const [x, y] = project(ring[i][0], ring[i][1]);
+                    if (i === 0) path.moveTo(x, y);
+                    else path.lineTo(x, y);
+                }
+                path.closePath();
+            }
+            out.push({ id: p.id, path });
+        }
+        return out;
+    }, [fitted, parcelShapes]);
 
     const drawParcelTier = shouldDrawParcels(zoomTier);
 
@@ -213,35 +275,39 @@ export function ParcelOverviewMap({
             ctx.restore();
         }
 
+        // Parcel outlines — the shapes themselves, in world space, so a
+        // field is recognisable here exactly as it is on the satellite
+        // map. Drawn at EVERY zoom: at cluster pitch they are the texture
+        // of the holding, at parcel pitch they are the subject. Line
+        // widths divide by `k` so a boundary stays one CSS pixel however
+        // far in the operator has zoomed.
+        if (parcelPaths.length > 0) {
+            const dim = selectedIds.size > 0;
+            ctx.save();
+            ctx.setTransform(dpr * k, 0, 0, dpr * k, dpr * tx, dpr * ty);
+            for (const p of parcelPaths) {
+                const on = !dim || selectedIds.has(p.id);
+                ctx.fillStyle = on ? (dim ? C_SELECTED_FILL : C_PARCEL_FILL) : C_PARCEL_FILL_DIM;
+                ctx.fill(p.path);
+                ctx.lineWidth = (on && dim ? 2 : 1) / k;
+                ctx.strokeStyle = on ? (dim ? C_CLUSTER_SELECTED : C_PARCEL) : C_PARCEL_DIM;
+                ctx.stroke(p.path);
+            }
+            ctx.restore();
+        }
+
         const project = makeProjector(fitted);
         const items: MapItem[] = [];
 
-        if (drawParcelTier && overview) {
-            for (const p of overview.parcels) {
-                const [wx, wy] = project(p.lon, p.lat);
-                items.push({
-                    kind: 'parcel',
-                    id: p.id,
-                    sx: wx * k + tx,
-                    sy: wy * k + ty,
-                    r: 5,
-                    label: parcelNames.get(p.id) ?? '',
-                    selected: selectedIds.has(p.id),
-                    cluster: null,
-                });
-            }
-        } else if (overview) {
+        if (!drawParcelTier && overview) {
             const maxCount = overview.clusters.reduce((m, c) => Math.max(m, c.count), 1);
             for (const c of overview.clusters) {
                 const [wx, wy] = project(c.lon, c.lat);
                 items.push({
-                    kind: 'cluster',
-                    id: c.id,
                     sx: wx * k + tx,
                     sy: wy * k + ty,
                     r: 6 + (c.count / maxCount) * 12,
                     label: `${c.label ?? t('clusterUnnamed')} · ${c.count}`,
-                    selected: selection?.id === c.id,
                     cluster: c,
                 });
             }
@@ -251,27 +317,43 @@ export function ParcelOverviewMap({
         ctx.textBaseline = 'middle';
 
         for (const it of items) {
-            const base = it.kind === 'parcel' ? C_PARCEL : C_CLUSTER;
-            const colour = it.selected ? C_CLUSTER_SELECTED : base;
+            const on = selection?.id === it.cluster.id;
             ctx.beginPath();
             ctx.arc(it.sx, it.sy, it.r, 0, Math.PI * 2);
-            ctx.fillStyle = colour;
-            ctx.globalAlpha = it.selected ? 0.95 : 0.75;
+            ctx.fillStyle = on ? C_CLUSTER_SELECTED : C_CLUSTER;
+            ctx.globalAlpha = on ? 0.95 : 0.75;
             ctx.fill();
             ctx.globalAlpha = 1;
-            ctx.lineWidth = it.selected ? 2.5 : 1;
-            ctx.strokeStyle = it.selected ? C_CLUSTER_SELECTED : 'rgba(11,16,22,.9)';
+            ctx.lineWidth = on ? 2.5 : 1;
+            ctx.strokeStyle = on ? C_CLUSTER_SELECTED : 'rgba(11,16,22,.9)';
             ctx.stroke();
         }
 
-        for (const it of items) {
-            if (!it.label) continue;
-            const x = it.sx + it.r + 6;
+        const label = (text: string, x: number, y: number) => {
             ctx.strokeStyle = C_LABEL_SHADOW;
             ctx.lineWidth = 3;
-            ctx.strokeText(it.label, x, it.sy);
+            ctx.strokeText(text, x, y);
             ctx.fillStyle = C_LABEL;
-            ctx.fillText(it.label, x, it.sy);
+            ctx.fillText(text, x, y);
+        };
+
+        ctx.textAlign = 'start';
+        for (const it of items) {
+            if (it.label) label(it.label, it.sx + it.r + 6, it.sy);
+        }
+
+        // Past the clustering floor the shapes carry their own names,
+        // centred on the parcel rather than trailing a marker — there is
+        // no marker any more.
+        if (drawParcelTier && overview) {
+            ctx.textAlign = 'center';
+            for (const p of overview.parcels) {
+                const name = parcelNames.get(p.id);
+                if (!name) continue;
+                const [wx, wy] = project(p.lon, p.lat);
+                label(name, wx * k + tx, wy * k + ty);
+            }
+            ctx.textAlign = 'start';
         }
 
         itemsRef.current = items;
@@ -281,6 +363,7 @@ export function ParcelOverviewMap({
         bridge,
         oblastPaths,
         outlinePath,
+        parcelPaths,
         overview,
         drawParcelTier,
         parcelNames,
@@ -391,6 +474,9 @@ export function ParcelOverviewMap({
             const rect = canvas.getBoundingClientRect();
             const mx = clientX - rect.left;
             const my = clientY - rect.top;
+            // Cluster markers first: they are the aggregate affordance and
+            // sit on top of the shapes. Nearest-within-radius over the LAST
+            // DRAWN frame, so hit and paint cannot drift apart.
             let best: MapItem | null = null;
             let bd = Infinity;
             for (const it of itemsRef.current) {
@@ -402,26 +488,41 @@ export function ParcelOverviewMap({
                     best = it;
                 }
             }
-            if (!best || bd > PICK_RADIUS_SQ) return;
-            if (best.kind === 'parcel') {
-                onParcelOpen(best.id);
+            if (best && bd <= PICK_RADIUS_SQ) {
+                const c = best.cluster;
+                if (selection?.id === c.id) {
+                    onSelect(null);
+                    return;
+                }
+                onSelect({
+                    id: c.id,
+                    zoomTier,
+                    parcelIds: [...c.parcelIds],
+                    label: c.label,
+                    count: c.count,
+                });
                 return;
             }
-            const c = best.cluster;
-            if (!c) return;
-            if (selection?.id === c.id) {
-                onSelect(null);
-                return;
+
+            // Otherwise: which outline is under the pointer? The screen →
+            // world inverse is the VIEW transform only, and the context
+            // transform is reset first, so the point is compared in the
+            // path's own coordinates — device pixel ratio and zoom
+            // deliberately taken out of the comparison.
+            const ctx = canvas.getContext('2d');
+            if (!ctx) return;
+            const v = view.current;
+            const wx = (mx - v.tx) / v.k;
+            const wy = (my - v.ty) / v.k;
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            for (const p of parcelPaths) {
+                if (ctx.isPointInPath(p.path, wx, wy)) {
+                    onParcelOpen(p.id);
+                    return;
+                }
             }
-            onSelect({
-                id: c.id,
-                zoomTier,
-                parcelIds: [...c.parcelIds],
-                label: c.label,
-                count: c.count,
-            });
         },
-        [onParcelOpen, onSelect, selection, zoomTier],
+        [onParcelOpen, onSelect, parcelPaths, selection, zoomTier],
     );
 
     // ── Pointer: mouse only. Touch is handled natively below. ─────────
@@ -624,7 +725,10 @@ export function ParcelOverviewMap({
 
             <div
                 ref={wrapRef}
-                className="relative h-[220px] w-full select-none overflow-hidden rounded-lg border border-border-subtle md:h-[300px]"
+                className={cn(
+                    'relative w-full select-none overflow-hidden rounded-lg border border-border-subtle',
+                    canvasClassName ?? 'h-[220px] md:h-[300px]',
+                )}
             >
                 <canvas
                     ref={canvasRef}

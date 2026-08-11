@@ -22,6 +22,8 @@ import {
     composeBridgeTransform,
     encodeClusterToken,
     parseClusterToken,
+    polygonBBox,
+    polygonRings,
     projectionBridge,
     resolveClusterSelection,
     shouldDrawParcels,
@@ -110,6 +112,70 @@ describe('zoom tiering', () => {
         // framing it by its height would put every parcel in one cell.
         const wideThin = bboxSpanMetres([26.0, 43.0, 27.0, 43.01]);
         expect(wideThin).toBeGreaterThan(70_000);
+    });
+});
+
+describe('parcel outlines', () => {
+    const SQUARE = {
+        type: 'MultiPolygon',
+        coordinates: [[[[26.9, 43.1], [27.0, 43.1], [27.0, 43.2], [26.9, 43.2], [26.9, 43.1]]]],
+    };
+
+    it('reads rings from a MultiPolygon and a bare Polygon alike', () => {
+        // Parcel.geometry is a MultiPolygon in the database, but some
+        // import paths deliver a plain Polygon — drawing one and not the
+        // other means a farm whose fields silently do not render.
+        expect(polygonRings(SQUARE)).toHaveLength(1);
+        expect(polygonRings({ type: 'Polygon', coordinates: SQUARE.coordinates[0] })).toHaveLength(1);
+    });
+
+    it('keeps interior rings, so a field with a hole draws its hole', () => {
+        const withHole = {
+            type: 'Polygon',
+            coordinates: [
+                [[0, 0], [4, 0], [4, 4], [0, 4], [0, 0]],
+                [[1, 1], [2, 1], [2, 2], [1, 2], [1, 1]],
+            ],
+        };
+        expect(polygonRings(withHole)).toHaveLength(2);
+    });
+
+    // Break: one malformed parcel taking the whole map down with it.
+    // Typed explicitly: a mixed literal table widens into a UNION of
+    // tuple types that the callback signature cannot satisfy, and jest
+    // runs it happily while `tsc` rejects it — which is how it reaches CI.
+    it.each<[unknown, string]>([
+        [null, 'null'],
+        [undefined, 'undefined'],
+        [{ type: 'Point', coordinates: [1, 2] }, 'a Point'],
+        [{ type: 'Polygon' }, 'no coordinates'],
+        [{ type: 'Polygon', coordinates: 'nope' }, 'garbage coordinates'],
+        [{ type: 'Polygon', coordinates: [[[0, 0], [1, 1]]] }, 'a ring too short to be an area'],
+        [{ type: 'Polygon', coordinates: [[[0, 0], [1, 'x'], [2, 2], [3, 3]]] }, 'a non-numeric vertex'],
+    ])('yields no rings for %p (%s) rather than throwing', (geometry) => {
+        expect(() => polygonRings(geometry)).not.toThrow();
+        expect(polygonRings(geometry)).toEqual([]);
+    });
+
+    // Break: framing the holding by its parcel CENTROIDS, which draws the
+    // edge fields half off the canvas.
+    it('spans the outlines, not their middles', () => {
+        expect(polygonBBox([{ geometry: SQUARE }])).toEqual([26.9, 43.1, 27.0, 43.2]);
+    });
+
+    it('spans every parcel, and ignores the ones with no geometry', () => {
+        const other = {
+            type: 'Polygon',
+            coordinates: [[[26.5, 43.05], [26.6, 43.05], [26.6, 43.15], [26.5, 43.15], [26.5, 43.05]]],
+        };
+        expect(polygonBBox([{ geometry: SQUARE }, { geometry: null }, { geometry: other }])).toEqual([
+            26.5, 43.05, 27.0, 43.2,
+        ]);
+    });
+
+    it('returns null when nothing has an outline, so the caller can fall back', () => {
+        expect(polygonBBox([])).toBeNull();
+        expect(polygonBBox([{ geometry: null }, { geometry: { type: 'Point', coordinates: [1, 2] } }])).toBeNull();
     });
 });
 
