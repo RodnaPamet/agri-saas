@@ -18,6 +18,8 @@ import {
     unionParcelsGeoJsonSql,
     splitParcelGeoJsonSql,
     centroidLonLatSql,
+    pointOnSurfaceLonSql,
+    pointOnSurfaceLatSql,
 } from '@/lib/db/geo';
 import type { ParsedParcel } from '@/lib/spatial/parse';
 import { SUPPORTED_SOURCE_SRIDS, type SupportedSourceSrid } from '@/lib/spatial/parse';
@@ -512,6 +514,62 @@ export class ParcelRepository {
      * null when the parcel is missing or has no geometry (caller treats
      * that as "no centroid, skip" — never throws / blocks).
      */
+    /**
+     * Every parcel of one location, with a representative interior point.
+     *
+     * ST_PointOnSurface, NOT ST_Centroid: `Parcel.geometry` is a
+     * MultiPolygon, and a parcel split by a road or track is two
+     * polygons whose centroid lands BETWEEN them — on the road, in
+     * whatever field lies opposite. PointOnSurface is guaranteed to sit
+     * on the geometry, which is what "where is this parcel" has to mean
+     * when the answer becomes a marker.
+     *
+     * ONE query for the whole location (the D1 guardrail bans a read per
+     * parcel), bounded by `take`, and filtered on tenantId IN THE SQL on
+     * top of RLS — raw SQL bypasses Prisma's tenantId filtering entirely,
+     * so the predicate here is load-bearing rather than belt-and-braces.
+     *
+     * Parcels with NULL geometry are returned too, with null lon/lat, so
+     * the caller can count them rather than silently dropping them.
+     */
+    static async listForOverview(
+        db: PrismaTx,
+        ctx: RequestContext,
+        locationId: string,
+        take = 2000,
+    ): Promise<Array<{
+        id: string;
+        name: string;
+        key: string | null;
+        areaHa: string | null;
+        cropType: string | null;
+        lon: number | null;
+        lat: number | null;
+    }>> {
+        const rows = await db.$queryRaw<Array<{
+            id: string;
+            name: string;
+            key: string | null;
+            areaHa: string | null;
+            cropType: string | null;
+            lon: number | null;
+            lat: number | null;
+        }>>(
+            Prisma.sql`SELECT "id", "name", "key", "areaHa"::text AS "areaHa", "cropType",
+                    CASE WHEN ${col('geometry')} IS NULL THEN NULL
+                         ELSE ${pointOnSurfaceLonSql(col('geometry'))} END AS "lon",
+                    CASE WHEN ${col('geometry')} IS NULL THEN NULL
+                         ELSE ${pointOnSurfaceLatSql(col('geometry'))} END AS "lat"
+                FROM "Parcel"
+                WHERE "locationId" = ${locationId}
+                  AND "tenantId" = ${ctx.tenantId}
+                  AND "deletedAt" IS NULL
+                ORDER BY "name" ASC
+                LIMIT ${take}`,
+        );
+        return rows;
+    }
+
     static async centroidLonLat(
         db: PrismaTx,
         ctx: RequestContext,

@@ -45,7 +45,7 @@ export function getBaseTestDatabaseUrl(): string {
     //    to this fallback silently applied THIS repo's migrations to the
     //    other product's database (observed: a failed migration left
     //    behind in inflect's test DB).
-    const testContainerUrl = 'postgresql://test:test@127.0.0.1:5434/agri_saas_test?schema=public';
+    const testContainerUrl = 'postgresql://test:test@127.0.0.1:5435/agri_saas_test?schema=public';
 
     // 4. Parse from .env (dev database)
     const envPath = path.resolve(__dirname, '../../.env');
