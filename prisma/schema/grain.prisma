@@ -326,3 +326,107 @@ model PayrollExpense {
   @@index([tenantId, plantingId])
   @@index([tenantId, seasonId])
 }
+
+/// A single cost a farmer entered, with an optional invoice.
+///
+/// `/grain/costs` used to be a read-only rollup of
+/// `COST_METRICS.ATTRIBUTED_CROP_COST`. The grain net-worth calculator now
+/// reports that same figure as part of a larger answer, so the page became
+/// the place a cost is ENTERED instead — one form for every kind of spend,
+/// rather than a farmer hunting for which of five surfaces owns it.
+///
+/// ── This row is a RECORD, not a LEDGER entry ────────────────────────
+///
+/// A CostEntry never mints a `StockTransaction`. That ledger is
+/// hash-chained and append-only (`previousHash`/`entryHash` with an
+/// `IMMUTABLE_STOCK_LEDGER` trigger blocking UPDATE and DELETE), it
+/// requires `lotId`/`unitId`/`quantityDelta` — a product and a quantity,
+/// which a money form does not have — and its `costAmount` is a MOVEMENT
+/// TOTAL rather than a rate. Minting from a money form would make a
+/// mistyped cost permanently uncorrectable and would relink every
+/// subsequent hash in the tenant. Domain pages READ the entries that link
+/// to them; where a real record already exists (a `LeasePayment`, a stock
+/// receipt) an entry LINKS to it. Linking is reversible; minting is not.
+///
+/// ── The domain links ────────────────────────────────────────────────
+///
+/// At most ONE of plantingId / seasonId / locationId / parcelId / leaseId
+/// is set, and `leaseId` only when `category = RENT`. The columns are what
+/// let a domain page show the costs that relate to it without a join
+/// table. Prisma cannot express "exactly one of these" — the invariant is
+/// enforced in the usecase (`assertSingleDomainLink`) and asserted by an
+/// executing test, because a row with two links would appear on two pages
+/// and be counted twice by anything summing per-domain.
+model CostEntry {
+  id              String       @id @default(cuid())
+  tenantId        String
+  category        CostCategory
+  /// Plaintext — cost figures are SUMmed in-DB, and Decimal columns cannot
+  /// carry the Epic B ciphertext (a "v2:"-prefixed base64 STRING) anyway.
+  /// Listing it in the encryption manifest would fail SILENTLY: the
+  /// middleware skips every non-string value without logging.
+  amount          Decimal      @db.Decimal(14, 2)
+  /// ISO-4217 code, e.g. "BGN" / "EUR". Plaintext, mirrors
+  /// `PayrollExpense.currency`. Never blended — there is no FX table in
+  /// this repo, so consumers group BY currency or refuse.
+  currency        String
+  /// The date the cost was incurred. Drives the list's newest-first sort.
+  incurredOn      DateTime
+  /// Who was paid. Deliberately NOT encrypted: the manifest bans
+  /// `contains` / `startsWith` / `orderBy` on encrypted columns and makes
+  /// GROUP BY impossible (randomised AES-GCM gives one group per row),
+  /// which would foreclose the supplier filter and any typeahead. A
+  /// supplier's name on an invoice is not the commercial detail the
+  /// manifest protects. sanitizePlainText'd before persisting.
+  supplier        String?
+  /// ENCRYPTED (Epic B manifest) — free text that can carry commercial
+  /// terms. sanitizePlainText'd before encryption.
+  description     String?
+  /// The invoice, if one was attached. A caller must verify the
+  /// FileRecord is `STORED` and not soft-deleted before pointing here —
+  /// see `assertUsableInvoice`.
+  invoiceFileId   String?
+  plantingId      String?
+  seasonId        String?
+  locationId      String?
+  parcelId        String?
+  /// Set only when `category = RENT`. The lease this payment settles.
+  leaseId         String?
+  createdByUserId String?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  deletedAt       DateTime?
+  deletedByUserId String?
+  retentionUntil  DateTime?
+
+  tenant      Tenant       @relation(fields: [tenantId], references: [id])
+  planting    Planting?    @relation(fields: [plantingId, tenantId], references: [id, tenantId])
+  season      Season?      @relation(fields: [seasonId, tenantId], references: [id, tenantId])
+  location    Location?    @relation(fields: [locationId, tenantId], references: [id, tenantId])
+  parcel      Parcel?      @relation(fields: [parcelId, tenantId], references: [id, tenantId])
+  lease       ParcelLease? @relation(fields: [leaseId, tenantId], references: [id, tenantId])
+  /// Referenced by `id` alone, not the usual `[id, tenantId]` tenant
+  /// barrier: `FileRecord` carries no `@@unique([id, tenantId])`, and the
+  /// existing precedent (`LogEntry.fileRecord`, journal.prisma:171) does
+  /// the same. Same-tenant ownership is therefore a USECASE obligation —
+  /// `assertUsableInvoice` checks it alongside STORED and not-deleted.
+  invoiceFile FileRecord?  @relation(fields: [invoiceFileId], references: [id])
+  createdBy   User?        @relation("CostEntryCreator", fields: [createdByUserId], references: [id])
+
+  @@unique([id, tenantId])
+  /// List filter+sort shape: newest-incurred-first, tenant-scoped, with the
+  /// category facet applied (`listCostEntries` default
+  /// `orderBy: [{ incurredOn: 'desc' }, { id: 'desc' }]`).
+  @@index([tenantId, incurredOn])
+  @@index([tenantId, category, incurredOn])
+  /// One composite PER foreign key, deliberately not one wide index: Layer
+  /// B's `fkAdequatelyIndexed` tests `group[1] === fk` and never reads
+  /// `group[2]`, so `[tenantId, plantingId, seasonId]` would cover
+  /// plantingId and leave seasonId a violation.
+  @@index([tenantId, plantingId])
+  @@index([tenantId, seasonId])
+  @@index([tenantId, locationId])
+  @@index([tenantId, parcelId])
+  @@index([tenantId, leaseId])
+  @@index([tenantId, invoiceFileId])
+}

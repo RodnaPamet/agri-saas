@@ -26,7 +26,6 @@ export type GrainSection =
     | 'yield'
     | 'bins'
     | 'costs'
-    | 'payroll'
     | 'calculator';
 
 const SECTIONS: ReadonlyArray<{ key: GrainSection; path: string }> = [
@@ -34,7 +33,8 @@ const SECTIONS: ReadonlyArray<{ key: GrainSection; path: string }> = [
     { key: 'yield', path: '/grain/yield' },
     { key: 'bins', path: '/grain/bins' },
     { key: 'costs', path: '/grain/costs' },
-    { key: 'payroll', path: '/grain/payroll' },
+    // Payroll is NOT here: it became a CATEGORY on /grain/costs rather
+    // than its own surface, and /grain/payroll now redirects there.
     // The calculator sits LAST because it is the only surface that
     // reads the other five: it prices the standing crop and the grain
     // on hand, then charges the field cost, the rent and the payroll

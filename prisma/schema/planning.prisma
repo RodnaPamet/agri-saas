@@ -140,6 +140,7 @@ model Season {
   contracts       Contract[]
   yieldRecords    YieldRecord[]
   payrollExpenses PayrollExpense[]
+  costEntries     CostEntry[]
 
   @@unique([id, tenantId])
   @@unique([tenantId, key])
@@ -242,6 +243,7 @@ model Planting {
   agroSignals     AgroSignal[]
   yieldRecords    YieldRecord[]
   payrollExpenses PayrollExpense[]
+  costEntries     CostEntry[]
 
   @@unique([id, tenantId])
   // Stable identity for a succession within a plan — regenerate UPSERTS

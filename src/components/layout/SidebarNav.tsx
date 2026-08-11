@@ -195,10 +195,11 @@ export function useNavSections(): NavSectionDef[] {
                 { href: tenantHref('/grain/bins'), label: t('bins'), icon: Warehouse, visible: grainAvailable },
                 { href: tenantHref('/grain/yield'), label: t('yield'), icon: LineChart, visible: grainAvailable },
                 { href: tenantHref('/grain/costs'), label: t('costs'), icon: Coins, visible: grainAvailable },
-                // Payroll (labour cost register) — a first-class cost
-                // alongside the field-event/stock costs the Costs rollup
-                // already aggregates. Reuses no other glyph on this list.
-                { href: tenantHref('/grain/payroll'), label: t('payroll'), icon: Banknote, visible: grainAvailable },
+                // Payroll is deliberately absent: it became a CATEGORY on
+                // /grain/costs rather than its own surface, and
+                // /grain/payroll redirects there. Two entry points for one
+                // kind of record is how a farm ends up with the same wage
+                // typed twice.
                 // Calculator (GRAIN_NET_WORTH) — last, because it is the
                 // only surface that READS the other five: it prices the
                 // standing crop and the grain on hand, then charges the

@@ -1,135 +1,123 @@
 /**
- * Structural contract for the grain costs page.
+ * Structural contract for the /grain/costs surface.
  *
- * Nothing exercised this page at all — which is how it shipped with
- * `sortableColumns` never passed to `DataTable` (so nothing sorted) while
- * TWO guard exemptions justified its missing toolbar by claiming the page
- * had "+ sort". A false exemption is worse than a missing feature: it tells
- * the next reader the gap was considered and accepted.
+ * This file used to assert on a ROLLUP: `useState('totalCost')`,
+ * `sortableColumns`, a dimension toggle, a slice at `</ListPageShell>`.
+ * That page is gone. It was a read-only report of
+ * `COST_METRICS.ATTRIBUTED_CROP_COST`, and the grain net-worth calculator
+ * already reports that same figure as part of a larger answer — two pages
+ * over one number is exactly the condition `src/lib/grain/cost-metrics.ts`
+ * exists to prevent, so the duplicate was DROPPED rather than moved.
  *
- * These assertions are deliberately structural rather than rendered. What
- * broke here was wiring — a prop not passed, a param accepted and ignored, a
- * literal that never reached a translator — and wiring is what a source scan
- * catches cheaply and reliably.
+ * What the page is now: the register where a farmer enters a cost. The
+ * assertions below pin the properties that make that safe, and the FIRST
+ * one pins the removal itself — a rollup quietly reappearing here is the
+ * regression this file now exists to catch.
+ *
+ * These are source-text assertions and contribute no runtime coverage;
+ * the executing coverage lives in `tests/unit/cost-entry-usecase.test.ts`
+ * and `tests/rendered/grain-costs-client.test.tsx`.
  */
-
-import * as fs from 'node:fs';
-import * as path from 'node:path';
+import * as fs from 'fs';
+import * as path from 'path';
 
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+const DIR = path.join(ROOT, 'src/app/t/[tenantSlug]/(app)/grain/costs');
+const read = (f: string) => fs.readFileSync(path.join(DIR, f), 'utf-8');
 
-const CLIENT = 'src/app/t/[tenantSlug]/(app)/grain/costs/CostsClient.tsx';
-const ROUTE = 'src/app/api/t/[tenantSlug]/grain/costs/route.ts';
-const ROLLUP = 'src/app-layer/usecases/cost-rollup.ts';
+describe('grain costs — the rollup is gone, not relocated', () => {
+    const page = read('page.tsx');
+    const client = read('CostsClient.tsx');
 
-describe('costs page — navigability', () => {
-    const source = read(CLIENT);
-
-    it('passes sortableColumns to every table', () => {
-        // The defect: the array existed in spirit but was never handed to
-        // DataTable, which defaults it to [] — so the headers rendered
-        // unsortable and the guard rationales were describing fiction.
-        const tables = source.match(/<DataTable</g) ?? [];
-        const sortProps = source.match(/sortableColumns=\{SORTABLE\}/g) ?? [];
-        expect(tables.length).toBeGreaterThan(0);
-        expect(sortProps).toHaveLength(tables.length);
+    it('the page no longer server-renders a cost rollup', () => {
+        expect(page).not.toContain('getCostRollupByPlanting');
+        expect(page).not.toContain('getCostRollupBySeason');
+        expect(page).not.toContain('getCostRollupByField');
+        // It reads the register instead.
+        expect(page).toContain('listCostEntries');
     });
 
-    it('defaults to the most expensive first', () => {
-        // A farmer's first question is "what cost me most"; answering it
-        // should not require reading 500 rows.
-        expect(source).toMatch(/useState<string>\('totalCost'\)/);
-        expect(source).toMatch(/useState<'asc' \| 'desc'>\('desc'\)/);
+    it('the client has no dimension toggle', () => {
+        // planting / field / season was the rollup's shape. A facet is a
+        // filter; a dimension is a different report — and the second
+        // report is the thing that was removed.
+        expect(client).not.toMatch(/initialBy|by=planting|dimensionOptions/);
     });
 
-    it('offers a search over the rows', () => {
-        expect(source).toContain('grain-costs-search');
-        expect(source).toContain("tc('searchPlaceholder')");
-    });
-
-    it('sorts rows with missing values last, in either direction', () => {
-        // A row with no cost-per-tonne is missing a denominator, not cheap —
-        // sorting it to the top of "cheapest first" would read as a finding.
-        expect(source).toMatch(/if \(av == null\) return 1;/);
-        expect(source).toMatch(/if \(bv == null\) return -1;/);
+    it('says in prose WHY the rollup went, so the next reader does not restore it', () => {
+        // The docblock is the only place this decision survives once the
+        // diff is old. Both files carry it.
+        expect(page).toMatch(/cost-metrics/);
+        expect(client).toMatch(/cost-metrics/);
     });
 });
 
-describe('costs page — honesty of the figures', () => {
-    const source = read(CLIENT);
+describe('grain costs — entry surface contract', () => {
+    const client = read('CostsClient.tsx');
+    const modal = read('CostEntryFormModal.tsx');
+    const filters = read('filter-defs.ts');
 
-    it('renders money through the tenant currency, not a per-row label', () => {
-        // Was `useTenantCurrencySymbol` + a local `useCostFormatter` hook
-        // spelling `symbol + formatDecimal(v, 2)` inline. /grain/calculator
-        // then wrote that same expression again under the name `formatMoney`,
-        // which polish-06-single-currency.test.ts caught — so the expression
-        // moved to ONE home and both pages now bind it through this hook.
-        // The invariant is unchanged: the symbol comes from tenant context.
-        expect(source).toContain('useExactMoneyFormatter');
-        // The old formatter took the row's own currency, which is null for
-        // every entry the journal UI creates.
-        expect(source).not.toMatch(/money\([^)]*,\s*row\.original\.currency\)/);
+    it('adopts EntityListPage rather than hand-rolling the composition', () => {
+        expect(client).toContain('EntityListPage');
+        expect(client).not.toMatch(/<ListPageShell\b/);
     });
 
-    it('formats to the CENT, never through the compact formatter', () => {
-        // `useMoneyFormatter` rounds (€1.2M) — right for a dashboard tile,
-        // wrong for a page a farmer reconciles against invoices, where it
-        // hides everything between €1,150,000 and €1,249,999. The two hooks
-        // differ by one word, so the wrong one is an easy import away.
-        expect(source).not.toContain('useMoneyFormatter');
+    it('wires the category facet and a live search', () => {
+        expect(client).toContain('buildCostFilters');
+        expect(client).toContain('searchPlaceholder');
+        expect(client).toContain('searchId');
     });
 
-    it('surfaces a mixed-currency warning and a truncation warning', () => {
-        expect(source).toContain("tc('currencyMixedWarning'");
-        expect(source).toContain("tc('truncatedWarning')");
+    it('sends search to the SERVER, not an in-memory filter', () => {
+        // An in-memory pass only ever sees the capped page, so a match
+        // beyond it is invisible — a silent wrong answer.
+        expect(client).toContain('useDebounce');
+        expect(client).toMatch(/params\.set\('q'/);
     });
 
-    it('states what the total does NOT cover', () => {
-        // "Total cost" claimed a completeness the rollup does not have:
-        // no machinery, labour, rent, fuel or purchase contracts.
-        expect(source).toContain("tc('scopeNote')");
+    it('surfaces a failed read as an error, never as the empty state', () => {
+        expect(client).toContain('loadError');
+        // Gated on having nothing to show, so a failed background refetch
+        // keeps stale rows instead of blanking them.
+        expect(client).toMatch(/isError && rows\.length === 0/);
     });
 
-    it('no longer advertises category columns that do not exist', () => {
-        // The residue of a designed-and-dropped breakdown. The comment was
-        // the only part that shipped.
-        const commentBlock = source.slice(0, source.indexOf('</ListPageShell>'));
-        expect(commentBlock).not.toMatch(/seed \/ fertiliser \/\n\s*chemical \/ labour \/ fuel \/ total cost columns per row/);
+    it('discloses the server cap rather than presenting a page as the total', () => {
+        expect(client).toContain('truncated');
+        expect(client).toContain('truncatedNotice');
     });
 
-    it('names which of the three cost metrics it reports', () => {
-        expect(source).toContain('COST_METRICS.ATTRIBUTED_CROP_COST');
-    });
-});
-
-describe('costs endpoint — parameters are honoured, not swallowed', () => {
-    const route = read(ROUTE);
-    const rollup = read(ROLLUP);
-
-    it('applies ?seasonId to every dimension', () => {
-        // It used to be read only on the planting branch, so a shared
-        // filtered link showed the whole farm on the field/season views.
-        expect(route).toMatch(/getCostRollupBySeason\(ctx, \{ seasonId \}\)/);
-        expect(route).toMatch(/getCostRollupByField\(ctx, \{ seasonId \}\)/);
-        expect(route).toMatch(/getCostRollupByPlanting\(ctx, \{ seasonId \}\)/);
+    it('prints the RECORDED currency code, never a single tenant symbol', () => {
+        // Entries in different currencies sit in one list and there is no
+        // FX table in this repo, so one symbol over all of them would be
+        // a claim the data does not support.
+        expect(client).toMatch(/row\.original\.currency/);
+        expect(client).not.toContain('useExactMoneyFormatter');
+        expect(client).not.toContain('useTenantCurrencySymbol');
     });
 
-    it('returns the truncation flag with every shape', () => {
-        const shapes = route.match(/rows, truncated/g) ?? [];
-        expect(shapes.length).toBeGreaterThanOrEqual(3);
+    it('the create button is a bare noun with a Plus icon', () => {
+        expect(client).toMatch(/icon=\{<Plus/);
+        expect(client).toContain("t('addCost')");
     });
 
-    it('uses a conditional response for the list read', () => {
-        expect(route).toContain('jsonWithETag');
+    it('the modal picks the attribution KIND before the target', () => {
+        // A cost may link to at most one domain. Five independent pickers
+        // would invite filling in two and then reject them; choosing the
+        // kind first makes the rule structural in the UI.
+        expect(modal).toContain('linkKind');
+        expect(modal).toContain('LINK_COLUMN');
     });
 
-    it('carries no hardcoded English planting label', () => {
-        // "Planting #3" rendered untranslated for a Bulgarian farmer.
-        expect(rollup).not.toContain("?? 'Planting'");
+    it('the modal offers a lease link ONLY on a RENT entry', () => {
+        expect(modal).toMatch(/k !== 'lease' \|\| watchedCategory === 'RENT'/);
     });
 
-    it('counts only CONSUMPTION as cost', () => {
-        expect(rollup).toMatch(/COST_BEARING_MOVEMENTS = \['CONSUMPTION'\]/);
+    it('has NO date facet, and says why', () => {
+        // The filter platform has no date type — `range` is numeric and
+        // integer-truncates, so it cannot carry an ISO date. Adding one is
+        // platform work with its own tests, not a line in a feature PR.
+        expect(filters).not.toMatch(/incurredOn:\s*\{/);
+        expect(filters).toMatch(/no date facet/i);
     });
 });

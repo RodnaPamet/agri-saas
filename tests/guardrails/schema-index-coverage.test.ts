@@ -249,6 +249,7 @@ const FK_INDEX_EXEMPT: Record<string, string> = {
     // composites (Layer B's tenant-composite rule) — only the actor FK
     // needs an exemption here.
     'PayrollExpense.createdByUserId': R_ACTOR,
+    'CostEntry.createdByUserId': R_ACTOR,
 };
 
 // ─────────────────────────────────────────────────────────────────────
@@ -279,6 +280,19 @@ interface CompositeIndex {
 }
 
 const LIST_QUERY_INDEXES: readonly CompositeIndex[] = [
+    // ── CostEntry (the /grain/costs entry surface) ──────────────────
+    {
+        model: 'CostEntry',
+        fields: ['tenantId', 'incurredOn'],
+        justification:
+            "listCostEntries' default shape — tenant-scoped, newest-incurred-first. `incurredOn` is the sort key, so it leads the non-tenant half.",
+    },
+    {
+        model: 'CostEntry',
+        fields: ['tenantId', 'category', 'incurredOn'],
+        justification:
+            'The category facet applied to that same sort — the only facet the list ships (a date facet needs a filter type that does not exist yet).',
+    },
     // ── Asset (machine register, since the Equipment merge) ─────────
     {
         model: 'Asset',

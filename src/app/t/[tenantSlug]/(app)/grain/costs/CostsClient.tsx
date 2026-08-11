@@ -1,597 +1,455 @@
 'use client';
 
-import { useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { useTranslations } from 'next-intl';
-import { ListPageShell } from '@/components/layout/ListPageShell';
-import { PageHeader } from '@/components/layout/PageHeader';
-import { Input } from '@/components/ui/input';
-import { ToggleGroup } from '@/components/ui/toggle-group';
-import { DataTable, createColumns } from '@/components/ui/table';
-import { EmptyState } from '@/components/ui/empty-state';
-import { useTenantApiUrl, useTenantHref, useExactMoneyFormatter } from '@/lib/tenant-context-provider';
-import { COST_METRICS, COST_METRIC_LABEL_KEYS } from '@/lib/grain/cost-metrics';
-
-// ─── Row shapes (mirror the cost-rollup usecase DTOs) ───
-
-interface PlantingCostRow {
-    plantingId: string;
-    plantingName: string;
-    cropVariety: string | null;
-    seasonId: string | null;
-    locationId: string | null;
-    logEntryCost: number;
-    stockCost: number;
-    totalCost: number;
-    /** Currencies the underlying costs were recorded in (usually one). */
-    currencies: string[];
-    /** True when this row sums costs recorded in more than one currency —
-     *  the total is then not a meaningful single figure. */
-    currencyMixed: boolean;
-    costPerHa?: number | null;
-    costPerTonne?: number | null;
-    harvestedAreaHa?: number | null;
-    producedTonnes?: number | null;
-}
-interface SeasonCostRow {
-    seasonId: string | null;
-    seasonName: string | null;
-    logEntryCost: number;
-    stockCost: number;
-    totalCost: number;
-    /** Currencies the underlying costs were recorded in (usually one). */
-    currencies: string[];
-    /** True when this row sums costs recorded in more than one currency —
-     *  the total is then not a meaningful single figure. */
-    currencyMixed: boolean;
-    costPerHa?: number | null;
-    costPerTonne?: number | null;
-    harvestedAreaHa?: number | null;
-    producedTonnes?: number | null;
-    plantingCount: number;
-}
-interface FieldCostRow {
-    locationId: string | null;
-    locationName: string | null;
-    logEntryCost: number;
-    stockCost: number;
-    totalCost: number;
-    /** Currencies the underlying costs were recorded in (usually one). */
-    currencies: string[];
-    /** True when this row sums costs recorded in more than one currency —
-     *  the total is then not a meaningful single figure. */
-    currencyMixed: boolean;
-    costPerHa?: number | null;
-    costPerTonne?: number | null;
-    harvestedAreaHa?: number | null;
-    producedTonnes?: number | null;
-    plantingCount: number;
-}
-
-type Dimension = 'planting' | 'field' | 'season';
-
-type CostResponse =
-    | { by: 'planting'; rows: PlantingCostRow[]; truncated?: boolean }
-    | { by: 'field'; rows: FieldCostRow[]; truncated?: boolean }
-    | { by: 'season'; rows: SeasonCostRow[]; truncated?: boolean };
-
-interface CostsClientProps {
-    tenantSlug: string;
-    initialBy: Dimension;
-    initialData: CostResponse;
-}
-
 /**
- * Money on this page is formatted by `useExactMoneyFormatter()` from
- * `@/lib/tenant-context-provider` — the shared, tenant-bound, to-the-cent
- * formatter. It used to be a local `useCostFormatter` hook spelling
- * `symbol + formatDecimal(v, 2)` inline; /grain/calculator then wrote the
- * same expression again under a different name, which is precisely the
- * duplication `tests/guards/polish-06-single-currency.test.ts` exists to
- * prevent. The hook name is why the guard never saw the first copy.
+ * Grain costs — the register where a farmer ENTERS a cost.
  *
- * The reasoning the local hook carried, which still holds and is why the
- * TENANT symbol is the only honest label here:
+ * ── What this page used to be, and why it stopped ───────────────────
  *
- * An earlier version labelled each row with its own `costCurrency`, which
- * is null for every entry the journal UI creates (the field was declared in
- * the modal's type and never sent), so money printed as a bare unlabelled
- * number. It only looked right because the demo seed writes 'EUR'.
+ * It was a read-only dimension-toggle rollup of
+ * `COST_METRICS.ATTRIBUTED_CROP_COST` (planting / field / season). That
+ * rollup is DROPPED, not moved: the grain net-worth calculator already
+ * reports the same attributed-cost figure as part of a larger answer, and
+ * `src/lib/grain/cost-metrics.ts` exists precisely because this product
+ * once shipped the same word over three different numbers. Two pages
+ * reporting one figure is the condition that created that module, so the
+ * duplicate went rather than being relocated.
  *
- * Two vocabularies were also being conflated: `Tenant.currencySymbol` is a
- * SYMBOL ("€") and `costCurrency` is an ISO CODE ("EUR"), with no mapping
- * between them and no FX table anywhere in the product. So a per-row
- * currency cannot be rendered faithfully OR converted — the tenant's
- * configured display currency, which the schema already documents as "the
- * tenant's display currency for every monetary surface", is the only label
- * this page can honestly print.
+ * What a farmer could not do anywhere was ENTER a cost without first
+ * knowing which of five surfaces owned it. That is now this page.
  *
- * Rows whose recorded currencies disagree are flagged separately
- * (`currencyMixed`) rather than being silently blended under one symbol.
+ * ── What an entry does NOT do ───────────────────────────────────────
+ *
+ * Nothing here writes into a domain's own ledger. `StockTransaction` is
+ * hash-chained and append-only, needs a product and a quantity this form
+ * does not collect, and would make a mistyped cost permanent. Domain
+ * pages READ the entries that link to them instead — see the CostEntry
+ * model docblock.
+ *
+ * ── Facets ──────────────────────────────────────────────────────────
+ *
+ * Category (multi-select) plus live search over supplier/currency. There
+ * is deliberately no date facet: the filter platform has no date type
+ * (`range` is numeric and truncates), so one is its own piece of work.
+ * See `filter-defs.ts`.
  */
-export function CostsClient({
-    tenantSlug,
-    initialBy,
-    initialData,
-}: CostsClientProps) {
-    const apiUrl = useTenantApiUrl();
-    const tenantHref = useTenantHref();
-    const money = useExactMoneyFormatter();
-    const t = useTranslations('grainEnums');
-    const tc = useTranslations('grain.costs');
-    const [by, setBy] = useState<Dimension>(initialBy);
 
-    const dimensionOptions = useMemo(
-        () => [
-            { value: 'planting', label: t('groupByPlanting') },
-            { value: 'field', label: t('groupByField') },
-            { value: 'season', label: t('groupBySeason') },
-        ],
-        [t],
+import { useCallback, useMemo, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useTranslations } from 'next-intl';
+import type { Row } from '@tanstack/react-table';
+import { Button } from '@/components/ui/button';
+import { Plus, Pen2, Trash, Paperclip } from '@/components/ui/icons/nucleo';
+import { createColumns } from '@/components/ui/table';
+import {
+    FilterProvider,
+    filterStateToUrlParams,
+    useFilterContext,
+    useFilters,
+    type FilterType,
+} from '@/components/ui/filter';
+import { EntityListPage } from '@/components/layout/EntityListPage';
+import { GrainSectionNav } from '../GrainSectionNav';
+import { EmptyState } from '@/components/ui/empty-state';
+import { Badge } from '@/components/ui/badge';
+import { Tooltip } from '@/components/ui/tooltip';
+import { useDebounce, useToastWithUndo } from '@/components/ui/hooks';
+import { formatDate } from '@/lib/format-date';
+import { formatDecimal } from '@/lib/number-format';
+import { buildCostFilters, COST_FILTER_KEYS } from './filter-defs';
+import { CostEntryFormModal } from './CostEntryFormModal';
+
+// ─── Types ───
+
+export interface CostRow {
+    id: string;
+    category: string;
+    /** Decimal serialises as a NUMBER through the usecase DTO's `dec()`. */
+    amount: number;
+    currency: string;
+    incurredOn: string;
+    supplier: string | null;
+    invoiceFileId: string | null;
+    plantingId: string | null;
+    seasonId: string | null;
+    locationId: string | null;
+    parcelId: string | null;
+    leaseId: string | null;
+    planting?: { id: string; successionNumber: number; cropPlan?: { name: string | null } | null } | null;
+    season?: { id: string; name: string } | null;
+    location?: { id: string; name: string } | null;
+    parcel?: { id: string; name: string } | null;
+    invoiceFile?: { id: string; originalName: string } | null;
+}
+
+interface CostListResponse {
+    rows: CostRow[];
+    totalCount: number;
+    truncated: boolean;
+}
+
+export interface CostsClientProps {
+    initialRows: CostRow[];
+    initialTotalCount: number;
+    initialTruncated: boolean;
+    tenantSlug: string;
+    permissions: { canWrite: boolean };
+}
+
+export function CostsClient(props: CostsClientProps) {
+    const filterCtx = useFilterContext([], COST_FILTER_KEYS, {});
+    return (
+        <FilterProvider value={filterCtx}>
+            <CostsPageInner {...props} />
+        </FilterProvider>
     );
+}
 
-    const costsQuery = useQuery<CostResponse>({
-        queryKey: ['grain-costs', tenantSlug, by],
+function CostsPageInner({
+    initialRows,
+    initialTotalCount,
+    initialTruncated,
+    tenantSlug,
+    permissions,
+}: CostsClientProps) {
+    const t = useTranslations('grain.costs');
+    const tEnums = useTranslations('grainEnums');
+    const apiUrl = useCallback((path: string) => `/api/t/${tenantSlug}${path}`, [tenantSlug]);
+    const queryClient = useQueryClient();
+    const triggerUndoToast = useToastWithUndo();
+
+    const { state, search, hasActive, clearAll } = useFilters();
+
+    const [isCreateOpen, setIsCreateOpen] = useState(false);
+    const [editing, setEditing] = useState<CostRow | null>(null);
+
+    // Search is a SERVER param: an in-memory filter would only ever see
+    // the capped page, so a match beyond it would be invisible — a silent
+    // wrong answer. Debounced so typing does not fire a request a
+    // keystroke.
+    const debouncedSearch = useDebounce(search, 300);
+    const filtersForQuery = useMemo(() => {
+        const params = filterStateToUrlParams(state);
+        const q = debouncedSearch.trim();
+        if (q) params.set('q', q);
+        return params;
+    }, [state, debouncedSearch]);
+
+    const queryKeyFilters = useMemo(() => {
+        const obj: Record<string, string> = {};
+        for (const [k, v] of filtersForQuery) obj[k] = v;
+        return obj;
+    }, [filtersForQuery]);
+
+    // Only hydrate from SSR when no facet is active — the SSR slice is the
+    // unfiltered newest-first list.
+    const noFacets = Object.keys(queryKeyFilters).length === 0;
+
+    const costsQuery = useQuery<CostListResponse>({
+        queryKey: ['grain-costs', tenantSlug, 'list', queryKeyFilters],
         queryFn: async () => {
-            const res = await fetch(apiUrl(`/grain/costs?by=${by}`));
-            if (!res.ok) throw new Error('Failed to fetch cost rollup');
+            const qs = filtersForQuery.toString();
+            const res = await fetch(apiUrl(`/grain/costs${qs ? `?${qs}` : ''}`));
+            if (!res.ok) throw new Error('Failed to fetch cost entries');
             return res.json();
         },
-        initialData: by === initialBy ? initialData : undefined,
+        initialData: noFacets
+            ? {
+                  rows: initialRows,
+                  totalCount: initialTotalCount ?? initialRows.length,
+                  truncated: initialTruncated ?? false,
+              }
+            : undefined,
         // eslint-disable-next-line react-hooks/purity
-        initialDataUpdatedAt: by === initialBy ? Date.now() : 0,
+        initialDataUpdatedAt: noFacets ? Date.now() : 0,
         staleTime: 30_000,
     });
 
+    const rows = useMemo(() => costsQuery.data?.rows ?? [], [costsQuery.data]);
+    const truncated = costsQuery.data?.truncated ?? false;
+    const totalCount = costsQuery.data?.totalCount ?? rows.length;
     const loading = costsQuery.isLoading && !costsQuery.data;
-    const data = costsQuery.data;
 
-    // A failed rollup read must surface as an error, not as the empty
-    // state ("no cost data yet") — that reads as "this farm spent
-    // nothing", the most misleading possible answer for a cost report.
-    // Gated on having no response at all so a failed background refetch
-    // never blanks rows already on screen (the DataTable renders `error`
-    // INSTEAD of the table).
-    const loadError = costsQuery.isError && !data ? tc('loadFailed') : undefined;
+    // A failed list read must NOT fall through to the empty state — an
+    // unreachable API rendered as "no costs" is a confident claim of zero.
+    // Gated on having nothing to show, so a failed BACKGROUND refetch
+    // keeps stale rows rather than blanking them (DataTable renders
+    // `error` INSTEAD of the table).
+    const loadError = costsQuery.isError && rows.length === 0 ? t('loadFailed') : undefined;
 
-    // ─── Columns per dimension. Each branch is fully typed against its
-    //     own row shape; the table is rendered in the matching branch so
-    //     the row generic and the column generic agree.
-    const plantingColumns = useMemo(
+    const liveFilterDefs: FilterType[] = useMemo(() => buildCostFilters(tEnums), [tEnums]);
+
+    const refetch = useCallback(() => {
+        queryClient.invalidateQueries({ queryKey: ['grain-costs', tenantSlug] });
+    }, [queryClient, tenantSlug]);
+
+    // Epic 67 — every destructive action goes through the undo toast. A
+    // fire-and-forget DELETE is the anti-pattern that convention replaced,
+    // and it is a worse fit here than almost anywhere: a cost entry is a
+    // hand-typed money record, so a mis-click deletes something the farmer
+    // would have to re-key from a paper invoice.
+    const handleDelete = useCallback(
+        (row: CostRow) => {
+            const listKey = ['grain-costs', tenantSlug, 'list', queryKeyFilters];
+            const previous = queryClient.getQueryData<CostListResponse>(listKey);
+            // Optimistic remove; the totalCount is left alone for the
+            // 5-second window because the refetch on commit replaces it
+            // with the server's exact figure anyway.
+            queryClient.setQueryData<CostListResponse>(listKey, (old) =>
+                old ? { ...old, rows: old.rows.filter((c) => c.id !== row.id) } : old,
+            );
+            triggerUndoToast({
+                message: t('deletedToast'),
+                undoMessage: t('undo'),
+                action: async () => {
+                    const res = await fetch(apiUrl(`/grain/costs/${row.id}`), {
+                        method: 'DELETE',
+                    });
+                    if (!res.ok) throw new Error('Delete cost entry failed');
+                },
+                undoAction: () => {
+                    if (previous) queryClient.setQueryData(listKey, previous);
+                },
+                onError: () => {
+                    if (previous) queryClient.setQueryData(listKey, previous);
+                },
+                onCommit: () => refetch(),
+            });
+        },
+        [apiUrl, queryClient, queryKeyFilters, refetch, tenantSlug, triggerUndoToast, t],
+    );
+
+    /** Which domain this entry is filed against, for the list. */
+    const attributionOf = useCallback(
+        (r: CostRow): string => {
+            if (r.planting)
+                return t('attrPlanting', { n: r.planting.successionNumber });
+            if (r.season) return r.season.name;
+            if (r.location) return r.location.name;
+            if (r.parcel) return r.parcel.name;
+            if (r.leaseId) return t('attrLease');
+            return '—';
+        },
+        [t],
+    );
+
+    const columns = useMemo(
         () =>
-            createColumns<PlantingCostRow>([
+            createColumns<CostRow>([
                 {
-                    accessorKey: 'plantingName',
-                    header: tc('colPlanting'),
+                    id: 'incurredOn',
+                    header: t('colDate'),
+                    accessorFn: (r) => r.incurredOn,
                     cell: ({ row }) => (
-                        <span className="text-content-emphasis">
-                            {row.original.plantingName}
+                        <span className="whitespace-nowrap text-xs tabular-nums text-content-muted">
+                            {formatDate(row.original.incurredOn)}
                         </span>
                     ),
+                    meta: { mobileCard: { slot: 'meta', label: t('colDate') } },
                 },
                 {
-                    id: 'cropVariety',
-                    header: tc('colVariety'),
-                    accessorFn: (r) => r.cropVariety ?? '—',
-                    cell: ({ getValue }) => (
+                    id: 'category',
+                    header: t('colCategory'),
+                    accessorFn: (r) => r.category,
+                    cell: ({ row }) => (
+                        <Badge variant="outline" size="sm">
+                            {tEnums(`costCategory.${row.original.category}`)}
+                        </Badge>
+                    ),
+                    meta: { mobileCard: { slot: 'title' } },
+                },
+                {
+                    id: 'supplier',
+                    header: t('colSupplier'),
+                    accessorFn: (r) => r.supplier ?? '',
+                    cell: ({ row }) => (
+                        <span className="text-content-emphasis">{row.original.supplier || '—'}</span>
+                    ),
+                    meta: { mobileCard: { slot: 'subtitle' } },
+                },
+                {
+                    id: 'amount',
+                    header: t('colAmount'),
+                    accessorFn: (r) => r.amount,
+                    cell: ({ row }) => (
+                        // Currency is printed as the RECORDED code, never a
+                        // tenant symbol: entries in different currencies sit
+                        // in one list and there is no FX table in this repo,
+                        // so a single symbol over all of them would be a
+                        // claim the data does not support.
+                        <span className="block text-right text-xs tabular-nums text-content-emphasis">
+                            {formatDecimal(row.original.amount, 2)} {row.original.currency}
+                        </span>
+                    ),
+                    meta: { mobileCard: { slot: 'meta', label: t('colAmount') } },
+                },
+                {
+                    id: 'attribution',
+                    header: t('colAttribution'),
+                    accessorFn: (r) => attributionOf(r),
+                    cell: ({ row }) => (
                         <span className="text-xs text-content-muted">
-                            {getValue() as string}
+                            {attributionOf(row.original)}
                         </span>
                     ),
+                    meta: { mobileCard: { slot: 'meta', label: t('colAttribution') } },
                 },
                 {
-                    id: 'logEntryCost',
-                    header: tc('colFieldEventCost'),
-                    accessorFn: (r) => r.logEntryCost,
-                    cell: ({ row }) => (
-                        <span className="text-xs text-content-muted tabular-nums block text-right">
-                            {money(row.original.logEntryCost)}
-                        </span>
-                    ),
+                    id: 'invoice',
+                    header: t('colInvoice'),
+                    accessorFn: (r) => (r.invoiceFileId ? 1 : 0),
+                    cell: ({ row }) =>
+                        row.original.invoiceFileId ? (
+                            <Tooltip content={row.original.invoiceFile?.originalName ?? t('hasInvoice')}>
+                                <span
+                                    className="inline-flex items-center text-content-muted"
+                                    aria-label={t('hasInvoice')}
+                                >
+                                    <Paperclip className="h-3.5 w-3.5" aria-hidden />
+                                </span>
+                            </Tooltip>
+                        ) : (
+                            <span className="text-xs text-content-subtle">—</span>
+                        ),
                 },
                 {
-                    id: 'stockCost',
-                    header: tc('colInputCost'),
-                    accessorFn: (r) => r.stockCost,
-                    cell: ({ row }) => (
-                        <span className="text-xs text-content-muted tabular-nums block text-right">
-                            {money(row.original.stockCost)}
-                        </span>
-                    ),
-                },
-                {
-                    id: 'totalCost',
-                    header: tc('colTotalCost'),
-                    accessorFn: (r) => r.totalCost,
-                    cell: ({ row }) => (
-                        <span className="text-xs text-content-emphasis tabular-nums block text-right">
-                            {money(row.original.totalCost)}
-                        </span>
-                    ),
+                    id: 'actions',
+                    header: '',
+                    enableHiding: false,
+                    cell: ({ row }) =>
+                        permissions.canWrite ? (
+                            <div className="flex items-center justify-end gap-tight">
+                                <Tooltip content={t('editCost')}>
+                                    <button
+                                        type="button"
+                                        aria-label={t('editCost')}
+                                        className="inline-flex h-7 w-7 items-center justify-center rounded-md text-content-muted transition-colors hover:bg-bg-muted hover:text-content-emphasis focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                        data-testid={`cost-edit-${row.original.id}`}
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            setEditing(row.original);
+                                            setIsCreateOpen(true);
+                                        }}
+                                    >
+                                        <Pen2 className="h-3.5 w-3.5" aria-hidden />
+                                    </button>
+                                </Tooltip>
+                                <Tooltip content={t('deleteCost')}>
+                                    <button
+                                        type="button"
+                                        aria-label={t('deleteCost')}
+                                        className="inline-flex h-7 w-7 items-center justify-center rounded-md text-content-muted transition-colors hover:bg-bg-error hover:text-content-error focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                        data-testid={`cost-delete-${row.original.id}`}
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            void handleDelete(row.original);
+                                        }}
+                                    >
+                                        <Trash className="h-3.5 w-3.5" aria-hidden />
+                                    </button>
+                                </Tooltip>
+                            </div>
+                        ) : null,
                 },
             ]),
-        [tc, money],
+        [t, tEnums, permissions.canWrite, handleDelete, attributionOf],
     );
-
-    const seasonColumns = useMemo(
-        () =>
-            createColumns<SeasonCostRow>([
-                {
-                    id: 'seasonName',
-                    header: tc('colSeason'),
-                    accessorFn: (r) => r.seasonName ?? tc('unassigned'),
-                    cell: ({ getValue }) => (
-                        <span className="text-content-emphasis">
-                            {getValue() as string}
-                        </span>
-                    ),
-                },
-                {
-                    id: 'plantingCount',
-                    header: tc('colPlantings'),
-                    accessorFn: (r) => r.plantingCount,
-                    cell: ({ row }) => (
-                        <span className="text-xs text-content-muted tabular-nums">
-                            {row.original.plantingCount}
-                        </span>
-                    ),
-                },
-                {
-                    id: 'logEntryCost',
-                    header: tc('colFieldEventCost'),
-                    accessorFn: (r) => r.logEntryCost,
-                    cell: ({ row }) => (
-                        <span className="text-xs text-content-muted tabular-nums block text-right">
-                            {money(row.original.logEntryCost)}
-                        </span>
-                    ),
-                },
-                {
-                    id: 'stockCost',
-                    header: tc('colInputCost'),
-                    accessorFn: (r) => r.stockCost,
-                    cell: ({ row }) => (
-                        <span className="text-xs text-content-muted tabular-nums block text-right">
-                            {money(row.original.stockCost)}
-                        </span>
-                    ),
-                },
-                {
-                    id: 'totalCost',
-                    header: tc('colTotalCost'),
-                    accessorFn: (r) => r.totalCost,
-                    cell: ({ row }) => (
-                        <span className="text-xs text-content-emphasis tabular-nums block text-right">
-                            {money(row.original.totalCost)}
-                        </span>
-                    ),
-                },
-                {
-                    // The two figures that turn spend into a question a
-                    // farmer can act on: what an area cost, and what a tonne
-                    // cost. Null (—) rather than 0 when the yield register
-                    // has no area/tonnage for the grouping — "0 per hectare"
-                    // would read as a free crop.
-                    id: 'costPerHa',
-                    header: tc('colCostPerHa'),
-                    accessorFn: (r) => r.costPerHa ?? -1,
-                    cell: ({ row }) => (
-                        <span className="text-xs text-content-muted tabular-nums block text-right">
-                            {money(row.original.costPerHa)}
-                        </span>
-                    ),
-                },
-                {
-                    id: 'costPerTonne',
-                    header: tc('colCostPerTonne'),
-                    accessorFn: (r) => r.costPerTonne ?? -1,
-                    cell: ({ row }) => (
-                        <span className="text-xs text-content-muted tabular-nums block text-right">
-                            {money(row.original.costPerTonne)}
-                        </span>
-                    ),
-                },
-            ]),
-        [tc, money],
-    );
-
-    const fieldColumns = useMemo(
-        () =>
-            createColumns<FieldCostRow>([
-                {
-                    id: 'locationName',
-                    header: tc('colField'),
-                    accessorFn: (r) => r.locationName ?? tc('unassigned'),
-                    cell: ({ getValue }) => (
-                        <span className="text-content-emphasis">
-                            {getValue() as string}
-                        </span>
-                    ),
-                },
-                {
-                    id: 'plantingCount',
-                    header: tc('colPlantings'),
-                    accessorFn: (r) => r.plantingCount,
-                    cell: ({ row }) => (
-                        <span className="text-xs text-content-muted tabular-nums">
-                            {row.original.plantingCount}
-                        </span>
-                    ),
-                },
-                {
-                    id: 'logEntryCost',
-                    header: tc('colFieldEventCost'),
-                    accessorFn: (r) => r.logEntryCost,
-                    cell: ({ row }) => (
-                        <span className="text-xs text-content-muted tabular-nums block text-right">
-                            {money(row.original.logEntryCost)}
-                        </span>
-                    ),
-                },
-                {
-                    id: 'stockCost',
-                    header: tc('colInputCost'),
-                    accessorFn: (r) => r.stockCost,
-                    cell: ({ row }) => (
-                        <span className="text-xs text-content-muted tabular-nums block text-right">
-                            {money(row.original.stockCost)}
-                        </span>
-                    ),
-                },
-                {
-                    id: 'totalCost',
-                    header: tc('colTotalCost'),
-                    accessorFn: (r) => r.totalCost,
-                    cell: ({ row }) => (
-                        <span className="text-xs text-content-emphasis tabular-nums block text-right">
-                            {money(row.original.totalCost)}
-                        </span>
-                    ),
-                },
-                {
-                    id: 'costPerHa',
-                    header: tc('colCostPerHa'),
-                    accessorFn: (r) => r.costPerHa ?? -1,
-                    cell: ({ row }) => (
-                        <span className="text-xs text-content-muted tabular-nums block text-right">
-                            {money(row.original.costPerHa)}
-                        </span>
-                    ),
-                },
-                {
-                    id: 'costPerTonne',
-                    header: tc('colCostPerTonne'),
-                    accessorFn: (r) => r.costPerTonne ?? -1,
-                    cell: ({ row }) => (
-                        <span className="text-xs text-content-muted tabular-nums block text-right">
-                            {money(row.original.costPerTonne)}
-                        </span>
-                    ),
-                },
-            ]),
-        [tc, money],
-    );
-
-    const emptyState = (
-        <EmptyState
-            size="sm"
-            variant="no-records"
-            title={tc('emptyTitle')}
-            description={tc('emptyDescription')}
-        />
-    );
-
-    // ── Navigability ──
-    //
-    // The table shipped with sortableColumns never passed to DataTable, so
-    // it defaulted to [] and nothing sorted — while two guard exemptions
-    // justified the missing toolbar by claiming the page had "+ sort".
-    // Total cost descending is the default because the farmer's first
-    // question is "what cost me most", and answering it should not require
-    // reading 500 rows.
-    const [sortBy, setSortBy] = useState<string>('totalCost');
-    const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
-    const [search, setSearch] = useState('');
-
-    // A partial total and a blended-currency total are both figures a
-    // farmer would otherwise act on. Derived from the loaded payload so they
-    // track whichever dimension is on screen.
-    const truncated = Boolean(data?.truncated);
-    const mixedCurrencies = useMemo(() => {
-        // Iterated rather than annotated: `rows` is a UNION of three row
-        // arrays, which TypeScript will not assign to one array type — but
-        // it iterates the union happily, and every member carries the same
-        // two currency fields. No cast needed.
-        const rows = data?.rows ?? [];
-        const all = new Set<string>();
-        let mixed = false;
-        for (const r of rows) {
-            for (const c of r.currencies) all.add(c);
-            if (r.currencyMixed) mixed = true;
-        }
-        return { list: [...all].sort(), mixed: mixed || all.size > 1 };
-    }, [data]);
-    const currencyMixed = mixedCurrencies.mixed;
-    const mixedCurrencyList = mixedCurrencies.list.join(', ');
-
-    /** Sort + name-filter applied to whichever dimension is on screen. */
-    function presentRows<T>(rows: T[], nameKey: keyof T): T[] {
-        const q = search.trim().toLowerCase();
-        const filtered = q
-            ? rows.filter((r) => String(r[nameKey] ?? '').toLowerCase().includes(q))
-            : rows;
-        const dir = sortOrder === 'asc' ? 1 : -1;
-        // The sort key arrives from the DataTable as a string, so the lookup
-        // is dynamic by nature; the cast is confined to these two reads
-        // rather than widening the row type.
-        const at = (row: T): unknown => (row as Record<string, unknown>)[sortBy];
-        return [...filtered].sort((a, b) => {
-            const av = at(a);
-            const bv = at(b);
-            // Nulls last regardless of direction: a row with no cost-per-tonne
-            // is missing a denominator, not cheap.
-            if (av == null && bv == null) return 0;
-            if (av == null) return 1;
-            if (bv == null) return -1;
-            if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * dir;
-            return String(av).localeCompare(String(bv)) * dir;
-        });
-    }
-
-    const onSortChange = ({ sortBy: nextBy, sortOrder: nextOrder }: { sortBy?: string; sortOrder?: 'asc' | 'desc' }) => {
-        if (nextBy) setSortBy(nextBy);
-        if (nextOrder) setSortOrder(nextOrder);
-    };
-
-    /** Every money + magnitude column sorts; names sort alphabetically. */
-    const SORTABLE = [
-        'plantingName',
-        'seasonName',
-        'locationName',
-        'logEntryCost',
-        'stockCost',
-        'totalCost',
-        'costPerHa',
-        'costPerTonne',
-        'plantingCount',
-    ];
-
-    // Pick the matching DataTable in a typed branch so the row + column
-    // generics always agree (the API echoes `by`, so we trust it; fall
-    // back to the selected dimension while the first page loads).
-    const activeBy = data?.by ?? by;
 
     return (
-        <ListPageShell className="animate-fadeIn gap-section">
-            <ListPageShell.Header>
-                <PageHeader
-                    breadcrumbs={[
-                        { label: t('dashboard'), href: tenantHref('/dashboard') },
-                        { label: t('costs') },
-                    ]}
-                    title={tc('title')}
-                    // Named, because two other pages report a DIFFERENT
-                    // cost for the same season by design — the org
-                    // dashboard counts unattributed spend, the season recap
-                    // counts a date window. A reader who sees two numbers
-                    // should be able to tell why.
-                    eyebrow={tc(COST_METRIC_LABEL_KEYS[COST_METRICS.ATTRIBUTED_CROP_COST])}
-                    // Two things a financial page must never hide: that the
-                    // figures are only part of the farm, and that they blend
-                    // currencies that cannot be added. Either replaces the
-                    // ordinary description rather than sitting below it,
-                    // because a caveat nobody reads is not a caveat.
-                    description={
-                        currencyMixed
-                            ? tc('currencyMixedWarning', { currencies: mixedCurrencyList })
-                            : truncated
-                              ? tc('truncatedWarning')
-                              : `${tc('description')} ${tc('scopeNote')}`
-                    }
+        <EntityListPage<CostRow>
+            className="animate-fadeIn gap-section"
+            header={{
+                breadcrumbs: [
+                    { label: tEnums('dashboard'), href: `/t/${tenantSlug}/dashboard` },
+                    { label: t('title') },
+                ],
+                title: t('title'),
+                description: t('description'),
+                actions: permissions.canWrite ? (
+                    <Button
+                        variant="primary"
+                        icon={<Plus className="-ml-0.5 -mr-2.5" />}
+                        id="new-cost-btn"
+                        onClick={() => {
+                            setEditing(null);
+                            setIsCreateOpen(true);
+                        }}
+                    >
+                        {t('addCost')}
+                    </Button>
+                ) : null,
+            }}
+            kpis={
+                truncated ? (
+                    <div
+                        role="status"
+                        id="grain-costs-truncation-notice"
+                        className="rounded-lg border border-border-subtle bg-bg-warning px-3 py-2 text-xs text-content-warning"
+                    >
+                        {t('truncatedNotice', { shown: rows.length, total: totalCount })}
+                    </div>
+                ) : null
+            }
+            filters={{
+                defs: liveFilterDefs,
+                searchId: 'grain-costs-search',
+                searchPlaceholder: t('searchPlaceholder'),
+                toolbarActions: <GrainSectionNav tenantSlug={tenantSlug} active="costs" />,
+            }}
+            table={{
+                data: rows,
+                columns,
+                loading,
+                error: loadError,
+                getRowId: (r) => r.id,
+                mobileFallback: 'card',
+                onRowClick: permissions.canWrite
+                    ? (r: Row<CostRow>) => {
+                          setEditing(r.original);
+                          setIsCreateOpen(true);
+                      }
+                    : undefined,
+                emptyState:
+                    hasActive || search ? (
+                        <EmptyState
+                            size="sm"
+                            variant="no-results"
+                            title={t('emptyNoResultsTitle')}
+                            description={t('emptyNoResultsDesc')}
+                            secondaryAction={{ label: t('clearFilters'), onClick: () => clearAll() }}
+                        />
+                    ) : (
+                        <EmptyState
+                            size="sm"
+                            variant="no-records"
+                            title={t('emptyTitle')}
+                            description={t('emptyDescription')}
+                            primaryAction={
+                                permissions.canWrite
+                                    ? {
+                                          label: t('addCost'),
+                                          onClick: () => {
+                                              setEditing(null);
+                                              setIsCreateOpen(true);
+                                          },
+                                      }
+                                    : undefined
+                            }
+                        />
+                    ),
+                resourceName: (p) => (p ? t('costs') : t('cost')),
+                'data-testid': 'grain-costs-table',
+                className: 'hover:bg-bg-muted',
+            }}
+        >
+            {permissions.canWrite && (
+                <CostEntryFormModal
+                    open={isCreateOpen}
+                    setOpen={setIsCreateOpen}
+                    tenantSlug={tenantSlug}
+                    record={editing}
+                    onSaved={refetch}
                 />
-            </ListPageShell.Header>
-            <ListPageShell.Filters className="space-y-section">
-                <div className="flex flex-wrap items-center gap-default">
-                    <ToggleGroup
-                        ariaLabel={tc('dimensionAria')}
-                        options={dimensionOptions}
-                        selected={by}
-                        selectAction={(v) => setBy(v as Dimension)}
-                    />
-                    {/* Find-by-name over the loaded rows. Deliberately not a
-                        faceted FilterToolbar: this report has no facets, it
-                        has a dimension toggle — but 500 rows with no way to
-                        reach one of them is not a report a farmer can use. */}
-                    <Input
-                        id="grain-costs-search"
-                        value={search}
-                        onChange={(e) => setSearch(e.target.value)}
-                        placeholder={tc('searchPlaceholder')}
-                        aria-label={tc('searchPlaceholder')}
-                        className="w-full sm:w-64"
-                    />
-                </div>
-            </ListPageShell.Filters>
-            <ListPageShell.Body>
-                {/* mobileFallback="scroll" on all three cost tables — the
-                    cost columns only make sense read side-by-side, so on a
-                    phone we keep the horizontally-scrollable table rather
-                    than collapse each row into a card.
-
-                    (This comment used to advertise seed / fertiliser /
-                    chemical / labour / fuel columns. None of them exist —
-                    it was the residue of a category breakdown that was
-                    designed and dropped. Building it needs cost CATEGORIES
-                    on the underlying entries, which the schema does not
-                    have; describing them in a comment was the only part
-                    that shipped.) */}
-                {activeBy === 'planting' && (
-                    <DataTable<PlantingCostRow>
-                        fillBody
-                        mobileFallback="scroll"
-                        data={
-                            data && data.by === 'planting'
-                                ? presentRows(data.rows, 'plantingName')
-                                : []
-                        }
-                        columns={plantingColumns}
-                        loading={loading}
-                        error={loadError}
-                        getRowId={(r) => r.plantingId}
-                        sortableColumns={SORTABLE}
-                        sortBy={sortBy}
-                        sortOrder={sortOrder}
-                        onSortChange={onSortChange}
-                        emptyState={emptyState}
-                        resourceName={(p) => (p ? 'plantings' : 'planting')}
-                        data-testid="grain-costs-table"
-                    />
-                )}
-                {activeBy === 'season' && (
-                    <DataTable<SeasonCostRow>
-                        fillBody
-                        mobileFallback="scroll"
-                        data={
-                            data && data.by === 'season'
-                                ? presentRows(data.rows, 'seasonName')
-                                : []
-                        }
-                        columns={seasonColumns}
-                        loading={loading}
-                        error={loadError}
-                        getRowId={(r) => r.seasonId ?? 'unassigned'}
-                        sortableColumns={SORTABLE}
-                        sortBy={sortBy}
-                        sortOrder={sortOrder}
-                        onSortChange={onSortChange}
-                        emptyState={emptyState}
-                        resourceName={(p) => (p ? 'seasons' : 'season')}
-                        data-testid="grain-costs-table"
-                    />
-                )}
-                {activeBy === 'field' && (
-                    <DataTable<FieldCostRow>
-                        fillBody
-                        mobileFallback="scroll"
-                        data={
-                            data && data.by === 'field'
-                                ? presentRows(data.rows, 'locationName')
-                                : []
-                        }
-                        columns={fieldColumns}
-                        loading={loading}
-                        error={loadError}
-                        getRowId={(r) => r.locationId ?? 'unassigned'}
-                        sortableColumns={SORTABLE}
-                        sortBy={sortBy}
-                        sortOrder={sortOrder}
-                        onSortChange={onSortChange}
-                        emptyState={emptyState}
-                        resourceName={(p) => (p ? 'fields' : 'field')}
-                        data-testid="grain-costs-table"
-                    />
-                )}
-            </ListPageShell.Body>
-        </ListPageShell>
+            )}
+        </EntityListPage>
     );
 }

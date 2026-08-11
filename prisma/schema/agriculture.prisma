@@ -372,6 +372,7 @@ model Location {
   @@index([tenantId, name])
   @@index([tenantId, status])
   @@index([tenantId, kind])
+  costEntries     CostEntry[]
 }
 
 /// One polygon imported from the spatial file. geometry is PostGIS
@@ -426,6 +427,7 @@ model Parcel {
   @@index([tenantId, locationId, deletedAt])
   // Per-settlement cadastre lookups (КАИС): find every parcel in an EKATTE.
   @@index([tenantId, ekatte])
+  costEntries     CostEntry[]
 }
 
 /// A land-use agreement (аренда/наем) under which the tenant farms a parcel it
@@ -468,6 +470,7 @@ model ParcelLease {
   @@index([tenantId, parcelId])
   // Rent-roll / expiry scans (3/3): leases ending within a window, per tenant.
   @@index([tenantId, endDate])
+  costEntries CostEntry[]
 }
 
 /// Rent actually PAID against a lease, per season. The lease carries the

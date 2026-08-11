@@ -67,8 +67,18 @@ describe('grain surfaces are registered in every nav registry', () => {
         // If the SECTIONS shape is ever refactored the regex above stops
         // matching, and every assertion below would pass over an empty
         // array. Fail loudly instead of silently covering nothing.
-        expect(sections.length).toBeGreaterThanOrEqual(6);
+        // A FLOOR, not a count. It exists to catch a refactor that breaks
+        // the SECTIONS regex — which would leave every assertion below
+        // iterating an empty array and passing. It is deliberately loose
+        // enough that legitimately RETIRING a surface does not trip it:
+        // payroll came out when it became a category on /grain/costs
+        // rather than a page of its own, taking the set from six to five.
+        expect(sections.length).toBeGreaterThanOrEqual(4);
+        // A named anchor is the sharper half of the self-check: it fails
+        // if the parse silently returns the wrong shape, regardless of
+        // how many entries it found.
         expect(sections.map((s) => s.key)).toContain('calculator');
+        expect(sections.map((s) => s.key)).toContain('contracts');
     });
 
     it.each(grainSections())(

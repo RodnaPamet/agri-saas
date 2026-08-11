@@ -135,9 +135,26 @@ export function sanitizeFileName(name: string): string {
 // ─── Storage Domains ───
 
 /** Well-known storage domains for organizing tenant objects */
-export type StorageDomain = 'evidence' | 'reports' | 'exports' | 'temp' | 'general' | 'spatial';
+/**
+ * The storage domains an object can be filed under. A CLOSED union, not a
+ * free string: `buildTenantObjectKey` puts the domain into the object key,
+ * so a typo would scatter files across a path nothing later looks in.
+ *
+ * `cost-invoice` — supplier invoices attached to a `CostEntry`. Its own
+ * domain rather than `general` so an operator can find every invoice by
+ * key prefix, and so a future retention rule can treat commercial
+ * paperwork differently from a field photo.
+ */
+export type StorageDomain =
+    | 'evidence'
+    | 'reports'
+    | 'exports'
+    | 'temp'
+    | 'general'
+    | 'spatial'
+    | 'cost-invoice';
 
-const VALID_DOMAINS: readonly StorageDomain[] = ['evidence', 'reports', 'exports', 'temp', 'general', 'spatial'] as const;
+const VALID_DOMAINS: readonly StorageDomain[] = ['evidence', 'reports', 'exports', 'temp', 'general', 'spatial', 'cost-invoice'] as const;
 
 // ─── Tenant Object Key Builder ───
 

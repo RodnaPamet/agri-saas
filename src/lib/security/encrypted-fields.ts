@@ -239,6 +239,22 @@ export const ENCRYPTED_FIELDS: Readonly<Record<string, readonly string[]>> = {
     //  is what makes the middleware treat PayrollExpense.description as
     //  encrypted; every other model's `description` field is unaffected.
     PayrollExpense: ['description'],
+    //  CostEntry.description carries the free text on a cost — supplier
+    //  terms, what a payment settled — so it is encrypted at rest on the
+    //  same reasoning as PayrollExpense.description above.
+    //
+    //  Two columns are DELIBERATELY absent:
+    //    • `amount` is Decimal. Listing it here would fail SILENTLY — the
+    //      middleware skips every non-string value without logging, so a
+    //      reviewer reading only this manifest would believe the figure is
+    //      protected when nothing happens at all. It is also SUMmed in-DB.
+    //    • `supplier` stays plaintext on purpose. Encryption bans
+    //      `contains` / `startsWith` / `orderBy` on a column and makes
+    //      GROUP BY useless (randomised AES-GCM gives one group per row),
+    //      which would foreclose the supplier filter and any typeahead. A
+    //      supplier's name on an invoice is not the commercial detail this
+    //      manifest exists to protect. It is still sanitised on write.
+    CostEntry: ['description'],
 } as const;
 
 /** Set of model names with at least one encrypted field. Fast-path check. */

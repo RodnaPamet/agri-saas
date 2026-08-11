@@ -221,6 +221,7 @@ function data(over: Partial<CalculatorData> = {}): CalculatorData {
             commoditiesWithNoPrice: ['maize'],
         },
         unvalued: { noUnitCost: 0, unitMismatch: 0 },
+        cashOut: [],
         truncated: false,
         ...over,
     };
@@ -578,5 +579,61 @@ describe('grain calculator — unvalued consumptions (setViewport("mobile"))', (
         );
 
         expect(screen.getByText('1 unvalued consumption farm-wide')).toBeVisible();
+    });
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// Cash out — a DIFFERENT question, kept visibly apart.
+//
+// Everything else on this page answers "what is the grain worth after
+// what it cost". This answers "what left the bank". They must never be
+// added: crop cost is CONSUMPTION-based and rent cost is a lease-terms
+// accrual, so a fertiliser purchase or a rent payment folded into either
+// would bill the same money twice.
+// ─────────────────────────────────────────────────────────────────────
+
+describe('grain calculator — cash out (setViewport("mobile"))', () => {
+    it('names the metric and states why it is kept apart', () => {
+        setViewport('mobile');
+        renderPage(
+            data({ cashOut: [{ currency: 'BGN', amount: 1250, categories: ['FUEL'] }] }),
+        );
+
+        expect(screen.getByText(COPY.metricGrainCashOut)).toBeVisible();
+        // The note is the whole point of the card's separateness.
+        expect(screen.getByText(/would charge the same money twice/)).toBeVisible();
+    });
+
+    it('reports ONE ROW PER CURRENCY, never a blended total', () => {
+        setViewport('mobile');
+        renderPage(
+            data({
+                cashOut: [
+                    { currency: 'BGN', amount: 1250, categories: ['FUEL', 'SEED'] },
+                    { currency: 'EUR', amount: 400, categories: ['PESTICIDE'] },
+                ],
+            }),
+        );
+
+        // There is no FX table in this product, so a single figure would
+        // reconcile against nothing.
+        expect(screen.getByText('1,250 BGN')).toBeVisible();
+        expect(screen.getByText('400 EUR')).toBeVisible();
+        expect(screen.queryByText('1,650')).not.toBeInTheDocument();
+    });
+
+    it('is ABSENT when the farm entered no costs', () => {
+        setViewport('mobile');
+        renderPage();
+        expect(screen.queryByText(COPY.metricGrainCashOut)).not.toBeInTheDocument();
+    });
+
+    it('does not move the net worth', () => {
+        setViewport('mobile');
+        // Cash out is a disclosure beside the answer, not part of it.
+        renderPage(
+            data({ cashOut: [{ currency: 'BGN', amount: 99_999, categories: ['FUEL'] }] }),
+        );
+        expect(screen.getAllByText('€18,750').length).toBeGreaterThan(0);
     });
 });
