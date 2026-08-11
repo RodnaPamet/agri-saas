@@ -156,6 +156,16 @@ and a filter you have to change tabs to observe is a filter the user
 takes on faith. The tab bar is then the toggle the brief asked for:
 **Map** is the satellite work surface, **Overview** is the locator.
 
+That left a hole, reported from the running app as *"I don't see a
+button for the 2d map"*: the page **opens on the Map tab**
+(`page.tsx:157`), so the only signpost to the locator was a tab labelled
+"Overview" — which does not say "here is how you find a parcel among a
+hundred". The Map tab's toolbar now carries a **Parcel groups** button
+that switches to it. Placement beside Merge rather than beside the
+index/soil toggles is deliberate: those are data layers on the current
+map, this is a different view. A view that has to be stumbled upon may
+as well not ship.
+
 ### Cluster identity survives zooming — because the URL carries the pitch
 
 `clusterIdFor` hashes the member set, and `cellMetresForZoom` re-cuts

@@ -297,6 +297,29 @@ describe('cluster selection narrows the parcels table (desktop)', () => {
     });
 });
 
+describe('reaching the locator from the tab the page opens on (desktop)', () => {
+    beforeEach(() => setViewport('desktop'));
+
+    // Break: shipping the locator where nobody lands. The page defaults to
+    // the MAP tab, and the locator lives in Overview beside the table it
+    // filters — so with no signpost the only route in is guessing that a
+    // tab labelled "Overview" contains a map. Reported from the running
+    // app as "I don't see a button for the 2d map".
+    it('offers a button on the Map tab that opens the parcel-group locator', () => {
+        setUrl(''); // no ?tab= — exactly how a location opens in production
+        render(<LocationDetailPage />);
+
+        // Sanity: we really are on the Map tab, and the locator is not here.
+        expect(screen.getByTestId('map-canvas')).toBeInTheDocument();
+        expect(screen.queryByRole('list', { name: 'Parcel groups' })).toBeNull();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Parcel groups' }));
+
+        expect(screen.getByRole('list', { name: 'Parcel groups' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Драгоево · 2 parcels' })).toBeInTheDocument();
+    });
+});
+
 describe('cluster selection narrows the parcels list (mobile)', () => {
     beforeEach(() => setViewport('mobile'));
 

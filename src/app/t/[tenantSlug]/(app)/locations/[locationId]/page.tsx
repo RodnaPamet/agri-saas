@@ -43,7 +43,7 @@ import { soilColorForTexture, type SoilProfile } from '@/lib/soil/types';
 import type { UsdaTextureClass } from '@/lib/soil/texture';
 import { SmartDefaultsBanner } from './SmartDefaultsBanner';
 import type { LocationSmartDefaults } from '@/app-layer/usecases/smart-defaults';
-import { CalendarIcon, MapPosition } from '@/components/ui/icons/nucleo';
+import { CalendarIcon, LocationPin, MapPosition } from '@/components/ui/icons/nucleo';
 import { GridIcon } from '@/components/ui/icons/nucleo/grid';
 import { haToDca, trimNumber } from '@/lib/agro/rate-calc';
 import { useMediaQuery, useToast } from '@/components/ui/hooks';
@@ -398,6 +398,15 @@ function LocationDetailBody() {
     // Resolve a URL token once the payload minted at its tier arrives.
     // Gated on `isValidating` so a keepPreviousData response from the
     // PREVIOUS tier can never be mistaken for an answer to this one.
+    //
+    // This trips `react-hooks/set-state-in-effect` (a warning), and the
+    // trade is deliberate: the resolution CANNOT be a lazy initializer
+    // like `sheetParcelId`'s, because the payload does not exist at
+    // mount, and it cannot be a plain derivation during render, because
+    // the result has to be PINNED — re-deriving it against each new
+    // payload is precisely the live re-lookup the snapshot exists to
+    // avoid. External data arriving and being latched once is the case
+    // the rule's own guidance carves out.
     useEffect(() => {
         if (!needsClusterResolve || !clusterToken) return;
         if (!overviewQ.data || overviewQ.isValidating) return;
@@ -849,6 +858,24 @@ function LocationDetailBody() {
                                 />
                             )}
                         </div>
+                        {/* Route to the parcel-group locator.
+                            The page opens on THIS tab, and the locator lives
+                            in Overview beside the table it filters — so
+                            without this, the only signpost to it is the tab
+                            bar, which says "Overview", not "here is how you
+                            find a parcel among a hundred". A view that has to
+                            be stumbled upon may as well not ship. */}
+                        {parcels.length > 0 && (
+                            <Button
+                                variant="secondary"
+                                size="sm"
+                                className="min-h-[44px]"
+                                icon={<LocationPin className="size-4" aria-hidden="true" />}
+                                onClick={() => setTab('overview')}
+                            >
+                                {t('overviewMapTitle')}
+                            </Button>
+                        )}
                         {selected.length >= 2 && (
                             <Button
                                 variant="secondary"
