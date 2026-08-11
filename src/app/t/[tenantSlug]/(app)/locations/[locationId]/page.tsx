@@ -1,7 +1,7 @@
 'use client';
 
 import dynamic from 'next/dynamic';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useParams, useSearchParams } from 'next/navigation';
 import type { Geometry } from 'geojson';
@@ -16,6 +16,15 @@ import { Combobox } from '@/components/ui/combobox';
 import { cropLabel, localizedCropOptions } from '@/lib/agriculture/crop-options';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { ToggleGroup } from '@/components/ui/toggle-group';
+import { FilterProvider, useFilterContext, useFilters } from '@/components/ui/filter';
+import { ParcelOverviewMap } from '@/components/locations/ParcelOverviewMap';
+import {
+    encodeClusterToken,
+    parseClusterToken,
+    resolveClusterSelection,
+    type ClusterSelection,
+} from '@/components/locations/parcel-overview-model';
+import type { ParcelOverview } from '@/app-layer/usecases/parcel-overview';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { DatePicker, type DateValue } from '@/components/ui/date-picker';
 import { toYMD } from '@/components/ui/date-picker/date-utils';
@@ -52,6 +61,25 @@ const MapCanvas = dynamic(() => import('@/components/ui/map/MapCanvas').then((m)
 
 type Tab = 'overview' | 'map' | 'operations';
 
+/**
+ * The page's filter facets, at module scope so the array identity is
+ * stable across renders.
+ *
+ * `cluster` is the parcel-overview map's selection; `crop` was a bare
+ * `useState` until this change. Both live in one `useFilterContext` now
+ * because two filter mechanisms narrowing ONE table is how a count ends
+ * up disagreeing with the rows beneath it — and because a crop selection
+ * that survives a reload and a shared link is worth having anyway.
+ *
+ * Any facet driven here MUST appear in this array: `pushToUrl` deletes
+ * only the keys it is given but writes every key in the next state, so a
+ * missing key is written to the URL once and then never removed or
+ * re-parsed.
+ */
+const PARCEL_FILTER_KEYS: string[] = ['cluster', 'crop'];
+
+/** Grid pitch to open at before the canvas has measured itself. */
+const DEFAULT_ZOOM_TIER = 9;
 
 interface LocationDetail {
     id: string;
@@ -138,7 +166,21 @@ function ParcelCropSelect({
     );
 }
 
+/**
+ * The filter context has to sit ABOVE everything that reads it, so the
+ * page splits into a provider shell and the body — the same shape
+ * `ExchangeClient` uses for the marketplace map.
+ */
 export default function LocationDetailPage() {
+    const filterCtx = useFilterContext([], PARCEL_FILTER_KEYS, {});
+    return (
+        <FilterProvider value={filterCtx}>
+            <LocationDetailBody />
+        </FilterProvider>
+    );
+}
+
+function LocationDetailBody() {
     const t = useTranslations('locations.detail');
     const tl = useTranslations('locations');
     const tCommon = useTranslations('common');
@@ -160,7 +202,36 @@ export default function LocationDetailPage() {
     });
     // Overview crop filter (#2): null = all crops. Chips are shown only when
     // more than one crop is present on the location.
-    const [cropFilter, setCropFilter] = useState<string | null>(null);
+    //
+    // The value lives in the Epic 53 filter context — and therefore in the
+    // URL — rather than in local state. Two mechanisms narrowing ONE table
+    // is how a count ends up disagreeing with the rows beneath it, and the
+    // map's cluster facet had to be on the platform regardless.
+    const { state: filterState, set: setFilter, hasActive } = useFilters();
+    const cropFilter = filterState.crop?.[0] ?? null;
+    // `set(key, '')` deletes the key: an absent facet, not an empty array.
+    const setCropFilter = useCallback((v: string | null) => setFilter('crop', v ?? ''), [setFilter]);
+
+    // Parcel-overview map selection.
+    //
+    // A cluster id is an FNV-1a hash of its member set, and every zoom tier
+    // re-cuts that membership — so the URL facet carries the pitch the id
+    // was minted at (`c1abc@8`). Without it a shared link resolves to no
+    // cluster at all and the table renders a confident "no parcels" on the
+    // strength of a failed lookup.
+    //
+    // `clusterSelection` holds the members SNAPSHOTTED at selection time.
+    // The table filters on the snapshot, never on a live re-lookup, so the
+    // user can keep zooming and the group they picked stays the group they
+    // picked.
+    const clusterTokenRaw = filterState.cluster?.[0] ?? null;
+    const clusterToken = useMemo(() => parseClusterToken(clusterTokenRaw), [clusterTokenRaw]);
+    const [clusterSelection, setClusterSelection] = useState<ClusterSelection | null>(null);
+    const needsClusterResolve = clusterToken !== null && clusterSelection?.id !== clusterToken.id;
+    const [viewZoomTier, setViewZoomTier] = useState(() => clusterToken?.zoomTier ?? DEFAULT_ZOOM_TIER);
+    // Cold load pins the payload to the token's own tier, so the very first
+    // response is the one that can answer it.
+    const fetchZoomTier = needsClusterResolve && clusterToken ? clusterToken.zoomTier : viewZoomTier;
     const [selected, setSelected] = useState<string[]>([]);
     // Mobile: the tapped parcel surfaced in the bottom-sheet (vaul). The
     // sheet replaces the inline side panel below the map on phones; desktop
@@ -213,6 +284,11 @@ export default function LocationDetailPage() {
     // Recall + weather + crop-plan suggestions for this field (editable;
     // powers the spray-window/next-task banner + the wizard prefills).
     const smartQ = useTenantSWR<LocationSmartDefaults>(`/locations/${locationId}/smart-defaults`);
+    // Proximity clusters for the overview map. Overview tab only — the Map
+    // tab draws parcels themselves and has no use for a locator.
+    const overviewQ = useTenantSWR<ParcelOverview>(
+        tab === 'overview' ? `/locations/${locationId}/parcel-clusters?zoom=${fetchZoomTier}` : null,
+    );
     // Active-index tiles (GEE) — fetched only when the Map tab is open AND an
     // index is selected, re-fetched when the index OR the inspection date
     // changes (the SWR key carries both). One query serves whichever of the
@@ -293,14 +369,57 @@ export default function LocationDetailPage() {
         }
         return Array.from(seen);
     }, [parcels]);
+    // Parcel names by id — the overview map holds ids and needs a label
+    // once it is zoomed past clustering. The names are already here, so the
+    // clusters payload deliberately does not repeat them.
+    const parcelNames = useMemo(() => {
+        const m = new Map<string, string>();
+        for (const p of parcels) m.set(p.id, p.name);
+        return m;
+    }, [parcels]);
+
+    const clusterMemberIds = useMemo(
+        () => (clusterSelection ? new Set(clusterSelection.parcelIds) : null),
+        [clusterSelection],
+    );
+
     // Overview parcels list — sorted by area DESCENDING by default (largest
-    // fields first, #2), then filtered by the selected crop chip.
+    // fields first, #2), then narrowed by the crop chip and the map's
+    // cluster selection. Both facets compose; either alone is the whole
+    // list minus that one cut.
     const overviewParcels = useMemo(() => {
         const sorted = [...parcels].sort(
             (a, b) => (b.areaHa ?? 0) - (a.areaHa ?? 0) || a.name.localeCompare(b.name),
         );
-        return cropFilter ? sorted.filter((p) => p.cropType === cropFilter) : sorted;
-    }, [parcels, cropFilter]);
+        const byCrop = cropFilter ? sorted.filter((p) => p.cropType === cropFilter) : sorted;
+        return clusterMemberIds ? byCrop.filter((p) => clusterMemberIds.has(p.id)) : byCrop;
+    }, [parcels, cropFilter, clusterMemberIds]);
+
+    // Resolve a URL token once the payload minted at its tier arrives.
+    // Gated on `isValidating` so a keepPreviousData response from the
+    // PREVIOUS tier can never be mistaken for an answer to this one.
+    useEffect(() => {
+        if (!needsClusterResolve || !clusterToken) return;
+        if (!overviewQ.data || overviewQ.isValidating) return;
+        const resolved = resolveClusterSelection(overviewQ.data, clusterToken);
+        if (resolved) {
+            setClusterSelection(resolved);
+        } else {
+            // The group is genuinely gone (parcels moved or deleted). Clear
+            // the facet rather than filtering the table to zero rows and
+            // presenting that as an empty holding.
+            setClusterSelection(null);
+            setFilter('cluster', '');
+        }
+    }, [needsClusterResolve, clusterToken, overviewQ.data, overviewQ.isValidating, setFilter]);
+
+    const handleClusterSelect = useCallback(
+        (sel: ClusterSelection | null) => {
+            setClusterSelection(sel);
+            setFilter('cluster', sel ? encodeClusterToken(sel.id, sel.zoomTier) : '');
+        },
+        [setFilter],
+    );
 
     const sheetParcel = useMemo<ParcelSheetData | null>(() => {
         const p = parcels.find((x) => x.id === sheetParcelId);
@@ -574,6 +693,25 @@ export default function LocationDetailPage() {
                             {t('noParcelsHint')}
                         </div>
                     )}
+                    {/* Parcel-overview locator (P3). Sits directly above the
+                        crop chips and the parcels list because clicking a
+                        group has to be visibly the thing that narrows them —
+                        a map in a different tab from the table it filters is
+                        a map you have to take on faith. The satellite
+                        MapCanvas keeps the Map tab to itself, untouched. */}
+                    {parcels.length > 0 && (
+                        <ParcelOverviewMap
+                            overview={overviewQ.data ?? null}
+                            loading={overviewQ.isLoading && !overviewQ.data}
+                            error={Boolean(overviewQ.error)}
+                            parcelNames={parcelNames}
+                            selection={clusterSelection}
+                            onSelect={handleClusterSelect}
+                            onParcelOpen={setSheetParcelId}
+                            zoomTier={viewZoomTier}
+                            onZoomTierChange={setViewZoomTier}
+                        />
+                    )}
                     {/* Per-culture filter chips (#2) — filter the parcels list
                         by crop. Shown only when the location grows more than
                         one crop; "All" clears the filter. */}
@@ -602,7 +740,11 @@ export default function LocationDetailPage() {
                                     <span className="flex items-center gap-tight">
                                         <span className="font-medium">{t('parcelsAccordion')}</span>
                                         <span className="text-xs text-content-secondary">
-                                            {cropFilter ? overviewParcels.length : (loc?._count?.parcels ?? parcels.length)}
+                                            {/* Any active facet ⇒ show what is actually
+                                                on screen. Keying this off the crop chip
+                                                alone would print the unfiltered total
+                                                above a cluster-filtered table. */}
+                                            {hasActive ? overviewParcels.length : (loc?._count?.parcels ?? parcels.length)}
                                         </span>
                                     </span>
                                 </AccordionTrigger>

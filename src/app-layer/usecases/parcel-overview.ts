@@ -43,8 +43,35 @@ export function cellMetresForZoom(zoom: number): number {
     return Math.max(200, 20_000 / 2 ** (z - 6));
 }
 
+/**
+ * One positioned parcel, as the map draws it.
+ *
+ * Ids and coordinates ONLY. Name, area and crop are deliberately absent:
+ * the location detail page already holds all three for every parcel, so
+ * repeating them here would be a second copy that can disagree with the
+ * table sitting under the map. The join is by `id`.
+ */
+export interface OverviewParcelPoint {
+    id: string;
+    lon: number;
+    lat: number;
+}
+
 export interface ParcelOverview {
     clusters: ParcelCluster[];
+    /**
+     * Every positioned parcel, so the view can stop drawing clusters and
+     * start drawing PARCELS once it is zoomed in far enough.
+     *
+     * Without this the progressive reveal has a floor it can never pass:
+     * `cellMetresForZoom` bottoms out at 200 m, so two parcels 150 m
+     * apart stay merged at any zoom, and a cluster of one is still
+     * labelled with a settlement name rather than the parcel's own. The
+     * points are already computed for the clustering — serialising them
+     * costs one array and removes a whole class of "I zoomed all the way
+     * in and it still won't tell me which field that is".
+     */
+    parcels: OverviewParcelPoint[];
     /** [minLon, minLat, maxLon, maxLat] of the POSITIONED parcels, or null. */
     bbox: BBox | null;
     /** Parcels carrying a position — the ones the map can draw. */
@@ -133,6 +160,7 @@ export async function getParcelOverview(
 
         return {
             clusters,
+            parcels: positioned.map((p) => ({ id: p.id, lon: p.lon, lat: p.lat })),
             bbox: bboxOf(positioned.map((p) => [p.lon, p.lat] as const)),
             positionedCount: positioned.length,
             unpositionedCount: unpositionedIds.length,

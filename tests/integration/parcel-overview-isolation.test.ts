@@ -119,11 +119,42 @@ describeFn('parcel-overview raw query — tenant isolation', () => {
     it('leaks no coordinates across the boundary', async () => {
         // Belt and braces on the one thing that actually matters: B's
         // parcels sit near lon 27.6, A's near 26.6. Nothing in A's
-        // payload may carry B's longitude.
+        // payload may carry B's longitude — and `parcels` is a SECOND
+        // array of coordinates, so it is a second surface to check. A
+        // leak test that only walks `clusters` would pass while the
+        // per-parcel points carried the neighbour's fields.
         const ctxA = makeRequestContext('READER', { tenantId: TENANT_A });
         const own = await getParcelOverview(ctxA, locationA);
         for (const c of own.clusters) {
             expect(c.lon).toBeLessThan(27);
+        }
+        for (const p of own.parcels) {
+            expect(p.lon).toBeLessThan(27);
+        }
+    });
+
+    it('gives every positioned parcel a drawable point', async () => {
+        // The per-parcel points are what let the view stop drawing the
+        // grid and start drawing parcels. If they went missing, the
+        // clusters would still render and the progressive reveal would
+        // silently bottom out at the 200 m floor instead.
+        const ctxA = makeRequestContext('READER', { tenantId: TENANT_A });
+        const own = await getParcelOverview(ctxA, locationA);
+
+        expect(own.parcels).toHaveLength(own.positionedCount);
+        for (const p of own.parcels) {
+            expect(Number.isFinite(p.lon)).toBe(true);
+            expect(Number.isFinite(p.lat)).toBe(true);
+        }
+        // Same id space as the clusters, so a cluster's members can be
+        // drawn individually without a second read.
+        const pointIds = new Set(own.parcels.map((p) => p.id));
+        for (const c of own.clusters) {
+            for (const id of c.parcelIds) expect(pointIds.has(id)).toBe(true);
+        }
+        // And no un-geocoded parcel sneaks in as a drawable one.
+        for (const id of own.unpositionedParcelIds) {
+            expect(pointIds.has(id)).toBe(false);
         }
     });
 
