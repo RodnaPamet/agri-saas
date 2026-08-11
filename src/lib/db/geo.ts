@@ -168,6 +168,28 @@ export function isValidGeometryColumnSql(column: Prisma.Sql): Prisma.Sql {
     return Prisma.sql`ST_IsValid(${column})`;
 }
 
+/**
+ * Longitude of a representative interior point of a geometry.
+ *
+ * `ST_PointOnSurface`, deliberately NOT `ST_Centroid`. A centroid is the
+ * average of the shape and can land OUTSIDE it: an L-shaped or crescent
+ * parcel, or a MultiPolygon split by a road, puts its centroid in the
+ * gap — which on a map is a marker sitting in the neighbour's field.
+ * `ST_PointOnSurface` is guaranteed to lie on the geometry, which is
+ * what "where is this parcel" has to mean.
+ *
+ * Costs slightly more than a centroid; irrelevant at one row per parcel
+ * and worth it to never point at the wrong field.
+ */
+export function pointOnSurfaceLonSql(column: Prisma.Sql): Prisma.Sql {
+    return Prisma.sql`ST_X(ST_PointOnSurface(${column}))`;
+}
+
+/** Latitude counterpart of `pointOnSurfaceLonSql`. See that docblock. */
+export function pointOnSurfaceLatSql(column: Prisma.Sql): Prisma.Sql {
+    return Prisma.sql`ST_Y(ST_PointOnSurface(${column}))`;
+}
+
 /** SQL fragment serializing a geometry column back to GeoJSON text. */
 export function asGeoJsonSql(column: Prisma.Sql): Prisma.Sql {
     return Prisma.sql`ST_AsGeoJSON(${column})`;
