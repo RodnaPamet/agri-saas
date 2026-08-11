@@ -30,6 +30,7 @@ import {
     LineChart,
     Coins,
     Banknote,
+    Calculator,
     ArrowLeftRight,
     CloudSun,
     CalendarClock,
@@ -198,6 +199,12 @@ export function useNavSections(): NavSectionDef[] {
                 // alongside the field-event/stock costs the Costs rollup
                 // already aggregates. Reuses no other glyph on this list.
                 { href: tenantHref('/grain/payroll'), label: t('payroll'), icon: Banknote, visible: grainAvailable },
+                // Calculator (GRAIN_NET_WORTH) — last, because it is the
+                // only surface that READS the other five: it prices the
+                // standing crop and the grain on hand, then charges the
+                // field cost, the rent and the payroll they record.
+                // Its own glyph, per the no-reuse convention above.
+                { href: tenantHref('/grain/calculator'), label: t('calculator'), icon: Calculator, visible: grainAvailable },
             ]),
         },
         {

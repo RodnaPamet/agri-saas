@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState, useCallback } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { ListPageShell } from '@/components/layout/ListPageShell';
@@ -9,9 +9,8 @@ import { Input } from '@/components/ui/input';
 import { ToggleGroup } from '@/components/ui/toggle-group';
 import { DataTable, createColumns } from '@/components/ui/table';
 import { EmptyState } from '@/components/ui/empty-state';
-import { useTenantApiUrl, useTenantHref, useTenantCurrencySymbol } from '@/lib/tenant-context-provider';
+import { useTenantApiUrl, useTenantHref, useExactMoneyFormatter } from '@/lib/tenant-context-provider';
 import { COST_METRICS, COST_METRIC_LABEL_KEYS } from '@/lib/grain/cost-metrics';
-import { formatDecimal } from '@/lib/number-format';
 
 // ─── Row shapes (mirror the cost-rollup usecase DTOs) ───
 
@@ -83,9 +82,18 @@ interface CostsClientProps {
 }
 
 /**
- * Format a cost magnitude in the TENANT's configured currency.
+ * Money on this page is formatted by `useExactMoneyFormatter()` from
+ * `@/lib/tenant-context-provider` — the shared, tenant-bound, to-the-cent
+ * formatter. It used to be a local `useCostFormatter` hook spelling
+ * `symbol + formatDecimal(v, 2)` inline; /grain/calculator then wrote the
+ * same expression again under a different name, which is precisely the
+ * duplication `tests/guards/polish-06-single-currency.test.ts` exists to
+ * prevent. The hook name is why the guard never saw the first copy.
  *
- * The previous version labelled each row with its own `costCurrency`, which
+ * The reasoning the local hook carried, which still holds and is why the
+ * TENANT symbol is the only honest label here:
+ *
+ * An earlier version labelled each row with its own `costCurrency`, which
  * is null for every entry the journal UI creates (the field was declared in
  * the modal's type and never sent), so money printed as a bare unlabelled
  * number. It only looked right because the demo seed writes 'EUR'.
@@ -101,14 +109,6 @@ interface CostsClientProps {
  * Rows whose recorded currencies disagree are flagged separately
  * (`currencyMixed`) rather than being silently blended under one symbol.
  */
-function useCostFormatter(): (v: number | null | undefined) => string {
-    const symbol = useTenantCurrencySymbol();
-    return useCallback(
-        (v: number | null | undefined) => (v == null ? '—' : `${symbol}${formatDecimal(v, 2)}`),
-        [symbol],
-    );
-}
-
 export function CostsClient({
     tenantSlug,
     initialBy,
@@ -116,7 +116,7 @@ export function CostsClient({
 }: CostsClientProps) {
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
-    const money = useCostFormatter();
+    const money = useExactMoneyFormatter();
     const t = useTranslations('grainEnums');
     const tc = useTranslations('grain.costs');
     const [by, setBy] = useState<Dimension>(initialBy);

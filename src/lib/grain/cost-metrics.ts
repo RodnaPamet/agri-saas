@@ -87,6 +87,24 @@ export type CostMetric = (typeof COST_METRICS)[keyof typeof COST_METRICS];
  * The i18n key each metric's on-screen label lives under, so a page cannot
  * show a cost figure without saying which cost it is.
  */
+/**
+ * Sentinel for money rent's currency. `ParcelLease` carries no currency
+ * column (see rent-basis.ts) — this is NOT an ISO code, and is never
+ * treated as one; it only makes an unknown-currency cost visible in
+ * `GRAIN_NET_WORTH`'s `cashCostCurrencies` / `cashCostCurrencyMixed`
+ * instead of silently assumed to match another figure's currency.
+ *
+ * It lives HERE, in the shared grain-cost vocabulary, rather than as a
+ * module-private const inside `grain-net-worth.ts`, because a value that
+ * ships inside a DTO array is not private in any useful sense: the array
+ * reaches a client component, and a page that cannot name the sentinel
+ * has no way to avoid rendering `Costs in UNKNOWN` at a farmer. The
+ * calculator filters on this constant; the usecase writes it. One
+ * spelling, both ends. This module is import-free by design, so it is
+ * safe to pull into a client bundle.
+ */
+export const UNKNOWN_RENT_CURRENCY = 'UNKNOWN';
+
 export const COST_METRIC_LABEL_KEYS: Record<CostMetric, string> = {
     [COST_METRICS.ATTRIBUTED_CROP_COST]: 'metricAttributedCropCost',
     [COST_METRICS.TENANT_ACTIVITY_SPEND]: 'metricTenantActivitySpend',

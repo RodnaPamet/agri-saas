@@ -53,6 +53,10 @@ const EXEMPTIONS: Record<string, string> = {
 
     // Certification scheme detail (schemes roadmap PR2).
 
+    // Grain calculator (GRAIN_NET_WORTH report).
+    "src/app/t/[tenantSlug]/(app)/grain/calculator/CalculatorClient.tsx":
+        "report appendix, not a list page. The table's row set is CANONICAL_COMMODITIES — ten rows, hard-capped by an `as const` array in src/lib/market/commodity-vocabulary.ts, and every one already on screen. There is nothing to filter TO: a facet whose options enumerate the visible rows is a control that can only ever hide data the reader can already see. Commodity selection is served by the <ToggleGroup> above, which drives the two value panels rather than the table.",
+
     // Grain bin detail (bins roadmap PR2).
     "src/app/t/[tenantSlug]/(app)/grain/bins/[binId]/BinDetailClient.tsx":
         "detail-page sub-table — the lots INSIDE one bin, not a list page. The set is one bin's contents (bounded, already sorted soonest-expiry first), so faceted filtering, a column gear and viewport-clamping all add chrome without adding reach.",
