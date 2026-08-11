@@ -1244,3 +1244,44 @@ enum SupportSchemeStatus {
   APPROVED
   REJECTED
 }
+
+/// What KIND of spend a `CostEntry` records.
+///
+/// The split is load-bearing, not cosmetic — it decides which figure an
+/// entry reaches, and `src/lib/grain/cost-metrics.ts` exists because
+/// getting that wrong once already shipped three incompatible totals under
+/// one word:
+///
+///   PAYROLL     — feeds crop cost AND cash-out. Nothing else in the
+///                 product records labour, so there is no double-count to
+///                 fear and omitting it would understate every crop.
+///   RENT        — cash-out ONLY. Rent COST is the lease-terms accrual
+///                 (`resolveRentBasis`), which is what the farmer owes
+///                 whether or not a lev has been paid. A payment is the
+///                 cash half of the same obligation, never a second cost.
+///   FERTILIZER / FUEL / SEED / PESTICIDE
+///               — cash-out ONLY. These are PURCHASES. Crop cost is
+///                 CONSUMPTION-based (`cost-rollup` counts only CONSUMPTION
+///                 stock movements, excluding RECEIPT as working capital),
+///                 so counting the purchase too bills the same sack of
+///                 fertiliser once when bought and again when applied.
+///   SERVICE / OTHER
+///               — cash-out ONLY. A contractor's invoice is very likely
+///                 ALREADY recorded as `LogEntry.costAmount` on the journal
+///                 entry for the operation it paid for; counting the cost
+///                 entry as well would bill the same contractor twice. The
+///                 route for "this operation cost me X" remains
+///                 `LogEntry.costAmount`.
+///
+/// Wanting purchases in crop cost later is a NEW named metric in
+/// COST_METRICS, never a quiet addition to an existing one.
+enum CostCategory {
+  PAYROLL
+  RENT
+  FERTILIZER
+  FUEL
+  SEED
+  PESTICIDE
+  SERVICE
+  OTHER
+}

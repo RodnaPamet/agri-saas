@@ -102,6 +102,12 @@ const RICH_TEXT_COVERAGE: Readonly<
     // or contractor) is encrypted at rest AND sanitised before the write,
     // same shape as Contract / YieldRecord above.
     PayrollExpense: { usecases: ['src/app-layer/usecases/payroll-expense.ts'], sanitizer: 'sanitizePlainText' },
+    // CostEntry.description is encrypted at rest and sanitised at the write
+    // seam. `supplier` is NOT encrypted (it must stay filterable) but is
+    // sanitised by the same call — encryption and sanitisation answer
+    // different questions, and every renderer that shows a supplier name
+    // deserves the same protection as one that shows a description.
+    CostEntry: { usecases: ['src/app-layer/usecases/cost-entry.ts'], sanitizer: 'sanitizePlainText' },
     // БАБХ farm-record — FarmProfile.egn/eik are encrypted at rest (Epic B
     // manifest) AND sanitised at the upsertFarmProfile write seam before the
     // middleware persists them, so every renderer that decrypts them (the

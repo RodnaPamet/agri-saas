@@ -623,6 +623,7 @@ model FileRecord {
   @@index([tenantId, createdAt])
   @@index([tenantId, scanStatus])
   @@index([tenantId, deletedAt])
+  costEntries          CostEntry[]
 }
 
 model EvidenceReview {

@@ -63,7 +63,10 @@ describe('contract enum labels — single source of truth', () => {
         it('has NO second copy of the members under grainEnums', () => {
             // The flattened `statusDraft` / `typeSale` shape is what
             // drifted. Its absence is the invariant.
-            const grainEnums = catalogue.grainEnums as Record<string, string>;
+            // `grainEnums` now holds nested groups too (costCategory), so
+            // the value type is not uniformly string. Only the KEYS matter
+            // here, and `unknown` is the honest widening.
+            const grainEnums = catalogue.grainEnums as unknown as Record<string, unknown>;
             const strays = Object.keys(grainEnums).filter((k) =>
                 /^(status|type)(Draft|Active|Delivered|Settled|Cancelled|Sale|Purchase)$/.test(k),
             );

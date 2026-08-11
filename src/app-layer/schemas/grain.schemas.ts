@@ -279,3 +279,83 @@ export const UpdatePayrollExpenseSchema = z
     .strip();
 
 export type UpdatePayrollExpenseInput = z.infer<typeof UpdatePayrollExpenseSchema>;
+
+// ─── CostEntry — the /grain/costs entry surface ─────────────────────
+
+/**
+ * The eight cost categories, mirrored from the Prisma `CostCategory`
+ * enum. Spelled out rather than derived so the wire contract is readable
+ * at the schema and a schema change is a visible diff.
+ */
+export const COST_CATEGORIES = [
+    'PAYROLL',
+    'RENT',
+    'FERTILIZER',
+    'FUEL',
+    'SEED',
+    'PESTICIDE',
+    'SERVICE',
+    'OTHER',
+] as const;
+
+/**
+ * The five optional domain links. At most ONE may be set on an entry —
+ * a row with two would appear on two domain pages and be counted twice by
+ * anything summing per domain. Zod cannot express that against optional
+ * nullable fields cleanly, and the rule also depends on `category`
+ * (`leaseId` is RENT-only), so it is enforced in the usecase where both
+ * are in hand — see `assertSingleDomainLink`.
+ */
+export const COST_DOMAIN_LINKS = [
+    'plantingId',
+    'seasonId',
+    'locationId',
+    'parcelId',
+    'leaseId',
+] as const;
+
+/**
+ * The category facet's wire validator. Exported so the route can hand it
+ * to `parseCsvEnumParam` — a multi-select facet arrives comma-joined in
+ * ONE param, and validating each member is what stops "PAYROLL,RENT"
+ * reaching Prisma as a single bogus enum value.
+ */
+export const CostCategorySchema = z.enum(COST_CATEGORIES);
+
+export const CreateCostEntrySchema = z
+    .object({
+        category: CostCategorySchema,
+        amount: RequiredPositiveAmount,
+        currency: ShortText(8),
+        incurredOn: z.string().min(8),
+        supplier: OptionalText(200),
+        description: OptionalText(8000),
+        invoiceFileId: z.string().min(1).nullable().optional(),
+        plantingId: z.string().min(1).nullable().optional(),
+        seasonId: z.string().min(1).nullable().optional(),
+        locationId: z.string().min(1).nullable().optional(),
+        parcelId: z.string().min(1).nullable().optional(),
+        leaseId: z.string().min(1).nullable().optional(),
+    })
+    .strip();
+
+export type CreateCostEntryInput = z.infer<typeof CreateCostEntrySchema>;
+
+export const UpdateCostEntrySchema = z
+    .object({
+        category: z.enum(COST_CATEGORIES).optional(),
+        amount: RequiredPositiveAmount.optional(),
+        currency: z.string().min(1).max(8).optional(),
+        incurredOn: z.string().min(8).optional(),
+        supplier: OptionalText(200),
+        description: OptionalText(8000),
+        invoiceFileId: z.string().min(1).nullable().optional(),
+        plantingId: z.string().min(1).nullable().optional(),
+        seasonId: z.string().min(1).nullable().optional(),
+        locationId: z.string().min(1).nullable().optional(),
+        parcelId: z.string().min(1).nullable().optional(),
+        leaseId: z.string().min(1).nullable().optional(),
+    })
+    .strip();
+
+export type UpdateCostEntryInput = z.infer<typeof UpdateCostEntrySchema>;

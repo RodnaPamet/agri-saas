@@ -147,7 +147,10 @@ export const GrainBinDTOSchema = z
 export type GrainBinDTO = z.infer<typeof GrainBinDTOSchema>;
 
 // ─── Grain cost rollup rows ───
-// The /grain/costs endpoint returns ONE of three shapes depending on
+// LEGACY (the rollup this described was dropped when /grain/costs became
+// the cost-entry register; these DTOs remain for the usecase's own
+// consumers, e.g. the net-worth calculator).
+// The retired rollup endpoint returned ONE of three shapes depending on
 // ?by=planting|season|field. Only the planting row was documented, and it
 // had drifted from the usecase — so the published contract described a
 // `currency` field that no longer exists and omitted the per-hectare and

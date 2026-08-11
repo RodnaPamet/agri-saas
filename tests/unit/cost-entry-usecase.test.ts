@@ -1,0 +1,315 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- standard
+ * test-mock pattern; per-line typing has poor cost/benefit ratio. */
+
+/**
+ * Unit tests for `src/app-layer/usecases/cost-entry.ts` (and, by
+ * extension, `CostEntryRepository` — mocked only at the
+ * `runInTenantContext`/`db` boundary, so the repository's real
+ * `where`-building logic runs).
+ *
+ * The two invariants Prisma cannot express are the point of this file:
+ *
+ *   1. AT MOST ONE domain link. A row claiming two homes is rendered on
+ *      two domain pages and summed twice by anything grouping per domain.
+ *   2. AN INVOICE MUST HAVE LANDED. `FileRecord` is created PENDING
+ *      before its bytes are confirmed, and the obvious precedent to copy
+ *      (`attachLogEntryFile`) checks tenant ownership ONLY — so a cost
+ *      entry could point at an upload that never completed, or at a file
+ *      the maintenance sweep has since soft-deleted.
+ *
+ * Both are enforced in the usecase and asserted here rather than trusted
+ * to a comment.
+ */
+
+const mockDb = {
+    costEntry: {
+        findFirst: jest.fn(),
+        findMany: jest.fn(),
+        count: jest.fn(),
+        create: jest.fn(),
+        update: jest.fn(),
+    },
+    fileRecord: { findFirst: jest.fn() },
+    planting: { findFirst: jest.fn() },
+    season: { findFirst: jest.fn() },
+    location: { findFirst: jest.fn() },
+    parcel: { findFirst: jest.fn() },
+    parcelLease: { findFirst: jest.fn() },
+} as any;
+
+jest.mock('@/lib/db-context', () => ({
+    runInTenantContext: jest.fn(async (_ctx: any, fn: (db: any) => any) => fn(mockDb)),
+}));
+
+jest.mock('@/app-layer/events/audit', () => ({ logEvent: jest.fn() }));
+
+import {
+    listCostEntries,
+    createCostEntry,
+    updateCostEntry,
+    deleteCostEntry,
+    assertSingleDomainLink,
+} from '@/app-layer/usecases/cost-entry';
+import { logEvent } from '@/app-layer/events/audit';
+import { makeRequestContext } from '../helpers/make-context';
+
+const ctx = makeRequestContext('ADMIN', { tenantSlug: 'acme', tenantId: 'tenant-1' });
+const readerCtx = makeRequestContext('READER', { tenantSlug: 'acme', tenantId: 'tenant-1' });
+
+/** A persisted row as the repository's include-shape returns it. */
+function row(over: Record<string, unknown> = {}) {
+    return {
+        id: 'ce-1',
+        category: 'FUEL',
+        amount: 340,
+        currency: 'BGN',
+        incurredOn: new Date('2026-08-01T00:00:00Z'),
+        supplier: 'Petrol AD',
+        invoiceFileId: null,
+        plantingId: null,
+        seasonId: null,
+        locationId: null,
+        parcelId: null,
+        leaseId: null,
+        createdByUserId: 'u-1',
+        createdAt: new Date('2026-08-01T00:00:00Z'),
+        updatedAt: new Date('2026-08-01T00:00:00Z'),
+        planting: null,
+        season: null,
+        location: null,
+        parcel: null,
+        invoiceFile: null,
+        ...over,
+    };
+}
+
+function baseInput(over: Record<string, unknown> = {}) {
+    return {
+        category: 'FUEL' as const,
+        amount: 340,
+        currency: 'bgn',
+        incurredOn: '2026-08-01',
+        supplier: 'Petrol AD',
+        description: null,
+        ...over,
+    };
+}
+
+beforeEach(() => {
+    jest.clearAllMocks();
+    mockDb.costEntry.create.mockResolvedValue(row());
+    mockDb.costEntry.update.mockResolvedValue(row());
+    mockDb.costEntry.findFirst.mockResolvedValue(row());
+    mockDb.costEntry.findMany.mockResolvedValue([row()]);
+    mockDb.costEntry.count.mockResolvedValue(1);
+    mockDb.planting.findFirst.mockResolvedValue({ id: 'p-1' });
+    mockDb.season.findFirst.mockResolvedValue({ id: 's-1' });
+    mockDb.location.findFirst.mockResolvedValue({ id: 'loc-1' });
+    mockDb.parcel.findFirst.mockResolvedValue({ id: 'par-1' });
+    mockDb.parcelLease.findFirst.mockResolvedValue({ id: 'lease-1' });
+    mockDb.fileRecord.findFirst.mockResolvedValue({
+        id: 'file-1',
+        status: 'STORED',
+        deletedAt: null,
+    });
+});
+
+describe('createCostEntry — the happy paths', () => {
+    it('creates without an invoice, uppercases currency, and audits', async () => {
+        await createCostEntry(ctx, baseInput());
+
+        const data = mockDb.costEntry.create.mock.calls[0][0].data;
+        expect(data.currency).toBe('BGN');
+        expect(data.tenantId).toBe('tenant-1');
+        expect(data.invoiceFileId).toBeNull();
+        // No invoice ⇒ the file gate is never consulted.
+        expect(mockDb.fileRecord.findFirst).not.toHaveBeenCalled();
+        expect(logEvent).toHaveBeenCalledTimes(1);
+    });
+
+    it('creates WITH an invoice once the file is STORED', async () => {
+        await createCostEntry(ctx, baseInput({ invoiceFileId: 'file-1' }));
+
+        expect(mockDb.fileRecord.findFirst).toHaveBeenCalledTimes(1);
+        // The gate is tenant-scoped: a file id from another tenant must not
+        // resolve, so the tenant filter belongs in the WHERE, not a
+        // post-hoc comparison.
+        expect(mockDb.fileRecord.findFirst.mock.calls[0][0].where).toMatchObject({
+            id: 'file-1',
+            tenantId: 'tenant-1',
+        });
+        expect(mockDb.costEntry.create.mock.calls[0][0].data.invoiceFileId).toBe('file-1');
+    });
+
+    it('sanitises supplier AND description before persisting', async () => {
+        await createCostEntry(
+            ctx,
+            baseInput({
+                supplier: '<script>alert(1)</script>Petrol AD',
+                description: '<img src=x onerror=alert(1)>diesel',
+            }),
+        );
+
+        const data = mockDb.costEntry.create.mock.calls[0][0].data;
+        expect(data.supplier).not.toMatch(/<script>/);
+        expect(data.description).not.toMatch(/onerror/);
+        // `supplier` is NOT encrypted (it must stay filterable), which is
+        // exactly why it still needs sanitising — encryption and
+        // sanitisation answer different questions.
+        expect(data.supplier).toContain('Petrol AD');
+    });
+});
+
+describe('createCostEntry — the invoice gate', () => {
+    it('REJECTS a FileRecord still PENDING', async () => {
+        // The upload may never have completed. A cost entry pointing at it
+        // would claim an invoice that does not exist.
+        mockDb.fileRecord.findFirst.mockResolvedValue({
+            id: 'file-1',
+            status: 'PENDING',
+            deletedAt: null,
+        });
+
+        await expect(
+            createCostEntry(ctx, baseInput({ invoiceFileId: 'file-1' })),
+        ).rejects.toThrow(/has not completed/);
+        expect(mockDb.costEntry.create).not.toHaveBeenCalled();
+    });
+
+    it('REJECTS a soft-deleted FileRecord', async () => {
+        mockDb.fileRecord.findFirst.mockResolvedValue({
+            id: 'file-1',
+            status: 'STORED',
+            deletedAt: new Date(),
+        });
+
+        await expect(
+            createCostEntry(ctx, baseInput({ invoiceFileId: 'file-1' })),
+        ).rejects.toThrow(/has been deleted/);
+        expect(mockDb.costEntry.create).not.toHaveBeenCalled();
+    });
+
+    it('REJECTS a file from another tenant', async () => {
+        mockDb.fileRecord.findFirst.mockResolvedValue(null);
+
+        await expect(
+            createCostEntry(ctx, baseInput({ invoiceFileId: 'file-1' })),
+        ).rejects.toThrow(/different tenant/);
+    });
+});
+
+describe('createCostEntry — one domain link only', () => {
+    it('accepts exactly one link', async () => {
+        await createCostEntry(ctx, baseInput({ plantingId: 'p-1' }));
+        expect(mockDb.costEntry.create.mock.calls[0][0].data.plantingId).toBe('p-1');
+    });
+
+    it('REJECTS two links, naming both', async () => {
+        await expect(
+            createCostEntry(ctx, baseInput({ plantingId: 'p-1', seasonId: 's-1' })),
+        ).rejects.toThrow(/plantingId, seasonId/);
+        expect(mockDb.costEntry.create).not.toHaveBeenCalled();
+    });
+
+    it('REJECTS a lease link on a non-RENT entry', async () => {
+        // A diesel invoice filed against a lease would appear on the rent
+        // surface, where it reads as rent.
+        await expect(
+            createCostEntry(ctx, baseInput({ category: 'FUEL', leaseId: 'lease-1' })),
+        ).rejects.toThrow(/only be set on a RENT/);
+    });
+
+    it('accepts a lease link on a RENT entry', async () => {
+        await createCostEntry(ctx, baseInput({ category: 'RENT', leaseId: 'lease-1' }));
+        expect(mockDb.costEntry.create.mock.calls[0][0].data.leaseId).toBe('lease-1');
+    });
+
+    it('is exported as a pure function, so the rule is testable without a DB', () => {
+        expect(() => assertSingleDomainLink({ plantingId: 'p-1' })).not.toThrow();
+        expect(() => assertSingleDomainLink({ plantingId: 'p-1', parcelId: 'x' })).toThrow();
+        expect(() => assertSingleDomainLink({})).not.toThrow();
+    });
+});
+
+describe('updateCostEntry — validates the RESULTING row', () => {
+    it('REJECTS a patch that adds a second link to an existing one', async () => {
+        // Checking the patch alone would miss this: the patch sets ONE
+        // link, but the row already had another.
+        mockDb.costEntry.findFirst.mockResolvedValue(row({ plantingId: 'p-1' }));
+
+        await expect(updateCostEntry(ctx, 'ce-1', { seasonId: 's-1' })).rejects.toThrow(
+            /at most one/,
+        );
+        expect(mockDb.costEntry.update).not.toHaveBeenCalled();
+    });
+
+    it('ACCEPTS swapping one link for another in a single patch', async () => {
+        mockDb.costEntry.findFirst.mockResolvedValue(row({ plantingId: 'p-1' }));
+
+        await updateCostEntry(ctx, 'ce-1', { plantingId: null, seasonId: 's-1' });
+
+        expect(mockDb.costEntry.update).toHaveBeenCalledTimes(1);
+        const data = mockDb.costEntry.update.mock.calls[0][0].data;
+        expect(data.plantingId).toBeNull();
+        expect(data.seasonId).toBe('s-1');
+    });
+
+    it('404s on a missing row and audits nothing', async () => {
+        mockDb.costEntry.findFirst.mockResolvedValue(null);
+        await expect(updateCostEntry(ctx, 'nope', { amount: 5 })).rejects.toThrow(/not found/);
+        expect(logEvent).not.toHaveBeenCalled();
+    });
+});
+
+describe('listCostEntries', () => {
+    it('filters by tenant and excludes soft-deleted rows', async () => {
+        await listCostEntries(ctx);
+        const where = mockDb.costEntry.findMany.mock.calls[0][0].where;
+        expect(where.tenantId).toBe('tenant-1');
+        expect(where.deletedAt).toBeNull();
+    });
+
+    it('applies the category facet as an IN, not an equality', async () => {
+        // The facet is multi-select; an equality against a comma-joined
+        // string is the failure mode this shape avoids.
+        await listCostEntries(ctx, { categories: ['PAYROLL', 'RENT'] as any });
+        expect(mockDb.costEntry.findMany.mock.calls[0][0].where.category).toEqual({
+            in: ['PAYROLL', 'RENT'],
+        });
+    });
+
+    it('never broadcasts the encrypted description on the list', async () => {
+        await listCostEntries(ctx);
+        const select = mockDb.costEntry.findMany.mock.calls[0][0].select;
+        expect(select.description).toBeUndefined();
+        expect(select.supplier).toBe(true);
+    });
+
+    it('is bounded and orders deterministically', async () => {
+        await listCostEntries(ctx);
+        const args = mockDb.costEntry.findMany.mock.calls[0][0];
+        expect(typeof args.take).toBe('number');
+        // `incurredOn` is a DATE — without the id tiebreak a day with
+        // several entries has no total order, and a capped read returns a
+        // different subset each refresh.
+        expect(args.orderBy).toEqual([{ incurredOn: 'desc' }, { id: 'desc' }]);
+    });
+
+    it('skips the count query unless the page came back FULL', async () => {
+        await listCostEntries(ctx);
+        expect(mockDb.costEntry.count).not.toHaveBeenCalled();
+    });
+
+    it('a READER can list', async () => {
+        await expect(listCostEntries(readerCtx)).resolves.toBeDefined();
+    });
+});
+
+describe('deleteCostEntry', () => {
+    it('soft-deletes and audits, never a hard delete', async () => {
+        await deleteCostEntry(ctx, 'ce-1');
+        expect(mockDb.costEntry.update).toHaveBeenCalledTimes(1);
+        expect(mockDb.costEntry.update.mock.calls[0][0].data.deletedAt).toBeInstanceOf(Date);
+        expect(logEvent).toHaveBeenCalledTimes(1);
+    });
+});
