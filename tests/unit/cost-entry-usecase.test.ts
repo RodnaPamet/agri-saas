@@ -145,14 +145,24 @@ describe('createCostEntry — the happy paths', () => {
         await createCostEntry(
             ctx,
             baseInput({
-                supplier: '<script>alert(1)</script>Petrol AD',
-                description: '<img src=x onerror=alert(1)>diesel',
+                // MIXED CASE deliberately. An earlier version of this test
+                // asserted `not.toMatch(/<script>/)`, which CodeQL flagged
+                // as js/bad-tag-filter: that pattern does not match
+                // `<SCRIPT>`, so the assertion would have passed vacuously
+                // against the very payload most likely to slip a filter.
+                supplier: '<ScRiPt>alert(1)</ScRiPt>Petrol AD',
+                description: '<IMG SRC=x ONERROR=alert(1)>diesel',
             }),
         );
 
         const data = mockDb.costEntry.create.mock.calls[0][0].data;
-        expect(data.supplier).not.toMatch(/<script>/);
-        expect(data.description).not.toMatch(/onerror/);
+        // Assert what sanitizePlainText actually guarantees — NO markup
+        // survives — rather than hunting for one tag name. A tag-specific
+        // assertion is only ever as good as the list of tags someone
+        // thought to write down.
+        expect(data.supplier).not.toMatch(/[<>]/);
+        expect(data.description).not.toMatch(/[<>]/);
+        expect(data.description).not.toMatch(/onerror/i);
         // `supplier` is NOT encrypted (it must stay filterable), which is
         // exactly why it still needs sanitising — encryption and
         // sanitisation answer different questions.
