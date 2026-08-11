@@ -75,6 +75,15 @@ const PAGES: ReadonlyArray<{ label: string; path: (slug: string) => string }> = 
     { label: 'grain/bins', path: (s) => `/t/${s}/grain/bins` },
     { label: 'grain/contracts', path: (s) => `/t/${s}/grain/contracts` },
     { label: 'grain/yield', path: (s) => `/t/${s}/grain/yield` },
+    // Grain calculator — the net-worth report, and the shape most exposed
+    // to drift in this complex: its per-commodity table is
+    // `mobileFallback="scroll"` (five money columns are only meaningful read
+    // side by side, so there is no card branch to escape into), which means
+    // a phone gets a genuinely wider-than-viewport table. That is fine while
+    // the overflow stays INSIDE the table's own scroll container and a bug
+    // the moment it reaches the document. Renders its empty state on a
+    // tenant with no plantings or lots, so no seed dependency.
+    { label: 'grain/calculator', path: (s) => `/t/${s}/grain/calculator` },
     // Planning visualisations (boards / calendars).
     { label: 'planning/seasons', path: (s) => `/t/${s}/planning/seasons` },
     // Admin — wide RBAC/role matrices + audit-log + integrations tables.

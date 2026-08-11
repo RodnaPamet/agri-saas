@@ -45,6 +45,10 @@ const EXEMPTIONS: Record<string, string> = {
 
     // Certification scheme detail (schemes roadmap PR2).
 
+    // Grain calculator (GRAIN_NET_WORTH report).
+    "grain/calculator/CalculatorClient.tsx":
+        "(b) lean report appendix — five fixed columns (commodity/standing/on-hand/farm cost/net worth), and hiding any one of the four money columns is the specific harm this page was built to avoid. Net worth is a SUBTRACTION: a reader who gears away 'Farm cost' is left with a value figure that looks like profit. The columns only mean anything read side by side, which is also why the table is mobileFallback=\"scroll\" rather than card.",
+
     // Grain bin detail (bins roadmap PR2).
     "grain/bins/[binId]/BinDetailClient.tsx":
         "(a) detail-page sub-table — the lots INSIDE one bin, not a list page. The set is one bin's contents (bounded, already sorted soonest-expiry first), so faceted filtering, a column gear and viewport-clamping all add chrome without adding reach.",

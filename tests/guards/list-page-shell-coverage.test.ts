@@ -55,6 +55,10 @@ const EXEMPTIONS: Record<string, string> = {
 
     // Certification scheme detail (schemes roadmap PR2).
 
+    // Grain calculator (GRAIN_NET_WORTH report).
+    'grain/calculator/CalculatorClient.tsx':
+        'multi-section report, not an entity list — a net-worth summary card, two side-by-side value panels (standing crop / grain on hand), a shared-cost note, an exclusions accordion, and only THEN the per-commodity table. Viewport-clamping the page would pin the panels and give the ≤10-row table its own internal scrollbar, which is the wrong emphasis: the panels are the answer and the table is the appendix. Natural document scroll is the right shape.',
+
     // Grain bin detail (bins roadmap PR2).
     "grain/bins/[binId]/BinDetailClient.tsx":
         "detail-page sub-table — the lots INSIDE one bin, not a list page. The set is one bin's contents (bounded, already sorted soonest-expiry first), so faceted filtering, a column gear and viewport-clamping all add chrome without adding reach.",
