@@ -11,6 +11,7 @@ import {
 } from '@/lib/market/commodity-vocabulary';
 import { summarizePlannedYield, type PlannedYieldInputRow } from '@/lib/planning/planned-yield';
 import { resolveRentBasis, type RentBasisLease } from '@/lib/grain/rent-basis';
+import { UNKNOWN_RENT_CURRENCY } from '@/lib/grain/cost-metrics';
 import { canConvert, convert } from '@/lib/units/unit-conversion';
 
 /**
@@ -108,14 +109,12 @@ const UNIT_TAKE = 200;
 const TONNES_UNIT_KEY = 't';
 const KG_PER_TONNE = 1000;
 
-/**
- * Sentinel for money rent's currency. `ParcelLease` carries no currency
- * column (see rent-basis.ts) — this is NOT an ISO code, and is never
- * treated as one; it only makes an unknown-currency cost visible in
- * `cashCostCurrencies` / `cashCostCurrencyMixed` instead of silently
- * assumed to match another figure's currency.
- */
-const UNKNOWN_RENT_CURRENCY = 'UNKNOWN';
+// Sentinel for money rent's currency (`UNKNOWN_RENT_CURRENCY`) is imported at
+// the top of this file from `@/lib/grain/cost-metrics`, where its docblock
+// lives. It moved out of here when the calculator page needed to recognise
+// it: the value travels to a client component inside `cashCostCurrencies`,
+// and a page that cannot name the sentinel cannot avoid printing
+// `Costs in UNKNOWN` at a farmer.
 
 /** Prisma `Decimal | number | null | undefined` → plain number (0 for nullish). */
 function dec(v: unknown): number {
@@ -657,7 +656,33 @@ function finalizeRow(
         netWorthUnavailableReason =
             'Cash costs were recorded in more than one currency; blending them into net worth would misstate the total.';
     } else if (cashCostCurrencies.size === 0) {
-        netWorth = netAssetPosition;
+        // No currency recorded ANYWHERE on the cost side. That is two
+        // situations wearing one shape, and both subtract:
+        //
+        //   • there is genuinely no cost — cashCostTotal is 0, and
+        //     subtracting 0 is the right answer;
+        //   • there IS cost, entered through the journal, which never
+        //     writes `costCurrency` (the column is nullable, the modal
+        //     declares the field and does not send it — see the docblock
+        //     on /grain/costs). `addCurrency` in cost-rollup skips nulls,
+        //     so a real magnitude arrives with an empty currency set.
+        //
+        // This branch used to return `netAssetPosition` unchanged, which
+        // silently DROPPED the second case's cost from net worth. It was
+        // invisible from in here — the figure is internally consistent —
+        // and only showed up once /grain/calculator rendered cashCostTotal
+        // beside it: a hero of 25,000 next to a table row reading cost
+        // 4,000, net worth 25,000.
+        //
+        // Subtracting treats an unlabelled magnitude as the tenant's
+        // display currency, which is the assumption the product already
+        // makes wherever it PRINTS these numbers (/grain/costs renders
+        // every cost under `Tenant.currencySymbol` regardless of
+        // `costCurrency`). The refusals that guard real ambiguity are
+        // untouched: mixed currencies, an unknown rent currency, and a
+        // cost currency that disagrees with the price currency all still
+        // withhold the figure above and below this branch.
+        netWorth = round2((netAssetPosition ?? 0) - cashCostTotal);
     } else {
         const onlyCurrency = [...cashCostCurrencies][0];
         if (onlyCurrency === UNKNOWN_RENT_CURRENCY) {

@@ -400,6 +400,60 @@ describe('getGrainNetWorth — currency handling and net worth', () => {
         expect(wheat.netWorthUnavailableReason).toMatch(/BGN/);
     });
 
+    it('subtracts cost that arrived with NO currency at all — the journal-entered case', async () => {
+        // The regression this pins: cost-rollup's `addCurrency` skips nulls,
+        // and `LogEntry.costCurrency` is null for every entry the journal UI
+        // creates. So a real magnitude arrives with an EMPTY currency set —
+        // the ordinary case for a farm that records spend in the journal and
+        // has no lease or payroll rows.
+        //
+        // finalizeRow used to answer that shape with `netWorth =
+        // netAssetPosition`, dropping the cost entirely. Nothing in here
+        // could see it: the figure is internally consistent, and it only
+        // became visible once /grain/calculator rendered cashCostTotal
+        // beside it.
+        mockDb.planting.findMany.mockResolvedValue([
+            planting({ id: 'p-1', areaM2: 10_000, plannedYieldKgPerHa: 3000 }),
+        ]);
+        mockGetCostRollupByPlanting.mockResolvedValue({
+            rows: [{ plantingId: 'p-1', totalCost: 100, currencies: [], currencyMixed: false }],
+            truncated: false,
+        });
+        mockGetMarketReferences.mockResolvedValue(
+            new Map([['wheat', { commodity: 'wheat', pricePerTonne: 250, currency: 'BGN', observedAt: '2026-01-01', source: 'ec-agrifood' }]]),
+        );
+
+        const result = await getGrainNetWorth(ctx);
+
+        const wheat = result.rows.find((r) => r.commodity === 'wheat')!;
+        expect(wheat.cashCostCurrencies).toEqual([]);
+        expect(wheat.cashCostTotal).toBe(100);
+        expect(wheat.netAssetPosition).toBe(750);
+        // 750 − 100. The bug returned 750 here.
+        expect(wheat.netWorth).toBe(650);
+        expect(wheat.netWorthUnavailableReason).toBeNull();
+    });
+
+    it('still returns the asset position when there is genuinely no cost', async () => {
+        // Same empty-currency shape, zero magnitude — the case the old
+        // branch was written for. Subtracting 0 keeps it correct, so the
+        // fix above must not have turned this into a refusal.
+        mockDb.planting.findMany.mockResolvedValue([
+            planting({ id: 'p-1', areaM2: 10_000, plannedYieldKgPerHa: 3000 }),
+        ]);
+        mockGetCostRollupByPlanting.mockResolvedValue({ rows: [], truncated: false });
+        mockGetMarketReferences.mockResolvedValue(
+            new Map([['wheat', { commodity: 'wheat', pricePerTonne: 250, currency: 'BGN', observedAt: '2026-01-01', source: 'ec-agrifood' }]]),
+        );
+
+        const result = await getGrainNetWorth(ctx);
+
+        const wheat = result.rows.find((r) => r.commodity === 'wheat')!;
+        expect(wheat.cashCostTotal).toBe(0);
+        expect(wheat.netWorth).toBe(750);
+        expect(wheat.netWorthUnavailableReason).toBeNull();
+    });
+
     it('names a commodity touched by the calculation with no market price at all', async () => {
         mockDb.planting.findMany.mockResolvedValue([planting({ id: 'p-1', plannedYieldKgPerHa: 3000 })]);
         // No market reference registered for wheat.
