@@ -170,15 +170,30 @@ jest.mock('@/components/ui/map/PrescriptionPanel', () => ({ PrescriptionPanel: (
 jest.mock('@/components/ui/map/FieldOperationPanel', () => ({ FieldOperationPanel: () => null }));
 jest.mock('@/components/ui/map/ParcelDetailSheet', () => ({ ParcelDetailSheet: () => null }));
 
+import { TooltipProvider } from '@/components/ui/tooltip';
 import LocationDetailPage from '@/app/t/[tenantSlug]/(app)/locations/[locationId]/page';
 
 function setUrl(search: string) {
     window.history.replaceState({}, '', `/t/acme/locations/loc1${search}`);
 }
 
+/**
+ * `providers.tsx` mounts a `TooltipProvider` at the app root, and the
+ * Map tab's icon-only controls are wrapped in `Tooltip` — without the
+ * provider here Radix throws on render, so this mirrors production
+ * rather than deleting the tooltips to suit the test.
+ */
+function renderPage() {
+    render(
+        <TooltipProvider delayDuration={0}>
+            <LocationDetailPage />
+        </TooltipProvider>,
+    );
+}
+
 /** Render on the Overview tab with the parcels accordion expanded. */
 function openParcels() {
-    render(<LocationDetailPage />);
+    renderPage();
     fireEvent.click(screen.getByRole('button', { name: /^Parcels/ }));
 }
 
@@ -301,22 +316,46 @@ describe('reaching the locator from the tab the page opens on (desktop)', () => 
     beforeEach(() => setViewport('desktop'));
 
     // Break: shipping the locator where nobody lands. The page defaults to
-    // the MAP tab, and the locator lives in Overview beside the table it
-    // filters — so with no signpost the only route in is guessing that a
-    // tab labelled "Overview" contains a map. Reported from the running
-    // app as "I don't see a button for the 2d map".
-    it('offers a button on the Map tab that opens the parcel-group locator', () => {
+    // the MAP tab, so with no control there the only route in is guessing
+    // that a tab labelled "Overview" contains a map. Reported from the
+    // running app as "I don't see a button for the 2d map".
+    it('swaps the satellite renderer for the locator, in place', () => {
         setUrl(''); // no ?tab= — exactly how a location opens in production
-        render(<LocationDetailPage />);
+        renderPage();
 
-        // Sanity: we really are on the Map tab, and the locator is not here.
+        // Sanity: we really are on the Map tab, with the satellite map up.
         expect(screen.getByTestId('map-canvas')).toBeInTheDocument();
         expect(screen.queryByRole('list', { name: 'Parcel groups' })).toBeNull();
 
         fireEvent.click(screen.getByRole('button', { name: 'Parcel groups' }));
 
+        // One slot, two renderers — MapCanvas is unmounted, not stacked.
+        expect(screen.queryByTestId('map-canvas')).toBeNull();
         expect(screen.getByRole('list', { name: 'Parcel groups' })).toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'Драгоево · 2 parcels' })).toBeInTheDocument();
+    });
+
+    // Break: leaving the satellite layer switches on screen while the
+    // raster they drive is gone — controls wired to nothing. Asserted by
+    // ABSENCE from the DOM, not by a `hidden` class: jsdom loads no CSS,
+    // so a class-based hide would pass this test while shipping visible
+    // dead controls.
+    it('hides the satellite-only controls while the locator holds the slot', () => {
+        setUrl('');
+        renderPage();
+
+        expect(screen.getByRole('button', { name: 'NDVI' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Soil' })).toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Parcel groups' }));
+
+        expect(screen.queryByRole('button', { name: 'NDVI' })).toBeNull();
+        expect(screen.queryByRole('button', { name: 'Soil' })).toBeNull();
+
+        // …and they come back when the satellite map does.
+        fireEvent.click(screen.getByRole('button', { name: 'Parcel groups' }));
+        expect(screen.getByRole('button', { name: 'NDVI' })).toBeInTheDocument();
+        expect(screen.getByTestId('map-canvas')).toBeInTheDocument();
     });
 });
 

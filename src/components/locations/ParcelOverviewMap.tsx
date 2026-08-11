@@ -103,6 +103,16 @@ export interface ParcelOverviewMapProps {
     zoomTier: number;
     onZoomTierChange: (tier: number) => void;
     className?: string;
+    /**
+     * Height classes for the canvas pane, replacing the default.
+     *
+     * Two mount points want two sizes: a compact locator above the parcels
+     * table on the Overview tab, and the full map slot on the Map tab when
+     * it takes the satellite renderer's place. The pane owns a definite
+     * height either way — the canvas measures its wrapper, and a wrapper
+     * that collapses to zero gives a backing store of zero.
+     */
+    canvasClassName?: string;
 }
 
 export function ParcelOverviewMap({
@@ -116,6 +126,7 @@ export function ParcelOverviewMap({
     zoomTier,
     onZoomTierChange,
     className,
+    canvasClassName,
 }: ParcelOverviewMapProps) {
     const t = useTranslations('locations.detail');
 
@@ -624,7 +635,10 @@ export function ParcelOverviewMap({
 
             <div
                 ref={wrapRef}
-                className="relative h-[220px] w-full select-none overflow-hidden rounded-lg border border-border-subtle md:h-[300px]"
+                className={cn(
+                    'relative w-full select-none overflow-hidden rounded-lg border border-border-subtle',
+                    canvasClassName ?? 'h-[220px] md:h-[300px]',
+                )}
             >
                 <canvas
                     ref={canvasRef}

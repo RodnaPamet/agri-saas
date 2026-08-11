@@ -160,11 +160,34 @@ That left a hole, reported from the running app as *"I don't see a
 button for the 2d map"*: the page **opens on the Map tab**
 (`page.tsx:157`), so the only signpost to the locator was a tab labelled
 "Overview" — which does not say "here is how you find a parcel among a
-hundred". The Map tab's toolbar now carries a **Parcel groups** button
-that switches to it. Placement beside Merge rather than beside the
-index/soil toggles is deliberate: those are data layers on the current
-map, this is a different view. A view that has to be stumbled upon may
-as well not ship.
+hundred". A view that has to be stumbled upon may as well not ship.
+
+So the Map tab hosts the locator too, and there the brief's original
+shape is the right one: **one slot, two renderers, toggled.** The
+header action row carries an icon-only **Parcel groups** toggle
+(`aria-pressed`, tooltip + `aria-label` for the name), and pressing it
+unmounts `MapCanvas` and mounts the locator in its place. Unmounting
+rather than stacking is deliberate — it drops the WebGL context and the
+tile fetches with it.
+
+*A first attempt put the button at the end of the index/soil chip row
+and justified it as "beside Merge, not beside the toggles". That
+distinction existed only in the DOM: the toolbar is one wrapping flex
+row, so on a phone it rendered as an orphaned seventh chip under six
+layer toggles. If a rationale does not survive to the screen, it is not
+a rationale.*
+
+**Every satellite-only control hides while the locator holds the slot** —
+the five index chips, the soil toggle, the imagery date picker, the
+index status line, the soil legend and the cadastre overlay toggle. They
+drive overlays on a raster that is no longer on screen, and a switch
+wired to nothing is worse than no switch. They are removed from the DOM
+rather than hidden with a class: jsdom loads no CSS, so a class-based
+hide would pass its test while shipping visible dead controls.
+
+Both mount points share ONE filter state (it lives in the URL), so a
+group picked on the Map tab is already applied when the operator moves
+to Overview to read the narrowed list.
 
 ### Cluster identity survives zooming — because the URL carries the pitch
 

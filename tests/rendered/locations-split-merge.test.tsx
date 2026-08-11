@@ -111,10 +111,19 @@ jest.mock('@/components/ui/map/FieldOperationPanel', () => ({ FieldOperationPane
 // not the sheet, and provides no QueryClientProvider.
 jest.mock('@/components/ui/map/ParcelDetailSheet', () => ({ ParcelDetailSheet: () => null }));
 
+import { TooltipProvider } from '@/components/ui/tooltip';
 import LocationDetailPage from '@/app/t/[tenantSlug]/(app)/locations/[locationId]/page';
 
 function openMapTab() {
-    render(<LocationDetailPage />);
+    // The Map tab's icon-only controls (cadastre overlay, parcel-group
+    // locator) are `Tooltip`-wrapped, and Radix throws without a provider.
+    // `providers.tsx` mounts one at the app root, so this mirrors
+    // production rather than stripping the tooltips to suit the harness.
+    render(
+        <TooltipProvider delayDuration={0}>
+            <LocationDetailPage />
+        </TooltipProvider>,
+    );
     fireEvent.click(screen.getByRole('tab', { name: /Map/i }));
 }
 
