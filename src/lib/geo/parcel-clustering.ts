@@ -35,7 +35,22 @@ export interface PositionedParcel {
 }
 
 export interface ParcelCluster {
-    /** Stable within one response — derived from the grid cell. */
+    /**
+     * Identity for this cluster.
+     *
+     * DERIVED FROM THE MEMBER SET, not the grid cell. The obvious choice
+     * is the cell key, and it is wrong: the cell pitch comes from the
+     * requested zoom, so the same parcels cluster under a DIFFERENT id
+     * at a different zoom. That id then leaks into a URL filter, and a
+     * link shared between two people — or simply reopened after
+     * zooming — resolves to different parcels, or to none. The failure
+     * looks like "the map lost my selection", not like an id bug.
+     *
+     * Hashing the sorted member ids makes identity a function of WHICH
+     * PARCELS are grouped, which is the thing a filter actually means.
+     * Zoom still changes the grouping, and therefore the id — but only
+     * when the membership genuinely differs, which is honest.
+     */
     id: string;
     /** Mean position of the members, in lon/lat. */
     lon: number;
@@ -74,6 +89,30 @@ export function distanceMetres(
     const dx = (bLon - aLon) * Math.cos(midLatRad) * M_PER_DEG_LAT;
     const dy = (bLat - aLat) * M_PER_DEG_LAT;
     return Math.hypot(dx, dy);
+}
+
+/**
+ * A cluster's identity: a short, stable hash of its SORTED member ids.
+ *
+ * Sorted so bucket iteration order cannot change the id; hashed so the
+ * value stays URL-sized even for a cluster of hundreds of parcels
+ * (member ids are cuids — a raw join would be kilobytes).
+ *
+ * FNV-1a: not cryptographic, and it does not need to be. The only
+ * requirement is that the same membership yields the same short token
+ * within one deployment.
+ */
+export function clusterIdFor(parcelIds: readonly string[]): string {
+    let h = 0x811c9dc5;
+    for (const id of [...parcelIds].sort()) {
+        for (let i = 0; i < id.length; i++) {
+            h ^= id.charCodeAt(i);
+            h = Math.imul(h, 0x01000193) >>> 0;
+        }
+        h ^= 0x2f; // separator, so ['ab','c'] and ['a','bc'] differ
+        h = Math.imul(h, 0x01000193) >>> 0;
+    }
+    return `c${h.toString(36)}`;
 }
 
 /**
@@ -119,11 +158,11 @@ export function clusterParcels(
     }
 
     const clusters: ParcelCluster[] = [];
-    for (const [key, members] of buckets) {
+    for (const [, members] of buckets) {
         const lon = members.reduce((s, m) => s + m.lon, 0) / members.length;
         const lat = members.reduce((s, m) => s + m.lat, 0) / members.length;
         clusters.push({
-            id: `c${key}`,
+            id: clusterIdFor(members.map((m) => m.id)),
             lon,
             lat,
             count: members.length,

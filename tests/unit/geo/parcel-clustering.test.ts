@@ -13,6 +13,7 @@
  * `splitPositioned`), and settlement ties break by rank.
  */
 import {
+    clusterIdFor,
     clusterParcels,
     nearestSettlement,
     labelClusters,
@@ -95,6 +96,42 @@ describe('clusterParcels — proximity, not administrative unit', () => {
         const [lonE] = offset(BASE_LON, BASE_LAT, 900, 0);
         const eastWest = clusterParcels([at('a', BASE_LON, BASE_LAT), at('b', lonE, BASE_LAT)], 2000);
         expect(eastWest).toHaveLength(1);
+    });
+});
+
+describe('clusterIdFor — identity follows MEMBERSHIP, not the grid cell', () => {
+    it('gives the same id for the same members in any order', () => {
+        expect(clusterIdFor(['a', 'b', 'c'])).toBe(clusterIdFor(['c', 'a', 'b']));
+    });
+
+    it('gives a different id for different members', () => {
+        expect(clusterIdFor(['a', 'b'])).not.toBe(clusterIdFor(['a', 'c']));
+    });
+
+    it('is not fooled by concatenation ambiguity', () => {
+        // Without a separator, ['ab','c'] and ['a','bc'] hash identically
+        // — two genuinely different clusters sharing a filter value.
+        expect(clusterIdFor(['ab', 'c'])).not.toBe(clusterIdFor(['a', 'bc']));
+    });
+
+    it('stays URL-sized for a large cluster', () => {
+        // Member ids are cuids; joining 300 of them would be kilobytes of
+        // query string. The id must stay a short token.
+        const many = Array.from({ length: 300 }, (_, i) => `clx${i}abcdefghijklmnop`);
+        expect(clusterIdFor(many).length).toBeLessThan(12);
+    });
+
+    it('SURVIVES a zoom change when the membership does not change', () => {
+        // The bug this replaced: the id used to be the grid cell key, so
+        // the same two parcels clustered under a DIFFERENT id at a
+        // different pitch — and a shared `?cluster=` link resolved to
+        // nothing. Same members must mean the same id at any pitch.
+        const parcels = [at('a', BASE_LON, BASE_LAT), at('b', ...offset(BASE_LON, BASE_LAT, 50, 0))];
+        const coarse = clusterParcels(parcels, 5000);
+        const fine = clusterParcels(parcels, 1000);
+        expect(coarse).toHaveLength(1);
+        expect(fine).toHaveLength(1);
+        expect(fine[0].id).toBe(coarse[0].id);
     });
 });
 
