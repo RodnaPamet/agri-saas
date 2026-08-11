@@ -42,6 +42,10 @@ const ADMIN_ONLY_ROUTES = [
     'admin/promotions/[id]/image/route.ts',
     'admin/companies/route.ts',
     'admin/companies/[id]/route.ts',
+    // Platform-tenant gated: a price typed here renders in every tenant's
+    // Trends chart, so it is curation of a global catalogue rather than
+    // tenant work — same shape as companies/promotions above.
+    'admin/market-prices/route.ts',
     // /admin/* routes
     'admin/members/route.ts',
     'admin/members/[membershipId]/route.ts',

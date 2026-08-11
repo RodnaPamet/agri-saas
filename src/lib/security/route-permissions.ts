@@ -184,6 +184,15 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'role floor, not the isolation practice.',
     },
     {
+        path: new RegExp(`^${T}\\/admin\\/market-prices(\\/.*)?$`),
+        permission: 'admin.manage',
+        note:
+            'Hand-entered prices for the GLOBAL market cache — a number typed ' +
+            'here renders in EVERY tenant\'s Trends chart. Platform-tenant ' +
+            'gated in-handler; admin.manage is the audited role floor, not ' +
+            'the isolation practice.',
+    },
+    {
         path: new RegExp(`^${T}\\/schemes(\\/.*)?$`),
         permission: 'admin.manage',
         methods: ['POST', 'PUT', 'PATCH', 'DELETE'],
