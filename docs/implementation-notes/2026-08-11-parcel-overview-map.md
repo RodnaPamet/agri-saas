@@ -44,6 +44,10 @@ Rendering consumes `src/lib/geo/bg-projection.ts` — extracted from
 | `src/app/api/t/[tenantSlug]/locations/[id]/parcel-clusters/route.ts` | The endpoint. |
 | `tests/guards/bg-projection-single-source.test.ts` | One transform, structurally enforced. |
 | `tests/guards/parcel-clusters-etag.test.ts` | The route keeps its conditional-GET behaviour. |
+| `src/components/locations/ParcelOverviewMap.tsx` | The canvas + the cluster list. Refs, effects, paint. |
+| `src/components/locations/parcel-overview-model.ts` | Zoom tiering, token codec, projection bridge, selection. Pure. |
+| `src/lib/geo/bg-geometry-client.ts` | One memoised fetch of the 100 KB geometry asset per page load. |
+| `…/locations/[locationId]/page.tsx` | `FilterProvider` shell; both facets narrow one table. |
 
 ## Decisions
 
@@ -107,8 +111,11 @@ high-rank city 60 km away still loses to a local hamlet.
 over a MapTiler satellite basemap, with draw/edit/split. The overview is
 a bespoke 2D canvas in the spirit of `ExchangeMap`. Different libraries
 with different rendering models — there is no single canvas that is both.
-They ship as two views the user toggles between, and `MapCanvas` is
-untouched.
+`MapCanvas` is untouched.
+
+*Amended by the UI work below:* the toggle between them is the page's
+existing **tab bar**, not a switcher inside the Map tab. The reason is
+mechanical rather than aesthetic — see "Where the overview lives".
 
 **A bespoke `<canvas>` is a deliberate exception to `docs/charts.md`,**
 which bans raw `<svg>` and inline percentage-width bars. `ExchangeMap`
@@ -116,6 +123,132 @@ already holds this exception: a full GL basemap is overkill for a
 country-scale overview, and the chart platform has no primitive for a
 projected map. Recorded so the next reader sees a decision rather than an
 oversight.
+
+## The view (P3)
+
+The endpoint above is consumed by `ParcelOverviewMap`, mounted in the
+location detail page's **Overview** tab, directly above the crop chips
+and the parcels table it filters.
+
+```
+GET …/parcel-clusters?zoom=<tier>
+        │
+        ▼
+ParcelOverviewMap        canvas (pixels) + cluster list (DOM)
+        │  onSelect(ClusterSelection)      ← member ids SNAPSHOTTED
+        ▼
+useFilterContext(['cluster','crop'])       ← Epic 53, URL-synced
+        │
+        ▼
+overviewParcels  =  parcels ∩ crop ∩ cluster.parcelIds
+        │
+        ▼
+<DataTable>              the thing the click visibly narrows
+```
+
+### Where the overview lives
+
+The brief described a switcher inside the Map tab. It went in the
+Overview tab instead, because the parcels table is in the Overview tab
+and `MapCanvas` is in the Map tab — they are mutually exclusive
+siblings. "Click a cluster, watch the list narrow" needs one viewport,
+and a filter you have to change tabs to observe is a filter the user
+takes on faith. The tab bar is then the toggle the brief asked for:
+**Map** is the satellite work surface, **Overview** is the locator.
+
+That left a hole, reported from the running app as *"I don't see a
+button for the 2d map"*: the page **opens on the Map tab**
+(`page.tsx:157`), so the only signpost to the locator was a tab labelled
+"Overview" — which does not say "here is how you find a parcel among a
+hundred". The Map tab's toolbar now carries a **Parcel groups** button
+that switches to it. Placement beside Merge rather than beside the
+index/soil toggles is deliberate: those are data layers on the current
+map, this is a different view. A view that has to be stumbled upon may
+as well not ship.
+
+### Cluster identity survives zooming — because the URL carries the pitch
+
+`clusterIdFor` hashes the member set, and `cellMetresForZoom` re-cuts
+membership at every tier, so a bare `?cluster=c1abc` set at tier 8
+matches nothing at tier 12. The failure is not a blank map: the table
+filters to zero rows and renders its EMPTY state, announcing "no
+parcels" on the strength of a lookup that failed. That is the exact
+shape `docs/implementation-notes/2026-07-25-grain-contract-defect-fixes.md`
+was written about.
+
+Two mechanisms, together:
+
+- The facet value is `<id>@<tier>` — the pitch the id was minted at. A
+  cold load pins the very first request to that tier, so the payload
+  that arrives is the one that can answer the token. One param, so the
+  facet stays a single filter key and `hasActive` keeps counting truthfully.
+- Once resolved, the member ids are **snapshotted**. The table filters
+  on the snapshot for the rest of the session; the user is free to keep
+  zooming and the group they picked stays the group they picked.
+
+A token that resolves to nothing (parcels moved or deleted) **clears the
+facet** rather than filtering to zero rows.
+
+### Per-parcel points, and why the payload grew
+
+`ParcelOverview` gained `parcels: [{ id, lon, lat }]`. Without it "zoom
+in and clusters split into individual parcels" was unreachable, not
+merely unimplemented: `cellMetresForZoom` floors at 200 m, so tiers 13
+and 14 cluster identically and two parcels 150 m apart never separate at
+any zoom. Past `PARCEL_TIER_THRESHOLD` the view stops drawing the grid
+and draws parcels.
+
+Ids and coordinates only. Name, area and crop are already on the page
+from `/locations/:id/parcels`, and a second copy is a second thing that
+can disagree with the table under the map. The join is by id, and the
+7239-entry settlement file stays server-side: clusters are labelled with
+a settlement, individual parcels with their own name, so the client
+never needs the lookup.
+
+### One filter mechanism, not two
+
+`cropFilter` was a bare `useState`. Leaving it there while the cluster
+facet went onto Epic 53 would have left one table narrowed by two
+independent mechanisms — and the accordion's count, which keyed off
+`cropFilter` alone, would have printed the unfiltered total above a
+cluster-filtered table. Both facets now live in one `useFilterContext`,
+the count keys off `hasActive`, and a crop selection survives a reload.
+The chips keep their `ToggleGroup` appearance; only the state moved.
+
+### The list is not a fallback
+
+A canvas is invisible to assistive tech, and `ExchangeMap` — the model
+for this component in every other respect — has three a11y attributes in
+985 lines and no keyboard path to any action. That is the one thing not
+mirrored. Every cluster is also a real `<button aria-pressed>` in a
+scrollable list beneath the canvas, calling the same handler. It is
+complete (never truncated), it is how the rendered tests drive the
+filter, and under jsdom — where `getContext('2d')` returns null and the
+canvas paints nothing at all — it is the only thing that works, which is
+a fair approximation of a screen reader's experience.
+
+### Gestures
+
+One per target. Mouse: drag pans, click selects. Touch: one finger is
+left entirely to the browser (the page scrolls, and the tab panel's own
+horizontal-swipe navigation keeps working), two fingers zoom the map, a
+one-finger tap that did not move selects. `preventDefault` is called on
+the two-finger paths only — #449's lesson is that a `preventDefault` on
+a single-touch path silently kills the default action of everything
+underneath it.
+
+### Where the logic lives, and why
+
+jsdom implements no 2D context, so every draw and hit-test path in the
+component is unreachable by a rendered test — which is why `ExchangeMap`
+has zero executing coverage. The arithmetic therefore sits outside the
+component in `parcel-overview-model.ts`: zoom tiering, the token codec,
+the projection bridge, selection resolution. `projectionBridge` measures
+itself through `makeProjector` with two probe points rather than
+re-deriving `(to.cos * to.s) / (from.cos * from.s)` from the parameters —
+a ratio built from the projection's internals is the same drift
+`bg-projection-single-source` exists to prevent, just wearing different
+clothes.
 
 ## Environment note
 
