@@ -395,3 +395,76 @@ export async function deleteCostEntry(ctx: RequestContext, id: string) {
         return { id };
     });
 }
+
+/**
+ * The cost entries attached to a SET of domain records, as a map keyed by
+ * that domain's id.
+ *
+ * This is the seam every domain surface uses — rent on the lease page,
+ * input costs on the product page, per-planting costs on the planting.
+ * They REFLECT the register; none of them writes into it, and none writes
+ * into its own ledger on a cost entry's behalf.
+ *
+ * ── Why a map, and why one query ────────────────────────────────────
+ *
+ * The caller has N domain rows on screen and wants each row's costs. The
+ * obvious shape — ask per row — is exactly what the D1 guardrail bans: a
+ * lease list of 200 would issue 200 queries. One batched `IN` read plus an
+ * in-memory group is the same answer at one round trip, and `take` keeps
+ * it bounded (D2 has zero headroom).
+ *
+ * Ids with no entries are ABSENT from the map rather than present with an
+ * empty array — a caller writing `map.get(id) ?? []` gets the right
+ * answer either way, and the absence keeps the payload proportional to
+ * what actually exists.
+ */
+export async function listCostEntriesForDomain(
+    ctx: RequestContext,
+    link: 'plantingId' | 'seasonId' | 'locationId' | 'parcelId' | 'leaseId',
+    ids: readonly string[],
+    opts: { take?: number } = {},
+): Promise<Map<string, ReturnType<typeof toDomainDto>[]>> {
+    assertCanRead(ctx);
+    if (ids.length === 0) return new Map();
+
+    const rows = await runInTenantContext(ctx, (db) =>
+        CostEntryRepository.listByDomainIds(db, ctx, link, ids, opts.take ?? LIST_TAKE),
+    );
+
+    const out = new Map<string, ReturnType<typeof toDomainDto>[]>();
+    for (const row of rows) {
+        const key = row[link];
+        if (key == null) continue; // the IN filter guarantees this, defensively.
+        const bucket = out.get(key);
+        if (bucket) bucket.push(toDomainDto(row));
+        else out.set(key, [toDomainDto(row)]);
+    }
+    return out;
+}
+
+/**
+ * The projection a domain page needs: enough to render a line and open
+ * the entry, and nothing more. `description` is absent — it is encrypted
+ * at rest and its only renderer is the write-gated edit form, so
+ * broadcasting it onto every domain page would decrypt it into readers'
+ * payloads for no one's benefit.
+ */
+function toDomainDto(row: {
+    id: string;
+    category: CostCategory;
+    amount: Prisma.Decimal | number;
+    currency: string;
+    incurredOn: Date;
+    supplier: string | null;
+    invoiceFileId: string | null;
+}) {
+    return {
+        id: row.id,
+        category: row.category,
+        amount: dec(row.amount) ?? 0,
+        currency: row.currency,
+        incurredOn: row.incurredOn,
+        supplier: row.supplier,
+        hasInvoice: row.invoiceFileId != null,
+    };
+}

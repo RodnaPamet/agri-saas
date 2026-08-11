@@ -49,6 +49,7 @@ import {
     updateCostEntry,
     deleteCostEntry,
     assertSingleDomainLink,
+    listCostEntriesForDomain,
 } from '@/app-layer/usecases/cost-entry';
 import { logEvent } from '@/app-layer/events/audit';
 import { makeRequestContext } from '../helpers/make-context';
@@ -321,5 +322,56 @@ describe('deleteCostEntry', () => {
         expect(mockDb.costEntry.update).toHaveBeenCalledTimes(1);
         expect(mockDb.costEntry.update.mock.calls[0][0].data.deletedAt).toBeInstanceOf(Date);
         expect(logEvent).toHaveBeenCalledTimes(1);
+    });
+});
+
+describe('listCostEntriesForDomain — the fan-out seam', () => {
+    it('asks ONE query for a whole set of ids, not one per id', async () => {
+        // D1 bans a read inside a loop. A lease list of 200 asking per row
+        // would issue 200 queries; this is the same answer at one round
+        // trip, grouped in memory.
+        mockDb.costEntry.findMany.mockResolvedValue([
+            row({ id: 'a', leaseId: 'lease-1', category: 'RENT' }),
+            row({ id: 'b', leaseId: 'lease-1', category: 'RENT' }),
+            row({ id: 'c', leaseId: 'lease-2', category: 'RENT' }),
+        ]);
+
+        const map = await listCostEntriesForDomain(ctx, 'leaseId', ['lease-1', 'lease-2', 'lease-3']);
+
+        expect(mockDb.costEntry.findMany).toHaveBeenCalledTimes(1);
+        expect(mockDb.costEntry.findMany.mock.calls[0][0].where.leaseId).toEqual({
+            in: ['lease-1', 'lease-2', 'lease-3'],
+        });
+        expect(map.get('lease-1')).toHaveLength(2);
+        expect(map.get('lease-2')).toHaveLength(1);
+        // An id with no entries is ABSENT, not an empty array — a caller
+        // writing `map.get(id) ?? []` is correct either way.
+        expect(map.has('lease-3')).toBe(false);
+    });
+
+    it('is bounded and tenant-scoped', async () => {
+        await listCostEntriesForDomain(ctx, 'plantingId', ['p-1']);
+        const args = mockDb.costEntry.findMany.mock.calls[0][0];
+        expect(typeof args.take).toBe('number');
+        expect(args.where.tenantId).toBe('tenant-1');
+        expect(args.where.deletedAt).toBeNull();
+    });
+
+    it('issues NO query for an empty id set', async () => {
+        const map = await listCostEntriesForDomain(ctx, 'parcelId', []);
+        expect(map.size).toBe(0);
+        expect(mockDb.costEntry.findMany).not.toHaveBeenCalled();
+    });
+
+    it('never broadcasts the encrypted description to a domain page', async () => {
+        mockDb.costEntry.findMany.mockResolvedValue([row({ id: 'a', leaseId: 'lease-1' })]);
+        const map = await listCostEntriesForDomain(ctx, 'leaseId', ['lease-1']);
+        // The projection carries a boolean, not the file or the narrative.
+        expect(map.get('lease-1')![0]).not.toHaveProperty('description');
+        expect(map.get('lease-1')![0]).toHaveProperty('hasInvoice');
+    });
+
+    it('a READER can read the fan-out', async () => {
+        await expect(listCostEntriesForDomain(readerCtx, 'seasonId', ['s-1'])).resolves.toBeDefined();
     });
 });
