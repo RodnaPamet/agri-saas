@@ -43,6 +43,27 @@ jest.mock('@/lib/db-context', () => ({
 
 jest.mock('@/app-layer/events/audit', () => ({ logEvent: jest.fn() }));
 
+// The storage pipeline, stubbed at its seams. The point of these tests is
+// the ORDER and the GATES around the write — not the provider itself.
+const mockWrite = jest.fn(async () => ({ sha256: 'abc123', sizeBytes: 42 }));
+jest.mock('@/lib/storage', () => ({
+    getStorageProvider: () => ({ name: 'local', write: mockWrite, delete: jest.fn() }),
+    buildTenantObjectKey: (t: string, domain: string, name: string) => `tenants/${t}/${domain}/${name}`,
+    isAllowedMime: (m: string) => m === 'application/pdf',
+    isAllowedSize: (n: number) => n < 10_000_000,
+    FILE_MAX_SIZE_BYTES: 10_000_000,
+}));
+jest.mock('@/lib/storage/av-scan', () => ({ scanUploadedBuffer: async () => 'CLEAN' }));
+jest.mock('@/lib/storage/mime-sniff', () => ({
+    reconcileMimeType: (declared: string) => ({ resolved: declared, detected: declared, corrected: false }),
+}));
+jest.mock('@/app-layer/repositories/FileRepository', () => ({
+    FileRepository: {
+        createPending: jest.fn(async () => ({ id: 'file-new' })),
+        markStored: jest.fn(),
+    },
+}));
+
 import {
     listCostEntries,
     createCostEntry,
@@ -50,6 +71,8 @@ import {
     deleteCostEntry,
     assertSingleDomainLink,
     listCostEntriesForDomain,
+    uploadCostInvoice,
+    detachCostInvoice,
 } from '@/app-layer/usecases/cost-entry';
 import { logEvent } from '@/app-layer/events/audit';
 import { makeRequestContext } from '../helpers/make-context';
@@ -373,5 +396,63 @@ describe('listCostEntriesForDomain — the fan-out seam', () => {
 
     it('a READER can read the fan-out', async () => {
         await expect(listCostEntriesForDomain(readerCtx, 'seasonId', ['s-1'])).resolves.toBeDefined();
+    });
+});
+
+describe('uploadCostInvoice', () => {
+    const { FileRepository } = jest.requireMock('@/app-layer/repositories/FileRepository');
+    const pdf = () =>
+        new File([new Uint8Array([1, 2, 3])], 'invoice.pdf', { type: 'application/pdf' });
+
+    it('writes bytes, then marks the record STORED, then points the entry at it', async () => {
+        await uploadCostInvoice(ctx, 'ce-1', pdf());
+
+        // ORDER is the property: a record left PENDING is a trap, because
+        // nothing else in the codebase advances that state.
+        expect(mockWrite).toHaveBeenCalledTimes(1);
+        expect(FileRepository.createPending).toHaveBeenCalledTimes(1);
+        expect(FileRepository.markStored).toHaveBeenCalledTimes(1);
+        expect(mockDb.costEntry.update.mock.calls[0][0].data.invoiceFileId).toBe('file-new');
+        expect(logEvent).toHaveBeenCalledTimes(1);
+    });
+
+    it('files the object under its OWN storage domain', async () => {
+        await uploadCostInvoice(ctx, 'ce-1', pdf());
+        // Not `general`: an operator should be able to find every invoice
+        // by key prefix, and a future retention rule should be able to
+        // treat commercial paperwork differently from a field photo.
+        expect(FileRepository.createPending.mock.calls[0][2].domain).toBe('cost-invoice');
+        expect(FileRepository.createPending.mock.calls[0][2].pathKey).toContain('cost-invoice');
+    });
+
+    it('REJECTS a disallowed MIME type before writing anything', async () => {
+        const exe = new File([new Uint8Array([1])], 'x.exe', { type: 'application/x-msdownload' });
+        // `badRequest(code, detail)` puts the CODE on `.message`, so match
+        // the code rather than the prose — the prose is the second arg.
+        await expect(uploadCostInvoice(ctx, 'ce-1', exe)).rejects.toThrow(
+            'FILE_TYPE_NOT_ALLOWED',
+        );
+        expect(mockWrite).not.toHaveBeenCalled();
+    });
+
+    it('404s on a missing entry AFTER the write, without attaching', async () => {
+        // The bytes land before the transaction opens — that is the shape
+        // of every upload path in this repo — so the guard here is that no
+        // entry is updated and no audit row is written.
+        mockDb.costEntry.findFirst.mockResolvedValue(null);
+        await expect(uploadCostInvoice(ctx, 'nope', pdf())).rejects.toThrow(/not found/);
+        expect(mockDb.costEntry.update).not.toHaveBeenCalled();
+        expect(logEvent).not.toHaveBeenCalled();
+    });
+});
+
+describe('detachCostInvoice', () => {
+    it('clears the pointer and KEEPS the FileRecord', async () => {
+        await detachCostInvoice(ctx, 'ce-1');
+        expect(mockDb.costEntry.update.mock.calls[0][0].data.invoiceFileId).toBeNull();
+        // A cost entry's document may be referenced by an export or an
+        // audit pack. Deleting the bytes to fix an attachment typo would
+        // destroy evidence.
+        expect(logEvent).toHaveBeenCalledTimes(1);
     });
 });

@@ -1,3 +1,4 @@
+import { Readable } from 'stream';
 import { Prisma, type CostCategory } from '@prisma/client';
 import { RequestContext } from '../types';
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
@@ -6,6 +7,18 @@ import { logEvent } from '../events/audit';
 import { notFound, badRequest } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { CostEntryRepository, type CostEntryFilters } from '../repositories/CostEntryRepository';
+import { FileRepository } from '../repositories/FileRepository';
+import {
+    getStorageProvider,
+    buildTenantObjectKey,
+    isAllowedMime,
+    isAllowedSize,
+    FILE_MAX_SIZE_BYTES,
+} from '@/lib/storage';
+import { scanUploadedBuffer } from '@/lib/storage/av-scan';
+import { reconcileMimeType } from '@/lib/storage/mime-sniff';
+import { logger } from '@/lib/observability';
+import { env } from '@/env';
 import { COST_DOMAIN_LINKS } from '../schemas/grain.schemas';
 import type { CreateCostEntryInput, UpdateCostEntryInput } from '../schemas/grain.schemas';
 
@@ -467,4 +480,150 @@ function toDomainDto(row: {
         supplier: row.supplier,
         hasInvoice: row.invoiceFileId != null,
     };
+}
+
+/** The storage `domain` invoices are filed under. */
+const INVOICE_DOMAIN = 'cost-invoice';
+
+/**
+ * Upload an invoice and attach it to a cost entry.
+ *
+ * ── Why this reproduces the pipeline instead of calling an endpoint ──
+ *
+ * There is no generic "upload bytes, get a FileRecord id" route in this
+ * repo — every multipart route mints its `FileRecord` inline as part of
+ * an entity-specific write. So "reuse the existing path" means reusing
+ * the SHAPE: allowlist the client's claim cheaply, write the bytes,
+ * reconcile the MIME against the actual signature, scan, then
+ * `createPending` + `markStored` inside one transaction. `markStored` is
+ * the only writer of `STORED` in the codebase, and leaving a record
+ * PENDING is a trap — nothing else advances that state.
+ *
+ * ── No SHA-256 dedup here, deliberately ─────────────────────────────
+ *
+ * The evidence path dedups identical uploads onto one `FileRecord`. That
+ * is right for evidence and wrong for invoices: the surviving record
+ * keeps the FIRST uploader's `originalName`, so a second cost entry
+ * uploading the same PDF would display someone else's filename against
+ * its own invoice. An invoice's filename is part of how a farmer
+ * recognises it. Two entries with the same document get two records.
+ */
+export async function uploadCostInvoice(
+    ctx: RequestContext,
+    costEntryId: string,
+    file: File,
+) {
+    assertCanWrite(ctx);
+
+    // `file.type` is the CLIENT's claim — cheap early reject; the bytes
+    // are checked below.
+    const declaredMime = file.type || 'application/octet-stream';
+    if (!isAllowedMime(declaredMime)) {
+        throw badRequest('FILE_TYPE_NOT_ALLOWED', `MIME type "${declaredMime}" is not allowed`);
+    }
+    if (!isAllowedSize(file.size)) {
+        throw badRequest('FILE_TOO_LARGE', `File exceeds maximum size of ${FILE_MAX_SIZE_BYTES} bytes`);
+    }
+
+    const storage = getStorageProvider();
+    const originalName = file.name || 'invoice';
+    const pathKey = buildTenantObjectKey(ctx.tenantId, INVOICE_DOMAIN, originalName);
+
+    const buffer = Buffer.from(await file.arrayBuffer());
+
+    // The SIGNATURE beats the claim. A file whose real content is
+    // inadmissible is rejected here even though its declared type passed.
+    const { resolved: mimeType, detected, corrected } = reconcileMimeType(declaredMime, buffer);
+    if (corrected) {
+        if (!isAllowedMime(mimeType)) {
+            throw badRequest(
+                'FILE_TYPE_NOT_ALLOWED',
+                `File content is "${mimeType}", which is not allowed`,
+            );
+        }
+        logger.warn('cost invoice declared a MIME type its bytes contradict', {
+            component: 'cost-entry',
+            tenantId: ctx.tenantId,
+            declaredMime,
+            detected,
+        });
+    }
+
+    const writeResult = await storage.write(pathKey, Readable.from(buffer), { mimeType });
+    // A TERMINAL scan status before the record is treated as usable.
+    const scanStatus = await scanUploadedBuffer(buffer);
+
+    return runInTenantContext(ctx, async (db) => {
+        const entry = await CostEntryRepository.getById(db, ctx, costEntryId);
+        if (!entry) throw notFound('Cost entry not found');
+
+        const fileRecord = await FileRepository.createPending(db, ctx, {
+            pathKey,
+            originalName,
+            mimeType,
+            sizeBytes: writeResult.sizeBytes,
+            sha256: writeResult.sha256,
+            storageProvider: storage.name,
+            bucket: env.S3_BUCKET || null,
+            domain: INVOICE_DOMAIN,
+        });
+        await FileRepository.markStored(db, ctx, fileRecord.id, scanStatus);
+
+        const updated = await CostEntryRepository.update(db, ctx, costEntryId, {
+            invoiceFileId: fileRecord.id,
+        });
+
+        await logEvent(db, ctx, {
+            action: 'UPDATE',
+            entityType: 'CostEntry',
+            entityId: costEntryId,
+            details: `Attached invoice to cost entry ${costEntryId}`,
+            detailsJson: {
+                category: 'entity_lifecycle',
+                entityName: 'CostEntry',
+                operation: 'updated',
+                changedFields: ['invoiceFileId'],
+                summary: 'Attached an invoice to a cost entry',
+            },
+        });
+
+        return toDto(updated);
+    });
+}
+
+/**
+ * Detach the invoice from a cost entry.
+ *
+ * The `FileRecord` SURVIVES — only the pointer is cleared. A cost entry
+ * is a money record and its document may be referenced by an export or an
+ * audit pack; deleting the bytes because someone corrected an attachment
+ * would destroy evidence to fix a typo.
+ */
+export async function detachCostInvoice(ctx: RequestContext, costEntryId: string) {
+    assertCanWrite(ctx);
+
+    return runInTenantContext(ctx, async (db) => {
+        const entry = await CostEntryRepository.getById(db, ctx, costEntryId);
+        if (!entry) throw notFound('Cost entry not found');
+
+        const updated = await CostEntryRepository.update(db, ctx, costEntryId, {
+            invoiceFileId: null,
+        });
+
+        await logEvent(db, ctx, {
+            action: 'UPDATE',
+            entityType: 'CostEntry',
+            entityId: costEntryId,
+            details: `Detached invoice from cost entry ${costEntryId}`,
+            detailsJson: {
+                category: 'entity_lifecycle',
+                entityName: 'CostEntry',
+                operation: 'updated',
+                changedFields: ['invoiceFileId'],
+                summary: 'Detached an invoice from a cost entry',
+            },
+        });
+
+        return toDto(updated);
+    });
 }
