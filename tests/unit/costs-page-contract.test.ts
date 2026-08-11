@@ -60,10 +60,24 @@ describe('costs page — honesty of the figures', () => {
     const source = read(CLIENT);
 
     it('renders money through the tenant currency, not a per-row label', () => {
-        expect(source).toContain('useTenantCurrencySymbol');
+        // Was `useTenantCurrencySymbol` + a local `useCostFormatter` hook
+        // spelling `symbol + formatDecimal(v, 2)` inline. /grain/calculator
+        // then wrote that same expression again under the name `formatMoney`,
+        // which polish-06-single-currency.test.ts caught — so the expression
+        // moved to ONE home and both pages now bind it through this hook.
+        // The invariant is unchanged: the symbol comes from tenant context.
+        expect(source).toContain('useExactMoneyFormatter');
         // The old formatter took the row's own currency, which is null for
         // every entry the journal UI creates.
         expect(source).not.toMatch(/money\([^)]*,\s*row\.original\.currency\)/);
+    });
+
+    it('formats to the CENT, never through the compact formatter', () => {
+        // `useMoneyFormatter` rounds (€1.2M) — right for a dashboard tile,
+        // wrong for a page a farmer reconciles against invoices, where it
+        // hides everything between €1,150,000 and €1,249,999. The two hooks
+        // differ by one word, so the wrong one is an easy import away.
+        expect(source).not.toContain('useMoneyFormatter');
     });
 
     it('surfaces a mixed-currency warning and a truncation warning', () => {

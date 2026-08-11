@@ -108,7 +108,7 @@ export function useTenantApiUrl() {
 // with a hardcoded symbol — the hook closes over the tenant's
 // configured currencySymbol (default €).
 
-import { formatCompactCurrency } from '@/lib/format-currency';
+import { formatCompactCurrency, formatExactCurrency } from '@/lib/format-currency';
 
 /**
  * The tenant's configured display currency SYMBOL (default €).
@@ -125,4 +125,20 @@ export function useMoneyFormatter(): (v: number | null | undefined) => string {
     const ctx = useTenantContext();
     const symbol = ctx.currencySymbol ?? '€';
     return useCallback((v: number | null | undefined) => formatCompactCurrency(v, symbol), [symbol]);
+}
+
+/**
+ * The tenant-bound EXACT money formatter (€18,750 / €900.25) — use this on any
+ * surface a farmer reconciles against an invoice, a lease or a grain
+ * ticket. `useMoneyFormatter` above is compact and rounds; that is the
+ * right answer for a dashboard tile and the wrong one here.
+ *
+ * Reaching for `useTenantCurrencySymbol()` and re-spelling the template
+ * literal at the call site is how this expression came to exist twice —
+ * prefer the hook.
+ */
+export function useExactMoneyFormatter(): (v: number | null | undefined) => string {
+    const ctx = useTenantContext();
+    const symbol = ctx.currencySymbol ?? '€';
+    return useCallback((v: number | null | undefined) => formatExactCurrency(v, symbol), [symbol]);
 }
