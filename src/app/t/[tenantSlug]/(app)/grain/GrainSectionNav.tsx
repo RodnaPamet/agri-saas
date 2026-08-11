@@ -21,7 +21,13 @@ import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/cn';
 
-export type GrainSection = 'contracts' | 'yield' | 'bins' | 'costs' | 'payroll';
+export type GrainSection =
+    | 'contracts'
+    | 'yield'
+    | 'bins'
+    | 'costs'
+    | 'payroll'
+    | 'calculator';
 
 const SECTIONS: ReadonlyArray<{ key: GrainSection; path: string }> = [
     { key: 'contracts', path: '/grain/contracts' },
@@ -29,6 +35,11 @@ const SECTIONS: ReadonlyArray<{ key: GrainSection; path: string }> = [
     { key: 'bins', path: '/grain/bins' },
     { key: 'costs', path: '/grain/costs' },
     { key: 'payroll', path: '/grain/payroll' },
+    // The calculator sits LAST because it is the only surface that
+    // reads the other five: it prices the standing crop and the grain
+    // on hand, then charges the field cost, the rent and the payroll
+    // those pages record against it.
+    { key: 'calculator', path: '/grain/calculator' },
 ];
 
 export function GrainSectionNav({

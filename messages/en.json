@@ -5331,7 +5331,8 @@
             "yield": "Yield",
             "bins": "Bins & stores",
             "costs": "Costs",
-            "payroll": "Payroll"
+            "payroll": "Payroll",
+            "calculator": "Calculator"
         }
     },
     "inventory": {
