@@ -743,6 +743,7 @@ function LocationDetailBody() {
                             loading={overviewQ.isLoading && !overviewQ.data}
                             error={Boolean(overviewQ.error)}
                             parcelNames={parcelNames}
+                            parcelShapes={mapParcels}
                             selection={clusterSelection}
                             onSelect={handleClusterSelect}
                             onParcelOpen={setSheetParcelId}
@@ -961,14 +962,19 @@ function LocationDetailBody() {
                                 loading={overviewQ.isLoading && !overviewQ.data}
                                 error={Boolean(overviewQ.error)}
                                 parcelNames={parcelNames}
+                                parcelShapes={mapParcels}
                                 selection={clusterSelection}
                                 onSelect={handleClusterSelect}
                                 onParcelOpen={setSheetParcelId}
                                 zoomTier={viewZoomTier}
                                 onZoomTierChange={setViewZoomTier}
+                                // Byte-for-byte the satellite renderer's own
+                                // sizing: it is the same slot, and a locator
+                                // that opens noticeably smaller reads as a
+                                // preview of the map rather than as the map.
                                 canvasClassName={isMobile
-                                    ? 'h-[calc(100dvh-22rem)] min-h-[18rem]'
-                                    : 'h-[360px] md:h-[480px]'}
+                                    ? '-mx-4 h-[calc(100dvh-15rem)] min-h-[22rem]'
+                                    : 'h-[360px] w-full md:h-[480px]'}
                             />
                         ) : (
                         <MapCanvas

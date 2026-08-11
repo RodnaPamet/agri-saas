@@ -166,6 +166,86 @@ export function resolveClusterSelection(
     };
 }
 
+// ── Parcel geometry ──────────────────────────────────────────────────
+
+/** A lon/lat ring, as GeoJSON orders it. */
+export type Ring = ReadonlyArray<readonly [number, number]>;
+
+/**
+ * Every outer/inner ring of a Polygon or MultiPolygon, flattened.
+ *
+ * `Parcel.geometry` is a MultiPolygon in the database, but a single
+ * Polygon arrives from some import paths, so both are handled. Anything
+ * else — a Point, a null, a malformed blob — yields no rings rather than
+ * throwing: one bad parcel must not blank the whole map.
+ */
+export function polygonRings(geometry: unknown): Ring[] {
+    const g = geometry as { type?: string; coordinates?: unknown } | null | undefined;
+    if (!g || typeof g.type !== 'string' || !Array.isArray(g.coordinates)) return [];
+
+    // A single bad vertex REJECTS THE WHOLE RING rather than being
+    // skipped. Skipping it would close the outline through the wrong
+    // neighbours and draw a boundary that is confidently in the wrong
+    // place — and a field boundary drawn wrong is worse than one not
+    // drawn, because nothing on screen says it is wrong. The same
+    // reasoning the endpoint applies when a non-finite coordinate makes a
+    // parcel unpositioned rather than mis-positioned.
+    const asRing = (candidate: unknown): Ring | null => {
+        if (!Array.isArray(candidate)) return null;
+        const ring: Array<readonly [number, number]> = [];
+        for (const pt of candidate) {
+            if (!Array.isArray(pt) || pt.length < 2) return null;
+            const lon = Number(pt[0]);
+            const lat = Number(pt[1]);
+            if (!Number.isFinite(lon) || !Number.isFinite(lat)) return null;
+            ring.push([lon, lat]);
+        }
+        return ring.length >= 3 ? ring : null;
+    };
+
+    const out: Ring[] = [];
+    if (g.type === 'Polygon') {
+        for (const ring of g.coordinates as unknown[]) {
+            const r = asRing(ring);
+            if (r) out.push(r);
+        }
+    } else if (g.type === 'MultiPolygon') {
+        for (const poly of g.coordinates as unknown[]) {
+            if (!Array.isArray(poly)) continue;
+            for (const ring of poly) {
+                const r = asRing(ring);
+                if (r) out.push(r);
+            }
+        }
+    }
+    return out;
+}
+
+/**
+ * Bounding box over parcel OUTLINES, not their centroids.
+ *
+ * The clusters payload's `bbox` spans the centroid points, so a parcel
+ * on the edge of the holding is framed by its middle and drawn with half
+ * of itself past the canvas edge. Fitting to the real geometry is what
+ * makes the locator frame the same ground the satellite map does.
+ */
+export function polygonBBox(shapes: ReadonlyArray<{ geometry: unknown }>): BBox | null {
+    let minLon = Infinity, minLat = Infinity, maxLon = -Infinity, maxLat = -Infinity;
+    let seen = false;
+    for (const s of shapes) {
+        for (const ring of polygonRings(s.geometry)) {
+            for (const [lon, lat] of ring) {
+                seen = true;
+                if (lon < minLon) minLon = lon;
+                if (lon > maxLon) maxLon = lon;
+                if (lat < minLat) minLat = lat;
+                if (lat > maxLat) maxLat = lat;
+            }
+        }
+    }
+    return seen ? [minLon, minLat, maxLon, maxLat] : null;
+}
+
 // ── Projection bridge ────────────────────────────────────────────────
 
 /**
