@@ -21,8 +21,10 @@
  * the `superuser_bypass` policy — reads every tenant's ACTIVE listings and
  * writes the shared cache directly. No per-tenant context is needed.
  *
- * All writes are idempotent: series upsert on (source, commodity, region,
- * stage); points upsert on (seriesId, date). A re-run never duplicates a row.
+ * All writes are idempotent: series resolve on the SIX-column natural key
+ * (source, commodity, region, stage, currency, unit); points upsert on
+ * (seriesId, date). A re-run never duplicates a row. Currency and unit are
+ * part of that key deliberately — see the note on `seriesKey` below.
  *
  * @module jobs/market-prices-pull
  */
@@ -48,6 +50,11 @@ import {
     BarchartRateLimitError,
     BARCHART_CONTRACTS,
 } from '@/lib/market/barchart-client';
+import {
+    fetchDieselPrices,
+    OilBulletinRateLimitError,
+    type DieselObservation,
+} from '@/lib/market/oil-bulletin-client';
 import { computeListingsMedianIndex, type ListingPriceRow } from '@/lib/market/listings-index';
 import { normalizeCommodity } from '@/lib/market/commodity-vocabulary';
 import { invalidatePriceTrendsCache } from '@/app-layer/usecases/trends';
@@ -83,6 +90,7 @@ export interface MarketPricesPullDeps {
     fetchOilseed?: typeof fetchOilseedPrices;
     fetchAv?: typeof fetchAlphaVantageCommodity;
     fetchBarchart?: typeof fetchBarchartQuotes;
+    fetchDiesel?: typeof fetchDieselPrices;
     /** DB client override (integration tests pass the test-DB client). */
     db?: MarketDbClient;
     /** Sleep (ms) — no-op in tests. */
@@ -418,6 +426,69 @@ async function pullBarchart(deps: MarketPricesPullDeps): Promise<UpsertItem[]> {
     return items;
 }
 
+// ── EC Weekly Oil Bulletin (road diesel) ──────────────────────────────
+
+/**
+ * Pull Bulgarian (+RO/EL/EU) road-diesel prices, both tax stages.
+ *
+ * There is NO API KEY to skip on — the bulletin is CC BY 4.0 and keyless — so
+ * this follows the EC-AGRI-food shape (always on, optional base-URL override)
+ * rather than the Alpha Vantage shape (`if (!env.X_API_KEY) return []`). The
+ * roadmap asked for a "skip cleanly when unconfigured" path; there is nothing
+ * to be unconfigured, and inventing a feature flag to satisfy the sentence
+ * would add an operator switch that only ever hides a working feed.
+ *
+ * What CAN go wrong is upstream: a 429, or a 404 if a document node moves.
+ * Both are caught here so one bad feed never takes down the other sources in
+ * the same run — the same containment `pullAlphaVantage` uses — but they are
+ * logged at WARN with the reason, never swallowed silently.
+ */
+async function pullOilBulletin(deps: MarketPricesPullDeps): Promise<UpsertItem[]> {
+    const fetchDiesel = deps.fetchDiesel ?? fetchDieselPrices;
+    let observations: DieselObservation[];
+    try {
+        observations = await fetchDiesel(
+            env.EC_OIL_BULLETIN_WITH_TAX_URL || env.EC_OIL_BULLETIN_WITHOUT_TAX_URL
+                ? {
+                      ...(env.EC_OIL_BULLETIN_WITH_TAX_URL
+                          ? { withTaxUrl: env.EC_OIL_BULLETIN_WITH_TAX_URL }
+                          : {}),
+                      ...(env.EC_OIL_BULLETIN_WITHOUT_TAX_URL
+                          ? { withoutTaxUrl: env.EC_OIL_BULLETIN_WITHOUT_TAX_URL }
+                          : {}),
+                  }
+                : {},
+        );
+    } catch (err) {
+        const rateLimited = err instanceof OilBulletinRateLimitError;
+        logger.warn('market_prices.oil_bulletin_failed', {
+            component: 'market-prices-pull',
+            rateLimited,
+            retryAfterSeconds: rateLimited ? err.retryAfterSeconds : undefined,
+            error: (err as Error).message,
+        });
+        return [];
+    }
+
+    return observations.map((o) => ({
+        source: 'oil-bulletin',
+        commodity: 'diesel',
+        region: o.region,
+        // with-tax / without-tax are the SAME series in every other respect,
+        // so without this discriminator they collide on the natural key and
+        // silently overwrite each other per date.
+        stage: o.stage,
+        // Stored exactly as reported. EUR/1000l deliberately does not match
+        // the /\/t$/i filter in getMarketReferences, so diesel can never be
+        // used to benchmark a grain contract.
+        unit: o.unit,
+        currency: o.currency,
+        label: o.label,
+        date: o.date,
+        price: o.price,
+    }));
+}
+
 // ── own-listings k-anon median ────────────────────────────────────────
 
 async function pullListings(
@@ -538,6 +609,10 @@ export async function runMarketPricesPull(
     if (runAll || payload.source === 'barchart') {
         sources.push('barchart');
         items.push(...(await pullBarchart(deps)));
+    }
+    if (runAll || payload.source === 'oil-bulletin') {
+        sources.push('oil-bulletin');
+        items.push(...(await pullOilBulletin(deps)));
     }
     if (runAll || payload.source === 'listings') {
         sources.push('listings');
