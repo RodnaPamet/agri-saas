@@ -972,8 +972,15 @@ function LocationDetailBody() {
                                 // sizing: it is the same slot, and a locator
                                 // that opens noticeably smaller reads as a
                                 // preview of the map rather than as the map.
+                                // Class ORDER matches MapCanvas's own string,
+                                // not just its values: `overflow-hidden` has to
+                                // ride with the `-mx-4` (the negative margin is
+                                // what would push the page sideways on a phone,
+                                // the clip is what stops it), and sharing the
+                                // signature keeps both map slots under the one
+                                // documented entry in the horizontal-drift guard.
                                 canvasClassName={isMobile
-                                    ? '-mx-4 h-[calc(100dvh-15rem)] min-h-[22rem]'
+                                    ? '-mx-4 h-[calc(100dvh-15rem)] min-h-[22rem] overflow-hidden'
                                     : 'h-[360px] w-full md:h-[480px]'}
                             />
                         ) : (
