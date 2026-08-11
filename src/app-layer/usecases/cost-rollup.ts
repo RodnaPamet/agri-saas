@@ -67,6 +67,14 @@ import type { PrismaTx } from '@/lib/db-context';
  */
 const COST_BEARING_MOVEMENTS = ['CONSUMPTION'] as const;
 
+/**
+ * Cap on the unvalued-consumption read. This query exists to produce a
+ * COUNT and a reason split, so a farm with more unvalued movements than
+ * this has a data problem the exact number would not change — the
+ * message ("your cost is a floor") is already delivered at 5,000.
+ */
+const UNVALUED_TAKE = 5000;
+
 const LIST_TAKE = 500;
 // Bound for the batched id-set queries below — plantings × their log
 // entries can fan out, so cap the intermediate reads too.
@@ -93,6 +101,19 @@ export interface PlantingCostRow {
      *  row. The total is then not a meaningful single figure and the UI
      *  must say so rather than print it with one of the labels. */
     currencyMixed: boolean;
+    /**
+     * CONSUMPTION movements on this planting that could not be valued
+     * because the lot carried no `unitCostAmount`. The stock MOVED and
+     * the planting is counted — only the money is missing, so `stockCost`
+     * above is a floor rather than a total.
+     */
+    unvaluedNoUnitCost: number;
+    /**
+     * As above, but the lot's unit disagreed with the product's default
+     * unit, so `recordInputApplication` refused to multiply a quantity in
+     * one unit by a price in another.
+     */
+    unvaluedUnitMismatch: number;
 }
 
 export interface SeasonCostRow {
@@ -244,7 +265,13 @@ async function computePlantingCostRows(
     ctx: RequestContext,
     filters: { seasonId?: string } = {},
     take = LIST_TAKE,
-): Promise<{ rows: PlantingCostRow[]; truncated: boolean }> {
+): Promise<{
+    rows: PlantingCostRow[];
+    truncated: boolean;
+    /** DISTINCT unvalued-consumption counts — see the accumulation below
+     *  for why this is not the sum of the rows' own counts. */
+    unvalued: { noUnitCost: number; unitMismatch: number };
+}> {
     const plantings = await db.planting.findMany({
         where: {
             tenantId: ctx.tenantId,
@@ -272,7 +299,8 @@ async function computePlantingCostRows(
     // them (which is exactly how the propagation test caught this).
     const plantingsTruncated = plantings.length > take;
     const plantingPage = plantingsTruncated ? plantings.slice(0, take) : plantings;
-    if (plantingPage.length === 0) return { rows: [], truncated: false };
+    if (plantingPage.length === 0)
+        return { rows: [], truncated: false, unvalued: { noUnitCost: 0, unitMismatch: 0 } };
 
     const plantingIds = plantingPage.map((p) => p.id);
 
@@ -372,12 +400,104 @@ async function computePlantingCostRows(
           })
         : [];
 
+    // ── Consumptions the valuation could not price ──
+    //
+    // `recordInputApplication` writes `costAmount: null` when it DECLINES
+    // to value a draw-down — the lot carried no `unitCostAmount`, or the
+    // lot's unit differs from the product's default unit (multiplying a
+    // quantity in one unit by a price in another is nonsense, and "a
+    // missing cost is recoverable; a wrong one is a number somebody
+    // budgets against"). It logs a warning nobody reads and moves on.
+    //
+    // Neither case is visible in the `_sum` above: null contributes 0, so
+    // an input that was genuinely consumed reports as a FREE one. The
+    // understatement flows into ATTRIBUTED_CROP_COST, into
+    // GRAIN_NET_WORTH's cashCostTotal, and therefore pushes the
+    // calculator's headline net worth UP.
+    //
+    // The reason is DERIVED here rather than persisted at write time,
+    // because a stored reason could never be backfilled: every
+    // consumption posted a null cost until the valuation landed, so the
+    // rows that most need explaining are exactly the historical ones.
+    // Ordered and cap-probed like every other capped read in this function
+    // — see the LogPlanting read above. A `take` without an `orderBy` hands
+    // back an ARBITRARY subset, and Postgres is free to pick a different
+    // one after any VACUUM or plan change, so the reason split and the
+    // per-commodity caveats would move between two loads of the same URL.
+    // Reading one past the cap is how the other reads detect overflow, and
+    // the overflow has to reach `truncated`: a capped count presented as
+    // exact is the same lie as a capped total presented as complete.
+    const unvaluedPage = liveLogEntryIds.length
+        ? await db.stockTransaction.findMany({
+              where: {
+                  tenantId: ctx.tenantId,
+                  logEntryId: { in: liveLogEntryIds },
+                  type: { in: [...COST_BEARING_MOVEMENTS] },
+                  costAmount: null,
+              },
+              select: {
+                  id: true,
+                  logEntryId: true,
+                  lot: {
+                      select: {
+                          unitCostAmount: true,
+                          unitId: true,
+                          item: { select: { defaultUnitId: true } },
+                      },
+                  },
+              },
+              // `id` is a cuid — unique, so a total order on its own.
+              orderBy: [{ id: 'asc' }],
+              take: UNVALUED_TAKE + 1,
+          })
+        : [];
+    const unvaluedTruncated = unvaluedPage.length > UNVALUED_TAKE;
+    const unvaluedTx = unvaluedPage.slice(0, UNVALUED_TAKE);
+
+    // Classification mirrors `recordInputApplication` — price first, units
+    // only when a price exists — so the two cannot drift and one
+    // transaction can never land in both buckets.
+    //
+    // The third arm is load-bearing, not defensive padding. `null` means
+    // "a priced lot whose units DO agree", which is not an outcome
+    // `recordInputApplication` can produce: it would have valued that
+    // draw-down. So the row was written by something else — `grain-blend`
+    // posts CONSUMPTION with no cost at all, and a seed or an import could
+    // too. Those are excluded today only because they carry no
+    // `logEntryId` and the query above filters on one; an ELSE-branch
+    // fallback would have labelled any that ever did as a unit mismatch,
+    // inventing a unit problem on a farm that has none. Naming the
+    // condition instead of assuming the complement keeps the reason split
+    // true no matter who writes the row.
+    const reasonOf = (
+        tx: (typeof unvaluedTx)[number],
+    ): 'noUnitCost' | 'unitMismatch' | null => {
+        if (tx.lot?.unitCostAmount == null) return 'noUnitCost';
+        if (tx.lot.unitId !== tx.lot.item?.defaultUnitId) return 'unitMismatch';
+        return null;
+    };
+
     // Accumulate per planting.
-    const acc = new Map<string, { logCost: number; stockCost: number; currencies: Set<string> }>();
+    const acc = new Map<
+        string,
+        {
+            logCost: number;
+            stockCost: number;
+            currencies: Set<string>;
+            unvaluedNoUnitCost: number;
+            unvaluedUnitMismatch: number;
+        }
+    >();
     const ensure = (pid: string) => {
         let row = acc.get(pid);
         if (!row) {
-            row = { logCost: 0, stockCost: 0, currencies: new Set<string>() };
+            row = {
+                logCost: 0,
+                stockCost: 0,
+                currencies: new Set<string>(),
+                unvaluedNoUnitCost: 0,
+                unvaluedUnitMismatch: 0,
+            };
             acc.set(pid, row);
         }
         return row;
@@ -403,9 +523,44 @@ async function computePlantingCostRows(
         if (!targets?.size) continue;
         for (const pid of targets) addCurrency(ensure(pid).currencies, c.costCurrency);
     }
+    // Counting rule — deliberately NOT the fractional `share` used for
+    // money above. A count cannot be split: when one transaction hangs off
+    // an entry touching two plantings, "this planting has an unvalued
+    // consumption" is true of BOTH, so each row gets a whole 1. The
+    // report-level figure below counts TRANSACTIONS instead, so it stays 1.
+    // The two therefore disagree by design, and a test says so.
+    for (const tx of unvaluedTx) {
+        const targets = tx.logEntryId ? plantingsByEntry.get(tx.logEntryId) : undefined;
+        if (!targets?.size) continue;
+        const reason = reasonOf(tx);
+        if (reason == null) continue; // not an application-time refusal
+        for (const pid of targets) {
+            const row = ensure(pid);
+            if (reason === 'noUnitCost') row.unvaluedNoUnitCost += 1;
+            else row.unvaluedUnitMismatch += 1;
+        }
+    }
+
+    // DISTINCT transaction counts. Summing the per-planting counts would
+    // multiply a shared transaction by the number of plantings it touches.
+    // Only transactions that actually reached a planting are counted — an
+    // orphaned one changes no figure on any surface.
+    const attributedUnvalued = unvaluedTx.filter(
+        (tx) => tx.logEntryId && plantingsByEntry.get(tx.logEntryId)?.size,
+    );
+    const unvalued = {
+        noUnitCost: attributedUnvalued.filter((tx) => reasonOf(tx) === 'noUnitCost').length,
+        unitMismatch: attributedUnvalued.filter((tx) => reasonOf(tx) === 'unitMismatch').length,
+    };
 
     const rows = plantingPage.map((p): PlantingCostRow => {
-        const row = acc.get(p.id) ?? { logCost: 0, stockCost: 0, currencies: new Set<string>() };
+        const row = acc.get(p.id) ?? {
+            logCost: 0,
+            stockCost: 0,
+            currencies: new Set<string>(),
+            unvaluedNoUnitCost: 0,
+            unvaluedUnitMismatch: 0,
+        };
         const logEntryCost = Math.round(row.logCost * 100) / 100;
         const stockCost = Math.round(row.stockCost * 100) / 100;
         return {
@@ -425,19 +580,38 @@ async function computePlantingCostRows(
             totalCost: Math.round((logEntryCost + stockCost) * 100) / 100,
             currencies: [...row.currencies].sort(),
             currencyMixed: row.currencies.size > 1,
+            unvaluedNoUnitCost: row.unvaluedNoUnitCost,
+            unvaluedUnitMismatch: row.unvaluedUnitMismatch,
         };
     });
 
-    // Either cap means the figures below cover only part of the farm. The
-    // callers surface this; none of them may present a partial total as a
-    // complete one.
-    return { rows, truncated: plantingsTruncated || linksTruncated };
+    // ANY of the three caps means the figures below cover only part of the
+    // farm. The callers surface this; none of them may present a partial
+    // total as a complete one — and that now includes the unvalued COUNTS,
+    // which a reader takes for exact every bit as readily as a money
+    // figure. (Phrasing note: the obvious comparative wording here would
+    // spell the explicit-any cast token, which the hygiene ratchet greps
+    // for in raw source and cannot tell from prose.)
+    return {
+        rows,
+        truncated: plantingsTruncated || linksTruncated || unvaluedTruncated,
+        unvalued,
+    };
 }
 
 export async function getCostRollupByPlanting(
     ctx: RequestContext,
     opts: { seasonId?: string; take?: number } = {},
-): Promise<{ rows: PlantingCostRow[]; truncated: boolean }> {
+): Promise<{
+    rows: PlantingCostRow[];
+    truncated: boolean;
+    /**
+     * DISTINCT counts of CONSUMPTION movements that could not be valued,
+     * split by cause. NOT the sum of the per-row counts — one transaction
+     * attributed to two plantings is 1 here and 1 on each row.
+     */
+    unvalued: { noUnitCost: number; unitMismatch: number };
+}> {
     assertCanRead(ctx);
     return runInTenantContext(ctx, (db) =>
         computePlantingCostRows(db, ctx, { seasonId: opts.seasonId }, opts.take ?? LIST_TAKE),

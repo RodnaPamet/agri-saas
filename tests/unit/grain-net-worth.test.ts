@@ -59,7 +59,7 @@ function resetMocks() {
     mockDb.unit.findMany.mockResolvedValue([]);
     mockDb.parcelLease.findMany.mockResolvedValue([]);
     mockDb.payrollExpense.findMany.mockResolvedValue([]);
-    mockGetCostRollupByPlanting.mockResolvedValue({ rows: [], truncated: false });
+    mockGetCostRollupByPlanting.mockResolvedValue({ rows: [], truncated: false, unvalued: { noUnitCost: 0, unitMismatch: 0 } });
     mockGetMarketReferences.mockResolvedValue(new Map());
 }
 
@@ -161,10 +161,11 @@ describe('getGrainNetWorth — attributed crop cost (reused from cost-rollup)', 
         ]);
         mockGetCostRollupByPlanting.mockResolvedValue({
             rows: [
-                { plantingId: 'p-1', totalCost: 1000, currencies: ['BGN'], currencyMixed: false },
-                { plantingId: 'p-2', totalCost: 500, currencies: ['EUR'], currencyMixed: false },
+                { plantingId: 'p-1', totalCost: 1000, currencies: ['BGN'], currencyMixed: false, unvaluedNoUnitCost: 0, unvaluedUnitMismatch: 0 },
+                { plantingId: 'p-2', totalCost: 500, currencies: ['EUR'], currencyMixed: false, unvaluedNoUnitCost: 0, unvaluedUnitMismatch: 0 },
             ],
             truncated: false,
+            unvalued: { noUnitCost: 0, unitMismatch: 0 },
         });
 
         const result = await getGrainNetWorth(ctx);
@@ -180,8 +181,9 @@ describe('getGrainNetWorth — attributed crop cost (reused from cost-rollup)', 
 
     it('names a cost-rollup row whose planting has no resolvable commodity', async () => {
         mockGetCostRollupByPlanting.mockResolvedValue({
-            rows: [{ plantingId: 'p-orphan', totalCost: 50, currencies: ['BGN'], currencyMixed: false }],
+            rows: [{ plantingId: 'p-orphan', totalCost: 50, currencies: ['BGN'], currencyMixed: false, unvaluedNoUnitCost: 0, unvaluedUnitMismatch: 0 }],
             truncated: false,
+            unvalued: { noUnitCost: 0, unitMismatch: 0 },
         });
 
         const result = await getGrainNetWorth(ctx);
@@ -364,7 +366,7 @@ describe('getGrainNetWorth — payroll allocation', () => {
 describe('getGrainNetWorth — currency handling and net worth', () => {
     it('computes a real net worth figure when cash costs share a single currency matching the price currency', async () => {
         mockDb.planting.findMany.mockResolvedValue([planting({ id: 'p-1', areaM2: 10_000, plannedYieldKgPerHa: 3000 })]);
-        mockGetCostRollupByPlanting.mockResolvedValue({ rows: [], truncated: false });
+        mockGetCostRollupByPlanting.mockResolvedValue({ rows: [], truncated: false, unvalued: { noUnitCost: 0, unitMismatch: 0 } });
         mockDb.payrollExpense.findMany.mockResolvedValue([
             { id: 'pay-1', amount: 100, currency: 'BGN', plantingId: 'p-1', seasonId: null },
         ]);
@@ -385,8 +387,9 @@ describe('getGrainNetWorth — currency handling and net worth', () => {
     it('refuses to blend currencies into net worth — null with a stated reason on mismatch', async () => {
         mockDb.planting.findMany.mockResolvedValue([planting({ id: 'p-1', plannedYieldKgPerHa: 3000 })]);
         mockGetCostRollupByPlanting.mockResolvedValue({
-            rows: [{ plantingId: 'p-1', totalCost: 100, currencies: ['EUR'], currencyMixed: false }],
+            rows: [{ plantingId: 'p-1', totalCost: 100, currencies: ['EUR'], currencyMixed: false, unvaluedNoUnitCost: 0, unvaluedUnitMismatch: 0 }],
             truncated: false,
+            unvalued: { noUnitCost: 0, unitMismatch: 0 },
         });
         mockGetMarketReferences.mockResolvedValue(
             new Map([['wheat', { commodity: 'wheat', pricePerTonne: 250, currency: 'BGN', observedAt: '2026-01-01', source: 'ec-agrifood' }]]),
@@ -416,8 +419,9 @@ describe('getGrainNetWorth — currency handling and net worth', () => {
             planting({ id: 'p-1', areaM2: 10_000, plannedYieldKgPerHa: 3000 }),
         ]);
         mockGetCostRollupByPlanting.mockResolvedValue({
-            rows: [{ plantingId: 'p-1', totalCost: 100, currencies: [], currencyMixed: false }],
+            rows: [{ plantingId: 'p-1', totalCost: 100, currencies: [], currencyMixed: false, unvaluedNoUnitCost: 0, unvaluedUnitMismatch: 0 }],
             truncated: false,
+            unvalued: { noUnitCost: 0, unitMismatch: 0 },
         });
         mockGetMarketReferences.mockResolvedValue(
             new Map([['wheat', { commodity: 'wheat', pricePerTonne: 250, currency: 'BGN', observedAt: '2026-01-01', source: 'ec-agrifood' }]]),
@@ -441,7 +445,7 @@ describe('getGrainNetWorth — currency handling and net worth', () => {
         mockDb.planting.findMany.mockResolvedValue([
             planting({ id: 'p-1', areaM2: 10_000, plannedYieldKgPerHa: 3000 }),
         ]);
-        mockGetCostRollupByPlanting.mockResolvedValue({ rows: [], truncated: false });
+        mockGetCostRollupByPlanting.mockResolvedValue({ rows: [], truncated: false, unvalued: { noUnitCost: 0, unitMismatch: 0 } });
         mockGetMarketReferences.mockResolvedValue(
             new Map([['wheat', { commodity: 'wheat', pricePerTonne: 250, currency: 'BGN', observedAt: '2026-01-01', source: 'ec-agrifood' }]]),
         );
@@ -486,7 +490,7 @@ describe('getGrainNetWorth — divergence from ATTRIBUTED_CROP_COST (the fourth-
         mockDb.payrollExpense.findMany.mockResolvedValue([
             { id: 'pay-1', amount: 40, currency: 'BGN', plantingId: 'p-1', seasonId: null },
         ]);
-        const rollupRows = [{ plantingId: 'p-1', totalCost: 100, currencies: ['BGN'], currencyMixed: false }];
+        const rollupRows = [{ plantingId: 'p-1', totalCost: 100, currencies: ['BGN'], currencyMixed: false, unvaluedNoUnitCost: 0, unvaluedUnitMismatch: 0 }];
         mockGetCostRollupByPlanting.mockResolvedValue({ rows: rollupRows, truncated: false });
 
         const result = await getGrainNetWorth(ctx, { seasonId: 's-1' });
@@ -503,7 +507,7 @@ describe('getGrainNetWorth — divergence from ATTRIBUTED_CROP_COST (the fourth-
 
     it('matches getCostRollupByPlanting\'s total when no payroll or rent is present', async () => {
         mockDb.planting.findMany.mockResolvedValue([planting({ id: 'p-1' })]);
-        const rollupRows = [{ plantingId: 'p-1', totalCost: 100, currencies: ['BGN'], currencyMixed: false }];
+        const rollupRows = [{ plantingId: 'p-1', totalCost: 100, currencies: ['BGN'], currencyMixed: false, unvaluedNoUnitCost: 0, unvaluedUnitMismatch: 0 }];
         mockGetCostRollupByPlanting.mockResolvedValue({ rows: rollupRows, truncated: false });
 
         const result = await getGrainNetWorth(ctx);
@@ -535,5 +539,70 @@ describe('getGrainNetWorth — access control + truncation', () => {
         for (const call of mockDb.inventoryLot.findMany.mock.calls) expect(call[0].take).toBeGreaterThan(0);
         for (const call of mockDb.parcelLease.findMany.mock.calls) expect(call[0].take).toBeGreaterThan(0);
         for (const call of mockDb.payrollExpense.findMany.mock.calls) expect(call[0].take).toBeGreaterThan(0);
+    });
+});
+
+describe('getGrainNetWorth — unvalued consumptions', () => {
+    it('sums the per-commodity counts and passes the farm-wide total through UNSUMMED', async () => {
+        // The rollup counts TRANSACTIONS for its farm-wide figure and
+        // increments a whole 1 per planting for its rows, so a transaction
+        // shared by two plantings is 1 farm-wide and 1 on each row. This
+        // module must carry that distinction, not re-derive it: summing
+        // rows here would multiply a shared transaction by the commodities
+        // it touched and report more unvalued movements than exist.
+        mockDb.planting.findMany.mockResolvedValue([
+            planting({ id: 'p-1', plannedYieldKgPerHa: 3000 }),
+            planting({ id: 'p-2', plannedYieldKgPerHa: 3000 }),
+        ]);
+        mockGetCostRollupByPlanting.mockResolvedValue({
+            rows: [
+                { plantingId: 'p-1', totalCost: 100, currencies: ['BGN'], currencyMixed: false, unvaluedNoUnitCost: 1, unvaluedUnitMismatch: 0 },
+                { plantingId: 'p-2', totalCost: 100, currencies: ['BGN'], currencyMixed: false, unvaluedNoUnitCost: 1, unvaluedUnitMismatch: 2 },
+            ],
+            truncated: false,
+            // ONE transaction, attributed to both plantings.
+            unvalued: { noUnitCost: 1, unitMismatch: 2 },
+        });
+        mockGetMarketReferences.mockResolvedValue(
+            new Map([['wheat', { commodity: 'wheat', pricePerTonne: 250, currency: 'BGN', observedAt: '2026-01-01', source: 'ec-agrifood' }]]),
+        );
+
+        const result = await getGrainNetWorth(ctx);
+
+        // Both plantings are wheat, so the row counts add up.
+        const wheat = result.rows.find((r) => r.commodity === 'wheat')!;
+        expect(wheat.unvaluedNoUnitCost).toBe(2);
+        expect(wheat.unvaluedUnitMismatch).toBe(2);
+
+        // …but the farm-wide figure is the rollup's DISTINCT count, which
+        // is 1, not the rows' 2. Re-deriving from rows would break this.
+        expect(result.unvalued).toEqual({ noUnitCost: 1, unitMismatch: 2 });
+    });
+
+    it('reports zeroes when every consumption was valued', async () => {
+        const result = await getGrainNetWorth(ctx);
+        expect(result.unvalued).toEqual({ noUnitCost: 0, unitMismatch: 0 });
+    });
+
+    it('does NOT change cashCostTotal or netWorth — a disclosure, not a recalculation', async () => {
+        mockDb.planting.findMany.mockResolvedValue([
+            planting({ id: 'p-1', areaM2: 10_000, plannedYieldKgPerHa: 3000 }),
+        ]);
+        mockGetCostRollupByPlanting.mockResolvedValue({
+            rows: [{ plantingId: 'p-1', totalCost: 100, currencies: ['BGN'], currencyMixed: false, unvaluedNoUnitCost: 5, unvaluedUnitMismatch: 3 }],
+            truncated: false,
+            unvalued: { noUnitCost: 5, unitMismatch: 3 },
+        });
+        mockGetMarketReferences.mockResolvedValue(
+            new Map([['wheat', { commodity: 'wheat', pricePerTonne: 250, currency: 'BGN', observedAt: '2026-01-01', source: 'ec-agrifood' }]]),
+        );
+
+        const result = await getGrainNetWorth(ctx);
+        const wheat = result.rows.find((r) => r.commodity === 'wheat')!;
+
+        // Eight unvalued movements, and the money is untouched: 750 − 100.
+        expect(wheat.cashCostTotal).toBe(100);
+        expect(wheat.netWorth).toBe(650);
+        expect(wheat.netWorthUnavailableReason).toBeNull();
     });
 });

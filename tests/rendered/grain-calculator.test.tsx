@@ -151,6 +151,9 @@ function wheatRow(over: Partial<CalculatorRow> = {}): CalculatorRow {
         cashCostCurrencies: ['EUR'],
         cashCostCurrencyMixed: false,
 
+        unvaluedNoUnitCost: 0,
+        unvaluedUnitMismatch: 0,
+
         netAssetPosition: 24_250,
         netWorth: 18_750,
         netWorthUnavailableReason: null,
@@ -193,6 +196,9 @@ function maizeRow(over: Partial<CalculatorRow> = {}): CalculatorRow {
         cashCostCurrencies: ['EUR'],
         cashCostCurrencyMixed: false,
 
+        unvaluedNoUnitCost: 0,
+        unvaluedUnitMismatch: 0,
+
         netAssetPosition: null,
         netWorth: null,
         netWorthUnavailableReason: 'No market price is available for maize.',
@@ -214,6 +220,7 @@ function data(over: Partial<CalculatorData> = {}): CalculatorData {
             ],
             commoditiesWithNoPrice: ['maize'],
         },
+        unvalued: { noUnitCost: 0, unitMismatch: 0 },
         truncated: false,
         ...over,
     };
@@ -474,5 +481,102 @@ describe('grain calculator — per-commodity table on a DESKTOP (setViewport("de
             within(table).getByText(COPY.netWorthUnavailableTitle),
         ).toBeVisible();
         expect(within(table).getByText('€18,750')).toBeVisible();
+    });
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// Unvalued consumptions.
+//
+// A consumption the usecase could not price leaves `cashCostTotal` SHORT,
+// which pushes net worth UP — the one direction a farmer must not take on
+// trust. The page renders a floor and has to say so.
+//
+// Deliberately NOT in the exclusions accordion: nothing was excluded. The
+// stock moved and the planting is counted; only the money is missing. So
+// these assertions check the caveat is beside the COST, and that the
+// exclusion count is unchanged by it.
+// ─────────────────────────────────────────────────────────────────────
+
+describe('grain calculator — unvalued consumptions (setViewport("mobile"))', () => {
+    const withUnvalued = () =>
+        data({
+            rows: [wheatRow({ unvaluedNoUnitCost: 2, unvaluedUnitMismatch: 1 })],
+            unvalued: { noUnitCost: 2, unitMismatch: 1 },
+        });
+
+    it('says the cost is a floor, and splits the reasons', () => {
+        setViewport('mobile');
+        renderPage(withUnvalued());
+
+        // Both panels charge the same cost, so both carry the caveat.
+        expect(
+            screen.getAllByText(/3 consumptions could not be valued/).length,
+        ).toBeGreaterThan(0);
+        expect(
+            screen.getAllByText(COPY.unvaluedReasonNoUnitCost.replace('{count}', '2')).length,
+        ).toBeGreaterThan(0);
+        expect(
+            screen.getAllByText(COPY.unvaluedReasonUnitMismatch.replace('{count}', '1')).length,
+        ).toBeGreaterThan(0);
+    });
+
+    it('states the farm-wide count in the header, before any toggling', () => {
+        setViewport('mobile');
+        renderPage(withUnvalued());
+
+        expect(screen.getByText('3 unvalued consumptions farm-wide')).toBeVisible();
+    });
+
+    it('renders NOTHING when every consumption was valued', () => {
+        setViewport('mobile');
+        renderPage();
+
+        // Absence, not a zero row — "0 unvalued" would be noise on the
+        // overwhelmingly common healthy case, unlike the exclusion count
+        // which is deliberately stated at zero.
+        expect(screen.queryByText(/could not be valued/)).not.toBeInTheDocument();
+        expect(screen.queryByText(/farm-wide/)).not.toBeInTheDocument();
+    });
+
+    it('omits a reason line whose count is zero', () => {
+        setViewport('mobile');
+        renderPage(
+            data({
+                rows: [wheatRow({ unvaluedNoUnitCost: 4, unvaluedUnitMismatch: 0 })],
+                unvalued: { noUnitCost: 4, unitMismatch: 0 },
+            }),
+        );
+
+        expect(
+            screen.getAllByText(COPY.unvaluedReasonNoUnitCost.replace('{count}', '4')).length,
+        ).toBeGreaterThan(0);
+        expect(screen.queryByText(/unit differs from/)).not.toBeInTheDocument();
+    });
+
+    it('does NOT fold into the exclusion count — different kind of thing', () => {
+        setViewport('mobile');
+        renderPage(withUnvalued());
+
+        // The fixture's five exclusions stay five: an unvalued consumption
+        // was not excluded from anything.
+        expect(screen.getByText('5 records excluded')).toBeVisible();
+    });
+
+    it('shows the farm-wide count even when it disagrees with the panel', () => {
+        setViewport('mobile');
+        // One transaction attributed to two commodities: 1 farm-wide,
+        // 1 on each row. The two figures differ BY DESIGN, and the page
+        // must not "reconcile" them by summing the rows.
+        renderPage(
+            data({
+                rows: [
+                    wheatRow({ unvaluedNoUnitCost: 1, unvaluedUnitMismatch: 0 }),
+                    maizeRow({ unvaluedNoUnitCost: 1, unvaluedUnitMismatch: 0 }),
+                ],
+                unvalued: { noUnitCost: 1, unitMismatch: 0 },
+            }),
+        );
+
+        expect(screen.getByText('1 unvalued consumption farm-wide')).toBeVisible();
     });
 });

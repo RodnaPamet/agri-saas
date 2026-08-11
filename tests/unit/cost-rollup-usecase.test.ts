@@ -56,10 +56,18 @@ beforeEach(() => {
     mockDb.stockTransaction.groupBy.mockResolvedValue([
         { logEntryId: 'le-1', _sum: { costAmount: 30 } },
     ]);
-    // The currency read is separate — a _sum cannot carry one.
-    mockDb.stockTransaction.findMany.mockResolvedValue([
-        { logEntryId: 'le-1', costCurrency: 'EUR' },
-    ]);
+    // TWO findMany reads now share this mock, so it branches on the
+    // discriminating clause rather than returning one shape to both:
+    //   • costCurrency: { not: null } — the currency read (a _sum cannot
+    //     carry a currency);
+    //   • costAmount: null           — the UNVALUED-consumption read.
+    // Returning the currency rows to the unvalued query would classify
+    // rows that have no `lot` at all.
+    mockDb.stockTransaction.findMany.mockImplementation(async (args: any) =>
+        args?.where?.costAmount === null
+            ? []
+            : [{ logEntryId: 'le-1', costCurrency: 'EUR' }],
+    );
     mockDb.season.findMany.mockResolvedValue([{ id: 's-1', name: 'Main Season' }]);
     mockDb.yieldRecord.groupBy.mockImplementation(async (args: any) =>
         args.by[0] === 'seasonId'
@@ -126,7 +134,14 @@ describe('getCostRollupByPlanting', () => {
     it('READER (canRead) is allowed; an unprivileged ctx is rejected', async () => {
         // READER has canRead true in the helper, so the rollup succeeds.
         mockDb.planting.findMany.mockResolvedValueOnce([]);
-        await expect(getCostRollupByPlanting(readerCtx)).resolves.toEqual({ rows: [], truncated: false });
+        await expect(getCostRollupByPlanting(readerCtx)).resolves.toEqual({
+            rows: [],
+            truncated: false,
+            // The no-plantings early return states the unvalued counts too,
+            // rather than omitting the key — a consumer reading `unvalued`
+            // must not get `undefined` on the empty farm and render NaN.
+            unvalued: { noUnitCost: 0, unitMismatch: 0 },
+        });
     });
 });
 
@@ -215,6 +230,21 @@ describe('cost rollup — a partial total says so', () => {
             { logEntryId: 'asc' },
             { plantingId: 'asc' },
         ]);
+        // The unvalued-consumption read is capped too. This test said
+        // "every capped read" while hand-enumerating two of them, so a
+        // third arrived unordered and the name quietly became false —
+        // derive the list instead of listing it.
+        const capped = [
+            mockDb.planting.findMany,
+            mockDb.logPlanting.findMany,
+            mockDb.stockTransaction.findMany,
+        ].flatMap((fn: any) => fn.mock.calls.map((c: any[]) => c[0]))
+            .filter((args: any) => typeof args?.take === 'number');
+
+        expect(capped.length).toBeGreaterThanOrEqual(3);
+        for (const args of capped) {
+            expect(Array.isArray(args.orderBy) && args.orderBy.length > 0).toBe(true);
+        }
     });
 
     it('reports truncated when the planting cap bites', async () => {
@@ -411,5 +441,179 @@ describe('cost rollup — an entry covering several plantings', () => {
         const { rows } = await getCostRollupByPlanting(adminCtx);
         const summed = rows.reduce((acc, r) => acc + r.totalCost, 0);
         expect(summed).toBe(100);
+    });
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// Unvalued consumptions.
+//
+// `recordInputApplication` DECLINES to value a draw-down in two cases —
+// the lot has no `unitCostAmount`, or `lot.unitId !== item.defaultUnitId`
+// so the multiplication would be dimensionally wrong. Both write
+// `costAmount: null` and log a warning that no reader ever sees.
+//
+// The `_sum` above cannot detect either: null contributes 0, so an input
+// that was genuinely consumed reports as a FREE one, and the
+// understatement flows all the way to the calculator's headline net
+// worth — which it pushes UP.
+// ─────────────────────────────────────────────────────────────────────
+
+/** A null-cost CONSUMPTION row as the unvalued read selects it. */
+function unvaluedTx(over: Record<string, unknown> = {}) {
+    return {
+        id: 'tx-1',
+        logEntryId: 'le-1',
+        // Priced lot, matching units — overridden per case below.
+        lot: { unitCostAmount: 5, unitId: 'u-l', item: { defaultUnitId: 'u-l' } },
+        ...over,
+    };
+}
+
+describe('cost rollup — unvalued consumptions', () => {
+    it('reports nothing when every consumption carried a cost', async () => {
+        const { rows, unvalued } = await getCostRollupByPlanting(adminCtx);
+
+        expect(unvalued).toEqual({ noUnitCost: 0, unitMismatch: 0 });
+        for (const r of rows) {
+            expect(r.unvaluedNoUnitCost).toBe(0);
+            expect(r.unvaluedUnitMismatch).toBe(0);
+        }
+    });
+
+    it('classifies a lot with no unit cost as noUnitCost', async () => {
+        mockDb.stockTransaction.findMany.mockImplementation(async (args: any) =>
+            args?.where?.costAmount === null
+                ? [unvaluedTx({ lot: { unitCostAmount: null, unitId: 'u-l', item: { defaultUnitId: 'u-l' } } })]
+                : [{ logEntryId: 'le-1', costCurrency: 'EUR' }],
+        );
+
+        const { rows, unvalued } = await getCostRollupByPlanting(adminCtx);
+
+        expect(unvalued).toEqual({ noUnitCost: 1, unitMismatch: 0 });
+        expect(rows.find((r) => r.plantingId === 'p-1')!.unvaluedNoUnitCost).toBe(1);
+        // p-2 hangs off le-2 and is untouched.
+        expect(rows.find((r) => r.plantingId === 'p-2')!.unvaluedNoUnitCost).toBe(0);
+    });
+
+    it('classifies a lot/product unit disagreement as unitMismatch', async () => {
+        mockDb.stockTransaction.findMany.mockImplementation(async (args: any) =>
+            args?.where?.costAmount === null
+                ? [unvaluedTx({ lot: { unitCostAmount: 5, unitId: 'u-litre', item: { defaultUnitId: 'u-kg' } } })]
+                : [{ logEntryId: 'le-1', costCurrency: 'EUR' }],
+        );
+
+        const { rows, unvalued } = await getCostRollupByPlanting(adminCtx);
+
+        expect(unvalued).toEqual({ noUnitCost: 0, unitMismatch: 1 });
+        expect(rows.find((r) => r.plantingId === 'p-1')!.unvaluedUnitMismatch).toBe(1);
+    });
+
+    it('a lot with NO unit cost AND a unit mismatch counts once, as noUnitCost', async () => {
+        // Order matters: `inventory.ts` checks the price first and only
+        // warns about units when a price exists. Double-counting one
+        // transaction would make the reason split add up to more
+        // transactions than there are.
+        mockDb.stockTransaction.findMany.mockImplementation(async (args: any) =>
+            args?.where?.costAmount === null
+                ? [unvaluedTx({ lot: { unitCostAmount: null, unitId: 'u-litre', item: { defaultUnitId: 'u-kg' } } })]
+                : [{ logEntryId: 'le-1', costCurrency: 'EUR' }],
+        );
+
+        const { unvalued } = await getCostRollupByPlanting(adminCtx);
+
+        expect(unvalued).toEqual({ noUnitCost: 1, unitMismatch: 0 });
+    });
+
+    it('counts a SHARED transaction once per planting, but ONCE in the total', async () => {
+        // The counting rule, stated as a test so nobody "fixes" the
+        // apparent disagreement. Cost is split fractionally across the
+        // plantings an entry touches (`share = cost / targets.size`) —
+        // right for money. A COUNT cannot be split: "this planting has an
+        // unvalued consumption" is true of BOTH plantings. But the
+        // report-level figure counts TRANSACTIONS, and there is one.
+        mockDb.logPlanting.findMany.mockResolvedValueOnce([
+            { plantingId: 'p-1', logEntryId: 'le-1' },
+            { plantingId: 'p-2', logEntryId: 'le-1' },
+        ]);
+        mockDb.stockTransaction.findMany.mockImplementation(async (args: any) =>
+            args?.where?.costAmount === null
+                ? [unvaluedTx({ lot: { unitCostAmount: null, unitId: 'u-l', item: { defaultUnitId: 'u-l' } } })]
+                : [{ logEntryId: 'le-1', costCurrency: 'EUR' }],
+        );
+
+        const { rows, unvalued } = await getCostRollupByPlanting(adminCtx);
+
+        expect(rows.find((r) => r.plantingId === 'p-1')!.unvaluedNoUnitCost).toBe(1);
+        expect(rows.find((r) => r.plantingId === 'p-2')!.unvaluedNoUnitCost).toBe(1);
+        // Rows sum to 2; the distinct transaction count is 1. Intended.
+        expect(unvalued.noUnitCost).toBe(1);
+    });
+
+    it('asks the DB only for null-cost cost-bearing movements, bounded', async () => {
+        await getCostRollupByPlanting(adminCtx);
+
+        const call = mockDb.stockTransaction.findMany.mock.calls
+            .map((c: any[]) => c[0])
+            .find((a: any) => a?.where?.costAmount === null);
+
+        expect(call).toBeDefined();
+        expect(call.where.type.in).toEqual(['CONSUMPTION']);
+        expect(call.where.tenantId).toBe('tenant-1');
+        expect(typeof call.take).toBe('number');
+    });
+});
+
+describe('cost rollup — unvalued classification is exact, not a fallback', () => {
+    it('ignores a null-cost consumption on a PRICED lot whose units agree', async () => {
+        // `recordInputApplication` cannot produce this shape — it would have
+        // valued the draw-down. So the row came from somewhere else:
+        // `grain-blend` posts CONSUMPTION with no cost at all, and a seed or
+        // an import could too. Those are excluded today only because they
+        // carry no logEntryId; if one ever did, an else-branch fallback
+        // would report a unit problem on a farm that has none.
+        mockDb.stockTransaction.findMany.mockImplementation(async (args: any) =>
+            args?.where?.costAmount === null
+                ? [unvaluedTx({ lot: { unitCostAmount: 5, unitId: 'u-l', item: { defaultUnitId: 'u-l' } } })]
+                : [{ logEntryId: 'le-1', costCurrency: 'EUR' }],
+        );
+
+        const { rows, unvalued } = await getCostRollupByPlanting(adminCtx);
+
+        expect(unvalued).toEqual({ noUnitCost: 0, unitMismatch: 0 });
+        expect(rows.find((r) => r.plantingId === 'p-1')!.unvaluedUnitMismatch).toBe(0);
+        expect(rows.find((r) => r.plantingId === 'p-1')!.unvaluedNoUnitCost).toBe(0);
+    });
+});
+
+describe('cost rollup — the unvalued read is capped honestly', () => {
+    it('reads one past the cap and reports truncated when it bites', async () => {
+        // A capped COUNT presented as exact is the same lie as a capped
+        // total presented as complete: the header would print a confident
+        // "N unvalued consumptions farm-wide" that is simply the cap.
+        const over = Array.from({ length: 5001 }, (_, i) =>
+            unvaluedTx({
+                id: `tx-${i}`,
+                lot: { unitCostAmount: null, unitId: 'u-l', item: { defaultUnitId: 'u-l' } },
+            }),
+        );
+        mockDb.stockTransaction.findMany.mockImplementation(async (args: any) =>
+            args?.where?.costAmount === null ? over : [{ logEntryId: 'le-1', costCurrency: 'EUR' }],
+        );
+
+        const { truncated, unvalued } = await getCostRollupByPlanting(adminCtx);
+
+        const call = mockDb.stockTransaction.findMany.mock.calls
+            .map((c: any[]) => c[0])
+            .find((a: any) => a?.where?.costAmount === null);
+        // take is cap + 1: the extra row is the overflow probe, never counted.
+        expect(call.take).toBe(5001);
+
+        expect(truncated).toBe(true);
+        expect(unvalued.noUnitCost).toBe(5000);
+    });
+
+    it('does not report truncated when the read fits inside the cap', async () => {
+        const { truncated } = await getCostRollupByPlanting(adminCtx);
+        expect(truncated).toBe(false);
     });
 });
