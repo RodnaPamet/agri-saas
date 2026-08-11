@@ -148,6 +148,13 @@ export interface CalculatorExclusions {
     payrollUnattributable: string[];
 }
 
+/** One currency's worth of money that left the bank. */
+export interface CalculatorCashOutLine {
+    currency: string;
+    amount: number;
+    categories: string[];
+}
+
 export interface CalculatorData {
     generatedAt: string;
     seasonId: string | null;
@@ -160,6 +167,16 @@ export interface CalculatorData {
      * shrink the row set; this understates the cost side.
      */
     unvalued: { noUnitCost: number; unitMismatch: number };
+    /**
+     * `COST_METRICS.GRAIN_CASH_OUT` — what LEFT THE BANK, per currency.
+     *
+     * Rendered as its own figure and never added to any cost line. Crop
+     * cost is consumption-based and rent cost is a lease-terms accrual, so
+     * folding a purchase or a rent payment in would bill the same money
+     * twice. The page's job is to show both and say they are different
+     * questions.
+     */
+    cashOut: CalculatorCashOutLine[];
     truncated: boolean;
 }
 
@@ -628,6 +645,45 @@ export function CalculatorClient({ tenantSlug, data }: CalculatorClientProps) {
             </div>
 
             <p className="text-xs text-content-subtle">{tc('sharedCostNote')}</p>
+
+            {/* ── Cash out — a DIFFERENT question, kept visibly apart ──
+                Everything above answers "what is the grain worth after
+                what it cost". This answers "what left the bank". They are
+                not two views of one number and must never be added: crop
+                cost is CONSUMPTION-based and rent cost is a lease-terms
+                accrual, so a fertiliser purchase or a rent payment folded
+                into either would bill the same money twice. Hence its own
+                card, its own metric name, and the note saying so. */}
+            {data.cashOut.length > 0 && (
+                <Card as="section" density="compact" className="space-y-default border-border-subtle">
+                    <div className="flex flex-wrap items-baseline gap-default">
+                        <Heading level={3} as="h2" tone="muted">
+                            {tc(COST_METRIC_LABEL_KEYS[COST_METRICS.GRAIN_CASH_OUT])}
+                        </Heading>
+                    </div>
+                    <dl className="space-y-tight text-sm">
+                        {data.cashOut.map((line) => (
+                            // One row PER CURRENCY, never a blended total —
+                            // there is no FX table in this product, so a
+                            // single figure would reconcile against nothing.
+                            <div
+                                key={line.currency}
+                                className="flex items-baseline justify-between gap-tight"
+                            >
+                                <dt className="text-content-muted">
+                                    {line.categories
+                                        .map((c) => t(`costCategory.${c}`))
+                                        .join(', ')}
+                                </dt>
+                                <dd className="font-medium tabular-nums text-content-emphasis">
+                                    {formatDecimal(line.amount, 2)} {line.currency}
+                                </dd>
+                            </div>
+                        ))}
+                    </dl>
+                    <p className="text-xs text-content-subtle">{tc('cashOutNote')}</p>
+                </Card>
+            )}
 
             <ExclusionsCard count={exclusionCount} classes={exclusionClasses} />
 

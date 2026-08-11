@@ -5434,7 +5434,9 @@
             "colCashCost": "Farm cost",
             "colNetWorth": "Net worth",
             "resourceCommodity": "commodity",
-            "resourceCommodities": "commodities"
+            "resourceCommodities": "commodities",
+            "metricGrainCashOut": "Cash out",
+            "cashOutNote": "What actually left the bank. Kept apart from the figures above on purpose — a bag of fertiliser is a cost when it goes on the field, not when it is bought, and rent is owed whether or not it has been paid. Adding the two would charge the same money twice."
         },
         "nav": {
             "ariaLabel": "Grain sections",

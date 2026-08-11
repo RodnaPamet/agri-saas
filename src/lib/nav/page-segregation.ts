@@ -41,9 +41,12 @@ export const BACK_AFFORDANCE_EXEMPT_SUBPAGES: readonly string[] = [
  * they have no parent within the tenant scope, so no back affordance.
  * The Grain module links straight to its sub-routes (there is no /grain
  * index), so those count as top-level destinations too — ALL SIX of
- * them. `/grain/payroll` and `/grain/calculator` were each added to the
- * sidebar without landing here, which left `classifyRoute` answering
- * `'unknown'` for a route the sidebar links to directly. That is now
+ * them — with `/grain/payroll` the exception, since it became a REDIRECT
+ * to `/grain/costs?category=PAYROLL` when payroll turned into a category
+ * rather than a surface. `/grain/payroll` and `/grain/calculator` were
+ * each once added to the sidebar without landing here, which left
+ * `classifyRoute` answering `'unknown'` for a route the sidebar linked to
+ * directly. That is now
  * held by `tests/guards/grain-surface-nav-registration.test.ts`, which
  * derives the expected set from `GrainSectionNav`'s own SECTIONS rather
  * than from anyone remembering to update this list.
@@ -64,7 +67,6 @@ export const MAIN_PAGES: readonly string[] = [
     '/grain/calculator',
     '/grain/contracts',
     '/grain/costs',
-    '/grain/payroll',
     '/grain/yield',
     '/inventory',
     '/issues',

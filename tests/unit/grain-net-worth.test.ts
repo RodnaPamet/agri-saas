@@ -18,7 +18,7 @@ const mockDb = {
     inventoryLot: { findMany: jest.fn() },
     unit: { findMany: jest.fn() },
     parcelLease: { findMany: jest.fn() },
-    payrollExpense: { findMany: jest.fn() },
+    costEntry: { findMany: jest.fn() },
 } as any;
 
 jest.mock('@/lib/db-context', () => ({
@@ -58,7 +58,7 @@ function resetMocks() {
     mockDb.inventoryLot.findMany.mockResolvedValue([]);
     mockDb.unit.findMany.mockResolvedValue([]);
     mockDb.parcelLease.findMany.mockResolvedValue([]);
-    mockDb.payrollExpense.findMany.mockResolvedValue([]);
+    mockDb.costEntry.findMany.mockResolvedValue([]);
     mockGetCostRollupByPlanting.mockResolvedValue({ rows: [], truncated: false, unvalued: { noUnitCost: 0, unitMismatch: 0 } });
     mockGetMarketReferences.mockResolvedValue(new Map());
 }
@@ -306,8 +306,8 @@ describe('getGrainNetWorth — rent attribution', () => {
 describe('getGrainNetWorth — payroll allocation', () => {
     it('attributes a directly-linked row without setting payrollAllocated', async () => {
         mockDb.planting.findMany.mockResolvedValue([planting({ id: 'p-1' })]);
-        mockDb.payrollExpense.findMany.mockResolvedValue([
-            { id: 'pay-1', amount: 200, currency: 'BGN', plantingId: 'p-1', seasonId: null },
+        mockDb.costEntry.findMany.mockResolvedValue([
+            { id: 'pay-1', category: 'PAYROLL', amount: 200, currency: 'BGN', plantingId: 'p-1', seasonId: null },
         ]);
 
         const result = await getGrainNetWorth(ctx);
@@ -323,9 +323,9 @@ describe('getGrainNetWorth — payroll allocation', () => {
             planting({ id: 'p-1', areaM2: 10_000, cropPlan: { seasonId: 's-1', cropType: { commodityCanonical: 'wheat' } } }), // 1 ha
             planting({ id: 'p-3', areaM2: 5_000, cropPlan: { seasonId: 's-1', cropType: { commodityCanonical: 'maize' } } }), // 0.5 ha
         ]);
-        mockDb.payrollExpense.findMany.mockResolvedValue([
-            { id: 'pay-2', amount: 300, currency: 'BGN', plantingId: null, seasonId: 's-1' },
-            { id: 'pay-3', amount: 60, currency: 'EUR', plantingId: null, seasonId: 's-1' },
+        mockDb.costEntry.findMany.mockResolvedValue([
+            { id: 'pay-2', category: 'PAYROLL', amount: 300, currency: 'BGN', plantingId: null, seasonId: 's-1' },
+            { id: 'pay-3', category: 'PAYROLL', amount: 60, currency: 'EUR', plantingId: null, seasonId: 's-1' },
         ]);
 
         const result = await getGrainNetWorth(ctx);
@@ -342,8 +342,8 @@ describe('getGrainNetWorth — payroll allocation', () => {
     });
 
     it('names a payroll row with nothing to allocate against', async () => {
-        mockDb.payrollExpense.findMany.mockResolvedValue([
-            { id: 'pay-4', amount: 15, currency: 'BGN', plantingId: null, seasonId: 'season-with-no-plantings' },
+        mockDb.costEntry.findMany.mockResolvedValue([
+            { id: 'pay-4', category: 'PAYROLL', amount: 15, currency: 'BGN', plantingId: null, seasonId: 'season-with-no-plantings' },
         ]);
 
         const result = await getGrainNetWorth(ctx);
@@ -352,8 +352,8 @@ describe('getGrainNetWorth — payroll allocation', () => {
     });
 
     it('names a directly-linked row whose planting has no resolvable commodity', async () => {
-        mockDb.payrollExpense.findMany.mockResolvedValue([
-            { id: 'pay-5', amount: 10, currency: 'BGN', plantingId: 'p-missing', seasonId: null },
+        mockDb.costEntry.findMany.mockResolvedValue([
+            { id: 'pay-5', category: 'PAYROLL', amount: 10, currency: 'BGN', plantingId: 'p-missing', seasonId: null },
         ]);
 
         const result = await getGrainNetWorth(ctx);
@@ -367,8 +367,8 @@ describe('getGrainNetWorth — currency handling and net worth', () => {
     it('computes a real net worth figure when cash costs share a single currency matching the price currency', async () => {
         mockDb.planting.findMany.mockResolvedValue([planting({ id: 'p-1', areaM2: 10_000, plannedYieldKgPerHa: 3000 })]);
         mockGetCostRollupByPlanting.mockResolvedValue({ rows: [], truncated: false, unvalued: { noUnitCost: 0, unitMismatch: 0 } });
-        mockDb.payrollExpense.findMany.mockResolvedValue([
-            { id: 'pay-1', amount: 100, currency: 'BGN', plantingId: 'p-1', seasonId: null },
+        mockDb.costEntry.findMany.mockResolvedValue([
+            { id: 'pay-1', category: 'PAYROLL', amount: 100, currency: 'BGN', plantingId: 'p-1', seasonId: null },
         ]);
         mockGetMarketReferences.mockResolvedValue(
             new Map([['wheat', { commodity: 'wheat', pricePerTonne: 250, currency: 'BGN', observedAt: '2026-01-01', source: 'ec-agrifood' }]]),
@@ -487,8 +487,8 @@ describe('getGrainNetWorth — divergence from ATTRIBUTED_CROP_COST (the fourth-
                 parcel: { areaHa: 1 },
             },
         ]);
-        mockDb.payrollExpense.findMany.mockResolvedValue([
-            { id: 'pay-1', amount: 40, currency: 'BGN', plantingId: 'p-1', seasonId: null },
+        mockDb.costEntry.findMany.mockResolvedValue([
+            { id: 'pay-1', category: 'PAYROLL', amount: 40, currency: 'BGN', plantingId: 'p-1', seasonId: null },
         ]);
         const rollupRows = [{ plantingId: 'p-1', totalCost: 100, currencies: ['BGN'], currencyMixed: false, unvaluedNoUnitCost: 0, unvaluedUnitMismatch: 0 }];
         mockGetCostRollupByPlanting.mockResolvedValue({ rows: rollupRows, truncated: false });
@@ -538,7 +538,7 @@ describe('getGrainNetWorth — access control + truncation', () => {
         for (const call of mockDb.planting.findMany.mock.calls) expect(call[0].take).toBeGreaterThan(0);
         for (const call of mockDb.inventoryLot.findMany.mock.calls) expect(call[0].take).toBeGreaterThan(0);
         for (const call of mockDb.parcelLease.findMany.mock.calls) expect(call[0].take).toBeGreaterThan(0);
-        for (const call of mockDb.payrollExpense.findMany.mock.calls) expect(call[0].take).toBeGreaterThan(0);
+        for (const call of mockDb.costEntry.findMany.mock.calls) expect(call[0].take).toBeGreaterThan(0);
     });
 });
 
@@ -604,5 +604,147 @@ describe('getGrainNetWorth — unvalued consumptions', () => {
         expect(wheat.cashCostTotal).toBe(100);
         expect(wheat.netWorth).toBe(650);
         expect(wheat.netWorthUnavailableReason).toBeNull();
+    });
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// The double-count rule.
+//
+// `src/lib/grain/cost-metrics.ts` exists because three incompatible
+// definitions of "cost" once shipped under one word. Wiring CostEntry
+// into this module can recreate that in a single line, so the rule is
+// pinned by EXECUTING tests rather than a comment:
+//
+//   • crop cost stays CONSUMPTION-based (cost-rollup counts only
+//     CONSUMPTION movements; RECEIPT is excluded as working capital);
+//   • an INPUT-category CostEntry is a PURCHASE and reaches CASH-OUT
+//     only — counting it as cost too bills the same sack of fertiliser
+//     once when bought and again when applied;
+//   • PAYROLL has no consumption path, so it DOES reach cost.
+// ─────────────────────────────────────────────────────────────────────
+
+function costEntry(over: Record<string, unknown> = {}) {
+    return {
+        id: 'ce-1',
+        category: 'FERTILIZER',
+        amount: 500,
+        currency: 'BGN',
+        plantingId: null,
+        seasonId: null,
+        ...over,
+    };
+}
+
+describe('getGrainNetWorth — purchases never enter crop cost', () => {
+    it('a FERTILIZER entry AND a CONSUMPTION of the same fertiliser counts ONCE', async () => {
+        // THE regression this rule exists for. The farm bought 500 of
+        // fertiliser and applied 400 of it. Crop cost is the APPLICATION
+        // (via cost-rollup); the purchase is cash out. Summing both would
+        // report 900 for one sack.
+        mockDb.planting.findMany.mockResolvedValue([
+            planting({ id: 'p-1', areaM2: 10_000, plannedYieldKgPerHa: 3000 }),
+        ]);
+        mockGetCostRollupByPlanting.mockResolvedValue({
+            rows: [
+                {
+                    plantingId: 'p-1',
+                    totalCost: 400, // the CONSUMPTION, from the stock ledger
+                    currencies: ['BGN'],
+                    currencyMixed: false,
+                    unvaluedNoUnitCost: 0,
+                    unvaluedUnitMismatch: 0,
+                },
+            ],
+            truncated: false,
+            unvalued: { noUnitCost: 0, unitMismatch: 0 },
+        });
+        mockDb.costEntry.findMany.mockResolvedValue([
+            costEntry({ category: 'FERTILIZER', amount: 500, plantingId: 'p-1' }),
+        ]);
+        mockGetMarketReferences.mockResolvedValue(
+            new Map([['wheat', { commodity: 'wheat', pricePerTonne: 250, currency: 'BGN', observedAt: '2026-01-01', source: 'ec-agrifood' }]]),
+        );
+
+        const result = await getGrainNetWorth(ctx);
+        const wheat = result.rows.find((r) => r.commodity === 'wheat')!;
+
+        // 400, not 900: the purchase is NOT in crop cost.
+        expect(wheat.attributedCropCost).toBe(400);
+        expect(wheat.payrollCost).toBe(0);
+        expect(wheat.cashCostTotal).toBe(400);
+        // …and it IS in cash-out.
+        expect(result.cashOut).toEqual([
+            { currency: 'BGN', amount: 500, categories: ['FERTILIZER'] },
+        ]);
+    });
+
+    it.each(['FERTILIZER', 'FUEL', 'SEED', 'PESTICIDE', 'SERVICE', 'OTHER', 'RENT'])(
+        'a %s entry moves cash-out but NOT the cost side',
+        async (category) => {
+            mockDb.planting.findMany.mockResolvedValue([
+                planting({ id: 'p-1', areaM2: 10_000, plannedYieldKgPerHa: 3000 }),
+            ]);
+            mockDb.costEntry.findMany.mockResolvedValue([
+                costEntry({ category, amount: 750, plantingId: 'p-1' }),
+            ]);
+            mockGetMarketReferences.mockResolvedValue(
+                new Map([['wheat', { commodity: 'wheat', pricePerTonne: 250, currency: 'BGN', observedAt: '2026-01-01', source: 'ec-agrifood' }]]),
+            );
+
+            const result = await getGrainNetWorth(ctx);
+            const wheat = result.rows.find((r) => r.commodity === 'wheat')!;
+
+            expect(wheat.payrollCost).toBe(0);
+            expect(wheat.cashCostTotal).toBe(0);
+            expect(result.cashOut[0]).toMatchObject({ amount: 750, categories: [category] });
+        },
+    );
+
+    it('a PAYROLL entry DOES move the cost side — nothing else records labour', async () => {
+        mockDb.planting.findMany.mockResolvedValue([
+            planting({ id: 'p-1', areaM2: 10_000, plannedYieldKgPerHa: 3000 }),
+        ]);
+        mockDb.costEntry.findMany.mockResolvedValue([
+            costEntry({ category: 'PAYROLL', amount: 300, plantingId: 'p-1' }),
+        ]);
+        mockGetMarketReferences.mockResolvedValue(
+            new Map([['wheat', { commodity: 'wheat', pricePerTonne: 250, currency: 'BGN', observedAt: '2026-01-01', source: 'ec-agrifood' }]]),
+        );
+
+        const result = await getGrainNetWorth(ctx);
+        const wheat = result.rows.find((r) => r.commodity === 'wheat')!;
+
+        expect(wheat.payrollCost).toBe(300);
+        expect(wheat.cashCostTotal).toBe(300);
+        // Payroll is BOTH: it is a real crop cost and it is money that
+        // left the bank.
+        expect(result.cashOut[0]).toMatchObject({ amount: 300, categories: ['PAYROLL'] });
+    });
+});
+
+describe('getGrainNetWorth — cash-out never blends currencies', () => {
+    it('groups per currency and sorts deterministically', async () => {
+        // No FX table exists in this repo. One blended figure would be a
+        // number that reconciles against nothing.
+        mockDb.planting.findMany.mockResolvedValue([
+            planting({ id: 'p-1', plannedYieldKgPerHa: 3000 }),
+        ]);
+        mockDb.costEntry.findMany.mockResolvedValue([
+            costEntry({ id: 'a', category: 'FUEL', amount: 100, currency: 'EUR' }),
+            costEntry({ id: 'b', category: 'SEED', amount: 200, currency: 'BGN' }),
+            costEntry({ id: 'c', category: 'FUEL', amount: 50, currency: 'BGN' }),
+        ]);
+
+        const result = await getGrainNetWorth(ctx);
+
+        expect(result.cashOut).toEqual([
+            { currency: 'BGN', amount: 250, categories: ['FUEL', 'SEED'] },
+            { currency: 'EUR', amount: 100, categories: ['FUEL'] },
+        ]);
+    });
+
+    it('is an empty list when the farm entered nothing', async () => {
+        const result = await getGrainNetWorth(ctx);
+        expect(result.cashOut).toEqual([]);
     });
 });

@@ -272,6 +272,17 @@ export interface CommodityNetWorthRow {
     netWorthUnavailableReason: string | null;
 }
 
+/**
+ * One currency's worth of cash out. `categories` names which kinds of
+ * spend contributed, so a reader can tell a fuel-heavy month from a rent
+ * one without opening the register.
+ */
+export interface GrainCashOutLine {
+    currency: string;
+    amount: number;
+    categories: string[];
+}
+
 export interface GrainNetWorthResult {
     generatedAt: string;
     seasonId: string | null;
@@ -287,6 +298,15 @@ export interface GrainNetWorthResult {
      * multiply it by the commodities it touched.
      */
     unvalued: { noUnitCost: number; unitMismatch: number };
+    /**
+     * What LEFT THE BANK, per currency — `COST_METRICS.GRAIN_CASH_OUT`.
+     *
+     * Deliberately NOT added into `cashCostTotal` on any row: crop cost is
+     * consumption-based and rent cost is a lease-terms accrual, so a
+     * purchase or a rent payment folded in would bill the same money
+     * twice. A consumer must render it as its own figure.
+     */
+    cashOut: GrainCashOutLine[];
     /** True when any batched read hit its cap — the figures below cover
      *  only part of the farm. */
     truncated: boolean;
@@ -399,7 +419,8 @@ interface LeaseRow {
     rentUnitRaw: string | null;
     parcel: { areaHa: unknown } | null;
 }
-interface PayrollRow {
+interface CostEntryRow {
+    category: string;
     id: string;
     amount: unknown;
     currency: string;
@@ -602,7 +623,7 @@ function computeRent(
  * allocated (not directly linked) share.
  */
 function computePayroll(
-    rows: readonly PayrollRow[],
+    rows: readonly CostEntryRow[],
     plantingInfo: Map<string, PlantingInfo>,
     plantingsBySeason: Map<string | null, PlantingInfo[]>,
     allKnownPlantings: PlantingInfo[],
@@ -641,6 +662,41 @@ function computePayroll(
             a.payrollAllocated = true;
         }
     }
+}
+
+/**
+ * 3d. CASH-OUT — every cost entry, grouped by the currency it was
+ * recorded in.
+ *
+ * Reported BESIDE the cost side, never inside it. `COST_METRICS.
+ * GRAIN_CASH_OUT` carries the full reasoning; the short version is that
+ * crop cost is CONSUMPTION-based and rent cost is a lease-terms ACCRUAL,
+ * so a FERTILIZER purchase or a RENT payment folded into either would
+ * bill the same money twice.
+ *
+ * Grouped rather than summed because this repo has no FX table. A farm
+ * holding entries in BGN and EUR gets two figures, not one blended number
+ * that reconciles against nothing. The array is sorted by currency so the
+ * output is deterministic.
+ */
+function computeCashOut(rows: readonly CostEntryRow[]): GrainCashOutLine[] {
+    const byCurrency = new Map<string, { amount: number; categories: Set<string> }>();
+    for (const row of rows) {
+        let bucket = byCurrency.get(row.currency);
+        if (!bucket) {
+            bucket = { amount: 0, categories: new Set<string>() };
+            byCurrency.set(row.currency, bucket);
+        }
+        bucket.amount += dec(row.amount);
+        bucket.categories.add(row.category);
+    }
+    return [...byCurrency.entries()]
+        .map(([currency, b]) => ({
+            currency,
+            amount: round2(b.amount),
+            categories: [...b.categories].sort(),
+        }))
+        .sort((a, b) => a.currency.localeCompare(b.currency));
 }
 
 /**
@@ -842,10 +898,23 @@ async function loadTenantRows(db: PrismaTx, ctx: RequestContext, seasonId: strin
     const leasesTruncated = leaseRows.length > LEASE_TAKE;
     const leases = leasesTruncated ? leaseRows.slice(0, LEASE_TAKE) : leaseRows;
 
-    // Payroll: scoped to the season directly OR via one of this season's
-    // plantings — both bounded by the id set already loaded above.
+    // Cost entries — the /grain/costs register, and the SOLE source of
+    // payroll since it replaced the separate PayrollExpense surface.
+    //
+    // One read serves two different figures, which is why it is not
+    // filtered by category here:
+    //   • PAYROLL rows feed the COST side, through the same
+    //     `computePayroll` allocation they always did (a CostEntry row has
+    //     the identical shape, so the allocator is untouched).
+    //   • EVERY row feeds CASH-OUT, reported per currency beside the cost
+    //     side and never inside it — see COST_METRICS.GRAIN_CASH_OUT for
+    //     why folding purchases into consumption-based crop cost would
+    //     bill the same sack of fertiliser twice.
+    //
+    // Scoped to the season directly OR via one of this season's plantings,
+    // both bounded by the id set already loaded above.
     const plantingIds = plantings.map((p) => p.id);
-    const payrollRows = await db.payrollExpense.findMany({
+    const costEntryRows = await db.costEntry.findMany({
         where: {
             tenantId: ctx.tenantId,
             deletedAt: null,
@@ -853,20 +922,30 @@ async function loadTenantRows(db: PrismaTx, ctx: RequestContext, seasonId: strin
                 ? { OR: [{ seasonId }, ...(plantingIds.length ? [{ plantingId: { in: plantingIds } }] : [])] }
                 : {}),
         },
-        select: { id: true, amount: true, currency: true, plantingId: true, seasonId: true },
+        select: {
+            id: true,
+            category: true,
+            amount: true,
+            currency: true,
+            plantingId: true,
+            seasonId: true,
+        },
         orderBy: [{ incurredOn: 'desc' }, { id: 'desc' }],
         take: PAYROLL_TAKE + 1,
     });
-    const payrollTruncated = payrollRows.length > PAYROLL_TAKE;
-    const payroll = payrollTruncated ? payrollRows.slice(0, PAYROLL_TAKE) : payrollRows;
+    const costEntriesTruncated = costEntryRows.length > PAYROLL_TAKE;
+    const costEntries = costEntriesTruncated
+        ? costEntryRows.slice(0, PAYROLL_TAKE)
+        : costEntryRows;
 
     return {
         plantings,
         lots,
         units,
         leases,
-        payroll,
-        truncated: plantingsTruncated || lotsTruncated || leasesTruncated || payrollTruncated,
+        costEntries,
+        truncated:
+            plantingsTruncated || lotsTruncated || leasesTruncated || costEntriesTruncated,
     };
 }
 
@@ -923,7 +1002,17 @@ export async function getGrainNetWorth(
         }
         group.push(p);
     }
-    computePayroll(fetched.payroll, plantingInfo, plantingsBySeason, knownCommodityPlantings, acc, exclusions);
+    // ONLY the PAYROLL category reaches the cost side. Every other
+    // category is a purchase or a cash settlement of an accrual, and both
+    // would double-count against consumption-based crop cost or the
+    // lease-terms rent accrual — see COST_METRICS.GRAIN_CASH_OUT.
+    const payrollEntries = fetched.costEntries.filter((e) => e.category === 'PAYROLL');
+    computePayroll(payrollEntries, plantingInfo, plantingsBySeason, knownCommodityPlantings, acc, exclusions);
+
+    // Cash-out: EVERY entry, grouped by the currency it was recorded in.
+    // Never summed across currencies — there is no FX table in this repo,
+    // and one blended figure would be a number nobody could reconcile.
+    const cashOut = computeCashOut(fetched.costEntries);
 
     // ── 4. Price — one batched lookup for every commodity touched ──
     const commodities = [...acc.keys()].sort(byCanonicalOrder);
@@ -952,6 +1041,9 @@ export async function getGrainNetWorth(
         // counted TRANSACTIONS, and summing the per-commodity counts would
         // multiply a shared one by the commodities it touched.
         unvalued: costRollup.unvalued,
+        // Beside the cost side, never inside it. Per currency, never
+        // blended — see COST_METRICS.GRAIN_CASH_OUT.
+        cashOut,
         truncated: fetched.truncated || costRollup.truncated,
     };
 }

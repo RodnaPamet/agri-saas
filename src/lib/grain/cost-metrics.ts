@@ -79,6 +79,27 @@ export const COST_METRICS = {
      * the same season whenever rent or payroll is present.
      */
     GRAIN_NET_WORTH: 'grain-net-worth',
+    /**
+     * What actually LEFT THE BANK — every `CostEntry` the farmer recorded,
+     * grouped by the currency it was recorded in.
+     *
+     * A FIFTH metric rather than an addition to any of the four above,
+     * because it answers a different question and mixing it into one of
+     * them would double-count by construction:
+     *
+     *   • Crop cost is CONSUMPTION-based (`cost-rollup` counts only
+     *     CONSUMPTION movements, excluding RECEIPT as working capital).
+     *     A FERTILIZER cost entry is the PURCHASE. Counting both bills the
+     *     same sack once when bought and again when applied.
+     *   • Rent cost is the lease-terms ACCRUAL (`resolveRentBasis`) — what
+     *     the farmer owes whether or not a lev has been paid. A RENT entry
+     *     is the cash half of that same obligation, not a second cost.
+     *
+     * So cash-out is reported BESIDE the cost side, never inside it. If a
+     * future change wants purchases in crop cost, that is another new
+     * named metric here — never a quiet addition to an existing one.
+     */
+    GRAIN_CASH_OUT: 'grain-cash-out',
 } as const;
 
 export type CostMetric = (typeof COST_METRICS)[keyof typeof COST_METRICS];
@@ -110,4 +131,5 @@ export const COST_METRIC_LABEL_KEYS: Record<CostMetric, string> = {
     [COST_METRICS.TENANT_ACTIVITY_SPEND]: 'metricTenantActivitySpend',
     [COST_METRICS.SEASON_ACTIVITY_COST]: 'metricSeasonActivityCost',
     [COST_METRICS.GRAIN_NET_WORTH]: 'metricGrainNetWorth',
+    [COST_METRICS.GRAIN_CASH_OUT]: 'metricGrainCashOut',
 };
