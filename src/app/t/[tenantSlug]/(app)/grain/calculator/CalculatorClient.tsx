@@ -122,6 +122,11 @@ export interface CalculatorRow {
     cashCostCurrencies: string[];
     cashCostCurrencyMixed: boolean;
 
+    // Consumptions the usecase could not price. They change no figure —
+    // `cashCostTotal` above is simply a FLOOR whenever either is non-zero.
+    unvaluedNoUnitCost: number;
+    unvaluedUnitMismatch: number;
+
     netAssetPosition: number | null;
     netWorth: number | null;
     netWorthUnavailableReason: string | null;
@@ -148,6 +153,13 @@ export interface CalculatorData {
     seasonId: string | null;
     rows: CalculatorRow[];
     exclusions: CalculatorExclusions;
+    /**
+     * Farm-wide DISTINCT counts, NOT the sum of the rows'. Deliberately
+     * not an exclusion class: nothing here was excluded — the stock moved
+     * and the planting is counted, only the money is missing. Exclusions
+     * shrink the row set; this understates the cost side.
+     */
+    unvalued: { noUnitCost: number; unitMismatch: number };
     truncated: boolean;
 }
 
@@ -176,6 +188,48 @@ const EXCLUSION_CLASSES: ReadonlyArray<{
     { key: 'leasesProduceRentUnpriced', labelKey: 'exclLeasesProduceRentUnpriced' },
     { key: 'payrollUnattributable', labelKey: 'exclPayrollUnattributable' },
 ];
+
+/**
+ * The unvalued-consumption caveat, rendered under a panel's cost total.
+ *
+ * Deliberately NOT a tenth exclusion class. The accordion below is titled
+ * "Excluded from these figures" and counts "records excluded" — and none
+ * of these were excluded. The stock moved, the planting is counted; only
+ * the money is missing. Filing it there would make the exclusion count
+ * mean two different things at once.
+ *
+ * It also matters WHICH WAY the error runs. Every exclusion class shrinks
+ * what is counted. This one leaves the cost side short, so the net worth
+ * above reads HIGH — the one direction a farmer must not be allowed to
+ * take on trust. Hence "a floor, not a total" rather than a neutral note.
+ */
+function UnvaluedNote({
+    noUnitCost,
+    unitMismatch,
+}: {
+    noUnitCost: number;
+    unitMismatch: number;
+}) {
+    const tc = useTranslations('grain.calculator');
+    const total = noUnitCost + unitMismatch;
+    if (total === 0) return null;
+
+    return (
+        <div className="space-y-tight border-t border-border-subtle pt-2">
+            <p className="text-xs text-content-attention">
+                {tc('unvaluedPanelNote', { count: total })}
+            </p>
+            <ul className="space-y-tight text-xs text-content-muted">
+                {noUnitCost > 0 && (
+                    <li>{tc('unvaluedReasonNoUnitCost', { count: noUnitCost })}</li>
+                )}
+                {unitMismatch > 0 && (
+                    <li>{tc('unvaluedReasonUnitMismatch', { count: unitMismatch })}</li>
+                )}
+            </ul>
+        </div>
+    );
+}
 
 /** One exclusion entry rendered as a readable line. */
 function describeEntry(entry: ExclusionEntry): string {
@@ -227,6 +281,12 @@ export function CalculatorClient({ tenantSlug, data }: CalculatorClientProps) {
         () => exclusionClasses.reduce((sum, cls) => sum + cls.entries.length, 0),
         [exclusionClasses],
     );
+
+    // Farm-wide, and read from `data.unvalued` rather than summed from the
+    // rows: the usecase counts TRANSACTIONS here, and one transaction can
+    // be attributed to plantings of several commodities. Summing rows
+    // would report more unvalued movements than the farm actually has.
+    const farmWideUnvalued = data.unvalued.noUnitCost + data.unvalued.unitMismatch;
 
     const columns = useMemo(
         () =>
@@ -320,9 +380,26 @@ export function CalculatorClient({ tenantSlug, data }: CalculatorClientProps) {
             // recomputed on every request still gets screenshotted, pasted
             // into a message and read back a fortnight later.
             meta={
-                <span className="text-xs tabular-nums text-content-subtle">
-                    {tc('generatedAt', { at: formatDateTime(data.generatedAt) })}
-                </span>
+                <>
+                    <span className="text-xs tabular-nums text-content-subtle">
+                        {tc('generatedAt', { at: formatDateTime(data.generatedAt) })}
+                    </span>
+                    {farmWideUnvalued > 0 && (
+                        // Farm-wide, so it belongs beside the report stamp
+                        // rather than in a panel. It is here so the caveat
+                        // is on screen BEFORE the reader starts toggling
+                        // commodities — a per-commodity note alone would
+                        // let someone read one clean commodity and leave.
+                        //
+                        // This count and the panel's can legitimately
+                        // differ: this one counts TRANSACTIONS, the panel
+                        // counts them per commodity, and one transaction
+                        // can be attributed to several.
+                        <span className="text-xs tabular-nums text-content-attention">
+                            {tc('unvaluedFarmWide', { count: farmWideUnvalued })}
+                        </span>
+                    )}
+                </>
             }
         />
     );
@@ -692,6 +769,13 @@ function ValuePanel({
                         <p className="text-xs text-content-muted">{tc('payrollAllocatedNote')}</p>
                     </div>
                 )}
+                {/* Sits directly under the total it qualifies — the whole
+                    point is that this number is short, so the caveat has to
+                    be where the number is, not in an accordion below. */}
+                <UnvaluedNote
+                    noUnitCost={row.unvaluedNoUnitCost}
+                    unitMismatch={row.unvaluedUnitMismatch}
+                />
                 {row.rentCostProduceKg > 0 && (
                     <p className="text-xs text-content-muted">
                         {tc('produceRentLabel')}: {formatDecimal(row.rentCostProduceKg, 0)}{' '}

@@ -250,6 +250,20 @@ export interface CommodityNetWorthRow {
 
     /** `standingCropValue + grainOnHandValue - rentCostProduceValue`, all
      *  in `priceCurrency`. Null when `pricePerTonne` is null. */
+    /**
+     * CONSUMPTION movements attributed to this commodity that could not be
+     * valued, split by cause: the lot carried no `unitCostAmount`, or the
+     * lot's unit disagreed with the product's default unit.
+     *
+     * These do NOT change any figure below — the stock moved and the
+     * planting is counted, only the money is missing. They are the reason
+     * `attributedCropCost` (and therefore `cashCostTotal`) is a FLOOR
+     * rather than a total, and why `netWorth` reads high when they are
+     * non-zero. A surface showing the cost must show these beside it.
+     */
+    unvaluedNoUnitCost: number;
+    unvaluedUnitMismatch: number;
+
     netAssetPosition: number | null;
     /** `netAssetPosition - cashCostTotal`, computed ONLY when the cash
      *  costs are a single known currency equal to `priceCurrency` — no FX
@@ -263,6 +277,16 @@ export interface GrainNetWorthResult {
     seasonId: string | null;
     rows: CommodityNetWorthRow[];
     exclusions: GrainNetWorthExclusions;
+    /**
+     * Farm-wide DISTINCT counts of unvalued consumptions, passed through
+     * from the cost rollup.
+     *
+     * NOT the sum of the per-row counts, and the two may legitimately
+     * disagree: one transaction attributed to two plantings of different
+     * commodities is 1 here and 1 on each row. Summing rows would
+     * multiply it by the commodities it touched.
+     */
+    unvalued: { noUnitCost: number; unitMismatch: number };
     /** True when any batched read hit its cap — the figures below cover
      *  only part of the farm. */
     truncated: boolean;
@@ -295,6 +319,8 @@ interface CommodityAcc {
     payrollCost: number;
     payrollCostCurrencies: Set<string>;
     payrollAllocated: boolean;
+    unvaluedNoUnitCost: number;
+    unvaluedUnitMismatch: number;
 }
 
 function newAcc(): CommodityAcc {
@@ -313,6 +339,8 @@ function newAcc(): CommodityAcc {
         payrollCost: 0,
         payrollCostCurrencies: new Set(),
         payrollAllocated: false,
+        unvaluedNoUnitCost: 0,
+        unvaluedUnitMismatch: 0,
     };
 }
 
@@ -481,7 +509,14 @@ function computeGrainOnHand(
  * per commodity. Reused verbatim; never re-derives `costAmount`.
  */
 function computeAttributedCost(
-    rollupRows: readonly { plantingId: string; totalCost: number; currencies: string[]; currencyMixed: boolean }[],
+    rollupRows: readonly {
+        plantingId: string;
+        totalCost: number;
+        currencies: string[];
+        currencyMixed: boolean;
+        unvaluedNoUnitCost: number;
+        unvaluedUnitMismatch: number;
+    }[],
     plantingInfo: Map<string, PlantingInfo>,
     acc: Map<CanonicalCommodity, CommodityAcc>,
     exclusions: GrainNetWorthExclusions,
@@ -497,6 +532,12 @@ function computeAttributedCost(
         a.attributedCropCost = round2(a.attributedCropCost + row.totalCost);
         for (const c of row.currencies) a.attributedCropCostCurrencies.add(c);
         a.attributedCropCostCurrencyMixed = a.attributedCropCostCurrencyMixed || row.currencyMixed;
+        // Carried, not recomputed: the rollup already classified WHY each
+        // consumption went unpriced. Summing per commodity is the same
+        // reduction `attributedCropCost` gets one line above, so the count
+        // always travels with the cost it qualifies.
+        a.unvaluedNoUnitCost += row.unvaluedNoUnitCost;
+        a.unvaluedUnitMismatch += row.unvaluedUnitMismatch;
     }
 }
 
@@ -728,6 +769,11 @@ function finalizeRow(
         cashCostCurrencies: [...cashCostCurrencies].sort(),
         cashCostCurrencyMixed,
 
+        // Carried beside the cost they qualify: cashCostTotal above is a
+        // floor whenever either of these is non-zero.
+        unvaluedNoUnitCost: a.unvaluedNoUnitCost,
+        unvaluedUnitMismatch: a.unvaluedUnitMismatch,
+
         netAssetPosition,
         netWorth,
         netWorthUnavailableReason,
@@ -902,6 +948,10 @@ export async function getGrainNetWorth(
         seasonId: seasonId ?? null,
         rows,
         exclusions,
+        // Passed straight through, NOT recomputed from `rows` — the rollup
+        // counted TRANSACTIONS, and summing the per-commodity counts would
+        // multiply a shared one by the commodities it touched.
+        unvalued: costRollup.unvalued,
         truncated: fetched.truncated || costRollup.truncated,
     };
 }
