@@ -50,7 +50,7 @@ describe('cluster token codec', () => {
     });
 
     // Break: a hand-edited or truncated URL throwing on render.
-    it.each([
+    it.each<[string | null, string]>([
         ['', 'empty'],
         [null, 'absent'],
         ['c1abc', 'no tier'],
@@ -61,7 +61,7 @@ describe('cluster token codec', () => {
         ['c1abc@2', 'tier below the clustering range'],
         ['c1abc@40', 'tier above the clustering range'],
     ])('rejects %p (%s) rather than throwing', (raw) => {
-        expect(parseClusterToken(raw as string | null)).toBeNull();
+        expect(parseClusterToken(raw)).toBeNull();
     });
 });
 
