@@ -28,7 +28,7 @@
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useMemo, type Dispatch, type SetStateAction } from 'react';
+import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
 import { useTranslations } from 'next-intl';
 import { z } from 'zod';
@@ -152,6 +152,12 @@ export function CostEntryFormModal({
     const apiUrl = useTenantApiUrl();
     const queryClient = useQueryClient();
     const isEdit = Boolean(record);
+
+    // The chosen invoice, held OUTSIDE react-hook-form: a File is not a
+    // serialisable form value, and the upload is a second request that
+    // only makes sense once the entry has an id.
+    const [invoice, setInvoice] = useState<File | null>(null);
+    const fileInputRef = useRef<HTMLInputElement | null>(null);
 
     // Built here rather than at module scope so the messages are localised.
     const formSchema = useMemo(
@@ -330,6 +336,8 @@ export function CostEntryFormModal({
         } else {
             reset(DEFAULT_VALUES);
         }
+        setInvoice(null);
+        if (fileInputRef.current) fileInputRef.current.value = '';
         const focusTimer = setTimeout(() => setFocus('amount'), 60);
         return () => clearTimeout(focusTimer);
     }, [open, record, reset, setFocus]);
@@ -403,6 +411,29 @@ export function CostEntryFormModal({
                         : data.message || `Failed to ${isEdit ? 'update' : 'create'} cost entry`;
                 throw new Error(msg);
             }
+            // The invoice is a SECOND request, and it needs the entry's id —
+            // which on create only exists once the response lands. Doing it
+            // after also means a rejected file (wrong type, too large)
+            // cannot lose the cost the farmer just typed: the entry is
+            // already saved, and the error names the upload alone.
+            if (invoice) {
+                const saved = (await res.json()) as { id: string };
+                const form = new FormData();
+                form.append('file', invoice);
+                const up = await fetch(apiUrl(`/grain/costs/${saved.id}/invoice`), {
+                    method: 'POST',
+                    body: form,
+                });
+                if (!up.ok) {
+                    const data = await up.json().catch(() => ({}));
+                    throw new Error(
+                        typeof data.error === 'string'
+                            ? data.error
+                            : t('invoiceUploadFailed'),
+                    );
+                }
+            }
+
             queryClient.invalidateQueries({ queryKey: ['grain-costs', tenantSlug] });
             setOpen(false);
             onSaved?.();
@@ -554,6 +585,36 @@ export function CostEntryFormModal({
                                 placeholder={t('descriptionPlaceholder')}
                                 {...register('description')}
                             />
+                        </FormField>
+
+                        <FormField label={t('invoice')} hint={t('invoiceHint')}>
+                          <div>
+                            {/* A plain file input: the repo has no upload
+                                primitive, and inventing one here would be a
+                                shared-component decision smuggled into a
+                                feature. `accept` is a HINT to the picker —
+                                the server re-checks the declared type AND
+                                the actual byte signature, and the signature
+                                wins. */}
+                            <input
+                                ref={fileInputRef}
+                                id="cost-invoice-input"
+                                type="file"
+                                accept="application/pdf,image/*"
+                                className="block w-full text-xs text-content-muted file:mr-3 file:rounded-md file:border file:border-border-subtle file:bg-bg-muted file:px-3 file:py-1.5 file:text-xs file:text-content-default"
+                                onChange={(e) => setInvoice(e.target.files?.[0] ?? null)}
+                            />
+                            {isEdit && record?.invoiceFileId && !invoice && (
+                                // An entry that already HAS an invoice says
+                                // so, rather than showing an empty picker
+                                // that reads as "none attached".
+                                <p className="mt-1 text-xs text-content-muted">
+                                    {t('invoiceAttached', {
+                                        name: record.invoiceFile?.originalName ?? '',
+                                    })}
+                                </p>
+                            )}
+                          </div>
                         </FormField>
                     </div>
                 </Modal.Body>

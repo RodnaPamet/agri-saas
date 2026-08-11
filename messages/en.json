@@ -5360,7 +5360,11 @@
                 "errRequired": "Required",
                 "errNotANumber": "Enter a number",
                 "errNotPositive": "Must be greater than zero",
-                "errTooLarge": "That amount is too large"
+                "errTooLarge": "That amount is too large",
+                "invoice": "Invoice",
+                "invoiceHint": "Optional. A PDF or a photo of the paperwork.",
+                "invoiceAttached": "Currently attached: {name}",
+                "invoiceUploadFailed": "The cost was saved, but the invoice could not be uploaded."
             },
             "deletedToast": "Cost deleted",
             "undo": "Undo"

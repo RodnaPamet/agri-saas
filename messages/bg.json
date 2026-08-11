@@ -5360,7 +5360,11 @@
                 "errRequired": "Задължително",
                 "errNotANumber": "Въведете число",
                 "errNotPositive": "Трябва да е по-голямо от нула",
-                "errTooLarge": "Тази сума е твърде голяма"
+                "errTooLarge": "Тази сума е твърде голяма",
+                "invoice": "Фактура",
+                "invoiceHint": "По желание. PDF или снимка на документа.",
+                "invoiceAttached": "Прикачена в момента: {name}",
+                "invoiceUploadFailed": "Разходът е запазен, но фактурата не можа да бъде качена."
             },
             "deletedToast": "Разходът е изтрит",
             "undo": "Отмяна"
