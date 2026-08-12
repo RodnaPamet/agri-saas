@@ -9,10 +9,6 @@ const db = {
     task: { findFirst: jest.fn() },
     logEntry: { findFirst: jest.fn(), findMany: jest.fn() },
     season: { findFirst: jest.fn() },
-    auditPack: { findFirst: jest.fn() },
-    tenantMembership: { count: jest.fn() },
-    policy: { findMany: jest.fn() },
-    policyAcknowledgement: { groupBy: jest.fn() },
 };
 jest.mock('@/lib/db-context', () => ({
     runInTenantContext: (_ctx: unknown, cb: (d: unknown) => unknown) => cb(db),
@@ -58,38 +54,35 @@ describe('getAchievements', () => {
         db.task.findFirst.mockResolvedValue(null); // no completed spray job
         db.logEntry.findFirst.mockResolvedValue({ occurredAt: new Date('2026-02-01') }); // first harvest
         db.season.findFirst.mockResolvedValue(null);
-        db.auditPack.findFirst.mockResolvedValue(null);
-        db.tenantMembership.count.mockResolvedValue(2);
-        db.policy.findMany.mockResolvedValue([{ currentVersionId: 'v1' }]);
-        db.policyAcknowledgement.groupBy.mockResolvedValue([{ policyVersionId: 'v1', _count: { _all: 2 } }]); // 2/2 → earned
         db.logEntry.findMany.mockResolvedValue([{ occurredAt: new Date() }]);
 
         const res = await getAchievements(ctx);
         const earned = new Set(res.milestones.filter((m) => m.earned).map((m) => m.key));
         expect(earned.has('first-field-mapped')).toBe(true);
         expect(earned.has('first-harvest')).toBe(true);
-        expect(earned.has('sop-100-ack')).toBe(true);
         expect(earned.has('spray-job-complete')).toBe(false);
         expect(earned.has('season-closed')).toBe(false);
-        expect(earned.has('inspection-passed')).toBe(false);
+        // Only the four agri milestones exist since GRC teardown phase 2.
+        expect(res.milestones).toHaveLength(4);
         // earnedAt carried through for the rows that have a timestamp.
         const field = res.milestones.find((m) => m.key === 'first-field-mapped');
         expect(field?.earnedAt).toBe(new Date('2026-01-01').toISOString());
     });
 
-    it('SOP milestone stays locked when acks < active members', async () => {
+    it('reports every milestone unearned when no qualifying row exists', async () => {
+        // Replaces the old SOP-acknowledgement case, whose data source
+        // (Policy + PolicyAcknowledgement) went with GRC teardown phase 2.
+        // The all-locked path is still worth pinning: a new tenant's
+        // dashboard must render four locked milestones, not an empty list.
         db.location.findFirst.mockResolvedValue(null);
         db.task.findFirst.mockResolvedValue(null);
         db.logEntry.findFirst.mockResolvedValue(null);
         db.season.findFirst.mockResolvedValue(null);
-        db.auditPack.findFirst.mockResolvedValue(null);
-        db.tenantMembership.count.mockResolvedValue(3);
-        db.policy.findMany.mockResolvedValue([{ currentVersionId: 'v1' }]);
-        db.policyAcknowledgement.groupBy.mockResolvedValue([{ policyVersionId: 'v1', _count: { _all: 2 } }]); // 2/3
         db.logEntry.findMany.mockResolvedValue([]);
 
         const res = await getAchievements(ctx);
-        expect(res.milestones.find((m) => m.key === 'sop-100-ack')?.earned).toBe(false);
+        expect(res.milestones).toHaveLength(4);
         expect(res.milestones.every((m) => !m.earned)).toBe(true);
+        expect(res.streak).toEqual({ current: 0, best: 0 });
     });
 });

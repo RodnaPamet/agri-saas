@@ -24,7 +24,7 @@ describe('celebrations registry coverage', () => {
     });
 
     it('the six ag milestones are registered + ordered', () => {
-        expect(AG_MILESTONE_ORDER).toHaveLength(6);
+        expect(AG_MILESTONE_ORDER).toHaveLength(4);
         for (const key of AG_MILESTONE_ORDER) {
             expect(MILESTONES[key as MilestoneKey]).toBeDefined();
         }

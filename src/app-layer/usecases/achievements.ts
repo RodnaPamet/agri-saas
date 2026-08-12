@@ -1,5 +1,5 @@
 /**
- * Achievements — the six meaningful farm milestones + a journaling streak,
+ * Achievements — the four meaningful farm milestones + a journaling streak,
  * all DERIVED from existing rows (no new schema). Read-only; safe to call on
  * the dashboard load. Each milestone reports `earned` + the timestamp it was
  * earned (so the UI can show "earned 3 days ago" and the client can fire a
@@ -60,40 +60,26 @@ const iso = (d: Date | null | undefined): string | null => (d ? d.toISOString() 
 export async function getAchievements(ctx: RequestContext): Promise<AchievementsResult> {
     const t = ctx.tenantId;
     return runInTenantContext(ctx, async (db) => {
-        const [firstField, sprayDone, firstHarvest, seasonClosed, inspection, activeMembers, publishedPolicies, streakRows] =
+        // GRC teardown phase 2 (plan §1c) dropped the two milestones that
+        // reached GRC models through Prisma delegates while importing no GRC
+        // module — `inspection-passed` (db.auditPack) and `sop-100-ack`
+        // (db.policy + db.policyAcknowledgement). No import-graph scan could
+        // see them; they were found by reading the delegates. The
+        // tenantMembership count went with `sop-100-ack`, its only consumer.
+        const [firstField, sprayDone, firstHarvest, seasonClosed, streakRows] =
             await Promise.all([
                 db.location.findFirst({ where: { tenantId: t, deletedAt: null }, orderBy: { createdAt: 'asc' }, select: { createdAt: true } }),
                 db.task.findFirst({ where: { tenantId: t, type: 'FIELD_OPERATION', status: 'RESOLVED', deletedAt: null }, orderBy: { completedAt: 'asc' }, select: { completedAt: true } }),
                 db.logEntry.findFirst({ where: { tenantId: t, type: 'HARVEST', status: 'DONE', deletedAt: null }, orderBy: { occurredAt: 'asc' }, select: { occurredAt: true } }),
                 db.season.findFirst({ where: { tenantId: t, status: 'CLOSED', deletedAt: null }, orderBy: { endDate: 'asc' }, select: { endDate: true } }),
-                db.auditPack.findFirst({ where: { tenantId: t, status: 'FROZEN', deletedAt: null, frozenAt: { not: null } }, orderBy: { frozenAt: 'asc' }, select: { frozenAt: true } }),
-                db.tenantMembership.count({ where: { tenantId: t, status: 'ACTIVE' } }),
-                db.policy.findMany({ where: { tenantId: t, deletedAt: null, currentVersionId: { not: null } }, select: { currentVersionId: true }, take: 200 }),
                 db.logEntry.findMany({ where: { tenantId: t, status: 'DONE', deletedAt: null }, select: { occurredAt: true }, orderBy: { occurredAt: 'desc' }, take: 400 }),
             ]);
-
-        // SOP 100% ack: a published policy whose current version is acknowledged
-        // by every active member. Bounded: groupBy over the current versions.
-        let sopEarned = false;
-        const versionIds = publishedPolicies
-            .map((p) => p.currentVersionId)
-            .filter((v): v is string => Boolean(v));
-        if (activeMembers > 0 && versionIds.length > 0) {
-            const grouped = await db.policyAcknowledgement.groupBy({
-                by: ['policyVersionId'],
-                where: { policyVersionId: { in: versionIds } },
-                _count: { _all: true },
-            });
-            sopEarned = grouped.some((g) => (g._count?._all ?? 0) >= activeMembers);
-        }
 
         const milestones: AchievementItem[] = [
             { key: 'first-field-mapped', earned: !!firstField, earnedAt: iso(firstField?.createdAt) },
             { key: 'spray-job-complete', earned: !!sprayDone, earnedAt: iso(sprayDone?.completedAt) },
             { key: 'first-harvest', earned: !!firstHarvest, earnedAt: iso(firstHarvest?.occurredAt) },
             { key: 'season-closed', earned: !!seasonClosed, earnedAt: iso(seasonClosed?.endDate) },
-            { key: 'inspection-passed', earned: !!inspection, earnedAt: iso(inspection?.frozenAt) },
-            { key: 'sop-100-ack', earned: sopEarned, earnedAt: null },
         ];
 
         return { milestones, streak: computeStreak(streakRows.map((r) => r.occurredAt)) };
