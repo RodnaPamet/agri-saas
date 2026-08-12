@@ -1,7 +1,9 @@
 /**
- * Epic 53 — sanity + URL round-trip for the Tasks, Vendors, and Assets
- * filter configs. These three pages ship static enum filters plus (for
- * Tasks) runtime-derived entity-ref options.
+ * Epic 53 — sanity + URL round-trip for the Tasks and Assets filter
+ * configs. Both pages ship static enum filters plus (for Tasks)
+ * runtime-derived entity-ref options.
+ *
+ * Vendors was the third page here until the GRC teardown removed it.
  */
 
 import {
@@ -16,14 +18,6 @@ import {
     FARM_STATUS_LABELS,
     farmTaskFilterDefs,
 } from '../../src/app/t/[tenantSlug]/(app)/farm-tasks/filter-defs';
-import {
-    buildVendorFilters,
-    VENDOR_CRITICALITY_LABELS,
-    VENDOR_FILTER_KEYS,
-    VENDOR_REVIEW_DUE_LABELS,
-    VENDOR_STATUS_LABELS,
-    vendorFilterDefs,
-} from '../../src/app/t/[tenantSlug]/(app)/vendors/filter-defs';
 import {
     ASSET_CRITICALITY_LABELS,
     ASSET_FILTER_KEYS,
@@ -81,37 +75,6 @@ describe('Farm tasks filter config', () => {
 
 // ─── Vendors ─────────────────────────────────────────────────────────
 
-describe('Vendors filter config', () => {
-    it('manages the documented key set', () => {
-        expect([...VENDOR_FILTER_KEYS].sort()).toEqual(
-            ['criticality', 'reviewDue', 'riskRating', 'status'].sort(),
-        );
-    });
-
-    it('status / criticality / riskRating are multi-select enums', () => {
-        expect(vendorFilterDefs.getFilter('status').multiple).toBe(true);
-        expect((vendorFilterDefs.getFilter('status').options ?? []).map((o) => o.value).sort()).toEqual(
-            Object.keys(VENDOR_STATUS_LABELS).sort(),
-        );
-        expect((vendorFilterDefs.getFilter('criticality').options ?? []).map((o) => o.value).sort()).toEqual(
-            Object.keys(VENDOR_CRITICALITY_LABELS).sort(),
-        );
-        expect((vendorFilterDefs.getFilter('riskRating').options ?? []).map((o) => o.value).sort()).toEqual(
-            Object.keys(VENDOR_CRITICALITY_LABELS).sort(),
-        );
-    });
-
-    it('reviewDue carries chip-style values the server understands directly', () => {
-        expect((vendorFilterDefs.getFilter('reviewDue').options ?? []).map((o) => o.value).sort()).toEqual(
-            Object.keys(VENDOR_REVIEW_DUE_LABELS).sort(),
-        );
-    });
-
-    it('buildVendorFilters returns the static set (no runtime derivation)', () => {
-        expect(buildVendorFilters()).toBe(vendorFilterDefs.filters);
-    });
-});
-
 // ─── Assets ──────────────────────────────────────────────────────────
 
 describe('Assets filter config', () => {
@@ -140,10 +103,9 @@ describe('Assets filter config', () => {
 
 // ─── Combined URL round-trip ────────────────────────────────────────
 
-describe('URL round-trip for Tasks / Vendors / Assets', () => {
+describe('URL round-trip for Tasks / Assets', () => {
     it.each([
         ['farm-tasks', FARM_TASK_FILTER_KEYS, { status: ['OPEN', 'IN_PROGRESS'], due: ['overdue'] } as FilterState],
-        ['vendors', VENDOR_FILTER_KEYS, { status: ['ACTIVE'], criticality: ['HIGH'], reviewDue: ['next30d'] } as FilterState],
         ['assets', ASSET_FILTER_KEYS, { type: ['SYSTEM'], status: ['ACTIVE'] } as FilterState],
     ])('%s is lossless across serialise/parse', (_name, keys, state) => {
         const parsed = parseUrlToFilterState(filterStateToUrlParams(state), keys);
