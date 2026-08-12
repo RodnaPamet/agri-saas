@@ -65,18 +65,26 @@ The tile now takes the **lead series of the chosen group**: EC stage preference
 (`FGATE`, `EXW`, `DEPSILO`, `DEPPORT`) when the group holds EC series, otherwise
 `primarySeries(group.series)`. Tile and chart cannot disagree.
 
-### The tile copy stops naming a region
+### The tile copy stops naming a region — or a source
 
 `trends.tiles.bgLatest` is `"BG price (official)"` / `"Цена BG (официална)"` —
 the region is baked into the translated **value**, where no compiler can relate
-it to the code selecting `region === 'BG'`. Renamed to
-`trends.tiles.officialLatest`, region-neutral in both locales (`Official price`
-/ `Официална цена`).
+it to the code selecting `region === 'BG'`.
 
-Region stays legible: the chart legend directly below renders `{s.region}` next
-to the source name, and there is now exactly one legend. `SeriesProvenance` is
-deliberately NOT given a region field — it is shared with the dashboard widget,
-and the information would be redundant two lines from the legend.
+Region-neutral is not enough. The *input* branch renders the same label, so a
+hand-typed MAP price already published itself as "official"; and the headline
+can now be EC (a crop), the EU Oil Bulletin (diesel), the World Bank (urea) or
+`manual` (somebody's typing). The key becomes **`trends.tiles.latestPrice`** —
+`Latest price` / `Последна цена` — neutral on both axes and true in every case.
+
+What it *is* gets stated rather than asserted: the headline tile drops
+`hideSource`, so `SeriesProvenance` names the source under every price. That
+disclosure is the one the module exists for — an official quote and the median
+of our own users' asking prices must not render alike. Region stays legible
+from the chart legend directly below, which renders `{s.region}` and of which
+there is now exactly one. `SeriesProvenance` is deliberately NOT given a region
+field: it is shared with the dashboard widget, and the information would be
+redundant two lines from the legend.
 
 ### The `isInput` fork narrows
 
@@ -107,7 +115,7 @@ display complaint must not change money numbers.
 |---|---|
 | `src/components/trends/trends-helpers.ts` | `selectPrimaryGroup` + `leadSeriesOf`, pure |
 | `src/components/trends/PricesTab.tsx` | render one group; tile follows it; narrowed fork |
-| `messages/{en,bg}.json` | `tiles.bgLatest` → `tiles.officialLatest` |
+| `messages/{en,bg}.json` | `tiles.bgLatest` → `tiles.latestPrice` |
 | `tests/unit/trends-helpers.test.ts` | the rule, executed |
 | `tests/rendered/trends-prices-tab.test.tsx` | one card from a four-region payload |
 | `tests/rendered/trends-input-categories.test.tsx` | picks up the key rename |

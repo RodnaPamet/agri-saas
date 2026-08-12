@@ -27,7 +27,12 @@ import {
     STALE_AFTER_DAYS,
     staleAfterDaysForSource,
     SOURCE_BARCHART,
+    SOURCE_MANUAL,
+    SOURCE_OIL_BULLETIN,
+    SOURCE_WORLD_BANK,
     firstInterestedCommodity,
+    selectPrimaryGroup,
+    leadSeriesOf,
 } from '@/components/trends/trends-helpers';
 
 const GENERATED_AT = '2026-03-20T09:00:00.000Z';
@@ -413,5 +418,151 @@ describe('firstInterestedCommodity', () => {
         expect(firstInterestedCommodity([])).toBeNull();
         expect(firstInterestedCommodity(undefined)).toBeNull();
         expect(firstInterestedCommodity(['nonsense'])).toBeNull();
+    });
+});
+
+/**
+ * The tab renders ONE chart, and this is what picks it.
+ *
+ * Before this, every (region, currency, unit) group got its own card — and the
+ * pull job fetches EC prices for BG, RO, EL and EU, all of them EUR/t since
+ * Bulgaria's euro adoption. So wheat drew four near-identical cards, three of
+ * them about countries a Bulgarian operator is not paid in.
+ */
+describe('selectPrimaryGroup', () => {
+    /** A non-EC series in an arbitrary region, for the fallback cases. */
+    function otherSeries(
+        source: string,
+        region: string,
+        unit: string,
+        currency: string,
+        points: Array<[string, number]>,
+    ): TrendSeries {
+        return {
+            source,
+            region,
+            stage: null,
+            unit,
+            currency,
+            label: source,
+            lastObservedAt: points.length > 0 ? points[points.length - 1][0] : null,
+            points: points.map(([date, price]) => ({ date, price })),
+        };
+    }
+
+    it('prefers Bulgaria over every other member state', () => {
+        // The whole point: RO and EL are noise for a Bulgarian farmer, and EU
+        // is an average rather than the market they sell into.
+        const groups = groupSeriesByRegionUnit([
+            ecSeries('EU', [['2026-01-01', 205]]),
+            ecSeries('RO', [['2026-01-01', 190]]),
+            ecSeries('BG', [['2026-01-01', 512]]),
+            ecSeries('EL', [['2026-01-01', 400]]),
+        ]);
+        expect(selectPrimaryGroup(groups)?.region).toBe('BG');
+    });
+
+    it('falls back to the EU average when Bulgaria has no data', () => {
+        const groups = groupSeriesByRegionUnit([
+            ecSeries('RO', [['2026-01-01', 190]]),
+            ecSeries('EU', [['2026-01-01', 205]]),
+            ecSeries('EL', [['2026-01-01', 400]]),
+        ]);
+        expect(selectPrimaryGroup(groups)?.region).toBe('EU');
+    });
+
+    it('falls back to the most recently observed group when neither exists', () => {
+        // Fertilizer is World Bank region GLOBAL and nothing else — without
+        // this arm the tab would render no chart at all for urea.
+        const groups = groupSeriesByRegionUnit([
+            otherSeries(SOURCE_WORLD_BANK, 'GLOBAL', 'USD/t', 'USD', [
+                ['2026-01-01', 340],
+                ['2026-02-01', 355],
+            ]),
+            otherSeries(SOURCE_MANUAL, 'XX', 'BGN/t', 'BGN', [['2025-06-01', 900]]),
+        ]);
+        expect(selectPrimaryGroup(groups)?.region).toBe('GLOBAL');
+    });
+
+    it('returns null when there is nothing to draw', () => {
+        expect(selectPrimaryGroup([])).toBeNull();
+    });
+
+    it('never leads with our own noticeboard when a real quote exists', () => {
+        // A region can hold two groups — EC in EUR/t and the own-listings
+        // median in BGN/t are both region BG. Taking "the first BG group"
+        // would resolve on backend ordering, and the losing outcome is the
+        // page presenting the median of our own users' ASKING prices as the
+        // official price. Order-independent by construction.
+        const ec = ecSeries('BG', [['2026-01-10', 212]]);
+        const listings = otherSeries(SOURCE_LISTINGS, 'BG', 'BGN/t', 'BGN', [
+            ['2026-01-10', 400],
+        ]);
+        expect(selectPrimaryGroup(groupSeriesByRegionUnit([ec, listings]))?.unit).toBe('EUR/t');
+        expect(selectPrimaryGroup(groupSeriesByRegionUnit([listings, ec]))?.unit).toBe('EUR/t');
+    });
+
+    it('still draws the noticeboard when it is the only thing there is', () => {
+        const groups = groupSeriesByRegionUnit([
+            otherSeries(SOURCE_LISTINGS, 'BG', 'BGN/t', 'BGN', [['2026-01-10', 400]]),
+        ]);
+        expect(selectPrimaryGroup(groups)?.unit).toBe('BGN/t');
+    });
+
+    it('keeps both diesel tax stages on the one chart it picks', () => {
+        // with-tax and without-tax are the SAME (region, currency, unit) and
+        // genuinely different numbers — narrowing to one CARD must not narrow
+        // to one LINE.
+        const groups = groupSeriesByRegionUnit([
+            otherSeries(SOURCE_OIL_BULLETIN, 'BG', 'EUR/1000l', 'EUR', [['2026-01-05', 1820]]),
+            {
+                ...otherSeries(SOURCE_OIL_BULLETIN, 'BG', 'EUR/1000l', 'EUR', [
+                    ['2026-01-05', 1490],
+                ]),
+                stage: 'without-tax',
+            },
+            otherSeries(SOURCE_OIL_BULLETIN, 'RO', 'EUR/1000l', 'EUR', [['2026-01-05', 1750]]),
+        ]);
+        const chosen = selectPrimaryGroup(groups);
+        expect(chosen?.region).toBe('BG');
+        expect(chosen?.series).toHaveLength(2);
+    });
+});
+
+/**
+ * The headline tile reads THIS, so it can never disagree with the chart.
+ *
+ * It used to read `findEcSeries(series, 'BG')` with the region hard-coded,
+ * which the moment the chart falls back to EU would print "no data" directly
+ * above a populated line.
+ */
+describe('leadSeriesOf', () => {
+    it('applies the EC stage preference inside the chosen group', () => {
+        const groups = groupSeriesByRegionUnit([
+            ecSeries('BG', [['2026-01-01', 200]], 'DEPPORT'),
+            ecSeries('BG', [['2026-01-01', 180]], 'FGATE'),
+        ]);
+        expect(leadSeriesOf(groups[0]).stage).toBe('FGATE');
+    });
+
+    it('takes the most recently observed series when the group is not EC', () => {
+        const stale: TrendSeries = {
+            source: SOURCE_OIL_BULLETIN,
+            region: 'BG',
+            stage: 'with-tax',
+            unit: 'EUR/1000l',
+            currency: 'EUR',
+            label: 'diesel',
+            lastObservedAt: '2025-11-01',
+            points: [{ date: '2025-11-01', price: 1700 }],
+        };
+        const fresh: TrendSeries = {
+            ...stale,
+            stage: 'without-tax',
+            lastObservedAt: '2026-01-05',
+            points: [{ date: '2026-01-05', price: 1490 }],
+        };
+        const groups = groupSeriesByRegionUnit([stale, fresh]);
+        expect(leadSeriesOf(groups[0]).stage).toBe('without-tax');
     });
 });

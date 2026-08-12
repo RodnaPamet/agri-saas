@@ -7003,7 +7003,7 @@
             "body": "Market data is populated by a scheduled job. Configure {ec} and {av} to enable it."
         },
         "tiles": {
-            "bgLatest": "BG price (official)",
+            "latestPrice": "Latest price",
             "listings": "Listings index",
             "listingsCount": "{count} listings",
             "reference": "Reference price",
