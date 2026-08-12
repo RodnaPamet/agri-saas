@@ -16,7 +16,7 @@ import { fitToExtent, makeProjector, type BgProjection } from '@/lib/geo/bg-proj
 import {
     MAX_ZOOM_TIER,
     MIN_ZOOM_TIER,
-    PARCEL_SHAPE_MIN_SCREEN_PX,
+    PARCEL_SHAPE_MIN_PANE_SHARE,
     PARCEL_TIER_THRESHOLD,
     UNPOSITIONED_CLUSTER_ID,
     bboxSpanMetres,
@@ -331,16 +331,79 @@ describe('how far out the view may zoom', () => {
 
     // Break: a hundred parcels drawn as a hundred one-pixel marks over
     // the country outline, which reads as damage rather than as fields.
-    it('stops drawing outlines once the holding is thumbnail-sized', () => {
-        expect(shouldDrawParcelShapes(PARCEL_SHAPE_MIN_SCREEN_PX)).toBe(true);
-        expect(shouldDrawParcelShapes(PARCEL_SHAPE_MIN_SCREEN_PX - 1)).toBe(false);
+    it('stops drawing outlines once the holding spans a fifth of the pane', () => {
+        expect(shouldDrawParcelShapes(CW * PARCEL_SHAPE_MIN_PANE_SHARE, CW)).toBe(true);
+        expect(shouldDrawParcelShapes(CW * PARCEL_SHAPE_MIN_PANE_SHARE - 1, CW)).toBe(false);
+        // Whatever else is wrong, an unmeasurable pane must not blank the map.
+        expect(shouldDrawParcelShapes(0, 0)).toBe(true);
+
         // The two predicates answer different questions and neither
         // implies the other: at country scale the tier is at its floor
         // (clustered) AND the shapes are too small — but a large holding
         // can sit at that same floor while filling the pane.
         expect(shouldDrawParcels(MIN_ZOOM_TIER)).toBe(false);
-        expect(shouldDrawParcelShapes(1000 * FIT)).toBe(true);
-        expect(shouldDrawParcelShapes(1000 * minZoomScale(FIT, COUNTRY, CW, CH))).toBe(false);
+        expect(shouldDrawParcelShapes(1000 * FIT, CW)).toBe(true);
+        expect(shouldDrawParcelShapes(1000 * minZoomScale(FIT, COUNTRY, CW, CH), CW)).toBe(false);
+    });
+
+    // Break: the threshold quietly changing the zoom range that shipped —
+    // outlines vanishing at a magnification the user could already reach.
+    it('still draws outlines at the OLD maximum zoom-out, on every pane', () => {
+        for (const [cw, ch] of [
+            [290, 220], // the compact locator on a small phone
+            [360, 500], // the mobile map slot
+            [800, 480],
+            [900, 480], // wide desktop slot — height-bound fit
+            [1200, 480],
+        ] as const) {
+            const fit = Math.min(cw / 1000, ch / 600) * 0.98;
+            expect(shouldDrawParcelShapes(1000 * (fit * 0.35), cw)).toBe(true);
+
+            // …and does not, at the new one.
+            const country = bridgedExtent(
+                projectionBridge(NATIONAL, fitToExtent(NATIONAL, FARM_BBOX, 1000, 600, { padding: 40 })),
+                1000,
+                600,
+            );
+            expect(
+                shouldDrawParcelShapes(1000 * minZoomScale(fit, country, cw, ch), cw),
+            ).toBe(false);
+        }
+    });
+
+    // The same, for a holding large enough to shrink the country ratio —
+    // the case that squeezes the two boundaries closest together. A 40 km
+    // holding makes the country only ~6.7× its box, not the ~78× a 6 km
+    // one does, so an "it is always at least ten times" assumption is
+    // simply false and this is the case that says so.
+    it('holds for a holding big enough to shrink the country ratio', () => {
+        const BIG = [26.0, 42.8, 26.5, 43.2] as const; // ~40 km across
+        const fitted = fitToExtent(NATIONAL, BIG, 1000, 600, { padding: 40 });
+        const country = bridgedExtent(projectionBridge(NATIONAL, fitted), 1000, 600);
+        expect((country.maxX - country.minX) / 1000).toBeLessThan(10);
+
+        for (const [cw, ch] of [[290, 220], [800, 480], [1200, 480]] as const) {
+            const fit = Math.min(cw / 1000, ch / 600) * 0.98;
+            expect(shouldDrawParcelShapes(1000 * (fit * 0.35), cw)).toBe(true);
+            expect(
+                shouldDrawParcelShapes(1000 * minZoomScale(fit, country, cw, ch), cw),
+            ).toBe(false);
+        }
+    });
+
+    // Break: reading the rule as "outlines vanish when you zoom out",
+    // which it deliberately is not. A holding spanning a third of the
+    // country is still legible at full zoom-out, and blanking its fields
+    // there would be the bug, not the feature.
+    it('keeps the outlines for a holding too large to shrink', () => {
+        const HUGE = [24.0, 42.0, 27.5, 43.8] as const; // most of the country
+        const fitted = fitToExtent(NATIONAL, HUGE, 1000, 600, { padding: 40 });
+        const country = bridgedExtent(projectionBridge(NATIONAL, fitted), 1000, 600);
+        const [cw, ch] = [800, 480];
+        const fit = Math.min(cw / 1000, ch / 600) * 0.98;
+        expect(
+            shouldDrawParcelShapes(1000 * minZoomScale(fit, country, cw, ch), cw),
+        ).toBe(true);
     });
 });
 

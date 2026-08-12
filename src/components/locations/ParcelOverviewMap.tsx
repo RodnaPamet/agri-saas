@@ -387,7 +387,7 @@ export function ParcelOverviewMap({
         // hundred one-pixel marks, which reads as damage to the country
         // outline rather than as fields. The cluster markers below are
         // what carries the holding at that magnification.
-        const drawShapes = shouldDrawParcelShapes(geom.W * k);
+        const drawShapes = shouldDrawParcelShapes(geom.W * k, cw);
 
         if (parcelPaths.length > 0 && drawShapes) {
             const dim = selectedIds.size > 0;

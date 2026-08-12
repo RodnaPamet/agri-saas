@@ -21,8 +21,9 @@ const nk = Math.max(v.fit * 0.35, Math.min(v.fit * 64, v.k * factor));
 `fit` frames the holding, so the floor let the view out to about three
 times the holding's own framing. The country outlines were already being
 drawn — `oblastPaths` re-placed through `projectionBridge` — and in this
-world space the country is **more than ten times** the holding's box. So
-the outlines were there and unreachable.
+world space the country is many times the holding's box (≈78× for a 6 km
+holding, ≈6.7× for a 40 km one). So the outlines were there and
+unreachable.
 
 The floor is now `minZoomScale(fit, countryExtent, cw, ch)`, where
 `countryExtent` is the national geometry's box read through the same
@@ -44,14 +45,25 @@ Two things follow from the view being able to go out that far:
 - **The outlines have to stop.** A hundred parcels inside a holding that
   is now forty pixels wide are a hundred one-pixel marks, which reads as
   damage to the country outline rather than as fields.
-  `shouldDrawParcelShapes(holdingScreenWidthPx)` is a sibling of the
-  existing `shouldDrawParcels(zoomTier)`, not a replacement, because the
-  two ask different questions: the tier is about visible ground span, this
-  is about whether a shape is big enough to read. Neither implies the
-  other — a large holding can sit at the tier floor while still filling
-  the pane. When the shapes drop out the cluster markers take over, which
-  also covers the frame or two between a zoom-out and the payload for the
-  new tier arriving.
+  `shouldDrawParcelShapes` is a sibling of the existing
+  `shouldDrawParcels(zoomTier)`, not a replacement, because the two ask
+  different questions: the tier is about visible ground span, this is
+  about whether a shape is big enough to read. Neither implies the other
+  — a large holding can sit at the tier floor while still filling the
+  pane. When the shapes drop out the cluster markers take over, which also
+  covers the frame or two between a zoom-out and the payload for the new
+  tier arriving.
+
+  It takes a SHARE of the pane, not a pixel count. A pixel count answers
+  differently on a 290 px phone card and a 900 px desktop slot while the
+  question does not, and the first draft's 140 px would have dropped the
+  outlines at `0.4 × fit` on a small phone — inside the zoom range that
+  already shipped. The share has one hard boundary (still drawing at the
+  old `fit * 0.35` floor, on every pane size) and deliberately no second
+  one: how small a holding gets at country scale depends on how big it is,
+  from ~0.03 of the pane for a 6 km holding to ~0.29 for one spanning a
+  third of Bulgaria. The last of those keeps its outlines all the way out,
+  which is right — they are still legible.
 
 A fourth control (globe) snaps between the two framings. Reaching country
 scale on the minus button alone is eight presses, which on a phone is not

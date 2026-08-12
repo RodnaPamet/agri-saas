@@ -68,10 +68,27 @@ export function shouldDrawParcels(zoomTier: number): boolean {
 }
 
 /**
- * How wide the holding's own frame has to be on screen, in CSS pixels,
- * before individual parcel outlines are worth drawing.
+ * How much of the pane the holding's own frame has to span before
+ * individual parcel outlines are worth drawing.
+ *
+ * A SHARE rather than a pixel count, because a pixel count answers
+ * differently on a 290 px phone card and a 900 px desktop slot, while
+ * the question — "is a field big enough on screen to read as a field?"
+ * — does not. It also has to sit above one fixed boundary: the zoom-out
+ * that shipped bottoms out at `fit * 0.35`, putting the holding at
+ * roughly 0.30–0.34 of the pane, and outlines must still be drawn there
+ * or this quietly narrows the pre-existing range.
+ *
+ * The other side is deliberately NOT a fixed boundary. How small the
+ * holding gets at country scale depends on how large the holding is: a
+ * 6 km one lands near 0.03 of the pane, a 40 km one near 0.14, and a
+ * holding spanning a third of Bulgaria stays around 0.29 — where its
+ * outlines are still perfectly legible and should still be drawn. The
+ * predicate therefore says nothing about zoom LEVEL, and a huge holding
+ * keeping its outlines all the way out is the right answer rather than a
+ * hole in the rule.
  */
-export const PARCEL_SHAPE_MIN_SCREEN_PX = 140;
+export const PARCEL_SHAPE_MIN_PANE_SHARE = 0.2;
 
 /**
  * Whether to draw parcel OUTLINES, as opposed to cluster markers.
@@ -80,18 +97,25 @@ export const PARCEL_SHAPE_MIN_SCREEN_PX = 140;
  * different question. That one reads a zoom TIER, which is a statement
  * about visible ground span: at 20 km of ground per cell, clustering says
  * more than a hundred separate dots do. This one is about legibility at
- * the current magnification — once the whole holding occupies less of the
- * pane than a thumbnail, its parcels are not outlines any more, they are a
- * smear of one-pixel marks that reads as noise on top of the country.
+ * the current magnification — once the whole holding spans a fifth of the
+ * pane, its parcels are not outlines any more, they are a smear of
+ * one-pixel marks that reads as noise on top of the country.
  *
  * Both are needed because neither implies the other. A large holding can
  * sit at the lowest tier while still filling the pane (draw the shapes);
  * the same holding zoomed out to country scale is at the same tier and
  * must not (draw the clusters instead). Ground span and screen size only
  * moved together while the view could not zoom out past the holding.
+ *
+ * An unmeasurable pane draws them: whatever else is wrong, it is not this
+ * function's business to blank the map.
  */
-export function shouldDrawParcelShapes(holdingScreenWidthPx: number): boolean {
-    return holdingScreenWidthPx >= PARCEL_SHAPE_MIN_SCREEN_PX;
+export function shouldDrawParcelShapes(
+    holdingScreenWidthPx: number,
+    paneWidthPx: number,
+): boolean {
+    if (!(paneWidthPx > 0)) return true;
+    return holdingScreenWidthPx >= paneWidthPx * PARCEL_SHAPE_MIN_PANE_SHARE;
 }
 
 // ── World extents, and how far out the view may go ───────────────────
