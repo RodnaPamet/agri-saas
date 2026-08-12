@@ -58,3 +58,62 @@ are the practice/policy/vendor-specific ones: `b4-practice-tasks-tab`,
 SharePoint integration in this repo is policy-centric (`sharepoint-policy-pull`,
 `sharepoint-subscription-renew`, a Graph webhook resolving `db.policy`).
 Everything else is a narrow.
+
+---
+
+## State as of the last phase-2 commit
+
+`npx tsc --noEmit` is clean. The guard suites went **80 → 23 failing**
+(225 → 94 assertions). What is DONE:
+
+- 23 pages + 97 API routes deleted (six route trees sat outside the tenant
+  tree and would have survived a `src/app/api/t/*` delete).
+- Shared exports lifted out of the doomed page dirs into
+  `src/components/EvidenceSubTable.tsx` and `src/components/processes/`.
+- 177 stale guard-registry entries removed; 15 guard suites deleted whole
+  (each read, not keyword-matched); 5 numeric ratchets lowered to reality.
+- `route-permissions.ts` orphan rule, `route-exemptions.ts` stale entries, and
+  the k6 load scripts severed.
+
+### The 23 that remain
+
+```
+design-system-drift          form-primitive-adoption      form-telemetry-adoption
+loading-states               table-platform-drift         token-migration
+action-button-canonical-…    columns-dropdown-coverage    epic55-native-select-ratchet
+epic63-timestamp-rollout     icon-only-action-discipline  list-page-shell-coverage
+metadatabar-detail-coverage  pageheader-adoption          r23-prd-assets-practices-rollout
+r32-modal-form-completeness  right-rail-discipline        roadmap-11-completion
+sharepoint-sp5               state-coverage               table-unification
+tab-primitive-adoption       ux-foundation-ratchets
+```
+
+Most are adoption registries with a surviving half — `r23-prd-assets-practices`
+(assets live, practices gone), `sharepoint-sp5` (the admin sync-health
+dashboard lives, the audit-pack export does not). They narrow; they do not
+delete.
+
+### Two traps, both already paid for once
+
+1. **Run `npx tsc --noEmit` after every mechanical pass over these files.** A
+   bulk entry-removal deleted paths that were CALL ARGUMENTS (`read(\n)`) and
+   emptied three registries to `[]` (implicit `any[]`). Jest reported those as
+   6 suites failing to run; only tsc named the cause.
+2. **An emptied registry is not a passing guard.** When every entry was a GRC
+   page, the guard becomes vacuous — delete it rather than leave an `[]` that
+   can never fail. `card-header-discipline` and `form-section-discipline` went
+   that way; `dashboard-masthead-discipline` did not, because its
+   MAIN_DASHBOARD subject survives.
+
+### Not started
+
+Everything below the guard tier: the KILL usecases/repositories/policies
+(`AuditRepository`, `PolicyRepository`, `VendorRepository`, `PracticeRepository`,
+`FrameworkRepository`, `MappingRepository`, the `vendor-assessment-*` and
+`audit-readiness` families), the GRC components, the jobs and their four
+registration points, `permissions.ts` / `search.ts` / command palette / nav /
+`modules.ts`, ~2,460 i18n keys in both locales, the 45 unit/integration/rendered
+files and 24 e2e specs, and all of phase 3.
+
+`compliance-calendar.ts` still needs splitting — `getUpcomingDeadlineCount`
+feeds the sidebar badge on EVERY authenticated page.
