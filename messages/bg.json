@@ -6167,7 +6167,11 @@
             "clusterActive": "Показани са {count, plural, one {# парцел} other {# парцела}} до {label}",
             "clusterActiveUnpositioned": "Показани са {count, plural, one {# парцел} other {# парцела}} без местоположение",
             "zoomIn": "Приближи",
-            "zoomOut": "Отдалечи"
+            "zoomOut": "Отдалечи",
+            "fitCountry": "Покажи цялата страна",
+            "fitHolding": "Обратно към този имот",
+            "stepNextParcel": "Към следващия парцел, от север на юг",
+            "stepPosition": "{name} · {index} от {total}, от север на юг"
         },
         "spray": {
             "title": "Нова задача за пръскане",

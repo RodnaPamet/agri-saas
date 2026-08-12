@@ -16,17 +16,29 @@ import { fitToExtent, makeProjector, type BgProjection } from '@/lib/geo/bg-proj
 import {
     MAX_ZOOM_TIER,
     MIN_ZOOM_TIER,
+    PARCEL_SHAPE_MIN_SCREEN_PX,
     PARCEL_TIER_THRESHOLD,
     UNPOSITIONED_CLUSTER_ID,
     bboxSpanMetres,
+    bridgedExtent,
+    centreOn,
+    clampExtentFor,
+    clampTranslation,
     composeBridgeTransform,
     encodeClusterToken,
+    farmExtent,
+    fitScaleForExtent,
+    minZoomScale,
+    nextStepIndex,
+    orderParcelsForStepping,
     parseClusterToken,
     polygonBBox,
     polygonRings,
     projectionBridge,
     resolveClusterSelection,
     shouldDrawParcels,
+    shouldDrawParcelShapes,
+    unionExtent,
     zoomTierForSpan,
 } from '@/components/locations/parcel-overview-model';
 
@@ -234,6 +246,162 @@ describe('projection bridge', () => {
         expect(gotY).toBeCloseTo(dpr * (view.k * worldY + view.ty), 9);
         expect(b).toBe(0);
         expect(c).toBe(0);
+    });
+});
+
+describe('how far out the view may zoom', () => {
+    const FITTED = fitToExtent(NATIONAL, FARM_BBOX, 1000, 600, { padding: 40 });
+    const BRIDGE = projectionBridge(NATIONAL, FITTED);
+    const COUNTRY = bridgedExtent(BRIDGE, 1000, 600);
+    const FARM = farmExtent(1000, 600);
+    // A pane the size the locator actually gets on the Map tab.
+    const CW = 800;
+    const CH = 480;
+    const FIT = Math.min(CW / 1000, CH / 600) * 0.98;
+
+    // Break: the whole reason for this work — a holding that cannot be
+    // seen in its national context because the zoom floor stops long
+    // before the country is in frame.
+    it('the country is very much larger than the holding in this world space', () => {
+        // Not an incidental fact: it is why `fit * 0.35` was nowhere near
+        // enough, and why the floor has to be measured rather than picked.
+        const countryWidth = COUNTRY.maxX - COUNTRY.minX;
+        expect(countryWidth / (FARM.maxX - FARM.minX)).toBeGreaterThan(10);
+    });
+
+    it('lets the zoom reach a scale that frames the whole country', () => {
+        const floor = minZoomScale(FIT, COUNTRY, CW, CH);
+        // At the floor the country fits the pane on both axes.
+        expect((COUNTRY.maxX - COUNTRY.minX) * floor).toBeLessThanOrEqual(CW);
+        expect((COUNTRY.maxY - COUNTRY.minY) * floor).toBeLessThanOrEqual(CH);
+        // …and the OLD floor did not, which is the regression this fixes.
+        const oldFloor = FIT * 0.35;
+        expect((COUNTRY.maxX - COUNTRY.minX) * oldFloor).toBeGreaterThan(CW);
+    });
+
+    it('never narrows the range that shipped', () => {
+        // Whatever the country works out to, the floor is at most the old
+        // one — a geometry change must not silently take zoom-out away.
+        expect(minZoomScale(FIT, COUNTRY, CW, CH)).toBeLessThanOrEqual(FIT * 0.35);
+        // No geometry yet → exactly the old behaviour.
+        expect(minZoomScale(FIT, null, CW, CH)).toBeCloseTo(FIT * 0.35, 12);
+        // A pane with no size cannot be measured against.
+        expect(minZoomScale(FIT, COUNTRY, 0, 0)).toBeCloseTo(FIT * 0.35, 12);
+    });
+
+    // Break: panning at farm zoom wandering off the holding into empty
+    // world space, because the clamp was widened to the country for every
+    // magnification instead of only the new range.
+    it('clamps to the holding while zoomed in, to the country once out past it', () => {
+        expect(clampExtentFor(FIT, FIT, FARM, COUNTRY)).toEqual(FARM);
+        expect(clampExtentFor(FIT * 4, FIT, FARM, COUNTRY)).toEqual(FARM);
+        expect(clampExtentFor(FIT * 0.5, FIT, FARM, COUNTRY)).toEqual(
+            unionExtent(FARM, COUNTRY),
+        );
+        // Nothing to widen to before the geometry loads.
+        expect(clampExtentFor(FIT * 0.5, FIT, FARM, null)).toEqual(FARM);
+    });
+
+    it('centres an extent smaller than the pane instead of pinning it', () => {
+        // What makes "zoom all the way out" land on a centred country
+        // rather than one shoved into whichever corner the holding is in.
+        const k = fitScaleForExtent(COUNTRY, CW, CH) * 0.9;
+        const { tx, ty } = clampTranslation(COUNTRY, k, CW, CH, 99999, -99999);
+        const left = COUNTRY.minX * k + tx;
+        const right = COUNTRY.maxX * k + tx;
+        expect(left).toBeCloseTo(CW - right, 6);
+        const top = COUNTRY.minY * k + ty;
+        const bottom = COUNTRY.maxY * k + ty;
+        expect(top).toBeCloseTo(CH - bottom, 6);
+    });
+
+    it('holds a larger-than-pane extent at its edges', () => {
+        const k = FIT * 4; // farm box far wider than the pane
+        const pulled = clampTranslation(FARM, k, CW, CH, 5000, 5000);
+        expect(pulled.tx).toBeCloseTo(0, 6); // cannot drag the left edge inward
+        const pushed = clampTranslation(FARM, k, CW, CH, -99999, -99999);
+        expect(pushed.tx).toBeCloseTo(CW - (FARM.maxX - FARM.minX) * k, 6);
+    });
+
+    it('centreOn puts a world point in the middle of the pane', () => {
+        const { tx, ty } = centreOn(250, 125, 2, CW, CH);
+        expect(250 * 2 + tx).toBeCloseTo(CW / 2, 9);
+        expect(125 * 2 + ty).toBeCloseTo(CH / 2, 9);
+    });
+
+    // Break: a hundred parcels drawn as a hundred one-pixel marks over
+    // the country outline, which reads as damage rather than as fields.
+    it('stops drawing outlines once the holding is thumbnail-sized', () => {
+        expect(shouldDrawParcelShapes(PARCEL_SHAPE_MIN_SCREEN_PX)).toBe(true);
+        expect(shouldDrawParcelShapes(PARCEL_SHAPE_MIN_SCREEN_PX - 1)).toBe(false);
+        // The two predicates answer different questions and neither
+        // implies the other: at country scale the tier is at its floor
+        // (clustered) AND the shapes are too small — but a large holding
+        // can sit at that same floor while filling the pane.
+        expect(shouldDrawParcels(MIN_ZOOM_TIER)).toBe(false);
+        expect(shouldDrawParcelShapes(1000 * FIT)).toBe(true);
+        expect(shouldDrawParcelShapes(1000 * minZoomScale(FIT, COUNTRY, CW, CH))).toBe(false);
+    });
+});
+
+describe('stepping through parcels', () => {
+    // Deliberately NOT in north-to-south order, so a pass cannot come
+    // from the input already being sorted.
+    const PARCELS = [
+        { id: 'p1', lon: 26.9, lat: 43.11 },
+        { id: 'p4', lon: 26.7, lat: 43.2 },
+        { id: 'p3', lon: 26.902, lat: 43.112 },
+        { id: 'p2', lon: 26.901, lat: 43.111 },
+    ];
+
+    // Break: a stepper that walks creation order, which records when a
+    // parcel was typed in and says nothing about where it is — so the
+    // button reads as a shuffle.
+    it('walks north to south', () => {
+        expect(orderParcelsForStepping(PARCELS)).toEqual(['p4', 'p3', 'p2', 'p1']);
+    });
+
+    it('breaks a shared latitude west to east, then by id', () => {
+        const sameLine = [
+            { id: 'b', lon: 27.0, lat: 43.0 },
+            { id: 'a', lon: 26.0, lat: 43.0 },
+            { id: 'c', lon: 26.0, lat: 43.0 },
+        ];
+        expect(orderParcelsForStepping(sameLine)).toEqual(['a', 'c', 'b']);
+    });
+
+    it('is total — the same input always gives the same walk', () => {
+        const once = orderParcelsForStepping(PARCELS);
+        const again = orderParcelsForStepping([...PARCELS].reverse());
+        expect(again).toEqual(once);
+    });
+
+    it('does not mutate the callers array', () => {
+        const input = [...PARCELS];
+        orderParcelsForStepping(input);
+        expect(input.map((p) => p.id)).toEqual(['p1', 'p4', 'p3', 'p2']);
+    });
+
+    // Break: stepping wandering outside an active cluster filter, so the
+    // map and the table below it are answering different questions.
+    it('walks only the selected group when there is one', () => {
+        expect(orderParcelsForStepping(PARCELS, new Set(['p1', 'p3']))).toEqual(['p3', 'p1']);
+        expect(orderParcelsForStepping(PARCELS, new Set())).toEqual([]);
+    });
+
+    it('skips a parcel with no usable coordinate rather than flying to NaN', () => {
+        const broken = [...PARCELS, { id: 'bad', lon: Number.NaN, lat: 43.5 }];
+        expect(orderParcelsForStepping(broken)).not.toContain('bad');
+    });
+
+    // Break: a stepper that stops responding at the last parcel, which is
+    // indistinguishable from a broken button.
+    it('wraps at the end and starts from nothing-visited', () => {
+        expect(nextStepIndex(-1, 4)).toBe(0);
+        expect(nextStepIndex(0, 4)).toBe(1);
+        expect(nextStepIndex(3, 4)).toBe(0);
+        expect(nextStepIndex(-1, 0)).toBe(-1);
+        expect(nextStepIndex(2, 0)).toBe(-1);
     });
 });
 

@@ -5,18 +5,27 @@
  *
  * jsdom implements no 2D canvas context: `getContext('2d')` returns
  * null, so every drawing and hit-testing path in this component
- * silently no-ops here. That is not a gap these tests can close — it is
+ * silently no-ops here. That is not a gap THESE tests can close — it is
  * why the component was split. The arithmetic is executed in
  * `tests/unit/locations/parcel-overview-model.test.ts`; what is
  * asserted below is the DOM half, which is also the half that has to
  * work for keyboard and screen-reader users.
  *
+ * The drawing half is not left unexecuted either, it is just not
+ * executed HERE: `parcel-overview-map-gestures.test.tsx` installs a
+ * recording 2D context and drives the pan/zoom gestures and the parcel
+ * stepper against it.
+ *
  * ── Viewport ─────────────────────────────────────────────────────────
  *
- * Pinned to `desktop`. This component branches on no media query at all,
- * so the choice changes nothing — it is stated (and pinned) so the next
- * reader does not have to work that out, and so a future viewport-
- * dependent branch cannot appear untested under the phone default.
+ * Pinned to `desktop`. Nothing asserted below branches on a width media
+ * query, so the choice changes nothing here — it is stated (and pinned)
+ * so the next reader does not have to work that out, and so a future
+ * viewport-dependent branch cannot appear untested under the phone
+ * default. (The component does read `prefers-reduced-motion`, in the
+ * stepper's flight; that branch is covered in the gestures suite, which
+ * installs its own `matchMedia` because the project stub answers
+ * `matches: false` to everything.)
  *
  * Every `it()` names the production break it catches.
  */
