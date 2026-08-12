@@ -1,0 +1,151 @@
+/// Work items — the farm's task system.
+///
+/// These models came from the inherited GRC product, where a `Task` was a
+/// compliance action. They are kept because the agri product RUNS ON THEM:
+/// `farm-task.ts` is a thin orchestration over this module, and
+/// `crop-planning.ts` and `field-operation.ts` both build on it. A
+/// `FARM_TASK` or `FIELD_OPERATION` row IS a farm task — same table, same
+/// key sequence, same links and comments.
+///
+/// Moved here from `compliance.prisma` so the agri product no longer depends
+/// on a compliance-owned file. A pure move: no field, index or relation
+/// changed, so the generated client is byte-identical and no migration is
+/// needed.
+
+model Task {
+  id               String            @id @default(cuid())
+  tenantId         String
+  type             WorkItemType      @default(TASK)
+  title            String
+  description      String?
+  severity         WorkItemSeverity  @default(MEDIUM)
+  priority         WorkItemPriority  @default(P2)
+  status           WorkItemStatus    @default(OPEN)
+  source           WorkItemSource?   @default(MANUAL)
+  key              String?
+  resolution       String?
+  dueAt            DateTime?
+  completedAt      DateTime?
+  createdByUserId  String
+  assigneeUserId   String?
+  reviewerUserId   String?
+  practiceId        String?
+  metadataJson     Json?
+  // Agriculture (БАБХ farm-record) — persisted so the ДНЕВНИК generator can
+  // split SPRAY rows (химични обработки) from FERTILIZE rows (торове)
+  // without re-deriving from the title. Nullable: legacy FIELD_OPERATION
+  // rows fall back to a derive-from-title reader. applicationTechnique is
+  // the "Техника за приложение" (one rig per job is the field reality).
+  operationType        FieldOperationType?
+  applicationTechnique String?
+  // Offline exactly-once handle. When a FIELD_OPERATION is created from the
+  // queued outbox, the client's outbox-item id rides in as the
+  // `Idempotency-Key`; a replayed write (flaky rural LTE re-send) dedupes on
+  // (tenantId, clientMutationId) and returns the original task instead of
+  // minting a duplicate. Nullable + NULLS-DISTINCT: online creates without a
+  // key are unconstrained (every NULL is unique to Postgres).
+  clientMutationId String?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  deletedAt        DateTime?
+  deletedByUserId  String?
+  retentionUntil   DateTime?
+  assignee         User?             @relation("TaskAssignee", fields: [assigneeUserId], references: [id])
+  practice          Practice?          @relation(fields: [practiceId], references: [id])
+  createdBy        User              @relation("TaskCreator", fields: [createdByUserId], references: [id])
+  reviewer         User?             @relation("TaskReviewer", fields: [reviewerUserId], references: [id])
+  tenant           Tenant            @relation(fields: [tenantId], references: [id])
+  comments         TaskComment[]
+  links            TaskLink[]
+  watchers         TaskWatcher[]
+  // Evidence attached directly to this task — the task Evidence tab
+  // mirrors the practice Evidence tab. `Evidence.taskId` is the source
+  // pointer that also powers the "uploaded from" back-reference on the
+  // evidence detail surface.
+  evidence         Evidence[]
+  // Agriculture (Feature 1) — per-parcel prescription lines when this
+  // task is a FIELD_OPERATION (spray job).
+  operationParcels OperationParcel[]
+
+  @@unique([tenantId, key])
+  // Offline idempotency ledger — a replayed FIELD_OPERATION create dedupes
+  // here. Nullable column ⇒ NULLS DISTINCT ⇒ online (no-key) creates never
+  // collide; only real Idempotency-Key replays are constrained.
+  @@unique([tenantId, clientMutationId])
+  @@index([tenantId])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, status])
+  @@index([tenantId, type])
+  @@index([tenantId, severity])
+  @@index([tenantId, assigneeUserId])
+  @@index([tenantId, practiceId])
+  // #102 item 4 — the practice-detail Tasks tab filters by both
+  // practiceId AND status; this composite serves that hot path.
+  @@index([tenantId, practiceId, status])
+  @@index([tenantId, deletedAt])
+  @@index([tenantId, priority, createdAt])
+  // #102 item 4 — `[tenantId, dueAt]` dropped: it is a strict
+  // prefix of `[tenantId, dueAt, status]` below, so the planner
+  // never needs both.
+  @@index([tenantId, dueAt, status])
+}
+
+/// Per-tenant monotonic counter for minting `TSK-N` work-item keys.
+///
+/// #102 item 2 — replaces the `db.task.count()` derivation in
+/// `WorkItemRepository.create`, which raced against the unique
+/// `[tenantId, key]` index under concurrent imports and scaled
+/// linearly with tenant size. `upsert` with an atomic `increment`
+/// (native `INSERT … ON CONFLICT DO UPDATE`) is race-free.
+///
+/// RLS: tenant-scoped (Class A — `tenant_isolation` USING +
+/// `tenant_isolation_insert` WITH CHECK + `superuser_bypass`,
+/// `FORCE ROW LEVEL SECURITY`). See the companion migration.
+model TaskKeySequence {
+  tenantId  String @id
+  lastValue Int    @default(0)
+}
+
+model TaskLink {
+  id         String             @id @default(cuid())
+  tenantId   String
+  taskId     String
+  entityType TaskLinkEntityType
+  entityId   String
+  relation   TaskLinkRelation   @default(RELATES_TO)
+  createdAt  DateTime           @default(now())
+  task       Task               @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  tenant     Tenant             @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, taskId, entityType, entityId])
+  @@index([tenantId, taskId])
+  @@index([tenantId, entityType, entityId])
+}
+
+model TaskComment {
+  id              String   @id @default(cuid())
+  tenantId        String
+  taskId          String
+  body            String
+  createdByUserId String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  createdBy       User     @relation("TaskCommentCreator", fields: [createdByUserId], references: [id])
+  task            Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  tenant          Tenant   @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, taskId])
+}
+
+model TaskWatcher {
+  id       String @id @default(cuid())
+  tenantId String
+  taskId   String
+  userId   String
+  task     Task   @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  tenant   Tenant @relation(fields: [tenantId], references: [id])
+  user     User   @relation(fields: [userId], references: [id])
+
+  @@unique([taskId, userId])
+  @@index([tenantId, taskId])
+}

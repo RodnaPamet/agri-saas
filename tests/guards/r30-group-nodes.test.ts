@@ -27,9 +27,27 @@ import * as path from "node:path";
 const ROOT = path.resolve(__dirname, "../..");
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), "utf8");
 
+/**
+ * The WHOLE schema folder, concatenated.
+ *
+ * These assertions are about what the schema DECLARES, not about which file
+ * happens to hold it -- and models do move between files: the GRC teardown
+ * relocated the Task, Asset, Evidence and process-map families out of the
+ * compliance-owned files in a single commit that changed no column at all.
+ * Reading one file by name made this guard fail on that pure move, which is
+ * a guard reporting on filing rather than on the property it exists to hold.
+ */
+const readSchema = (): string =>
+    fs
+        .readdirSync(path.join(ROOT, 'prisma/schema'))
+        .filter((f) => f.endsWith('.prisma'))
+        .map((f) => fs.readFileSync(path.join(ROOT, 'prisma/schema', f), 'utf8'))
+        .join('\n');
+
+
 describe("R30 — group nodes", () => {
     describe("schema + migration", () => {
-        const prisma = read("prisma/schema/processes.prisma");
+        const prisma = readSchema();
         const migration = read(
             "prisma/migrations/20260525160000_r30_group_nodes/migration.sql",
         );

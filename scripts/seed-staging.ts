@@ -123,7 +123,10 @@ async function seedStaging() {
         for (let i = 0; i < Math.min(practices.length, requirements.length); i++) {
             await stagingPrisma.practiceRequirementLink.upsert({
                 where: { practiceId_requirementId: { practiceId: practices[i].id, requirementId: requirements[i].id } },
-                create: { practiceId: practices[i].id, requirementId: requirements[i].id },
+                // tenantId is REQUIRED on PracticeRequirementLink; omitting it
+                // made this a hard PrismaClientValidationError at runtime,
+                // invisible to tsc because scripts/ is excluded.
+                create: { tenantId: tenant.id, practiceId: practices[i].id, requirementId: requirements[i].id },
                 update: {},
             });
         }
