@@ -1,8 +1,8 @@
 'use client';
 
 /**
- * The cost entries filed against ONE domain record — a lease, a
- * planting, a field, a season, a parcel.
+ * The cost entries filed against ONE domain record — a lease, a product,
+ * a planting, a field, a season, a parcel.
  *
  * ── Reflect, never duplicate ────────────────────────────────────────
  *
@@ -27,14 +27,14 @@
  * register is the one place a cost is entered; this is the mirror.
  */
 
-import useSWR from 'swr';
 import { useTranslations } from 'next-intl';
 import { Badge } from '@/components/ui/badge';
 import { Heading } from '@/components/ui/typography';
 import { Paperclip } from '@/components/ui/icons/nucleo';
 import { formatDate } from '@/lib/format-date';
 import { formatDecimal } from '@/lib/number-format';
-import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
+import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
+import { useTenantHref } from '@/lib/tenant-context-provider';
 
 interface CostEntryLine {
     id: string;
@@ -53,6 +53,22 @@ export interface DomainCostEntriesPanelProps {
     id: string;
     /** i18n key under `grain.costs` for this surface's heading. */
     titleKey: string;
+    /**
+     * i18n key under `grain.costs` for the nothing-here line.
+     *
+     * REQUIRED, and deliberately not defaulted. The first version of this
+     * panel hard-coded the lease wording, so the second surface to mount it
+     * would have told a farmer looking at a product that "no costs are
+     * recorded against this lease yet" — wrong, and wrong in the confident
+     * register that gets believed.
+     */
+    emptyKey: string;
+    /**
+     * Optional footnote under the list. The lease surface needs one (it sits
+     * beside `LeasePaymentsPanel` and has to say why the two are not added
+     * together); a surface with no neighbouring money list needs none.
+     */
+    noteKey?: string;
     /** Where "open the register" should land, pre-filtered. */
     registerHref: string;
 }
@@ -61,20 +77,23 @@ export function DomainCostEntriesPanel({
     link,
     id,
     titleKey,
+    emptyKey,
+    noteKey,
     registerHref,
 }: DomainCostEntriesPanelProps) {
     const t = useTranslations('grain.costs');
     const tEnums = useTranslations('grainEnums');
-    const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
 
-    const { data, error, isLoading } = useSWR<{ rows: CostEntryLine[] }>(
-        apiUrl(`/grain/costs?${link}=${encodeURIComponent(id)}`),
-        async (url: string) => {
-            const res = await fetch(url);
-            if (!res.ok) throw new Error('Failed to load cost entries');
-            return res.json();
-        },
+    // `useTenantSWR`, not a bare `useSWR` + hand-rolled `fetch`. The panel
+    // originally carried its own fetcher, which made it the one component in
+    // the app that could not be exercised through the project's SWR seam —
+    // the reason an earlier attempt to mount it on the inventory page had to
+    // be reverted. Going through the shared hook also buys tenant-prefixed
+    // key derivation, cross-tenant cache isolation and the persistent
+    // cache, none of which the private fetcher had.
+    const { data, error, isLoading } = useTenantSWR<{ rows: CostEntryLine[] }>(
+        `/grain/costs?${link}=${encodeURIComponent(id)}`,
     );
 
     const rows = data?.rows ?? [];
@@ -99,7 +118,7 @@ export function DomainCostEntriesPanel({
                 <Heading level={3} as="h3" tone="muted">
                     {t(titleKey)}
                 </Heading>
-                <p className="text-xs text-content-subtle">{t('leasePanelLoading')}</p>
+                <p className="text-xs text-content-subtle">{t('panelLoading')}</p>
             </section>
         );
     }
@@ -114,12 +133,12 @@ export function DomainCostEntriesPanel({
                     href={tenantHref(registerHref)}
                     className="text-xs text-content-muted underline-offset-2 hover:text-content-emphasis hover:underline"
                 >
-                    {t('leasePanelOpenRegister')}
+                    {t('panelOpenRegister')}
                 </a>
             </div>
 
             {rows.length === 0 ? (
-                <p className="text-xs text-content-subtle">{t('leasePanelEmpty')}</p>
+                <p className="text-xs text-content-subtle">{t(emptyKey)}</p>
             ) : (
                 <ul className="space-y-tight">
                     {rows.map((r) => (
@@ -153,7 +172,9 @@ export function DomainCostEntriesPanel({
                     ))}
                 </ul>
             )}
-            <p className="text-xs text-content-subtle">{t('leasePanelNote')}</p>
+            {noteKey ? (
+                <p className="text-xs text-content-subtle">{t(noteKey)}</p>
+            ) : null}
         </section>
     );
 }

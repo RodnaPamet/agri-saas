@@ -503,6 +503,8 @@ export function RentClient({
                                     link="leaseId"
                                     id={editingId}
                                     titleKey="leasePanelTitle"
+                                    emptyKey="leasePanelEmpty"
+                                    noteKey="leasePanelNote"
                                     registerHref="/grain/costs?category=RENT"
                                 />
                             ) : null}

@@ -61,6 +61,8 @@ let lotPage: Any | undefined;
 let itemsData: Any[] | undefined;
 let lotDetailData: Any | undefined;
 let traceData: Any | undefined;
+// The product-edit modal mirrors the cost register for that product.
+let costPanelData: Any | undefined;
 let traceLoading = false;
 const mutateLots = jest.fn(async () => undefined);
 const mutateItems = jest.fn(async () => undefined);
@@ -95,6 +97,9 @@ jest.mock('@/lib/hooks/use-tenant-swr', () => ({
                 isLoading: false,
                 mutate: jest.fn(),
             };
+        }
+        if (key.startsWith('/grain/costs?')) {
+            return { data: costPanelData, isLoading: false, mutate: jest.fn() };
         }
         return { data: undefined, isLoading: false, mutate: jest.fn() };
     },
@@ -200,6 +205,19 @@ beforeEach(() => {
     lotDetailData = LOT_DETAIL;
     traceData = undefined;
     traceLoading = false;
+    costPanelData = {
+        rows: [
+            {
+                id: 'ce-1',
+                category: 'PESTICIDE',
+                amount: 120,
+                currency: 'BGN',
+                incurredOn: '2026-03-01T00:00:00.000Z',
+                supplier: 'Agrimarket',
+                invoiceFileId: null,
+            },
+        ],
+    };
     apiGet.mockImplementation(async (url: string) => {
         if (url.includes('/ledger')) return page([]);
         if (url.includes('/items/')) return ITEM_DETAIL;
@@ -397,6 +415,12 @@ describe('InventoryClient — product modal', () => {
             expect(screen.getByPlaceholderText('e.g. Roundup PowerMAX')).toHaveValue('Roundup'),
         );
         expect(apiGet).toHaveBeenCalledWith('/api/t/acme/items/item-1');
+
+        // The cost mirror is mounted and scoped to THIS product. Break:
+        // dropping the `editItemId ?` gate mounts it for a brand-new
+        // product too, filtering on an id that does not exist yet.
+        expect(screen.getByText('Costs for this product')).toBeInTheDocument();
+        expect(screen.getByText('120 BGN')).toBeInTheDocument();
         expect(screen.getByPlaceholderText('e.g. 5')).toHaveValue('5');
         expect(screen.getByPlaceholderText('e.g. 30')).toHaveValue('30');
         expect(screen.getByPlaceholderText('e.g. glyphosate 480 g/L')).toHaveValue(
