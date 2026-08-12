@@ -26,6 +26,12 @@ export const SOURCE_EC = 'ec-agrifood';
 export const SOURCE_AV = 'alpha-vantage';
 export const SOURCE_LISTINGS = 'listings';
 export const SOURCE_BARCHART = 'barchart';
+/** Hand-entered by a platform admin (see market-manual-prices.ts). */
+export const SOURCE_MANUAL = 'manual';
+/** EC Weekly Oil Bulletin — road diesel. */
+export const SOURCE_OIL_BULLETIN = 'oil-bulletin';
+/** World Bank Pink Sheet — urea + DAP. */
+export const SOURCE_WORLD_BANK = 'world-bank';
 
 /** Commodities that actually have a price series to open on. */
 const TREND_COMMODITIES = TrendCommodity.options;
@@ -35,7 +41,15 @@ const TREND_COMMODITIES = TrendCommodity.options;
  * sources fall back to `other` so a future backend source renders SOMETHING
  * rather than a blank legend.
  */
-export type SourceLabelKey = 'official' | 'reference' | 'listings' | 'futures' | 'other';
+export type SourceLabelKey =
+    | 'official'
+    | 'reference'
+    | 'listings'
+    | 'futures'
+    | 'manual'
+    | 'oilBulletin'
+    | 'worldBank'
+    | 'other';
 
 export function sourceLabelKey(source: string): SourceLabelKey {
     switch (source) {
@@ -47,9 +61,27 @@ export function sourceLabelKey(source: string): SourceLabelKey {
             return 'listings';
         case SOURCE_BARCHART:
             return 'futures';
+        case SOURCE_MANUAL:
+            return 'manual';
+        case SOURCE_OIL_BULLETIN:
+            return 'oilBulletin';
+        case SOURCE_WORLD_BANK:
+            return 'worldBank';
         default:
             return 'other';
     }
+}
+
+/**
+ * A hand-typed price must never be presented as a live quote.
+ *
+ * The manual path exists because MAP and ammonium nitrate have no free feed,
+ * so those series are somebody's typing. A farmer deciding when to buy is
+ * entitled to know which is which, and "Other source" — where `manual` landed
+ * before this — does not tell them.
+ */
+export function isManualSeries(series: Pick<TrendSeries, 'source'>): boolean {
+    return series.source === SOURCE_MANUAL;
 }
 
 /**
@@ -298,13 +330,57 @@ export function stalenessDays(
  */
 export const STALE_AFTER_DAYS = 15;
 
-/** True when a series has not reported within {@link STALE_AFTER_DAYS}. */
+/**
+ * Staleness is a property of the SOURCE'S CADENCE, not a constant.
+ *
+ * 15 days is two weekly cycles plus slack, which is right for the weekly EC
+ * and listings feeds. Applied to the World Bank Pink Sheet it is simply
+ * wrong: that feed is MONTHLY with a ~1-month publication lag, so a urea
+ * point is 30-60 days old at all times and would render permanently orange
+ * with a "not reported recently" warning — a false alarm on every single
+ * view, which is how a warning stops being read at all.
+ *
+ * A manual series gets a wide bound for a different reason: it is somebody's
+ * typing and its age is already stated explicitly next to it, so a staleness
+ * warning would be both redundant and unactionable. Only a year of silence
+ * says something the provenance line does not.
+ */
+export const STALE_AFTER_DAYS_BY_SOURCE: Readonly<Record<string, number>> = {
+    [SOURCE_WORLD_BANK]: 75,
+    [SOURCE_MANUAL]: 400,
+};
+
+export function staleAfterDaysForSource(source: string): number {
+    return STALE_AFTER_DAYS_BY_SOURCE[source] ?? STALE_AFTER_DAYS;
+}
+
+/** True when a series has not reported within its source's own bound. */
 export function isStale(
-    series: Pick<TrendSeries, 'lastObservedAt'>,
+    series: Pick<TrendSeries, 'lastObservedAt' | 'source'>,
     generatedAt: string,
 ): boolean {
     const days = stalenessDays(series, generatedAt);
-    return days != null && days > STALE_AFTER_DAYS;
+    return days != null && days > staleAfterDaysForSource(series.source);
+}
+
+/**
+ * The series a stat tile should lead with, for a commodity whose feeds are
+ * not the crop trio.
+ *
+ * The existing tiles look for EC / listings / Alpha Vantage by name, which
+ * for diesel or urea means three "no data" tiles sitting above a perfectly
+ * good chart. This picks the series with the most recent observation instead,
+ * breaking ties by point count so a one-point series never outranks a
+ * populated one.
+ */
+export function primarySeries(series: TrendSeries[]): TrendSeries | null {
+    const withPoints = series.filter((s) => s.points.length > 0);
+    if (withPoints.length === 0) return null;
+    return [...withPoints].sort(
+        (a, b) =>
+            (b.lastObservedAt ?? '').localeCompare(a.lastObservedAt ?? '') ||
+            b.points.length - a.points.length,
+    )[0];
 }
 
 /** Round-trip-safe display number: fixed to at most 2 decimals, trimmed. */

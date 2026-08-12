@@ -19,6 +19,12 @@
  */
 import { useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
+import {
+    commoditiesInCategory,
+    commodityMeta,
+    type CommodityCategory,
+} from '@/lib/market/commodity-vocabulary';
+import { TREND_CHARTABLE, type TrendCommodity } from '@/app-layer/schemas/trends.schemas';
 
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { CACHE_KEYS } from '@/lib/swr-keys';
@@ -47,6 +53,7 @@ import {
     seriesKey,
     sourceLabelKey,
     findEcSeries,
+    primarySeries,
     findListingsSeries,
     findReferenceSeries,
     latestPoint,
@@ -58,10 +65,31 @@ import {
 } from './trends-helpers';
 import { SeriesProvenance } from './SeriesProvenance';
 
-const COMMODITIES = ['wheat', 'maize', 'barley', 'sunflower'] as const;
 const RANGES = ['1m', '3m', '1y', 'all'] as const;
-type Commodity = (typeof COMMODITIES)[number];
+type Commodity = TrendCommodity;
 type Range = (typeof RANGES)[number];
+
+/**
+ * The picker is two levels now: category, then commodity within it.
+ *
+ * Options come from the vocabulary's own category lookup rather than a list
+ * in this file, so adding a commodity never means editing a React component.
+ * Only slugs the read path can actually serve are offered — the vocabulary is
+ * deliberately a superset of what is quotable, and a dropdown entry that can
+ * only ever draw an empty chart reads as a broken page.
+ */
+const CATEGORIES = ['grain', 'fuel', 'fertilizer'] as const satisfies readonly CommodityCategory[];
+
+const CHARTABLE = new Set<string>(TREND_CHARTABLE);
+
+function commoditiesFor(category: CommodityCategory): Commodity[] {
+    return commoditiesInCategory(category).filter((c): c is Commodity => CHARTABLE.has(c));
+}
+
+/** The category a slug belongs to — used to open on the right tab. */
+function categoryOf(commodity: Commodity): CommodityCategory {
+    return commodityMeta(commodity)?.category ?? 'grain';
+}
 
 // Token-backed series palette (currentColor drives chart fill/stroke; the
 // legend dot uses the matching bg-*). Assigned by a series' global index so a
@@ -220,24 +248,45 @@ export function PricesTab() {
         [interestsData],
     );
     const [commodity, setCommodity] = useState<Commodity | null>(null);
+    const [category, setCategory] = useState<CommodityCategory | null>(null);
     const [range, setRange] = useState<Range>('3m');
 
     // `null` until interests load, then the preferred one — but ONLY while the
     // user has not chosen. An interests fetch resolving late must never yank
     // the picker out from under someone who already selected a commodity.
+    //
+    // `preferred` can only ever be a CROP: firstInterestedCommodity resolves
+    // free-text keywords through the crop-only `normalizeCommodity`, so a
+    // farmer whose interests mention дизел is not dropped onto the diesel
+    // chart by a feature they never asked for.
     const effectiveCommodity: Commodity = commodity ?? preferred ?? 'wheat';
 
+    // The category follows the commodity unless the user picked one. Changing
+    // category necessarily changes the valid set, so it defaults to the first
+    // commodity of the new category — but a selection that is STILL VALID is
+    // never reset, which is the same promise the commodity picker already made.
+    const effectiveCategory: CommodityCategory = category ?? categoryOf(effectiveCommodity);
+    const categoryCommodities = useMemo(() => commoditiesFor(effectiveCategory), [effectiveCategory]);
+    const commodityInCategory = categoryCommodities.includes(effectiveCommodity);
+    const shownCommodity: Commodity = commodityInCategory
+        ? effectiveCommodity
+        : (categoryCommodities[0] ?? 'wheat');
+
     const { data, error } = useTenantSWR<TrendPricesResponse>(
-        CACHE_KEYS.trends.prices(effectiveCommodity, range),
+        CACHE_KEYS.trends.prices(shownCommodity, range),
     );
 
-    const commodityOptions = useMemo<ComboboxOption[]>(
-        () => COMMODITIES.map((c) => ({ value: c, label: t(`commodities.${c}`) })),
+    const categoryOptions = useMemo(
+        () => CATEGORIES.map((c) => ({ id: c, label: t(`categories.${c}`) })),
         [t],
     );
+    const commodityOptions = useMemo<ComboboxOption[]>(
+        () => categoryCommodities.map((c) => ({ value: c, label: t(`commodities.${c}`) })),
+        [categoryCommodities, t],
+    );
     const selectedCommodity = useMemo<ComboboxOption>(
-        () => ({ value: effectiveCommodity, label: t(`commodities.${effectiveCommodity}`) }),
-        [effectiveCommodity, t],
+        () => ({ value: shownCommodity, label: t(`commodities.${shownCommodity}`) }),
+        [shownCommodity, t],
     );
     const rangeOptions = useMemo(
         () => RANGES.map((r) => ({ id: r, label: t(`ranges.${r}`) })),
@@ -256,6 +305,12 @@ export function PricesTab() {
     );
 
     // ── Stat-tile derivations ──
+    //
+    // The three crop tiles look up EC / listings / Alpha Vantage BY NAME, and
+    // none of those publish diesel or fertiliser — so for an input they would
+    // render three "no data" tiles above a perfectly good chart. Inputs get a
+    // single tile driven by whichever series actually reported most recently.
+    const isInput = commodityMeta(shownCommodity)?.kind === 'input';
     const tiles = useMemo(() => {
         if (!data) return null;
         const ec = findEcSeries(data.series, 'BG');
@@ -263,21 +318,41 @@ export function PricesTab() {
         const reference = findReferenceSeries(data.series);
         return { ec, listings, reference };
     }, [data]);
+    const primary = useMemo(() => (data ? primarySeries(data.series) : null), [data]);
 
     // ── Practices (always visible so a user can switch even on empty) ──
     const practices = (
         <div className="flex flex-col gap-default sm:flex-row sm:items-end sm:justify-between">
-            <div className="w-full sm:max-w-[220px]">
-                <FormField label={t('commodityLabel')}>
-                    <Combobox
-                        options={commodityOptions}
-                        selected={selectedCommodity}
-                        setSelected={(opt) => {
-                            if (opt) setCommodity(opt.value as Commodity);
-                        }}
-                        searchPlaceholder={t('commoditySearchPlaceholder')}
-                    />
-                </FormField>
+            <div className="flex flex-col gap-default sm:flex-row sm:items-end">
+                <TabSelect<CommodityCategory>
+                    options={categoryOptions}
+                    selected={effectiveCategory}
+                    onSelect={(next: CommodityCategory) => {
+                        setCategory(next);
+                        // Do NOT reset a still-valid selection. Only when the
+                        // chosen commodity does not exist in the new category
+                        // does the picker move, and then to that category's
+                        // first entry rather than to nothing.
+                        const options = commoditiesFor(next);
+                        if (!options.includes(shownCommodity)) {
+                            setCommodity(options[0] ?? null);
+                        }
+                    }}
+                    ariaLabel={t('categories.ariaLabel')}
+                    idPrefix="trends-category-"
+                />
+                <div className="w-full sm:max-w-[220px]">
+                    <FormField label={t('commodityLabel')}>
+                        <Combobox
+                            options={commodityOptions}
+                            selected={selectedCommodity}
+                            setSelected={(opt) => {
+                                if (opt) setCommodity(opt.value as Commodity);
+                            }}
+                            searchPlaceholder={t('commoditySearchPlaceholder')}
+                        />
+                    </FormField>
+                </div>
             </div>
             <TabSelect<Range>
                 options={rangeOptions}
@@ -321,8 +396,8 @@ export function PricesTab() {
             ) : empty ? (
                 <EmptyState
                     variant="no-records"
-                    title={t('empty.title')}
-                    description={t('empty.description')}
+                    title={isInput ? t('noSeries.title') : t('empty.title')}
+                    description={isInput ? t('noSeries.body') : t('empty.description')}
                     data-testid="trends-empty"
                 >
                     {/* Operator-configuration explainer, ADMINS ONLY.
@@ -353,6 +428,32 @@ export function PricesTab() {
                 <>
                     {/* Stat tiles — wrap on 390px. */}
                     <div className="flex flex-wrap gap-default">
+                        {isInput ? (
+                            <StatTile
+                                label={t('tiles.bgLatest')}
+                                value={
+                                    primary && latestPoint(primary)
+                                        ? formatPriceWithCurrency(
+                                              latestPoint(primary)!.price,
+                                              primary.currency,
+                                          )
+                                        : t('tiles.noData')
+                                }
+                                footer={
+                                    primary && data ? (
+                                        // Source SHOWN, not hidden: a hand-typed
+                                        // fertiliser price and a fed one must not
+                                        // look alike here of all places.
+                                        <SeriesProvenance
+                                            series={primary}
+                                            generatedAt={data.generatedAt}
+                                            className="mt-1"
+                                        />
+                                    ) : undefined
+                                }
+                            />
+                        ) : (
+                        <>
                         <StatTile
                             label={t('tiles.bgLatest')}
                             value={
@@ -451,6 +552,8 @@ export function PricesTab() {
                                 ) : undefined
                             }
                         />
+                        </>
+                        )}
                     </div>
 
                     {/* One chart per unit-group. */}
@@ -461,7 +564,7 @@ export function PricesTab() {
                             merged={buildMergedData(g)}
                             series={g.series}
                             colorIndex={colorIndex}
-                            commodityLabel={t(`commodities.${effectiveCommodity}`)}
+                            commodityLabel={t(`commodities.${shownCommodity}`)}
                         />
                     ))}
                 </>
