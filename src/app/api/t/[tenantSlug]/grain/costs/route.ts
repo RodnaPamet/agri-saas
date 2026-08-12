@@ -7,7 +7,11 @@ import { withApiErrorHandling } from '@/lib/errors/api';
 import { withValidatedBody } from '@/lib/validation/route';
 import { jsonResponse } from '@/lib/api-response';
 import { jsonWithETag } from '@/lib/http/etag';
-import { parseCsvIdParam, parseCsvEnumParam } from '@/lib/validation/query-params';
+import {
+    parseCsvIdParam,
+    parseCsvEnumParam,
+    parseDateRangeParam,
+} from '@/lib/validation/query-params';
 
 /**
  * Cost entries — the register behind /grain/costs (GRAIN module).
@@ -40,6 +44,12 @@ export const GET = withApiErrorHandling(
         const ctx = await getTenantCtx(params, req);
         await assertModuleEnabled(ctx, 'GRAIN');
         const sp = req.nextUrl.searchParams;
+        // The `dateRange` facet arrives as ONE "YYYY-MM-DD|YYYY-MM-DD" token.
+        // Handing that to a Prisma DateTime comparison throws exactly the way
+        // a comma-joined enum does — a 500 the page renders as its empty
+        // state, i.e. a confident "no costs in that window" in response to a
+        // crash.
+        const incurredWindow = parseDateRangeParam(sp.get('incurredOn'), 'incurredOn');
         const { rows, totalCount, truncated } = await listCostEntries(ctx, {
             // A multi-select facet is comma-joined into ONE param by
             // `filterStateToUrlParams`, so a bare `sp.get()` would hand
@@ -53,6 +63,8 @@ export const GET = withApiErrorHandling(
             parcelIds: parseCsvIdParam(sp.get('parcelId'), 'parcel'),
             leaseIds: parseCsvIdParam(sp.get('leaseId'), 'lease'),
             itemIds: parseCsvIdParam(sp.get('itemId'), 'item'),
+            incurredFrom: incurredWindow?.from,
+            incurredTo: incurredWindow?.to,
             q: sp.get('q') ?? undefined,
         });
         // Hot list read on a page farmers reload over rural LTE — a weak

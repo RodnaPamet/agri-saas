@@ -29,6 +29,7 @@
 import { LucideIcon } from "lucide-react";
 import type {
   Filter,
+  FilterKind,
   FilterOption,
   FilterResetBehavior,
   FilterValueCodec,
@@ -57,8 +58,8 @@ export interface FilterDefInput {
   icon: LucideIcon;
   /** Filter options. Pass `null` for async-loaded options. */
   options: FilterOption[] | null;
-  /** Filter type. Default: "default". */
-  type?: "default" | "range";
+  /** Filter type. Default: "default". See `Filter["type"]`. */
+  type?: FilterKind;
   /** Allow multiple selection. Default: false. */
   multiple?: boolean;
   /** Force single selection even in advanced mode. */

@@ -59,9 +59,47 @@ src/components/ui/filter/
 ├── filter-context.tsx     ← React context + useFilterContext + useFilters
 ├── filter-select.tsx      ← Filter.Select — command-palette picker (cmdk)
 ├── filter-list.tsx        ← Filter.List — active filter pills
-├── filter-range-panel.tsx ← Range filter panel (internal)
+├── filter-range-panel.tsx ← Numeric range panel (internal)
+├── filter-date-range-panel.tsx ← Date range panel (internal)
 └── filter-scroll.tsx      ← Scroll container (internal)
 ```
+
+### Facet kinds (`Filter.type`)
+
+| `type` | Body | Value |
+|--------|------|-------|
+| `default` (default) | the option list | one or more option values |
+| `range` | min/max **number** inputs | ONE `"lo\|hi"` token |
+| `dateRange` | a `<Calendar mode="range">` | ONE `"YYYY-MM-DD\|YYYY-MM-DD"` token |
+
+`range` and `dateRange` share the token shape, so URL sync, active-filter
+state and the pill treat them alike — but **never test the two literals by
+hand**. Ask `isRangeType(filter.type)` from the barrel; a third token-shaped
+kind should not require finding four `||`s scattered across the module.
+
+They do **not** share the alphabet of a bound. Running the numeric parser
+over a date token yields `NaN` on both sides, which reports a fully applied
+window as *no filter at all* — so per-kind validity is decided once, in
+`rangeTokenBounds` (`filter-range-utils.ts`), and the shape-only questions
+("is a bound set?", "are both set?") live in `filter-select-utils.ts`.
+
+Wiring a date facet is three lines on the definition plus a server parse:
+
+```ts
+incurredOn: {
+  label: 'Date', icon: CalendarDays, options: null, type: 'dateRange',
+}
+```
+
+```ts
+// route handler — the facet arrives as ONE token
+const window = parseDateRangeParam(sp.get('incurredOn'), 'incurredOn');
+```
+
+`parseDateRangeParam` (`@/lib/validation/query-params`) validates both
+sides, swaps an inverted window, and widens the upper bound to end-of-day —
+a `DateTime` column compared against a bare midnight upper bound matches
+nothing, which a user reads as "my data is missing".
 
 ### Module Responsibilities
 
@@ -218,7 +256,8 @@ const flat = toCompactFilterState(state);
 
 ### ❌ DON'T
 
-- Import from internal modules (`filter-range-panel`, `filter-scroll`)
+- Import from internal modules (`filter-range-panel`,
+  `filter-date-range-panel`, `filter-scroll`)
 - Create ad-hoc filter state management (`useState` + manual URL sync)
 - Hardcode entity-specific logic in the shared filter module
 - Use raw `URLSearchParams` manipulation for filter state

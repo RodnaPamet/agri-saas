@@ -34,6 +34,15 @@ export interface CostEntryFilters {
      * out of that manifest; see the column's schema comment.
      */
     q?: string;
+    /**
+     * Inclusive `incurredOn` window, both bounds optional. The route builds
+     * it with `parseDateRangeParam`, which anchors both ends in UTC and
+     * widens `to` to end-of-day — `incurredOn` is a DateTime, so a
+     * same-day window whose upper bound was left at midnight would match
+     * nothing at all.
+     */
+    incurredFrom?: Date;
+    incurredTo?: Date;
 }
 
 /** Relations every read needs for display. */
@@ -101,6 +110,17 @@ export class CostEntryRepository {
             ...(filters?.parcelIds?.length ? { parcelId: { in: filters.parcelIds } } : {}),
             ...(filters?.leaseIds?.length ? { leaseId: { in: filters.leaseIds } } : {}),
             ...(filters?.itemIds?.length ? { itemId: { in: filters.itemIds } } : {}),
+            // Guarded on having a bound: `{ incurredOn: {} }` is legal Prisma
+            // and matches everything, but it makes a cleared facet look like
+            // an applied one in a logged query.
+            ...(filters?.incurredFrom || filters?.incurredTo
+                ? {
+                      incurredOn: {
+                          ...(filters.incurredFrom ? { gte: filters.incurredFrom } : {}),
+                          ...(filters.incurredTo ? { lte: filters.incurredTo } : {}),
+                      },
+                  }
+                : {}),
             ...(filters?.q ? buildSearchWhere(filters.q) : {}),
         };
     }

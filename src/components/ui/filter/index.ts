@@ -28,6 +28,7 @@ export type {
   ActiveFilter,
   ActiveFilterInput,
   Filter as FilterType,
+  FilterKind,
   FilterOption,
   FilterOperator,
   FilterResetBehavior,
@@ -36,7 +37,24 @@ export type {
   TypedActiveFilter,
   TypedFilterOption,
 } from "./types";
-export { encodeRangeToken, normalizeActiveFilter, parseRangeToken } from "./types";
+export {
+  encodeRangeToken,
+  isRangeType,
+  normalizeActiveFilter,
+  parseRangeToken,
+} from "./types";
+/**
+ * The `dateRange` facet codec. Aliases of Epic 58's own token helpers rather
+ * than a second implementation — `date-utils` already emits exactly the
+ * `"YYYY-MM-DD|YYYY-MM-DD"` shape this facet stores, UTC-anchored so client
+ * and server agree on the calendar day. Re-exported here so a page author
+ * wiring a date facet imports from the filter barrel like every other part
+ * of the system, and never has to know which module owns the format.
+ */
+export {
+  parseRangeToken as parseDateRangeToken,
+  toRangeToken as encodeDateRangeToken,
+} from "../date-picker/date-utils";
 
 // ── State Management ──
 export type { FilterState, FilterUrlConfig } from "./filter-state";

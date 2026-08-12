@@ -7,18 +7,23 @@
  *   q         → free-text search (server-side; `supplier` + `currency`,
  *               NOT `description` — that column is encrypted at rest, so
  *               a `contains` would match ciphertext)
- *   category  → CostCategory, MULTI-select
+ *   category   → CostCategory, MULTI-select
+ *   incurredOn → the date window, ONE `"YYYY-MM-DD|YYYY-MM-DD"` token
  *
- * ── Why there is no date facet ──────────────────────────────────────
+ * ── The date facet ──────────────────────────────────────────────────
  *
- * `incurredOn` is the obvious thing to filter by and it is deliberately
- * absent. `Filter.type` is only `"default" | "range"`, and `range` is a
- * NUMERIC min/max panel whose encoder integer-truncates
- * (`String(Math.trunc(min))`) — it cannot carry an ISO date. A real date
- * facet means extending the filter platform with a new type, encoder and
- * decoder, which is its own piece of work with its own tests rather than
- * something to smuggle into a feature PR. The list sorts `incurredOn`
- * descending, so recent entries are on top without one.
+ * `incurredOn` was deliberately absent until the filter platform grew a
+ * `dateRange` type: `Filter.type` was only `"default" | "range"`, and
+ * `range` is a NUMERIC min/max panel whose encoder integer-truncates
+ * (`String(Math.trunc(min))`), which no ISO date survives. That platform
+ * work landed with its own panel, codec and tests, so the facet is now a
+ * three-line definition here rather than a feature PR carrying a platform
+ * change inside it.
+ *
+ * The window is INCLUSIVE at both ends and interpreted in UTC — see
+ * `parseDateRangeParam` in `@/lib/validation/query-params`, which widens
+ * the upper bound to end-of-day so a single-day filter (`X|X`) matches the
+ * entries typed on X rather than nothing.
  */
 
 import type {
@@ -29,7 +34,7 @@ import { createTypedFilterDefs } from '@/components/ui/filter/filter-definitions
 import type { FilterOption } from '@/components/ui/filter/types';
 // Nucleo icon cast to the contract's icon shape — keeps this file off the
 // lucide allowlist.
-import { Tag } from '@/components/ui/icons/nucleo';
+import { CalendarDays, Tag } from '@/components/ui/icons/nucleo';
 
 /** The icon shape the filter contract expects, derived from the contract
  *  type itself (no direct legacy-icon-package dependency). */
@@ -64,6 +69,18 @@ const STATIC_DEFS = {
         multiple: true,
         resetBehavior: 'clearable',
     },
+    incurredOn: {
+        label: 'Date',
+        labelPlural: 'Dates',
+        description: 'When the cost was incurred.',
+        group: 'Attributes',
+        icon: asIcon(CalendarDays),
+        // A calendar, not a list — the panel is chosen by `type`, and a
+        // `dateRange` facet has no options to enumerate.
+        options: null,
+        type: 'dateRange',
+        resetBehavior: 'clearable',
+    },
 } satisfies Record<string, FilterDefInput>;
 
 // ─── Public API ──────────────────────────────────────────────────────
@@ -88,7 +105,13 @@ export function buildCostFilters(t: Translator): FilterDef[] {
         label: t(`costCategory.${value}`),
     }));
 
-    return costFilterDefs.filters.map((f) =>
-        f.key === 'category' ? { ...f, label: t('costCategoryFacet'), options } : f,
-    );
+    return costFilterDefs.filters.map((f) => {
+        if (f.key === 'category') {
+            return { ...f, label: t('costCategoryFacet'), options };
+        }
+        if (f.key === 'incurredOn') {
+            return { ...f, label: t('incurredOnFacet') };
+        }
+        return f;
+    });
 }

@@ -26,6 +26,7 @@ import { AnimatedSizeContainer } from "../animated-size-container";
 import { useKeyboardShortcut, useMediaQuery } from "../hooks";
 import { Check, LoadingSpinner, Magic } from "../icons";
 import { Popover } from "../popover";
+import { FilterDateRangePanel } from "./filter-date-range-panel";
 import { FilterRangePanel } from "./filter-range-panel";
 import { FilterScroll } from "./filter-scroll";
 import {
@@ -33,13 +34,14 @@ import {
   hasAppliedRange,
   isOptionSelectedIn,
   isSingleSelect,
+  rangeTokenIsComplete,
   resolveEmptyStateFor,
 } from "./filter-select-utils";
 import {
   ActiveFilterInput,
   Filter,
   FilterOption,
-  parseRangeToken,
+  isRangeType,
 } from "./types";
 
 type FilterSelectProps = {
@@ -161,9 +163,49 @@ export function FilterSelect({
   );
 
   const rangeFilterHasAppliedValue = useMemo(() => {
-    if (!selectedFilter || selectedFilter.type !== "range") return false;
+    if (!selectedFilter || !isRangeType(selectedFilter.type)) return false;
     return hasAppliedRange(activeRangeTokenForSelected);
   }, [selectedFilter, activeRangeTokenForSelected]);
+
+  // Both token-valued panels clear and apply identically — the token IS the
+  // whole value, so there is nothing kind-specific left to do by the time it
+  // reaches here. Defined once so the two branches cannot drift.
+  const rangePanelClear = useMemo(() => {
+    if (!rangeFilterHasAppliedValue || !selectedFilterKey) return undefined;
+    return () =>
+      onRemoveFilter
+        ? onRemoveFilter(selectedFilterKey)
+        : onRemove(selectedFilterKey, activeRangeTokenForSelected ?? "|");
+  }, [
+    rangeFilterHasAppliedValue,
+    selectedFilterKey,
+    onRemoveFilter,
+    onRemove,
+    activeRangeTokenForSelected,
+  ]);
+
+  const rangePanelApply = useCallback(
+    (token: string) => {
+      const key = selectedFilterKey;
+      if (!key) return;
+      // `"|"` is the empty sentinel: an emptied panel means "no filter",
+      // not "a filter matching nothing".
+      if (token === "|") {
+        onRemoveFilter
+          ? onRemoveFilter(key)
+          : onRemove(key, activeRangeTokenForSelected ?? "|");
+      } else {
+        onSelect(key, token);
+      }
+    },
+    [
+      selectedFilterKey,
+      onRemoveFilter,
+      onRemove,
+      onSelect,
+      activeRangeTokenForSelected,
+    ],
+  );
 
   const openFilter = useCallback(
     (key: Filter["key"]) => {
@@ -233,13 +275,13 @@ export function FilterSelect({
       openPopover={isOpen}
       setOpenPopover={setIsOpen}
       onEscapeKeyDown={(e) => {
-        if (selectedFilter?.type === "range") {
-          const { min, max } = parseRangeToken(activeRangeTokenForSelected);
-          if (min != null && max != null) {
-            e.preventDefault();
-            setIsOpen(false);
-            return;
-          }
+        if (
+          isRangeType(selectedFilter?.type) &&
+          rangeTokenIsComplete(activeRangeTokenForSelected)
+        ) {
+          e.preventDefault();
+          setIsOpen(false);
+          return;
         }
         if (selectedFilterKey) {
           e.preventDefault();
@@ -264,30 +306,19 @@ export function FilterSelect({
               activeToken={activeRangeTokenForSelected}
               scrollRef={listContainer}
               onBack={() => reset()}
-              onClear={
-                rangeFilterHasAppliedValue && selectedFilterKey
-                  ? () =>
-                      onRemoveFilter
-                        ? onRemoveFilter(selectedFilterKey)
-                        : onRemove(
-                            selectedFilterKey,
-                            activeRangeTokenForSelected ?? "|",
-                          )
-                  : undefined
-              }
+              onClear={rangePanelClear}
               onCloseOuter={() => setIsOpen(false)}
-              onApply={(token) => {
-                if (token === "|") {
-                  onRemoveFilter
-                    ? onRemoveFilter(selectedFilter.key)
-                    : onRemove(
-                        selectedFilter.key,
-                        activeRangeTokenForSelected ?? "|",
-                      );
-                } else {
-                  onSelect(selectedFilter.key, token);
-                }
-              }}
+              onApply={rangePanelApply}
+            />
+          ) : selectedFilter?.type === "dateRange" ? (
+            <FilterDateRangePanel
+              key={selectedFilterKey}
+              filter={selectedFilter}
+              activeToken={activeRangeTokenForSelected}
+              scrollRef={listContainer}
+              onBack={() => reset()}
+              onClear={rangePanelClear}
+              onApply={rangePanelApply}
             />
           ) : (
             <Command

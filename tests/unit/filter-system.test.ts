@@ -513,6 +513,13 @@ describe('Filter module architecture', () => {
    */
   const INTERNAL_MODULES = new Set([
     'filter-range-panel',
+    // Same class as `filter-range-panel`: a facet BODY, mounted by
+    // `filter-select` and `filter-list` when `Filter.type` selects it. A
+    // page author never reaches for it — they set `type: 'dateRange'` on a
+    // definition and the platform picks the panel. What IS public is the
+    // codec, re-exported from the barrel as
+    // `encodeDateRangeToken` / `parseDateRangeToken`.
+    'filter-date-range-panel',
     'filter-range-utils',
     'filter-scroll',
     'filter-select-utils',
