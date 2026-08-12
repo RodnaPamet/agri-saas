@@ -5,6 +5,7 @@ import { runInTenantContext } from '@/lib/db-context';
 import { detectFormat } from '@/lib/spatial/parse';
 import { assertUploadWithinSize } from '@/lib/spatial/limits';
 import { getStorageProvider, buildTenantObjectKey } from '@/lib/storage';
+import { scanUploadedBuffer } from '@/lib/storage/av-scan';
 import { FileRepository } from '../repositories/FileRepository';
 import { enqueue } from '@/app-layer/jobs/queue';
 import { logger } from '@/lib/observability/logger';
@@ -44,8 +45,8 @@ export interface SpatialImportStageResult {
  *      single source of truth so a non-HTTP caller is bounded too),
  *   3. verify the target Location exists (tenant-scoped) BEFORE spending
  *      a storage write on it,
- *   4. stage the original bytes + record a FileRecord (ClamAV scans
- *      async; markStored → scanStatus PENDING),
+ *   4. stage the original bytes + record a FileRecord, carrying a REAL
+ *      scan verdict (see below),
  *   5. enqueue the `spatial-import` job, which parses + validates +
  *      persists off-thread.
  *
@@ -86,6 +87,20 @@ export async function stageLocationSpatialImport(
     const pathKey = buildTenantObjectKey(ctx.tenantId, 'spatial', file.filename);
     const writeResult = await storage.write(pathKey, Readable.from(file.buffer), { mimeType });
 
+    // A REAL verdict, not the absent argument this used to pass.
+    //
+    // `markStored`'s `scanStatus` carried a `= 'SKIPPED'` default, and this
+    // call omitted it — so a staged shapefile was recorded as stored AND
+    // downloadable (`isDownloadAllowed('SKIPPED')` is true in every AV mode)
+    // without a byte of it ever reaching the scanner. The docblock above
+    // claimed ClamAV scanned it asynchronously and that the status was
+    // PENDING; both were false, and no async scan worker exists.
+    //
+    // Scanning here is close to free: the bytes are already buffered in
+    // memory (the size cap above is enforced on `file.buffer.length`), so
+    // this adds no I/O the request was not already doing.
+    const scanStatus = await scanUploadedBuffer(file.buffer);
+
     // 4 — record the FileRecord (becomes the Location's canonical spatial
     //     file on success; the job stamps it onto Location.spatialFileId).
     const fileRecord = await runInTenantContext(ctx, async (db) => {
@@ -99,7 +114,7 @@ export async function stageLocationSpatialImport(
             bucket: env.S3_BUCKET || null,
             domain: 'spatial',
         });
-        await FileRepository.markStored(db, ctx, fr.id);
+        await FileRepository.markStored(db, ctx, fr.id, scanStatus);
         return fr;
     });
 
