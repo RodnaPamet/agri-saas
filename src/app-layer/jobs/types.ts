@@ -526,13 +526,22 @@ export interface WeatherPullPayload {
 }
 
 /**
- * Market-price trends — weekly/daily pull of the three price sources into
- * the GLOBAL MarketPriceSeries/Point cache. `source` scopes the run to one
- * source ('ec' EC AGRI-food weekly, 'av' Alpha Vantage daily, 'listings'
- * k-anonymised own-listings median); omit to run all three.
+ * Market-price trends — weekly/daily pull of the price sources into the
+ * GLOBAL MarketPriceSeries/Point cache. `source` scopes the run to one
+ * source; omit to run every one.
+ *
+ *   'ec'           EC AGRI-food weekly cereal + oilseed prices
+ *   'av'           Alpha Vantage daily reference futures
+ *   'barchart'     Barchart quotes
+ *   'listings'     k-anonymised own-listings median
+ *   'oil-bulletin' EC Weekly Oil Bulletin — road DIESEL, both tax stages
+ *
+ * NOTE the payload tag and the STORED `source` differ by design and always
+ * have ('ec' stores as 'ec-agrifood'); the tag selects a puller, the stored
+ * value names a provenance.
  */
 export interface MarketPricesPullPayload {
-    source?: 'ec' | 'av' | 'barchart' | 'listings';
+    source?: 'ec' | 'av' | 'barchart' | 'listings' | 'oil-bulletin';
 }
 
 /**

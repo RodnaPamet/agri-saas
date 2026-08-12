@@ -231,6 +231,13 @@ export const env = createEnv({
         // Alpha Vantage source is simply skipped by the pull. Mirrors the
         // SOIL_BASE_URL pattern (feature degrades gracefully when unset).
         EC_AGRIFOOD_BASE_URL: z.string().url().optional(),
+        // EC Weekly Oil Bulletin (road diesel). Overrides ONLY — the feed is
+        // keyless and CC BY 4.0, so there is nothing to enable and the source
+        // is always on. These exist because the document URLs carry no
+        // published permanence guarantee: if a node moves, an operator can
+        // repoint the job without a deploy. Defaults live in the client.
+        EC_OIL_BULLETIN_WITH_TAX_URL: z.string().url().optional(),
+        EC_OIL_BULLETIN_WITHOUT_TAX_URL: z.string().url().optional(),
         ALPHA_VANTAGE_API_KEY: z.string().optional(),
         // BARCHART_API_KEY enables the Barchart OnDemand delayed-futures feed
         // (Euronext MATIF wheat/corn benchmark). UNSET → the Barchart source is
@@ -613,6 +620,8 @@ export const env = createEnv({
         SOIL_PROVIDER: process.env.SOIL_PROVIDER,
         SOIL_BASE_URL: process.env.SOIL_BASE_URL,
         EC_AGRIFOOD_BASE_URL: process.env.EC_AGRIFOOD_BASE_URL,
+        EC_OIL_BULLETIN_WITH_TAX_URL: process.env.EC_OIL_BULLETIN_WITH_TAX_URL,
+        EC_OIL_BULLETIN_WITHOUT_TAX_URL: process.env.EC_OIL_BULLETIN_WITHOUT_TAX_URL,
         ALPHA_VANTAGE_API_KEY: process.env.ALPHA_VANTAGE_API_KEY,
         BARCHART_API_KEY: process.env.BARCHART_API_KEY,
         MARKET_NEWS_FEEDS: process.env.MARKET_NEWS_FEEDS,
