@@ -1,0 +1,5706 @@
+[
+ {
+  "file": "src/app-layer/jobs/deadline-monitor.ts",
+  "line": 157,
+  "kind": "prisma-delegate",
+  "detail": "prisma.policy.findMany \u2014 policy-review due-item source in the shared deadline monitor",
+  "survives": true,
+  "surface": "policies"
+ },
+ {
+  "file": "src/app-layer/integrations/providers/sharepoint/health.ts",
+  "line": 53,
+  "kind": "prisma-delegate",
+  "detail": "db.policy.count({ where: { spItemId: { not: null } } }) \u2014 SharePoint integration health counter",
+  "survives": true,
+  "surface": "policies"
+ },
+ {
+  "file": "src/app-layer/usecases/search.ts",
+  "line": 91,
+  "kind": "prisma-delegate",
+  "detail": "db.policy.findMany inside the 6-way Promise.all global search fan-out",
+  "survives": true,
+  "surface": "policies"
+ },
+ {
+  "file": "src/app-layer/usecases/achievements.ts",
+  "line": 71,
+  "kind": "prisma-delegate",
+  "detail": "db.policy.findMany (published policies) feeding the 'SOP 100% ack' farm milestone",
+  "survives": true,
+  "surface": "policies"
+ },
+ {
+  "file": "src/app-layer/usecases/achievements.ts",
+  "line": 82,
+  "kind": "prisma-delegate",
+  "detail": "db.policyAcknowledgement.groupBy({ by: ['policyVersionId'] }) \u2014 only PolicyAcknowledgement use outside the surface",
+  "survives": true,
+  "surface": "policies"
+ },
+ {
+  "file": "src/app-layer/usecases/compliance-calendar.ts",
+  "line": 370,
+  "kind": "prisma-delegate",
+  "detail": "db.policy.findMany \u2014 policy-review events source for the compliance calendar",
+  "survives": true,
+  "surface": "policies"
+ },
+ {
+  "file": "src/app-layer/usecases/compliance-calendar.ts",
+  "line": 863,
+  "kind": "prisma-delegate",
+  "detail": "db.policy.count \u2014 contributes to the GLOBAL sidebar badge count (see task T1.14)",
+  "survives": true,
+  "surface": "policies"
+ },
+ {
+  "file": "src/app-layer/repositories/DashboardRepository.ts",
+  "line": 380,
+  "kind": "prisma-delegate",
+  "detail": "getPolicySummary: db.policy.groupBy(status) + db.policy.count(overdue review) at line 385",
+  "survives": true,
+  "surface": "policies"
+ },
+ {
+  "file": "src/app/api/webhooks/sharepoint/route.ts",
+  "line": 51,
+  "kind": "prisma-delegate",
+  "detail": "prisma.policy.findFirst by spSubscriptionId \u2014 inbound Graph webhook resolves the policy",
+  "survives": true,
+  "surface": "policies"
+ },
+ {
+  "file": "src/app-layer/usecases/audit-readiness/packs.ts",
+  "line": 315,
+  "kind": "prisma-delegate",
+  "detail": "tdb.policy.findMany (also 172 findFirst, 377 findMany) \u2014 audit-pack contents; dir 'audit-readiness' is NOT in the doomed-dir list",
+  "survives": true,
+  "surface": "policies"
+ },
+ {
+  "file": "src/app-layer/usecases/audit-readiness-scoring.ts",
+  "line": 558,
+  "kind": "prisma-delegate",
+  "detail": "tdb.policy.findMany \u2014 'key policies check' scoring input; file sits in usecases/, not a doomed dir",
+  "survives": true,
+  "surface": "policies"
+ },
+ {
+  "file": "src/app-layer/notifications/templates.ts",
+  "line": 114,
+  "kind": "fetch-url",
+  "detail": "absoluteUrl(`/t/${tenantSlug}/policies`) in buildPolicyApprovalRequestedEmail; same at line 161 (buildPolicyDecisionEmail)",
+  "survives": true,
+  "surface": "policies"
+ },
+ {
+  "file": "src/app-layer/usecases/search.ts",
+  "line": 296,
+  "kind": "link-href",
+  "detail": "href: `/t/${slug}/policies/${row.id}` in buildPolicyHit; type 'policy' also at 249, 291, 438",
+  "survives": true,
+  "surface": "policies"
+ },
+ {
+  "file": "src/app-layer/usecases/compliance-calendar.ts",
+  "line": 401,
+  "kind": "link-href",
+  "detail": "tenantHrefFromCtx(ctx, `/policies/${r.id}`) on the policy-review calendar event",
+  "survives": true,
+  "surface": "policies"
+ },
+ {
+  "file": "src/app-layer/notifications/digest-templates.ts",
+  "line": 61,
+  "kind": "link-href",
+  "detail": "ENTITY_PATH record: POLICY: 'policies' \u2014 deep-link segment for digest emails",
+  "survives": true,
+  "surface": "policies"
+ },
+ {
+  "file": "src/lib/swr-keys.ts",
+  "line": 115,
+  "kind": "registry-entry",
+  "detail": "policies: { ...makeResource('policies'), templates: () => '/policies/templates' }",
+  "survives": true,
+  "surface": "policies"
+ },
+ {
+  "file": "src/lib/permissions.ts",
+  "line": 73,
+  "kind": "permission-key",
+  "detail": "PERMISSION_KEYS policies: ['view','create','edit','approve']; PermissionSet type at line 6; role grids at 101/118/139/154/179/196",
+  "survives": true,
+  "surface": "policies"
+ },
+ {
+  "file": "src/lib/nav/canonical-parents.ts",
+  "line": 89,
+  "kind": "nav-entry",
+  "detail": "'/policies/[policyId]', '/policies/new', '/policies/templates' \u2192 parent '/policies' (lines 89-91)",
+  "survives": true,
+  "surface": "policies"
+ },
+ {
+  "file": "src/lib/nav/page-segregation.ts",
+  "line": 79,
+  "kind": "nav-entry",
+  "detail": "'/policies' plus '/policies/new' redirect shim (34) and detail/new/templates entries (158-160)",
+  "survives": true,
+  "surface": "policies"
+ },
+ {
+  "file": "src/components/nav/BackAffordance.tsx",
+  "line": 59,
+  "kind": "nav-entry",
+  "detail": "'/policies': 'policies' back-label map entry",
+  "survives": true,
+  "surface": "policies"
+ },
+ {
+  "file": "src/components/command-palette/command-palette.tsx",
+  "line": 157,
+  "kind": "registry-entry",
+  "detail": "policy: { heading: 'Policies', icon: FileText }; also type list at 167 and label t('entPolicies') at 191",
+  "survives": true,
+  "surface": "policies"
+ },
+ {
+  "file": "src/lib/soft-delete.ts",
+  "line": 19,
+  "kind": "registry-entry",
+  "detail": "'Policy' in the soft-delete model registry (T3.6 mirrors this count in three places)",
+  "survives": true,
+  "surface": "policies"
+ },
+ {
+  "file": "src/lib/security/classification.ts",
+  "line": 239,
+  "kind": "registry-entry",
+  "detail": "{ model: 'Policy', hasDeletedAt: true, priority: 'P0' }; PolicyVersion classification entry at line 141",
+  "survives": true,
+  "surface": "policies"
+ },
+ {
+  "file": "src/lib/security/encrypted-fields.ts",
+  "line": 158,
+  "kind": "registry-entry",
+  "detail": "PolicyVersion: ['contentText','changeSummary'] in ENCRYPTED_FIELDS; prose refs at 68-76 and 153-156",
+  "survives": true,
+  "surface": "policies"
+ },
+ {
+  "file": "src/lib/schemas/index.ts",
+  "line": 162,
+  "kind": "registry-entry",
+  "detail": "CreatePolicySchema/UpdatePolicyMetadataSchema/CreatePolicyVersionSchema/PublishPolicySchema (162-212), all .openapi()-registered",
+  "survives": true,
+  "surface": "policies"
+ },
+ {
+  "file": "src/lib/dto/index.ts",
+  "line": 10,
+  "kind": "import",
+  "detail": "export * from './policy.dto' \u2014 barrel re-export of the whole policy DTO module",
+  "survives": true,
+  "surface": "policies"
+ },
+ {
+  "file": "src/lib/hooks/index.ts",
+  "line": 36,
+  "kind": "import",
+  "detail": "export { usePolicies, usePolicy, useCreatePolicy, useUpdatePolicy, useDeletePolicy } from './use-policies'",
+  "survives": true,
+  "surface": "policies"
+ },
+ {
+  "file": "src/app-layer/automation/events.ts",
+  "line": 61,
+  "kind": "registry-entry",
+  "detail": "POLICY_REVIEW_DUE automation event; contract PolicyReviewDueData at event-contracts.ts:92/214; label at lib/automation/event-labels.ts:122",
+  "survives": true,
+  "surface": "policies"
+ },
+ {
+  "file": "src/app-layer/jobs/executor-registry.ts",
+  "line": 408,
+  "kind": "registry-entry",
+  "detail": "executorRegistry.register('policy-review-reminder') \u2192 dynamic import('./policyReviewReminder')",
+  "survives": true,
+  "surface": "policies"
+ },
+ {
+  "file": "src/app-layer/jobs/executor-registry.ts",
+  "line": 1038,
+  "kind": "registry-entry",
+  "detail": "register('sharepoint-policy-pull') and register('sharepoint-subscription-renew') at 1051 \u2192 import('./sharepoint-policy-jobs')",
+  "survives": true,
+  "surface": "policies"
+ },
+ {
+  "file": "messages/en.json",
+  "line": 979,
+  "kind": "i18n-namespace",
+  "detail": "top-level \"policies\" namespace (same key at messages/bg.json:979); nested keys elsewhere e.g. en.json:119, :1511",
+  "survives": true,
+  "surface": "policies"
+ },
+ {
+  "file": "scripts/openapi-build.ts",
+  "line": 57,
+  "kind": "import",
+  "detail": "import * as policyDTOs from '@/lib/dto/policy.dto'; registered in the DTO namespace list at line 150",
+  "survives": true,
+  "surface": "policies"
+ },
+ {
+  "file": "src/lib/billing/entitlements.ts",
+  "line": 274,
+  "kind": "prisma-delegate",
+  "detail": "db.practice.count \u2014 'practice' is the ONLY plan-gated resource in PLAN_LIMITS/getCurrentCount",
+  "survives": true,
+  "surface": "practices"
+ },
+ {
+  "file": "src/app-layer/usecases/farm-record-traceability.ts",
+  "line": 107,
+  "kind": "prisma-delegate",
+  "detail": "db.practiceRequirementLink.findMany \u2014 AGRI farm-record traceability reads the GRC link table",
+  "survives": true,
+  "surface": "practices"
+ },
+ {
+  "file": "src/app-layer/usecases/inherited-practice-data.ts",
+  "line": 26,
+  "kind": "prisma-delegate",
+  "detail": "db.practiceAsset.findMany (also :70 db.practiceRequirementLink.findMany) \u2014 feeds surviving /assets/[id]/{evidence,mappings}",
+  "survives": true,
+  "surface": "practices"
+ },
+ {
+  "file": "src/app-layer/repositories/WorkItemRepository.ts",
+  "line": 509,
+  "kind": "prisma-delegate",
+  "detail": "db.practice.findMany({where:{id:{in:practiceIds}}}) \u2014 hydrates Task.practiceId for the farm-task work-item list",
+  "survives": true,
+  "surface": "practices"
+ },
+ {
+  "file": "src/app-layer/repositories/TraceabilityRepository.ts",
+  "line": 6,
+  "kind": "prisma-delegate",
+  "detail": "db.practiceAsset.findMany/create/delete at :6,:14,:22,:28 \u2014 whole AssetPracticeRepository class is practiceAsset",
+  "survives": true,
+  "surface": "practices"
+ },
+ {
+  "file": "src/app-layer/repositories/DashboardRepository.ts",
+  "line": 233,
+  "kind": "prisma-delegate",
+  "detail": "db.practice.groupBy (also :257 count, :286 groupBy) \u2014 dashboard practice-coverage tiles",
+  "survives": true,
+  "surface": "practices"
+ },
+ {
+  "file": "src/app-layer/repositories/ReportRepository.ts",
+  "line": 6,
+  "kind": "prisma-delegate",
+  "detail": "db.practice.findMany \u2014 first statement of the repository",
+  "survives": true,
+  "surface": "practices"
+ },
+ {
+  "file": "src/app-layer/repositories/MappingRepository.ts",
+  "line": 6,
+  "kind": "prisma-delegate",
+  "detail": "db.practice.findMany \u2014 first statement of the repository",
+  "survives": true,
+  "surface": "practices"
+ },
+ {
+  "file": "src/app-layer/repositories/FrameworkRepository.ts",
+  "line": 120,
+  "kind": "prisma-delegate",
+  "detail": "db.practiceRequirementLink.count \u2014 framework requirement coverage count",
+  "survives": true,
+  "surface": "practices"
+ },
+ {
+  "file": "src/app-layer/usecases/search.ts",
+  "line": 80,
+  "kind": "prisma-delegate",
+  "detail": "db.practice.findMany in the global search Promise.all \u2014 powers the command palette",
+  "survives": true,
+  "surface": "practices"
+ },
+ {
+  "file": "src/app-layer/usecases/compliance-calendar.ts",
+  "line": 604,
+  "kind": "prisma-delegate",
+  "detail": "db.practice.findMany (also :844 db.practice.count) \u2014 calendar rows + the GLOBAL sidebar badge count",
+  "survives": true,
+  "surface": "practices"
+ },
+ {
+  "file": "src/app-layer/usecases/evidence.ts",
+  "line": 134,
+  "kind": "prisma-delegate",
+  "detail": "db.practice.findFirst + db.practiceEvidenceLink.createMany at :134,:170,:216,:492,:635,:735",
+  "survives": true,
+  "surface": "practices"
+ },
+ {
+  "file": "src/app-layer/usecases/portfolio.ts",
+  "line": 479,
+  "kind": "prisma-delegate",
+  "detail": "db.practice.findMany (also :812) \u2014 org-level portfolio rollup",
+  "survives": true,
+  "surface": "practices"
+ },
+ {
+  "file": "src/app-layer/usecases/webhook-processor.ts",
+  "line": 312,
+  "kind": "prisma-delegate",
+  "detail": "prisma.practice.findMany inside the triggered-automation-keys loop (has a KNOWN_N_PLUS_ONE guardrail entry)",
+  "survives": true,
+  "surface": "practices"
+ },
+ {
+  "file": "src/app-layer/jobs/automation-runner.ts",
+  "line": 147,
+  "kind": "prisma-delegate",
+  "detail": "prisma.practice.findMany (also :374 prisma.practice.update) \u2014 scheduled BullMQ job",
+  "survives": true,
+  "surface": "practices"
+ },
+ {
+  "file": "src/app-layer/jobs/deadline-monitor.ts",
+  "line": 103,
+  "kind": "prisma-delegate",
+  "detail": "prisma.practice.findMany \u2014 deadline digest job",
+  "survives": true,
+  "surface": "practices"
+ },
+ {
+  "file": "src/app-layer/automation/action-executor.ts",
+  "line": 220,
+  "kind": "prisma-delegate",
+  "detail": "db.practice.updateMany under case 'Practice' (entityType union at types.ts:44, map at :69)",
+  "survives": true,
+  "surface": "practices"
+ },
+ {
+  "file": "src/app-layer/domain/restore-validators.ts",
+  "line": 80,
+  "kind": "prisma-delegate",
+  "detail": "db.practice.findFirst in the Task restore validator; 'Practice' also in the union :36 and registry :150",
+  "survives": true,
+  "surface": "practices"
+ },
+ {
+  "file": "src/app-layer/usecases/auto-evidence.ts",
+  "line": 123,
+  "kind": "prisma-delegate",
+  "detail": "db.practiceRequirementLink.findMany (also :201 db.practiceEvidenceLink.createMany)",
+  "survives": true,
+  "surface": "practices"
+ },
+ {
+  "file": "src/app/t/[tenantSlug]/(app)/evidence/page.tsx",
+  "line": 4,
+  "kind": "import",
+  "detail": "import { listPractices } from '@/app-layer/usecases/practice'",
+  "survives": true,
+  "surface": "practices"
+ },
+ {
+  "file": "src/app/api/t/[tenantSlug]/assets/[id]/evidence/route.ts",
+  "line": 4,
+  "kind": "import",
+  "detail": "import { getAssetInheritedEvidence } from '@/app-layer/usecases/inherited-practice-data'",
+  "survives": true,
+  "surface": "practices"
+ },
+ {
+  "file": "src/lib/hooks/index.ts",
+  "line": 35,
+  "kind": "import",
+  "detail": "export { usePractices, usePractice, useCreatePractice, useUpdatePractice, useDeletePractice } from './use-practices'",
+  "survives": true,
+  "surface": "practices"
+ },
+ {
+  "file": "src/lib/dto/index.ts",
+  "line": 9,
+  "kind": "import",
+  "detail": "export * from './practice.dto' \u2014 surviving DTO barrel re-exports PracticeListItemDTO/PracticeDetailDTO",
+  "survives": true,
+  "surface": "practices"
+ },
+ {
+  "file": "src/components/TraceabilityPanel.tsx",
+  "line": 78,
+  "kind": "fetch-url",
+  "detail": "`${apiBase}/practices/${entityId}/traceability`; also :115 /practices, :128,:131 /assets/:id/practices, :194,:195 unlink",
+  "survives": true,
+  "surface": "practices"
+ },
+ {
+  "file": "src/components/ui/entity-picker.tsx",
+  "line": 144,
+  "kind": "fetch-url",
+  "detail": "case 'PRACTICE': url = `${base}/practices${qs}` (kind union :53, label branch :75)",
+  "survives": true,
+  "surface": "practices"
+ },
+ {
+  "file": "src/lib/processes/use-tenant-practices.ts",
+  "line": 69,
+  "kind": "fetch-url",
+  "detail": "fetch(`/api/t/${tenantSlug}/practices`) \u2014 process-map inspector 'Linked practice' combobox options",
+  "survives": true,
+  "surface": "practices"
+ },
+ {
+  "file": "src/app/t/[tenantSlug]/(app)/farm-tasks/[taskId]/FarmTaskDetailClient.tsx",
+  "line": 682,
+  "kind": "link-href",
+  "detail": "<Link href={tenantHref(`/practices/${task.practice.id}`)} id=\"task-practice-link\"> on the AGRI farm-task page",
+  "survives": true,
+  "surface": "practices"
+ },
+ {
+  "file": "src/lib/swr-keys.ts",
+  "line": 88,
+  "kind": "registry-entry",
+  "detail": "CACHE_KEYS.practices block (:88-107): makeResource('practices') + consistencyCheck/pageData/activity/tasks/evidence/mappings",
+  "survives": true,
+  "surface": "practices"
+ },
+ {
+  "file": "src/lib/permissions.ts",
+  "line": 4,
+  "kind": "permission-key",
+  "detail": "PermissionSet.practices {view,create,edit}; also :71 RESOURCE list and role tables at :99,:116,:135,:151,:177,:194",
+  "survives": true,
+  "surface": "practices"
+ },
+ {
+  "file": "messages/en.json",
+  "line": 399,
+  "kind": "i18n-namespace",
+  "detail": "top-level namespace \"practices\" (also \"practiceReverseLookup\" at :3686); identical line numbers in messages/bg.json",
+  "survives": true,
+  "surface": "practices"
+ },
+ {
+  "file": "src/lib/nav/canonical-parents.ts",
+  "line": 71,
+  "kind": "nav-entry",
+  "detail": "'/practices/[practiceId]' plus :75,:76,:77,:78,:79 (tests/dashboard/new/sankey/templates) map to '/practices'",
+  "survives": true,
+  "surface": "practices"
+ },
+ {
+  "file": "src/components/layout/OrgSidebarNav.tsx",
+  "line": 78,
+  "kind": "nav-entry",
+  "detail": "href: orgHref('/practices'), label t('nonPerformingPractices') \u2014 org sidebar item",
+  "survives": true,
+  "surface": "practices"
+ },
+ {
+  "file": "src/lib/schemas/index.ts",
+  "line": 283,
+  "kind": "registry-entry",
+  "detail": "export const CreateFindingSchema \u2014 DEFINITION lives in a SURVIVING shared-schema barrel; also registers OpenAPI component 'FindingCreateRequest' (line 301)",
+  "survives": true,
+  "surface": "findings"
+ },
+ {
+  "file": "src/lib/schemas/index.ts",
+  "line": 305,
+  "kind": "registry-entry",
+  "detail": "export const UpdateFindingSchema \u2014 same surviving barrel; OpenAPI component 'FindingUpdateRequest' (line 320)",
+  "survives": true,
+  "surface": "findings"
+ },
+ {
+  "file": "src/app-layer/jobs/snapshot.ts",
+  "line": 142,
+  "kind": "prisma-delegate",
+  "detail": "db.finding.count({ where: { tenantId, status: { not: 'CLOSED' } } }) \u2014 feeds Snapshot.findingsOpen; MUST BE SEVERED",
+  "survives": true,
+  "surface": "findings"
+ },
+ {
+  "file": "src/app-layer/usecases/compliance-calendar.ts",
+  "line": 758,
+  "kind": "prisma-delegate",
+  "detail": "db.finding.findMany inside loadFindingEvents() (declared line 751, called line 186) \u2014 MUST BE SEVERED",
+  "survives": true,
+  "surface": "findings"
+ },
+ {
+  "file": "src/app-layer/jobs/calendar-deadlines.ts",
+  "line": 193,
+  "kind": "prisma-delegate",
+  "detail": "prisma.finding.findMany inside scanFindings() (declared 186, called 257, aggregated 254/260/269) \u2014 MUST BE SEVERED",
+  "survives": true,
+  "surface": "findings"
+ },
+ {
+  "file": "src/app-layer/repositories/AuditRepository.ts",
+  "line": 12,
+  "kind": "prisma-delegate",
+  "detail": "_count: { select: { checklist: true, findings: true } } \u2014 Finding accessed via the Audit RELATION, invisible to import scans",
+  "survives": true,
+  "surface": "findings"
+ },
+ {
+  "file": "src/app-layer/repositories/AuditRepository.ts",
+  "line": 34,
+  "kind": "prisma-delegate",
+  "detail": "include findings: { orderBy: { createdAt: 'desc' } } \u2014 Finding via Audit relation",
+  "survives": true,
+  "surface": "findings"
+ },
+ {
+  "file": "src/app-layer/usecases/compliance-calendar.ts",
+  "line": 790,
+  "kind": "link-href",
+  "detail": "href: tenantHrefFromCtx(ctx, `/findings/${r.id}`) \u2014 calendar event deep-links into a page that will not exist; MUST BE SEVERED",
+  "survives": true,
+  "surface": "findings"
+ },
+ {
+  "file": "src/lib/nav/page-segregation.ts",
+  "line": 65,
+  "kind": "nav-entry",
+  "detail": "'/findings' listed in the tenant route inventory",
+  "survives": true,
+  "surface": "findings"
+ },
+ {
+  "file": "src/components/nav/BackAffordance.tsx",
+  "line": 49,
+  "kind": "nav-entry",
+  "detail": "SECTION_LABELS['/findings'] = 'findings' \u2014 back-affordance label map",
+  "survives": true,
+  "surface": "findings"
+ },
+ {
+  "file": "src/lib/queryKeys.ts",
+  "line": 65,
+  "kind": "registry-entry",
+  "detail": "queryKeys.findings namespace: all() line 66, list() line 68 \u2014 React Query key registry",
+  "survives": true,
+  "surface": "findings"
+ },
+ {
+  "file": "src/lib/swr-keys.ts",
+  "line": 141,
+  "kind": "registry-entry",
+  "detail": "findings: makeResource('findings') \u2014 SWR key registry",
+  "survives": true,
+  "surface": "findings"
+ },
+ {
+  "file": "src/lib/observability/list-page-metrics.ts",
+  "line": 100,
+  "kind": "registry-entry",
+  "detail": "'findings' member of the ListPageEntity union (consumed by src/app/api/t/[tenantSlug]/findings/route.ts:22)",
+  "survives": true,
+  "surface": "findings"
+ },
+ {
+  "file": "src/lib/soft-delete.ts",
+  "line": 25,
+  "kind": "registry-entry",
+  "detail": "'Finding' in SOFT_DELETE_MODELS (P2 tier)",
+  "survives": true,
+  "surface": "findings"
+ },
+ {
+  "file": "src/app-layer/usecases/soft-delete-operations.ts",
+  "line": 27,
+  "kind": "registry-entry",
+  "detail": "'Finding' member of the SoftDeletableModel union used by restoreEntity",
+  "survives": true,
+  "surface": "findings"
+ },
+ {
+  "file": "src/app-layer/domain/restore-validators.ts",
+  "line": 42,
+  "kind": "registry-entry",
+  "detail": "'Finding' in the RestorableModel union",
+  "survives": true,
+  "surface": "findings"
+ },
+ {
+  "file": "src/app-layer/domain/restore-validators.ts",
+  "line": 156,
+  "kind": "registry-entry",
+  "detail": "Finding: NOOP_VALIDATOR entry in the validator map",
+  "survives": true,
+  "surface": "findings"
+ },
+ {
+  "file": "src/lib/security/classification.ts",
+  "line": 243,
+  "kind": "registry-entry",
+  "detail": "{ model: 'Finding', hasDeletedAt: false, priority: 'P2' } in the data-classification inventory",
+  "survives": true,
+  "surface": "findings"
+ },
+ {
+  "file": "src/lib/security/encrypted-fields.ts",
+  "line": 141,
+  "kind": "registry-entry",
+  "detail": "Finding: ['description','rootCause','correctiveAction','analysis','verificationNotes'] in ENCRYPTED_FIELDS (also referenced in comments at 139/237/269)",
+  "survives": true,
+  "surface": "findings"
+ },
+ {
+  "file": "src/app-layer/schemas/calendar.schemas.ts",
+  "line": 42,
+  "kind": "registry-entry",
+  "detail": "'finding' member of the calendar category union",
+  "survives": true,
+  "surface": "findings"
+ },
+ {
+  "file": "src/app-layer/schemas/calendar.schemas.ts",
+  "line": 103,
+  "kind": "registry-entry",
+  "detail": "'finding-due' member of the calendar event-type union",
+  "survives": true,
+  "surface": "findings"
+ },
+ {
+  "file": "src/app-layer/schemas/calendar.schemas.ts",
+  "line": 212,
+  "kind": "registry-entry",
+  "detail": "'FINDING' member of the calendar entityType union",
+  "survives": true,
+  "surface": "findings"
+ },
+ {
+  "file": "src/app/t/[tenantSlug]/(app)/calendar/CalendarClient.tsx",
+  "line": 150,
+  "kind": "i18n-namespace",
+  "detail": "finding: tCategory('finding') \u2014 calendar category label map on a SURVIVING page",
+  "survives": true,
+  "surface": "findings"
+ },
+ {
+  "file": "src/lib/design/status-tone.ts",
+  "line": 179,
+  "kind": "registry-entry",
+  "detail": "case 'finding': in the calendar/status tone switch",
+  "survives": true,
+  "surface": "findings"
+ },
+ {
+  "file": "src/app-layer/jobs/snapshot.ts",
+  "line": 134,
+  "kind": "other",
+  "detail": "findingsOpen destructured from the Promise.all and written to the Snapshot row (also line 191)",
+  "survives": true,
+  "surface": "findings"
+ },
+ {
+  "file": "src/app-layer/jobs/compliance-digest.ts",
+  "line": 55,
+  "kind": "other",
+  "detail": "findingsOpen / findingsOpenDelta digest fields (59, 162, 169-170) rendered at 258, 260-261, 314-315 \u2014 reads Snapshot.findingsOpen, goes permanently 0 once the delegate is severed",
+  "survives": true,
+  "surface": "findings"
+ },
+ {
+  "file": "src/app-layer/repositories/PortfolioRepository.ts",
+  "line": 48,
+  "kind": "other",
+  "detail": "findingsOpen on the portfolio row type; selected line 162, summed line 181 (Snapshot column, not the Finding delegate)",
+  "survives": true,
+  "surface": "findings"
+ },
+ {
+  "file": "src/app-layer/usecases/portfolio.ts",
+  "line": 203,
+  "kind": "other",
+  "detail": "findings: { open: findingsOpen } in the portfolio summary (accumulated 90/140/162)",
+  "survives": true,
+  "surface": "findings"
+ },
+ {
+  "file": "src/app-layer/schemas/portfolio.ts",
+  "line": 86,
+  "kind": "other",
+  "detail": "findings zod object in the portfolio summary schema; findingsOpen at line 157",
+  "survives": true,
+  "surface": "findings"
+ },
+ {
+  "file": "src/app/api/org/[orgSlug]/portfolio/export/route.ts",
+  "line": 86,
+  "kind": "other",
+  "detail": "['Findings Open', summary.findings.open] CSV export row",
+  "survives": true,
+  "surface": "findings"
+ },
+ {
+  "file": "src/app-layer/usecases/compliance-trends.ts",
+  "line": 53,
+  "kind": "other",
+  "detail": "findingsOpen trend field (declared 52-53, mapped line 94) \u2014 Snapshot-derived",
+  "survives": true,
+  "surface": "findings"
+ },
+ {
+  "file": "src/app-layer/repositories/DashboardRepository.ts",
+  "line": 19,
+  "kind": "other",
+  "detail": "openFindings: number on the DashboardStats interface (declared but never populated in this file)",
+  "survives": true,
+  "surface": "findings"
+ },
+ {
+  "file": "src/lib/db/rls-middleware.ts",
+  "line": 213,
+  "kind": "other",
+  "detail": "comment naming FindingEvidence among ownership-chained RLS tables",
+  "survives": true,
+  "surface": "findings"
+ },
+ {
+  "file": "src/lib/dto/task.dto.ts",
+  "line": 31,
+  "kind": "other",
+  "detail": "OpenAPI description text mentioning 'audit findings' (cosmetic)",
+  "survives": true,
+  "surface": "findings"
+ },
+ {
+  "file": "messages/en.json",
+  "line": 1300,
+  "kind": "i18n-namespace",
+  "detail": "top-level namespace \"findings\" (the whole GRC page's copy)",
+  "survives": true,
+  "surface": "findings"
+ },
+ {
+  "file": "messages/bg.json",
+  "line": 1300,
+  "kind": "i18n-namespace",
+  "detail": "top-level namespace \"findings\" (the whole GRC page's copy)",
+  "survives": true,
+  "surface": "findings"
+ },
+ {
+  "file": "messages/en.json",
+  "line": 121,
+  "kind": "i18n-namespace",
+  "detail": "nav.findings = 'Nonconformities' \u2014 sidebar label inside the SURVIVING nav namespace",
+  "survives": true,
+  "surface": "findings"
+ },
+ {
+  "file": "messages/bg.json",
+  "line": 121,
+  "kind": "i18n-namespace",
+  "detail": "nav.findings = '\u041a\u043e\u043d\u0441\u0442\u0430\u0442\u0430\u0446\u0438\u0438' \u2014 sidebar label inside the SURVIVING nav namespace",
+  "survives": true,
+  "surface": "findings"
+ },
+ {
+  "file": "messages/en.json",
+  "line": 6819,
+  "kind": "i18n-namespace",
+  "detail": "backNav.findings = 'Findings' \u2014 consumed by src/components/nav/BackAffordance.tsx",
+  "survives": true,
+  "surface": "findings"
+ },
+ {
+  "file": "messages/bg.json",
+  "line": 6819,
+  "kind": "i18n-namespace",
+  "detail": "backNav.findings = '\u041d\u0430\u0445\u043e\u0434\u043a\u0438' \u2014 consumed by src/components/nav/BackAffordance.tsx",
+  "survives": true,
+  "surface": "findings"
+ },
+ {
+  "file": "tests/guards/list-page-descriptions.test.ts",
+  "line": 38,
+  "kind": "registry-entry",
+  "detail": "'findings' in the required-description entity list; file entry at line 52 pointing at findings/FindingsClient.tsx",
+  "survives": true,
+  "surface": "findings"
+ },
+ {
+  "file": "tests/guards/list-page-perf-ratchet.test.ts",
+  "line": 67,
+  "kind": "registry-entry",
+  "detail": "{ entity: 'findings', repo: 'FindingRepository' } \u2014 will dangle once the repo file is gone",
+  "survives": true,
+  "surface": "findings"
+ },
+ {
+  "file": "tests/guards/epic49-calendar-ratchets.test.ts",
+  "line": 70,
+  "kind": "registry-entry",
+  "detail": "asserts compliance-calendar.ts contains 'loadFindingEvents'; line 128 asserts calendar-deadlines.ts matches /scanFindings/",
+  "survives": true,
+  "surface": "findings"
+ },
+ {
+  "file": "tests/guardrails/schema-index-coverage.test.ts",
+  "line": 501,
+  "kind": "registry-entry",
+  "detail": "Finding entry in LIST_MODELS_TENANT_INDEX_SUFFICIENT (has a no-stale-entries test)",
+  "survives": true,
+  "surface": "findings"
+ },
+ {
+  "file": "tests/guardrails/table-platform-drift.test.ts",
+  "line": 47,
+  "kind": "registry-entry",
+  "detail": "'findings/FindingsClient.tsx' in the tracked-page list; 'finding' in the entityNames array at line 245",
+  "survives": true,
+  "surface": "findings"
+ },
+ {
+  "file": "tests/guards/pageheader-adoption.test.ts",
+  "line": 48,
+  "kind": "registry-entry",
+  "detail": "findings/FindingsClient.tsx adoption entry (note at line 50)",
+  "survives": true,
+  "surface": "findings"
+ },
+ {
+  "file": "tests/guards/table-title-cell-adoption.test.ts",
+  "line": 37,
+  "kind": "registry-entry",
+  "detail": "'src/app/t/[tenantSlug]/(app)/findings/FindingsClient.tsx' in the adoption list",
+  "survives": true,
+  "surface": "findings"
+ },
+ {
+  "file": "tests/guards/table-unification.test.ts",
+  "line": 166,
+  "kind": "registry-entry",
+  "detail": "findings/FindingsClient.tsx exemption entry (note at 169)",
+  "survives": true,
+  "surface": "findings"
+ },
+ {
+  "file": "tests/guards/filter-toolbar-coverage.test.ts",
+  "line": 163,
+  "kind": "registry-entry",
+  "detail": "findings/FindingsClient.tsx exemption with written reason (164)",
+  "survives": true,
+  "surface": "findings"
+ },
+ {
+  "file": "tests/guards/primary-action-budget.test.ts",
+  "line": 163,
+  "kind": "registry-entry",
+  "detail": "\"\u2026/findings/FindingsClient.tsx\": 2 budget entry",
+  "survives": true,
+  "surface": "findings"
+ },
+ {
+  "file": "tests/guards/datatable-row-height-uniform.test.ts",
+  "line": 69,
+  "kind": "registry-entry",
+  "detail": "findings/FindingsClient.tsx in the uniform-row-height file list",
+  "survives": true,
+  "surface": "findings"
+ },
+ {
+  "file": "tests/guards/epic55-native-select-ratchet.test.ts",
+  "line": 138,
+  "kind": "registry-entry",
+  "detail": "'findings/FindingsClient.tsx' entry",
+  "survives": true,
+  "surface": "findings"
+ },
+ {
+  "file": "tests/guards/empty-state-personality.test.ts",
+  "line": 38,
+  "kind": "registry-entry",
+  "detail": "findings/FindingsClient.tsx in the personality-required list (comment at 115)",
+  "survives": true,
+  "surface": "findings"
+ },
+ {
+  "file": "tests/guards/empty-state-tone.test.ts",
+  "line": 170,
+  "kind": "registry-entry",
+  "detail": "'findings.createModal.noRisksToLink' i18n key allowlisted \u2014 dies with the findings namespace",
+  "survives": true,
+  "surface": "findings"
+ },
+ {
+  "file": "tests/guards/form-section-discipline.test.ts",
+  "line": 44,
+  "kind": "registry-entry",
+  "detail": "'src/app/t/[tenantSlug]/(app)/findings/CreateFindingModal.tsx' \u2014 comment at 41 calls it \"the surviving\" subject, so removing it makes this ratchet vacuous",
+  "survives": true,
+  "surface": "findings"
+ },
+ {
+  "file": "tests/guards/action-button-canonical-entity-label.test.ts",
+  "line": 65,
+  "kind": "registry-entry",
+  "detail": "['findings', 'newFinding', 'Finding'] canonical header-button tuple",
+  "survives": true,
+  "surface": "findings"
+ },
+ {
+  "file": "tests/guards/ui-roadmap-2026-06-capstone.test.ts",
+  "line": 46,
+  "kind": "registry-entry",
+  "detail": "reads findings/FindingsClient.tsx to assert ownerDisplayName on the assignee column (test at line 45)",
+  "survives": true,
+  "surface": "findings"
+ },
+ {
+  "file": "tests/guards/inline-subtitle-budget.test.ts",
+  "line": 45,
+  "kind": "other",
+  "detail": "docblock names FindingsClient as part of the budget floor \u2014 narrow the prose/number when the page goes",
+  "survives": true,
+  "surface": "findings"
+ },
+ {
+  "file": "tests/guards/inline-form-action-order.test.ts",
+  "line": 12,
+  "kind": "other",
+  "detail": "docblock lists findings/FindingsClient as a covered site",
+  "survives": true,
+  "surface": "findings"
+ },
+ {
+  "file": "tests/guards/badge-density.test.ts",
+  "line": 26,
+  "kind": "other",
+  "detail": "docblock names findings/FindingsClient.tsx row status tone",
+  "survives": true,
+  "surface": "findings"
+ },
+ {
+  "file": "tests/guards/columns-dropdown-coverage.test.ts",
+  "line": 118,
+  "kind": "other",
+  "detail": "comment referencing Findings getting the gear in R10-PR11 (also line 21)",
+  "survives": true,
+  "surface": "findings"
+ },
+ {
+  "file": "tests/guards/roadmap-10-completion.test.ts",
+  "line": 82,
+  "kind": "other",
+  "detail": "completion-item name string 'gear added to 5 pages \u2026 (Tasks/Assets/Vendors/Frameworks/Findings)'",
+  "survives": true,
+  "surface": "findings"
+ },
+ {
+  "file": "src/app-layer/services/export-graph.ts",
+  "line": 164,
+  "kind": "prisma-delegate",
+  "detail": "EXPORT_EDGES entry: prismaModel: 'vendorAssessment' (string-keyed delegate, invisible to tsc)",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "src/app-layer/services/export-service.ts",
+  "line": 152,
+  "kind": "prisma-delegate",
+  "detail": "ROOT_PRISMA_MODELS: vendorReview: 'vendorAssessment' (string-keyed delegate)",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "src/app-layer/services/import-service.ts",
+  "line": 166,
+  "kind": "prisma-delegate",
+  "detail": "ROOT_PRISMA_MODELS: vendorReview: 'vendorAssessment' (string-keyed delegate)",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "prisma/seed-vendor-questionnaire.ts",
+  "line": 10,
+  "kind": "prisma-delegate",
+  "detail": "prisma.questionnaireTemplate.findUnique({ where: { key: 'VENDOR_BASELINE' } })",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "prisma/seed-vendor-questionnaire.ts",
+  "line": 16,
+  "kind": "prisma-delegate",
+  "detail": "prisma.questionnaireTemplate.create(...) \u2014 breaks db:reset if model dropped",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "src/app-layer/repositories/AssessmentRepository.ts",
+  "line": 7,
+  "kind": "prisma-delegate",
+  "detail": "db.questionnaireTemplate.findMany (QuestionnaireRepository.listTemplates)",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "src/app-layer/repositories/AssessmentRepository.ts",
+  "line": 15,
+  "kind": "prisma-delegate",
+  "detail": "db.questionnaireTemplate.findUnique (QuestionnaireRepository.getByKey)",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "src/app-layer/repositories/AssessmentRepository.ts",
+  "line": 26,
+  "kind": "prisma-delegate",
+  "detail": "db.vendorAssessment.findMany",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "src/app-layer/repositories/AssessmentRepository.ts",
+  "line": 39,
+  "kind": "prisma-delegate",
+  "detail": "db.vendorAssessment.findFirst",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "src/app-layer/repositories/AssessmentRepository.ts",
+  "line": 51,
+  "kind": "prisma-delegate",
+  "detail": "db.vendorAssessment.create",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "src/app-layer/repositories/AssessmentRepository.ts",
+  "line": 72,
+  "kind": "prisma-delegate",
+  "detail": "db.vendorAssessment.update (updateScore)",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "src/app-layer/repositories/AssessmentRepository.ts",
+  "line": 83,
+  "kind": "prisma-delegate",
+  "detail": "db.vendorAssessment.update (submit)",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "src/app-layer/repositories/AssessmentRepository.ts",
+  "line": 95,
+  "kind": "prisma-delegate",
+  "detail": "db.vendorAssessment.update (decide)",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "src/app-layer/repositories/AssessmentRepository.ts",
+  "line": 107,
+  "kind": "prisma-delegate",
+  "detail": "db.vendorAssessmentAnswer.upsert (VendorAnswerRepository.upsertMany)",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "src/app-layer/repositories/AssessmentRepository.ts",
+  "line": 124,
+  "kind": "prisma-delegate",
+  "detail": "db.vendorAssessmentAnswer.findMany (listByAssessment)",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "src/app-layer/usecases/vendor.ts",
+  "line": 5,
+  "kind": "import",
+  "detail": "import { QuestionnaireRepository, VendorAssessmentRepository, VendorAnswerRepository } from '../repositories/AssessmentRepository'",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "src/app-layer/usecases/vendor.ts",
+  "line": 227,
+  "kind": "import",
+  "detail": "VendorAssessmentRepository.create \u2014 startVendorAssessment",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "src/app-layer/usecases/vendor.ts",
+  "line": 295,
+  "kind": "import",
+  "detail": "VendorAssessmentRepository.updateScore + VendorAnswerRepository.upsertMany/listByAssessment (283/286)",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "src/app-layer/usecases/vendor.ts",
+  "line": 355,
+  "kind": "import",
+  "detail": "QuestionnaireRepository.listTemplates / getByKey (361) \u2014 legacy questionnaire read path",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "src/app-layer/usecases/vendor-audit.ts",
+  "line": 87,
+  "kind": "prisma-delegate",
+  "detail": "db.vendorAssessment.findFirst inside loop (has a KNOWN_N_PLUS_ONE guardrail entry)",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "src/app-layer/usecases/vendor-audit.ts",
+  "line": 207,
+  "kind": "prisma-delegate",
+  "detail": "db.vendorAssessment.findMany",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "src/lib/security/external-assessment-access.ts",
+  "line": 103,
+  "kind": "prisma-delegate",
+  "detail": "prisma.vendorAssessment.findFirst \u2014 token verify; module also imports type VendorAssessment (l.34)",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "src/lib/security/encrypted-fields.ts",
+  "line": 163,
+  "kind": "registry-entry",
+  "detail": "ENCRYPTED_FIELDS: VendorAssessment: ['notes'] \u2014 Epic B manifest entry",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "src/lib/auth/guard.ts",
+  "line": 33,
+  "kind": "route-permission",
+  "detail": "PUBLIC_PATH_PREFIXES: '/vendor-assessment/' (external respondent page carve-out)",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "src/lib/auth/guard.ts",
+  "line": 34,
+  "kind": "route-permission",
+  "detail": "PUBLIC_PATH_PREFIXES: '/api/vendor-assessment/' (external respondent API carve-out)",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "src/lib/errors/route-exemptions.ts",
+  "line": 276,
+  "kind": "registry-entry",
+  "detail": "exemption entry file: 'vendor-assessment/[assessmentId]/route.ts' (anti_enumeration)",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "src/lib/errors/route-exemptions.ts",
+  "line": 285,
+  "kind": "registry-entry",
+  "detail": "exemption entry file: 'vendor-assessment/[assessmentId]/submit/route.ts' (anti_enumeration)",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "src/lib/nav/canonical-parents.ts",
+  "line": 57,
+  "kind": "nav-entry",
+  "detail": "'/admin/vendor-assessment-reviews/[assessmentId]' \u2192 { href: '/admin' }",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "src/lib/nav/canonical-parents.ts",
+  "line": 58,
+  "kind": "nav-entry",
+  "detail": "'/admin/vendor-templates' \u2192 { href: '/admin' }",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "src/lib/nav/canonical-parents.ts",
+  "line": 59,
+  "kind": "nav-entry",
+  "detail": "'/admin/vendor-templates/[templateId]' \u2192 { href: '/admin/vendor-templates', label: 'vendorTemplates' }",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "src/lib/nav/page-segregation.ts",
+  "line": 108,
+  "kind": "nav-entry",
+  "detail": "'/admin/vendor-assessment-reviews/[assessmentId]'",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "src/lib/nav/page-segregation.ts",
+  "line": 109,
+  "kind": "nav-entry",
+  "detail": "'/admin/vendor-templates'",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "src/lib/nav/page-segregation.ts",
+  "line": 110,
+  "kind": "nav-entry",
+  "detail": "'/admin/vendor-templates/[templateId]'",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "src/lib/schemas/index.ts",
+  "line": 594,
+  "kind": "registry-entry",
+  "detail": "CreateVendorAssessmentTemplateSchema (Zod) \u2014 only consumer is a doomed route",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "src/lib/schemas/index.ts",
+  "line": 605,
+  "kind": "registry-entry",
+  "detail": "AddVendorAssessmentTemplateSectionSchema",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "src/lib/schemas/index.ts",
+  "line": 615,
+  "kind": "registry-entry",
+  "detail": "AddVendorAssessmentTemplateQuestionSchema",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "src/lib/schemas/index.ts",
+  "line": 654,
+  "kind": "registry-entry",
+  "detail": "ReorderVendorAssessmentTemplateSchema",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "src/lib/schemas/index.ts",
+  "line": 670,
+  "kind": "registry-entry",
+  "detail": "ReviewVendorAssessmentSchema",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "src/lib/schemas/index.ts",
+  "line": 700,
+  "kind": "registry-entry",
+  "detail": "CloneVendorAssessmentTemplateSchema",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "src/app-layer/notifications/enqueue.ts",
+  "line": 19,
+  "kind": "import",
+  "detail": "imports buildVendorAssessmentInvitation/Reminder/Submitted/ReviewedEmail (lines 19-22)",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "src/app-layer/notifications/enqueue.ts",
+  "line": 30,
+  "kind": "import",
+  "detail": "imports type VendorAssessment{Invitation,Reminder,Submitted,Reviewed}Payload (lines 30-33)",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "src/app-layer/notifications/enqueue.ts",
+  "line": 163,
+  "kind": "registry-entry",
+  "detail": "switch arms case 'VENDOR_ASSESSMENT_INVITATION' / _REMINDER (167) / _SUBMITTED (171) / _REVIEWED (175)",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "src/app-layer/notifications/templates.ts",
+  "line": 207,
+  "kind": "registry-entry",
+  "detail": "buildVendorAssessmentInvitationEmail + VendorAssessmentInvitationPayload (l.189)",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "src/app-layer/notifications/templates.ts",
+  "line": 267,
+  "kind": "registry-entry",
+  "detail": "buildVendorAssessmentReminderEmail + VendorAssessmentReminderPayload (l.258)",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "src/app-layer/notifications/templates.ts",
+  "line": 326,
+  "kind": "registry-entry",
+  "detail": "buildVendorAssessmentSubmittedEmail + VendorAssessmentSubmittedPayload (l.314)",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "src/app-layer/notifications/templates.ts",
+  "line": 381,
+  "kind": "registry-entry",
+  "detail": "buildVendorAssessmentReviewedEmail + VendorAssessmentReviewedPayload (l.370)",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "prisma/schema/enums.prisma",
+  "line": 562,
+  "kind": "registry-entry",
+  "detail": "EmailNotificationType: VENDOR_ASSESSMENT_INVITATION / _REMINDER(565) / _SUBMITTED(568) / _REVIEWED(571)",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "src/app-layer/automation/events.ts",
+  "line": 62,
+  "kind": "registry-entry",
+  "detail": "AUTOMATION_EVENTS.VENDOR_ASSESSMENT_OVERDUE",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "src/app-layer/automation/event-contracts.ts",
+  "line": 97,
+  "kind": "registry-entry",
+  "detail": "interface VendorAssessmentOverdueData (union member at l.215)",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "src/lib/automation/event-labels.ts",
+  "line": 131,
+  "kind": "registry-entry",
+  "detail": "label entry for AUTOMATION_EVENTS.VENDOR_ASSESSMENT_OVERDUE",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "src/app-layer/jobs/vendor-renewal-check.ts",
+  "line": 121,
+  "kind": "registry-entry",
+  "detail": "emits event: 'VENDOR_ASSESSMENT_OVERDUE'",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "src/app-layer/domain/entity-status-mapping.ts",
+  "line": 122,
+  "kind": "registry-entry",
+  "detail": "export const VENDOR_ASSESSMENT_VARIANT status\u2192badge map",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "src/app-layer/policies/vendor.policies.ts",
+  "line": 38,
+  "kind": "import",
+  "detail": "assertCanManageVendorAssessmentTemplates \u2014 only callers are vendor-assessment-template.ts",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "messages/en.json",
+  "line": 6518,
+  "kind": "i18n-namespace",
+  "detail": "top-level ns 'vendorAssessment' (also admin.vendorReview / admin.vendorTemplates / admin.vendorTemplateBuilder)",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "messages/bg.json",
+  "line": 6518,
+  "kind": "i18n-namespace",
+  "detail": "top-level ns 'vendorAssessment' (also admin.vendorReview / admin.vendorTemplates / admin.vendorTemplateBuilder)",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "src/app/t/[tenantSlug]/(app)/admin/vendor-templates/VendorTemplatesIndexClient.tsx",
+  "line": 61,
+  "kind": "fetch-url",
+  "detail": "fetch(apiUrl('/vendor-assessment-templates')) \u2014 GET list",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "src/app/t/[tenantSlug]/(app)/admin/vendor-templates/VendorTemplatesIndexClient.tsx",
+  "line": 81,
+  "kind": "fetch-url",
+  "detail": "fetch(apiUrl('/vendor-assessment-templates'), { POST }) \u2014 create",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "src/app/t/[tenantSlug]/(app)/admin/vendor-templates/[templateId]/VendorTemplateBuilderClient.tsx",
+  "line": 114,
+  "kind": "fetch-url",
+  "detail": "apiUrl(`/vendor-assessment-templates/${templateId}`)",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "src/app/t/[tenantSlug]/(app)/admin/vendor-templates/[templateId]/VendorTemplateBuilderClient.tsx",
+  "line": 241,
+  "kind": "fetch-url",
+  "detail": "apiUrl(`/vendor-assessment-templates/${templateId}/reorder`)",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "src/app/t/[tenantSlug]/(app)/admin/vendor-templates/[templateId]/VendorTemplateBuilderClient.tsx",
+  "line": 263,
+  "kind": "fetch-url",
+  "detail": "apiUrl(`/vendor-assessment-templates/${templateId}/sections`)",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "src/app/t/[tenantSlug]/(app)/admin/vendor-templates/[templateId]/VendorTemplateBuilderClient.tsx",
+  "line": 284,
+  "kind": "fetch-url",
+  "detail": "`/vendor-assessment-templates/${templateId}/sections/${sectionId}/questions`",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "src/app/t/[tenantSlug]/(app)/admin/vendor-templates/[templateId]/VendorTemplateBuilderClient.tsx",
+  "line": 307,
+  "kind": "fetch-url",
+  "detail": "apiUrl(`/vendor-assessment-templates/${templateId}/clone`)",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "tests/guardrails/epic-g3-end-to-end.test.ts",
+  "line": 51,
+  "kind": "registry-entry",
+  "detail": "entire file is the vendor-assessments surface ratchet (schema, 12 routes, 2 pages, guard prefixes, dynamic imports)",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "tests/guardrails/vendor-questionnaire-schema.test.ts",
+  "line": 94,
+  "kind": "registry-entry",
+  "detail": "entire file asserts VendorAssessmentTemplate/Section/Question + VendorAssessment/Answer schema shape",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "tests/guardrails/schema-index-coverage.test.ts",
+  "line": 198,
+  "kind": "registry-entry",
+  "detail": "FK exemptions VendorAssessmentTemplate.createdByUserId \u2026 VendorAssessmentAnswer.evidenceId (198-207)",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "tests/guardrails/schema-index-coverage.test.ts",
+  "line": 549,
+  "kind": "registry-entry",
+  "detail": "LIST_QUERY_INDEXES entries VendorAssessment / Answer / Template / TemplateQuestion (549-555)",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "tests/guardrails/sanitize-rich-text-coverage.test.ts",
+  "line": 83,
+  "kind": "registry-entry",
+  "detail": "VendorAssessment classification \u2192 src/app-layer/usecases/vendor.ts; VendorAssessmentAnswer at l.85",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "tests/guardrails/logging-import-hygiene.test.ts",
+  "line": 160,
+  "kind": "registry-entry",
+  "detail": "allowlist for vendor-assessment-send/reminder/response (160-162) and -review (170)",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "tests/guardrails/query-shape-guardrails.test.ts",
+  "line": 186,
+  "kind": "registry-entry",
+  "detail": "KNOWN_N_PLUS_ONE key 'src/app-layer/usecases/vendor-audit.ts:findFirst:vendorAssessment'",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "tests/guardrails/audit-s6-vendor-risk.test.ts",
+  "line": 13,
+  "kind": "registry-entry",
+  "detail": "read('src/app-layer/usecases/vendor-assessment-review.ts')",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "tests/guardrails/raw-color-ratchet.test.ts",
+  "line": 72,
+  "kind": "registry-entry",
+  "detail": "'vendor-assessment' exempt path segment",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "tests/guards/entity-detail-layout-coverage.test.ts",
+  "line": 104,
+  "kind": "registry-entry",
+  "detail": "admin/vendor-assessment-reviews/[assessmentId]/page.tsx entry; vendor-templates/[templateId]/page.tsx at l.109",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "tests/guards/entity-detail-shell-coverage.test.ts",
+  "line": 161,
+  "kind": "registry-entry",
+  "detail": "vendor-templates/[templateId]/page.tsx (161) + vendor-assessment-reviews page.tsx (162)",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "tests/guards/heading-primitive-discipline.test.ts",
+  "line": 59,
+  "kind": "registry-entry",
+  "detail": "src/app/vendor-assessment/[assessmentId]/VendorAssessmentClient.tsx exemption",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "tests/guards/no-raw-palette-greys.test.ts",
+  "line": 63,
+  "kind": "registry-entry",
+  "detail": "src/app/vendor-assessment/[assessmentId]/VendorAssessmentClient.tsx allowlist entry",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "tests/guards/page-breadcrumbs-coverage.test.ts",
+  "line": 93,
+  "kind": "registry-entry",
+  "detail": "VendorAssessmentReviewClient.tsx entry",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "tests/guards/single-h1-per-page.test.ts",
+  "line": 48,
+  "kind": "registry-entry",
+  "detail": "src/app/vendor-assessment/[assessmentId]/VendorAssessmentClient.tsx entry",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "tests/guards/typography-eradication.test.ts",
+  "line": 49,
+  "kind": "registry-entry",
+  "detail": "src/app/vendor-assessment/[assessmentId]/VendorAssessmentClient.tsx entry",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "tests/guards/action-label-vocabulary.test.ts",
+  "line": 84,
+  "kind": "registry-entry",
+  "detail": "baseline 'VendorTemplateBuilderClient.tsx:690'",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "tests/guards/pageheader-adoption.test.ts",
+  "line": 110,
+  "kind": "registry-entry",
+  "detail": "VendorTemplateBuilderClient.tsx (110) + VendorTemplatesIndexClient.tsx (135)",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "tests/guards/primary-action-budget.test.ts",
+  "line": 112,
+  "kind": "registry-entry",
+  "detail": "budget entry VendorTemplateBuilderClient.tsx: 4",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "src/app-layer/usecases/data-stream.ts",
+  "line": 12,
+  "kind": "other",
+  "detail": "doc comment cites mintExternalAccessToken in vendor-assessment-send / vendor-assessment-response.ts (l.22)",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "src/components/ui/required-marker.tsx",
+  "line": 9,
+  "kind": "other",
+  "detail": "doc comment naming vendor-assessment questions as a call site",
+  "survives": true,
+  "surface": "vendor-assessments"
+ },
+ {
+  "file": "src/app-layer/domain/restore-validators.ts",
+  "line": 105,
+  "kind": "prisma-delegate",
+  "detail": "db.auditCycle.findFirst \u2014 AUDIT_PACK_VALIDATOR reads parent cycle state",
+  "survives": true,
+  "surface": "audits"
+ },
+ {
+  "file": "src/app-layer/jobs/calendar-deadlines.ts",
+  "line": 84,
+  "kind": "prisma-delegate",
+  "detail": "prisma.auditCycle.findMany \u2014 deadline monitor emits AuditCycle periodEndAt notifications",
+  "survives": true,
+  "surface": "audits"
+ },
+ {
+  "file": "src/app-layer/usecases/compliance-calendar.ts",
+  "line": 543,
+  "kind": "prisma-delegate",
+  "detail": "db.auditCycle.findMany \u2014 the ONLY duration-bearing calendar source today",
+  "survives": true,
+  "surface": "audits"
+ },
+ {
+  "file": "src/app-layer/usecases/achievements.ts",
+  "line": 69,
+  "kind": "prisma-delegate",
+  "detail": "db.auditPack.findFirst (status FROZEN) \u2014 agri gamification milestone",
+  "survives": true,
+  "surface": "audits"
+ },
+ {
+  "file": "prisma/seed.ts",
+  "line": 629,
+  "kind": "prisma-delegate",
+  "detail": "prisma.auditCycle.findFirst/.create (629,633), auditPack.findFirst/.create (644,648), auditPackItem.create (661), auditPackShare.findFirst/.create (677,683) \u2014 db:reset breaks for every dev if models drop",
+  "survives": true,
+  "surface": "audits"
+ },
+ {
+  "file": "src/app/api/t/[tenantSlug]/files/[fileName]/verify/route.ts",
+  "line": 3,
+  "kind": "import",
+  "detail": "import { verifyFileIntegrity } from '@/app-layer/usecases/audit-hardening' \u2014 SURVIVING platform route depending on an audits-surface usecase; audit-hardening.ts is a boundary file, split it or move verifyFileIntegrity",
+  "survives": true,
+  "surface": "audits"
+ },
+ {
+  "file": "src/app/api/audit/shared/[token]/route.ts",
+  "line": 2,
+  "kind": "import",
+  "detail": "import { getPackByShareToken } from '@/app-layer/usecases/audit-readiness' \u2014 route lives under api/audit/ (NOT api/audits/), so a dir-name-only delete leaves it dangling",
+  "survives": true,
+  "surface": "audits"
+ },
+ {
+  "file": "src/lib/dto/index.ts",
+  "line": 14,
+  "kind": "registry-entry",
+  "detail": "export * from './audit.dto' \u2014 barrel re-export; src/lib/dto/audit.dto.ts (AuditDTOSchema, .openapi('Audit')) is orphaned by the deletion",
+  "survives": true,
+  "surface": "audits"
+ },
+ {
+  "file": "src/app-layer/usecases/audit-hardening.ts",
+  "line": 14,
+  "kind": "import",
+  "detail": "import from '../policies/audit-readiness.policies' \u2014 file exports BOTH audits-only verbs (getAuditorAssignedPacks, clonePackForRetest, storeExportArtifact) and the surviving verifyFileIntegrity",
+  "survives": true,
+  "surface": "audits"
+ },
+ {
+  "file": "src/components/ui/next-best-action-logic.ts",
+  "line": 87,
+  "kind": "link-href",
+  "detail": "tenantHref(\"/audits/readiness\") \u2014 agri next-best-action card points at a dead route",
+  "survives": true,
+  "surface": "audits"
+ },
+ {
+  "file": "src/app-layer/usecases/compliance-calendar.ts",
+  "line": 590,
+  "kind": "link-href",
+  "detail": "tenantHrefFromCtx(ctx, `/audits/cycles/${r.id}`) \u2014 calendar event deep-link",
+  "survives": true,
+  "surface": "audits"
+ },
+ {
+  "file": "src/app/audit/shared/[token]/page.tsx",
+  "line": 29,
+  "kind": "fetch-url",
+  "detail": "fetch(`/api/audit/shared/${token}`) \u2014 public audit-pack share page, outside the audits/ dir",
+  "survives": true,
+  "surface": "audits"
+ },
+ {
+  "file": "src/app/api/org/[orgSlug]/portfolio/export/route.ts",
+  "line": 25,
+  "kind": "other",
+  "detail": "docblock cites `src/app/api/t/[tenantSlug]/audits/.../pack` as the precedent \u2014 stale doc reference in surviving code",
+  "survives": true,
+  "surface": "audits"
+ },
+ {
+  "file": "src/lib/permissions.ts",
+  "line": 11,
+  "kind": "permission-key",
+  "detail": "PermissionSet field `audits: { view; manage; freeze; share }` (11); PERMISSION_RESOURCES entry (78); per-role tables at 106, 123, 144, 161, 184, 201",
+  "survives": true,
+  "surface": "audits"
+ },
+ {
+  "file": "src/lib/auth/api-key-auth.ts",
+  "line": 71,
+  "kind": "permission-key",
+  "detail": "API-key scope map: audits: { read: ['view'], write: ['manage','freeze','share'] } \u2014 backs the `audits:read` / `audits:write` scopes",
+  "survives": true,
+  "surface": "audits"
+ },
+ {
+  "file": "src/app/t/[tenantSlug]/(app)/admin/api-keys/page.tsx",
+  "line": 60,
+  "kind": "registry-entry",
+  "detail": "scope picker row: audits: { label: 'Audits', scopes: ['audits:read','audits:write'] } \u2014 SURVIVING admin page",
+  "survives": true,
+  "surface": "audits"
+ },
+ {
+  "file": "src/app-layer/jobs/evidence-import.ts",
+  "line": 271,
+  "kind": "permission-key",
+  "detail": "canAudit: appPermissions.audits.view \u2014 job builds a RequestContext from the audits permission block",
+  "survives": true,
+  "surface": "audits"
+ },
+ {
+  "file": "src/app-layer/jobs/sharepoint-delta-sync.ts",
+  "line": 37,
+  "kind": "permission-key",
+  "detail": "canAudit: appPermissions.audits.view",
+  "survives": true,
+  "surface": "audits"
+ },
+ {
+  "file": "src/app-layer/jobs/sharepoint-policy-jobs.ts",
+  "line": 39,
+  "kind": "permission-key",
+  "detail": "canAudit: appPermissions.audits.view",
+  "survives": true,
+  "surface": "audits"
+ },
+ {
+  "file": "src/lib/security/route-permissions.ts",
+  "line": 1,
+  "kind": "route-permission",
+  "detail": "NEGATIVE FINDING: no rule keyed on 'audits' \u2014 the audits API routes are gated by getTenantCtx + assertModuleEnabled('CERTIFICATION'), not requirePermission. Nothing to remove here, but api-permission-coverage's privileged-root list should be re-checked.",
+  "survives": true,
+  "surface": "audits"
+ },
+ {
+  "file": "src/lib/queryKeys.ts",
+  "line": 60,
+  "kind": "registry-entry",
+  "detail": "queryKeys.audits block \u2014 all() (61) and list() (63) return ['audits', tenantSlug, ...]",
+  "survives": true,
+  "surface": "audits"
+ },
+ {
+  "file": "src/lib/swr-keys.ts",
+  "line": 195,
+  "kind": "registry-entry",
+  "detail": "swrKeys.audits: makeResource('audits') (196) + readiness (197) + cycles (198) + packs (199)",
+  "survives": true,
+  "surface": "audits"
+ },
+ {
+  "file": "src/lib/observability/list-page-metrics.ts",
+  "line": 97,
+  "kind": "registry-entry",
+  "detail": "| 'audits' member of the ListPageEntity union (consumed by recordListPageRowCount at src/app/api/t/[tenantSlug]/audits/route.ts:22)",
+  "survives": true,
+  "surface": "audits"
+ },
+ {
+  "file": "src/lib/nav/canonical-parents.ts",
+  "line": 62,
+  "kind": "nav-entry",
+  "detail": "7 CANONICAL_PARENT entries: '/audits/auditor', '/audits/cycles', '/audits/cycles/[cycleId]', '/audits/cycles/[cycleId]/readiness', '/audits/new', '/audits/packs/[packId]', '/audits/readiness' (lines 62-68), labels 'audits'/'auditCycles'/'auditCycle'",
+  "survives": true,
+  "surface": "audits"
+ },
+ {
+  "file": "src/lib/nav/page-segregation.ts",
+  "line": 58,
+  "kind": "nav-entry",
+  "detail": "MAIN_PAGES '/audits' (58); SUB_PAGES '/audits/auditor'\u2026'/audits/readiness' (117-123); BACK_AFFORDANCE_EXEMPT_SUBPAGES '/audits/new' (27)",
+  "survives": true,
+  "surface": "audits"
+ },
+ {
+  "file": "src/components/nav/BackAffordance.tsx",
+  "line": 41,
+  "kind": "nav-entry",
+  "detail": "'/audits': 'audits' \u2014 back-label map entry resolving to the backNav.audits i18n key",
+  "survives": true,
+  "surface": "audits"
+ },
+ {
+  "file": "src/lib/soft-delete.ts",
+  "line": 27,
+  "kind": "registry-entry",
+  "detail": "SOFT_DELETE_MODELS: 'Audit' (27), 'AuditCycle' (28), 'AuditPack' (29) \u2014 must be removed in lockstep with classification.ts (T3.6 three mirrored counts)",
+  "survives": true,
+  "surface": "audits"
+ },
+ {
+  "file": "src/lib/security/classification.ts",
+  "line": 244,
+  "kind": "registry-entry",
+  "detail": "soft-delete mirror: { model: 'Audit' } (244), 'AuditCycle' (245), 'AuditPack' (246); PII rows AuditorAccount.email (79) + .name (86); ALREADY_SECURED AuditPackShare.tokenHash (127)",
+  "survives": true,
+  "surface": "audits"
+ },
+ {
+  "file": "src/lib/security/encrypted-fields.ts",
+  "line": 191,
+  "kind": "registry-entry",
+  "detail": "ENCRYPTED_FIELDS: Audit: ['auditScope','criteria','auditors','auditees','departments'] (191-197) and AuditChecklistItem: ['prompt','notes','evidenceRef'] (198)",
+  "survives": true,
+  "surface": "audits"
+ },
+ {
+  "file": "src/lib/security/pii-middleware.ts",
+  "line": 89,
+  "kind": "registry-entry",
+  "detail": "PII column map AuditorAccount: email/emailEncrypted/emailHash + name/nameEncrypted (89-92); relation-alias map auditor: 'AuditorAccount' (218)",
+  "survives": true,
+  "surface": "audits"
+ },
+ {
+  "file": "src/app-layer/domain/restore-validators.ts",
+  "line": 43,
+  "kind": "registry-entry",
+  "detail": "RestorableModel union members 'Audit' (43), 'AuditCycle' (44), 'AuditPack' (45); validator table AuditCycle: NOOP_VALIDATOR (158), AuditPack: AUDIT_PACK_VALIDATOR (159)",
+  "survives": true,
+  "surface": "audits"
+ },
+ {
+  "file": "src/app-layer/usecases/soft-delete-operations.ts",
+  "line": 28,
+  "kind": "registry-entry",
+  "detail": "union member: | 'Audit' | 'AuditCycle' | 'AuditPack'",
+  "survives": true,
+  "surface": "audits"
+ },
+ {
+  "file": "src/app-layer/schemas/calendar.schemas.ts",
+  "line": 38,
+  "kind": "registry-entry",
+  "detail": "CALENDAR_EVENT_CATEGORIES 'audit' (38) and event-type 'audit-cycle' (85)",
+  "survives": true,
+  "surface": "audits"
+ },
+ {
+  "file": "src/app-layer/usecases/compliance-calendar.ts",
+  "line": 107,
+  "kind": "registry-entry",
+  "detail": "CALENDAR_SOURCE_NAMES entry 'auditCycle'; emitted event id/type/category/titleKey at 580-583",
+  "survives": true,
+  "surface": "audits"
+ },
+ {
+  "file": "src/lib/schemas/index.ts",
+  "line": 332,
+  "kind": "registry-entry",
+  "detail": "CreateAuditSchema (332, .openapi('AuditCreateRequest') at 344) and UpdateAuditSchema (348, .openapi('AuditUpdateRequest') at 356) \u2014 surviving shared-schema barrel",
+  "survives": true,
+  "surface": "audits"
+ },
+ {
+  "file": "src/lib/dto/audit.dto.ts",
+  "line": 6,
+  "kind": "registry-entry",
+  "detail": "AuditDTOSchema / AuditDTO \u2014 whole file becomes orphaned; registered into the OpenAPI doc via .openapi('Audit') at line 19",
+  "survives": true,
+  "surface": "audits"
+ },
+ {
+  "file": "src/lib/db/rls-middleware.ts",
+  "line": 213,
+  "kind": "other",
+  "detail": "comment enumerating ownership-chained RLS tables incl. AuditChecklistItem + AuditorPackAccess (213-214) \u2014 update alongside the RLS policy drops",
+  "survives": true,
+  "surface": "audits"
+ },
+ {
+  "file": "src/lib/prisma.ts",
+  "line": 324,
+  "kind": "other",
+  "detail": "comment on extension ordering: '\u2026which encrypts User/AuditorAccount email/name' \u2014 stale once AuditorAccount drops",
+  "survives": true,
+  "surface": "audits"
+ },
+ {
+  "file": "src/lib/modules.ts",
+  "line": 72,
+  "kind": "other",
+  "detail": "CERTIFICATION module description prose 'Audit frameworks, practices, evidence, and policies' \u2014 the module survives, its copy does not",
+  "survives": true,
+  "surface": "audits"
+ },
+ {
+  "file": "messages/en.json",
+  "line": 120,
+  "kind": "i18n-namespace",
+  "detail": "nav.audits (en+bg :120) \u2014 key inside the SURVIVING \"nav\" namespace",
+  "survives": true,
+  "surface": "audits"
+ },
+ {
+  "file": "messages/en.json",
+  "line": 1517,
+  "kind": "i18n-namespace",
+  "detail": "admin.apiKeys.scopes.audits (en+bg :1517) \u2014 key inside the SURVIVING \"admin\" namespace",
+  "survives": true,
+  "surface": "audits"
+ },
+ {
+  "file": "messages/en.json",
+  "line": 1925,
+  "kind": "i18n-namespace",
+  "detail": "admin.roles.resourceLabels.audits (en+bg :1925) \u2014 key inside the SURVIVING \"admin\" namespace",
+  "survives": true,
+  "surface": "audits"
+ },
+ {
+  "file": "messages/en.json",
+  "line": 6809,
+  "kind": "i18n-namespace",
+  "detail": "backNav.audits (en+bg :6809) \u2014 key inside the SURVIVING \"backNav\" namespace, referenced by BackAffordance.tsx:41",
+  "survives": true,
+  "surface": "audits"
+ },
+ {
+  "file": "tests/guardrails/assets-audits-modal-form.test.ts",
+  "line": 106,
+  "kind": "registry-entry",
+  "detail": "base = 'src/app/t/[tenantSlug]/(app)/audits' (106); asserts the /audits/new redirect shim (121-126), useNewAuditForm.ts (131), AuditsClient.tsx (82) \u2014 narrow to the assets half",
+  "survives": true,
+  "surface": "audits"
+ },
+ {
+  "file": "tests/guardrails/b4-filter-nav-consistency.test.ts",
+  "line": 75,
+  "kind": "registry-entry",
+  "detail": "reads audits/AuditsClient.tsx (75-76) and asserts id=\"audits-clauses-link\" / \"audits-frameworks-link\" ordering (80-88)",
+  "survives": true,
+  "surface": "audits"
+ },
+ {
+  "file": "tests/guardrails/b6-usezodform-adoption.test.ts",
+  "line": 130,
+  "kind": "registry-entry",
+  "detail": "adoption entry file: 'src/app/t/[tenantSlug]/(app)/audits/_form/useNewAuditForm.ts'",
+  "survives": true,
+  "surface": "audits"
+ },
+ {
+  "file": "tests/guardrails/b8-folders-frameworks.test.ts",
+  "line": 111,
+  "kind": "registry-entry",
+  "detail": "asserts audits/_form/useNewAuditForm.ts (111) and audits/_form/NewAuditFields.tsx (114)",
+  "survives": true,
+  "surface": "audits"
+ },
+ {
+  "file": "tests/guardrails/enterprise-identity-epic.test.ts",
+  "line": 172,
+  "kind": "registry-entry",
+  "detail": "curated page list includes 'audits'",
+  "survives": true,
+  "surface": "audits"
+ },
+ {
+  "file": "tests/guardrails/form-primitive-adoption.test.ts",
+  "line": 34,
+  "kind": "registry-entry",
+  "detail": "{ label: 'audits/cycles/page.tsx', files: ['src/app/t/[tenantSlug]/(app)/audits/cycles/page.tsx'] }",
+  "survives": true,
+  "surface": "audits"
+ },
+ {
+  "file": "tests/guardrails/loading-states.test.ts",
+  "line": 83,
+  "kind": "registry-entry",
+  "detail": "'audits' in the required loading.tsx route list",
+  "survives": true,
+  "surface": "audits"
+ },
+ {
+  "file": "tests/guardrails/module-gate-coverage.test.ts",
+  "line": 72,
+  "kind": "registry-entry",
+  "detail": "file: 'src/app/api/t/[tenantSlug]/audits/route.ts' \u2014 CERTIFICATION module-gate coverage entry",
+  "survives": true,
+  "surface": "audits"
+ },
+ {
+  "file": "tests/guards/action-button-canonical-entity-label.test.ts",
+  "line": 64,
+  "kind": "registry-entry",
+  "detail": "['audits', 'newAudit', 'Audit'] \u2014 canonical header-button + i18n-key assertion",
+  "survives": true,
+  "surface": "audits"
+ },
+ {
+  "file": "tests/guards/action-label-vocabulary.test.ts",
+  "line": 88,
+  "kind": "registry-entry",
+  "detail": "5 baseline entries pinned by file:line \u2014 audits/cycles/[cycleId]/page.tsx:124, audits/cycles/page.tsx:136/209/221, audits/readiness/page.tsx:155 (lines 88-92)",
+  "survives": true,
+  "surface": "audits"
+ },
+ {
+  "file": "tests/guards/cardheader-adoption.test.ts",
+  "line": 35,
+  "kind": "registry-entry",
+  "detail": "adopter entry file: audits/AuditsClient.tsx",
+  "survives": true,
+  "surface": "audits"
+ },
+ {
+  "file": "tests/guards/card-header-discipline.test.ts",
+  "line": 50,
+  "kind": "registry-entry",
+  "detail": "anchor file audits/AuditsClient.tsx \u2014 comment at 48 already notes it is 'a surviving CardHeader adopter'; a new anchor is needed",
+  "survives": true,
+  "surface": "audits"
+ },
+ {
+  "file": "tests/guards/empty-state-coverage.test.ts",
+  "line": 49,
+  "kind": "registry-entry",
+  "detail": "audits/packs/[packId]/page.tsx in the empty-state coverage list",
+  "survives": true,
+  "surface": "audits"
+ },
+ {
+  "file": "tests/guards/entity-detail-layout-coverage.test.ts",
+  "line": 66,
+  "kind": "registry-entry",
+  "detail": "entries for audits/cycles/[cycleId]/page.tsx (66), audits/packs/[packId]/page.tsx (83), audits/cycles/[cycleId]/readiness/page.tsx (114)",
+  "survives": true,
+  "surface": "audits"
+ },
+ {
+  "file": "tests/guards/entity-detail-shell-coverage.test.ts",
+  "line": 55,
+  "kind": "registry-entry",
+  "detail": "{ page: audits/cycles/[cycleId]/page.tsx, entity: 'Audit cycle' } (55), audits/packs/[packId]/page.tsx 'Audit pack' (56), readiness page (158)",
+  "survives": true,
+  "surface": "audits"
+ },
+ {
+  "file": "tests/guards/epic55-native-select-ratchet.test.ts",
+  "line": 132,
+  "kind": "registry-entry",
+  "detail": "'audits/cycles/page.tsx' (132) and 'audits/AuditsClient.tsx' (153) baseline entries",
+  "survives": true,
+  "surface": "audits"
+ },
+ {
+  "file": "tests/guards/icon-only-action-discipline.test.ts",
+  "line": 57,
+  "kind": "registry-entry",
+  "detail": "reads audits/packs/[packId]/page.tsx (57,80,86) AND asserts messages/en.json audits.packDetail[key] (63) \u2014 dies with both the page and the i18n namespace",
+  "survives": true,
+  "surface": "audits"
+ },
+ {
+  "file": "tests/guards/inline-notice-discipline.test.ts",
+  "line": 53,
+  "kind": "registry-entry",
+  "detail": "audits/cycles/[cycleId]/page.tsx in the curated file list",
+  "survives": true,
+  "surface": "audits"
+ },
+ {
+  "file": "tests/guards/list-page-descriptions.test.ts",
+  "line": 37,
+  "kind": "registry-entry",
+  "detail": "'audits' entity (37) + { entity: 'audits', file: audits/AuditsClient.tsx } (51)",
+  "survives": true,
+  "surface": "audits"
+ },
+ {
+  "file": "tests/guards/list-page-perf-ratchet.test.ts",
+  "line": 64,
+  "kind": "registry-entry",
+  "detail": "{ entity: 'audits', repo: 'AuditRepository' } \u2014 couples to the deleted repository too",
+  "survives": true,
+  "surface": "audits"
+ },
+ {
+  "file": "tests/guards/metadatabar-detail-coverage.test.ts",
+  "line": 75,
+  "kind": "registry-entry",
+  "detail": "audits/cycles/[cycleId]/page.tsx (75) and audits/packs/[packId]/page.tsx (90)",
+  "survives": true,
+  "surface": "audits"
+ },
+ {
+  "file": "tests/guards/next-best-action-discipline.test.ts",
+  "line": 53,
+  "kind": "registry-entry",
+  "detail": "expect(a.href).toBe(\"/t/acme/audits/readiness\") \u2014 locks the next-best-action-logic.ts:87 href",
+  "survives": true,
+  "surface": "audits"
+ },
+ {
+  "file": "tests/guards/no-lucide.test.ts",
+  "line": 82,
+  "kind": "registry-entry",
+  "detail": "audits/cycles/page.tsx, audits/packs/[packId]/page.tsx, audits/readiness/page.tsx (82-84)",
+  "survives": true,
+  "surface": "audits"
+ },
+ {
+  "file": "tests/guards/pageheader-adoption.test.ts",
+  "line": 43,
+  "kind": "registry-entry",
+  "detail": "audits/AuditsClient.tsx (43), audits/cycles/page.tsx (55), audits/auditor/page.tsx (60), audits/readiness/page.tsx (75)",
+  "survives": true,
+  "surface": "audits"
+ },
+ {
+  "file": "tests/guards/primary-action-budget.test.ts",
+  "line": 165,
+  "kind": "registry-entry",
+  "detail": "budget map entries for audits/packs/[packId]/page.tsx, audits/cycles/page.tsx, audits/AuditsClient.tsx (165-167)",
+  "survives": true,
+  "surface": "audits"
+ },
+ {
+  "file": "tests/guards/sharepoint-sp5.test.ts",
+  "line": 36,
+  "kind": "registry-entry",
+  "detail": "asserts api/t/[tenantSlug]/audits/packs/[packId]/sharepoint-export/route.ts (36), SharePointExportButton.tsx (45), packs/[packId]/page.tsx mounts it (47) \u2014 whole SP5 assertion block dies",
+  "survives": true,
+  "surface": "audits"
+ },
+ {
+  "file": "tests/guards/sharepoint-spf1.test.ts",
+  "line": 28,
+  "kind": "registry-entry",
+  "detail": "asserts audits/packs/[packId]/SharePointExportButton.tsx matches /folderSelect/",
+  "survives": true,
+  "surface": "audits"
+ },
+ {
+  "file": "tests/guardrails/dashboard-chart-bypass.test.ts",
+  "line": 16,
+  "kind": "other",
+  "detail": "docblock only ('frameworks, risks, audits, practices') \u2014 no assertion binds to the surface",
+  "survives": true,
+  "surface": "audits"
+ },
+ {
+  "file": "tests/guardrails/design-system-drift.test.ts",
+  "line": 239,
+  "kind": "other",
+  "detail": "comment referencing audits/new/page.tsx redirect shim \u2014 verify no assertion follows before narrowing",
+  "survives": true,
+  "surface": "audits"
+ },
+ {
+  "file": "tests/guards/r32-modal-form-completeness.test.ts",
+  "line": 23,
+  "kind": "other",
+  "detail": "docblock cross-references assets-audits-modal-form.test.ts; the widened scan will pick up audits pages until they are gone",
+  "survives": true,
+  "surface": "audits"
+ },
+ {
+  "file": "prisma/schema/assets.prisma",
+  "line": 129,
+  "kind": "other",
+  "detail": "AssetMaintenance.vendorId String? \u2014 FK scalar crossing from the SURVIVING agri assets schema into Vendor",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "prisma/schema/assets.prisma",
+  "line": 142,
+  "kind": "other",
+  "detail": "AssetMaintenance.vendor Vendor? @relation(fields: [vendorId], references: [id])",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "prisma/schema/assets.prisma",
+  "line": 149,
+  "kind": "other",
+  "detail": "@@index([tenantId, vendorId]) on AssetMaintenance",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "prisma/schema/assets.prisma",
+  "line": 10,
+  "kind": "other",
+  "detail": "doc comment: \"`AssetMaintenance.vendorId` is the single nullable FK crossing into the \u2026\"",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "prisma/schema/files.prisma",
+  "line": 100,
+  "kind": "other",
+  "detail": "Evidence.vendorAnswers VendorAssessmentAnswer[] @relation(\"VendorAnswerEvidence\")",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "prisma/schema/auth.prisma",
+  "line": 157,
+  "kind": "other",
+  "detail": "Tenant.vendors Vendor[]",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "prisma/schema/auth.prisma",
+  "line": 158,
+  "kind": "other",
+  "detail": "Tenant.vendorAssessments VendorAssessment[]",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "prisma/schema/auth.prisma",
+  "line": 159,
+  "kind": "other",
+  "detail": "Tenant.vendorAssessmentAnswers VendorAssessmentAnswer[]",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "prisma/schema/auth.prisma",
+  "line": 161,
+  "kind": "other",
+  "detail": "Tenant.vendorAssessmentTemplates VendorAssessmentTemplate[]",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "prisma/schema/auth.prisma",
+  "line": 162,
+  "kind": "other",
+  "detail": "Tenant.vendorAssessmentTemplateSections VendorAssessmentTemplateSection[]",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "prisma/schema/auth.prisma",
+  "line": 163,
+  "kind": "other",
+  "detail": "Tenant.vendorAssessmentTemplateQuestions VendorAssessmentTemplateQuestion[]",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "prisma/schema/auth.prisma",
+  "line": 164,
+  "kind": "other",
+  "detail": "Tenant.vendorContacts VendorContact[]",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "prisma/schema/auth.prisma",
+  "line": 165,
+  "kind": "other",
+  "detail": "Tenant.vendorDocuments VendorDocument[]",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "prisma/schema/auth.prisma",
+  "line": 166,
+  "kind": "other",
+  "detail": "Tenant.vendorEvidenceBundles VendorEvidenceBundle[]",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "prisma/schema/auth.prisma",
+  "line": 167,
+  "kind": "other",
+  "detail": "Tenant.vendorEvidenceBundleItems VendorEvidenceBundleItem[]",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "prisma/schema/auth.prisma",
+  "line": 168,
+  "kind": "other",
+  "detail": "Tenant.vendorLinks VendorLink[]",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "prisma/schema/auth.prisma",
+  "line": 169,
+  "kind": "other",
+  "detail": "Tenant.vendorRelationships VendorRelationship[]",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "prisma/schema/auth.prisma",
+  "line": 722,
+  "kind": "other",
+  "detail": "User.ownedVendors Vendor[] @relation(\"VendorOwner\")",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "prisma/schema/auth.prisma",
+  "line": 723,
+  "kind": "other",
+  "detail": "User.assessmentsDecided VendorAssessment[] @relation(\"AssessmentDecider\")",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "prisma/schema/auth.prisma",
+  "line": 724,
+  "kind": "other",
+  "detail": "User.assessmentsRequested VendorAssessment[] @relation(\"AssessmentRequester\")",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "prisma/schema/auth.prisma",
+  "line": 726,
+  "kind": "other",
+  "detail": "User.assessmentsSent VendorAssessment[] @relation(\"AssessmentSender\")",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "prisma/schema/auth.prisma",
+  "line": 727,
+  "kind": "other",
+  "detail": "User.assessmentsReviewed VendorAssessment[] @relation(\"AssessmentReviewer\")",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "prisma/schema/auth.prisma",
+  "line": 728,
+  "kind": "other",
+  "detail": "User.assessmentsClosed VendorAssessment[] @relation(\"AssessmentCloser\")",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "prisma/schema/auth.prisma",
+  "line": 729,
+  "kind": "other",
+  "detail": "User.assessmentTemplatesCreated VendorAssessmentTemplate[] @relation(\"AssessmentTemplateCreator\")",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "prisma/schema/auth.prisma",
+  "line": 730,
+  "kind": "other",
+  "detail": "User.vendorDocsUploaded VendorDocument[] @relation(\"VendorDocUploader\")",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "prisma/schema/auth.prisma",
+  "line": 731,
+  "kind": "other",
+  "detail": "User.vendorBundlesCreated VendorEvidenceBundle[] @relation(\"EvidenceBundleCreator\")",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "prisma/schema/enums.prisma",
+  "line": 363,
+  "kind": "other",
+  "detail": "VENDOR member of the entity-type enum",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "prisma/schema/enums.prisma",
+  "line": 527,
+  "kind": "other",
+  "detail": "NotificationType.VENDOR_REVIEW_DUE",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "prisma/schema/enums.prisma",
+  "line": 558,
+  "kind": "other",
+  "detail": "digest enum VENDOR_RENEWAL_DIGEST",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "prisma/schema/enums.prisma",
+  "line": 562,
+  "kind": "other",
+  "detail": "EmailNotificationType.VENDOR_ASSESSMENT_INVITATION (also 565/568/571 REMINDER/SUBMITTED/REVIEWED)",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "prisma/schema/enums.prisma",
+  "line": 665,
+  "kind": "other",
+  "detail": "enum VendorStatus (also 672 VendorCriticality, 679 VendorDataAccess, 686 VendorDocumentType, 733 VendorLinkEntityType, 739 VendorLinkRelation)",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "prisma/schema/enums.prisma",
+  "line": 1069,
+  "kind": "other",
+  "detail": "ModuleKey.VENDORS",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/app-layer/repositories/DashboardRepository.ts",
+  "line": 461,
+  "kind": "prisma-delegate",
+  "detail": "db.vendor.count({ where: { tenantId, deletedAt: null } }) inside getVendorSummary",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/app-layer/repositories/DashboardRepository.ts",
+  "line": 462,
+  "kind": "prisma-delegate",
+  "detail": "db.vendor.count({ \u2026 overdue nextReviewAt \u2026 })",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/app-layer/repositories/DashboardRepository.ts",
+  "line": 457,
+  "kind": "other",
+  "detail": "static getVendorSummary(db, ctx): Promise<VendorSummary> \u2014 exported entry point (interface VendorSummary at :133, field vendorSummary at :198)",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/app-layer/jobs/snapshot.ts",
+  "line": 140,
+  "kind": "other",
+  "detail": "DashboardRepository.getVendorSummary(db, ctx) call; results written at :181 vendorsTotal / :182 vendorsOverdueReview",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/app-layer/jobs/calendar-deadlines.ts",
+  "line": 138,
+  "kind": "prisma-delegate",
+  "detail": "prisma.vendorDocument.findMany({ \u2026 include vendor \u2026 }) inside scanVendorDocuments",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/app-layer/jobs/calendar-deadlines.ts",
+  "line": 256,
+  "kind": "other",
+  "detail": "scanVendorDocuments(...) wired into the Promise.all deadline scan; VENDOR_DOCUMENT counter at :56/:268",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/app-layer/usecases/compliance-calendar.ts",
+  "line": 414,
+  "kind": "prisma-delegate",
+  "detail": "db.vendor.findMany(...) in loadVendorEvents",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/app-layer/usecases/compliance-calendar.ts",
+  "line": 497,
+  "kind": "prisma-delegate",
+  "detail": "db.vendorDocument.findMany({ select: { vendor: { select: { name } } } }) in loadVendorDocumentEvents",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/app-layer/usecases/compliance-calendar.ts",
+  "line": 872,
+  "kind": "prisma-delegate",
+  "detail": "db.vendor.count(...) in the calendar badge aggregate",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/app-layer/usecases/compliance-calendar.ts",
+  "line": 181,
+  "kind": "other",
+  "detail": "loadVendorEvents / loadVendorDocumentEvents (:182) invoked from the calendar loader; category strings at :105 'vendor' and :106 'vendorDocument'",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/app-layer/repositories/AssetMaintenanceRepository.ts",
+  "line": 29,
+  "kind": "prisma-delegate",
+  "detail": "include: { vendor: { select: { id: true, name: true } } } on db.assetMaintenance.findMany \u2014 SURVIVING agri repo reading the Vendor relation",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/app-layer/usecases/asset-maintenance.ts",
+  "line": 44,
+  "kind": "other",
+  "detail": "vendorId?: string | null on the asset-maintenance input type (written at :82)",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/app/api/t/[tenantSlug]/assets/[id]/maintenance/route.ts",
+  "line": 30,
+  "kind": "other",
+  "detail": "vendorId: z.string().min(1).nullable().optional() in the agri maintenance route schema",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/app/t/[tenantSlug]/(app)/assets/[id]/MaintenanceTab.tsx",
+  "line": 57,
+  "kind": "other",
+  "detail": "vendor?: { id: string; name: string } | null on the agri maintenance row type",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/lib/security/external-assessment-access.ts",
+  "line": 103,
+  "kind": "prisma-delegate",
+  "detail": "prisma.vendorAssessment.findFirst(...) \u2014 token-gated external respondent verification",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/lib/security/external-assessment-access.ts",
+  "line": 34,
+  "kind": "import",
+  "detail": "import type { VendorAssessment } from '@prisma/client' (used at :45 and :77)",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/app-layer/repositories/AssessmentRepository.ts",
+  "line": 26,
+  "kind": "prisma-delegate",
+  "detail": "db.vendorAssessment.findMany in VendorAssessmentRepository.listByVendor (also :39 findFirst, :51 create, :68/:79 findFirst, :72/:83/:95 update)",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/app-layer/repositories/AssessmentRepository.ts",
+  "line": 107,
+  "kind": "prisma-delegate",
+  "detail": "db.vendorAssessmentAnswer.upsert in VendorAnswerRepository (also :124 findMany)",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/app-layer/repositories/AssessmentRepository.ts",
+  "line": 3,
+  "kind": "import",
+  "detail": "import { AssessmentStatus, VendorCriticality } from '@prisma/client'",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/app-layer/services/export-service.ts",
+  "line": 151,
+  "kind": "prisma-delegate",
+  "detail": "ROOT_PRISMA_MODELS: vendor: 'vendor' \u2014 STRING-keyed delegate resolved at :225/:255 via (db as unknown as Record<string, \u2026>)[name]; invisible to import scans",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/app-layer/services/export-service.ts",
+  "line": 152,
+  "kind": "prisma-delegate",
+  "detail": "ROOT_PRISMA_MODELS: vendorReview: 'vendorAssessment' (dynamic delegate name)",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/app-layer/services/export-service.ts",
+  "line": 153,
+  "kind": "prisma-delegate",
+  "detail": "ROOT_PRISMA_MODELS: vendorSubprocessor: 'vendorRelationship' (dynamic delegate name)",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/app-layer/services/export-service.ts",
+  "line": 133,
+  "kind": "registry-entry",
+  "detail": "DOMAIN_ROOTS: VENDORS: 'vendor'",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/app-layer/services/export-service.ts",
+  "line": 97,
+  "kind": "registry-entry",
+  "detail": "schema-version map vendor/vendorReview/vendorSubprocessor '1.0' (:97-99)",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/app-layer/services/export-service.ts",
+  "line": 238,
+  "kind": "registry-entry",
+  "detail": "['practice','policy','risk','evidence','task','vendor'].includes(entityType)",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/app-layer/services/export-service.ts",
+  "line": 340,
+  "kind": "registry-entry",
+  "detail": "domains = [\u2026 'VENDORS' \u2026] for FULL_TENANT export",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/app-layer/services/import-service.ts",
+  "line": 165,
+  "kind": "prisma-delegate",
+  "detail": "PRISMA_MODEL_MAP: vendor: 'vendor' \u2014 dynamic delegate resolved at :251 (also :166 vendorReview\u2192vendorAssessment, :167 vendorSubprocessor\u2192vendorRelationship)",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/app-layer/services/export-graph.ts",
+  "line": 164,
+  "kind": "prisma-delegate",
+  "detail": "ExportEdge prismaModel: 'vendorAssessment', foreignKey 'vendorId' (edge vendor\u2192vendorReview)",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/app-layer/services/export-graph.ts",
+  "line": 173,
+  "kind": "prisma-delegate",
+  "detail": "ExportEdge prismaModel: 'vendorRelationship', foreignKey 'primaryVendorId'",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/app-layer/services/export-schemas.ts",
+  "line": 48,
+  "kind": "registry-entry",
+  "detail": "ExportDomain 'VENDORS' (also :59 in the domain list, :223)",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/app-layer/services/export-schemas.ts",
+  "line": 79,
+  "kind": "registry-entry",
+  "detail": "ExportEntityType 'vendor' | 'vendorReview' | 'vendorSubprocessor' (:79-81, :233, :534, :540)",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/app-layer/services/export-schemas.ts",
+  "line": 507,
+  "kind": "registry-entry",
+  "detail": "DOMAIN_ENTITIES VENDORS: ['vendor','vendorReview','vendorSubprocessor'] (also :515)",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/app-layer/services/tenant-safety.ts",
+  "line": 75,
+  "kind": "registry-entry",
+  "detail": "tenant-safety entity map keys vendor / vendorReview / vendorSubprocessor (:75-77)",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/lib/dto/index.ts",
+  "line": 12,
+  "kind": "import",
+  "detail": "export * from './vendor.dto'",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/app-layer/jobs/executor-registry.ts",
+  "line": 567,
+  "kind": "registry-entry",
+  "detail": "executorRegistry.register('vendor-renewal-check', \u2026)",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/app-layer/jobs/executor-registry.ts",
+  "line": 568,
+  "kind": "import",
+  "detail": "await import('./vendor-renewal-check') \u2192 runVendorRenewalCheck",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/app-layer/jobs/notification-dispatch.ts",
+  "line": 196,
+  "kind": "import",
+  "detail": "await import('./vendor-renewal-check') inside the VENDOR_RENEWAL_DIGEST branch",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/app-layer/jobs/notification-dispatch.ts",
+  "line": 185,
+  "kind": "registry-entry",
+  "detail": "categories.includes('VENDOR_RENEWAL_DIGEST') branch (also :40, :80, :205 dispatchDigest category)",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/app-layer/jobs/types.ts",
+  "line": 720,
+  "kind": "registry-entry",
+  "detail": "JobPayloadMap 'vendor-renewal-check': VendorRenewalCheckPayload (declared :201; schedule entry :1019)",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/app-layer/jobs/types.ts",
+  "line": 69,
+  "kind": "registry-entry",
+  "detail": "'VENDOR' member of the due-item entity-type union (VENDOR_RENEWAL_DIGEST at :223)",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/app-layer/jobs/data-lifecycle.ts",
+  "line": 46,
+  "kind": "registry-entry",
+  "detail": "'Vendor' in the retention/purge model list",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/app-layer/jobs/schedules.ts",
+  "line": 18,
+  "kind": "registry-entry",
+  "detail": "docblock naming vendor-renewal-check as a scheduled sweep",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/app-layer/notifications/enqueue.ts",
+  "line": 19,
+  "kind": "import",
+  "detail": "import buildVendorAssessmentInvitationEmail / Reminder / Submitted / Reviewed (:19-22) from ./templates",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/app-layer/notifications/enqueue.ts",
+  "line": 30,
+  "kind": "import",
+  "detail": "import type VendorAssessmentInvitationPayload / Reminder / Submitted / Reviewed (:30-33); used in the payload union :49-52, :144-147 and dispatch switch :163-177",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/app-layer/notifications/templates.ts",
+  "line": 207,
+  "kind": "other",
+  "detail": "buildVendorAssessmentInvitationEmail (payload iface :189); siblings at :267/:258, :326/:314, :381/:370",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/app-layer/notifications/index.ts",
+  "line": 28,
+  "kind": "import",
+  "detail": "barrel re-export of buildVendorRenewalDigestEmail (type VendorRenewalDigestPayload at :31)",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/app-layer/notifications/digest-dispatcher.ts",
+  "line": 31,
+  "kind": "import",
+  "detail": "import buildVendorRenewalDigestEmail (DigestCategory union :36, switch arm :169-170)",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/app-layer/notifications/digest-templates.ts",
+  "line": 219,
+  "kind": "other",
+  "detail": "buildVendorRenewalDigestEmail (payload iface :213); label maps :50 VENDOR: 'Vendor' and :62 VENDOR: 'vendors'",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/app-layer/notifications/digest-templates.ts",
+  "line": 233,
+  "kind": "link-href",
+  "detail": "plain-text digest body: `View vendors: /t/${tenantSlug}/vendors`",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/app-layer/notifications/digest-templates.ts",
+  "line": 243,
+  "kind": "link-href",
+  "detail": "HTML digest CTA: href=\"/t/${escapeHtml(tenantSlug)}/vendors\" \"View Vendors\"",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/components/ui/entity-picker.tsx",
+  "line": 153,
+  "kind": "fetch-url",
+  "detail": "url = `${base}/vendors${qs}` for the VENDOR entity-picker case (union member at :56, label case :94)",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/components/command-palette/use-palette-commands.ts",
+  "line": 110,
+  "kind": "nav-entry",
+  "detail": "command 'nav:vendors' (:106) label t('navVendors') (:108) href: href('/vendors')",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/components/nav/BackAffordance.tsx",
+  "line": 64,
+  "kind": "nav-entry",
+  "detail": "'/vendors': 'vendors' back-label map entry",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/lib/nav/canonical-parents.ts",
+  "line": 107,
+  "kind": "nav-entry",
+  "detail": "'/vendors/[vendorId]': { href: '/vendors', label: 'vendors' } (also :108 assessment subpage, :109 dashboard, :110 new)",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/lib/nav/canonical-parents.ts",
+  "line": 57,
+  "kind": "nav-entry",
+  "detail": "'/admin/vendor-assessment-reviews/[assessmentId]' \u2192 /admin (also :58 /admin/vendor-templates, :59 templateId \u2192 vendorTemplates label)",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/lib/nav/page-segregation.ts",
+  "line": 81,
+  "kind": "nav-entry",
+  "detail": "'/vendors' listed as a top-level page (also :36 '/vendors/new' redirect shim; :175-178 subpages; :108-110 admin/vendor-* pages)",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/lib/swr-keys.ts",
+  "line": 123,
+  "kind": "registry-entry",
+  "detail": "swr-keys vendors namespace: makeResource('vendors') (:124) + metrics: () => '/vendors/metrics' (:125)",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/lib/queryKeys.ts",
+  "line": 48,
+  "kind": "registry-entry",
+  "detail": "queryKeys.vendors all/list/detail (:49-53) keyed on 'vendors'",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/lib/observability/list-page-metrics.ts",
+  "line": 99,
+  "kind": "registry-entry",
+  "detail": "'vendors' member of the list-page metric-surface union",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/lib/onboarding-steps.ts",
+  "line": 140,
+  "kind": "nav-entry",
+  "detail": "onboarding step id 'sidebar.vendors' with selector '[data-testid=\"nav-vendors\"]' (:141) \u2014 NOTE the sidebar (SidebarNav.tsx) already has no vendors item, so this selector is ALREADY dangling",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/lib/onboarding-steps.ts",
+  "line": 180,
+  "kind": "nav-entry",
+  "detail": "ENTERPRISE_ONLY_STEP_IDS includes 'sidebar.vendors'",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/lib/auth/guard.ts",
+  "line": 33,
+  "kind": "route-permission",
+  "detail": "'/vendor-assessment/' public-path carve-out for the token-gated external respondent page",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/lib/errors/route-exemptions.ts",
+  "line": 276,
+  "kind": "route-permission",
+  "detail": "error-handling exemption for 'vendor-assessment/[assessmentId]/route.ts' (also :285 submit route)",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/lib/permissions.ts",
+  "line": 8,
+  "kind": "permission-key",
+  "detail": "PermissionSet field `vendors: { view; create; edit }`",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/lib/permissions.ts",
+  "line": 75,
+  "kind": "permission-key",
+  "detail": "permission-key catalogue entry `vendors: ['view','create','edit']`",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/lib/permissions.ts",
+  "line": 103,
+  "kind": "permission-key",
+  "detail": "per-role vendors grants \u2014 OWNER/ADMIN/EDITOR/READER/AUDITOR/custom at :103, :120, :141, :157, :181, :198",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/lib/auth/api-key-auth.ts",
+  "line": 68,
+  "kind": "permission-key",
+  "detail": "API-key scope map `vendors: { read: ['view'], write: ['create','edit'] }`",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/app/t/[tenantSlug]/(app)/admin/api-keys/page.tsx",
+  "line": 57,
+  "kind": "permission-key",
+  "detail": "scope picker entry `vendors: { label: 'Vendors', scopes: ['vendors:read','vendors:write'] }`",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/lib/modules.ts",
+  "line": 19,
+  "kind": "registry-entry",
+  "detail": "'VENDORS' in the ModuleKey list (display label 'Suppliers & Buyers' at :56)",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/lib/entitlements.ts",
+  "line": 104,
+  "kind": "registry-entry",
+  "detail": "module\u2192plan gate `VENDORS: 'PRO'` (feature flag ADVANCED_VENDOR_MGMT at :26/:46/:55)",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/app/api/t/[tenantSlug]/admin/modules/route.ts",
+  "line": 10,
+  "kind": "registry-entry",
+  "detail": "z.enum([\u2026 'VENDORS' \u2026]) on the module-toggle admin route",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/lib/soft-delete.ts",
+  "line": 21,
+  "kind": "registry-entry",
+  "detail": "'Vendor' in the soft-delete model registry",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/app-layer/usecases/soft-delete-operations.ts",
+  "line": 27,
+  "kind": "registry-entry",
+  "detail": "'Vendor' in the restorable-entity union",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/app-layer/domain/restore-validators.ts",
+  "line": 39,
+  "kind": "registry-entry",
+  "detail": "'Vendor' in the restore-validator entity union (NOOP_VALIDATOR mapping at :153)",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/lib/security/classification.ts",
+  "line": 58,
+  "kind": "registry-entry",
+  "detail": "VendorContact classification rows (:58, :65, :72) and `{ model: 'Vendor', hasDeletedAt: false, priority: 'P1' }` at :240",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/lib/security/encrypted-fields.ts",
+  "line": 161,
+  "kind": "registry-entry",
+  "detail": "ENCRYPTED_FIELDS Vendor: ['description'], VendorDocument: ['notes'] (:162), VendorAssessment: ['notes'] (:163), VendorEvidenceBundle: ['description'] (:164)",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/lib/security/pii-middleware.ts",
+  "line": 100,
+  "kind": "registry-entry",
+  "detail": "PII field map entry for VendorContact",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/app-layer/automation/events.ts",
+  "line": 62,
+  "kind": "registry-entry",
+  "detail": "AUTOMATION_EVENTS.VENDOR_ASSESSMENT_OVERDUE",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/app-layer/automation/event-contracts.ts",
+  "line": 97,
+  "kind": "registry-entry",
+  "detail": "interface VendorAssessmentOverdueData (vendorName at :98); union arm at :215",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/lib/automation/event-labels.ts",
+  "line": 131,
+  "kind": "registry-entry",
+  "detail": "event-label entry for VENDOR_ASSESSMENT_OVERDUE with domain: 'Vendor' (:135); 'Vendor' is also a member of the domain union at :27",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/app-layer/domain/entity-status-mapping.ts",
+  "line": 107,
+  "kind": "registry-entry",
+  "detail": "VENDOR_STATUS_VARIANT (also :114 VENDOR_CRITICALITY_VARIANT, :122 VENDOR_ASSESSMENT_VARIANT)",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/app-layer/domain/due-item-ownership.ts",
+  "line": 62,
+  "kind": "registry-entry",
+  "detail": "VENDOR: { \u2026 ownerUserId \u2026 } due-item ownership rule",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/app-layer/schemas/calendar.schemas.ts",
+  "line": 37,
+  "kind": "registry-entry",
+  "detail": "'vendor' calendar category; event types 'vendor-review'/'vendor-renewal'/'vendor-document-expiry' at :81-83; entityType 'VENDOR'/'VENDOR_DOCUMENT' at :204-205",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/app-layer/schemas/json-columns.schemas.ts",
+  "line": 84,
+  "kind": "registry-entry",
+  "detail": "VendorTagsSchema (:84) + VendorCertificationsSchema (:93) + validateVendorTags (:158) + validateVendorCertifications (:169)",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/lib/schemas/index.ts",
+  "line": 504,
+  "kind": "registry-entry",
+  "detail": "CreateVendorSchema (openapi 'VendorCreateRequest' :520); UpdateVendorSchema :524; CreateVendorDocumentSchema :545; SetVendorReviewSchema :574; AddVendorLinkSchema :579",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/lib/schemas/index.ts",
+  "line": 594,
+  "kind": "registry-entry",
+  "detail": "Epic G-3 vendor-assessment-template schemas: Create :594, AddSection :605, AddQuestion :615, Reorder :654, Review :670, Clone :700",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/lib/schemas/index.ts",
+  "line": 420,
+  "kind": "registry-entry",
+  "detail": "entityType: z.enum([\u2026 'VENDOR']) on a shared link schema",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/app/t/[tenantSlug]/(app)/calendar/CalendarClient.tsx",
+  "line": 145,
+  "kind": "registry-entry",
+  "detail": "agri calendar category label map: `vendor: tCategory('vendor')`",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "messages/en.json",
+  "line": 3970,
+  "kind": "i18n-namespace",
+  "detail": "top-level namespace \"vendors\" (second vendor namespace \"vendorAssessment\" at :6518)",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "messages/bg.json",
+  "line": 3970,
+  "kind": "i18n-namespace",
+  "detail": "top-level namespace \"vendors\" (second vendor namespace \"vendorAssessment\" at :6518)",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "tests/guardrails/vendor-questionnaire-schema.test.ts",
+  "line": 31,
+  "kind": "other",
+  "detail": "whole-file structural ratchet over prisma/schema/vendor.prisma \u2014 delete with the surface",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "tests/guardrails/epic-g3-end-to-end.test.ts",
+  "line": 52,
+  "kind": "other",
+  "detail": "whole-file Epic G-3 end-to-end structural ratchet over vendor.prisma + vendor-assessment usecases + routes \u2014 delete with the surface",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "tests/guardrails/audit-s6-vendor-risk.test.ts",
+  "line": 13,
+  "kind": "other",
+  "detail": "whole-file ratchet over vendor-assessment-review.ts + vendor-reassessment-reminder.ts + NotificationType.VENDOR_REVIEW_DUE \u2014 delete with the surface",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "tests/guardrails/schema-index-coverage.test.ts",
+  "line": 196,
+  "kind": "other",
+  "detail": "FK-index exemptions Vendor.ownerUserId \u2026 VendorEvidenceBundle.createdByUserId (:196-208) and LIST_MODELS_TENANT_INDEX_SUFFICIENT Vendor* entries (:547-564) \u2014 narrow, no stale entries allowed",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "tests/guardrails/query-shape-guardrails.test.ts",
+  "line": 182,
+  "kind": "other",
+  "detail": "KNOWN_N_PLUS_ONE entries 'src/app-layer/usecases/vendor-audit.ts:findFirst:vendorDocument' (:182) and ':findFirst:vendorAssessment' (:186)",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "tests/guardrails/sanitize-rich-text-coverage.test.ts",
+  "line": 81,
+  "kind": "other",
+  "detail": "classification rows Vendor / VendorDocument / VendorAssessment \u2192 src/app-layer/usecases/vendor.ts (:81-83)",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "tests/guardrails/usecase-test-coverage.test.ts",
+  "line": 74,
+  "kind": "other",
+  "detail": "coverage exemption for 'src/app-layer/usecases/vendor-audit.ts' (and the inherited-practice entry at :73)",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "tests/guardrails/logging-import-hygiene.test.ts",
+  "line": 160,
+  "kind": "other",
+  "detail": "import-allowlist entries for vendor-assessment-send/reminder/response/review (:160-162, :170)",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "tests/guardrails/module-import-boundaries.test.ts",
+  "line": 35,
+  "kind": "other",
+  "detail": "CORE_RE includes `vendor`; classify('src/app-layer/usecases/vendor.ts') === 'core' assertion at :143",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "tests/guardrails/prisma-schema-folder-coverage.test.ts",
+  "line": 45,
+  "kind": "other",
+  "detail": "'vendor.prisma' in the required schema-folder file list",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "tests/guardrails/audit-s10-tenant-isolation.test.ts",
+  "line": 36,
+  "kind": "other",
+  "detail": "'Vendor' in the tenant-isolation model list",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "tests/guardrails/module-gate-coverage.test.ts",
+  "line": 80,
+  "kind": "other",
+  "detail": "module-gate coverage entry for 'src/app/api/t/[tenantSlug]/vendors/route.ts'",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "tests/guardrails/form-primitive-adoption.test.ts",
+  "line": 55,
+  "kind": "other",
+  "detail": "'vendors/new (shim + modal + fields)' contract naming three vendors/ files (:57-59)",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "tests/guardrails/table-platform-drift.test.ts",
+  "line": 45,
+  "kind": "other",
+  "detail": "'vendors/VendorsClient.tsx' in the drift allowlist (raw-table note at :275)",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "tests/guardrails/design-system-drift.test.ts",
+  "line": 61,
+  "kind": "other",
+  "detail": "'vendors/VendorsClient.tsx' allowlist entry",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "tests/guardrails/no-client-side-filtering.test.ts",
+  "line": 30,
+  "kind": "other",
+  "detail": "vendors/VendorsClient.tsx in the server-filtering contract list",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "tests/guardrails/b2-table-unification.test.ts",
+  "line": 33,
+  "kind": "other",
+  "detail": "Vendors list (:33) and Vendor detail (:81) table-unification contracts",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "tests/guardrails/b4-filter-nav-consistency.test.ts",
+  "line": 26,
+  "kind": "other",
+  "detail": "vendors/[vendorId]/page.tsx in the filter-nav contract",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "tests/guardrails/b6-usezodform-adoption.test.ts",
+  "line": 118,
+  "kind": "other",
+  "detail": "vendors/_form/useNewVendorForm.ts adoption contract",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "tests/guardrails/b8-folders-frameworks.test.ts",
+  "line": 73,
+  "kind": "other",
+  "detail": "reads VendorRepository.ts (:73) and vendors/[vendorId]/page.tsx (:75)",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "tests/guardrails/pr-d-entity-id-picker.test.ts",
+  "line": 123,
+  "kind": "other",
+  "detail": "vendors/[vendorId]/page.tsx entity-picker contract (also :139)",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "tests/guardrails/token-migration.test.ts",
+  "line": 72,
+  "kind": "other",
+  "detail": "read('app/t/[tenantSlug]/(app)/vendors/VendorsClient.tsx')",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "tests/guardrails/responsive-tokens.test.ts",
+  "line": 43,
+  "kind": "other",
+  "detail": "'vendors/[vendorId]/page.tsx' in the responsive-token contract list",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "tests/guardrails/loading-states.test.ts",
+  "line": 84,
+  "kind": "other",
+  "detail": "'vendors' in the loading-state surface list",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "tests/guardrails/enterprise-identity-epic.test.ts",
+  "line": 172,
+  "kind": "other",
+  "detail": "'vendors' in the expected tenant page-slug list",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "tests/guards/entity-detail-shell-coverage.test.ts",
+  "line": 59,
+  "kind": "other",
+  "detail": "{ page: vendors/[vendorId]/page.tsx, entity: 'Vendor' } (assessment subpage exemption at :159)",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "tests/guards/entity-detail-layout-coverage.test.ts",
+  "line": 56,
+  "kind": "other",
+  "detail": "vendors/[vendorId]/page.tsx coverage entry (assessment page at :99)",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "tests/guards/dashboard-shell-coverage.test.ts",
+  "line": 54,
+  "kind": "other",
+  "detail": "vendors/dashboard/page.tsx shell-coverage entry",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "tests/guards/dashboard-masthead-discipline.test.ts",
+  "line": 49,
+  "kind": "other",
+  "detail": "'src/app/t/[tenantSlug]/(app)/vendors/dashboard/page.tsx' in the masthead contract",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "tests/guards/pageheader-adoption.test.ts",
+  "line": 155,
+  "kind": "other",
+  "detail": "VendorsClient.tsx adoption entry (admin/vendor-templates entries at :110 and :135)",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "tests/guards/list-page-shell-coverage.test.ts",
+  "line": 122,
+  "kind": "other",
+  "detail": "'vendors/[vendorId]/page.tsx' EXEMPTIONS entry",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "tests/guards/list-page-perf-ratchet.test.ts",
+  "line": 66,
+  "kind": "other",
+  "detail": "{ entity: 'vendors', repo: 'VendorRepository' }",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "tests/guards/filter-toolbar-coverage.test.ts",
+  "line": 129,
+  "kind": "other",
+  "detail": "vendors/[vendorId]/page.tsx exemption entry",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "tests/guards/columns-dropdown-coverage.test.ts",
+  "line": 88,
+  "kind": "other",
+  "detail": "'vendors/[vendorId]/page.tsx' exemption entry",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "tests/guards/datatable-mobile-fallback.test.ts",
+  "line": 133,
+  "kind": "other",
+  "detail": "'t/[tenantSlug]/(app)/vendors/[vendorId]/page.tsx' exemption entry",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "tests/guards/datatable-row-height-uniform.test.ts",
+  "line": 68,
+  "kind": "other",
+  "detail": "vendors/VendorsClient.tsx in the row-height contract",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "tests/guards/table-unification.test.ts",
+  "line": 172,
+  "kind": "other",
+  "detail": "vendors/VendorsClient.tsx entry",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "tests/guards/table-title-cell-adoption.test.ts",
+  "line": 35,
+  "kind": "other",
+  "detail": "vendors/VendorsClient.tsx adoption entry",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "tests/guards/epic52-datatable-ratchet.test.ts",
+  "line": 71,
+  "kind": "other",
+  "detail": "RAW_TABLE_BASELINE = 13 counts vendors/[vendorId](3) \u2014 LOWER the baseline when the surface goes",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "tests/guards/primary-action-budget.test.ts",
+  "line": 99,
+  "kind": "other",
+  "detail": "budget entries vendors/[vendorId]/page.tsx: 9 (:99), admin/vendor-templates/[templateId]: 4 (:112), vendors/[vendorId]/assessment/[assessmentId]: 2 (:161)",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "tests/guards/badge-density.test.ts",
+  "line": 87,
+  "kind": "other",
+  "detail": "vendors/[vendorId]/page.tsx: 9 badge budget",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "tests/guards/action-label-vocabulary.test.ts",
+  "line": 110,
+  "kind": "other",
+  "detail": "three baseline entries pinned to vendors/[vendorId]/page.tsx:369/:393/:470 (:110-112)",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "tests/guards/action-button-canonical-entity-label.test.ts",
+  "line": 109,
+  "kind": "other",
+  "detail": "canonical header-button contract for VendorsClient.tsx / 'vendors' (:109, :112)",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "tests/guards/epic-67-rollout-coverage.test.ts",
+  "line": 56,
+  "kind": "other",
+  "detail": "SITE_CONTRACTS entry for vendors/[vendorId]/page.tsx (vendor document removal undo-toast)",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "tests/guards/epic63-timestamp-rollout.test.ts",
+  "line": 44,
+  "kind": "other",
+  "detail": "path.join(APP, 'vendors/VendorsClient.tsx') rollout entry",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "tests/guards/epic55-native-select-ratchet.test.ts",
+  "line": 137,
+  "kind": "other",
+  "detail": "'vendors/new/page.tsx' (:137), 'vendors/[vendorId]/page.tsx' (:149), assessment page (:150)",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "tests/guards/page-breadcrumbs-coverage.test.ts",
+  "line": 81,
+  "kind": "other",
+  "detail": "vendors/new/page.tsx (:81), admin/vendor-assessment-reviews client (:93), vendors assessment page (:94), vendors/dashboard (:102)",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "tests/guards/tab-primitive-adoption.test.ts",
+  "line": 43,
+  "kind": "other",
+  "detail": "vendors/[vendorId]/page.tsx tab-bar adoption entry",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "tests/guards/metadatabar-detail-coverage.test.ts",
+  "line": 65,
+  "kind": "other",
+  "detail": "vendors/[vendorId]/page.tsx metadata-bar entry",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "tests/guards/empty-state-personality.test.ts",
+  "line": 35,
+  "kind": "other",
+  "detail": "vendors/VendorsClient.tsx entry",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "tests/guards/chart-token-discipline.test.ts",
+  "line": 46,
+  "kind": "other",
+  "detail": "vendors/dashboard/page.tsx entry",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "tests/guards/r14-no-page-searchbars.test.ts",
+  "line": 102,
+  "kind": "other",
+  "detail": "vendors/VendorsClient.tsx must wire searchId + searchPlaceholder",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "tests/guards/r23-prf-policies-vendors-capstone.test.ts",
+  "line": 24,
+  "kind": "other",
+  "detail": "whole-file capstone ratchet over VendorsClient.tsx (:24, :44) \u2014 delete or split with the surface",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "tests/guards/r32-modal-form-completeness.test.ts",
+  "line": 62,
+  "kind": "other",
+  "detail": "slug: 'vendors' modal-form completeness entry",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "tests/guards/roadmap-11-completion.test.ts",
+  "line": 100,
+  "kind": "other",
+  "detail": "ratchet pinned to vendors/[vendorId]/page.tsx",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "tests/guards/no-lucide.test.ts",
+  "line": 100,
+  "kind": "other",
+  "detail": "'src/app/t/[tenantSlug]/(app)/vendors/filter-defs.ts' allowlist entry",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "tests/guards/no-raw-palette-greys.test.ts",
+  "line": 63,
+  "kind": "other",
+  "detail": "'src/app/vendor-assessment/[assessmentId]/VendorAssessmentClient.tsx' allowlist entry",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "tests/guards/typography-eradication.test.ts",
+  "line": 49,
+  "kind": "other",
+  "detail": "VendorAssessmentClient.tsx allowlist entry",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "tests/guards/single-h1-per-page.test.ts",
+  "line": 48,
+  "kind": "other",
+  "detail": "VendorAssessmentClient.tsx exemption entry",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "tests/guards/heading-primitive-discipline.test.ts",
+  "line": 59,
+  "kind": "other",
+  "detail": "src/app/vendor-assessment/[assessmentId]/VendorAssessmentClient.tsx entry",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "tests/guards/automation-domain-emits.test.ts",
+  "line": 33,
+  "kind": "other",
+  "detail": "reads src/app-layer/jobs/vendor-renewal-check.ts and asserts VENDOR_ASSESSMENT_OVERDUE emit (:15, :34)",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "tests/guards/epic49-calendar-ratchets.test.ts",
+  "line": 65,
+  "kind": "other",
+  "detail": "asserts loadVendorEvents / loadVendorDocumentEvents exist in compliance-calendar.ts (:65-66) and scanVendorDocuments in calendar-deadlines.ts (:127)",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "tests/guards/contract-drift.test.ts",
+  "line": 19,
+  "kind": "other",
+  "detail": "{ module: 'vendor.dto', schemas: ['VendorListItemDTOSchema','VendorDetailDTOSchema'] } (also :106)",
+  "survives": true,
+  "surface": "vendors"
+ },
+ {
+  "file": "src/app-layer/usecases/farm-record-traceability.ts",
+  "line": 38,
+  "kind": "import",
+  "detail": "import { assertCanViewFrameworks } from '@/app-layer/policies/framework.policies' \u2014 AGRI usecase",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "src/app-layer/usecases/farm-record-traceability.ts",
+  "line": 83,
+  "kind": "other",
+  "detail": "assertCanViewFrameworks(ctx) call in listBackingFramework \u2014 agri farm-record traceability",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "src/app-layer/usecases/farm-record-traceability.ts",
+  "line": 88,
+  "kind": "prisma-delegate",
+  "detail": "prisma.framework.findFirst({ where: { key: frameworkKey } })",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "src/app-layer/usecases/farm-record-traceability.ts",
+  "line": 94,
+  "kind": "prisma-delegate",
+  "detail": "prisma.frameworkRequirement.findMany({ where: { frameworkId, deprecatedAt: null } })",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "src/app-layer/usecases/search.ts",
+  "line": 209,
+  "kind": "prisma-delegate",
+  "detail": "prisma.framework.findMany \u2014 unified search indexes the global Framework table",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "src/app-layer/usecases/search.ts",
+  "line": 421,
+  "kind": "link-href",
+  "detail": "href: `/t/${slug}/frameworks/${encodeURIComponent(row.key)}` (page dir already absent \u2192 404)",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "src/app-layer/usecases/search.ts",
+  "line": 418,
+  "kind": "registry-entry",
+  "detail": "type: 'framework' SearchHit emitted by buildFrameworkHit; SEARCH_TYPE_DEFAULTS.framework",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "src/app/api/staging/seed/route.ts",
+  "line": 80,
+  "kind": "prisma-delegate",
+  "detail": "frameworks: await prisma.framework.count() in the staging-seed counts payload",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "src/app-layer/usecases/auto-evidence.ts",
+  "line": 113,
+  "kind": "prisma-delegate",
+  "detail": "db.frameworkRequirement.findMany \u2014 auto-evidence requirement lookup",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "src/app-layer/jobs/snapshot.ts",
+  "line": 195,
+  "kind": "prisma-delegate",
+  "detail": "db.complianceSnapshot.upsert({ where: { tenantId_snapshotDate } })",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "src/app-layer/jobs/compliance-digest.ts",
+  "line": 127,
+  "kind": "prisma-delegate",
+  "detail": "prisma.complianceSnapshot.findFirst (latest); also line 142 (prior snapshot)",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "src/app-layer/repositories/PortfolioRepository.ts",
+  "line": 97,
+  "kind": "prisma-delegate",
+  "detail": "db.complianceSnapshot.findMany; also line 146 db.complianceSnapshot.groupBy",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "src/app-layer/usecases/compliance-trends.ts",
+  "line": 125,
+  "kind": "prisma-delegate",
+  "detail": "db.complianceSnapshot.findMany over the tenant date range",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "src/app-layer/services/library-importer.ts",
+  "line": 130,
+  "kind": "prisma-delegate",
+  "detail": "db.framework.findFirst/update/create at 130,159,182,240",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "src/app-layer/services/library-importer.ts",
+  "line": 330,
+  "kind": "prisma-delegate",
+  "detail": "db.frameworkRequirement.create/findMany/update at 330,368,394,413,432",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "src/app-layer/services/mapping-set-importer.ts",
+  "line": 261,
+  "kind": "prisma-delegate",
+  "detail": "db.framework.findFirst at 261,273 (source/target framework resolution)",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "src/app-layer/services/mapping-set-importer.ts",
+  "line": 321,
+  "kind": "prisma-delegate",
+  "detail": "db.frameworkRequirement.findMany at 321,325",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "src/app-layer/services/mapping-set-importer.ts",
+  "line": 388,
+  "kind": "prisma-delegate",
+  "detail": "db.requirementMapping.findMany at 388, db.requirementMapping.upsert at 402",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "src/app-layer/services/mapping-set-importer.ts",
+  "line": 32,
+  "kind": "import",
+  "detail": "import { RequirementMappingRepository } from '../repositories/RequirementMappingRepository'",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "src/app-layer/repositories/RequirementMappingRepository.ts",
+  "line": 74,
+  "kind": "prisma-delegate",
+  "detail": "db.requirementMappingSet.create/upsert/findMany/findUnique/delete at 74,93,122,130,142,155",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "src/app-layer/repositories/RequirementMappingRepository.ts",
+  "line": 167,
+  "kind": "prisma-delegate",
+  "detail": "db.requirementMapping.* at 167,182,217,250,287,340,369,374,379",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "src/app-layer/usecases/gap-analysis.ts",
+  "line": 44,
+  "kind": "import",
+  "detail": "import {...} from '../services/cross-framework-traceability'",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "src/app-layer/usecases/gap-analysis.ts",
+  "line": 33,
+  "kind": "import",
+  "detail": "import { RequirementMappingRepository } from '../repositories/RequirementMappingRepository'",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "src/app-layer/usecases/gap-analysis.ts",
+  "line": 35,
+  "kind": "import",
+  "detail": "import { resolveMapping, type MappingEdgeLoader } from '../services/mapping-resolution'",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "src/app-layer/usecases/library-sync.ts",
+  "line": 258,
+  "kind": "prisma-delegate",
+  "detail": "db.framework.findFirst during library sync",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "src/app-layer/usecases/library-sync.ts",
+  "line": 33,
+  "kind": "import",
+  "detail": "import {...} from '../services/mapping-set-importer'",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "src/app-layer/usecases/audit-readiness/packs.ts",
+  "line": 124,
+  "kind": "prisma-delegate",
+  "detail": "prisma.framework.findUnique \u2014 audit-readiness dir is NOT in the doomed-dir list",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "src/app-layer/repositories/PracticeRepository.ts",
+  "line": 192,
+  "kind": "prisma-delegate",
+  "detail": "db.frameworkMapping.findMany (path has no doomed dir segment)",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "src/app-layer/usecases/practice/requirements.ts",
+  "line": 3,
+  "kind": "import",
+  "detail": "import { FrameworkRepository } from '../../repositories/FrameworkRepository' (dir is 'practice', not 'practices')",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "src/app-layer/usecases/practice/requirements.ts",
+  "line": 40,
+  "kind": "prisma-delegate",
+  "detail": "db.frameworkMapping.create at 40, findFirst at 59, delete at 64",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "src/app-layer/usecases/practice/requirements.ts",
+  "line": 22,
+  "kind": "other",
+  "detail": "FrameworkRepository.listRequirements(db, frameworkKey)",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "src/app-layer/usecases/inherited-practice-data.ts",
+  "line": 79,
+  "kind": "prisma-delegate",
+  "detail": "nested include `framework: { select: { id, name, version } }` off requirement relation",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "src/app-layer/services/export-service.ts",
+  "line": 154,
+  "kind": "prisma-delegate",
+  "detail": "ROOT_PRISMA_MODELS framework/frameworkRequirement (154,155) dispatched dynamically at db[modelName] line 227",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "src/app-layer/services/export-service.ts",
+  "line": 233,
+  "kind": "registry-entry",
+  "detail": "tenantId carve-out `entityType !== 'framework' && !== 'frameworkRequirement'`; also 100,101,134,340",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "src/app-layer/services/export-graph.ts",
+  "line": 184,
+  "kind": "prisma-delegate",
+  "detail": "edge prismaModel: 'frameworkRequirement' (dynamic db[edge.prismaModel]); targetModel at 129; framework\u2192frameworkRequirement edge at 181",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "src/app-layer/services/export-schemas.ts",
+  "line": 49,
+  "kind": "registry-entry",
+  "detail": "'FRAMEWORKS' domain + 'framework'/'frameworkRequirement' entity types at 49,60,82,83,223,234,508,516,527,528",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "src/app-layer/services/import-service.ts",
+  "line": 168,
+  "kind": "prisma-delegate",
+  "detail": "import model map framework: 'framework', frameworkRequirement: 'frameworkRequirement' (168,169)",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "src/app-layer/services/tenant-safety.ts",
+  "line": 78,
+  "kind": "registry-entry",
+  "detail": "framework: [] / frameworkRequirement: [] tenant-scope-exempt entries (78,79)",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "src/app-layer/libraries/index.ts",
+  "line": 75,
+  "kind": "import",
+  "detail": "barrel re-export block (68-75) of getFrameworkTree, listAvailableFrameworks, FrameworkInfo from './framework-provider'",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "src/lib/dto/index.ts",
+  "line": 13,
+  "kind": "import",
+  "detail": "export * from './framework.dto' \u2014 barrel re-export of FrameworkDTOSchema/RequirementDTOSchema",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "src/components/ui/entity-picker.tsx",
+  "line": 165,
+  "kind": "fetch-url",
+  "detail": "url = `${base}/frameworks/${frameworkKey}/tree` for the FRAMEWORK_REQUIREMENT picker case (case at 158)",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "src/app/org/[orgSlug]/(app)/tenants/new/NewTenantForm.tsx",
+  "line": 200,
+  "kind": "link-href",
+  "detail": "router.push(`/t/${newSlug}/frameworks?install=${framework}`) \u2014 post-tenant-create redirect",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "src/components/ui/TreeView.tsx",
+  "line": 63,
+  "kind": "import",
+  "detail": "imports tree-helpers (63) and TreeViewNode type (64) from '@/lib/framework-tree/*'",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "src/components/ui/TreeExpandCollapseToggle.tsx",
+  "line": 23,
+  "kind": "import",
+  "detail": "import { getExpandToggleState } from '@/lib/framework-tree/tree-helpers'",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "src/components/ui/ComplianceStatusIndicator.tsx",
+  "line": 27,
+  "kind": "import",
+  "detail": "import type { ComplianceStatus } from '@/lib/framework-tree/types'",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "src/lib/permissions.ts",
+  "line": 10,
+  "kind": "permission-key",
+  "detail": "PermissionSet field `frameworks: { view: boolean; install: boolean }`",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "src/lib/permissions.ts",
+  "line": 77,
+  "kind": "permission-key",
+  "detail": "PERMISSION_ACTIONS entry `frameworks: ['view', 'install']`",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "src/lib/permissions.ts",
+  "line": 105,
+  "kind": "permission-key",
+  "detail": "per-role frameworks grants at 105,122,143,159,183,200 (OWNER/ADMIN/EDITOR/READER/\u2026/AUDITOR)",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "src/lib/security/route-permissions.ts",
+  "line": 208,
+  "kind": "route-permission",
+  "detail": "path: new RegExp(`^${T}\\\\/frameworks(\\\\/.*)?$`) \u2192 'admin.manage' on POST/PUT/PATCH/DELETE",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "src/lib/auth/api-key-auth.ts",
+  "line": 70,
+  "kind": "permission-key",
+  "detail": "SCOPE_ACTION_MAP `frameworks: { read: ['view'], write: ['install'] }` \u2014 API-key scope vocabulary",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "src/lib/queryKeys.ts",
+  "line": 55,
+  "kind": "registry-entry",
+  "detail": "queryKeys.frameworks { all, list } cache-key namespace (55-58)",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "src/lib/swr-keys.ts",
+  "line": 142,
+  "kind": "registry-entry",
+  "detail": "swrKeys `frameworks: makeResource('frameworks')`",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "src/components/icons/iconMap.ts",
+  "line": 79,
+  "kind": "registry-entry",
+  "detail": "IconKey union member 'frameworks' (79) + iconMap entry `frameworks: Map` (132)",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "src/lib/search/types.ts",
+  "line": 43,
+  "kind": "registry-entry",
+  "detail": "SearchHitType union member 'framework' (43) + SEARCH_TYPE_DEFAULTS.framework (103)",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "src/lib/search/rank.ts",
+  "line": 42,
+  "kind": "registry-entry",
+  "detail": "TYPE_TIEBREAK framework: 1 (42) and per-type score seed framework: 0 (113)",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "src/lib/palette/recents.ts",
+  "line": 126,
+  "kind": "registry-entry",
+  "detail": "'framework' listed in the command-palette recents type allowlist",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "src/lib/palette/filter.ts",
+  "line": 69,
+  "kind": "registry-entry",
+  "detail": "palette filter type-weight entry `framework: 0`",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "src/components/command-palette/command-palette.tsx",
+  "line": 159,
+  "kind": "registry-entry",
+  "detail": "framework: { heading: 'Frameworks', icon: Layers } (159); type order list (169); i18n heading t('entFrameworks') (193)",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "src/lib/celebrations.ts",
+  "line": 50,
+  "kind": "registry-entry",
+  "detail": "MilestoneKey 'framework-100' (50) + MILESTONES['framework-100'] definition (78-81)",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "src/components/layout/SidebarNav.tsx",
+  "line": 256,
+  "kind": "nav-entry",
+  "detail": "R13-PR12 comment block (256-259) documenting the Frameworks sidebar entry and its palette/Audits-pill fallbacks",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "src/lib/nav/canonical-parents.ts",
+  "line": 81,
+  "kind": "nav-entry",
+  "detail": "empty '\u2500\u2500 Frameworks \u2500\u2500' section header in CANONICAL_PARENTS",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "src/lib/schemas/index.ts",
+  "line": 420,
+  "kind": "registry-entry",
+  "detail": "AddTaskLinkSchema entityType enum includes 'FRAMEWORK_REQUIREMENT'",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "src/lib/schemas/onboarding.ts",
+  "line": 8,
+  "kind": "registry-entry",
+  "detail": "OnboardingStep 'FRAMEWORK_SELECTION' (8 and 28)",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "src/components/onboarding/OnboardingWizard.tsx",
+  "line": 434,
+  "kind": "registry-entry",
+  "detail": "case 'FRAMEWORK_SELECTION' \u2192 <FrameworkSelectionStep> (434); step impl 503-525; summary 549,636",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "src/app-layer/usecases/onboarding.ts",
+  "line": 287,
+  "kind": "registry-entry",
+  "detail": "FRAMEWORK_SELECTION \u2192 practice-baseline dependency rule (266-296)",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "src/app-layer/usecases/onboarding-automation.ts",
+  "line": 78,
+  "kind": "registry-entry",
+  "detail": "'\u2500\u2500 Framework Install \u2500\u2500' retired-automation branch (78-91)",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "messages/en.json",
+  "line": 3711,
+  "kind": "i18n-namespace",
+  "detail": "top-level namespace \"frameworkExplorer\" (same key at messages/bg.json:3711)",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "prisma/seed.ts",
+  "line": 321,
+  "kind": "prisma-delegate",
+  "detail": "prisma.framework.* at 321-345,366-375,390,408,426; frameworkRequirement.* at 329,357,374,379,397,415,433,599; frameworkPack.upsert at 460",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "prisma/seed-catalog.ts",
+  "line": 42,
+  "kind": "prisma-delegate",
+  "detail": "prisma.framework.upsert at 42,59,85,103,121,139; frameworkRequirement at 49,75,92,110,128,146; frameworkPack at 335-387; counts at 402-405",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "prisma/catalog-applier.ts",
+  "line": 85,
+  "kind": "prisma-delegate",
+  "detail": "prisma.framework.findFirst/upsert (85,86); frameworkRequirement.upsert (127); frameworkPack.findUnique/upsert (160,163)",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "scripts/seed-demo.ts",
+  "line": 376,
+  "kind": "prisma-delegate",
+  "detail": "prisma.frameworkPack.findUnique",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "tests/guardrails/api-permission-coverage.test.ts",
+  "line": 135,
+  "kind": "route-permission",
+  "detail": "EXPECTED route entries 'api/t/[tenantSlug]/frameworks/route.ts' (135) and '.../[frameworkKey]/tree/route.ts' (141)",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "tests/guardrails/module-gate-coverage.test.ts",
+  "line": 60,
+  "kind": "registry-entry",
+  "detail": "module-gate expectation on 'src/app/api/t/[tenantSlug]/frameworks/route.ts'",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "tests/guardrails/query-shape-guardrails.test.ts",
+  "line": 162,
+  "kind": "registry-entry",
+  "detail": "N+1 baseline key 'src/app-layer/usecases/framework/fixtures.ts:findUnique:frameworkRequirement'",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "tests/guardrails/usecase-test-coverage.test.ts",
+  "line": 56,
+  "kind": "registry-entry",
+  "detail": "coverage-map entries for 'src/app-layer/usecases/framework/catalog.ts' (56) and '.../tree.ts' (58)",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "tests/guardrails/schema-index-coverage.test.ts",
+  "line": 189,
+  "kind": "registry-entry",
+  "detail": "index exemptions FrameworkPack.frameworkId (189), FrameworkMapping.toPracticeId/toRequirementId (190,191), FrameworkRequirementOrder (503)",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "tests/guards/catalogue-write-gate.test.ts",
+  "line": 36,
+  "kind": "registry-entry",
+  "detail": "regex \\\\b(?:prisma|db|tx)\\\\.(framework|frameworkRequirement)\\\\. \u2014 whole guard is about the Framework catalogue",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "tests/guards/contract-drift.test.ts",
+  "line": 20,
+  "kind": "registry-entry",
+  "detail": "{ module: 'framework.dto', schemas: ['FrameworkDTOSchema','RequirementDTOSchema'] }; also list at 107",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "tests/guards/no-lucide.test.ts",
+  "line": 104,
+  "kind": "registry-entry",
+  "detail": "allowlist 'src/components/frameworks/FrameworkExplorer.tsx' (104) and 'src/components/ui/FrameworkBuilder.tsx' (156)",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "tests/guards/no-horizontal-drift-patterns.test.ts",
+  "line": 166,
+  "kind": "registry-entry",
+  "detail": "exemption entry file: 'src/components/frameworks/FrameworkExplorer.tsx'",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "tests/guards/no-unsafe-any.test.ts",
+  "line": 113,
+  "kind": "registry-entry",
+  "detail": "allowlisted filename 'framework.dto.ts'",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "tests/guardrails/logging-import-hygiene.test.ts",
+  "line": 149,
+  "kind": "registry-entry",
+  "detail": "require-allowlist 'app-layer/libraries/framework-provider.ts': ['@/data/frameworks', '@/data/clauses']",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "tests/guardrails/enterprise-identity-epic.test.ts",
+  "line": 172,
+  "kind": "registry-entry",
+  "detail": "API-key scope list includes 'frameworks' (mirrors api-key-auth SCOPE_ACTION_MAP)",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "tests/guards/practice-detail-tab-lazy.test.ts",
+  "line": 53,
+  "kind": "registry-entry",
+  "detail": "asserts absence of frameworkMappings include (53) and practice.frameworkMappings (84)",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "tests/guards/list-page-shell-coverage.test.ts",
+  "line": 158,
+  "kind": "registry-entry",
+  "detail": "Epic 66 exemption comment for the frameworks client island; practice framework-mappings sub-table at 135",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "tests/guards/filter-toolbar-coverage.test.ts",
+  "line": 143,
+  "kind": "registry-entry",
+  "detail": "exemption reason naming framework mappings sub-table; header comment names Frameworks at line 4",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "tests/guards/datatable-mobile-fallback.test.ts",
+  "line": 136,
+  "kind": "registry-entry",
+  "detail": "exemption reason 'detail-page sub-table \u2014 framework mappings for one practice'",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "tests/guards/columns-dropdown-coverage.test.ts",
+  "line": 117,
+  "kind": "registry-entry",
+  "detail": "comment citing Frameworks as the standalone-above-table precedent",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "tests/guards/rendered-coverage-floor.test.ts",
+  "line": 150,
+  "kind": "registry-entry",
+  "detail": "comment block about the removed frameworks.spec.ts and the surviving GET /frameworks API (150-152)",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "tests/guards/loading-text-discipline.test.ts",
+  "line": 11,
+  "kind": "registry-entry",
+  "detail": "inventory comment listing frameworks/[key] 'Loading tree...' and frameworks/.../diff (11,12)",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "tests/guards/r14-no-page-searchbars.test.ts",
+  "line": 59,
+  "kind": "registry-entry",
+  "detail": "comment listing frameworks/[frameworkKey]/templates/page.tsx",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "tests/guards/truncation-max-width-tokens.test.ts",
+  "line": 8,
+  "kind": "registry-entry",
+  "detail": "comment citing FrameworkExplorer code chip max-w-[8rem]",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "tests/guards/pageheader-adoption.test.ts",
+  "line": 67,
+  "kind": "registry-entry",
+  "detail": "exemption note 'Framework mapping page. Pending migration.'",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "tests/guards/tab-primitive-adoption.test.ts",
+  "line": 60,
+  "kind": "registry-entry",
+  "detail": "exemption note 'Framework mapping page \u2014 tab pattern in the multi-framework view.'",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "tests/guardrails/b8-folders-frameworks.test.ts",
+  "line": 106,
+  "kind": "registry-entry",
+  "detail": "whole guardrail is the Audit \u2194 Framework wiring contract",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "tests/guardrails/audit-s9-traceability.test.ts",
+  "line": 25,
+  "kind": "registry-entry",
+  "detail": "describe('Audit S9 \u2014 Cross-Framework Traceability') over cross-framework-traceability.ts",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "tests/guards/coverage-ratchet.test.ts",
+  "line": 98,
+  "kind": "registry-entry",
+  "detail": "per-file coverage notes for framework/coverage.ts (98) and framework/fixtures.ts (125)",
+  "survives": true,
+  "surface": "frameworks"
+ },
+ {
+  "file": "prisma/schema/auth.prisma",
+  "line": 120,
+  "kind": "other",
+  "detail": "Tenant model back-relation: `clauseProgress ClauseProgress[]` \u2014 surviving agri schema file",
+  "survives": true,
+  "surface": "clauses"
+ },
+ {
+  "file": "prisma/schema/enums.prisma",
+  "line": 102,
+  "kind": "other",
+  "detail": "`enum ClauseStatus { NOT_STARTED IN_PROGRESS READY NEEDS_REVIEW }` in shared surviving enums file",
+  "survives": true,
+  "surface": "clauses"
+ },
+ {
+  "file": "prisma/seed.ts",
+  "line": 247,
+  "kind": "prisma-delegate",
+  "detail": "`prisma.clause.upsert(...)` in loop over clauseData (block 236-249); breaks db:reset",
+  "survives": true,
+  "surface": "clauses"
+ },
+ {
+  "file": "src/app-layer/libraries/framework-provider.ts",
+  "line": 232,
+  "kind": "import",
+  "detail": "RUNTIME `require('@/data/clauses')` fallback in getISO27001Clauses (also 4, 43-44, 199-233)",
+  "survives": true,
+  "surface": "clauses"
+ },
+ {
+  "file": "src/app-layer/libraries/index.ts",
+  "line": 65,
+  "kind": "registry-entry",
+  "detail": "barrel re-export `getISO27001Clauses` (and `type ClauseInfo` at line 73)",
+  "survives": true,
+  "surface": "clauses"
+ },
+ {
+  "file": "src/lib/schemas/index.ts",
+  "line": 465,
+  "kind": "other",
+  "detail": "`UpdateClauseProgressSchema` under a '\u2500\u2500\u2500 Clauses \u2500\u2500\u2500' banner (line 463); only doomed consumers",
+  "survives": true,
+  "surface": "clauses"
+ },
+ {
+  "file": "src/lib/nav/page-segregation.ts",
+  "line": 60,
+  "kind": "nav-entry",
+  "detail": "`'/clauses'` listed in MAIN_PAGES (top-level sidebar destinations, drives classifyRoute)",
+  "survives": true,
+  "surface": "clauses"
+ },
+ {
+  "file": "src/components/nav/BackAffordance.tsx",
+  "line": 43,
+  "kind": "nav-entry",
+  "detail": "SECTION_LABELS entry `'/clauses': 'clauses'` (resolves the backNav.clauses i18n key)",
+  "survives": true,
+  "surface": "clauses"
+ },
+ {
+  "file": "src/components/ui/next-best-action-logic.ts",
+  "line": 79,
+  "kind": "link-href",
+  "detail": "`href: tenantHref(\"/clauses\")` for the 'low-coverage' next-best-action card",
+  "survives": true,
+  "surface": "clauses"
+ },
+ {
+  "file": "src/app-layer/repositories/DashboardRepository.ts",
+  "line": 27,
+  "kind": "other",
+  "detail": "DashboardStats DTO fields `clausesReady` / `totalClauses` (line 28) \u2014 declared, never populated",
+  "survives": true,
+  "surface": "clauses"
+ },
+ {
+  "file": "messages/en.json",
+  "line": 223,
+  "kind": "i18n-namespace",
+  "detail": "top-level `clauses` namespace, 12 keys (title, subtitle, clause, notStarted, needsReview, \u2026)",
+  "survives": true,
+  "surface": "clauses"
+ },
+ {
+  "file": "messages/bg.json",
+  "line": 223,
+  "kind": "i18n-namespace",
+  "detail": "top-level `clauses` namespace, same 12 keys as en",
+  "survives": true,
+  "surface": "clauses"
+ },
+ {
+  "file": "messages/en.json",
+  "line": 114,
+  "kind": "i18n-namespace",
+  "detail": "cross-namespace keys: nav.clauses:114, dashboard.clauseProgress:144, .viewAllClauses:145, audits.clausesLink:1178, backNav.clauses:6813",
+  "survives": true,
+  "surface": "clauses"
+ },
+ {
+  "file": "messages/bg.json",
+  "line": 114,
+  "kind": "i18n-namespace",
+  "detail": "same cross-namespace keys at identical lines: 114, 144, 145, 1178, 6813",
+  "survives": true,
+  "surface": "clauses"
+ },
+ {
+  "file": "tests/guardrails/b4-filter-nav-consistency.test.ts",
+  "line": 80,
+  "kind": "registry-entry",
+  "detail": "ASSERTS Audits header has id=\"audits-clauses-link\" href /t/${tenantSlug}/clauses (74-92) \u2014 will FAIL on delete",
+  "survives": true,
+  "surface": "clauses"
+ },
+ {
+  "file": "tests/guardrails/module-gate-coverage.test.ts",
+  "line": 56,
+  "kind": "route-permission",
+  "detail": "entry { file: 'src/app/api/t/[tenantSlug]/clauses/route.ts', module: 'CERTIFICATION' }",
+  "survives": true,
+  "surface": "clauses"
+ },
+ {
+  "file": "tests/guardrails/usecase-test-coverage.test.ts",
+  "line": 54,
+  "kind": "registry-entry",
+  "detail": "EXEMPTIONS key 'src/app-layer/usecases/clause.ts' with Roadmap-Q1 reason (stale-entry test will fire)",
+  "survives": true,
+  "surface": "clauses"
+ },
+ {
+  "file": "tests/guardrails/schema-index-coverage.test.ts",
+  "line": 489,
+  "kind": "registry-entry",
+  "detail": "`ClauseProgress:` entry in LIST_MODELS_TENANT_INDEX_SUFFICIENT with written reason",
+  "survives": true,
+  "surface": "clauses"
+ },
+ {
+  "file": "tests/guardrails/logging-import-hygiene.test.ts",
+  "line": 149,
+  "kind": "registry-entry",
+  "detail": "REQUIRE_ALLOWLIST 'app-layer/libraries/framework-provider.ts': ['@/data/frameworks', '@/data/clauses']",
+  "survives": true,
+  "surface": "clauses"
+ },
+ {
+  "file": "tests/guardrails/design-system-drift.test.ts",
+  "line": 70,
+  "kind": "registry-entry",
+  "detail": "clean-page list entry 'clauses/loading.tsx' (readFileSync \u2014 throws when file is gone)",
+  "survives": true,
+  "surface": "clauses"
+ },
+ {
+  "file": "tests/guards/epic55-native-select-ratchet.test.ts",
+  "line": 139,
+  "kind": "registry-entry",
+  "detail": "APP_MIGRATED entry 'clauses/ClausesBrowser.tsx'",
+  "survives": true,
+  "surface": "clauses"
+ },
+ {
+  "file": "tests/guards/page-breadcrumbs-coverage.test.ts",
+  "line": 109,
+  "kind": "registry-entry",
+  "detail": "breadcrumb exemption \"src/app/t/[tenantSlug]/(app)/clauses/page.tsx\"",
+  "survives": true,
+  "surface": "clauses"
+ },
+ {
+  "file": "tests/guards/next-best-action-discipline.test.ts",
+  "line": 62,
+  "kind": "link-href",
+  "detail": "expect(a.href).toBe(\"/t/acme/clauses\") for the low-coverage action",
+  "survives": true,
+  "surface": "clauses"
+ },
+ {
+  "file": "tests/guards/empty-state-tone.test.ts",
+  "line": 77,
+  "kind": "registry-entry",
+  "detail": "allowlisted i18n keys 'clauses.notStarted' (77) and 'clauses.notApplicable' (78)",
+  "survives": true,
+  "surface": "clauses"
+ },
+ {
+  "file": "tests/guards/animation-vocabulary.test.ts",
+  "line": 28,
+  "kind": "other",
+  "detail": "docblock names `clauses/ClausesBrowser` as a split-pane exemplar (comment only)",
+  "survives": true,
+  "surface": "clauses"
+ },
+ {
+  "file": "src/lib/nav/page-segregation.ts",
+  "line": 55,
+  "kind": "nav-entry",
+  "detail": "MAIN_PAGES entry '/access-reviews'",
+  "survives": true,
+  "surface": "access-reviews"
+ },
+ {
+  "file": "src/lib/nav/page-segregation.ts",
+  "line": 90,
+  "kind": "nav-entry",
+  "detail": "SUBPAGES entry '/access-reviews/[reviewId]'",
+  "survives": true,
+  "surface": "access-reviews"
+ },
+ {
+  "file": "src/lib/nav/canonical-parents.ts",
+  "line": 39,
+  "kind": "nav-entry",
+  "detail": "'/access-reviews/[reviewId]': { href: '/access-reviews', label: 'accessReviews' }",
+  "survives": true,
+  "surface": "access-reviews"
+ },
+ {
+  "file": "src/components/nav/BackAffordance.tsx",
+  "line": 38,
+  "kind": "nav-entry",
+  "detail": "SECTION_LABELS entry '/access-reviews': 'accessReviews'",
+  "survives": true,
+  "surface": "access-reviews"
+ },
+ {
+  "file": "src/lib/observability/list-page-metrics.ts",
+  "line": 102,
+  "kind": "registry-entry",
+  "detail": "ListPageEntity union member | 'access-reviews' (no call site; type-only entry)",
+  "survives": true,
+  "surface": "access-reviews"
+ },
+ {
+  "file": "src/lib/security/encrypted-fields.ts",
+  "line": 213,
+  "kind": "registry-entry",
+  "detail": "ENCRYPTED_FIELDS: AccessReview: ['description']",
+  "survives": true,
+  "surface": "access-reviews"
+ },
+ {
+  "file": "src/lib/security/encrypted-fields.ts",
+  "line": 214,
+  "kind": "registry-entry",
+  "detail": "ENCRYPTED_FIELDS: AccessReviewDecision: ['notes']",
+  "survives": true,
+  "surface": "access-reviews"
+ },
+ {
+  "file": "src/lib/security/encrypted-fields.ts",
+  "line": 238,
+  "kind": "other",
+  "detail": "comment on CostEntry.description names AccessReview as a colliding `description` model \u2014 stale after deletion",
+  "survives": true,
+  "surface": "access-reviews"
+ },
+ {
+  "file": "src/app-layer/jobs/executor-registry.ts",
+  "line": 423,
+  "kind": "registry-entry",
+  "detail": "executorRegistry.register('access-review-reminder', \u2026)",
+  "survives": true,
+  "surface": "access-reviews"
+ },
+ {
+  "file": "src/app-layer/jobs/executor-registry.ts",
+  "line": 426,
+  "kind": "import",
+  "detail": "dynamic await import('./access-review-reminder') \u2192 processAccessReviewReminders",
+  "survives": true,
+  "surface": "access-reviews"
+ },
+ {
+  "file": "src/app-layer/jobs/executor-registry.ts",
+  "line": 450,
+  "kind": "registry-entry",
+  "detail": "executorRegistry.register('access-review-overdue-escalation', \u2026)",
+  "survives": true,
+  "surface": "access-reviews"
+ },
+ {
+  "file": "src/app-layer/jobs/executor-registry.ts",
+  "line": 453,
+  "kind": "import",
+  "detail": "dynamic await import('./access-review-overdue-escalation') \u2192 processAccessReviewOverdueEscalation",
+  "survives": true,
+  "surface": "access-reviews"
+ },
+ {
+  "file": "src/app-layer/jobs/schedules.ts",
+  "line": 236,
+  "kind": "registry-entry",
+  "detail": "cron schedule { name: 'access-review-reminder', pattern: '0 4 * * *' }",
+  "survives": true,
+  "surface": "access-reviews"
+ },
+ {
+  "file": "src/app-layer/jobs/schedules.ts",
+  "line": 248,
+  "kind": "registry-entry",
+  "detail": "cron schedule { name: 'access-review-overdue-escalation', pattern: '15 4 * * *' }",
+  "survives": true,
+  "surface": "access-reviews"
+ },
+ {
+  "file": "src/app-layer/jobs/types.ts",
+  "line": 159,
+  "kind": "registry-entry",
+  "detail": "export interface AccessReviewReminderPayload",
+  "survives": true,
+  "surface": "access-reviews"
+ },
+ {
+  "file": "src/app-layer/jobs/types.ts",
+  "line": 175,
+  "kind": "registry-entry",
+  "detail": "export interface AccessReviewOverdueEscalationPayload",
+  "survives": true,
+  "surface": "access-reviews"
+ },
+ {
+  "file": "src/app-layer/jobs/types.ts",
+  "line": 736,
+  "kind": "registry-entry",
+  "detail": "JobPayloadMap: 'access-review-reminder': AccessReviewReminderPayload",
+  "survives": true,
+  "surface": "access-reviews"
+ },
+ {
+  "file": "src/app-layer/jobs/types.ts",
+  "line": 737,
+  "kind": "registry-entry",
+  "detail": "JobPayloadMap: 'access-review-overdue-escalation': AccessReviewOverdueEscalationPayload",
+  "survives": true,
+  "surface": "access-reviews"
+ },
+ {
+  "file": "src/app-layer/jobs/types.ts",
+  "line": 856,
+  "kind": "registry-entry",
+  "detail": "job-options map entry 'access-review-reminder' (attempts/backoff)",
+  "survives": true,
+  "surface": "access-reviews"
+ },
+ {
+  "file": "src/app-layer/jobs/types.ts",
+  "line": 862,
+  "kind": "registry-entry",
+  "detail": "job-options map entry 'access-review-overdue-escalation' (attempts/backoff)",
+  "survives": true,
+  "surface": "access-reviews"
+ },
+ {
+  "file": "src/app-layer/jobs/task-due-notification.ts",
+  "line": 17,
+  "kind": "other",
+  "detail": "docblock: \"Two scope modes (mirrors `access-review-reminder` / `policyReviewReminder`)\" \u2014 stale prose ref",
+  "survives": true,
+  "surface": "access-reviews"
+ },
+ {
+  "file": "src/app-layer/notifications/templates.ts",
+  "line": 429,
+  "kind": "registry-entry",
+  "detail": "export interface AccessReviewReminderPayload",
+  "survives": true,
+  "surface": "access-reviews"
+ },
+ {
+  "file": "src/app-layer/notifications/templates.ts",
+  "line": 440,
+  "kind": "registry-entry",
+  "detail": "export function buildAccessReviewReminderEmail",
+  "survives": true,
+  "surface": "access-reviews"
+ },
+ {
+  "file": "src/app-layer/notifications/templates.ts",
+  "line": 453,
+  "kind": "link-href",
+  "detail": "absoluteUrl(`/t/${tenantSlug}/access-reviews/${accessReviewId}`) in reminder email body",
+  "survives": true,
+  "surface": "access-reviews"
+ },
+ {
+  "file": "src/app-layer/notifications/templates.ts",
+  "line": 498,
+  "kind": "registry-entry",
+  "detail": "export interface AccessReviewOverdueEscalationPayload",
+  "survives": true,
+  "surface": "access-reviews"
+ },
+ {
+  "file": "src/app-layer/notifications/templates.ts",
+  "line": 514,
+  "kind": "registry-entry",
+  "detail": "export function buildAccessReviewOverdueEscalationEmail",
+  "survives": true,
+  "surface": "access-reviews"
+ },
+ {
+  "file": "src/app-layer/notifications/templates.ts",
+  "line": 529,
+  "kind": "link-href",
+  "detail": "absoluteUrl(`/t/${tenantSlug}/access-reviews/${accessReviewId}`) in escalation email body",
+  "survives": true,
+  "surface": "access-reviews"
+ },
+ {
+  "file": "src/app-layer/notifications/enqueue.ts",
+  "line": 23,
+  "kind": "import",
+  "detail": "import { buildAccessReviewReminderEmail } from './templates'",
+  "survives": true,
+  "surface": "access-reviews"
+ },
+ {
+  "file": "src/app-layer/notifications/enqueue.ts",
+  "line": 24,
+  "kind": "import",
+  "detail": "import { buildAccessReviewOverdueEscalationEmail } from './templates'",
+  "survives": true,
+  "surface": "access-reviews"
+ },
+ {
+  "file": "src/app-layer/notifications/enqueue.ts",
+  "line": 34,
+  "kind": "import",
+  "detail": "import type { AccessReviewReminderPayload } from './templates'",
+  "survives": true,
+  "surface": "access-reviews"
+ },
+ {
+  "file": "src/app-layer/notifications/enqueue.ts",
+  "line": 35,
+  "kind": "import",
+  "detail": "import type { AccessReviewOverdueEscalationPayload } from './templates'",
+  "survives": true,
+  "surface": "access-reviews"
+ },
+ {
+  "file": "src/app-layer/notifications/enqueue.ts",
+  "line": 53,
+  "kind": "registry-entry",
+  "detail": "EnqueueEmailInput payload union arms: AccessReviewReminderPayload | AccessReviewOverdueEscalationPayload (lines 53-54)",
+  "survives": true,
+  "surface": "access-reviews"
+ },
+ {
+  "file": "src/app-layer/notifications/enqueue.ts",
+  "line": 148,
+  "kind": "registry-entry",
+  "detail": "buildEmail() payload union arms: AccessReviewReminderPayload | AccessReviewOverdueEscalationPayload (lines 148-149)",
+  "survives": true,
+  "surface": "access-reviews"
+ },
+ {
+  "file": "src/app-layer/notifications/enqueue.ts",
+  "line": 179,
+  "kind": "registry-entry",
+  "detail": "switch case 'ACCESS_REVIEW_REMINDER' \u2192 buildAccessReviewReminderEmail",
+  "survives": true,
+  "surface": "access-reviews"
+ },
+ {
+  "file": "src/app-layer/notifications/enqueue.ts",
+  "line": 183,
+  "kind": "registry-entry",
+  "detail": "switch case 'ACCESS_REVIEW_OVERDUE_ESCALATION' \u2192 buildAccessReviewOverdueEscalationEmail",
+  "survives": true,
+  "surface": "access-reviews"
+ },
+ {
+  "file": "messages/en.json",
+  "line": 4709,
+  "kind": "i18n-namespace",
+  "detail": "top-level namespace \"accessReviews\" (66 keys)",
+  "survives": true,
+  "surface": "access-reviews"
+ },
+ {
+  "file": "messages/bg.json",
+  "line": 4709,
+  "kind": "i18n-namespace",
+  "detail": "top-level namespace \"accessReviews\" (66 keys) \u2014 must be deleted in the same diff as en.json",
+  "survives": true,
+  "surface": "access-reviews"
+ },
+ {
+  "file": "messages/en.json",
+  "line": 6806,
+  "kind": "i18n-namespace",
+  "detail": "backNav.accessReviews \u2014 key inside the SURVIVING backNav namespace (same key at messages/bg.json:6806); consumed by BackAffordance/canonical-parents",
+  "survives": true,
+  "surface": "access-reviews"
+ },
+ {
+  "file": "prisma/schema/auth.prisma",
+  "line": 185,
+  "kind": "other",
+  "detail": "Tenant back-relation `accessReviews AccessReview[]` \u2014 surviving model referencing a doomed model",
+  "survives": true,
+  "surface": "access-reviews"
+ },
+ {
+  "file": "prisma/schema/auth.prisma",
+  "line": 186,
+  "kind": "other",
+  "detail": "Tenant back-relation `accessReviewDecisions AccessReviewDecision[]`",
+  "survives": true,
+  "surface": "access-reviews"
+ },
+ {
+  "file": "prisma/schema/auth.prisma",
+  "line": 500,
+  "kind": "other",
+  "detail": "TenantMembership back-relation `accessReviewDecisions AccessReviewDecision[] @relation(\"AccessReviewDecisionMembership\")`",
+  "survives": true,
+  "surface": "access-reviews"
+ },
+ {
+  "file": "prisma/schema/auth.prisma",
+  "line": 743,
+  "kind": "other",
+  "detail": "User back-relations to AccessReview/AccessReviewDecision (lines 743-749: Reviewer/Creator/Closer/Deleter/Subject/Decider/Executor)",
+  "survives": true,
+  "surface": "access-reviews"
+ },
+ {
+  "file": "prisma/schema/files.prisma",
+  "line": 38,
+  "kind": "other",
+  "detail": "FileRecord back-relation `accessReviews AccessReview[] @relation(\"AccessReviewEvidence\")`",
+  "survives": true,
+  "surface": "access-reviews"
+ },
+ {
+  "file": "prisma/schema/enums.prisma",
+  "line": 576,
+  "kind": "registry-entry",
+  "detail": "EmailNotificationType value ACCESS_REVIEW_REMINDER",
+  "survives": true,
+  "surface": "access-reviews"
+ },
+ {
+  "file": "prisma/schema/enums.prisma",
+  "line": 583,
+  "kind": "registry-entry",
+  "detail": "EmailNotificationType value ACCESS_REVIEW_OVERDUE_ESCALATION",
+  "survives": true,
+  "surface": "access-reviews"
+ },
+ {
+  "file": "tests/guardrails/audit-s7-access-reviews.test.ts",
+  "line": 1,
+  "kind": "other",
+  "detail": "ENTIRE guardrail file is dedicated to the access-review surface (usecase/schemas/repo/job/executor-registry/types assertions) \u2014 delete wholesale",
+  "survives": true,
+  "surface": "access-reviews"
+ },
+ {
+  "file": "tests/guardrails/module-gate-coverage.test.ts",
+  "line": 84,
+  "kind": "route-permission",
+  "detail": "module-gate entry file: 'src/app/api/t/[tenantSlug]/access-reviews/route.ts'",
+  "survives": true,
+  "surface": "access-reviews"
+ },
+ {
+  "file": "tests/guardrails/schema-index-coverage.test.ts",
+  "line": 160,
+  "kind": "registry-entry",
+  "detail": "FK-exemption entries AccessReview.createdByUserId/closedByUserId/deletedByUserId/evidenceFileRecordId + AccessReviewDecision.decidedByUserId/executedByUserId (lines 160-165)",
+  "survives": true,
+  "surface": "access-reviews"
+ },
+ {
+  "file": "tests/guardrails/schema-index-coverage.test.ts",
+  "line": 469,
+  "kind": "registry-entry",
+  "detail": "LIST_QUERY_INDEXES entries for AccessReview (469) and AccessReviewDecision (471)",
+  "survives": true,
+  "surface": "access-reviews"
+ },
+ {
+  "file": "tests/guardrails/sanitize-rich-text-coverage.test.ts",
+  "line": 90,
+  "kind": "registry-entry",
+  "detail": "classification entries AccessReview (90) + AccessReviewDecision (91) \u2192 usecases: ['src/app-layer/usecases/access-review.ts']",
+  "survives": true,
+  "surface": "access-reviews"
+ },
+ {
+  "file": "tests/guardrails/table-platform-drift.test.ts",
+  "line": 29,
+  "kind": "registry-entry",
+  "detail": "exemption key 'AccessReviewDetailClient.tsx' (baseline comment at line 281)",
+  "survives": true,
+  "surface": "access-reviews"
+ },
+ {
+  "file": "tests/guardrails/design-system-drift.test.ts",
+  "line": 213,
+  "kind": "other",
+  "detail": "baseline comment '98 (+4): Epic G-4 added the access-reviews surface' \u2014 count must be lowered by 4",
+  "survives": true,
+  "surface": "access-reviews"
+ },
+ {
+  "file": "tests/guards/epic52-datatable-ratchet.test.ts",
+  "line": 71,
+  "kind": "other",
+  "detail": "RAW_TABLE_BASELINE = 13 comment credits access-reviews/[reviewId]/AccessReviewDetailClient(1) \u2014 lower the baseline",
+  "survives": true,
+  "surface": "access-reviews"
+ },
+ {
+  "file": "tests/guards/columns-dropdown-coverage.test.ts",
+  "line": 86,
+  "kind": "registry-entry",
+  "detail": "exemption keys 'access-reviews/[reviewId]/AccessReviewDetailClient.tsx' (86) and 'access-reviews/AccessReviewsClient.tsx' (114)",
+  "survives": true,
+  "surface": "access-reviews"
+ },
+ {
+  "file": "tests/guards/entity-detail-shell-coverage.test.ts",
+  "line": 54,
+  "kind": "registry-entry",
+  "detail": "registry row { page: '\u2026/access-reviews/[reviewId]/AccessReviewDetailClient.tsx', entity: 'Access review' } (plus prose refs at 46, 49, 144)",
+  "survives": true,
+  "surface": "access-reviews"
+ },
+ {
+  "file": "tests/guards/pageheader-adoption.test.ts",
+  "line": 150,
+  "kind": "registry-entry",
+  "detail": "pending-migration entry file: '\u2026/access-reviews/AccessReviewsClient.tsx'",
+  "survives": true,
+  "surface": "access-reviews"
+ },
+ {
+  "file": "tests/guards/entity-detail-layout-coverage.test.ts",
+  "line": 90,
+  "kind": "registry-entry",
+  "detail": "entry file '\u2026/access-reviews/[reviewId]/page.tsx' + compositionFile '\u2026/AccessReviewDetailClient.tsx' (92)",
+  "survives": true,
+  "surface": "access-reviews"
+ },
+ {
+  "file": "tests/guards/filter-toolbar-coverage.test.ts",
+  "line": 127,
+  "kind": "registry-entry",
+  "detail": "exemption keys '\u2026/access-reviews/[reviewId]/AccessReviewDetailClient.tsx' (127) and '\u2026/access-reviews/AccessReviewsClient.tsx' (161)",
+  "survives": true,
+  "surface": "access-reviews"
+ },
+ {
+  "file": "tests/guards/roadmap-10-completion.test.ts",
+  "line": 60,
+  "kind": "registry-entry",
+  "detail": "checklist row 'access-reviews detail-page roster uses DataTable' \u2192 ratchet path AccessReviewDetailClient.tsx (61)",
+  "survives": true,
+  "surface": "access-reviews"
+ },
+ {
+  "file": "tests/guards/metadatabar-detail-coverage.test.ts",
+  "line": 95,
+  "kind": "registry-entry",
+  "detail": "entry file '\u2026/access-reviews/[reviewId]/AccessReviewDetailClient.tsx'",
+  "survives": true,
+  "surface": "access-reviews"
+ },
+ {
+  "file": "tests/guards/datatable-mobile-fallback.test.ts",
+  "line": 131,
+  "kind": "registry-entry",
+  "detail": "exemption key 't/[tenantSlug]/(app)/access-reviews/[reviewId]/AccessReviewDetailClient.tsx'",
+  "survives": true,
+  "surface": "access-reviews"
+ },
+ {
+  "file": "tests/guards/epic55-native-select-ratchet.test.ts",
+  "line": 155,
+  "kind": "registry-entry",
+  "detail": "allowlist entry 'access-reviews/[reviewId]/AccessReviewDetailClient.tsx' (docblock ref at 31)",
+  "survives": true,
+  "surface": "access-reviews"
+ },
+ {
+  "file": "tests/guards/list-page-shell-coverage.test.ts",
+  "line": 117,
+  "kind": "registry-entry",
+  "detail": "EXEMPTIONS key 'access-reviews/[reviewId]/AccessReviewDetailClient.tsx'",
+  "survives": true,
+  "surface": "access-reviews"
+ },
+ {
+  "file": "tests/guards/empty-state-tone.test.ts",
+  "line": 176,
+  "kind": "other",
+  "detail": "comment 'access-reviews/assets batch' in an EmptyState baseline note",
+  "survives": true,
+  "surface": "access-reviews"
+ },
+ {
+  "file": "tests/guards/web-platform-identifiers.test.ts",
+  "line": 12,
+  "kind": "other",
+  "detail": "docblock names 'access-review-evidence responses' as a Cache-Control call site \u2014 prose only",
+  "survives": true,
+  "surface": "access-reviews"
+ },
+ {
+  "file": "src/app-layer/repositories/EvidenceBundleRepository.ts",
+  "line": 12,
+  "kind": "other",
+  "detail": "listByIssue/create/freeze/addItem \u2014 throw deprecatedResource; orphaned once usecases/issue.ts dies",
+  "survives": true,
+  "surface": "issues"
+ },
+ {
+  "file": "src/app-layer/usecases/audit-readiness/packs.ts",
+  "line": 194,
+  "kind": "prisma-delegate",
+  "detail": "tdb.task.findFirst in createIssueSnapshot(issueId) \u2014 reconstructs an 'Issue' snapshot from the Task table",
+  "survives": true,
+  "surface": "issues"
+ },
+ {
+  "file": "src/app-layer/usecases/audit-readiness/packs.ts",
+  "line": 334,
+  "kind": "prisma-delegate",
+  "detail": "tdb.task.findMany \u2014 'Open issues' pack selection",
+  "survives": true,
+  "surface": "issues"
+ },
+ {
+  "file": "src/app-layer/usecases/audit-readiness/packs.ts",
+  "line": 400,
+  "kind": "prisma-delegate",
+  "detail": "tdb.task.findMany \u2014 second 'Issues' pack selection",
+  "survives": true,
+  "surface": "issues"
+ },
+ {
+  "file": "src/components/ui/entity-picker.tsx",
+  "line": 156,
+  "kind": "fetch-url",
+  "detail": "url = `${base}/issues${qs}` \u2014 live fetch to the doomed API from a surviving shared primitive",
+  "survives": true,
+  "surface": "issues"
+ },
+ {
+  "file": "src/components/ui/entity-picker.tsx",
+  "line": 57,
+  "kind": "registry-entry",
+  "detail": "EntityPickerKind union member 'ISSUE'",
+  "survives": true,
+  "surface": "issues"
+ },
+ {
+  "file": "src/components/ui/entity-picker.tsx",
+  "line": 99,
+  "kind": "registry-entry",
+  "detail": "labelFor switch case 'ISSUE' \u2192 r.title",
+  "survives": true,
+  "surface": "issues"
+ },
+ {
+  "file": "src/lib/nav/canonical-parents.ts",
+  "line": 84,
+  "kind": "nav-entry",
+  "detail": "'/issues/[issueId]': { href: '/issues', label: 'issues' }",
+  "survives": true,
+  "surface": "issues"
+ },
+ {
+  "file": "src/lib/nav/canonical-parents.ts",
+  "line": 85,
+  "kind": "nav-entry",
+  "detail": "'/issues/dashboard': { href: '/issues', label: 'issues' }",
+  "survives": true,
+  "surface": "issues"
+ },
+ {
+  "file": "src/lib/nav/canonical-parents.ts",
+  "line": 86,
+  "kind": "nav-entry",
+  "detail": "'/issues/new': { href: '/issues', label: 'issues' }",
+  "survives": true,
+  "surface": "issues"
+ },
+ {
+  "file": "src/lib/nav/page-segregation.ts",
+  "line": 30,
+  "kind": "nav-entry",
+  "detail": "BACK_AFFORDANCE_EXEMPT_SUBPAGES: '/issues/[issueId]'",
+  "survives": true,
+  "surface": "issues"
+ },
+ {
+  "file": "src/lib/nav/page-segregation.ts",
+  "line": 31,
+  "kind": "nav-entry",
+  "detail": "BACK_AFFORDANCE_EXEMPT_SUBPAGES: '/issues/dashboard'",
+  "survives": true,
+  "surface": "issues"
+ },
+ {
+  "file": "src/lib/nav/page-segregation.ts",
+  "line": 32,
+  "kind": "nav-entry",
+  "detail": "BACK_AFFORDANCE_EXEMPT_SUBPAGES: '/issues/new'",
+  "survives": true,
+  "surface": "issues"
+ },
+ {
+  "file": "src/lib/nav/page-segregation.ts",
+  "line": 72,
+  "kind": "nav-entry",
+  "detail": "TOP_LEVEL sidebar destinations list: '/issues'",
+  "survives": true,
+  "surface": "issues"
+ },
+ {
+  "file": "src/lib/nav/page-segregation.ts",
+  "line": 137,
+  "kind": "nav-entry",
+  "detail": "SUBPAGES list: '/issues/[issueId]'",
+  "survives": true,
+  "surface": "issues"
+ },
+ {
+  "file": "src/lib/nav/page-segregation.ts",
+  "line": 138,
+  "kind": "nav-entry",
+  "detail": "SUBPAGES list: '/issues/dashboard'",
+  "survives": true,
+  "surface": "issues"
+ },
+ {
+  "file": "src/lib/nav/page-segregation.ts",
+  "line": 139,
+  "kind": "nav-entry",
+  "detail": "SUBPAGES list: '/issues/new'",
+  "survives": true,
+  "surface": "issues"
+ },
+ {
+  "file": "src/components/nav/BackAffordance.tsx",
+  "line": 52,
+  "kind": "nav-entry",
+  "detail": "segment\u2192i18n-label map: '/issues': 'issues'",
+  "survives": true,
+  "surface": "issues"
+ },
+ {
+  "file": "src/lib/swr-keys.ts",
+  "line": 149,
+  "kind": "registry-entry",
+  "detail": "issues: makeResource('issues') \u2014 DEAD entry, zero consumers in src/ or tests/",
+  "survives": true,
+  "surface": "issues"
+ },
+ {
+  "file": "src/app-layer/automation/events.ts",
+  "line": 48,
+  "kind": "registry-entry",
+  "detail": "AUTOMATION_EVENTS.ISSUE_CREATED",
+  "survives": true,
+  "surface": "issues"
+ },
+ {
+  "file": "src/app-layer/automation/events.ts",
+  "line": 49,
+  "kind": "registry-entry",
+  "detail": "AUTOMATION_EVENTS.ISSUE_STATUS_CHANGED",
+  "survives": true,
+  "surface": "issues"
+ },
+ {
+  "file": "src/app-layer/automation/event-contracts.ts",
+  "line": 134,
+  "kind": "registry-entry",
+  "detail": "export interface IssueCreatedData",
+  "survives": true,
+  "surface": "issues"
+ },
+ {
+  "file": "src/app-layer/automation/event-contracts.ts",
+  "line": 142,
+  "kind": "registry-entry",
+  "detail": "export interface IssueStatusChangedData",
+  "survives": true,
+  "surface": "issues"
+ },
+ {
+  "file": "src/app-layer/automation/event-contracts.ts",
+  "line": 222,
+  "kind": "registry-entry",
+  "detail": "typed union arm { event: 'ISSUE_CREATED'; data: IssueCreatedData }",
+  "survives": true,
+  "surface": "issues"
+ },
+ {
+  "file": "src/app-layer/automation/event-contracts.ts",
+  "line": 223,
+  "kind": "registry-entry",
+  "detail": "typed union arm { event: 'ISSUE_STATUS_CHANGED'; data: IssueStatusChangedData }",
+  "survives": true,
+  "surface": "issues"
+ },
+ {
+  "file": "src/lib/automation/event-labels.ts",
+  "line": 208,
+  "kind": "registry-entry",
+  "detail": "EVENT_LABELS[ISSUE_CREATED] \u2014 label 'Issue created', domain 'Issue', severity filterField",
+  "survives": true,
+  "surface": "issues"
+ },
+ {
+  "file": "src/lib/automation/event-labels.ts",
+  "line": 217,
+  "kind": "registry-entry",
+  "detail": "EVENT_LABELS[ISSUE_STATUS_CHANGED] \u2014 label 'Issue status changed', domain 'Issue'",
+  "survives": true,
+  "surface": "issues"
+ },
+ {
+  "file": "src/lib/automation/event-labels.ts",
+  "line": 27,
+  "kind": "registry-entry",
+  "detail": "domain union type includes 'Issue'",
+  "survives": true,
+  "surface": "issues"
+ },
+ {
+  "file": "src/app-layer/automation/types.ts",
+  "line": 44,
+  "kind": "registry-entry",
+  "detail": "UpdateStatusActionConfig.entityType: 'Risk' | 'Task' | 'Practice' | 'Issue'",
+  "survives": true,
+  "surface": "issues"
+ },
+ {
+  "file": "src/app-layer/schemas/automation.schemas.ts",
+  "line": 35,
+  "kind": "registry-entry",
+  "detail": "UpdateStatusConfig entityType: z.enum(['Risk','Task','Practice','Issue'])",
+  "survives": true,
+  "surface": "issues"
+ },
+ {
+  "file": "src/app-layer/automation/action-executor.ts",
+  "line": 223,
+  "kind": "registry-entry",
+  "detail": "default branch rejecting entityType 'Issue' ('issues are Tasks via WorkItemType')",
+  "survives": true,
+  "surface": "issues"
+ },
+ {
+  "file": "src/data/automation-templates/index.ts",
+  "line": 16,
+  "kind": "registry-entry",
+  "detail": "TemplateTag union includes 'issue'",
+  "survives": true,
+  "surface": "issues"
+ },
+ {
+  "file": "src/data/automation-templates/index.ts",
+  "line": 55,
+  "kind": "registry-entry",
+  "detail": "tpl_critical_issue_ciso \u2014 trigger: 'ISSUE_CREATED', tags ['issue','notify']",
+  "survives": true,
+  "surface": "issues"
+ },
+ {
+  "file": "src/data/automation-templates/index.ts",
+  "line": 75,
+  "kind": "registry-entry",
+  "detail": "tpl_slack_finding_webhook \u2014 trigger: 'ISSUE_CREATED', tags ['issue','webhook']",
+  "survives": true,
+  "surface": "issues"
+ },
+ {
+  "file": "src/components/processes/TemplateLibraryModal.tsx",
+  "line": 30,
+  "kind": "registry-entry",
+  "detail": "ALL_TAGS includes 'issue'",
+  "survives": true,
+  "surface": "issues"
+ },
+ {
+  "file": "src/app-layer/usecases/automation-suggestions.ts",
+  "line": 61,
+  "kind": "registry-entry",
+  "detail": "suggestion 'issue-created-task' with triggerEvent: 'ISSUE_CREATED'",
+  "survives": true,
+  "surface": "issues"
+ },
+ {
+  "file": "src/lib/schemas/index.ts",
+  "line": 451,
+  "kind": "registry-entry",
+  "detail": "'Issue Compatibility Aliases' block: CreateIssueSchema/UpdateIssueSchema/SetIssueStatusSchema/AssignIssueSchema/AddIssueLinkSchema/AddIssueCommentSchema (lines 453-458) \u2014 zero importers",
+  "survives": true,
+  "surface": "issues"
+ },
+ {
+  "file": "src/lib/schemas/index.ts",
+  "line": 459,
+  "kind": "registry-entry",
+  "detail": "BulkAssignSchema/BulkStatusSchema/BulkDueDateSchema (459-461) \u2014 imported ONLY by the three issues/bulk routes",
+  "survives": true,
+  "surface": "issues"
+ },
+ {
+  "file": "src/lib/schemas/index.ts",
+  "line": 492,
+  "kind": "registry-entry",
+  "detail": "CreateBundleSchema + AddBundleItemSchema (492, 496) \u2014 imported ONLY by the issues bundle routes (vendors declares its own local CreateBundleSchema)",
+  "survives": true,
+  "surface": "issues"
+ },
+ {
+  "file": "src/lib/schemas/index.ts",
+  "line": 580,
+  "kind": "registry-entry",
+  "detail": "AddVendorLinkSchema entityType: z.enum(['ASSET','ISSUE','PRACTICE'])",
+  "survives": true,
+  "surface": "issues"
+ },
+ {
+  "file": "messages/en.json",
+  "line": 4307,
+  "kind": "i18n-namespace",
+  "detail": "top-level namespace \"issues\" (redirecting, loadingLabel)",
+  "survives": true,
+  "surface": "issues"
+ },
+ {
+  "file": "messages/bg.json",
+  "line": 4307,
+  "kind": "i18n-namespace",
+  "detail": "top-level namespace \"issues\" (redirecting, loadingLabel)",
+  "survives": true,
+  "surface": "issues"
+ },
+ {
+  "file": "messages/en.json",
+  "line": 122,
+  "kind": "i18n-namespace",
+  "detail": "nav.issues = \"Issues\" \u2014 consumed by BackAffordance/canonical-parents label lookup",
+  "survives": true,
+  "surface": "issues"
+ },
+ {
+  "file": "messages/bg.json",
+  "line": 122,
+  "kind": "i18n-namespace",
+  "detail": "nav.issues = \"\u041f\u0440\u043e\u0431\u043b\u0435\u043c\u0438\"",
+  "survives": true,
+  "surface": "issues"
+ },
+ {
+  "file": "messages/en.json",
+  "line": 6825,
+  "kind": "i18n-namespace",
+  "detail": "backNav.issues = \"Issues\"",
+  "survives": true,
+  "surface": "issues"
+ },
+ {
+  "file": "messages/bg.json",
+  "line": 6825,
+  "kind": "i18n-namespace",
+  "detail": "backNav.issues = \"\u041f\u0440\u043e\u0431\u043b\u0435\u043c\u0438\"",
+  "survives": true,
+  "surface": "issues"
+ },
+ {
+  "file": "src/app-layer/usecases/audit-hardening.ts",
+  "line": 220,
+  "kind": "other",
+  "detail": "existingIssueIds from items.entityType === 'ISSUE'",
+  "survives": true,
+  "surface": "issues"
+ },
+ {
+  "file": "src/app-layer/usecases/audit-hardening.ts",
+  "line": 228,
+  "kind": "other",
+  "detail": "clone item with entityType: 'ISSUE'",
+  "survives": true,
+  "surface": "issues"
+ },
+ {
+  "file": "src/app-layer/usecases/audit-readiness/packs.ts",
+  "line": 231,
+  "kind": "other",
+  "detail": "case 'ISSUE': snapshot = await createIssueSnapshot(...)",
+  "survives": true,
+  "surface": "issues"
+ },
+ {
+  "file": "src/app-layer/usecases/audit-readiness-scoring.ts",
+  "line": 317,
+  "kind": "other",
+  "detail": "issuesScore * weights.issues (GENERIC_WEIGHTS 'issues' dimension; also 326, 460, 471, 602, 612)",
+  "survives": true,
+  "surface": "issues"
+ },
+ {
+  "file": "tests/guardrails/audit-s8-task-remediation.test.ts",
+  "line": 88,
+  "kind": "other",
+  "detail": "read('src/app-layer/usecases/issue.ts') \u2014 4 reads (88, 105, 132, 177) asserting setIssueStatus/bulkSetStatus/getIssue source text",
+  "survives": true,
+  "surface": "issues"
+ },
+ {
+  "file": "tests/guardrails/sanitize-rich-text-coverage.test.ts",
+  "line": 60,
+  "kind": "registry-entry",
+  "detail": "usecases: ['src/app-layer/usecases/task.ts', 'src/app-layer/usecases/issue.ts']",
+  "survives": true,
+  "surface": "issues"
+ },
+ {
+  "file": "tests/guardrails/loading-states.test.ts",
+  "line": 86,
+  "kind": "registry-entry",
+  "detail": "REQUIRED_ROUTES includes 'issues' \u2014 requires (app)/issues/loading.tsx to exist",
+  "survives": true,
+  "surface": "issues"
+ },
+ {
+  "file": "tests/guardrails/pr-d-entity-id-picker.test.ts",
+  "line": 48,
+  "kind": "registry-entry",
+  "detail": "asserts entity-picker source contains the 'ISSUE' kind literal",
+  "survives": true,
+  "surface": "issues"
+ },
+ {
+  "file": "tests/guards/dashboard-anatomy.test.ts",
+  "line": 52,
+  "kind": "registry-entry",
+  "detail": "exemption: 'src/app/t/[tenantSlug]/(app)/issues/dashboard/page.tsx'",
+  "survives": true,
+  "surface": "issues"
+ },
+ {
+  "file": "tests/guards/state-coverage.test.ts",
+  "line": 50,
+  "kind": "registry-entry",
+  "detail": "exemption: 'src/app/t/[tenantSlug]/(app)/issues/dashboard/page.tsx'",
+  "survives": true,
+  "surface": "issues"
+ },
+ {
+  "file": "tests/guards/entity-detail-shell-coverage.test.ts",
+  "line": 160,
+  "kind": "registry-entry",
+  "detail": "exemption: 'src/app/t/[tenantSlug]/(app)/issues/[issueId]/page.tsx'",
+  "survives": true,
+  "surface": "issues"
+ },
+ {
+  "file": "tests/guardrails/audit-s5-readiness-scoring.test.ts",
+  "line": 77,
+  "kind": "other",
+  "detail": "regex requires GENERIC_WEIGHTS to contain coverage/evidence/issues",
+  "survives": true,
+  "surface": "issues"
+ },
+ {
+  "file": "tests/guardrails/audit-s7-iso-nis2-weights.test.ts",
+  "line": 84,
+  "kind": "other",
+  "detail": "\"issues\" weight key asserted in 4 profiles (84, 99, 121, 135)",
+  "survives": true,
+  "surface": "issues"
+ }
+]

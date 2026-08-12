@@ -1,0 +1,643 @@
+FAIL node tests/guards/filter-toolbar-coverage.test.ts
+  ● FilterToolbar coverage › EXEMPTIONS entries point at real files
+FAIL node tests/guards/no-lucide.test.ts
+  ● Iconography unification — no new lucide imports (Roadmap-2 PR-8) › no allowlist entry is stale (every entry actually imports lucide)
+FAIL node tests/guardrails/loading-states.test.ts
+  ● Loading-state guardrails › Key routes have loading.tsx › practices route has loading.tsx
+  ● Loading-state guardrails › Key routes have loading.tsx › policies route has loading.tsx
+  ● Loading-state guardrails › Key routes have loading.tsx › audits route has loading.tsx
+  ● Loading-state guardrails › Key routes have loading.tsx › vendors route has loading.tsx
+FAIL node tests/guards/legacy-badge-eradication.test.ts
+  ● StatusBadge adoption › app pages + components use <StatusBadge> extensively
+FAIL node tests/guards/epic55-native-select-ratchet.test.ts
+  ● Epic 55 — migrated surfaces must not regress to native <select> › app/t/[tenantSlug]/(app)/audits/cycles/page.tsx contains no native <select> (Epic 55 migrated)
+  ● Epic 55 — migrated surfaces must not regress to native <select> › app/t/[tenantSlug]/(app)/practices/NewPracticeModal.tsx contains no native <select> (Epic 55 migrated)
+  ● Epic 55 — migrated surfaces must not regress to native <select> › app/t/[tenantSlug]/(app)/practices/PracticeDetailSheet.tsx contains no native <select> (Epic 55 migrated)
+  ● Epic 55 — migrated surfaces must not regress to native <select> › app/t/[tenantSlug]/(app)/vendors/new/page.tsx contains no native <select> (Epic 55 migrated)
+  ● Epic 55 — migrated surfaces must not regress to native <select> › app/t/[tenantSlug]/(app)/findings/FindingsClient.tsx contains no native <select> (Epic 55 migrated)
+  ● Epic 55 — migrated surfaces must not regress to native <select> › app/t/[tenantSlug]/(app)/clauses/ClausesBrowser.tsx contains no native <select> (Epic 55 migrated)
+  ● Epic 55 — migrated surfaces must not regress to native <select> › app/t/[tenantSlug]/(app)/policies/new/page.tsx contains no native <select> (Epic 55 migrated)
+  ● Epic 55 — migrated surfaces must not regress to native <select> › app/t/[tenantSlug]/(app)/practices/[practiceId]/page.tsx contains no native <select> (Epic 55 migrated)
+  ● Epic 55 — migrated surfaces must not regress to native <select> › app/t/[tenantSlug]/(app)/vendors/[vendorId]/page.tsx contains no native <select> (Epic 55 migrated)
+  ● Epic 55 — migrated surfaces must not regress to native <select> › app/t/[tenantSlug]/(app)/vendors/[vendorId]/assessment/[assessmentId]/page.tsx contains no native <select> (Epic 55 migrated)
+  ● Epic 55 — migrated surfaces must not regress to native <select> › app/t/[tenantSlug]/(app)/policies/templates/page.tsx contains no native <select> (Epic 55 migrated)
+  ● Epic 55 — migrated surfaces must not regress to native <select> › app/t/[tenantSlug]/(app)/audits/AuditsClient.tsx contains no native <select> (Epic 55 migrated)
+FAIL node tests/guardrails/table-platform-drift.test.ts
+  ● Import hygiene — no legacy table imports in migrated pages › practices/PracticesClient.tsx does not import SkeletonTableRow
+  ● Import hygiene — no legacy table imports in migrated pages › policies/PoliciesClient.tsx does not import SkeletonTableRow
+  ● Import hygiene — no legacy table imports in migrated pages › vendors/VendorsClient.tsx does not import SkeletonTableRow
+  ● Import hygiene — no legacy table imports in migrated pages › findings/FindingsClient.tsx does not import SkeletonTableRow
+  ● Import hygiene — no legacy table imports in migrated pages › practices/PracticesClient.tsx does not import SkeletonDataTable
+  ● Import hygiene — no legacy table imports in migrated pages › policies/PoliciesClient.tsx does not import SkeletonDataTable
+  ● Import hygiene — no legacy table imports in migrated pages › vendors/VendorsClient.tsx does not import SkeletonDataTable
+  ● Import hygiene — no legacy table imports in migrated pages › findings/FindingsClient.tsx does not import SkeletonDataTable
+  ● Import hygiene — no legacy table imports in migrated pages › practices/PracticesClient.tsx imports from barrel, not deep module paths
+  ● Import hygiene — no legacy table imports in migrated pages › policies/PoliciesClient.tsx imports from barrel, not deep module paths
+  ● Import hygiene — no legacy table imports in migrated pages › vendors/VendorsClient.tsx imports from barrel, not deep module paths
+  ● Import hygiene — no legacy table imports in migrated pages › findings/FindingsClient.tsx imports from barrel, not deep module paths
+  ● Structural compliance — migrated pages use DataTable › practices/PracticesClient.tsx uses <DataTable>, not raw <table>
+  ● Structural compliance — migrated pages use DataTable › policies/PoliciesClient.tsx uses <DataTable>, not raw <table>
+  ● Structural compliance — migrated pages use DataTable › vendors/VendorsClient.tsx uses <DataTable>, not raw <table>
+  ● Structural compliance — migrated pages use DataTable › findings/FindingsClient.tsx uses <DataTable>, not raw <table>
+  ● Structural compliance — migrated pages use DataTable › practices/PracticesClient.tsx exists and is not accidentally deleted
+  ● Structural compliance — migrated pages use DataTable › policies/PoliciesClient.tsx exists and is not accidentally deleted
+  ● Structural compliance — migrated pages use DataTable › vendors/VendorsClient.tsx exists and is not accidentally deleted
+  ● Structural compliance — migrated pages use DataTable › findings/FindingsClient.tsx exists and is not accidentally deleted
+  ● Convention compliance — column patterns › practices/PracticesClient.tsx uses createColumns<T> for type-safe column definitions
+  ● Convention compliance — column patterns › policies/PoliciesClient.tsx uses createColumns<T> for type-safe column definitions
+  ● Convention compliance — column patterns › vendors/VendorsClient.tsx uses createColumns<T> for type-safe column definitions
+  ● Convention compliance — column patterns › findings/FindingsClient.tsx uses createColumns<T> for type-safe column definitions
+  ● Convention compliance — column patterns › practices/PracticesClient.tsx wraps columns in useMemo (not inline)
+  ● Convention compliance — column patterns › policies/PoliciesClient.tsx wraps columns in useMemo (not inline)
+  ● Convention compliance — column patterns › vendors/VendorsClient.tsx wraps columns in useMemo (not inline)
+  ● Convention compliance — column patterns › findings/FindingsClient.tsx wraps columns in useMemo (not inline)
+  ● Convention compliance — column patterns › practices/PracticesClient.tsx has a data-testid for E2E targeting
+  ● Convention compliance — column patterns › policies/PoliciesClient.tsx has a data-testid for E2E targeting
+  ● Convention compliance — column patterns › vendors/VendorsClient.tsx has a data-testid for E2E targeting
+  ● Convention compliance — column patterns › findings/FindingsClient.tsx has a data-testid for E2E targeting
+  ● Excluded page registry › AuditsClient.tsx exists and has a documented reason: "Master/detail panel UX, not a list page"
+  ● Migration progress › at least 8 pages are fully migrated
+FAIL node tests/guards/button-label-centering.test.ts
+  ● Button label centering › 3. Practice-status trigger hugs content (no fixed-width void) › does not pin the status combobox to a fixed width
+FAIL node tests/guards/datatable-mobile-fallback.test.ts
+  ● DataTable mobile-fallback coverage ratchet › no exempt entry is stale (file exists and still renders a DataTable)
+FAIL node tests/guardrails/no-client-side-filtering.test.ts
+  ● Guardrail: No client-side filtering in list pages › PracticesClient should not .filter() server data on client
+  ● Guardrail: No client-side filtering in list pages › PoliciesClient should not .filter() server data on client
+  ● Guardrail: No client-side filtering in list pages › VendorsClient should not .filter() server data on client
+  ● Guardrail: No stacked/legacy filter UI › PracticesClient should use FilterToolbar, not stacked selects
+  ● Guardrail: No stacked/legacy filter UI › PoliciesClient should use FilterToolbar, not stacked selects
+  ● Guardrail: No stacked/legacy filter UI › VendorsClient should use FilterToolbar, not stacked selects
+  ● Guardrail: All list pages import FilterToolbar › PracticesClient should import FilterToolbar (or EntityListPage)
+  ● Guardrail: All list pages import FilterToolbar › PoliciesClient should import FilterToolbar (or EntityListPage)
+  ● Guardrail: All list pages import FilterToolbar › VendorsClient should import FilterToolbar (or EntityListPage)
+FAIL node tests/guardrails/epic-g3-end-to-end.test.ts
+  ● Epic G-3 — end-to-end readiness › public vendor-assessment routes exist
+  ● Epic G-3 — end-to-end readiness › internal admin routes exist for templates + reviews
+FAIL node tests/guards/entity-detail-shell-coverage.test.ts
+  ● EntityDetailLayout adoption — PR-4 › Practice detail (src/app/t/[tenantSlug]/(app)/practices/[practiceId]/page.tsx) › file exists at the documented path
+  ● EntityDetailLayout adoption — PR-4 › Practice detail (src/app/t/[tenantSlug]/(app)/practices/[practiceId]/page.tsx) › imports EntityDetailLayout from the canonical layout module
+  ● EntityDetailLayout adoption — PR-4 › Practice detail (src/app/t/[tenantSlug]/(app)/practices/[practiceId]/page.tsx) › renders <EntityDetailLayout> at least once
+  ● EntityDetailLayout adoption — PR-4 › Audit cycle detail (src/app/t/[tenantSlug]/(app)/audits/cycles/[cycleId]/page.tsx) › file exists at the documented path
+  ● EntityDetailLayout adoption — PR-4 › Audit cycle detail (src/app/t/[tenantSlug]/(app)/audits/cycles/[cycleId]/page.tsx) › imports EntityDetailLayout from the canonical layout module
+  ● EntityDetailLayout adoption — PR-4 › Audit cycle detail (src/app/t/[tenantSlug]/(app)/audits/cycles/[cycleId]/page.tsx) › renders <EntityDetailLayout> at least once
+  ● EntityDetailLayout adoption — PR-4 › Audit pack detail (src/app/t/[tenantSlug]/(app)/audits/packs/[packId]/page.tsx) › file exists at the documented path
+  ● EntityDetailLayout adoption — PR-4 › Audit pack detail (src/app/t/[tenantSlug]/(app)/audits/packs/[packId]/page.tsx) › imports EntityDetailLayout from the canonical layout module
+  ● EntityDetailLayout adoption — PR-4 › Audit pack detail (src/app/t/[tenantSlug]/(app)/audits/packs/[packId]/page.tsx) › renders <EntityDetailLayout> at least once
+  ● EntityDetailLayout adoption — PR-4 › Vendor detail (src/app/t/[tenantSlug]/(app)/vendors/[vendorId]/page.tsx) › file exists at the documented path
+  ● EntityDetailLayout adoption — PR-4 › Vendor detail (src/app/t/[tenantSlug]/(app)/vendors/[vendorId]/page.tsx) › imports EntityDetailLayout from the canonical layout module
+  ● EntityDetailLayout adoption — PR-4 › Vendor detail (src/app/t/[tenantSlug]/(app)/vendors/[vendorId]/page.tsx) › renders <EntityDetailLayout> at least once
+  ● EntityDetailLayout adoption — PR-4 › Policy detail (src/app/t/[tenantSlug]/(app)/policies/[policyId]/page.tsx) › file exists at the documented path
+  ● EntityDetailLayout adoption — PR-4 › Policy detail (src/app/t/[tenantSlug]/(app)/policies/[policyId]/page.tsx) › imports EntityDetailLayout from the canonical layout module
+  ● EntityDetailLayout adoption — PR-4 › Policy detail (src/app/t/[tenantSlug]/(app)/policies/[policyId]/page.tsx) › renders <EntityDetailLayout> at least once
+FAIL node tests/guardrails/api-permission-coverage.test.ts
+  ● Console
+  ● Epic C.1 — API permission coverage guardrail › every rule path-regex matches at least one real route on disk
+FAIL node tests/guards/sharepoint-sp4.test.ts
+  ● SP-4 SharePoint policy sync › the policy detail page mounts the SharePoint link section
+FAIL node tests/guards/inline-subtitle-budget.test.ts
+  ● inline subtitle pattern budget › budget tracks reality (forbids slack > 3 sites)
+FAIL node tests/guards/ux-foundation-ratchets.test.ts
+  ● Epic 64 — react-hook-form reference form › uses zodResolver + useForm + Controller in NewPracticeModal
+  ● Epic 64 — react-hook-form reference form › keeps every stable id E2E selectors rely on
+FAIL node tests/guards/list-page-perf-ratchet.test.ts
+  ● PR-7 — list-page perf anti-bloat ratchet › 1. server page caps the SSR fetch › practices/page.tsx defines SSR_PAGE_LIMIT and forwards { take: SSR_PAGE_LIMIT }
+  ● PR-7 — list-page perf anti-bloat ratchet › 1. server page caps the SSR fetch › audits/page.tsx defines SSR_PAGE_LIMIT and forwards { take: SSR_PAGE_LIMIT }
+  ● PR-7 — list-page perf anti-bloat ratchet › 1. server page caps the SSR fetch › policies/page.tsx defines SSR_PAGE_LIMIT and forwards { take: SSR_PAGE_LIMIT }
+  ● PR-7 — list-page perf anti-bloat ratchet › 1. server page caps the SSR fetch › vendors/page.tsx defines SSR_PAGE_LIMIT and forwards { take: SSR_PAGE_LIMIT }
+  ● PR-7 — list-page perf anti-bloat ratchet › 1. server page caps the SSR fetch › findings/page.tsx defines SSR_PAGE_LIMIT and forwards { take: SSR_PAGE_LIMIT }
+  ● PR-7 — list-page perf anti-bloat ratchet › 3. API route caps the backfill and emits row-count metrics › /api/t/[tenantSlug]/practices/route.ts wires applyBackfillCap + recordListPageRowCount
+  ● PR-7 — list-page perf anti-bloat ratchet › 3. API route caps the backfill and emits row-count metrics › /api/t/[tenantSlug]/audits/route.ts wires applyBackfillCap + recordListPageRowCount
+  ● PR-7 — list-page perf anti-bloat ratchet › 3. API route caps the backfill and emits row-count metrics › /api/t/[tenantSlug]/policies/route.ts wires applyBackfillCap + recordListPageRowCount
+  ● PR-7 — list-page perf anti-bloat ratchet › 3. API route caps the backfill and emits row-count metrics › /api/t/[tenantSlug]/vendors/route.ts wires applyBackfillCap + recordListPageRowCount
+  ● PR-7 — list-page perf anti-bloat ratchet › 3. API route caps the backfill and emits row-count metrics › /api/t/[tenantSlug]/findings/route.ts wires applyBackfillCap + recordListPageRowCount
+  ● PR-7 — list-page perf anti-bloat ratchet › 4. cap constant lives in one module › no list-page API route inlines a numeric backfill cap literal
+FAIL node tests/guards/shadow-discipline.test.ts
+  ● Shadow discipline (Roadmap-5 PR-4) › every allowlisted file still exists
+FAIL node tests/guards/inline-notice-discipline.test.ts
+  ● PR-10 InlineNotice discipline › hand-rolled `bg-bg-X border border-border-X` banners eradicated › documents every exempt file with a reason
+FAIL node tests/guards/state-coverage.test.ts
+  ● State coverage ratchet (Polish PR-10) › the dashboard scanner finds at least the expected canonical files
+FAIL node tests/guardrails/form-primitive-adoption.test.ts
+  ● Epic 55 — FormField adoption ratchet › audits/cycles/page.tsx imports + uses <FormField>
+  ● Epic 55 — FormField adoption ratchet › practices/PracticeDetailSheet.tsx imports + uses <FormField>
+  ● Epic 55 — FormField adoption ratchet › practices/NewPracticeModal.tsx imports + uses <FormField>
+  ● Epic 55 — FormField adoption ratchet › policies/new (shim + modal + fields) imports + uses <FormField>
+  ● Epic 55 — FormField adoption ratchet › vendors/new (shim + modal + fields) imports + uses <FormField>
+  ● Epic 55 — FormField adoption ratchet › at least 8 surfaces carry <FormField> (count can only grow)
+  ● Epic 55 — FormError adoption ratchet › practices/NewPracticeModal.tsx surfaces field-level errors via <FormError> OR <FormField error=…>
+  ● Epic 55 — FormError adoption ratchet › at least 2 surfaces carry field-level error rendering (count can only grow)
+FAIL node tests/guards/empty-state-coverage.test.ts
+  ● Empty-state coverage ratchet (Elevation PR-5) › exempt list is bounded and every entry exists
+FAIL node tests/guardrails/design-system-drift.test.ts
+  ● Migrated page anti-drift › vendors/VendorsClient.tsx uses no raw Tailwind color utilities
+  ● Migrated page anti-drift › clauses/loading.tsx uses no raw Tailwind color utilities
+  ● Migrated page anti-drift › vendors/VendorsClient.tsx uses no legacy .btn CSS classes
+  ● Migrated page anti-drift › clauses/loading.tsx uses no legacy .btn CSS classes
+  ● Migrated page anti-drift › vendors/VendorsClient.tsx uses no legacy .badge CSS classes
+  ● Migrated page anti-drift › clauses/loading.tsx uses no legacy .badge CSS classes
+FAIL node tests/guardrails/module-gate-coverage.test.ts
+  ● module-gate coverage guardrail — registry integrity › src/app/api/t/[tenantSlug]/practices/route.ts imports + calls assertModuleEnabled for its module
+  ● module-gate coverage guardrail — registry integrity › src/app/api/t/[tenantSlug]/clauses/route.ts imports + calls assertModuleEnabled for its module
+  ● module-gate coverage guardrail — registry integrity › src/app/api/t/[tenantSlug]/frameworks/route.ts imports + calls assertModuleEnabled for its module
+  ● module-gate coverage guardrail — registry integrity › src/app/api/t/[tenantSlug]/mapping/route.ts imports + calls assertModuleEnabled for its module
+  ● module-gate coverage guardrail — registry integrity › src/app/api/t/[tenantSlug]/policies/route.ts imports + calls assertModuleEnabled for its module
+  ● module-gate coverage guardrail — registry integrity › src/app/api/t/[tenantSlug]/audits/route.ts imports + calls assertModuleEnabled for its module
+  ● module-gate coverage guardrail — registry integrity › src/app/api/t/[tenantSlug]/findings/route.ts imports + calls assertModuleEnabled for its module
+  ● module-gate coverage guardrail — registry integrity › src/app/api/t/[tenantSlug]/vendors/route.ts imports + calls assertModuleEnabled for its module
+  ● module-gate coverage guardrail — no stale entries › every registered route file exists (catches renames/refactors)
+FAIL node tests/guards/border-tone-budget.test.ts
+  ● Border-tone budget (Roadmap-5 PR-10) › budget is realistic (not vacuous)
+FAIL node tests/guardrails/b6-usezodform-adoption.test.ts
+  ● B6 — Phase 3 useZodForm adoption › Canonical 6-tab structure on detail pages (B6 +1) › Practices (canonical) declares the 6-tab Tab union
+  ● B6 — Phase 3 useZodForm adoption › Canonical 6-tab structure on detail pages (B6 +1) › Practices (canonical) passes tabs to EntityDetailLayout
+  ● B6 — Phase 3 useZodForm adoption › Four modal form hooks adopt useZodForm › vendor hook composes useZodForm
+  ● B6 — Phase 3 useZodForm adoption › Four modal form hooks adopt useZodForm › vendor hook preserves the legacy fields/setField contract
+  ● B6 — Phase 3 useZodForm adoption › Four modal form hooks adopt useZodForm › audit hook composes useZodForm
+  ● B6 — Phase 3 useZodForm adoption › Four modal form hooks adopt useZodForm › audit hook preserves the legacy fields/setField contract
+FAIL node tests/guards/epic-67-rollout-coverage.test.ts
+  ● Epic 67 — destructive flow rollout › Practice evidence unlink (practice detail) — imports useToastWithUndo from the shared barrel
+  ● Epic 67 — destructive flow rollout › Practice requirement unmap (Mappings tab) — imports useToastWithUndo from the shared barrel
+  ● Epic 67 — destructive flow rollout › Vendor document removal (vendor detail) — imports useToastWithUndo from the shared barrel
+  ● Epic 67 — destructive flow rollout › Practice evidence unlink (practice detail) — handler "src/app/t/[tenantSlug]/(app)/practices/[practiceId]/page.tsx" dispatches via triggerUndoToast
+  ● Epic 67 — destructive flow rollout › Practice requirement unmap (Mappings tab) — handler "src/app/t/[tenantSlug]/(app)/practices/[practiceId]/_tabs/PracticeMappingsTab.tsx" dispatches via triggerUndoToast
+  ● Epic 67 — destructive flow rollout › Vendor document removal (vendor detail) — handler "src/app/t/[tenantSlug]/(app)/vendors/[vendorId]/page.tsx" dispatches via triggerUndoToast
+FAIL node tests/guards/r32-modal-form-completeness.test.ts
+  ● R32-task-63 — modal-form completeness › policies entity › ships the /new redirect shim (P2 contract)
+  ● R32-task-63 — modal-form completeness › policies entity › ships the NewXModal
+  ● R32-task-63 — modal-form completeness › policies entity › ships the useNewXForm hook with an isDirty return field (P1 contract)
+  ● R32-task-63 — modal-form completeness › policies entity › modal close is dirty-state guarded (P3 contract)
+  ● R32-task-63 — modal-form completeness › vendors entity › ships the /new redirect shim (P2 contract)
+  ● R32-task-63 — modal-form completeness › vendors entity › ships the NewXModal
+  ● R32-task-63 — modal-form completeness › vendors entity › ships the useNewXForm hook with an isDirty return field (P1 contract)
+  ● R32-task-63 — modal-form completeness › vendors entity › modal close is dirty-state guarded (P3 contract)
+FAIL node tests/guards/load-script-routes-exist.test.ts
+  ● k6 load scripts drive routes that exist › every referenced route segment resolves to an API directory
+  ● k6 load scripts drive routes that exist › the detector resolves a real route and rejects a deleted one
+FAIL node tests/guardrails/api-error-wrapper-coverage.test.ts
+  ● Epic E — API error-handler coverage guardrail › every exemption file actually exists on disk
+FAIL node tests/guards/r14-living-topbar-bundle.test.ts
+  ● Roadmap-14 PR-13 — Living Top-Bar capstone bundle › PR-7 — Page searchbars retired › the no-page-searchbars ratchet baseline files exist
+FAIL node tests/guards/ui-roadmap-2026-06-capstone.test.ts
+  ● UI roadmap capstone — audit polish (owner columns are name-only everywhere) › Policies owner column uses ownerDisplayName and renders no raw email
+  ● UI roadmap capstone — audit polish (owner columns are name-only everywhere) › Findings assignee column uses ownerDisplayName
+  ● UI roadmap capstone — audit polish (tags one size smaller everywhere) › the practices Browse rail status badge is size="sm" (no stray default-md tag)
+FAIL node tests/guards/columns-dropdown-coverage.test.ts
+  ● columns-dropdown gear coverage (R10-PR8) › no exempt entry has a stale path (file moved / deleted / migrated)
+FAIL node tests/guards/practice-task-create-modal.test.ts
+  ● Practice task creation — unified through LinkedTasksPanel › Tasks tab mounts <LinkedTasksPanel entityType="PRACTICE"> with canWrite
+  ● Practice task creation — unified through LinkedTasksPanel › no longer imports or mounts the bespoke NewPracticeTaskModal
+  ● Practice task creation — unified through LinkedTasksPanel › no longer POSTs to the per-practice PracticeTask create endpoint
+  ● Practice task creation — unified through LinkedTasksPanel › has no inline task-create <form> block
+FAIL node tests/guards/sharepoint-sp5.test.ts
+  ● SP-5 SharePoint audit-pack export + health › the export + health routes exist (admin.manage)
+  ● SP-5 SharePoint audit-pack export + health › the export button + health dashboard page exist
+FAIL node tests/guards/tab-primitive-adoption.test.ts
+  ● Tab primitive adoption registry › every registered page exists in the codebase
+  ● Tab primitive adoption registry › every page marked `migrated: false` actually does NOT mount <TabSelect> (otherwise flip the flag)
+FAIL node tests/guards/entity-detail-layout-coverage.test.ts
+  ● EntityDetailLayout coverage › every registered detail page exists in the codebase
+  ● EntityDetailLayout coverage › every page marked `adopted: true` actually mounts <EntityDetailLayout>
+  ● EntityDetailLayout coverage › every page marked `adopted: false` actually does NOT mount <EntityDetailLayout> (otherwise flip the flag)
+FAIL node tests/guards/r14-no-page-searchbars.test.ts
+  ● Live filter-scoped search on list pages › the standard list-page Client files wire a FilterToolbar `searchPlaceholder`
+  ● Live filter-scoped search on list pages › the six baseline files cleaned by R14-PR7 stay clean
+FAIL node tests/guards/table-unification.test.ts
+  ● DataTable unification — Practices as the canonical shape › Practices table — the canonical reference — sets the four locked traits
+  ● DataTable first-column registry › every registered table exists in the codebase
+  ● DataTable first-column registry › every page marked `adopted: true` contains its declared firstColumnId
+FAIL node tests/guards/pageheader-adoption.test.ts
+  ● PageHeader adoption registry › every registered page exists in the codebase
+  ● PageHeader adoption registry › every page marked `adopted: true` actually mounts <PageHeader>
+  ● PageHeader adoption registry › every page marked `adopted: false` actually does NOT mount <PageHeader> (otherwise flip the flag)
+FAIL node tests/guards/chart-token-discipline.test.ts
+  ● Chart token discipline (Polish PR-7) › every scanned file exists
+FAIL node tests/guards/table-title-cell-adoption.test.ts
+  ● TableTitleCell adoption (R13-PR1) › every entity list page imports + mounts TableTitleCell
+  ● TableTitleCell adoption (R13-PR1) › no entity list page renders an inline-styled title cell (font-medium text-content-emphasis manually)
+FAIL node tests/guardrails/form-telemetry-adoption.test.ts
+  ● Epic 54 — useFormTelemetry adoption › practices/NewPracticeModal.tsx imports and invokes useFormTelemetry
+  ● Epic 54 — useFormTelemetry adoption › policies/new (shim + modal + hook) imports and invokes useFormTelemetry
+  ● Epic 54 — useFormTelemetry adoption › at least 5 CRUD surfaces are instrumented (count can only grow)
+FAIL node tests/guards/right-rail-discipline.test.ts
+  ● Right-rail list-page aside discipline (Phase 2) › practices list page uses the header-row selection bar (B1), keeping the browse/AI rails
+FAIL node tests/guards/ui-tables-columns-owner.test.ts
+  ● UI-21 — code column off by default › practices code entry is defaultVisible: false
+  ● UI-2/3 — entity-table tags are one size smaller (size="sm") › practices status/tag badges carry size="sm"
+  ● UI-14 — Owner column is name-only (no email address) › practices owner cell uses ownerDisplayName (no `.owner?.email` rendered)
+FAIL node tests/guards/action-button-canonical-entity-label.test.ts
+  ● Action-button canonical entity label › 2. Header action buttons use the icon-slot Plus pattern › src/app/t/[tenantSlug]/(app)/practices/PracticesClient.tsx uses icon={<Plus />} + bare label `new-practice-btn`
+  ● Action-button canonical entity label › 2. Header action buttons use the icon-slot Plus pattern › src/app/t/[tenantSlug]/(app)/policies/PoliciesClient.tsx uses icon={<Plus />} + bare label `new-policy-btn`
+  ● Action-button canonical entity label › 2. Header action buttons use the icon-slot Plus pattern › src/app/t/[tenantSlug]/(app)/vendors/VendorsClient.tsx uses icon={<Plus />} + bare label `new-vendor-btn`
+FAIL node tests/guards/dashboard-masthead-discipline.test.ts
+  ● Dashboard masthead discipline (Roadmap-3 PR-10) › every per-resource dashboard mounts <KPIStat>
+  ● Dashboard masthead discipline (Roadmap-3 PR-10) › no per-resource dashboard hand-rolls a raw stat card
+FAIL node tests/guards/metadatabar-detail-coverage.test.ts
+  ● MetaStrip detail-page coverage › every registered detail page exists in the codebase
+  ● MetaStrip detail-page coverage › every page marked `adopted: true` actually mounts <MetaStrip>
+FAIL node tests/guards/page-breadcrumbs-coverage.test.ts
+  ● page breadcrumbs coverage › every exempt page actually exists
+FAIL node tests/guards/roadmap-11-completion.test.ts
+  ● Roadmap-11 round completion (PR-12) › every obsession-checklist entry points at a real file
+FAIL node tests/guards/card-header-discipline.test.ts
+  ● CardHeader discipline (Roadmap-3 PR-5) › the curated adopters import AND mount CardHeader
+FAIL node tests/guards/icon-only-action-discipline.test.ts
+  ● icon-only action discipline › IconAction site stays icon-only (i18n): "Freeze pack"
+  ● icon-only action discipline › IconAction site stays icon-only (i18n): "Generate share link"
+  ● icon-only action discipline › IconAction site stays icon-only (i18n): "Clone for retest"
+  ● icon-only action discipline › icon-only link stays icon-only: "Export JSON"
+  ● icon-only action discipline › icon-only link stays icon-only: "Export CSV"
+FAIL node tests/guards/cardheader-adoption.test.ts
+  ● CardHeader adoption registry › every registered page exists in the codebase
+  ● CardHeader adoption registry › every page marked `adopted: true` actually mounts <CardHeader>
+FAIL node tests/guards/form-section-discipline.test.ts
+  ● FormSection discipline (Roadmap-2 PR-6) › the curated adopters import AND mount FormSection
+FAIL node tests/guards/list-page-shell-coverage.test.ts
+  ● list-page-shell coverage ratchet › no exempt entry has a stale path (file moved/deleted)
+FAIL node tests/guards/sharepoint-spf1.test.ts
+  ● SP-F1 connection + folder targeting › the file picker supports folder-select, and the export button uses it
+FAIL node tests/guardrails/b2-table-unification.test.ts
+  ● B2 — table unification › Title-cell navigation parity › Practices (canonical) renders TableTitleCell with an href
+  ● B2 — table unification › Title-cell navigation parity › Policies renders TableTitleCell with an href
+  ● B2 — table unification › Title-cell navigation parity › Vendors renders TableTitleCell with an href
+  ● B2 — table unification › Edit-button icon-only on detail pages › Vendor detail: edit button is icon-only
+  ● B2 — table unification › Edit-button icon-only on detail pages › Practice detail: edit button is icon-only
+FAIL node tests/guards/epic63-timestamp-rollout.test.ts
+  ● Epic 63 — TimestampTooltip rollout ratchet › Policies (src/app/t/[tenantSlug]/(app)/policies/PoliciesClient.tsx) › exists
+  ● Epic 63 — TimestampTooltip rollout ratchet › Policies (src/app/t/[tenantSlug]/(app)/policies/PoliciesClient.tsx) › does not call `formatDate(` in JSX
+  ● Epic 63 — TimestampTooltip rollout ratchet › Policies (src/app/t/[tenantSlug]/(app)/policies/PoliciesClient.tsx) › imports TimestampTooltip
+  ● Epic 63 — TimestampTooltip rollout ratchet › Vendors (src/app/t/[tenantSlug]/(app)/vendors/VendorsClient.tsx) › exists
+  ● Epic 63 — TimestampTooltip rollout ratchet › Vendors (src/app/t/[tenantSlug]/(app)/vendors/VendorsClient.tsx) › does not call `formatDate(` in JSX
+  ● Epic 63 — TimestampTooltip rollout ratchet › Vendors (src/app/t/[tenantSlug]/(app)/vendors/VendorsClient.tsx) › imports TimestampTooltip
+FAIL node tests/guards/list-page-descriptions.test.ts
+  ● List-page editorial descriptions (Roadmap-2 PR-4) › each list-page client renders the description slot
+FAIL node tests/guards/empty-state-personality.test.ts
+  ● Empty-state personality adoption (R11-PR1) › every adopted page imports EmptyState from the canonical path
+  ● Empty-state personality adoption (R11-PR1) › every adopted page renders <EmptyState> as its emptyState prop
+  ● Empty-state personality adoption (R11-PR1) › every adopted page uses the canonical variant + size shape
+  ● Empty-state personality adoption (R11-PR1) › every adopted page with filters pairs no-results with a Clear filters action
+FAIL node tests/guards/practices-detail-page-size.test.ts
+  ● Practices detail page size ratchet (Elevation PR-2) › practices/[practiceId]/page.tsx stays at or below the size floor
+  ● Practices detail page size ratchet (Elevation PR-2) › the _modals/ extraction directory exists
+FAIL node tests/guards/dashboard-shell-coverage.test.ts
+  ● DashboardLayout coverage › every registered dashboard exists in the codebase
+  ● DashboardLayout coverage › every page marked `adopted: true` actually mounts <DashboardLayout>
+FAIL node tests/guards/ui-rightrail-expand-toggle.test.ts
+  ● Test suite failed to run
+FAIL node tests/guards/vr9-practice-ai-suggestions.test.ts
+  ● VR-9 — practice AI suggestions › the rail component is mounted in the Practice detail page right rail
+FAIL node tests/guards/r23-prf-policies-vendors-capstone.test.ts
+  ● Test suite failed to run
+FAIL node tests/guards/r23-prd-assets-practices-rollout.test.ts
+  ● Test suite failed to run
+FAIL node tests/guards/practice-detail-tab-lazy.test.ts
+  ● Test suite failed to run
+FAIL node tests/guards/p2c-practice-reverse-lookup.test.ts
+  ● Test suite failed to run
+FAIL node tests/guards/ui-chrome-cleanup.test.ts
+  ● UI-15 — removed buttons › practices header has no Frameworks button
+FAIL node tests/guards/b4-practice-tasks-tab.test.ts
+  ● Test suite failed to run
+FAIL node tests/guardrails/token-migration.test.ts
+  ● Test suite failed to run
+FAIL node tests/guards/b1-selection-header-bar.test.ts
+  ● Test suite failed to run
+FAIL node tests/guardrails/pr-d-entity-id-picker.test.ts
+  ● Test suite failed to run
+FAIL node tests/guardrails/practices-tasks-list-hydration.test.ts
+  ● Test suite failed to run
+FAIL node tests/guardrails/b9-policy-template-upgrade.test.ts
+  ● Test suite failed to run
+FAIL node tests/guardrails/pr-1-tenant-tables-org-parity.test.ts
+  ● Test suite failed to run
+FAIL node tests/guardrails/b7-layout-redesign.test.ts
+  ● Test suite failed to run
+FAIL node tests/guardrails/b4-filter-nav-consistency.test.ts
+  ● Test suite failed to run
+FAIL node tests/guardrails/assets-audits-modal-form.test.ts
+  ● Test suite failed to run
+FAIL node tests/guardrails/b8-folders-frameworks.test.ts
+  ● Test suite failed to run
+FAIL node tests/guards/no-hardcoded-ui-strings.test.ts (8.429 s)
+  ● no-new-hardcoded-UI-string ratchet › config-prop baseline tracks the real count (no accumulated slack)
+FAIL tests/guards/filter-toolbar-coverage.test.ts
+  ● FilterToolbar coverage › EXEMPTIONS entries point at real files
+FAIL tests/guards/no-lucide.test.ts
+  ● Iconography unification — no new lucide imports (Roadmap-2 PR-8) › no allowlist entry is stale (every entry actually imports lucide)
+FAIL tests/guardrails/loading-states.test.ts
+  ● Loading-state guardrails › Key routes have loading.tsx › practices route has loading.tsx
+  ● Loading-state guardrails › Key routes have loading.tsx › policies route has loading.tsx
+  ● Loading-state guardrails › Key routes have loading.tsx › audits route has loading.tsx
+  ● Loading-state guardrails › Key routes have loading.tsx › vendors route has loading.tsx
+FAIL tests/guards/legacy-badge-eradication.test.ts
+  ● StatusBadge adoption › app pages + components use <StatusBadge> extensively
+FAIL tests/guards/epic55-native-select-ratchet.test.ts
+  ● Epic 55 — migrated surfaces must not regress to native <select> › app/t/[tenantSlug]/(app)/audits/cycles/page.tsx contains no native <select> (Epic 55 migrated)
+  ● Epic 55 — migrated surfaces must not regress to native <select> › app/t/[tenantSlug]/(app)/practices/NewPracticeModal.tsx contains no native <select> (Epic 55 migrated)
+  ● Epic 55 — migrated surfaces must not regress to native <select> › app/t/[tenantSlug]/(app)/practices/PracticeDetailSheet.tsx contains no native <select> (Epic 55 migrated)
+  ● Epic 55 — migrated surfaces must not regress to native <select> › app/t/[tenantSlug]/(app)/vendors/new/page.tsx contains no native <select> (Epic 55 migrated)
+  ● Epic 55 — migrated surfaces must not regress to native <select> › app/t/[tenantSlug]/(app)/findings/FindingsClient.tsx contains no native <select> (Epic 55 migrated)
+  ● Epic 55 — migrated surfaces must not regress to native <select> › app/t/[tenantSlug]/(app)/clauses/ClausesBrowser.tsx contains no native <select> (Epic 55 migrated)
+  ● Epic 55 — migrated surfaces must not regress to native <select> › app/t/[tenantSlug]/(app)/policies/new/page.tsx contains no native <select> (Epic 55 migrated)
+  ● Epic 55 — migrated surfaces must not regress to native <select> › app/t/[tenantSlug]/(app)/practices/[practiceId]/page.tsx contains no native <select> (Epic 55 migrated)
+  ● Epic 55 — migrated surfaces must not regress to native <select> › app/t/[tenantSlug]/(app)/vendors/[vendorId]/page.tsx contains no native <select> (Epic 55 migrated)
+  ● Epic 55 — migrated surfaces must not regress to native <select> › app/t/[tenantSlug]/(app)/vendors/[vendorId]/assessment/[assessmentId]/page.tsx contains no native <select> (Epic 55 migrated)
+  ● Epic 55 — migrated surfaces must not regress to native <select> › app/t/[tenantSlug]/(app)/policies/templates/page.tsx contains no native <select> (Epic 55 migrated)
+  ● Epic 55 — migrated surfaces must not regress to native <select> › app/t/[tenantSlug]/(app)/audits/AuditsClient.tsx contains no native <select> (Epic 55 migrated)
+FAIL tests/guardrails/table-platform-drift.test.ts
+  ● Import hygiene — no legacy table imports in migrated pages › practices/PracticesClient.tsx does not import SkeletonTableRow
+  ● Import hygiene — no legacy table imports in migrated pages › policies/PoliciesClient.tsx does not import SkeletonTableRow
+  ● Import hygiene — no legacy table imports in migrated pages › vendors/VendorsClient.tsx does not import SkeletonTableRow
+  ● Import hygiene — no legacy table imports in migrated pages › findings/FindingsClient.tsx does not import SkeletonTableRow
+  ● Import hygiene — no legacy table imports in migrated pages › practices/PracticesClient.tsx does not import SkeletonDataTable
+  ● Import hygiene — no legacy table imports in migrated pages › policies/PoliciesClient.tsx does not import SkeletonDataTable
+  ● Import hygiene — no legacy table imports in migrated pages › vendors/VendorsClient.tsx does not import SkeletonDataTable
+  ● Import hygiene — no legacy table imports in migrated pages › findings/FindingsClient.tsx does not import SkeletonDataTable
+  ● Import hygiene — no legacy table imports in migrated pages › practices/PracticesClient.tsx imports from barrel, not deep module paths
+  ● Import hygiene — no legacy table imports in migrated pages › policies/PoliciesClient.tsx imports from barrel, not deep module paths
+  ● Import hygiene — no legacy table imports in migrated pages › vendors/VendorsClient.tsx imports from barrel, not deep module paths
+  ● Import hygiene — no legacy table imports in migrated pages › findings/FindingsClient.tsx imports from barrel, not deep module paths
+  ● Structural compliance — migrated pages use DataTable › practices/PracticesClient.tsx uses <DataTable>, not raw <table>
+  ● Structural compliance — migrated pages use DataTable › policies/PoliciesClient.tsx uses <DataTable>, not raw <table>
+  ● Structural compliance — migrated pages use DataTable › vendors/VendorsClient.tsx uses <DataTable>, not raw <table>
+  ● Structural compliance — migrated pages use DataTable › findings/FindingsClient.tsx uses <DataTable>, not raw <table>
+  ● Structural compliance — migrated pages use DataTable › practices/PracticesClient.tsx exists and is not accidentally deleted
+  ● Structural compliance — migrated pages use DataTable › policies/PoliciesClient.tsx exists and is not accidentally deleted
+  ● Structural compliance — migrated pages use DataTable › vendors/VendorsClient.tsx exists and is not accidentally deleted
+  ● Structural compliance — migrated pages use DataTable › findings/FindingsClient.tsx exists and is not accidentally deleted
+  ● Convention compliance — column patterns › practices/PracticesClient.tsx uses createColumns<T> for type-safe column definitions
+  ● Convention compliance — column patterns › policies/PoliciesClient.tsx uses createColumns<T> for type-safe column definitions
+  ● Convention compliance — column patterns › vendors/VendorsClient.tsx uses createColumns<T> for type-safe column definitions
+  ● Convention compliance — column patterns › findings/FindingsClient.tsx uses createColumns<T> for type-safe column definitions
+  ● Convention compliance — column patterns › practices/PracticesClient.tsx wraps columns in useMemo (not inline)
+  ● Convention compliance — column patterns › policies/PoliciesClient.tsx wraps columns in useMemo (not inline)
+  ● Convention compliance — column patterns › vendors/VendorsClient.tsx wraps columns in useMemo (not inline)
+  ● Convention compliance — column patterns › findings/FindingsClient.tsx wraps columns in useMemo (not inline)
+  ● Convention compliance — column patterns › practices/PracticesClient.tsx has a data-testid for E2E targeting
+  ● Convention compliance — column patterns › policies/PoliciesClient.tsx has a data-testid for E2E targeting
+  ● Convention compliance — column patterns › vendors/VendorsClient.tsx has a data-testid for E2E targeting
+  ● Convention compliance — column patterns › findings/FindingsClient.tsx has a data-testid for E2E targeting
+  ● Excluded page registry › AuditsClient.tsx exists and has a documented reason: "Master/detail panel UX, not a list page"
+  ● Migration progress › at least 8 pages are fully migrated
+FAIL tests/guards/button-label-centering.test.ts
+  ● Button label centering › 3. Practice-status trigger hugs content (no fixed-width void) › does not pin the status combobox to a fixed width
+FAIL tests/guards/datatable-mobile-fallback.test.ts
+  ● DataTable mobile-fallback coverage ratchet › no exempt entry is stale (file exists and still renders a DataTable)
+FAIL tests/guardrails/no-client-side-filtering.test.ts
+  ● Guardrail: No client-side filtering in list pages › PracticesClient should not .filter() server data on client
+  ● Guardrail: No client-side filtering in list pages › PoliciesClient should not .filter() server data on client
+  ● Guardrail: No client-side filtering in list pages › VendorsClient should not .filter() server data on client
+  ● Guardrail: No stacked/legacy filter UI › PracticesClient should use FilterToolbar, not stacked selects
+  ● Guardrail: No stacked/legacy filter UI › PoliciesClient should use FilterToolbar, not stacked selects
+  ● Guardrail: No stacked/legacy filter UI › VendorsClient should use FilterToolbar, not stacked selects
+  ● Guardrail: All list pages import FilterToolbar › PracticesClient should import FilterToolbar (or EntityListPage)
+  ● Guardrail: All list pages import FilterToolbar › PoliciesClient should import FilterToolbar (or EntityListPage)
+  ● Guardrail: All list pages import FilterToolbar › VendorsClient should import FilterToolbar (or EntityListPage)
+FAIL tests/guardrails/epic-g3-end-to-end.test.ts
+  ● Epic G-3 — end-to-end readiness › public vendor-assessment routes exist
+  ● Epic G-3 — end-to-end readiness › internal admin routes exist for templates + reviews
+FAIL tests/guards/entity-detail-shell-coverage.test.ts
+  ● EntityDetailLayout adoption — PR-4 › Practice detail (src/app/t/[tenantSlug]/(app)/practices/[practiceId]/page.tsx) › file exists at the documented path
+  ● EntityDetailLayout adoption — PR-4 › Practice detail (src/app/t/[tenantSlug]/(app)/practices/[practiceId]/page.tsx) › imports EntityDetailLayout from the canonical layout module
+  ● EntityDetailLayout adoption — PR-4 › Practice detail (src/app/t/[tenantSlug]/(app)/practices/[practiceId]/page.tsx) › renders <EntityDetailLayout> at least once
+  ● EntityDetailLayout adoption — PR-4 › Audit cycle detail (src/app/t/[tenantSlug]/(app)/audits/cycles/[cycleId]/page.tsx) › file exists at the documented path
+  ● EntityDetailLayout adoption — PR-4 › Audit cycle detail (src/app/t/[tenantSlug]/(app)/audits/cycles/[cycleId]/page.tsx) › imports EntityDetailLayout from the canonical layout module
+  ● EntityDetailLayout adoption — PR-4 › Audit cycle detail (src/app/t/[tenantSlug]/(app)/audits/cycles/[cycleId]/page.tsx) › renders <EntityDetailLayout> at least once
+  ● EntityDetailLayout adoption — PR-4 › Audit pack detail (src/app/t/[tenantSlug]/(app)/audits/packs/[packId]/page.tsx) › file exists at the documented path
+  ● EntityDetailLayout adoption — PR-4 › Audit pack detail (src/app/t/[tenantSlug]/(app)/audits/packs/[packId]/page.tsx) › imports EntityDetailLayout from the canonical layout module
+  ● EntityDetailLayout adoption — PR-4 › Audit pack detail (src/app/t/[tenantSlug]/(app)/audits/packs/[packId]/page.tsx) › renders <EntityDetailLayout> at least once
+  ● EntityDetailLayout adoption — PR-4 › Vendor detail (src/app/t/[tenantSlug]/(app)/vendors/[vendorId]/page.tsx) › file exists at the documented path
+  ● EntityDetailLayout adoption — PR-4 › Vendor detail (src/app/t/[tenantSlug]/(app)/vendors/[vendorId]/page.tsx) › imports EntityDetailLayout from the canonical layout module
+  ● EntityDetailLayout adoption — PR-4 › Vendor detail (src/app/t/[tenantSlug]/(app)/vendors/[vendorId]/page.tsx) › renders <EntityDetailLayout> at least once
+  ● EntityDetailLayout adoption — PR-4 › Policy detail (src/app/t/[tenantSlug]/(app)/policies/[policyId]/page.tsx) › file exists at the documented path
+  ● EntityDetailLayout adoption — PR-4 › Policy detail (src/app/t/[tenantSlug]/(app)/policies/[policyId]/page.tsx) › imports EntityDetailLayout from the canonical layout module
+  ● EntityDetailLayout adoption — PR-4 › Policy detail (src/app/t/[tenantSlug]/(app)/policies/[policyId]/page.tsx) › renders <EntityDetailLayout> at least once
+FAIL tests/guardrails/api-permission-coverage.test.ts
+  ● Epic C.1 — API permission coverage guardrail › every rule path-regex matches at least one real route on disk
+FAIL tests/guards/sharepoint-sp4.test.ts
+  ● SP-4 SharePoint policy sync › the policy detail page mounts the SharePoint link section
+FAIL tests/guards/inline-subtitle-budget.test.ts
+  ● inline subtitle pattern budget › budget tracks reality (forbids slack > 3 sites)
+FAIL tests/guards/ux-foundation-ratchets.test.ts
+  ● Epic 64 — react-hook-form reference form › uses zodResolver + useForm + Controller in NewPracticeModal
+  ● Epic 64 — react-hook-form reference form › keeps every stable id E2E selectors rely on
+FAIL tests/guards/list-page-perf-ratchet.test.ts
+  ● PR-7 — list-page perf anti-bloat ratchet › 1. server page caps the SSR fetch › practices/page.tsx defines SSR_PAGE_LIMIT and forwards { take: SSR_PAGE_LIMIT }
+  ● PR-7 — list-page perf anti-bloat ratchet › 1. server page caps the SSR fetch › audits/page.tsx defines SSR_PAGE_LIMIT and forwards { take: SSR_PAGE_LIMIT }
+  ● PR-7 — list-page perf anti-bloat ratchet › 1. server page caps the SSR fetch › policies/page.tsx defines SSR_PAGE_LIMIT and forwards { take: SSR_PAGE_LIMIT }
+  ● PR-7 — list-page perf anti-bloat ratchet › 1. server page caps the SSR fetch › vendors/page.tsx defines SSR_PAGE_LIMIT and forwards { take: SSR_PAGE_LIMIT }
+  ● PR-7 — list-page perf anti-bloat ratchet › 1. server page caps the SSR fetch › findings/page.tsx defines SSR_PAGE_LIMIT and forwards { take: SSR_PAGE_LIMIT }
+  ● PR-7 — list-page perf anti-bloat ratchet › 3. API route caps the backfill and emits row-count metrics › /api/t/[tenantSlug]/practices/route.ts wires applyBackfillCap + recordListPageRowCount
+  ● PR-7 — list-page perf anti-bloat ratchet › 3. API route caps the backfill and emits row-count metrics › /api/t/[tenantSlug]/audits/route.ts wires applyBackfillCap + recordListPageRowCount
+  ● PR-7 — list-page perf anti-bloat ratchet › 3. API route caps the backfill and emits row-count metrics › /api/t/[tenantSlug]/policies/route.ts wires applyBackfillCap + recordListPageRowCount
+  ● PR-7 — list-page perf anti-bloat ratchet › 3. API route caps the backfill and emits row-count metrics › /api/t/[tenantSlug]/vendors/route.ts wires applyBackfillCap + recordListPageRowCount
+  ● PR-7 — list-page perf anti-bloat ratchet › 3. API route caps the backfill and emits row-count metrics › /api/t/[tenantSlug]/findings/route.ts wires applyBackfillCap + recordListPageRowCount
+  ● PR-7 — list-page perf anti-bloat ratchet › 4. cap constant lives in one module › no list-page API route inlines a numeric backfill cap literal
+FAIL tests/guards/shadow-discipline.test.ts
+  ● Shadow discipline (Roadmap-5 PR-4) › every allowlisted file still exists
+FAIL tests/guards/inline-notice-discipline.test.ts
+  ● PR-10 InlineNotice discipline › hand-rolled `bg-bg-X border border-border-X` banners eradicated › documents every exempt file with a reason
+FAIL tests/guards/state-coverage.test.ts
+  ● State coverage ratchet (Polish PR-10) › the dashboard scanner finds at least the expected canonical files
+FAIL tests/guardrails/form-primitive-adoption.test.ts
+  ● Epic 55 — FormField adoption ratchet › audits/cycles/page.tsx imports + uses <FormField>
+  ● Epic 55 — FormField adoption ratchet › practices/PracticeDetailSheet.tsx imports + uses <FormField>
+  ● Epic 55 — FormField adoption ratchet › practices/NewPracticeModal.tsx imports + uses <FormField>
+  ● Epic 55 — FormField adoption ratchet › policies/new (shim + modal + fields) imports + uses <FormField>
+  ● Epic 55 — FormField adoption ratchet › vendors/new (shim + modal + fields) imports + uses <FormField>
+  ● Epic 55 — FormField adoption ratchet › at least 8 surfaces carry <FormField> (count can only grow)
+  ● Epic 55 — FormError adoption ratchet › practices/NewPracticeModal.tsx surfaces field-level errors via <FormError> OR <FormField error=…>
+  ● Epic 55 — FormError adoption ratchet › at least 2 surfaces carry field-level error rendering (count can only grow)
+FAIL tests/guards/empty-state-coverage.test.ts
+  ● Empty-state coverage ratchet (Elevation PR-5) › exempt list is bounded and every entry exists
+FAIL tests/guardrails/design-system-drift.test.ts
+  ● Migrated page anti-drift › vendors/VendorsClient.tsx uses no raw Tailwind color utilities
+  ● Migrated page anti-drift › clauses/loading.tsx uses no raw Tailwind color utilities
+  ● Migrated page anti-drift › vendors/VendorsClient.tsx uses no legacy .btn CSS classes
+  ● Migrated page anti-drift › clauses/loading.tsx uses no legacy .btn CSS classes
+  ● Migrated page anti-drift › vendors/VendorsClient.tsx uses no legacy .badge CSS classes
+  ● Migrated page anti-drift › clauses/loading.tsx uses no legacy .badge CSS classes
+FAIL tests/guardrails/module-gate-coverage.test.ts
+  ● module-gate coverage guardrail — registry integrity › src/app/api/t/[tenantSlug]/practices/route.ts imports + calls assertModuleEnabled for its module
+  ● module-gate coverage guardrail — registry integrity › src/app/api/t/[tenantSlug]/clauses/route.ts imports + calls assertModuleEnabled for its module
+  ● module-gate coverage guardrail — registry integrity › src/app/api/t/[tenantSlug]/frameworks/route.ts imports + calls assertModuleEnabled for its module
+  ● module-gate coverage guardrail — registry integrity › src/app/api/t/[tenantSlug]/mapping/route.ts imports + calls assertModuleEnabled for its module
+  ● module-gate coverage guardrail — registry integrity › src/app/api/t/[tenantSlug]/policies/route.ts imports + calls assertModuleEnabled for its module
+  ● module-gate coverage guardrail — registry integrity › src/app/api/t/[tenantSlug]/audits/route.ts imports + calls assertModuleEnabled for its module
+  ● module-gate coverage guardrail — registry integrity › src/app/api/t/[tenantSlug]/findings/route.ts imports + calls assertModuleEnabled for its module
+  ● module-gate coverage guardrail — registry integrity › src/app/api/t/[tenantSlug]/vendors/route.ts imports + calls assertModuleEnabled for its module
+  ● module-gate coverage guardrail — no stale entries › every registered route file exists (catches renames/refactors)
+FAIL tests/guards/border-tone-budget.test.ts
+  ● Border-tone budget (Roadmap-5 PR-10) › budget is realistic (not vacuous)
+FAIL tests/guardrails/b6-usezodform-adoption.test.ts
+  ● B6 — Phase 3 useZodForm adoption › Canonical 6-tab structure on detail pages (B6 +1) › Practices (canonical) declares the 6-tab Tab union
+  ● B6 — Phase 3 useZodForm adoption › Canonical 6-tab structure on detail pages (B6 +1) › Practices (canonical) passes tabs to EntityDetailLayout
+  ● B6 — Phase 3 useZodForm adoption › Four modal form hooks adopt useZodForm › vendor hook composes useZodForm
+  ● B6 — Phase 3 useZodForm adoption › Four modal form hooks adopt useZodForm › vendor hook preserves the legacy fields/setField contract
+  ● B6 — Phase 3 useZodForm adoption › Four modal form hooks adopt useZodForm › audit hook composes useZodForm
+  ● B6 — Phase 3 useZodForm adoption › Four modal form hooks adopt useZodForm › audit hook preserves the legacy fields/setField contract
+FAIL tests/guards/epic-67-rollout-coverage.test.ts
+  ● Epic 67 — destructive flow rollout › Practice evidence unlink (practice detail) — imports useToastWithUndo from the shared barrel
+  ● Epic 67 — destructive flow rollout › Practice requirement unmap (Mappings tab) — imports useToastWithUndo from the shared barrel
+  ● Epic 67 — destructive flow rollout › Vendor document removal (vendor detail) — imports useToastWithUndo from the shared barrel
+  ● Epic 67 — destructive flow rollout › Practice evidence unlink (practice detail) — handler "src/app/t/[tenantSlug]/(app)/practices/[practiceId]/page.tsx" dispatches via triggerUndoToast
+  ● Epic 67 — destructive flow rollout › Practice requirement unmap (Mappings tab) — handler "src/app/t/[tenantSlug]/(app)/practices/[practiceId]/_tabs/PracticeMappingsTab.tsx" dispatches via triggerUndoToast
+  ● Epic 67 — destructive flow rollout › Vendor document removal (vendor detail) — handler "src/app/t/[tenantSlug]/(app)/vendors/[vendorId]/page.tsx" dispatches via triggerUndoToast
+FAIL tests/guards/r32-modal-form-completeness.test.ts
+  ● R32-task-63 — modal-form completeness › policies entity › ships the /new redirect shim (P2 contract)
+  ● R32-task-63 — modal-form completeness › policies entity › ships the NewXModal
+  ● R32-task-63 — modal-form completeness › policies entity › ships the useNewXForm hook with an isDirty return field (P1 contract)
+  ● R32-task-63 — modal-form completeness › policies entity › modal close is dirty-state guarded (P3 contract)
+  ● R32-task-63 — modal-form completeness › vendors entity › ships the /new redirect shim (P2 contract)
+  ● R32-task-63 — modal-form completeness › vendors entity › ships the NewXModal
+  ● R32-task-63 — modal-form completeness › vendors entity › ships the useNewXForm hook with an isDirty return field (P1 contract)
+  ● R32-task-63 — modal-form completeness › vendors entity › modal close is dirty-state guarded (P3 contract)
+FAIL tests/guards/load-script-routes-exist.test.ts
+  ● k6 load scripts drive routes that exist › every referenced route segment resolves to an API directory
+  ● k6 load scripts drive routes that exist › the detector resolves a real route and rejects a deleted one
+FAIL tests/guardrails/api-error-wrapper-coverage.test.ts
+  ● Epic E — API error-handler coverage guardrail › every exemption file actually exists on disk
+FAIL tests/guards/r14-living-topbar-bundle.test.ts
+  ● Roadmap-14 PR-13 — Living Top-Bar capstone bundle › PR-7 — Page searchbars retired › the no-page-searchbars ratchet baseline files exist
+FAIL tests/guards/ui-roadmap-2026-06-capstone.test.ts
+  ● UI roadmap capstone — audit polish (owner columns are name-only everywhere) › Policies owner column uses ownerDisplayName and renders no raw email
+  ● UI roadmap capstone — audit polish (owner columns are name-only everywhere) › Findings assignee column uses ownerDisplayName
+  ● UI roadmap capstone — audit polish (tags one size smaller everywhere) › the practices Browse rail status badge is size="sm" (no stray default-md tag)
+FAIL tests/guards/columns-dropdown-coverage.test.ts
+  ● columns-dropdown gear coverage (R10-PR8) › no exempt entry has a stale path (file moved / deleted / migrated)
+FAIL tests/guards/practice-task-create-modal.test.ts
+  ● Practice task creation — unified through LinkedTasksPanel › Tasks tab mounts <LinkedTasksPanel entityType="PRACTICE"> with canWrite
+  ● Practice task creation — unified through LinkedTasksPanel › no longer imports or mounts the bespoke NewPracticeTaskModal
+  ● Practice task creation — unified through LinkedTasksPanel › no longer POSTs to the per-practice PracticeTask create endpoint
+  ● Practice task creation — unified through LinkedTasksPanel › has no inline task-create <form> block
+FAIL tests/guards/sharepoint-sp5.test.ts
+  ● SP-5 SharePoint audit-pack export + health › the export + health routes exist (admin.manage)
+  ● SP-5 SharePoint audit-pack export + health › the export button + health dashboard page exist
+FAIL tests/guards/tab-primitive-adoption.test.ts
+  ● Tab primitive adoption registry › every registered page exists in the codebase
+  ● Tab primitive adoption registry › every page marked `migrated: false` actually does NOT mount <TabSelect> (otherwise flip the flag)
+FAIL tests/guards/entity-detail-layout-coverage.test.ts
+  ● EntityDetailLayout coverage › every registered detail page exists in the codebase
+  ● EntityDetailLayout coverage › every page marked `adopted: true` actually mounts <EntityDetailLayout>
+  ● EntityDetailLayout coverage › every page marked `adopted: false` actually does NOT mount <EntityDetailLayout> (otherwise flip the flag)
+FAIL tests/guards/r14-no-page-searchbars.test.ts
+  ● Live filter-scoped search on list pages › the standard list-page Client files wire a FilterToolbar `searchPlaceholder`
+  ● Live filter-scoped search on list pages › the six baseline files cleaned by R14-PR7 stay clean
+FAIL tests/guards/table-unification.test.ts
+  ● DataTable unification — Practices as the canonical shape › Practices table — the canonical reference — sets the four locked traits
+  ● DataTable first-column registry › every registered table exists in the codebase
+  ● DataTable first-column registry › every page marked `adopted: true` contains its declared firstColumnId
+FAIL tests/guards/pageheader-adoption.test.ts
+  ● PageHeader adoption registry › every registered page exists in the codebase
+  ● PageHeader adoption registry › every page marked `adopted: true` actually mounts <PageHeader>
+  ● PageHeader adoption registry › every page marked `adopted: false` actually does NOT mount <PageHeader> (otherwise flip the flag)
+FAIL tests/guards/chart-token-discipline.test.ts
+  ● Chart token discipline (Polish PR-7) › every scanned file exists
+FAIL tests/guards/table-title-cell-adoption.test.ts
+  ● TableTitleCell adoption (R13-PR1) › every entity list page imports + mounts TableTitleCell
+  ● TableTitleCell adoption (R13-PR1) › no entity list page renders an inline-styled title cell (font-medium text-content-emphasis manually)
+FAIL tests/guardrails/form-telemetry-adoption.test.ts
+  ● Epic 54 — useFormTelemetry adoption › practices/NewPracticeModal.tsx imports and invokes useFormTelemetry
+  ● Epic 54 — useFormTelemetry adoption › policies/new (shim + modal + hook) imports and invokes useFormTelemetry
+  ● Epic 54 — useFormTelemetry adoption › at least 5 CRUD surfaces are instrumented (count can only grow)
+FAIL tests/guards/right-rail-discipline.test.ts
+  ● Right-rail list-page aside discipline (Phase 2) › practices list page uses the header-row selection bar (B1), keeping the browse/AI rails
+FAIL tests/guards/ui-tables-columns-owner.test.ts
+  ● UI-21 — code column off by default › practices code entry is defaultVisible: false
+  ● UI-2/3 — entity-table tags are one size smaller (size="sm") › practices status/tag badges carry size="sm"
+  ● UI-14 — Owner column is name-only (no email address) › practices owner cell uses ownerDisplayName (no `.owner?.email` rendered)
+FAIL tests/guards/action-button-canonical-entity-label.test.ts
+  ● Action-button canonical entity label › 2. Header action buttons use the icon-slot Plus pattern › src/app/t/[tenantSlug]/(app)/practices/PracticesClient.tsx uses icon={<Plus />} + bare label `new-practice-btn`
+  ● Action-button canonical entity label › 2. Header action buttons use the icon-slot Plus pattern › src/app/t/[tenantSlug]/(app)/policies/PoliciesClient.tsx uses icon={<Plus />} + bare label `new-policy-btn`
+  ● Action-button canonical entity label › 2. Header action buttons use the icon-slot Plus pattern › src/app/t/[tenantSlug]/(app)/vendors/VendorsClient.tsx uses icon={<Plus />} + bare label `new-vendor-btn`
+FAIL tests/guards/dashboard-masthead-discipline.test.ts
+  ● Dashboard masthead discipline (Roadmap-3 PR-10) › every per-resource dashboard mounts <KPIStat>
+  ● Dashboard masthead discipline (Roadmap-3 PR-10) › no per-resource dashboard hand-rolls a raw stat card
+FAIL tests/guards/metadatabar-detail-coverage.test.ts
+  ● MetaStrip detail-page coverage › every registered detail page exists in the codebase
+  ● MetaStrip detail-page coverage › every page marked `adopted: true` actually mounts <MetaStrip>
+FAIL tests/guards/page-breadcrumbs-coverage.test.ts
+  ● page breadcrumbs coverage › every exempt page actually exists
+FAIL tests/guards/roadmap-11-completion.test.ts
+  ● Roadmap-11 round completion (PR-12) › every obsession-checklist entry points at a real file
+FAIL tests/guards/card-header-discipline.test.ts
+  ● CardHeader discipline (Roadmap-3 PR-5) › the curated adopters import AND mount CardHeader
+FAIL tests/guards/icon-only-action-discipline.test.ts
+  ● icon-only action discipline › IconAction site stays icon-only (i18n): "Freeze pack"
+  ● icon-only action discipline › IconAction site stays icon-only (i18n): "Generate share link"
+  ● icon-only action discipline › IconAction site stays icon-only (i18n): "Clone for retest"
+  ● icon-only action discipline › icon-only link stays icon-only: "Export JSON"
+  ● icon-only action discipline › icon-only link stays icon-only: "Export CSV"
+FAIL tests/guards/cardheader-adoption.test.ts
+  ● CardHeader adoption registry › every registered page exists in the codebase
+  ● CardHeader adoption registry › every page marked `adopted: true` actually mounts <CardHeader>
+FAIL tests/guards/form-section-discipline.test.ts
+  ● FormSection discipline (Roadmap-2 PR-6) › the curated adopters import AND mount FormSection
+FAIL tests/guards/list-page-shell-coverage.test.ts
+  ● list-page-shell coverage ratchet › no exempt entry has a stale path (file moved/deleted)
+FAIL tests/guards/sharepoint-spf1.test.ts
+  ● SP-F1 connection + folder targeting › the file picker supports folder-select, and the export button uses it
+FAIL tests/guardrails/b2-table-unification.test.ts
+  ● B2 — table unification › Title-cell navigation parity › Practices (canonical) renders TableTitleCell with an href
+  ● B2 — table unification › Title-cell navigation parity › Policies renders TableTitleCell with an href
+  ● B2 — table unification › Title-cell navigation parity › Vendors renders TableTitleCell with an href
+  ● B2 — table unification › Edit-button icon-only on detail pages › Vendor detail: edit button is icon-only
+  ● B2 — table unification › Edit-button icon-only on detail pages › Practice detail: edit button is icon-only
+FAIL tests/guards/epic63-timestamp-rollout.test.ts
+  ● Epic 63 — TimestampTooltip rollout ratchet › Policies (src/app/t/[tenantSlug]/(app)/policies/PoliciesClient.tsx) › exists
+  ● Epic 63 — TimestampTooltip rollout ratchet › Policies (src/app/t/[tenantSlug]/(app)/policies/PoliciesClient.tsx) › does not call `formatDate(` in JSX
+  ● Epic 63 — TimestampTooltip rollout ratchet › Policies (src/app/t/[tenantSlug]/(app)/policies/PoliciesClient.tsx) › imports TimestampTooltip
+  ● Epic 63 — TimestampTooltip rollout ratchet › Vendors (src/app/t/[tenantSlug]/(app)/vendors/VendorsClient.tsx) › exists
+  ● Epic 63 — TimestampTooltip rollout ratchet › Vendors (src/app/t/[tenantSlug]/(app)/vendors/VendorsClient.tsx) › does not call `formatDate(` in JSX
+  ● Epic 63 — TimestampTooltip rollout ratchet › Vendors (src/app/t/[tenantSlug]/(app)/vendors/VendorsClient.tsx) › imports TimestampTooltip
+FAIL tests/guards/list-page-descriptions.test.ts
+  ● List-page editorial descriptions (Roadmap-2 PR-4) › each list-page client renders the description slot
+FAIL tests/guards/empty-state-personality.test.ts
+  ● Empty-state personality adoption (R11-PR1) › every adopted page imports EmptyState from the canonical path
+  ● Empty-state personality adoption (R11-PR1) › every adopted page renders <EmptyState> as its emptyState prop
+  ● Empty-state personality adoption (R11-PR1) › every adopted page uses the canonical variant + size shape
+  ● Empty-state personality adoption (R11-PR1) › every adopted page with filters pairs no-results with a Clear filters action
+FAIL tests/guards/practices-detail-page-size.test.ts
+  ● Practices detail page size ratchet (Elevation PR-2) › practices/[practiceId]/page.tsx stays at or below the size floor
+  ● Practices detail page size ratchet (Elevation PR-2) › the _modals/ extraction directory exists
+FAIL tests/guards/dashboard-shell-coverage.test.ts
+  ● DashboardLayout coverage › every registered dashboard exists in the codebase
+  ● DashboardLayout coverage › every page marked `adopted: true` actually mounts <DashboardLayout>
+FAIL tests/guards/ui-rightrail-expand-toggle.test.ts
+  ● Test suite failed to run
+FAIL tests/guards/vr9-practice-ai-suggestions.test.ts
+  ● VR-9 — practice AI suggestions › the rail component is mounted in the Practice detail page right rail
+FAIL tests/guards/r23-prf-policies-vendors-capstone.test.ts
+  ● Test suite failed to run
+FAIL tests/guards/r23-prd-assets-practices-rollout.test.ts
+  ● Test suite failed to run
+FAIL tests/guards/practice-detail-tab-lazy.test.ts
+  ● Test suite failed to run
+FAIL tests/guards/p2c-practice-reverse-lookup.test.ts
+  ● Test suite failed to run
+FAIL tests/guards/ui-chrome-cleanup.test.ts
+  ● UI-15 — removed buttons › practices header has no Frameworks button
+FAIL tests/guards/b4-practice-tasks-tab.test.ts
+  ● Test suite failed to run
+FAIL tests/guardrails/token-migration.test.ts
+  ● Test suite failed to run
+FAIL tests/guards/b1-selection-header-bar.test.ts
+  ● Test suite failed to run
+FAIL tests/guardrails/pr-d-entity-id-picker.test.ts
+  ● Test suite failed to run
+FAIL tests/guardrails/practices-tasks-list-hydration.test.ts
+  ● Test suite failed to run
+FAIL tests/guardrails/b9-policy-template-upgrade.test.ts
+  ● Test suite failed to run
+FAIL tests/guardrails/pr-1-tenant-tables-org-parity.test.ts
+  ● Test suite failed to run
+FAIL tests/guardrails/b7-layout-redesign.test.ts
+  ● Test suite failed to run
+FAIL tests/guardrails/b4-filter-nav-consistency.test.ts
+  ● Test suite failed to run
+FAIL tests/guardrails/assets-audits-modal-form.test.ts
+  ● Test suite failed to run
+FAIL tests/guardrails/b8-folders-frameworks.test.ts
+  ● Test suite failed to run
+FAIL tests/guards/no-hardcoded-ui-strings.test.ts (8.429 s)
+  ● no-new-hardcoded-UI-string ratchet › config-prop baseline tracks the real count (no accumulated slack)
