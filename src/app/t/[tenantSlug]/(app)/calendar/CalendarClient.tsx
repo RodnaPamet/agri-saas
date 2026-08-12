@@ -137,7 +137,7 @@ export function CalendarClient({
     // Exhaustive over CalendarEventCategory / CalendarEventStatus — a new
     // category or status added to calendar.schemas.ts is a COMPILE ERROR
     // here rather than a raw enum value leaking into the side panel (the
-    // same device compliance-calendar.ts uses for AgriEvent categories,
+    // same device calendar.ts uses for AgriEvent categories,
     // which once caught a subsidy deadline rendering as "Fair").
     const categoryLabels: Record<CalendarEventCategory, string> = {
         evidence: tCategory('evidence'),

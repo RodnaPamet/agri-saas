@@ -1,24 +1,24 @@
 /**
- * Epic 49 — `getComplianceCalendarEvents` usecase.
+ * Epic 49 — `getCalendarEvents` usecase.
  *
  * Single aggregation that fans out across the date-bearing entities and
  * normalises every result into the unified `CalendarEvent` shape:
  *
  *   - Evidence       (nextReviewDate, expiredAt)
- *   - Policy         (nextReviewAt)
- *   - Vendor         (nextReviewAt, contractRenewalAt)
- *   - VendorDocument (validTo)
- *   - AuditCycle     (periodStartAt → periodEndAt — the only duration source today)
- *   - Practice        (nextDueAt)
- *   - PracticeTestPlan(nextDueAt)
  *   - Task           (dueAt — FARM_TASK rows split into their own category)
- *   - Risk           (nextReviewAt, targetDate)
- *   - Finding        (dueDate)
  *   - ParcelLease    (startDate → endDate — duration)
  *   - Contract       (deliveryStart → deliveryEnd — duration)
  *   - Planting       (sowDate → harvestEndDate — duration)
  *   - AgroSignal     (signalDate)
+ *   - AgriEvent      (curated global catalogue — no tenantId predicate)
  *   - NewsDerivedEvent (eventDate — AI-proposed, APPROVED rows only)
+ *   - SupportScheme  (application deadlines)
+ *
+ * GRC teardown phase 2 removed the six inherited loaders (Policy,
+ * Vendor, VendorDocument, AuditCycle, Practice, Finding) and renamed
+ * this file from `calendar.ts`. What is left is the agri
+ * calendar — and the sidebar badge, which renders on EVERY authenticated
+ * page and must never be deleted with the rest.
  *
  * Tenant isolation: every Prisma query starts with `tenantId: ctx.tenantId`
  * (AgroSignal has no `deletedAt` column — see its loader for why).
@@ -43,7 +43,7 @@
  * a stable, deterministic order rather than an arbitrary DB-order slice.
  * `CalendarResponse.truncated` is true when any source hit its cap.
  *
- * Transaction budget: all 17 loaders run on ONE `runInTenantContext`
+ * Transaction budget: all loaders run on ONE `runInTenantContext`
  * interactive transaction (one PgBouncer connection, held for the whole
  * fan-out) with a raised `timeout`/`maxWait` — see `CALENDAR_TX_TIMEOUT_MS`
  * below for why that beat splitting the fan-out into per-source
@@ -94,31 +94,16 @@ interface SourceResult {
     truncated: boolean;
 }
 
-/**
- * 1:1, in order, with the `Promise.allSettled` array in
- * `getComplianceCalendarEvents`. Used only to name a rejected source in
- * the log line below — keep it in sync when a source is added/removed.
- */
-const CALENDAR_SOURCE_NAMES = [
-    'evidence',
-    'policy',
-    'vendor',
-    'vendorDocument',
-    'auditCycle',
-    'practice',
-    'testPlan',
-    'task',
-    'risk',
-    'finding',
-    'treatmentMilestone',
-    'treatmentPlan',
-    'parcelLease',
-    'contract',
-    'planting',
-    'agroSignal',
-    'agriEvent',
-    'newsDerivedEvent',
-] as const;
+// NOTE: there is deliberately no free-standing array of source names.
+// There used to be one, indexed positionally against the fan-out array,
+// and it had silently drifted: successive uprootings removed the
+// `testPlan`, `risk`, `treatmentMilestone` and `treatmentPlan` loaders
+// without removing their names, and `supportScheme` was added without
+// one. Every index from 6 up named the WRONG source, and the last
+// entry logged `undefined` — so the one diagnostic that tells an
+// operator which loader broke was lying. The name now travels WITH the
+// loader (see `SOURCES` in the entry point below), which makes the
+// drift unrepresentable rather than merely fixed.
 
 /**
  * Interactive-transaction budget for the calendar fan-out.
@@ -127,19 +112,20 @@ const CALENDAR_SOURCE_NAMES = [
  * PgBouncer (transaction-mode) connection held for the transaction's
  * full duration. Prisma's default `timeout`/`maxWait` (5s / 2s) was
  * sized for a handful of loaders; the fan-out grew from 12 to 17 in the
- * agriculture-sources PR and now sits at 18 with the AI news-derived
- * source. The per-query cost is what the indexes added in the
+ * agriculture-sources PR, peaked at 18 with the AI news-derived source,
+ * and sits at 9 after the GRC teardown removed the inherited loaders.
+ * The per-query cost is what the indexes added in the
  * calendar-agri-source-date-indexes migration fix — each loader is a
  * bounded, index-backed point/range read — but the DEFAULT ceiling is
- * still shared across all 18 sequential statements on that one
+ * still shared across every sequential statement on that one
  * connection (SET LOCAL ROLE + SET LOCAL app.tenant_id/app.request_id +
- * 18 queries), so a slow one (cold cache, a large tenant, a brief lock
+ * one query per source), so a slow one (cold cache, a large tenant, a brief lock
  * wait) has no headroom before Prisma kills the whole transaction and
  * blanks the calendar for every source, not just the slow one.
  *
- * We raise the ceiling rather than splitting the fan-out into 18
- * separate `runInTenantContext` transactions: that would trade one
- * held connection for up to 18 concurrent ones per calendar page load,
+ * We raise the ceiling rather than splitting the fan-out into one
+ * `runInTenantContext` transaction per source: that would trade one
+ * held connection for as many concurrent ones per calendar page load,
  * which is worse for a shared PgBouncer pool under real traffic than
  * one connection held a few seconds longer, and it would also lose the
  * single consistent read snapshot the sources currently share. Values
@@ -150,7 +136,7 @@ const CALENDAR_SOURCE_NAMES = [
 const CALENDAR_TX_TIMEOUT_MS = 15_000;
 const CALENDAR_TX_MAX_WAIT_MS = 10_000;
 
-export async function getComplianceCalendarEvents(
+export async function getCalendarEvents(
     ctx: RequestContext,
     input: GetCalendarEventsInput,
 ): Promise<CalendarResponse> {
@@ -160,46 +146,46 @@ export async function getComplianceCalendarEvents(
     const limit = input.perSourceLimit ?? 500;
     const range = { from: input.from, to: input.to };
 
+    // Every source, paired with the name used in its failure log. The
+    // pairing lives HERE rather than in a parallel array so a loader can
+    // never again be added, removed or reordered without its name moving
+    // with it.
+    const SOURCES: ReadonlyArray<{
+        name: string;
+        run: (db: PrismaTx) => Promise<SourceResult>;
+    }> = [
+        { name: 'evidence', run: (db) => loadEvidenceEvents(db, ctx, range, now, limit) },
+        { name: 'task', run: (db) => loadTaskEvents(db, ctx, range, now, limit) },
+        // Agriculture data sources (PR 2 of the calendar roadmap).
+        { name: 'parcelLease', run: (db) => loadParcelLeaseEvents(db, ctx, range, now, limit) },
+        { name: 'contract', run: (db) => loadContractEvents(db, ctx, range, now, limit) },
+        { name: 'planting', run: (db) => loadPlantingEvents(db, ctx, range, now, limit) },
+        { name: 'agroSignal', run: (db) => loadAgroSignalEvents(db, ctx, range, now, limit) },
+        // Global curated catalogue — see loadAgriEventEvents on why this
+        // one carries no tenantId predicate.
+        { name: 'agriEvent', run: (db) => loadAgriEventEvents(db, ctx, range, now, limit) },
+        // Calendar roadmap PR 3 — AI news-derived proposals. Same
+        // no-tenantId shape as loadAgriEventEvents; ONLY reads
+        // status: 'APPROVED' rows.
+        { name: 'newsDerivedEvent', run: (db) => loadNewsDerivedEventEvents(db, ctx, range, now, limit) },
+        { name: 'supportScheme', run: (db) => loadSupportSchemeEvents(db, ctx, range, now, limit) },
+    ];
+
     // Fan-out to every source in parallel inside one tenant-bound
     // transaction. `runInTenantContext` binds the per-tx `app_user`
     // role + sets `app.tenant_id` so every read goes through the
     // RLS policies — that's belt-and-braces with the explicit
     // `tenantId: ctx.tenantId` filter inside each loader.
     //
-    // `Promise.allSettled`, NOT `Promise.all`: with 18 sources fanning
-    // out, one throwing loader must not blank the other 17. A rejected
-    // source is logged and dropped; the rest still render.
+    // `Promise.allSettled`, NOT `Promise.all`: one throwing loader must
+    // not blank the others. A rejected source is logged and dropped; the
+    // rest still render.
     //
     // Timeout raised, transaction NOT split — see
     // `CALENDAR_TX_TIMEOUT_MS` above for why.
     const settled = await runInTenantContext(
         ctx,
-        (db) =>
-            Promise.allSettled<SourceResult>([
-                loadEvidenceEvents(db, ctx, range, now, limit),
-                loadPolicyEvents(db, ctx, range, now, limit),
-                loadVendorEvents(db, ctx, range, now, limit),
-                loadVendorDocumentEvents(db, ctx, range, now, limit),
-                loadAuditCycleEvents(db, ctx, range, now, limit),
-                loadPracticeEvents(db, ctx, range, now, limit),
-                loadTaskEvents(db, ctx, range, now, limit),
-                loadFindingEvents(db, ctx, range, now, limit),
-                // Epic G-7 — milestones contribute one event per milestone;
-                // plans contribute one per non-completed plan target.
-                // Agriculture data sources (PR 2 of the calendar roadmap).
-                loadParcelLeaseEvents(db, ctx, range, now, limit),
-                loadContractEvents(db, ctx, range, now, limit),
-                loadPlantingEvents(db, ctx, range, now, limit),
-                loadAgroSignalEvents(db, ctx, range, now, limit),
-                // Global curated catalogue — see loadAgriEventEvents on why
-                // this one carries no tenantId predicate.
-                loadAgriEventEvents(db, ctx, range, now, limit),
-                // Calendar roadmap PR 3 — AI news-derived proposals. Same
-                // no-tenantId shape as loadAgriEventEvents; ONLY reads
-                // status: 'APPROVED' rows.
-                loadNewsDerivedEventEvents(db, ctx, range, now, limit),
-                loadSupportSchemeEvents(db, ctx, range, now, limit),
-            ]),
+        (db) => Promise.allSettled<SourceResult>(SOURCES.map((s) => s.run(db))),
         { timeout: CALENDAR_TX_TIMEOUT_MS, maxWait: CALENDAR_TX_MAX_WAIT_MS },
     );
 
@@ -213,10 +199,10 @@ export async function getComplianceCalendarEvents(
         }
         // A partial calendar beats no calendar — log the failure and let
         // the surviving sources render rather than rethrowing.
-        logger.error('compliance-calendar: source failed, serving a partial calendar', {
-            component: 'compliance-calendar',
+        logger.error('calendar: source failed, serving a partial calendar', {
+            component: 'calendar',
             tenantId: ctx.tenantId,
-            source: CALENDAR_SOURCE_NAMES[i],
+            source: SOURCES[i].name,
             error:
                 result.reason instanceof Error
                     ? result.reason.message
@@ -360,287 +346,6 @@ async function loadEvidenceEvents(
     return { events, truncated };
 }
 
-async function loadPolicyEvents(
-    db: PrismaTx,
-    ctx: RequestContext,
-    range: DateRange,
-    now: Date,
-    limit: number,
-): Promise<SourceResult> {
-    const rawRows = await db.policy.findMany({
-        where: {
-            tenantId: ctx.tenantId,
-            deletedAt: null,
-            nextReviewAt: { not: null, gte: range.from, lte: range.to },
-        },
-        select: {
-            id: true,
-            title: true,
-            nextReviewAt: true,
-            status: true,
-        },
-        orderBy: { nextReviewAt: 'asc' },
-        take: limit + 1,
-    });
-    const { rows, truncated } = capRows(rawRows, limit);
-    const events = rows
-        .filter((r) => r.nextReviewAt)
-        .map((r): CalendarEvent => {
-            const date = r.nextReviewAt as Date;
-            const isDone = r.status === 'ARCHIVED';
-            return {
-                id: `POLICY:${r.id}:policy-review`,
-                type: 'policy-review',
-                category: 'policy',
-                titleKey: 'policyReview',
-                titleParams: { name: r.title },
-                date: date.toISOString(),
-                status: classifyStatus(date, now, isDone),
-                entityType: 'POLICY',
-                entityId: r.id,
-                href: tenantHrefFromCtx(ctx, `/policies/${r.id}`),
-            };
-        });
-    return { events, truncated };
-}
-
-async function loadVendorEvents(
-    db: PrismaTx,
-    ctx: RequestContext,
-    range: DateRange,
-    now: Date,
-    limit: number,
-): Promise<SourceResult> {
-    const rawRows = await db.vendor.findMany({
-        where: {
-            tenantId: ctx.tenantId,
-            deletedAt: null,
-            OR: [
-                { nextReviewAt: { not: null, gte: range.from, lte: range.to } },
-                {
-                    contractRenewalAt: {
-                        not: null,
-                        gte: range.from,
-                        lte: range.to,
-                    },
-                },
-            ],
-        },
-        select: {
-            id: true,
-            name: true,
-            nextReviewAt: true,
-            contractRenewalAt: true,
-            status: true,
-            ownerUserId: true,
-        },
-        orderBy: { nextReviewAt: 'asc' },
-        take: limit + 1,
-    });
-    const { rows, truncated } = capRows(rawRows, limit);
-    const events: CalendarEvent[] = [];
-    for (const r of rows) {
-        const isOffboarded = r.status === 'OFFBOARDED';
-        if (
-            r.nextReviewAt &&
-            r.nextReviewAt >= range.from &&
-            r.nextReviewAt <= range.to
-        ) {
-            events.push({
-                id: `VENDOR:${r.id}:vendor-review`,
-                type: 'vendor-review',
-                category: 'vendor',
-                titleKey: 'vendorReview',
-                titleParams: { name: r.name },
-                date: r.nextReviewAt.toISOString(),
-                status: classifyStatus(r.nextReviewAt, now, isOffboarded),
-                entityType: 'VENDOR',
-                entityId: r.id,
-                href: tenantHrefFromCtx(ctx, `/vendors/${r.id}`),
-                ownerUserId: r.ownerUserId ?? undefined,
-            });
-        }
-        if (
-            r.contractRenewalAt &&
-            r.contractRenewalAt >= range.from &&
-            r.contractRenewalAt <= range.to
-        ) {
-            events.push({
-                id: `VENDOR:${r.id}:vendor-renewal`,
-                type: 'vendor-renewal',
-                category: 'vendor',
-                titleKey: 'vendorRenewal',
-                titleParams: { name: r.name },
-                date: r.contractRenewalAt.toISOString(),
-                status: classifyStatus(
-                    r.contractRenewalAt,
-                    now,
-                    isOffboarded,
-                ),
-                entityType: 'VENDOR',
-                entityId: r.id,
-                href: tenantHrefFromCtx(ctx, `/vendors/${r.id}`),
-                ownerUserId: r.ownerUserId ?? undefined,
-            });
-        }
-    }
-    return { events, truncated };
-}
-
-async function loadVendorDocumentEvents(
-    db: PrismaTx,
-    ctx: RequestContext,
-    range: DateRange,
-    now: Date,
-    limit: number,
-): Promise<SourceResult> {
-    const rawRows = await db.vendorDocument.findMany({
-        where: {
-            tenantId: ctx.tenantId,
-            validTo: { not: null, gte: range.from, lte: range.to },
-        },
-        select: {
-            id: true,
-            type: true,
-            validTo: true,
-            vendorId: true,
-            vendor: { select: { name: true } },
-        },
-        orderBy: { validTo: 'asc' },
-        take: limit + 1,
-    });
-    const { rows, truncated } = capRows(rawRows, limit);
-    const events = rows
-        .filter((r) => r.validTo)
-        .map((r): CalendarEvent => {
-            const date = r.validTo as Date;
-            return {
-                id: `VENDOR_DOCUMENT:${r.id}:vendor-document-expiry`,
-                type: 'vendor-document-expiry',
-                category: 'vendor',
-                titleKey: 'vendorDocExpiry',
-                titleParams: { type: String(r.type), name: r.vendor.name },
-                date: date.toISOString(),
-                status: classifyStatus(date, now, false),
-                entityType: 'VENDOR_DOCUMENT',
-                entityId: r.id,
-                href: tenantHrefFromCtx(ctx, `/vendors/${r.vendorId}`),
-            };
-        });
-    return { events, truncated };
-}
-
-async function loadAuditCycleEvents(
-    db: PrismaTx,
-    ctx: RequestContext,
-    range: DateRange,
-    now: Date,
-    limit: number,
-): Promise<SourceResult> {
-    // AuditCycle is the only duration source today: emits an event with
-    // `start` (periodStartAt) and `end` (periodEndAt). Either bound
-    // intersecting the queried range surfaces the cycle.
-    const rawRows = await db.auditCycle.findMany({
-        where: {
-            tenantId: ctx.tenantId,
-            deletedAt: null,
-            OR: [
-                { periodStartAt: { gte: range.from, lte: range.to } },
-                { periodEndAt: { gte: range.from, lte: range.to } },
-                {
-                    AND: [
-                        { periodStartAt: { lte: range.from } },
-                        { periodEndAt: { gte: range.to } },
-                    ],
-                },
-            ],
-        },
-        select: {
-            id: true,
-            name: true,
-            frameworkKey: true,
-            periodStartAt: true,
-            periodEndAt: true,
-            status: true,
-        },
-        orderBy: { periodStartAt: 'asc' },
-        take: limit + 1,
-    });
-    const { rows, truncated } = capRows(rawRows, limit);
-    const events = rows
-        .filter((r) => r.periodStartAt || r.periodEndAt)
-        .map((r): CalendarEvent => {
-            const start = r.periodStartAt ?? r.periodEndAt!;
-            const end =
-                r.periodEndAt && r.periodStartAt && r.periodEndAt !== r.periodStartAt
-                    ? r.periodEndAt
-                    : undefined;
-            const isDone = r.status === 'COMPLETE';
-            return {
-                id: `AUDIT_CYCLE:${r.id}:audit-cycle`,
-                type: 'audit-cycle',
-                category: 'audit',
-                titleKey: 'auditCycle',
-                titleParams: { name: r.name },
-                date: start.toISOString(),
-                end: end?.toISOString(),
-                status: classifyStatus(end ?? start, now, isDone),
-                entityType: 'AUDIT_CYCLE',
-                entityId: r.id,
-                href: tenantHrefFromCtx(ctx, `/audits/cycles/${r.id}`),
-                detail: r.frameworkKey,
-            };
-        });
-    return { events, truncated };
-}
-
-async function loadPracticeEvents(
-    db: PrismaTx,
-    ctx: RequestContext,
-    range: DateRange,
-    now: Date,
-    limit: number,
-): Promise<SourceResult> {
-    const rawRows = await db.practice.findMany({
-        where: {
-            tenantId: ctx.tenantId,
-            deletedAt: null,
-            applicability: 'APPLICABLE',
-            nextDueAt: { not: null, gte: range.from, lte: range.to },
-        },
-        select: {
-            id: true,
-            name: true,
-            nextDueAt: true,
-            status: true,
-            ownerUserId: true,
-        },
-        orderBy: { nextDueAt: 'asc' },
-        take: limit + 1,
-    });
-    const { rows, truncated } = capRows(rawRows, limit);
-    const events = rows
-        .filter((r) => r.nextDueAt)
-        .map((r): CalendarEvent => {
-            const date = r.nextDueAt as Date;
-            const isDone = r.status === 'IMPLEMENTED';
-            return {
-                id: `PRACTICE:${r.id}:practice-review`,
-                type: 'practice-review',
-                category: 'practice',
-                titleKey: 'practiceReview',
-                titleParams: { name: r.name },
-                date: date.toISOString(),
-                status: classifyStatus(date, now, isDone),
-                entityType: 'PRACTICE',
-                entityId: r.id,
-                href: tenantHrefFromCtx(ctx, `/practices/${r.id}`),
-                ownerUserId: r.ownerUserId ?? undefined,
-            };
-        });
-    return { events, truncated };
-}
-
 /**
  * Task — both compliance to-dos and farm work share this model.
  * `type: 'FARM_TASK'` rows are field work, not a compliance deadline, and
@@ -748,52 +453,6 @@ async function loadTaskEvents(
     return { events, truncated };
 }
 
-async function loadFindingEvents(
-    db: PrismaTx,
-    ctx: RequestContext,
-    range: DateRange,
-    now: Date,
-    limit: number,
-): Promise<SourceResult> {
-    const rawRows = await db.finding.findMany({
-        where: {
-            tenantId: ctx.tenantId,
-            deletedAt: null,
-            dueDate: { not: null, gte: range.from, lte: range.to },
-        },
-        select: {
-            id: true,
-            title: true,
-            dueDate: true,
-            status: true,
-            owner: true,
-        },
-        orderBy: { dueDate: 'asc' },
-        take: limit + 1,
-    });
-    const { rows, truncated } = capRows(rawRows, limit);
-    const events = rows
-        .filter((r) => r.dueDate)
-        .map((r): CalendarEvent => {
-            const date = r.dueDate as Date;
-            const isDone = r.status === 'CLOSED';
-            return {
-                id: `FINDING:${r.id}:finding-due`,
-                type: 'finding-due',
-                category: 'finding',
-                titleKey: 'findingDue',
-                titleParams: { name: r.title },
-                date: date.toISOString(),
-                status: classifyStatus(date, now, isDone),
-                entityType: 'FINDING',
-                entityId: r.id,
-                href: tenantHrefFromCtx(ctx, `/findings/${r.id}`),
-                ownerUserId: r.owner ?? undefined,
-            };
-        });
-    return { events, truncated };
-}
-
 // ─── Lightweight badge query ─────────────────────────────────────────
 
 /**
@@ -819,7 +478,7 @@ export async function getUpcomingDeadlineCount(
     // `take: MAX_BADGE_COUNT + 1` pattern lets us know if the real
     // number exceeds the cap without doing a full COUNT. Wrapped in
     // `runInTenantContext` so the read goes through RLS-bound `app_user`.
-    const [tasks, practices, evidence, policies, vendors] =
+    const [tasks, evidence] =
         await runInTenantContext(ctx, (db) =>
             Promise.all([
                 db.task.count({
@@ -841,16 +500,6 @@ export async function getUpcomingDeadlineCount(
                     },
                     take: MAX_BADGE_COUNT + 1,
                 }),
-                db.practice.count({
-                    where: {
-                        tenantId: ctx.tenantId,
-                        deletedAt: null,
-                        applicability: 'APPLICABLE',
-                        nextDueAt: { not: null, lte: horizon },
-                        status: { notIn: ['IMPLEMENTED', 'NOT_APPLICABLE'] },
-                    },
-                    take: MAX_BADGE_COUNT + 1,
-                }),
                 db.evidence.count({
                     where: {
                         tenantId: ctx.tenantId,
@@ -860,34 +509,10 @@ export async function getUpcomingDeadlineCount(
                     },
                     take: MAX_BADGE_COUNT + 1,
                 }),
-                db.policy.count({
-                    where: {
-                        tenantId: ctx.tenantId,
-                        deletedAt: null,
-                        nextReviewAt: { not: null, lte: horizon },
-                        status: { not: 'ARCHIVED' },
-                    },
-                    take: MAX_BADGE_COUNT + 1,
-                }),
-                db.vendor.count({
-                    where: {
-                        tenantId: ctx.tenantId,
-                        deletedAt: null,
-                        status: { not: 'OFFBOARDED' },
-                        OR: [
-                            { nextReviewAt: { not: null, lte: horizon } },
-                            { contractRenewalAt: { not: null, lte: horizon } },
-                        ],
-                    },
-                    take: MAX_BADGE_COUNT + 1,
-                }),
             ]),
         );
 
-    return Math.min(
-        MAX_BADGE_COUNT + 1,
-        tasks + practices + evidence + policies + vendors,
-    );
+    return Math.min(MAX_BADGE_COUNT + 1, tasks + evidence);
 }
 
 // ─── Epic G-7 — treatment plan + milestone calendar loaders ─────────

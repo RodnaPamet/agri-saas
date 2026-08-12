@@ -1,5 +1,5 @@
 /**
- * Epic 49 — `getComplianceCalendarEvents` usecase tests.
+ * Epic 49 — `getCalendarEvents` usecase tests.
  *
  * Verifies the unified-aggregation behaviour:
  *
@@ -23,17 +23,18 @@ const OWNER = 'user-owner';
 // ─── Mocks ────────────────────────────────────────────────────────────
 
 const mockEvidenceFindMany = jest.fn();
-const mockPolicyFindMany = jest.fn();
-const mockVendorFindMany = jest.fn();
-const mockVendorDocFindMany = jest.fn();
-const mockAuditCycleFindMany = jest.fn();
-const mockPracticeFindMany = jest.fn();
 const mockTaskFindMany = jest.fn();
-const mockFindingFindMany = jest.fn();
 
 const mockAgriEventFindMany = jest.fn();
 // Calendar roadmap PR 3 — AI news-derived proposals. Global, like agriEvent.
 const mockNewsDerivedEventFindMany = jest.fn();
+// Support schemes (subsidy windows). Global like agriEvent — the loader's
+// where clause is `reviewStatus: 'APPROVED'`, with no tenantId predicate.
+// This delegate was MISSING from the mock db until the GRC teardown split:
+// `loadSupportSchemeEvents` threw `undefined.findMany` on every test in this
+// file, Promise.allSettled swallowed it, and the suite stayed green over a
+// loader that had never once run.
+const mockSupportSchemeFindMany = jest.fn();
 
 // Agriculture data sources (PR 2 of the calendar roadmap).
 const mockParcelLeaseFindMany = jest.fn();
@@ -45,25 +46,17 @@ const mockLocationFindMany = jest.fn();
 const mockParcelFindMany = jest.fn();
 
 const mockTaskCount = jest.fn().mockResolvedValue(0);
-const mockPracticeCount = jest.fn().mockResolvedValue(0);
 const mockEvidenceCount = jest.fn().mockResolvedValue(0);
-const mockPolicyCount = jest.fn().mockResolvedValue(0);
-const mockVendorCount = jest.fn().mockResolvedValue(0);
 
 beforeEach(() => {
     jest.resetModules();
     jest.clearAllMocks();
     [
         mockEvidenceFindMany,
-        mockPolicyFindMany,
-        mockVendorFindMany,
-        mockVendorDocFindMany,
-        mockAuditCycleFindMany,
-        mockPracticeFindMany,
         mockTaskFindMany,
-        mockFindingFindMany,
         mockAgriEventFindMany,
         mockNewsDerivedEventFindMany,
+        mockSupportSchemeFindMany,
         mockParcelLeaseFindMany,
         mockContractFindMany,
         mockPlantingFindMany,
@@ -71,13 +64,9 @@ beforeEach(() => {
         mockLocationFindMany,
         mockParcelFindMany,
     ].forEach((m) => m.mockReset().mockResolvedValue([]));
-    [
-        mockTaskCount,
-        mockPracticeCount,
-        mockEvidenceCount,
-        mockPolicyCount,
-        mockVendorCount,
-    ].forEach((m) => m.mockReset().mockResolvedValue(0));
+    [mockTaskCount, mockEvidenceCount].forEach((m) =>
+        m.mockReset().mockResolvedValue(0),
+    );
 
     // Calendar usecase reads via `runInTenantContext(ctx, db => ...)`
     // (passes through RLS-bound `app_user`). Mock the helper to invoke
@@ -88,30 +77,9 @@ beforeEach(() => {
             findMany: (...a: unknown[]) => mockEvidenceFindMany(...a),
             count: (...a: unknown[]) => mockEvidenceCount(...a),
         },
-        policy: {
-            findMany: (...a: unknown[]) => mockPolicyFindMany(...a),
-            count: (...a: unknown[]) => mockPolicyCount(...a),
-        },
-        vendor: {
-            findMany: (...a: unknown[]) => mockVendorFindMany(...a),
-            count: (...a: unknown[]) => mockVendorCount(...a),
-        },
-        vendorDocument: {
-            findMany: (...a: unknown[]) => mockVendorDocFindMany(...a),
-        },
-        auditCycle: {
-            findMany: (...a: unknown[]) => mockAuditCycleFindMany(...a),
-        },
-        practice: {
-            findMany: (...a: unknown[]) => mockPracticeFindMany(...a),
-            count: (...a: unknown[]) => mockPracticeCount(...a),
-        },
         task: {
             findMany: (...a: unknown[]) => mockTaskFindMany(...a),
             count: (...a: unknown[]) => mockTaskCount(...a),
-        },
-        finding: {
-            findMany: (...a: unknown[]) => mockFindingFindMany(...a),
         },
         // Global agriculture catalogue — no tenantId on the model.
         agriEvent: {
@@ -120,6 +88,10 @@ beforeEach(() => {
         // Calendar roadmap PR 3 — global, like agriEvent above.
         newsDerivedEvent: {
             findMany: (...a: unknown[]) => mockNewsDerivedEventFindMany(...a),
+        },
+        // Support schemes — also global (no tenantId predicate).
+        supportScheme: {
+            findMany: (...a: unknown[]) => mockSupportSchemeFindMany(...a),
         },
         // Agriculture data sources (PR 2 of the calendar roadmap) — all
         // four ARE tenant-scoped, unlike agriEvent above.
@@ -179,12 +151,12 @@ const TO = new Date('2026-08-01T00:00:00Z');
 
 // ─── Test cases ──────────────────────────────────────────────────────
 
-describe('getComplianceCalendarEvents — aggregation', () => {
+describe('getCalendarEvents — aggregation', () => {
     it('returns an empty stream when every source is empty', async () => {
-        const { getComplianceCalendarEvents } = await import(
-            '@/app-layer/usecases/compliance-calendar'
+        const { getCalendarEvents } = await import(
+            '@/app-layer/usecases/calendar'
         );
-        const result = await getComplianceCalendarEvents(makeCtx() as never, {
+        const result = await getCalendarEvents(makeCtx() as never, {
             from: FROM,
             to: TO,
             now: NOW,
@@ -194,24 +166,18 @@ describe('getComplianceCalendarEvents — aggregation', () => {
     });
 
     it('always filters every Prisma query by tenantId (defense-in-depth)', async () => {
-        const { getComplianceCalendarEvents } = await import(
-            '@/app-layer/usecases/compliance-calendar'
+        const { getCalendarEvents } = await import(
+            '@/app-layer/usecases/calendar'
         );
-        await getComplianceCalendarEvents(makeCtx() as never, {
+        await getCalendarEvents(makeCtx() as never, {
             from: FROM,
             to: TO,
             now: NOW,
         });
         for (const m of [
             mockEvidenceFindMany,
-            mockPolicyFindMany,
-            mockVendorFindMany,
-            mockVendorDocFindMany,
-            mockAuditCycleFindMany,
-            mockPracticeFindMany,
             mockTaskFindMany,
-                mockFindingFindMany,
-                    // Agriculture data sources (PR 2) — all four ARE tenant-scoped.
+            // Agriculture data sources (PR 2) — all four ARE tenant-scoped.
             mockParcelLeaseFindMany,
             mockContractFindMany,
             mockPlantingFindMany,
@@ -243,12 +209,13 @@ describe('getComplianceCalendarEvents — aggregation', () => {
                 ownerUserId: OWNER,
             },
         ]);
-        mockPolicyFindMany.mockResolvedValue([
+        mockAgroSignalFindMany.mockResolvedValue([
             {
-                id: 'pol-1',
-                title: 'Acceptable Use',
-                nextReviewAt: new Date('2026-05-20T00:00:00Z'),
-                status: 'PUBLISHED',
+                id: 'sig-1',
+                kind: 'SPRAY_WINDOW',
+                signalDate: new Date('2026-05-20T00:00:00Z'),
+                locationId: 'loc-9',
+                location: { name: 'East Field' },
             },
         ]);
         mockTaskFindMany.mockResolvedValue([
@@ -261,23 +228,24 @@ describe('getComplianceCalendarEvents — aggregation', () => {
             },
         ]);
 
-        const { getComplianceCalendarEvents } = await import(
-            '@/app-layer/usecases/compliance-calendar'
+        const { getCalendarEvents } = await import(
+            '@/app-layer/usecases/calendar'
         );
-        const result = await getComplianceCalendarEvents(makeCtx() as never, {
+        const result = await getCalendarEvents(makeCtx() as never, {
             from: FROM,
             to: TO,
             now: NOW,
         });
 
         expect(result.events).toHaveLength(3);
-        expect(result.events.map((e) => e.type)).toEqual([
-            'policy-review',
-            'evidence-review',
-            'task-due',
+        // Sorted by date: agro-signal (05-20) < evidence (06-15) < task (07-01).
+        expect(result.events.map((e) => e.category)).toEqual([
+            'agro-signal',
+            'evidence',
+            'task',
         ]);
         expect(result.counts.total).toBe(3);
-        expect(result.counts.byCategory.policy).toBe(1);
+        expect(result.counts.byCategory['agro-signal']).toBe(1);
         expect(result.counts.byCategory.evidence).toBe(1);
         expect(result.counts.byCategory.task).toBe(1);
     });
@@ -313,10 +281,10 @@ describe('getComplianceCalendarEvents — aggregation', () => {
                 assigneeUserId: null,
             },
         ]);
-        const { getComplianceCalendarEvents } = await import(
-            '@/app-layer/usecases/compliance-calendar'
+        const { getCalendarEvents } = await import(
+            '@/app-layer/usecases/calendar'
         );
-        const result = await getComplianceCalendarEvents(makeCtx() as never, {
+        const result = await getCalendarEvents(makeCtx() as never, {
             from: FROM,
             to: TO,
             now: NOW,
@@ -330,57 +298,40 @@ describe('getComplianceCalendarEvents — aggregation', () => {
         expect(byId['t-done']).toBe('done');
     });
 
-    it('emits audit cycles with both `date` and `end` (duration shape)', async () => {
-        mockAuditCycleFindMany.mockResolvedValue([
+    it('a support scheme emits BOTH an opens event AND a closes event from one row', async () => {
+        // The one-row-to-two-events shape used to be pinned on Vendor
+        // (nextReviewAt + contractRenewalAt). GRC teardown phase 2 deleted
+        // that loader; SupportScheme carries the same shape via its
+        // application window, so the behaviour class keeps its coverage.
+        mockSupportSchemeFindMany.mockResolvedValue([
             {
-                id: 'cyc-1',
-                name: 'Q3 SOC2',
-                frameworkKey: 'SOC2',
-                periodStartAt: new Date('2026-06-01T00:00:00Z'),
-                periodEndAt: new Date('2026-08-31T00:00:00Z'),
-                status: 'IN_PROGRESS',
+                id: 'sch-1',
+                title: 'Young farmer grant',
+                authority: 'ДФЗ',
+                applicationOpensAt: new Date('2026-06-10T00:00:00Z'),
+                applicationClosesAt: new Date('2026-07-15T00:00:00Z'),
+                sourceUrl: null,
+                source: 'manual',
+                confidence: null,
             },
         ]);
-        const { getComplianceCalendarEvents } = await import(
-            '@/app-layer/usecases/compliance-calendar'
+        const { getCalendarEvents } = await import(
+            '@/app-layer/usecases/calendar'
         );
-        const result = await getComplianceCalendarEvents(makeCtx() as never, {
+        const result = await getCalendarEvents(makeCtx() as never, {
             from: FROM,
             to: TO,
             now: NOW,
         });
-        expect(result.events).toHaveLength(1);
-        const ev = result.events[0];
-        expect(ev.type).toBe('audit-cycle');
-        expect(ev.category).toBe('audit');
-        expect(ev.date).toBe('2026-06-01T00:00:00.000Z');
-        expect(ev.end).toBe('2026-08-31T00:00:00.000Z');
-        expect(ev.href).toBe('/t/acme/audits/cycles/cyc-1');
-    });
-
-    it('vendor returns BOTH a review event AND a renewal event when both dates fall in range', async () => {
-        mockVendorFindMany.mockResolvedValue([
-            {
-                id: 'v-1',
-                name: 'AWS',
-                nextReviewAt: new Date('2026-06-10T00:00:00Z'),
-                contractRenewalAt: new Date('2026-07-15T00:00:00Z'),
-                status: 'ACTIVE',
-                ownerUserId: OWNER,
-            },
+        expect(result.events.map((e) => e.id)).toEqual([
+            'SUPPORT_SCHEME:sch-1:opens',
+            'SUPPORT_SCHEME:sch-1:closes',
         ]);
-        const { getComplianceCalendarEvents } = await import(
-            '@/app-layer/usecases/compliance-calendar'
-        );
-        const result = await getComplianceCalendarEvents(makeCtx() as never, {
-            from: FROM,
-            to: TO,
-            now: NOW,
-        });
         expect(result.events.map((e) => e.type)).toEqual([
-            'vendor-review',
-            'vendor-renewal',
+            'agri-subsidy-deadline',
+            'agri-subsidy-deadline',
         ]);
+        expect(result.events[0].href).toBe('/t/acme/schemes');
     });
 
     it('applies the `types` filter to narrow results post-aggregation', async () => {
@@ -403,10 +354,10 @@ describe('getComplianceCalendarEvents — aggregation', () => {
             },
         ]);
 
-        const { getComplianceCalendarEvents } = await import(
-            '@/app-layer/usecases/compliance-calendar'
+        const { getCalendarEvents } = await import(
+            '@/app-layer/usecases/calendar'
         );
-        const result = await getComplianceCalendarEvents(makeCtx() as never, {
+        const result = await getCalendarEvents(makeCtx() as never, {
             from: FROM,
             to: TO,
             now: NOW,
@@ -426,10 +377,10 @@ describe('getComplianceCalendarEvents — aggregation', () => {
                 assigneeUserId: null,
             },
         ]);
-        const { getComplianceCalendarEvents } = await import(
-            '@/app-layer/usecases/compliance-calendar'
+        const { getCalendarEvents } = await import(
+            '@/app-layer/usecases/calendar'
         );
-        const result = await getComplianceCalendarEvents(makeCtx() as never, {
+        const result = await getCalendarEvents(makeCtx() as never, {
             from: FROM,
             to: TO,
             now: NOW,
@@ -452,10 +403,10 @@ describe('getComplianceCalendarEvents — aggregation', () => {
         mockLocationFindMany.mockResolvedValue([
             { id: 'loc-1', name: 'North Block' },
         ]);
-        const { getComplianceCalendarEvents } = await import(
-            '@/app-layer/usecases/compliance-calendar'
+        const { getCalendarEvents } = await import(
+            '@/app-layer/usecases/calendar'
         );
-        const result = await getComplianceCalendarEvents(makeCtx() as never, {
+        const result = await getCalendarEvents(makeCtx() as never, {
             from: FROM,
             to: TO,
             now: NOW,
@@ -509,10 +460,10 @@ describe('getComplianceCalendarEvents — aggregation', () => {
                 cropPlan: { cropType: { name: 'Tomato' } },
             },
         ]);
-        const { getComplianceCalendarEvents } = await import(
-            '@/app-layer/usecases/compliance-calendar'
+        const { getCalendarEvents } = await import(
+            '@/app-layer/usecases/calendar'
         );
-        const result = await getComplianceCalendarEvents(makeCtx() as never, {
+        const result = await getCalendarEvents(makeCtx() as never, {
             from: FROM,
             to: TO,
             now: NOW,
@@ -558,10 +509,10 @@ describe('getComplianceCalendarEvents — aggregation', () => {
                 cropPlan: { cropType: { name: 'Sweetcorn' } },
             },
         ]);
-        const { getComplianceCalendarEvents } = await import(
-            '@/app-layer/usecases/compliance-calendar'
+        const { getCalendarEvents } = await import(
+            '@/app-layer/usecases/calendar'
         );
-        const result = await getComplianceCalendarEvents(makeCtx() as never, {
+        const result = await getCalendarEvents(makeCtx() as never, {
             from: FROM,
             to: TO,
             now: NOW,
@@ -589,10 +540,10 @@ describe('getComplianceCalendarEvents — aggregation', () => {
                 location: { name: 'East Field' },
             },
         ]);
-        const { getComplianceCalendarEvents } = await import(
-            '@/app-layer/usecases/compliance-calendar'
+        const { getCalendarEvents } = await import(
+            '@/app-layer/usecases/calendar'
         );
-        const result = await getComplianceCalendarEvents(makeCtx() as never, {
+        const result = await getCalendarEvents(makeCtx() as never, {
             from: FROM,
             to: TO,
             now: NOW,
@@ -627,10 +578,10 @@ describe('getComplianceCalendarEvents — aggregation', () => {
                 sourceUrl: 'https://dfz.bg/article-2',
             },
         ]);
-        const { getComplianceCalendarEvents } = await import(
-            '@/app-layer/usecases/compliance-calendar'
+        const { getCalendarEvents } = await import(
+            '@/app-layer/usecases/calendar'
         );
-        const result = await getComplianceCalendarEvents(makeCtx() as never, {
+        const result = await getCalendarEvents(makeCtx() as never, {
             from: FROM,
             to: TO,
             now: NOW,
@@ -679,10 +630,10 @@ describe('getComplianceCalendarEvents — aggregation', () => {
                 ownerUserId: null,
             },
         ]);
-        const { getComplianceCalendarEvents } = await import(
-            '@/app-layer/usecases/compliance-calendar'
+        const { getCalendarEvents } = await import(
+            '@/app-layer/usecases/calendar'
         );
-        const result = await getComplianceCalendarEvents(makeCtx() as never, {
+        const result = await getCalendarEvents(makeCtx() as never, {
             from: FROM,
             to: TO,
             now: NOW,
@@ -693,10 +644,10 @@ describe('getComplianceCalendarEvents — aggregation', () => {
     });
 
     it('does not surface `truncated` when every source stays under its cap', async () => {
-        const { getComplianceCalendarEvents } = await import(
-            '@/app-layer/usecases/compliance-calendar'
+        const { getCalendarEvents } = await import(
+            '@/app-layer/usecases/calendar'
         );
-        const result = await getComplianceCalendarEvents(makeCtx() as never, {
+        const result = await getCalendarEvents(makeCtx() as never, {
             from: FROM,
             to: TO,
             now: NOW,
@@ -705,7 +656,7 @@ describe('getComplianceCalendarEvents — aggregation', () => {
     });
 
     it('one source throwing does not blank the calendar (Promise.allSettled resilience)', async () => {
-        mockPolicyFindMany.mockRejectedValue(new Error('boom'));
+        mockContractFindMany.mockRejectedValue(new Error('boom'));
         mockEvidenceFindMany.mockResolvedValue([
             {
                 id: 'ev-1',
@@ -715,10 +666,10 @@ describe('getComplianceCalendarEvents — aggregation', () => {
                 ownerUserId: null,
             },
         ]);
-        const { getComplianceCalendarEvents } = await import(
-            '@/app-layer/usecases/compliance-calendar'
+        const { getCalendarEvents } = await import(
+            '@/app-layer/usecases/calendar'
         );
-        const result = await getComplianceCalendarEvents(makeCtx() as never, {
+        const result = await getCalendarEvents(makeCtx() as never, {
             from: FROM,
             to: TO,
             now: NOW,
@@ -730,25 +681,21 @@ describe('getComplianceCalendarEvents — aggregation', () => {
 
 describe('getUpcomingDeadlineCount — sidebar badge', () => {
     it('sums per-source counts and caps at 99+', async () => {
-        mockTaskCount.mockResolvedValue(50);
-        mockPracticeCount.mockResolvedValue(40);
-        mockEvidenceCount.mockResolvedValue(20);
-        mockPolicyCount.mockResolvedValue(0);
-        mockVendorCount.mockResolvedValue(0);
+        mockTaskCount.mockResolvedValue(60);
+        mockEvidenceCount.mockResolvedValue(50);
         const { getUpcomingDeadlineCount } = await import(
-            '@/app-layer/usecases/compliance-calendar'
+            '@/app-layer/usecases/calendar'
         );
         const count = await getUpcomingDeadlineCount(makeCtx() as never);
-        // 50 + 40 + 20 = 110 → capped at 100 (MAX_BADGE_COUNT + 1).
+        // 60 + 50 = 110 → capped at 100 (MAX_BADGE_COUNT + 1).
         expect(count).toBe(100);
     });
 
     it('returns the real total when below the cap', async () => {
         mockTaskCount.mockResolvedValue(3);
-        mockPracticeCount.mockResolvedValue(2);
-        mockEvidenceCount.mockResolvedValue(1);
+        mockEvidenceCount.mockResolvedValue(3);
         const { getUpcomingDeadlineCount } = await import(
-            '@/app-layer/usecases/compliance-calendar'
+            '@/app-layer/usecases/calendar'
         );
         const count = await getUpcomingDeadlineCount(makeCtx() as never);
         expect(count).toBe(6);

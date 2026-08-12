@@ -424,7 +424,7 @@ const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
         'listDataStreams filters by tenantId (deletedAt:null), orders by createdAt DESC — covered by @@index([tenantId, locationId]) / @@index([tenantId, status]); the per-tenant stream set is small and take:200-bounded. Ingestion looks up a single stream by PK (findUnique).',
     DataStreamReading:
         'listReadings filters by tenantId + dataStreamId, orders by recordedAt DESC — covered exactly by @@index([tenantId, dataStreamId, recordedAt]); take:500-bounded. Writes are createMany only.',
-    // AgroSignal's first findMany: loadAgroSignalEvents (compliance-calendar,
+    // AgroSignal's first findMany: loadAgroSignalEvents (calendar,
     // PR 2 of the calendar roadmap) filters by (tenantId, signalDate range),
     // orders by signalDate asc — covered exactly by @@index([tenantId,
     // signalDate]); take-bounded (perSourceLimit + 1). Previously the model

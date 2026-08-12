@@ -15,7 +15,7 @@ import { z } from 'zod';
 import { getTenantCtx } from '@/app-layer/context';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
-import { getUpcomingDeadlineCount } from '@/app-layer/usecases/compliance-calendar';
+import { getUpcomingDeadlineCount } from '@/app-layer/usecases/calendar';
 
 const QuerySchema = z.object({
     days: z.coerce.number().int().min(1).max(60).optional(),

@@ -4,7 +4,7 @@
  * Auditors expect vendor due-diligence to follow a cadence: a vendor
  * marked for review by `nextReviewAt` either gets re-assessed or
  * the date is acknowledged + extended. Pre-this-cron the
- * `compliance-calendar` view surfaced overdue vendors but no
+ * `calendar` view surfaced overdue vendors but no
  * automated reminder fired — operators only saw them by clicking
  * into the calendar tab.
  *
