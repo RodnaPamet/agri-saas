@@ -11,7 +11,20 @@
  * guard, proves nothing about behaviour.
  */
 
-const mockWrite = jest.fn(async () => ({ sha256: 'sha-1', sizeBytes: 11 }));
+// Parameters are declared even though the body ignores them: an argument-less
+// `jest.fn` types its `mock.calls` as `[]`, so asserting on `calls[0][2]`
+// (the write options, where the RESOLVED mime type has to land) is a compile
+// error rather than a test.
+const mockWrite = jest.fn(
+    async (
+        _pathKey: string,
+        _body: unknown,
+        _opts?: { mimeType?: string },
+    ): Promise<{ sha256: string; sizeBytes: number }> => ({
+        sha256: 'sha-1',
+        sizeBytes: 11,
+    }),
+);
 const mockDelete = jest.fn();
 let allowedMime = true;
 let sniffResult = { resolved: 'application/pdf', detected: null as string | null, corrected: false };
