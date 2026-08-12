@@ -50,9 +50,19 @@ You do **not** need one for a plain additive migration.
    the mirror is too.
 5. **Held by a guard test.** A rollback script is code that is never
    exercised until the worst possible moment, so something has to keep
-   it true. See `tests/guards/rename-rollback-inverse.test.ts` — it
-   asserts a bijection between the forward migration's renames and the
-   script's, in both directions, and carries a mutation proof.
+   it true. Two guards, at different depths:
+   - `tests/guards/destructive-migration-has-inverse.test.ts` DERIVES the
+     destructive set by scanning every `migration.sql` for `DROP TABLE` /
+     `DROP COLUMN` / `DROP TYPE` / `RENAME TO` / `RENAME COLUMN`, and
+     requires each one to have a `.down.sql` that runs in one transaction
+     and deletes its own `_prisma_migrations` row. Migrations that predate
+     this directory sit in a `PREDATES_RULE` baseline with a stale-entry
+     test; the baseline is not meant to grow. Because it derives rather
+     than lists, a new drop is covered the moment it lands.
+   - `tests/guards/rename-rollback-inverse.test.ts` guards ONE migration
+     by hardcoded path and makes the deeper claim: a bijection between the
+     forward migration's renames and the script's, in both directions,
+     with a mutation proof.
 
 ## Running one
 
@@ -81,3 +91,4 @@ rolled-back transaction reported as a successful run.
 | Script | Undoes | Verified |
 | --- | --- | --- |
 | `20260809120000_rename_control_to_practice.down.sql` | The Control → Practice rename (8 tables, 19 columns, 4 enum types, 5 enum values, 77 index/constraint names, 1 jsonb rekey) | Executed against Postgres 16 with seeded rows: down → `Control*` with values, RLS and all three policies intact, permissions rekeyed with intent preserved; then `migrate deploy` rolled forward again and everything round-tripped. Residual drift 31 statements, none naming Control or Practice — the repo's pre-existing baseline. |
+| `20260812180000_drop_payroll_expense.down.sql` | `DROP TABLE "PayrollExpense"`. Recreates the shape, the four FKs, the three indexes and the RLS trio, then reads the rows back out of `CostEntry WHERE category = 'PAYROLL'` — the forward data migration (`20260812090000`) reused the `PayrollExpense` id verbatim, which is what makes an id-for-id restore possible. | Not executed against a live database. It restores what a pinned-back image can use; it cannot restore `supplier` / invoice / location / parcel / lease / item data a `CostEntry` gained after the copy, because the old table has no columns for those. |

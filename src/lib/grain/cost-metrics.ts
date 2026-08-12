@@ -50,7 +50,8 @@
  * FOURTH definition, and deliberately not a fourth spelling of one of the
  * three above: it is the first to fold in OVERHEADS — land rent
  * (`ParcelLease`, via `resolveRentBasis`) and payroll/labour spend
- * (`PayrollExpense`) — alongside the attributed field/stock cost it
+ * (PAYROLL-category `CostEntry` rows) — alongside the attributed
+ * field/stock cost it
  * reuses verbatim from `ATTRIBUTED_CROP_COST`.
  *
  * **State this plainly wherever the figure is shown: `GRAIN_NET_WORTH`'s

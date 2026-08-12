@@ -139,7 +139,6 @@ model Season {
   cropPlans       CropPlan[]
   contracts       Contract[]
   yieldRecords    YieldRecord[]
-  payrollExpenses PayrollExpense[]
   costEntries     CostEntry[]
 
   @@unique([id, tenantId])
@@ -242,7 +241,6 @@ model Planting {
   logPlantings    LogPlanting[]
   agroSignals     AgroSignal[]
   yieldRecords    YieldRecord[]
-  payrollExpenses PayrollExpense[]
   costEntries     CostEntry[]
 
   @@unique([id, tenantId])

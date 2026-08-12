@@ -15,11 +15,11 @@ import { redirect } from 'next/navigation';
  * conclude their payroll data had been lost. The category filter is
  * pre-applied so they land on the rows they were looking for.
  *
- * The API routes under /api/t/:slug/grain/payroll are deliberately left
- * serving `PayrollExpense`: this migration is additive and the table
- * survives, so a pinned-back image can still read and write it. They are
- * removed in a later, separate change once the new surface has proven
- * itself.
+ * The API routes under /api/t/:slug/grain/payroll, the usecase, the
+ * repository and the `PayrollExpense` table itself are GONE as of
+ * `20260812180000_drop_payroll_expense`. This redirect is the last thing
+ * standing at the old address, and it is the part worth keeping: it costs
+ * one file and it is what a bookmark resolves to.
  */
 export default async function GrainPayrollPage({
     params,

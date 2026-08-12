@@ -19,20 +19,20 @@
 //  valuation commentary) is encrypted at rest via
 //  `src/lib/security/encrypted-fields.ts`:
 //      Contract.terms, Contract.pricingNotes, YieldRecord.valuationNotes,
-//      PayrollExpense.description
+//      CostEntry.description
 //  The NUMERIC magnitudes (volumeTonnes, pricePerTonne, grossTonnes,
-//  moisturePct, areaHa, PayrollExpense.amount) stay PLAINTEXT Decimals so
+//  moisturePct, areaHa, CostEntry.amount) stay PLAINTEXT Decimals so
 //  the portfolio / cost / yield rollups can aggregate them in-DB — an
 //  encrypted column cannot be SUM()'d. Encrypted columns MUST be nullable
 //  String (the middleware encrypts strings into the same column).
 //
 //  Back-relations added elsewhere (Prisma needs both sides):
 //    • auth.prisma        Tenant:   contracts / yieldRecords / grainDeliveries /
-//                                   payrollExpenses
-//    • auth.prisma        User:     payrollExpensesCreated
+//                                   costEntries
+//    • auth.prisma        User:     costEntriesCreated
 //    • agriculture.prisma Location: yieldRecords
-//    • planning.prisma    Season:   contracts / yieldRecords / payrollExpenses
-//    • planning.prisma    Planting: yieldRecords / payrollExpenses
+//    • planning.prisma    Season:   contracts / yieldRecords / costEntries
+//    • planning.prisma    Planting: yieldRecords / costEntries
 //
 //  ── Production vs delivery (the fulfilment loop) ──
 //  YieldRecord is PRODUCTION (what came off the field); GrainDelivery is
@@ -263,70 +263,6 @@ model YieldRecord {
   @@index([tenantId, commodityCanonical])
 }
 
-/// A payroll / labour cost incurred by the farm — wages, contractor
-/// day-rates, seasonal harvest-crew pay. First-class COST alongside
-/// `LogEntry.costAmount` / `StockTransaction.costAmount` (see
-/// `src/app-layer/usecases/cost-rollup.ts`), tracked as its own producer:
-/// labour is often a farm's single biggest cost line, and neither the
-/// journal event cost nor the stock ledger has a slot for "I paid the
-/// harvest crew."
-///
-/// `plantingId` / `seasonId` are OPTIONAL BY DESIGN — plenty of payroll
-/// rows (a bookkeeper's salary, a full-time tractor driver's monthly
-/// wage) are not attributable to one crop. A later net-worth / whole-farm
-/// P&L calculator is expected to allocate the unattributed rows pro-rata
-/// by harvested area; this model is the PRODUCER of the raw expense, not
-/// the allocator — no allocation logic lives here.
-///
-/// `description` is ENCRYPTED at rest (Epic B manifest) — it can name an
-/// employee or contractor ("Overtime, combine operator I. Petrov"), which
-/// is personal as well as commercial detail. `amount` stays a PLAINTEXT
-/// Decimal (an encrypted numeric cannot be SUM()'d by a future payroll /
-/// labour-cost rollup) — the same plaintext-magnitude /
-/// encrypted-narrative split as Contract / YieldRecord. Tenant-scoped.
-model PayrollExpense {
-  id              String    @id @default(cuid())
-  tenantId        String
-  /// Payroll spend for the period — plaintext (a future cost rollup SUMs
-  /// it in-DB). Matches `ParcelLease.rentAmount`'s precision
-  /// (agriculture.prisma:449).
-  amount          Decimal   @db.Decimal(14, 2)
-  /// ISO-4217 currency code, e.g. "BGN" / "EUR" — plaintext, mirrors
-  /// `Contract.priceCurrency`.
-  currency        String
-  /// The pay period / disbursement date this expense belongs to. Drives
-  /// the list's default newest-first sort.
-  incurredOn      DateTime
-  /// ENCRYPTED (Epic B manifest) — free text that can name an employee or
-  /// contractor. sanitizePlainText'd before encryption.
-  description     String?
-  /// Optional link to the Planting this labour cost is attributable to.
-  /// NULL when the cost is not tied to one crop (see model doc above).
-  plantingId      String?
-  /// Optional link to the marketing-year Season.
-  seasonId        String?
-  /// Who recorded this expense. Optional — a future bulk/background
-  /// import has no interactive user.
-  createdByUserId String?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-  deletedAt       DateTime?
-  deletedByUserId String?
-  retentionUntil  DateTime?
-
-  tenant    Tenant    @relation(fields: [tenantId], references: [id])
-  planting  Planting? @relation(fields: [plantingId, tenantId], references: [id, tenantId])
-  season    Season?   @relation(fields: [seasonId, tenantId], references: [id, tenantId])
-  createdBy User?     @relation("PayrollExpenseCreator", fields: [createdByUserId], references: [id])
-
-  @@unique([id, tenantId])
-  /// List filter+sort shape: newest-incurred-first, tenant-scoped
-  /// (listPayrollExpenses default `orderBy: [{ incurredOn: 'desc' }, …]`).
-  @@index([tenantId, incurredOn])
-  @@index([tenantId, plantingId])
-  @@index([tenantId, seasonId])
-}
-
 /// A single cost a farmer entered, with an optional invoice.
 ///
 /// `/grain/costs` used to be a read-only rollup of
@@ -367,8 +303,8 @@ model CostEntry {
   /// Listing it in the encryption manifest would fail SILENTLY: the
   /// middleware skips every non-string value without logging.
   amount          Decimal      @db.Decimal(14, 2)
-  /// ISO-4217 code, e.g. "BGN" / "EUR". Plaintext, mirrors
-  /// `PayrollExpense.currency`. Never blended — there is no FX table in
+  /// ISO-4217 code, e.g. "BGN" / "EUR". Plaintext, and mirrors
+  /// `Contract.priceCurrency`. Never blended — there is no FX table in
   /// this repo, so consumers group BY currency or refuse.
   currency        String
   /// The date the cost was incurred. Drives the list's newest-first sort.

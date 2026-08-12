@@ -229,19 +229,15 @@ export const ENCRYPTED_FIELDS: Readonly<Record<string, readonly string[]>> = {
     Contract: ['terms', 'pricingNotes'],
     YieldRecord: ['valuationNotes'],
 
-    // ─── Enterprise-grain — payroll / labour cost ──────────
-    //  PayrollExpense.description can name an employee or contractor
-    //  ("Overtime, combine operator I. Petrov, harvest week") — personal
-    //  as well as commercial detail. `amount` stays plaintext Decimal so
-    //  a future labour-cost rollup can SUM it in-DB (an encrypted column
-    //  cannot be). `description` is shared with several other models
-    //  (Finding, Vendor, VendorEvidenceBundle, AccessReview) — this entry
-    //  is what makes the middleware treat PayrollExpense.description as
-    //  encrypted; every other model's `description` field is unaffected.
-    PayrollExpense: ['description'],
-    //  CostEntry.description carries the free text on a cost — supplier
-    //  terms, what a payment settled — so it is encrypted at rest on the
-    //  same reasoning as PayrollExpense.description above.
+    // ─── Enterprise-grain — the cost register ──────────────
+    //  CostEntry.description carries the free text on a cost — settlement
+    //  terms, what a payment covered, and (on a PAYROLL-category row) who
+    //  was paid for what. That is personal as well as commercial detail,
+    //  so it is encrypted at rest. `description` is a field name shared
+    //  with several other models (Finding, Vendor, VendorEvidenceBundle,
+    //  AccessReview) — this entry is what makes the middleware treat
+    //  CostEntry.description as encrypted; every other model's
+    //  `description` is unaffected.
     //
     //  Two columns are DELIBERATELY absent:
     //    • `amount` is Decimal. Listing it here would fail SILENTLY — the
