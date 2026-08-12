@@ -132,8 +132,6 @@ const EXEMPTIONS: Record<string, string> = {
         'detail page — DataTable is the inner roster sub-table',
     't/[tenantSlug]/(app)/vendors/[vendorId]/page.tsx':
         'detail page — DataTable is the inner documents sub-table',
-    't/[tenantSlug]/(app)/practices/[practiceId]/_tabs/EvidenceSubTable.tsx':
-        'detail-page sub-table — evidence rows for one practice',
     't/[tenantSlug]/(app)/practices/[practiceId]/_tabs/PracticeMappingsTab.tsx':
         'detail-page sub-table — framework mappings for one practice',
     't/[tenantSlug]/(app)/farm-tasks/[taskId]/FarmTaskDetailClient.tsx':

@@ -78,7 +78,7 @@ const LEGACY_LUCIDE_USERS = new Set<string>([
     // typed `LucideIcon` (the entire filter system is lucide-based), so a
     // new filter-defs file has no Nucleo option until the filter platform
     // migrates. Same precedent as every other *filter-defs.ts entry here.
-    'src/app/t/[tenantSlug]/(app)/processes/automation-filter-defs.ts',
+    'src/components/processes/automation-filter-defs.ts',
     'src/app/t/[tenantSlug]/(app)/audits/cycles/page.tsx',
     'src/app/t/[tenantSlug]/(app)/audits/packs/[packId]/page.tsx',
     'src/app/t/[tenantSlug]/(app)/audits/readiness/page.tsx',

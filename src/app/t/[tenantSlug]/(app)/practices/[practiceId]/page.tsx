@@ -15,7 +15,7 @@ import { Heading } from '@/components/ui/typography';
 import { EditPracticeModal } from './_modals/EditPracticeModal';
 import { PracticeReverseLookupModal } from '@/components/practices/PracticeReverseLookupModal';
 import { PracticeMappingsTab } from './_tabs/PracticeMappingsTab';
-import { EvidenceSubTable } from './_tabs/EvidenceSubTable';
+import { EvidenceSubTable } from '@/components/EvidenceSubTable';
 import { EvidenceAddForm } from '@/components/EvidenceAddForm';
 import { MetaStrip } from '@/components/ui/meta-strip';
 import { CONTROL_STATUS_VARIANT } from '@/app-layer/domain/entity-status-mapping';

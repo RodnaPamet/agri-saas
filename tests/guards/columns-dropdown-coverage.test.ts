@@ -91,8 +91,6 @@ const EXEMPTIONS: Record<string, string> = {
         '(a) sub-component — location-detail parcels sub-table (a11y pass, off raw table); EntityDetailLayout owns chrome.',
     'practices/[practiceId]/page.tsx':
         '(a) sub-component — practice-detail tasks sub-table (R11-PR6); EntityDetailLayout owns chrome.',
-    'practices/[practiceId]/_tabs/EvidenceSubTable.tsx':
-        '(a) sub-component — practice-detail evidence sub-table (R10-PR3 follow-up); EntityDetailLayout owns chrome.',
     'practices/[practiceId]/_tabs/PracticeMappingsTab.tsx':
         '(a) sub-component — practice-detail mappings sub-table (R10-PR3 follow-up); EntityDetailLayout owns chrome.',
     'farm-tasks/[taskId]/FarmTaskDetailClient.tsx':

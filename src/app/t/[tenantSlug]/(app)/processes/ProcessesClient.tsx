@@ -34,6 +34,7 @@ import { WorkspaceShell } from "@/components/layout/WorkspaceShell";
 import { RulesTab } from "./RulesTab";
 import { AnalyticsTab } from "./AnalyticsTab";
 import { MonitorTab } from "./MonitorTab";
+import type { ProcessMapSummary } from "@/components/processes/types";
 import { CanvasModeProvider } from "@/lib/processes/canvas-mode-context";
 // R31 Bundle 3 — page-level Heading + PageBreadcrumbs retired. The
 // document bar inside the canvas now carries the breadcrumbs +
@@ -54,19 +55,8 @@ const PersistedProcessCanvas = dynamic(
     { ssr: false },
 );
 
-export interface ProcessMapSummary {
-    id: string;
-    name: string;
-    description: string | null;
-    status: "DRAFT" | "ACTIVE" | "ARCHIVED";
-    version: number;
-    createdAt: string | Date;
-    updatedAt: string | Date;
-    nodeCount: number;
-    edgeCount: number;
-    /** VR-2 — DOCUMENT (process map) vs AUTOMATION (visual rule editor). */
-    canvasMode?: "DOCUMENT" | "AUTOMATION";
-}
+
+export type { ProcessMapSummary } from "@/components/processes/types";
 
 interface ProcessesClientProps {
     tenantSlug: string;

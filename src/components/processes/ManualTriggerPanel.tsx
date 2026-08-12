@@ -15,7 +15,7 @@ import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 import { CACHE_KEYS } from '@/lib/swr-keys';
-import type { AutomationRuleRow } from '@/app/t/[tenantSlug]/(app)/processes/RulesTab';
+import type { AutomationRuleRow } from '@/components/processes/types';
 
 export function ManualTriggerPanel() {
     const t = useTranslations('ui');

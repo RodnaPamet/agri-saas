@@ -100,7 +100,7 @@ describe('Practice evidence tab — unified display', () => {
         __dirname, '../../src/app/t/[tenantSlug]/(app)/practices/[practiceId]/page.tsx'
     );
     const SUBTABLE_PATH = path.resolve(
-        __dirname, '../../src/app/t/[tenantSlug]/(app)/practices/[practiceId]/_tabs/EvidenceSubTable.tsx'
+        __dirname, '../../src/components/EvidenceSubTable.tsx'
     );
     const pageContent = fs.readFileSync(PAGE_PATH, 'utf-8');
     const subtableContent = fs.existsSync(SUBTABLE_PATH)
