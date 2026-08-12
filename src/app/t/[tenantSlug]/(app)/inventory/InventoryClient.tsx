@@ -887,6 +887,7 @@ export function InventoryClient({ tenantSlug }: { tenantSlug: string }) {
                             </div>
                         )}
                     </div>
+
                 </Modal.Body>
                 <Modal.Actions>
                     <Button variant="secondary" size="sm" type="button" onClick={() => setActiveLotId(null)}>{t('close')}</Button>

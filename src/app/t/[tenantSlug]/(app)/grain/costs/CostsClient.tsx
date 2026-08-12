@@ -74,10 +74,12 @@ export interface CostRow {
     locationId: string | null;
     parcelId: string | null;
     leaseId: string | null;
+    itemId: string | null;
     planting?: { id: string; successionNumber: number; cropPlan?: { name: string | null } | null } | null;
     season?: { id: string; name: string } | null;
     location?: { id: string; name: string } | null;
     parcel?: { id: string; name: string } | null;
+    item?: { id: string; name: string; category: string } | null;
     invoiceFile?: { id: string; originalName: string } | null;
 }
 
@@ -226,6 +228,7 @@ function CostsPageInner({
             if (r.season) return r.season.name;
             if (r.location) return r.location.name;
             if (r.parcel) return r.parcel.name;
+            if (r.item) return r.item.name;
             if (r.leaseId) return t('attrLease');
             return '—';
         },

@@ -69,7 +69,7 @@ interface LeaseOption {
 const MAX_AMOUNT = 999_999_999_999;
 
 /** The attribution kinds, mapped to their CostEntry column. */
-const LINK_KINDS = ['none', 'planting', 'season', 'location', 'parcel', 'lease'] as const;
+const LINK_KINDS = ['none', 'planting', 'season', 'location', 'parcel', 'lease', 'item'] as const;
 type LinkKind = (typeof LINK_KINDS)[number];
 
 const LINK_COLUMN: Record<Exclude<LinkKind, 'none'>, string> = {
@@ -78,6 +78,7 @@ const LINK_COLUMN: Record<Exclude<LinkKind, 'none'>, string> = {
     location: 'locationId',
     parcel: 'parcelId',
     lease: 'leaseId',
+    item: 'itemId',
 };
 
 function isoToDate(v: string | null | undefined): Date | null {
@@ -94,6 +95,7 @@ function linkKindOf(record: CostRow | null | undefined): LinkKind {
     if (record.locationId) return 'location';
     if (record.parcelId) return 'parcel';
     if (record.leaseId) return 'lease';
+    if (record.itemId) return 'item';
     return 'none';
 }
 
@@ -105,6 +107,7 @@ function linkIdOf(record: CostRow | null | undefined): string {
         record.locationId ??
         record.parcelId ??
         record.leaseId ??
+        record.itemId ??
         ''
     );
 }
@@ -240,6 +243,17 @@ export function CostEntryFormModal({
         enabled: open && (watchedLinkKind === 'location' || watchedLinkKind === 'parcel'),
         staleTime: 60_000,
     });
+    const itemsQuery = useQuery<NamedOption[]>({
+        queryKey: ['grain', tenantSlug, 'items'],
+        queryFn: async () => {
+            const res = await fetch(apiUrl('/items'));
+            if (!res.ok) throw new Error('Failed to load items');
+            const data = await res.json();
+            return Array.isArray(data) ? data : (data.rows ?? []);
+        },
+        enabled: open && watchedLinkKind === 'item',
+        staleTime: 60_000,
+    });
     const leasesQuery = useQuery<LeaseOption[]>({
         queryKey: ['grain', tenantSlug, 'leases'],
         queryFn: async () => {
@@ -304,6 +318,8 @@ export function CostEntryFormModal({
                 return (locationsQuery.data ?? []).map((l) => ({ value: l.id, label: l.name }));
             case 'parcel':
                 return (locationsQuery.data ?? []).map((l) => ({ value: l.id, label: l.name }));
+            case 'item':
+                return (itemsQuery.data ?? []).map((i) => ({ value: i.id, label: i.name }));
             case 'lease':
                 return (leasesQuery.data ?? []).map((l) => ({
                     value: l.id,
@@ -312,7 +328,7 @@ export function CostEntryFormModal({
             default:
                 return [];
         }
-    }, [watchedLinkKind, plantingsQuery.data, seasonsQuery.data, locationsQuery.data, leasesQuery.data, t]);
+    }, [watchedLinkKind, plantingsQuery.data, seasonsQuery.data, locationsQuery.data, itemsQuery.data, leasesQuery.data, t]);
 
     const currencyChoices = useMemo(
         () => currencyOptions(watchedCurrency ?? record?.currency),

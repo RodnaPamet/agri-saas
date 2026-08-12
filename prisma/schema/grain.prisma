@@ -350,7 +350,8 @@ model PayrollExpense {
 ///
 /// ── The domain links ────────────────────────────────────────────────
 ///
-/// At most ONE of plantingId / seasonId / locationId / parcelId / leaseId
+/// At most ONE of plantingId / seasonId / locationId / parcelId /
+/// leaseId / itemId
 /// is set, and `leaseId` only when `category = RENT`. The columns are what
 /// let a domain page show the costs that relate to it without a join
 /// table. Prisma cannot express "exactly one of these" — the invariant is
@@ -392,6 +393,18 @@ model CostEntry {
   parcelId        String?
   /// Set only when `category = RENT`. The lease this payment settles.
   leaseId         String?
+  /// The PRODUCT this cost bought — fertiliser, fuel, seed, chemical.
+  ///
+  /// A sixth domain link, added because the inventory surface had no
+  /// honest one: a cost's nearest column was `locationId`, which is where
+  /// a lot SITS rather than what was purchased, so an input cost could
+  /// only ever be shown against a field.
+  ///
+  /// It does NOT make the purchase a crop cost. Crop cost stays
+  /// CONSUMPTION-based (see the `CostCategory` docblock), so this link is
+  /// what lets a product page SHOW its purchases beside its consumption —
+  /// not what merges them.
+  itemId          String?
   createdByUserId String?
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
@@ -405,6 +418,7 @@ model CostEntry {
   location    Location?    @relation(fields: [locationId, tenantId], references: [id, tenantId])
   parcel      Parcel?      @relation(fields: [parcelId, tenantId], references: [id, tenantId])
   lease       ParcelLease? @relation(fields: [leaseId, tenantId], references: [id, tenantId])
+  item        Item?        @relation(fields: [itemId, tenantId], references: [id, tenantId])
   /// Referenced by `id` alone, not the usual `[id, tenantId]` tenant
   /// barrier: `FileRecord` carries no `@@unique([id, tenantId])`, and the
   /// existing precedent (`LogEntry.fileRecord`, journal.prisma:171) does
@@ -428,5 +442,6 @@ model CostEntry {
   @@index([tenantId, locationId])
   @@index([tenantId, parcelId])
   @@index([tenantId, leaseId])
+  @@index([tenantId, itemId])
   @@index([tenantId, invoiceFileId])
 }

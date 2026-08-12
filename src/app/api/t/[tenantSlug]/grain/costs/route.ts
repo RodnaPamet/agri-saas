@@ -52,6 +52,7 @@ export const GET = withApiErrorHandling(
             locationIds: parseCsvIdParam(sp.get('locationId'), 'location'),
             parcelIds: parseCsvIdParam(sp.get('parcelId'), 'parcel'),
             leaseIds: parseCsvIdParam(sp.get('leaseId'), 'lease'),
+            itemIds: parseCsvIdParam(sp.get('itemId'), 'item'),
             q: sp.get('q') ?? undefined,
         });
         // Hot list read on a page farmers reload over rural LTE — a weak

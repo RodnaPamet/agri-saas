@@ -30,6 +30,7 @@
 import useSWR from 'swr';
 import { useTranslations } from 'next-intl';
 import { Badge } from '@/components/ui/badge';
+import { Heading } from '@/components/ui/typography';
 import { Paperclip } from '@/components/ui/icons/nucleo';
 import { formatDate } from '@/lib/format-date';
 import { formatDecimal } from '@/lib/number-format';
@@ -47,7 +48,7 @@ interface CostEntryLine {
 
 export interface DomainCostEntriesPanelProps {
     /** Which link column to filter on — the API accepts all five. */
-    link: 'leaseId' | 'plantingId' | 'seasonId' | 'locationId' | 'parcelId';
+    link: 'leaseId' | 'plantingId' | 'seasonId' | 'locationId' | 'parcelId' | 'itemId';
     /** The domain record's id. */
     id: string;
     /** i18n key under `grain.costs` for this surface's heading. */
@@ -84,9 +85,9 @@ export function DomainCostEntriesPanel({
     if (error) {
         return (
             <section className="space-y-tight">
-                <h3 className="text-xs font-medium uppercase tracking-wide text-content-muted">
+                <Heading level={3} as="h3" tone="muted">
                     {t(titleKey)}
-                </h3>
+                </Heading>
                 <p className="text-xs text-content-error">{t('loadFailed')}</p>
             </section>
         );
@@ -95,9 +96,9 @@ export function DomainCostEntriesPanel({
     if (isLoading) {
         return (
             <section className="space-y-tight">
-                <h3 className="text-xs font-medium uppercase tracking-wide text-content-muted">
+                <Heading level={3} as="h3" tone="muted">
                     {t(titleKey)}
-                </h3>
+                </Heading>
                 <p className="text-xs text-content-subtle">{t('leasePanelLoading')}</p>
             </section>
         );
@@ -106,9 +107,9 @@ export function DomainCostEntriesPanel({
     return (
         <section className="space-y-tight border-t border-border-subtle pt-3">
             <div className="flex flex-wrap items-baseline justify-between gap-tight">
-                <h3 className="text-xs font-medium uppercase tracking-wide text-content-muted">
+                <Heading level={3} as="h3" tone="muted">
                     {t(titleKey)}
-                </h3>
+                </Heading>
                 <a
                     href={tenantHref(registerHref)}
                     className="text-xs text-content-muted underline-offset-2 hover:text-content-emphasis hover:underline"

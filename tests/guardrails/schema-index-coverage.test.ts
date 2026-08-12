@@ -289,6 +289,12 @@ const LIST_QUERY_INDEXES: readonly CompositeIndex[] = [
     },
     {
         model: 'CostEntry',
+        fields: ['tenantId', 'itemId'],
+        justification:
+            'The product surface reads its own purchases — GET /grain/costs?itemId=… and the lot-detail panel. Its own composite, like every other domain link on this table.',
+    },
+    {
+        model: 'CostEntry',
         fields: ['tenantId', 'category', 'incurredOn'],
         justification:
             'The category facet applied to that same sort — the only facet the list ships (a date facet needs a filter type that does not exist yet).',

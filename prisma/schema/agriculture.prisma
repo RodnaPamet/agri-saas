@@ -310,6 +310,8 @@ model Item {
   operationLines OperationParcel[]
   lots           InventoryLot[]
 
+  costEntries    CostEntry[]
+
   @@unique([id, tenantId])
   @@index([tenantId, category])
   @@index([tenantId, name])
