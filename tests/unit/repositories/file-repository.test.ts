@@ -15,6 +15,8 @@
  * `where` rather than inferred from a return value. `db` is a recording
  * double.
  */
+import * as fs from 'fs';
+import * as path from 'path';
 import { FileRepository } from '@/app-layer/repositories/FileRepository';
 import { makeRequestContext } from '../../helpers/make-context';
 import type { PrismaTx } from '@/lib/db-context';
@@ -120,9 +122,13 @@ describe('FileRepository — status transitions', () => {
         // made a dead-man switch: every evidence download blocked forever in
         // any deployment that didn't override the env var.
         //
-        // The default is SKIPPED — honest about the fact that nothing scanned
-        // it — rather than PENDING, which promises a scan that is not coming.
-        await FileRepository.markStored(asTx(db), ctx, 'f-1');
+        // The fix then made SKIPPED a DEFAULT ARGUMENT, which was the same
+        // bug wearing a different hat: `isDownloadAllowed('SKIPPED')` is true
+        // in every AV mode, so an omitted argument marked a file unscanned
+        // AND downloadable — and two upload paths took it without anyone
+        // choosing to. The argument is now REQUIRED. A caller that wants to
+        // skip says so, in a diff a reviewer can see.
+        await FileRepository.markStored(asTx(db), ctx, 'f-1', 'SKIPPED');
 
         expect(argOf(db.fileRecord.update).where).toEqual({ id: 'f-1' });
         expect(dataOf(db.fileRecord.update)).toMatchObject({
@@ -130,6 +136,19 @@ describe('FileRepository — status transitions', () => {
             scanStatus: 'SKIPPED',
         });
         expect(dataOf(db.fileRecord.update).storedAt).toBeInstanceOf(Date);
+    });
+
+    it('has NO default scan status — omitting it must not compile', () => {
+        // The type is the enforcement; this records WHY, and fails loudly if
+        // someone re-adds the default to "fix" a call site.
+        const src = fs.readFileSync(
+            path.join(__dirname, '../../../src/app-layer/repositories/FileRepository.ts'),
+            'utf-8',
+        );
+        expect(src).toMatch(
+            /scanStatus:\s*'CLEAN'\s*\|\s*'INFECTED'\s*\|\s*'SKIPPED'\s*\|\s*'PENDING',/,
+        );
+        expect(src).not.toMatch(/scanStatus:[^,)]*=\s*'/);
     });
 
     it('persists the scan outcome the caller resolved', async () => {

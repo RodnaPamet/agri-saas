@@ -123,7 +123,7 @@ async function stageZip(
             sha256: writeResult.sha256,
             domain: 'temp',
         });
-        await FileRepository.markStored(db, ctx, fr.id);
+        await FileRepository.markStored(db, ctx, fr.id, 'SKIPPED');
         return fr;
     });
 

@@ -91,7 +91,7 @@ async function stageGeoJson(
             sha256: writeResult.sha256,
             domain: 'spatial',
         });
-        await FileRepository.markStored(db, ctx, fr.id);
+        await FileRepository.markStored(db, ctx, fr.id, 'SKIPPED');
         return fr;
     });
     return { pathKey, fileRecordId: fileRecord.id };

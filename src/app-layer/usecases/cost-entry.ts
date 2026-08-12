@@ -1,4 +1,3 @@
-import { Readable } from 'stream';
 import { Prisma, type CostCategory } from '@prisma/client';
 import { RequestContext } from '../types';
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
@@ -8,17 +7,7 @@ import { notFound, badRequest } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { CostEntryRepository, type CostEntryFilters } from '../repositories/CostEntryRepository';
 import { FileRepository } from '../repositories/FileRepository';
-import {
-    getStorageProvider,
-    buildTenantObjectKey,
-    isAllowedMime,
-    isAllowedSize,
-    FILE_MAX_SIZE_BYTES,
-} from '@/lib/storage';
-import { scanUploadedBuffer } from '@/lib/storage/av-scan';
-import { reconcileMimeType } from '@/lib/storage/mime-sniff';
-import { logger } from '@/lib/observability';
-import { env } from '@/env';
+import { ingestUploadedFile } from '@/lib/upload/ingest';
 import { COST_DOMAIN_LINKS } from '../schemas/grain.schemas';
 import type { CreateCostEntryInput, UpdateCostEntryInput } from '../schemas/grain.schemas';
 
@@ -530,59 +519,32 @@ export async function uploadCostInvoice(
 ) {
     assertCanWrite(ctx);
 
-    // `file.type` is the CLIENT's claim — cheap early reject; the bytes
-    // are checked below.
-    const declaredMime = file.type || 'application/octet-stream';
-    if (!isAllowedMime(declaredMime)) {
-        throw badRequest('FILE_TYPE_NOT_ALLOWED', `MIME type "${declaredMime}" is not allowed`);
-    }
-    if (!isAllowedSize(file.size)) {
-        throw badRequest('FILE_TOO_LARGE', `File exceeds maximum size of ${FILE_MAX_SIZE_BYTES} bytes`);
-    }
-
-    const storage = getStorageProvider();
-    const originalName = file.name || 'invoice';
-    const pathKey = buildTenantObjectKey(ctx.tenantId, INVOICE_DOMAIN, originalName);
-
-    const buffer = Buffer.from(await file.arrayBuffer());
-
-    // The SIGNATURE beats the claim. A file whose real content is
-    // inadmissible is rejected here even though its declared type passed.
-    const { resolved: mimeType, detected, corrected } = reconcileMimeType(declaredMime, buffer);
-    if (corrected) {
-        if (!isAllowedMime(mimeType)) {
-            throw badRequest(
-                'FILE_TYPE_NOT_ALLOWED',
-                `File content is "${mimeType}", which is not allowed`,
-            );
-        }
-        logger.warn('cost invoice declared a MIME type its bytes contradict', {
-            component: 'cost-entry',
-            tenantId: ctx.tenantId,
-            declaredMime,
-            detected,
-        });
-    }
-
-    const writeResult = await storage.write(pathKey, Readable.from(buffer), { mimeType });
-    // A TERMINAL scan status before the record is treated as usable.
-    const scanStatus = await scanUploadedBuffer(buffer);
+    // Validate → key → buffer → sniff → write → scan, once, in
+    // `@/lib/upload/ingest`. What stays here is the part that is genuinely
+    // per-entity: minting the FileRecord inside the same transaction as the
+    // CostEntry update, so a dropped connection cannot leave an invoice
+    // stored and attached to nothing.
+    const ingested = await ingestUploadedFile(ctx.tenantId, file, {
+        domain: INVOICE_DOMAIN,
+        fallbackName: 'invoice',
+        component: 'cost-entry',
+    });
 
     return runInTenantContext(ctx, async (db) => {
         const entry = await CostEntryRepository.getById(db, ctx, costEntryId);
         if (!entry) throw notFound('Cost entry not found');
 
         const fileRecord = await FileRepository.createPending(db, ctx, {
-            pathKey,
-            originalName,
-            mimeType,
-            sizeBytes: writeResult.sizeBytes,
-            sha256: writeResult.sha256,
-            storageProvider: storage.name,
-            bucket: env.S3_BUCKET || null,
-            domain: INVOICE_DOMAIN,
+            pathKey: ingested.pathKey,
+            originalName: ingested.originalName,
+            mimeType: ingested.mimeType,
+            sizeBytes: ingested.sizeBytes,
+            sha256: ingested.sha256,
+            storageProvider: ingested.storageProvider,
+            bucket: ingested.bucket,
+            domain: ingested.domain,
         });
-        await FileRepository.markStored(db, ctx, fileRecord.id, scanStatus);
+        await FileRepository.markStored(db, ctx, fileRecord.id, ingested.scanStatus);
 
         const updated = await CostEntryRepository.update(db, ctx, costEntryId, {
             invoiceFileId: fileRecord.id,

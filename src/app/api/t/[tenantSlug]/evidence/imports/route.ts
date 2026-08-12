@@ -25,6 +25,7 @@ import { getTenantCtx } from '@/app-layer/context';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
 import { getStorageProvider, buildTenantObjectKey } from '@/lib/storage';
+import { scanUploadedBuffer } from '@/lib/storage/av-scan';
 import { FileRepository } from '@/app-layer/repositories/FileRepository';
 import { runInTenantContext } from '@/lib/db/rls-middleware';
 import { env } from '@/env';
@@ -109,6 +110,20 @@ export const POST = withApiErrorHandling(
             { mimeType: file.type || 'application/zip' },
         );
 
+        // A REAL verdict, not the absent argument this used to pass.
+        //
+        // `markStored`'s `scanStatus` carried a `= 'SKIPPED'` default and
+        // this call omitted it, so a 100 MB archive of arbitrary uploaded
+        // files was recorded as stored AND downloadable
+        // (`isDownloadAllowed('SKIPPED')` is true in every AV mode) without
+        // a byte of it reaching the scanner. The archive is the single most
+        // attractive thing on this surface to smuggle something into,
+        // because every file inside it is extracted and kept.
+        //
+        // The bytes are already buffered (the size cap is enforced on them),
+        // so this adds no I/O the request was not already doing.
+        const scanStatus = await scanUploadedBuffer(buffer);
+
         // Track the staging upload as a FileRecord so cleanup +
         // observability stay consistent with every other ingest path.
         const fileRecord = await runInTenantContext(ctx, async (db) => {
@@ -122,7 +137,7 @@ export const POST = withApiErrorHandling(
                 bucket: env.S3_BUCKET || null,
                 domain: 'temp',
             });
-            await FileRepository.markStored(db, ctx, fr.id);
+            await FileRepository.markStored(db, ctx, fr.id, scanStatus);
             return fr;
         });
 

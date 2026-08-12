@@ -145,14 +145,17 @@ export function sanitizeFileName(name: string): string {
  * key prefix, and so a future retention rule can treat commercial
  * paperwork differently from a field photo.
  */
-export type StorageDomain =
-    | 'evidence'
-    | 'reports'
-    | 'exports'
-    | 'temp'
-    | 'general'
-    | 'spatial'
-    | 'cost-invoice';
+export const STORAGE_DOMAINS = [
+    'evidence',
+    'reports',
+    'exports',
+    'temp',
+    'general',
+    'spatial',
+    'cost-invoice',
+] as const;
+
+export type StorageDomain = (typeof STORAGE_DOMAINS)[number];
 
 const VALID_DOMAINS: readonly StorageDomain[] = ['evidence', 'reports', 'exports', 'temp', 'general', 'spatial', 'cost-invoice'] as const;
 
@@ -215,7 +218,20 @@ export function generatePathKey(tenantId: string, originalName: string): string 
 
 // ─── Key Validation & Parsing ───
 
-const TENANT_KEY_REGEX = /^tenants\/([^/]+)\/(evidence|reports|exports|temp|general|spatial)\/\d{4}\/\d{2}\/[a-f0-9-]+_.+$/;
+/**
+ * DERIVED from `STORAGE_DOMAINS`, not hand-listed.
+ *
+ * It used to spell the alternation out, and it had already drifted:
+ * `cost-invoice` was added to the domain union and to
+ * `buildTenantObjectKey`, but not here — so `parseTenantKey` returned
+ * `null` for every invoice key this module itself had minted, and
+ * `assertTenantKey` treated a perfectly valid key as malformed. A regex
+ * that repeats a union is a copy of it, and copies drift silently because
+ * nothing type-checks a string.
+ */
+const TENANT_KEY_REGEX = new RegExp(
+    `^tenants/([^/]+)/(${STORAGE_DOMAINS.join('|')})/\\d{4}/\\d{2}/[a-f0-9-]+_.+$`,
+);
 
 /**
  * Runtime guard: asserts a key belongs to the expected tenant.

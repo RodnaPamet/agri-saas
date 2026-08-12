@@ -47,12 +47,21 @@ export class FileRepository {
      * scanning off entirely.
      *
      * The caller now passes the real outcome. See `scanUploadedBuffer`.
+     *
+     * `scanStatus` is REQUIRED, and used to default to `'SKIPPED'`. That
+     * default was the second version of the same bug: it reads as a
+     * harmless fallback, but `isDownloadAllowed('SKIPPED')` is true in
+     * every AV mode, so it silently marked a file both unscanned AND
+     * downloadable. Two upload paths — the evidence ZIP import and the
+     * spatial import — took it without anyone choosing to, and neither
+     * mentioned scanning in its diff. A caller that genuinely wants to skip
+     * must now say `'SKIPPED'` out loud, in a diff a reviewer can see.
      */
     static async markStored(
         db: PrismaTx,
         _ctx: RequestContext,
         id: string,
-        scanStatus: 'CLEAN' | 'INFECTED' | 'SKIPPED' | 'PENDING' = 'SKIPPED',
+        scanStatus: 'CLEAN' | 'INFECTED' | 'SKIPPED' | 'PENDING',
     ) {
         return db.fileRecord.update({
             where: { id },
