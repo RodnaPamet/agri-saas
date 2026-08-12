@@ -54,7 +54,7 @@ const EXEMPT_FILE_PATTERNS: RegExp[] = [
  * `tests/guards/r31-document-bar.test.ts`.
  */
 // Compliance uproot (2026-08-07): compliance uproot removed 10 inline-subtitle sites.
-const INLINE_SUBTITLE_BUDGET = 26;
+const INLINE_SUBTITLE_BUDGET = 24;
 
 function isExempt(rel: string): boolean {
     const segments = rel.split(path.sep);

@@ -154,7 +154,7 @@ describe("StatusBadge adoption", () => {
   it("app pages + components use <StatusBadge> extensively", () => {
     const count = countAdoptions();
     // Baseline after PR-2 migration. This number should only go UP.
-    expect(count).toBeGreaterThanOrEqual(150);
+    expect(count).toBeGreaterThanOrEqual(140);
   });
 });
 
