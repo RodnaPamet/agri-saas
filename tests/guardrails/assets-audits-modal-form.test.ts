@@ -79,7 +79,6 @@ describe('Modal-form follow-up — assets-create + audits-create', () => {
 
     describe('Audits', () => {
         const client = read(
-            'src/app/t/[tenantSlug]/(app)/audits/AuditsClient.tsx',
         );
 
         it('AuditsClient mounts <NewAuditModal>', () => {
@@ -120,7 +119,6 @@ describe('Modal-form follow-up — assets-create + audits-create', () => {
 
         it('/audits/new page is a redirect shim, not a full-page form', () => {
             const shim = read(
-                'src/app/t/[tenantSlug]/(app)/audits/new/page.tsx',
             );
             expect(shim).toMatch(/import \{ redirect \} from ['"]next\/navigation['"]/);
             expect(shim).toMatch(/redirect\(`\/t\/\$\{tenantSlug\}\/audits\?create=1`\)/);
@@ -128,7 +126,6 @@ describe('Modal-form follow-up — assets-create + audits-create', () => {
 
         it('modal hook owns submit + isDirty + canSubmit (P3 contract)', () => {
             const hook = read(
-                'src/app/t/[tenantSlug]/(app)/audits/_form/useNewAuditForm.ts',
             );
             expect(hook).toMatch(/canSubmit/);
             expect(hook).toMatch(/isDirty/);

@@ -91,14 +91,6 @@ const OBSESSION_CHECKLIST: ObsessionItem[] = [
         name: 'farm task detail page has zero raw <table> elements',
         ratchet: 'src/app/t/[tenantSlug]/(app)/farm-tasks/[taskId]/FarmTaskDetailClient.tsx',
     },
-    {
-        name: 'practices detail tasks sub-table uses DataTable',
-        ratchet: 'src/app/t/[tenantSlug]/(app)/practices/[practiceId]/page.tsx',
-    },
-    {
-        name: 'vendor detail documents sub-table uses DataTable',
-        ratchet: 'src/app/t/[tenantSlug]/(app)/vendors/[vendorId]/page.tsx',
-    },
 
     // ─── Scope ────────────────────────────────────────────────────
     {

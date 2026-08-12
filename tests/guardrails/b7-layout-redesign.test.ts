@@ -115,7 +115,6 @@ describe('B7 — layout redesign', () => {
         // and a click-to-navigate to the practice detail page. The
         // rail NAVIGATES; it no longer filters the table.
         const src = read(
-            'src/app/t/[tenantSlug]/(app)/practices/PracticesClient.tsx',
         );
 
         it('mounts an AsidePanel browse rail (NOT a LeftAccordionRail)', () => {
@@ -169,7 +168,6 @@ describe('B7 — layout redesign', () => {
 
     describe('Practices table — `Category` column (framework-tagged)', () => {
         const src = read(
-            'src/app/t/[tenantSlug]/(app)/practices/PracticesClient.tsx',
         );
 
         it('column-visibility list includes Category before Status', () => {

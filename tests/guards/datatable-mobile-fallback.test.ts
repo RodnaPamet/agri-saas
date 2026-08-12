@@ -130,10 +130,6 @@ const EXEMPTIONS: Record<string, string> = {
     // ── Detail-page sub-tables (EntityDetailLayout, not list pages) ──
     't/[tenantSlug]/(app)/access-reviews/[reviewId]/AccessReviewDetailClient.tsx':
         'detail page — DataTable is the inner roster sub-table',
-    't/[tenantSlug]/(app)/vendors/[vendorId]/page.tsx':
-        'detail page — DataTable is the inner documents sub-table',
-    't/[tenantSlug]/(app)/practices/[practiceId]/_tabs/PracticeMappingsTab.tsx':
-        'detail-page sub-table — framework mappings for one practice',
     't/[tenantSlug]/(app)/farm-tasks/[taskId]/FarmTaskDetailClient.tsx':
         'detail page — DataTable is the inner links sub-table',
     't/[tenantSlug]/(app)/planning/[cropPlanId]/PlantingBoard.tsx':

@@ -44,7 +44,6 @@ const EXEMPT_FILES = new Set<string>([
   // (not the .badge CSS class) — `badge` is a local variable holding a
   // `{ tone, label }` shape for the risk-score preview styling. The code
   // moved here from NewRiskModal on 2026-06-06.
-  "src/app/t/[tenantSlug]/(app)/risks/_shared/RiskEvaluationFields.tsx",
 ]);
 
 // `className=` strings (string OR template literal) containing the

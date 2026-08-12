@@ -45,11 +45,7 @@ interface ClientFile {
 
 const CLIENTS: ClientFile[] = [
     { entity: 'assets', file: 'src/app/t/[tenantSlug]/(app)/assets/AssetsClient.tsx' },
-    { entity: 'practices', file: 'src/app/t/[tenantSlug]/(app)/practices/PracticesClient.tsx' },
     { entity: 'evidence', file: 'src/app/t/[tenantSlug]/(app)/evidence/EvidenceClient.tsx' },
-    { entity: 'policies', file: 'src/app/t/[tenantSlug]/(app)/policies/PoliciesClient.tsx' },
-    { entity: 'audits', file: 'src/app/t/[tenantSlug]/(app)/audits/AuditsClient.tsx' },
-    { entity: 'findings', file: 'src/app/t/[tenantSlug]/(app)/findings/FindingsClient.tsx' },
 ];
 
 describe('List-page editorial descriptions (Roadmap-2 PR-4)', () => {

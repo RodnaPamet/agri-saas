@@ -14,16 +14,6 @@ import * as path from 'node:path';
 const ROOT = path.resolve(__dirname, '../..');
 
 const ROLLOUT_PAGES: Array<{ name: string; path: string; activeVar: string }> = [
-    {
-        name: 'Policies',
-        path: 'src/app/t/[tenantSlug]/(app)/policies/PoliciesClient.tsx',
-        activeVar: 'activePolicyKpi',
-    },
-    {
-        name: 'Vendors',
-        path: 'src/app/t/[tenantSlug]/(app)/vendors/VendorsClient.tsx',
-        activeVar: 'activeVendorKpi',
-    },
 ];
 
 const ALL_R23_RATCHETS = [
@@ -37,11 +27,8 @@ const ALL_R23_RATCHETS = [
 
 const ALL_R23_CONSUMERS = [
     'src/app/t/[tenantSlug]/(app)/assets/AssetsClient.tsx',
-    'src/app/t/[tenantSlug]/(app)/practices/PracticesClient.tsx',
     'src/app/t/[tenantSlug]/(app)/farm-tasks/FarmTasksClient.tsx',
     'src/app/t/[tenantSlug]/(app)/evidence/EvidenceClient.tsx',
-    'src/app/t/[tenantSlug]/(app)/policies/PoliciesClient.tsx',
-    'src/app/t/[tenantSlug]/(app)/vendors/VendorsClient.tsx',
 ] as const;
 
 function read(rel: string): string {

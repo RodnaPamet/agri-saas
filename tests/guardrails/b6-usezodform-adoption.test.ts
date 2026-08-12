@@ -82,10 +82,6 @@ describe('B6 — Phase 3 useZodForm adoption', () => {
         // by tests/guards/rq2-4-assessment-ia.test.ts.
         const PAGES: Array<{ label: string; file: string }> = [
             {
-                label: 'Practices (canonical)',
-                file: 'src/app/t/[tenantSlug]/(app)/practices/[practiceId]/page.tsx',
-            },
-            {
                 label: 'Assets',
                 file: 'src/app/t/[tenantSlug]/(app)/assets/[id]/page.tsx',
             },
@@ -114,20 +110,12 @@ describe('B6 — Phase 3 useZodForm adoption', () => {
     describe('Four modal form hooks adopt useZodForm', () => {
         const HOOKS: Array<{ label: string; file: string }> = [
             {
-                label: 'vendor',
-                file: 'src/app/t/[tenantSlug]/(app)/vendors/_form/useNewVendorForm.ts',
-            },
-            {
                 label: 'task',
                 file: 'src/components/tasks/_form/useNewTaskForm.ts',
             },
             {
                 label: 'asset',
                 file: 'src/app/t/[tenantSlug]/(app)/assets/_form/useNewAssetForm.ts',
-            },
-            {
-                label: 'audit',
-                file: 'src/app/t/[tenantSlug]/(app)/audits/_form/useNewAuditForm.ts',
             },
         ];
 

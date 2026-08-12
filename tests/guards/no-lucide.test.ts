@@ -79,15 +79,9 @@ const LEGACY_LUCIDE_USERS = new Set<string>([
     // new filter-defs file has no Nucleo option until the filter platform
     // migrates. Same precedent as every other *filter-defs.ts entry here.
     'src/components/processes/automation-filter-defs.ts',
-    'src/app/t/[tenantSlug]/(app)/audits/cycles/page.tsx',
-    'src/app/t/[tenantSlug]/(app)/audits/packs/[packId]/page.tsx',
-    'src/app/t/[tenantSlug]/(app)/audits/readiness/page.tsx',
     'src/app/t/[tenantSlug]/(app)/auth/mfa/page.tsx',
     'src/app/t/[tenantSlug]/(app)/calendar/CalendarClient.tsx',
-    'src/app/t/[tenantSlug]/(app)/practices/PracticesClient.tsx',
-    'src/app/t/[tenantSlug]/(app)/practices/filter-defs.ts',
     'src/app/t/[tenantSlug]/(app)/evidence/filter-defs.ts',
-    'src/app/t/[tenantSlug]/(app)/policies/filter-defs.ts',
     // Roadmap-2 PR-12 — moved a single `Download` icon import
     // from SoAClient to ReportsClient when lifting the SoA
     // export-buttons cluster up into the Reports header. Net
@@ -97,7 +91,6 @@ const LEGACY_LUCIDE_USERS = new Set<string>([
     // T13 i18n migration — the sole lucide import (Paperclip) migrated to
     // the Nucleo `paperclip` icon; the file no longer imports lucide, so
     // it is removed from the allowlist in the same diff (stale-entry rule).
-    'src/app/t/[tenantSlug]/(app)/vendors/filter-defs.ts',
     'src/components/command-palette/command-palette.tsx',
     'src/components/command-palette/use-palette-commands.ts',
     'src/components/ForbiddenPage.tsx',

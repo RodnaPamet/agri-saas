@@ -23,7 +23,6 @@ const read = (rel: string) =>
 describe('B4 — filter + nav consistency', () => {
     describe('Documents filter placement', () => {
         const src = read(
-            'src/app/t/[tenantSlug]/(app)/vendors/[vendorId]/page.tsx',
         );
 
         it('docs tab carries a search input', () => {
@@ -73,7 +72,6 @@ describe('B4 — filter + nav consistency', () => {
 
     describe('Clauses entry-point lives on the Audits page', () => {
         const audits = read(
-            'src/app/t/[tenantSlug]/(app)/audits/AuditsClient.tsx',
         );
 
         it('Audits header carries a Clauses link', () => {

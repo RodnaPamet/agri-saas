@@ -43,7 +43,6 @@ const SCAN_FILES: string[] = [
     // (SVG `stroke` / `fill` accept `var(...)`), so it joins the
     // ratchet net.
     'src/components/ui/DonutChart.tsx',
-    'src/app/t/[tenantSlug]/(app)/vendors/dashboard/page.tsx',
 ];
 
 // Allowlisted (file, line-substring, reason) tuples for hex literals

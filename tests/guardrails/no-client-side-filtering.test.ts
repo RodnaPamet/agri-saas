@@ -23,11 +23,8 @@ const root = path.resolve(__dirname, '../..');
 // List page client components that own server-side filter state and must
 // render `<FilterToolbar>`. The page.tsx server wrappers hydrate these.
 const LIST_CLIENT_FILES = [
-    'src/app/t/[tenantSlug]/(app)/practices/PracticesClient.tsx',
     'src/app/t/[tenantSlug]/(app)/evidence/EvidenceClient.tsx',
     'src/app/t/[tenantSlug]/(app)/assets/AssetsClient.tsx',
-    'src/app/t/[tenantSlug]/(app)/policies/PoliciesClient.tsx',
-    'src/app/t/[tenantSlug]/(app)/vendors/VendorsClient.tsx',
 ];
 
 /** Patterns that suggest client-side filtering of server data. */

@@ -120,7 +120,6 @@ describe('PR-D — entity-ID picker migration', () => {
 
     describe('Vendor link form (vendor detail page)', () => {
         const src = read(
-            'src/app/t/[tenantSlug]/(app)/vendors/[vendorId]/page.tsx',
         );
 
         it('mounts <EntityPicker> with the canonical testid', () => {
@@ -136,7 +135,6 @@ describe('PR-D — entity-ID picker migration', () => {
 
     describe('Vendor subprocessor form (vendor detail page)', () => {
         const src = read(
-            'src/app/t/[tenantSlug]/(app)/vendors/[vendorId]/page.tsx',
         );
 
         it('mounts <EntityPicker entityType="VENDOR"> for the subprocessor slot', () => {

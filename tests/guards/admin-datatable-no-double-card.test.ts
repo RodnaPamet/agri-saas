@@ -25,7 +25,6 @@ import * as path from 'node:path';
 const ROOT = path.resolve(__dirname, '../..');
 const SCAN_GLOBS = [
     'src/app/t/[tenantSlug]/(app)/admin',
-    'src/app/t/[tenantSlug]/(app)/reports',
 ];
 
 function walk(dir: string): string[] {

@@ -74,8 +74,6 @@ describe('DataTable selection default-on (R12-PR1)', () => {
         // (e.g. "select which templates to install"). Each carries a
         // written reason.
         const EXEMPTIONS: Record<string, string> = {
-            'src/app/t/[tenantSlug]/(app)/practices/templates/page.tsx':
-                'Install-from-templates picker — `select` is the "include this template in the install set" toggle, not a row-record selection affordance.',
         };
         const stripComments = (s: string) =>
             s

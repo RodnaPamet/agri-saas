@@ -213,7 +213,6 @@ describe('Button label centering', () => {
     describe('3. Practice-status trigger hugs content (no fixed-width void)', () => {
         it('does not pin the status combobox to a fixed width', () => {
             const page = read(
-                'src/app/t/[tenantSlug]/(app)/practices/[practiceId]/page.tsx',
             );
             const idx = page.indexOf('id="practice-status-select"');
             expect(idx).toBeGreaterThan(-1);

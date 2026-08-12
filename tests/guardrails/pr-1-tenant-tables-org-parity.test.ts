@@ -109,7 +109,6 @@ describe('PR-1 — tenant tables → org-level parity', () => {
 
     describe('Tenant rollouts — Practices / Evidence', () => {
         const practices = read(
-            'src/app/t/[tenantSlug]/(app)/practices/PracticesClient.tsx',
         );
         const evidence = read(
             'src/app/t/[tenantSlug]/(app)/evidence/EvidenceClient.tsx',

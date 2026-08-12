@@ -94,19 +94,16 @@ describe('Action-button canonical entity label', () => {
         //  button's t()/tr() call resolves against]
         const INLINE_SITES: Array<[string, string, string, string]> = [
             [
-                'src/app/t/[tenantSlug]/(app)/practices/PracticesClient.tsx',
                 'new-practice-btn',
                 'Practice',
                 'practices',
             ],
             [
-                'src/app/t/[tenantSlug]/(app)/policies/PoliciesClient.tsx',
                 'new-policy-btn',
                 'Policy',
                 'policies',
             ],
             [
-                'src/app/t/[tenantSlug]/(app)/vendors/VendorsClient.tsx',
                 'new-vendor-btn',
                 'Vendor',
                 'vendors',

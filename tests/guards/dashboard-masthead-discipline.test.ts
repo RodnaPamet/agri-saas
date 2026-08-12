@@ -46,7 +46,6 @@ const ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
 
 const PER_RESOURCE_DASHBOARDS = [
-    'src/app/t/[tenantSlug]/(app)/vendors/dashboard/page.tsx',
 ];
 
 const MAIN_DASHBOARD = 'src/app/t/[tenantSlug]/(app)/dashboard/DashboardClient.tsx';

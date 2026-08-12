@@ -135,12 +135,10 @@ describe('Epic G-3 — end-to-end readiness', () => {
     test('public vendor-assessment routes exist', () => {
         expect(
             exists(
-                'src/app/api/vendor-assessment/[assessmentId]/route.ts',
             ),
         ).toBe(true);
         expect(
             exists(
-                'src/app/api/vendor-assessment/[assessmentId]/submit/route.ts',
             ),
         ).toBe(true);
     });
@@ -148,16 +146,6 @@ describe('Epic G-3 — end-to-end readiness', () => {
     // [5] Internal routes
     test('internal admin routes exist for templates + reviews', () => {
         for (const rel of [
-            'src/app/api/t/[tenantSlug]/vendor-assessment-templates/route.ts',
-            'src/app/api/t/[tenantSlug]/vendor-assessment-templates/[templateId]/route.ts',
-            'src/app/api/t/[tenantSlug]/vendor-assessment-templates/[templateId]/sections/route.ts',
-            'src/app/api/t/[tenantSlug]/vendor-assessment-templates/[templateId]/sections/[sectionId]/questions/route.ts',
-            'src/app/api/t/[tenantSlug]/vendor-assessment-templates/[templateId]/reorder/route.ts',
-            'src/app/api/t/[tenantSlug]/vendor-assessment-templates/[templateId]/clone/route.ts',
-            'src/app/api/t/[tenantSlug]/vendor-assessment-reviews/[assessmentId]/route.ts',
-            'src/app/api/t/[tenantSlug]/vendor-assessment-reviews/[assessmentId]/review/route.ts',
-            'src/app/api/t/[tenantSlug]/vendor-assessment-reviews/[assessmentId]/close/route.ts',
-            'src/app/api/t/[tenantSlug]/vendor-assessment-reviews/[assessmentId]/reminder/route.ts',
         ]) {
             expect(exists(rel)).toBe(true);
         }

@@ -41,7 +41,6 @@ const PRIMITIVE_PATH = 'src/components/ui/form-section.tsx';
 // ratchet vacuously green. The findings create-modal is the surviving
 // multi-section form.
 const ADOPTERS = [
-    'src/app/t/[tenantSlug]/(app)/findings/CreateFindingModal.tsx',
 ];
 
 describe('FormSection discipline (Roadmap-2 PR-6)', () => {

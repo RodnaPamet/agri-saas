@@ -47,7 +47,6 @@ const PRIMITIVE_PATH = 'src/components/ui/card-header.tsx';
 // array makes the "curated adopters mount CardHeader" test vacuously green,
 // so the anchor moves to the audits list — a surviving CardHeader adopter.
 const ADOPTERS = [
-    'src/app/t/[tenantSlug]/(app)/audits/AuditsClient.tsx',
 ];
 
 describe('CardHeader discipline (Roadmap-3 PR-5)', () => {

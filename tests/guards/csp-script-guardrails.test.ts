@@ -24,7 +24,6 @@ const CSP_ALLOWLIST = new Set([
     // `sanitizeRichTextHtml(...)` — defence in depth). Both calls
     // funnel through the same DOMPurify allowlist; widening the
     // allowlist requires a security review.
-    'app/t/[tenantSlug]/(app)/policies/[policyId]/page.tsx',
     // Field-journal detail renders the entry's rich-text notes. Same
     // defence-in-depth as the policy body: notes are sanitised
     // server-side on write (`sanitizeRichTextHtml` at the usecase

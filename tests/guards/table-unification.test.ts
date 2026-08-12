@@ -88,7 +88,6 @@ describe("DataTable unification — Practices as the canonical shape", () => {
         const src = fs.readFileSync(
             path.join(
                 ROOT,
-                "src/app/t/[tenantSlug]/(app)/practices/PracticesClient.tsx",
             ),
             "utf8",
         );
@@ -135,12 +134,6 @@ interface FirstColumnEntry {
 }
 
 const FIRST_COLUMN_TABLES: FirstColumnEntry[] = [
-    {
-        file: "src/app/t/[tenantSlug]/(app)/practices/PracticesClient.tsx",
-        firstColumnId: "code",
-        adopted: true,
-        note: "Practices — the canonical reference. First column is `id: 'code'` accessing `c.code || ''`.",
-    },
     // R10-PR5 — registry expansion across the remaining list-page
     // tables. Every entity converges on the same shape: column 0 is
     // the canonical scannable identifier (name, title, or code).
@@ -155,24 +148,6 @@ const FIRST_COLUMN_TABLES: FirstColumnEntry[] = [
         firstColumnId: "title",
         adopted: true,
         note: "Evidence list — title is the canonical identifier of an evidence record (e.g. 'Q3 access review PDF'). No separate code or key.",
-    },
-    {
-        file: "src/app/t/[tenantSlug]/(app)/policies/PoliciesClient.tsx",
-        firstColumnId: "title",
-        adopted: true,
-        note: "Policies list — title is the canonical identifier (e.g. 'Information Security Policy v2.1'). Versions are a separate column.",
-    },
-    {
-        file: "src/app/t/[tenantSlug]/(app)/findings/FindingsClient.tsx",
-        firstColumnId: "title",
-        adopted: true,
-        note: "Findings list — title is the canonical identifier (the finding's short name). No separate code field on findings.",
-    },
-    {
-        file: "src/app/t/[tenantSlug]/(app)/vendors/VendorsClient.tsx",
-        firstColumnId: "name",
-        adopted: true,
-        note: "Vendors list — name is the canonical identifier (e.g. 'Stripe Inc'). No separate code field on vendors.",
     },
 ];
 

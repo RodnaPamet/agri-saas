@@ -61,12 +61,7 @@ describe('DataTable uniform row height (R12-PR2)', () => {
         // Heuristic: a title-cell `cell: ({ ... }) => <div>...<Link>...
         // </Link>...<p` shape is the regression we lock against.
         const titleCellPages = [
-            'src/app/t/[tenantSlug]/(app)/risks/RisksClient.tsx',
-            'src/app/t/[tenantSlug]/(app)/practices/PracticesClient.tsx',
-            'src/app/t/[tenantSlug]/(app)/policies/PoliciesClient.tsx',
             'src/app/t/[tenantSlug]/(app)/evidence/EvidenceClient.tsx',
-            'src/app/t/[tenantSlug]/(app)/vendors/VendorsClient.tsx',
-            'src/app/t/[tenantSlug]/(app)/findings/FindingsClient.tsx',
             'src/app/t/[tenantSlug]/(app)/assets/AssetsClient.tsx',
         ];
         const offenders: string[] = [];
