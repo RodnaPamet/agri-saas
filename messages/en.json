@@ -6167,7 +6167,11 @@
             "clusterActive": "Showing {count, plural, one {# parcel} other {# parcels}} near {label}",
             "clusterActiveUnpositioned": "Showing {count, plural, one {# parcel} other {# parcels}} without a location",
             "zoomIn": "Zoom in",
-            "zoomOut": "Zoom out"
+            "zoomOut": "Zoom out",
+            "fitCountry": "Show the whole country",
+            "fitHolding": "Back to this holding",
+            "stepNextParcel": "Go to the next parcel, north to south",
+            "stepPosition": "{name} · {index} of {total}, north to south"
         },
         "spray": {
             "title": "New spray job",
