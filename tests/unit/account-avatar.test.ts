@@ -2,10 +2,35 @@
  * Unit — `src/lib/account/avatar.ts` (avatar roadmap P3).
  *
  * Covers the server-side validation that is the trust boundary for
- * the upload: the magic-number webp sniff, the size cap, and the
- * empty-payload guard — plus the deterministic key/URL helpers.
+ * the upload: the magic-number webp sniff, the size cap, the
+ * empty-payload guard, and the AV scan — plus the deterministic
+ * key/URL helpers.
+ *
+ * The scan cases matter more than their size suggests. This path stores
+ * no `FileRecord`, so no download gate will ever look at a scan status:
+ * the bytes are streamed by key to any authenticated user who asks. Until
+ * 2026-08-12 nothing scanned them at all. Only `scanUploadedBuffer` is
+ * stubbed below — the accept/refuse decision runs for real.
  */
+const mockScanVerdict = jest.fn();
+
 jest.mock('@/lib/storage', () => ({ getStorageProvider: jest.fn() }));
+jest.mock('@/lib/storage/av-scan', () => {
+    const actual = jest.requireActual('@/lib/storage/av-scan');
+    return {
+        ...actual,
+        scanUploadedBuffer: (...args: unknown[]) => mockScanVerdict(...args),
+    };
+});
+// Jest runs with `skipValidation`, so zod's `.default('strict')` never fires
+// and an unset AV_SCAN_MODE would read as "not strict" — quietly turning the
+// fail-closed case below into a fail-open one.
+const mockEnv: { AV_SCAN_MODE: string } = { AV_SCAN_MODE: 'strict' };
+jest.mock('@/env', () => ({
+    get env() {
+        return mockEnv;
+    },
+}));
 jest.mock('@/lib/prisma', () => ({
     __esModule: true,
     default: { user: { update: jest.fn() } },
@@ -37,6 +62,12 @@ function webpBuffer(extraBytes = 32): Buffer {
         Buffer.alloc(extraBytes),
     ]);
 }
+
+beforeEach(() => {
+    mockEnv.AV_SCAN_MODE = 'strict';
+    mockScanVerdict.mockReset();
+    mockScanVerdict.mockResolvedValue('CLEAN');
+});
 
 describe('isWebp — magic-number sniff', () => {
     it('accepts a RIFF/WEBP buffer', () => {
@@ -132,6 +163,88 @@ describe('uploadOwnAvatar — validation branches', () => {
             data: { image: '/api/account/avatar/u1' },
         });
         expect(result).toEqual({ imageUrl: '/api/account/avatar/u1' });
+    });
+});
+
+describe('uploadOwnAvatar — the AV scan gate', () => {
+    const write = jest.fn();
+
+    beforeEach(() => {
+        write.mockReset();
+        mockUserUpdate.mockReset();
+        mockGetStorageProvider.mockReturnValue({ write });
+    });
+
+    it('scans the uploaded bytes', async () => {
+        // The whole gap: this call did not exist. An avatar is rendered to
+        // every colleague in every tenant the owner belongs to, which makes
+        // it one of the few uploads with a distribution path built in.
+        const buf = webpBuffer();
+        await uploadOwnAvatar('u1', buf);
+        expect(mockScanVerdict).toHaveBeenCalledWith(buf);
+    });
+
+    it('REFUSES an infected avatar — no write, no User.image', async () => {
+        mockScanVerdict.mockResolvedValue('INFECTED');
+
+        await expect(uploadOwnAvatar('u1', webpBuffer())).rejects.toThrow(
+            /malware/i,
+        );
+        expect(write).not.toHaveBeenCalled();
+        expect(mockUserUpdate).not.toHaveBeenCalled();
+    });
+
+    it('REFUSES to store when a configured scanner failed under strict', async () => {
+        // `scanUploadedBuffer` returns PENDING only when a scanner IS
+        // deployed, DID error, and the operator asked to fail closed. Storing
+        // anyway would put unscanned bytes at a key the serve route reads.
+        mockScanVerdict.mockResolvedValue('PENDING');
+
+        await expect(uploadOwnAvatar('u1', webpBuffer())).rejects.toThrow(
+            /unavailable/i,
+        );
+        expect(write).not.toHaveBeenCalled();
+        expect(mockUserUpdate).not.toHaveBeenCalled();
+    });
+
+    it('stores when no scanner is deployed at all', async () => {
+        // The branch the live stack takes (`AV_SCAN_MODE=disabled`, no
+        // CLAMAV_HOST). Refusing here would break avatars everywhere ClamAV
+        // is not run, for no gain over what every FileRecord path already
+        // does with the identical verdict.
+        mockScanVerdict.mockResolvedValue('SKIPPED');
+
+        await uploadOwnAvatar('u1', webpBuffer());
+        expect(write).toHaveBeenCalledTimes(1);
+        expect(mockUserUpdate).toHaveBeenCalledTimes(1);
+    });
+
+    it('scans BEFORE writing, not after', async () => {
+        // The mirror image of the record-backed pipeline's ordering, and for
+        // the reason that pipeline states: there, an infected file is
+        // recoverable because the download gate refuses it. Here there is no
+        // gate, so bytes that reach the key are already being served.
+        const order: string[] = [];
+        mockScanVerdict.mockImplementation(async () => {
+            order.push('scan');
+            return 'CLEAN';
+        });
+        write.mockImplementation(async () => {
+            order.push('write');
+        });
+
+        await uploadOwnAvatar('u1', webpBuffer());
+        expect(order).toEqual(['scan', 'write']);
+    });
+
+    it('never occupies the scanner with bytes that fail the cheap checks', async () => {
+        await expect(uploadOwnAvatar('u1', Buffer.alloc(0))).rejects.toThrow();
+        const png = Buffer.concat([
+            Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+            Buffer.alloc(32),
+        ]);
+        await expect(uploadOwnAvatar('u1', png)).rejects.toThrow(/WebP/i);
+        expect(mockScanVerdict).not.toHaveBeenCalled();
     });
 });
 

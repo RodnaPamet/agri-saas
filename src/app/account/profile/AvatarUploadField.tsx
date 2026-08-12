@@ -58,6 +58,28 @@ async function toAvatarWebp(file: File): Promise<Blob> {
     return blob;
 }
 
+/**
+ * The server's refusal, as a sentence.
+ *
+ * `withApiErrorHandling` shapes every 4xx as `{ error: { code, message } }`
+ * — an OBJECT under `error`. Reading `payload.error` directly and passing
+ * it to `new Error(...)` stringifies that object, so every refusal the
+ * server took care to word rendered as `[object Object]`. It mattered
+ * little while the only refusals were "not a webp" (which the canvas
+ * round-trip makes unreachable in practice); it matters now that the
+ * scanner can refuse an upload for a reason the user has to act on.
+ */
+async function uploadErrorMessage(res: Response): Promise<string> {
+    const payload = (await res.json().catch(() => null)) as
+        | { error?: { message?: string } | string; message?: string }
+        | null;
+    const fromError =
+        typeof payload?.error === 'string'
+            ? payload.error
+            : payload?.error?.message;
+    return fromError || payload?.message || 'Upload failed.';
+}
+
 export interface AvatarUploadFieldProps {
     name: string | null;
     email: string | null;
@@ -93,10 +115,7 @@ export function AvatarUploadField({
                 credentials: 'same-origin',
             });
             if (!res.ok) {
-                const payload = await res.json().catch(() => ({}));
-                throw new Error(
-                    payload.error || payload.message || 'Upload failed.',
-                );
+                throw new Error(await uploadErrorMessage(res));
             }
             const { imageUrl } = (await res.json()) as { imageUrl: string };
             // Cache-bust the preview — the serve URL is stable, so the

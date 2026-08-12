@@ -97,3 +97,9 @@ own diff and its own run of the evidence/journal suites.
 The avatar and promotion-image paths remain a separate variant: fixed keys,
 webp magic bytes, no `FileRecord`. The avatar path performs **no AV scan at
 all**, which this change does not alter. Both are worth folding in next.
+
+> **Superseded for the avatar path** by
+> `2026-08-12-avatar-scan-gate.md`: it scans now, via `scanOrRefuse` in this
+> same module — the record-less shape's gate, which runs BEFORE the write
+> because there is no download gate to defer to. Promotion artwork keeps its
+> own stricter verdict policy, deliberately; see that note.

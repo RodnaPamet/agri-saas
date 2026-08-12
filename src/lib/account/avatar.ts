@@ -15,12 +15,31 @@
  * storage abstraction. The canvas round-trip also strips EXIF before
  * the image ever leaves the browser, so GPS/camera metadata never
  * reaches the server at all.
+ *
+ * ── Why the AV scan runs HERE, before the write ──────────────────────
+ *
+ * This path stores no `FileRecord`, so nothing downstream carries a
+ * `scanStatus` and the serve route has nothing to consult: it streams
+ * `avatars/<userId>.webp` to any authenticated user who asks, and an
+ * avatar is rendered to every colleague in every tenant the owner
+ * belongs to. That distribution is the reason an unscanned avatar is
+ * worse than it looks — and the reason the scan cannot be deferred to a
+ * download gate that does not exist. `scanOrRefuse` is that gate, moved
+ * to ingest; see `@/lib/upload/ingest` for which verdicts it stores.
+ *
+ * Until 2026-08-12 this path called no scanner at all. #543 removed the
+ * `markStored` default that had left two `FileRecord` paths unscanned;
+ * it did not reach this one, because a path with no record has no
+ * `markStored` call for that work to have noticed.
  */
 import type { Readable } from 'node:stream';
 
 import prisma from '@/lib/prisma';
 import { getStorageProvider } from '@/lib/storage';
+import { sniffMimeType } from '@/lib/storage/mime-sniff';
+import { scanOrRefuse } from '@/lib/upload/ingest';
 import { badRequest } from '@/lib/errors/types';
+import { logger } from '@/lib/observability/logger';
 
 /**
  * Hard upload cap. A 256×256 webp off the client canvas is ~5–25KB;
@@ -39,13 +58,19 @@ export function avatarServeUrl(userId: string): string {
     return `/api/account/avatar/${userId}`;
 }
 
-/** True when `buf` begins with the RIFF/WEBP magic number. */
+/**
+ * True when the BYTES are a webp — what the client declared is never
+ * consulted on this path at all.
+ *
+ * Delegates to the shared signature table rather than re-reading the
+ * RIFF header here. It used to carry its own copy of that read, which
+ * is a second implementation of a question the codebase already answers
+ * (`sniffMimeType` recognises webp, and the upload pipeline's
+ * `reconcileMimeType` stands on it) — and two magic-number readers
+ * agree only until one of them is corrected.
+ */
 export function isWebp(buf: Buffer): boolean {
-    return (
-        buf.length >= 12 &&
-        buf.toString('ascii', 0, 4) === 'RIFF' &&
-        buf.toString('ascii', 8, 12) === 'WEBP'
-    );
+    return sniffMimeType(buf) === 'image/webp';
 }
 
 /**
@@ -72,9 +97,24 @@ export async function uploadOwnAvatar(
         throw badRequest('Avatar must be a WebP image.');
     }
 
+    // Every cheap rejection above runs first, so malformed bytes never
+    // occupy the scanner — and the scan runs before the write, so refused
+    // bytes never reach the key the serve route reads.
+    const scanStatus = await scanOrRefuse(buf, {
+        component: 'account-avatar',
+        subjectId: userId,
+    });
+
     await getStorageProvider().write(avatarStorageKey(userId), buf, {
         mimeType: 'image/webp',
         maxSizeBytes: AVATAR_MAX_BYTES,
+    });
+
+    logger.info('account-avatar.stored', {
+        component: 'account-avatar',
+        userId,
+        bytes: buf.length,
+        scanStatus,
     });
 
     const imageUrl = avatarServeUrl(userId);

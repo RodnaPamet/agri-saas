@@ -1104,6 +1104,29 @@ stands for that PR only — not as a precedent.
 - **Zod schemas** for all API input validation live in `src/app-layer/schemas/` (backend) and `src/lib/schemas/` (shared).
 - **Audit trail**: Call `logEvent()` from `src/app-layer/events/audit.ts` after mutating state. Entries are hash-chained — never write directly to the `AuditLog` table.
 - **Error classes**: Use typed errors from `src/lib/errors/` rather than throwing raw `Error`.
+- **Uploaded bytes always reach a scanner.** Two shapes, both in
+  `@/lib/upload/ingest`, and which one you need is decided by whether the
+  bytes get a `FileRecord`:
+    - **Record-backed** (evidence, journal, invoices, importers) →
+      `ingestUploadedFile(tenantId, file, opts)`. Allowlist → write →
+      MIME-reconcile → scan, then the caller mints its `FileRecord` inside
+      the same transaction as the entity write and passes the returned
+      `scanStatus` to `FileRepository.markStored`. Writing before scanning is
+      safe *here* because the download route asks `isDownloadAllowed` on the
+      way back out. Never restore a default on that `scanStatus` argument —
+      `isDownloadAllowed('SKIPPED')` is true in every `AV_SCAN_MODE`, so a
+      default meaning "unscanned" also means "downloadable".
+    - **Record-less** (a fixed key streamed straight back by an image route:
+      `avatars/<userId>.webp`, `promotions/<id>.webp`) → `scanOrRefuse(buf,
+      opts)` **before** the write. There is no download gate to defer to, so
+      the gate runs at ingest and the write does not happen unless it passes.
+      Its policy is derived from `isDownloadAllowed`, not restated beside it.
+  Enforcement is two guards, deliberately derived from two different roots
+  because each is blind to the other's class:
+  `tests/guards/upload-scan-explicitness.test.ts` (from `markStored` call
+  sites — record-backed) and
+  `tests/guards/upload-route-scan-reachability.test.ts` (from API routes that
+  read `formData()` and handle a `File` — every class, including record-less).
 - **i18n**: UI strings go through `next-intl`. Message files are in
   `messages/`. Server components use `getTranslations()`, client components
   use `useTranslations()`. **Every user-facing string is added to BOTH
