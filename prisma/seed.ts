@@ -601,9 +601,12 @@ async function main() {
     });
     for (const r of annexReqs) annexMap[r.code] = r.id;
     for (const ctrl of tenantPractices) {
-        // Seed-created practices use annexId like 'A.5.1' which matches the
-        // requirement code directly.
-        const code = ctrl.annexId ?? '';
+        // Seed-created practices carry a `code` like 'A.5.1', which matches the
+        // requirement code directly. This read used to be `ctrl.annexId`, a
+        // field the Control→Practice rename removed — so it resolved to
+        // undefined, every row hit the `continue` below, and ZERO links were
+        // seeded. Silent because `prisma/seed.ts` is in tsconfig's exclude.
+        const code = ctrl.code ?? '';
         const reqId = annexMap[code];
         if (!reqId) continue;
         const existing = await prisma.practiceRequirementLink.findFirst({

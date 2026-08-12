@@ -190,11 +190,28 @@ prisma/schema/         → Multi-file Prisma schema (GAP-09):
                             base.prisma         — generator + datasource (sole owners)
                             enums.prisma        — every shared enum
                             auth.prisma         — Tenant/User/Membership/Session/SSO/Billing
-                            compliance.prisma   — Practice/Evidence/Framework/Policy/Asset/etc.
-                            vendor.prisma       — Vendor + assessment graph
-                            audit.prisma        — AuditCycle/Pack/Auditor + AuditLog
-                            automation.prisma   — AutomationRule/Execution + Notification + Integration
+                            work.prisma         — Task family (THE farm task system)
+                            files.prisma        — FileRecord + Evidence + EvidenceReview
+                            assets.prisma       — Asset + maintenance + key sequence
+                            automation.prisma   — AutomationRule/Execution + Notification +
+                                                  Integration + the process-map models
+                            compliance.prisma   — INHERITED GRC, being torn down
+                            vendor.prisma       — INHERITED GRC, being torn down
+                            audit.prisma        — AuditLog + OrgAuditLog (PLATFORM, stay) +
+                                                  inherited GRC audit models being torn down
+                            processes.prisma    — emptied; removed in teardown phase 3
                             schema.prisma       — transitional sediment file (currently empty)
+
+                          THE GRC TEARDOWN. This codebase was spun out of a GRC
+                          SaaS and the inherited surface is being removed in three
+                          phases — see
+                          docs/implementation-notes/2026-08-12-grc-teardown-plan.md
+                          for the authoritative KILL/KEEP lists. Phase 1 (done)
+                          moved the load-bearing models OUT of the GRC files, so
+                          the agri product no longer depends on a
+                          compliance-owned file. Do NOT add an agri model to
+                          compliance.prisma, vendor.prisma or audit.prisma —
+                          those files are being deleted.
                           See prisma/schema/README.md for the full layout + conventions.
                           Adding a new model: pick the matching domain file. Generator
                           and datasource ONLY live in base.prisma — Prisma rejects

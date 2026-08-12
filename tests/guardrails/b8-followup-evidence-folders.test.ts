@@ -31,9 +31,42 @@ import * as path from 'node:path';
 const ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 
+/**
+ * The WHOLE schema folder, concatenated.
+ *
+ * These assertions are about what the schema DECLARES, not about which file
+ * happens to hold it -- and models do move between files: the GRC teardown
+ * relocated the Task, Asset, Evidence and process-map families out of the
+ * compliance-owned files in a single commit that changed no column at all.
+ * Reading one file by name made this guard fail on that pure move, which is
+ * a guard reporting on filing rather than on the property it exists to hold.
+ */
+const readSchema = (): string =>
+    fs
+        .readdirSync(path.join(ROOT, 'prisma/schema'))
+        .filter((f) => f.endsWith('.prisma'))
+        .map((f) => fs.readFileSync(path.join(ROOT, 'prisma/schema', f), 'utf8'))
+        .join('\n');
+
+/**
+ * One model's block, anchored on its own closing brace.
+ *
+ * The previous form sliced from `model Evidence {` to `model FileRecord {`,
+ * which silently returned the EMPTY STRING the moment those two models were
+ * reordered -- and an empty haystack fails every `toMatch` on it, so the
+ * guard reported a missing column that was never missing. Anchoring on the
+ * block's own terminator makes the extraction independent of what happens
+ * to sit next to it.
+ */
+function modelBlock(schema: string, model: string): string {
+    const m = new RegExp(String.raw`^model ${model} \{[\s\S]*?^\}`, 'm').exec(schema);
+    if (!m) throw new Error(`model ${model} not found in prisma/schema/*.prisma`);
+    return m[0];
+}
+
 describe('B8 follow-up — evidence folders', () => {
     describe('Schema + migration', () => {
-        const compliance = read('prisma/schema/compliance.prisma');
+        const compliance = readSchema();
         const migration = read(
             'prisma/migrations/20260524190000_b8_evidence_folder/migration.sql',
         );
@@ -41,18 +74,12 @@ describe('B8 follow-up — evidence folders', () => {
         it('Evidence carries a nullable folder column', () => {
             // Anchor on the Evidence model so a `folder` field on
             // another model can't false-match.
-            const evidenceBlock = compliance.slice(
-                compliance.indexOf('model Evidence {'),
-                compliance.indexOf('model FileRecord {'),
-            );
+            const evidenceBlock = modelBlock(compliance, 'Evidence');
             expect(evidenceBlock).toMatch(/^\s*folder\s+String\?/m);
         });
 
         it('Evidence indexes (tenantId, folder)', () => {
-            const evidenceBlock = compliance.slice(
-                compliance.indexOf('model Evidence {'),
-                compliance.indexOf('model FileRecord {'),
-            );
+            const evidenceBlock = modelBlock(compliance, 'Evidence');
             expect(evidenceBlock).toMatch(
                 /@@index\(\[tenantId,\s*folder\]\)/,
             );

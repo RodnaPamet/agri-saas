@@ -23,9 +23,27 @@ import * as path from 'node:path';
 const ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 
+/**
+ * The WHOLE schema folder, concatenated.
+ *
+ * These assertions are about what the schema DECLARES, not about which file
+ * happens to hold it -- and models do move between files: the GRC teardown
+ * relocated the Task, Asset, Evidence and process-map families out of the
+ * compliance-owned files in a single commit that changed no column at all.
+ * Reading one file by name made this guard fail on that pure move, which is
+ * a guard reporting on filing rather than on the property it exists to hold.
+ */
+const readSchema = (): string =>
+    fs
+        .readdirSync(path.join(ROOT, 'prisma/schema'))
+        .filter((f) => f.endsWith('.prisma'))
+        .map((f) => fs.readFileSync(path.join(ROOT, 'prisma/schema', f), 'utf8'))
+        .join('\n');
+
+
 describe('Asset Code column + Asset/Practice code generation', () => {
     describe('Asset key field + AssetKeySequence schema', () => {
-        const schema = read('prisma/schema/compliance.prisma');
+        const schema = readSchema();
 
         it('Asset declares the key field + @@unique([tenantId, key])', () => {
             // Anchor on the Asset block bounded by its closing brace
@@ -53,7 +71,7 @@ describe('Asset Code column + Asset/Practice code generation', () => {
     });
 
     describe('Practice key sequence schema', () => {
-        const schema = read('prisma/schema/compliance.prisma');
+        const schema = readSchema();
 
         it('PracticeKeySequence model exists', () => {
             expect(schema).toMatch(/model PracticeKeySequence/);

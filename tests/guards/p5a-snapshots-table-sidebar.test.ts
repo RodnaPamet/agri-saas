@@ -12,7 +12,8 @@
  *      unique that guards against duplicate snapshots on save
  *      retry.
  *   2. Migration — table creation + the 3-policy RLS shape that
- *      mirrors the rest of the processes.prisma family.
+ *      mirrors the rest of the process-map family (which the GRC
+ *      teardown moved into automation.prisma).
  *   3. Repository — `replaceGraph` writes a snapshot inside the
  *      same outer tx as the version bump (atomic guarantee);
  *      `listSnapshots` returns descending by version.
@@ -28,11 +29,29 @@ import * as path from "node:path";
 
 const ROOT = path.resolve(__dirname, "../..");
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), "utf8");
+
+/**
+ * The WHOLE schema folder, concatenated.
+ *
+ * These assertions are about what the schema DECLARES, not about which file
+ * happens to hold it -- and models do move between files: the GRC teardown
+ * relocated the Task, Asset, Evidence and process-map families out of the
+ * compliance-owned files in a single commit that changed no column at all.
+ * Reading one file by name made this guard fail on that pure move, which is
+ * a guard reporting on filing rather than on the property it exists to hold.
+ */
+const readSchema = (): string =>
+    fs
+        .readdirSync(path.join(ROOT, 'prisma/schema'))
+        .filter((f) => f.endsWith('.prisma'))
+        .map((f) => fs.readFileSync(path.join(ROOT, 'prisma/schema', f), 'utf8'))
+        .join('\n');
+
 const exists = (rel: string) => fs.existsSync(path.join(ROOT, rel));
 
 describe("Epic P5-PR-A — process map snapshots + version-history sidebar", () => {
     describe("Prisma schema — ProcessMapSnapshot model", () => {
-        const src = read("prisma/schema/processes.prisma");
+        const src = readSchema();
 
         it("declares the model with the canonical column set", () => {
             // The graphJson Json column carries the full per-
@@ -62,7 +81,7 @@ describe("Epic P5-PR-A — process map snapshots + version-history sidebar", () 
         });
 
         it("Tenant + User carry the back-relations", () => {
-            const authSrc = read("prisma/schema/auth.prisma");
+            const authSrc = readSchema();
             expect(authSrc).toMatch(/processMapSnapshots\s+ProcessMapSnapshot\[\]/);
             expect(authSrc).toMatch(
                 /processMapSnapshotsCreated\s+ProcessMapSnapshot\[\]\s+@relation\("ProcessMapSnapshotCreatedBy"\)/,

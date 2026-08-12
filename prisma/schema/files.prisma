@@ -1,0 +1,169 @@
+/// Documents — file records and the evidence that references them.
+///
+/// `FileRecord` backs the БАБХ ДНЕВНИК farm-record register
+/// (`farm-record-register.ts`, `jobs/farm-record-pdf.ts`). `Evidence` fronts
+/// the "Docs" nav surface at `/evidence` and carries the file links;
+/// `EvidenceReview` is its review trail.
+///
+/// The three live together because they are one domain — a document, what it
+/// evidences, and who reviewed it — and because `Evidence` holds the
+/// `FileRecord` relation. Moved here from `compliance.prisma` as a pure move.
+
+model FileRecord {
+  id                   String           @id @default(cuid())
+  tenantId             String
+  pathKey              String           @unique
+  originalName         String
+  mimeType             String
+  sizeBytes            Int
+  sha256               String
+  status               FileRecordStatus @default(PENDING)
+  uploadedByUserId     String
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+  storedAt             DateTime?
+  bucket               String?
+  domain               String           @default("general")
+  scanStatus           String           @default("PENDING")
+  storageProvider      String           @default("local")
+  scanDetails          String?
+  scannedAt            DateTime?
+  deletedAt            DateTime?
+  deletedByUserId      String?
+  retentionUntil       DateTime?
+  evidence             Evidence[]
+  tenant               Tenant           @relation(fields: [tenantId], references: [id])
+  uploadedBy           User             @relation("FileUploader", fields: [uploadedByUserId], references: [id])
+  // Epic G-4 — campaigns whose evidence PDF this row carries.
+  accessReviews        AccessReview[]   @relation("AccessReviewEvidence")
+  // Agriculture (Feature 1) — locations whose original spatial file
+  // (shapefile/KML/GeoJSON) this row stores.
+  locationSpatialFiles Location[]       @relation("LocationSpatialFile")
+  logEntryFiles        LogEntryFile[]   @relation("LogEntryFileRecord")
+
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, scanStatus])
+  @@index([tenantId, deletedAt])
+  costEntries          CostEntry[]
+}
+
+model Evidence {
+  id                String                    @id @default(cuid())
+  tenantId          String
+  practiceId         String?
+  // Source task — set when this evidence was uploaded/linked from a
+  // task's Evidence tab. Powers the task Evidence tab AND the
+  // "uploaded from" back-reference on the evidence detail surface.
+  taskId            String?
+  // Source asset — same pattern as taskId: set when uploaded from that
+  // entity's Evidence tab; powers the attached-evidence tab + the
+  // "uploaded from" back-reference.
+  assetId           String?
+  type              EvidenceType
+  title             String
+  content           String?
+  fileName          String?
+  fileSize          Int?
+  category          String?
+  dateCollected     DateTime                  @default(now())
+  owner             String? // Legacy free-text — kept for backward compat
+  ownerUserId       String? // Real user FK — used for due-item routing & notifications
+  reviewCycle       ReviewCadence?
+  nextReviewDate    DateTime?
+  status            EvidenceStatus            @default(DRAFT)
+  createdAt         DateTime                  @default(now())
+  updatedAt         DateTime                  @updatedAt
+  deletedAt         DateTime?
+  deletedByUserId   String?
+  fileRecordId      String?
+  expiredAt         DateTime?
+  isArchived        Boolean                   @default(false)
+  retentionDays     Int?
+  retentionPolicy   RetentionPolicy           @default(NONE)
+  retentionUntil    DateTime?
+  /// B8 follow-up — free-text folder label (e.g. "SOC2/2026" or
+  /// "Quarterly access reviews"). Mirrors the `VendorDocument.folder`
+  /// pattern. Nullable; null/empty maps to "no folder" in the UI.
+  /// Sanitised + trimmed at the usecase boundary.
+  folder            String?
+  /// Phase-8 — auto-evidence provenance. When a farm journal record
+  /// (esp. an INPUT_APPLICATION spray LogEntry) is auto-attached as
+  /// evidence to a certification-scheme requirement's practice, this points
+  /// back at the source LogEntry. Scalar FK (no relation — LogEntry lives
+  /// in the journal domain); drives idempotency (one auto-evidence per
+  /// (logEntry, practice)) and the "which farm records back this scheme"
+  /// query. NULL for hand-authored evidence.
+  sourceLogEntryId  String?
+  // their proof here.
+  vendorAnswers     VendorAssessmentAnswer[]  @relation("VendorAnswerEvidence")
+  practice           Practice?                  @relation(fields: [practiceId], references: [id])
+  task              Task?                     @relation(fields: [taskId], references: [id])
+  asset             Asset?                    @relation(fields: [assetId], references: [id])
+  fileRecord        FileRecord?               @relation(fields: [fileRecordId], references: [id])
+  ownerUser         User?                     @relation("EvidenceOwner", fields: [ownerUserId], references: [id])
+  tenant            Tenant                    @relation(fields: [tenantId], references: [id])
+  reviews           EvidenceReview[]
+  findingLinks      FindingEvidence[]
+  reminderHistories ReminderHistory[]
+
+  @@unique([id, tenantId])
+  @@index([tenantId])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, deletedAt])
+  @@index([tenantId, retentionUntil])
+  @@index([tenantId, isArchived])
+  @@index([tenantId, ownerUserId])
+  // GAP-perf — supports `status` filter (DRAFT|SUBMITTED|APPROVED|REJECTED).
+  @@index([tenantId, status])
+  // GAP-perf — supports `practiceId` filter ("evidence for practice X").
+  // Already a heavily-used UI surface — every practice detail page
+  // pulls evidence by practiceId.
+  @@index([tenantId, practiceId])
+  // Supports the task Evidence tab ("evidence for task X") + the
+  // evidence "uploaded from" back-reference lookup.
+  @@index([tenantId, taskId])
+  // Same, for the risk + asset Evidence tabs.
+  @@index([tenantId, assetId])
+  // GAP-perf — supports `type` filter (FILE|LINK|TEXT|SCREENSHOT).
+  @@index([tenantId, type])
+  // B8 follow-up — supports folder filter + group-by reads. Same
+  // shape as VendorDocument's folder index.
+  @@index([tenantId, folder])
+  // Phase-8 — auto-evidence idempotency + "farm records backing this
+  // scheme" lookup (FK-shaped scalar; Layer-B index coverage).
+  @@index([tenantId, sourceLogEntryId])
+  // Calendar (compliance-calendar loadEvidenceEvents) — the
+  // evidence-review range predicate had no index; every calendar load
+  // was a per-tenant seq scan of Evidence.
+  @@index([tenantId, nextReviewDate])
+  // One auto-evidence row per (farm record, practice). The attach job used to
+  // rely solely on a read-then-write check, which is TOCTOU: it runs inside a
+  // transaction opened by a journal write, and a retry or a concurrent
+  // field-operation save could have two callers each read "not attached" and
+  // each insert. NULLs do not collide in Postgres, so hand-filed evidence
+  // (sourceLogEntryId IS NULL) is unaffected.
+  @@unique([tenantId, sourceLogEntryId, practiceId])
+}
+
+model EvidenceReview {
+  // denorm-tenantId — Phase 2: tenantId is NOT NULL and the parent
+  // relation is composite (evidenceId, tenantId) → Evidence(id,
+  // tenantId), which structurally guarantees this row's tenantId
+  // matches its parent's. Phase 3 swaps the chained RLS policy for
+  // the trivial direct form.
+  id         String       @id @default(cuid())
+  tenantId   String
+  evidenceId String
+  reviewerId String
+  action     ReviewAction
+  comment    String?
+  createdAt  DateTime     @default(now())
+  evidence   Evidence     @relation(fields: [evidenceId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  reviewer   User         @relation(fields: [reviewerId], references: [id])
+  tenant     Tenant       @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId])
+  @@index([tenantId, evidenceId])
+}
