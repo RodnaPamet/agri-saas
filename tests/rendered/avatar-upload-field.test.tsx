@@ -3,10 +3,15 @@
 /**
  * Rendered (Tier-2) test — `<AvatarUploadField>` (avatar roadmap P3).
  *
- * Pins the account-profile avatar practice's affordances and the
- * remove flow. The upload path runs through `createImageBitmap` +
- * `canvas.toBlob`, which jsdom does not implement — that path is
- * E2E-shaped and verified there, not here.
+ * Pins the account-profile avatar practice's affordances, the remove
+ * flow, and what the user is shown when the SERVER refuses an upload.
+ *
+ * The upload path runs through `createImageBitmap` + `canvas.toBlob`,
+ * neither of which jsdom implements, so the refusal cases below stub both
+ * to reach the `fetch`. That is worth the stubbing: the server can now
+ * refuse an avatar because the malware scanner found something or is
+ * unreachable, and a refusal the user cannot read is a refusal they cannot
+ * act on.
  */
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -125,6 +130,86 @@ describe('<AvatarUploadField>', () => {
             expect(
                 screen.getByTestId('avatar-upload-error'),
             ).toBeInTheDocument();
+        });
+    });
+
+    describe('a server refusal reaches the user as a sentence', () => {
+        /**
+         * Make the client-side canvas round-trip work under jsdom, which
+         * implements neither `createImageBitmap` nor a real 2D context.
+         * Everything after it — the POST and the error rendering — is the
+         * component's own code.
+         */
+        function stubCanvasPipeline() {
+            (
+                global as unknown as { createImageBitmap: unknown }
+            ).createImageBitmap = jest.fn(async () => ({
+                width: 800,
+                height: 600,
+                close: jest.fn(),
+            }));
+            jest.spyOn(
+                HTMLCanvasElement.prototype,
+                'getContext',
+            ).mockReturnValue({
+                drawImage: jest.fn(),
+            } as unknown as CanvasRenderingContext2D);
+            jest.spyOn(HTMLCanvasElement.prototype, 'toBlob').mockImplementation(
+                (cb) => cb(new Blob(['x'], { type: 'image/webp' })),
+            );
+        }
+
+        async function pickAndFail(body: unknown): Promise<void> {
+            stubCanvasPipeline();
+            const user = userEvent.setup();
+            global.fetch = jest.fn().mockResolvedValue({
+                ok: false,
+                json: async () => body,
+            } as Response) as typeof global.fetch;
+
+            render(
+                <AvatarUploadField
+                    name="Ada Lovelace"
+                    email="ada@example.com"
+                    initialImage={null}
+                />,
+            );
+            await user.upload(
+                screen.getByTestId('avatar-file-input'),
+                new File(['bytes'], 'photo.png', { type: 'image/png' }),
+            );
+        }
+
+        it('renders the scanner refusal verbatim, not "[object Object]"', async () => {
+            // `withApiErrorHandling` shapes a 4xx as `{ error: { message } }`
+            // — an OBJECT. The component read `payload.error` and handed it
+            // to `new Error(...)`, so every refusal the server worded
+            // carefully rendered as the stringified object.
+            await pickAndFail({
+                error: {
+                    code: 'BAD_REQUEST',
+                    message: 'This image was rejected by the malware scanner.',
+                },
+            });
+
+            await waitFor(() => {
+                expect(screen.getByTestId('avatar-upload-error')).toHaveTextContent(
+                    /rejected by the malware scanner/i,
+                );
+            });
+            expect(
+                screen.getByTestId('avatar-upload-error'),
+            ).not.toHaveTextContent(/object Object/i);
+        });
+
+        it('falls back to a readable message when the body carries none', async () => {
+            await pickAndFail({});
+
+            await waitFor(() => {
+                expect(screen.getByTestId('avatar-upload-error')).toHaveTextContent(
+                    /upload failed/i,
+                );
+            });
         });
     });
 });

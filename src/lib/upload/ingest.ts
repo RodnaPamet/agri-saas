@@ -43,6 +43,23 @@
  * `= 'SKIPPED'` default, and a default meaning "unscanned" is how two
  * upload paths came to skip the scanner without anyone deciding to. The
  * default is gone; a caller that wants to skip has to say so.
+ *
+ * ── Two shapes, and the second one is why `scanOrRefuse` exists ──────
+ *
+ * `ingestUploadedFile` above is the RECORD-BACKED shape: the bytes get a
+ * `FileRecord`, the record carries a `scanStatus`, and every read of those
+ * bytes goes through a download route that asks `isDownloadAllowed` first.
+ * That is what makes "write, then scan, then record the verdict" safe —
+ * the verdict is consulted on the way back out.
+ *
+ * Some surfaces store bytes with **no `FileRecord` at all**: a fixed key,
+ * one object per subject, streamed straight back by an `<img>` route that
+ * has no status to consult (`avatars/<userId>.webp`,
+ * `promotions/<id>.webp`). For those, deferring to a download gate is not
+ * an option, because there is no download gate — so the gate has to run at
+ * INGEST, and the write must not happen until it passes. That is
+ * `scanOrRefuse`, and the ordering is the mirror image of the one above
+ * for exactly that reason.
  */
 
 import { Readable } from 'node:stream';
@@ -51,7 +68,7 @@ import { env } from '@/env';
 import { badRequest } from '@/lib/errors/types';
 import { logger } from '@/lib/observability';
 
-import { scanUploadedBuffer } from '@/lib/storage/av-scan';
+import { isDownloadAllowed, scanUploadedBuffer } from '@/lib/storage/av-scan';
 import { reconcileMimeType } from '@/lib/storage/mime-sniff';
 // `@/lib/storage` — the same specifier every other consumer uses. This
 // module deliberately does NOT live under `src/lib/storage/`: from inside
@@ -190,4 +207,76 @@ export async function ingestUploadedFile(
         scanStatus,
         buffer,
     };
+}
+
+/**
+ * The scan gate for bytes that will be stored WITHOUT a `FileRecord`.
+ *
+ * Returns the verdict when the bytes may be stored, and throws
+ * `badRequest` when they may not. Call it BEFORE the write: a record-less
+ * object is served by key, so once the bytes are at that key nothing later
+ * in the request can stop them being handed out.
+ *
+ * ── The policy is the download gate, not a second opinion ────────────
+ *
+ * Which verdicts are storable here is not a judgement call this module
+ * gets to make separately. A record-backed file with verdict V is readable
+ * exactly when `isDownloadAllowed(V)`; a record-less file is readable
+ * unconditionally. So the honest translation is to run the SAME gate one
+ * step earlier and refuse the write when it says no — which lands, for
+ * free, on the distinction that matters:
+ *
+ *   CLEAN     → store. Scanned, nothing found.
+ *   SKIPPED   → store. No scanner is deployed (`AV_SCAN_MODE=disabled`, or
+ *               no `CLAMAV_HOST`), or one errored under a mode that asked
+ *               to fail open. Identical to what every `FileRecord` path in
+ *               this repo does today; refusing here would mean an operator
+ *               who never deployed ClamAV cannot set a profile photo.
+ *   PENDING   → refuse. Only reachable when a scanner IS configured, DID
+ *               error, and the mode is `strict` — an operator who asked to
+ *               fail closed, with a scanner that broke.
+ *   INFECTED  → refuse, always.
+ *
+ * A second hand-written table of "which statuses are OK" is how the two
+ * ideas drift apart; deriving from `isDownloadAllowed` means a future
+ * change to the gate reaches this path too.
+ */
+export async function scanOrRefuse(
+    buffer: Buffer,
+    opts: {
+        /** Component name for the refusal log line. */
+        component: string;
+        /** Subject the bytes belong to (userId, promotionId) — logged. */
+        subjectId?: string;
+    },
+): Promise<'CLEAN' | 'SKIPPED' | 'PENDING'> {
+    const verdict = await scanUploadedBuffer(buffer);
+
+    // INFECTED is checked ahead of the gate deliberately. `isDownloadAllowed`
+    // short-circuits on `AV_SCAN_MODE=disabled` BEFORE reaching its own
+    // infected rule, and a scanner that positively identified malware must
+    // not have that finding discarded by a mode flag. (In practice a
+    // disabled mode never runs a scanner, so this is belt to the gate's
+    // braces — but the belt is one line.)
+    if (verdict === 'INFECTED') {
+        logger.warn('upload refused: scanner reported an infection', {
+            component: opts.component,
+            subjectId: opts.subjectId,
+            verdict,
+        });
+        throw badRequest('This image was rejected by the malware scanner.');
+    }
+
+    if (!isDownloadAllowed(verdict)) {
+        logger.warn('upload refused: no usable scan verdict', {
+            component: opts.component,
+            subjectId: opts.subjectId,
+            verdict,
+        });
+        throw badRequest(
+            'The malware scanner is unavailable, so the image was not stored. Try again shortly.',
+        );
+    }
+
+    return verdict;
 }
