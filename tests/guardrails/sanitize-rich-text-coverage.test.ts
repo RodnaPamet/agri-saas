@@ -98,10 +98,6 @@ const RICH_TEXT_COVERAGE: Readonly<
     // safe content.
     Contract: { usecases: ['src/app-layer/usecases/contract.ts'], sanitizer: 'sanitizePlainText' },
     YieldRecord: { usecases: ['src/app-layer/usecases/yield-record.ts'], sanitizer: 'sanitizePlainText' },
-    // Enterprise-grain — PayrollExpense.description (can name an employee
-    // or contractor) is encrypted at rest AND sanitised before the write,
-    // same shape as Contract / YieldRecord above.
-    PayrollExpense: { usecases: ['src/app-layer/usecases/payroll-expense.ts'], sanitizer: 'sanitizePlainText' },
     // CostEntry.description is encrypted at rest and sanitised at the write
     // seam. `supplier` is NOT encrypted (it must stay filterable) but is
     // sanitised by the same call — encryption and sanitisation answer

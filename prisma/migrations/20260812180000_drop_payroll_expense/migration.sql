@@ -1,0 +1,33 @@
+-- ═══════════════════════════════════════════════════════════════════
+--  DROP PayrollExpense — the second half of the payroll retirement.
+--
+--  Migration 20260812090000 copied every live row into CostEntry(PAYROLL)
+--  and deliberately LEFT this table in place, so the release that
+--  introduced the change could be rolled back by pinning the image.
+--  That grace period is over: nothing reads or writes this table any
+--  more (the /grain/payroll API routes, usecase and repository are
+--  deleted in the same diff, and the page has redirected to
+--  /grain/costs?category=PAYROLL since 20260812090000).
+--
+--  ── THIS ONE BREAKS THE PREVIOUS IMAGE ─────────────────────────────
+--
+--  Unlike every other migration in this feature, this is DESTRUCTIVE.
+--  `prisma migrate deploy` runs from scripts/entrypoint.sh, so shipping
+--  the image applies it — and pinning Watchtower back would leave the
+--  older image querying a table that no longer exists. An image-only
+--  rollback therefore FAILS after this lands, which is exactly the
+--  condition deploy/rollback/README.md requires an inverse script for.
+--  See deploy/rollback/20260812180000_drop_payroll_expense.down.sql.
+--
+--  ── BEFORE DEPLOYING ───────────────────────────────────────────────
+--
+--  Confirm the table is genuinely dormant, rather than assuming it:
+--
+--    SELECT count(*) FROM "PayrollExpense"
+--     WHERE "createdAt" > (SELECT "finished_at" FROM "_prisma_migrations"
+--                          WHERE "migration_name" LIKE '%payroll_expense_to_cost_entry');
+--
+--  A non-zero result means something still writes here and this drop
+--  would destroy data — stop and find the writer.
+-- ═══════════════════════════════════════════════════════════════════
+DROP TABLE IF EXISTS "PayrollExpense";

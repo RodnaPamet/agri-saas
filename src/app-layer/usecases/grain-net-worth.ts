@@ -19,7 +19,8 @@ import { canConvert, convert } from '@/lib/units/unit-conversion';
  *
  * The fourth cost definition this product reports, and the first to include
  * OVERHEADS: land rent (`ParcelLease`, via `resolveRentBasis`) and payroll
- * (`PayrollExpense`) alongside the attributed field/stock cost reused
+ * (`CostEntry` rows in the PAYROLL category) alongside the attributed
+ * field/stock cost reused
  * verbatim from `getCostRollupByPlanting`. Its cost figure will NOT match
  * `COST_METRICS.ATTRIBUTED_CROP_COST` for the same season whenever rent or
  * payroll is present — see cost-metrics.ts's "fourth metric" section for why
@@ -54,7 +55,8 @@ import { canConvert, convert } from '@/lib/units/unit-conversion';
  *          rent-basis.ts), so money rent's currency is genuinely unknown —
  *          it is reported separately and never assumed to match the cost
  *          currency (see the currency section below).
- *        - `payrollCost` — `PayrollExpense` rows. Directly-linked
+ *        - `payrollCost` — `CostEntry` rows in the PAYROLL category.
+ *          Directly-linked
  *          (`plantingId`/`seasonId`) rows attribute straight to that
  *          planting/season; unattributed rows allocate pro-rata by AREA
  *          SHARE across the plantings in scope, and `payrollAllocated` is
@@ -66,8 +68,8 @@ import { canConvert, convert } from '@/lib/units/unit-conversion';
  *   5. CURRENCY — no FX rate is ever invented. `attributedCropCost` passes
  *      through cost-rollup's own blend (its `currencyMixed` flag is
  *      surfaced, not hidden). `payrollCost` DOES track its own currencies
- *      precisely, because this module reads the raw `PayrollExpense` rows
- *      itself. Money rent's currency is unknown by construction (no column
+ *      precisely, because this module reads the raw PAYROLL-category
+ *      `CostEntry` rows itself. Money rent's currency is unknown by construction (no column
  *      on `ParcelLease`) and is folded into `cashCostCurrencies` under the
  *      literal sentinel `'UNKNOWN'` rather than assumed to match anything —
  *      that keeps it visible in `cashCostCurrencyMixed` without inventing a

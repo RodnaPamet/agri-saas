@@ -108,8 +108,15 @@ re-applies rather than silently skipping). **Add one whenever a
 migration would break the previous image** — renames a table / column /
 enum value, drops a column still written, or rewrites persisted data
 still read. Plain additive migrations need none. See
-`deploy/rollback/README.md`; the bijection is held by
-`tests/guards/rename-rollback-inverse.test.ts`.
+`deploy/rollback/README.md`. Two guards hold this at different depths:
+`tests/guards/destructive-migration-has-inverse.test.ts` DERIVES the
+destructive set by scanning every `migration.sql` for `DROP TABLE` /
+`DROP COLUMN` / `DROP TYPE` / `RENAME TO` / `RENAME COLUMN` and requires
+each to have a `.down.sql` (one transaction, deletes its own
+`_prisma_migrations` row), with pre-convention migrations sitting in a
+`PREDATES_RULE` baseline that is not meant to grow; and
+`tests/guards/rename-rollback-inverse.test.ts` holds the rename
+bijection for the one migration it names.
 
 > **The `inflect-compliance` VM is NOT this product and is NOT idle.**
 > The same GCP project runs a second GCE instance, `inflect-compliance`

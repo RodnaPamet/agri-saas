@@ -25,8 +25,8 @@ import { parseCsvIdParam, parseCsvEnumParam } from '@/lib/validation/query-param
  *          (`description`) — fetch one entry for that.
  *   POST → create a cost entry.
  *
- * Auth follows the PayrollExpense precedent, which is what every grain
- * route does: module gate here, `assertCanRead`/`assertCanWrite` in the
+ * Auth follows what every grain route does:
+ * module gate here, `assertCanRead`/`assertCanWrite` in the
  * usecase. NOT `requirePermission` — grain is not in the Epic C.1
  * `PRIVILEGED_ROOTS`, and adding a `ROUTE_PERMISSIONS` rule for a path
  * outside those roots fails the orphan-rule test, while adding the root

@@ -28,7 +28,7 @@ import type {
 import { createTypedFilterDefs } from '@/components/ui/filter/filter-definitions';
 import type { FilterOption } from '@/components/ui/filter/types';
 // Nucleo icon cast to the contract's icon shape — keeps this file off the
-// lucide allowlist (same precedent as `grain/payroll/filter-defs.ts`).
+// lucide allowlist.
 import { Tag } from '@/components/ui/icons/nucleo';
 
 /** The icon shape the filter contract expects, derived from the contract

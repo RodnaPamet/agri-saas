@@ -4,9 +4,9 @@ import { RequestContext } from '../types';
 
 /**
  * CostEntry repository — the cost register behind `/grain/costs`
- * (enterprise-grain, GRAIN module). Mirrors `PayrollExpenseRepository`
- * (tenant-scoped CRUD, explicit soft delete via `deletedAt` /
- * `deletedByUserId` since CostEntry is not in `SOFT_DELETE_MODELS`).
+ * (enterprise-grain, GRAIN module). Tenant-scoped CRUD with explicit soft
+ * delete via `deletedAt` / `deletedByUserId`, since CostEntry is not in
+ * `SOFT_DELETE_MODELS`.
  *
  * Every method takes the caller's RLS-bound `PrismaTx` and re-asserts the
  * tenant filter in the `where` clause — defence in depth over RLS, per
@@ -217,8 +217,7 @@ export class CostEntryRepository {
     }
 
     /**
-     * `where: { id }` only — mirrors `PayrollExpenseRepository.update`. The
-     * tenant check is the caller's job (the usecase runs `getById`, which
+     * `where: { id }` only. The tenant check is the caller's job (the usecase runs `getById`, which
      * IS tenant-filtered, before calling this), so a foreign id never
      * reaches here; RLS is the hard backstop underneath both.
      */

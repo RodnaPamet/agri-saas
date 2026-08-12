@@ -1,5 +1,11 @@
 # 2026-08-10 — Payroll expense (first-class labour cost)
 
+> **SUPERSEDED — this describes a surface that no longer exists.** Payroll
+> became a CATEGORY on the `/grain/costs` cost register two days later, and
+> `PayrollExpense` (model, routes, usecase, repository, page) was retired.
+> Kept as the record of why the surface existed and what its data meant.
+> See `2026-08-12-retire-payroll-expense.md`.
+
 **Commit:** (pending — see PR)
 
 ## Design
