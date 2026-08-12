@@ -63,8 +63,9 @@ Everything else is a narrow.
 
 ## State as of the last phase-2 commit
 
-`npx tsc --noEmit` is clean. The guard suites went **80 → 23 failing**
-(225 → 94 assertions). What is DONE:
+`npx tsc --noEmit` is clean and the **guard tier is fully green** — 582
+suites, 7614 passing, 1 skipped. The suites went 80 → 23 → **0 failing**
+(225 → 94 → 0 assertions). What is DONE:
 
 - 23 pages + 97 API routes deleted (six route trees sat outside the tenant
   tree and would have survived a `src/app/api/t/*` delete).
@@ -75,23 +76,47 @@ Everything else is a narrow.
 - `route-permissions.ts` orphan rule, `route-exemptions.ts` stale entries, and
   the k6 load scripts severed.
 
-### The 23 that remain
+### How the last 23 were narrowed
 
-```
-design-system-drift          form-primitive-adoption      form-telemetry-adoption
-loading-states               table-platform-drift         token-migration
-action-button-canonical-…    columns-dropdown-coverage    epic55-native-select-ratchet
-epic63-timestamp-rollout     icon-only-action-discipline  list-page-shell-coverage
-metadatabar-detail-coverage  pageheader-adoption          r23-prd-assets-practices-rollout
-r32-modal-form-completeness  right-rail-discipline        roadmap-11-completion
-sharepoint-sp5               state-coverage               table-unification
-tab-primitive-adoption       ux-foundation-ratchets
-```
+All 23 were adoption registries with a surviving half, so all 23 narrowed.
+Three needed a NEW SUBJECT rather than a deletion — the invariant still
+mattered and only its exemplar was GRC:
 
-Most are adoption registries with a surviving half — `r23-prd-assets-practices`
-(assets live, practices gone), `sharepoint-sp5` (the admin sync-health
-dashboard lives, the audit-pack export does not). They narrow; they do not
-delete.
+- **`table-unification`** named `PracticesClient` as THE canonical
+  DataTable. Assets inherits: the only surviving table with a `code` first
+  column, and it carries the other three traits. The `useCallback` row-id
+  sub-assertion was **dropped, not weakened** — Assets passes an inline
+  arrow, and asserting the stronger form against it would be a green lie.
+- **`ux-foundation-ratchets`**' react-hook-form reference was
+  `NewPracticeModal`; `ContractFormModal` is the richest survivor. Its id
+  assertion now says what is true: no E2E targets those ids yet, the pin
+  exists so a rename has to be deliberate.
+- **`action-button-canonical-entity-label`**'s `INLINE_SITES` had been
+  emptied by the earlier bulk pass. Repopulated with Assets + Evidence,
+  which resolve their label as `{t.addAsset}` rather than `{t('key')}`;
+  the matcher reads both forms now.
+
+Two ratchets were **re-floored** rather than left at ceilings nothing can
+reach — banking headroom a deletion did not earn is exactly what a
+one-way-down ratchet exists to prevent: raw `<table>` 12 → 4, native
+`confirm()` 21 → 13.
+
+`icon-only-action-discipline` is the **exception to trap 2 below**: its
+call-site registry is now empty (IconAction has no call site anywhere in
+`src/`), yet the suite is kept — the primitive contract reads a real file
+and the Admin exclusion is a NEGATIVE scan over a live tree, so it can
+still fail. The reasoning is written into the file so the next reader does
+not mistake it for oversight.
+
+### A guard-on-a-guard, worth knowing about
+
+`tests/guardrails/pr-asset-practice-codes.test.ts` reads
+`tests/guards/table-unification.test.ts` and located its registry entry by
+slicing 600 chars from the FIRST occurrence of the `AssetsClient` path.
+Re-pointing the canonical assertion at Assets put that path ABOVE the
+registry, so the slice landed in prose and the sibling went red. It now
+anchors on `const FIRST_COLUMN_TABLES`. Only the full-tier run caught
+this — a targeted run of the file being edited would not have.
 
 ### Two traps, both already paid for once
 
@@ -107,7 +132,18 @@ delete.
 
 ### Not started
 
-Everything below the guard tier: the KILL usecases/repositories/policies
+Everything below the guard tier. Two phase-2 PRECONDITIONS from §7 of the
+plan are still open and both are load-bearing:
+
+- **`compliance-calendar.ts` still needs splitting.** It reads six KILL
+  delegates (`policy`, `vendor`, `vendorDocument`, `auditCycle`,
+  `practice`, `finding`) alongside nine KEEP ones, and
+  `getUpcomingDeadlineCount` feeds the sidebar badge on EVERY
+  authenticated page.
+- **`achievements.ts` still needs trimming** to its four agri milestones —
+  it reads `db.policy`, `db.policyAcknowledgement` and `db.auditPack`.
+
+Then: the KILL usecases/repositories/policies
 (`AuditRepository`, `PolicyRepository`, `VendorRepository`, `PracticeRepository`,
 `FrameworkRepository`, `MappingRepository`, the `vendor-assessment-*` and
 `audit-readiness` families), the GRC components, the jobs and their four
@@ -115,5 +151,13 @@ registration points, `permissions.ts` / `search.ts` / command palette / nav /
 `modules.ts`, ~2,460 i18n keys in both locales, the 45 unit/integration/rendered
 files and 24 e2e specs, and all of phase 3.
 
-`compliance-calendar.ts` still needs splitting — `getUpcomingDeadlineCount`
-feeds the sidebar badge on EVERY authenticated page.
+Also still open, and reachable by no grep: the `soft-delete.ts` model-name
+list (it becomes `DELETE FROM "${model}"` in one loop with no per-model
+try/catch — see §8d.2) and the DB-resident references in `ApiKey.scopes` /
+`TenantCustomRole.permissionsJson` / `AutomationRule.event` /
+`TenantModule.moduleKey` (§8d.4). Both must land BEFORE the phase-3 drop.
+
+`/mapping` (§8c) is half done: its API routes went with the route sweep,
+including the one outside the tenant tree. The usecase, the two
+repositories, the two services, the domain types, the panel component and
+`data/libraries/mappings/` are all still present.
