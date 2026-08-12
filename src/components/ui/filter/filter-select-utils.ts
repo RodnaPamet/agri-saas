@@ -13,7 +13,7 @@
 
 import { isValidElement, type ReactNode } from "react";
 import type { ActiveFilterInput, Filter, FilterOption } from "./types";
-import { normalizeActiveFilter, parseRangeToken } from "./types";
+import { isRangeType, normalizeActiveFilter } from "./types";
 
 // ─── single-select decision ──────────────────────────────────────────
 
@@ -92,25 +92,59 @@ export function isOptionSelectedIn(
 // ─── range helpers ──────────────────────────────────────────────────
 
 /**
+ * Which sides of a `"lo|hi"` token carry a value.
+ *
+ * Deliberately SHAPE-based rather than numeric. Both `range` and `dateRange`
+ * facets store this token, and `"2026-08-01"` is not a number — running the
+ * numeric parser over a date token yields `NaN` on both sides, which would
+ * report a fully-applied date window as "no filter applied" and hide the
+ * panel's Clear button for every date facet. The question these helpers ask
+ * ("is there a bound here?") is answerable from the token's shape alone, so
+ * it is asked there.
+ */
+function appliedRangeSides(token: string | undefined | null): {
+  lo: boolean;
+  hi: boolean;
+} {
+  if (!token) return { lo: false, hi: false };
+  const [a = "", b = ""] = String(token).split("|");
+  return { lo: a.trim() !== "", hi: b.trim() !== "" };
+}
+
+/**
  * Does the given range token represent at least one applied bound?
  * The sentinel `"|"` (both ends blank) returns false; `"30|"` / `"|70"` /
- * `"30|70"` return true.
+ * `"30|70"` / `"2026-08-01|2026-08-12"` return true.
  */
 export function hasAppliedRange(token: string | undefined | null): boolean {
-  const { min, max } = parseRangeToken(token);
-  return min != null || max != null;
+  const { lo, hi } = appliedRangeSides(token);
+  return lo || hi;
+}
+
+/**
+ * Are BOTH bounds applied? Drives the Escape-key behaviour: a complete
+ * window means the user is done, so Escape closes the whole filter popover
+ * rather than stepping back to the facet list.
+ */
+export function rangeTokenIsComplete(token: string | undefined | null): boolean {
+  const { lo, hi } = appliedRangeSides(token);
+  return lo && hi;
 }
 
 /**
  * Extract the currently-applied range token for a filter, if any.
- * Returns `undefined` when the filter isn't a range, isn't in active state,
- * or has no values. `normalizeActiveFilter` handles legacy shapes.
+ * Returns `undefined` when the filter isn't token-valued, isn't in active
+ * state, or has no values. `normalizeActiveFilter` handles legacy shapes.
+ *
+ * Both `range` and `dateRange` store ONE `"lo|hi"` token, so the gate asks
+ * `isRangeType` rather than naming either literal — a third token-shaped
+ * kind would otherwise have to find and edit this line by hand.
  */
 export function activeRangeTokenFor(
   filter: Pick<Filter, "type" | "key"> | null | undefined,
   activeFilters: ActiveFilterInput[] | undefined,
 ): string | undefined {
-  if (!filter || filter.type !== "range" || !activeFilters) return undefined;
+  if (!filter || !isRangeType(filter.type) || !activeFilters) return undefined;
   const raw = activeFilters.find((f) => f.key === filter.key);
   if (!raw) return undefined;
   const [first] = normalizeActiveFilter(raw).values;

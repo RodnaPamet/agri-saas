@@ -62,3 +62,31 @@ export function sanitizeNumericDraft(raw: string, displayScale: number): string 
     }
     return s;
 }
+
+/**
+ * The bounds of a `"lo|hi"` token, as VALIDATED strings.
+ *
+ * Both range kinds share the token shape but not its alphabet: `range`
+ * bounds are numbers, `dateRange` bounds are `YYYY-MM-DD`. Reading a date
+ * token with the numeric parser yields `NaN` on both sides — which is how a
+ * date pill would come to render the raw `"2026-08-01|2026-08-12"` instead
+ * of a window — so validity is decided per kind here, once, rather than at
+ * each render site.
+ *
+ * A side that is present but MALFORMED reads as absent. That is deliberate:
+ * a hand-edited URL should degrade to "no min" rather than to the string
+ * `"NaN"`, and the server rejects the same token anyway.
+ */
+export function rangeTokenBounds(
+    token: string,
+    isDate: boolean,
+): { lo: string | null; hi: string | null } {
+    const [rawLo = "", rawHi = ""] = String(token).split("|");
+    const valid = (raw: string): string | null => {
+        const s = raw.trim();
+        if (s === "") return null;
+        if (isDate) return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null;
+        return Number.isFinite(Number(s)) ? s : null;
+    };
+    return { lo: valid(rawLo), hi: valid(rawHi) };
+}

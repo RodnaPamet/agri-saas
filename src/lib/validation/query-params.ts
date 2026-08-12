@@ -193,3 +193,77 @@ export function csvIdField(opts: { maxValues?: number; maxLength?: number } = {}
         return out;
     });
 }
+
+/**
+ * Parse a `dateRange` facet param into an inclusive UTC window.
+ *
+ * The Epic 53 `dateRange` facet serialises as ONE param holding a
+ * `"YYYY-MM-DD|YYYY-MM-DD"` token (either side may be blank; `"|"` is the
+ * empty sentinel). A route reading it with a bare `searchParams.get(key)`
+ * receives that whole string, and passing it to Prisma as a DateTime
+ * comparison throws — the same failure shape `parseCsvEnumParam` exists to
+ * prevent, and with the same consequence: a 500 the list page renders as
+ * its empty state, which reads as "no costs in that window" rather than
+ * "the request failed".
+ *
+ * ── Why `to` is widened to end-of-day ───────────────────────────────
+ *
+ * The column is a `DateTime`, and a farmer picking "12 August" on both ends
+ * means the whole of the 12th. A literal `lte: 2026-08-12T00:00:00Z` would
+ * match only entries stamped exactly midnight — in practice, nothing. So
+ * the upper bound becomes `23:59:59.999Z` of the chosen day. The lower
+ * bound needs no such treatment: UTC midnight already includes the day.
+ *
+ * Both bounds are UTC because `parseYMD` is — the same anchoring the date
+ * picker uses when it writes the token, so the day the farmer clicked is
+ * the day the query filters on regardless of their timezone.
+ *
+ * @returns `undefined` when the param is absent, empty, or the `"|"`
+ *          sentinel — so a cleared facet omits the filter rather than
+ *          sending an unsatisfiable window.
+ * @throws  `badRequest` (400) when either side is present but not a valid
+ *          `YYYY-MM-DD` date. Rejecting beats silently dropping the bad
+ *          bound, which would quietly widen the window past what was asked.
+ */
+export function parseDateRangeParam(
+    raw: string | null | undefined,
+    label: string,
+): { from?: Date; to?: Date } | undefined {
+    if (raw == null) return undefined;
+    const token = raw.trim();
+    if (token === '' || token === '|') return undefined;
+
+    const [rawFrom = '', rawTo = ''] = token.split('|');
+    const parseSide = (side: string, which: 'from' | 'to'): Date | undefined => {
+        const s = side.trim();
+        if (s === '') return undefined;
+        // Shape first: `new Date('2026')` is a valid Date, and accepting it
+        // would turn a typo into a silently different window.
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+            throw badRequest(`Invalid ${which} date in ${label}: expected YYYY-MM-DD`);
+        }
+        const d = new Date(`${s}T00:00:00.000Z`);
+        // Round-trip, not just `isNaN`: JS ROLLS OVER an impossible day
+        // (`2026-02-30` becomes 2 March) rather than rejecting it, so a
+        // NaN check alone would silently filter on a date nobody asked for.
+        if (Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== s) {
+            throw badRequest(`Invalid ${which} date in ${label}`);
+        }
+        return d;
+    };
+
+    let from = parseSide(rawFrom, 'from');
+    let to = parseSide(rawTo, 'to');
+    if (from == null && to == null) return undefined;
+
+    // An inverted window is a slip, not a request for zero rows — the
+    // calendar orders its own output, but a hand-edited or shared URL need
+    // not. Swap rather than return nothing.
+    if (from && to && from.getTime() > to.getTime()) {
+        [from, to] = [to, from];
+    }
+    if (to) {
+        to = new Date(to.getTime() + 86_399_999);
+    }
+    return { ...(from ? { from } : {}), ...(to ? { to } : {}) };
+}

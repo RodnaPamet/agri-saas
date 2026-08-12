@@ -2693,7 +2693,8 @@
             "maximumValue": "Maximum value",
             "noMin": "No min",
             "noMax": "No max",
-            "to": "to"
+            "to": "to",
+            "anyDate": "Any date"
         },
         "formPrimitive": {
             "saveChanges": "Save Changes"
@@ -5373,7 +5374,8 @@
             "leasePanelLoading": "Loading costs…",
             "leasePanelOpenRegister": "Open the register",
             "leasePanelNote": "Recorded on the costs page. Separate from the settlements above — the same rent, seen from the cost side, so the two are not added together.",
-            "itemPanelTitle": "Costs for this product"
+            "itemPanelTitle": "Costs for this product",
+            "incurredOnFacet": "Date"
         },
         "calculator": {
             "title": "Grain calculator",

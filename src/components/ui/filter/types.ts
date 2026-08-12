@@ -23,6 +23,26 @@ export type { FilterOperator };
  */
 export type FilterResetBehavior = "clearable" | "sticky" | "resetsToDefault";
 
+/** What a facet renders as its body. See `Filter.type`. */
+export type FilterKind = "default" | "range" | "dateRange";
+
+/**
+ * The kinds whose value is ONE `"lo|hi"` token rather than a set of option
+ * values.
+ *
+ * Derived membership, not a hand-written `a || b` at each site: the range
+ * branch is tested in four files (`filter-select`, `filter-select-utils`,
+ * `filter-list`, `filter-definitions`), and every one of them would have to
+ * be found and edited by hand to add a third token-shaped kind. Adding one
+ * here covers them all.
+ */
+const RANGE_KINDS: ReadonlySet<FilterKind> = new Set(["range", "dateRange"]);
+
+/** Is this facet token-valued (`"lo|hi"`) rather than option-valued? */
+export function isRangeType(type: FilterKind | undefined): boolean {
+  return type != null && RANGE_KINDS.has(type);
+}
+
 export type Filter = {
   key: string;
   icon: FilterIcon;
@@ -35,8 +55,20 @@ export type Filter = {
   /** How `clearAllFilters` and "Reset" treat this filter. Default: `clearable`. */
   resetBehavior?: FilterResetBehavior;
   options: FilterOption[] | null;
-  /** When set to `range`, `FilterSelect` renders min/max practices instead of option list. */
-  type?: "default" | "range";
+  /**
+   * What `FilterSelect` renders as this facet's body.
+   *
+   * - `default` — the option list.
+   * - `range` — min/max NUMBER inputs (`FilterRangePanel`).
+   * - `dateRange` — a calendar (`FilterDateRangePanel`).
+   *
+   * `dateRange` is a separate type rather than a flag on `range` because
+   * the numeric codec `Math.trunc`s each bound, which no ISO date survives.
+   * See `filter-date-range-panel.tsx` for the full reasoning. Both range
+   * types share the `"lo|hi"` token shape, so URL sync needs no new case —
+   * ask `isRangeType(...)` rather than testing either literal by hand.
+   */
+  type?: FilterKind;
   /** Format a bound in storage units (e.g. cents) for display. */
   formatRangeBound?: (n: number) => string;
   /** Parse typed input into storage units. Return NaN if invalid. */

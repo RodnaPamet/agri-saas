@@ -113,11 +113,15 @@ describe('grain costs — entry surface contract', () => {
         expect(modal).toMatch(/k !== 'lease' \|\| watchedCategory === 'RENT'/);
     });
 
-    it('has NO date facet, and says why', () => {
-        // The filter platform has no date type — `range` is numeric and
-        // integer-truncates, so it cannot carry an ISO date. Adding one is
-        // platform work with its own tests, not a line in a feature PR.
-        expect(filters).not.toMatch(/incurredOn:\s*\{/);
-        expect(filters).toMatch(/no date facet/i);
+    it('has a date facet, and it is the dateRange KIND', () => {
+        // This assertion used to be its own inverse — `not.toMatch` plus a
+        // "no date facet" docblock — because `Filter.type` had no date
+        // variant and `range` integer-truncates its bounds. The platform
+        // grew `dateRange`, so the absence became the regression. Asserting
+        // the KIND matters as much as the key: wiring `incurredOn` as a
+        // plain `range` would render number inputs and encode `NaN|NaN`.
+        expect(filters).toMatch(/incurredOn:\s*\{/);
+        expect(filters).toMatch(/type:\s*'dateRange'/);
+        expect(filters).not.toMatch(/no date facet/i);
     });
 });

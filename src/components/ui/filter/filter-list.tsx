@@ -12,14 +12,18 @@ import { AnimatedSizeContainer } from "../animated-size-container";
 import { useKeyboardShortcut } from "../hooks";
 import { Check } from "../icons";
 import { Popover } from "../popover";
+import { formatDate } from "@/lib/format-date";
+import { parseYMD } from "../date-picker/date-utils";
+import { FilterDateRangePanel } from "./filter-date-range-panel";
+import { rangeTokenBounds } from "./filter-range-utils";
 import { FilterRangePanel } from "./filter-range-panel";
 import {
   ActiveFilterInput,
   Filter,
   FilterOperator,
   FilterOption,
+  isRangeType,
   normalizeActiveFilter,
-  parseRangeToken,
 } from "./types";
 
 type FilterListProps = {
@@ -320,22 +324,50 @@ function OperatorFilterPill({
     [filterKey, values, onSelect, onRemove, isAdvancedFilter, filter.multiple],
   );
 
-  if (filter.type === "range") {
+  if (isRangeType(filter.type)) {
     const token = String(values[0] ?? "|");
-    const fmt =
-      filter.formatRangeBound ?? ((n: number) => String(Math.trunc(n)));
-    const { min, max } = parseRangeToken(token);
-    const rangeFullyApplied = min != null && max != null;
-    const rangeHasAppliedValue = min != null || max != null;
+    const isDate = filter.type === "dateRange";
+    // Bounds as VALIDATED strings, per kind — a `dateRange` token's sides
+    // are ISO dates, and the numeric parser turns those into NaN, which is
+    // how a date pill would come to show the raw token.
+    const { lo, hi } = rangeTokenBounds(token, isDate);
+    const fmt = isDate
+      ? (raw: string) => formatDate(parseYMD(raw))
+      : filter.formatRangeBound
+        ? (raw: string) => filter.formatRangeBound!(Number(raw))
+        : (raw: string) => String(Math.trunc(Number(raw)));
+    const rangeFullyApplied = lo != null && hi != null;
+    const rangeHasAppliedValue = lo != null || hi != null;
     const rangeLabel =
       filter.formatRangePillLabel?.(token) ??
-      (min != null && max != null
-        ? `${fmt(min)} – ${fmt(max)}`
-        : min != null
-          ? `${fmt(min)} – ${t("noMax")}`
-          : max != null
-            ? `${t("noMin")} – ${fmt(max)}`
+      (lo != null && hi != null
+        ? `${fmt(lo)} – ${fmt(hi)}`
+        : lo != null
+          ? `${fmt(lo)} – ${t("noMax")}`
+          : hi != null
+            ? `${t("noMin")} – ${fmt(hi)}`
             : token);
+
+    // One definition each, used by whichever panel the kind selects — the
+    // token IS the value, so nothing here is kind-specific.
+    const rangePillClear = rangeHasAppliedValue
+      ? () =>
+          onRemoveFilter
+            ? onRemoveFilter(filterKey)
+            : onRemove(filterKey, token)
+      : undefined;
+
+    const rangePillApply = (next: string) => {
+      if (next === "|") {
+        if (onRemoveFilter) {
+          onRemoveFilter(filterKey);
+        } else {
+          onRemove(filterKey, token);
+        }
+      } else {
+        onSelect?.(filterKey, next);
+      }
+    };
 
     return (
       <motion.div
@@ -373,34 +405,28 @@ function OperatorFilterPill({
           }}
           content={
             <AnimatedSizeContainer width height className="rounded-[inherit]">
-              <FilterRangePanel
-                key={filterKey}
-                filter={filter}
-                activeToken={token}
-                onBack={() => setRangeEditOpen(false)}
-                onClear={
-                  rangeHasAppliedValue
-                    ? () =>
-                        onRemoveFilter
-                          ? onRemoveFilter(filterKey)
-                          : onRemove(filterKey, token)
-                    : undefined
-                }
-                onCloseOuter={
-                  rangeFullyApplied ? () => setRangeEditOpen(false) : undefined
-                }
-                onApply={(t) => {
-                  if (t === "|") {
-                    if (onRemoveFilter) {
-                      onRemoveFilter(filterKey);
-                    } else {
-                      onRemove(filterKey, token);
-                    }
-                  } else {
-                    onSelect?.(filterKey, t);
+              {isDate ? (
+                <FilterDateRangePanel
+                  key={filterKey}
+                  filter={filter}
+                  activeToken={token}
+                  onBack={() => setRangeEditOpen(false)}
+                  onClear={rangePillClear}
+                  onApply={rangePillApply}
+                />
+              ) : (
+                <FilterRangePanel
+                  key={filterKey}
+                  filter={filter}
+                  activeToken={token}
+                  onBack={() => setRangeEditOpen(false)}
+                  onClear={rangePillClear}
+                  onCloseOuter={
+                    rangeFullyApplied ? () => setRangeEditOpen(false) : undefined
                   }
-                }}
-              />
+                  onApply={rangePillApply}
+                />
+              )}
             </AnimatedSizeContainer>
           }
         >

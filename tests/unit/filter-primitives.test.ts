@@ -29,6 +29,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import {
     normalizeRangeBounds,
+    rangeTokenBounds,
     sanitizeNumericDraft,
     storageToDraft,
 } from '../../src/components/ui/filter/filter-range-utils';
@@ -68,6 +69,51 @@ describe('FilterRangePanel — range input behaviour', () => {
         it('handles zero correctly (not confused with undefined)', () => {
             expect(normalizeRangeBounds(0, 5)).toEqual({ min: 0, max: 5 });
             expect(normalizeRangeBounds(-5, 0)).toEqual({ min: -5, max: 0 });
+        });
+    });
+
+    describe('rangeTokenBounds', () => {
+        // The pill's label logic reads its bounds through this. Both range
+        // KINDS share the `"lo|hi"` token but not its alphabet, and reading
+        // a date token numerically yields NaN on both sides — which is how a
+        // date pill would come to display the raw
+        // `"2026-08-01|2026-08-12"` instead of a window.
+        it('reads numeric bounds for a numeric range', () => {
+            expect(rangeTokenBounds('30|70', false)).toEqual({ lo: '30', hi: '70' });
+            expect(rangeTokenBounds('30|', false)).toEqual({ lo: '30', hi: null });
+            expect(rangeTokenBounds('|70', false)).toEqual({ lo: null, hi: '70' });
+            expect(rangeTokenBounds('|', false)).toEqual({ lo: null, hi: null });
+        });
+
+        it('reads ISO bounds for a date range', () => {
+            expect(rangeTokenBounds('2026-08-01|2026-08-12', true)).toEqual({
+                lo: '2026-08-01',
+                hi: '2026-08-12',
+            });
+            expect(rangeTokenBounds('2026-08-01|', true)).toEqual({
+                lo: '2026-08-01',
+                hi: null,
+            });
+        });
+
+        it('would have reported a date token as EMPTY under the numeric reader', () => {
+            // The regression this helper exists to prevent, stated as a
+            // test rather than a comment.
+            expect(Number.isFinite(Number('2026-08-01'))).toBe(false);
+            expect(rangeTokenBounds('2026-08-01|2026-08-12', false)).toEqual({
+                lo: null,
+                hi: null,
+            });
+        });
+
+        it('treats a malformed side as ABSENT, not as "NaN"', () => {
+            // A hand-edited URL should degrade to "no min", not render the
+            // string NaN into the pill. The server rejects the same token.
+            expect(rangeTokenBounds('abc|70', false)).toEqual({ lo: null, hi: '70' });
+            expect(rangeTokenBounds('2026-8-1|2026-08-12', true)).toEqual({
+                lo: null,
+                hi: '2026-08-12',
+            });
         });
     });
 

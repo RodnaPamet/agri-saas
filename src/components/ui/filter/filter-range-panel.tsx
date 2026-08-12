@@ -27,7 +27,14 @@ import { encodeRangeToken, parseRangeToken, type Filter } from "./types";
 
 type RangeBound = "min" | "max";
 
-function FilterRangeHeader({
+/**
+ * The back-chevron + label + Clear row every token-valued facet panel wears.
+ *
+ * Exported because `FilterDateRangePanel` needs the identical row — a second
+ * copy would be a second definition of one header, and the two would drift
+ * the first time either is restyled.
+ */
+export function FilterPanelHeader({
   label,
   onBack,
   onClear,
@@ -407,7 +414,7 @@ export function FilterRangePanel({
 }: FilterRangePanelProps) {
   return (
     <>
-      <FilterRangeHeader
+      <FilterPanelHeader
         label={filter.label}
         onBack={onBack}
         onClear={onClear}
