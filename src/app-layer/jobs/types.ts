@@ -535,13 +535,14 @@ export interface WeatherPullPayload {
  *   'barchart'     Barchart quotes
  *   'listings'     k-anonymised own-listings median
  *   'oil-bulletin' EC Weekly Oil Bulletin — road DIESEL, both tax stages
+ *   'world-bank'   World Bank Pink Sheet — urea + DAP only, monthly USD/mt
  *
  * NOTE the payload tag and the STORED `source` differ by design and always
  * have ('ec' stores as 'ec-agrifood'); the tag selects a puller, the stored
  * value names a provenance.
  */
 export interface MarketPricesPullPayload {
-    source?: 'ec' | 'av' | 'barchart' | 'listings' | 'oil-bulletin';
+    source?: 'ec' | 'av' | 'barchart' | 'listings' | 'oil-bulletin' | 'world-bank';
 }
 
 /**

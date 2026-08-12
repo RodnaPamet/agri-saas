@@ -238,6 +238,11 @@ export const env = createEnv({
         // repoint the job without a deploy. Defaults live in the client.
         EC_OIL_BULLETIN_WITH_TAX_URL: z.string().url().optional(),
         EC_OIL_BULLETIN_WITHOUT_TAX_URL: z.string().url().optional(),
+        // World Bank Pink Sheet (urea + DAP). Override ONLY — keyless feed.
+        // Exists because the doc-id URL segment rolls over annually AND the
+        // previous generation keeps returning HTTP 200 with a frozen file, so
+        // an operator needs to repoint it without waiting for a deploy.
+        WORLD_BANK_PINK_SHEET_URL: z.string().url().optional(),
         ALPHA_VANTAGE_API_KEY: z.string().optional(),
         // BARCHART_API_KEY enables the Barchart OnDemand delayed-futures feed
         // (Euronext MATIF wheat/corn benchmark). UNSET → the Barchart source is
@@ -622,6 +627,7 @@ export const env = createEnv({
         EC_AGRIFOOD_BASE_URL: process.env.EC_AGRIFOOD_BASE_URL,
         EC_OIL_BULLETIN_WITH_TAX_URL: process.env.EC_OIL_BULLETIN_WITH_TAX_URL,
         EC_OIL_BULLETIN_WITHOUT_TAX_URL: process.env.EC_OIL_BULLETIN_WITHOUT_TAX_URL,
+        WORLD_BANK_PINK_SHEET_URL: process.env.WORLD_BANK_PINK_SHEET_URL,
         ALPHA_VANTAGE_API_KEY: process.env.ALPHA_VANTAGE_API_KEY,
         BARCHART_API_KEY: process.env.BARCHART_API_KEY,
         MARKET_NEWS_FEEDS: process.env.MARKET_NEWS_FEEDS,
