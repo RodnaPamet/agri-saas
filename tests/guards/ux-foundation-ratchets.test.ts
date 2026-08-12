@@ -50,13 +50,17 @@ function walk(dir: string, results: string[] = []): string[] {
 // ─── 1. RHF + FormField reference form ────────────────────────────────
 
 describe('Epic 64 — react-hook-form reference form', () => {
-    const NEW_CONTROL = path.join(
+    // The reference form was `practices/NewPracticeModal.tsx` until GRC
+    // teardown phase 2 deleted it. `ContractFormModal` inherits the role:
+    // it is the richest surviving zodResolver + Controller form, and the
+    // shape the next form should be modelled on.
+    const REFERENCE_FORM = path.join(
         TENANT_APP,
-        'practices/NewPracticeModal.tsx',
+        'grain/contracts/ContractFormModal.tsx',
     );
 
-    it('uses zodResolver + useForm + Controller in NewPracticeModal', () => {
-        const src = read(NEW_CONTROL);
+    it('uses zodResolver + useForm + Controller in ContractFormModal', () => {
+        const src = read(REFERENCE_FORM);
         expect(src).toMatch(/from\s+['"]react-hook-form['"]/);
         expect(src).toMatch(/from\s+['"]@hookform\/resolvers\/zod['"]/);
         expect(src).toMatch(/\buseForm\s*</);
@@ -64,18 +68,22 @@ describe('Epic 64 — react-hook-form reference form', () => {
         expect(src).toMatch(/\bController\b/);
     });
 
-    it('keeps every stable id E2E selectors rely on', () => {
-        const src = read(NEW_CONTROL);
+    it('keeps its stable field / action ids', () => {
+        // Unlike the practices modal this replaces, no E2E spec targets
+        // these ids YET — the assertion pins them so a rename has to be
+        // deliberate, and so the ids are there when a spec wants them.
+        const src = read(REFERENCE_FORM);
         const ids = [
-            'practice-code-input',
-            'practice-name-input',
-            'practice-description-input',
-            'practice-category-input',
-            'practice-frequency-input',
-            'practice-justification-input',
-            'create-practice-btn',
-            'new-practice-cancel-btn',
-            'new-practice-error',
+            'contract-key-input',
+            'contract-counterparty-input',
+            'contract-commodity-input',
+            'contract-season-input',
+            'contract-price-input',
+            'contract-currency-input',
+            'contract-status-input',
+            'save-contract-btn',
+            'contract-cancel-btn',
+            'contract-form-error',
         ];
         for (const id of ids) {
             expect(src).toMatch(new RegExp(`id=['"]${id}['"]`));
@@ -136,9 +144,16 @@ describe('Epic 64 — window.confirm() ceiling', () => {
     // silently drop a typed scheme (name, key, requirement rows). Same
     // sync-close rationale as the sites above.
     //
-    // To LOWER this number: migrate one or more remaining sites and
-    // bump the constant down. Don't lower without a real migration.
-    const CONFIRM_CALL_CEILING = 21;
+    // GRC teardown phase 2 lowered 21 → 13. The confirm sites on the
+    // deleted GRC create/edit modals (NewPolicyModal, NewVendorModal,
+    // NewAuditModal, TaskDetailSheet, NewSchemeModal's GRC siblings)
+    // went with their pages. This is a deletion, not a migration — but
+    // leaving the ceiling at 21 would bank 8 slots of unearned headroom,
+    // which is exactly what a one-way-down ratchet exists to prevent.
+    //
+    // To LOWER this number further: migrate one or more remaining sites
+    // and bump the constant down. Don't lower without a real migration.
+    const CONFIRM_CALL_CEILING = 13;
 
     it(`has at most ${CONFIRM_CALL_CEILING} native-confirm call sites under the tenant app`, () => {
         const offenders: string[] = [];

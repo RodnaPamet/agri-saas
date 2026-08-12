@@ -1,10 +1,16 @@
 /**
- * Roadmap-9 PR-4 — DataTable unification (Practices as the canonical reference).
+ * Roadmap-9 PR-4 — DataTable unification (Assets as the canonical reference).
  *
- * User directive locked 2026-05-11: the Practices page DataTable
- * (`src/app/t/[tenantSlug]/(app)/practices/PracticesClient.tsx`) is
- * the reference shape every other table unifies around. Four rules
- * follow:
+ * User directive locked 2026-05-11 named the Practices page DataTable as
+ * the reference shape every other table unifies around. That page was
+ * deleted in GRC teardown phase 2; the Assets DataTable inherits the
+ * role — it is the surviving table that carries all four traits. Four
+ * rules follow:
+ *
+ * (The Assets path is spelled once, at the assertion below. A sibling
+ * ratchet, `pr-asset-practice-codes.test.ts`, locates the registry entry
+ * in this file by slicing from the FIRST occurrence of that path string,
+ * so a second mention up here silently points it at prose.)
  *
  *   1. **Selection circle.** Row-select Checkbox renders as a
  *      circle (`rounded-full`), not the prior `rounded-md`. Locks
@@ -18,9 +24,8 @@
  *      that wires `onRowClick`.
  *
  *   3. **First column = Code.** Where the entity has a code/
- *      identifier (practices, risks, frameworks, policies, audits,
- *      assets), the first column should be `id: 'code'`. Migration
- *      target — coverage ratchet registers candidate tables.
+ *      identifier (assets), the first column should be `id: 'code'`.
+ *      Migration target — coverage ratchet registers candidate tables.
  *
  *   4. **Stable row IDs.** `getRowId: (row) => row.id` set on every
  *      table to anchor row selection across data refreshes.
@@ -37,7 +42,7 @@ import * as path from "path";
 
 const ROOT = path.resolve(__dirname, "../..");
 
-describe("DataTable unification — Practices as the canonical shape", () => {
+describe("DataTable unification — Assets as the canonical shape", () => {
     it("row-select Checkbox in table.tsx is rounded-full (circular select)", () => {
         const src = fs.readFileSync(
             path.join(ROOT, "src/components/ui/table/table.tsx"),
@@ -84,25 +89,31 @@ describe("DataTable unification — Practices as the canonical shape", () => {
         );
     });
 
-    it("Practices table — the canonical reference — sets the four locked traits", () => {
+    // GRC teardown phase 2 deleted PracticesClient, the original
+    // canonical reference. Assets inherits the role: it is the only
+    // surviving list table whose first column is `id: 'code'`, and it
+    // sets the other three traits too. It mounts <DataTable> directly
+    // rather than through EntityListPage's table config, so the props
+    // are JSX attributes (`getRowId={…}`) instead of object keys.
+    //
+    // One sub-assertion is NOT carried over: Practices extracted its
+    // row-id fn to a stable `useCallback` (`getPracticeRowId`). Assets
+    // passes an inline arrow, so only the wiring is asserted here —
+    // dropped deliberately rather than weakened silently.
+    it("Assets table — the canonical reference — sets the four locked traits", () => {
         const src = fs.readFileSync(
             path.join(
                 ROOT,
+                "src/app/t/[tenantSlug]/(app)/assets/AssetsClient.tsx",
             ),
             "utf8",
         );
         // 1. First column is `id: 'code'`.
         expect(src).toMatch(/id:\s*['"]code['"]/);
-        // 2. getRowId is set. Right-rail Phase 2 extracted the row-id
-        //    fn to a stable `useCallback` (`getPracticeRowId`) so a
-        //    selection-toggle re-render doesn't rebuild the table
-        //    model — assert both the wiring and the definition.
-        expect(src).toMatch(/getRowId:\s*getPracticeRowId/);
-        expect(src).toMatch(
-            /getPracticeRowId\s*=\s*useCallback\(\(c:[^)]*\)\s*=>\s*c\.id/,
-        );
+        // 2. getRowId is set, anchoring selection across data refreshes.
+        expect(src).toMatch(/getRowId=\{/);
         // 3. onRowClick wires the canonical primitive hover.
-        expect(src).toMatch(/onRowClick:/);
+        expect(src).toMatch(/onRowClick=\{/);
         // 4. The hover className is preserved on the table chrome.
         expect(src).toMatch(/hover:bg-bg-muted/);
     });
@@ -112,10 +123,9 @@ describe("DataTable unification — Practices as the canonical shape", () => {
 //
 // R10-PR4 reframed the R9-PR4 "first column = Code" principle. The
 // underlying rule is: every list-page table should open with the
-// entity's canonical, scannable identifier. For Practices that's the
-// code (`AC-1`); for Risks it's the title (Risks have no separate
-// code field — see prisma/schema/compliance.prisma); for Frameworks
-// it's the name. The label varies; the principle (canonical
+// entity's canonical, scannable identifier. For Assets that's the
+// code (`AST-1`); for Evidence it's the title (evidence records have
+// no separate code field). The label varies; the principle (canonical
 // identifier first, not a fact pulled from the row) is invariant.
 //
 // Adoption tracker — flip `adopted: true` when a page's first non-
@@ -141,7 +151,7 @@ const FIRST_COLUMN_TABLES: FirstColumnEntry[] = [
         file: "src/app/t/[tenantSlug]/(app)/assets/AssetsClient.tsx",
         firstColumnId: "code",
         adopted: true,
-        note: "Assets list — per-tenant `AST-N` code minted via AssetKeySequence is the canonical identifier (Risk/Practices parity); Name comes second.",
+        note: "Assets list — per-tenant `AST-N` code minted via AssetKeySequence is the canonical identifier; Name comes second.",
     },
     {
         file: "src/app/t/[tenantSlug]/(app)/evidence/EvidenceClient.tsx",

@@ -144,7 +144,11 @@ describe('Roadmap-11 round completion (PR-12)', () => {
         }
     });
 
-    test('obsession-checklist captures at least 12 audited items', () => {
-        expect(OBSESSION_CHECKLIST.length).toBeGreaterThanOrEqual(12);
+    test('obsession-checklist captures at least 11 audited items', () => {
+        // 12 → 11 (GRC teardown phase 2): one checklist entry pointed at a
+        // ratchet that went with the inherited GRC surface. The floor is a
+        // drift detector against the checklist being quietly emptied, so it
+        // tracks the post-deletion reality rather than a stale number.
+        expect(OBSESSION_CHECKLIST.length).toBeGreaterThanOrEqual(11);
     });
 });

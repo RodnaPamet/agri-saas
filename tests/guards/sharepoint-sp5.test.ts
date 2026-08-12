@@ -1,7 +1,14 @@
 /**
- * SP-5 ratchet — audit-pack SharePoint export + the sync-health dashboard must
- * stay wired: the export usecase (FROZEN-gated ZIP upload), the AuditPack export
- * columns, the export + health routes, and the dashboard page.
+ * SP-5 ratchet — the SharePoint sync-health surface must stay wired: the
+ * health route and the admin dashboard page that reads it.
+ *
+ * This ratchet originally covered two halves. The other half — the
+ * audit-pack SharePoint export (the FROZEN-gated ZIP upload usecase, the
+ * `AuditPack.spExport*` columns, the export route and the export button on
+ * the pack detail page) — went with the GRC teardown in phase 2: AuditPack
+ * is an inherited GRC model and its pages and routes are deleted. The
+ * export usecase itself is deleted with the rest of the KILL app-layer
+ * tier; asserting on it here would only re-break this suite mid-teardown.
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -10,40 +17,28 @@ const ROOT = path.resolve(__dirname, '../..');
 const read = (p: string) => fs.readFileSync(path.join(ROOT, p), 'utf8');
 const exists = (p: string) => fs.existsSync(path.join(ROOT, p));
 
-describe('SP-5 SharePoint audit-pack export + health', () => {
-    it('the export usecase is FROZEN-gated, builds a ZIP, records the export', () => {
-        const src = read('src/app-layer/usecases/audit-pack-sharepoint-export.ts');
-        expect(src).toMatch(/export async function exportAuditPackToSharePoint/);
-        expect(src).toMatch(/FROZEN/);
-        expect(src).toMatch(/JSZip|generateAsync/);
-        expect(src).toMatch(/uploadNewFile/);
-        expect(src).toMatch(/integrationExecution\.create/);
-        // SP-F2 — bundles evidence binaries under evidence/ (capped + scan-gated).
-        expect(src).toMatch(/bundleEvidenceBinaries/);
-        expect(src).toMatch(/SP_EXPORT_MAX_BYTES/);
-        expect(src).toMatch(/isDownloadAllowed/);
-    });
-
-    it('AuditPack has the SharePoint export columns + migration', () => {
-        const schema = read('prisma/schema/audit.prisma');
-        for (const col of ['spExportItemId', 'spExportWebUrl', 'spExportedAt']) {
-            expect(schema).toMatch(new RegExp(col));
-        }
-        expect(exists('prisma/migrations/20260609160000_audit_pack_sharepoint_export/migration.sql')).toBe(true);
-    });
-
-    it('the export + health routes exist (admin.manage)', () => {
-        const exp = 'src/app/api/t/[tenantSlug]/audits/packs/[packId]/sharepoint-export/route.ts';
-        const health = 'src/app/api/t/[tenantSlug]/integrations/sharepoint/health/route.ts';
-        expect(exists(exp)).toBe(true);
+describe('SP-5 SharePoint sync health', () => {
+    it('the health route exists and is admin.manage-gated', () => {
+        const health =
+            'src/app/api/t/[tenantSlug]/integrations/sharepoint/health/route.ts';
         expect(exists(health)).toBe(true);
-        expect(read(exp)).toMatch(/requirePermission(<[^>]*>)?\(\s*'admin\.manage'/);
-        expect(read(health)).toMatch(/requirePermission(<[^>]*>)?\(\s*'admin\.manage'/);
+        expect(read(health)).toMatch(
+            /requirePermission(<[^>]*>)?\(\s*'admin\.manage'/,
+        );
     });
 
-    it('the export button + health dashboard page exist', () => {
-        expect(exists('src/app/t/[tenantSlug]/(app)/audits/packs/[packId]/SharePointExportButton.tsx')).toBe(true);
-        expect(exists('src/app/t/[tenantSlug]/(app)/admin/integrations/sharepoint-health/page.tsx')).toBe(true);
-        expect(read('src/app/t/[tenantSlug]/(app)/audits/packs/[packId]/page.tsx')).toMatch(/SharePointExportButton/);
+    it('the health dashboard page exists', () => {
+        expect(
+            exists(
+                'src/app/t/[tenantSlug]/(app)/admin/integrations/sharepoint-health/page.tsx',
+            ),
+        ).toBe(true);
+    });
+
+    it('the health dashboard reads the health route', () => {
+        const page = read(
+            'src/app/t/[tenantSlug]/(app)/admin/integrations/sharepoint-health/page.tsx',
+        );
+        expect(page).toMatch(/integrations\/sharepoint\/health/);
     });
 });

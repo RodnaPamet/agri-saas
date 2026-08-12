@@ -31,18 +31,12 @@ interface Rolled {
     label: string;
 }
 
+// GRC teardown phase 2 removed the Policies and Vendors clients;
+// Evidence is the surviving rollout surface and keeps every assertion.
 const ROLLED_OUT: Rolled[] = [
     {
         file: path.join(APP, 'evidence/EvidenceClient.tsx'),
         label: 'Evidence',
-    },
-    {
-        file: path.join(APP, 'policies/PoliciesClient.tsx'),
-        label: 'Policies',
-    },
-    {
-        file: path.join(APP, 'vendors/VendorsClient.tsx'),
-        label: 'Vendors',
     },
 ];
 

@@ -76,12 +76,10 @@ describe('Loading-state guardrails', () => {
 
     // ─── 2. Key routes must have loading.tsx ───
     describe('Key routes have loading.tsx', () => {
+        // GRC teardown phase 2 removed practices / policies / audits /
+        // vendors — those routes no longer exist to carry a loading.tsx.
         const REQUIRED_ROUTES = [
-            'practices',
             'evidence',
-            'policies',
-            'audits',
-            'vendors',
             'dashboard',
             'issues',
             'assets',

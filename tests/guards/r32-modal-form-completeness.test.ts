@@ -19,10 +19,13 @@
  *     lost.')` prompt, plus a `form.submitting` guard.
  *
  * This ratchet locks the completeness state so a future PR that
- * removes the guard / regresses any of the four migrations fails
- * CI loudly. The earlier `assets-audits-modal-form.test.ts` ratchet
- * carries a narrower assets-and-audits assertion; this file widens
- * the assertion family to the canonical four entities.
+ * removes the guard / regresses a migration fails CI loudly.
+ *
+ * GRC teardown phase 2 deleted the `policies` and `vendors` entities
+ * (and, earlier, the companion `assets-audits-modal-form.test.ts`
+ * ratchet along with the audits half of its pair). `tasks` and
+ * `assets` are the surviving migrations; every assertion below is
+ * unchanged for them.
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -53,16 +56,8 @@ const ENTITIES = [
         formHookPath: "src/components/tasks/_form/useNewTaskForm.ts",
         noRedirectShim: true,
     },
-    {
-        slug: "policies",
-        modal: "NewPolicyModal",
-        formHook: "useNewPolicyForm",
-    },
-    {
-        slug: "vendors",
-        modal: "NewVendorModal",
-        formHook: "useNewVendorForm",
-    },
+    // GRC teardown phase 2 removed the `policies` and `vendors` entities
+    // — both create flows (shim + modal + form hook) are gone.
     {
         slug: "assets",
         modal: "NewAssetModal",

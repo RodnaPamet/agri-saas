@@ -187,7 +187,9 @@ describe("PageHeader adoption registry", () => {
         // registry entry (the next assertion); page removals force
         // entry removal (the first assertion).
         // 25 → 24: the risks list page went with the register.
-        expect(PAGES.length).toBeGreaterThanOrEqual(24);
+        // 24 → 17 (GRC teardown phase 2): the inherited GRC list pages
+        // left the candidate set with their routes.
+        expect(PAGES.length).toBeGreaterThanOrEqual(17);
         expect(PAGES.length).toBeLessThanOrEqual(35);
     });
 });

@@ -58,7 +58,6 @@ const MIGRATED_PAGES = [
     // `'use client'` component owning the card composition. Both
     // sides of the split clean on the design-system checks.
     'dashboard/DashboardClient.tsx',
-    'vendors/VendorsClient.tsx',
     'admin/members/page.tsx',
     // Second migration pass — Epic 51 finishing guide. A page is only
     // added here once it is clean on ALL three checks: raw color
@@ -67,7 +66,9 @@ const MIGRATED_PAGES = [
     // legacy button/badge CSS are tracked by the raw-color ratchet
     // instead (`tests/guardrails/raw-color-ratchet.test.ts`) — they
     // get promoted here when the component migration also lands.
-    'clauses/loading.tsx',
+    //
+    // GRC teardown phase 2 removed two entries whose pages no longer
+    // exist: `vendors/VendorsClient.tsx` and `clauses/loading.tsx`.
 ];
 
 const RAW_COLOR_RE = /\b(?:text|bg|border)-(?:slate|gray|neutral|zinc)-\d{2,3}\b/g;
@@ -373,7 +374,10 @@ describe('New page token discipline', () => {
         // 152 → 153: the new /support-schemes page. A genuinely NEW route, so
         // it enters the tally the way every unpromoted route does. Not drift:
         // semantic tokens throughout, EntityListPage, bilingual copy.
-        expect(unmigrated.length).toBeLessThanOrEqual(153);
+        // 153 → 94 (GRC teardown phase 2): the inherited GRC pages were
+        // deleted, so the tally is re-floored at the post-deletion reality
+        // rather than left at a ceiling nothing can reach.
+        expect(unmigrated.length).toBeLessThanOrEqual(94);
     });
 
     it('migrated page count is at least 4', () => {

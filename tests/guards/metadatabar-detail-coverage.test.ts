@@ -128,7 +128,9 @@ describe("MetaStrip detail-page coverage", () => {
         // drift detector — it exists so someone cannot quietly empty the
         // registry — so it tracks the new reality rather than a stale number.
         // 9 → 8: the risk detail page went with the register.
-        expect(DETAIL_PAGES.length).toBeGreaterThanOrEqual(8);
+        // 8 → 3 (GRC teardown phase 2): the practice / policy / vendor /
+        // audit / finding detail pages went with the inherited surface.
+        expect(DETAIL_PAGES.length).toBeGreaterThanOrEqual(3);
     });
 
     it("MetadataBar (the deprecated sibling primitive) has zero production adopters", () => {

@@ -21,11 +21,14 @@ const REPO_ROOT = path.resolve(__dirname, '../..');
 /**
  * Every CRUD surface that is required to carry `useFormTelemetry`.
  *
- * Modal-form P1 (2026-05-24) — the `/tasks/new` and `/policies/new`
- * pages were decomposed into page wrapper + extracted form hook +
- * extracted field component. The telemetry hook lives in the
- * extracted `_form/use<Entity>Form.ts` now. The structural assertion
- * resolves against the SURFACE (page + hook), not a single file.
+ * Modal-form P1 (2026-05-24) — the `/tasks/new` page was decomposed
+ * into page wrapper + extracted form hook + extracted field component.
+ * The telemetry hook lives in the extracted `_form/use<Entity>Form.ts`
+ * now. The structural assertion resolves against the SURFACE
+ * (page + hook), not a single file.
+ *
+ * The `/policies/new` surface, decomposed the same way, was deleted in
+ * GRC teardown phase 2.
  */
 type TelemetrySurface = { label: string; files: string[] };
 
@@ -37,11 +40,6 @@ const EXPECTED_SURFACES: TelemetrySurface[] = [
         files: [
             'src/components/tasks/NewTaskModal.tsx',
             'src/components/tasks/_form/useNewTaskForm.ts',
-        ],
-    },
-    {
-        label: 'policies/new (shim + modal + hook)',
-        files: [
         ],
     },
 ];

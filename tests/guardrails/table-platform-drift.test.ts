@@ -22,10 +22,10 @@ const CLIENT_DIR = path.resolve(__dirname, '../../src/app/t/[tenantSlug]/(app)')
  * Each must have a documented reason.
  */
 const EXCLUDED_PAGES: Record<string, string> = {
-    'AuditsClient.tsx': 'Master/detail panel UX, not a list page',
     // Epic G-4 — list-of-decisions inside a campaign detail page.
-    // Per-row inline dropdown + decision dialog sit on the row;
-    // same architectural shape as AuditsClient.
+    // Per-row inline dropdown + decision dialog sit on the row.
+    // (The original entry here, AuditsClient.tsx, went with the GRC
+    // teardown; this page inherited the same architectural shape.)
     'AccessReviewDetailClient.tsx':
         'Master/detail with inline decision practices — list inside a parent record, not a list page.',
 };
@@ -33,18 +33,16 @@ const EXCLUDED_PAGES: Record<string, string> = {
 /**
  * Client pages that have been migrated and must NOT regress.
  */
+// GRC teardown phase 2 removed practices / policies / vendors / findings
+// from this registry — those clients no longer exist.
 const MIGRATED_PAGES = [
-    'practices/PracticesClient.tsx',
     'evidence/EvidenceClient.tsx',
-    'policies/PoliciesClient.tsx',
     // /tasks compliance UI retired 2026-07-25 → the farm-tasks list is the
     // task-entity list page now (it mounts <DataTable> via the EntityListPage
     // shell, so it satisfies the structural check without importing DataTable
     // directly).
     'farm-tasks/FarmTasksClient.tsx',
-    'vendors/VendorsClient.tsx',
     'assets/AssetsClient.tsx',
-    'findings/FindingsClient.tsx',
     // R13-PR10 — `admin/AdminClient.tsx` was deleted (audit log
     // moved to `/admin/audit-log` with a dedicated client island).
     // The new sub-component takes its place in the registry.
@@ -231,18 +229,22 @@ describe('Excluded page registry', () => {
 // ─── Migration Progress Tracking ─────────────────────────────────────
 
 describe('Migration progress', () => {
-    it('at least 8 pages are fully migrated', () => {
+    it('at least 4 pages are fully migrated', () => {
         const existing = MIGRATED_PAGES.filter(rel => {
             try { readClientFile(rel); return true; } catch { return false; }
         });
         // Compliance uproot (2026-08-07): SoAClient was deleted with the
         // Statement of Applicability, taking the migrated-page count to 9.
         // Risk-register uproot (2026-08-08): RisksClient went too — 8.
-        expect(existing.length).toBeGreaterThanOrEqual(8);
+        // GRC teardown phase 2: practices / policies / vendors / findings
+        // went with the inherited surface — 4.
+        expect(existing.length).toBeGreaterThanOrEqual(4);
     });
 
     it('migrated pages collectively cover all entity types', () => {
-        const entityNames = ['practice', 'evidence', 'polic', 'task', 'vendor', 'asset', 'finding'];
+        // The GRC entities (practice / policy / vendor / finding) left with
+        // the teardown; these four are the agri + platform entity types.
+        const entityNames = ['evidence', 'task', 'asset', 'audit-log'];
         for (const entity of entityNames) {
             const covered = MIGRATED_PAGES.some(p => p.toLowerCase().includes(entity));
             expect(covered).toBe(true);
@@ -270,25 +272,19 @@ const RATCHET_ALLOWLIST = new Set<string>([
 // `<table>` occurrences (a page with 3 sub-tables contributes 3 to
 // the total). Lower only.
 //
-// Remaining hotspots (occurrences per file, post-api-keys migration):
-//   3  practices/[practiceId]/page.tsx    evidence + mappings + activity
-//   3  vendors/[vendorId]/page.tsx      docs + assessments + links
-//   2  admin/members/page.tsx           members + pending invites
-//   2  admin/rbac/page.tsx              permission matrix + roles
+// Remaining hotspots (occurrences per file):
 //   2  admin/roles/page.tsx             role list + permission grid
-//                                       in EXCLUDED_PAGES because of
-//                                       expandable-row UX)
-//   1  access-reviews/[reviewId]/AccessReviewDetailClient.tsx
-//                                       per-decision roster — same
-//                                       master/detail shape as
-//                                       AuditsClient (also listed in
-//                                       EXCLUDED_PAGES above).
+//   1  admin/rbac/page.tsx              permission matrix
+//   1  admin/members/page.tsx           members roster
 //
 // /tasks retirement (2026-07-25): the compliance `tasks/[taskId]/page.tsx`
 // activity-log table was deleted with the rest of the /tasks UI; the
 // farm-tasks detail uses cards, not a raw <table>. Baseline lowered
 // 15 → 12 to lock the win (one-way down).
-const RAW_TABLE_BASELINE = 12;
+// GRC teardown phase 2: the practices / vendors detail pages and the
+// access-review roster's siblings went with the inherited surface —
+// 12 → 4, re-floored at the post-deletion reality.
+const RAW_TABLE_BASELINE = 4;
 const RAW_TABLE_RE = /<table\b/g;
 
 function countAdHocTables(): { total: number; byFile: Record<string, number> } {

@@ -219,10 +219,19 @@ describe('Asset Code column + Asset/Practice code generation', () => {
         const src = read('tests/guards/table-unification.test.ts');
 
         it('Assets entry declares firstColumnId="code"', () => {
-            const entry = src.slice(
-                src.indexOf('assets/AssetsClient.tsx'),
-                src.indexOf('assets/AssetsClient.tsx') + 600,
+            // Anchor on the REGISTRY, not on the first textual occurrence
+            // of the path: GRC teardown phase 2 re-pointed the sibling
+            // file's canonical-reference assertion at AssetsClient, so the
+            // path now appears above the registry too and a naive
+            // indexOf() slice lands in that assertion instead.
+            const registryIdx = src.indexOf('const FIRST_COLUMN_TABLES');
+            expect(registryIdx).toBeGreaterThan(-1);
+            const entryIdx = src.indexOf(
+                'assets/AssetsClient.tsx',
+                registryIdx,
             );
+            expect(entryIdx).toBeGreaterThan(-1);
+            const entry = src.slice(entryIdx, entryIdx + 600);
             expect(entry).toMatch(/firstColumnId:\s*['"]code['"]/);
             expect(entry).toMatch(/adopted:\s*true/);
             // Note mentions AssetKeySequence so a "drop the note" PR

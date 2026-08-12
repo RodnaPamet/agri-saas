@@ -1,9 +1,12 @@
 /**
  * Guardrail: token migration — representative pages
  *
- * Verifies that the four representative pages migrated in Epic 51 use
+ * Verifies that the representative pages migrated in Epic 51 use
  * the new design system primitives (Button, StatusBadge, EmptyState)
  * and semantic token classes instead of raw Tailwind colors.
+ *
+ * The Vendors block was dropped in GRC teardown phase 2 — that page is
+ * gone. Dashboard and admin/members are the surviving representatives.
  */
 import * as fs from 'fs';
 import * as path from 'path';
@@ -60,47 +63,6 @@ describe('Dashboard page token migration', () => {
     });
 
     it('does not use legacy badge CSS classes', () => {
-        expect(src).not.toMatch(/className="badge badge-/);
-    });
-
-    it('does not use legacy btn CSS classes', () => {
-        expect(src).not.toMatch(/className="btn btn-/);
-    });
-});
-
-describe('Vendors list page token migration', () => {
-    const src = read('app/t/[tenantSlug]/(app)/vendors/VendorsClient.tsx');
-
-    it('imports StatusBadge', () => {
-        expect(src).toContain("from '@/components/ui/status-badge'");
-    });
-
-    it('imports EmptyState', () => {
-        expect(src).toContain("from '@/components/ui/empty-state'");
-    });
-
-    it('imports buttonVariants', () => {
-        expect(src).toContain("from '@/components/ui/button'");
-    });
-
-    it('uses semantic tokens for table styling', () => {
-        expect(src).toContain('border-border-default');
-        expect(src).toContain('text-content-muted');
-        expect(src).toContain('hover:bg-bg-muted');
-    });
-
-    it('uses StatusBadge for status and criticality', () => {
-        expect(src).toContain('<StatusBadge');
-        expect(src).toContain('STATUS_VARIANT');
-        expect(src).toContain('CRIT_VARIANT');
-    });
-
-    it('uses EmptyState for empty table', () => {
-        expect(src).toContain('<EmptyState');
-    });
-
-    it('does not use legacy badge CSS classes', () => {
-        expect(src).not.toMatch(/className=\{`badge \$/);
         expect(src).not.toMatch(/className="badge badge-/);
     });
 

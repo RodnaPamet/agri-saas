@@ -23,31 +23,24 @@ import * as path from 'path';
 
 const REPO_ROOT = path.resolve(__dirname, '../..');
 
-// Modal-form P1 (2026-05-24) — policies/tasks/vendors create flows
-// were decomposed into page wrapper + extracted `_form/<Entity>Fields.tsx`.
-// FormField lives in the extracted fields component now. The
-// structural assertion below reads the SURFACE — a tuple of related
-// files — and resolves when ANY of them imports / uses the primitive.
+// Modal-form P1 (2026-05-24) — the create flows were decomposed into
+// page wrapper + extracted `_form/<Entity>Fields.tsx`. FormField lives
+// in the extracted fields component now. The structural assertion below
+// reads the SURFACE — a tuple of related files — and resolves when ANY
+// of them imports / uses the primitive.
+//
+// GRC teardown phase 2 dropped the `policies/new` and `vendors/new`
+// surfaces; both create flows are gone.
 type FormSurface = { label: string; files: string[] };
 
 const FORM_FIELD_SURFACES: FormSurface[] = [
     { label: 'evidence/NewEvidenceTextModal.tsx', files: ['src/app/t/[tenantSlug]/(app)/evidence/NewEvidenceTextModal.tsx'] },
     { label: 'evidence/UploadEvidenceModal.tsx', files: ['src/app/t/[tenantSlug]/(app)/evidence/UploadEvidenceModal.tsx'] },
     {
-        label: 'policies/new (shim + modal + fields)',
-        files: [
-        ],
-    },
-    {
         label: 'tasks create (modal + fields)',
         files: [
             'src/components/tasks/NewTaskModal.tsx',
             'src/components/tasks/_form/NewTaskFields.tsx',
-        ],
-    },
-    {
-        label: 'vendors/new (shim + modal + fields)',
-        files: [
         ],
     },
 ];
