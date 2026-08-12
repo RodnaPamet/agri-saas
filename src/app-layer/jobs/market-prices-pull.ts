@@ -55,6 +55,12 @@ import {
     OilBulletinRateLimitError,
     type DieselObservation,
 } from '@/lib/market/oil-bulletin-client';
+import {
+    fetchFertilizerPrices,
+    PinkSheetStaleError,
+    WorldBankRateLimitError,
+    type FertilizerObservation,
+} from '@/lib/market/world-bank-client';
 import { computeListingsMedianIndex, type ListingPriceRow } from '@/lib/market/listings-index';
 import { normalizeCommodity } from '@/lib/market/commodity-vocabulary';
 import { invalidatePriceTrendsCache } from '@/app-layer/usecases/trends';
@@ -91,6 +97,7 @@ export interface MarketPricesPullDeps {
     fetchAv?: typeof fetchAlphaVantageCommodity;
     fetchBarchart?: typeof fetchBarchartQuotes;
     fetchDiesel?: typeof fetchDieselPrices;
+    fetchFertilizer?: typeof fetchFertilizerPrices;
     /** DB client override (integration tests pass the test-DB client). */
     db?: MarketDbClient;
     /** Sleep (ms) — no-op in tests. */
@@ -489,6 +496,50 @@ async function pullOilBulletin(deps: MarketPricesPullDeps): Promise<UpsertItem[]
     }));
 }
 
+// ── World Bank Pink Sheet (urea + DAP) ────────────────────────────────
+
+/**
+ * Pull monthly urea and DAP prices.
+ *
+ * Keyless like the Oil Bulletin, so always on. The two failure modes worth
+ * naming are caught and logged rather than allowed to abort the whole run —
+ * a rate limit, and a STALE workbook, which is the interesting one: the
+ * Pink Sheet's doc-id URL segment rolls annually and the previous generation
+ * still returns HTTP 200 with a frozen file. The client asserts freshness
+ * from the DATA and throws; here that becomes a loud warn naming the age,
+ * because the fix is an operator repointing a URL, not a code change.
+ */
+async function pullWorldBank(deps: MarketPricesPullDeps): Promise<UpsertItem[]> {
+    const fetchFertilizer = deps.fetchFertilizer ?? fetchFertilizerPrices;
+    let observations: FertilizerObservation[];
+    try {
+        observations = await fetchFertilizer(
+            env.WORLD_BANK_PINK_SHEET_URL ? { url: env.WORLD_BANK_PINK_SHEET_URL } : {},
+        );
+    } catch (err) {
+        logger.warn('market_prices.world_bank_failed', {
+            component: 'market-prices-pull',
+            rateLimited: err instanceof WorldBankRateLimitError,
+            stale: err instanceof PinkSheetStaleError,
+            error: (err as Error).message,
+        });
+        return [];
+    }
+
+    return observations.map((o) => ({
+        source: 'world-bank',
+        commodity: o.commodity,
+        region: o.region,
+        // No stage concept — the basis lives in the label instead.
+        stage: null,
+        unit: o.unit,
+        currency: o.currency,
+        label: o.label,
+        date: o.date,
+        price: o.price,
+    }));
+}
+
 // ── own-listings k-anon median ────────────────────────────────────────
 
 async function pullListings(
@@ -613,6 +664,10 @@ export async function runMarketPricesPull(
     if (runAll || payload.source === 'oil-bulletin') {
         sources.push('oil-bulletin');
         items.push(...(await pullOilBulletin(deps)));
+    }
+    if (runAll || payload.source === 'world-bank') {
+        sources.push('world-bank');
+        items.push(...(await pullWorldBank(deps)));
     }
     if (runAll || payload.source === 'listings') {
         sources.push('listings');
