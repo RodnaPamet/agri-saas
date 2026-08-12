@@ -383,6 +383,77 @@ export function primarySeries(series: TrendSeries[]): TrendSeries | null {
     )[0];
 }
 
+/**
+ * Regions worth leading with, most-relevant-first for a Bulgarian operator.
+ *
+ * BG is the market a farmer here is actually paid in. EU is an average across
+ * the union — a reasonable benchmark when BG has not reported, and wrong to
+ * present as the local price when it has.
+ */
+const REGION_PREFERENCE = ['BG', 'EU'] as const;
+
+/**
+ * The ONE chart-group the Prices tab draws.
+ *
+ * The tab used to render every group {@link groupSeriesByRegionUnit} returned,
+ * and the pull job fetches EC prices for BG, RO, EL and EU — all EUR/t since
+ * Bulgaria's euro adoption, so region is the only thing separating them. Wheat
+ * therefore drew four cards with the same title, the same source label and the
+ * same unit, three of them about countries the reader is not paid in. The
+ * grouping is still right (those series must not share a Y axis); showing all
+ * of it was not.
+ *
+ * The third arm is what makes this ONE rule rather than a crop rule with
+ * exceptions. Fertilizer is World Bank region `GLOBAL` and nothing else, and a
+ * future commodity may arrive in a region nobody listed here — both fall
+ * through to whichever group reported most recently and draw a chart, rather
+ * than matching no preference and drawing nothing.
+ *
+ * Series WITHIN the chosen group are untouched: narrowing to one card must not
+ * narrow to one line, or diesel would lose either its with-tax or its
+ * without-tax series, which are different numbers and both wanted.
+ */
+export function selectPrimaryGroup(groups: ChartGroup[]): ChartGroup | null {
+    if (groups.length === 0) return null;
+    // A region can hold more than one group — EC in EUR/t and the own-listings
+    // median in BGN/t are BOTH region BG. Picking "the first BG group" would
+    // resolve on backend result ordering, and the losing outcome is this page
+    // presenting the median of our own users' ASKING prices as the official
+    // one. The noticeboard is a last resort, never a default.
+    const quotes = groups.filter(
+        (g) => !g.series.every((s) => isOwnMarketplaceSource(s.source)),
+    );
+    const candidates = quotes.length > 0 ? quotes : groups;
+    for (const region of REGION_PREFERENCE) {
+        const preferred = candidates.find((g) => g.region === region);
+        if (preferred) return preferred;
+    }
+    const lead = primarySeries(candidates.flatMap((g) => g.series));
+    if (!lead) return null;
+    return candidates.find((g) => g.series.includes(lead)) ?? candidates[0];
+}
+
+/**
+ * The series a group's headline tile should quote.
+ *
+ * The tile used to call `findEcSeries(series, 'BG')` with the region spelled
+ * out, so the moment {@link selectPrimaryGroup} fell back to EU the tile read
+ * "no data" directly above a populated chart. Reading the group the chart drew
+ * makes the two incapable of disagreeing.
+ *
+ * EC stage preference applies first because it encodes a material distinction
+ * — ex-farm and delivered-to-port are separated by haulage — and only then the
+ * most-recent rule, which is all a non-EC group (oil bulletin, World Bank,
+ * hand-typed) has to go on.
+ */
+export function leadSeriesOf(group: ChartGroup): TrendSeries {
+    return (
+        findEcSeries(group.series, group.region) ??
+        primarySeries(group.series) ??
+        group.series[0]
+    );
+}
+
 /** Round-trip-safe display number: fixed to at most 2 decimals, trimmed. */
 export function formatPrice(value: number): string {
     return Number.isInteger(value) ? String(value) : value.toFixed(2);

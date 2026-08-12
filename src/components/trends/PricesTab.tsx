@@ -3,10 +3,13 @@
 /**
  * Trends → Prices tab.
  *
- * A commodity picker + range selector driving one line chart PER UNIT-GROUP
- * (EC EUR/t, listings BGN, Alpha Vantage USD each get their own Y axis — units
- * are never mixed on one axis). Above the charts sit stat tiles (latest BG
- * official price + week-over-week delta, listings index + sample count,
+ * A commodity picker + range selector driving ONE line chart — the group
+ * `selectPrimaryGroup` chooses (Bulgaria, else the EU average, else whatever
+ * reported most recently). Units are still never mixed on one axis; the
+ * grouping that guarantees it is unchanged, but only one group is drawn,
+ * because the pull covers four EC member states and all four are EUR/t since
+ * Bulgaria's euro adoption. Above the chart sit stat tiles (the drawn series'
+ * latest price + week-over-week delta, listings index + sample count,
  * reference-benchmark latest). Degrades to a skeleton while loading, and to a
  * combined empty + operator-configuration panel when the payload has no data
  * (the endpoint returns empty series when EC / Alpha Vantage are unconfigured
@@ -49,11 +52,11 @@ import {
     type MergedDatum,
     type TrendSeries,
     groupSeriesByRegionUnit,
+    selectPrimaryGroup,
+    leadSeriesOf,
     buildMergedData,
     seriesKey,
     sourceLabelKey,
-    findEcSeries,
-    primarySeries,
     findListingsSeries,
     findReferenceSeries,
     latestPoint,
@@ -304,21 +307,32 @@ export function PricesTab() {
         [data],
     );
 
+    // ── The one chart, and the series its tile quotes ──
+    //
+    // The tab used to draw EVERY group, and the pull fetches EC prices for BG,
+    // RO, EL and EU — all EUR/t since Bulgaria's euro adoption — so wheat drew
+    // four cards distinguished only by a region chip.
+    const chartGroup = useMemo(() => selectPrimaryGroup(groups), [groups]);
+    const headline = useMemo(
+        () => (chartGroup ? leadSeriesOf(chartGroup) : null),
+        [chartGroup],
+    );
+    const headlineLatest = headline ? latestPoint(headline) : null;
+    const headlineDelta = headline ? weekOverWeekDelta(headline) : null;
+
     // ── Stat-tile derivations ──
     //
-    // The three crop tiles look up EC / listings / Alpha Vantage BY NAME, and
-    // none of those publish diesel or fertiliser — so for an input they would
-    // render three "no data" tiles above a perfectly good chart. Inputs get a
-    // single tile driven by whichever series actually reported most recently.
+    // The listings + reference tiles look up their sources BY NAME, and
+    // neither publishes diesel or fertiliser — so for an input they would
+    // render two "no data" tiles above a perfectly good chart. The headline
+    // tile needs no such fork: it quotes whatever the chart drew.
     const isInput = commodityMeta(shownCommodity)?.kind === 'input';
     const tiles = useMemo(() => {
         if (!data) return null;
-        const ec = findEcSeries(data.series, 'BG');
         const listings = findListingsSeries(data.series);
         const reference = findReferenceSeries(data.series);
-        return { ec, listings, reference };
+        return { listings, reference };
     }, [data]);
-    const primary = useMemo(() => (data ? primarySeries(data.series) : null), [data]);
 
     // ── Practices (always visible so a user can switch even on empty) ──
     const practices = (
@@ -428,67 +442,55 @@ export function PricesTab() {
                 <>
                     {/* Stat tiles — wrap on 390px. */}
                     <div className="flex flex-wrap gap-default">
-                        {isInput ? (
-                            <StatTile
-                                label={t('tiles.bgLatest')}
-                                value={
-                                    primary && latestPoint(primary)
-                                        ? formatPriceWithCurrency(
-                                              latestPoint(primary)!.price,
-                                              primary.currency,
-                                          )
-                                        : t('tiles.noData')
-                                }
-                                footer={
-                                    primary && data ? (
-                                        // Source SHOWN, not hidden: a hand-typed
-                                        // fertiliser price and a fed one must not
-                                        // look alike here of all places.
-                                        <SeriesProvenance
-                                            series={primary}
-                                            generatedAt={data.generatedAt}
-                                            className="mt-1"
-                                        />
-                                    ) : undefined
-                                }
-                            />
-                        ) : (
-                        <>
+                        {/* The headline quotes the series the chart drew, so the
+                            two cannot disagree. It used to read
+                            findEcSeries(series, 'BG') with the region spelled
+                            out, which on an EU fallback printed the no-data dash
+                            directly above a populated line.
+
+                            Its label names neither region nor source, because it
+                            can now be any of them — EC for a crop, the Oil
+                            Bulletin for diesel, somebody's typing for MAP. The
+                            provenance line below says which, and is NOT hidden
+                            here: a hand-typed fertiliser price and a fed one
+                            must not look alike on the number a farmer prices
+                            against. */}
                         <StatTile
-                            label={t('tiles.bgLatest')}
+                            label={t('tiles.latestPrice')}
                             value={
-                                tiles?.ec && latestPoint(tiles.ec)
+                                headline && headlineLatest
                                     ? formatPriceWithCurrency(
-                                          latestPoint(tiles.ec)!.price,
-                                          tiles.ec.currency,
+                                          headlineLatest.price,
+                                          headline.currency,
                                       )
                                     : t('tiles.noData')
                             }
                             sub={
-                                tiles?.ec && weekOverWeekDelta(tiles.ec) != null
-                                    ? formatDelta(weekOverWeekDelta(tiles.ec)!)
+                                headlineDelta != null
+                                    ? formatDelta(headlineDelta)
                                     : undefined
                             }
                             tone={
-                                tiles?.ec && weekOverWeekDelta(tiles.ec) != null
-                                    ? weekOverWeekDelta(tiles.ec)! > 0
+                                headlineDelta != null
+                                    ? headlineDelta > 0
                                         ? 'up'
-                                        : weekOverWeekDelta(tiles.ec)! < 0
+                                        : headlineDelta < 0
                                           ? 'down'
                                           : 'flat'
                                     : undefined
                             }
                             footer={
-                                tiles?.ec && data ? (
+                                headline && data ? (
                                     <SeriesProvenance
-                                        series={tiles.ec}
+                                        series={headline}
                                         generatedAt={data.generatedAt}
-                                        hideSource
                                         className="mt-1"
                                     />
                                 ) : undefined
                             }
                         />
+                        {!isInput && (
+                        <>
                         <StatTile
                             label={t('tiles.listings')}
                             value={
@@ -556,17 +558,17 @@ export function PricesTab() {
                         )}
                     </div>
 
-                    {/* One chart per unit-group. */}
-                    {groups.map((g) => (
+                    {/* Exactly one chart — see selectPrimaryGroup. */}
+                    {chartGroup && (
                         <UnitGroupChart
-                            key={g.key}
-                            unit={g.unit}
-                            merged={buildMergedData(g)}
-                            series={g.series}
+                            key={chartGroup.key}
+                            unit={chartGroup.unit}
+                            merged={buildMergedData(chartGroup)}
+                            series={chartGroup.series}
                             colorIndex={colorIndex}
                             commodityLabel={t(`commodities.${shownCommodity}`)}
                         />
-                    ))}
+                    )}
                 </>
             )}
         </div>
