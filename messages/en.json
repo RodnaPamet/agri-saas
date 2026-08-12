@@ -6963,7 +6963,12 @@
             "rye": "Rye",
             "soybean": "Soybean",
             "peas": "Peas",
-            "lentils": "Lentils"
+            "lentils": "Lentils",
+            "diesel": "Diesel",
+            "urea": "Urea",
+            "dap": "DAP (diammonium phosphate)",
+            "map": "MAP (monoammonium phosphate)",
+            "ammonium-nitrate": "Ammonium nitrate"
         },
         "ranges": {
             "1m": "1M",
@@ -6976,7 +6981,10 @@
             "reference": "Reference benchmark",
             "listings": "Listings index",
             "other": "Other source",
-            "futures": "Futures (delayed)"
+            "futures": "Futures (delayed)",
+            "manual": "Entered by hand",
+            "oilBulletin": "EU Oil Bulletin",
+            "worldBank": "World Bank"
         },
         "chartAria": "{commodity} price trend ({unit})",
         "empty": {
@@ -7068,6 +7076,17 @@
         "error": {
             "title": "Could not load prices",
             "description": "Something went wrong fetching market prices. This is a problem on our side or with your connection — not a sign that the market is quiet. Try again shortly."
+        },
+        "categories": {
+            "label": "Category",
+            "ariaLabel": "Price category",
+            "grain": "Grain",
+            "fuel": "Fuel",
+            "fertilizer": "Fertilizer"
+        },
+        "noSeries": {
+            "title": "No price series yet",
+            "body": "Nothing is published for this commodity yet. Pick another, or ask an administrator to enter prices by hand."
         }
     },
     "privacy": {

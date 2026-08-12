@@ -22,7 +22,7 @@ import {
     normalizeAnyCommodity,
     normalizeCommodity,
 } from '@/lib/market/commodity-vocabulary';
-import { TrendCommodity } from '@/app-layer/schemas/trends.schemas';
+import { TREND_CROPS, TrendCommodity } from '@/app-layer/schemas/trends.schemas';
 
 describe('normalizeCommodity', () => {
     it('accepts the exact casing production writes', () => {
@@ -76,12 +76,38 @@ describe('normalizeCommodity', () => {
 });
 
 describe('vocabulary alignment', () => {
-    it('covers every TrendCommodity, so a price series can always be named', () => {
-        // If these drift, a commodity with a live price series becomes
-        // un-listable on the exchange — or worse, listable under a spelling the
-        // trends read can never match.
+    it('names every TrendCommodity — as a crop OR as an input', () => {
+        // This assertion used to be `isCanonicalCommodity(c)` for every
+        // chartable commodity, and that was right while only crops were
+        // chartable. Trends now charts fuel and fertiliser, which are
+        // deliberately NOT canonical (canonical IS the exchange's offer
+        // vocabulary), so the invariant is restated rather than relaxed: a
+        // chartable commodity must be nameable by the vocabulary, in exactly
+        // one of its two lists.
         for (const c of TrendCommodity.options) {
+            const crop = isCanonicalCommodity(c);
+            const input = isInputCommodity(c);
+            expect(crop || input).toBe(true);
+            expect(crop && input).toBe(false);
+            expect(commodityMeta(c)).not.toBeNull();
+        }
+    });
+
+    it('keeps every chartable CROP listable on the exchange', () => {
+        // The original concern, still guarded: a crop with a live price series
+        // that the exchange cannot name, or can only name under a spelling the
+        // trends read will never match.
+        for (const c of TREND_CROPS) {
             expect(isCanonicalCommodity(c)).toBe(true);
+            expect(normalizeCommodity(c)).toBe(c);
+        }
+    });
+
+    it('charts every input the vocabulary knows', () => {
+        // The reverse drift: an input added to the vocabulary but never made
+        // requestable would be invisible in Trends with nothing saying why.
+        for (const slug of INPUT_COMMODITIES) {
+            expect((TrendCommodity.options as readonly string[])).toContain(slug);
         }
     });
 

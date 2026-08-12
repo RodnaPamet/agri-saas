@@ -25,6 +25,7 @@ import {
     isStale,
     stalenessDays,
     STALE_AFTER_DAYS,
+    staleAfterDaysForSource,
     SOURCE_BARCHART,
     firstInterestedCommodity,
 } from '@/components/trends/trends-helpers';
@@ -323,11 +324,38 @@ describe('provenance helpers', () => {
         const daysAgo = (n: number) =>
             new Date(Date.UTC(2026, 2, 20) - n * 86_400_000).toISOString().slice(0, 10);
 
-        expect(isStale({ lastObservedAt: daysAgo(8) }, generatedAt)).toBe(false);
-        expect(isStale({ lastObservedAt: daysAgo(STALE_AFTER_DAYS) }, generatedAt)).toBe(false);
-        expect(isStale({ lastObservedAt: daysAgo(STALE_AFTER_DAYS + 1) }, generatedAt)).toBe(true);
+        const ec = (lastObservedAt: string | null) => ({ lastObservedAt, source: 'ec-agrifood' });
+        expect(isStale(ec(daysAgo(8)), generatedAt)).toBe(false);
+        expect(isStale(ec(daysAgo(STALE_AFTER_DAYS)), generatedAt)).toBe(false);
+        expect(isStale(ec(daysAgo(STALE_AFTER_DAYS + 1)), generatedAt)).toBe(true);
         // Never reported at all is "unknown", not "stale".
-        expect(isStale({ lastObservedAt: null }, generatedAt)).toBe(false);
+        expect(isStale(ec(null), generatedAt)).toBe(false);
+    });
+
+    // Break: a false alarm on EVERY view. The World Bank feed is MONTHLY with
+    // a ~1-month publication lag, so a urea point is 30-60 days old at all
+    // times — under the weekly bound it would render permanently orange, which
+    // is how a warning stops being read at all.
+    it('judges a monthly source by its own cadence, not the weekly one', () => {
+        const generatedAt = '2026-03-20T09:00:00.000Z';
+        const daysAgo = (n: number) =>
+            new Date(Date.UTC(2026, 2, 20) - n * 86_400_000).toISOString().slice(0, 10);
+
+        const wb = (n: number) => ({ lastObservedAt: daysAgo(n), source: 'world-bank' });
+        expect(isStale(wb(45), generatedAt)).toBe(false); // routine for monthly data
+        expect(isStale(wb(76), generatedAt)).toBe(true); // two cycles missed
+        expect(staleAfterDaysForSource('world-bank')).toBeGreaterThan(STALE_AFTER_DAYS);
+    });
+
+    it('does not nag about a hand-entered series, whose age is already stated', () => {
+        const generatedAt = '2026-03-20T09:00:00.000Z';
+        const daysAgo = (n: number) =>
+            new Date(Date.UTC(2026, 2, 20) - n * 86_400_000).toISOString().slice(0, 10);
+        expect(isStale({ lastObservedAt: daysAgo(120), source: 'manual' }, generatedAt)).toBe(false);
+    });
+
+    it('falls back to the weekly bound for a source it does not know', () => {
+        expect(staleAfterDaysForSource('some-future-feed')).toBe(STALE_AFTER_DAYS);
     });
 });
 
