@@ -25,6 +25,7 @@ import { ToggleGroup } from '@/components/ui/toggle-group';
 import { DatePicker } from '@/components/ui/date-picker';
 import { formatDate } from '@/lib/format-date';
 import { QrCode } from '@/components/ui/qr-code';
+import { DomainCostEntriesPanel } from '@/components/agro/DomainCostEntriesPanel';
 
 interface Lot {
     id: string;
@@ -656,6 +657,23 @@ export function InventoryClient({ tenantSlug }: { tenantSlug: string }) {
                                 />
                             </FormField>
                         </div>
+
+                        {/* What this product has cost — read-only, and only
+                            when an EXISTING product is open. A brand-new one
+                            has no id to filter by, and rendering the panel
+                            before there is anything to show would fetch on
+                            every "add product" click. Costs are entered on
+                            /grain/costs; this reflects them. */}
+                        {editItemId ? (
+                            <DomainCostEntriesPanel
+                                link="itemId"
+                                id={editItemId}
+                                titleKey="itemPanelTitle"
+                                emptyKey="itemPanelEmpty"
+                                noteKey="itemPanelNote"
+                                registerHref={`/grain/costs?itemId=${encodeURIComponent(editItemId)}`}
+                            />
+                        ) : null}
                     </Modal.Body>
                     <Modal.Actions>
                         <Button variant="secondary" size="sm" type="button" onClick={() => setShowProduct(false)}>{t('cancel')}</Button>

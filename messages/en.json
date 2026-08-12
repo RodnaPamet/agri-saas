@@ -5371,11 +5371,13 @@
             "undo": "Undo",
             "leasePanelTitle": "Costs filed against this lease",
             "leasePanelEmpty": "No costs recorded against this lease yet.",
-            "leasePanelLoading": "Loading costs…",
-            "leasePanelOpenRegister": "Open the register",
             "leasePanelNote": "Recorded on the costs page. Separate from the settlements above — the same rent, seen from the cost side, so the two are not added together.",
             "itemPanelTitle": "Costs for this product",
-            "incurredOnFacet": "Date"
+            "incurredOnFacet": "Date",
+            "panelLoading": "Loading…",
+            "panelOpenRegister": "Open the register",
+            "itemPanelEmpty": "No costs recorded against this product yet.",
+            "itemPanelNote": "Recorded on the costs page. Purchases of this product — not the value of the stock on hand."
         },
         "calculator": {
             "title": "Grain calculator",
