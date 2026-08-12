@@ -313,3 +313,90 @@ Before phase 3 drops anything:
 - [ ] The migration is destructive and irreversible against production data; it
       carries a pre-flight row-count query and is not applied to the production
       VM without an operator's explicit go-ahead.
+
+---
+
+## 8. AMENDMENT (phase 2 recon) — this plan was wrong about two surfaces
+
+Before deleting anything, a ten-surface reference sweep ran across four
+modalities (imports, Prisma delegates, fetch/URL strings, registries) plus a
+completeness critic. It found **713 references from code that survives the
+teardown** — not the five couplings §5 lists — and two outright errors in the
+KILL list above. The corrections are load-bearing, so they live here rather
+than in a phase-2 note nobody reads first.
+
+### 8a. `/issues` is NOT a GRC surface. It stays.
+
+**There is no `Issue` model.** `usecases/issue.ts` opens with
+`@deprecated — Legacy Issue usecase; delegates to Task repositories`, and the
+only three delegates it touches are `db.task`, `db.taskLink` and `db.auditLog`
+— all three explicit KEEP. `/issues` is a compatibility view over
+`TaskType.ISSUE`, i.e. over the farm task system.
+
+Deleting it would remove a working feature built on agri models and delete
+nothing GRC. Retiring a deprecated shim may be worth doing; it is **not** part
+of this teardown, and it does not belong in a PR whose stated job is removing
+inherited schema surface.
+
+### 8b. `/access-reviews` is a platform security feature. It stays.
+
+`AccessReview` (`auth.prisma:539`) and `AccessReviewDecision` (`:597`) live in
+**auth.prisma**, which is not a GRC file and is named nowhere in §2's KILL
+list. This is periodic user-access review — the same family as sessions, SSO
+and SCIM.
+
+Both errors have the same root cause: **§2's surface list was assembled from
+directory names, not from the KILL model list.** A directory called
+`access-reviews` reads like GRC; the models under it do not.
+
+### 8c. `/mapping` is KILL and was missed entirely.
+
+`RequirementMappingSet`, `RequirementMapping` and `FrameworkMapping` are all on
+the §2 KILL list, but no surface covered them. It is not small:
+`usecases/mapping.ts`, `RequirementMappingRepository` (13 delegates),
+`MappingRepository`, `services/mapping-resolution.ts`,
+`services/mapping-set-importer.ts`, `domain/requirement-mapping.types.ts`,
+`components/InheritedMappingsPanel.tsx`, `data/libraries/mappings/`.
+
+**`src/app/api/mapping/route.ts` sits OUTSIDE the tenant tree**, so deleting
+`src/app/api/t/[tenantSlug]/mapping/` leaves a live route behind.
+
+### 8d. Four reference classes the four modalities structurally cannot see
+
+1. **Relation traversal on a KEEP delegate.** `db.task.findFirst({ include: {
+   practice: … } })` spells `Practice` nowhere. Hits sit in
+   `WorkItemRepository.ts:340` (the FARM TASK repository), `AssetRepository`
+   (`/assets` is never-touch), `EvidenceRepository` (the surviving Docs
+   surface) and `ProcessMapRepository` (the rule builder that KEEPS).
+2. **Model names that become SQL.** `lib/soft-delete.ts`'s entries are not
+   registry keys — `retention-purge.ts:41-49` interpolates them into
+   `DELETE FROM "${model}"` in **one loop with no per-model try/catch**. A
+   single stale entry after phase 3 throws `relation "Policy" does not exist`
+   and takes the nightly purge down for `Asset`, `Evidence`, `FileRecord`,
+   `Task` and `Contract` too. Same shape in `soft-delete-operations.ts`,
+   `soft-delete-lifecycle.ts`, `jobs/data-lifecycle.ts`.
+3. **The test tiers below guards.** Every test hit in the 713 is from
+   `tests/guards` / `tests/guardrails`. **45 files** under `tests/unit`,
+   `tests/integration`, `tests/rendered` import a doomed module, and **24 e2e
+   specs** navigate a doomed surface — including shared ones that must be
+   EDITED, not deleted: `fixtures.ts`, `auth.spec.ts`, `a11y.spec.ts`,
+   `responsive.spec.ts`, `core-flow.spec.ts`, `data-table-platform.spec.ts`.
+4. **DB-resident references no code scan reaches.** `ApiKey.scopes` rows hold
+   `vendors:*` / `audits:*` strings that `api-key-auth.ts:82` only ever builds
+   at runtime (`` `${resource}:${action}` ``); `TenantCustomRole.permissionsJson`
+   holds `policies.approve` reconstructed at `permissions.ts:431`;
+   `AutomationRule.event` holds `POLICY_REVIEW_DUE`; `TenantModule.moduleKey`
+   holds `VENDORS`. **Deleting the enum members orphans live rows**, and every
+   issued API key carrying a dead scope starts failing `assertScope` silently.
+   These need a pre-flight row count and a data migration, not a grep.
+
+### 8e. Files that break and appear in no reference list
+
+`usecases/journal.ts` + `usecases/field-operation.ts` (both import
+`auto-evidence.ts`, which reads three KILL models);
+`WorkItemRepository.ts:509` (`db.practice.findMany`, plus `Task.practiceId` at
+seven more sites); `usecases/portfolio.ts:479/812`, reached by two surviving
+org routes; `usecases/farm-record-traceability.ts` — **the trap**: the filename
+says *farm-record*, so a name-driven sweep keeps it, and every model it touches
+is KILL; and all of `src/lib/framework-tree/`, whose consumers are platform
+primitives under `src/components/ui/` carrying no GRC noun in their path.
