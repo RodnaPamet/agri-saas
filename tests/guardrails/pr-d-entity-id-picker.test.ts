@@ -118,40 +118,5 @@ describe('PR-D — entity-ID picker migration', () => {
         });
     });
 
-    describe('Vendor link form (vendor detail page)', () => {
-        const src = read(
-        );
 
-        it('mounts <EntityPicker> with the canonical testid', () => {
-            expect(src).toMatch(/testId="vendor-link-entity-picker"/);
-        });
-
-        it('preserves linkForm.entityId as the state slot', () => {
-            // The legacy input wrote to `linkForm.entityId`; the
-            // picker writes into the same slot via the lambda.
-            expect(src).toMatch(/setLinkForm\(\(p\)\s*=>\s*\(\{\s*\.\.\.p,\s*entityId:\s*id\s*\}\)\)/);
-        });
-    });
-
-    describe('Vendor subprocessor form (vendor detail page)', () => {
-        const src = read(
-        );
-
-        it('mounts <EntityPicker entityType="VENDOR"> for the subprocessor slot', () => {
-            expect(src).toMatch(/testId="vendor-subprocessor-picker"/);
-            expect(src).toMatch(
-                /<EntityPicker[\s\S]{0,400}entityType="VENDOR"/,
-            );
-        });
-
-        it('retires the legacy "Paste vendor ID" input', () => {
-            expect(src).not.toMatch(/placeholder="Paste vendor ID"/);
-        });
-
-        it('preserves subForm.subprocessorVendorId as the state slot', () => {
-            expect(src).toMatch(
-                /setSubForm\(\(p\)\s*=>\s*\(\{\s*\.\.\.p,\s*subprocessorVendorId:\s*id\s*\}\)\)/,
-            );
-        });
-    });
 });

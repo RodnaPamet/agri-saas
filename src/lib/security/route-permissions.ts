@@ -204,18 +204,6 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'assertCanWriteCatalogue; admin.manage is the audited role ' +
             'floor, not the isolation practice.',
     },
-    {
-        path: new RegExp(`^${T}\\/frameworks(\\/.*)?$`),
-        permission: 'admin.manage',
-        methods: ['POST', 'PUT', 'PATCH', 'DELETE'],
-        note:
-            'Framework writes span two classes: pack install / bulk-map ' +
-            'create TENANT rows, while upsert-requirements rewrites the ' +
-            'GLOBAL catalogue (and can deprecate every requirement of a ' +
-            'standard, zeroing coverage for all tenants). The catalogue arm ' +
-            'is platform-tenant gated in-handler; this rule is what makes a ' +
-            'denial on any arm an audited AUTHZ_DENIED row.',
-    },
 
     // ── Master-KEK rotation (Epic B.3) ──────────────────────────────
     {

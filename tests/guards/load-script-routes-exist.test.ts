@@ -110,10 +110,13 @@ describe('k6 load scripts drive routes that exist', () => {
     });
 
     it('the detector resolves a real route and rejects a deleted one', () => {
-        // Mutation proof. `practices` is live; `controls` and `risks` are
-        // the two routes that actually caused the incidents above.
-        expect(fs.existsSync(path.join(API_ROOT, 'practices'))).toBe(true);
+        // Mutation proof. `evidence` is live; `controls`, `risks` and
+        // `practices` are deleted -- the first two caused the incidents
+        // above, the third went with the GRC teardown, which is exactly the
+        // class of change this guard exists to catch.
+        expect(fs.existsSync(path.join(API_ROOT, 'evidence'))).toBe(true);
         expect(fs.existsSync(path.join(API_ROOT, 'controls'))).toBe(false);
         expect(fs.existsSync(path.join(API_ROOT, 'risks'))).toBe(false);
+        expect(fs.existsSync(path.join(API_ROOT, 'practices'))).toBe(false);
     });
 });

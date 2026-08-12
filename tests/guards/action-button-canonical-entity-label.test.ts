@@ -93,21 +93,6 @@ describe('Action-button canonical entity label', () => {
         // [file, buttonId, expected bare-noun label, i18n namespace the
         //  button's t()/tr() call resolves against]
         const INLINE_SITES: Array<[string, string, string, string]> = [
-            [
-                'new-practice-btn',
-                'Practice',
-                'practices',
-            ],
-            [
-                'new-policy-btn',
-                'Policy',
-                'policies',
-            ],
-            [
-                'new-vendor-btn',
-                'Vendor',
-                'vendors',
-            ],
         ];
 
         it.each(INLINE_SITES)(

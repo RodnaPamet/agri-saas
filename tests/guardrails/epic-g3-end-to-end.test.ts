@@ -131,17 +131,6 @@ describe('Epic G-3 — end-to-end readiness', () => {
         }
     });
 
-    // [4] Public routes
-    test('public vendor-assessment routes exist', () => {
-        expect(
-            exists(
-            ),
-        ).toBe(true);
-        expect(
-            exists(
-            ),
-        ).toBe(true);
-    });
 
     // [5] Internal routes
     test('internal admin routes exist for templates + reviews', () => {

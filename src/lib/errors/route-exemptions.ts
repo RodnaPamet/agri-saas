@@ -272,24 +272,6 @@ export const BARE_ROUTE_EXEMPTIONS: ReadonlyArray<BareRouteExemption> = [
     // longer active" messaging — distinct guard reasons (expired,
     // wrong_status, unknown_assessment) intentionally collapse to
     // 401/410 without leaking which one tripped.
-    {
-        file: 'vendor-assessment/[assessmentId]/route.ts',
-        category: 'anti_enumeration',
-        reason:
-            'Public token-gated GET. Custom { error, reason } ' +
-            'contract for the external respondent UI; collapses ' +
-            'guard distinctions to 401/410 to avoid leaking which ' +
-            'gate tripped.',
-    },
-    {
-        file: 'vendor-assessment/[assessmentId]/submit/route.ts',
-        category: 'anti_enumeration',
-        reason:
-            'Public token-gated POST submit. Custom validation_failed ' +
-            'response shape carries fieldErrors[] for the response ' +
-            'form; access_denied uses the same anti-enumeration ' +
-            'mapping as the GET sibling.',
-    },
 
     // ─── Agro-intel — public data-stream ingestion ───
     //

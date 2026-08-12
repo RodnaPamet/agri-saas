@@ -21,79 +21,7 @@ const read = (rel: string) =>
     fs.readFileSync(path.join(ROOT, rel), 'utf8');
 
 describe('B4 — filter + nav consistency', () => {
-    describe('Documents filter placement', () => {
-        const src = read(
-        );
 
-        it('docs tab carries a search input', () => {
-            // The search input lives ABOVE the table inside the
-            // documents tab block. Anchor on the id so unrelated
-            // search inputs don't false-match.
-            expect(src).toMatch(/id="doc-search-input"/);
-            // T09 i18n — placeholder routes through next-intl
-            // (`t('searchDocuments')`); the literal lives in messages/en.json.
-            expect(src).toMatch(/placeholder=\{\w+\(['"]searchDocuments['"]\)\}/);
-        });
-
-        it('docs tab carries a type filter combobox', () => {
-            expect(src).toMatch(/id="doc-type-filter"/);
-            expect(src).toMatch(/DOC_TYPE_FILTER_OPTIONS/);
-        });
-
-        it('filter row positions search-left, action-right', () => {
-            // Anchor on the "DOCUMENTS" comment block so the
-            // structural shape is locked relative to the tab. The
-            // slice window grew in B8 — the folder filter Combobox
-            // + the folder input inside the form push the
-            // `add-doc-btn` position past the original 2500-char
-            // budget. 6000 keeps headroom for one more inline field.
-            const start = src.indexOf('{/* DOCUMENTS */}');
-            const block = src.slice(start, start + 6000);
-            // Search input comes BEFORE the Add document button.
-            const searchIdx = block.indexOf('doc-search-input');
-            const addIdx = block.indexOf('id="add-doc-btn"');
-            expect(searchIdx).toBeGreaterThan(0);
-            expect(addIdx).toBeGreaterThan(searchIdx);
-            // The shared parent uses `justify-between` so the two
-            // groups sit at opposite ends of the row.
-            expect(block).toMatch(/justify-between/);
-        });
-
-        it('docs list is filtered by both search and type', () => {
-            const start = src.indexOf('<VendorDocsTable');
-            // B8 — folder filter sits between the table mount and
-            // the docs.filter() lambda; the slice has to span it.
-            const block = src.slice(start, start + 1600);
-            expect(block).toMatch(/docs\.filter\(/);
-            expect(block).toMatch(/docTypeFilter/);
-            expect(block).toMatch(/docSearch/);
-        });
-    });
-
-    describe('Clauses entry-point lives on the Audits page', () => {
-        const audits = read(
-        );
-
-        it('Audits header carries a Clauses link', () => {
-            expect(audits).toMatch(/id="audits-clauses-link"/);
-            expect(audits).toMatch(
-                /href=\{`\/t\/\$\{tenantSlug\}\/clauses`\}/,
-            );
-        });
-
-        it('Clauses link sits adjacent to the Frameworks link', () => {
-            const fwIdx = audits.indexOf('id="audits-frameworks-link"');
-            const clIdx = audits.indexOf('id="audits-clauses-link"');
-            expect(fwIdx).toBeGreaterThan(0);
-            expect(clIdx).toBeGreaterThan(0);
-            // Sibling ordering: Frameworks first, Clauses next —
-            // matches the user's "Clauses next to Frameworks" intent.
-            expect(clIdx).toBeGreaterThan(fwIdx);
-            // The two should be within the same actions array
-            // (~800 chars apart in practice).
-            expect(clIdx - fwIdx).toBeLessThan(2000);
-        });
-    });
 
     describe('Workspace switcher shows organizations', () => {
         const switcher = read(

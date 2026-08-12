@@ -107,46 +107,4 @@ describe('PR-1 — tenant tables → org-level parity', () => {
         });
     });
 
-    describe('Tenant rollouts — Practices / Evidence', () => {
-        const practices = read(
-        );
-        const evidence = read(
-            'src/app/t/[tenantSlug]/(app)/evidence/EvidenceClient.tsx',
-        );
-
-        const rollouts = [
-            { name: 'PracticesClient', src: practices, testId: 'tenant-practices-load-more', sortKey: 'code' },
-            { name: 'EvidenceClient', src: evidence, testId: 'tenant-evidence-load-more', sortKey: 'title' },
-        ];
-
-        for (const r of rollouts) {
-            describe(r.name, () => {
-                it('imports the shared threshold + footer primitives', () => {
-                    expect(r.src).toMatch(
-                        /import\s*\{\s*useThresholdLoadMore\s*\}\s*from\s*['"]@\/components\/ui\/hooks['"]/,
-                    );
-                    expect(r.src).toMatch(
-                        /import\s*\{\s*TableLoadMoreFooter\s*\}\s*from\s*['"]@\/components\/ui\/table-load-more-footer['"]/,
-                    );
-                });
-
-                it('mounts a <TableLoadMoreFooter> with the canonical testId', () => {
-                    expect(r.src).toMatch(
-                        new RegExp(`<TableLoadMoreFooter[\\s\\S]{0,800}testId="${r.testId}"`),
-                    );
-                });
-
-                it('threads sortableColumns + sortBy + sortOrder + onSortChange', () => {
-                    expect(r.src).toMatch(/sortableColumns/);
-                    expect(r.src).toMatch(/sortBy/);
-                    expect(r.src).toMatch(/sortOrder/);
-                    expect(r.src).toMatch(/onSortChange/);
-                });
-
-                it('first sortable column matches the canonical row id', () => {
-                    expect(r.src).toMatch(new RegExp(`'${r.sortKey}'`));
-                });
-            });
-        }
-    });
 });
