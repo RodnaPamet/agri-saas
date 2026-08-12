@@ -86,6 +86,7 @@ export function assertSingleDomainLink(input: {
     locationId?: string | null;
     parcelId?: string | null;
     leaseId?: string | null;
+    itemId?: string | null;
 }): void {
     const set = COST_DOMAIN_LINKS.filter((k) => input[k] != null);
     if (set.length > 1) {
@@ -139,6 +140,7 @@ function toDto(row: {
     locationId: string | null;
     parcelId: string | null;
     leaseId: string | null;
+    itemId: string | null;
     createdByUserId: string | null;
     description?: string | null;
     createdAt: Date;
@@ -147,6 +149,7 @@ function toDto(row: {
     season?: { id: string; name: string } | null;
     location?: { id: string; name: string } | null;
     parcel?: { id: string; name: string } | null;
+    item?: { id: string; name: string; category: string } | null;
     invoiceFile?: {
         id: string;
         originalName: string;
@@ -167,6 +170,7 @@ function toDto(row: {
         locationId: row.locationId,
         parcelId: row.parcelId,
         leaseId: row.leaseId,
+        itemId: row.itemId,
         createdByUserId: row.createdByUserId,
         // Present only on a single-record read — the list projection omits
         // it entirely, so `undefined` means "not sent here" rather than
@@ -178,6 +182,7 @@ function toDto(row: {
         season: row.season ?? null,
         location: row.location ?? null,
         parcel: row.parcel ?? null,
+        item: row.item ?? null,
         invoiceFile: row.invoiceFile ?? null,
     };
 }
@@ -225,6 +230,7 @@ async function assertFksBelongToTenant(
         locationId?: string | null;
         parcelId?: string | null;
         leaseId?: string | null;
+        itemId?: string | null;
     },
 ): Promise<void> {
     if (input.plantingId) {
@@ -262,6 +268,13 @@ async function assertFksBelongToTenant(
         });
         if (!row) throw badRequest('Lease not found or belongs to a different tenant');
     }
+    if (input.itemId) {
+        const row = await db.item.findFirst({
+            where: { id: input.itemId, tenantId: ctx.tenantId, deletedAt: null },
+            select: { id: true },
+        });
+        if (!row) throw badRequest('Item not found or belongs to a different tenant');
+    }
 }
 
 export async function createCostEntry(ctx: RequestContext, input: CreateCostEntryInput) {
@@ -290,6 +303,7 @@ export async function createCostEntry(ctx: RequestContext, input: CreateCostEntr
             locationId: input.locationId ?? null,
             parcelId: input.parcelId ?? null,
             leaseId: input.leaseId ?? null,
+            itemId: input.itemId ?? null,
             createdByUserId: ctx.userId ?? null,
         });
 
@@ -356,6 +370,7 @@ export async function updateCostEntry(
             locationId: input.locationId !== undefined ? input.locationId : existing.locationId,
             parcelId: input.parcelId !== undefined ? input.parcelId : existing.parcelId,
             leaseId: input.leaseId !== undefined ? input.leaseId : existing.leaseId,
+            itemId: input.itemId !== undefined ? input.itemId : existing.itemId,
         });
 
         await assertFksBelongToTenant(db, ctx, input);
@@ -433,7 +448,7 @@ export async function deleteCostEntry(ctx: RequestContext, id: string) {
  */
 export async function listCostEntriesForDomain(
     ctx: RequestContext,
-    link: 'plantingId' | 'seasonId' | 'locationId' | 'parcelId' | 'leaseId',
+    link: 'plantingId' | 'seasonId' | 'locationId' | 'parcelId' | 'leaseId' | 'itemId',
     ids: readonly string[],
     opts: { take?: number } = {},
 ): Promise<Map<string, ReturnType<typeof toDomainDto>[]>> {

@@ -66,10 +66,12 @@ function costRow(over: Partial<CostRow> = {}): CostRow {
         locationId: null,
         parcelId: null,
         leaseId: null,
+        itemId: null,
         planting: null,
         season: null,
         location: null,
         parcel: null,
+        item: null,
         invoiceFile: null,
         ...over,
     };

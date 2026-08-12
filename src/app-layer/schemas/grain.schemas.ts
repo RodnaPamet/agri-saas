@@ -312,6 +312,7 @@ export const COST_DOMAIN_LINKS = [
     'locationId',
     'parcelId',
     'leaseId',
+    'itemId',
 ] as const;
 
 /**
@@ -336,6 +337,7 @@ export const CreateCostEntrySchema = z
         locationId: z.string().min(1).nullable().optional(),
         parcelId: z.string().min(1).nullable().optional(),
         leaseId: z.string().min(1).nullable().optional(),
+        itemId: z.string().min(1).nullable().optional(),
     })
     .strip();
 
@@ -355,6 +357,7 @@ export const UpdateCostEntrySchema = z
         locationId: z.string().min(1).nullable().optional(),
         parcelId: z.string().min(1).nullable().optional(),
         leaseId: z.string().min(1).nullable().optional(),
+        itemId: z.string().min(1).nullable().optional(),
     })
     .strip();
 

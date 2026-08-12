@@ -5351,7 +5351,8 @@
                     "season": "A season",
                     "location": "A field",
                     "parcel": "A parcel",
-                    "lease": "A lease"
+                    "lease": "A lease",
+                    "item": "A product"
                 },
                 "successionLabel": "Planting #{n}",
                 "cancel": "Cancel",
@@ -5367,7 +5368,13 @@
                 "invoiceUploadFailed": "The cost was saved, but the invoice could not be uploaded."
             },
             "deletedToast": "Cost deleted",
-            "undo": "Undo"
+            "undo": "Undo",
+            "leasePanelTitle": "Costs filed against this lease",
+            "leasePanelEmpty": "No costs recorded against this lease yet.",
+            "leasePanelLoading": "Loading costs…",
+            "leasePanelOpenRegister": "Open the register",
+            "leasePanelNote": "Recorded on the costs page. Separate from the settlements above — the same rent, seen from the cost side, so the two are not added together.",
+            "itemPanelTitle": "Costs for this product"
         },
         "calculator": {
             "title": "Grain calculator",

@@ -26,6 +26,7 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import { EmptyState } from '@/components/ui/empty-state';
 import { RentRollCard, type RentRollData } from '@/components/ui/map/RentRollCard';
 import { leaseExpiryTier, LEASE_EXPIRY_TONE, daysUntil } from '@/lib/agro/lease-expiry';
+import { DomainCostEntriesPanel } from '@/components/agro/DomainCostEntriesPanel';
 import { LeasePaymentsPanel } from '@/components/agro/LeasePaymentsPanel';
 import {
     LeaseFormFields,
@@ -486,6 +487,23 @@ export function RentClient({
                                     rentUnit={form.rentUnit || null}
                                     canWrite={permissions.canWrite}
                                     onChanged={() => { void rentRollQ.mutate(); }}
+                                />
+                            ) : null}
+                            {/* The cost register's view of the same money.
+                                A SEPARATE panel from the settlement log
+                                above, deliberately: a LeasePayment settles
+                                the lease's own obligation (it is what the
+                                rent roll reads for paid/outstanding), while
+                                a CostEntry(RENT) carries the supplier and
+                                the invoice. One list would imply one record
+                                and invite someone to sum them, which would
+                                double the rent. */}
+                            {editingId ? (
+                                <DomainCostEntriesPanel
+                                    link="leaseId"
+                                    id={editingId}
+                                    titleKey="leasePanelTitle"
+                                    registerHref="/grain/costs?category=RENT"
                                 />
                             ) : null}
                         </div>

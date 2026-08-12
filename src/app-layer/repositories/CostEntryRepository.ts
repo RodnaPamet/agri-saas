@@ -25,6 +25,7 @@ export interface CostEntryFilters {
     locationIds?: string[];
     parcelIds?: string[];
     leaseIds?: string[];
+    itemIds?: string[];
     /**
      * Free-text search over `supplier` + `currency`. Deliberately EXCLUDES
      * `description` — it is encrypted at rest (Epic B manifest), so a
@@ -43,6 +44,7 @@ const COST_INCLUDE = {
     season: { select: { id: true, name: true } },
     location: { select: { id: true, name: true } },
     parcel: { select: { id: true, name: true } },
+    item: { select: { id: true, name: true, category: true } },
     invoiceFile: { select: { id: true, originalName: true, mimeType: true, sizeBytes: true } },
 } satisfies Prisma.CostEntryInclude;
 
@@ -69,6 +71,7 @@ const COST_LIST_SELECT = {
     locationId: true,
     parcelId: true,
     leaseId: true,
+    itemId: true,
     createdByUserId: true,
     createdAt: true,
     updatedAt: true,
@@ -97,6 +100,7 @@ export class CostEntryRepository {
             ...(filters?.locationIds?.length ? { locationId: { in: filters.locationIds } } : {}),
             ...(filters?.parcelIds?.length ? { parcelId: { in: filters.parcelIds } } : {}),
             ...(filters?.leaseIds?.length ? { leaseId: { in: filters.leaseIds } } : {}),
+            ...(filters?.itemIds?.length ? { itemId: { in: filters.itemIds } } : {}),
             ...(filters?.q ? buildSearchWhere(filters.q) : {}),
         };
     }
@@ -170,7 +174,7 @@ export class CostEntryRepository {
     static async listByDomainIds(
         db: PrismaTx,
         ctx: RequestContext,
-        link: 'plantingId' | 'seasonId' | 'locationId' | 'parcelId' | 'leaseId',
+        link: 'plantingId' | 'seasonId' | 'locationId' | 'parcelId' | 'leaseId' | 'itemId',
         ids: readonly string[],
         take: number,
     ) {
@@ -195,6 +199,7 @@ export class CostEntryRepository {
                 locationId: true,
                 parcelId: true,
                 leaseId: true,
+                itemId: true,
             },
             take,
         });

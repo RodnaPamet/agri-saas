@@ -35,6 +35,7 @@ const mockDb = {
     location: { findFirst: jest.fn() },
     parcel: { findFirst: jest.fn() },
     parcelLease: { findFirst: jest.fn() },
+    item: { findFirst: jest.fn() },
 } as any;
 
 jest.mock('@/lib/db-context', () => ({
@@ -95,6 +96,7 @@ function row(over: Record<string, unknown> = {}) {
         locationId: null,
         parcelId: null,
         leaseId: null,
+        itemId: null,
         createdByUserId: 'u-1',
         createdAt: new Date('2026-08-01T00:00:00Z'),
         updatedAt: new Date('2026-08-01T00:00:00Z'),
@@ -102,6 +104,7 @@ function row(over: Record<string, unknown> = {}) {
         season: null,
         location: null,
         parcel: null,
+        item: null,
         invoiceFile: null,
         ...over,
     };
@@ -131,6 +134,7 @@ beforeEach(() => {
     mockDb.location.findFirst.mockResolvedValue({ id: 'loc-1' });
     mockDb.parcel.findFirst.mockResolvedValue({ id: 'par-1' });
     mockDb.parcelLease.findFirst.mockResolvedValue({ id: 'lease-1' });
+    mockDb.item.findFirst.mockResolvedValue({ id: 'item-1' });
     mockDb.fileRecord.findFirst.mockResolvedValue({
         id: 'file-1',
         status: 'STORED',
@@ -236,6 +240,29 @@ describe('createCostEntry — one domain link only', () => {
     it('accepts exactly one link', async () => {
         await createCostEntry(ctx, baseInput({ plantingId: 'p-1' }));
         expect(mockDb.costEntry.create.mock.calls[0][0].data.plantingId).toBe('p-1');
+    });
+
+    it('accepts an ITEM link — the product a cost bought', async () => {
+        // The sixth link, added because the inventory surface had no
+        // honest one: a cost's nearest column was `locationId`, which is
+        // where a lot SITS rather than what was purchased.
+        await createCostEntry(ctx, baseInput({ category: 'FERTILIZER', itemId: 'item-1' }));
+        expect(mockDb.costEntry.create.mock.calls[0][0].data.itemId).toBe('item-1');
+        expect(mockDb.item.findFirst).toHaveBeenCalledTimes(1);
+    });
+
+    it('REJECTS an item link ALONGSIDE another link', async () => {
+        // itemId joins the same one-link-only rule as the other five.
+        await expect(
+            createCostEntry(ctx, baseInput({ itemId: 'item-1', plantingId: 'p-1' })),
+        ).rejects.toThrow(/at most one/);
+    });
+
+    it('REJECTS an item from another tenant', async () => {
+        mockDb.item.findFirst.mockResolvedValue(null);
+        await expect(
+            createCostEntry(ctx, baseInput({ itemId: 'item-1' })),
+        ).rejects.toThrow(/different tenant/);
     });
 
     it('REJECTS two links, naming both', async () => {
