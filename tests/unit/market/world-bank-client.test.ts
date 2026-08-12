@@ -127,7 +127,7 @@ describe('the stale-URL trap', () => {
     it('names the age and the likely cause, since the fix is repointing a URL', async () => {
         const muchLater = new Date('2027-06-01T00:00:00Z');
         await expect(parsePinkSheetWorkbook(bytes(), { now: muchLater })).rejects.toThrow(
-            /months old \(2026-07\).*doc-id URL segment rolls annually/s,
+            /months old \(2026-07\)[\s\S]*doc-id URL segment rolls annually/,
         );
     });
 
