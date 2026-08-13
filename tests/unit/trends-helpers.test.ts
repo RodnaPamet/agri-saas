@@ -33,6 +33,7 @@ import {
     firstInterestedCommodity,
     selectPrimaryGroup,
     leadSeriesOf,
+    chartSeriesFor,
 } from '@/components/trends/trends-helpers';
 
 const GENERATED_AT = '2026-03-20T09:00:00.000Z';
@@ -526,6 +527,92 @@ describe('selectPrimaryGroup', () => {
         const chosen = selectPrimaryGroup(groups);
         expect(chosen?.region).toBe('BG');
         expect(chosen?.series).toHaveLength(2);
+    });
+});
+
+/**
+ * How many LINES the one chart draws.
+ *
+ * Narrowing to one CARD was not the whole job. EC publishes wheat per market
+ * — Burgas, Plovdiv, Varna, Ruse, Dobrich… — and the pull keys series on
+ * stageName while dropping marketName, so a single (BG, EUR, EUR/t) group
+ * held TWELVE series in production: one National Average, nine per-market
+ * rows under EC's old stage naming, and two under its new naming. The card
+ * count was 1 and the line count was 12.
+ *
+ * Ten of those twelve were dead ends. EC moved the market out of `stageName`
+ * (`"Burgas - DEPPROD"` → `"Departure from farm…"` + `marketName: "Burgas"`),
+ * which changed the series key, so the old rows stopped receiving points and
+ * flatline at their last pre-change observation while the new ones carry on.
+ */
+describe('chartSeriesFor', () => {
+    function ec(stage: string, points: Array<[string, number]>, label = 'Breadmaking common wheat') {
+        return { ...ecSeries('BG', points, stage), label };
+    }
+
+    it('draws only the National Average when EC publishes one', () => {
+        // The nine per-market rows measure THE SAME quantity in different
+        // places; the national average is the answer to "what is wheat worth
+        // in Bulgaria". Overlaying all ten says nothing the one line does not.
+        const group = groupSeriesByRegionUnit([
+            ec('Burgas - DEPPROD', [['2026-07-20', 191]]),
+            ec('Plovdiv - DEPPROD', [['2026-07-20', 188]]),
+            ec('National Average - Not Specified', [['2026-07-27', 190]]),
+            ec('Departure from farm or from production area', [['2026-08-03', 193]], 'BLTPAN|PAN'),
+        ])[0];
+        const drawn = chartSeriesFor(group);
+        expect(drawn).toHaveLength(1);
+        expect(drawn[0].stage).toBe('National Average - Not Specified');
+    });
+
+    it('falls back to the freshest EC series when no national average exists', () => {
+        // EC restructures its vocabulary — it just did. If the national
+        // average disappears, one live line beats twelve overlapping ones,
+        // and the freshest is the only defensible choice among equivalents.
+        const group = groupSeriesByRegionUnit([
+            ec('Burgas - DEPPROD', [['2026-07-20', 191]]),
+            ec('Departure from farm or from production area', [['2026-08-03', 193]], 'BLTPAN|PAN'),
+        ])[0];
+        const drawn = chartSeriesFor(group);
+        expect(drawn).toHaveLength(1);
+        expect(drawn[0].stage).toBe('Departure from farm or from production area');
+    });
+
+    it('keeps every line for a non-EC group', () => {
+        // Diesel's with-tax and without-tax are DIFFERENT quantities and both
+        // are wanted. Collapsing by count rather than by source would have
+        // silently dropped one of them.
+        const withTax: TrendSeries = {
+            source: SOURCE_OIL_BULLETIN,
+            region: 'BG',
+            stage: 'with-tax',
+            unit: 'EUR/1000l',
+            currency: 'EUR',
+            label: 'diesel',
+            lastObservedAt: '2026-08-10',
+            points: [{ date: '2026-08-10', price: 1820 }],
+        };
+        const withoutTax: TrendSeries = { ...withTax, stage: 'without-tax', points: [{ date: '2026-08-10', price: 1490 }] };
+        const group = groupSeriesByRegionUnit([withTax, withoutTax])[0];
+        expect(chartSeriesFor(group)).toHaveLength(2);
+    });
+
+    it('is a no-op on a single-series group', () => {
+        const group = groupSeriesByRegionUnit([ec('National Average - Not Specified', [['2026-07-27', 190]])])[0];
+        expect(chartSeriesFor(group)).toHaveLength(1);
+    });
+
+    it('matches the national average however EC cases or pads the stage', () => {
+        // The stage text is EC's, not ours, and they have already renamed it
+        // once. Matching a literal would break on the next rename.
+        for (const stage of ['National Average - Not Specified', 'national average', '  National Average  ']) {
+            const group = groupSeriesByRegionUnit([
+                ec('Burgas - DEPPROD', [['2026-08-03', 191]]),
+                ec(stage, [['2026-07-27', 190]]),
+            ])[0];
+            expect(chartSeriesFor(group)).toHaveLength(1);
+            expect(chartSeriesFor(group)[0].stage).toBe(stage);
+        }
     });
 });
 

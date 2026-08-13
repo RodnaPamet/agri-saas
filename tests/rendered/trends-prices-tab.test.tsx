@@ -219,6 +219,34 @@ describe('PricesTab — one chart, whichever regions the feed carries', () => {
         expect(screen.getByText('EU')).toBeInTheDocument();
     });
 
+    it('draws ONE line for the twelve series production actually has', () => {
+        // The shape no fixture had. EC publishes wheat per market and the pull
+        // keys on stageName while dropping marketName, so prod's BG/EUR/t
+        // group held 12 series: one National Average, nine per-market rows
+        // under EC's old stage naming (dead ends since the rename), and two
+        // under the new naming. The card count was already 1; the LINE count
+        // was 12, ten of them flatlining weeks back.
+        const perMarket = ['Burgas', 'Plovdiv', 'Varna', 'Ruse', 'Dobrich', 'Pleven', 'Stara Zagora'].map(
+            (m) => ({ ...ec('BG', 191), stage: `${m} - DEPPROD`, lastObservedAt: '2026-07-20' }),
+        );
+        useTenantSWR.mockReturnValue({
+            data: payload([
+                ...perMarket,
+                { ...ec('BG', 190), stage: 'National Average - Not Specified' },
+                { ...ec('BG', 193), stage: 'Departure from farm or from production area', label: 'BLTPAN|PAN' },
+            ]),
+            error: undefined,
+        });
+        renderTab();
+
+        expect(screen.getAllByTestId('ts-chart')).toHaveLength(1);
+        // One legend entry === one line. Counted via the REGION chip, which
+        // only the legend renders — `sources.official` also appears in the
+        // tile's provenance line, so counting that would count two and read
+        // as a failure when the chart is correct.
+        expect(screen.getAllByText('BG')).toHaveLength(1);
+    });
+
     it('quotes the series it drew, so the tile cannot contradict the chart', () => {
         // The tile used to read findEcSeries(series, 'BG') with the region
         // hard-coded: on an EU fallback it printed the no-data dash directly

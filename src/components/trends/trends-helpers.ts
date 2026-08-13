@@ -434,6 +434,51 @@ export function selectPrimaryGroup(groups: ChartGroup[]): ChartGroup | null {
 }
 
 /**
+ * How EC names its country-wide series, loosely matched.
+ *
+ * The text is EC's and they have already renamed it once — the market moved
+ * out of `stageName` (`'Burgas - DEPPROD'` → `'Departure from farm…'` plus a
+ * separate `marketName`) some time before 2026-08-10, which changed our series
+ * key and orphaned ten Bulgarian wheat series mid-chart. Matching a literal
+ * would break on the next rename; matching a substring, case- and
+ * whitespace-insensitively, survives one.
+ */
+function isNationalAverage(s: TrendSeries): boolean {
+    return (s.stage ?? '').trim().toLowerCase().includes('national average');
+}
+
+/**
+ * The lines the one chart draws, out of the group {@link selectPrimaryGroup}
+ * chose.
+ *
+ * Narrowing to one CARD was not the whole job. EC publishes wheat per market —
+ * Burgas, Plovdiv, Varna, Ruse, Dobrich… — and the pull keys a series on
+ * `stageName` while dropping `marketName`, so production held TWELVE series in
+ * a single (BG, EUR, EUR/t) group. The card count was 1 and the line count was
+ * 12, ten of them dead ends flatlining weeks back because EC's rename changed
+ * their key.
+ *
+ * The collapse is decided by SOURCE, not by count. Those per-market rows are
+ * ALTERNATIVES — the same quantity measured in different places, for which the
+ * national average is the answer to "what is wheat worth in Bulgaria". Diesel's
+ * with-tax and without-tax are COMPLEMENTS: different quantities, both wanted,
+ * on the same axis. No property of the group distinguishes those two cases, so
+ * a count- or freshness-based rule would silently drop one of the diesel lines.
+ * Only the EC feed collapses; every other source keeps every line it has.
+ */
+export function chartSeriesFor(group: ChartGroup): TrendSeries[] {
+    if (group.series.length <= 1) return group.series;
+    if (!group.series.every((s) => s.source === SOURCE_EC)) return group.series;
+    const national = group.series.find(isNationalAverage);
+    if (national) return [national];
+    // No national average — EC restructures, and it just did. One live line
+    // beats a dozen overlapping ones, and among series measuring the same
+    // thing the freshest is the only defensible pick.
+    const freshest = primarySeries(group.series);
+    return freshest ? [freshest] : group.series;
+}
+
+/**
  * The series a group's headline tile should quote.
  *
  * The tile used to call `findEcSeries(series, 'BG')` with the region spelled
