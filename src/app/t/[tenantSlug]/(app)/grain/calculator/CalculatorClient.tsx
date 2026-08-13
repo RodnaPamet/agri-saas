@@ -101,6 +101,12 @@ import {
 import { haToDca } from '@/lib/agro/rate-calc';
 import { formatDecimal } from '@/lib/number-format';
 import { formatDate, formatDateTime } from '@/lib/format-date';
+import {
+    UNCERTAINTY,
+    costUncertainty,
+    explainRefusal,
+    netWorthUncertainty,
+} from '@/lib/grain/uncertainty';
 import { GrainSectionNav } from '../GrainSectionNav';
 
 // ─── Serialised DTOs (mirror the grain-net-worth usecase output) ────
@@ -146,7 +152,11 @@ export interface CalculatorRow {
 
     netAssetPosition: number | null;
     netWorth: number | null;
+    /** English, authored by the usecase — the FALLBACK for an unknown code. */
     netWorthUnavailableReason: string | null;
+    /** Machine-readable reason, translated client-side when recognised. */
+    netWorthUnavailableCode: string | null;
+    netWorthUnavailableParams: Record<string, string> | null;
 }
 
 export type LotExclusion = { lotId: string; unitKey: string | null };
@@ -472,6 +482,16 @@ export function CalculatorClient({ tenantSlug, data }: CalculatorClientProps) {
     // The subtraction is gated on the usecase having CERTIFIED that the
     // currencies are combinable (`netWorth != null`); when it refused,
     // this page refuses too rather than inventing an exchange rate.
+    // The uncertainty vocabulary, resolved once for this row and used the
+    // same way wherever it appears — headline, cost line, table cell.
+    const netState = netWorthUncertainty(row);
+    const refusalText = explainRefusal(
+        row.netWorthUnavailableCode,
+        row.netWorthUnavailableParams,
+        row.netWorthUnavailableReason,
+        (key, values) => tc(key, values),
+    );
+
     // No per-asset net is derived here any more. Both used to subtract the
     // WHOLE farm cost from ONE asset — the arithmetic the removed panels
     // displayed — and neither was a quantity anyone could act on.
@@ -603,6 +623,15 @@ export function CalculatorClient({ tenantSlug, data }: CalculatorClientProps) {
                             sign="−"
                             label={tc('costTotalLabel')}
                             amount={row.cashCostTotal}
+                            // AT_LEAST, not AT_MOST — an unpriced
+                            // consumption makes this a FLOOR. The same
+                            // cause bounds the net the other way; see
+                            // lib/grain/uncertainty.
+                            bound={
+                                costUncertainty(row) === UNCERTAINTY.AT_LEAST
+                                    ? 'atLeast'
+                                    : undefined
+                            }
                         />
                     </dl>
 
@@ -642,24 +671,46 @@ export function CalculatorClient({ tenantSlug, data }: CalculatorClientProps) {
                     </div>
 
                     <div className="border-t border-border-subtle pt-2">
+                        {/* THE HEADLINE CARRIES ITS OWN QUALIFIER.
+                            When cost is a floor, net worth is a MAXIMUM,
+                            and the page used to print it as a definite
+                            figure with the caveat two surfaces above,
+                            under a panel's cost line. A qualifier that
+                            lives on a different surface from the number
+                            it qualifies is not a qualifier — so it is in
+                            the VALUE. */}
                         <KPIStat
                             size="md"
-                            value={row.netWorth != null ? money(row.netWorth) : '—'}
+                            value={
+                                row.netWorth == null
+                                    ? '—'
+                                    : netState === UNCERTAINTY.AT_MOST
+                                      ? tc('uncertaintyAtMost', { value: money(row.netWorth) })
+                                      : money(row.netWorth)
+                            }
                             label={tc('netWorthLabel')}
-                            tone={row.netWorth != null ? 'default' : 'attention'}
+                            tone={
+                                row.netWorth == null || netState === UNCERTAINTY.AT_MOST
+                                    ? 'attention'
+                                    : 'default'
+                            }
                             description={
                                 row.netWorth == null
                                     ? tc('netWorthUnavailableTitle')
-                                    : undefined
+                                    : netState === UNCERTAINTY.AT_MOST
+                                      ? tc('uncertaintyAtMostWhy')
+                                      : undefined
                             }
                         />
                     </div>
                 </div>
-                {row.netWorthUnavailableReason != null && (
-                    // A refusal is stated, never blanked. The sentence is
-                    // authored by the usecase so the page cannot drift from
-                    // the actual reason the figure was withheld.
-                    <p className="text-xs text-content-muted">{row.netWorthUnavailableReason}</p>
+                {refusalText != null && (
+                    // A refusal is stated, never blanked. Translated from
+                    // the usecase's CODE when this client knows it, and
+                    // from its English sentence when it does not — see
+                    // explainRefusal, whose whole job is that an
+                    // unrecognised code still explains itself.
+                    <p className="text-xs text-content-muted">{refusalText}</p>
                 )}
                 <div className="flex flex-wrap gap-default text-xs text-content-subtle">
                     <span className="tabular-nums">
@@ -814,6 +865,12 @@ interface SumLineProps {
     amount: number | null;
     /** Shown instead of the amount when the term exists but could not be priced. */
     unavailableText?: string;
+    /**
+     * Wraps the amount in the shared bound phrasing when this term is not
+     * exact. `atLeast` is the only one a term ever carries — a floor cost.
+     * The matching `atMost` rides the RESULT, not a term.
+     */
+    bound?: 'atLeast';
 }
 
 /**
@@ -828,7 +885,8 @@ interface SumLineProps {
  * `−` is U+2212, not a hyphen: it is the character that aligns with the
  * `+` at the same optical weight in a tabular-nums column.
  */
-function SumLine({ sign, label, badge, details, amount, unavailableText }: SumLineProps) {
+function SumLine({ sign, label, badge, details, amount, unavailableText, bound }: SumLineProps) {
+    const tc = useTranslations('grain.calculator');
     const money = useExactMoneyFormatter();
 
     return (
@@ -856,6 +914,8 @@ function SumLine({ sign, label, badge, details, amount, unavailableText }: SumLi
                     // for a null. Signing it would assert a direction for a
                     // quantity we do not have.
                     money(null)
+                ) : bound === 'atLeast' ? (
+                    tc('uncertaintyAtLeast', { value: `${sign}${money(amount)}` })
                 ) : (
                     `${sign}${money(amount)}`
                 )}
@@ -890,6 +950,16 @@ function ExclusionsCard({ count, classes }: ExclusionsCardProps) {
                 <Heading level={3} as="h2" tone="muted">
                     {tc('exclusionsTitle')}
                 </Heading>
+                {/* PARTIAL, in the vocabulary's one treatment for it —
+                    the same badge the header wears when a read limit
+                    truncated the scan. The COUNT stays and is still
+                    rendered at zero: "0 records excluded" is a statement,
+                    an absent line is not. Folded in, not replaced. */}
+                {count > 0 && (
+                    <Badge variant="warning" size="sm">
+                        {tc('uncertaintyPartialBadge')}
+                    </Badge>
+                )}
                 <Badge variant={count > 0 ? 'attention' : 'neutral'} size="md">
                     {tc('exclusionsCount', { count })}
                 </Badge>

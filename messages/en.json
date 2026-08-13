@@ -5439,6 +5439,16 @@
             "exclLeasesProduceRentUnpriced": "Rent in grain that could not be priced",
             "exclPayrollUnattributable": "Payroll with nothing to charge",
             "waterfallAria": "How net worth is built",
+            "uncertaintyAtMost": "at most {value}",
+            "uncertaintyAtLeast": "at least {value}",
+            "uncertaintyAtMostWhy": "Some consumptions could not be priced, so the cost is a floor — the net worth above is a maximum, not a measurement.",
+            "uncertaintyPartialBadge": "Partial",
+            "refusal": {
+                "NO_MARKET_PRICE": "No market price is available for {commodity}.",
+                "MIXED_COST_CURRENCY": "Costs were recorded in more than one currency; blending them into net worth would misstate the total.",
+                "RENT_CURRENCY_UNRECORDED": "The lease does not record a currency for rent, so it cannot be combined with market-priced assets without inventing one.",
+                "COST_PRICE_CURRENCY_MISMATCH": "Costs are in {costCurrency} and the market price is in {priceCurrency}; no currency conversion is performed."
+            },
             "tableTitle": "Every commodity",
             "colCommodity": "Commodity",
             "colStandingValue": "Standing crop",
