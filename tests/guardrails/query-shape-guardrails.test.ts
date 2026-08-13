@@ -159,10 +159,6 @@ const KNOWN_N_PLUS_ONE: Record<string, KnownNPlusOne> = {
         reason:
             'maintenance scan over file-backed evidence verifying each row\'s FileRecord still exists; an admin/background integrity check, not a hot request path. Loop is over the tenant\'s file evidence — acceptable for a maintenance task.',
     },
-    'src/app-layer/usecases/framework/fixtures.ts:findUnique:frameworkRequirement': {
-        reason:
-            'framework-fixture upsert loop — per-requirement existence check drives create-vs-update. Runs at install / seed time over a fixed framework definition, not on a user request.',
-    },
     'src/app-layer/usecases/library-sync.ts:findFirst:framework': {
         reason:
             'library-sync dry-run loop over the loaded library definitions — per-framework lookup classifies would-create / would-update / up-to-date. Admin sync action over a bounded library set.',

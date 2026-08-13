@@ -163,11 +163,6 @@ const COMPENSATED_SITES: ReadonlyArray<{
         reason: 'Scroll-container (overflow-y-auto) full-bleed coverage list; -mx-2 bleeds the rows to the card edge and is compensated by px-2.',
     },
     {
-        file: 'src/components/frameworks/FrameworkExplorer.tsx',
-        contains: 'overflow-x-hidden -mx-2 px-1',
-        reason: 'Scroll-container (overflow-y-auto) tree pane; -mx-2 is compensated by px-1 AND clipped by overflow-x-hidden.',
-    },
-    {
         file: 'src/app/org/[orgSlug]/(app)/dashboard-sections.tsx',
         contains: '-mx-3 px-3 py-2',
         reason: 'Full-bleed hover row; -mx-3 widens the tap target to the card edge and is compensated by px-3.',

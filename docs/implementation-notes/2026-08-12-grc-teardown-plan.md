@@ -499,3 +499,25 @@ table names.
 procedure, not a one-off. These numbers are true as of 2026-08-13 with one
 tenant on the stack; a tenant onboarded between now and the migration changes
 them. Count again immediately before applying.
+
+### 8h. OPERATOR DECISIONS (2026-08-13) — the two the work order escalated
+
+**A6 — `AUDIT_FINDING`, `PRACTICE_GAP` and `INCIDENT` are REMOVED from the
+task-type picker.** All three depended on `validateTypeRelevance`, which
+required a task to carry `practiceId` or a `PRACTICE` / `FRAMEWORK_REQUIREMENT`
+link. Phase 2 removes both link options and phase 3 drops the column, so the
+three types become uncreatable rather than merely unused. Removing them from
+`TaskType`'s UI is the honest reading; leaving them in the picker would offer a
+farmer three options that throw. The Prisma enum members themselves go in
+phase 3 with the rest.
+
+**A20 — the evidence download gate is RE-BASED, not widened.** Today
+`downloadEvidenceFile` lets READER / AUDITOR download only when
+`evidence.practiceId` is non-null. Deleting that condition would widen
+privilege to every file in the tenant; keeping it throws at phase 3. The gate
+is re-based on the surviving provenance columns — `assetId ?? taskId ??
+sourceLogEntryId` non-null — which preserves the existing posture: a
+read-only role can fetch evidence that is attached to a known farm record,
+and cannot fetch a free-floating upload. This is a security-relevant change
+and ships in its own commit with an executing test, which the gate has never
+had.

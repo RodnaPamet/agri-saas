@@ -77,11 +77,6 @@ const PAGES: PageEntry[] = [
         note: "Admin SCIM page. Pending migration.",
     },
     {
-        file: "src/app/t/[tenantSlug]/(app)/admin/vendor-templates/[templateId]/VendorTemplateBuilderClient.tsx",
-        adopted: false,
-        note: "Vendor template builder. Pending migration — wizard-shaped page.",
-    },
-    {
         file: "src/app/t/[tenantSlug]/(app)/admin/rbac/page.tsx",
         adopted: false,
         note: "RBAC admin page. Pending migration.",
@@ -100,11 +95,6 @@ const PAGES: PageEntry[] = [
         file: "src/app/t/[tenantSlug]/(app)/admin/billing/page.tsx",
         adopted: false,
         note: "Billing admin page. Pending migration.",
-    },
-    {
-        file: "src/app/t/[tenantSlug]/(app)/admin/vendor-templates/VendorTemplatesIndexClient.tsx",
-        adopted: false,
-        note: "Vendor templates index page. Pending migration.",
     },
     {
         file: "src/app/t/[tenantSlug]/(app)/admin/integrations/page.tsx",
@@ -189,7 +179,8 @@ describe("PageHeader adoption registry", () => {
         // 25 → 24: the risks list page went with the register.
         // 24 → 17 (GRC teardown phase 2): the inherited GRC list pages
         // left the candidate set with their routes.
-        expect(PAGES.length).toBeGreaterThanOrEqual(17);
+        // 17 → 15 (T1): the two vendor-template admin pages went too.
+        expect(PAGES.length).toBeGreaterThanOrEqual(15);
         expect(PAGES.length).toBeLessThanOrEqual(35);
     });
 });

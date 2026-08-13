@@ -153,8 +153,13 @@ describe("StatusBadge adoption", () => {
 
   it("app pages + components use <StatusBadge> extensively", () => {
     const count = countAdoptions();
-    // Baseline after PR-2 migration. This number should only go UP.
-    expect(count).toBeGreaterThanOrEqual(140);
+    // Baseline after PR-2 migration. This number should only go UP —
+    // except when pages are DELETED, which is the one way a
+    // "count can only grow" floor legitimately comes down.
+    // 140 → 135 (GRC teardown phase 2, T1): the vendor-assessment,
+    // vendor-template and framework-explorer surfaces took their
+    // StatusBadge mounts with them.
+    expect(count).toBeGreaterThanOrEqual(135);
   });
 });
 

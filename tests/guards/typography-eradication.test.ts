@@ -46,7 +46,6 @@ const EXEMPT_FILES = new Set<string>([
   // need their colours migrated to semantic tokens first; once clean
   // they can graduate to <Heading>. Tracking outside PR-3 scope.
   "src/app/not-found.tsx",
-  "src/app/vendor-assessment/[assessmentId]/VendorAssessmentClient.tsx",
   "src/components/onboarding/OnboardingWizard.tsx",
 ]);
 

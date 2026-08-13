@@ -94,7 +94,6 @@ const LEGACY_LUCIDE_USERS = new Set<string>([
     'src/components/command-palette/command-palette.tsx',
     'src/components/command-palette/use-palette-commands.ts',
     'src/components/ForbiddenPage.tsx',
-    'src/components/frameworks/FrameworkExplorer.tsx',
     'src/components/icons/iconMap.ts',
     'src/components/layout/OrgSidebarNav.tsx',
     'src/components/layout/SidebarNav.tsx',
@@ -146,7 +145,6 @@ const LEGACY_LUCIDE_USERS = new Set<string>([
     'src/components/ui/filter/filter-range-panel.tsx',
     'src/components/ui/filter/filter-select.tsx',
     'src/components/ui/filter/types.ts',
-    'src/components/ui/FrameworkBuilder.tsx',
     'src/components/ui/FreshnessBadge.tsx',
     // R25/R26 — Processes canvas chrome. The taxonomy module owns
     // the lucide imports (one stroke family for the seven kinds);
@@ -174,8 +172,6 @@ const LEGACY_LUCIDE_USERS = new Set<string>([
     'src/components/ui/table/columns-dropdown.tsx',
     'src/components/ui/table/edit-columns-button.tsx',
     'src/components/ui/tooltip.tsx',
-    'src/components/ui/TreeExpandCollapseToggle.tsx',
-    'src/components/ui/TreeViewItem.tsx',
     'src/components/ui/TruncationBanner.tsx',
     'src/components/ui/view-toggle.tsx',
     'src/components/UpgradeGate.tsx',

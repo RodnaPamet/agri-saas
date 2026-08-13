@@ -53,10 +53,7 @@ const EXEMPTIONS: Record<string, string> = {
     // ratchet asks for a direct import.
     'src/app-layer/usecases/clause.ts':
         'Roadmap Q1 — exercised transitively via practice/framework tests; direct unit tests pending.',
-    'src/app-layer/usecases/framework/catalog.ts':
-        'Roadmap Q1 — fixtures-driven catalog loader, currently exercised only via framework.install integration.',
-    'src/app-layer/usecases/framework/tree.ts':
-        'Roadmap Q1 — pending direct unit tests.',
+    // (framework/catalog.ts was deleted in GRC teardown T1.)
 
     // Q2 — Audit + audit-trail
     'src/app-layer/usecases/org-audit.ts':

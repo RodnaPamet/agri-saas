@@ -70,16 +70,6 @@ const DETAIL_PAGES: DetailPageEntry[] = [
     },
 
     // ── Pending migration ──
-    {
-        file: "src/app/t/[tenantSlug]/(app)/admin/vendor-assessment-reviews/[assessmentId]/page.tsx",
-        adopted: false,
-        note: "Admin-side vendor assessment review. Pending migration — admin-area sub-route.",
-    },
-    {
-        file: "src/app/t/[tenantSlug]/(app)/admin/vendor-templates/[templateId]/page.tsx",
-        adopted: false,
-        note: "Admin-side vendor template builder. Pending migration — wizard-shaped page; may need <EntityDetailLayout> adaptation rather than direct adoption.",
-    },
 ];
 
 describe("EntityDetailLayout coverage", () => {

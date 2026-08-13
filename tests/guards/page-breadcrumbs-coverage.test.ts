@@ -88,7 +88,6 @@ const EXEMPT_FILES = new Set<string>([
     // rendering breadcrumbs here would duplicate. Each sits under
     // an entity detail (practice, audit, framework, vendor) and
     // renders inside the parent's `<EntityDetailLayout>` context.
-    "src/app/t/[tenantSlug]/(app)/admin/vendor-assessment-reviews/[assessmentId]/VendorAssessmentReviewClient.tsx",
 
     // ── Per-resource dashboards ─────────────────────────────────
     // These render the resource's own dashboard view (e.g.

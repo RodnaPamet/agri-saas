@@ -49,7 +49,8 @@ describe('B6 — Phase 3 useZodForm adoption', () => {
     });
 
     describe('Frontend-safe schemas in src/lib/schemas/', () => {
-        const ENTITIES = ['vendor', 'task', 'asset', 'audit'] as const;
+        // GRC teardown phase 2: 'vendor' removed with vendor-form.ts.
+        const ENTITIES = ['task', 'asset', 'audit'] as const;
         for (const entity of ENTITIES) {
             it(`${entity}-form.ts schema exists + exports the export shape`, () => {
                 const src = read(`src/lib/schemas/${entity}-form.ts`);

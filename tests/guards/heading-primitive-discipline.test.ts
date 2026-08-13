@@ -55,11 +55,6 @@ const ALLOWLIST: AllowlistEntry[] = [
         reason:
             'Next.js App Router root error boundary — replaces the root layout, owns its own <html> / <body>, ships its own CSS module for typography (CSP-compliant). Cannot import client-side primitives that depend on the app shell.',
     },
-    {
-        file: 'src/app/vendor-assessment/[assessmentId]/VendorAssessmentClient.tsx',
-        reason:
-            'External public surface (vendor-facing assessment, no auth, no app shell). Same allowlist rationale as Roadmap-4 PR-1 no-raw-palette-greys — the surface is intentionally on a separate visual ledger and uses raw Tailwind palette classes throughout.',
-    },
 ];
 
 const ALLOWLIST_PATHS = new Set(ALLOWLIST.map((e) => e.file));

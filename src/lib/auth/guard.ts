@@ -28,10 +28,6 @@ const PUBLIC_PATH_PREFIXES = [
                          // request is submitted, and a prospective user has to
                          // be able to read it before signing up. It renders no
                          // tenant data, so there is nothing to gate.
-    '/audit/shared',     // Shared audit pack read-only view (token-gated, no login)
-    '/api/audit/shared', // Shared audit pack API endpoint (token-gated)
-    '/vendor-assessment/',     // Epic G-3 — external respondent page (token-gated)
-    '/api/vendor-assessment/', // Epic G-3 — external respondent API (token-gated)
     '/_next',            // Next.js internals
 ];
 
