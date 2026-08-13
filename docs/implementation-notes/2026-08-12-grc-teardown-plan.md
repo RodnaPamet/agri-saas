@@ -452,3 +452,50 @@ the phase-3 migration rather than land on its own.
 **The general lesson, third time it has bitten:** a model's file and a model's
 name are both evidence about its owner, and both are weaker than the list of
 things that read it.
+
+### 8g. PRE-FLIGHT (2026-08-13) — every KILL table on production is EMPTY
+
+Run against the `agrent` VM's database (read-only; `inflect_production` is the
+agri product's DB under its pre-rebrand name, confirmed by the presence of
+`Parcel` / `LogEntry` / `Season` / `SupportScheme` / `AgroSignal`):
+
+```
+TOTAL GRC ROWS: 0        -- exact count(*), all 36 KILL tables
+tenants: 1   users: 5
+```
+
+`ComplianceSnapshot` is the ONLY table in the GRC schema files carrying real
+data (45 rows) — and it is precisely the one §8f took off the KILL list. That
+is a nice independent confirmation of that decision rather than a coincidence.
+
+**The §8d.4 DB-resident-reference risk is empirically zero here too.** Every
+table that could hold an orphaned enum value has no rows at all:
+
+| table | rows | rows holding a GRC value |
+|---|---|---|
+| `TenantApiKey` (`scopes`) | 0 | 0 |
+| `TenantCustomRole` (`permissionsJson`) | 0 | 0 |
+| `AutomationRule` (`triggerEvent`) | 0 | 0 |
+| `TenantModuleSettings` (`enabledModules`) | 0 | 0 |
+| `OrgDashboardWidget` (`chartType`) | 0 | 0 |
+
+Note the real column names differ from §8d.4's prose: it is `TenantApiKey`
+not `ApiKey`, `TenantModuleSettings.enabledModules` not
+`TenantModule.moduleKey`, and `AutomationRule.triggerEvent` not `.event`. A
+data migration written from that prose would have failed on three of five
+table names.
+
+**What this changes:**
+
+- The phase-3 destructive migration destroys NO production data. The
+  "irreversible against production data" warning in §7 still stands as a
+  procedure, but the blast radius on this stack is currently nil.
+- No data migration is needed for the orphaned-enum class on `agrent`.
+- The `.down.sql` inverses are still REQUIRED — the guard derives them from
+  the migration SQL, and other environments (dev, staging, a future
+  customer stack) are not covered by this count.
+
+**What this does NOT license:** re-running the count is part of the phase-3
+procedure, not a one-off. These numbers are true as of 2026-08-13 with one
+tenant on the stack; a tenant onboarded between now and the migration changes
+them. Count again immediately before applying.
