@@ -29,14 +29,9 @@ import { registry } from '@/lib/openapi/registry';
 import * as requestSchemas from '@/lib/schemas';
 // All annotated schemas — response DTO side
 import * as commonDTOs from '@/lib/dto/common';
-import * as practiceDTOs from '@/lib/dto/practice.dto';
 import * as evidenceDTOs from '@/lib/dto/evidence.dto';
-import * as policyDTOs from '@/lib/dto/policy.dto';
-import * as auditDTOs from '@/lib/dto/audit.dto';
 import * as assetDTOs from '@/lib/dto/asset.dto';
 import * as taskDTOs from '@/lib/dto/task.dto';
-import * as vendorDTOs from '@/lib/dto/vendor.dto';
-import * as frameworkDTOs from '@/lib/dto/framework.dto';
 
 interface AnnotatedSchema {
     schema: unknown;
@@ -108,41 +103,21 @@ describe('GAP-10 foundation — annotated schemas have metadata', () => {
             'AuditLogEntrySchema',
             'SuccessResponseSchema',
         ],
-        '@/lib/dto/practice.dto': [
-            'PracticeListItemDTOSchema',
-            'PracticeDetailDTOSchema',
-            'PracticeDashboardDTOSchema',
-        ],
         '@/lib/dto/evidence.dto': [
             'EvidenceReviewDTOSchema',
             'EvidenceListItemDTOSchema',
             'EvidenceDetailDTOSchema',
         ],
-        '@/lib/dto/policy.dto': [
-            'PolicyListItemDTOSchema',
-            'PolicyDetailDTOSchema',
-        ],
-        '@/lib/dto/audit.dto': ['AuditDTOSchema'],
         '@/lib/dto/asset.dto': [
             'AssetListItemDTOSchema',
             'AssetDetailDTOSchema',
         ],
         '@/lib/dto/task.dto': ['TaskDTOSchema'],
-        '@/lib/dto/vendor.dto': [
-            'VendorListItemDTOSchema',
-            'VendorDetailDTOSchema',
-        ],
-        '@/lib/dto/framework.dto': ['FrameworkDTOSchema', 'RequirementDTOSchema'],
         '@/lib/schemas': [
             // Canonical CRUD pairs across the 9 domains
             'CreateAssetSchema', 'UpdateAssetSchema',
-            'CreatePracticeSchema', 'UpdatePracticeSchema',
-            'CreatePolicySchema', 'UpdatePolicyMetadataSchema',
             'CreateEvidenceSchema', 'UpdateEvidenceSchema',
-            'CreateAuditSchema', 'UpdateAuditSchema',
             'CreateTaskSchema', 'UpdateTaskSchema',
-            'CreateVendorSchema', 'UpdateVendorSchema',
-            'CreateFindingSchema', 'UpdateFindingSchema',
             // Focused mutation requests
             'SetPracticeStatusSchema',
             'SetPracticeApplicabilitySchema', 'SetTaskStatusSchema',
@@ -152,14 +127,9 @@ describe('GAP-10 foundation — annotated schemas have metadata', () => {
 
     const moduleSources: Record<string, Record<string, unknown>> = {
         '@/lib/dto/common': commonDTOs,
-        '@/lib/dto/practice.dto': practiceDTOs,
         '@/lib/dto/evidence.dto': evidenceDTOs,
-        '@/lib/dto/policy.dto': policyDTOs,
-        '@/lib/dto/audit.dto': auditDTOs,
         '@/lib/dto/asset.dto': assetDTOs,
         '@/lib/dto/task.dto': taskDTOs,
-        '@/lib/dto/vendor.dto': vendorDTOs,
-        '@/lib/dto/framework.dto': frameworkDTOs,
         '@/lib/schemas': requestSchemas,
     };
 
@@ -189,14 +159,9 @@ describe('GAP-10 foundation — component IDs are globally unique', () => {
         // schema with another.
         const sources = [
             { ns: commonDTOs, name: 'common' },
-            { ns: practiceDTOs, name: 'practice.dto' },
             { ns: evidenceDTOs, name: 'evidence.dto' },
-            { ns: policyDTOs, name: 'policy.dto' },
-            { ns: auditDTOs, name: 'audit.dto' },
             { ns: assetDTOs, name: 'asset.dto' },
             { ns: taskDTOs, name: 'task.dto' },
-            { ns: vendorDTOs, name: 'vendor.dto' },
-            { ns: frameworkDTOs, name: 'framework.dto' },
             { ns: requestSchemas, name: 'schemas' },
         ];
 

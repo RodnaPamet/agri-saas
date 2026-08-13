@@ -159,7 +159,9 @@ describe("StatusBadge adoption", () => {
     // 140 → 135 (GRC teardown phase 2, T1): the vendor-assessment,
     // vendor-template and framework-explorer surfaces took their
     // StatusBadge mounts with them.
-    expect(count).toBeGreaterThanOrEqual(135);
+    // 135 → 129 (T3): the GRC components (Inherited*Panel,
+    // TraceabilityPanel) went with the closure.
+    expect(count).toBeGreaterThanOrEqual(129);
   });
 });
 

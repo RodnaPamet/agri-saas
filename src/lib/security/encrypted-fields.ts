@@ -138,13 +138,6 @@ export const ENCRYPTED_FIELDS: Readonly<Record<string, readonly string[]>> = {
 
     // ─── Finding ───────────────────────────────────────
     //  Findings are audit artifacts — attacker value if leaked is high.
-    Finding: [
-        'description',
-        'rootCause',
-        'correctiveAction',
-        'analysis',
-        'verificationNotes',
-    ],
 
     // ─── Evidence / review ─────────────────────────────
     //  Evidence.content omitted — searched via EvidenceRepository.
@@ -155,13 +148,8 @@ export const ENCRYPTED_FIELDS: Readonly<Record<string, readonly string[]>> = {
     //  The high-value target (the policy body itself) lives on
     //  PolicyVersion; encrypting it defends the real secret without
     //  breaking the list-page search UX.
-    PolicyVersion: ['contentText', 'changeSummary'],
 
     // ─── Vendor ────────────────────────────────────────
-    Vendor: ['description'],
-    VendorDocument: ['notes'],
-    VendorAssessment: ['notes'],
-    VendorEvidenceBundle: ['description'],
 
     // ─── Tasks + comments ──────────────────────────────
     //  WorkItemRepository searches `title` + `key` only — `description`
@@ -188,14 +176,6 @@ export const ENCRYPTED_FIELDS: Readonly<Record<string, readonly string[]>> = {
     ParcelLease: ['lessorName', 'lessorEik'],
 
     // ─── Compliance audits (model: Audit, not AuditLog) ────
-    Audit: [
-        'auditScope',
-        'criteria',
-        'auditors',   // legacy free-text "names" column
-        'auditees',   // legacy free-text "names" column
-        'departments',
-    ],
-    AuditChecklistItem: ['prompt', 'notes', 'evidenceRef'],
 
     // ─── Epic G-4 access review campaigns ──────────────
     //  Both columns can carry sensitive reviewer rationale that

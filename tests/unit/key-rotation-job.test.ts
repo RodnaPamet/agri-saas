@@ -324,7 +324,7 @@ describe('runKeyRotation — v1 ciphertext re-encrypt', () => {
         expect(models.has('EvidenceReview')).toBe(false);
         // Finding (has tenantId) was probed + processed (0 rows, but
         // present in the per-field breakdown).
-        expect(models.has('Finding')).toBe(true);
+        expect(models.has('Task')).toBe(true);
     });
 });
 

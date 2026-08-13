@@ -502,69 +502,14 @@ describe('Evidence Expiry Monitor', () => {
 // 5. Vendor Renewal Check — DueItem Normalization Tests
 // ═════════════════════════════════════════════════════════════════════
 
-describe('Vendor Renewal Check — DueItem output', () => {
-    beforeEach(() => {
-        jest.clearAllMocks();
-        jest.resetModules();
-        jest.mock('@/lib/observability/logger', () => ({ logger: mockLogger }));
-        jest.mock('@/lib/observability/job-runner', () => ({
-            runJob: jest.fn(async (_name: string, fn: () => Promise<unknown>) => fn()),
-        }));
-    });
-
-    test('maps REVIEW_OVERDUE to OVERDUE urgency', async () => {
-        jest.mock('../../src/app-layer/services/vendor-renewals', () => ({
-            findDueVendorsAndEmitEvents: jest.fn().mockResolvedValue([
-                {
-                    id: 'v-1',
-                    tenantId: 't-1',
-                    name: 'CloudCorp',
-                    type: 'REVIEW_OVERDUE',
-                    dueDate: new Date('2026-04-10T00:00:00Z'),
-                },
-            ]),
-        }));
-
-        const { runVendorRenewalCheck } = await import('../../src/app-layer/jobs/vendor-renewal-check');
-        const { items } = await runVendorRenewalCheck({});
-
-        expect(items).toHaveLength(1);
-        expect(items[0].entityType).toBe('VENDOR');
-        expect(items[0].urgency).toBe('OVERDUE');
-        expect(items[0].reason).toContain('Vendor review overdue');
-    });
-
-    test('maps RENEWAL_DUE to UPCOMING urgency', async () => {
-        jest.mock('../../src/app-layer/services/vendor-renewals', () => ({
-            findDueVendorsAndEmitEvents: jest.fn().mockResolvedValue([
-                {
-                    id: 'v-2',
-                    tenantId: 't-1',
-                    name: 'SecureInc',
-                    type: 'RENEWAL_DUE',
-                    // Relative so the test stays in the UPCOMING bucket
-                    // (>7 days out) regardless of when it runs — a fixed
-                    // calendar date drifts into URGENT once today's date
-                    // is within 7 days of it.
-                    dueDate: new Date(Date.now() + 30 * 86_400_000),
-                },
-            ]),
-        }));
-
-        const { runVendorRenewalCheck } = await import('../../src/app-layer/jobs/vendor-renewal-check');
-        const { items, result } = await runVendorRenewalCheck({});
-
-        expect(items).toHaveLength(1);
-        expect(items[0].urgency).toBe('UPCOMING');
-        expect(items[0].reason).toContain('Contract renewal due');
-        expect(result.success).toBe(true);
-    });
-});
 
 // ═════════════════════════════════════════════════════════════════════
 // 6. Executor Registry — New Registrations
 // ═════════════════════════════════════════════════════════════════════
 
+// GRC teardown phase 2 (T3): the Vendor Renewal Check block went with
+// its job. Deadline + Evidence Expiry are the surviving monitors and
+// the registration block below still covers every registered one.
 describe('Monitor executor registrations', () => {
     beforeEach(() => {
         jest.resetModules();

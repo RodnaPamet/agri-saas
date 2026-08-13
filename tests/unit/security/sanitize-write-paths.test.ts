@@ -191,16 +191,7 @@ jest.mock('@/app-layer/usecases/task', () => ({
     addTaskComment: jest.requireActual('@/app-layer/usecases/task').addTaskComment,
 }));
 
-import { createPolicyVersion } from '@/app-layer/usecases/policy';
 import { addTaskComment } from '@/app-layer/usecases/task';
-import { createFinding, updateFinding } from '@/app-layer/usecases/finding';
-import {
-    createVendor,
-    updateVendor,
-    addVendorDocument,
-    decideVendorAssessment,
-} from '@/app-layer/usecases/vendor';
-import { createAudit, updateAudit } from '@/app-layer/usecases/audit';
 import { makeRequestContext } from '../../helpers/make-context';
 
 const ctx = makeRequestContext('ADMIN');
@@ -228,54 +219,6 @@ beforeEach(() => {
 // Epic C.5 — first-wave surfaces
 // ═══════════════════════════════════════════════════════════════════
 
-describe('createPolicyVersion sanitises HTML content before persisting', () => {
-    it('strips <script> from the contentText handed to the repository', async () => {
-        await createPolicyVersion(ctx, 'p1', {
-            contentType: 'HTML',
-            contentText:
-                '<h1>Policy</h1><script>alert("XSS")</script><p>OK</p>',
-            changeSummary: 'init',
-        });
-        const data = mockPolicyVersionCreate.mock.calls[0][3];
-        expect(data.contentText).toContain('<h1>Policy</h1>');
-        expect(data.contentText).toContain('<p>OK</p>');
-        expect(data.contentText).not.toMatch(/<script/i);
-        expect(data.contentText).not.toMatch(/alert\(/);
-    });
-
-    it('strips event handlers (onerror) from HTML before persisting', async () => {
-        await createPolicyVersion(ctx, 'p1', {
-            contentType: 'HTML',
-            contentText: '<img src="x" onerror="alert(1)" />',
-            changeSummary: '',
-        });
-        const data = mockPolicyVersionCreate.mock.calls[0][3];
-        expect(data.contentText).not.toMatch(/onerror=/i);
-    });
-
-    it('plain-text-strips MARKDOWN content (defence against embedded raw HTML)', async () => {
-        await createPolicyVersion(ctx, 'p1', {
-            contentType: 'MARKDOWN',
-            contentText: '# Heading\n\n<script>alert(1)</script>',
-            changeSummary: '',
-        });
-        const data = mockPolicyVersionCreate.mock.calls[0][3];
-        expect(data.contentText).not.toMatch(/<script/i);
-        expect(data.contentText).toContain('# Heading');
-    });
-
-    it('keeps EXTERNAL_LINK + null contentText untouched (no contentText on the wire)', async () => {
-        await createPolicyVersion(ctx, 'p1', {
-            contentType: 'EXTERNAL_LINK',
-            externalUrl: 'https://example.com',
-            changeSummary: '',
-        });
-        const data = mockPolicyVersionCreate.mock.calls[0][3];
-        // No contentText to sanitise — passthrough.
-        expect(data.contentText).toBeUndefined();
-        expect(data.externalUrl).toBe('https://example.com');
-    });
-});
 
 describe('addTaskComment sanitises the body before persisting', () => {
     it('strips <script> entirely', async () => {
@@ -305,38 +248,7 @@ describe('addTaskComment sanitises the body before persisting', () => {
 
 // ── finding.ts ────────────────────────────────────────────────────
 
-describe('finding.createFinding sanitises every free-text column', () => {
-    it('strips <script> from title, description, rootCause, correctiveAction, owner', async () => {
-        mockFindingCreate.mockResolvedValue({ id: 'f1', title: 'X', status: 'OPEN' });
-        await createFinding(ctx, {
-            severity: 'HIGH',
-            type: 'NONCONFORMITY',
-            title: `Title ${XSS}`,
-            description: `Desc ${XSS}`,
-            rootCause: `Root ${XSS}`,
-            correctiveAction: `Fix ${XSS}`,
-            owner: `Alice ${XSS}`,
-        });
-        const data = mockFindingCreate.mock.calls[0][2];
-        for (const k of ['title', 'description', 'rootCause', 'correctiveAction', 'owner']) {
-            expect(data[k]).not.toMatch(/<script/);
-        }
-        // Sanity — clean text survives.
-        expect(data.title).toContain('Title');
-    });
-});
 
-describe('finding.updateFinding sanitises only fields actually being written', () => {
-    it('sanitises verificationNotes when provided; leaves omitted fields as undefined', async () => {
-        mockFindingGetById.mockResolvedValue({ id: 'f1', status: 'OPEN' });
-        mockFindingUpdate.mockResolvedValue({ id: 'f1', status: 'OPEN' });
-        await updateFinding(ctx, 'f1', { verificationNotes: `V ${XSS}` });
-        const data = mockFindingUpdate.mock.calls[0][3];
-        expect(data.verificationNotes).not.toMatch(/<script/);
-        expect(data.title).toBeUndefined();
-        expect(data.description).toBeUndefined();
-    });
-});
 
 // ── risk.ts ───────────────────────────────────────────────────────
 
@@ -345,115 +257,15 @@ describe('finding.updateFinding sanitises only fields actually being written', (
 
 // ── vendor.ts ─────────────────────────────────────────────────────
 
-describe('vendor.createVendor sanitises every free-text column + tags', () => {
-    it('strips <script> from name, description, country, tags[]', async () => {
-        mockVendorCreate.mockResolvedValue({
-            id: 'v1', name: 'X', status: 'ACTIVE', criticality: 'LOW',
-        });
-        await createVendor(ctx, {
-            name: `Acme ${XSS}`,
-            description: `desc ${XSS}`,
-            country: `US ${XSS}`,
-            tags: [`prod ${XSS}`, 'safe-tag'],
-        });
-        const data = mockVendorCreate.mock.calls[0][2];
-        expect(data.name).not.toMatch(/<script/);
-        expect(data.description).not.toMatch(/<script/);
-        expect(data.country).not.toMatch(/<script/);
-        expect(data.tags[0]).not.toMatch(/<script/);
-        expect(data.tags[1]).toBe('safe-tag');
-    });
-});
 
-describe('vendor.updateVendor sanitises known free-text patch keys', () => {
-    it('strips <script> from description; enums and ids pass through untouched', async () => {
-        mockVendorUpdate.mockResolvedValue({ id: 'v1', name: 'X' });
-        mockVendorGetById.mockResolvedValue({ status: 'ACTIVE' });
-        await updateVendor(ctx, 'v1', {
-            description: `bad ${XSS}`,
-            criticality: 'HIGH', // enum — must NOT be sanitised
-            ownerUserId: 'user-9', // FK id — must NOT be sanitised
-            tags: ['t1', `t2 ${XSS}`],
-        });
-        const data = mockVendorUpdate.mock.calls[0][3];
-        expect(data.description).not.toMatch(/<script/);
-        expect(data.criticality).toBe('HIGH');
-        expect(data.ownerUserId).toBe('user-9');
-        expect(data.tags[1]).not.toMatch(/<script/);
-    });
-});
 
-describe('vendor.addVendorDocument sanitises title, externalUrl, notes', () => {
-    it('strips <script> from notes (encrypted) and title', async () => {
-        mockVendorDocCreate.mockResolvedValue({
-            id: 'd1', vendorId: 'v1', type: 'POLICY', title: 'X',
-        });
-        await addVendorDocument(ctx, 'v1', {
-            type: 'POLICY',
-            title: `T ${XSS}`,
-            notes: `Notes ${XSS}`,
-            externalUrl: 'https://example.com',
-        });
-        const data = mockVendorDocCreate.mock.calls[0][3];
-        expect(data.title).not.toMatch(/<script/);
-        expect(data.notes).not.toMatch(/<script/);
-    });
-});
 
-describe('vendor.decideVendorAssessment sanitises the notes argument', () => {
-    it('strips <script> before forwarding to the repository', async () => {
-        mockVendorAssessmentDecide.mockResolvedValue({ id: 'a1', vendorId: 'v1' });
-        await decideVendorAssessment(ctx, 'a1', 'APPROVED', `Looks good ${XSS}`);
-        const notes = mockVendorAssessmentDecide.mock.calls[0][4];
-        expect(notes).not.toMatch(/<script/);
-    });
-});
 
 // ── audit.ts ──────────────────────────────────────────────────────
 
-describe('audit.createAudit sanitises every encrypted free-text column', () => {
-    it('strips <script> from title, scope, criteria, auditors, auditees, departments', async () => {
-        mockAuditCreate.mockResolvedValue({ id: 'a1', title: 'X' });
-        await createAudit(ctx, {
-            title: `T ${XSS}`,
-            scope: `S ${XSS}`,
-            criteria: `C ${XSS}`,
-            auditors: `Alice ${XSS}`,
-            auditees: `Bob ${XSS}`,
-            departments: `IT ${XSS}`,
-        });
-        const data = mockAuditCreate.mock.calls[0][2];
-        for (const k of [
-            'title',
-            'auditScope',
-            'criteria',
-            'auditors',
-            'auditees',
-            'departments',
-        ]) {
-            expect(data[k]).not.toMatch(/<script/);
-        }
-    });
-});
-
-describe('audit.updateAudit sanitises top-level fields and per-checklist notes', () => {
-    it('strips <script> from updated criteria + checklist notes; enum result untouched', async () => {
-        mockAuditUpdate.mockResolvedValue({ id: 'a1' });
-        mockAuditChecklistUpdate.mockResolvedValue({ id: 'ci-1' });
-        await updateAudit(ctx, 'a1', {
-            criteria: `C ${XSS}`,
-            checklistUpdates: [
-                { id: 'ci-1', result: 'PASS', notes: `Item ${XSS}` },
-                { id: 'ci-2', result: 'FAIL' }, // no notes → no sanitisation
-            ],
-        });
-        const top = mockAuditUpdate.mock.calls[0][3];
-        expect(top.criteria).not.toMatch(/<script/);
-        const item = mockAuditChecklistUpdate.mock.calls[0][3];
-        expect(item.notes).not.toMatch(/<script/);
-        expect(item.result).toBe('PASS');
-        const item2 = mockAuditChecklistUpdate.mock.calls[1][3];
-        expect(item2.notes).toBeUndefined();
-        expect(item2.result).toBe('FAIL');
-    });
-});
+// GRC teardown phase 2 (T3): the policy / finding / vendor / audit
+// write-path cases went with their usecases. `addTaskComment` is the
+// surviving encrypted-free-text write path, and the DERIVED half of this
+// contract — tests/guardrails/sanitize-rich-text-coverage.test.ts, which
+// builds its inventory from ENCRYPTED_FIELDS rather than a hand-list — is
+// what keeps a NEW unsanitised write path from sliding in.
