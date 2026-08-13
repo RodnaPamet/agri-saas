@@ -41,6 +41,7 @@ import { render, screen, within } from '@testing-library/react';
 import enMessages from '../../messages/en.json';
 import { formatDate, formatDateTime } from '@/lib/format-date';
 
+import { costUncertainty, netWorthUncertainty } from '@/lib/grain/uncertainty';
 import { restoreViewport, setViewport } from './viewport';
 
 jest.mock('next/navigation', () => ({
@@ -89,6 +90,28 @@ import {
 
 const COPY = enMessages.grain.calculator;
 
+/**
+ * Applies the SAME derivations `calculator/page.tsx` applies.
+ *
+ * Those three fields moved server-side, so a fixture that hardcoded them
+ * would let a test set `unvaluedNoUnitCost: 2` and still assert against an
+ * EXACT headline — passing while production showed a bound. Deriving them
+ * here keeps the fixture a model of the server rather than a wish about
+ * it. An explicit override still wins, for the cases that mean to pin a
+ * state directly.
+ */
+function withServerDerived(
+    row: Omit<CalculatorRow, 'netUncertainty' | 'costUncertainty' | 'showProduceRent'> &
+        Partial<Pick<CalculatorRow, 'netUncertainty' | 'costUncertainty' | 'showProduceRent'>>,
+): CalculatorRow {
+    return {
+        ...row,
+        netUncertainty: row.netUncertainty ?? netWorthUncertainty(row),
+        costUncertainty: row.costUncertainty ?? costUncertainty(row),
+        showProduceRent: row.showProduceRent ?? row.rentCostProduceKg > 0,
+    };
+}
+
 function emptyExclusions(): CalculatorExclusions {
     return {
         plantingsMissingYieldEstimate: [],
@@ -114,7 +137,7 @@ function emptyExclusions(): CalculatorExclusions {
  *   net worth 24,250 − 5,500 = €18,750
  */
 function wheatRow(over: Partial<CalculatorRow> = {}): CalculatorRow {
-    return {
+    return withServerDerived({
         commodity: 'wheat',
         pricePerTonne: 250,
         priceCurrency: 'EUR',
@@ -127,45 +150,40 @@ function wheatRow(over: Partial<CalculatorRow> = {}): CalculatorRow {
 
         standingCropAreaHa: 12.5,
         standingCropExpectedKg: 60_000,
-        standingCropPlantingIds: ['planting-w1'],
         standingCropValue: 15_000,
 
         grainOnHandTonnes: 40,
-        grainOnHandLotIds: ['lot-w1'],
         grainOnHandValue: 10_000,
 
-        attributedCropCost: 4_000,
-        attributedCropCostCurrencies: ['EUR'],
-        attributedCropCostCurrencyMixed: false,
+        costBreakdown: [
+            { id: 'field', labelKey: 'costFieldLabel', value: 4_000, variant: 'brand' },
+            { id: 'rent', labelKey: 'costRentLabel', value: 0, variant: 'warning' },
+            { id: 'payroll', labelKey: 'costPayrollLabel', value: 1_500, variant: 'info' },
+        ],
 
-        rentCostMoneyAmount: 0,
         rentCostProduceKg: 3_000,
         rentCostProduceValue: 750,
 
-        payrollCost: 1_500,
-        payrollCostCurrencies: ['EUR'],
-        payrollCostCurrencyMixed: false,
         payrollAllocated: true,
 
         cashCostTotal: 5_500,
-        cashCostCurrencies: ['EUR'],
-        cashCostCurrencyMixed: false,
 
         unvaluedNoUnitCost: 0,
         unvaluedUnitMismatch: 0,
-
-        netAssetPosition: 24_250,
         netWorth: 18_750,
         netWorthUnavailableReason: null,
         netWorthUnavailableCode: null,
         netWorthUnavailableParams: null,
+
+        costCurrencyCodes: ['EUR'],
+        rentCurrencyUnknown: false,
         ...over,
-    };
+    });
 }
 
 /** Maize with no market price — the usecase's stated refusal. */
 function maizeRow(over: Partial<CalculatorRow> = {}): CalculatorRow {
-    return {
+    return withServerDerived({
         commodity: 'maize',
         pricePerTonne: null,
         priceCurrency: null,
@@ -174,40 +192,35 @@ function maizeRow(over: Partial<CalculatorRow> = {}): CalculatorRow {
 
         standingCropAreaHa: 8,
         standingCropExpectedKg: 32_000,
-        standingCropPlantingIds: ['planting-m1'],
         standingCropValue: null,
 
         grainOnHandTonnes: 0,
-        grainOnHandLotIds: [],
         grainOnHandValue: null,
 
-        attributedCropCost: 900,
-        attributedCropCostCurrencies: ['EUR'],
-        attributedCropCostCurrencyMixed: false,
+        costBreakdown: [
+            { id: 'field', labelKey: 'costFieldLabel', value: 900, variant: 'brand' },
+            { id: 'rent', labelKey: 'costRentLabel', value: 0, variant: 'warning' },
+            { id: 'payroll', labelKey: 'costPayrollLabel', value: 0, variant: 'info' },
+        ],
 
-        rentCostMoneyAmount: 0,
         rentCostProduceKg: 0,
         rentCostProduceValue: 0,
 
-        payrollCost: 0,
-        payrollCostCurrencies: [],
-        payrollCostCurrencyMixed: false,
         payrollAllocated: false,
 
         cashCostTotal: 900,
-        cashCostCurrencies: ['EUR'],
-        cashCostCurrencyMixed: false,
 
         unvaluedNoUnitCost: 0,
         unvaluedUnitMismatch: 0,
-
-        netAssetPosition: null,
         netWorth: null,
         netWorthUnavailableReason: 'No market price is available for maize.',
         netWorthUnavailableCode: 'NO_MARKET_PRICE',
         netWorthUnavailableParams: { commodity: 'maize' },
+
+        costCurrencyCodes: ['EUR'],
+        rentCurrencyUnknown: false,
         ...over,
-    };
+    });
 }
 
 function data(over: Partial<CalculatorData> = {}): CalculatorData {
@@ -613,12 +626,23 @@ describe('grain calculator — on a PHONE (setViewport("mobile"))', () => {
         // Money rent present ⇒ the usecase pushes UNKNOWN_RENT_CURRENCY into
         // cashCostCurrencies. Joining that array verbatim printed a farmer
         // "Costs in EUR, UNKNOWN".
+        //
+        // The sentinel no longer reaches this island at all: page.tsx
+        // filters it and hands over `costCurrencyCodes` plus a boolean, so
+        // the fixture states what the server would state. That IS the fix
+        // — the island cannot print a sentinel it is never given — and the
+        // assertion stays because the wording it guards is still ours.
         renderPage(
             data({
                 rows: [
                     wheatRow({
-                        rentCostMoneyAmount: 300,
-                        cashCostCurrencies: ['EUR', 'UNKNOWN'],
+                        costBreakdown: [
+                            { id: 'field', labelKey: 'costFieldLabel', value: 4_000, variant: 'brand' },
+                            { id: 'rent', labelKey: 'costRentLabel', value: 300, variant: 'warning' },
+                            { id: 'payroll', labelKey: 'costPayrollLabel', value: 1_500, variant: 'info' },
+                        ],
+                        costCurrencyCodes: ['EUR'],
+                        rentCurrencyUnknown: true,
                     }),
                 ],
             }),
@@ -636,7 +660,7 @@ describe('grain calculator — on a PHONE (setViewport("mobile"))', () => {
         // Bulgarian a preposition followed by a finite verb.
         renderPage(
             data({
-                rows: [wheatRow({ priceCurrency: null, cashCostCurrencies: [] })],
+                rows: [wheatRow({ priceCurrency: null, costCurrencyCodes: [] })],
             }),
         );
 
