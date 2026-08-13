@@ -103,11 +103,11 @@ import { formatDecimal } from '@/lib/number-format';
 import { formatDate, formatDateTime } from '@/lib/format-date';
 import {
     UNCERTAINTY,
-    costUncertainty,
     explainRefusal,
-    netWorthUncertainty,
+    type UncertaintyState,
 } from '@/lib/grain/uncertainty';
 import { GrainSectionNav } from '../GrainSectionNav';
+import { ExclusionsCard, SumLine } from './components';
 
 // ─── Serialised DTOs (mirror the grain-net-worth usecase output) ────
 
@@ -121,42 +121,58 @@ export interface CalculatorRow {
 
     standingCropAreaHa: number;
     standingCropExpectedKg: number;
-    standingCropPlantingIds: string[];
     standingCropValue: number | null;
 
     grainOnHandTonnes: number;
-    grainOnHandLotIds: string[];
     grainOnHandValue: number | null;
 
-    attributedCropCost: number;
-    attributedCropCostCurrencies: string[];
-    attributedCropCostCurrencyMixed: boolean;
-
-    rentCostMoneyAmount: number;
     rentCostProduceKg: number;
     rentCostProduceValue: number | null;
-
-    payrollCost: number;
-    payrollCostCurrencies: string[];
-    payrollCostCurrencyMixed: boolean;
     payrollAllocated: boolean;
-
     cashCostTotal: number;
-    cashCostCurrencies: string[];
-    cashCostCurrencyMixed: boolean;
 
-    // Consumptions the usecase could not price. They change no figure —
-    // `cashCostTotal` above is simply a FLOOR whenever either is non-zero.
+    // Rendered with their COUNTS by UnvaluedNote, so they stay data rather
+    // than collapsing into `costUncertainty` — the state says the cost is
+    // a floor, these say by how many records and why.
     unvaluedNoUnitCost: number;
     unvaluedUnitMismatch: number;
 
-    netAssetPosition: number | null;
     netWorth: number | null;
     /** English, authored by the usecase — the FALLBACK for an unknown code. */
     netWorthUnavailableReason: string | null;
     /** Machine-readable reason, translated client-side when recognised. */
     netWorthUnavailableCode: string | null;
     netWorthUnavailableParams: Record<string, string> | null;
+
+    // ── Decided server-side (see page.tsx) ──
+    //
+    // The row used to carry thirty fields shaped by what the USECASE
+    // computes, and this island assembled an answer out of them: it
+    // filtered the rent sentinel out of a currency list, worked out
+    // whether the cost was a floor, worked out whether the rent term
+    // belonged on screen. Those are decisions, and they are made where the
+    // data is now. What arrives is an answer to FORMAT.
+
+    /** Shared vocabulary — see `@/lib/grain/uncertainty`. */
+    netUncertainty: UncertaintyState;
+    costUncertainty: UncertaintyState;
+    /** Real ISO codes only; the internal rent sentinel is already gone. */
+    costCurrencyCodes: string[];
+    /** True when rent currency was the sentinel — stated in its own words. */
+    rentCurrencyUnknown: boolean;
+    /** Whether the rent-in-grain term is part of this farm's arithmetic. */
+    showProduceRent: boolean;
+    /** The cost's composition — which categories, in what order and tone. */
+    costBreakdown: CalculatorCostSlice[];
+}
+
+/** One labelled slice of the cost total, decided server-side. */
+export interface CalculatorCostSlice {
+    id: string;
+    /** i18n key under `grain.calculator` — the island resolves it. */
+    labelKey: string;
+    value: number;
+    variant: StatusBreakdownItem['variant'];
 }
 
 export type LotExclusion = { lotId: string; unitKey: string | null };
@@ -275,12 +291,6 @@ function UnvaluedNote({
     );
 }
 
-/** One exclusion entry rendered as a readable line. */
-function describeEntry(entry: ExclusionEntry): string {
-    if (typeof entry === 'string') return entry;
-    if ('lotId' in entry) return entry.unitKey ? `${entry.lotId} (${entry.unitKey})` : entry.lotId;
-    return `${entry.leaseId} — ${entry.reason}`;
-}
 
 export function CalculatorClient({ tenantSlug, data }: CalculatorClientProps) {
     const t = useTranslations('grainEnums');
@@ -472,11 +482,7 @@ export function CalculatorClient({ tenantSlug, data }: CalculatorClientProps) {
     // has no currency column). Split them: codes are listed, the sentinel is
     // said in words. Printing the array verbatim showed farmers "Costs in
     // UNKNOWN".
-    const costCurrencyCodes = row.cashCostCurrencies.filter(
-        (c) => c !== UNKNOWN_RENT_CURRENCY,
-    );
-    const rentCurrencyUnknown =
-        costCurrencyCodes.length !== row.cashCostCurrencies.length;
+    const { costCurrencyCodes, rentCurrencyUnknown } = row;
 
     // Both panels charge the SAME farm cost — see the module docblock.
     // The subtraction is gated on the usecase having CERTIFIED that the
@@ -484,7 +490,7 @@ export function CalculatorClient({ tenantSlug, data }: CalculatorClientProps) {
     // this page refuses too rather than inventing an exchange rate.
     // The uncertainty vocabulary, resolved once for this row and used the
     // same way wherever it appears — headline, cost line, table cell.
-    const netState = netWorthUncertainty(row);
+    const netState = row.netUncertainty;
     const refusalText = explainRefusal(
         row.netWorthUnavailableCode,
         row.netWorthUnavailableParams,
@@ -508,26 +514,12 @@ export function CalculatorClient({ tenantSlug, data }: CalculatorClientProps) {
     //      `role="progressbar"` when `typeof item.label === 'string'`, so
     //      passing a ReactNode to get formatted money would silently leave
     //      three progress bars with no accessible name.
-    const costItems: StatusBreakdownItem[] = [
-        {
-            id: 'field',
-            label: `${tc('costFieldLabel')} · ${money(row.attributedCropCost)}`,
-            value: row.attributedCropCost,
-            variant: 'brand',
-        },
-        {
-            id: 'rent',
-            label: `${tc('costRentLabel')} · ${money(row.rentCostMoneyAmount)}`,
-            value: row.rentCostMoneyAmount,
-            variant: 'warning',
-        },
-        {
-            id: 'payroll',
-            label: `${tc('costPayrollLabel')} · ${money(row.payrollCost)}`,
-            value: row.payrollCost,
-            variant: 'info',
-        },
-    ];
+    const costItems: StatusBreakdownItem[] = row.costBreakdown.map((slice) => ({
+        id: slice.id,
+        label: `${tc(slice.labelKey)} · ${money(slice.value)}`,
+        value: slice.value,
+        variant: slice.variant,
+    }));
 
     return (
         <div className="animate-fadeIn space-y-section">
@@ -600,7 +592,7 @@ export function CalculatorClient({ tenantSlug, data }: CalculatorClientProps) {
                             details={[`${formatDecimal(row.grainOnHandTonnes, 3)} ${tc('tonnesUnit')}`]}
                             amount={row.grainOnHandValue}
                         />
-                        {row.rentCostProduceKg > 0 && (
+                        {row.showProduceRent && (
                             // A TERM, not a footnote. netAssetPosition already
                             // subtracts it, so grain owed to a landlord is
                             // inside the headline whether or not it is drawn —
@@ -628,7 +620,7 @@ export function CalculatorClient({ tenantSlug, data }: CalculatorClientProps) {
                             // cause bounds the net the other way; see
                             // lib/grain/uncertainty.
                             bound={
-                                costUncertainty(row) === UNCERTAINTY.AT_LEAST
+                                row.costUncertainty === UNCERTAINTY.AT_LEAST
                                     ? 'atLeast'
                                     : undefined
                             }
@@ -844,151 +836,5 @@ export function CalculatorClient({ tenantSlug, data }: CalculatorClientProps) {
                 />
             </Card>
         </div>
-    );
-}
-
-// ─── One line of the sum ────────────────────────────────────────────
-
-interface SumLineProps {
-    /** Rendered before the amount so the column can be added by eye. */
-    sign: '+' | '−';
-    label: string;
-    /** EXPECTED / ACTUAL — the term's basis, not decoration. */
-    badge?: string;
-    /**
-     * The quantities behind the money (area, tonnes, kg) — a LIST, each
-     * rendered as its own node. Joining them into one string would make
-     * "125 dca" unfindable as a fact in its own right, by a test or by
-     * anything else reading the DOM.
-     */
-    details?: readonly string[];
-    amount: number | null;
-    /** Shown instead of the amount when the term exists but could not be priced. */
-    unavailableText?: string;
-    /**
-     * Wraps the amount in the shared bound phrasing when this term is not
-     * exact. `atLeast` is the only one a term ever carries — a floor cost.
-     * The matching `atMost` rides the RESULT, not a term.
-     */
-    bound?: 'atLeast';
-}
-
-/**
- * One term of `standing + onHand − produceRent − cost = netWorth`.
- *
- * The sign is rendered, not implied by colour or position, because the
- * whole point of the layout is that a reader can add the column
- * themselves and arrive at the figure below it. A minus that exists only
- * as red text is not a minus on a monochrome print-out or to anyone who
- * does not distinguish the hue.
- *
- * `−` is U+2212, not a hyphen: it is the character that aligns with the
- * `+` at the same optical weight in a tabular-nums column.
- */
-function SumLine({ sign, label, badge, details, amount, unavailableText, bound }: SumLineProps) {
-    const tc = useTranslations('grain.calculator');
-    const money = useExactMoneyFormatter();
-
-    return (
-        <div className="flex items-baseline justify-between gap-tight">
-            <dt className="flex flex-wrap items-baseline gap-tight text-content-muted">
-                <span>{label}</span>
-                {badge != null && (
-                    <Badge variant="outline" size="sm">
-                        {badge}
-                    </Badge>
-                )}
-                {details?.map((d) => (
-                    <span key={d} className="tabular-nums text-content-subtle">
-                        {d}
-                    </span>
-                ))}
-            </dt>
-            <dd className="font-medium tabular-nums text-content-emphasis">
-                {unavailableText != null ? (
-                    <span className="text-xs font-normal text-content-attention">
-                        {unavailableText}
-                    </span>
-                ) : amount == null ? (
-                    // The em-dash every formatter on this page already uses
-                    // for a null. Signing it would assert a direction for a
-                    // quantity we do not have.
-                    money(null)
-                ) : bound === 'atLeast' ? (
-                    tc('uncertaintyAtLeast', { value: `${sign}${money(amount)}` })
-                ) : (
-                    `${sign}${money(amount)}`
-                )}
-            </dd>
-        </div>
-    );
-}
-
-// ─── Exclusions ─────────────────────────────────────────────────────
-
-interface ExclusionsCardProps {
-    count: number;
-    classes: ReadonlyArray<{
-        key: keyof CalculatorExclusions;
-        labelKey: string;
-        entries: ReadonlyArray<ExclusionEntry>;
-    }>;
-}
-
-/**
- * The exclusion count is ALWAYS rendered, including when it is zero —
- * "0 records excluded" is a statement; an absent line is not. The
- * accordion is the "which ones" affordance the count is useless
- * without.
- */
-function ExclusionsCard({ count, classes }: ExclusionsCardProps) {
-    const tc = useTranslations('grain.calculator');
-
-    return (
-        <Card as="section" density="compact" className="space-y-default border-border-subtle">
-            <div className="flex flex-wrap items-baseline gap-default">
-                <Heading level={3} as="h2" tone="muted">
-                    {tc('exclusionsTitle')}
-                </Heading>
-                {/* PARTIAL, in the vocabulary's one treatment for it —
-                    the same badge the header wears when a read limit
-                    truncated the scan. The COUNT stays and is still
-                    rendered at zero: "0 records excluded" is a statement,
-                    an absent line is not. Folded in, not replaced. */}
-                {count > 0 && (
-                    <Badge variant="warning" size="sm">
-                        {tc('uncertaintyPartialBadge')}
-                    </Badge>
-                )}
-                <Badge variant={count > 0 ? 'attention' : 'neutral'} size="md">
-                    {tc('exclusionsCount', { count })}
-                </Badge>
-            </div>
-            {count === 0 ? (
-                <p className="text-xs text-content-muted">{tc('exclusionsNone')}</p>
-            ) : (
-                <>
-                    <p className="text-xs text-content-muted">{tc('exclusionsHint')}</p>
-                    <Accordion type="single" collapsible>
-                        {classes.map((cls) => (
-                            <AccordionItem key={cls.key} value={cls.key} density="compact">
-                                <AccordionTrigger size="sm">
-                                    <span className="text-left">
-                                        {tc(cls.labelKey)} ({cls.entries.length})
-                                    </span>
-                                </AccordionTrigger>
-                                <AccordionContent size="sm">
-                                    <ul className="space-y-tight pt-2 font-mono text-xs text-content-muted">
-                                        {cls.entries.map((entry, i) => (
-                                            <li key={`${cls.key}-${i}`}>{describeEntry(entry)}</li>
-                                        ))}
-                                    </ul>
-                                </AccordionContent>
-                            </AccordionItem>
-                        ))}
-                    </Accordion>
-                </>
-            )}
-        </Card>
     );
 }
