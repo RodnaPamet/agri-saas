@@ -54,6 +54,7 @@ import {
     type TrendSeries,
     groupSeriesByRegionUnit,
     selectPrimaryGroup,
+    chartSeriesFor,
     leadSeriesOf,
     buildMergedData,
     seriesKey,
@@ -328,9 +329,18 @@ export function PricesTab() {
     // RO, EL and EU — all EUR/t since Bulgaria's euro adoption — so wheat drew
     // four cards distinguished only by a region chip.
     const chartGroup = useMemo(() => selectPrimaryGroup(groups), [groups]);
+    // One card was not one line. EC publishes per market and the pull drops
+    // marketName, so a single BG/EUR/t group held twelve series in production
+    // — ten of them dead ends left behind by an EC stage rename.
+    const drawn = useMemo(() => (chartGroup ? chartSeriesFor(chartGroup) : []), [chartGroup]);
+    // Built from the DRAWN series, so the tile can only ever quote a line that
+    // is actually on screen.
     const headline = useMemo(
-        () => (chartGroup ? leadSeriesOf(chartGroup) : null),
-        [chartGroup],
+        () =>
+            chartGroup && drawn.length > 0
+                ? leadSeriesOf({ ...chartGroup, series: drawn })
+                : null,
+        [chartGroup, drawn],
     );
     const headlineLatest = headline ? latestPoint(headline) : null;
     const headlineDelta = headline ? weekOverWeekDelta(headline) : null;
@@ -589,13 +599,14 @@ export function PricesTab() {
                         )}
                     </div>
 
-                    {/* Exactly one chart — see selectPrimaryGroup. */}
-                    {chartGroup && (
+                    {/* Exactly one chart (selectPrimaryGroup), and for EC
+                        exactly one LINE in it (chartSeriesFor). */}
+                    {chartGroup && drawn.length > 0 && (
                         <UnitGroupChart
                             key={chartGroup.key}
                             unit={chartGroup.unit}
-                            merged={buildMergedData(chartGroup)}
-                            series={chartGroup.series}
+                            merged={buildMergedData({ ...chartGroup, series: drawn })}
+                            series={drawn}
                             colorIndex={colorIndex}
                             commodityLabel={t(`commodities.${shownCommodity}`)}
                         />
