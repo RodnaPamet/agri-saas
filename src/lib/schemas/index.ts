@@ -417,7 +417,20 @@ export const LinkAssetEvidenceSchema = z.object({
 });
 
 export const AddTaskLinkSchema = z.object({
-    entityType: z.enum(['PRACTICE', 'FRAMEWORK_REQUIREMENT', 'ASSET', 'POLICY', 'EVIDENCE', 'FILE', 'AUDIT_PACK', 'VENDOR']),
+    // Mirrors the Prisma `TaskLinkEntityType` enum, minus the GRC members
+    // deleted in the teardown (PRACTICE / FRAMEWORK_REQUIREMENT / POLICY /
+    // AUDIT_PACK / VENDOR).
+    //
+    // The four agri members are ADDED here, not merely kept: they exist in
+    // Prisma (enums.prisma) and `FarmTaskDetailClient` has been offering
+    // LOCATION / PARCEL / EQUIPMENT in its link picker — DEFAULTING to
+    // LOCATION — while this zod enum omitted all four. `withValidatedBody`
+    // calls `schema.parse`, so the farm-task manual-link form has been
+    // returning 400 on its own default selection. It went unnoticed because
+    // every AUTOMATIC link writer (farm-task.ts, field-operation.ts,
+    // crop-planning.ts) calls addTaskLink / TaskLinkRepository.link directly
+    // and never crosses this boundary.
+    entityType: z.enum(['ASSET', 'EVIDENCE', 'FILE', 'LOCATION', 'PARCEL', 'EQUIPMENT', 'PLANTING']),
     entityId: z.string().min(1),
     relation: z.enum(['RELATES_TO', 'EVIDENCE_FOR', 'BLOCKED_BY', 'CAUSED_BY', 'MITIGATED_BY']).optional(),
 }).strip().openapi('TaskLinkAddRequest', {

@@ -144,7 +144,7 @@ describe('Issue Schemas', () => {
 
     describe('AddIssueLinkSchema', () => {
         it('accepts valid link', () => {
-            const result = AddIssueLinkSchema.safeParse({ entityType: 'PRACTICE', entityId: 'ctrl-1' });
+            const result = AddIssueLinkSchema.safeParse({ entityType: 'LOCATION', entityId: 'loc-1' });
             expect(result.success).toBe(true);
         });
 
@@ -153,18 +153,18 @@ describe('Issue Schemas', () => {
             expect(result.success).toBe(false);
         });
 
-        it.each(['PRACTICE', 'ASSET', 'EVIDENCE', 'FILE'])('accepts entityType %s', (entityType) => {
+        it.each(['ASSET', 'EVIDENCE', 'FILE', 'LOCATION', 'PARCEL', 'EQUIPMENT', 'PLANTING'])('accepts entityType %s', (entityType) => {
             const result = AddIssueLinkSchema.safeParse({ entityType, entityId: 'id-1' });
             expect(result.success).toBe(true);
         });
 
         it.each(['RELATES_TO', 'CAUSED_BY', 'MITIGATED_BY', 'EVIDENCE_FOR'])('accepts relation %s', (relation) => {
-            const result = AddIssueLinkSchema.safeParse({ entityType: 'PRACTICE', entityId: '1', relation });
+            const result = AddIssueLinkSchema.safeParse({ entityType: 'LOCATION', entityId: '1', relation });
             expect(result.success).toBe(true);
         });
 
         it('requires entityId to be non-empty', () => {
-            const result = AddIssueLinkSchema.safeParse({ entityType: 'PRACTICE', entityId: '' });
+            const result = AddIssueLinkSchema.safeParse({ entityType: 'LOCATION', entityId: '' });
             expect(result.success).toBe(false);
         });
     });

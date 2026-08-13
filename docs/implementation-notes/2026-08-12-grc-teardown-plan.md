@@ -559,3 +559,43 @@ A second lesson rides along: the verification tier itself was the problem.
 minutes) and it is where teardown breakage was expected to land. It is a fine
 smoke test and a terrible completion check. The full suite is ~30 minutes;
 run it in the background and read it before claiming a tranche is done.
+
+### 8j. A20 PRE-FLIGHT (2026-08-13) — and a correction to the reasoning behind it
+
+§8h decided the evidence download gate is RE-BASED, not widened: READER /
+AUDITOR may download when `assetId ?? taskId ?? sourceLogEntryId` is non-null,
+instead of when `practiceId` is non-null.
+
+The T4 map justified that as costless with this claim:
+
+> "The only rows whose READER access CHANGES are practice-linked-but-otherwise-
+> unattached rows, which cannot exist after phase 2 anyway."
+
+**That reasoning is wrong, and it is worth keeping the correction visible.**
+Phase 2 deleted the code that CREATES such rows; it did not delete the rows.
+`Evidence.practiceId` is not dropped until phase 3, so any file a tenant had
+filed through the old evidence practice picker is still sitting there with
+`practiceId` set and no other provenance. Today a READER can download it;
+after the re-base they get a 403. Code deletion is not data deletion — the
+same conflation §8g had to correct once already.
+
+Measured rather than argued (`agrent`, read-only):
+
+```
+evidence_total          0
+with_practiceId         0
+AT_RISK_practice_only   0     -- practiceId set, no asset/task/logEntry
+reachable_after_rebase  0
+readers_or_auditors     0
+```
+
+So the at-risk set is empty — but note WHY. It is empty because this tenant
+holds no Evidence rows at all and has no READER/AUDITOR members, NOT because
+the row shape is impossible. On a stack with real evidence history the
+re-base would revoke access, and the count is the only thing that can tell
+you. **Re-run this predicate before applying A20 to any other environment**,
+and record the result in the PR body rather than asserting the set is empty.
+
+Auto-evidence rows were never at risk either way: `auto-evidence.ts:168-170`
+writes `sourceLogEntryId` alongside `practiceId`, so they satisfy the
+re-based gate. That is probably what produced the original false confidence.
