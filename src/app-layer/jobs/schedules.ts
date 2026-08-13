@@ -57,12 +57,6 @@ export interface ScheduleDefinition {
  */
 export const SCHEDULED_JOBS: ScheduleDefinition[] = [
     {
-        name: 'automation-runner',
-        pattern: '*/15 * * * *',  // every 15 minutes
-        description: 'Execute scheduled automation/integration checks for practices',
-        defaultPayload: {},
-    },
-    {
         name: 'promotion-lead-retention',
         pattern: '30 3 * * *',    // daily at 03:30 UTC
         description:
@@ -79,12 +73,6 @@ export const SCHEDULED_JOBS: ScheduleDefinition[] = [
         name: 'sharepoint-delta-sync-dispatch',
         pattern: '0 */4 * * *',   // every 4 hours
         description: 'Fan out a SharePoint delta sync per enabled connection (auto-import changed evidence files)',
-        defaultPayload: {},
-    },
-    {
-        name: 'sharepoint-subscription-renew',
-        pattern: '0 2 * * *',     // daily at 02:00 UTC
-        description: 'Renew active SharePoint policy Graph change-notification subscriptions before they expire',
         defaultPayload: {},
     },
     {
@@ -208,12 +196,6 @@ export const SCHEDULED_JOBS: ScheduleDefinition[] = [
         pattern: '0 3 * * *',     // daily at 03:00 UTC
         description: 'Purge soft-deleted records, expired evidence, and run retention sweep',
         defaultPayload: { dryRun: false },
-    },
-    {
-        name: 'policy-review-reminder',
-        pattern: '0 8 * * *',     // daily at 08:00 UTC
-        description: 'Find overdue policies and emit audit events / notifications',
-        defaultPayload: {},
     },
     {
         name: 'task-due-notification',

@@ -69,12 +69,14 @@ describe('B6 — Phase 3 useZodForm adoption', () => {
         // structure as practices: Overview, Tasks, Evidence, Mappings,
         // Traceability, Activity. (A seventh tab, Tests, was dropped in the
         // compliance uproot along with the test-plan feature it opened.)
+        // GRC teardown phase 2 (T2/A8): 'mappings' and 'traceability' were
+        // the compliance-era tabs and are gone. 'evidence' survives and is
+        // now UNGATED — the inherited-from-practices half went, but evidence
+        // attached directly to the asset is a farm record.
         const CANONICAL_TABS = [
             'overview',
             'tasks',
             'evidence',
-            'mappings',
-            'traceability',
             'activity',
         ] as const;
         // RQ2-4: Risks left the canonical 7-tab club — its IA is now

@@ -33,7 +33,6 @@ import type { TimeSeriesPoint } from '@/components/ui/charts';
 import { NewAssetModal } from './NewAssetModal';
 import { DeletedAssetsView } from './DeletedAssetsView';
 import { useTenantContext } from '@/lib/tenant-context-provider';
-import { hasComplianceModules } from '@/lib/modules';
 import type { StatusBadgeVariant } from '@/components/ui/status-badge';
 
 // B7 — status badge tone; IN_MAINTENANCE gets its own amber tone.
@@ -58,7 +57,6 @@ interface AssetsClientProps {
         manufacturer: string;
         owner: string;
         location: string;
-        practicesCol: string;
         noAssets: string;
         cancel: string;
         assetsRegistered: string;
@@ -85,11 +83,6 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
     // client-side `useTranslations('assets')` binding (`tm`).
     const tm = useTranslations('assets');
     const tGroups = useTranslations('common.filterGroups');
-    // Assets-exoskeleton — the compliance chrome (Practices + Risks link
-    // counts, the coverage shield) only renders for a tenant that runs a
-    // compliance module. A plain farm gets a clean register.
-    const { availableModules } = useTenantContext();
-    const showCompliance = hasComplianceModules(availableModules);
     // B2 — in-page Trash toggle (ADMIN-only; no navbar entry).
     const [showDeleted, setShowDeleted] = useState(false);
     // Modal-form follow-up — create-asset modal mounted off the list,
@@ -314,10 +307,9 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
             { id: 'owner', label: t.owner },
             { id: 'status', label: tm('status') },
             // Compliance-only link counts — hidden for a plain farm.
-            ...(showCompliance ? [{ id: 'practices', label: t.practicesCol }] : []),
             { id: 'tasks', label: tm('colTasks') },
         ],
-        [t, tm, showCompliance],
+        [t, tm],
     );
     const {
         columnVisibility,
@@ -396,20 +388,6 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
             },
             meta: { mobileCard: { slot: 'status', label: tm('status') } },
         },
-        // Compliance-only link counts (assets-exoskeleton): the asset↔risk
-        // and asset↔practice registers only mean something to a tenant running
-        // a compliance module. Gated out entirely for a plain farm.
-        ...(showCompliance
-            ? [
-                  {
-                      id: 'practices',
-                      header: t.practicesCol,
-                      accessorFn: (a: any) => a._count?.practices || 0,
-                      cell: ({ getValue }: any) => <span className="text-xs">{getValue()}</span>,
-                      meta: { mobileCard: { slot: 'meta' as const, label: t.practicesCol } },
-                  },
-              ]
-            : []),
         {
             // B7 — unified linked-task count (done/total), matching Practices.
             id: 'tasks',
@@ -431,7 +409,7 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
                 );
             },
         },
-    ]), [t, tm, showCompliance]);
+    ]), [t, tm]);
 
     // B2 — swap the whole surface into the Trash view. Placed after all
     // hooks so hook order stays stable.

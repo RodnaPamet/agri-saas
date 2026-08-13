@@ -59,3 +59,20 @@ export const EvidenceDetailDTOSchema = EvidenceListItemDTOSchema.extend({
 });
 
 export type EvidenceDetailDTO = z.infer<typeof EvidenceDetailDTOSchema>;
+
+// ─── Evidence link sub-shape ───
+//
+// Moved here from `practice.dto.ts` in GRC teardown phase 2. It describes a
+// user-attached URL / file reference on an evidence record — an evidence
+// shape that merely happened to LIVE in the practice DTO file, and the one
+// piece of it `EvidenceSubTable` (a surviving component) depends on.
+export const EvidenceLinkDTOSchema = z.object({
+    id: z.string(),
+    kind: z.string(),
+    fileId: z.string().nullable().optional(),
+    url: z.string().nullable().optional(),
+    note: z.string().nullable().optional(),
+    createdAt: z.string().optional(),
+    createdBy: UserRefShortSchema.nullable().optional(),
+}).passthrough();
+export type EvidenceLinkDTO = z.infer<typeof EvidenceLinkDTOSchema>;

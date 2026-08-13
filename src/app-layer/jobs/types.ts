@@ -220,7 +220,7 @@ export interface EvidenceExpiryMonitorPayload {
 export interface NotificationDispatchPayload {
     tenantId?: string;
     /** Which categories to dispatch. Default: all */
-    categories?: ('DEADLINE_DIGEST' | 'EVIDENCE_EXPIRY_DIGEST' | 'VENDOR_RENEWAL_DIGEST')[];
+    categories?: ('DEADLINE_DIGEST' | 'EVIDENCE_EXPIRY_DIGEST')[];
     /** Detection windows in days. Default: [30, 7, 1] */
     windows?: number[];
 }
@@ -702,13 +702,10 @@ export interface JobPayloadMap {
     'health-check': HealthCheckPayload;
     'embed-chunks': EmbedChunksPayload;
     'reindex-knowledge-article': ReindexKnowledgeArticlePayload;
-    'automation-runner': AutomationRunnerPayload;
     'daily-evidence-expiry': DailyEvidenceExpiryPayload;
     'data-lifecycle': DataLifecyclePayload;
-    'policy-review-reminder': PolicyReviewReminderPayload;
     'retention-sweep': RetentionSweepPayload;
     'promotion-lead-retention': PromotionLeadRetentionPayload;
-    'vendor-renewal-check': VendorRenewalCheckPayload;
     'deadline-monitor': DeadlineMonitorPayload;
     'evidence-expiry-monitor': EvidenceExpiryMonitorPayload;
     'evidence-stale-review-sweep': EvidenceStaleReviewSweepPayload;
@@ -728,8 +725,6 @@ export interface JobPayloadMap {
     'task-due-notification': TaskDueNotificationPayload;
     'sharepoint-delta-sync': SharePointDeltaSyncPayload;
     'sharepoint-delta-sync-dispatch': SharePointDeltaSyncDispatchPayload;
-    'sharepoint-policy-pull': SharePointPolicyPullPayload;
-    'sharepoint-subscription-renew': SharePointSubscriptionRenewPayload;
     'low-stock-monitor': LowStockMonitorPayload;
     'lease-expiry-sweep': LeaseExpirySweepPayload;
     'contract-delivery-window-sweep': ContractDeliveryWindowSweepPayload;
@@ -795,12 +790,6 @@ export const JOB_DEFAULTS: Record<JobName, {
         removeOnComplete: 200,
         removeOnFail: 500,
     },
-    'automation-runner': {
-        attempts: 3,
-        backoff: { type: 'exponential', delay: 5000 },
-        removeOnComplete: 500,
-        removeOnFail: 1000,
-    },
     'sla-monitor': {
         attempts: 2,
         backoff: { type: 'exponential', delay: 5000 },
@@ -837,12 +826,6 @@ export const JOB_DEFAULTS: Record<JobName, {
         removeOnComplete: 200,
         removeOnFail: 500,
     },
-    'policy-review-reminder': {
-        attempts: 2,
-        backoff: { type: 'exponential', delay: 5000 },
-        removeOnComplete: 200,
-        removeOnFail: 500,
-    },
     'access-review-reminder': {
         attempts: 2,
         backoff: { type: 'exponential', delay: 5000 },
@@ -870,18 +853,6 @@ export const JOB_DEFAULTS: Record<JobName, {
         removeOnFail: 500,
     },
     'sharepoint-delta-sync-dispatch': {
-        attempts: 1,
-        backoff: { type: 'fixed', delay: 0 },
-        removeOnComplete: 50,
-        removeOnFail: 200,
-    },
-    'sharepoint-policy-pull': {
-        attempts: 2,
-        backoff: { type: 'exponential', delay: 10000 },
-        removeOnComplete: 200,
-        removeOnFail: 500,
-    },
-    'sharepoint-subscription-renew': {
         attempts: 1,
         backoff: { type: 'fixed', delay: 0 },
         removeOnComplete: 50,
@@ -1001,12 +972,6 @@ export const JOB_DEFAULTS: Record<JobName, {
     // Same shape as retention-sweep: idempotent, so a retry is safe — expiry
     // only touches rows still live and purge only rows already past the grace.
     'promotion-lead-retention': {
-        attempts: 2,
-        backoff: { type: 'exponential', delay: 10000 },
-        removeOnComplete: 200,
-        removeOnFail: 500,
-    },
-    'vendor-renewal-check': {
         attempts: 2,
         backoff: { type: 'exponential', delay: 10000 },
         removeOnComplete: 200,

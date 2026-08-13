@@ -99,15 +99,14 @@ describe('Contract Drift — DTO integrity', () => {
     test('all DTO index barrel exports are stable', () => {
 
         const dtoIndex = require('../../src/lib/dto/index');
+        // GRC teardown phase 2: the practice / policy / vendor / framework
+        // / audit DTOs left the barrel with their models. The barrel-
+        // stability contract is unchanged for the surviving shapes.
         const expectedExports = [
-            'PracticeListItemDTOSchema', 'PracticeDetailDTOSchema',
-            'PolicyListItemDTOSchema', 'PolicyDetailDTOSchema',
             'TaskDTOSchema',
-            'VendorListItemDTOSchema', 'VendorDetailDTOSchema',
-            'FrameworkDTOSchema', 'RequirementDTOSchema',
-            'AuditDTOSchema',
             'AssetListItemDTOSchema', 'AssetDetailDTOSchema',
             'EvidenceListItemDTOSchema', 'EvidenceDetailDTOSchema',
+            'EvidenceLinkDTOSchema',
             'UserRefSchema', 'ApiErrorResponseSchema',
         ];
         for (const name of expectedExports) {

@@ -32,8 +32,6 @@ export type {
     UseKeyboardShortcutOptions,
 } from './use-keyboard-shortcut';
 
-export { usePractices, usePractice, useCreatePractice, useUpdatePractice, useDeletePractice } from './use-practices';
-export { usePolicies, usePolicy, useCreatePolicy, useUpdatePolicy, useDeletePolicy } from './use-policies';
 export { useTasks, useTask, useCreateTask, useUpdateTask, useDeleteTask } from './use-tasks';
 export { useAssets, useAsset, useCreateAsset, useUpdateAsset, useDeleteAsset } from './use-assets';
 export { useEvidence, useEvidenceItem, useCreateEvidence, useDeleteEvidence } from './use-evidence';

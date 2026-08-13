@@ -100,10 +100,8 @@ describe('BullMQ Queue — Constants', () => {
     test('JOB_DEFAULTS covers all job names', () => {
         const expectedJobs: Array<keyof JobPayloadMap> = [
             'health-check',
-            'automation-runner',
             'daily-evidence-expiry',
             'data-lifecycle',
-            'policy-review-reminder',
             'retention-sweep',
             'sync-pull',
         ];

@@ -325,23 +325,6 @@ executorRegistry.register('reindex-knowledge-article', async (payload) => {
     );
 });
 
-// ── automation-runner ────────────────────────────────────────────────
-
-executorRegistry.register('automation-runner', async (payload) => {
-    const startedAt = new Date().toISOString();
-    const startMs = performance.now();
-    const { runScheduledAutomations } = await import('./automation-runner');
-    const r = await runScheduledAutomations({
-        tenantId: payload.tenantId,
-        dryRun: payload.dryRun,
-    });
-    return makeResult(
-        'automation-runner', startedAt, startMs,
-        r.totalDue, r.executed, r.skipped,
-        { passed: r.passed, failed: r.failed, errors: r.errors, dryRun: r.dryRun },
-    );
-});
-
 // ── daily-evidence-expiry ────────────────────────────────────────────
 
 executorRegistry.register('daily-evidence-expiry', async (payload) => {
@@ -400,21 +383,6 @@ executorRegistry.register('data-lifecycle', async (payload) => {
         'data-lifecycle', startedAt, startMs,
         totalScanned, totalActioned, 0,
         { purgeResults, evidencePurge, retentionResults },
-    );
-});
-
-// ── policy-review-reminder ───────────────────────────────────────────
-
-executorRegistry.register('policy-review-reminder', async (payload) => {
-    const startedAt = new Date().toISOString();
-    const startMs = performance.now();
-    const { processOverdueReminders } = await import('./policyReviewReminder');
-    const { prisma } = await import('@/lib/prisma');
-    const r = await processOverdueReminders(prisma, { tenantId: payload.tenantId });
-    return makeResult(
-        'policy-review-reminder', startedAt, startMs,
-        r.processed, r.processed, 0,
-        { policies: r.policies },
     );
 });
 
@@ -560,14 +528,6 @@ executorRegistry.register('promotion-lead-retention', async (payload) => {
         r.expired + r.purged, r.expired, 0,
         { expired: r.expired, purged: r.purged, dryRun: r.dryRun },
     );
-});
-
-// ── vendor-renewal-check ─────────────────────────────────────────────
-
-executorRegistry.register('vendor-renewal-check', async (payload) => {
-    const { runVendorRenewalCheck } = await import('./vendor-renewal-check');
-    const { result } = await runVendorRenewalCheck({ tenantId: payload.tenantId });
-    return result;
 });
 
 // ── low-stock-monitor ────────────────────────────────────────────────
@@ -1019,31 +979,6 @@ executorRegistry.register('sharepoint-delta-sync-dispatch', async (payload) => {
     return makeResult('sharepoint-delta-sync-dispatch', startedAt, startMs, r.connections, r.dispatched, 0, {
         connections: r.connections,
         dispatched: r.dispatched,
-    });
-});
-
-// SP-4 — pull a changed policy from SharePoint (webhook-enqueued).
-executorRegistry.register('sharepoint-policy-pull', async (payload) => {
-    const startedAt = new Date().toISOString();
-    const startMs = performance.now();
-    const { runSharePointPolicyPull } = await import('./sharepoint-policy-jobs');
-    const r = await runSharePointPolicyPull(payload);
-    return makeResult('sharepoint-policy-pull', startedAt, startMs, 1, r.pulled ? 1 : 0, r.pulled ? 0 : 1, {
-        tenantId: payload.tenantId,
-        policyId: payload.policyId,
-        pulled: r.pulled,
-    });
-});
-
-// SP-4 — daily renewal of all active policy Graph subscriptions.
-executorRegistry.register('sharepoint-subscription-renew', async (payload) => {
-    const startedAt = new Date().toISOString();
-    const startMs = performance.now();
-    const { runSharePointSubscriptionRenew } = await import('./sharepoint-policy-jobs');
-    const r = await runSharePointSubscriptionRenew(payload);
-    return makeResult('sharepoint-subscription-renew', startedAt, startMs, r.subscriptions, r.renewed, 0, {
-        subscriptions: r.subscriptions,
-        renewed: r.renewed,
     });
 });
 

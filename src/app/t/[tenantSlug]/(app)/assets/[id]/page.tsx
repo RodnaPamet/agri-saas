@@ -30,16 +30,8 @@ import { EntityPrevNextNav } from '@/components/ui/entity-prev-next-nav';
 import { cardVariants } from '@/components/ui/card';
 import { cn } from '@/lib/cn';
 import { EditAssetModal } from '../EditAssetModal';
-import { InheritedEvidencePanel } from '@/components/InheritedEvidencePanel';
 import { AttachedEvidencePanel } from '@/components/AttachedEvidencePanel';
 import { Heading } from '@/components/ui/typography';
-import { InheritedMappingsPanel } from '@/components/InheritedMappingsPanel';
-import { hasComplianceModules } from '@/lib/modules';
-
-const TraceabilityPanel = dynamic(() => import('@/components/TraceabilityPanel'), {
-    loading: () => <SkeletonCard lines={3} />,
-    ssr: false,
-});
 
 // B7 — status badge tone. IN_MAINTENANCE previously fell into the `else`
 // and rendered green; it now gets its own amber tone.
@@ -56,13 +48,8 @@ export default function AssetDetailPage() {
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
     const triggerUndoToast = useToastWithUndo();
-    const { permissions, tenantSlug, availableModules } = useTenantContext();
+    const { permissions, tenantSlug } = useTenantContext();
     const assetId = params.id as string;
-    // Assets-exoskeleton — the GRC tabs (evidence / mappings / traceability /
-    // tests) only render for a tenant that runs a compliance module. A plain
-    // farm gets the clean Overview / Tasks / Activity trio.
-    const showCompliance = hasComplianceModules(availableModules);
-
     const [asset, setAsset] = useState<any>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
@@ -93,17 +80,16 @@ export default function AssetDetailPage() {
     const tabs: ReadonlyArray<{ key: Tab; label: string }> = [
         { key: 'overview', label: t('tabOverview') },
         { key: 'tasks', label: t('tabTasks') },
-        // UNGATED on purpose: Evidence / Mappings / Traceability below are
-        // compliance-era surfaces a plain farm hides, but every farm
-        // services its machines.
+        // UNGATED on purpose: every farm services its machines.
         { key: 'maintenance', label: t('tabMaintenance') },
-        ...(showCompliance
-            ? ([
-                  { key: 'evidence', label: t('tabEvidence') },
-                  { key: 'mappings', label: t('tabMappings') },
-                  { key: 'traceability', label: t('tabTraceability') },
-              ] as const)
-            : []),
+        // Evidence is UNGATED too as of the GRC teardown. The tab used to
+        // sit behind `showCompliance` because it stacked an inherited-from-
+        // practices panel under the attached-evidence one. The inherited
+        // half is gone; what remains is evidence attached directly to this
+        // asset (Evidence.assetId), which is a farm record — a plain farm
+        // should see it. Mappings and Traceability were the genuinely
+        // compliance-era tabs and are removed.
+        { key: 'evidence', label: t('tabEvidence') },
         { key: 'activity', label: t('tabActivity') },
     ];
     // Modal-form P2 — the inline-edit panel is replaced by an
@@ -347,15 +333,6 @@ export default function AssetDetailPage() {
                     />
                 </div>
             )}
-            {activeTab === 'traceability' && (
-                <TraceabilityPanel
-                    apiBase={apiUrl('')}
-                    entityType="asset"
-                    entityId={assetId}
-                    canWrite={permissions.canWrite}
-                    tenantHref={tenantHref}
-                />
-            )}
             {activeTab === 'evidence' && (
                 <div className="space-y-section">
                     <div className="space-y-default">
@@ -369,22 +346,7 @@ export default function AssetDetailPage() {
                             canWrite={permissions.canWrite}
                         />
                     </div>
-                    <div className="space-y-default">
-                        <Heading level={3}>{t('inheritedFromPractices')}</Heading>
-                        <InheritedEvidencePanel
-                            endpoint={apiUrl(`/assets/${assetId}/evidence`)}
-                            tenantHref={tenantHref}
-                            entityLabel="asset"
-                        />
-                    </div>
                 </div>
-            )}
-            {activeTab === 'mappings' && (
-                <InheritedMappingsPanel
-                    endpoint={apiUrl(`/assets/${assetId}/mappings`)}
-                    tenantHref={tenantHref}
-                    entityLabel="asset"
-                />
             )}
             {activeTab === 'activity' && (
                 <div className={cn(cardVariants({ density: 'none' }), 'overflow-hidden')} id="asset-activity-tab">

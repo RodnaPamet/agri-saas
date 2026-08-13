@@ -3,6 +3,10 @@
  */
 import { z } from '@/lib/openapi/zod';
 import { UserRefSchema, UserRefShortSchema } from './common';
+// EvidenceLinkDTO moved to evidence.dto.ts in GRC teardown phase 2
+// (it is an evidence shape that merely lived here). This file is
+// deleted in T3, so the import back is transitional.
+import { EvidenceLinkDTOSchema } from './evidence.dto';
 
 // ─── Practice List Item ───
 // Returned by PracticeRepository.list() → includes owner + _count
@@ -60,16 +64,8 @@ export const PracticeTaskDTOSchema = z.object({
 }).passthrough();
 export type PracticeTaskDTO = z.infer<typeof PracticeTaskDTOSchema>;
 
-export const EvidenceLinkDTOSchema = z.object({
-    id: z.string(),
-    kind: z.string(),
-    fileId: z.string().nullable().optional(),
-    url: z.string().nullable().optional(),
-    note: z.string().nullable().optional(),
-    createdAt: z.string().optional(),
-    createdBy: UserRefShortSchema.nullable().optional(),
-}).passthrough();
-export type EvidenceLinkDTO = z.infer<typeof EvidenceLinkDTOSchema>;
+// EvidenceLinkDTO moved to evidence.dto.ts in GRC teardown phase 2;
+// this file is deleted in T3, so the import is transitional.
 
 export const PolicyLinkDTOSchema = z.object({
     id: z.string(),

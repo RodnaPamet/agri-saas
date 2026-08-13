@@ -113,10 +113,16 @@ describe('Schedule: no duplicate monitor jobs', () => {
         expect(monitor).toBeUndefined();
     });
 
-    test('vendor-renewal-check is NOT independently scheduled', async () => {
+    test('vendor-renewal-check is gone entirely, not merely unscheduled', async () => {
+        // It used to be registered-but-unscheduled (fired via the digest
+        // fan-out). GRC teardown phase 2 removed the job with the Vendor
+        // model, so the stronger assertion is that neither registry knows
+        // the name at all.
         const { SCHEDULED_JOBS } = await import('../../src/app-layer/jobs/schedules');
-        const monitor = SCHEDULED_JOBS.find(j => j.name === 'vendor-renewal-check');
-        expect(monitor).toBeUndefined();
+        const names: string[] = SCHEDULED_JOBS.map((j) => j.name);
+        expect(names).not.toContain('vendor-renewal-check');
+        const { executorRegistry } = await import('../../src/app-layer/jobs/executor-registry');
+        expect(executorRegistry.has('vendor-renewal-check' as never)).toBe(false);
     });
 
     test('monitors remain registered in executor registry for ad-hoc use', async () => {
@@ -171,31 +177,21 @@ describe('notification-dispatch: precomputed items skip scanners', () => {
         expect(dispatch.scanSource.evidence).toBe('precomputed');
     });
 
-    test('precomputed vendor items skip vendor-renewal-check scan', async () => {
-        const { runNotificationDispatch } = await import(
-            '../../src/app-layer/jobs/notification-dispatch'
-        );
-
-        const { dispatch } = await runNotificationDispatch({
-            categories: ['VENDOR_RENEWAL_DIGEST'],
-            precomputed: { vendorItems: [] },
-        });
-
-        expect(dispatch.scanSource.vendors).toBe('precomputed');
-    });
-
     test('without precomputed items, scanSource is "scanned"', async () => {
         const { runNotificationDispatch } = await import(
             '../../src/app-layer/jobs/notification-dispatch'
         );
 
         const { dispatch } = await runNotificationDispatch({
-            categories: ['DEADLINE_DIGEST', 'EVIDENCE_EXPIRY_DIGEST', 'VENDOR_RENEWAL_DIGEST'],
+            categories: ['DEADLINE_DIGEST', 'EVIDENCE_EXPIRY_DIGEST'],
         });
 
+        // GRC teardown phase 2 removed the VENDOR_RENEWAL_DIGEST category
+        // with the Vendor model, so the precomputed-vendor-items case went
+        // with it. The precomputed-vs-scanned contract is still covered by
+        // the two surviving sources.
         expect(dispatch.scanSource.deadlines).toBe('scanned');
         expect(dispatch.scanSource.evidence).toBe('scanned');
-        expect(dispatch.scanSource.vendors).toBe('scanned');
     });
 });
 

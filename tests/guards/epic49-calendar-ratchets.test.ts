@@ -145,10 +145,13 @@ describe('Epic 49 — calendar feature wiring', () => {
         expect(src).toMatch(/scanFindings/);
     });
 
-    it('the orchestrator wires the calendar monitor into DEADLINE_DIGEST', () => {
+    it('the orchestrator scans deadlines through runDeadlineMonitor', () => {
+        // GRC teardown phase 2: the calendar-deadlines monitor scanned
+        // AuditCycle / VendorDocument / Finding — all three KILL — so the
+        // DEADLINE_DIGEST fan-out collapsed to the one surviving scanner.
         const src = read('src/app-layer/jobs/notification-dispatch.ts');
-        expect(src).toMatch(/calendar-deadlines/);
-        expect(src).toMatch(/runCalendarDeadlineMonitor/);
+        expect(src).toMatch(/runDeadlineMonitor/);
+        expect(src).not.toMatch(/runCalendarDeadlineMonitor/);
     });
 
     it('the upcoming-count helper is bounded by MAX_BADGE_COUNT (cap = 99)', () => {

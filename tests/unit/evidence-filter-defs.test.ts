@@ -9,7 +9,6 @@ import {
 } from '../../src/components/ui/filter/filter-state';
 import {
     buildEvidenceFilters,
-    practiceOptionsFromPractices,
     EVIDENCE_FILTER_KEYS,
     EVIDENCE_STATUS_LABELS,
     EVIDENCE_TYPE_LABELS,
@@ -23,8 +22,10 @@ describe('Evidence filter config', () => {
         // when evidence folders shipped. The API GET route +
         // EvidenceListFilters + repository where-builder all honour
         // `folder` end-to-end (see b8-followup-evidence-folders ratchet).
+        // GRC teardown phase 2 removed the `practiceId` facet with the
+        // Practice model.
         expect([...EVIDENCE_FILTER_KEYS].sort()).toEqual(
-            ['practiceId', 'folder', 'status', 'type'].sort(),
+            ['folder', 'status', 'type'].sort(),
         );
     });
 
@@ -41,12 +42,6 @@ describe('Evidence filter config', () => {
         );
     });
 
-    it('practiceId is an entity-ref filter (async options, shouldFilter=true)', () => {
-        const practice = evidenceFilterDefs.getFilter('practiceId');
-        expect(practice.options).toBeNull();
-        expect(practice.shouldFilter).toBe(true);
-    });
-
     it('every filter carries group + clearable reset behaviour', () => {
         for (const f of evidenceFilterDefs.filters) {
             expect(f.group).toBeDefined();
@@ -55,52 +50,40 @@ describe('Evidence filter config', () => {
     });
 });
 
-describe('practiceOptionsFromPractices', () => {
-    it('builds a label with the code prefix and a short display label', () => {
-        const opts = practiceOptionsFromPractices([
-            { id: 'c1', name: 'Information Classification', code: 'A.5.12' },
-            { id: 'c2', name: 'Custom policy', code: 'CUST-1' },
-            { id: 'c3', name: 'No prefix' },
-        ]);
-        expect(opts[0].label).toBe('A.5.12: Information Classification');
-        expect(opts[0].displayLabel).toBe('A.5.12');
-        expect(opts.find((o) => o.value === 'c2')?.displayLabel).toBe('CUST-1');
-        expect(opts.find((o) => o.value === 'c3')?.label).toBe('No prefix');
-    });
-
-    it('dedupes by id and sorts alphabetically', () => {
-        const opts = practiceOptionsFromPractices([
-            { id: 'zz', name: 'Zulu', code: 'Z.1' },
-            { id: 'aa', name: 'Alpha', code: 'A.1' },
-            { id: 'aa', name: 'Alpha duplicate', code: 'A.1' },
-        ]);
-        expect(opts.map((o) => o.value)).toEqual(['aa', 'zz']);
-    });
-});
-
 describe('buildEvidenceFilters', () => {
-    it('injects practice options without mutating the static defs', () => {
+    it('injects folder options without mutating the static defs', () => {
+        // Folder is the one facet whose options are still derived at render
+        // time; `practiceId` went with the Practice model. The
+        // no-mutation half of this assertion is the part worth keeping —
+        // the builder must return a NEW array, or a second call would
+        // accumulate options.
         const live = buildEvidenceFilters([
-            { id: 'c1', name: 'ISMS Scope', code: 'A.4.3' },
+            { folder: 'Sprays 2026' },
+            { folder: 'Sprays 2026' },
+            { folder: null },
         ]);
-        const practice = live.find((f) => f.key === 'practiceId');
-        expect(practice?.options).toHaveLength(1);
+        const folder = live.find((f) => f.key === 'folder');
+        // 'Sprays 2026' deduped, plus the __none__ pseudo-bucket.
+        expect(folder?.options).toHaveLength(2);
         // Static defs still null — a new array was constructed.
-        expect(evidenceFilterDefs.getFilter('practiceId').options).toBeNull();
+        expect(evidenceFilterDefs.getFilter('folder').options).toBeNull();
     });
 });
 
 describe('Evidence URL round-trip', () => {
     it('roundtrips filter state → URL → state', () => {
+        // `practiceId` left the managed key set with the Practice model;
+        // `folder` keeps the multi-value round-trip covered, which is the
+        // part of this test that actually exercises the comma-join.
         const initial: FilterState = {
             type: ['FILE'],
             status: ['APPROVED', 'SUBMITTED'],
-            practiceId: ['c1', 'c2'],
+            folder: ['Sprays 2026', 'Harvest 2026'],
         };
         const params = filterStateToUrlParams(initial);
         expect(params.get('type')).toBe('FILE');
         expect(params.get('status')).toBe('APPROVED,SUBMITTED');
-        expect(params.get('practiceId')).toBe('c1,c2');
+        expect(params.get('folder')).toBe('Sprays 2026,Harvest 2026');
 
         const parsed = parseUrlToFilterState(params, EVIDENCE_FILTER_KEYS);
         expect(parsed).toEqual(initial);

@@ -24,8 +24,6 @@
         "db:reset": "prisma migrate reset --force && tsx prisma/seed.ts",
         "db:bootstrap-owners": "tsx scripts/bootstrap-tenant-owners.ts",
         "db:backfill-org-widgets": "tsx scripts/backfill-org-dashboard-widgets.ts",
-        "framework:import": "tsx scripts/framework-import.ts",
-        "schemes:import": "tsx scripts/import-schemes.ts",
         "import:units": "tsx scripts/import-units.ts",
         "validate:geometries": "tsx scripts/validate-parcel-geometries.ts",
         "import:knowledge": "tsx scripts/import-knowledge.ts",

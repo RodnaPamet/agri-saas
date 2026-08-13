@@ -205,15 +205,11 @@ export const BARE_ROUTE_EXEMPTIONS: ReadonlyArray<BareRouteExemption> = [
             'constructWebhookEvent signature check; returns 200 on ' +
             'processing failure to avoid Stripe retry storms.',
     },
-    {
-        file: 'webhooks/sharepoint/route.ts',
-        category: 'external_webhook',
-        reason:
-            'SP-4 Microsoft Graph change-notification receiver. Returns the ' +
-            'validationToken as text/plain on the subscription handshake and ' +
-            '200 on notifications (Graph retries otherwise); verifies clientState ' +
-            'against policy.spSubscriptionId before enqueuing a pull.',
-    },
+    // The SP-4 Microsoft Graph change-notification receiver
+    // (webhooks/sharepoint/route.ts) was deleted in GRC teardown phase 2 —
+    // it verified clientState against `policy.spSubscriptionId` and enqueued
+    // a policy pull, so it went with the POLICY half of the SharePoint
+    // integration. The evidence delta-sync routes are untouched.
     {
         file: 'storage/av-webhook/route.ts',
         category: 'external_webhook',
