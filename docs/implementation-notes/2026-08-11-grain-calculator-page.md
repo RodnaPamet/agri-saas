@@ -27,23 +27,44 @@ plus a second place to forget.
 PageHeader        eyebrow = the METRIC NAME, meta = "Priced <when>"
 GrainSectionNav
 ToggleGroup       commodity selector (only when >1 commodity)
-HeroMetric card   THE ANSWER — net worth, or the stated refusal
+ONE card          THE ANSWER, as the sum that produces it:
+                    + standing crop value   (EXPECTED)
+                    + grain on hand value   (ACTUAL)
+                    − rent paid in grain    (omitted at zero)
+                    − total farm cost       (+ breakdown, badges, notes)
+                    = net worth             (KPIStat, or the refusal)
                   + price / observed-at / currency basis / source
-two ValuePanels   standing crop (EXPECTED) | grain on hand (ACTUAL)
-sharedCostNote    why the two panel nets cannot be added
 ExclusionsCard    a count that is ALWAYS rendered + an accordion of ids
-DataTable         every commodity, five money columns, the appendix
+DataTable         every commodity the farm HAS, five money columns
 ```
 
-### The cost side is shared, not split
+> **SUPERSEDED 2026-08-13.** The two-`ValuePanel` layout below, and the
+> `sharedCostNote` that propped it up, are gone. See
+> `2026-08-13-grain-calculator-one-answer.md`. The section is kept because
+> the reasoning that produced it is still correct about the *usecase* — it
+> was the LAYOUT drawn from it that was wrong.
+
+### The cost side is shared, not split — and the layout now says so
 
 The usecase attributes cost per COMMODITY, not per "growing vs stored".
-Both panels therefore charge the SAME `cashCostTotal`, and the page says
-so in `sharedCostNote`: the two nets cannot be added, and the combined
-authoritative figure is the `HeroMetric` above. The alternative was to
-invent a split — apportion cost between standing and stored by tonnage or
-by value — which would have produced two numbers that *look* addable and
-are not derived from anything the usecase measured.
+Refusing to invent a split was right: apportioning cost between standing
+and stored by tonnage or by value would have produced two numbers that
+*look* addable and are derived from nothing the usecase measured.
+
+What was wrong was drawing that shared cost TWICE. Both panels charged the
+same `cashCostTotal` and each ended in a net line, which is the universal
+idiom for "these sum" — and `sharedCostNote` was a sentence asking the
+reader to disbelieve the layout. A prose disclaimer cannot beat a layout.
+
+Each of those nets was also meaningless in its own right: the whole farm
+cost subtracted from one asset. Neither was a quantity anyone could act on.
+
+The page now draws the arithmetic the usecase actually performs, and it
+composes term for term because `netAssetPosition` is exactly
+`standing + onHand − rentCostProduceValue`. One cost, stated once; one
+net, stated once. The rent-in-grain term was the quiet casualty of the old
+shape — a real subtraction inside the headline that appeared only as a
+footnote under a panel's cost breakdown.
 
 ### Refusals are stated, never blanked
 
@@ -52,9 +73,8 @@ blank or zero is the failure mode this metric is most exposed to:
 
 - `netWorth === null` → em-dash in `attention` tone, the refusal named in
   the `HeroMetric` description, and the usecase's own reason sentence
-  printed verbatim underneath. Both panels drop their net line for the
-  same reason, gated on the same `netWorth != null` certification rather
-  than re-deciding locally whether the currencies combine.
+  printed verbatim underneath. (Post-2026-08-13: the sum's result line
+  carries the em-dash; there are no panel nets left to drop.)
 - `payrollAllocated` → an "Allocated" badge and a sentence, so an
   allocation by area share is never read as a measurement.
 - exclusions → a visible count *even at zero* ("0 records excluded" is a
@@ -71,7 +91,7 @@ a missing one.
 | File | Role |
 | --- | --- |
 | `src/app/t/[tenantSlug]/(app)/grain/calculator/page.tsx` | Server Component — tenant ctx → usecase → serialised payload |
-| `src/app/t/[tenantSlug]/(app)/grain/calculator/CalculatorClient.tsx` | Client island — DTOs, layout, the two panels, exclusions, table |
+| `src/app/t/[tenantSlug]/(app)/grain/calculator/CalculatorClient.tsx` | Client island — DTOs, layout, the sum, exclusions, table |
 | `src/lib/format-currency.ts` | Gains `formatExactCurrency` — the to-the-cent sibling of `formatCompactCurrency` |
 | `src/lib/tenant-context-provider.tsx` | Gains `useExactMoneyFormatter()` — its tenant-bound hook |
 | `src/app/t/[tenantSlug]/(app)/grain/costs/CostsClient.tsx` | Migrated off its local `useCostFormatter` onto the shared hook |

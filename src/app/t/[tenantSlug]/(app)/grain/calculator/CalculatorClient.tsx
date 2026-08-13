@@ -23,25 +23,42 @@
  * different cost numbers must be able to tell why without guessing that
  * one of them is broken.
  *
- * ── The two panels ──────────────────────────────────────────────────
+ * ── One sum, read down a column ─────────────────────────────────────
  *
- * Standing crop (EXPECTED — planned yield × area × today's price) and
- * grain on hand (ACTUAL — what is physically in a store, converted to
- * tonnes from each lot's own unit). Stacked on a phone, side by side
- * from `sm` up.
+ * The page used to render two side-by-side panels — standing crop
+ * (EXPECTED) and grain on hand (ACTUAL) — each ending in its own net
+ * line, plus a sentence explaining that the two nets could not be
+ * added. They could not, because the usecase attributes cost per
+ * COMMODITY rather than per growing-vs-stored, so BOTH panels charged
+ * the same `cashCostTotal`: each "net" was the whole farm cost taken off
+ * one asset, a quantity nobody can act on.
  *
- * The cost side is NOT split between them: the usecase attributes cost
- * per COMMODITY, not per "growing vs stored". Rather than invent a
- * split, both panels charge the SAME `cashCostTotal` and the page says
- * so — `sharedCostNote` states plainly that the two nets cannot be
- * added, and the combined, authoritative figure is `row.netWorth` in
- * the summary card above.
+ * Two panels each ending in a total is the universal idiom for "these
+ * sum". A prose disclaimer cannot beat a layout, so the layout changed.
+ *
+ * What replaced it is the arithmetic the usecase actually performs,
+ * written out — because it composes exactly, term for term:
+ *
+ *     + standing crop value        (expected)
+ *     + grain on hand value        (actual)
+ *     − rent paid in grain         (netAssetPosition)
+ *     − total farm cost
+ *     = net worth
+ *
+ * The third line is the one the old layout lost. `netAssetPosition` is
+ * `standing + onHand − rentCostProduceValue`, so grain owed to a
+ * landlord is already subtracted inside the headline — yet it appeared
+ * only as a footnote under a panel's cost breakdown, which put a term of
+ * the sum somewhere the sum could not be read. It is a line now.
+ *
+ * One cost, stated once. One net, stated once.
  *
  * ── Where the refusals show up ──────────────────────────────────────
  *
  *   • `netWorth === null` → the summary card renders
  *     `netWorthUnavailableReason` (a stated refusal — never a blank or
- *     a zero), and both panels drop their net line for the same reason.
+ *     a zero), and the sum's result line carries the em-dash instead of
+ *     a figure.
  *     The reason string is authored server-side and is English today;
  *     it is surfaced verbatim rather than dropped, because a missing
  *     explanation is worse than an untranslated one.
@@ -455,15 +472,9 @@ export function CalculatorClient({ tenantSlug, data }: CalculatorClientProps) {
     // The subtraction is gated on the usecase having CERTIFIED that the
     // currencies are combinable (`netWorth != null`); when it refused,
     // this page refuses too rather than inventing an exchange rate.
-    const netCertified = row.netWorth != null;
-    const standingNet =
-        netCertified && row.standingCropValue != null
-            ? row.standingCropValue - row.cashCostTotal
-            : null;
-    const onHandNet =
-        netCertified && row.grainOnHandValue != null
-            ? row.grainOnHandValue - row.cashCostTotal
-            : null;
+    // No per-asset net is derived here any more. Both used to subtract the
+    // WHOLE farm cost from ONE asset — the arithmetic the removed panels
+    // displayed — and neither was a quantity anyone could act on.
 
     // The money is folded into the LABEL, and `showCount` is turned off at
     // the mount below. Two reasons, both load-bearing:
@@ -541,15 +552,109 @@ export function CalculatorClient({ tenantSlug, data }: CalculatorClientProps) {
                     long refusal sentence AS the value would render it at
                     display size, and a refusal shouted large is not more
                     honest than one stated at 14px. */}
-                <KPIStat
-                    size="md"
-                    value={row.netWorth != null ? money(row.netWorth) : '—'}
-                    label={tc('netWorthLabel')}
-                    tone={row.netWorth != null ? 'default' : 'attention'}
-                    description={
-                        row.netWorth == null ? tc('netWorthUnavailableTitle') : undefined
-                    }
-                />
+                {/* The sum, read down a column. Grouped so the terms and
+                    the result they produce are one thing to a screen
+                    reader — and so a test can assert that exactly one net
+                    figure is claimed here, separately from the appendix
+                    table's "Net worth" column header below. */}
+                <div
+                    role="group"
+                    aria-label={tc('waterfallAria')}
+                    className="space-y-default"
+                >
+                    <dl className="space-y-tight text-sm">
+                        <SumLine
+                            sign="+"
+                            label={tc('panelStandingTitle')}
+                            badge={tc('panelStandingSubtitle')}
+                            details={[
+                                `${formatDecimal(areaDca, 1)} ${tc('areaUnit')}`,
+                                `${formatDecimal(expectedTonnes, 2)} ${tc('tonnesUnit')}`,
+                            ]}
+                            amount={row.standingCropValue}
+                        />
+                        <SumLine
+                            sign="+"
+                            label={tc('panelOnHandTitle')}
+                            badge={tc('panelOnHandSubtitle')}
+                            details={[`${formatDecimal(row.grainOnHandTonnes, 3)} ${tc('tonnesUnit')}`]}
+                            amount={row.grainOnHandValue}
+                        />
+                        {row.rentCostProduceKg > 0 && (
+                            // A TERM, not a footnote. netAssetPosition already
+                            // subtracts it, so grain owed to a landlord is
+                            // inside the headline whether or not it is drawn —
+                            // and it was not. Omitted entirely at zero: a line
+                            // reading "− €0" states a term this farm does not
+                            // have.
+                            <SumLine
+                                sign="−"
+                                label={tc('produceRentLabel')}
+                                details={[`${formatDecimal(row.rentCostProduceKg, 0)} ${tc('kgUnit')}`]}
+                                amount={row.rentCostProduceValue}
+                                unavailableText={
+                                    row.rentCostProduceValue == null
+                                        ? tc('produceRentUnpriced')
+                                        : undefined
+                                }
+                            />
+                        )}
+                        <SumLine
+                            sign="−"
+                            label={tc('costTotalLabel')}
+                            amount={row.cashCostTotal}
+                        />
+                    </dl>
+
+                    {/* The cost's composition sits under the cost line it
+                        decomposes — one cost on the page means one place
+                        for everything that qualifies it. */}
+                    <div className="space-y-tight">
+                        <p className="text-xs uppercase tracking-wide text-content-subtle">
+                            {tc('costBreakdownLabel')}
+                        </p>
+                        <StatusBreakdown
+                            size="sm"
+                            ariaLabel={tc('costBreakdownAria')}
+                            items={costItems}
+                            // OFF, and deliberately: the count slot renders the
+                            // raw number with no currency. The amount is in the
+                            // label instead — see the costItems comment.
+                            showCount={false}
+                            showPercent
+                        />
+                        {row.payrollAllocated && (
+                            // An allocation is not a measurement. Said twice —
+                            // badge for the skim, sentence for the reader.
+                            <div className="space-y-tight">
+                                <Badge variant="warning" size="sm">
+                                    {tc('payrollAllocatedBadge')}
+                                </Badge>
+                                <p className="text-xs text-content-muted">
+                                    {tc('payrollAllocatedNote')}
+                                </p>
+                            </div>
+                        )}
+                        <UnvaluedNote
+                            noUnitCost={row.unvaluedNoUnitCost}
+                            unitMismatch={row.unvaluedUnitMismatch}
+                        />
+                    </div>
+
+                    <div className="border-t border-border-subtle pt-2">
+                        <KPIStat
+                            size="md"
+                            value={row.netWorth != null ? money(row.netWorth) : '—'}
+                            label={tc('netWorthLabel')}
+                            tone={row.netWorth != null ? 'default' : 'attention'}
+                            description={
+                                row.netWorth == null
+                                    ? tc('netWorthUnavailableTitle')
+                                    : undefined
+                            }
+                        />
+                    </div>
+                </div>
                 {row.netWorthUnavailableReason != null && (
                     // A refusal is stated, never blanked. The sentence is
                     // authored by the usecase so the page cannot drift from
@@ -614,37 +719,6 @@ export function CalculatorClient({ tenantSlug, data }: CalculatorClientProps) {
                 </div>
             </Card>
 
-            {/* ── The two panels: expected beside actual ──
-                Stacked on a phone (the operator's real device), side by
-                side from `sm` up. */}
-            <div className="grid grid-cols-1 gap-section sm:grid-cols-2">
-                <ValuePanel
-                    title={tc('panelStandingTitle')}
-                    subtitle={tc('panelStandingSubtitle')}
-                    quantityLabel={tc('areaLabel')}
-                    quantityValue={`${formatDecimal(areaDca, 1)} ${tc('areaUnit')}`}
-                    secondaryLabel={tc('expectedYieldLabel')}
-                    secondaryValue={`${formatDecimal(expectedTonnes, 2)} ${tc('tonnesUnit')}`}
-                    gross={row.standingCropValue}
-                    net={standingNet}
-                    row={row}
-                    costItems={costItems}
-                />
-                <ValuePanel
-                    title={tc('panelOnHandTitle')}
-                    subtitle={tc('panelOnHandSubtitle')}
-                    quantityLabel={tc('inStoreLabel')}
-                    quantityValue={`${formatDecimal(row.grainOnHandTonnes, 3)} ${tc('tonnesUnit')}`}
-                    secondaryLabel={null}
-                    secondaryValue={null}
-                    gross={row.grainOnHandValue}
-                    net={onHandNet}
-                    row={row}
-                    costItems={costItems}
-                />
-            </div>
-
-            <p className="text-xs text-content-subtle">{tc('sharedCostNote')}</p>
 
             {/* ── Cash out — a DIFFERENT question, kept visibly apart ──
                 Everything above answers "what is the grain worth after
@@ -722,140 +796,71 @@ export function CalculatorClient({ tenantSlug, data }: CalculatorClientProps) {
     );
 }
 
-// ─── Panel ──────────────────────────────────────────────────────────
+// ─── One line of the sum ────────────────────────────────────────────
 
-interface ValuePanelProps {
-    title: string;
-    subtitle: string;
-    quantityLabel: string;
-    quantityValue: string;
-    secondaryLabel: string | null;
-    secondaryValue: string | null;
-    gross: number | null;
-    net: number | null;
-    row: CalculatorRow;
-    costItems: StatusBreakdownItem[];
+interface SumLineProps {
+    /** Rendered before the amount so the column can be added by eye. */
+    sign: '+' | '−';
+    label: string;
+    /** EXPECTED / ACTUAL — the term's basis, not decoration. */
+    badge?: string;
+    /**
+     * The quantities behind the money (area, tonnes, kg) — a LIST, each
+     * rendered as its own node. Joining them into one string would make
+     * "125 dca" unfindable as a fact in its own right, by a test or by
+     * anything else reading the DOM.
+     */
+    details?: readonly string[];
+    amount: number | null;
+    /** Shown instead of the amount when the term exists but could not be priced. */
+    unavailableText?: string;
 }
 
 /**
- * One side of the calculator: a quantity, its gross value, the cost
- * charged against it broken down BY SOURCE, and the net.
+ * One term of `standing + onHand − produceRent − cost = netWorth`.
  *
- * The breakdown is a `<StatusBreakdown>` from the Epic 59 chart
- * platform — three labelled categories sharing a total is exactly what
- * that primitive is for, and it keeps this page free of the hand-rolled
- * percentage-width div the platform replaced.
+ * The sign is rendered, not implied by colour or position, because the
+ * whole point of the layout is that a reader can add the column
+ * themselves and arrive at the figure below it. A minus that exists only
+ * as red text is not a minus on a monochrome print-out or to anyone who
+ * does not distinguish the hue.
  *
- * (Spelling that hand-rolled bar out literally here is what the earlier
- * draft did, and `tests/guardrails/dashboard-chart-bypass.test.ts` failed
- * the file for it: the scanner reads raw source and cannot tell a bypass
- * from a comment saying "we do not bypass". Describe the anti-pattern in
- * prose rather than quoting its code.)
+ * `−` is U+2212, not a hyphen: it is the character that aligns with the
+ * `+` at the same optical weight in a tabular-nums column.
  */
-function ValuePanel({
-    title,
-    subtitle,
-    quantityLabel,
-    quantityValue,
-    secondaryLabel,
-    secondaryValue,
-    gross,
-    net,
-    row,
-    costItems,
-}: ValuePanelProps) {
-    const tc = useTranslations('grain.calculator');
+function SumLine({ sign, label, badge, details, amount, unavailableText }: SumLineProps) {
     const money = useExactMoneyFormatter();
 
     return (
-        <Card as="section" density="compact" className="space-y-default border-border-subtle">
-            <div className="flex flex-wrap items-baseline gap-tight">
-                <Heading level={2}>{title}</Heading>
-                <Badge variant="outline" size="sm">
-                    {subtitle}
-                </Badge>
-            </div>
-
-            <dl className="space-y-tight text-sm">
-                <div className="flex items-baseline justify-between gap-tight">
-                    <dt className="text-content-muted">{quantityLabel}</dt>
-                    <dd className="tabular-nums text-content-default">{quantityValue}</dd>
-                </div>
-                {secondaryLabel != null && secondaryValue != null && (
-                    <div className="flex items-baseline justify-between gap-tight">
-                        <dt className="text-content-muted">{secondaryLabel}</dt>
-                        <dd className="tabular-nums text-content-default">{secondaryValue}</dd>
-                    </div>
+        <div className="flex items-baseline justify-between gap-tight">
+            <dt className="flex flex-wrap items-baseline gap-tight text-content-muted">
+                <span>{label}</span>
+                {badge != null && (
+                    <Badge variant="outline" size="sm">
+                        {badge}
+                    </Badge>
                 )}
-                <div className="flex items-baseline justify-between gap-tight border-t border-border-subtle pt-2">
-                    <dt className="text-content-muted">{tc('grossValueLabel')}</dt>
-                    <dd className="font-medium tabular-nums text-content-emphasis">
-                        {money(gross)}
-                    </dd>
-                </div>
-            </dl>
-
-            <div className="space-y-tight">
-                <p className="text-xs uppercase tracking-wide text-content-subtle">
-                    {tc('costBreakdownLabel')}
-                </p>
-                <StatusBreakdown
-                    size="sm"
-                    ariaLabel={tc('costBreakdownAria')}
-                    items={costItems}
-                    // OFF, and deliberately: the count slot renders the raw
-                    // number with no currency. The amount is in the label
-                    // instead — see the costItems comment.
-                    showCount={false}
-                    showPercent
-                />
-                <div className="flex items-baseline justify-between gap-tight text-sm">
-                    <span className="text-content-muted">{tc('costTotalLabel')}</span>
-                    <span className="font-medium tabular-nums text-content-emphasis">
-                        {money(row.cashCostTotal)}
+                {details?.map((d) => (
+                    <span key={d} className="tabular-nums text-content-subtle">
+                        {d}
                     </span>
-                </div>
-                {row.payrollAllocated && (
-                    // An allocation is not a measurement. Said twice —
-                    // badge for the skim, sentence for the reader.
-                    <div className="space-y-tight">
-                        <Badge variant="warning" size="sm">
-                            {tc('payrollAllocatedBadge')}
-                        </Badge>
-                        <p className="text-xs text-content-muted">{tc('payrollAllocatedNote')}</p>
-                    </div>
-                )}
-                {/* Sits directly under the total it qualifies — the whole
-                    point is that this number is short, so the caveat has to
-                    be where the number is, not in an accordion below. */}
-                <UnvaluedNote
-                    noUnitCost={row.unvaluedNoUnitCost}
-                    unitMismatch={row.unvaluedUnitMismatch}
-                />
-                {row.rentCostProduceKg > 0 && (
-                    <p className="text-xs text-content-muted">
-                        {tc('produceRentLabel')}: {formatDecimal(row.rentCostProduceKg, 0)}{' '}
-                        {tc('kgUnit')}
-                        {row.rentCostProduceValue == null
-                            ? ` — ${tc('produceRentUnpriced')}`
-                            : ` — ${money(row.rentCostProduceValue)}`}
-                    </p>
-                )}
-            </div>
-
-            <div className="flex items-baseline justify-between gap-tight border-t border-border-subtle pt-2 text-sm">
-                <span className="text-content-muted">{tc('netAfterCostLabel')}</span>
-                {net == null ? (
-                    <span className="text-xs text-content-attention">
-                        {tc('netWorthUnavailableTitle')}
+                ))}
+            </dt>
+            <dd className="font-medium tabular-nums text-content-emphasis">
+                {unavailableText != null ? (
+                    <span className="text-xs font-normal text-content-attention">
+                        {unavailableText}
                     </span>
+                ) : amount == null ? (
+                    // The em-dash every formatter on this page already uses
+                    // for a null. Signing it would assert a direction for a
+                    // quantity we do not have.
+                    money(null)
                 ) : (
-                    <span className="text-base font-semibold tabular-nums text-content-emphasis">
-                        {money(net)}
-                    </span>
+                    `${sign}${money(amount)}`
                 )}
-            </div>
-        </Card>
+            </dd>
+        </div>
     );
 }
 
