@@ -6,10 +6,18 @@
  * `docs/implementation-notes/2026-05-24-modal-form-architecture.md`.
  *
  * This is a structural test, not a deep behavioural one — the
- * full-page wrappers (`policies/new`, `tasks/new`, `vendors/new`,
- * `assets/[id]`) cover the existing user-facing flows via E2E. The
- * job here is to keep the extracted seam intact so the P2 modal
- * migration has a stable contract to bolt onto.
+ * full-page wrappers (`tasks` modal, `assets/[id]`) cover the
+ * existing user-facing flows via E2E. The job here is to keep the
+ * extracted seam intact so the P2 modal migration has a stable
+ * contract to bolt onto.
+ *
+ * GRC teardown phase 2 deleted the policies and vendors surfaces
+ * (models, pages, routes and their `_form/` extractions), so two of
+ * the original four flows are gone. The tasks + assets flows below
+ * still exercise every assertion in this file — including both P2
+ * sub-contracts (the `/new` redirect shim and the list client that
+ * auto-opens on `?create=1`), which are re-pointed at the surviving
+ * assets equivalents.
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -34,25 +42,10 @@ interface Extraction {
     pageWrapperPath: string;
 }
 
+// GRC teardown phase 2 removed the `policies (create)` and
+// `vendors (create)` extractions with their surfaces — both entities
+// and every file they named are deleted.
 const EXTRACTIONS: Extraction[] = [
-    {
-        name: 'policies (create)',
-        hookPath: 'policies/_form/useNewPolicyForm.ts',
-        fieldsPath: 'policies/_form/NewPolicyFields.tsx',
-        hookExport: 'useNewPolicyForm',
-        fieldsExport: 'NewPolicyFields',
-        requiredReturnKeys: [
-            'fields',
-            'setField',
-            'submitting',
-            'error',
-            'canSubmit',
-            'submit',
-        ],
-        // Modal-form P2 — `/new` routes are redirect shims now;
-        // the hook + fields are composed by the modal wrapper.
-        pageWrapperPath: 'policies/NewPolicyModal.tsx',
-    },
     {
         name: 'tasks (create)',
         // Relocated out of the app dir to src/components/tasks/ when the
@@ -75,22 +68,6 @@ const EXTRACTIONS: Extraction[] = [
             'submit',
         ],
         pageWrapperPath: '../../../../components/tasks/NewTaskModal.tsx',
-    },
-    {
-        name: 'vendors (create)',
-        hookPath: 'vendors/_form/useNewVendorForm.ts',
-        fieldsPath: 'vendors/_form/NewVendorFields.tsx',
-        hookExport: 'useNewVendorForm',
-        fieldsExport: 'NewVendorFields',
-        requiredReturnKeys: [
-            'fields',
-            'setField',
-            'submitting',
-            'error',
-            'canSubmit',
-            'submit',
-        ],
-        pageWrapperPath: 'vendors/NewVendorModal.tsx',
     },
     {
         name: 'assets (edit)',
@@ -169,18 +146,12 @@ describe.each(EXTRACTIONS)('modal-form extraction — $name', (extraction) => {
 // ─── P2 — modal wrappers + redirect shims ───────────────────────────
 
 describe('modal-form P2 — modal wrappers exist', () => {
+    // GRC teardown phase 2 deleted NewPolicyModal + NewVendorModal with
+    // their surfaces.
     const MODALS = [
-        {
-            label: 'NewPolicyModal',
-            file: 'src/app/t/[tenantSlug]/(app)/policies/NewPolicyModal.tsx',
-        },
         {
             label: 'NewTaskModal',
             file: 'src/components/tasks/NewTaskModal.tsx',
-        },
-        {
-            label: 'NewVendorModal',
-            file: 'src/app/t/[tenantSlug]/(app)/vendors/NewVendorModal.tsx',
         },
         {
             label: 'EditAssetModal',
@@ -204,16 +175,16 @@ describe('modal-form P2 — modal wrappers exist', () => {
 });
 
 describe('modal-form P2 — /new routes are redirect shims', () => {
+    // GRC teardown phase 2 deleted `policies/new` + `vendors/new`, the two
+    // shims this ratchet originally pinned. Re-pointed at `assets/new`,
+    // which is the same shim built to the same pattern, so the contract
+    // (redirect to `?create=1`, no form primitives left behind) is still
+    // enforced instead of dropped.
     const REDIRECTS = [
         {
-            label: 'policies/new',
-            file: 'src/app/t/[tenantSlug]/(app)/policies/new/page.tsx',
-            target: '/policies?',
-        },
-        {
-            label: 'vendors/new',
-            file: 'src/app/t/[tenantSlug]/(app)/vendors/new/page.tsx',
-            target: '/vendors?create=1',
+            label: 'assets/new',
+            file: 'src/app/t/[tenantSlug]/(app)/assets/new/page.tsx',
+            target: '/assets?create=1',
         },
     ];
 
@@ -231,16 +202,14 @@ describe('modal-form P2 — /new routes are redirect shims', () => {
 });
 
 describe('modal-form P2 — list clients open the modal on ?create=1', () => {
+    // GRC teardown phase 2 deleted PoliciesClient + VendorsClient.
+    // Re-pointed at AssetsClient, the surviving list client wired to the
+    // same `?create=1` → open-modal → strip-flag contract.
     const CLIENTS = [
         {
-            label: 'PoliciesClient',
-            file: 'src/app/t/[tenantSlug]/(app)/policies/PoliciesClient.tsx',
-            modal: 'NewPolicyModal',
-        },
-        {
-            label: 'VendorsClient',
-            file: 'src/app/t/[tenantSlug]/(app)/vendors/VendorsClient.tsx',
-            modal: 'NewVendorModal',
+            label: 'AssetsClient',
+            file: 'src/app/t/[tenantSlug]/(app)/assets/AssetsClient.tsx',
+            modal: 'NewAssetModal',
         },
     ];
 

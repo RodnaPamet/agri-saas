@@ -30,22 +30,20 @@ export interface OrgTenantMeta {
 
 /**
  * Aggregated trend row — one per snapshotDate, summed across the
- * supplied tenant set. Coverage is computed downstream from the
- * implemented/applicable sums (so the org-wide percentage stays
- * weighted by practice counts, not by tenant count).
+ * supplied tenant set.
+ *
+ * GRC teardown phase 2 (plan §8f) removed the practice / policy / finding
+ * sums. The snapshot COLUMNS survive until the phase-3 migration and still
+ * hold real historical values, but nothing computes them any more, so
+ * summing them would report a confident zero rather than "not measured".
  */
 export interface SnapshotTrendRow {
     snapshotDate: Date;
-    practicesApplicable: number;
-    practicesImplemented: number;
     evidenceOverdue: number;
     evidenceDueSoon7d: number;
     evidenceCurrent: number;
-    policiesTotal: number;
-    policiesOverdueReview: number;
     tasksOpen: number;
     tasksOverdue: number;
-    findingsOpen: number;
     /** How many tenants contributed to this row's sums. */
     tenantsContributing: number;
 }
@@ -119,14 +117,8 @@ export class PortfolioRepository {
      * Org-wide trend rows: snapshots in the supplied tenant set
      * grouped by `snapshotDate` and summed.
      *
-     * Coverage % is NOT included in the row — callers compute it
-     * downstream from `practicesImplemented / practicesApplicable` so
-     * the math is centralised in the usecase layer (and so a future
-     * change to "weighted by tenant" vs "weighted by practices" is a
-     * one-place edit).
-     *
      * `days` is clamped to [1, 365] to match the per-tenant
-     * `getComplianceTrends` contract.
+     * `getMetricTrends` contract.
      */
     static async getSnapshotTrends(
         tenantIds: string[],
@@ -150,16 +142,11 @@ export class PortfolioRepository {
                     snapshotDate: { gte: rangeStart, lte: rangeEnd },
                 },
                 _sum: {
-                    practicesApplicable: true,
-                    practicesImplemented: true,
                     evidenceOverdue: true,
                     evidenceDueSoon7d: true,
                     evidenceCurrent: true,
-                    policiesTotal: true,
-                    policiesOverdueReview: true,
                     tasksOpen: true,
                     tasksOverdue: true,
-                    findingsOpen: true,
                 },
                 _count: {
                     tenantId: true,
@@ -169,16 +156,11 @@ export class PortfolioRepository {
 
             return grouped.map((g) => ({
                 snapshotDate: g.snapshotDate,
-                practicesApplicable: g._sum.practicesApplicable ?? 0,
-                practicesImplemented: g._sum.practicesImplemented ?? 0,
                 evidenceOverdue: g._sum.evidenceOverdue ?? 0,
                 evidenceDueSoon7d: g._sum.evidenceDueSoon7d ?? 0,
                 evidenceCurrent: g._sum.evidenceCurrent ?? 0,
-                policiesTotal: g._sum.policiesTotal ?? 0,
-                policiesOverdueReview: g._sum.policiesOverdueReview ?? 0,
                 tasksOpen: g._sum.tasksOpen ?? 0,
                 tasksOverdue: g._sum.tasksOverdue ?? 0,
-                findingsOpen: g._sum.findingsOpen ?? 0,
                 tenantsContributing: g._count.tenantId,
             }));
         });

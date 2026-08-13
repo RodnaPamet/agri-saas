@@ -1,7 +1,6 @@
 // k6 load-test scenario — authenticated mutation baseline.
 //
 // Two operations per iteration:
-//   1. POST /api/t/{slug}/practices         — JSON, tagged op:create_practice
 //   2. POST /api/t/{slug}/evidence/uploads — multipart, tagged op:upload_evidence
 //
 // Why a single login in setup()
@@ -41,8 +40,6 @@ import { login } from './lib/auth.js';
 const cfg = loadConfig();
 const RUN_ID = __ENV.RUN_ID || `local-${Date.now()}`;
 
-const createPracticeOk = new Counter('mutation_create_practice_ok');
-const createPracticeFail = new Counter('mutation_create_practice_fail');
 const uploadEvidenceOk = new Counter('mutation_upload_evidence_ok');
 const uploadEvidenceFail = new Counter('mutation_upload_evidence_fail');
 const mutationLoopMs = new Trend('mutation_loop_ms', true);
@@ -89,16 +86,13 @@ export const options = {
         // over on a noisy one. The full-scale baseline in
         // `load-test.yml` (50/100/200 VU, 2 min, post-warmup) is
         // the canonical SLO gate where the tighter targets apply.
-        'http_req_failed{op:create_practice}': ['rate<0.20'],
         'http_req_failed{op:upload_evidence}': ['rate<0.20'],
 
-        'http_req_duration{op:create_practice}': ['p(95)<5000', 'p(99)<8000'],
         'http_req_duration{op:upload_evidence}': ['p(95)<5000', 'p(99)<8000'],
 
         // Correctness — relaxed to 80% on the smoke tier (a single
         // retried request can move 200-sample rate noticeably). The
         // full baseline still asserts >98%.
-        'checks{check:practice_created}': ['rate>0.80'],
         'checks{check:evidence_uploaded}': ['rate>0.80'],
 
         // E2E loop — wide enough to absorb cold-start noise but
@@ -139,44 +133,6 @@ export default function mutationsIteration(data) {
     };
     const tag = `loadtest-${data.runId}-vu${__VU}-it${__ITER}`;
     const base = `${cfg.baseUrl}/api/t/${cfg.tenant}`;
-
-    // ── 1. Create practice ──
-    const practiceBody = JSON.stringify({
-        name: `[${tag}] load-test practice`,
-        description: 'Created by tests/load/mutations.js — safe to delete.',
-        category: 'loadtest',
-        status: 'NOT_STARTED',
-        isCustom: true,
-    });
-    const practiceRes = http.post(`${base}/practices`, practiceBody, {
-        ...params,
-        headers: { 'Content-Type': 'application/json' },
-        tags: { type: 'mutation', op: 'create_practice' },
-    });
-    const practiceOk = check(
-        practiceRes,
-        {
-            'practice 201': (r) => r.status === 201,
-            'practice has id': (r) => {
-                try {
-                    return typeof r.json('id') === 'string';
-                } catch (_e) {
-                    return false;
-                }
-            },
-            'practice name persisted': (r) => {
-                try {
-                    const n = r.json('name');
-                    return typeof n === 'string' && n.includes(tag);
-                } catch (_e) {
-                    return false;
-                }
-            },
-        },
-        { check: 'practice_created' },
-    );
-    if (practiceOk) createPracticeOk.add(1);
-    else createPracticeFail.add(1);
 
     // ── 2. Upload evidence (multipart, unique bytes) ──
     const uniqueContent =

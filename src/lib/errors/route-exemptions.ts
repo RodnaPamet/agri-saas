@@ -205,15 +205,11 @@ export const BARE_ROUTE_EXEMPTIONS: ReadonlyArray<BareRouteExemption> = [
             'constructWebhookEvent signature check; returns 200 on ' +
             'processing failure to avoid Stripe retry storms.',
     },
-    {
-        file: 'webhooks/sharepoint/route.ts',
-        category: 'external_webhook',
-        reason:
-            'SP-4 Microsoft Graph change-notification receiver. Returns the ' +
-            'validationToken as text/plain on the subscription handshake and ' +
-            '200 on notifications (Graph retries otherwise); verifies clientState ' +
-            'against policy.spSubscriptionId before enqueuing a pull.',
-    },
+    // The SP-4 Microsoft Graph change-notification receiver
+    // (webhooks/sharepoint/route.ts) was deleted in GRC teardown phase 2 —
+    // it verified clientState against `policy.spSubscriptionId` and enqueued
+    // a policy pull, so it went with the POLICY half of the SharePoint
+    // integration. The evidence delta-sync routes are untouched.
     {
         file: 'storage/av-webhook/route.ts',
         category: 'external_webhook',
@@ -272,24 +268,6 @@ export const BARE_ROUTE_EXEMPTIONS: ReadonlyArray<BareRouteExemption> = [
     // longer active" messaging — distinct guard reasons (expired,
     // wrong_status, unknown_assessment) intentionally collapse to
     // 401/410 without leaking which one tripped.
-    {
-        file: 'vendor-assessment/[assessmentId]/route.ts',
-        category: 'anti_enumeration',
-        reason:
-            'Public token-gated GET. Custom { error, reason } ' +
-            'contract for the external respondent UI; collapses ' +
-            'guard distinctions to 401/410 to avoid leaking which ' +
-            'gate tripped.',
-    },
-    {
-        file: 'vendor-assessment/[assessmentId]/submit/route.ts',
-        category: 'anti_enumeration',
-        reason:
-            'Public token-gated POST submit. Custom validation_failed ' +
-            'response shape carries fieldErrors[] for the response ' +
-            'form; access_denied uses the same anti-enumeration ' +
-            'mapping as the GET sibling.',
-    },
 
     // ─── Agro-intel — public data-stream ingestion ───
     //

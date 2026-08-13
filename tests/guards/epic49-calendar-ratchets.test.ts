@@ -1,5 +1,5 @@
 /**
- * Epic 49 — structural ratchets for the compliance-calendar feature.
+ * Epic 49 — structural ratchets for the calendar feature.
  *
  * Locks the wiring contract that's easy to silently break in a
  * "simplify" PR:
@@ -55,28 +55,45 @@ describe('Epic 49 — calendar feature wiring', () => {
     });
 
     it('the aggregation usecase covers every required source', () => {
-        const src = read('src/app-layer/usecases/compliance-calendar.ts');
+        const src = read('src/app-layer/usecases/calendar.ts');
         // Each loader name guards against a future refactor that
         // accidentally drops a source — the calendar would still
         // render but a whole entity class would be invisible.
+        // GRC teardown phase 2 removed six loaders with their models:
+        // Policy, Vendor, VendorDocument, AuditCycle, Practice, Finding.
         for (const fn of [
             'loadEvidenceEvents',
-            'loadPolicyEvents',
-            'loadVendorEvents',
-            'loadVendorDocumentEvents',
-            'loadAuditCycleEvents',
-            'loadPracticeEvents',
             'loadTaskEvents',
-            'loadFindingEvents',
             // Agriculture data sources (PR 2 of the calendar roadmap).
             'loadParcelLeaseEvents',
             'loadContractEvents',
             'loadPlantingEvents',
             'loadAgroSignalEvents',
             'loadAgriEventEvents',
+            'loadNewsDerivedEventEvents',
+            'loadSupportSchemeEvents',
         ]) {
             expect(src).toMatch(new RegExp(`function\\s+${fn}\\b`));
         }
+    });
+
+    it('every fan-out source carries its own log name (no positional array)', () => {
+        // The old `CALENDAR_SOURCE_NAMES` array was indexed positionally
+        // against the fan-out and had silently drifted four entries out of
+        // alignment, so a failing loader was logged under the WRONG name.
+        // Locking the paired shape stops that class of bug returning.
+        const src = read('src/app-layer/usecases/calendar.ts');
+        expect(src).not.toMatch(/CALENDAR_SOURCE_NAMES/);
+        expect(src).toMatch(/const SOURCES:\s*ReadonlyArray</);
+        expect(src).toMatch(/source:\s*SOURCES\[i\]\.name/);
+        // Every loader referenced in the fan-out is paired with a name.
+        const fanOut = src.slice(
+            src.indexOf('const SOURCES:'),
+            src.indexOf('const settled'),
+        );
+        const named = fanOut.match(/\{\s*name:\s*'[a-zA-Z]+',\s*run:/g) ?? [];
+        const runs = fanOut.match(/load[A-Za-z]+Events\(/g) ?? [];
+        expect(named.length).toBe(runs.length);
     });
 
     it('the sidebar Calendar nav item is registered with a live badge', () => {
@@ -107,35 +124,22 @@ describe('Epic 49 — calendar feature wiring', () => {
         expect(src).toMatch(/href\(['"]\/calendar['"]\)/);
     });
 
-    it('the calendar-deadlines monitor exists and exports the shared helper', () => {
-        expect(exists('src/app-layer/jobs/calendar-deadlines.ts')).toBe(true);
-        const src = read('src/app-layer/jobs/calendar-deadlines.ts');
-        expect(src).toMatch(/export\s+async\s+function\s+runCalendarDeadlineMonitor/);
-        // `runCalendarDeadlineJob` (a standalone BullMQ-registrable
-        // wrapper) was removed 2026-08-06: it was never a `JobName`,
-        // never registered in the executor registry, never scheduled,
-        // and had zero callers — the real production path is
-        // `notification-dispatch.ts` calling `runCalendarDeadlineMonitor`
-        // directly inside the DEADLINE_DIGEST category. Don't re-add the
-        // wrapper without also registering it (JobPayloadMap +
-        // JOB_DEFAULTS + executor-registry + schedules.ts).
-        //
-        // It must scan the three NEW sources the base deadline monitor
-        // doesn't cover. If a future PR drops one of these, deadline
-        // notifications for that source disappear silently.
-        expect(src).toMatch(/scanAuditCycles/);
-        expect(src).toMatch(/scanVendorDocuments/);
-        expect(src).toMatch(/scanFindings/);
-    });
+    // The calendar-deadlines monitor block was removed in GRC teardown
+    // phase 2 (T3). It scanned AuditCycle / VendorDocument / Finding — all
+    // three KILL models — so the job went with them. The surviving
+    // DEADLINE_DIGEST path is asserted by the next test.
 
-    it('the orchestrator wires the calendar monitor into DEADLINE_DIGEST', () => {
+    it('the orchestrator scans deadlines through runDeadlineMonitor', () => {
+        // GRC teardown phase 2: the calendar-deadlines monitor scanned
+        // AuditCycle / VendorDocument / Finding — all three KILL — so the
+        // DEADLINE_DIGEST fan-out collapsed to the one surviving scanner.
         const src = read('src/app-layer/jobs/notification-dispatch.ts');
-        expect(src).toMatch(/calendar-deadlines/);
-        expect(src).toMatch(/runCalendarDeadlineMonitor/);
+        expect(src).toMatch(/runDeadlineMonitor/);
+        expect(src).not.toMatch(/runCalendarDeadlineMonitor/);
     });
 
     it('the upcoming-count helper is bounded by MAX_BADGE_COUNT (cap = 99)', () => {
-        const src = read('src/app-layer/usecases/compliance-calendar.ts');
+        const src = read('src/app-layer/usecases/calendar.ts');
         // Cap value lives next to the function — locking it stops a
         // contributor from removing the cap and shipping a 5-digit
         // badge.

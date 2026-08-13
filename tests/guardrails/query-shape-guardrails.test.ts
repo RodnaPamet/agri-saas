@@ -135,10 +135,6 @@ interface KnownNPlusOne {
 }
 
 const KNOWN_N_PLUS_ONE: Record<string, KnownNPlusOne> = {
-    'src/app-layer/jobs/automation-runner.ts:findFirst:integrationExecution': {
-        reason:
-            'idempotency check inside a scheduled-job loop over due practices — looks up the most recent execution in the current window to avoid double-running. Loop is over the bounded set of automation-enabled practices; hoisting would need a per-practice window join.',
-    },
     'src/app-layer/jobs/data-lifecycle.ts:findMany:delegate': {
         reason:
             'data-lifecycle sweep iterates a small fixed set of soft-delete-eligible model delegates; each `delegate.findMany` is one query per MODEL, not per row — the loop length is the number of lifecycle-managed models, a compile-time constant.',
@@ -159,14 +155,6 @@ const KNOWN_N_PLUS_ONE: Record<string, KnownNPlusOne> = {
         reason:
             'maintenance scan over file-backed evidence verifying each row\'s FileRecord still exists; an admin/background integrity check, not a hot request path. Loop is over the tenant\'s file evidence — acceptable for a maintenance task.',
     },
-    'src/app-layer/usecases/framework/fixtures.ts:findUnique:frameworkRequirement': {
-        reason:
-            'framework-fixture upsert loop — per-requirement existence check drives create-vs-update. Runs at install / seed time over a fixed framework definition, not on a user request.',
-    },
-    'src/app-layer/usecases/library-sync.ts:findFirst:framework': {
-        reason:
-            'library-sync dry-run loop over the loaded library definitions — per-framework lookup classifies would-create / would-update / up-to-date. Admin sync action over a bounded library set.',
-    },
     'src/app-layer/usecases/onboarding-automation.ts:findFirst:asset': {
         reason:
             'onboarding-automation seed loop — per-asset idempotency check so re-running onboarding does not duplicate starter assets. Over a fixed starter-asset template list.',
@@ -178,14 +166,6 @@ const KNOWN_N_PLUS_ONE: Record<string, KnownNPlusOne> = {
     'src/app-layer/usecases/sso.ts:findFirst:tenantIdentityProvider': {
         reason:
             'sign-in SSO-enforcement check — per-membership lookup of an enforced identity provider. Loop is over the user\'s tenant memberships (typically 1-3); the per-membership query is acceptable at sign-in.',
-    },
-    'src/app-layer/usecases/vendor-audit.ts:findFirst:vendorDocument': {
-        reason:
-            'audit-pack freeze loop — snapshots each bundle item\'s entity metadata into the frozen item. Per-item lookup is required to read the live entity before freezing; loop is over the bundle\'s items, a bounded set.',
-    },
-    'src/app-layer/usecases/vendor-audit.ts:findFirst:vendorAssessment': {
-        reason:
-            'audit-pack freeze loop — snapshots each ASSESSMENT bundle item\'s metadata into the frozen item. Same bounded-items loop as the vendorDocument branch above.',
     },
     'src/app-layer/usecases/webhook-processor.ts:findMany:practice': {
         reason:
@@ -319,7 +299,12 @@ function scanNPlusOne(): NPlusOneFinding[] {
 // unbounded. The budget had been ratcheting against inflated numbers,
 // which is worse than a loose budget: it made a real regression cheaper
 // to hide, because there was slack that looked like debt.
-const UNBOUNDED_FINDMANY_BUDGET = 40;
+// 40 → 15 (GRC teardown phase 2, T3). MEASURED, not estimated: the
+// slack-drift assertion below reported `findings.length + 5 === 20`, so the
+// live count is exactly 15. The work order's guess was "~23 removed"; the
+// real figure is 25. This is why the budget is re-floored from the failing
+// assertion's own arithmetic rather than from the plan.
+const UNBOUNDED_FINDMANY_BUDGET = 15;
 
 /** How far the budget may sit ABOVE the live count before it is stale. */
 const UNBOUNDED_BUDGET_SLACK = 5;

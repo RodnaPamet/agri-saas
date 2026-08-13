@@ -52,14 +52,9 @@ import { registry } from '@/lib/openapi/registry';
 
 import * as requestSchemas from '@/lib/schemas';
 import * as commonDTOs from '@/lib/dto/common';
-import * as practiceDTOs from '@/lib/dto/practice.dto';
 import * as evidenceDTOs from '@/lib/dto/evidence.dto';
-import * as policyDTOs from '@/lib/dto/policy.dto';
-import * as auditDTOs from '@/lib/dto/audit.dto';
 import * as assetDTOs from '@/lib/dto/asset.dto';
 import * as taskDTOs from '@/lib/dto/task.dto';
-import * as vendorDTOs from '@/lib/dto/vendor.dto';
-import * as frameworkDTOs from '@/lib/dto/framework.dto';
 import * as grainDTOs from '@/lib/dto/grain.dto';
 import * as locationDTOs from '@/lib/dto/location.dto';
 import * as operationParcelDTOs from '@/lib/dto/operation-parcel.dto';
@@ -145,14 +140,9 @@ export function buildOpenApiDoc(opts: BuildOptions = {}): {
     const sources: Array<{ ns: Record<string, unknown>; label: string }> = [
         { ns: requestSchemas, label: '@/lib/schemas' },
         { ns: commonDTOs, label: '@/lib/dto/common' },
-        { ns: practiceDTOs, label: '@/lib/dto/practice.dto' },
         { ns: evidenceDTOs, label: '@/lib/dto/evidence.dto' },
-        { ns: policyDTOs, label: '@/lib/dto/policy.dto' },
-        { ns: auditDTOs, label: '@/lib/dto/audit.dto' },
         { ns: assetDTOs, label: '@/lib/dto/asset.dto' },
         { ns: taskDTOs, label: '@/lib/dto/task.dto' },
-        { ns: vendorDTOs, label: '@/lib/dto/vendor.dto' },
-        { ns: frameworkDTOs, label: '@/lib/dto/framework.dto' },
         { ns: grainDTOs, label: '@/lib/dto/grain.dto' },
         { ns: locationDTOs, label: '@/lib/dto/location.dto' },
         { ns: operationParcelDTOs, label: '@/lib/dto/operation-parcel.dto' },

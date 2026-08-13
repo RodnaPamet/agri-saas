@@ -13,10 +13,6 @@
 import { registry } from '@/app-layer/integrations/registry';
 import { GitHubProvider } from '@/app-layer/integrations/providers/github';
 import {
-    getFrequencyIntervalMs,
-    computeNextDueAt,
-} from '@/app-layer/jobs/automation-runner';
-import {
     computeHmacSha256,
     verifyHmacSha256,
     verifyGitHubSignature,
@@ -190,36 +186,9 @@ describe('Integration Framework Regression Guards', () => {
 
     // ── 5. Scheduler Bounds ──
 
-    describe('Scheduler bounds', () => {
-        it('batch size is capped at 500 practices', () => {
-            // findDueAutomationPractices uses `take: 500`
-            const BATCH_LIMIT = 500;
-            expect(BATCH_LIMIT).toBeLessThanOrEqual(500);
-        });
-
-        it('AD_HOC frequency is excluded from scheduled runs', () => {
-            expect(getFrequencyIntervalMs('AD_HOC')).toBeNull();
-        });
-
-        it('nextDueAt advances after execution', () => {
-            const now = new Date('2026-03-27T12:00:00Z');
-            const next = computeNextDueAt('DAILY', now);
-            expect(next!.getTime()).toBeGreaterThan(now.getTime());
-        });
-
-        it('runner result invariants hold', () => {
-            const result = {
-                totalDue: 10,
-                executed: 7,
-                skipped: 3,
-                passed: 4,
-                failed: 2,
-                errors: 1,
-            };
-            expect(result.executed + result.skipped).toBe(result.totalDue);
-            expect(result.passed + result.failed + result.errors).toBe(result.executed);
-        });
-    });
+    // GRC teardown phase 2 (T3): the 'Scheduler bounds' block asserted the
+    // cadence maths of the practice-automation runner (getFrequencyIntervalMs /
+    // computeNextDueAt), which went with the Practice model.
 
     // ── 6. Webhook Security ──
 
@@ -283,18 +252,5 @@ describe('Integration Framework Regression Guards', () => {
             expect(provider.mapResultToEvidence(makeInput(), failResult)).not.toBeNull();
         });
 
-        it('scheduled runner idempotency window prevents re-execution', () => {
-            const interval = getFrequencyIntervalMs('DAILY')!;
-            const now = Date.now();
-            const windowStart = now - interval;
-
-            // Recent execution (2h ago) — should skip
-            const recentExec = now - 2 * 60 * 60 * 1000;
-            expect(recentExec >= windowStart).toBe(true);
-
-            // Old execution (25h ago) — should execute
-            const oldExec = now - 25 * 60 * 60 * 1000;
-            expect(oldExec >= windowStart).toBe(false);
-        });
     });
 });

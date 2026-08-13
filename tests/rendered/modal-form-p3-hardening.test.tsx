@@ -41,14 +41,11 @@ interface HardenedFlow {
     guard?: 'confirm' | 'native';
 }
 
+// GRC teardown phase 2 removed the `policies` and `vendors` flows with
+// their surfaces (models, pages, routes, `_form/` hooks and modals).
+// The surviving two still cover both guard mechanisms: `tasks` the
+// native `<Modal isDirty>` guard, `assets` the window.confirm guard.
 const FLOWS: HardenedFlow[] = [
-    {
-        label: 'policies',
-        hookPath: 'policies/_form/useNewPolicyForm.ts',
-        hookExport: 'useNewPolicyForm',
-        modalPath: 'policies/NewPolicyModal.tsx',
-        confirmCopy: /Discard policy\?/,
-    },
     {
         label: 'tasks',
         // Relocated to src/components/tasks/ when the /tasks UI was retired;
@@ -59,13 +56,6 @@ const FLOWS: HardenedFlow[] = [
         // mobile-forms PR-3 — migrated to the Modal primitive's native guard.
         confirmCopy: /Discard changes\?/,
         guard: 'native',
-    },
-    {
-        label: 'vendors',
-        hookPath: 'vendors/_form/useNewVendorForm.ts',
-        hookExport: 'useNewVendorForm',
-        modalPath: 'vendors/NewVendorModal.tsx',
-        confirmCopy: /Discard vendor\?/,
     },
     {
         label: 'assets',

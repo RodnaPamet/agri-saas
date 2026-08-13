@@ -140,7 +140,18 @@ const ROOT = path.resolve(__dirname, '../..');
 // `trends-operator-hint.test.tsx`, covering the Prices tab's empty-state hint
 // per commodity feed — the branch that told an operator staring at an empty
 // urea chart to configure two env vars that cannot produce a urea row.
-const RENDERED_TEST_FLOOR = 216;
+//
+// Lowered 216 → 211 in GRC teardown phase 2 (2026-08-13). Five rendered
+// suites lost their subject entirely — every one is a deleted GRC surface,
+// and each was verified to have no surviving component to re-point at:
+//   audit-cycle-date-range   — the AuditCycle period picker (/audits gone)
+//   create-finding-modal     — the Finding create modal (/findings gone)
+//   policies-list-columns    — PoliciesClient's column set (/policies gone)
+//   traceability-panel-link  \ TraceabilityPanel, the cross-entity link/
+//   traceability-panel-undo  / unlink surface, deleted with the component
+// The Epic 67 undo-toast contract the two traceability suites also carried
+// survives on the other registered sites (see epic-67-rollout-coverage).
+const RENDERED_TEST_FLOOR = 211;
 // Lowered 55 → 54 in the risk-quantification uproot (2026-08-08).
 // `ai-risk-assessment.spec.ts` and `new-risk-modal.spec.ts` were both
 // wholly about the deleted register; the specs that merely REFERENCED a
@@ -160,12 +171,31 @@ const RENDERED_TEST_FLOOR = 216;
 //                           deleted with the practice exoskeleton.
 // Everything else that merely REFERENCED a dead route was repointed, not
 // deleted, and so still counts: core-flow's steps D-F moved from Risk onto
-// Asset, entity-detail-layout's representative surface moved from Risk to
-// Practice, reporting.spec.ts kept its audit-cycle scenario (E-G) and lost
-// only the three read-only tests whose pages are gone, and
-// mobile/horizontal-drift dropped three risk rows from its path table.
-// No surviving surface lost its E2E coverage. Upward-only from 52.
-const E2E_SPEC_FLOOR = 52;
+// Asset, and mobile/horizontal-drift dropped three risk rows from its path
+// table.
+//
+// Lowered 52 → 44 in GRC teardown phase 2 (2026-08-13). Eight specs drove
+// deleted routes end-to-end with no surviving half:
+//   practices, create-practice-modal, practice-toggle-pills,
+//   practices-filter-epic53  — /practices and its modals
+//   policies, vendors                  — /policies, /vendors
+//   audit-readiness, reporting         — /audits/{cycles,packs} + the
+//                                        anonymous /audit/shared/<token>
+//                                        page, all deleted
+// Fourteen more that merely REFERENCED a dead route were EDITED and still
+// count — data-table-platform, entity-detail-layout, epic54-crud-smoke,
+// filters, search-affordances, core-flow, auth, a11y, responsive,
+// tooltip-and-copy, ciso-portfolio and the three practice-* variants whose
+// surviving halves were re-pointed at /assets and /journal.
+//
+// NOTE the two prose claims above this line that the teardown falsified:
+// `entity-detail-layout`'s representative surface is no longer Practice
+// (re-pointed again), and `reporting.spec.ts` no longer "kept its
+// audit-cycle scenario" — it is deleted, its last remaining test having
+// driven the freeze→share→anonymous-view journey that is now gone.
+//
+// Upward-only from 44.
+const E2E_SPEC_FLOOR = 44;
 const REGISTRY_FLOOR = 5;
 
 /** Max a live count may exceed its floor before the floor must rise. */

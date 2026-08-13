@@ -105,9 +105,6 @@ export const SUBPAGES: readonly string[] = [
     '/admin/scim',
     '/admin/security',
     '/admin/sso',
-    '/admin/vendor-assessment-reviews/[assessmentId]',
-    '/admin/vendor-templates',
-    '/admin/vendor-templates/[templateId]',
 
     // Assets
     '/assets/[id]',

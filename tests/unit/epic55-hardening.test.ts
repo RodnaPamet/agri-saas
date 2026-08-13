@@ -4,12 +4,18 @@
  * Locks in the final migration batch and the architectural doc that
  * guides future contributors:
  *
- *   1. findings/FindingsClient   — severity + type Combobox hideSearch.
- *   2. clauses/ClausesBrowser    — status Combobox hideSearch.
- *   3. policies/new              — category Combobox with search.
- *   4. tasks/new                 — remaining findingSource / gapType /
+ *   1. tasks/new                 — remaining findingSource / gapType /
  *                                  linkEntityType selects migrated.
- *   5. docs/combobox-form-strategy.md exists + covers the decision tree.
+ *   2. docs/combobox-form-strategy.md exists + covers the decision tree.
+ *   3. The native-<select> ratchet guardrail is installed and still
+ *      enumerates its surviving drift sentinels.
+ *
+ * GRC teardown phase 2 removed three of the four migrated surfaces this
+ * file covered, along with their pages and their models:
+ *   - findings/FindingsClient + findings/CreateFindingModal
+ *     (severity + type Combobox hideSearch)
+ *   - clauses/ClausesBrowser  (status Combobox hideSearch)
+ *   - policies/new            (category Combobox with search)
  */
 
 import * as fs from 'fs';
@@ -20,27 +26,6 @@ function read(rel: string): string {
     return fs.readFileSync(path.join(ROOT, rel), 'utf-8');
 }
 
-// The severity + type Comboboxes moved from the inline FindingsClient
-// form into the CreateFindingModal (2026-06-05). Assert against the
-// joined surface — the modal is where the pickers live now.
-const FINDINGS_SRC =
-    read('src/app/t/[tenantSlug]/(app)/findings/FindingsClient.tsx') +
-    '\n' +
-    read('src/app/t/[tenantSlug]/(app)/findings/CreateFindingModal.tsx');
-const CLAUSES_SRC = read(
-    'src/app/t/[tenantSlug]/(app)/clauses/ClausesBrowser.tsx',
-);
-// Modal-form P1 (2026-05-24) — page wrappers decomposed into
-// page + extracted form module. Structural assertions resolve
-// against the joined surface.
-const POLICIES_NEW_SRC =
-    read('src/app/t/[tenantSlug]/(app)/policies/new/page.tsx') +
-    '\n' +
-    read('src/app/t/[tenantSlug]/(app)/policies/NewPolicyModal.tsx') +
-    '\n' +
-    read('src/app/t/[tenantSlug]/(app)/policies/_form/NewPolicyFields.tsx') +
-    '\n' +
-    read('src/app/t/[tenantSlug]/(app)/policies/_form/useNewPolicyForm.ts');
 const TASKS_NEW_SRC =
     read('src/components/tasks/NewTaskModal.tsx') +
     '\n' +
@@ -48,93 +33,6 @@ const TASKS_NEW_SRC =
     '\n' +
     read('src/components/tasks/_form/useNewTaskForm.ts');
 const STRATEGY_DOC = read('docs/combobox-form-strategy.md');
-
-// ─── findings severity + type ───────────────────────────────────
-
-describe('findings/FindingsClient — severity + type', () => {
-    it('imports Combobox', () => {
-        expect(FINDINGS_SRC).toMatch(
-            /from ["']@\/components\/ui\/combobox["']/,
-        );
-    });
-
-    it('no native <select> remains', () => {
-        expect(FINDINGS_SRC).not.toMatch(/<select\b/);
-    });
-
-    it('exposes finding-severity + finding-type ids', () => {
-        expect(FINDINGS_SRC).toMatch(/id=["']finding-severity["']/);
-        expect(FINDINGS_SRC).toMatch(/id=["']finding-type["']/);
-    });
-
-    it('both use hideSearch (≤5 options)', () => {
-        const hits = FINDINGS_SRC.match(/hideSearch/g) ?? [];
-        expect(hits.length).toBeGreaterThanOrEqual(2);
-    });
-});
-
-// ─── clauses status ─────────────────────────────────────────────
-
-describe('clauses/ClausesBrowser — status', () => {
-    it('imports Combobox', () => {
-        expect(CLAUSES_SRC).toMatch(
-            /from ["']@\/components\/ui\/combobox["']/,
-        );
-    });
-
-    it('no native <select> remains', () => {
-        expect(CLAUSES_SRC).not.toMatch(/<select\b/);
-    });
-
-    it('Combobox preserves id="clause-status-select"', () => {
-        expect(CLAUSES_SRC).toMatch(
-            /<Combobox[\s\S]{0,500}id=["']clause-status-select["']/,
-        );
-    });
-
-    it('re-runs its options memo when the i18n bundle changes', () => {
-        // The option labels come from t('notStarted') etc., so the
-        // array must rebuild when `t` swaps locale.
-        expect(CLAUSES_SRC).toMatch(/useMemo[\s\S]{0,400}\[t\]/);
-    });
-
-    it('passes the status through to updateStatus() as before', () => {
-        expect(CLAUSES_SRC).toMatch(
-            /setSelected=\{\(o\)\s*=>\s*\{\s*if\s*\(o\)\s*updateStatus\(selected\.id,\s*o\.value\)/,
-        );
-    });
-});
-
-// ─── policies/new category ──────────────────────────────────────
-
-describe('policies/new — category', () => {
-    it('imports Combobox + declares POLICY_CATEGORIES as ComboboxOption[]', () => {
-        expect(POLICIES_NEW_SRC).toMatch(
-            /from ["']@\/components\/ui\/combobox["']/,
-        );
-        expect(POLICIES_NEW_SRC).toMatch(
-            /POLICY_CATEGORIES:\s*ComboboxOption\[\]/,
-        );
-    });
-
-    it('no native <select> remains', () => {
-        expect(POLICIES_NEW_SRC).not.toMatch(/<select\b/);
-    });
-
-    it('Combobox uses search (10 options) and preserves id="policy-category-select"', () => {
-        expect(POLICIES_NEW_SRC).toMatch(
-            /<Combobox[\s\S]{0,500}id=["']policy-category-select["']/,
-        );
-        // T09 i18n — searchPlaceholder moved to t('categorySearch'); assert
-        // the t() reference AND the en.json value stays "Search categories…".
-        expect(POLICIES_NEW_SRC).toMatch(
-            /searchPlaceholder=\{\w+\(['"][\w.]*categorySearch['"]\)\}/,
-        );
-        expect(
-            JSON.parse(read('messages/en.json')).policies.fields.categorySearch,
-        ).toMatch(/^Search categories/);
-    });
-});
 
 // ─── tasks/new remaining selects ────────────────────────────────
 
@@ -221,16 +119,28 @@ describe('Epic 55 — native <select> ratchet is installed', () => {
     it('enumerates the migrated surfaces that must not regress', () => {
         // tasks/new/page.tsx dropped when the /tasks compliance UI was retired;
         // its create form now lives in the shared src/components/tasks/ modal.
+        //
+        // GRC teardown phase 2 dropped the guard's audits/ practices/
+        // policies/ vendors/ findings/ clauses/ sentinels with their pages.
+        // Rather than shrink this to the two evidence entries that happened
+        // to survive, the list is RE-POINTED at the guard's full surviving
+        // sentinel set (measured against
+        // tests/guards/epic55-native-select-ratchet.test.ts) — so "the guard
+        // still names every migrated surface" stays a real bound instead of
+        // a token one.
         for (const surface of [
-            'audits/cycles/page.tsx',
-            'practices/NewPracticeModal.tsx',
-            'practices/PracticeDetailSheet.tsx',
             'evidence/UploadEvidenceModal.tsx',
             'evidence/NewEvidenceTextModal.tsx',
-            'vendors/new/page.tsx',
-            'findings/FindingsClient.tsx',
-            'clauses/ClausesBrowser.tsx',
-            'policies/new/page.tsx',
+            'assets/[id]/page.tsx',
+            'assets/AssetsClient.tsx',
+            'admin/members/page.tsx',
+            'admin/roles/page.tsx',
+            'admin/api-keys/page.tsx',
+            'admin/integrations/page.tsx',
+            'access-reviews/[reviewId]/AccessReviewDetailClient.tsx',
+            'components/ui/map/PrescriptionPanel.tsx',
+            'components/ui/VersionDiff.tsx',
+            'components/ui/dashboard-widgets/WidgetPicker.tsx',
         ]) {
             expect(guardSrc).toContain(surface);
         }

@@ -1,13 +1,11 @@
 import { getTranslations } from 'next-intl/server';
 import { getTenantCtx } from '@/app-layer/context';
 import { listEvidence } from '@/app-layer/usecases/evidence';
-import { listPractices } from '@/app-layer/usecases/practice';
 import { EvidenceClient } from './EvidenceClient';
 
 export const dynamic = 'force-dynamic';
 
-// SSR fetch caps at SSR_PAGE_LIMIT rows for both evidence and the
-// supporting practices list (used to populate filters / dropdowns).
+// SSR fetch caps at SSR_PAGE_LIMIT rows of evidence.
 // The Epic 69 SWR client immediately fetches the unbounded list in
 // the background, swapped in by SWR's keepPreviousData. Mirrors
 // the PR #146 Tasks pattern.
@@ -15,7 +13,7 @@ const SSR_PAGE_LIMIT = 100;
 
 /**
  * Evidence — Server Component wrapper.
- * Fetches evidence + practices server-side, delegates all interaction to client island.
+ * Fetches evidence server-side, delegates all interaction to client island.
  */
 export default async function EvidencePage({
     params,
@@ -31,16 +29,11 @@ export default async function EvidencePage({
         getTenantCtx({ tenantSlug }),
     ]);
 
-    // Data fetches depend on ctx but are independent of each other
-    const [evidence, practices] = await Promise.all([
-        listEvidence(ctx, undefined, { take: SSR_PAGE_LIMIT }),
-        listPractices(ctx, undefined, { take: SSR_PAGE_LIMIT }),
-    ]);
+    const evidence = await listEvidence(ctx, undefined, { take: SSR_PAGE_LIMIT });
 
     return (
         <EvidenceClient
             initialEvidence={JSON.parse(JSON.stringify(evidence))}
-            initialPractices={JSON.parse(JSON.stringify(practices))}
             tenantSlug={tenantSlug}
             permissions={ctx.permissions}
             translations={{

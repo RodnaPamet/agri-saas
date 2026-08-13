@@ -120,10 +120,14 @@ describe('State coverage ratchet (Polish PR-10)', () => {
 
     it('the dashboard scanner finds at least the expected canonical files', () => {
         const found = findDashboardFiles();
-        // Sanity check — must find risks, tasks, practices, vendors,
-        // tests dashboards (5 minimum) so a future code reorg doesn't
-        // silently turn the ratchet into a no-op.
+        // Sanity check — the scanner must keep finding the dashboard
+        // files so a future code reorg doesn't silently turn the ratchet
+        // into a no-op.
         // 5 → 4: the risks dashboard went with the register.
-        expect(found.length).toBeGreaterThanOrEqual(4);
+        // 4 → 3 (GRC teardown phase 2): the remaining GRC dashboards went
+        // with the inherited surface. The three are the root dashboard,
+        // the tenant dashboard page and its client island (the issues
+        // dashboard is a redirect and sits in EXEMPT_DASHBOARDS).
+        expect(found.length).toBeGreaterThanOrEqual(3);
     });
 });

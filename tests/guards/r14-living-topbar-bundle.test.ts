@@ -167,7 +167,6 @@ describe('Roadmap-14 PR-13 — Living Top-Bar capstone bundle', () => {
             // input by file existence + checking absence of the
             // canonical banned shapes.
             const baseline = [
-                'src/app/t/[tenantSlug]/(app)/policies/templates/page.tsx',
                 'src/app/t/[tenantSlug]/(app)/admin/members/page.tsx',
             ];
             for (const rel of baseline) {

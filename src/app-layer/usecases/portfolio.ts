@@ -74,20 +74,11 @@ function toIsoDate(d: Date): string {
 function trendRowToDataPoint(row: SnapshotTrendRow): PortfolioTrendDataPoint {
     return {
         date: toIsoDate(row.snapshotDate),
-        practiceCoveragePercent: safeCoveragePercent(
-            row.practicesImplemented,
-            row.practicesApplicable,
-        ),
-        practicesImplemented: row.practicesImplemented,
-        practicesApplicable: row.practicesApplicable,
         evidenceOverdue: row.evidenceOverdue,
         evidenceDueSoon7d: row.evidenceDueSoon7d,
         evidenceCurrent: row.evidenceCurrent,
-        policiesTotal: row.policiesTotal,
-        policiesOverdueReview: row.policiesOverdueReview,
         tasksOpen: row.tasksOpen,
         tasksOverdue: row.tasksOverdue,
-        findingsOpen: row.findingsOpen,
     };
 }
 
@@ -161,10 +152,7 @@ function projectPortfolioSummary(
         tasksOverdue += s.tasksOverdue;
         findingsOpen += s.findingsOpen;
 
-        const rag = computeRag({
-            coveragePercent: bpsToPercent(s.practiceCoverageBps),
-            overdueEvidence: s.evidenceOverdue,
-        });
+        const rag = computeRag({ overdueEvidence: s.evidenceOverdue });
         if (rag === 'GREEN') green++;
         else if (rag === 'AMBER') amber++;
         else red++;
@@ -234,10 +222,7 @@ function projectPortfolioTenantHealth(base: PortfolioBaseData): TenantHealthRow[
             snapshotDate: toIsoDate(s.snapshotDate),
             coveragePercent,
             overdueEvidence: s.evidenceOverdue,
-            rag: computeRag({
-                coveragePercent,
-                overdueEvidence: s.evidenceOverdue,
-            }),
+            rag: computeRag({ overdueEvidence: s.evidenceOverdue }),
         };
     });
 }

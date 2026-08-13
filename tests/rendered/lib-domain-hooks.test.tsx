@@ -51,8 +51,6 @@ jest.mock('@/lib/tenant-context-provider', () => ({
 }));
 
 import { useApi, useMutation } from '@/lib/hooks/use-api';
-import * as practices from '@/lib/hooks/use-practices';
-import * as policies from '@/lib/hooks/use-policies';
 import * as tasks from '@/lib/hooks/use-tasks';
 import * as assets from '@/lib/hooks/use-assets';
 import * as evidence from '@/lib/hooks/use-evidence';
@@ -250,8 +248,8 @@ describe('useMutation', () => {
  * TypeScript cannot see either — so that is what is asserted.
  */
 const DOMAINS = [
-    { name: 'practices', mod: practices, path: 'practices', list: 'usePractices', detail: 'usePractice', create: 'useCreatePractice', update: 'useUpdatePractice', remove: 'useDeletePractice' },
-    { name: 'policies', mod: policies, path: 'policies', list: 'usePolicies', detail: 'usePolicy', create: 'useCreatePolicy', update: 'useUpdatePolicy', remove: 'useDeletePolicy' },
+    // 'practices' and 'policies' went with the GRC teardown; the
+    // copy-paste risk this table guards is unchanged for the rest.
     { name: 'tasks', mod: tasks, path: 'tasks', list: 'useTasks', detail: 'useTask', create: 'useCreateTask', update: 'useUpdateTask', remove: 'useDeleteTask' },
     { name: 'assets', mod: assets, path: 'assets', list: 'useAssets', detail: 'useAsset', create: 'useCreateAsset', update: 'useUpdateAsset', remove: 'useDeleteAsset' },
     // Evidence has no PATCH surface — an evidence item is replaced, not edited.

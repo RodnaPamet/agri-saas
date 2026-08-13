@@ -102,11 +102,14 @@ describe('UploadEvidenceModal — preserved E2E IDs', () => {
     const REQUIRED_PLAIN_IDS = [
         'upload-form',
         'upload-title-input',
-        // Epic 55 Prompt 4: `practice-search-input` was removed when the
-        // paired input + native <select> was migrated to a searchable
-        // <Combobox>. The Combobox keeps `id="practice-select"` (below)
-        // and exposes its own search via cmdk's Command.Input.
-        'practice-select',
+        // GRC teardown phase 2 removed `practice-select` (and the
+        // `practice-search-input` its Combobox migration replaced): the
+        // practice picker went with the Practice model. The metadata
+        // field that survives in that slot is the free-text folder
+        // label, so the id contract is re-pointed there rather than
+        // dropped — the "modal preserves its E2E selectors" bound is
+        // still enforced against a live field.
+        'upload-evidence-folder-input',
         'retention-date-input',
         'submit-upload-btn',
         'upload-error',
@@ -137,8 +140,13 @@ describe('UploadEvidenceModal — business contract preserved', () => {
         // After the FileDropzone migration, retention is sent via a
         // separate POST (see `fires the follow-up retention POST` test
         // below) — NOT in the upload's FormData. The upload payload
-        // still carries file + title + practiceId.
-        for (const field of ['file', 'title', 'practiceId']) {
+        // still carries file + title + folder.
+        //
+        // GRC teardown phase 2 removed the `practiceId` append with the
+        // Practice model; `folder` is the surviving optional metadata
+        // field on the same payload, so the "every metadata field is
+        // appended" bound is re-pointed rather than weakened.
+        for (const field of ['file', 'title', 'folder']) {
             // Allow for whitespace/newlines between the paren and the
             // field name — prettier may wrap long appends.
             expect(UPLOAD_MODAL_SRC).toMatch(
@@ -316,13 +324,16 @@ describe('EvidenceClient — modal entry points', () => {
         expect(hasText).toBe(false);
     });
 
-    it('mounts <UploadEvidenceModal> with tenant helpers and practices', () => {
+    it('mounts <UploadEvidenceModal> with tenant helpers', () => {
         expect(CLIENT_SRC).toMatch(/<UploadEvidenceModal\b/);
         expect(CLIENT_SRC).toMatch(/open=\{showUpload\}/);
         expect(CLIENT_SRC).toMatch(/setOpen=\{setShowUpload\}/);
         expect(CLIENT_SRC).toMatch(/tenantSlug=\{tenantSlug\}/);
         expect(CLIENT_SRC).toMatch(/apiUrl=\{apiUrl\}/);
-        expect(CLIENT_SRC).toMatch(/practices=\{practices\}/);
+        // GRC teardown phase 2 removed the `practices={practices}` prop —
+        // the modal no longer offers a practice picker because the
+        // Practice model went with the compliance surface. The remaining
+        // four props are the modal's whole public contract now.
     });
 
     it('UI-18: the text + bulk-import modals are no longer mounted in the client', () => {

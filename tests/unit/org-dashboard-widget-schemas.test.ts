@@ -118,11 +118,9 @@ describe('Epic 41 — widget Zod schemas', () => {
 
     describe('WidgetTypedShapeSchema — TREND', () => {
         it('accepts every canonical TREND chartType + days', () => {
-            for (const chartType of [
-                'risks-open',
-                'practices-coverage',
-                'evidence-overdue',
-            ]) {
+            // GRC teardown phase 2: 'risks-open' and 'practices-coverage'
+            // left the enum with their models.
+            for (const chartType of ['evidence-overdue']) {
                 const r = WidgetTypedShapeSchema.safeParse({
                     type: 'TREND',
                     chartType,
@@ -135,7 +133,7 @@ describe('Epic 41 — widget Zod schemas', () => {
         it('rejects days below 7', () => {
             const r = WidgetTypedShapeSchema.safeParse({
                 type: 'TREND',
-                chartType: 'risks-open',
+                chartType: 'evidence-overdue',
                 config: { days: 6 },
             });
             expect(r.success).toBe(false);
@@ -144,7 +142,7 @@ describe('Epic 41 — widget Zod schemas', () => {
         it('rejects days above 365', () => {
             const r = WidgetTypedShapeSchema.safeParse({
                 type: 'TREND',
-                chartType: 'risks-open',
+                chartType: 'evidence-overdue',
                 config: { days: 366 },
             });
             expect(r.success).toBe(false);
@@ -176,7 +174,11 @@ describe('Epic 41 — widget Zod schemas', () => {
             const r = WidgetTypedShapeSchema.safeParse({
                 type: 'DRILLDOWN_CTAS',
                 chartType: 'default',
-                config: { entries: ['practices', 'risks'] },
+                // 'risks' left with the risk register and 'practices' with
+                // GRC teardown phase 2 (its tile linked to the deleted
+                // /org/:slug/practices route). 'evidence' is the surviving
+                // drill-down; the subset contract is unchanged.
+                config: { entries: ['evidence'] },
             });
             expect(r.success).toBe(true);
         });
@@ -242,7 +244,7 @@ describe('Epic 41 — widget Zod schemas', () => {
     describe('TREND target line config', () => {
         const base = {
             type: 'TREND' as const,
-            chartType: 'risks-open' as const,
+            chartType: 'evidence-overdue' as const,
         };
 
         it('accepts a target with value only', () => {
@@ -420,7 +422,7 @@ describe('Epic 41 — widget Zod schemas', () => {
             expect(() =>
                 assertWidgetTypedShape({
                     type: 'TREND',
-                    chartType: 'risks-open',
+                    chartType: 'evidence-overdue',
                     // missing required `days`
                     config: {},
                 }),

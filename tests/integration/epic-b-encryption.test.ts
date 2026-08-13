@@ -124,7 +124,7 @@ describeFn('Epic B — encryption, tenant DEKs, and rotation end-to-end', () => 
             await testPrisma.auditLog.deleteMany({
                 where: { tenantId: { in: [tenantA, tenantB] } },
             });
-            await testPrisma.finding.deleteMany({
+            await testPrisma.task.deleteMany({
                 where: { tenantId: { in: [tenantA, tenantB] } },
             });
             await testPrisma.tenant.deleteMany({
@@ -153,40 +153,41 @@ describeFn('Epic B — encryption, tenant DEKs, and rotation end-to-end', () => 
         const plaintext = 'ransomware via supply-chain compromise on 2026-04-01';
 
         const created = await runInTenantContext(ctxFor(tenantA), (db) =>
-            db.finding.create({
+            db.task.create({
                 data: {
                     tenantId: tenantA,
-                    severity: 'HIGH',
-                    type: 'NONCONFORMITY',
+                    createdByUserId: adminUserId,
+                    type: 'TASK',
                     title: 'Epic B — end-to-end',
                     description: plaintext,
-                    rootCause: 'missing input validation',
+                    resolution: 'missing input validation',
                 },
             }),
         );
 
         // Caller sees plaintext (middleware decrypted the create result).
         expect(created.description).toBe(plaintext);
-        expect(created.rootCause).toBe('missing input validation');
+        expect(created.resolution).toBe('missing input validation');
 
         // Raw SQL bypasses the middleware — confirms on-disk ciphertext.
         const raw = await testPrisma.$queryRawUnsafe<
-            Array<{ id: string; description: string; rootCause: string }>
+            Array<{ id: string; description: string; resolution: string }>
         >(
-            `SELECT id, "description", "rootCause" FROM "Finding" WHERE id = $1`,
+            `SELECT id, "description", "resolution" FROM "Task" WHERE id = $1`,
             created.id,
         );
         expect(raw).toHaveLength(1);
         expect(getCiphertextVersion(raw[0].description)).toBe('v2');
-        expect(getCiphertextVersion(raw[0].rootCause)).toBe('v2');
+        expect(getCiphertextVersion(raw[0].resolution)).toBe('v2');
         expect(raw[0].description).not.toContain('ransomware');
     });
 
     test('read via runInTenantContext returns plaintext', async () => {
         const found = await runInTenantContext(ctxFor(tenantA), (db) =>
-            db.finding.findFirst({
+            db.task.findFirst({
                 where: {
                     tenantId: tenantA,
+                    createdByUserId: adminUserId,
                     title: 'Epic B — end-to-end',
                 },
             }),
@@ -195,7 +196,7 @@ describeFn('Epic B — encryption, tenant DEKs, and rotation end-to-end', () => 
         expect(found!.description).toBe(
             'ransomware via supply-chain compromise on 2026-04-01',
         );
-        expect(found!.rootCause).toBe('missing input validation');
+        expect(found!.resolution).toBe('missing input validation');
     });
 
     test("tenant B's DEK cannot decrypt tenant A's v2 ciphertext", async () => {
@@ -203,7 +204,7 @@ describeFn('Epic B — encryption, tenant DEKs, and rotation end-to-end', () => 
         const raw = await testPrisma.$queryRawUnsafe<
             Array<{ description: string }>
         >(
-            `SELECT "description" FROM "Finding" WHERE "tenantId" = $1 AND "title" = $2 LIMIT 1`,
+            `SELECT "description" FROM "Task" WHERE "tenantId" = $1 AND "title" = $2 LIMIT 1`,
             tenantA,
             'Epic B — end-to-end',
         );
@@ -255,9 +256,10 @@ describeFn('Epic B — encryption, tenant DEKs, and rotation end-to-end', () => 
         // The key-manager cache was invalidated by the rotation job —
         // next request re-resolves from the freshly-wrapped DEK row.
         const found = await runInTenantContext(ctxFor(tenantA), (db) =>
-            db.finding.findFirst({
+            db.task.findFirst({
                 where: {
                     tenantId: tenantA,
+                    createdByUserId: adminUserId,
                     title: 'Epic B — end-to-end',
                 },
             }),

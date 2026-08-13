@@ -26,7 +26,6 @@
 // Per iteration each VU exercises the three highest-traffic list
 // endpoints with realistic filter combinations:
 //
-//   GET /api/t/{slug}/practices  — paged + filtered (status, q, category)
 //   GET /api/t/{slug}/evidence  — paged + filtered (status, archived)
 //
 // Run staged baselines:
@@ -35,7 +34,7 @@
 //   k6 run -e VUS=200 -e DURATION=2m tests/load/lists.js
 //
 // The seed (`prisma/seed.ts`) creates a small but non-empty dataset
-// in `acme-corp`: ~4 practices, plus assets and templates.
+// in `acme-corp`: assets and templates.
 // Run the same script against a heavier seed for realistic baselines
 // — see tests/load/README.md.
 
@@ -50,7 +49,6 @@ import { login } from './lib/auth.js';
 const cfg = loadConfig();
 
 // Per-endpoint counters so the summary breaks throughput out by surface.
-const practicesRequests = new Counter('list_practices_requests');
 const evidenceRequests = new Counter('list_evidence_requests');
 const listSuccessRate = new Rate('list_success_rate');
 // Completed iterations, tagged by regime, so the saturation window
@@ -109,7 +107,6 @@ export const options = {
         // Read-path error budget. Anything above 1% is a real problem.
         'http_req_failed{type:list}': ['rate<0.01'],
         list_success_rate: ['rate>0.99'],
-        'checks{check:practices_ok}': ['rate>0.99'],
         'checks{check:evidence_ok}': ['rate>0.99'],
 
         // Login-step health (gate the warm-up, not the steady state).
@@ -119,12 +116,11 @@ export const options = {
         // p95 < 800ms covers a healthy DB-backed paginated list with
         // auth + tenant-RLS overhead, and is the figure docs/slos.md
         // publishes for the read path. Measured uncontended p95 on a
-        // loaded dev box: practices 94.6ms, evidence
+        // loaded dev box: evidence
         // 49.0ms — so the budget carries ~8x headroom. Deliberately
         // NOT tightened to the measurement: 800ms is the published
         // read SLO, and this gate exists to catch a regression that
         // breaches it, not to pin the current number.
-        'http_req_duration{regime:latency,endpoint:practices}': ['p(95)<800', 'p(99)<2000'],
         'http_req_duration{regime:latency,endpoint:evidence}': ['p(95)<800', 'p(99)<2000'],
 
         // ── Capacity: ONLY in the saturated regime ──
@@ -142,13 +138,6 @@ export const options = {
 // Realistic filter sets — rotated per iteration so we don't hammer
 // a single query plan. Covers: empty filter, narrow text search, and
 // status/score-band filters that exercise different index paths.
-const PRACTICES_FILTERS = [
-    'limit=50',
-    'limit=50&status=IMPLEMENTED',
-    'limit=50&q=security',
-    'limit=50&applicability=APPLICABLE&category=Access',
-    'limit=20&q=policy',
-];
 
 const EVIDENCE_FILTERS = [
     'limit=50',
@@ -194,32 +183,6 @@ export default function listsIteration(data) {
     // Re-attach the shared session cookie on every request.
     const auth = { cookies: { [data.tokenName]: data.tokenValue } };
 
-    group('list:practices', () => {
-        const url = `${base}/practices?${pickFilter(PRACTICES_FILTERS, iter)}`;
-        const r = http.get(url, {
-            ...auth,
-            tags: { type: 'list', endpoint: 'practices' },
-        });
-        const ok = check(
-            r,
-            {
-                'practices 200': (res) => res.status === 200,
-                'practices is JSON': (res) => {
-                    try {
-                        const j = res.json();
-                        // Shape can be an array (legacy) or
-                        // { items, nextCursor } (paginated). Both valid.
-                        return Array.isArray(j) || typeof j === 'object';
-                    } catch (_e) {
-                        return false;
-                    }
-                },
-            },
-            { check: 'practices_ok' },
-        );
-        practicesRequests.add(1);
-        listSuccessRate.add(ok);
-    });
 
     group('list:evidence', () => {
         const url = `${base}/evidence?${pickFilter(EVIDENCE_FILTERS, iter)}`;

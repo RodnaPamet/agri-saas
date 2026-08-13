@@ -1,16 +1,19 @@
 /**
- * R23-PR-D — Assets + Practices KPI rollout ratchet.
+ * R23-PR-D — Assets KPI rollout ratchet.
  *
- * Locks that both pages adopted the shared primitive + hook in the
+ * Originally covered Assets + Practices. GRC teardown phase 2 deleted the
+ * Practices page; Assets is the surviving rollout and keeps every
+ * invariant unchanged.
+ *
+ * Locks that the page adopted the shared primitive + hook in the
  * standard shape. Three invariants per page:
  *   1. KpiFilterCard import from the shared module.
  *   2. useKpiFilter import + invocation.
  *   3. At least one <KpiFilterCard> JSX with `selected={activeKpiId === ...}`
  *      driving the active-state affordance.
  *
- * Also locks the EntityListPage `kpis` slot addition that Practices
- * relies on — a future PR that strips the slot would orphan the
- * Practices-page KPI strip silently.
+ * Also locks the EntityListPage `kpis` slot — a future PR that strips
+ * the slot would orphan a page's KPI strip silently.
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -19,8 +22,6 @@ const ROOT = path.resolve(__dirname, '../..');
 
 const ASSETS_PATH =
     'src/app/t/[tenantSlug]/(app)/assets/AssetsClient.tsx';
-const CONTROLS_PATH =
-    'src/app/t/[tenantSlug]/(app)/practices/PracticesClient.tsx';
 const ENTITY_LIST_PAGE_PATH = 'src/components/layout/EntityListPage.tsx';
 
 function read(rel: string): string {
@@ -33,14 +34,9 @@ const ROLLOUT_PAGES: Array<{ name: string; path: string; activeVar: string }> = 
         path: ASSETS_PATH,
         activeVar: 'activeAssetKpi',
     },
-    {
-        name: 'Practices',
-        path: CONTROLS_PATH,
-        activeVar: 'activePracticeKpi',
-    },
 ];
 
-describe('R23-PR-D — Assets + Practices KPI rollout', () => {
+describe('R23-PR-D — Assets KPI rollout', () => {
     for (const page of ROLLOUT_PAGES) {
         describe(`${page.name} page`, () => {
             const src = read(page.path);

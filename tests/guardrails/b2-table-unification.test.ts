@@ -28,9 +28,6 @@ describe('B2 — table unification', () => {
             label: string;
             file: string;
         }> = [
-            { label: 'Practices (canonical)', file: 'src/app/t/[tenantSlug]/(app)/practices/PracticesClient.tsx' },
-            { label: 'Policies', file: 'src/app/t/[tenantSlug]/(app)/policies/PoliciesClient.tsx' },
-            { label: 'Vendors', file: 'src/app/t/[tenantSlug]/(app)/vendors/VendorsClient.tsx' },
             { label: 'Assets', file: 'src/app/t/[tenantSlug]/(app)/assets/AssetsClient.tsx' },
         ];
 
@@ -78,8 +75,6 @@ describe('B2 — table unification', () => {
         // this ratchet red.
         const EDIT_PAGES: Array<{ label: string; file: string }> = [
             { label: 'Asset detail', file: 'src/app/t/[tenantSlug]/(app)/assets/[id]/page.tsx' },
-            { label: 'Vendor detail', file: 'src/app/t/[tenantSlug]/(app)/vendors/[vendorId]/page.tsx' },
-            { label: 'Practice detail', file: 'src/app/t/[tenantSlug]/(app)/practices/[practiceId]/page.tsx' },
         ];
 
         for (const { label, file } of EDIT_PAGES) {

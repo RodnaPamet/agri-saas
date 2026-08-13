@@ -7,7 +7,6 @@
  *   q          → free-text search (`useFilterContext`'s search slot)
  *   type       → EvidenceType (FILE | LINK | TEXT)
  *   status     → EvidenceStatus (DRAFT | SUBMITTED | APPROVED | REJECTED)
- *   practiceId  → entity-reference (Practice ID; options derived from loaded data)
  *
  * Retention buckets (`archived=true` / `expiring=true`) are *not* modelled
  * here — they're driven by the existing retention-tab UI (`tab=active|
@@ -24,7 +23,7 @@ import {
     optionsFromEnum,
 } from '@/components/ui/filter/filter-definitions';
 import type { FilterOption } from '@/components/ui/filter/types';
-import { FileText, CircleDot, Link2, FolderOpen } from 'lucide-react';
+import { FileText, CircleDot, FolderOpen } from 'lucide-react';
 
 // ─── Static labels ──────────────────────────────────────────────────
 
@@ -62,15 +61,6 @@ const STATIC_DEFS = {
         multiple: true,
         resetBehavior: 'clearable',
     },
-    practiceId: {
-        label: 'Linked practice',
-        description: 'Only show evidence attached to this practice.',
-        group: 'Linked',
-        icon: Link2,
-        options: null, // filled at render time from the practices prop
-        shouldFilter: true,
-        resetBehavior: 'clearable',
-    },
     // B8 follow-up — Folder filter. Options are derived at render
     // time from the folders present in the currently-loaded
     // evidence rows (plus a "No folder" pseudo-bucket when any
@@ -93,35 +83,6 @@ export const evidenceFilterDefs = createTypedFilterDefs()(STATIC_DEFS);
 export const EVIDENCE_FILTER_KEYS = evidenceFilterDefs.filterKeys;
 
 // ─── Runtime option builder ─────────────────────────────────────────
-
-interface PracticeLike {
-    id: string;
-    name: string;
-    code?: string | null;
-}
-
-/**
- * Build Practice options from the list loaded server-side. The filter row
- * displays `{ code }: name` to match the pattern used elsewhere on
- * Evidence pages, while the pill text (displayLabel) stays short.
- */
-export function practiceOptionsFromPractices(
-    practices: ReadonlyArray<PracticeLike>,
-): FilterOption[] {
-    const seen = new Map<string, FilterOption>();
-    for (const c of practices) {
-        if (!c.id || seen.has(c.id)) continue;
-        const prefix = c.code || '';
-        seen.set(c.id, {
-            value: c.id,
-            label: prefix ? `${prefix}: ${c.name}` : c.name,
-            displayLabel: prefix || c.name,
-        });
-    }
-    return Array.from(seen.values()).sort((a, b) =>
-        a.label.localeCompare(b.label),
-    );
-}
 
 /**
  * B8 follow-up — build the Folder filter's options from whatever
@@ -154,13 +115,13 @@ export function folderOptionsFromEvidence(
 }
 
 export function buildEvidenceFilters(
-    practices: ReadonlyArray<PracticeLike>,
     evidence: ReadonlyArray<EvidenceFolderLike> = [],
 ) {
-    const practiceOpts = practiceOptionsFromPractices(practices);
+    // GRC teardown phase 2: the `practiceId` facet and its `practices`
+    // parameter went with the Practice model. Folder is the one facet left
+    // whose options are derived at render time.
     const folderOpts = folderOptionsFromEvidence(evidence);
     return evidenceFilterDefs.filters.map((f) => {
-        if (f.key === 'practiceId') return { ...f, options: practiceOpts };
         if (f.key === 'folder') return { ...f, options: folderOpts };
         return f;
     });

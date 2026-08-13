@@ -57,12 +57,6 @@ export interface ScheduleDefinition {
  */
 export const SCHEDULED_JOBS: ScheduleDefinition[] = [
     {
-        name: 'automation-runner',
-        pattern: '*/15 * * * *',  // every 15 minutes
-        description: 'Execute scheduled automation/integration checks for practices',
-        defaultPayload: {},
-    },
-    {
         name: 'promotion-lead-retention',
         pattern: '30 3 * * *',    // daily at 03:30 UTC
         description:
@@ -79,12 +73,6 @@ export const SCHEDULED_JOBS: ScheduleDefinition[] = [
         name: 'sharepoint-delta-sync-dispatch',
         pattern: '0 */4 * * *',   // every 4 hours
         description: 'Fan out a SharePoint delta sync per enabled connection (auto-import changed evidence files)',
-        defaultPayload: {},
-    },
-    {
-        name: 'sharepoint-subscription-renew',
-        pattern: '0 2 * * *',     // daily at 02:00 UTC
-        description: 'Renew active SharePoint policy Graph change-notification subscriptions before they expire',
         defaultPayload: {},
     },
     {
@@ -215,12 +203,6 @@ export const SCHEDULED_JOBS: ScheduleDefinition[] = [
         defaultPayload: { dryRun: false },
     },
     {
-        name: 'policy-review-reminder',
-        pattern: '0 8 * * *',     // daily at 08:00 UTC
-        description: 'Find overdue policies and emit audit events / notifications',
-        defaultPayload: {},
-    },
-    {
         name: 'task-due-notification',
         // Daily at 08:00 in the configured local zone (NOTIFICATIONS_TZ,
         // default Europe/London) — the start of the working day, and
@@ -294,12 +276,6 @@ export const SCHEDULED_JOBS: ScheduleDefinition[] = [
         name: 'compliance-snapshot',
         pattern: '0 5 * * *',     // daily at 05:00 UTC (before dashboard traffic)
         description: 'Generate daily ComplianceSnapshot for trend reporting. Idempotent — safe to re-run.',
-        defaultPayload: {},
-    },
-    {
-        name: 'compliance-digest',
-        pattern: '0 8 * * 1',     // weekly Monday at 08:00 UTC
-        description: 'Send weekly compliance digest email to tenant admins. Reuses snapshot data — no live aggregation.',
         defaultPayload: {},
     },
 ];

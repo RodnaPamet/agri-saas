@@ -105,8 +105,8 @@ describe('encryptFieldForModel', () => {
 
         const r = await encryptFieldForModel(
             deps,
-            'Finding',
-            'rootCause',
+            'Task',
+            'resolution',
             DEFAULTS,
         );
 
@@ -124,10 +124,10 @@ describe('encryptFieldForModel', () => {
 
     test("SELECT includes the idempotency guard (NOT LIKE 'v1:%')", async () => {
         const deps = makeDeps({ batches: [[]] });
-        await encryptFieldForModel(deps, 'Finding', 'rootCause', DEFAULTS);
+        await encryptFieldForModel(deps, 'Task', 'resolution', DEFAULTS);
         expect(deps.queryCalls[0].sql).toContain("NOT LIKE 'v1:%'");
-        expect(deps.queryCalls[0].sql).toContain(`FROM "Finding"`);
-        expect(deps.queryCalls[0].sql).toContain(`"rootCause"`);
+        expect(deps.queryCalls[0].sql).toContain(`FROM "Task"`);
+        expect(deps.queryCalls[0].sql).toContain(`"resolution"`);
     });
 
     test('stops cleanly after a short final batch', async () => {
@@ -148,8 +148,8 @@ describe('encryptFieldForModel', () => {
 
         const r = await encryptFieldForModel(
             deps,
-            'Finding',
-            'rootCause',
+            'Task',
+            'resolution',
             { ...DEFAULTS, batchSize: 10 },
         );
 
@@ -164,8 +164,8 @@ describe('encryptFieldForModel', () => {
         const deps = makeDeps({ batches: [[]] });
         const r = await encryptFieldForModel(
             deps,
-            'Finding',
-            'rootCause',
+            'Task',
+            'resolution',
             DEFAULTS,
         );
         expect(r.scanned).toBe(0);
@@ -184,7 +184,7 @@ describe('encryptFieldForModel', () => {
             ],
         });
 
-        const r = await encryptFieldForModel(deps, 'Finding', 'rootCause', {
+        const r = await encryptFieldForModel(deps, 'Task', 'resolution', {
             ...DEFAULTS,
             execute: false,
         });
@@ -208,8 +208,8 @@ describe('encryptFieldForModel', () => {
 
         const r = await encryptFieldForModel(
             deps,
-            'Finding',
-            'rootCause',
+            'Task',
+            'resolution',
             DEFAULTS,
         );
 
@@ -234,8 +234,8 @@ describe('encryptFieldForModel', () => {
 
         const r = await encryptFieldForModel(
             deps,
-            'Finding',
-            'rootCause',
+            'Task',
+            'resolution',
             DEFAULTS,
         );
         expect(r.scanned).toBe(3);
@@ -257,8 +257,8 @@ describe('encryptFieldForModel', () => {
 
         const r = await encryptFieldForModel(
             deps,
-            'Finding',
-            'rootCause',
+            'Task',
+            'resolution',
             DEFAULTS,
         );
         expect(r.errors).toBe(1);
@@ -281,7 +281,7 @@ describe('encryptFieldForModel', () => {
             failUpdates: new Set(['r1']),
         });
 
-        await encryptFieldForModel(deps, 'Finding', 'rootCause', DEFAULTS);
+        await encryptFieldForModel(deps, 'Task', 'resolution', DEFAULTS);
 
         const serialised = JSON.stringify(deps.logCalls);
         expect(serialised).not.toContain('ROOT_PASSWORD=supersecret!');
@@ -292,7 +292,7 @@ describe('encryptFieldForModel', () => {
         const deps = makeDeps({
             batches: [[{ id: 'r1', value: 'hello' }]],
         });
-        const r = await encryptFieldForModel(deps, 'Finding', 'rootCause', {
+        const r = await encryptFieldForModel(deps, 'Task', 'resolution', {
             ...DEFAULTS,
             verify: true,
         });
@@ -313,7 +313,7 @@ describe('encryptFieldForModel', () => {
         ).rejects.toThrow(/Invalid model identifier/);
 
         await expect(
-            encryptFieldForModel(deps, 'Finding', 'bad field name', DEFAULTS),
+            encryptFieldForModel(deps, 'Task', 'bad field name', DEFAULTS),
         ).rejects.toThrow(/Invalid field identifier/);
 
         expect(deps.queryCalls).toHaveLength(0);
@@ -324,7 +324,7 @@ describe('encryptFieldForModel', () => {
         const first = makeDeps({
             batches: [[{ id: 'r1', value: 'plain' }]],
         });
-        await encryptFieldForModel(first, 'Finding', 'rootCause', DEFAULTS);
+        await encryptFieldForModel(first, 'Task', 'resolution', DEFAULTS);
 
         // Second run: all data now encrypted → SELECT returns empty
         // (the `NOT LIKE 'v1:%'` filter takes care of it in reality;
@@ -332,8 +332,8 @@ describe('encryptFieldForModel', () => {
         const second = makeDeps({ batches: [[]] });
         const r = await encryptFieldForModel(
             second,
-            'Finding',
-            'rootCause',
+            'Task',
+            'resolution',
             DEFAULTS,
         );
         expect(r.scanned).toBe(0);
@@ -361,7 +361,8 @@ describe('runBackfill — orchestration', () => {
 
         expect(report.totalScanned).toBe(0);
         expect(report.totalEncrypted).toBe(0);
-        expect(report.results.length).toBeGreaterThan(20); // ~32
+        // ~20 after GRC teardown phase 2 trimmed the manifest.
+        expect(report.results.length).toBeGreaterThan(15);
         expect(report.options.execute).toBe(false);
         expect(report.durationMs).toBeGreaterThanOrEqual(0);
     });
@@ -375,32 +376,34 @@ describe('runBackfill — orchestration', () => {
             execute: false,
             verify: false,
             batchSize: 10,
-            // AuditChecklistItem is the manifest's 3-field model
-            // (this was Risk until the risk register was removed).
-            modelsFilter: ['AuditChecklistItem'],
+            // A single-field manifest model (this was Risk until the risk
+            // register was removed, then AuditChecklistItem until GRC
+            // teardown phase 2).
+            modelsFilter: ['TaskComment'],
             piiOnly: false,
             skipPii: true,
         });
 
         // All results are from the filtered model.
         for (const r of report.results) {
-            expect(r.model).toBe('AuditChecklistItem');
+            expect(r.model).toBe('TaskComment');
         }
-        expect(report.results.length).toBe(3);
+        expect(report.results.length).toBe(1);
     });
 
-    test('end-to-end: plaintext rows in 2 fields get encrypted + summed in totals', async () => {
+    test('end-to-end: plaintext rows get encrypted + summed in totals', async () => {
+        // Task is the manifest's surviving two-field model
+        // (description + resolution). AuditChecklistItem played this role
+        // until GRC teardown phase 2.
         const deps = makeDeps({
             batches: [
-                // AuditChecklistItem.prompt — 2 plaintext rows
+                // Task.description — 2 plaintext rows
                 [
                     { id: 'r1', value: 'a' },
                     { id: 'r2', value: 'b' },
                 ],
-                // AuditChecklistItem.notes — 1 plaintext row
+                // Task.resolution — 1 plaintext row
                 [{ id: 'r3', value: 'c' }],
-                // AuditChecklistItem.evidenceRef — empty
-                [],
             ],
         });
 
@@ -408,7 +411,7 @@ describe('runBackfill — orchestration', () => {
             execute: true,
             verify: false,
             batchSize: 10,
-            modelsFilter: ['AuditChecklistItem'],
+            modelsFilter: ['Task'],
             piiOnly: false,
             skipPii: true,
         });

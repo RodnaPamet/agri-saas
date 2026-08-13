@@ -49,7 +49,8 @@ describe('B6 — Phase 3 useZodForm adoption', () => {
     });
 
     describe('Frontend-safe schemas in src/lib/schemas/', () => {
-        const ENTITIES = ['vendor', 'task', 'asset', 'audit'] as const;
+        // GRC teardown phase 2: 'vendor' removed with vendor-form.ts.
+        const ENTITIES = ['task', 'asset', 'audit'] as const;
         for (const entity of ENTITIES) {
             it(`${entity}-form.ts schema exists + exports the export shape`, () => {
                 const src = read(`src/lib/schemas/${entity}-form.ts`);
@@ -68,12 +69,14 @@ describe('B6 — Phase 3 useZodForm adoption', () => {
         // structure as practices: Overview, Tasks, Evidence, Mappings,
         // Traceability, Activity. (A seventh tab, Tests, was dropped in the
         // compliance uproot along with the test-plan feature it opened.)
+        // GRC teardown phase 2 (T2/A8): 'mappings' and 'traceability' were
+        // the compliance-era tabs and are gone. 'evidence' survives and is
+        // now UNGATED — the inherited-from-practices half went, but evidence
+        // attached directly to the asset is a farm record.
         const CANONICAL_TABS = [
             'overview',
             'tasks',
             'evidence',
-            'mappings',
-            'traceability',
             'activity',
         ] as const;
         // RQ2-4: Risks left the canonical 7-tab club — its IA is now
@@ -81,10 +84,6 @@ describe('B6 — Phase 3 useZodForm adoption', () => {
         // Bow-Tie · History · Tasks · Evidence · Traceability), locked
         // by tests/guards/rq2-4-assessment-ia.test.ts.
         const PAGES: Array<{ label: string; file: string }> = [
-            {
-                label: 'Practices (canonical)',
-                file: 'src/app/t/[tenantSlug]/(app)/practices/[practiceId]/page.tsx',
-            },
             {
                 label: 'Assets',
                 file: 'src/app/t/[tenantSlug]/(app)/assets/[id]/page.tsx',
@@ -114,20 +113,12 @@ describe('B6 — Phase 3 useZodForm adoption', () => {
     describe('Four modal form hooks adopt useZodForm', () => {
         const HOOKS: Array<{ label: string; file: string }> = [
             {
-                label: 'vendor',
-                file: 'src/app/t/[tenantSlug]/(app)/vendors/_form/useNewVendorForm.ts',
-            },
-            {
                 label: 'task',
                 file: 'src/components/tasks/_form/useNewTaskForm.ts',
             },
             {
                 label: 'asset',
                 file: 'src/app/t/[tenantSlug]/(app)/assets/_form/useNewAssetForm.ts',
-            },
-            {
-                label: 'audit',
-                file: 'src/app/t/[tenantSlug]/(app)/audits/_form/useNewAuditForm.ts',
             },
         ];
 

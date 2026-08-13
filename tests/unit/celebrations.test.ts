@@ -53,9 +53,9 @@ describe('MILESTONES registry', () => {
             'first-harvest',
             'first-practice-mapped',
             'framework-100',
-            'inspection-passed',
+            // GRC teardown phase 2 removed 'inspection-passed' + 'sop-100-ack'
+            // with their AuditPack / Policy data sources (plan §1c).
             'season-closed',
-            'sop-100-ack',
             'spray-job-complete',
         ]);
     });

@@ -14,7 +14,7 @@
  *     approve|reject` (PLATFORM_ADMIN_API_KEY, the `agri-events.ts`
  *     pattern). A row that reaches `APPROVED` becomes visible on every
  *     tenant's calendar via `loadNewsDerivedEventEvents` in
- *     `compliance-calendar.ts`; `REJECTED` (and `PROPOSED`) never surface
+ *     `calendar.ts`; `REJECTED` (and `PROPOSED`) never surface
  *     there. There is deliberately NO auto-promotion path anywhere in the
  *     codebase — every approval is a human decision.
  *

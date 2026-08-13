@@ -50,11 +50,6 @@ const DASHBOARDS: DashboardEntry[] = [
         adopted: false,
         note: "Farm-UI trim removed the dashboard masthead header (the 'Compliance Dashboard' PageHeader) along with the KPI/trend/hero surfaces. The page's greeting header (server page.tsx) is the sole masthead now, so DashboardClient no longer mounts <DashboardLayout> — it's just onboarding banner + ag strip + recent-activity feed.",
     },
-    {
-        file: "src/app/t/[tenantSlug]/(app)/vendors/dashboard/page.tsx",
-        adopted: true,
-        note: "Vendors portfolio dashboard with risk-rating breakdown + assessment status.",
-    },
 ];
 
 describe("DashboardLayout coverage", () => {

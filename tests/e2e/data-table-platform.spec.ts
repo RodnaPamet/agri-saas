@@ -75,26 +75,12 @@ test.describe('DataTable Platform — Cross-page regression', () => {
         }
     }
 
-    // ── Practices ──
-
-    test('Practices page renders DataTable', async ({ page }) => {
-        tenantSlug = await loginAndGetTenant(page);
-        await assertTableRendered(page, '/practices', {
-            heading: 'Practices',
-            minHeaders: 3,
-        });
-    });
-
-    // ── Policies ──
-
-    test('Policies page renders DataTable', async ({ page }) => {
-        tenantSlug = await loginAndGetTenant(page);
-        await assertTableRendered(page, '/policies', {
-            heading: 'Polic',
-            testId: 'policies-table',
-            minHeaders: 3,
-        });
-    });
+    // GRC teardown phase 2 — the Practices and Policies list tests were
+    // deleted with `/practices` and `/policies`. They asserted nothing
+    // about those entities that the surviving pages below do not also
+    // assert (this describe block is deliberately entity-agnostic — it
+    // tests the shared DataTable, not the domain), so the platform
+    // contract is still covered by Tasks / Assets / Evidence / audit-log.
 
     // ── Tasks ──
 
@@ -107,16 +93,7 @@ test.describe('DataTable Platform — Cross-page regression', () => {
         });
     });
 
-    // ── Vendors ──
-
-    test('Vendors page renders DataTable', async ({ page }) => {
-        tenantSlug = await loginAndGetTenant(page);
-        await assertTableRendered(page, '/vendors', {
-            heading: 'Vendor',
-            testId: 'vendors-table',
-            minHeaders: 3,
-        });
-    });
+    // GRC teardown phase 2 — the Vendors test went with `/vendors`.
 
     // ── Assets ──
 
@@ -129,17 +106,8 @@ test.describe('DataTable Platform — Cross-page regression', () => {
         });
     });
 
-    // ── Findings ──
-
-    test('Findings page renders DataTable', async ({ page }) => {
-        tenantSlug = await loginAndGetTenant(page);
-        await assertTableRendered(page, '/findings', {
-            // Reseated: findings.title → "Nonconformity Register" (ag vocabulary).
-            heading: 'Nonconformity',
-            testId: 'findings-table',
-            minHeaders: 3,
-        });
-    });
+    // GRC teardown phase 2 — the Findings test went with `/findings`
+    // (the "Nonconformity Register" reseat did not survive the uproot).
 
     // ── Evidence ──
 
@@ -170,45 +138,61 @@ test.describe('DataTable Platform — Cross-page regression', () => {
 test.describe('DataTable Platform — Row click navigation', () => {
     let tenantSlug: string;
 
-    test('Practices row double-click navigates to detail', async ({ page }) => {
+    // GRC teardown phase 2 — the two cases here drove `/practices` and
+    // `/policies`. The assertion is about the PLATFORM (R13-PR2:
+    // selection owns the single click, so the row action moves to
+    // double-click), not about either entity, so both were re-pointed
+    // at surviving seeded list pages rather than dropped: Assets and
+    // farm Tasks. Both wire `onRowClick` and leave `selectionEnabled`
+    // at its `true` default, which is exactly the configuration that
+    // puts navigation on the double-click.
+
+    test('Assets row double-click navigates to detail', async ({ page }) => {
         tenantSlug = await loginAndGetTenant(page);
-        await page.goto(`/t/${tenantSlug}/practices`);
+        await page.goto(`/t/${tenantSlug}/assets`);
         await page.waitForLoadState('networkidle').catch(() => {});
         await page.waitForSelector('h1', { timeout: 15000 });
 
-        // R13-PR2 — row opens on double-click, not single-click.
-        // Seed provisions 4 tenant practices; assert visibility.
-        // Target the second visible cell (the code cell), which is
-        // not interactive — DataTable ignores double-clicks landing
-        // on interactive children like the select checkbox or title
-        // link.
-        const rows = page.locator('tbody tr');
+        // Seed provisions 3 tenant assets.
+        const rows = page.getByRole('main').locator('[data-testid="assets-table"] tbody tr');
         await expect(rows.first()).toBeVisible({ timeout: 15_000 });
 
-        await rows.first().locator('td').nth(1).dblclick();
-        await page.waitForURL(/\/practices\/[a-zA-Z0-9-]+$/, { timeout: 10_000 });
-        await expect(page.locator('#practice-title')).toBeVisible({ timeout: 10_000 });
+        // Target the LAST cell — DataTable's trailing chevron column,
+        // which it appends whenever `onRowClick` is wired. Its contents
+        // are `aria-hidden` decoration with `pointer-events-none`, so
+        // the double-click always lands on the `<td>` itself and never
+        // on an interactive child (the select checkbox in the leading
+        // cell, or the title `<Link>` in the name cell — DataTable
+        // ignores double-clicks on both). Using `.last()` rather than a
+        // fixed index also survives the Code column being hidden by
+        // default, which would shift every positional index by one.
+        await rows.first().locator('td').last().dblclick();
+        await page.waitForURL(/\/assets\/[a-zA-Z0-9-]+$/, { timeout: 10_000 });
+        await expect(page.locator('#asset-title-heading')).toBeVisible({ timeout: 10_000 });
     });
 
-    test('Policies row double-click navigates to detail', async ({ page }) => {
+    test('Tasks row double-click navigates to detail', async ({ page }) => {
         tenantSlug = await loginAndGetTenant(page);
-        await page.goto(`/t/${tenantSlug}/policies`);
+        await page.goto(`/t/${tenantSlug}/farm-tasks`);
         await page.waitForLoadState('networkidle').catch(() => {});
         await page.waitForSelector('h1', { timeout: 15000 });
 
-        // R13-PR2 — row opens on double-click, not single-click.
-        // Seed provisions 3 published policies.
-        const rows = page.locator('[data-testid="policies-table"] tbody tr');
+        // Seed provisions 4 tenant tasks.
+        const rows = page.getByRole('main').locator('[data-testid="farm-tasks-table"] tbody tr');
         await expect(rows.first()).toBeVisible({ timeout: 15_000 });
 
-        await rows.first().dblclick();
-        await page.waitForURL(/\/policies\/[a-zA-Z0-9-]+$/, { timeout: 10_000 });
+        await rows.first().locator('td').last().dblclick();
+        await page.waitForURL(/\/farm-tasks\/[a-zA-Z0-9-]+$/, { timeout: 10_000 });
+        await expect(page.locator('#task-title')).toBeVisible({ timeout: 10_000 });
     });
 });
 
-// R14 (#443) removed the FilterToolbar text-search input from every list
-// page (the navbar ⌘K palette is the sole search affordance now). The
-// "Filter interaction" describe block here drove `#practice-search` /
-// `#task-search` directly and was deleted — list-page filter coverage
-// now lives in `practices-filter-epic53.spec.ts` (the FilterSelect popover
-// path, which is the surviving filter UI).
+// R14 (#443) removed the standalone FilterToolbar text-search input from
+// every list page. The "Filter interaction" describe block here drove
+// `#practice-search` / `#task-search` directly and was deleted — the
+// surviving filter UI is the FilterSelect popover, covered by
+// `filters.spec.ts` (URL-param contract) and `search-affordances.spec.ts`
+// (the live content search that now lives inside that popover).
+//
+// GRC teardown phase 2 — the earlier pointer here was to
+// `practices-filter-epic53.spec.ts`, which went with `/practices`.

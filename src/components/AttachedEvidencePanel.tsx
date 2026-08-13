@@ -26,7 +26,7 @@ import { EvidenceAddForm } from '@/components/EvidenceAddForm';
 import {
     EvidenceSubTable,
     type EvidenceTabData,
-} from '@/app/t/[tenantSlug]/(app)/practices/[practiceId]/_tabs/EvidenceSubTable';
+} from '@/components/EvidenceSubTable';
 
 interface AttachedEvidencePanelProps {
     /** Risk or asset id. */

@@ -31,9 +31,6 @@
  *   - access-reviews decision picker → ToggleGroup; its modal target-role
  *     picker → Combobox.
  *   - admin/members row-action menu → Popover (never a native select).
- * Note: PracticesClient's dense inline pickers, referenced by earlier
- * versions of this comment as "4 native selects", are now button-based
- * StatusBadge triggers — they contribute ZERO native selects today.
  */
 
 import * as fs from 'fs';
@@ -128,29 +125,22 @@ describe('Epic 55 — native <select> ratchet', () => {
 // ─── Explicit drift sentinels — surfaces that MUST stay migrated ──
 
 describe('Epic 55 — migrated surfaces must not regress to native <select>', () => {
+    // GRC teardown phase 2 dropped the twelve sentinels whose pages were
+    // deleted (audits/*, practices/*, policies/*, vendors/*, findings/*,
+    // clauses/*). The surviving sentinels below are unchanged — the
+    // baseline of 0 is what actually stops a new native <select>; these
+    // are the belt-and-braces "this specific surface stays migrated"
+    // checks for the surfaces that still exist.
     const APP_MIGRATED = [
-        'audits/cycles/page.tsx',
-        'practices/NewPracticeModal.tsx',
-        'practices/PracticeDetailSheet.tsx',
         'evidence/UploadEvidenceModal.tsx',
         'evidence/NewEvidenceTextModal.tsx',
-        'vendors/new/page.tsx',
-        'findings/FindingsClient.tsx',
-        'clauses/ClausesBrowser.tsx',
-        'policies/new/page.tsx',
         // Session 2 — Batch 1 migrated files
         'assets/[id]/page.tsx',
         'assets/AssetsClient.tsx',
-        'practices/[practiceId]/page.tsx',
         'admin/members/page.tsx',
         'admin/roles/page.tsx',
         'admin/api-keys/page.tsx',
         'admin/integrations/page.tsx',
-        'vendors/[vendorId]/page.tsx',
-        'vendors/[vendorId]/assessment/[assessmentId]/page.tsx',
-        'policies/templates/page.tsx',
-        // Session 3 — final native-select closeouts (baseline → 0)
-        'audits/AuditsClient.tsx',
         // Dropdown-unification pass — access-reviews decision + target-role
         'access-reviews/[reviewId]/AccessReviewDetailClient.tsx',
     ].map((rel) => `app/t/[tenantSlug]/(app)/${rel}`);

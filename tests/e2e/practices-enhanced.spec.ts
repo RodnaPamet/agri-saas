@@ -1,12 +1,22 @@
 /**
- * Practices Enhanced — mutating E2E (dashboard + detail-page extras).
+ * Entity-detail activity tab — mutating E2E.
  *
- * Isolation: each `test()` runs on its own fresh, empty tenant via
- * the `isolatedTenant` fixture. The "activity tab" / "automation
- * section" tests previously clicked the FIRST row of the practices
- * table — which only works if the seed tenant already has practices.
- * On an isolated (empty) tenant they now create their own practice
- * first, so the test is self-contained and order-independent.
+ * GRC teardown phase 2 — this file was `Practices Enhanced` and drove
+ * `/practices/<id>`, which was DELETED. The one surviving test asserts
+ * a PLATFORM behaviour, not a practice one: a detail page's Activity
+ * tab renders either the audit feed or its empty state. `/assets/<id>`
+ * carries the same tab (`EntityDetailLayout` renders the trigger as
+ * `#tab-activity`; the asset page renders `#asset-activity-feed` or an
+ * `InlineEmptyState` whose description reads "No activity recorded for
+ * this asset yet."), so the test is RE-POINTED there rather than
+ * dropped. The practices dashboard test that used to open this block
+ * (`/practices/dashboard` — stats + implementation-progress + sankey)
+ * had already gone with the practice exoskeleton and is not replaced:
+ * no surviving page reproduces it.
+ *
+ * Isolation: the test runs on its own fresh, empty tenant via the
+ * `isolatedTenant` fixture and creates the asset whose activity it
+ * inspects, so it is self-contained and order-independent.
  *
  * All selectors use existing id attributes — no data-testid additions.
  */
@@ -15,12 +25,14 @@ import { test, expect } from './fixtures';
 import type { Page } from '@playwright/test';
 import { safeGoto } from './e2e-utils';
 
-/** Create a practice on the isolated tenant; land on its detail page. */
-async function createPractice(page: Page, slug: string): Promise<void> {
+/** Create an asset on the isolated tenant; land on its detail page. */
+async function createAsset(page: Page, slug: string): Promise<void> {
     const uid = `${Date.now().toString(36)}-${randomUUID().slice(0, 8)}`;
     let r = 3;
     while (r > 0) {
-        const resp = await safeGoto(page, `/t/${slug}/practices/new`, {
+        // `/assets/new` is a server redirect onto `/assets?create=1`,
+        // which AssetsClient detects and opens <NewAssetModal> for.
+        const resp = await safeGoto(page, `/t/${slug}/assets/new`, {
             waitUntil: 'domcontentloaded',
         });
         if (resp && resp.status() < 500) break;
@@ -28,22 +40,20 @@ async function createPractice(page: Page, slug: string): Promise<void> {
         if (r > 0) await page.waitForTimeout(5000);
     }
     await page.waitForLoadState('networkidle').catch(() => {});
-    await page.waitForSelector('#practice-name-input', { timeout: 30000 });
-    await page.fill('#practice-name-input', `Enhanced Test ${uid}`);
-    await page.fill('#practice-code-input', `ENH-${uid}`);
-    await page.click('#create-practice-btn');
-    await page.waitForURL('**/practices/**', { timeout: 30000 });
-    await page.waitForSelector('#practice-title', { timeout: 30000 });
+    await page.waitForSelector('#asset-name-input', { timeout: 30000 });
+    // `name` is the only required field — `type` / `status` default to
+    // TRACTOR / ACTIVE in useNewAssetForm.
+    await page.fill('#asset-name-input', `Enhanced Test ${uid}`);
+    await page.click('#create-asset-submit');
+    // The modal's onSuccess pushes to the new asset's detail page.
+    await page.waitForURL('**/assets/**', { timeout: 30000 });
+    await page.waitForSelector('#asset-title-heading', { timeout: 30000 });
 }
 
-// The `dashboard loads and shows metrics` test that opened this block
-// drove `/t/<slug>/practices/dashboard` — the practices dashboard (stats +
-// implementation-progress + sankey) deleted with the practice exoskeleton.
-// It had no subject left; the activity tab below is unaffected.
-test.describe('Practices Enhanced', () => {
+test.describe('Entity detail — activity tab', () => {
     test('activity tab shows events', async ({ authedPage, isolatedTenant }) => {
-        // Self-contained: create the practice whose activity we inspect.
-        await createPractice(authedPage, isolatedTenant.tenantSlug);
+        // Self-contained: create the asset whose activity we inspect.
+        await createAsset(authedPage, isolatedTenant.tenantSlug);
 
         await authedPage.click('#tab-activity');
 
@@ -54,8 +64,8 @@ test.describe('Practices Enhanced', () => {
         // `isVisible()` pattern flaked when neither had painted within a
         // fixed 15s window).
         const activityOrEmpty = authedPage
-            .locator('#activity-feed')
-            .or(authedPage.getByText('No activity recorded'));
+            .locator('#asset-activity-feed')
+            .or(authedPage.getByText(/No activity recorded/i));
         await expect(activityOrEmpty.first()).toBeVisible({ timeout: 30000 });
     });
 });

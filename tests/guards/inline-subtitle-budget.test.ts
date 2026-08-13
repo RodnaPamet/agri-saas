@@ -54,7 +54,9 @@ const EXEMPT_FILE_PATTERNS: RegExp[] = [
  * `tests/guards/r31-document-bar.test.ts`.
  */
 // Compliance uproot (2026-08-07): compliance uproot removed 10 inline-subtitle sites.
-const INLINE_SUBTITLE_BUDGET = 26;
+// 24 → 20 (GRC teardown phase 2, T3): the deleted GRC pages took their
+// inline subtitles with them; the budget re-floors so slack stays ≤3.
+const INLINE_SUBTITLE_BUDGET = 20;
 
 function isExempt(rel: string): boolean {
     const segments = rel.split(path.sep);

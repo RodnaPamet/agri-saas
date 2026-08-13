@@ -1,19 +1,40 @@
 /**
- * E2E Core Certification Flow
+ * E2E Core Lifecycle Flow
  *
- * Covers the full compliance lifecycle as ONE scenario:
+ * Covers the primary create → evidence → link → read-back lifecycle as
+ * ONE scenario:
  *   A) Log in (OWNER of a fresh isolated tenant)
- *   B) Create a Practice
- *   C) Upload Evidence linked to that Practice
- *   D) Create an Asset (via API)
- *   E) Link Practice → Asset and verify on the asset detail
- *   F) Verify the bidirectional link on the practice detail
+ *   B) Create an Asset
+ *   C) Upload tenant-wide Evidence
+ *   D) Attach Evidence to that Asset from the asset detail
+ *   E) Cold-reload the asset detail and read the link back
  *
- * Steps D-F used to run against the Risk register. That went with the
- * inherited GRC stack, so they were repointed onto Asset — the surviving
- * entity on the other side of a practice's traceability graph. The shape
- * of the assertion (link once via API, read it back from BOTH detail
- * pages) is unchanged, which is the property this spec exists to hold.
+ * GRC teardown phase 2 — the original A-F walked
+ * practice → evidence → asset → bidirectional traceability. `/practices`
+ * was deleted along with the whole inherited GRC surface, and so were
+ * the two halves that made the link bidirectional: the
+ * `TraceabilityPanel` component (`#traceability-panel`,
+ * `#linked-practices-table`, `#linked-assets-table`) and the
+ * `POST /api/t/:slug/assets/:id/practices` endpoint. There is no
+ * practice to create, nothing to link it to, and no panel to read it
+ * back from, so steps B/E/F could not be re-pointed — they were
+ * replaced.
+ *
+ * What replaced them is the surviving link of the same SHAPE:
+ * Asset ↔ Evidence, via `Evidence.assetId` and the
+ * `<AttachedEvidencePanel>` on the asset detail's Evidence tab. The
+ * property this spec exists to hold is unchanged — mint two entities,
+ * link them, and prove the link is real by reading it back from a page
+ * that did not perform the write. Step E does that with a cold
+ * navigation, which additionally proves the link PERSISTED rather than
+ * only living in post-mutation client state.
+ *
+ * Step C (the `/evidence` upload modal) survives intact except for the
+ * practice linker: `UploadEvidenceModal` no longer renders
+ * `#practice-select` — that combobox went with the GRC teardown, and
+ * the modal now has no entity picker at all. The upload itself
+ * (dropzone → multipart POST → optimistic list insert) is untouched and
+ * still worth covering, so the step keeps everything but the link.
  *
  * Isolation: the whole flow runs against ONE fresh, empty tenant
  * provisioned by the `isolatedTenant` fixture. The previous shape
@@ -33,16 +54,16 @@ import * as path from 'path';
 
 const EVIDENCE_FIXTURE = path.resolve(__dirname, '../fixtures/evidence.txt');
 
-test.describe('Core Certification Flow', () => {
-    test('full compliance lifecycle: practice → evidence → asset → link', async ({
+test.describe('Core Lifecycle Flow', () => {
+    test('full lifecycle: asset → evidence → attach → read back', async ({
         authedPage: page,
         isolatedTenant,
     }) => {
         const { tenantSlug } = isolatedTenant;
         const unique = `${Date.now().toString(36)}-${randomUUID().slice(0, 8)}`;
-        const CONTROL_CODE = `E2E-CTRL-${unique}`;
-        const CONTROL_NAME = `E2E Access Control ${unique}`;
         const ASSET_NAME = `E2E Asset ${unique}`;
+        const EVIDENCE_TITLE = `E2E Evidence ${unique}`;
+        const ATTACHED_TITLE = `E2E Attached Evidence ${unique}`;
 
         // ── A) Already signed in via the `authedPage` fixture ──
         await test.step('A — landed on dashboard as the isolated OWNER', async () => {
@@ -52,35 +73,48 @@ test.describe('Core Certification Flow', () => {
             });
         });
 
-        // ── B) Create Practice ──
-        let practiceId: string | undefined;
-        await test.step('B — create a new practice', async () => {
-            await page.goto(`/t/${tenantSlug}/practices/new`);
+        // ── B) Create an Asset ──
+        let assetId: string | undefined;
+        await test.step('B — create a new asset', async () => {
+            // `/assets/new` is a redirect shim onto `/assets?create=1`,
+            // which AssetsClient detects and opens <NewAssetModal> for.
+            // `name` is the only required field — `type` and `status`
+            // carry defaults (TRACTOR / ACTIVE) in useNewAssetForm.
+            await page.goto(`/t/${tenantSlug}/assets/new`);
             await page.waitForLoadState('networkidle').catch(() => {});
-            await page.waitForSelector('#practice-name-input', { timeout: 60000 });
+            await page.waitForSelector('#asset-name-input', { timeout: 60000 });
 
-            await page.fill('#practice-name-input', CONTROL_NAME);
-            await page.fill('#practice-code-input', CONTROL_CODE);
-            await page.fill(
-                '#practice-description-input',
-                'E2E test practice for certification flow',
-            );
-            await page.click('#create-practice-btn');
+            await page.fill('#asset-name-input', ASSET_NAME);
+            await page.click('#create-asset-submit');
 
-            await page.waitForURL('**/practices/**', { timeout: 30000 });
+            // The modal's onSuccess pushes to the new asset's detail page.
+            await page.waitForURL('**/assets/**', { timeout: 30000 });
             await page.waitForLoadState('networkidle').catch(() => {});
-            await page.waitForSelector('#practice-title', { timeout: 60000 });
-            await expect(page.locator('#practice-title')).toContainText(
-                CONTROL_NAME,
+            await page.waitForSelector('#asset-title-heading', { timeout: 60000 });
+            await expect(page.locator('#asset-title-heading')).toContainText(
+                ASSET_NAME,
                 { timeout: 5000 },
             );
-            const m = page.url().match(/\/practices\/([^/?]+)/);
-            practiceId = m?.[1];
-            expect(practiceId).toBeTruthy();
+            const m = page.url().match(/\/assets\/([^/?]+)/);
+            assetId = m?.[1];
+            expect(assetId).toBeTruthy();
+
+            // Server-side list search. This assertion came off the deleted
+            // /practices step; `assets/page.tsx` reads `q` out of
+            // searchParams into listAssets, so the contract survives intact
+            // on assets. Without it nothing in this spec ever reads the
+            // LIST — step B lands on ?create=1 and the modal pushes
+            // straight to the detail page.
+            await page.goto(
+                `/t/${tenantSlug}/assets?q=${encodeURIComponent(ASSET_NAME)}`,
+            );
+            await expect(
+                page.locator(`text=${ASSET_NAME}`).first(),
+            ).toBeVisible({ timeout: 10_000 });
         });
 
-        // ── C) Upload Evidence linked to the Practice ──
-        await test.step('C — upload evidence and link to practice', async () => {
+        // ── C) Upload tenant-wide Evidence ──
+        await test.step('C — upload evidence from the evidence list', async () => {
             await page.goto(`/t/${tenantSlug}/evidence`);
             await page.waitForLoadState('networkidle').catch(() => {});
             await page.waitForSelector('h1', { timeout: 60000 });
@@ -89,129 +123,102 @@ test.describe('Core Certification Flow', () => {
             await page.waitForSelector('#upload-form', { timeout: 5000 });
 
             await page.locator('#file-input').setInputFiles(EVIDENCE_FIXTURE);
-            await page.fill('#upload-title-input', `E2E Evidence ${unique}`);
+            await page.fill('#upload-title-input', EVIDENCE_TITLE);
 
-            // Epic 55: the practice linker is a <Combobox>. Open it,
-            // type into the cmdk search, click the matching option.
-            // The tenant is isolated + freshly created, so this is the
-            // ONLY practice — the search is unambiguous.
-            await page.click('#practice-select');
-            const comboSearch = page.getByPlaceholder('Search practices…');
-            await comboSearch.fill(CONTROL_CODE);
-            const codeOption = page
-                .getByRole('option')
-                .filter({ hasText: CONTROL_CODE })
-                .first();
-            await codeOption.waitFor({ state: 'visible', timeout: 10_000 });
-            await codeOption.click();
+            // GRC teardown phase 2 — the `#practice-select` combobox that
+            // used to link the upload to a practice was removed with
+            // /practices. UploadEvidenceModal now carries no entity
+            // picker, so the upload is tenant-wide; entity attachment
+            // happens on the entity's own detail page (step D).
 
             await page.click('#submit-upload-btn');
             await expect(page.locator('#upload-form')).not.toBeVisible({
                 timeout: 15000,
             });
             await expect(
-                page.locator(`text=E2E Evidence ${unique}`).first(),
+                page.locator(`text=${EVIDENCE_TITLE}`).first(),
             ).toBeVisible({ timeout: 10000 });
         });
 
-        // ── D) Create an Asset via API ──
-        let assetId: string | undefined;
-        await test.step('D — create an asset via API', async () => {
-            await page.goto(`/t/${tenantSlug}/assets`);
-            await page.waitForLoadState('networkidle').catch(() => {});
-            await page.waitForSelector('h1', { timeout: 60000 });
-
-            const assetResult = await page.evaluate(async (assetName) => {
-                const slug = window.location.pathname.split('/')[2];
-                const res = await fetch(
-                    `${window.location.origin}/api/t/${slug}/assets`,
-                    {
-                        method: 'POST',
-                        credentials: 'include',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            name: assetName,
-                            type: 'TRACTOR',
-                            criticality: 'HIGH',
-                        }),
-                    },
-                );
-                const data = await res.json();
-                return { ok: res.ok, status: res.status, id: data?.id, name: data?.name };
-            }, ASSET_NAME);
-
-            expect(assetResult.ok).toBe(true);
-            expect(assetResult.name).toBe(ASSET_NAME);
-            assetId = assetResult.id;
-            expect(assetId).toBeTruthy();
-
-            await page.goto(
-                `/t/${tenantSlug}/assets?q=${encodeURIComponent(ASSET_NAME)}`,
-            );
-            await page.waitForLoadState('networkidle').catch(() => {});
-            await page.waitForSelector('h1', { timeout: 30000 });
-            await expect(
-                page.locator(`text=${ASSET_NAME}`).first(),
-            ).toBeVisible({ timeout: 10000 });
-        });
-
-        // ── E) Link Practice → Asset and verify on the asset detail ──
-        await test.step('E — link practice to asset and verify in traceability', async () => {
-            const linkResult = await page.evaluate(
-                async ({ cId, aId }) => {
-                    const slug = window.location.pathname.split('/')[2];
-                    const res = await fetch(
-                        `${window.location.origin}/api/t/${slug}/assets/${aId}/practices`,
-                        {
-                            method: 'POST',
-                            credentials: 'include',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ practiceId: cId }),
-                        },
-                    );
-                    return { ok: res.ok, status: res.status };
-                },
-                { cId: practiceId!, aId: assetId! },
-            );
-            expect(linkResult.ok).toBe(true);
-
+        // ── D) Attach Evidence to the Asset ──
+        await test.step('D — attach evidence to the asset', async () => {
             await page.goto(`/t/${tenantSlug}/assets/${assetId}`);
             await page.waitForLoadState('networkidle').catch(() => {});
-            // Traceability lives on its own tab. Wait for the tab trigger
-            // itself (EntityDetailLayout renders `id={`tab-${key}`}`) so a
-            // slow detail fetch can't race the click.
-            await page.waitForSelector('#tab-traceability', { timeout: 60000 });
-            await page.click('#tab-traceability');
-            await page.waitForSelector('#traceability-panel', { timeout: 60000 });
-            await expect(
-                page.locator('#linked-practices-table'),
-            ).toBeVisible({ timeout: 30_000 });
-            await expect(
-                page.locator('#linked-practices-table'),
-            ).not.toContainText('Loading', { timeout: 30_000 });
-            await expect(
-                page.locator('#linked-practices-table'),
-            ).toContainText(CONTROL_NAME, { timeout: 15_000 });
+            // Attached evidence lives on its own tab. Wait for the tab
+            // trigger itself (EntityDetailLayout renders `id={`tab-${key}`}`)
+            // so a slow detail fetch can't race the click.
+            await page.waitForSelector('#tab-evidence', { timeout: 60000 });
+            await page.click('#tab-evidence');
+
+            // <AttachedEvidencePanel entity="asset"> names its ids off the
+            // entity, so the add form is `#add-asset-evidence-btn` →
+            // `#asset-evidence-form`.
+            await page.waitForSelector('#add-asset-evidence-btn', {
+                timeout: 60000,
+            });
+            await page.click('#add-asset-evidence-btn');
+            await page.waitForSelector('#asset-evidence-form', { timeout: 15000 });
+
+            await page
+                .locator('#asset-evidence-file')
+                .setInputFiles(EVIDENCE_FIXTURE);
+            await page.fill('#asset-evidence-title', ATTACHED_TITLE);
+            await page.click('#submit-asset-evidence-btn');
+
+            // The form closes on success and the panel refetches.
+            await expect(page.locator('#asset-evidence-form')).not.toBeVisible({
+                timeout: 30_000,
+            });
+            // Settle on EITHER branch first: EvidenceSubTable renders
+            // #evidence-table only when rows.length > 0 and #no-evidence
+            // otherwise. Waiting on the table alone turns a rejected
+            // attach (AV scan / MIME reconcile / validation) into a bare
+            // 30s "element not found" instead of a diagnosable failure.
+            await page.waitForSelector('#evidence-table, #no-evidence', {
+                timeout: 30_000,
+            });
+            await expect(page.locator('#evidence-table')).toBeVisible({
+                timeout: 5_000,
+            });
+            await expect(page.locator('#evidence-table')).toContainText(
+                ATTACHED_TITLE,
+                { timeout: 15_000 },
+            );
         });
 
-        // ── F) Verify the bidirectional link on the practice detail ──
-        await test.step('F — verify practice shows linked asset in traceability', async () => {
-            await page.goto(`/t/${tenantSlug}/practices/${practiceId}`);
+        // ── E) Read the link back from a cold load ──
+        await test.step('E — reload the asset and verify the attachment persisted', async () => {
+            // Full navigation, not a client-side tab switch: the panel
+            // re-fetches `/assets/:id/evidence/attached` from scratch, so
+            // a row here proves the FK was persisted rather than only
+            // reflected in post-mutation client state.
+            await page.goto(`/t/${tenantSlug}/assets/${assetId}`);
             await page.waitForLoadState('networkidle').catch(() => {});
-            await page.waitForSelector('#practice-title', { timeout: 60000 });
-            await expect(page.locator('#practice-title')).toContainText(
-                CONTROL_NAME,
+            await page.waitForSelector('#tab-evidence', { timeout: 60000 });
+            await page.click('#tab-evidence');
+
+            // Settle on EITHER branch first: EvidenceSubTable renders
+            // #evidence-table only when rows.length > 0 and #no-evidence
+            // otherwise. Waiting on the table alone turns a rejected
+            // attach (AV scan / MIME reconcile / validation) into a bare
+            // 30s "element not found" instead of a diagnosable failure.
+            await page.waitForSelector('#evidence-table, #no-evidence', {
+                timeout: 30_000,
+            });
+            await expect(page.locator('#evidence-table')).toBeVisible({
+                timeout: 5_000,
+            });
+            await expect(page.locator('#evidence-table')).toContainText(
+                ATTACHED_TITLE,
+                { timeout: 15_000 },
             );
-
-            await page.click('button:has-text("Traceability")');
-            await page.waitForSelector('#traceability-panel', { timeout: 60000 });
-
-            await expect(
-                page.locator('#linked-assets-table'),
-            ).toBeVisible({ timeout: 10000 });
-            await expect(
-                page.locator('#linked-assets-table'),
-            ).toContainText(ASSET_NAME, { timeout: 5000 });
+            // The tenant-wide upload from step C was never attached to
+            // this asset, so it must NOT appear on the asset's panel —
+            // this is what makes the assertion above about the LINK
+            // rather than about evidence existing in the tenant.
+            await expect(page.locator('#evidence-table')).not.toContainText(
+                EVIDENCE_TITLE,
+            );
         });
     });
 });

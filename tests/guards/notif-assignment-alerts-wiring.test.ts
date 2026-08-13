@@ -10,7 +10,7 @@
  *      EVERY task write that may have set the assignee
  *      (createTask + assignTask). Pre-PR-A the email path
  *      fired but the in-app bell stayed silent.
- *   4. `practice/mutations.ts::setPracticeOwner` calls
+ *   4. (removed in GRC teardown phase 2) `practice/mutations.ts::setPracticeOwner` called
  *      `createAssignmentNotification('PRACTICE_ASSIGNED', …)`
  *      after committing the ownership change. Pre-PR-A
  *      practice owner changes wrote only the audit row.
@@ -217,56 +217,10 @@ describe('PR-A notification-assignment alert wiring', () => {
         });
     });
 
-    describe('4. practice/mutations.ts wires PRACTICE_ASSIGNED in setPracticeOwner', () => {
-        const src = () =>
-            read('src/app-layer/usecases/practice/mutations.ts');
-
-        it('imports createAssignmentNotification', () => {
-            expect(src()).toMatch(
-                /import\s*\{\s*createAssignmentNotification\s*\}\s*from\s*['"]\.\.\/\.\.\/notifications\/assignment['"]/,
-            );
-        });
-
-        it('setPracticeOwner calls createAssignmentNotification with PRACTICE_ASSIGNED', () => {
-            const s = src();
-            const start = s.indexOf('export async function setPracticeOwner');
-            expect(start).toBeGreaterThan(-1);
-            const end = s.indexOf('// ─── Cadence', start);
-            expect(end).toBeGreaterThan(start);
-            const body = s.slice(start, end);
-            expect(body).toMatch(
-                /createAssignmentNotification\(\s*db,\s*['"]PRACTICE_ASSIGNED['"]/,
-            );
-        });
-
-        it('the PRACTICE_ASSIGNED write runs AFTER the parent transaction commits', () => {
-            // The notification write MUST be outside the
-            // `runInTenantContext(...)` that does the ownership
-            // update — a notification failure should never roll back
-            // the assign. We anchor on the closing `await
-            // bumpEntityCacheVersion(...)` (post-tx) appearing BEFORE
-            // the createAssignmentNotification call.
-            const s = src();
-            const start = s.indexOf('export async function setPracticeOwner');
-            const end = s.indexOf('// ─── Cadence', start);
-            const body = s.slice(start, end);
-            const bumpIdx = body.indexOf("bumpEntityCacheVersion(ctx, 'practice')");
-            const callIdx = body.indexOf('createAssignmentNotification(');
-            expect(bumpIdx).toBeGreaterThan(-1);
-            expect(callIdx).toBeGreaterThan(bumpIdx);
-        });
-
-        it('only fires when ownerUserId is non-null (no notification on unassign)', () => {
-            // Unassigning (`ownerUserId === null`) shouldn't spam
-            // the deassigned user with "you were assigned" — the
-            // guard at the top of the if-block prevents it.
-            const s = src();
-            const start = s.indexOf('export async function setPracticeOwner');
-            const end = s.indexOf('// ─── Cadence', start);
-            const body = s.slice(start, end);
-            expect(body).toMatch(/if \(ownerUserId && ctx\.tenantSlug\)/);
-        });
-    });
+    // Block 4 (practice/mutations.ts wiring PRACTICE_ASSIGNED in
+    // setPracticeOwner) was removed in GRC teardown phase 2 with the
+    // Practice model. The PRACTICE_ASSIGNED notification enum member
+    // itself is dropped in phase 3 with the rest of the Prisma enums.
 
     describe('5. asset.ts wires ASSET_ASSIGNED on owner change', () => {
         it('updateAsset imports + emits ASSET_ASSIGNED only on an actual change', () => {

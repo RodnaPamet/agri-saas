@@ -23,27 +23,19 @@ import * as path from 'path';
 
 const REPO_ROOT = path.resolve(__dirname, '../..');
 
-// Modal-form P1 (2026-05-24) — policies/tasks/vendors create flows
-// were decomposed into page wrapper + extracted `_form/<Entity>Fields.tsx`.
-// FormField lives in the extracted fields component now. The
-// structural assertion below reads the SURFACE — a tuple of related
-// files — and resolves when ANY of them imports / uses the primitive.
+// Modal-form P1 (2026-05-24) — the create flows were decomposed into
+// page wrapper + extracted `_form/<Entity>Fields.tsx`. FormField lives
+// in the extracted fields component now. The structural assertion below
+// reads the SURFACE — a tuple of related files — and resolves when ANY
+// of them imports / uses the primitive.
+//
+// GRC teardown phase 2 dropped the `policies/new` and `vendors/new`
+// surfaces; both create flows are gone.
 type FormSurface = { label: string; files: string[] };
 
 const FORM_FIELD_SURFACES: FormSurface[] = [
-    { label: 'audits/cycles/page.tsx', files: ['src/app/t/[tenantSlug]/(app)/audits/cycles/page.tsx'] },
-    { label: 'practices/PracticeDetailSheet.tsx', files: ['src/app/t/[tenantSlug]/(app)/practices/PracticeDetailSheet.tsx'] },
-    { label: 'practices/NewPracticeModal.tsx', files: ['src/app/t/[tenantSlug]/(app)/practices/NewPracticeModal.tsx'] },
     { label: 'evidence/NewEvidenceTextModal.tsx', files: ['src/app/t/[tenantSlug]/(app)/evidence/NewEvidenceTextModal.tsx'] },
     { label: 'evidence/UploadEvidenceModal.tsx', files: ['src/app/t/[tenantSlug]/(app)/evidence/UploadEvidenceModal.tsx'] },
-    {
-        label: 'policies/new (shim + modal + fields)',
-        files: [
-            'src/app/t/[tenantSlug]/(app)/policies/new/page.tsx',
-            'src/app/t/[tenantSlug]/(app)/policies/NewPolicyModal.tsx',
-            'src/app/t/[tenantSlug]/(app)/policies/_form/NewPolicyFields.tsx',
-        ],
-    },
     {
         label: 'tasks create (modal + fields)',
         files: [
@@ -51,18 +43,9 @@ const FORM_FIELD_SURFACES: FormSurface[] = [
             'src/components/tasks/_form/NewTaskFields.tsx',
         ],
     },
-    {
-        label: 'vendors/new (shim + modal + fields)',
-        files: [
-            'src/app/t/[tenantSlug]/(app)/vendors/new/page.tsx',
-            'src/app/t/[tenantSlug]/(app)/vendors/NewVendorModal.tsx',
-            'src/app/t/[tenantSlug]/(app)/vendors/_form/NewVendorFields.tsx',
-        ],
-    },
 ];
 
 const FORM_ERROR_SURFACES: FormSurface[] = [
-    { label: 'practices/NewPracticeModal.tsx', files: ['src/app/t/[tenantSlug]/(app)/practices/NewPracticeModal.tsx'] },
     // UploadEvidenceModal renders a form-level upload-error banner
     // (`#upload-error`) rather than per-field validation errors, so
     // `<FormError>` is not the right primitive — the ratchet was stale

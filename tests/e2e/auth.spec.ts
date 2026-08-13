@@ -132,8 +132,15 @@ test.describe('Authentication Flow', () => {
 });
 
 test.describe('Middleware Auth Guard', () => {
+    // GRC teardown phase 2 — this pair used to hit `/api/clauses`, which
+    // was deleted with the GRC stack. Re-pointed to `/api/notifications`:
+    // the same class of route (session-authenticated, NOT tenant-slugged,
+    // so the URL carries nothing the middleware could gate on besides the
+    // cookie) and it returns 200 for any authenticated member —
+    // `listMyNotifications` only asserts `canRead`. The pair still
+    // isolates exactly one variable: the session.
     test('unauthenticated API request returns 401 JSON (not redirect)', async ({ request }) => {
-        const response = await request.get('/api/clauses', {
+        const response = await request.get('/api/notifications', {
             maxRedirects: 0,
         });
         expect(response.status()).toBe(401);
@@ -144,13 +151,9 @@ test.describe('Middleware Auth Guard', () => {
     test('authenticated API request returns 200', async ({ page }) => {
         await doLogin(page);
 
-        // Same route as the 401 case above, so the pair isolates exactly one
-        // variable: the session. It used to hit `/api/dashboard`, a legacy
-        // non-tenant route deleted with the GRC stack — this spec was its
-        // only remaining caller, so the test 404'd rather than proving
-        // anything about the guard.
+        // Same route as the 401 case above.
         const apiResponse = await page.evaluate(async () => {
-            const res = await fetch('/api/clauses');
+            const res = await fetch('/api/notifications');
             return { status: res.status, ok: res.ok };
         });
         expect(apiResponse.status).toBe(200);
@@ -166,11 +169,16 @@ test.describe('Middleware Auth Guard', () => {
         expect(response.status()).toBe(200);
     });
 
+    // GRC teardown phase 2 — `/clauses` was deleted. Re-pointed to
+    // `/account/profile`, a surviving protected non-tenant page. It is a
+    // strictly better probe than the flat `/clauses` was: a NESTED path
+    // proves the whole pathname survives into `next`, not just the first
+    // segment. (The sibling test above covers the flat `/dashboard` case.)
     test('redirect includes next param for return navigation', async ({ page }) => {
-        await page.goto('/clauses');
+        await page.goto('/account/profile');
         await page.waitForURL('**/login**', { timeout: 15000 });
         const url = new URL(page.url());
-        expect(url.searchParams.get('next')).toBe('/clauses');
+        expect(url.searchParams.get('next')).toBe('/account/profile');
     });
 
     test('static assets are not blocked by middleware', async ({ request }) => {

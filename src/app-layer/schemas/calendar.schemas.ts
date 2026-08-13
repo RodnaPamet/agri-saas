@@ -152,7 +152,7 @@ export type CalendarEventStatus = (typeof CALENDAR_EVENT_STATUSES)[number];
 // ─── Public DTO ──────────────────────────────────────────────────────
 
 /**
- * One unified compliance-calendar event. Every event is either a
+ * One unified calendar event. Every event is either a
  * point-in-time (`date`) or a duration (`start` + `end`). Renderers
  * can branch on the presence of `end` to decide between dot vs bar.
  */

@@ -94,8 +94,6 @@ const EXEMPTIONS: Record<string, string> = {
     // Sort + cursor pagination is the entire interaction surface.
     "src/app/org/[orgSlug]/(app)/audit/AuditLogTable.tsx":
         "Org-level cross-tenant audit log — chronological view with sort + load-more, no faceted filters appropriate at the portfolio aggregation tier.",
-    "src/app/org/[orgSlug]/(app)/practices/PracticesTable.tsx":
-        "Org-level non-performing practices digest — fixed scope (status != IMPLEMENTED) + sort, no per-tenant facets.",
     "src/app/org/[orgSlug]/(app)/evidence/EvidenceTable.tsx":
         "Org-level overdue-evidence digest — fixed scope (review past due) + sort, no per-tenant facets.",
     "src/app/org/[orgSlug]/(app)/members/MembersTable.tsx":
@@ -126,8 +124,6 @@ const EXEMPTIONS: Record<string, string> = {
         "Members sub-table on the RBAC admin dashboard — fixed list of tenant memberships with no faceting (members admin owns the writes; RBAC is read-only matrix).",
     "src/app/t/[tenantSlug]/(app)/access-reviews/[reviewId]/AccessReviewDetailClient.tsx":
         "Detail-page roster sub-table — fixed scope (decisions in this campaign) with inline per-row decision practices; not a faceted-filter surface.",
-    "src/app/t/[tenantSlug]/(app)/vendors/[vendorId]/page.tsx":
-        "Detail-page documents sub-table (R11-PR7) — fixed scope (documents attached to this one vendor); not a faceted-filter surface.",
     // A11y pass — location detail parcels list (a DataTable, now inside the
     // Overview tab's collapsible Parcels dropdown). Detail-page sub-table
     // (parcels of this one location); not a faceted-filter list surface.
@@ -137,10 +133,8 @@ const EXEMPTIONS: Record<string, string> = {
     // the legacy 'Practice tasks' sub-table was removed when the Tasks tab
     // was aligned to Asset/Risk (a single LinkedTasksPanel). It's no longer
     // a DataTable surface, so it drops out of this exemption list.
-    "src/app/t/[tenantSlug]/(app)/practices/[practiceId]/_tabs/EvidenceSubTable.tsx":
+    "src/components/EvidenceSubTable.tsx":
         "Detail-page evidence sub-table (R10-PR3 follow-up) — fixed scope (evidence links + direct evidence for this one practice) with per-row unlink action; not a faceted-filter surface.",
-    "src/app/t/[tenantSlug]/(app)/practices/[practiceId]/_tabs/PracticeMappingsTab.tsx":
-        "Detail-page mappings sub-table (R10-PR3 follow-up) — fixed scope (framework mappings for this one practice) with per-row unmap action; not a faceted-filter surface.",
     "src/app/t/[tenantSlug]/(app)/farm-tasks/[taskId]/FarmTaskDetailClient.tsx":
         "Detail-page links sub-table — fixed scope (cross-links from this one farm task); not a faceted-filter surface.",
     "src/app/t/[tenantSlug]/(app)/planning/[cropPlanId]/PlantingBoard.tsx":
@@ -160,8 +154,6 @@ const EXEMPTIONS: Record<string, string> = {
     // would compete with the page's existing composition.
     "src/app/t/[tenantSlug]/(app)/access-reviews/AccessReviewsClient.tsx":
         "Multi-section dashboard — review cycle list lives inside a tabbed dashboard composition with per-tab filtering.",
-    "src/app/t/[tenantSlug]/(app)/findings/FindingsClient.tsx":
-        "Findings list — currently uses inline filter practices; planned for FilterToolbar migration in a follow-up.",
 
     // ── Templates / sub-resource lists ──
 

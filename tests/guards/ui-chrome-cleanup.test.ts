@@ -19,11 +19,6 @@ describe('UI-15 — removed buttons', () => {
         expect(src).not.toMatch(/href=\{href\('\/notifications'\)\}/);
         expect(src).not.toMatch(/unreadNotifications > 0 \?/);
     });
-    it('practices header has no Frameworks button', () => {
-        const src = read('src/app/t/[tenantSlug]/(app)/practices/PracticesClient.tsx');
-        expect(src).not.toContain('frameworks-btn');
-        expect(src).not.toMatch(/aria-label="Frameworks"/);
-    });
 });
 
 describe('UI-18 — unified evidence upload', () => {

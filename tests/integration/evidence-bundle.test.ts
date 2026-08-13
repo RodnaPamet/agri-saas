@@ -24,9 +24,10 @@ describe('Evidence Bundle Integration', () => {
             expect(existsSync(join(apiBase, '[issueId]/bundles/[bundleId]/items/route.ts'))).toBe(true);
         });
 
-        it('issues-by-practice route exists', () => {
-            expect(existsSync(join(apiBase, '../issues/by-practice/[practiceId]/route.ts'))).toBe(true);
-        });
+        // GRC teardown phase 2 removed the `issues/by-practice/[practiceId]`
+        // route along with the Practice surface it filtered on. The bundle
+        // routes above are the surviving issue-scoped surface and stay
+        // asserted.
     });
 
     describe('Bundle schemas enforce validation', () => {

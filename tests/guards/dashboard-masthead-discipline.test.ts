@@ -45,32 +45,10 @@ import * as path from 'path';
 const ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
 
-const PER_RESOURCE_DASHBOARDS = [
-    'src/app/t/[tenantSlug]/(app)/vendors/dashboard/page.tsx',
-];
 
 const MAIN_DASHBOARD = 'src/app/t/[tenantSlug]/(app)/dashboard/DashboardClient.tsx';
 
 describe('Dashboard masthead discipline (Roadmap-3 PR-10)', () => {
-    it('every per-resource dashboard mounts <KPIStat>', () => {
-        const offenders: string[] = [];
-        for (const rel of PER_RESOURCE_DASHBOARDS) {
-            const src = read(rel);
-            // Either direct usage or via a local wrapper that
-            // forwards to the primitive. The grep is deliberately
-            // wide — both shapes satisfy the discipline.
-            const hasKpiStat = /<KPIStat\b/.test(src);
-            if (!hasKpiStat) {
-                offenders.push(rel);
-            }
-        }
-        if (offenders.length > 0) {
-            throw new Error(
-                `These per-resource dashboards do not mount <KPIStat>:\n  ${offenders.join('\n  ')}\n\nUse the canonical primitive (direct or via a tiny local wrapper). Hand-rolled stat cards drift the visual rhythm.`,
-            );
-        }
-        expect(offenders).toEqual([]);
-    });
 
     it('the main /dashboard no longer mounts <HeroMetric> (masthead hero removed)', () => {
         const src = read(MAIN_DASHBOARD);
@@ -81,30 +59,4 @@ describe('Dashboard masthead discipline (Roadmap-3 PR-10)', () => {
         expect(src).not.toMatch(/<HeroMetric\b/);
     });
 
-    it('no per-resource dashboard hand-rolls a raw stat card', () => {
-        // Detect the anti-pattern: a `<div className="…">…number…</div>`
-        // followed by a `<div>…label…</div>` inside dashboard pages.
-        // This is too loose to ratchet structurally without false
-        // positives, so we instead use a positive assertion: each
-        // dashboard's KPI mount density is expected to dominate the
-        // page. We anchor on the import path — every dashboard
-        // imports `KPIStat` from the metric module.
-        const offenders: string[] = [];
-        for (const rel of PER_RESOURCE_DASHBOARDS) {
-            const src = read(rel);
-            const hasImport =
-                /import\s+\{[^}]*\bKPIStat\b[^}]*\}\s+from\s+['"]@\/components\/ui\/metric['"]/.test(
-                    src,
-                );
-            if (!hasImport) {
-                offenders.push(rel);
-            }
-        }
-        if (offenders.length > 0) {
-            throw new Error(
-                `These per-resource dashboards don't import KPIStat from @/components/ui/metric. Always use the canonical primitive — never hand-roll a stat card.\n\nOffenders:\n  ${offenders.join('\n  ')}`,
-            );
-        }
-        expect(offenders).toEqual([]);
-    });
 });

@@ -7,7 +7,7 @@ import { approveNewsDerivedEvent } from '@/app-layer/usecases/news-derived-event
 /**
  * Promote a PROPOSED news-derived calendar event to APPROVED — the ONLY
  * path that makes it visible on any tenant's calendar
- * (`loadNewsDerivedEventEvents` in compliance-calendar.ts reads
+ * (`loadNewsDerivedEventEvents` in calendar.ts reads
  * `status: 'APPROVED'` only). There is deliberately no auto-promotion
  * anywhere else in the codebase.
  *

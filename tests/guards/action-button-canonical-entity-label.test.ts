@@ -23,11 +23,12 @@
  *   1. The header-action i18n keys (`addX`, `newX` — by
  *      convention, the keys consumed by header trigger buttons)
  *      do NOT carry a verb prefix in their value.
- *   2. The seven canonical entity pages (Practices, Risks, Assets,
- *      Tasks, Policies, Vendors, Evidence) all render their
- *      header action button via the `icon={<Plus />}` slot — not
- *      via an inline `+ Entity` literal — so the `+` and the noun
- *      centre together as one tidy unit.
+ *   2. The canonical entity pages render their header action button
+ *      via the `icon={<Plus />}` slot — not via an inline `+ Entity`
+ *      literal — so the `+` and the noun centre together as one tidy
+ *      unit. The registry named seven pages before GRC teardown phase 2
+ *      (Practices, Risks, Policies, Vendors and Tasks went with the
+ *      inherited surface); Assets and Evidence are what remain.
  *
  * Companion: `action-label-vocabulary.test.ts` (the older
  * R22-PR-G ratchet) bans literal `"+ Word"` text in JSX/source.
@@ -52,6 +53,9 @@ describe('Action-button canonical entity label', () => {
         // (`createX` for modal submit buttons, dashboard "Quick
         // Actions", form titles) keep their verbed forms — they
         // belong to confirmation surfaces, not action triggers.
+        // GRC teardown phase 2 removed the `audits.newAudit` and
+        // `findings.newFinding` rows — neither page exists to render a
+        // header button, so the keys are no longer header-action keys.
         const HEADER_ACTION_KEYS: Array<[string, string, string]> = [
             ['assets', 'addAsset', 'Asset'],
             // "Record", not "Evidence": the page, its nav entry, its title,
@@ -61,8 +65,6 @@ describe('Action-button canonical entity label', () => {
             // "Документи" in the sidebar and "Библиотека с доказателства" on
             // the page, which is two different names for one place.
             ['evidence', 'addEvidence', 'Record'],
-            ['audits', 'newAudit', 'Audit'],
-            ['findings', 'newFinding', 'Finding'],
         ];
 
         it.each(HEADER_ACTION_KEYS)(
@@ -92,25 +94,15 @@ describe('Action-button canonical entity label', () => {
         // both `icon={<Plus />}` AND a bare entity-noun label.
         // [file, buttonId, expected bare-noun label, i18n namespace the
         //  button's t()/tr() call resolves against]
+        //
+        // GRC teardown phase 2 emptied this registry — every site it held
+        // was a GRC entity page. Repopulated with the two surviving
+        // canonical entity pages, which resolve their label through a
+        // pre-resolved translations object (`{t.addAsset}`) rather than a
+        // `t('key')` call; the matcher below accepts both forms.
         const INLINE_SITES: Array<[string, string, string, string]> = [
-            [
-                'src/app/t/[tenantSlug]/(app)/practices/PracticesClient.tsx',
-                'new-practice-btn',
-                'Practice',
-                'practices',
-            ],
-            [
-                'src/app/t/[tenantSlug]/(app)/policies/PoliciesClient.tsx',
-                'new-policy-btn',
-                'Policy',
-                'policies',
-            ],
-            [
-                'src/app/t/[tenantSlug]/(app)/vendors/VendorsClient.tsx',
-                'new-vendor-btn',
-                'Vendor',
-                'vendors',
-            ],
+            ['src/app/t/[tenantSlug]/(app)/assets/AssetsClient.tsx', 'new-asset-btn', 'Asset', 'assets'],
+            ['src/app/t/[tenantSlug]/(app)/evidence/EvidenceClient.tsx', 'add-evidence-btn', 'Record', 'evidence'],
         ];
 
         it.each(INLINE_SITES)(
@@ -142,7 +134,14 @@ describe('Action-button canonical entity label', () => {
                 // Accept either the bare literal noun OR a `<binding>('<key>')`
                 // call whose en.json value (under the site's namespace)
                 // resolves to the same bare noun. Binding may be t/tr/etc.
-                const tCall = textContent.match(/^\{\w+\(['"]([a-zA-Z0-9_.]+)['"]\)\}$/);
+                // Two i18n shapes reach the same place:
+                //   `{t('list.addPractice')}` — a next-intl call, and
+                //   `{t.addAsset}`            — a property read off a
+                //                               pre-resolved messages object.
+                // Both resolve to a key under the site's namespace.
+                const tCall =
+                    textContent.match(/^\{\w+\(['"]([a-zA-Z0-9_.]+)['"]\)\}$/) ??
+                    textContent.match(/^\{\w+\.([a-zA-Z0-9_.]+)\}$/);
                 if (tCall) {
                     const en = JSON.parse(read('messages/en.json')) as Record<string, unknown>;
                     // `ns` may itself be dotted (e.g. 'tasks.list' when the

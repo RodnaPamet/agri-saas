@@ -210,22 +210,4 @@ describe('Button label centering', () => {
         });
     });
 
-    describe('3. Practice-status trigger hugs content (no fixed-width void)', () => {
-        it('does not pin the status combobox to a fixed width', () => {
-            const page = read(
-                'src/app/t/[tenantSlug]/(app)/practices/[practiceId]/page.tsx',
-            );
-            const idx = page.indexOf('id="practice-status-select"');
-            expect(idx).toBeGreaterThan(-1);
-            // Inspect the Combobox element around the status select.
-            const start = page.lastIndexOf('<Combobox', idx);
-            const end = page.indexOf('/>', idx);
-            const block = page.slice(start, end);
-            // A fixed `w-NN` in buttonProps reintroduces the void the
-            // user reported. matchTriggerWidth + a fixed width is the
-            // exact anti-pattern; require the trigger to hug content.
-            expect(block).not.toMatch(/className:\s*['"][^'"]*\bw-\d/);
-            expect(block).not.toMatch(/matchTriggerWidth/);
-        });
-    });
 });

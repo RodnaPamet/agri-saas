@@ -48,26 +48,6 @@ interface DetailPageEntry {
 const DETAIL_PAGES: DetailPageEntry[] = [
     // ── Adopted ──
     {
-        file: "src/app/t/[tenantSlug]/(app)/practices/[practiceId]/page.tsx",
-        adopted: true,
-        note: "Heavy detail page with multiple tabs + traceability panel; runs through the shell cleanly.",
-    },
-    {
-        file: "src/app/t/[tenantSlug]/(app)/vendors/[vendorId]/page.tsx",
-        adopted: true,
-        note: "Vendor detail with sub-tabs (Overview, Documents, Risks, Assessments).",
-    },
-    {
-        file: "src/app/t/[tenantSlug]/(app)/policies/[policyId]/page.tsx",
-        adopted: true,
-        note: "Policy detail with versioning + acknowledgment tabs.",
-    },
-    {
-        file: "src/app/t/[tenantSlug]/(app)/audits/cycles/[cycleId]/page.tsx",
-        adopted: true,
-        note: "Audit cycle detail with readiness + checklist tabs.",
-    },
-    {
         file: "src/app/t/[tenantSlug]/(app)/farm-tasks/[taskId]/page.tsx",
         compositionFile:
             "src/app/t/[tenantSlug]/(app)/farm-tasks/[taskId]/FarmTaskDetailClient.tsx",
@@ -78,11 +58,6 @@ const DETAIL_PAGES: DetailPageEntry[] = [
         file: "src/app/t/[tenantSlug]/(app)/assets/[id]/page.tsx",
         adopted: true,
         note: "Asset detail with classification + lifecycle metadata.",
-    },
-    {
-        file: "src/app/t/[tenantSlug]/(app)/audits/packs/[packId]/page.tsx",
-        adopted: true,
-        note: "Audit pack detail with grouped item rendering.",
     },
 
     // ── Adopted via sibling Client file (R8-PR3 ratchet smarting) ──
@@ -95,26 +70,6 @@ const DETAIL_PAGES: DetailPageEntry[] = [
     },
 
     // ── Pending migration ──
-    {
-        file: "src/app/t/[tenantSlug]/(app)/vendors/[vendorId]/assessment/[assessmentId]/page.tsx",
-        adopted: false,
-        note: "Nested vendor assessment review detail. Pending migration — sub-route of vendor detail; needs breadcrumb stacking.",
-    },
-    {
-        file: "src/app/t/[tenantSlug]/(app)/admin/vendor-assessment-reviews/[assessmentId]/page.tsx",
-        adopted: false,
-        note: "Admin-side vendor assessment review. Pending migration — admin-area sub-route.",
-    },
-    {
-        file: "src/app/t/[tenantSlug]/(app)/admin/vendor-templates/[templateId]/page.tsx",
-        adopted: false,
-        note: "Admin-side vendor template builder. Pending migration — wizard-shaped page; may need <EntityDetailLayout> adaptation rather than direct adoption.",
-    },
-    {
-        file: "src/app/t/[tenantSlug]/(app)/audits/cycles/[cycleId]/readiness/page.tsx",
-        adopted: true,
-        note: "Audit cycle readiness sub-page. Migrated R8-PR3 — uses <EntityDetailLayout> with breadcrumb stacking (Audits → Readiness → Cycle → Readiness Report) + back link to the parent cycle.",
-    },
 ];
 
 describe("EntityDetailLayout coverage", () => {

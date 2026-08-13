@@ -36,18 +36,11 @@ import {
     RULE_FILTER_KEYS,
     RULE_STATUS_LABELS,
     RULE_ACTION_LABELS,
-} from './automation-filter-defs';
+} from '@/components/processes/automation-filter-defs';
+import type { AutomationRuleRow } from '@/components/processes/types';
 
-export interface AutomationRuleRow {
-    id: string;
-    name: string;
-    triggerEvent: string;
-    actionType: keyof typeof RULE_ACTION_LABELS;
-    status: keyof typeof RULE_STATUS_LABELS;
-    priority: number;
-    executionCount: number;
-    lastTriggeredAt: string | Date | null;
-}
+export type { AutomationRuleRow };
+
 
 const STATUS_VARIANT: Record<string, StatusBadgeVariant> = {
     ENABLED: 'success',

@@ -1,10 +1,13 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- standard test-mock pattern. */
 
 /**
- * Zero-coverage jobs, wave 4: `soil-fetch`, `sharepoint-delta-sync`,
- * `sharepoint-policy-jobs`.
+ * Zero-coverage jobs, wave 4: `soil-fetch`, `sharepoint-delta-sync`.
  *
- * Three job modules with no test importing them. They look like thin
+ * (`sharepoint-policy-jobs` was the third; GRC teardown phase 2 removed it
+ *  with the POLICY half of the SharePoint integration. The EVIDENCE
+ *  delta-sync below is untouched and still carries the same contracts.)
+ *
+ * Job modules with no test importing them. They look like thin
  * delegators, but each one privately builds the `RequestContext` its work
  * runs under — and that context is the **authorization boundary for
  * background work**. A request handler gets its context from an
@@ -23,9 +26,9 @@
  * single bad row cannot abort the sweep.
  */
 
+// `policy` left the mock with sharepoint-policy-jobs (GRC teardown phase 2).
 const mockPrisma = {
     tenantMembership: { findFirst: jest.fn(), findMany: jest.fn() },
-    policy: { findFirst: jest.fn(), findMany: jest.fn() },
     integrationConnection: { findMany: jest.fn() },
 };
 jest.mock('@/lib/prisma', () => ({ __esModule: true, default: mockPrisma }));
@@ -40,12 +43,9 @@ jest.mock('@/app-layer/integrations/providers/sharepoint/import', () => ({
     runSharePointDeltaSync: (...a: unknown[]) => mockRunSharePointDeltaSync(...a),
 }));
 
-const mockPullPolicyFromSharePoint = jest.fn();
-const mockGetSharePointClientForTenant = jest.fn();
-jest.mock('@/app-layer/usecases/policy-sharepoint-sync', () => ({
-    pullPolicyFromSharePoint: (...a: unknown[]) => mockPullPolicyFromSharePoint(...a),
-    getSharePointClientForTenant: (...a: unknown[]) => mockGetSharePointClientForTenant(...a),
-}));
+// The `@/app-layer/usecases/policy-sharepoint-sync` mock went with the
+// module itself in GRC teardown phase 2 — jest.mock on a path that no
+// longer resolves fails the whole suite at load, not just its own tests.
 
 const mockEnqueue = jest.fn();
 jest.mock('@/app-layer/jobs/queue', () => ({ enqueue: (...a: unknown[]) => mockEnqueue(...a) }));
@@ -60,10 +60,6 @@ import {
     runSharePointDeltaSyncJob,
     runSharePointDeltaSyncDispatch,
 } from '@/app-layer/jobs/sharepoint-delta-sync';
-import {
-    runSharePointPolicyPull,
-    runSharePointSubscriptionRenew,
-} from '@/app-layer/jobs/sharepoint-policy-jobs';
 
 beforeEach(() => {
     jest.clearAllMocks();
@@ -311,179 +307,5 @@ describe('runSharePointDeltaSyncDispatch', () => {
     });
 });
 
-// ─── sharepoint-policy-jobs ──────────────────────────────────────────
-
-describe('runSharePointPolicyPull', () => {
-    const payload = { tenantId: 't1', policyId: 'pol-1' } as any;
-
-    it('pulls a new version for a linked policy', async () => {
-        mockPrisma.tenantMembership.findFirst.mockResolvedValue({ userId: 'u1', role: 'ADMIN' });
-        mockPrisma.policy.findFirst.mockResolvedValue({ spDriveId: 'd1', spItemId: 'i1' });
-        mockPullPolicyFromSharePoint.mockResolvedValue({ pulled: true });
-
-        expect(await runSharePointPolicyPull(payload)).toEqual({ pulled: true });
-        expect(mockPullPolicyFromSharePoint).toHaveBeenCalledWith(
-            expect.objectContaining({ tenantId: 't1', userId: 'u1' }),
-            { driveId: 'd1', itemId: 'i1' },
-        );
-    });
-
-    it('reports no_admin rather than throwing when the tenant has no OWNER/ADMIN', async () => {
-        // A webhook fires regardless of tenant state; a soft reason keeps the
-        // job from retry-looping on something no retry can fix.
-        mockPrisma.tenantMembership.findFirst.mockResolvedValue(null);
-
-        expect(await runSharePointPolicyPull(payload)).toEqual({ pulled: false, reason: 'no_admin' });
-        expect(mockPrisma.policy.findFirst).not.toHaveBeenCalled();
-    });
-
-    it.each([
-        ['the policy is gone', null],
-        ['the drive link is missing', { spDriveId: null, spItemId: 'i1' }],
-        ['the item link is missing', { spDriveId: 'd1', spItemId: null }],
-    ])('reports not_linked when %s', async (_label, policy) => {
-        mockPrisma.tenantMembership.findFirst.mockResolvedValue({ userId: 'u1', role: 'OWNER' });
-        mockPrisma.policy.findFirst.mockResolvedValue(policy);
-
-        expect(await runSharePointPolicyPull(payload)).toEqual({
-            pulled: false,
-            reason: 'not_linked',
-        });
-        expect(mockPullPolicyFromSharePoint).not.toHaveBeenCalled();
-    });
-
-    it('scopes the policy lookup to the payload tenant', async () => {
-        mockPrisma.tenantMembership.findFirst.mockResolvedValue({ userId: 'u1', role: 'ADMIN' });
-        mockPrisma.policy.findFirst.mockResolvedValue(null);
-
-        await runSharePointPolicyPull(payload);
-
-        expect(mockPrisma.policy.findFirst.mock.calls[0][0].where).toMatchObject({
-            id: 'pol-1',
-            tenantId: 't1',
-        });
-    });
-});
-
-describe('runSharePointSubscriptionRenew', () => {
-    const client = () => ({ renewSubscription: jest.fn().mockResolvedValue(undefined) });
-
-    it('renews every subscription and reports the counts', async () => {
-        mockPrisma.policy.findMany.mockResolvedValue([
-            { id: 'p1', tenantId: 't1', spSubscriptionId: 's1' },
-            { id: 'p2', tenantId: 't1', spSubscriptionId: 's2' },
-        ]);
-        mockPrisma.tenantMembership.findFirst.mockResolvedValue({ userId: 'u1', role: 'ADMIN' });
-        const c = client();
-        mockGetSharePointClientForTenant.mockResolvedValue(c);
-
-        expect(await runSharePointSubscriptionRenew({} as any)).toEqual({
-            subscriptions: 2,
-            renewed: 2,
-        });
-        expect(c.renewSubscription).toHaveBeenCalledTimes(2);
-        // The new expiry is an ISO instant in the future, not a duration.
-        const [, expiry] = c.renewSubscription.mock.calls[0];
-        expect(new Date(expiry).getTime()).toBeGreaterThan(Date.now());
-    });
-
-    it('builds ONE Graph client per tenant, not per policy', async () => {
-        // Each build costs a token exchange; three policies in one tenant
-        // must not mean three round trips.
-        mockPrisma.policy.findMany.mockResolvedValue([
-            { id: 'p1', tenantId: 't1', spSubscriptionId: 's1' },
-            { id: 'p2', tenantId: 't1', spSubscriptionId: 's2' },
-            { id: 'p3', tenantId: 't2', spSubscriptionId: 's3' },
-        ]);
-        mockPrisma.tenantMembership.findFirst.mockResolvedValue({ userId: 'u1', role: 'ADMIN' });
-        mockGetSharePointClientForTenant.mockImplementation(async () => client());
-
-        await runSharePointSubscriptionRenew({} as any);
-
-        expect(mockGetSharePointClientForTenant).toHaveBeenCalledTimes(2); // t1, t2
-    });
-
-    it('isolates a failed renewal so the sweep continues', async () => {
-        // A cross-tenant nightly sweep that aborts on the first bad
-        // subscription would leave every later tenant unrenewed.
-        mockPrisma.policy.findMany.mockResolvedValue([
-            { id: 'p1', tenantId: 't1', spSubscriptionId: 's1' },
-            { id: 'p2', tenantId: 't1', spSubscriptionId: 's2' },
-        ]);
-        mockPrisma.tenantMembership.findFirst.mockResolvedValue({ userId: 'u1', role: 'ADMIN' });
-        const c = client();
-        c.renewSubscription
-            .mockRejectedValueOnce(new Error('Graph 404 subscription expired'))
-            .mockResolvedValueOnce(undefined);
-        mockGetSharePointClientForTenant.mockResolvedValue(c);
-
-        expect(await runSharePointSubscriptionRenew({} as any)).toEqual({
-            subscriptions: 2,
-            renewed: 1,
-        });
-        expect(logger.warn).toHaveBeenCalledWith(
-            'sharepoint-subscription-renew: renew failed',
-            expect.objectContaining({ tenantId: 't1', error: 'Graph 404 subscription expired' }),
-        );
-    });
-
-    it('stringifies a non-Error rejection rather than logging [object Object]', async () => {
-        // Graph SDK failures are not always Error instances.
-        mockPrisma.policy.findMany.mockResolvedValue([
-            { id: 'p1', tenantId: 't1', spSubscriptionId: 's1' },
-        ]);
-        mockPrisma.tenantMembership.findFirst.mockResolvedValue({ userId: 'u1', role: 'ADMIN' });
-        const c = client();
-        c.renewSubscription.mockRejectedValue('gateway timeout');
-        mockGetSharePointClientForTenant.mockResolvedValue(c);
-
-        await runSharePointSubscriptionRenew({} as any);
-
-        expect(logger.warn).toHaveBeenCalledWith(
-            'sharepoint-subscription-renew: renew failed',
-            expect.objectContaining({ error: 'gateway timeout' }),
-        );
-    });
-
-    it('skips a tenant with no admin, and caches that miss too', async () => {
-        mockPrisma.policy.findMany.mockResolvedValue([
-            { id: 'p1', tenantId: 'orphan', spSubscriptionId: 's1' },
-            { id: 'p2', tenantId: 'orphan', spSubscriptionId: 's2' },
-        ]);
-        mockPrisma.tenantMembership.findFirst.mockResolvedValue(null);
-
-        expect(await runSharePointSubscriptionRenew({} as any)).toEqual({
-            subscriptions: 2,
-            renewed: 0,
-        });
-        // A null client is cached as a real value, so the second policy in
-        // the same tenant does not re-attempt the admin lookup.
-        expect(mockPrisma.tenantMembership.findFirst).toHaveBeenCalledTimes(1);
-        expect(mockGetSharePointClientForTenant).not.toHaveBeenCalled();
-    });
-
-    it('skips a tenant whose client cannot be built', async () => {
-        // `.catch(() => null)` — a revoked app consent must degrade to a
-        // skip, not take the whole nightly sweep down.
-        mockPrisma.policy.findMany.mockResolvedValue([
-            { id: 'p1', tenantId: 't1', spSubscriptionId: 's1' },
-        ]);
-        mockPrisma.tenantMembership.findFirst.mockResolvedValue({ userId: 'u1', role: 'ADMIN' });
-        mockGetSharePointClientForTenant.mockRejectedValue(new Error('consent revoked'));
-
-        expect(await runSharePointSubscriptionRenew({} as any)).toEqual({
-            subscriptions: 1,
-            renewed: 0,
-        });
-    });
-
-    it('ignores rows whose subscription id vanished between query and loop', async () => {
-        mockPrisma.policy.findMany.mockResolvedValue([{ id: 'p1', tenantId: 't1', spSubscriptionId: null }]);
-
-        expect(await runSharePointSubscriptionRenew({} as any)).toEqual({
-            subscriptions: 1,
-            renewed: 0,
-        });
-        expect(mockPrisma.tenantMembership.findFirst).not.toHaveBeenCalled();
-    });
-});
+// (sharepoint-policy-jobs was deleted in GRC teardown phase 2 — the
+//  POLICY half of the SharePoint integration. Evidence delta-sync stays.)

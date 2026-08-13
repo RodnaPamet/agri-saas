@@ -37,67 +37,19 @@ describe('icon-only action discipline', () => {
         });
     });
 
-    // Curated in-scope call sites. Each is pinned to its icon-only label
-    // (IconAction `label=` OR a link `aria-label=`). The label string is
-    // distinctive enough that its presence proves the icon-only button is
-    // wired — and a revert to a text `<Button>Freeze Pack</Button>` would
-    // drop the `label=`/`aria-label=` and fail here.
-
-    // i18n batch T08 — the audit-pack IconAction labels now route through
-    // next-intl (`t('packDetail.freezePack')` etc.). Assert the icon-only
-    // wiring is preserved AND the en.json values keep the copy so the a11y
-    // contract holds.
-    const PACK_ICON_ACTION_I18N: Array<{ key: string; en: string }> = [
-        { key: 'freezePack', en: 'Freeze pack' },
-        { key: 'generateShareLink', en: 'Generate share link' },
-        { key: 'cloneForRetest', en: 'Clone for retest' },
-    ];
-    for (const { key, en } of PACK_ICON_ACTION_I18N) {
-        it(`IconAction site stays icon-only (i18n): "${en}"`, () => {
-            const src = read(`${APP}/audits/packs/[packId]/page.tsx`);
-            expect(src).toMatch(/import \{ IconAction \} from '@\/components\/ui\/icon-action'/);
-            expect(src).toMatch(
-                new RegExp(`<IconAction[\\s\\S]*?label=\\{t\\('packDetail\\.${key}'\\)\\}`),
-            );
-            // eslint-disable-next-line @typescript-eslint/no-var-requires
-            expect(require('../../messages/en.json').audits.packDetail[key]).toBe(en);
-        });
-    }
-
-    // Link sites (download / navigation) — icon-only via a Tooltip-wrapped
-    // `size:'icon'` anchor with an aria-label.
-    // i18n (T06): RisksClient's "Import risks" link now resolves both the
-    // aria-label and the Tooltip content through next-intl (tm('importRisks')).
-    const LINK_SITES: Array<{
-        file: string;
-        ariaLabel: string;
-        ariaMatch: string;
-        tooltipMatch: RegExp;
-    }> = [
-        // i18n batch T08 — the pack Export JSON/CSV icon-link labels + tooltips
-        // now route through next-intl (`t('packDetail.exportJson' | 'exportCsv')`).
-        {
-            file: `${APP}/audits/packs/[packId]/page.tsx`,
-            ariaLabel: 'Export JSON',
-            ariaMatch: `aria-label=\\{t\\('packDetail\\.exportJson'\\)\\}[\\s\\S]*?size: 'icon'`,
-            tooltipMatch: /<Tooltip content=\{t\('packDetail\.(?:exportJson|exportCsv)'\)\}>/,
-        },
-        {
-            file: `${APP}/audits/packs/[packId]/page.tsx`,
-            ariaLabel: 'Export CSV',
-            ariaMatch: `aria-label=\\{t\\('packDetail\\.exportCsv'\\)\\}[\\s\\S]*?size: 'icon'`,
-            tooltipMatch: /<Tooltip content=\{t\('packDetail\.(?:exportJson|exportCsv)'\)\}>/,
-        },
-    ];
-
-    for (const { file, ariaLabel, ariaMatch, tooltipMatch } of LINK_SITES) {
-        it(`icon-only link stays icon-only: "${ariaLabel}"`, () => {
-            const src = read(file);
-            expect(src).toMatch(new RegExp(ariaMatch));
-            // wrapped in the shared Tooltip for the delayed label.
-            expect(src).toMatch(tooltipMatch);
-        });
-    }
+    // The curated in-scope call-site registry is EMPTY as of GRC teardown
+    // phase 2. Every site this ratchet pinned lived on the audit-pack
+    // detail page (`audits/packs/[packId]/page.tsx`) — the three IconAction
+    // buttons (Freeze pack / Generate share link / Clone for retest) and the
+    // two Tooltip-wrapped export links (Export JSON / CSV). That page is
+    // gone, and `IconAction` now has no call site anywhere in `src/`.
+    //
+    // The suite is kept rather than deleted because its other two halves
+    // still have real subjects: the shared-primitive contract above reads a
+    // file that exists, and the Admin exclusion below is a NEGATIVE scan
+    // over a live directory tree — it can still fail when someone reaches
+    // for IconAction on an admin page. Re-populate the registry here when
+    // the primitive gets its next call site.
 
     describe('Admin exclusion', () => {
         // The rollout must not reach Admin — no IconAction usage there.

@@ -117,24 +117,11 @@ const EXEMPTIONS: Record<string, string> = {
     'access-reviews/[reviewId]/AccessReviewDetailClient.tsx':
         'detail page — DataTable is the inner roster sub-table',
 
-    // R11-PR7 — vendor detail page now mounts DataTable for the
-    // documents sub-table. Detail page (EntityDetailLayout).
-    'vendors/[vendorId]/page.tsx':
-        'detail page — DataTable is the inner documents sub-table (R11-PR7)',
-
-    // R11-PR6 — practice detail page now mounts DataTable for the
-    // tasks sub-table. Detail page (EntityDetailLayout), not a list
-    // page.
-    'practices/[practiceId]/page.tsx':
-        'detail page — DataTable is the inner tasks sub-table (R11-PR6)',
-
-    // R10-PR3 follow-up — practice detail page evidence + mappings
-    // sub-tables migrated off raw <table> to DataTable. Detail-page
-    // sub-tables; the page itself is not a list page.
-    'practices/[practiceId]/_tabs/EvidenceSubTable.tsx':
-        'detail page sub-table — evidence rows for one practice (R10-PR3 follow-up)',
-    'practices/[practiceId]/_tabs/PracticeMappingsTab.tsx':
-        'detail page sub-table — framework mappings for one practice (R10-PR3 follow-up)',
+    // GRC teardown phase 2 removed three detail-page exemptions whose
+    // files are gone: vendors/[vendorId]/page.tsx (R11-PR7 documents
+    // sub-table), practices/[practiceId]/page.tsx (R11-PR6 tasks
+    // sub-table) and practices/[practiceId]/_tabs/PracticeMappingsTab.tsx
+    // (R10-PR3 follow-up mappings sub-table).
 
     // Farm task detail — the single task-detail page; DataTable is the inner
     // links/traceability sub-table. Detail page (EntityDetailLayout).

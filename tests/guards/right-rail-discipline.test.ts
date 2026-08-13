@@ -41,9 +41,6 @@ const LIST_SHELL_RAIL_PATH = 'src/components/layout/ListPageShellRail.tsx';
 const ENTITY_LIST_PAGE_PATH = 'src/components/layout/EntityListPage.tsx';
 const SELECTION_PANEL_PATH =
     'src/components/ui/selection-summary-panel.tsx';
-const CONTROLS_CLIENT_PATH =
-    'src/app/t/[tenantSlug]/(app)/practices/PracticesClient.tsx';
-
 const ASIDE_PANEL_PATH = 'src/components/ui/aside-panel.tsx';
 
 describe('Right-rail master-detail discipline (Roadmap-2 PR-5)', () => {
@@ -158,17 +155,14 @@ describe('Right-rail list-page aside discipline (Phase 2)', () => {
         expect(src).toMatch(/clearSelection/);
     });
 
-    it('practices list page uses the header-row selection bar (B1), keeping the browse/AI rails', () => {
-        // B1 (2026-06-07): the practices selection actions moved from the
-        // SelectionSummaryPanel right-rail INTO the DataTable's header-row
-        // `batchActions` bar (the row-select bar that pops over the
-        // column-names row). The aside slot persists for the browse + AI
-        // assist rails; only the SELECTION rail is retired.
-        const src = read(CONTROLS_CLIENT_PATH);
-        expect(src).toMatch(/<EntityListPage[\s\S]*?\baside=\{/);
-        expect(src).not.toContain('<SelectionSummaryPanel');
-        expect(src).toMatch(/batchActions:\s*practiceBatchActions/);
-    });
+    // The B1 call-site assertion lived here: the practices list page kept
+    // its browse + AI-assist rails in the `aside` slot while its selection
+    // actions moved into the DataTable header-row `batchActions` bar. GRC
+    // teardown phase 2 deleted that page, and it was the ONLY consumer of
+    // the `aside` slot — no surviving list page passes one today. The
+    // primitive-level assertions above still guard the slot's plumbing
+    // (props declared, threaded to ListPageShell.Body), so the slot stays
+    // ready for its next consumer; there is simply no call site to pin.
 });
 
 /**

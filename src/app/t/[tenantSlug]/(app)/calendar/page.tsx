@@ -13,7 +13,7 @@
  */
 
 import { getTenantCtx } from '@/app-layer/context';
-import { getComplianceCalendarEvents } from '@/app-layer/usecases/compliance-calendar';
+import { getCalendarEvents } from '@/app-layer/usecases/calendar';
 import { env } from '@/env';
 import { CalendarClient } from './CalendarClient';
 import { monthGridRange, startOfUtcMonth } from './range';
@@ -34,7 +34,7 @@ export default async function CalendarPage({
     const now = new Date();
     const { from, to } = monthGridRange(startOfUtcMonth(now));
 
-    const initial = await getComplianceCalendarEvents(ctx, {
+    const initial = await getCalendarEvents(ctx, {
         from,
         to,
         now,

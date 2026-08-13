@@ -97,9 +97,6 @@ const BANNED_PATTERNS: RegExp[] = [
 //
 const LIST_PAGES_REQUIRE_SEARCH = [
     'src/app/t/[tenantSlug]/(app)/assets/AssetsClient.tsx',
-    'src/app/t/[tenantSlug]/(app)/practices/PracticesClient.tsx',
-    'src/app/t/[tenantSlug]/(app)/policies/PoliciesClient.tsx',
-    'src/app/t/[tenantSlug]/(app)/vendors/VendorsClient.tsx',
     // Evidence's bespoke toolbar now carries the box too, with the
     // Filter cluster moved to the left to match the other pages.
     'src/app/t/[tenantSlug]/(app)/evidence/EvidenceClient.tsx',
@@ -197,7 +194,6 @@ describe('Live filter-scoped search on list pages', () => {
         // page's source elsewhere is forced to update this ratchet
         // explicitly (and check the new location too).
         const baselineFiles = [
-            'src/app/t/[tenantSlug]/(app)/policies/templates/page.tsx',
             'src/app/t/[tenantSlug]/(app)/admin/members/page.tsx',
         ];
         for (const rel of baselineFiles) {

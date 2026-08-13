@@ -50,10 +50,15 @@ describe('Tenant Isolation — runInTenantContext enforcement', () => {
         const fs = require('fs');
         const path = require('path');
         const usecasesDir = path.resolve(__dirname, '../../src/app-layer/usecases');
-        const criticalModules = ['practice', 'evidence'];
+        // GRC teardown phase 2 removed `practice` with its model. Re-pointed
+        // at surviving tenant-scoped usecases so the invariant ("a critical
+        // tenant-scoped usecase reaches the DB through runInTenantContext")
+        // is still enforced rather than half-deleted. `evidence` is the
+        // original entry and stays.
+        const criticalModules = ['evidence', 'asset', 'journal'];
 
         for (const mod of criticalModules) {
-            // Support both flat file (evidence.ts) and directory barrel (practice/index.ts)
+            // Support both flat file (evidence.ts) and directory barrel (<mod>/index.ts)
             const flatPath = path.join(usecasesDir, `${mod}.ts`);
             const dirPath = path.join(usecasesDir, mod);
             let content: string;
@@ -76,28 +81,33 @@ describe('Tenant Isolation — Repository code analysis', () => {
     const path = require('path');
     const reposDir = path.resolve(__dirname, '../../src/app-layer/repositories');
 
-    test('tenant-scoped repository list methods filter by tenantId', () => {
-        if (!fs.existsSync(reposDir)) return; // skip if no repos dir
+    // GRC teardown phase 2 removed RiskRepository + PracticeRepository with
+    // their models. Re-pointed at surviving tenant-scoped repositories
+    // (EvidenceRepository is the original entry and stays) so the
+    // tenantId-scoping bound is still enforced on a real subject.
+    //
+    // NOTE the `readdirSync().filter()` shape below: it silently yields an
+    // EMPTY list when a named repository disappears, which is how this guard
+    // could have gone vacuous instead of failing. The length assertion is
+    // what makes the next deletion loud.
+    const tenantScopedRepos = ['AssetRepository.ts', 'EvidenceRepository.ts', 'JournalRepository.ts'];
 
-        // Only check tenant-scoped repositories (not global ones like FrameworkRepository)
-        const tenantScopedRepos = ['RiskRepository.ts', 'PracticeRepository.ts', 'EvidenceRepository.ts'];
+    function readTenantScopedRepos(): Array<[string, string]> {
+        expect(fs.existsSync(reposDir)).toBe(true);
         const files = fs.readdirSync(reposDir).filter((f: string) => tenantScopedRepos.includes(f));
+        expect(files.sort()).toEqual([...tenantScopedRepos].sort());
+        return files.map((f: string) => [f, fs.readFileSync(path.join(reposDir, f), 'utf-8')]);
+    }
 
-        for (const file of files) {
-            const content = fs.readFileSync(path.join(reposDir, file), 'utf-8');
+    test('tenant-scoped repository list methods filter by tenantId', () => {
+        for (const [, content] of readTenantScopedRepos()) {
             // Tenant-scoped repos must reference tenantId
             expect(content).toContain('tenantId');
         }
     });
 
     test('tenant-scoped repository getById methods filter by tenantId', () => {
-        if (!fs.existsSync(reposDir)) return;
-
-        const tenantScopedRepos = ['RiskRepository.ts', 'PracticeRepository.ts', 'EvidenceRepository.ts'];
-        const files = fs.readdirSync(reposDir).filter((f: string) => tenantScopedRepos.includes(f));
-
-        for (const file of files) {
-            const content = fs.readFileSync(path.join(reposDir, file), 'utf-8');
+        for (const [, content] of readTenantScopedRepos()) {
             // Must contain tenantId — proves queries are scoped
             expect(content).toContain('tenantId');
         }
@@ -107,7 +117,8 @@ describe('Tenant Isolation — Repository code analysis', () => {
         const usecasesDir = path.resolve(__dirname, '../../src/app-layer/usecases');
         if (!fs.existsSync(usecasesDir)) return;
 
-        const criticalFiles = ['practice.ts', 'evidence.ts'];
+        // Mirrors `criticalModules` above — practice.ts went with the teardown.
+        const criticalFiles = ['evidence.ts', 'asset.ts', 'journal.ts'];
 
         for (const mod of criticalFiles) {
             const modName = mod.replace('.ts', '');

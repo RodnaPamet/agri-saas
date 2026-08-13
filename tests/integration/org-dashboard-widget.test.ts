@@ -147,7 +147,7 @@ describeFn('Epic 41 — OrgDashboardWidget CRUD (DB-backed)', () => {
 
         await createOrgDashboardWidget(acmeAdmin, {
             type: 'TREND',
-            chartType: 'risks-open',
+            chartType: 'evidence-overdue',
             config: { days: 30 },
             position: { x: 0, y: 1 },
             size: { w: 6, h: 3 },
@@ -210,7 +210,7 @@ describeFn('Epic 41 — OrgDashboardWidget CRUD (DB-backed)', () => {
         // discriminated union rejects.
         await expect(
             updateOrgDashboardWidget(ctx, created.id, {
-                chartType: 'risks-open',
+                chartType: 'evidence-overdue',
                 config: { days: 30 },
             }),
         ).rejects.toThrow();

@@ -313,3 +313,249 @@ Before phase 3 drops anything:
 - [ ] The migration is destructive and irreversible against production data; it
       carries a pre-flight row-count query and is not applied to the production
       VM without an operator's explicit go-ahead.
+
+---
+
+## 8. AMENDMENT (phase 2 recon) — this plan was wrong about two surfaces
+
+Before deleting anything, a ten-surface reference sweep ran across four
+modalities (imports, Prisma delegates, fetch/URL strings, registries) plus a
+completeness critic. It found **713 references from code that survives the
+teardown** — not the five couplings §5 lists — and two outright errors in the
+KILL list above. The corrections are load-bearing, so they live here rather
+than in a phase-2 note nobody reads first.
+
+### 8a. `/issues` is NOT a GRC surface. It stays.
+
+**There is no `Issue` model.** `usecases/issue.ts` opens with
+`@deprecated — Legacy Issue usecase; delegates to Task repositories`, and the
+only three delegates it touches are `db.task`, `db.taskLink` and `db.auditLog`
+— all three explicit KEEP. `/issues` is a compatibility view over
+`TaskType.ISSUE`, i.e. over the farm task system.
+
+Deleting it would remove a working feature built on agri models and delete
+nothing GRC. Retiring a deprecated shim may be worth doing; it is **not** part
+of this teardown, and it does not belong in a PR whose stated job is removing
+inherited schema surface.
+
+### 8b. `/access-reviews` is a platform security feature. It stays.
+
+`AccessReview` (`auth.prisma:539`) and `AccessReviewDecision` (`:597`) live in
+**auth.prisma**, which is not a GRC file and is named nowhere in §2's KILL
+list. This is periodic user-access review — the same family as sessions, SSO
+and SCIM.
+
+Both errors have the same root cause: **§2's surface list was assembled from
+directory names, not from the KILL model list.** A directory called
+`access-reviews` reads like GRC; the models under it do not.
+
+### 8c. `/mapping` is KILL and was missed entirely.
+
+`RequirementMappingSet`, `RequirementMapping` and `FrameworkMapping` are all on
+the §2 KILL list, but no surface covered them. It is not small:
+`usecases/mapping.ts`, `RequirementMappingRepository` (13 delegates),
+`MappingRepository`, `services/mapping-resolution.ts`,
+`services/mapping-set-importer.ts`, `domain/requirement-mapping.types.ts`,
+`components/InheritedMappingsPanel.tsx`, `data/libraries/mappings/`.
+
+**`src/app/api/mapping/route.ts` sits OUTSIDE the tenant tree**, so deleting
+`src/app/api/t/[tenantSlug]/mapping/` leaves a live route behind.
+
+### 8d. Four reference classes the four modalities structurally cannot see
+
+1. **Relation traversal on a KEEP delegate.** `db.task.findFirst({ include: {
+   practice: … } })` spells `Practice` nowhere. Hits sit in
+   `WorkItemRepository.ts:340` (the FARM TASK repository), `AssetRepository`
+   (`/assets` is never-touch), `EvidenceRepository` (the surviving Docs
+   surface) and `ProcessMapRepository` (the rule builder that KEEPS).
+2. **Model names that become SQL.** `lib/soft-delete.ts`'s entries are not
+   registry keys — `retention-purge.ts:41-49` interpolates them into
+   `DELETE FROM "${model}"` in **one loop with no per-model try/catch**. A
+   single stale entry after phase 3 throws `relation "Policy" does not exist`
+   and takes the nightly purge down for `Asset`, `Evidence`, `FileRecord`,
+   `Task` and `Contract` too. Same shape in `soft-delete-operations.ts`,
+   `soft-delete-lifecycle.ts`, `jobs/data-lifecycle.ts`.
+3. **The test tiers below guards.** Every test hit in the 713 is from
+   `tests/guards` / `tests/guardrails`. **45 files** under `tests/unit`,
+   `tests/integration`, `tests/rendered` import a doomed module, and **24 e2e
+   specs** navigate a doomed surface — including shared ones that must be
+   EDITED, not deleted: `fixtures.ts`, `auth.spec.ts`, `a11y.spec.ts`,
+   `responsive.spec.ts`, `core-flow.spec.ts`, `data-table-platform.spec.ts`.
+4. **DB-resident references no code scan reaches.** `ApiKey.scopes` rows hold
+   `vendors:*` / `audits:*` strings that `api-key-auth.ts:82` only ever builds
+   at runtime (`` `${resource}:${action}` ``); `TenantCustomRole.permissionsJson`
+   holds `policies.approve` reconstructed at `permissions.ts:431`;
+   `AutomationRule.event` holds `POLICY_REVIEW_DUE`; `TenantModule.moduleKey`
+   holds `VENDORS`. **Deleting the enum members orphans live rows**, and every
+   issued API key carrying a dead scope starts failing `assertScope` silently.
+   These need a pre-flight row count and a data migration, not a grep.
+
+### 8e. Files that break and appear in no reference list
+
+`usecases/journal.ts` + `usecases/field-operation.ts` (both import
+`auto-evidence.ts`, which reads three KILL models);
+`WorkItemRepository.ts:509` (`db.practice.findMany`, plus `Task.practiceId` at
+seven more sites); `usecases/portfolio.ts:479/812`, reached by two surviving
+org routes; `usecases/farm-record-traceability.ts` — **the trap**: the filename
+says *farm-record*, so a name-driven sweep keeps it, and every model it touches
+is KILL; and all of `src/lib/framework-tree/`, whose consumers are platform
+primitives under `src/components/ui/` carrying no GRC noun in their path.
+
+### 8f. AMENDMENT (phase 2 execution) — `ComplianceSnapshot` comes OFF the KILL list
+
+§2 lists `ComplianceSnapshot` under `compliance.prisma`'s KILL set. That is
+wrong, and the way it is wrong is the same shape as §8a/§8b: the model was
+classified by the FILE it lives in and the noun in its name, not by what reads
+it.
+
+It is a daily metrics rollup, and its columns are split down the middle:
+
+| section | verdict |
+|---|---|
+| `practices*`, `policies*`, `vendors*`, `findingsOpen` | GRC — go |
+| `evidence*`, `tasks*`, `assets*` | agri — stay |
+
+Two SURVIVING surfaces read it, and one of them is explicitly never-touch:
+
+1. **The `/assets` KPI sparklines.** `AssetsClient` fetches
+   `/api/t/:slug/dashboard/trends` → `compliance-trends.ts` →
+   `db.complianceSnapshot`, and renders a 30-day history strip across four
+   asset KPI cards. `/assets` is on the never-touch list in §1f.
+2. **The org portfolio roll-up.** `PortfolioRepository` reads it for the
+   cross-tenant 14-day view behind the surviving `/org/:slug` pages.
+
+There is also a data argument that has nothing to do with code: the table has
+been accumulating one row per tenant per day in production. A phase-3 `DROP
+TABLE` destroys that history irreversibly, and no snapshot restore brings it
+back selectively.
+
+**DECIDED (operator, 2026-08-13): keep a trimmed snapshot.**
+
+- **Phase 2** — move the model OUT of `compliance.prisma` into a surviving
+  schema file. This is a pure file move: `prismaSchemaFolder` concatenates the
+  folder, so relocating a model between files produces NO migration. Then trim
+  `jobs/snapshot.ts` to compute only the surviving columns, trim
+  `compliance-trends.ts` and `PortfolioRepository` to the surviving aggregates,
+  and keep `/dashboard/trends` + the sparklines working.
+  `jobs/compliance-digest.ts` is a GRC digest and goes.
+- **Phase 3** — drop the GRC COLUMNS in the main destructive migration, with a
+  `.down.sql` inverse (`tests/guards/destructive-migration-has-inverse.test.ts`
+  DERIVES the destructive set by scanning for `DROP COLUMN`, so the inverse is
+  not optional). Deferring the drop to phase 3 avoids standing up a second
+  destructive migration — and its rollback script — in the middle of the
+  teardown.
+
+The model KEEPS its name for now. Renaming it off the `Compliance` prefix means
+a `RENAME TO` migration plus its own inverse; if that is wanted it should ride
+the phase-3 migration rather than land on its own.
+
+**The general lesson, third time it has bitten:** a model's file and a model's
+name are both evidence about its owner, and both are weaker than the list of
+things that read it.
+
+### 8g. PRE-FLIGHT (2026-08-13) — every KILL table on production is EMPTY
+
+Run against the `agrent` VM's database (read-only; `inflect_production` is the
+agri product's DB under its pre-rebrand name, confirmed by the presence of
+`Parcel` / `LogEntry` / `Season` / `SupportScheme` / `AgroSignal`):
+
+```
+TOTAL GRC ROWS: 0        -- exact count(*), all 36 KILL tables
+tenants: 1   users: 5
+```
+
+`ComplianceSnapshot` is the ONLY table in the GRC schema files carrying real
+data (45 rows) — and it is precisely the one §8f took off the KILL list. That
+is a nice independent confirmation of that decision rather than a coincidence.
+
+**The §8d.4 DB-resident-reference risk is empirically zero here too.** Every
+table that could hold an orphaned enum value has no rows at all:
+
+| table | rows | rows holding a GRC value |
+|---|---|---|
+| `TenantApiKey` (`scopes`) | 0 | 0 |
+| `TenantCustomRole` (`permissionsJson`) | 0 | 0 |
+| `AutomationRule` (`triggerEvent`) | 0 | 0 |
+| `TenantModuleSettings` (`enabledModules`) | 0 | 0 |
+| `OrgDashboardWidget` (`chartType`) | 0 | 0 |
+
+Note the real column names differ from §8d.4's prose: it is `TenantApiKey`
+not `ApiKey`, `TenantModuleSettings.enabledModules` not
+`TenantModule.moduleKey`, and `AutomationRule.triggerEvent` not `.event`. A
+data migration written from that prose would have failed on three of five
+table names.
+
+**What this changes:**
+
+- The phase-3 destructive migration destroys NO production data. The
+  "irreversible against production data" warning in §7 still stands as a
+  procedure, but the blast radius on this stack is currently nil.
+- No data migration is needed for the orphaned-enum class on `agrent`.
+- The `.down.sql` inverses are still REQUIRED — the guard derives them from
+  the migration SQL, and other environments (dev, staging, a future
+  customer stack) are not covered by this count.
+
+**What this does NOT license:** re-running the count is part of the phase-3
+procedure, not a one-off. These numbers are true as of 2026-08-13 with one
+tenant on the stack; a tenant onboarded between now and the migration changes
+them. Count again immediately before applying.
+
+### 8h. OPERATOR DECISIONS (2026-08-13) — the two the work order escalated
+
+**A6 — `AUDIT_FINDING`, `PRACTICE_GAP` and `INCIDENT` are REMOVED from the
+task-type picker.** All three depended on `validateTypeRelevance`, which
+required a task to carry `practiceId` or a `PRACTICE` / `FRAMEWORK_REQUIREMENT`
+link. Phase 2 removes both link options and phase 3 drops the column, so the
+three types become uncreatable rather than merely unused. Removing them from
+`TaskType`'s UI is the honest reading; leaving them in the picker would offer a
+farmer three options that throw. The Prisma enum members themselves go in
+phase 3 with the rest.
+
+**A20 — the evidence download gate is RE-BASED, not widened.** Today
+`downloadEvidenceFile` lets READER / AUDITOR download only when
+`evidence.practiceId` is non-null. Deleting that condition would widen
+privilege to every file in the tenant; keeping it throws at phase 3. The gate
+is re-based on the surviving provenance columns — `assetId ?? taskId ??
+sourceLogEntryId` non-null — which preserves the existing posture: a
+read-only role can fetch evidence that is attached to a known farm record,
+and cannot fetch a free-floating upload. This is a security-relevant change
+and ships in its own commit with an executing test, which the gate has never
+had.
+
+### 8i. THE DELETION CRITERION WAS WRONG (learned in T3, 2026-08-13)
+
+T3 deleted the KILL closure using this rule: **delete a source file, then fix
+whatever `npx tsc --noEmit` flags.** The tree went typecheck-clean and the
+five structural tiers (`guards`, `guardrails`, `regression`, `contracts`,
+`pdf`) reported 578/578 green.
+
+CI then failed **47 test files**.
+
+The rule is wrong because TypeScript only sees `import`-shaped references.
+This repo's structural tests — hundreds of them — reference source by STRING
+PATH:
+
+```ts
+readFileSync('src/app/t/[tenantSlug]/(app)/practices/PracticesClient.tsx')
+```
+
+That compiles perfectly against a deleted file and fails at runtime. 43 of the
+47 were exactly this shape. The CLAUDE.md warning that "guards assert on
+source TEXT and contribute no runtime coverage" has a corollary nobody had
+written down: **the same property makes them invisible to the compiler**, so
+`tsc` clean is not evidence that a deletion is complete.
+
+**The corrected criterion, for T4 / T5 / phase 3:**
+
+1. Delete the source file.
+2. `npx tsc --noEmit` — catches the import-graph half.
+3. **`grep -rn '<deleted-path>' tests/`** — catches the string-path half.
+   Do this for EVERY deleted path, including directories, before committing.
+4. Run the FULL `npx jest`, not a tier subset.
+
+A second lesson rides along: the verification tier itself was the problem.
+`tests/guards` + `tests/guardrails` + `regression` + `contracts` + `pdf` is
+**93 of 1,180 suites — under 8%**. It was chosen because it is fast (~9
+minutes) and it is where teardown breakage was expected to land. It is a fine
+smoke test and a terrible completion check. The full suite is ~30 minutes;
+run it in the background and read it before claiming a tranche is done.

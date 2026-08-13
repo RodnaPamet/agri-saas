@@ -45,16 +45,13 @@ const EXEMPT_FILE_PATTERNS: RegExp[] = [
  * the multiple states are.
  */
 const EXEMPT_FILES: Record<string, string> = {
-    "src/app/vendor-assessment/[assessmentId]/VendorAssessmentClient.tsx":
-        "External-link assessment page renders distinct H1s for `loading`, `forbidden`, and `success` states — each represents a different page identity at the same route.",
+    // The vendor-assessment external page entry went with GRC teardown T1.
     "src/app/t/[tenantSlug]/(app)/auth/mfa/page.tsx":
         "MFA gate renders distinct H1s for `enrollment` and `verification` flows — each is a separate sign-in obstacle, not a sub-section of one page.",
     "src/app/invite/[token]/page.tsx":
         "Invite preview renders one H1 for valid invite and another for `invalid / expired` — two distinct page identities.",
     "src/app/invite/org/[token]/page.tsx":
         "Org invite preview — same shape as tenant invite.",
-    "src/app/audit/shared/[token]/page.tsx":
-        "Shared audit pack renders distinct H1s for `access denied` (token revoked / wrong) and `pack contents`.",
 };
 
 function isExempt(rel: string): boolean {

@@ -18,12 +18,21 @@
  *
  * Authenticated (admin@acme.com → acme-corp):
  *   • /t/{slug}/dashboard    — landing page, dense KPI grid
- *   • /t/{slug}/practices     — list page (DataTable + filter shell)
+ *   • /t/{slug}/assets       — list page (DataTable + filter shell)
  *   • /t/{slug}/evidence     — list page + uploads
  *   • /t/{slug}/farm-tasks   — list page (field work)
  *
  * Modal / interactive surfaces:
- *   • Create-practice modal opened from /practices
+ *   • Create-asset modal opened from /assets
+ *
+ * GRC teardown phase 2 — the list-page and modal surfaces above were
+ * /practices and its create-practice modal until that route was
+ * deleted. Both are re-pointed at /assets rather than dropped: what
+ * they scan is the shared PLATFORM chrome (ListPageShell +
+ * FilterToolbar + DataTable for the list; the <Modal> primitive's
+ * focus trap + labelling for the overlay), not anything specific to
+ * the entity. /assets is the closest surviving equivalent — a seeded
+ * DataTable list page whose create affordance is a <Modal>.
  *
  * AXE CONFIG
  *
@@ -254,12 +263,15 @@ test.describe('a11y — authenticated tenant pages', () => {
         await runA11yScan(page, 'dashboard');
     });
 
-    test('practices list has no critical/serious WCAG violations', async ({ page }) => {
-        await safeGoto(page, `/t/${tenantSlug}/practices`);
+    // GRC teardown phase 2 — was `/practices`; re-pointed to `/assets`
+    // (same DataTable + filter shell, seeded with three rows by
+    // `prisma/seed.ts`). See the docblock.
+    test('assets list has no critical/serious WCAG violations', async ({ page }) => {
+        await safeGoto(page, `/t/${tenantSlug}/assets`);
         // DataTable mounts its <table> after data resolves; wait on
         // the table itself or a data-testid.
-        await page.waitForSelector('table, [data-testid="practices-table"]', { timeout: 30_000 });
-        await runA11yScan(page, 'practices list');
+        await page.waitForSelector('table, [data-testid="assets-table"]', { timeout: 30_000 });
+        await runA11yScan(page, 'assets list');
     });
 
 
@@ -280,26 +292,28 @@ test.describe('a11y — authenticated tenant pages', () => {
 // ─── Modal / interactive surfaces ────────────────────────────────
 
 test.describe('a11y — interactive overlays', () => {
-    test('create-practice modal has no critical/serious WCAG violations', async ({ page }) => {
+    // GRC teardown phase 2 — was the create-practice modal on
+    // `/practices`; re-pointed to the create-asset modal on `/assets`.
+    // Both are the same `<Modal>` primitive rendered from a list page
+    // header button, which is what this scan is about.
+    test('create-asset modal has no critical/serious WCAG violations', async ({ page }) => {
         const tenantSlug = await loginAndGetTenant(page);
-        await safeGoto(page, `/t/${tenantSlug}/practices`);
-        await page.waitForSelector('table, [data-testid="practices-table"]', { timeout: 30_000 });
+        await safeGoto(page, `/t/${tenantSlug}/assets`);
+        await page.waitForSelector('table, [data-testid="assets-table"]', { timeout: 30_000 });
 
-        // Open the create-practice modal via the canonical id
-        // selector (`#new-practice-btn`). The previous text-/data-
-        // testid-multi-selector chain raced the toolbar render in
-        // some seeded states, tripping the conditional `test.skip`
-        // and leaving the surface uncovered. The id is wired into
-        // PracticesClient.tsx directly and is the same selector
-        // create-practice-modal.spec.ts uses.
-        const newPracticeBtn = page.locator('#new-practice-btn');
-        await expect(newPracticeBtn).toBeVisible({ timeout: 30_000 });
-        await newPracticeBtn.click();
+        // Open the create-asset modal via the canonical id selector
+        // (`#new-asset-btn`, wired into AssetsClient.tsx). An id
+        // selector rather than a text-/data-testid chain: the latter
+        // raced the toolbar render in some seeded states, tripping a
+        // conditional `test.skip` and leaving the surface uncovered.
+        const newAssetBtn = page.locator('#new-asset-btn');
+        await expect(newAssetBtn).toBeVisible({ timeout: 30_000 });
+        await newAssetBtn.click();
 
         // Modal renders a dialog with role="dialog". Wait for it
         // before scanning so axe sees the trapped focus + modal DOM.
         await page.waitForSelector('[role="dialog"]', { timeout: 15_000 });
 
-        await runA11yScan(page, 'create-practice modal');
+        await runA11yScan(page, 'create-asset modal');
     });
 });

@@ -1622,14 +1622,15 @@ describe('Architecture compliance — no ad-hoc tables on list pages', () => {
   const clientDir = path.resolve(__dirname, '../../src/app/t/[tenantSlug]/(app)');
 
   // Pages that are intentionally excluded from DataTable migration
-  // (SoAClient was one until the compliance uproot deleted it)
-  // AuditsClient: master/detail panel UX, not a list page
+  // (SoAClient was one until the compliance uproot deleted it; AuditsClient
+  // was another until GRC teardown phase 2 deleted the audit surface with
+  // its models — both entries dropped rather than kept as dangling
+  // exclusions, since the "excluded pages still exist" check below would
+  // otherwise assert on files that are gone on purpose)
   // AccessReviewDetailClient: list-of-decisions inside a campaign
   // detail page; per-row inline decision dropdown + decision dialog
-  // sit on the row itself. Same architectural shape as
-  // AuditsClient — list inside a parent record, not a list page.
+  // sit on the row itself — a list inside a parent record, not a list page.
   const EXCLUDED_PAGES = [
-    'AuditsClient.tsx',
     'AccessReviewDetailClient.tsx',
   ];
 
@@ -1751,7 +1752,10 @@ describe('No duplicate table utilities outside the table module', () => {
 
 describe('Page-level column definition patterns', () => {
   const clientDir = path.resolve(__dirname, '../../src/app/t/[tenantSlug]/(app)');
-  const EXCLUDED = ['SoAClient.tsx', 'AuditsClient.tsx'];
+  // Both names are gone from the tree (SoAClient with the compliance
+  // uproot, AuditsClient with GRC teardown phase 2); the filter is kept
+  // empty rather than listing deleted files.
+  const EXCLUDED: string[] = [];
 
   function findClientFiles(dir: string): string[] {
     const results: string[] = [];

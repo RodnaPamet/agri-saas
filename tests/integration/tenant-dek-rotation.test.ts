@@ -88,7 +88,7 @@ describeFn('rotateTenantDek (integration — real DB)', () => {
                         }
                     })
                     .catch(() => undefined);
-                await prisma.finding
+                await prisma.task
                     .deleteMany({ where: { tenantId: { in: tenantIds } } })
                     .catch(() => undefined);
             }
@@ -167,7 +167,7 @@ describeFn('rotateTenantDek (integration — real DB)', () => {
         await expect(
             rotateTenantDek({
                 tenantId: tenant.id,
-                initiatedByUserId: 'user-int-2',
+                    initiatedByUserId: 'user-int-2',
             }),
         ).rejects.toThrow(/already mid-rotation/);
     });
@@ -239,7 +239,7 @@ describeFn('rotateTenantDek (integration — real DB)', () => {
         });
 
         // ── Seed v2 ciphertexts under the INITIAL DEK ───────────────
-        // Finding.rootCause is in the encrypted-fields manifest and
+        // Finding.resolution is in the encrypted-fields manifest and
         // Finding carries a tenantId column — so the rotation sweep
         // will pick these rows up. Write directly via Prisma + a pre-
         // computed v2 ciphertext (bypasses the runtime middleware
@@ -252,14 +252,14 @@ describeFn('rotateTenantDek (integration — real DB)', () => {
         const seeded: Array<{ id: string; plaintext: string }> = [];
         for (const plaintext of PLAINTEXTS) {
             const v2 = encryptWithKey(initialDek, plaintext);
-            const finding = await prisma.finding.create({
+            const finding = await prisma.task.create({
                 data: {
                     tenantId: tenant.id,
+                    createdByUserId: lifecycleUser.id,
                     title: `lifecycle-${seeded.length}`,
-                    description: `lifecycle finding ${seeded.length}`,
-                    severity: 'HIGH',
-                    type: 'NONCONFORMITY',
-                    rootCause: v2,
+                    description: `lifecycle task ${seeded.length}`,
+                    type: 'TASK',
+                    resolution: v2,
                 },
             });
             seeded.push({ id: finding.id, plaintext });
@@ -268,16 +268,16 @@ describeFn('rotateTenantDek (integration — real DB)', () => {
         // Sanity — ciphertexts on disk are v2: shape and decrypt
         // cleanly under the initial DEK.
         const seededRows = await prisma.$queryRawUnsafe<
-            Array<{ id: string; rootCause: string }>
+            Array<{ id: string; resolution: string }>
         >(
-            `SELECT id, "rootCause" FROM "Finding" WHERE "tenantId" = $1 ORDER BY id`,
+            `SELECT id, "resolution" FROM "Task" WHERE "tenantId" = $1 ORDER BY id`,
             tenant.id,
         );
         expect(seededRows).toHaveLength(PLAINTEXTS.length);
         for (const row of seededRows) {
-            expect(row.rootCause.startsWith('v2:')).toBe(true);
+            expect(row.resolution.startsWith('v2:')).toBe(true);
             const seedMatch = seeded.find((s) => s.id === row.id)!;
-            expect(decryptWithKey(initialDek, row.rootCause)).toBe(
+            expect(decryptWithKey(initialDek, row.resolution)).toBe(
                 seedMatch.plaintext,
             );
         }
@@ -305,16 +305,16 @@ describeFn('rotateTenantDek (integration — real DB)', () => {
         // auth, and falls back to the previous DEK.
         for (const row of seededRows) {
             // Under the NEW DEK directly: must FAIL (different key).
-            expect(() => decryptWithKey(newDek, row.rootCause)).toThrow();
+            expect(() => decryptWithKey(newDek, row.resolution)).toThrow();
             // Under the PREVIOUS DEK directly: still works.
             const seedMatch = seeded.find((s) => s.id === row.id)!;
-            expect(decryptWithKey(previousDek, row.rootCause)).toBe(
+            expect(decryptWithKey(previousDek, row.resolution)).toBe(
                 seedMatch.plaintext,
             );
             // Via the production fallback: works without the caller
             // having to know which DEK is active.
             expect(
-                decryptWithKeyOrPrevious(newDek, previousDek, row.rootCause),
+                decryptWithKeyOrPrevious(newDek, previousDek, row.resolution),
             ).toBe(seedMatch.plaintext);
         }
 
@@ -333,7 +333,7 @@ describeFn('rotateTenantDek (integration — real DB)', () => {
         expect(sweepResult.tenantId).toBe(tenant.id);
         expect(sweepResult.previousEncryptedDekCleared).toBe(true);
         expect(sweepResult.totalErrors).toBe(0);
-        // The Finding.rootCause column carried 3 v2 rows — they all
+        // The Finding.resolution column carried 3 v2 rows — they all
         // get rewritten. The sweep walks every (model, field) so its
         // counters span the whole manifest, but `totalRewritten` is
         // bounded below by what we seeded.
@@ -362,9 +362,9 @@ describeFn('rotateTenantDek (integration — real DB)', () => {
         expect(afterSweep?.encryptedDek).toBe(afterSwap?.encryptedDek);
 
         const sweptRows = await prisma.$queryRawUnsafe<
-            Array<{ id: string; rootCause: string }>
+            Array<{ id: string; resolution: string }>
         >(
-            `SELECT id, "rootCause" FROM "Finding" WHERE "tenantId" = $1 ORDER BY id`,
+            `SELECT id, "resolution" FROM "Task" WHERE "tenantId" = $1 ORDER BY id`,
             tenant.id,
         );
         expect(sweptRows).toHaveLength(PLAINTEXTS.length);
@@ -372,11 +372,11 @@ describeFn('rotateTenantDek (integration — real DB)', () => {
             const seedMatch = seeded.find((s) => s.id === row.id)!;
             // Plaintext recovers correctly under the NEW DEK alone —
             // no fallback needed.
-            expect(row.rootCause.startsWith('v2:')).toBe(true);
-            expect(decryptWithKey(newDek, row.rootCause)).toBe(seedMatch.plaintext);
+            expect(row.resolution.startsWith('v2:')).toBe(true);
+            expect(decryptWithKey(newDek, row.resolution)).toBe(seedMatch.plaintext);
             // Under the PREVIOUS DEK: must FAIL (the row is no
             // longer encrypted under that key).
-            expect(() => decryptWithKey(previousDek, row.rootCause)).toThrow();
+            expect(() => decryptWithKey(previousDek, row.resolution)).toThrow();
         }
 
         // ── Phase 4: a brand-new write uses the new DEK ─────────────
@@ -385,23 +385,23 @@ describeFn('rotateTenantDek (integration — real DB)', () => {
         // path that would silently encrypt under the old key.
         const freshPlaintext = 'newly-discovered headland compaction';
         const freshV2 = encryptWithKey(newDek, freshPlaintext);
-        const freshFinding = await prisma.finding.create({
+        const freshFinding = await prisma.task.create({
             data: {
                 tenantId: tenant.id,
+                createdByUserId: lifecycleUser.id,
                 title: 'lifecycle-fresh',
-                description: 'lifecycle finding — post-rotation write',
-                severity: 'HIGH',
-                type: 'NONCONFORMITY',
-                rootCause: freshV2,
+                description: 'lifecycle task — post-rotation write',
+                type: 'TASK',
+                resolution: freshV2,
             },
         });
         const [freshRow] = await prisma.$queryRawUnsafe<
-            Array<{ rootCause: string }>
-        >(`SELECT "rootCause" FROM "Finding" WHERE id = $1`, freshFinding.id);
-        expect(freshRow.rootCause.startsWith('v2:')).toBe(true);
-        expect(decryptWithKey(newDek, freshRow.rootCause)).toBe(freshPlaintext);
+            Array<{ resolution: string }>
+        >(`SELECT "resolution" FROM "Task" WHERE id = $1`, freshFinding.id);
+        expect(freshRow.resolution.startsWith('v2:')).toBe(true);
+        expect(decryptWithKey(newDek, freshRow.resolution)).toBe(freshPlaintext);
         // And the previous DEK doesn't decrypt it.
-        expect(() => decryptWithKey(previousDek, freshRow.rootCause)).toThrow();
+        expect(() => decryptWithKey(previousDek, freshRow.resolution)).toThrow();
 
         // ── Cleanup ────────────────────────────────────────────────
         // AuditLog has an immutability trigger; bypass with
@@ -416,7 +416,7 @@ describeFn('rotateTenantDek (integration — real DB)', () => {
                 tenant.id,
             );
         });
-        await prisma.finding.deleteMany({ where: { tenantId: tenant.id } });
+        await prisma.task.deleteMany({ where: { tenantId: tenant.id } });
         await prisma.user
             .delete({ where: { id: lifecycleUser.id } })
             .catch(() => undefined);

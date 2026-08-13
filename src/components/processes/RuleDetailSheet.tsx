@@ -23,8 +23,8 @@ import { useTenantMutation } from '@/lib/hooks/use-tenant-mutation';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import { ExecutionsPanel } from '@/components/processes/ExecutionsPanel';
-import type { AutomationRuleRow } from '@/app/t/[tenantSlug]/(app)/processes/RulesTab';
-import { RULE_ACTION_LABELS } from '@/app/t/[tenantSlug]/(app)/processes/automation-filter-defs';
+import type { AutomationRuleRow } from '@/components/processes/types';
+import { RULE_ACTION_LABELS } from '@/components/processes/automation-filter-defs';
 
 function humanizeEvent(name: string): string {
     return name

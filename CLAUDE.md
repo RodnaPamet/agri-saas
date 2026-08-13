@@ -1388,11 +1388,21 @@ and domain-specific tab bodies (e.g. `TraceabilityPanel`,
 
 **Adoption ratchet.** Each adoption is locked by a structural test
 that asserts the page mounts the shell and doesn't hand-roll the
-inline composition: `practices-client-shell-adoption.test.ts` (list)
-and `practice-detail-shell-adoption.test.ts` (detail). When you
-migrate a new entity page (policies / vendors / audits /
-…), add a sibling `*-shell-adoption.test.ts` next to the existing
-two — same shape, same regression-class lock.
+inline composition. The GRC teardown deleted the two originally named
+here (`practices-client-shell-adoption` / `practice-detail-shell-adoption`);
+the surviving locks are `{bins,contracts,costs,yield}-list-shell-adoption.test.ts`
+(list) and `entity-detail-shell-adoption.test.ts` (detail, pinned to
+`journal/[id]`). When you migrate a new entity page, add a sibling
+`*-shell-adoption.test.ts` next to those — same shape, same
+regression-class lock.
+
+The detail ratchet is the load-bearing one and is easy to delete by
+accident, because the guards that *look* like they cover it do not: the
+`entity-detail-{shell,layout}-coverage` guards only assert
+`<EntityDetailLayout` appears, `detail-page-tabs-slot` is a negative pin,
+and `state-coverage` EXEMPTS detail pages precisely because they
+"delegate loading to EntityDetailLayout" — a delegation only the detail
+ratchet actually verifies.
 
 See `docs/implementation-notes/2026-04-30-entity-page-architecture.md`
 for the unified architecture rationale and

@@ -156,3 +156,77 @@ model AssetKeySequence {
   tenantId  String @id
   lastValue Int    @default(0)
 }
+
+// ─────────────────────────────────────────────────────────────────
+// Daily metrics rollup.
+//
+// Moved here from `compliance.prisma` as a PURE MOVE (Prisma's
+// `prismaSchemaFolder` concatenates the folder, so relocating a model
+// between files produces no migration). It sits with `Asset` because the
+// surviving reader that matters most is the `/assets` KPI sparkline strip —
+// see §8f of docs/implementation-notes/2026-08-12-grc-teardown-plan.md for why
+// this model came OFF the teardown's KILL list.
+//
+// The `practices*` / `policies*` / `vendors*` / `findingsOpen` columns below
+// are DEAD as of phase 2: nothing computes or reads them any more. They are
+// dropped in the phase-3 destructive migration (with its `.down.sql` inverse)
+// rather than in a second migration here.
+// ─────────────────────────────────────────────────────────────────
+/// Daily compliance KPI snapshot for trend reporting.
+/// One row per tenant per day. Idempotent via @@unique([tenantId, snapshotDate]).
+/// Stores denormalized KPI values computed by the daily snapshot job.
+model ComplianceSnapshot {
+  id           String   @id @default(cuid())
+  tenantId     String
+  /// Calendar date (midnight UTC) — NOT a full timestamp.
+  /// Enables clean GROUP BY / ORDER BY for trend queries.
+  snapshotDate DateTime @db.Date
+
+  // ── Practice Coverage ──
+  practicesTotal       Int @default(0)
+  practicesApplicable  Int @default(0)
+  practicesImplemented Int @default(0)
+  practicesInProgress  Int @default(0)
+  practicesNotStarted  Int @default(0)
+  /// Cached coverage % × 10 (e.g. 753 = 75.3%). Int avoids float precision issues.
+  practiceCoverageBps  Int @default(0)
+
+  // ── Evidence ──
+  evidenceTotal      Int @default(0)
+  evidenceOverdue    Int @default(0)
+  evidenceDueSoon7d  Int @default(0)
+  evidenceDueSoon30d Int @default(0)
+  evidenceCurrent    Int @default(0)
+
+  // ── Policies ──
+  policiesTotal         Int @default(0)
+  policiesPublished     Int @default(0)
+  policiesOverdueReview Int @default(0)
+
+  // ── Tasks ──
+  tasksTotal   Int @default(0)
+  tasksOpen    Int @default(0)
+  tasksOverdue Int @default(0)
+
+  // ── Vendors ──
+  vendorsTotal         Int @default(0)
+  vendorsOverdueReview Int @default(0)
+
+  // ── Assets ──
+  assetsTotal           Int @default(0)
+  assetsActive          Int @default(0)
+  assetsHighCriticality Int @default(0)
+  assetsRetired         Int @default(0)
+
+  // ── Findings ──
+  findingsOpen Int @default(0)
+
+  // ── Meta ──
+  createdAt DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, snapshotDate])
+  @@index([tenantId, snapshotDate])
+  @@index([tenantId])
+}

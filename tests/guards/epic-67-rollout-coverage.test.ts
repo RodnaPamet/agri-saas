@@ -30,32 +30,12 @@ interface SiteContract {
 }
 
 const SITE_CONTRACTS: ReadonlyArray<SiteContract> = [
-    {
-        file: 'src/components/TraceabilityPanel.tsx',
-        name: 'Cross-entity unlink (TraceabilityPanel)',
-        handlers: ['handleUnlink'],
-    },
-    {
-        file: 'src/app/t/[tenantSlug]/(app)/practices/[practiceId]/page.tsx',
-        name: 'Practice evidence unlink (practice detail)',
-        handlers: ['unlinkEvidence'],
-    },
-    {
-        // #102 item 1 extracted the Mappings tab — and its
-        // requirement-unmap undo flow — into its own component.
-        file: 'src/app/t/[tenantSlug]/(app)/practices/[practiceId]/_tabs/PracticeMappingsTab.tsx',
-        name: 'Practice requirement unmap (Mappings tab)',
-        handlers: ['unmapRequirement'],
-    },
+    // The cross-entity unlink site (TraceabilityPanel) went with the GRC
+    // teardown in phase 2; the remaining sites are unchanged.
     {
         file: 'src/app/t/[tenantSlug]/(app)/farm-tasks/[taskId]/FarmTaskDetailClient.tsx',
         name: 'Farm task link removal (task detail)',
         handlers: ['removeLink'],
-    },
-    {
-        file: 'src/app/t/[tenantSlug]/(app)/vendors/[vendorId]/page.tsx',
-        name: 'Vendor document removal (vendor detail)',
-        handlers: ['removeDoc'],
     },
     {
         file: 'src/app/t/[tenantSlug]/(app)/exchange/my-listings/MyListingsClient.tsx',

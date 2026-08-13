@@ -39,42 +39,12 @@ const PAGES: PageEntry[] = [
         adopted: true,
         note: "Notifications page — first proof-of-pattern migration. Single primary action absent; description slot used for the activity-feed framing.",
     },
-    {
-        file: "src/app/t/[tenantSlug]/(app)/audits/AuditsClient.tsx",
-        adopted: true,
-        note: "Audits master/detail page — header uses primary CTA `New audit` in the actions slot; description slot carries the list-page subtitle.",
-    },
-    {
-        file: "src/app/t/[tenantSlug]/(app)/findings/FindingsClient.tsx",
-        adopted: true,
-        note: "Findings list — wrapped inside ListPageShell's Header slot; PageHeader carries the title + description + new-finding action.",
-    },
 
     // ── Pending migration ──
-    {
-        file: "src/app/t/[tenantSlug]/(app)/audits/cycles/page.tsx",
-        adopted: false,
-        note: "Audit cycles list page. Pending migration — straightforward shape.",
-    },
-    {
-        file: "src/app/t/[tenantSlug]/(app)/audits/auditor/page.tsx",
-        adopted: false,
-        note: "Auditor portal page. Pending migration — straightforward shape.",
-    },
-    {
-        file: "src/app/t/[tenantSlug]/(app)/mapping/page.tsx",
-        adopted: false,
-        note: "Framework mapping page. Pending migration.",
-    },
     {
         file: "src/app/t/[tenantSlug]/(app)/assets/AssetsClient.tsx",
         adopted: false,
         note: "Assets list page. Pending migration.",
-    },
-    {
-        file: "src/app/t/[tenantSlug]/(app)/audits/readiness/page.tsx",
-        adopted: false,
-        note: "Readiness landing page (Server Component). Pending migration; needs ratchet-aware handling of server-component composition.",
     },
     {
         file: "src/app/t/[tenantSlug]/(app)/calendar/CalendarClient.tsx",
@@ -107,11 +77,6 @@ const PAGES: PageEntry[] = [
         note: "Admin SCIM page. Pending migration.",
     },
     {
-        file: "src/app/t/[tenantSlug]/(app)/admin/vendor-templates/[templateId]/VendorTemplateBuilderClient.tsx",
-        adopted: false,
-        note: "Vendor template builder. Pending migration — wizard-shaped page.",
-    },
-    {
         file: "src/app/t/[tenantSlug]/(app)/admin/rbac/page.tsx",
         adopted: false,
         note: "RBAC admin page. Pending migration.",
@@ -132,11 +97,6 @@ const PAGES: PageEntry[] = [
         note: "Billing admin page. Pending migration.",
     },
     {
-        file: "src/app/t/[tenantSlug]/(app)/admin/vendor-templates/VendorTemplatesIndexClient.tsx",
-        adopted: false,
-        note: "Vendor templates index page. Pending migration.",
-    },
-    {
         file: "src/app/t/[tenantSlug]/(app)/admin/integrations/page.tsx",
         adopted: false,
         note: "Integrations admin page. Pending migration.",
@@ -150,11 +110,6 @@ const PAGES: PageEntry[] = [
         file: "src/app/t/[tenantSlug]/(app)/access-reviews/AccessReviewsClient.tsx",
         adopted: false,
         note: "Access reviews list. Pending migration.",
-    },
-    {
-        file: "src/app/t/[tenantSlug]/(app)/vendors/VendorsClient.tsx",
-        adopted: false,
-        note: "Vendors list page. Pending migration.",
     },
 ];
 
@@ -222,7 +177,10 @@ describe("PageHeader adoption registry", () => {
         // registry entry (the next assertion); page removals force
         // entry removal (the first assertion).
         // 25 → 24: the risks list page went with the register.
-        expect(PAGES.length).toBeGreaterThanOrEqual(24);
+        // 24 → 17 (GRC teardown phase 2): the inherited GRC list pages
+        // left the candidate set with their routes.
+        // 17 → 15 (T1): the two vendor-template admin pages went too.
+        expect(PAGES.length).toBeGreaterThanOrEqual(15);
         expect(PAGES.length).toBeLessThanOrEqual(35);
     });
 });

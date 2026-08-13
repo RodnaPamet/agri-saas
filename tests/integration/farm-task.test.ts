@@ -21,7 +21,7 @@ import { DB_URL, DB_AVAILABLE } from './db-helper';
 import { hashForLookup } from '@/lib/security/encryption';
 import { makeRequestContext } from '../helpers/make-context';
 import { createFarmTask, listMyFarmTasks } from '@/app-layer/usecases/farm-task';
-import { getComplianceCalendarEvents } from '@/app-layer/usecases/compliance-calendar';
+import { getCalendarEvents } from '@/app-layer/usecases/calendar';
 
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
@@ -128,7 +128,7 @@ describeFn('farm tasks (DB)', () => {
         const ctx = ownerCtx();
         const from = new Date(Date.now() - 86_400_000);
         const to = new Date(Date.now() + 30 * 86_400_000);
-        const res = await getComplianceCalendarEvents(ctx, { from, to });
+        const res = await getCalendarEvents(ctx, { from, to });
         const hit = res.events.find((e) => e.entityType === 'TASK' && e.entityId === taskId);
         expect(hit).toBeDefined();
         // A FARM_TASK now carries its own event type and category rather than

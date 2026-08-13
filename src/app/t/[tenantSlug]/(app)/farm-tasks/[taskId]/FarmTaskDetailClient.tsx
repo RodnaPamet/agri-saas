@@ -38,7 +38,7 @@ import { cardVariants } from '@/components/ui/card';
 // Shared evidence sub-table — lives under the practice detail route's `_tabs/`
 // (kept there so existing guard exemptions + a unit test keyed on that path
 // stay valid). Imported here via the `@/app` alias.
-import { EvidenceSubTable } from '@/app/t/[tenantSlug]/(app)/practices/[practiceId]/_tabs/EvidenceSubTable';
+import { EvidenceSubTable } from '@/components/EvidenceSubTable';
 import { EvidenceAddForm } from '@/components/EvidenceAddForm';
 import { Pen2, CircleCheck, Trash } from '@/components/ui/icons/nucleo';
 import { cn } from '@/lib/cn';

@@ -5,10 +5,12 @@
  *   1. The <UserCombobox> wrapper fetches members through a single
  *      tenant-scoped React Query key, projects them into Combobox
  *      options, and exposes a narrow single-vs-multi API.
- *   2. Three free-text UUID inputs are gone — replaced by UserCombobox:
- *        a. PracticeDetailSheet   (#sheet-owner-input)
- *        b. NewTaskPage          (#task-assignee-input)
- *        c. TaskDetailPage       (#task-assignee-input)
+ *   2. Two free-text UUID inputs are gone — replaced by UserCombobox:
+ *        a. NewTaskPage          (#task-assignee-input)
+ *        b. TaskDetailPage       (#task-assignee-input)
+ *      GRC teardown phase 2 removed the third — PracticeDetailSheet's
+ *      #sheet-owner-input owner picker — with the /practices page and
+ *      the Practice model.
  *   3. Tenant safety: the shared queryKeys.members entry is namespaced
  *      per tenant, the fetch path carries the tenantSlug, and the
  *      wrapper never leaks raw admin data into the picker option labels.
@@ -24,9 +26,6 @@ function read(rel: string): string {
 
 const USER_COMBO_SRC = read('src/components/ui/user-combobox.tsx');
 const QUERY_KEYS_SRC = read('src/lib/queryKeys.ts');
-const SHEET_SRC = read(
-    'src/app/t/[tenantSlug]/(app)/practices/PracticeDetailSheet.tsx',
-);
 // Modal-form P1 (2026-05-24) — `tasks/new/page.tsx` was decomposed
 // into page wrapper + `_form/useNewTaskForm.ts` + `_form/NewTaskFields.tsx`.
 // Modal-form P2 (2026-05-24) — `tasks/new/page.tsx` further became
@@ -175,54 +174,14 @@ describe('queryKeys.members — tenant scoping', () => {
     });
 });
 
-// ─── 3. PracticeDetailSheet — owner picker migration ─────────────
-
-describe('PracticeDetailSheet — owner UserCombobox', () => {
-    it('imports UserCombobox + FormField', () => {
-        expect(SHEET_SRC).toMatch(
-            /from ["']@\/components\/ui\/user-combobox["']/,
-        );
-        expect(SHEET_SRC).toMatch(
-            /from ["']@\/components\/ui\/form-field["']/,
-        );
-    });
-
-    it('drops the legacy free-text <input id="sheet-owner-input">', () => {
-        expect(SHEET_SRC).not.toMatch(
-            /<input[^>]*\bid=["']sheet-owner-input["']/,
-        );
-    });
-
-    it('UserCombobox preserves id="sheet-owner-input" for E2E selector parity', () => {
-        expect(SHEET_SRC).toMatch(
-            /<UserCombobox[\s\S]{0,300}id=["']sheet-owner-input["']/,
-        );
-    });
-
-    it('passes tenantSlug through (tenant-scoped fetch)', () => {
-        expect(SHEET_SRC).toMatch(
-            /<UserCombobox[\s\S]{0,500}tenantSlug=\{tenantSlug\}/,
-        );
-    });
-
-    it('carries name="ownerUserId" for native form serialisation', () => {
-        expect(SHEET_SRC).toMatch(/name=["']ownerUserId["']/);
-    });
-
-    it('disables the picker when canWrite is false', () => {
-        expect(SHEET_SRC).toMatch(
-            /<UserCombobox[\s\S]{0,500}disabled=\{!canWrite\}/,
-        );
-    });
-
-    it('onChange routes into the existing form.owner reducer', () => {
-        expect(SHEET_SRC).toMatch(
-            /onChange=\{\(userId\)\s*=>\s*[\s\S]{0,80}update\(['"]owner['"],\s*userId\s*\?\?\s*['"]['"]\)/,
-        );
-    });
-});
-
-// ─── 4. NewTaskPage — assignee picker migration ─────────────────
+// ─── 3. NewTaskPage — assignee picker migration ─────────────────
+//
+// (GRC teardown phase 2 removed section 3, the PracticeDetailSheet
+// owner picker, along with the /practices page and the Practice model.
+// Its "tenantSlug is passed through / disabled={!canWrite} / onChange
+// writes the reducer" assertions had no surviving equivalent — the two
+// remaining call sites below already carry the same contract for the
+// farm-task assignee picker.)
 
 describe('NewTaskPage — assignee UserCombobox', () => {
     it('imports UserCombobox', () => {
@@ -263,7 +222,7 @@ describe('NewTaskPage — assignee UserCombobox', () => {
     });
 });
 
-// ─── 5. TaskDetailPage — inline assign picker ───────────────────
+// ─── 4. TaskDetailPage — inline assign picker ───────────────────
 
 describe('TaskDetailPage — inline assign UserCombobox', () => {
     it('imports UserCombobox', () => {
@@ -309,14 +268,12 @@ describe('TaskDetailPage — inline assign UserCombobox', () => {
     });
 });
 
-// ─── 6. Drift sentinel — no regression in payload contract ──────
+// ─── 5. Drift sentinel — no regression in payload contract ──────
 
 describe('Epic 55 Prompt 5 — payload contracts preserved', () => {
-    it('PracticeDetailSheet still POSTs ownerUserId to /practices/:id/owner', () => {
-        expect(SHEET_SRC).toMatch(
-            /ownerUserId:\s*draft\.owner\.trim\(\)\s*\|\|\s*null/,
-        );
-    });
+    // GRC teardown phase 2 — the "PracticeDetailSheet still POSTs
+    // ownerUserId to /practices/:id/owner" sentinel went with the route
+    // and the Practice model.
 
     it('TaskDetailPage still PATCHes assigneeUserId via /assign endpoint', () => {
         // #102 item 5 — `handleAssign` derives `assigneeUserId` from

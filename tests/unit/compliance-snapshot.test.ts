@@ -45,7 +45,7 @@ jest.mock('@/lib/observability/job-runner', () => ({
 }));
 
 import { toSnapshotDate, runSnapshotJob } from '@/app-layer/jobs/snapshot';
-import { getComplianceTrends } from '@/app-layer/usecases/compliance-trends';
+import { getMetricTrends } from '@/app-layer/usecases/metric-trends';
 import { getPermissionsForRole } from '@/lib/permissions';
 import type { RequestContext } from '@/app-layer/types';
 
@@ -185,16 +185,31 @@ describe('Snapshot Job', () => {
         expect(upsertCall.where.tenantId_snapshotDate.tenantId).toBe('tenant-1');
     });
 
-    it('stores practice coverage BPS correctly', async () => {
+    it('no longer writes the GRC columns at all', async () => {
+        // GRC teardown phase 2 (plan §8f): the job used to compute practice
+        // coverage BPS, policy and vendor summaries and an open-findings
+        // count. Those aggregates went with their models. The COLUMNS remain
+        // on the table until the phase-3 migration, so the meaningful
+        // assertion is that a new row does not mention them — leaving them
+        // absent lets Prisma apply `@default(0)` rather than the job writing
+        // a computed-looking zero.
         setupDashboardMocks();
         mockUpsert.mockResolvedValue({});
 
         await runSnapshotJob({ tenantId: 'tenant-1' });
 
         const upsertCall = mockUpsert.mock.calls[0][0];
-        // 10 implemented / 15 applicable = 66.7% → BPS = 667
-        expect(upsertCall.create.practiceCoverageBps).toBe(667);
-        expect(upsertCall.create.practicesImplemented).toBe(10);
+        for (const dead of [
+            'practiceCoverageBps',
+            'practicesImplemented',
+            'practicesApplicable',
+            'policiesTotal',
+            'vendorsTotal',
+            'findingsOpen',
+        ]) {
+            expect(upsertCall.create).not.toHaveProperty(dead);
+            expect(upsertCall.update).not.toHaveProperty(dead);
+        }
     });
 
     it('stores the asset KPI buckets', async () => {
@@ -269,7 +284,7 @@ describe('Compliance Trends', () => {
             ]),
         };
 
-        const result = await getComplianceTrends(makeCtx(), 90);
+        const result = await getMetricTrends(makeCtx(), 90);
 
         expect(result.daysRequested).toBe(90);
         expect(result.daysAvailable).toBe(2);
@@ -278,16 +293,25 @@ describe('Compliance Trends', () => {
         expect(result.dataPoints[1].date).toBe('2026-04-17');
     });
 
-    it('converts BPS to percentage correctly', async () => {
+    it('omits the GRC columns from the DTO even when the row still carries them', async () => {
+        // GRC teardown phase 2 (plan §8f): the snapshot TABLE keeps its
+        // practice / policy / vendor / finding columns until the phase-3
+        // migration — historical rows hold real values — but the DTO must not
+        // surface them, because nothing computes them any more and a chart
+        // would draw a flat zero line as though it were measured.
         mockTx.complianceSnapshot = {
             findMany: jest.fn(async () => [
-                { snapshotDate: new Date('2026-04-18'), practiceCoverageBps: 753, practicesImplemented: 8, practicesApplicable: 10, risksTotal: 0, risksOpen: 0, risksCritical: 0, risksHigh: 0, evidenceOverdue: 0, evidenceDueSoon7d: 0, evidenceCurrent: 0, policiesTotal: 0, policiesOverdueReview: 0, tasksOpen: 0, tasksOverdue: 0, findingsOpen: 0 },
+                { snapshotDate: new Date('2026-04-18'), practiceCoverageBps: 753, practicesImplemented: 8, practicesApplicable: 10, evidenceOverdue: 0, evidenceDueSoon7d: 0, evidenceCurrent: 0, policiesTotal: 0, policiesOverdueReview: 0, tasksOpen: 0, tasksOverdue: 0, findingsOpen: 0, assetsTotal: 5, assetsActive: 4, assetsHighCriticality: 1, assetsRetired: 0 },
             ]),
         };
 
-        const result = await getComplianceTrends(makeCtx(), 30);
+        const result = await getMetricTrends(makeCtx(), 30);
 
-        expect(result.dataPoints[0].practiceCoveragePercent).toBe(75.3);
+        const dp = result.dataPoints[0];
+        expect(dp).not.toHaveProperty('practiceCoveragePercent');
+        expect(dp).not.toHaveProperty('policiesTotal');
+        expect(dp).not.toHaveProperty('findingsOpen');
+        expect(dp.assetsTotal).toBe(5);
     });
 
     it('returns empty array for no snapshots', async () => {
@@ -295,7 +319,7 @@ describe('Compliance Trends', () => {
             findMany: jest.fn(async () => []),
         };
 
-        const result = await getComplianceTrends(makeCtx(), 90);
+        const result = await getMetricTrends(makeCtx(), 90);
 
         expect(result.daysAvailable).toBe(0);
         expect(result.dataPoints).toEqual([]);
@@ -306,7 +330,7 @@ describe('Compliance Trends', () => {
             findMany: jest.fn(async () => []),
         };
 
-        const result = await getComplianceTrends(makeCtx(), 999);
+        const result = await getMetricTrends(makeCtx(), 999);
 
         expect(result.daysRequested).toBe(365);
     });
@@ -316,7 +340,7 @@ describe('Compliance Trends', () => {
             findMany: jest.fn(async () => []),
         };
 
-        const result = await getComplianceTrends(makeCtx(), 0);
+        const result = await getMetricTrends(makeCtx(), 0);
 
         expect(result.daysRequested).toBe(1);
     });
@@ -326,7 +350,7 @@ describe('Compliance Trends', () => {
             findMany: jest.fn(async () => []),
         };
 
-        await getComplianceTrends(makeCtx({ tenantId: 'tenant-xyz' }), 30);
+        await getMetricTrends(makeCtx({ tenantId: 'tenant-xyz' }), 30);
 
         const query = mockTx.complianceSnapshot.findMany.mock.calls[0][0];
         expect(query.where.tenantId).toBe('tenant-xyz');
@@ -337,7 +361,7 @@ describe('Compliance Trends', () => {
             findMany: jest.fn(async () => []),
         };
 
-        await getComplianceTrends(makeCtx(), 90);
+        await getMetricTrends(makeCtx(), 90);
 
         const query = mockTx.complianceSnapshot.findMany.mock.calls[0][0];
         expect(query.where.snapshotDate).toHaveProperty('gte');
@@ -354,7 +378,7 @@ describe('Compliance Trends', () => {
             permissions: { canRead: false, canWrite: false, canAdmin: false, canAudit: false, canExport: false },
         });
 
-        await expect(getComplianceTrends(ctx, 30)).rejects.toThrow(/permission/i);
+        await expect(getMetricTrends(ctx, 30)).rejects.toThrow(/permission/i);
     });
 });
 

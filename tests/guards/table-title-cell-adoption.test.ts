@@ -29,12 +29,8 @@ import * as path from 'path';
 const ROOT = path.resolve(__dirname, '../..');
 
 const ADOPTED_PAGES = [
-    'src/app/t/[tenantSlug]/(app)/practices/PracticesClient.tsx',
-    'src/app/t/[tenantSlug]/(app)/policies/PoliciesClient.tsx',
     'src/app/t/[tenantSlug]/(app)/evidence/EvidenceClient.tsx',
-    'src/app/t/[tenantSlug]/(app)/vendors/VendorsClient.tsx',
     'src/app/t/[tenantSlug]/(app)/assets/AssetsClient.tsx',
-    'src/app/t/[tenantSlug]/(app)/findings/FindingsClient.tsx',
     'src/app/t/[tenantSlug]/(app)/farm-tasks/FarmTasksClient.tsx',
 ];
 

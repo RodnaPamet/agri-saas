@@ -185,13 +185,15 @@ describe('DrillDownCtas — counters animate', () => {
         const { container } = render(
             <DrillDownCtas summary={summary} orgSlug="acme-org" />,
         );
-        // Two CTAs, one animated number each — the risks CTA went with
-        // the register.
+        // One CTA, one animated number. The risks CTA went with the
+        // register; the practices CTA went with GRC teardown phase 2,
+        // where its href pointed at a deleted route and its count read
+        // snapshot columns nothing computes any more.
         expect(
             container.querySelectorAll(
                 '[data-testid="org-drilldown-ctas"] [data-animated-number]',
             ).length,
-        ).toBe(2);
+        ).toBe(1);
     });
 
     it('counters reflect the summary values exactly', () => {
@@ -202,11 +204,13 @@ describe('DrillDownCtas — counters animate', () => {
         const { container } = render(
             <DrillDownCtas summary={summary} orgSlug="acme-org" />,
         );
-        const practices = container.querySelector('[data-testid="org-drilldown-practices"]');
         const evidence = container.querySelector('[data-testid="org-drilldown-evidence"]');
-        // applicable - implemented = 50
-        expect(practices?.textContent).toContain('50');
         expect(evidence?.textContent).toContain('9');
+        // The practices tile is gone (GRC teardown phase 2) — assert it
+        // cannot come back rather than dropping the check.
+        expect(
+            container.querySelector('[data-testid="org-drilldown-practices"]'),
+        ).toBeNull();
     });
 
     it('re-render with new counts updates the rendered numbers', () => {

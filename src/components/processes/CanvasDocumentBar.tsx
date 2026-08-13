@@ -37,7 +37,7 @@ import { Button } from "@/components/ui/button";
 import { useRunMode } from "@/lib/processes/run-mode-context";
 import { useIsAutomationMode } from "@/lib/processes/canvas-mode-context";
 import { Combobox, type ComboboxOption } from "@/components/ui/combobox";
-import type { ProcessMapSummary } from "@/app/t/[tenantSlug]/(app)/processes/ProcessesClient";
+import type { ProcessMapSummary } from "@/components/processes/types";
 
 import type { AutosaveStatus } from "@/lib/processes/use-canvas-autosave";
 

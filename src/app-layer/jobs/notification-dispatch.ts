@@ -37,7 +37,7 @@ import type { DispatchDigestResult } from '../notifications/digest-dispatcher';
 export interface NotificationDispatchPayload {
     tenantId?: string;
     /** Which categories to dispatch. Default: all */
-    categories?: ('DEADLINE_DIGEST' | 'EVIDENCE_EXPIRY_DIGEST' | 'VENDOR_RENEWAL_DIGEST')[];
+    categories?: ('DEADLINE_DIGEST' | 'EVIDENCE_EXPIRY_DIGEST')[];
     /** Detection windows in days. Default: [30, 7, 1] */
     windows?: number[];
     /**
@@ -55,7 +55,6 @@ export interface NotificationDispatchPayload {
 export interface NotificationDispatchResult {
     deadlines: DispatchDigestResult | null;
     evidenceExpiry: DispatchDigestResult | null;
-    vendorRenewals: DispatchDigestResult | null;
     totalEnqueued: number;
     totalSkipped: number;
     /** Indicates which monitors were reused vs freshly scanned */
@@ -77,12 +76,10 @@ export async function runNotificationDispatch(
         const categories = payload.categories ?? [
             'DEADLINE_DIGEST',
             'EVIDENCE_EXPIRY_DIGEST',
-            'VENDOR_RENEWAL_DIGEST',
         ];
 
         let deadlines: DispatchDigestResult | null = null;
         let evidenceExpiry: DispatchDigestResult | null = null;
-        let vendorRenewals: DispatchDigestResult | null = null;
 
         const scanSource: NotificationDispatchResult['scanSource'] = {
             deadlines: 'skipped',
@@ -107,30 +104,17 @@ export async function runNotificationDispatch(
             } else {
                 // The base deadline-monitor covers
                 // Practice/Policy/Task/Risk/TestPlan. Epic 49 adds the
-                // calendar-deadlines monitor for AuditCycle /
-                // VendorDocument / Finding — three sources that
-                // weren't previously scanned. Run them in parallel and
-                // merge into the same DEADLINE_DIGEST stream so the
-                // existing per-day per-recipient dedupe still applies
-                // (one digest per day, not one-per-source).
-                const [
-                    { runDeadlineMonitor },
-                    { runCalendarDeadlineMonitor },
-                ] = await Promise.all([
-                    import('./deadline-monitor'),
-                    import('./calendar-deadlines'),
-                ]);
-                const [base, calendar] = await Promise.all([
-                    runDeadlineMonitor({
-                        tenantId: payload.tenantId,
-                        windows: payload.windows,
-                    }),
-                    runCalendarDeadlineMonitor({
-                        tenantId: payload.tenantId,
-                        windows: payload.windows,
-                    }),
-                ]);
-                items = [...base.items, ...calendar.items];
+                // GRC teardown phase 2: the calendar-deadlines monitor
+                // scanned AuditCycle / VendorDocument / Finding — all three
+                // KILL — so it went with them. runDeadlineMonitor is the
+                // surviving scanner and the DEADLINE_DIGEST stream (and its
+                // per-day per-recipient dedupe) is unchanged.
+                const { runDeadlineMonitor } = await import('./deadline-monitor');
+                const base = await runDeadlineMonitor({
+                    tenantId: payload.tenantId,
+                    windows: payload.windows,
+                });
+                items = base.items;
                 scanSource.deadlines = 'scanned';
             }
 
@@ -181,48 +165,14 @@ export async function runNotificationDispatch(
             });
         }
 
-        // 3. Vendor renewal digests
-        if (categories.includes('VENDOR_RENEWAL_DIGEST')) {
-            let items: DueItem[];
-
-            if (payload.precomputed?.vendorItems) {
-                items = payload.precomputed.vendorItems;
-                scanSource.vendors = 'precomputed';
-                logger.info('vendor items: using precomputed results', {
-                    component: 'notification-dispatch',
-                    itemCount: items.length,
-                });
-            } else {
-                const { runVendorRenewalCheck } = await import('./vendor-renewal-check');
-                const monitor = await runVendorRenewalCheck({
-                    tenantId: payload.tenantId,
-                });
-                items = monitor.items;
-                scanSource.vendors = 'scanned';
-            }
-
-            vendorRenewals = await dispatchDigest({
-                category: 'VENDOR_RENEWAL_DIGEST',
-                items,
-            });
-            logger.info('vendor renewal digests dispatched', {
-                component: 'notification-dispatch',
-                source: scanSource.vendors,
-                items: items.length,
-                enqueued: vendorRenewals.enqueued,
-                skipped: vendorRenewals.skipped,
-            });
-        }
-
-        const totalEnqueued = (deadlines?.enqueued ?? 0) + (evidenceExpiry?.enqueued ?? 0) + (vendorRenewals?.enqueued ?? 0);
-        const totalSkipped = (deadlines?.skipped ?? 0) + (evidenceExpiry?.skipped ?? 0) + (vendorRenewals?.skipped ?? 0);
-        const totalItems = (deadlines?.totalItems ?? 0) + (evidenceExpiry?.totalItems ?? 0) + (vendorRenewals?.totalItems ?? 0);
+        const totalEnqueued = (deadlines?.enqueued ?? 0) + (evidenceExpiry?.enqueued ?? 0);
+        const totalSkipped = (deadlines?.skipped ?? 0) + (evidenceExpiry?.skipped ?? 0);
+        const totalItems = (deadlines?.totalItems ?? 0) + (evidenceExpiry?.totalItems ?? 0);
         const durationMs = Math.round(performance.now() - startMs);
 
         const dispatch: NotificationDispatchResult = {
             deadlines,
             evidenceExpiry,
-            vendorRenewals,
             totalEnqueued,
             totalSkipped,
             scanSource,
@@ -242,7 +192,6 @@ export async function runNotificationDispatch(
                 scanSource,
                 deadlines: deadlines ? { enqueued: deadlines.enqueued, skipped: deadlines.skipped } : null,
                 evidenceExpiry: evidenceExpiry ? { enqueued: evidenceExpiry.enqueued, skipped: evidenceExpiry.skipped } : null,
-                vendorRenewals: vendorRenewals ? { enqueued: vendorRenewals.enqueued, skipped: vendorRenewals.skipped } : null,
             },
         };
 

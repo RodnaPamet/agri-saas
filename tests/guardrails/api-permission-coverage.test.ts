@@ -76,14 +76,6 @@ const PRIVILEGED_ROOTS: ReadonlyArray<{
     // guardrail — which is how a tenant-scoped route that can deprecate every
     // requirement of a standard, for every tenant, went unnoticed.
     {
-        relPath: 'src/app/api/t/[tenantSlug]/frameworks',
-        why:
-            'Framework writes reach the GLOBAL catalogue (upsert-requirements ' +
-            'can deprecate every requirement of a standard, zeroing coverage ' +
-            'for all tenants). Catalogue arms are platform-tenant gated in the ' +
-            'usecase; the permission is the audited role floor.',
-    },
-    {
         relPath: 'src/app/api/t/[tenantSlug]/schemes',
         why:
             'Scheme authoring writes the GLOBAL Framework table that every ' +

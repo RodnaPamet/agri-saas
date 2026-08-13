@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { getTenantCtx } from '@/app-layer/context';
-import { verifyFileIntegrity } from '@/app-layer/usecases/audit-hardening';
+import { verifyFileIntegrity } from '@/app-layer/usecases/file-integrity';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
 

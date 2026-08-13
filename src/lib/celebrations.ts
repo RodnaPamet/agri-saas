@@ -55,9 +55,7 @@ export type MilestoneKey =
     | 'first-field-mapped'
     | 'spray-job-complete'
     | 'first-harvest'
-    | 'season-closed'
-    | 'inspection-passed'
-    | 'sop-100-ack';
+    | 'season-closed';
 
 // ─── Definition shape ──────────────────────────────────────────────
 
@@ -124,18 +122,6 @@ export const MILESTONES: Record<MilestoneKey, MilestoneDefinition> = {
         preset: 'fireworks',
         message: 'Season closed 🎉',
         description: 'A full season, start to finish — well done.',
-    },
-    'inspection-passed': {
-        key: 'inspection-passed',
-        preset: 'fireworks',
-        message: 'Inspection passed 🏅',
-        description: 'Your records stood up to the certifier.',
-    },
-    'sop-100-ack': {
-        key: 'sop-100-ack',
-        preset: 'rain',
-        message: 'Every SOP acknowledged ✨',
-        description: 'The whole team has read and signed off.',
     },
 };
 
@@ -255,13 +241,14 @@ export interface AchievementsResult {
 }
 
 /** The ag milestones surfaced on the achievements card, in display order. */
+// GRC teardown phase 2 (plan §1c): `inspection-passed` and `sop-100-ack`
+// were dropped with their data sources (AuditPack; Policy +
+// PolicyAcknowledgement). Four genuinely agri milestones remain.
 export const AG_MILESTONE_ORDER: MilestoneKey[] = [
     'first-field-mapped',
     'spray-job-complete',
     'first-harvest',
     'season-closed',
-    'inspection-passed',
-    'sop-100-ack',
 ];
 
 // ─── Hook-input types (consumed by `useCelebration`) ───────────────

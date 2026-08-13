@@ -31,16 +31,6 @@ const CARDHEADER_PAGES: CardHeaderEntry[] = [
     // Traceability section that was removed — risk traceability now
     // lives solely on the dedicated Traceability tab. De-registered
     // here when that section was dropped.
-    {
-        file: "src/app/t/[tenantSlug]/(app)/audits/AuditsClient.tsx",
-        adopted: true,
-        note: "Audits master/detail — checklist section header migrated R9-PR2.",
-    },
-    {
-        file: "src/app/t/[tenantSlug]/(app)/practices/[practiceId]/page.tsx",
-        adopted: false,
-        note: "B4 (2026-06-07): the only CardHeader (the legacy 'Practice tasks' table) was removed when the Tasks tab was aligned to Asset/Risk (a single LinkedTasksPanel).",
-    },
 ];
 
 describe("CardHeader adoption registry", () => {

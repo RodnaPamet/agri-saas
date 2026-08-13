@@ -35,29 +35,9 @@ interface TabPageEntry {
 
 const TAB_PAGES: TabPageEntry[] = [
     {
-        file: "src/app/t/[tenantSlug]/(app)/practices/[practiceId]/page.tsx",
-        migrated: false,
-        note: "Practices detail — tabs for Overview / Tests / Tasks / Evidence / Mappings / Activity. Migration target.",
-    },
-    {
-        file: "src/app/t/[tenantSlug]/(app)/vendors/[vendorId]/page.tsx",
-        migrated: false,
-        note: "Vendors detail — tabs for Overview / Documents / Assessments / Links / Bundles / Subprocessors.",
-    },
-    {
-        file: "src/app/t/[tenantSlug]/(app)/policies/[policyId]/page.tsx",
-        migrated: false,
-        note: "Policies detail — tabs for content / versions / acknowledgements.",
-    },
-    {
         file: "src/app/t/[tenantSlug]/(app)/farm-tasks/[taskId]/FarmTaskDetailClient.tsx",
         migrated: false,
         note: "Farm task detail — tabs for Overview / Evidence / Links / Comments / Activity.",
-    },
-    {
-        file: "src/app/t/[tenantSlug]/(app)/mapping/page.tsx",
-        migrated: false,
-        note: "Framework mapping page — tab pattern in the multi-framework view.",
     },
     {
         file: "src/app/t/[tenantSlug]/(app)/admin/sso/page.tsx",
@@ -126,7 +106,9 @@ describe("Tab primitive adoption registry", () => {
         // Drift detector — a new tab-pattern detail page must
         // either land here with `migrated: false` and a written
         // note, or migrate directly to <TabSelect> at landing time.
-        expect(TAB_PAGES.length).toBeGreaterThanOrEqual(8);
+        // 8 → 4 (GRC teardown phase 2): the inherited GRC detail pages
+        // took their tab bars with them.
+        expect(TAB_PAGES.length).toBeGreaterThanOrEqual(4);
         expect(TAB_PAGES.length).toBeLessThanOrEqual(14);
     });
 });

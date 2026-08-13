@@ -2,11 +2,17 @@ import { test, expect } from '@playwright/test';
 import { loginAndGetTenant, safeGoto } from './e2e-utils';
 
 /**
- * FilterToolbar contract — Tasks (farm-tasks) and Vendors.
+ * FilterToolbar contract — Tasks (farm-tasks) and Assets.
  *
- * The Practices page has its own canonical coverage in
- * `practices-filter-epic53.spec.ts`. This spec extends that contract to
- * the two other migrated list pages (the farm-tasks queue, Vendors).
+ * GRC teardown phase 2 — this spec used to pair the farm-tasks queue
+ * with Vendors, and deferred the canonical case to
+ * `practices-filter-epic53.spec.ts`. `/vendors` and `/practices` are
+ * both gone. The Vendors block is re-pointed at Assets rather than
+ * dropped: its assertion was the FilterToolbar → URL-param contract on
+ * a `criticality` facet, and the assets list carries the same facet
+ * (same `optionsFromEnum` shape, same `multiple: true`, same
+ * HIGH/MEDIUM/LOW values), so the regression class is preserved on a
+ * surviving page.
  *
  * The pre-Epic-53 version of this file exercised the deprecated
  * `CompactFilterBar` DOM (`filter-dd-status`, `filter-chip-overdue`,
@@ -21,11 +27,11 @@ import { loginAndGetTenant, safeGoto } from './e2e-utils';
  * (status · assignee · due); the compliance-only type / severity axes
  * were retired with the /tasks list.
  *
- * NOTE: R14 (#443) removed the free-text search input from every list
- * page — the per-page `search input writes q param` tests and the
- * `URL persistence` block (both driven by `#task-search` / `#vendor-search`
- * / `#practice-search`) were deleted. The navbar ⌘K palette is the sole
- * search affordance now.
+ * NOTE: R14 (#443) removed the standalone free-text search input from
+ * every list page — the per-page `search input writes q param` tests and
+ * the `URL persistence` block (driven by the old page-level `#*-search`
+ * inputs) were deleted. The live content search now lives inside the
+ * Filter popover; `search-affordances.spec.ts` owns that contract.
  */
 
 test.describe('FilterToolbar — Tasks', () => {
@@ -76,17 +82,20 @@ test.describe('FilterToolbar — Tasks', () => {
     });
 });
 
-test.describe('FilterToolbar — Vendors', () => {
+test.describe('FilterToolbar — Assets', () => {
     test.describe.configure({ mode: 'serial' });
 
-    let tenantSlug: string;
-
     test('picking a criticality filter pushes it into the URL', async ({ page }) => {
-        tenantSlug = await loginAndGetTenant(page);
-        await safeGoto(page, `/t/${tenantSlug}/vendors`);
+        // Re-pointed from `/vendors` (GRC teardown phase 2). Same facet,
+        // same enum values — see the file docblock.
+        const tenantSlug = await loginAndGetTenant(page);
+        await safeGoto(page, `/t/${tenantSlug}/assets`);
         await page.waitForLoadState('networkidle').catch(() => {});
 
-        await page.getByRole('button', { name: /^filter$/i }).first().click();
+        // The assets toolbar puts a Columns and a KPI dropdown in its
+        // `actions` slot, so target the FilterToolbar trigger by its
+        // `data-filter-trigger` marker rather than by accessible name.
+        await page.getByRole('main').locator('[data-filter-trigger]').first().click();
         await expect(page.getByRole('listbox').first()).toBeVisible({ timeout: 10000 });
 
         const criticalityRow = page.getByRole('option', { name: /^Criticality$/ });

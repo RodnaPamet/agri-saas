@@ -115,18 +115,30 @@ describe('GAP-10 step 3 — generated OpenAPI 3.1 spec', () => {
     });
 
     it('registers all canonical response DTOs', () => {
+        // GRC teardown phase 2 deleted the DTO modules behind the
+        // Practice* / Policy* / Vendor* / Audit / Framework / Requirement
+        // response shapes, and `scripts/openapi-build.ts` no longer
+        // imports them — so those names are gone from the spec.
+        //
+        // The list is RE-POINTED rather than merely shortened: the
+        // surviving agri DTO modules the builder still walks (grain,
+        // location, operation-parcel, inventory) are named here so this
+        // stays a real "every canonical response DTO is registered"
+        // bound instead of degenerating into the four cross-cutting
+        // shapes. Names measured against the committed
+        // public/openapi.json.
         const expectedResponses = [
             // Cross-cutting
             'UserRef', 'UserRefShort', 'ErrorResponse', 'AuditLogEntry', 'SuccessResponse',
-            // Domain DTOs
-            'PracticeListItem', 'PracticeDetail', 'PracticeDashboard',
+            // Domain DTOs — evidence / assets / tasks
             'EvidenceListItem', 'EvidenceDetail', 'EvidenceReview',
-            'PolicyListItem', 'PolicyDetail',
-            'Audit',
             'AssetListItem', 'AssetDetail',
             'Task',
-            'VendorListItem', 'VendorDetail',
-            'Framework', 'Requirement',
+            // Domain DTOs — locations / field operations
+            'LocationListItem', 'LocationDetail', 'Parcel', 'OperationParcel',
+            // Domain DTOs — grain / inventory
+            'Contract', 'GrainBin', 'YieldRecord', 'PortfolioGrainSummary',
+            'InventoryLot', 'InventoryLotPage',
         ];
         for (const name of expectedResponses) {
             expect(spec.components!.schemas![name]).toBeDefined();

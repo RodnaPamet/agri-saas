@@ -121,11 +121,17 @@ const DonutConfigSchema = z.object({
         .strict(),
 });
 
-const TrendChartType = z.enum([
-    'risks-open',
-    'practices-coverage',
-    'evidence-overdue',
-]);
+// GRC teardown phase 2: `risks-open` and `practices-coverage` are gone with
+// their models. `risks-open` was ALREADY dead before the teardown — the risk
+// register left with the compliance uproot and the dispatcher has carried no
+// case for it since, so a widget configured that way rendered a flat zero
+// line as though it were measured data.
+//
+// NOTE for the DB-resident-reference sweep (plan §8d.4): persisted
+// `OrgDashboardWidget.chartType` rows may still hold either dead value. They
+// need a data migration — rewrite to 'evidence-overdue' or delete the widget
+// — not just this enum edit.
+const TrendChartType = z.enum(['evidence-overdue']);
 
 const TrendConfigSchema = z.object({
     type: z.literal('TREND'),
@@ -187,11 +193,18 @@ const DrilldownCtasConfigSchema = z.object({
     config: z
         .object({
             /** Optional subset of CTAs to render. Empty / undefined =
-             *  render the canonical three (practices / risks / evidence). */
+             *  render all.
+             *
+             *  'risks' left with the risk register; 'practices' left with
+             *  GRC teardown phase 2 — its tile linked to the deleted
+             *  /org/:slug/practices route. Persisted widget rows may still
+             *  hold either value: that is the §8d.4 DB-resident class, and
+             *  the pre-flight (§8g) found ZERO OrgDashboardWidget rows on
+             *  production, so no data migration is required for this stack. */
             entries: z
-                .array(z.enum(['practices', 'risks', 'evidence']))
+                .array(z.enum(['evidence']))
                 .min(1)
-                .max(3)
+                .max(1)
                 .optional(),
         })
         .strict(),

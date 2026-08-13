@@ -81,9 +81,13 @@ test.describe('Mobile viewport (375×812)', () => {
         await expect(drawer).toHaveAttribute('data-open', 'false', { timeout: 10_000 });
     });
 
-    test('practices list has no horizontal overflow', async ({ page }) => {
+    // GRC teardown phase 2 — was `/practices`; re-pointed to `/assets`.
+    // The assertion is about the list-page SHELL not overflowing at
+    // 375px, not about the entity, so any surviving DataTable list page
+    // holds the same property. `/assets` is the closest equivalent.
+    test('assets list has no horizontal overflow', async ({ page }) => {
         slug = await signInAs(page, tenant);
-        await gotoAndVerify(page, `/t/${slug}/practices`, 'h1');
+        await gotoAndVerify(page, `/t/${slug}/assets`, 'h1');
 
         const noOverflow = await hasNoHorizontalOverflow(page);
         expect(noOverflow).toBe(true);
@@ -118,9 +122,11 @@ test.describe('Desktop viewport (1280×720)', () => {
         await expect(toggle).toBeHidden();
     });
 
-    test('practices page renders without horizontal overflow', async ({ page }) => {
+    // GRC teardown phase 2 — was `/practices`; re-pointed to `/assets`
+    // for the same reason as the mobile-viewport sibling above.
+    test('assets page renders without horizontal overflow', async ({ page }) => {
         slug = await signInAs(page, tenant);
-        await gotoAndVerify(page, `/t/${slug}/practices`, 'h1');
+        await gotoAndVerify(page, `/t/${slug}/assets`, 'h1');
 
         const noOverflow = await hasNoHorizontalOverflow(page);
         expect(noOverflow).toBe(true);

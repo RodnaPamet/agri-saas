@@ -2,11 +2,11 @@
  * Asset KPI trendlines: the 4 asset KPI tiles render an inline sparkline.
  *
  * The series now comes from the daily compliance-snapshot table (one frozen
- * point per 24h) via getComplianceTrends — see DashboardRepository.getAssetSummary
+ * point per 24h) via getMetricTrends — see DashboardRepository.getAssetSummary
  * + the snapshot job. The KpiFilterCard sparkline wiring below is the
  * presentational contract (renders the chart when given ≥2 points), unchanged
  * by the data-source swap. The per-day series shape is covered server-side in
- * the compliance-trends + snapshot unit tests.
+ * the metric-trends + snapshot unit tests.
  */
 import { render } from '@testing-library/react';
 import * as React from 'react';

@@ -44,7 +44,6 @@ const EXEMPT_FILES = new Set<string>([
   // (not the .badge CSS class) — `badge` is a local variable holding a
   // `{ tone, label }` shape for the risk-score preview styling. The code
   // moved here from NewRiskModal on 2026-06-06.
-  "src/app/t/[tenantSlug]/(app)/risks/_shared/RiskEvaluationFields.tsx",
 ]);
 
 // `className=` strings (string OR template literal) containing the
@@ -154,8 +153,15 @@ describe("StatusBadge adoption", () => {
 
   it("app pages + components use <StatusBadge> extensively", () => {
     const count = countAdoptions();
-    // Baseline after PR-2 migration. This number should only go UP.
-    expect(count).toBeGreaterThanOrEqual(150);
+    // Baseline after PR-2 migration. This number should only go UP —
+    // except when pages are DELETED, which is the one way a
+    // "count can only grow" floor legitimately comes down.
+    // 140 → 135 (GRC teardown phase 2, T1): the vendor-assessment,
+    // vendor-template and framework-explorer surfaces took their
+    // StatusBadge mounts with them.
+    // 135 → 129 (T3): the GRC components (Inherited*Panel,
+    // TraceabilityPanel) went with the closure.
+    expect(count).toBeGreaterThanOrEqual(129);
   });
 });
 

@@ -51,30 +51,16 @@ const EXEMPTIONS: Record<string, string> = {
     // framework + cross-framework projection layer; tested today
     // transitively via practice.queries integration tests but the
     // ratchet asks for a direct import.
-    'src/app-layer/usecases/clause.ts':
-        'Roadmap Q1 — exercised transitively via practice/framework tests; direct unit tests pending.',
-    'src/app-layer/usecases/framework/catalog.ts':
-        'Roadmap Q1 — fixtures-driven catalog loader, currently exercised only via framework.install integration.',
-    'src/app-layer/usecases/framework/tree.ts':
-        'Roadmap Q1 — pending direct unit tests.',
+    // (framework/catalog.ts was deleted in GRC teardown T1.)
 
     // Q2 — Audit + audit-trail
     'src/app-layer/usecases/org-audit.ts':
         'Roadmap Q2 — org-scoped audit feed projection; pending direct tests.',
 
     // Q3 — Reports + cross-domain
-    'src/app-layer/usecases/report.ts':
-        'Roadmap Q3 — report rendering orchestration; covered indirectly by PDF/export integration suites.',
     'src/app-layer/usecases/notification.ts':
         'Roadmap Q3 — notification dispatch; covered indirectly by deadline-monitor + automation tests.',
 
-    // Inherited data / vendor-audit / traceability-graph — supporting domains
-    'src/app-layer/usecases/inherited-practice-data.ts':
-        'Roadmap Q3 — vendor → tenant inherited practice denormalisation, indirectly exercised by vendor.assessment tests.',
-    'src/app-layer/usecases/vendor-audit.ts':
-        'Roadmap Q2 — vendor audit cycle, pending direct unit tests in Vendor PR.',
-    'src/app-layer/usecases/traceability.ts':
-        'Asset ↔ practice mapping verbs, exercised end-to-end through the practice detail page; pending direct unit tests. (Replaced the traceability-graph.ts entry, which went with the risk register.)',
 
     // Test-internal hardening — last priority, low blast radius.
 };
@@ -180,7 +166,15 @@ describe('every usecase file has an importing test', () => {
         // untested file without explicitly admitting the regression in
         // a separate, visible diff. PR 19 took auditLog.ts off the
         // list, so the ratchet is at 11 now.
-        const BASELINE = 10;
+        // 10 → 3 (GRC teardown phase 2, T3): seven exemptions named
+        // usecases that no longer exist. The work order predicted exactly
+        // this figure; it is confirmed here by the failing assertion's own
+        // list, not carried over on trust.
+        // 10 → 2 (GRC teardown phase 2, T3). MEASURED: after removing the
+        // eight exemptions that named deleted usecases, org-audit and
+        // notification are what remain. The work order predicted 3; the
+        // real figure is 2, so this is set from the file, not the plan.
+        const BASELINE = 2;
         expect(EXEMPTION_COUNT).toBeLessThanOrEqual(BASELINE);
     });
 

@@ -12,13 +12,10 @@
 // the DTO modules export the expected symbols.
 
 describe('Contract Drift — DTO integrity', () => {
+    // GRC teardown phase 2 removed the practice / policy / vendor /
+    // framework / audit DTO modules with their models.
     const dtoPaths = [
-        { module: 'practice.dto', schemas: ['PracticeListItemDTOSchema', 'PracticeDetailDTOSchema', 'PracticeDashboardDTOSchema'] },
-        { module: 'policy.dto', schemas: ['PolicyListItemDTOSchema', 'PolicyDetailDTOSchema'] },
         { module: 'task.dto', schemas: ['TaskDTOSchema'] },
-        { module: 'vendor.dto', schemas: ['VendorListItemDTOSchema', 'VendorDetailDTOSchema'] },
-        { module: 'framework.dto', schemas: ['FrameworkDTOSchema', 'RequirementDTOSchema'] },
-        { module: 'audit.dto', schemas: ['AuditDTOSchema'] },
         { module: 'asset.dto', schemas: ['AssetListItemDTOSchema', 'AssetDetailDTOSchema'] },
         { module: 'evidence.dto', schemas: ['EvidenceListItemDTOSchema', 'EvidenceDetailDTOSchema'] },
     ];
@@ -33,29 +30,7 @@ describe('Contract Drift — DTO integrity', () => {
         }
     });
 
-    test('PracticeListItemDTOSchema parses a valid practice shape', () => {
-
-        const { PracticeListItemDTOSchema } = require('../../src/lib/dto/practice.dto');
-        const validPractice = {
-            id: 'ctl_123',
-            tenantId: 'ten_1',
-            code: 'A.5.1',
-            name: 'Access Control Policy',
-            description: 'Ensures proper access controls',
-            category: 'TECHNICAL',
-            status: 'IMPLEMENTED',
-            applicability: 'APPLICABLE',
-            frequency: 'ANNUAL',
-            ownerUserId: 'usr_1',
-            createdAt: '2025-01-01T00:00:00.000Z',
-            updatedAt: '2025-01-01T00:00:00.000Z',
-            owner: { id: 'usr_1', name: 'Admin', email: 'admin@acme.com' },
-            _count: { evidence: 3, risks: 1 },
-        };
-        const result = PracticeListItemDTOSchema.safeParse(validPractice);
-        expect(result.success).toBe(true);
-    });
-
+    
     test('AssetListItemDTOSchema parses a valid asset shape', () => {
 
         const { AssetListItemDTOSchema } = require('../../src/lib/dto/asset.dto');
@@ -88,26 +63,18 @@ describe('Contract Drift — DTO integrity', () => {
         expect(result.success).toBe(true);
     });
 
-    test('PracticeListItemDTOSchema rejects invalid shape (missing required)', () => {
-
-        const { PracticeListItemDTOSchema } = require('../../src/lib/dto/practice.dto');
-        const invalid = { id: 'ctl_1' }; // missing name, status, applicability
-        const result = PracticeListItemDTOSchema.safeParse(invalid);
-        expect(result.success).toBe(false);
-    });
-
+    
     test('all DTO index barrel exports are stable', () => {
 
         const dtoIndex = require('../../src/lib/dto/index');
+        // GRC teardown phase 2: the practice / policy / vendor / framework
+        // / audit DTOs left the barrel with their models. The barrel-
+        // stability contract is unchanged for the surviving shapes.
         const expectedExports = [
-            'PracticeListItemDTOSchema', 'PracticeDetailDTOSchema',
-            'PolicyListItemDTOSchema', 'PolicyDetailDTOSchema',
             'TaskDTOSchema',
-            'VendorListItemDTOSchema', 'VendorDetailDTOSchema',
-            'FrameworkDTOSchema', 'RequirementDTOSchema',
-            'AuditDTOSchema',
             'AssetListItemDTOSchema', 'AssetDetailDTOSchema',
             'EvidenceListItemDTOSchema', 'EvidenceDetailDTOSchema',
+            'EvidenceLinkDTOSchema',
             'UserRefSchema', 'ApiErrorResponseSchema',
         ];
         for (const name of expectedExports) {

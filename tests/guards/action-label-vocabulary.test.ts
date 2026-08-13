@@ -73,23 +73,13 @@ interface Hit {
  * literals are baselined.
  */
 const BASELINE_PLUS_LITERAL_SITES = new Set<string>([
-    'src/app/t/[tenantSlug]/(app)/admin/api-keys/page.tsx:509',
-    'src/app/t/[tenantSlug]/(app)/admin/integrations/page.tsx:234',
-    'src/app/t/[tenantSlug]/(app)/admin/roles/page.tsx:593',
-    'src/app/t/[tenantSlug]/(app)/admin/scim/page.tsx:216',
     // T05 i18n migration — the `+ Section` label is now own-line JSX
     // text (not a regex-caught literal), so its baseline anchor is
     // dropped. The `+ Question` submit label stays a ternary string
     // literal; its line shifted 687 → 690 when the i18n hooks landed.
-    'src/app/t/[tenantSlug]/(app)/admin/vendor-templates/[templateId]/VendorTemplateBuilderClient.tsx:690',
     // T08 i18n — the `+ Pack`/`+ Cycle`/`+ Audit Cycle` literals stay
     // (moving them into message values would trip no-plus-prefix-labels);
     // their lines shifted +2 when the useTranslations hooks + t() calls landed.
-    'src/app/t/[tenantSlug]/(app)/audits/cycles/[cycleId]/page.tsx:124',
-    'src/app/t/[tenantSlug]/(app)/audits/cycles/page.tsx:136',
-    'src/app/t/[tenantSlug]/(app)/audits/cycles/page.tsx:209',
-    'src/app/t/[tenantSlug]/(app)/audits/cycles/page.tsx:221',
-    'src/app/t/[tenantSlug]/(app)/audits/readiness/page.tsx:155',
     // B9 — line numbers shifted by 13 when the Export PDF anchor
     // landed in the page-header actions slot. The `+ Version`
     // labels themselves are unchanged staged debt (see baseline
@@ -101,15 +91,10 @@ const BASELINE_PLUS_LITERAL_SITES = new Set<string>([
     // useTranslations/useTranslations('common') hooks + import landed above
     // them. The `+ Version` literals stay (moving them into a message value
     // would trip no-plus-prefix-labels).
-    'src/app/t/[tenantSlug]/(app)/policies/[policyId]/page.tsx:457',
-    'src/app/t/[tenantSlug]/(app)/policies/[policyId]/page.tsx:761',
     // T13 i18n — the `+ Evidence` literal stays inline (moving it into a
     // message value would trip no-plus-prefix-labels). Its line shifted
     // 419 → 424 when the useTranslations import/hook + useMemo import
     // landed above it.
-    'src/app/t/[tenantSlug]/(app)/vendors/[vendorId]/page.tsx:369',
-    'src/app/t/[tenantSlug]/(app)/vendors/[vendorId]/page.tsx:393',
-    'src/app/t/[tenantSlug]/(app)/vendors/[vendorId]/page.tsx:470',
 ]);
 
 function walk(dir: string): string[] {

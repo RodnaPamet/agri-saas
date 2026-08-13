@@ -107,7 +107,6 @@ export interface UploadEvidenceModalProps {
     setOpen: Dispatch<SetStateAction<boolean>>;
     tenantSlug: string;
     apiUrl: (path: string) => string;
-    practices: PracticeOption[];
 }
 
 // ─── Component ──────────────────────────────────────────────────────
@@ -118,7 +117,6 @@ export function UploadEvidenceModal({
 
     tenantSlug: _tenantSlug,
     apiUrl,
-    practices,
 }: UploadEvidenceModalProps) {
     const t = useTranslations('evidence');
     const close = useCallback(() => setOpen(false), [setOpen]);
@@ -126,7 +124,6 @@ export function UploadEvidenceModal({
     const dropzoneRef = useRef<FileDropzoneHandle>(null);
 
     const [title, setTitle] = useState('');
-    const [practiceId, setPracticeId] = useState('');
     // B8 follow-up — free-text folder label applied to every file
     // in the upload batch. Datalist below seeds it with values
     // already in use on existing evidence.
@@ -166,7 +163,6 @@ export function UploadEvidenceModal({
                     body: JSON.stringify({
                         connectionId: spConnId,
                         items: items.map((i) => ({ driveId: i.driveId, itemId: i.itemId, name: i.name })),
-                        practiceId: practiceId || undefined,
                     }),
                 });
                 if (!res.ok) {
@@ -180,33 +176,18 @@ export function UploadEvidenceModal({
                 setError(t('upload.sharePointNetworkFailed'));
             }
         },
-        [apiUrl, spConnId, practiceId, swrMutate, setOpen, t],
+        [apiUrl, spConnId, swrMutate, setOpen, t],
     );
 
     // Reset on every open so a previous cancel doesn't leak state.
     useEffect(() => {
         if (!open) return;
         setTitle('');
-        setPracticeId('');
         setRetentionUntil('');
         setError('');
         setQueuedCount(0);
         setUploadingAll(false);
     }, [open]);
-
-    // Project practices into ComboboxOption shape. The code +
-    // name are all folded into the label so cmdk's fuzzy-match scoring
-    // hits on any of them — typing "A.5.1" or "access review" or the
-    // raw practice code all filter to the same row.
-    const practiceOptions = useMemo<ComboboxOption<PracticeOption>[]>(
-        () =>
-            practices.map((c) => ({
-                value: c.id,
-                label: `${c.code || 'Custom'}: ${c.name}`,
-                meta: c,
-            })),
-        [practices],
-    );
 
     const telemetry = useFormTelemetry('UploadEvidenceModal');
 
@@ -234,7 +215,6 @@ export function UploadEvidenceModal({
     interface UploadVars {
         file: File;
         applyTitle: boolean;
-        practiceId: string;
         /** B8 follow-up — folder label applied to every uploaded file. */
         folder: string;
         retentionUntil: string;
@@ -253,7 +233,6 @@ export function UploadEvidenceModal({
             // (multi-file uploads just take the filename — different
             // titles would all land on the same string otherwise).
             if (applyTitle && title) formData.append('title', title);
-            if (vars.practiceId) formData.append('practiceId', vars.practiceId);
             // B8 follow-up — folder rides every uploaded row in the
             // batch. The /uploads route forwards it to createEvidence.
             if (vars.folder) formData.append('folder', vars.folder.trim());
@@ -299,7 +278,6 @@ export function UploadEvidenceModal({
                 status: 'PENDING_UPLOAD',
                 owner: null,
                 practice: null,
-                practiceId: null,
                 retentionUntil: null,
                 isArchived: false,
                 expiredAt: null,
@@ -332,7 +310,6 @@ export function UploadEvidenceModal({
                 const uploaded = await mutation.trigger({
                     file,
                     applyTitle,
-                    practiceId,
                     folder,
                     retentionUntil,
                     onProgress: ctx.onProgress,
@@ -375,7 +352,6 @@ export function UploadEvidenceModal({
         },
         [
             mutation,
-            practiceId,
             folder,
             retentionUntil,
             telemetry,
@@ -419,7 +395,6 @@ export function UploadEvidenceModal({
         telemetry.trackSubmit({
             count: queued.length,
             hasTitle: title.trim().length > 0,
-            hasPracticeLink: Boolean(practiceId),
             hasRetention: Boolean(retentionUntil),
         });
         setUploadingAll(true);
@@ -461,7 +436,6 @@ export function UploadEvidenceModal({
             isDirty={
                 queuedCount > 0 ||
                 title.trim().length > 0 ||
-                practiceId.length > 0 ||
                 folder.trim().length > 0 ||
                 retentionUntil.length > 0
             }
@@ -591,37 +565,6 @@ export function UploadEvidenceModal({
                             </div>
                         </div>
 
-                        {/* Practice link — Epic 55: searchable Combobox */}
-                        <FormField
-                            label={t('upload.linkToPractice')}
-                            description={
-                                practices.length === 0
-                                    ? t('upload.practicesEmptyHint')
-                                    : practices.length === 1
-                                        ? t('upload.practiceSearchHintSingular', { count: practices.length })
-                                        : t('upload.practiceSearchHintPlural', { count: practices.length })
-                            }
-                        >
-                            <Combobox<false, PracticeOption>
-                                id="practice-select"
-                                name="practiceId"
-                                options={practiceOptions}
-                                selected={
-                                    practiceOptions.find(
-                                        (o) => o.value === practiceId,
-                                    ) ?? null
-                                }
-                                setSelected={(option) =>
-                                    setPracticeId(option?.value ?? '')
-                                }
-                                placeholder={t('upload.practicePlaceholder')}
-                                searchPlaceholder={t('upload.searchPractices')}
-                                emptyState={t('upload.noPracticesMatch')}
-                                matchTriggerWidth
-                                buttonProps={{ className: 'w-full' }}
-                                caret
-                            />
-                        </FormField>
 
                         {/* B8 follow-up — Folder. Applies to every
                             file in the batch; datalist seeds it

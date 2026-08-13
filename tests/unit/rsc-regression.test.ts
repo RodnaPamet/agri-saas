@@ -22,10 +22,14 @@ const TENANT_APP_DIR = path.resolve(__dirname, '../../src/app/t/[tenantSlug]/(ap
 /**
  * Pages that MUST remain server components.
  * Each entry is a directory name under /t/[tenantSlug]/(app)/.
+ *
+ * GRC teardown phase 2 removed `clauses` — the requirement/clause
+ * browser was deleted with the Framework/Clause models, so there is no
+ * page left to hold to the RSC contract. `dashboard` and `evidence`
+ * are untouched agri surfaces and still carry every assertion below.
  */
 const RSC_PAGES = [
     'dashboard',
-    'clauses',
     'evidence',
 ];
 

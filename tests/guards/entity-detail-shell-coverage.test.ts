@@ -49,15 +49,10 @@ const ADOPTED_PAGES: ReadonlyArray<Adopter> = [
   // shape as the access-review entry below) — the server page only fetches.
   { page: "src/app/t/[tenantSlug]/(app)/grain/bins/[binId]/BinDetailClient.tsx", entity: "Grain bin" },
   // Wave 1 (PR-4)
-  { page: "src/app/t/[tenantSlug]/(app)/practices/[practiceId]/page.tsx", entity: "Practice" },
   { page: "src/app/t/[tenantSlug]/(app)/assets/[id]/page.tsx", entity: "Asset" },
   { page: "src/app/t/[tenantSlug]/(app)/access-reviews/[reviewId]/AccessReviewDetailClient.tsx", entity: "Access review" },
-  { page: "src/app/t/[tenantSlug]/(app)/audits/cycles/[cycleId]/page.tsx", entity: "Audit cycle" },
-  { page: "src/app/t/[tenantSlug]/(app)/audits/packs/[packId]/page.tsx", entity: "Audit pack" },
   // Wave 2 (PR-4b)
   { page: "src/app/t/[tenantSlug]/(app)/farm-tasks/[taskId]/FarmTaskDetailClient.tsx", entity: "Farm task" },
-  { page: "src/app/t/[tenantSlug]/(app)/vendors/[vendorId]/page.tsx", entity: "Vendor" },
-  { page: "src/app/t/[tenantSlug]/(app)/policies/[policyId]/page.tsx", entity: "Policy" },
   // Agriculture (Feature 1) — spray-prescription map.
   { page: "src/app/t/[tenantSlug]/(app)/locations/[locationId]/page.tsx", entity: "Location" },
   // Field Journal.
@@ -155,8 +150,6 @@ describe("EntityDetailLayout adoption — PR-4", () => {
     // are not the entity's primary detail surface. Documented here so
     // the ratchet doesn't flag them.
     const KNOWN_NON_PRIMARY_DETAIL = new Set<string>([
-      "src/app/t/[tenantSlug]/(app)/audits/cycles/[cycleId]/readiness/page.tsx",
-      "src/app/t/[tenantSlug]/(app)/vendors/[vendorId]/assessment/[assessmentId]/page.tsx",
       "src/app/t/[tenantSlug]/(app)/issues/[issueId]/page.tsx", // legacy redirect → /farm-tasks/[id]
       "src/app/t/[tenantSlug]/(app)/admin/vendor-templates/[templateId]/page.tsx",
       "src/app/t/[tenantSlug]/(app)/admin/vendor-assessment-reviews/[assessmentId]/page.tsx",

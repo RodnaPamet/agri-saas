@@ -38,7 +38,6 @@ const SCAN_ROOT = path.join(ROOT, 'src');
 // exists. Default answer: migrate to Nucleo.
 const LEGACY_LUCIDE_USERS = new Set<string>([
     'src/app/org/[orgSlug]/(app)/audit/AuditLogTable.tsx',
-    'src/app/org/[orgSlug]/(app)/practices/PracticesTable.tsx',
     'src/app/org/[orgSlug]/(app)/dashboard-sections.tsx',
     'src/app/org/[orgSlug]/(app)/evidence/EvidenceTable.tsx',
     'src/app/org/[orgSlug]/(app)/members/MembersTable.tsx',
@@ -78,16 +77,10 @@ const LEGACY_LUCIDE_USERS = new Set<string>([
     // typed `LucideIcon` (the entire filter system is lucide-based), so a
     // new filter-defs file has no Nucleo option until the filter platform
     // migrates. Same precedent as every other *filter-defs.ts entry here.
-    'src/app/t/[tenantSlug]/(app)/processes/automation-filter-defs.ts',
-    'src/app/t/[tenantSlug]/(app)/audits/cycles/page.tsx',
-    'src/app/t/[tenantSlug]/(app)/audits/packs/[packId]/page.tsx',
-    'src/app/t/[tenantSlug]/(app)/audits/readiness/page.tsx',
+    'src/components/processes/automation-filter-defs.ts',
     'src/app/t/[tenantSlug]/(app)/auth/mfa/page.tsx',
     'src/app/t/[tenantSlug]/(app)/calendar/CalendarClient.tsx',
-    'src/app/t/[tenantSlug]/(app)/practices/PracticesClient.tsx',
-    'src/app/t/[tenantSlug]/(app)/practices/filter-defs.ts',
     'src/app/t/[tenantSlug]/(app)/evidence/filter-defs.ts',
-    'src/app/t/[tenantSlug]/(app)/policies/filter-defs.ts',
     // Roadmap-2 PR-12 — moved a single `Download` icon import
     // from SoAClient to ReportsClient when lifting the SoA
     // export-buttons cluster up into the Reports header. Net
@@ -97,11 +90,9 @@ const LEGACY_LUCIDE_USERS = new Set<string>([
     // T13 i18n migration — the sole lucide import (Paperclip) migrated to
     // the Nucleo `paperclip` icon; the file no longer imports lucide, so
     // it is removed from the allowlist in the same diff (stale-entry rule).
-    'src/app/t/[tenantSlug]/(app)/vendors/filter-defs.ts',
     'src/components/command-palette/command-palette.tsx',
     'src/components/command-palette/use-palette-commands.ts',
     'src/components/ForbiddenPage.tsx',
-    'src/components/frameworks/FrameworkExplorer.tsx',
     'src/components/icons/iconMap.ts',
     'src/components/layout/OrgSidebarNav.tsx',
     'src/components/layout/SidebarNav.tsx',
@@ -153,7 +144,6 @@ const LEGACY_LUCIDE_USERS = new Set<string>([
     'src/components/ui/filter/filter-range-panel.tsx',
     'src/components/ui/filter/filter-select.tsx',
     'src/components/ui/filter/types.ts',
-    'src/components/ui/FrameworkBuilder.tsx',
     'src/components/ui/FreshnessBadge.tsx',
     // R25/R26 — Processes canvas chrome. The taxonomy module owns
     // the lucide imports (one stroke family for the seven kinds);
@@ -181,8 +171,6 @@ const LEGACY_LUCIDE_USERS = new Set<string>([
     'src/components/ui/table/columns-dropdown.tsx',
     'src/components/ui/table/edit-columns-button.tsx',
     'src/components/ui/tooltip.tsx',
-    'src/components/ui/TreeExpandCollapseToggle.tsx',
-    'src/components/ui/TreeViewItem.tsx',
     'src/components/ui/TruncationBanner.tsx',
     'src/components/ui/view-toggle.tsx',
     'src/components/UpgradeGate.tsx',

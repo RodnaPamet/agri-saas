@@ -1,9 +1,9 @@
 /**
  * Server→client serialization boundary ratchet for org list pages.
  *
- * The org drill-down pages (practices / evidence / tenants)
- * each cross the RSC boundary by passing usecase result rows into a
- * client-component table. The convention is:
+ * The org drill-down pages (evidence / tenants) each cross the RSC
+ * boundary by passing usecase result rows into a client-component
+ * table. The convention is:
  *
  *   import { toPlainJson } from '@/lib/server/to-plain-json';
  *   ...
@@ -24,9 +24,12 @@
  *      `<Table rows={rows}` after the boundary).
  *   3. A future page that adds a NEW org list surface and forgets
  *      the boundary altogether — the ratchet's coverage floor
- *      (`expect(checked.length).toBeGreaterThanOrEqual(4)`) breaks
- *      if a new page is added without it, since this list won't
- *      cover the new file.
+ *      (see the "coverage floor" test below) breaks if a new page is
+ *      added without it, since this list won't cover the new file.
+ *
+ * GRC teardown phase 2 removed the org `practices` page with the
+ * Practice model, so its entry left this list. The two remaining
+ * pages carry the identical contract.
  *
  * The helper itself is unit-tested in `to-plain-json.test.ts`.
  */
@@ -46,11 +49,8 @@ interface PageSpec {
 }
 
 const PAGES: PageSpec[] = [
-    {
-        name: 'practices',
-        page: 'src/app/org/[orgSlug]/(app)/practices/page.tsx',
-        tableTag: 'PracticesTable',
-    },
+    // GRC teardown phase 2: the `practices` entry went with the deleted
+    // org practices page + PracticesTable island.
     {
         name: 'evidence',
         page: 'src/app/org/[orgSlug]/(app)/evidence/page.tsx',
@@ -101,11 +101,14 @@ describe('org list pages — server→client serialization boundary', () => {
     );
 
     it('coverage floor — every org list page is checked here', () => {
-        // Snapshot: 4 list pages cross the RSC boundary today. If a
+        // Snapshot: 2 list pages cross the RSC boundary today. If a
         // new page is added without an entry in PAGES, the floor
         // forces an explicit conversation rather than a silent miss.
-        // Floor was 4 until the org risks page went with the register.
-        expect(PAGES.length).toBeGreaterThanOrEqual(3);
+        // Floor was 4 until the org risks page went with the register
+        // (→ 3), then 3 → 2 when GRC teardown phase 2 deleted the org
+        // practices page. Each step down is exactly one deleted page —
+        // measured against PAGES, not rounded.
+        expect(PAGES.length).toBeGreaterThanOrEqual(2);
     });
 
     it('the helper file itself exists and exports the function', () => {

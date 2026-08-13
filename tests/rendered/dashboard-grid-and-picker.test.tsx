@@ -238,8 +238,12 @@ describe('Epic 41 — WidgetPicker', () => {
         const optionTexts = screen
             .getAllByRole('option')
             .map((o) => o.textContent);
-        expect(optionTexts).toContain('Open risks');
-        expect(optionTexts).toContain('Practices coverage');
+        // GRC teardown phase 2: 'Open risks' and 'Practices coverage' left
+        // the TREND set with their models — 'Overdue evidence' is the only
+        // trend chart type remaining.
+        expect(optionTexts).toContain('Overdue evidence');
+        expect(optionTexts).not.toContain('Open risks');
+        expect(optionTexts).not.toContain('Practices coverage');
         expect(optionTexts).not.toContain('Coverage'); // KPI-only
 
         // Days field is rendered.
@@ -287,7 +291,7 @@ describe('Epic 41 — WidgetPicker', () => {
             id: 'w-new',
             organizationId: 'org-1',
             type: 'TREND' as const,
-            chartType: 'risks-open',
+            chartType: 'evidence-overdue',
             title: null,
             config: { days: 30 },
             position: { x: 0, y: 0 },
@@ -328,7 +332,7 @@ describe('Epic 41 — WidgetPicker', () => {
         expect(onSubmit).toHaveBeenCalledTimes(1);
         const payload = onSubmit.mock.calls[0][0];
         expect(payload.type).toBe('TREND');
-        expect(payload.chartType).toBe('risks-open');
+        expect(payload.chartType).toBe('evidence-overdue');
         expect(payload.config).toEqual({ days: 30 });
         expect(payload.size).toEqual({ w: 6, h: 3 });
     });

@@ -11,7 +11,7 @@
  *   - `PortfolioTrend`       — time-series for the org's coverage /
  *                              risk / evidence charts. Reuses the
  *                              shape of `TrendDataPoint` from the
- *                              tenant-level `compliance-trends.ts`
+ *                              tenant-level `metric-trends.ts`
  *                              so charting code can be shared.
  *
  * Pure types — no DB access, no usecase logic. Imported by the
@@ -137,24 +137,22 @@ export type TenantHealthRow = z.infer<typeof TenantHealthRowSchema>;
 //
 // One data point per snapshotDate, summed across all org tenants.
 // Shape matches `TrendDataPoint` from
-// `src/app-layer/usecases/compliance-trends.ts` so the org dashboard
+// `src/app-layer/usecases/metric-trends.ts` so the org dashboard
 // can reuse the same chart components.
 
 export const PortfolioTrendDataPointSchema = z
     .object({
         /** ISO date string (YYYY-MM-DD) — same shape as TrendDataPoint. */
         date: z.string().min(1),
-        practiceCoveragePercent: z.number().min(0).max(100),
-        practicesImplemented: NonNegInt,
-        practicesApplicable: NonNegInt,
+        // GRC teardown phase 2 (plan §8f): the practice / policy / finding
+        // fields left this DTO with their models. The snapshot columns
+        // survive until the phase-3 migration but nothing computes them, so
+        // publishing them would report a measured zero instead of nothing.
         evidenceOverdue: NonNegInt,
         evidenceDueSoon7d: NonNegInt,
         evidenceCurrent: NonNegInt,
-        policiesTotal: NonNegInt,
-        policiesOverdueReview: NonNegInt,
         tasksOpen: NonNegInt,
         tasksOverdue: NonNegInt,
-        findingsOpen: NonNegInt,
     })
     .strict();
 
@@ -328,29 +326,37 @@ export interface PaginatedDrillDownResult<TRow> {
 // without going through the full usecase.
 
 export interface RagInputs {
-    coveragePercent: number;
     overdueEvidence: number;
 }
 
 /**
  * Map a tenant's snapshot metrics to a single RAG badge.
  *
- *   RED   — coverage < 60% OR overdueEvidence ≥ 10
- *   AMBER — coverage < 80% OR overdueEvidence ≥ 1
- *   GREEN — otherwise (coverage ≥ 80% AND no overdue evidence)
+ *   RED   — overdueEvidence ≥ 10
+ *   AMBER — overdueEvidence ≥ 1
+ *   GREEN — no overdue evidence
  *
- * The `criticalRisks` term went with the risk register; the coverage
- * and overdue-evidence thresholds are unchanged.
+ * The `criticalRisks` term went with the risk register.
+ *
+ * The COVERAGE term went with the GRC teardown, and dropping it from
+ * `RagInputs` is deliberate rather than defaulting it. The coverage
+ * thresholds read `practiceCoverageBps`, which `jobs/snapshot.ts` stopped
+ * computing when the practice model left (plan §8f) — so every new
+ * snapshot row carries the column's `@default(0)`, `0 < 60` is always
+ * true, and the badge would have gone RED for EVERY tenant on the next
+ * daily run while looking like a real measurement. Removing the field
+ * from the input type makes the compiler point at every call site
+ * instead of letting one quietly pass a zero.
  *
  * Thresholds are deliberately conservative for v1; a future iteration
  * could pull them from `TenantSecuritySettings` per-tenant.
  */
 export function computeRag(inputs: RagInputs): RagBadge {
-    const { coveragePercent, overdueEvidence } = inputs;
-    if (coveragePercent < 60 || overdueEvidence >= 10) {
+    const { overdueEvidence } = inputs;
+    if (overdueEvidence >= 10) {
         return 'RED';
     }
-    if (coveragePercent < 80 || overdueEvidence >= 1) {
+    if (overdueEvidence >= 1) {
         return 'AMBER';
     }
     return 'GREEN';

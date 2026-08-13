@@ -34,7 +34,7 @@ import {
     eventOptionsByDomain,
     filterFieldsForEvent,
 } from '@/lib/automation/event-labels';
-import type { AutomationRuleRow } from '@/app/t/[tenantSlug]/(app)/processes/RulesTab';
+import type { AutomationRuleRow } from '@/components/processes/types';
 
 type ActionType = 'NOTIFY_USER' | 'CREATE_TASK' | 'UPDATE_STATUS' | 'WEBHOOK';
 

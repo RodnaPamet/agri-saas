@@ -1,7 +1,7 @@
 /**
  * Epic 49 — `GET /api/t/[tenantSlug]/calendar` route.
  *
- * Returns the unified compliance-calendar event stream for the given
+ * Returns the unified calendar event stream for the given
  * date range. Powers the heatmap, monthly grid, and Gantt views.
  *
  * Query params (validated by `CalendarQuerySchema`):
@@ -21,7 +21,7 @@ import { NextRequest } from 'next/server';
 import { getTenantCtx } from '@/app-layer/context';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
-import { getComplianceCalendarEvents } from '@/app-layer/usecases/compliance-calendar';
+import { getCalendarEvents } from '@/app-layer/usecases/calendar';
 import { CalendarQuerySchema } from '@/app-layer/schemas/calendar.schemas';
 
 export const GET = withApiErrorHandling(
@@ -34,7 +34,7 @@ export const GET = withApiErrorHandling(
         const sp = Object.fromEntries(req.nextUrl.searchParams.entries());
         const query = CalendarQuerySchema.parse(sp);
 
-        const response = await getComplianceCalendarEvents(ctx, {
+        const response = await getCalendarEvents(ctx, {
             from: new Date(query.from),
             to: new Date(query.to),
             types: query.types,

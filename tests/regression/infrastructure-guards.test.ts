@@ -74,7 +74,7 @@ describe('Infrastructure Regression Guards', () => {
             }
         });
 
-        test('exactly 25 scheduled jobs exist', () => {
+        test('exactly 21 scheduled jobs exist', () => {
             // 29 → 30: `evidence-stale-review-sweep` was written in 2026-05
             // and never registered or scheduled, so `nextReviewDate` was
             // settable, shown in the calendar, counted on the dashboard — and
@@ -85,7 +85,16 @@ describe('Infrastructure Regression Guards', () => {
             // `risk-appetite-monitor`, `risk-snapshot` and `report-delivery`.
             // All three were scheduled with NO executor registered, so the
             // scheduler was enqueuing three jobs a day that nothing consumed.
-            expect(SCHEDULED_JOBS).toHaveLength(25);
+            //
+            // 25 → 24: GRC teardown phase 2 removed `compliance-digest`, the
+            // weekly executive-summary email. It read ComplianceSnapshot's
+            // GRC columns, which stopped being computed with their models.
+            //
+            // 24 → 21 (T2): `automation-runner` (practice automation),
+            // `policy-review-reminder`, and `sharepoint-subscription-renew`
+            // — the POLICY half of the SharePoint integration. The evidence
+            // delta-sync schedule STAYS (work-order A4).
+            expect(SCHEDULED_JOBS).toHaveLength(21);
         });
 
         test('scheduled job names match expected set', () => {
@@ -98,8 +107,7 @@ describe('Infrastructure Regression Guards', () => {
                 // Epic G-4 — daily reviewer reminder for access review
                 // campaigns approaching their dueAt.
                 'access-review-reminder',
-                'automation-runner',
-                'compliance-digest',
+                // 'compliance-digest' removed in GRC teardown phase 2.
                 'compliance-snapshot',
                 // Grain fulfilment — daily 07:30 UTC sweep firing
                 // delivery-window alerts for ACTIVE contracts. Shares its
@@ -143,7 +151,6 @@ describe('Infrastructure Regression Guards', () => {
                 // is deliberately not in this always-on set.)
                 'market-prices-pull',
                 'notification-dispatch',
-                'policy-review-reminder',
                 // Retention for promotion leads (contact PII): soft-delete past
                 // the window, then purge past the grace. Scheduled because the
                 // privacy notice states a deletion period — a sweep nobody runs
@@ -164,7 +171,6 @@ describe('Infrastructure Regression Guards', () => {
                 // SharePoint connection (auto-import changed evidence files).
                 'sharepoint-delta-sync-dispatch',
                 // SP-4 — daily renewal of policy Graph change subscriptions.
-                'sharepoint-subscription-renew',
                 // Automation Epic 5 — every-5-min SLA breach sweep over
                 // RUNNING automation executions.
                 'sla-monitor',

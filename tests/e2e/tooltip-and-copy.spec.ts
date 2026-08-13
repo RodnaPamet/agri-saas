@@ -8,8 +8,19 @@
  *      via the standard Radix `aria-describedby` linkage.
  *   2. CopyText on a prominent entity identifier (task key) writes the
  *      value to the clipboard and shows a toast.
- *   3. CopyButton on the share link (audits/packs) writes the URL to
- *      the clipboard and shows a toast.
+ *   3. CopyButton on a rendered value (the SCIM endpoint URL) writes it
+ *      to the clipboard and shows a toast.
+ *
+ * GRC teardown phase 2 — check 3 used to drive the audit-pack share
+ * link. `/audits` was deleted along with the whole inherited GRC
+ * surface, and so were `#share-link-card` / `#share-pack-btn` /
+ * `#share-link-url`. It is re-pointed at `/admin/scim`, which is the
+ * only surviving <CopyButton> call site in the product. The assertion
+ * shape is unchanged and is what this check is for: click the button,
+ * a toast appears, and the clipboard holds exactly the value rendered
+ * beside it. `/admin/scim` also keeps the check read-only — the
+ * endpoint URL is returned by `GET /admin/scim` on page load, so no
+ * token has to be minted against the shared seeded tenant.
  *
  * These are the smoke checks — we don't re-verify every tooltip copy
  * target. The source-contract guards
@@ -51,7 +62,12 @@ test.describe('Epic 56 — tooltip + copy primitives', () => {
     // coarse-pointer branch in src/components/ui/tooltip.tsx).
     test('selection-toolbar Clear tooltip exposes its hint on hover', async ({ page }) => {
         const tenantSlug = await loginAndGetTenant(page, ADMIN_USER);
-        await safeGoto(page, `/t/${tenantSlug}/practices`, {
+        // GRC teardown phase 2 — was `/practices`; re-pointed to
+        // `/assets`. The subject is the shared DataTable's
+        // SelectionToolbar, not the entity, and `/assets` is a
+        // surviving list page with seeded rows on acme-corp and row
+        // selection left at its default-on setting.
+        await safeGoto(page, `/t/${tenantSlug}/assets`, {
             waitUntil: 'domcontentloaded',
         });
         await page.waitForLoadState('networkidle').catch(() => {});
@@ -63,7 +79,7 @@ test.describe('Epic 56 — tooltip + copy primitives', () => {
         // mismatch because Radix Checkbox already renders as <button>;
         // GAP-CI-77 changed the wrapper from role="button" to
         // role="presentation" so axe sees only the inner labelled
-        // Radix button as the canonical practice). The inner checkbox
+        // Radix button as the canonical control). The inner checkbox
         // has `pointer-events-none` so the click reaches the wrapping
         // div's handler.
         const firstRowSelect = page
@@ -89,68 +105,48 @@ test.describe('Epic 56 — tooltip + copy primitives', () => {
         await expect(tip.locator('kbd')).toContainText('Esc');
     });
 
-    // The original skip rationale ("seed billing plan doesn't
-    // include AUDIT_PACK_SHARING") was stale —
-    // `<UpgradeGate>` treats a null `plan` (no `BillingAccount`
-    // row) as ungated, and the seed doesn't create one. The
-    // share-pack flow runs cleanly under the seeded admin tenant.
-    // Re-enabled in the Epic-69 follow-up pass that swept the
-    // remaining E2E skips.
-    test('audit pack share link — CopyButton writes to clipboard + shows toast', async ({ page }) => {
+    // GRC teardown phase 2 — this was the audit-pack share link
+    // (`/audits/cycles` → cycle → pack → `#share-link-card`). The whole
+    // `/audits` surface was deleted, so the flow has no route to walk.
+    // Re-pointed at `/admin/scim`, the only surviving <CopyButton> call
+    // site: `<CopyButton value={state.scimEndpoint}
+    // label="Copy SCIM endpoint" successMessage="SCIM endpoint copied">`
+    // sits next to the `#scim-endpoint-url` <code> that renders the same
+    // value, which is exactly the "copy what you can see" shape the
+    // share-link banner had. Read-only — the endpoint arrives with the
+    // page's `GET /admin/scim`, no token generation on the shared tenant.
+    test('SCIM endpoint — CopyButton writes to clipboard + shows toast', async ({ page }) => {
         const tenantSlug = await loginAndGetTenant(page, ADMIN_USER);
 
-        // Navigate via the cycle list (no standalone /audits/packs route
-        // exists) — pick the seeded ISO27001 cycle, then the seeded
-        // frozen pack inside it.
-        await safeGoto(page, `/t/${tenantSlug}/audits/cycles`, {
+        await safeGoto(page, `/t/${tenantSlug}/admin/scim`, {
             waitUntil: 'domcontentloaded',
         });
         await page.waitForLoadState('networkidle').catch(() => {});
 
-        const firstCycle = page
-            .locator('a[id^="cycle-link-"]')
-            .first();
-        await expect(firstCycle).toBeVisible({ timeout: 30_000 });
-        await firstCycle.click();
-        await page.waitForURL(/audits\/cycles\/[^/]+/, {
-            waitUntil: 'domcontentloaded',
-            timeout: 30_000,
-        });
-        await page.waitForLoadState('networkidle').catch(() => {});
-
-        const firstPack = page.locator('a[href*="/audits/packs/"]').first();
-        await expect(firstPack).toBeVisible({ timeout: 30_000 });
-        await firstPack.click();
-        await page.waitForURL(/audits\/packs\/[^/]+/, {
-            waitUntil: 'domcontentloaded',
+        // The <code> starts as a loading placeholder and fills in once
+        // `GET /admin/scim` resolves; wait for a real URL rather than a
+        // dash/placeholder so the clipboard comparison is meaningful.
+        const endpointEl = page.locator('#scim-endpoint-url');
+        await expect(endpointEl).toBeVisible({ timeout: 30_000 });
+        await expect(endpointEl).toContainText(/https?:\/\/.+\/api\/scim\/v2/, {
             timeout: 30_000,
         });
 
-        // If the share-link banner isn't rendered yet (the seed share
-        // token was hashed without exposing the raw token for the UI),
-        // click the Share action to surface one.
-        const shareBanner = page.locator('#share-link-card');
-        if (!(await shareBanner.isVisible().catch(() => false))) {
-            const shareBtn = page.locator('#share-pack-btn');
-            await expect(shareBtn).toBeVisible({ timeout: 15_000 });
-            await shareBtn.click();
-            await expect(shareBanner).toBeVisible({ timeout: 15_000 });
-        }
+        const endpointUrl = (await endpointEl.textContent()) ?? '';
+        expect(endpointUrl.trim().length).toBeGreaterThan(0);
 
-        const shareUrl =
-            (await page.locator('#share-link-url').textContent()) ?? '';
-        expect(shareUrl.length).toBeGreaterThan(0);
-
-        await shareBanner.getByRole('button', { name: /Copy share link/i }).click();
+        await page
+            .getByRole('button', { name: /Copy SCIM endpoint/i })
+            .click();
 
         // Toast appears.
         await expect(
-            page.getByText('Share link copied', { exact: false }),
+            page.getByText('SCIM endpoint copied', { exact: false }),
         ).toBeVisible({ timeout: 5000 });
 
-        // Clipboard contains the exact URL rendered on the banner.
+        // Clipboard contains the exact URL rendered beside the button.
         const clipboard = await readClipboard(page);
-        expect(clipboard).toBe(shareUrl.trim());
+        expect(clipboard).toBe(endpointUrl.trim());
     });
 
     test('task detail header — task.key is copyable via CopyText', async ({

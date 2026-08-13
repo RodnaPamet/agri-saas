@@ -76,7 +76,7 @@ const CURRENT_BASELINE = 17;
 // pages, filter-defs, org widget config and permission modules carried
 // 40 of the counted hard-coded config-prop strings. The drift sentinel
 // below forbids leaving slack, so this tracks reality, not headroom.
-const CONFIG_PROP_BASELINE = 340;
+const CONFIG_PROP_BASELINE = 238;
 
 /** A string counts as user-facing copy if — after stripping HTML entities —
  *  it has a real word (≥2 latin letters) and is not an ALL-CAPS enum/acronym

@@ -5,11 +5,11 @@
  *      `AssetKeySequence.upsert`. The Assets list page leads with
  *      the new Code column.
  *
- *   2. Practice gains a `PracticeKeySequence` counter, with the
- *      `createPractice` usecase minting `CTL-N` for the custom-
- *      practice create path (`isCustom && !code`). Framework-
- *      installed practices always supply their own `code` /
- *      `code` from the catalogue and bypass the counter.
+ *   2. (The Practice half — a `PracticeKeySequence` counter minting
+ *      `CTL-N` — went with the model in GRC teardown phase 2. The
+ *      MIGRATION assertions below stay: applied migrations are asserted
+ *      verbatim, because rewriting one changes its checksum and breaks
+ *      `migrate deploy` on every existing database.)
  *
  *   3. The first-column registry flips Assets from `name` to
  *      `code` (Risk/Practices parity) and adds a written note.
@@ -64,18 +64,6 @@ describe('Asset Code column + Asset/Practice code generation', () => {
             // Same shape Risk/Task counters use: tenantId PK +
             // lastValue Int counter.
             const start = schema.indexOf('model AssetKeySequence');
-            const block = schema.slice(start, start + 400);
-            expect(block).toMatch(/tenantId\s+String\s+@id/);
-            expect(block).toMatch(/lastValue\s+Int\s+@default\(0\)/);
-        });
-    });
-
-    describe('Practice key sequence schema', () => {
-        const schema = readSchema();
-
-        it('PracticeKeySequence model exists', () => {
-            expect(schema).toMatch(/model PracticeKeySequence/);
-            const start = schema.indexOf('model PracticeKeySequence');
             const block = schema.slice(start, start + 400);
             expect(block).toMatch(/tenantId\s+String\s+@id/);
             expect(block).toMatch(/lastValue\s+Int\s+@default\(0\)/);
@@ -163,22 +151,6 @@ describe('Asset Code column + Asset/Practice code generation', () => {
         });
     });
 
-    describe('createPractice usecase mints CTL-N for custom practices', () => {
-        const usecase = read('src/app-layer/usecases/practice/mutations.ts');
-
-        it('mints CTL-N via practiceKeySequence.upsert', () => {
-            expect(usecase).toMatch(/practiceKeySequence\.upsert/);
-            expect(usecase).toMatch(/`CTL-\$\{seq\.lastValue\}`/);
-        });
-
-        it('only mints when isCustom AND no explicit code supplied', () => {
-            // The gate is `!code && isCustom` — both must hold for
-            // the counter to advance. Framework-installed practices
-            // (`isCustom: false`) never consume the sequence.
-            expect(usecase).toMatch(/if\s*\(!code\s*&&\s*isCustom\)\s*\{/);
-        });
-    });
-
     describe('AssetsClient renders Code as the FIRST column', () => {
         const ui = read(
             'src/app/t/[tenantSlug]/(app)/assets/AssetsClient.tsx',
@@ -219,10 +191,19 @@ describe('Asset Code column + Asset/Practice code generation', () => {
         const src = read('tests/guards/table-unification.test.ts');
 
         it('Assets entry declares firstColumnId="code"', () => {
-            const entry = src.slice(
-                src.indexOf('assets/AssetsClient.tsx'),
-                src.indexOf('assets/AssetsClient.tsx') + 600,
+            // Anchor on the REGISTRY, not on the first textual occurrence
+            // of the path: GRC teardown phase 2 re-pointed the sibling
+            // file's canonical-reference assertion at AssetsClient, so the
+            // path now appears above the registry too and a naive
+            // indexOf() slice lands in that assertion instead.
+            const registryIdx = src.indexOf('const FIRST_COLUMN_TABLES');
+            expect(registryIdx).toBeGreaterThan(-1);
+            const entryIdx = src.indexOf(
+                'assets/AssetsClient.tsx',
+                registryIdx,
             );
+            expect(entryIdx).toBeGreaterThan(-1);
+            const entry = src.slice(entryIdx, entryIdx + 600);
             expect(entry).toMatch(/firstColumnId:\s*['"]code['"]/);
             expect(entry).toMatch(/adopted:\s*true/);
             // Note mentions AssetKeySequence so a "drop the note" PR

@@ -13,7 +13,7 @@
 
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
-import { ChevronRight, Layers, Paperclip, ShieldCheck } from 'lucide-react';
+import { ChevronRight, Layers, Paperclip } from 'lucide-react';
 
 import { AnimatedNumber } from '@/components/ui/animated-number';
 import { CardList } from '@/components/ui/card-list';
@@ -326,18 +326,16 @@ export function DrillDownCtas({
 }: {
     summary: PortfolioSummary;
     orgSlug: string;
-    entries?: ReadonlyArray<'practices' | 'evidence'>;
+    entries?: ReadonlyArray<'evidence'>;
 }) {
     const t = useTranslations('org.sections');
+    // GRC teardown phase 2: the 'practices' drill-down tile is gone. Its
+    // href pointed at /org/:slug/practices, a route this teardown deleted,
+    // and its count read summary.practices.* — columns jobs/snapshot.ts
+    // stopped computing, so the tile rendered a confident zero over a dead
+    // link. No e2e caught it: ciso test B only asserts the CTA container is
+    // visible, so a real user clicking the tile 404s while CI stays green.
     const all = [
-        {
-            key: 'practices' as const,
-            label: t('ctaPractices'),
-            count: summary.practices.applicable - summary.practices.implemented,
-            href: `/org/${orgSlug}/practices`,
-            icon: ShieldCheck,
-            tone: 'rose',
-        },
         {
             key: 'evidence' as const,
             label: t('ctaEvidence'),

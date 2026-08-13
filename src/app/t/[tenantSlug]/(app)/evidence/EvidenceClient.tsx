@@ -108,7 +108,6 @@ interface EvidenceClientProps {
 
     initialEvidence: any[];
 
-    initialPractices: any[];
     tenantSlug: string;
     permissions: Permissions;
     translations: Record<string, string>;
@@ -133,7 +132,7 @@ export function EvidenceClient(props: EvidenceClientProps) {
     );
 }
 
-function EvidencePageInner({ initialEvidence, initialPractices, tenantSlug, permissions, translations: t }: EvidenceClientProps) {
+function EvidencePageInner({ initialEvidence, tenantSlug, permissions, translations: t }: EvidenceClientProps) {
     const tr = useTranslations('evidence');
     // Stabilise across renders so dependent useCallbacks don't get a
     // fresh identity every cycle (was a real exhaustive-deps warning).
@@ -219,7 +218,6 @@ function EvidencePageInner({ initialEvidence, initialPractices, tenantSlug, perm
             },
         });
 
-    const [practices] = useState<any[]>(initialPractices);
     const retentionFilter = (filters.tab || 'active') as RetentionFilter;
     const { celebrate } = useCelebration();
     const viewMode: 'list' | 'gallery' =
@@ -589,11 +587,8 @@ function EvidencePageInner({ initialEvidence, initialPractices, tenantSlug, perm
     // EVIDENCE_FILTER_KEYS) is untouched — a hidden filter keeps its value.
     const evidenceFilters: FilterType[] = useMemo(
         () =>
-            buildEvidenceFilters(
-                practices as Parameters<typeof buildEvidenceFilters>[0],
-                evidence,
-            ),
-        [practices, evidence],
+            buildEvidenceFilters(evidence),
+        [evidence],
     );
     const filterCards = useMemo(
         () => filtersToCards(evidenceFilters),
@@ -966,7 +961,6 @@ function EvidencePageInner({ initialEvidence, initialPractices, tenantSlug, perm
                         setOpen={setShowUpload}
                         tenantSlug={tenantSlug}
                         apiUrl={apiUrl}
-                        practices={practices}
                     />
                 </>
             )}

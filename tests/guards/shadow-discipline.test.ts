@@ -102,10 +102,6 @@ const ALLOWLIST: AllowlistEntry[] = [
         reason: 'Hand-rolled overflow menu floats above the row; shadow communicates lift. Future PR may migrate to Popover.',
     },
     {
-        file: 'src/app/t/[tenantSlug]/(app)/practices/[practiceId]/page.tsx',
-        reason: 'Inline success toast floats above the page; shadow communicates lift. Future PR may migrate to canonical Toast.',
-    },
-    {
         file: 'src/components/ui/hooks/use-pull-to-refresh.tsx',
         reason: 'mobile-native-feel — the pull-to-refresh spinner disc floats over the page content during the drag gesture; shadow-md gives it the lift of a native refresh practice (same floating-affordance class as the FAB).',
     },

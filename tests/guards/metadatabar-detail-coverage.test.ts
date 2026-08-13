@@ -57,26 +57,6 @@ interface DetailPageEntry {
  */
 const DETAIL_PAGES: DetailPageEntry[] = [
     {
-        file: "src/app/t/[tenantSlug]/(app)/practices/[practiceId]/page.tsx",
-        adopted: true,
-        note: "Practices detail — uses <MetaStrip> for status / framework / owner / last-updated. Heaviest detail page in the product.",
-    },
-    {
-        file: "src/app/t/[tenantSlug]/(app)/vendors/[vendorId]/page.tsx",
-        adopted: true,
-        note: "Vendors detail — uses <MetaStrip> for tier / status / risk-rating / contact / next-review.",
-    },
-    {
-        file: "src/app/t/[tenantSlug]/(app)/policies/[policyId]/page.tsx",
-        adopted: true,
-        note: "Policies detail — uses <MetaStrip> for status / version / approver / acknowledgment.",
-    },
-    {
-        file: "src/app/t/[tenantSlug]/(app)/audits/cycles/[cycleId]/page.tsx",
-        adopted: true,
-        note: "Audit cycle detail — uses <MetaStrip> for framework / period / scope / readiness score.",
-    },
-    {
         file: "src/app/t/[tenantSlug]/(app)/farm-tasks/[taskId]/FarmTaskDetailClient.tsx",
         adopted: true,
         note: "Farm task detail — uses <MetaStrip> for status / priority / assignee / due-date / SLA (in the Client component; page.tsx is a server shell).",
@@ -85,11 +65,6 @@ const DETAIL_PAGES: DetailPageEntry[] = [
         file: "src/app/t/[tenantSlug]/(app)/assets/[id]/page.tsx",
         adopted: true,
         note: "Assets detail — uses <MetaStrip> for classification / owner / lifecycle / criticality.",
-    },
-    {
-        file: "src/app/t/[tenantSlug]/(app)/audits/packs/[packId]/page.tsx",
-        adopted: true,
-        note: "Audit pack detail — uses <MetaStrip> for state / auditor / due-date / item-count.",
     },
     {
         file: "src/app/t/[tenantSlug]/(app)/access-reviews/[reviewId]/AccessReviewDetailClient.tsx",
@@ -153,7 +128,9 @@ describe("MetaStrip detail-page coverage", () => {
         // drift detector — it exists so someone cannot quietly empty the
         // registry — so it tracks the new reality rather than a stale number.
         // 9 → 8: the risk detail page went with the register.
-        expect(DETAIL_PAGES.length).toBeGreaterThanOrEqual(8);
+        // 8 → 3 (GRC teardown phase 2): the practice / policy / vendor /
+        // audit / finding detail pages went with the inherited surface.
+        expect(DETAIL_PAGES.length).toBeGreaterThanOrEqual(3);
     });
 
     it("MetadataBar (the deprecated sibling primitive) has zero production adopters", () => {
