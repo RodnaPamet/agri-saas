@@ -193,11 +193,18 @@ const DrilldownCtasConfigSchema = z.object({
     config: z
         .object({
             /** Optional subset of CTAs to render. Empty / undefined =
-             *  render the canonical three (practices / risks / evidence). */
+             *  render all.
+             *
+             *  'risks' left with the risk register; 'practices' left with
+             *  GRC teardown phase 2 — its tile linked to the deleted
+             *  /org/:slug/practices route. Persisted widget rows may still
+             *  hold either value: that is the §8d.4 DB-resident class, and
+             *  the pre-flight (§8g) found ZERO OrgDashboardWidget rows on
+             *  production, so no data migration is required for this stack. */
             entries: z
-                .array(z.enum(['practices', 'risks', 'evidence']))
+                .array(z.enum(['evidence']))
                 .min(1)
-                .max(3)
+                .max(1)
                 .optional(),
         })
         .strict(),

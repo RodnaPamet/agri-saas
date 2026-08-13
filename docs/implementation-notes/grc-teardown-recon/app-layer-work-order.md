@@ -166,7 +166,26 @@ Verify: `npx tsc --noEmit && npx jest tests/guards tests/guardrails`
 - `tests/regression/infrastructure-guards.test.ts:92,105` — verified expects `toHaveLength(24)` and lists `'automation-runner'`; drop to 23 and remove the name.
 - `tests/unit/{job-scope-audit,job-tenant-isolation-regression,jobs-context-and-fanout,periodic-monitors,notification-pipeline-regression,notification-pipeline-single-run,calendar-deadlines-monitor,sharepoint-webhook}.test.ts` — narrow/delete. `job-scope-audit` does `readFileSync` on deleted paths (ENOENT).
 - `tests/guards/epic49-calendar-ratchets.test.ts:127-152` — asserts `calendar-deadlines.ts` EXISTS.
-- `scripts/` (tsc-invisible, verify by hand): `scripts/openapi-build.ts:57,61,150,154` · `scripts/seed-demo.ts:38` · delete `scripts/framework-import.ts`, `scripts/import-schemes.ts`, `prisma/catalog-{loader,applier}.ts`, `prisma/catalogs/` + `package.json:27-28`.
+- `scripts/` (tsc-invisible, verify by hand): `scripts/openapi-build.ts:57,61,150,154` · `scripts/seed-demo.ts:38` · delete `scripts/framework-import.ts`, `scripts/import-schemes.ts` + `package.json:27-28`.
+
+  > **CORRECTION (2026-08-13, verified against live source).** This line
+  > originally also ordered `prisma/catalog-{loader,applier}.ts` and
+  > `prisma/catalogs/` deleted. **Do not.** They are LIVE:
+  > `scripts/seed-demo.ts:39-40` imports `loadAndValidateCatalogFile` +
+  > `applyCatalogFile`, and `:508-536` applies every YAML in
+  > `prisma/catalogs/`; `package.json` ships it as `npm run seed:demo`.
+  > Three of the four catalogs are AGRI —
+  > `bg-babh-plant-protection.yaml`, `globalgap-ifa-demo.yaml`,
+  > `eu-organic-2018-848-demo.yaml` — and only `iso27001-2022-demo.yaml`
+  > is GRC. `tests/unit/catalog-loader.test.ts` covers the loader (13
+  > tests, green).
+  >
+  > Note also that the sever point named above (`seed-demo.ts:38`) is the
+  > `attachAutoEvidenceFromLogEntry` import, NOT the catalog imports at
+  > `:39-40`. Deleting the closure on this instruction would have left a
+  > CLEAN `tsc` (tsconfig excludes `scripts/`) and a green test suite
+  > while `npm run seed:demo` died at import — the exact tsc-invisible
+  > class this same bullet warns about.
 
 Verify: `npx tsc --noEmit && npx jest tests/unit/notification-pipeline-regression tests/unit/notification-pipeline-single-run tests/unit/periodic-monitors tests/regression && npx tsx scripts/openapi-build.ts 2>/dev/null || npm run openapi:generate`
 

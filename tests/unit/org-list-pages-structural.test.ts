@@ -14,7 +14,13 @@
  *   - the row-link cell uses the pre-computed `drillDownUrl` from the
  *     usecase (never a hand-built href)
  *   - tenant attribution is rendered as a column on every cross-tenant
- *     list (practices / evidence)
+ *     list (evidence)
+ *
+ * GRC teardown phase 2 removed the org `practices` page (server +
+ * PracticesTable island) along with the Practice model and the
+ * `listNonPerformingPractices` portfolio usecase it called. Its spec
+ * left this list with it; `tenants` and `evidence` are unchanged and
+ * still carry the full contract below.
  *
  * Mirrors the org-overview-structural.test.ts template.
  */
@@ -49,18 +55,10 @@ const PAGES: PageSpec[] = [
         // primary entity, not a side-attribution column.
         requiresTenantColumn: false,
     },
-    {
-        name: 'practices',
-        serverPath: 'src/app/org/[orgSlug]/(app)/practices/page.tsx',
-        clientPath: 'src/app/org/[orgSlug]/(app)/practices/PracticesTable.tsx',
-        // Cursor-paginated list usecase. The non-paginated
-        // `getNonPerformingPractices` remains for the dashboard
-        // summary card + CSV export.
-        usecase: 'listNonPerformingPractices',
-        rowLinkPattern: /href=\{row\.original\.drillDownUrl\}/,
-        testIds: ['org-practices-table', 'org-practice-link-', 'org-practice-tenant-'],
-        requiresTenantColumn: true,
-    },
+    // GRC teardown phase 2: the `practices` entry was removed here —
+    // the org practices page and `listNonPerformingPractices` were
+    // deleted with the Practice model. `evidence` keeps the
+    // cross-tenant-attribution half of this contract alive.
     {
         name: 'evidence',
         serverPath: 'src/app/org/[orgSlug]/(app)/evidence/page.tsx',
@@ -152,9 +150,11 @@ describe('Epic O-4 — cross-tenant list pages structural contract', () => {
     // ── Cross-page invariants ────────────────────────────────────────
 
     it('the pages collectively cover the spec entities', () => {
-        // Was four; `risks` went with the risk register.
+        // Was four; `risks` went with the risk register, then
+        // `practices` went with the GRC teardown (phase 2). Both
+        // removals were page deletions, not spec drift.
         const names = PAGES.map((p) => p.name).sort();
-        expect(names).toEqual(['evidence', 'practices', 'tenants']);
+        expect(names).toEqual(['evidence', 'tenants']);
     });
 
     it('every cross-tenant list resourceName is plural-aware', () => {

@@ -280,7 +280,7 @@ export function DispatchedWidget({
         }
         case 'DRILLDOWN_CTAS': {
             const cfg = widget.config as {
-                entries?: ReadonlyArray<'practices' | 'evidence'>;
+                entries?: ReadonlyArray<'evidence'>;
             };
             title = widget.title ?? 'Drill-down';
             body = (

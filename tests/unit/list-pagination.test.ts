@@ -162,12 +162,14 @@ describe('Epic 52 adoption — migrated pages wire column visibility', () => {
     //
     // Column-visibility persistence was retained — that's a per-user
     // setting independent of how rows are paged.
+    //
+    // GRC teardown phase 2 removed the `practices` entry: PracticesClient
+    // went with the inherited GRC surface. Evidence is an agri KEEP page
+    // and carries the whole contract unchanged (ListPageShell + fillBody,
+    // no pagination wiring, namespaced column-visibility storage key,
+    // gear in the toolbar actions slot), so every assertion below is
+    // still executed against a real page.
     const MIGRATED = [
-        {
-            dir: 'practices',
-            client: 'PracticesClient.tsx',
-            storageKey: 'inflect:col-vis:practices',
-        },
         {
             dir: 'evidence',
             client: 'EvidenceClient.tsx',

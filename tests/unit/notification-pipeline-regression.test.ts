@@ -40,25 +40,20 @@ const mockLogger = {
 };
 
 // ── Prisma spies for query counting ─────────────────────────────────
+//
+// GRC teardown phase 2 removed every scanner except the deadline monitor
+// (practice / policy / task) and the evidence-expiry monitor: the Risk +
+// PracticeTestPlan scanners, the vendor-renewal check and its
+// VENDOR_RENEWAL_DIGEST, the Epic 49 calendar-deadlines monitor
+// (AuditCycle / VendorDocument / Finding) and the Epic G-7 treatment-plan +
+// milestone scanners all went with their models. Their spies went with
+// them — a spy for a table nothing queries turns a budget into a
+// tautology, which is exactly what this suite exists to prevent.
 const spies = {
-    practice:         jest.fn().mockResolvedValue([]),
+    practice:        jest.fn().mockResolvedValue([]),
     policy:          jest.fn().mockResolvedValue([]),
     task:            jest.fn().mockResolvedValue([]),
-    risk:            jest.fn().mockResolvedValue([]),
-    practiceTestPlan: jest.fn().mockResolvedValue([]),
     evidence:        jest.fn().mockResolvedValue([]),
-    vendor:          jest.fn().mockResolvedValue([]),
-    // Epic 49 — calendar-deadlines monitor adds three entity sources
-    // that the original deadline-monitor doesn't cover. They merge
-    // into DEADLINE_DIGEST inside notification-dispatch.
-    auditCycle:      jest.fn().mockResolvedValue([]),
-    vendorDocument:  jest.fn().mockResolvedValue([]),
-    finding:         jest.fn().mockResolvedValue([]),
-    // Epic G-7 — risk-treatment-plan scanner + Phase 0 transition,
-    // plus the milestone scanner. updateMany returns a row-count.
-    riskTreatmentPlan:           jest.fn().mockResolvedValue([]),
-    riskTreatmentPlanUpdateMany: jest.fn().mockResolvedValue({ count: 0 }),
-    treatmentMilestone:          jest.fn().mockResolvedValue([]),
     // Notification infra — NOT source entities
     user:            jest.fn().mockResolvedValue([]),
     membership:      jest.fn().mockResolvedValue([]),
@@ -75,16 +70,7 @@ beforeEach(() => {
     spies.practice.mockResolvedValue([]);
     spies.policy.mockResolvedValue([]);
     spies.task.mockResolvedValue([]);
-    spies.risk.mockResolvedValue([]);
-    spies.practiceTestPlan.mockResolvedValue([]);
     spies.evidence.mockResolvedValue([]);
-    spies.vendor.mockResolvedValue([]);
-    spies.auditCycle.mockResolvedValue([]);
-    spies.vendorDocument.mockResolvedValue([]);
-    spies.finding.mockResolvedValue([]);
-    spies.riskTreatmentPlan.mockResolvedValue([]);
-    spies.riskTreatmentPlanUpdateMany.mockResolvedValue({ count: 0 });
-    spies.treatmentMilestone.mockResolvedValue([]);
     spies.user.mockResolvedValue([]);
     spies.membership.mockResolvedValue([]);
     spies.tenant.mockResolvedValue({ slug: 'test' });
@@ -96,22 +82,10 @@ beforeEach(() => {
     }));
 
     const prismaMock = {
-        practice:          { findMany: (...a: unknown[]) => spies.practice(...a) },
+        practice:         { findMany: (...a: unknown[]) => spies.practice(...a) },
         policy:           { findMany: (...a: unknown[]) => spies.policy(...a) },
         task:             { findMany: (...a: unknown[]) => spies.task(...a) },
-        risk:             { findMany: (...a: unknown[]) => spies.risk(...a) },
-        practiceTestPlan:  { findMany: (...a: unknown[]) => spies.practiceTestPlan(...a) },
         evidence:         { findMany: (...a: unknown[]) => spies.evidence(...a) },
-        vendor:           { findMany: (...a: unknown[]) => spies.vendor(...a) },
-        // Epic 49 calendar-deadlines monitor sources.
-        auditCycle:       { findMany: (...a: unknown[]) => spies.auditCycle(...a) },
-        vendorDocument:   { findMany: (...a: unknown[]) => spies.vendorDocument(...a) },
-        finding:          { findMany: (...a: unknown[]) => spies.finding(...a) },
-        riskTreatmentPlan: {
-            findMany:   (...a: unknown[]) => spies.riskTreatmentPlan(...a),
-            updateMany: (...a: unknown[]) => spies.riskTreatmentPlanUpdateMany(...a),
-        },
-        treatmentMilestone: { findMany: (...a: unknown[]) => spies.treatmentMilestone(...a) },
         user:             { findMany: (...a: unknown[]) => spies.user(...a) },
         tenantMembership: { findMany: (...a: unknown[]) => spies.membership(...a) },
         tenant:           { findUnique: (...a: unknown[]) => spies.tenant(...a) },
@@ -133,37 +107,32 @@ beforeEach(() => {
 describe('REGRESSION: query budget per notification-dispatch run', () => {
     /**
      * Expected query counts per entity table for ONE full dispatch:
-     *   - practice:         1 (deadline-monitor)
-     *   - policy:          1 (deadline-monitor)
-     *   - task:            1 (deadline-monitor)
-     *   - risk:            1 (deadline-monitor)
-     *   - practiceTestPlan: 1 (deadline-monitor)
-     *   - evidence:        3 (evidence-expiry-monitor: retentionUntil + expired
-     *                          + nextReviewDate). The third is a deliberate
-     *                          budget raise, not drift: retention asks "may we
-     *                          still keep this?" and review asks "is this still
-     *                          true?" — different columns, different remedies,
-     *                          and the review axis previously had NO sweep at
-     *                          all, so a cadence an operator set produced
-     *                          nothing. One more bounded, indexed scan.
-     *   - vendor:          4 (vendor-renewal: overdue reviews, due reviews, overdue renewals, due renewals)
-     *   - auditCycle:      1 (Epic 49 calendar-deadlines monitor — periodEndAt scan)
-     *   - vendorDocument:  1 (Epic 49 calendar-deadlines monitor — validTo scan)
-     *   - finding:         1 (Epic 49 calendar-deadlines monitor — dueDate scan)
+     *   - practice:  1 (deadline-monitor)
+     *   - policy:    1 (deadline-monitor)
+     *   - task:      1 (deadline-monitor)
+     *   - evidence:  3 (evidence-expiry-monitor: retentionUntil + expired
+     *                   + nextReviewDate). The third is a deliberate
+     *                   budget raise, not drift: retention asks "may we
+     *                   still keep this?" and review asks "is this still
+     *                   true?" — different columns, different remedies,
+     *                   and the review axis previously had NO sweep at
+     *                   all, so a cadence an operator set produced
+     *                   nothing. One more bounded, indexed scan.
+     *
+     * GRC teardown phase 2 removed the risk / practiceTestPlan /
+     * vendor / auditCycle / vendorDocument / finding rows: those scanners
+     * no longer exist, so a budget for them could never be exceeded.
+     * The four above are the ENTIRE source-entity surface of a dispatch
+     * run, and the per-table ceilings are unchanged from what they were
+     * before the teardown (nothing was raised).
      *
      * If any of these double, someone reintroduced a second scan path.
      */
     const QUERY_BUDGET: Record<string, { spy: keyof typeof spies; maxCalls: number; source: string }> = {
-        practice:         { spy: 'practice',         maxCalls: 1, source: 'deadline-monitor' },
-        policy:          { spy: 'policy',          maxCalls: 1, source: 'deadline-monitor' },
-        task:            { spy: 'task',            maxCalls: 1, source: 'deadline-monitor' },
-        risk:            { spy: 'risk',            maxCalls: 1, source: 'deadline-monitor' },
-        practiceTestPlan: { spy: 'practiceTestPlan', maxCalls: 1, source: 'deadline-monitor' },
-        evidence:        { spy: 'evidence',        maxCalls: 3, source: 'evidence-expiry-monitor' },
-        vendor:          { spy: 'vendor',          maxCalls: 4, source: 'vendor-renewal-check' },
-        auditCycle:      { spy: 'auditCycle',      maxCalls: 1, source: 'calendar-deadlines' },
-        vendorDocument:  { spy: 'vendorDocument',  maxCalls: 1, source: 'calendar-deadlines' },
-        finding:         { spy: 'finding',         maxCalls: 1, source: 'calendar-deadlines' },
+        practice: { spy: 'practice', maxCalls: 1, source: 'deadline-monitor' },
+        policy:   { spy: 'policy',   maxCalls: 1, source: 'deadline-monitor' },
+        task:     { spy: 'task',     maxCalls: 1, source: 'deadline-monitor' },
+        evidence: { spy: 'evidence', maxCalls: 3, source: 'evidence-expiry-monitor' },
     };
 
     test('full dispatch run stays within query budget for ALL entity tables', async () => {
@@ -188,16 +157,10 @@ describe('REGRESSION: query budget per notification-dispatch run', () => {
     });
 
     test.each(Object.entries({
-        practice:         { spy: 'practice' as const,         maxCalls: 1 },
-        policy:          { spy: 'policy' as const,          maxCalls: 1 },
-        task:            { spy: 'task' as const,            maxCalls: 1 },
-        risk:            { spy: 'risk' as const,            maxCalls: 1 },
-        practiceTestPlan: { spy: 'practiceTestPlan' as const, maxCalls: 1 },
-        evidence:        { spy: 'evidence' as const,        maxCalls: 3 },
-        vendor:          { spy: 'vendor' as const,          maxCalls: 4 },
-        auditCycle:      { spy: 'auditCycle' as const,      maxCalls: 1 },
-        vendorDocument:  { spy: 'vendorDocument' as const,  maxCalls: 1 },
-        finding:         { spy: 'finding' as const,         maxCalls: 1 },
+        practice: { spy: 'practice' as const, maxCalls: 1 },
+        policy:   { spy: 'policy' as const,   maxCalls: 1 },
+        task:     { spy: 'task' as const,     maxCalls: 1 },
+        evidence: { spy: 'evidence' as const, maxCalls: 3 },
     }))(
         '%s: at most %j queries per dispatch',
         async (table, { spy, maxCalls }) => {
@@ -220,11 +183,12 @@ describe('REGRESSION: precomputed items produce zero source-entity queries', () 
             '../../src/app-layer/jobs/notification-dispatch'
         );
 
+        // `vendorItems` left with VENDOR_RENEWAL_DIGEST in GRC teardown
+        // phase 2 — notification-dispatch no longer reads that key.
         await runNotificationDispatch({
             precomputed: {
                 deadlineItems: [],
                 evidenceItems: [],
-                vendorItems: [],
             },
         });
 
@@ -232,10 +196,7 @@ describe('REGRESSION: precomputed items produce zero source-entity queries', () 
         expect(spies.practice.mock.calls.length).toBe(0);
         expect(spies.policy.mock.calls.length).toBe(0);
         expect(spies.task.mock.calls.length).toBe(0);
-        expect(spies.risk.mock.calls.length).toBe(0);
-        expect(spies.practiceTestPlan.mock.calls.length).toBe(0);
         expect(spies.evidence.mock.calls.length).toBe(0);
-        expect(spies.vendor.mock.calls.length).toBe(0);
     });
 
     test('providing partial precomputed items only scans remaining categories', async () => {
@@ -243,12 +204,14 @@ describe('REGRESSION: precomputed items produce zero source-entity queries', () 
             '../../src/app-layer/jobs/notification-dispatch'
         );
 
-        // Provide deadlines pre-computed, let evidence and vendor scan
+        // Provide deadlines pre-computed, let evidence scan.
+        // (The vendor leg went with VENDOR_RENEWAL_DIGEST in GRC teardown
+        //  phase 2; evidence is the surviving "not precomputed → scans"
+        //  half, so the mixed-mode contract is still exercised.)
         await runNotificationDispatch({
             precomputed: {
                 deadlineItems: [],
                 // evidenceItems NOT provided → should scan
-                // vendorItems NOT provided → should scan
             },
         });
 
@@ -256,12 +219,9 @@ describe('REGRESSION: precomputed items produce zero source-entity queries', () 
         expect(spies.practice.mock.calls.length).toBe(0);
         expect(spies.policy.mock.calls.length).toBe(0);
         expect(spies.task.mock.calls.length).toBe(0);
-        expect(spies.risk.mock.calls.length).toBe(0);
-        expect(spies.practiceTestPlan.mock.calls.length).toBe(0);
 
-        // Evidence and vendor ARE queried (not precomputed)
+        // Evidence IS queried (not precomputed)
         expect(spies.evidence.mock.calls.length).toBeGreaterThan(0);
-        expect(spies.vendor.mock.calls.length).toBeGreaterThan(0);
     });
 });
 
@@ -273,6 +233,11 @@ describe('REGRESSION: digest-dispatcher does not query source-entity tables', ()
     const { readFileSync } = require('fs');
     const { resolve } = require('path');
 
+    // These are NEGATIVE assertions ("the dispatcher must not touch these"),
+    // so GRC teardown phase 2 deliberately left the list intact: risk /
+    // practiceTestPlan / vendor lost their monitors but their Prisma models
+    // survive until phase 3 drops the schema, and dropping a name from a
+    // never-list only ever weakens it.
     const SOURCE_ENTITY_MODELS = [
         'practice', 'policy', 'task', 'risk',
         'practiceTestPlan', 'evidence', 'vendor',

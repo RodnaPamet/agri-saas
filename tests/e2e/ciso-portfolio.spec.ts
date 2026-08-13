@@ -3,35 +3,44 @@
  *
  * Walks the full hub-and-spoke flow against the production-mode
  * Next server, the seeded `acme-org` Organization, and the seeded
- * `acme-corp` child Tenant (which already has practices /
- * evidence courtesy of `prisma/seed.ts`):
+ * `acme-corp` child Tenant (which already has assets / evidence
+ * courtesy of `prisma/seed.ts`):
  *
  *   A. Login as `ciso@acme.com` (ORG_ADMIN of acme-org, AUDITOR
  *      of acme-corp). Confirms the read-only AUDITOR badge on the
  *      tenant chrome.
  *
- *   B. Portfolio overview at `/org/acme-org` renders the four stat
+ *   B. Portfolio overview at `/org/acme-org` renders the stat
  *      cards + the drill-down CTAs + the per-tenant coverage list.
  *
- *   C. Drill-down lists at `/org/acme-org/{practices,evidence}`
- *      render with tenant attribution columns. The first practice row
- *      links to `/t/acme-corp/practices/{id}` and lands on the per-
- *      tenant detail page (RLS-enforced read via the auto-
- *      provisioned AUDITOR membership).
+ *   E. Drill-down list at `/org/acme-org/evidence` renders with
+ *      tenant attribution columns (RLS-enforced read via the
+ *      auto-provisioned AUDITOR membership).
  *
- *   D. Read-only invariant: the AUDITOR membership grants no
- *      `canWrite`, so the tenant practices list must NOT render
- *      `#new-practice-btn`.
+ *   F. Read-only invariant: the AUDITOR membership grants no
+ *      `canWrite`, so a tenant list page must NOT render its create
+ *      button.
  *
- *   E. Tenant creation via `/org/acme-org/tenants/new`. Confirms
+ *   G. Tenant creation via `/org/acme-org/tenants/new`. Confirms
  *      the new tenant appears in the org tenants list. We do NOT
  *      navigate into the new tenant — the in-flight session JWT
  *      doesn't carry the just-issued OWNER membership until next
  *      refresh, and the middleware tenant-access gate is JWT-bound
  *      (separate concern, predates Epic O-4).
  *
- *   F. OrgSwitcher pivots from portfolio context to a tenant
+ *   H. OrgSwitcher pivots from portfolio context to a tenant
  *      workspace via the sidebar header dropdown.
+ *
+ * GRC teardown phase 2 — test C (the `/org/acme-org/practices`
+ * drill-down) was DELETED, not re-pointed. Both halves of it are gone:
+ * the org-level route `/org/:slug/practices` and the per-tenant
+ * `/t/:slug/practices/:id` detail page it drilled into. The surviving
+ * org drill-down is evidence, and test E already covers that exact
+ * shape (table renders, rows carry tenant attribution, or the empty
+ * state) — re-pointing C at `/org/:slug/evidence` would have produced
+ * a duplicate of E rather than new coverage. What is genuinely lost is
+ * the org→tenant NAVIGATION hop: no surviving org drill-down row links
+ * out to a per-tenant detail page.
  *
  * Each test re-logs in and re-navigates from scratch — matches the
  * pattern in `core-flow.spec.ts` so a single failure doesn't cascade
@@ -114,7 +123,9 @@ test.describe('CISO portfolio journey (Epic O-4)', () => {
         ).toBeVisible({ timeout: 15_000 });
     });
 
-    test('B — portfolio overview renders four stat cards + drill-down CTAs + tenant list', async ({ page }) => {
+    // Titled "four stat cards" until the critical-risks tile went with
+    // the risk register; the body has asserted three ever since.
+    test('B — portfolio overview renders three stat cards + drill-down CTAs + tenant list', async ({ page }) => {
         await loginAsCiso(page);
         await safeGoto(page, `/org/${ORG_SLUG}`);
 
@@ -138,28 +149,13 @@ test.describe('CISO portfolio journey (Epic O-4)', () => {
         ).toBeVisible({ timeout: 15_000 });
     });
 
-    test('C — practices drill-down lists rows with tenant attribution', async ({ page }) => {
-        await loginAsCiso(page);
-        await safeGoto(page, `/org/${ORG_SLUG}/practices`);
-
-        // Either rows or the empty state — both prove the page rendered
-        // through getNonPerformingPractices without an error.
-        await expect(page.locator('#org-practices-table')).toBeVisible({
-            timeout: 30_000,
-        });
-
-        const hasRow = await page
-            .locator(`[data-testid="org-practice-tenant-${SEED_TENANT}"]`)
-            .first()
-            .isVisible()
-            .catch(() => false);
-        const hasEmpty = await page
-            .getByText(/All practices performing/i)
-            .first()
-            .isVisible()
-            .catch(() => false);
-        expect(hasRow || hasEmpty).toBe(true);
-    });
+    // GRC teardown phase 2 — test C ("practices drill-down lists rows
+    // with tenant attribution") was deleted here. It drove
+    // `/org/:slug/practices` and `#org-practices-table`, both removed
+    // with the GRC surface, and its drill-through target
+    // `/t/:slug/practices/:id` is gone too. See the docblock for why it
+    // was not re-pointed onto the evidence drill-down (test E already
+    // holds that assertion) and what coverage that costs.
 
     test('E — overdue evidence list renders with tenant attribution or empty state', async ({ page }) => {
         await loginAsCiso(page);
@@ -183,7 +179,13 @@ test.describe('CISO portfolio journey (Epic O-4)', () => {
 
     test('F — read-only invariant: AUDITOR cannot create tenant-level records', async ({ page }) => {
         await loginAsCiso(page);
-        await safeGoto(page, `/t/${SEED_TENANT}/practices`);
+        // GRC teardown phase 2 — was `/t/:slug/practices`; re-pointed to
+        // `/t/:slug/assets`. The invariant is about the ROLE, not the
+        // entity (it asserted on the risks page before that, and on
+        // practices after), and `#new-asset-btn` in AssetsClient.tsx is
+        // gated by the same `permissions.canWrite` flag `#new-practice-btn`
+        // was.
+        await safeGoto(page, `/t/${SEED_TENANT}/assets`);
 
         // Wait for the tenant chrome to come up.
         await expect(page.locator('aside').first()).toBeVisible({
@@ -191,11 +193,17 @@ test.describe('CISO portfolio journey (Epic O-4)', () => {
         });
         await page.waitForLoadState('networkidle').catch(() => { /* best-effort */ });
 
+        // Sanity-check the page actually rendered its list before
+        // concluding the button is absent — otherwise a blank error page
+        // would satisfy the count-0 assertion vacuously.
+        await expect(
+            page.locator('[data-testid="assets-table"]'),
+        ).toBeVisible({ timeout: 30_000 });
+
         // The create button is gated by `permissions.canWrite` —
         // AUDITOR never has it. Absence of the button is the read-only
-        // proof. (This asserted on the risks page until the register was
-        // removed; the invariant is about the ROLE, not the entity.)
-        await expect(page.locator('#new-practice-btn')).toHaveCount(0);
+        // proof.
+        await expect(page.locator('#new-asset-btn')).toHaveCount(0);
     });
 
     test('G — CISO creates a 2nd tenant via /org/{slug}/tenants/new', async ({ page }) => {

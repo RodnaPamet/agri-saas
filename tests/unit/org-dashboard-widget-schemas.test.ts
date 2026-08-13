@@ -174,7 +174,11 @@ describe('Epic 41 — widget Zod schemas', () => {
             const r = WidgetTypedShapeSchema.safeParse({
                 type: 'DRILLDOWN_CTAS',
                 chartType: 'default',
-                config: { entries: ['practices', 'risks'] },
+                // 'risks' left with the risk register and 'practices' with
+                // GRC teardown phase 2 (its tile linked to the deleted
+                // /org/:slug/practices route). 'evidence' is the surviving
+                // drill-down; the subset contract is unchanged.
+                config: { entries: ['evidence'] },
             });
             expect(r.success).toBe(true);
         });

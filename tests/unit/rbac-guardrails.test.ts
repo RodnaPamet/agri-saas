@@ -39,50 +39,30 @@ describe('RBAC Guardrail Scans', () => {
         });
     });
 
-    describe('Practices page RBAC', () => {
-        test('practices server page resolves appPerms and passes to client island', () => {
-            const content = readFile('app/t/[tenantSlug]/(app)/practices/page.tsx');
-            // Server component must resolve permissions via ctx.appPermissions (from custom role resolution)
-            expect(content).toMatch(/ctx\.appPermissions\.practices/);
-            // Must pass appPermissions (including practices) to client island
-            expect(content).toMatch(/appPermissions/);
-        });
-
-        test('practices client island receives and enforces create/edit permissions', () => {
-            const content = readFile('app/t/[tenantSlug]/(app)/practices/PracticesClient.tsx');
-            // Client island must declare create and edit permission props
-            expect(content).toMatch(/create.*boolean/);
-            expect(content).toMatch(/edit.*boolean/);
-        });
-    });
-
-    describe('Audit pack RBAC', () => {
-        test('freeze button is wrapped in RequirePermission', () => {
-            const content = readFile('app/t/[tenantSlug]/(app)/audits/packs/[packId]/page.tsx');
-            expect(content).toMatch(/RequirePermission/);
-            expect(content).toMatch(/resource="audits" action="freeze"/);
-        });
-
-        test('share button is wrapped in RequirePermission', () => {
-            const content = readFile('app/t/[tenantSlug]/(app)/audits/packs/[packId]/page.tsx');
-            expect(content).toMatch(/resource="audits" action="share"/);
-        });
-
-        test('clone button is wrapped in RequirePermission', () => {
-            const content = readFile('app/t/[tenantSlug]/(app)/audits/packs/[packId]/page.tsx');
-            expect(content).toMatch(/resource="audits" action="manage"/);
-        });
-    });
-
-    describe('Policies page RBAC', () => {
-        test('policies server page resolves permissions and passes to client island', () => {
-            const content = readFile('app/t/[tenantSlug]/(app)/policies/page.tsx');
-            // Server component must resolve tenant context (which includes permissions)
-            expect(content).toMatch(/getTenantCtx/);
-            // Must pass permissions to client island
-            expect(content).toMatch(/permissions/);
-        });
-    });
+    // ── GRC teardown phase 2 ────────────────────────────────────────
+    // Four describes were removed here, each because its ONLY subject
+    // was a deleted page and no surviving page carries the same
+    // pattern to re-point them at:
+    //
+    //   • "Practices page RBAC"  — practices/page.tsx +
+    //     PracticesClient.tsx (the `ctx.appPermissions.<domain>` →
+    //     client-island prop hand-off). Deleted with the Practice
+    //     model; grepping src/app/t/[tenantSlug]/(app) for
+    //     `appPermissions.` now returns nothing, so there is no
+    //     surviving page-level equivalent of this contract left.
+    //   • "Audit pack RBAC"      — audits/packs/[packId]/page.tsx
+    //     (the three `<RequirePermission resource="audits" …>` button
+    //     wrappers). Deleted with the audit-pack surface. The only
+    //     remaining RequirePermission call site in the whole app is
+    //     the admin layout, already asserted above.
+    //   • "Policies page RBAC"   — policies/page.tsx. Deleted with the
+    //     Policy model.
+    //   • "Vendors page RBAC"    — vendors/page.tsx. Deleted with the
+    //     Vendor model.
+    //
+    // The surviving RBAC surfaces below (admin layout guard, farm-tasks
+    // write gate, SidebarNav filtering, RequirePermission/PermissionSet/
+    // TenantProvider infrastructure) are unchanged.
 
     describe('Farm tasks page RBAC', () => {
         // The compliance /tasks list was retired; /farm-tasks is the sole task
@@ -93,15 +73,6 @@ describe('RBAC Guardrail Scans', () => {
             expect(content).toMatch(/canWrite/);
         });
     });
-
-    describe('Vendors page RBAC', () => {
-        test('vendor create button uses appPerms', () => {
-            const content = readFile('app/t/[tenantSlug]/(app)/vendors/page.tsx');
-            expect(content).toMatch(/appPermissions\.vendors\.create/);
-        });
-    });
-
-
 
     describe('Navigation RBAC', () => {
         test('SidebarNav filters hidden items by permission', () => {

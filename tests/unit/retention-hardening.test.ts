@@ -2,39 +2,41 @@
  * Evidence Retention Hardening — CI Guardrails
  *
  * These tests ensure retention enforcement is consistently applied:
- * 1. Readiness scoring excludes archived evidence
+ * 1. Evidence roll-up scoring excludes archived evidence
  * 2. Evidence linking guards exist
  * 3. Notification job is idempotent
- * 4. Readiness code always filters isArchived
+ * 4. Scoring code always filters isArchived
+ *
+ * GRC teardown phase 2 deleted `app-layer/usecases/audit-readiness-scoring.ts`
+ * (ISO/NIS2 audit-readiness scoring) along with the Framework/Clause models
+ * it scored against. Sections 1 and 5 below used to read that file. The
+ * INVARIANT they protected — "an aggregate that scores evidence must not
+ * count archived or soft-deleted rows" — outlived it, so both sections are
+ * RE-POINTED at the surviving equivalent, `DashboardRepository`'s
+ * `getEvidenceExpiry` / `getUpcomingExpirations` evidence roll-ups, rather
+ * than dropped. The one assertion with no survivor (the deleted scorer's
+ * user-facing "archived/expired excluded" gap-detail copy) is gone.
  */
 import fs from 'fs';
 import path from 'path';
 
 const SRC_ROOT = path.resolve('src');
 
-// ─── 1) Readiness excludes archived evidence ───
+// The surviving evidence-scoring surface (see teardown note above).
+const DASHBOARD_REPO = path.join(SRC_ROOT, 'app-layer/repositories/DashboardRepository.ts');
 
-describe('Retention Hardening — Readiness scoring', () => {
-    test('ISO readiness evidence query filters isArchived', () => {
-        const content = fs.readFileSync(
-            path.join(SRC_ROOT, 'app-layer/usecases/audit-readiness-scoring.ts'), 'utf-8'
-        );
+// ─── 1) Evidence roll-ups exclude archived evidence ───
+
+describe('Retention Hardening — Evidence roll-up scoring', () => {
+    test('dashboard evidence roll-up filters isArchived', () => {
+        const content = fs.readFileSync(DASHBOARD_REPO, 'utf-8');
         // Must contain isArchived: false in evidence query context
         expect(content).toContain('isArchived: false');
     });
 
-    test('ISO readiness evidence query filters deletedAt', () => {
-        const content = fs.readFileSync(
-            path.join(SRC_ROOT, 'app-layer/usecases/audit-readiness-scoring.ts'), 'utf-8'
-        );
+    test('dashboard evidence roll-up filters deletedAt', () => {
+        const content = fs.readFileSync(DASHBOARD_REPO, 'utf-8');
         expect(content).toContain('deletedAt: null');
-    });
-
-    test('gap details mention archived/expired exclusion', () => {
-        const content = fs.readFileSync(
-            path.join(SRC_ROOT, 'app-layer/usecases/audit-readiness-scoring.ts'), 'utf-8'
-        );
-        expect(content).toContain('archived/expired excluded');
     });
 });
 
@@ -78,23 +80,54 @@ describe('Retention Hardening — Metrics', () => {
     });
 });
 
-// ─── 5) CI guardrail: readiness code isArchived check ───
+// ─── 5) CI guardrail: scoring code isArchived check ───
+
+/**
+ * Extract the argument text of every `db.evidence.<method>(...)` call in
+ * `src`, paren-matched so nested object literals are captured whole.
+ */
+function evidenceCallArgs(src: string): string[] {
+    const out: string[] = [];
+    const re = /db\.evidence\.(?:count|findMany|findFirst|findUnique|aggregate|groupBy)\s*\(/g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(src)) !== null) {
+        let depth = 0;
+        let i = m.index + m[0].length - 1; // index of the opening '('
+        const start = i;
+        for (; i < src.length; i++) {
+            if (src[i] === '(') depth++;
+            else if (src[i] === ')') {
+                depth--;
+                if (depth === 0) break;
+            }
+        }
+        out.push(src.slice(start + 1, i));
+    }
+    return out;
+}
 
 describe('Retention Hardening — CI guardrail', () => {
-    test('readiness scoring file does NOT query evidence without isArchived filter', () => {
-        const content = fs.readFileSync(
-            path.join(SRC_ROOT, 'app-layer/usecases/audit-readiness-scoring.ts'), 'utf-8'
-        );
-        // Find all evidence query blocks (those with 'where' nearby), each should have isArchived filter
-        // Use regex to find evidence relation queries: evidence: { where: ... select: ... }
-        const evidenceQueryPattern = /evidence:\s*\{[^}]*where:/g;
-        const matches = content.match(evidenceQueryPattern);
-        // Must have at least 2 (ISO + NIS2)
-        expect(matches?.length).toBeGreaterThanOrEqual(2);
-        // Each match must include isArchived
-        for (const match of matches || []) {
-            expect(match).toBeDefined();
+    test('dashboard evidence roll-ups never query evidence without isArchived + deletedAt filters', () => {
+        const content = fs.readFileSync(DASHBOARD_REPO, 'utf-8');
+        const calls = evidenceCallArgs(content);
+
+        // Floor kept at the original guard's 2 (it is a floor, not a
+        // census); measured value at the time of writing is 6 — five
+        // `count`s in getEvidenceExpiry plus one `findMany` in
+        // getUpcomingExpirations.
+        expect(calls.length).toBeGreaterThanOrEqual(2);
+
+        // Every one of them must be archive- and soft-delete-aware,
+        // either inline or via the shared `base` where-fragment.
+        for (const args of calls) {
+            const viaBase = /\.\.\.base\b/.test(args);
+            expect(viaBase || /isArchived/.test(args)).toBe(true);
+            expect(viaBase || /deletedAt/.test(args)).toBe(true);
         }
+
+        // …and the shared fragment itself must carry both filters, or the
+        // `...base` escape above would be a hole.
+        expect(content).toMatch(/const base = \{[^}]*deletedAt: null[^}]*isArchived: false[^}]*\}/);
     });
 
     test('notification job is idempotent — checks for existing tasks', () => {

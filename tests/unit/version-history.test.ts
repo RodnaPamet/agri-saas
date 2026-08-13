@@ -310,62 +310,12 @@ describe('Metadata JSON serialization', () => {
 });
 
 // ─── Integration: Rule-of-Three with applyMigrationStrategy ─────────
-
-describe('rule-of-three with version history (integrated)', () => {
-    // Use the updater to verify the wiring
-
-    const { applyMigrationStrategy, computeRequirementDiff } = require('@/app-layer/services/library-updater');
-
-    it('should suppress removals when history has < 3 entries', () => {
-        const diff = computeRequirementDiff(
-            [{ code: 'R1', title: 'A' }, { code: 'R2', title: 'B' }],
-            [{ code: 'R1', title: 'A' }], // R2 removed
-        );
-        const history = buildHistory([{ version: 1 }, { version: 2 }]);
-        const result = applyMigrationStrategy(diff, 'rule-of-three', history);
-        expect(result.removed).toHaveLength(0);
-    });
-
-    it('should allow removal when stably absent for 3 versions', () => {
-        const diff = computeRequirementDiff(
-            [{ code: 'R1', title: 'A' }, { code: 'R2', title: 'B' }],
-            [{ code: 'R1', title: 'A' }], // R2 removed
-        );
-        const history = buildHistory([
-            { version: 1, requirementCodes: ['R1', 'R2'], removedCodes: [] },
-            { version: 2, requirementCodes: ['R1'],       removedCodes: ['R2'] },
-            { version: 3, requirementCodes: ['R1'],       removedCodes: [] },
-            { version: 4, requirementCodes: ['R1'],       removedCodes: [] },
-        ]);
-        const result = applyMigrationStrategy(diff, 'rule-of-three', history);
-        expect(result.removed).toHaveLength(1);
-        expect(result.removed[0].code).toBe('R2');
-    });
-
-    it('should suppress removal of recently removed code (< 3 versions)', () => {
-        const diff = computeRequirementDiff(
-            [{ code: 'R1', title: 'A' }, { code: 'R2', title: 'B' }],
-            [{ code: 'R1', title: 'A' }],
-        );
-        const history = buildHistory([
-            { version: 1, requirementCodes: ['R1', 'R2'], removedCodes: [] },
-            { version: 2, requirementCodes: ['R1', 'R2'], removedCodes: [] },
-            { version: 3, requirementCodes: ['R1'],       removedCodes: ['R2'] },
-            { version: 4, requirementCodes: ['R1'],       removedCodes: [] },
-        ]);
-        // R2 only absent in v3 and v4 (2 versions, threshold is 3)
-        const result = applyMigrationStrategy(diff, 'rule-of-three', history);
-        expect(result.removed).toHaveLength(0);
-    });
-
-    it('should still work without history (backward compatible)', () => {
-        const diff = computeRequirementDiff(
-            [{ code: 'R1', title: 'A' }],
-            [{ code: 'R1', title: 'A' }, { code: 'R2', title: 'B' }],
-        );
-        // No history provided at all
-        const result = applyMigrationStrategy(diff, 'rule-of-three');
-        expect(result.added).toHaveLength(1);
-        expect(result.removed).toHaveLength(0);
-    });
-});
+//
+// GRC teardown phase 2 deleted `@/app-layer/services/library-updater`
+// (the framework-library import/diff service) along with the Framework
+// model it updated, so the four `applyMigrationStrategy` wiring tests
+// that lived here have no subject left to exercise. The pure
+// rule-of-three analysis they were wired into — `getStablyRemovedCodes`
+// / `getStablyAddedCodes` / `getStablyChangedCodes` — lives in
+// `@/app-layer/libraries/version-history`, which survives, and is
+// still covered directly by the describes above.

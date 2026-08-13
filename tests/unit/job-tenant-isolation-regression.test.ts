@@ -50,7 +50,8 @@ beforeEach(() => {
 });
 
 // ═════════════════════════════════════════════════════════════════════
-// 1. vendor-renewal-check — REGRESSION for original bug
+// 1. task-due-notification — REGRESSION for the original bug class
+//    (it was vendor-renewal-check until GRC teardown phase 2)
 // ═════════════════════════════════════════════════════════════════════
 
 // GRC teardown phase 2 (T3): the vendor-renewal-check and
@@ -209,10 +210,16 @@ describe('Executor Registry — structural tenant-scope guards', () => {
         expect(violations).toEqual([]);
     });
 
+    // GRC teardown phase 2 deleted services/vendor-renewals.ts and
+    // jobs/policyReviewReminder.ts with their jobs. Re-pointed at the
+    // surviving tenant-scoped scanners so the "the service actually applies
+    // the tenantId it was handed" half of the contract is still enforced —
+    // the structural guards above only prove the EXECUTOR passes it down.
     test('service files for tenant-scoped jobs contain tenantId filtering', () => {
         const serviceFiles = [
-            { name: 'vendor-renewals', path: '../../src/app-layer/services/vendor-renewals.ts', pattern: /tenantFilter/ },
-            { name: 'policyReviewReminder', path: '../../src/app-layer/jobs/policyReviewReminder.ts', pattern: /where\.tenantId\s*=\s*tenantId/ },
+            { name: 'deadline-monitor', path: '../../src/app-layer/jobs/deadline-monitor.ts', pattern: /where\.tenantId\s*=\s*tenantId/ },
+            { name: 'evidence-expiry-monitor', path: '../../src/app-layer/jobs/evidence-expiry-monitor.ts', pattern: /Where\.tenantId\s*=\s*tenantId/ },
+            { name: 'task-due-notification', path: '../../src/app-layer/jobs/task-due-notification.ts', pattern: /where\.tenantId\s*=\s*tenantId/ },
         ];
 
         for (const svc of serviceFiles) {

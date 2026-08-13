@@ -29,6 +29,14 @@ const PAGES_ROOT = path.join(ROOT, 'src/app/t/[tenantSlug]/(app)');
  * DataTable-backed list pages that must be on the shared filter system.
  * Add new pages here as they land — the rest of the guardrail runs against
  * this single list so the rollout expectation is legible.
+ *
+ * GRC teardown phase 2 removed the `practices`, `policies` and `vendors`
+ * entries along with their pages — those three surfaces were deleted with
+ * the inherited GRC models, so there is nothing left to hold on the shared
+ * filter stack. The agri list pages below are untouched and every
+ * invariant still applies to them; the tree-wide CompactFilterBar scan at
+ * the bottom of this file is unchanged, so a *new* page that reaches for
+ * the legacy stack still fails CI.
  */
 const MIGRATED_PAGES: Array<{
     dir: string;
@@ -36,11 +44,8 @@ const MIGRATED_PAGES: Array<{
     /** Set when the page uses useUrlFilters for a non-filter view slot. */
     allowLegacyUrlFilterScope?: string[];
 }> = [
-    { dir: 'practices', client: 'PracticesClient.tsx' },
     { dir: 'evidence', client: 'EvidenceClient.tsx', allowLegacyUrlFilterScope: ['tab', 'view'] },
-    { dir: 'policies', client: 'PoliciesClient.tsx' },
     { dir: 'farm-tasks', client: 'FarmTasksClient.tsx' },
-    { dir: 'vendors', client: 'VendorsClient.tsx' },
     { dir: 'assets', client: 'AssetsClient.tsx' },
 ];
 

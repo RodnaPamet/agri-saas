@@ -37,26 +37,20 @@ beforeEach(() => {
     jest.mock('@/lib/observability/job-runner', () => ({
         runJob: jest.fn(async (_name: string, fn: () => Promise<unknown>) => fn()),
     }));
+    // GRC teardown phase 2: the risk / practiceTestPlan scanners, the
+    // vendor-renewal check, the Epic 49 calendar-deadlines monitor
+    // (auditCycle / vendorDocument / finding) and the Epic G-7
+    // treatment-plan + milestone scanners all went with their models, so
+    // their model stubs went too. What a dispatch run can still touch is
+    // practice / policy / task (deadline-monitor) + evidence
+    // (evidence-expiry-monitor), plus the notification infra below.
     jest.mock('@/lib/prisma', () => ({
         __esModule: true,
         default: {
             practice: { findMany: jest.fn().mockResolvedValue([]) },
             policy: { findMany: jest.fn().mockResolvedValue([]) },
             task: { findMany: jest.fn().mockResolvedValue([]) },
-            risk: { findMany: jest.fn().mockResolvedValue([]) },
-            practiceTestPlan: { findMany: jest.fn().mockResolvedValue([]) },
             evidence: { findMany: jest.fn().mockResolvedValue([]) },
-            vendor: { findMany: jest.fn().mockResolvedValue([]) },
-            // Epic 49 calendar-deadlines monitor sources.
-            auditCycle: { findMany: jest.fn().mockResolvedValue([]) },
-            vendorDocument: { findMany: jest.fn().mockResolvedValue([]) },
-            finding: { findMany: jest.fn().mockResolvedValue([]) },
-            // Epic G-7
-            riskTreatmentPlan: {
-                findMany: jest.fn().mockResolvedValue([]),
-                updateMany: jest.fn().mockResolvedValue({ count: 0 }),
-            },
-            treatmentMilestone: { findMany: jest.fn().mockResolvedValue([]) },
             user: { findMany: jest.fn().mockResolvedValue([]) },
             tenantMembership: { findMany: jest.fn().mockResolvedValue([]) },
             tenant: { findUnique: jest.fn().mockResolvedValue({ slug: 'test' }) },
@@ -67,20 +61,7 @@ beforeEach(() => {
             practice: { findMany: jest.fn().mockResolvedValue([]) },
             policy: { findMany: jest.fn().mockResolvedValue([]) },
             task: { findMany: jest.fn().mockResolvedValue([]) },
-            risk: { findMany: jest.fn().mockResolvedValue([]) },
-            practiceTestPlan: { findMany: jest.fn().mockResolvedValue([]) },
             evidence: { findMany: jest.fn().mockResolvedValue([]) },
-            vendor: { findMany: jest.fn().mockResolvedValue([]) },
-            // Epic 49 calendar-deadlines monitor sources.
-            auditCycle: { findMany: jest.fn().mockResolvedValue([]) },
-            vendorDocument: { findMany: jest.fn().mockResolvedValue([]) },
-            finding: { findMany: jest.fn().mockResolvedValue([]) },
-            // Epic G-7
-            riskTreatmentPlan: {
-                findMany: jest.fn().mockResolvedValue([]),
-                updateMany: jest.fn().mockResolvedValue({ count: 0 }),
-            },
-            treatmentMilestone: { findMany: jest.fn().mockResolvedValue([]) },
             user: { findMany: jest.fn().mockResolvedValue([]) },
             tenantMembership: { findMany: jest.fn().mockResolvedValue([]) },
             tenant: { findUnique: jest.fn().mockResolvedValue({ slug: 'test' }) },
@@ -126,10 +107,12 @@ describe('Schedule: no duplicate monitor jobs', () => {
     });
 
     test('monitors remain registered in executor registry for ad-hoc use', async () => {
+        // vendor-renewal-check left this list in GRC teardown phase 2; the
+        // test directly above now asserts its ABSENCE from both registries,
+        // so the name is still covered — by the opposite expectation.
         const { executorRegistry } = await import('../../src/app-layer/jobs/executor-registry');
         expect(executorRegistry.has('deadline-monitor')).toBe(true);
         expect(executorRegistry.has('evidence-expiry-monitor')).toBe(true);
-        expect(executorRegistry.has('vendor-renewal-check')).toBe(true);
     });
 });
 
@@ -209,9 +192,11 @@ describe('notification-dispatch: monitors run exactly once per dispatch', () => 
         );
         await runNotificationDispatch({});
 
-        // deadline-monitor scans 5 entity types (practice, policy, task, risk, testPlan)
-        // evidence-expiry scans evidence (2 queries: retentionUntil + expired)
-        // vendor scans vendor (4 queries)
+        // deadline-monitor scans 3 entity types (practice, policy, task) —
+        //   the risk + testPlan scanners went with their models in GRC
+        //   teardown phase 2, as did the vendor monitor entirely.
+        // evidence-expiry scans evidence (3 queries: retentionUntil +
+        //   expired + nextReviewDate)
         // Total: should be exactly one run of each monitor
         // The key assertion: no entity table is scanned more than its expected count
 
@@ -268,10 +253,12 @@ describe('Structural: notification-dispatch uses single-pass architecture', () =
             'utf8',
         );
 
-        // Each category should have a precomputed check
+        // Each SURVIVING category should have a precomputed check.
+        // GRC teardown phase 2 removed the VENDOR_RENEWAL_DIGEST leg with
+        // the Vendor model, so `precomputed?.vendorItems` is no longer read
+        // anywhere — the assertion went with the branch it described.
         expect(source).toContain('precomputed?.deadlineItems');
         expect(source).toContain('precomputed?.evidenceItems');
-        expect(source).toContain('precomputed?.vendorItems');
     });
 
     test('schedules.ts does not include standalone monitor jobs', () => {

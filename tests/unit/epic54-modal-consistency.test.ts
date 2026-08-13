@@ -41,13 +41,11 @@ interface ModalSurface {
     expectedSize: 'sm' | 'md' | 'lg' | 'xl';
 }
 
+// GRC teardown phase 2 removed the "Create Practice" modal along with
+// the whole practices surface (model + pages + routes). The evidence
+// modals below are the surviving Epic 54 CRUD surfaces and carry the
+// same consistency bar.
 const MODAL_SURFACES: ModalSurface[] = [
-    {
-        label: 'Create Practice',
-        file: 'src/app/t/[tenantSlug]/(app)/practices/NewPracticeModal.tsx',
-        cacheKey: 'queryKeys.practices.all',
-        expectedSize: 'lg',
-    },
     {
         label: 'Upload Evidence',
         file: 'src/app/t/[tenantSlug]/(app)/evidence/UploadEvidenceModal.tsx',
@@ -119,16 +117,75 @@ describe('Epic 54 — modal surface consistency', () => {
 interface SheetSurface {
     label: string;
     file: string;
-    expectedSize: 'sm' | 'md' | 'lg' | 'xl';
+    /**
+     * The declared `size` variant, or `null` when the surface rides the
+     * primitive's default width on purpose (say why in `sizeReason`).
+     */
+    expectedSize: 'sm' | 'md' | 'lg' | 'xl' | null;
+    sizeReason?: string;
+    /**
+     * `true` when the sheet owns a save/confirm footer, which MUST be
+     * composed as `<Sheet.Actions>` rather than hand-placed buttons.
+     * `false` for read-only drill-downs (say why in `actionsReason`).
+     */
+    expectsActions: boolean;
+    actionsReason?: string;
+    /**
+     * The query key the sheet invalidates after a write. Empty string
+     * for surfaces that don't mutate (the parent owns the pipeline).
+     */
     cacheKey: string;
 }
 
+// GRC teardown phase 2 deleted the practice detail sheet — the only
+// entry this registry used to carry. Re-pointed at the four surviving
+// dedicated Sheet surfaces so the Epic 54 bound (shared primitive,
+// no bespoke overlay, Header/Body composition, Actions footer, cache
+// invalidation on write) is still enforced against live code rather
+// than dropped.
 const SHEET_SURFACES: SheetSurface[] = [
     {
-        label: 'Practice detail sheet',
-        file: 'src/app/t/[tenantSlug]/(app)/practices/PracticeDetailSheet.tsx',
+        label: 'Evidence detail sheet',
+        file: 'src/app/t/[tenantSlug]/(app)/evidence/EvidenceDetailSheet.tsx',
         expectedSize: 'md',
-        cacheKey: 'queryKeys.practices.all',
+        expectsActions: false,
+        actionsReason:
+            'Composes <Sheet.Footer> (:277-381) with the review actions — ' +
+            'Edit / Submit / Resubmit / Reject / Approve — rather than ' +
+            '<Sheet.Actions>. It is NOT read-only and it is NOT footer-less; ' +
+            'the two primitives are siblings and this surface picked the ' +
+            'lower-level one. Recorded as a real deviation from the Epic 54 ' +
+            'shape, not as an exemption on the merits: migrating it to ' +
+            '<Sheet.Actions> would let this flag flip to true.',
+        cacheKey: '',
+    },
+    {
+        label: 'Grain deliveries sheet',
+        file: 'src/app/t/[tenantSlug]/(app)/grain/contracts/DeliveriesSheet.tsx',
+        expectedSize: 'md',
+        expectsActions: false,
+        actionsReason:
+            'The add-delivery form submits from inside Sheet.Body (an inline ' +
+            'row-append form, not a modal-style confirm footer).',
+        cacheKey: 'listKey',
+    },
+    {
+        label: 'Automation rule detail sheet',
+        file: 'src/components/processes/RuleDetailSheet.tsx',
+        expectedSize: null,
+        sizeReason: 'Rides the Sheet default width — no size override.',
+        expectsActions: true,
+        cacheKey: '',
+    },
+    {
+        label: 'Parcel detail sheet',
+        file: 'src/components/ui/map/ParcelDetailSheet.tsx',
+        expectedSize: null,
+        sizeReason:
+            'A bottom drawer (`direction="bottom"`) over the map — width is ' +
+            'the viewport, so no size variant applies.',
+        expectsActions: true,
+        cacheKey: '',
     },
 ];
 
@@ -142,19 +199,27 @@ describe('Epic 54 — sheet surface consistency', () => {
 
         it('imports the shared <Sheet> primitive', () => {
             expect(src).toMatch(/from ['"]@\/components\/ui\/sheet['"]/);
+            expect(src).not.toMatch(/fixed\s+inset-0[^"'`]*bg-black/);
         });
 
-        it('composes Sheet.Header + Sheet.Body + Sheet.Actions', () => {
+        it('composes Sheet.Header + Sheet.Body', () => {
             expect(src).toMatch(/<Sheet\.Header\b/);
             expect(src).toMatch(/<Sheet\.Body\b/);
-            expect(src).toMatch(/<Sheet\.Actions\b/);
         });
 
-        it(`uses size="${surface.expectedSize}"`, () => {
-            expect(src).toMatch(
-                new RegExp(`size=["']${surface.expectedSize}["']`),
-            );
-        });
+        if (surface.expectsActions) {
+            it('composes its footer as <Sheet.Actions>', () => {
+                expect(src).toMatch(/<Sheet\.Actions\b/);
+            });
+        }
+
+        if (surface.expectedSize) {
+            it(`uses size="${surface.expectedSize}"`, () => {
+                expect(src).toMatch(
+                    new RegExp(`size=["']${surface.expectedSize}["']`),
+                );
+            });
+        }
 
         if (surface.cacheKey) {
             it(`invalidates ${surface.cacheKey} on save`, () => {

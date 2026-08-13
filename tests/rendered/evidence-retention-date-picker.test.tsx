@@ -1,17 +1,20 @@
 /**
  * Epic 58 — single-date picker rollout tests.
  *
- * Covers the three highest-value form fields migrated from a native
+ * Covers the highest-value form fields migrated from a native
  * `<input type="date">` to the shared `<DatePicker>`:
  *
  *   - Upload Evidence modal's "Retain until" field.
- *   - Evidence list's inline retention-edit.
- *   - Policy detail page's "Next review" field.
+ *   - Evidence list's inline retention-edit (now the Edit modal).
+ *
+ * GRC teardown phase 2 deleted the policy detail page, so its
+ * "Next review" field — the third rollout surface this file covered —
+ * has no subject left. The evidence surfaces are untouched.
  *
  * These are structural contract checks. They fail loudly if a future
  * refactor drops the shared picker (e.g. for a new native input) or
- * breaks the YMD ↔ ISO bridging the retention / policy-review APIs
- * have always consumed. The DatePicker's own behaviour is exercised
+ * breaks the YMD ↔ ISO bridging the retention API
+ * has always consumed. The DatePicker's own behaviour is exercised
  * separately by `tests/rendered/date-pickers.test.tsx` and
  * `tests/rendered/date-picker-ui.test.tsx`.
  */
@@ -33,11 +36,11 @@ const EVIDENCE_CLIENT =
 // the evidence Edit modal (2026-06-05). The DatePicker now lives here.
 const EDIT_EVIDENCE_MODAL =
     'src/app/t/[tenantSlug]/(app)/evidence/EditEvidenceModal.tsx';
-const POLICY_DETAIL =
-    'src/app/t/[tenantSlug]/(app)/policies/[policyId]/page.tsx';
+// GRC teardown phase 2 removed POLICY_DETAIL
+// (`.../(app)/policies/[policyId]/page.tsx`) with the Policy model.
 
 // Surfaces that carry a retention/expiry DatePicker.
-const DATE_PICKER_FILES = [EVIDENCE_UPLOAD, EDIT_EVIDENCE_MODAL, POLICY_DETAIL];
+const DATE_PICKER_FILES = [EVIDENCE_UPLOAD, EDIT_EVIDENCE_MODAL];
 // Surfaces that must never reintroduce a native <input type="date">.
 const EVIDENCE_FILES = [EVIDENCE_UPLOAD, EVIDENCE_CLIENT, EDIT_EVIDENCE_MODAL];
 
@@ -119,11 +122,10 @@ describe('Epic 58 — DatePicker call-site invariants', () => {
             src: read(EDIT_EVIDENCE_MODAL),
             datePickerBlocks: [],
         },
-        {
-            label: 'PolicyDetail',
-            src: read(POLICY_DETAIL),
-            datePickerBlocks: [],
-        },
+        // GRC teardown phase 2 removed the PolicyDetail site with the
+        // policy detail page. The two evidence sites keep every
+        // call-site invariant (clearable / disabledDays / YMD bridging)
+        // under assertion.
     ];
     for (const s of sites) {
         s.datePickerBlocks = findDatePickerBlocks(s.src);
@@ -205,11 +207,6 @@ describe('Epic 58 — existing API contracts preserved', () => {
         expect(src).toMatch(/retention-status-\$\{ev\.id\}/);
     });
 
-    it('Policy "Next review" picker retains the canonical field id for the save handler', () => {
-        const src = read(POLICY_DETAIL);
-        // `nextReview` state + the save handler that posts it are
-        // unchanged; only the visible widget migrated.
-        expect(src).toMatch(/setNextReview\(/);
-        expect(src).toMatch(/id=["']policy-next-review-input["']/);
-    });
+    // GRC teardown phase 2 removed the policy "Next review" field-id
+    // contract along with the policy detail page.
 });

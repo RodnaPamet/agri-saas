@@ -1,9 +1,17 @@
 /**
- * Epic 69 wave #4 — structural pins for the policies / tasks /
- * vendors SWR-first migration.
+ * Epic 69 wave #4 — structural pins for the SWR-first list pages.
  *
- * Same ratchet shape as evidence-risks-swr-migration.test.ts. Each
- * file passes the four-pin contract:
+ * Originally pinned the policies / tasks / vendors clients. GRC
+ * teardown phase 2 deleted the policies + vendors pages with their
+ * models (tasks had already been retired into /farm-tasks), which
+ * would have left this ratchet with an empty registry. Rather than
+ * drop the regression class, it is RE-POINTED at JournalClient —
+ * the surviving list page that carries the identical contract
+ * (useTenantSWR + CACHE_KEYS list key + qs suffix + fallbackData
+ * gated by filtersMatchInitial, zero React Query). Every pin below
+ * is unchanged in strength; only the subject moved.
+ *
+ * Each file passes the four-pin contract:
  *
  *   1. Reads via `useTenantSWR(CACHE_KEYS.<resource>.list())` with a
  *      filter-aware query-string suffix on the key.
@@ -29,23 +37,23 @@ interface ListPageContract {
     label: string;
     filePath: string;
     cacheKey: string;
+    /**
+     * The exact expression interpolated after the `?` in the SWR key,
+     * so the query-string-suffix pin stays an exact-substring match
+     * rather than a loose regex.
+     */
+    keySuffixExpr: string;
     /** Whether the page also writes (mutation present). */
     hasMutation: boolean;
 }
 
 const LIST_PAGES: readonly ListPageContract[] = [
     {
-        label: 'PoliciesClient',
+        label: 'JournalClient',
         filePath:
-            'src/app/t/[tenantSlug]/(app)/policies/PoliciesClient.tsx',
-        cacheKey: 'CACHE_KEYS.policies.list()',
-        hasMutation: false,
-    },
-    {
-        label: 'VendorsClient',
-        filePath:
-            'src/app/t/[tenantSlug]/(app)/vendors/VendorsClient.tsx',
-        cacheKey: 'CACHE_KEYS.vendors.list()',
+            'src/app/t/[tenantSlug]/(app)/journal/JournalClient.tsx',
+        cacheKey: 'CACHE_KEYS.journal.list()',
+        keySuffixExpr: 'p.toString()',
         hasMutation: false,
     },
 ] as const;
@@ -65,7 +73,7 @@ function stripComments(src: string): string {
 
 describe.each(LIST_PAGES)(
     '$label — Epic 69 SWR migration',
-    ({ label, filePath, cacheKey, hasMutation }) => {
+    ({ label, filePath, cacheKey, keySuffixExpr, hasMutation }) => {
         it(`reads via useTenantSWR keyed at ${cacheKey}`, () => {
             const src = read(filePath);
             expect(src).toContain("from '@/lib/hooks/use-tenant-swr'");
@@ -75,13 +83,15 @@ describe.each(LIST_PAGES)(
 
         it('threads filters into the SWR key via a query-string suffix', () => {
             const src = read(filePath);
-            // The key derivation builds `${list()}?${qs}` so each
+            // The key derivation builds `${list()}?${<suffix>}` so each
             // filter combo gets its own cache entry. The rendered
             // source contains the literal substring
-            // `${CACHE_KEYS.X.list()}?${qs}` — match it as a plain
+            // `${CACHE_KEYS.X.list()}?${<suffix>}` — match it as a plain
             // string to dodge the regex-escape edge case CodeQL
             // flags on ad-hoc `.replace(/[.()]/g, '\\$&')` patterns.
-            expect(src).toContain(`${cacheKey}}?\${qs}`);
+            // The suffix expression is declared per page so this stays
+            // an exact match after the GRC-teardown re-point.
+            expect(src).toContain(`${cacheKey}}?\${${keySuffixExpr}}`);
         });
 
         it('passes server-rendered data as fallbackData', () => {

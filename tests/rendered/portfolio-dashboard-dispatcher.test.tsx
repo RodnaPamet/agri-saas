@@ -211,28 +211,33 @@ describe('Epic 41 — DispatchedWidget per (type, chartType)', () => {
         });
         render(<DispatchedWidget widget={widget} data={makeData()} />);
         expect(screen.getByText('Drill-down')).toBeInTheDocument();
-        expect(
-            screen.getByTestId('org-drilldown-practices').getAttribute('href'),
-        ).toBe('/org/acme-org/practices');
+        // GRC teardown phase 2 removed the 'practices' tile — its href
+        // pointed at /org/:slug/practices, a deleted route, so the tile was
+        // a live 404. 'evidence' is the surviving drill-down.
         expect(
             screen.getByTestId('org-drilldown-evidence').getAttribute('href'),
         ).toBe('/org/acme-org/evidence');
+        expect(screen.queryByTestId('org-drilldown-practices')).toBeNull();
     });
 
     it('DRILLDOWN_CTAS respects entries config (subset rendering)', () => {
         const widget = makeWidget({
             type: 'DRILLDOWN_CTAS',
             chartType: 'default',
-            config: { entries: ['practices'] },
+            config: { entries: ['evidence'] },
             title: 'Drill-down',
             size: { w: 12, h: 2 },
         });
         render(<DispatchedWidget widget={widget} data={makeData()} />);
+        // The subset contract still holds — an explicit `entries` list
+        // renders exactly those tiles. With only one surviving CTA the
+        // assertion is that the named one renders and the deleted one
+        // cannot come back.
         expect(
-            screen.getByTestId('org-drilldown-practices'),
+            screen.getByTestId('org-drilldown-evidence'),
         ).toBeInTheDocument();
         expect(
-            screen.queryByTestId('org-drilldown-evidence'),
+            screen.queryByTestId('org-drilldown-practices'),
         ).toBeNull();
     });
 });

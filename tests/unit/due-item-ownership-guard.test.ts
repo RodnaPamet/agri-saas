@@ -127,21 +127,21 @@ describe('Structural: all DueItem producers wire ownerUserId', () => {
     const { readFileSync } = require('fs');
     const { resolve } = require('path');
 
+    // GRC teardown phase 2 deleted jobs/vendor-renewal-check.ts (the only
+    // VENDOR producer) and, inside deadline-monitor, the Risk and
+    // PracticeTestPlan scanners. Both remaining producers are scanned in
+    // full — nothing about the ownership contract was relaxed, the set of
+    // files that can violate it just got smaller.
     const PRODUCER_FILES = [
         {
             name: 'deadline-monitor',
             path: '../../src/app-layer/jobs/deadline-monitor.ts',
-            expectedEntityTypes: ['PRACTICE', 'POLICY', 'TASK', 'RISK', 'TEST_PLAN'],
+            expectedEntityTypes: ['PRACTICE', 'POLICY', 'TASK'],
         },
         {
             name: 'evidence-expiry-monitor',
             path: '../../src/app-layer/jobs/evidence-expiry-monitor.ts',
             expectedEntityTypes: ['EVIDENCE'],
-        },
-        {
-            name: 'vendor-renewal-check',
-            path: '../../src/app-layer/jobs/vendor-renewal-check.ts',
-            expectedEntityTypes: ['VENDOR'],
         },
     ];
 
@@ -183,7 +183,7 @@ describe('Structural: all DueItem producers wire ownerUserId', () => {
         });
     }
 
-    test('all MonitoredEntityTypes are covered by at least one producer', () => {
+    test('every PRODUCED MonitoredEntityType is covered by at least one producer', () => {
         const coveredTypes = new Set<string>();
         for (const producer of PRODUCER_FILES) {
             for (const et of producer.expectedEntityTypes) {
@@ -191,11 +191,17 @@ describe('Structural: all DueItem producers wire ownerUserId', () => {
             }
         }
 
-        const ALL_TYPES: MonitoredEntityType[] = [
-            'PRACTICE', 'EVIDENCE', 'POLICY', 'VENDOR', 'TASK', 'RISK', 'TEST_PLAN',
+        // The MonitoredEntityType union in jobs/types.ts still carries
+        // VENDOR / RISK / TEST_PLAN / TREATMENT_* — GRC teardown phase 2 took
+        // their SCANNERS, and phase 3 takes the union members with the schema.
+        // Asserting a producer for a type nothing can produce would fail on a
+        // deletion that is the intended outcome, so this list is the set of
+        // types a surviving job actually emits.
+        const PRODUCED_TYPES: MonitoredEntityType[] = [
+            'PRACTICE', 'EVIDENCE', 'POLICY', 'TASK',
         ];
 
-        const uncovered = ALL_TYPES.filter(t => !coveredTypes.has(t));
+        const uncovered = PRODUCED_TYPES.filter(t => !coveredTypes.has(t));
         expect(uncovered).toEqual([]);
     });
 });
@@ -239,16 +245,10 @@ describe('Structural: scanner queries select owner fields', () => {
         }
     });
 
-    test('vendor-renewals: queries select ownerUserId', () => {
-        const source = readFileSync(
-            resolve(__dirname, '../../src/app-layer/services/vendor-renewals.ts'), 'utf8'
-        );
-
-        const selectBlocks = source.match(/select:\s*\{[\s\S]*?\}/g) || [];
-        expect(selectBlocks.length).toBeGreaterThanOrEqual(4);
-
-        for (const block of selectBlocks) {
-            expect(block).toContain('ownerUserId');
-        }
-    });
+    // A third case scanned services/vendor-renewals.ts, deleted in GRC
+    // teardown phase 2 with the Vendor model. Deliberately NOT re-pointed:
+    // the two tests above already assert exactly this bound ("every select
+    // block in a DueItem producer names an owner field") against both
+    // surviving producers, so a replacement would be a third copy of an
+    // assertion that is already enforced everywhere it can apply.
 });

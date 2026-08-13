@@ -26,9 +26,16 @@ function fileExists(filePath: string): boolean {
 
 // ─── 1. Route handler pagination support ───
 
+// GRC teardown phase 2 deleted the practices / policies / vendors API
+// routes along with their models, so those three entities left this list.
+// The surviving agri list endpoints below still carry the full contract
+// (paginated usecase + Zod-bounded limit + cursor), and the same list
+// drives both the section-1 support check and the section-4 limit-bound
+// check, so a new unbounded `limit` on any of them still fails CI.
+const CORE_ENTITIES = ['evidence', 'tasks', 'assets'];
+
 describe('Guardrail: All core list endpoints support pagination', () => {
     const ROUTE_BASE = path.join(SRC_ROOT, 'app', 'api', 't', '[tenantSlug]');
-    const CORE_ENTITIES = ['practices', 'evidence', 'tasks', 'policies', 'vendors', 'assets'];
 
     for (const entity of CORE_ENTITIES) {
         it(`GET /${entity} route handler must import paginated usecase or pagination lib`, () => {
@@ -59,14 +66,9 @@ describe('Guardrail: Core list pages must not use useEffect(() => fetch(...))', 
 
     // Core list pages that should be RSC or at minimum should not fetch-all-on-mount
     // Detail pages ([id]/page.tsx) and dashboards are excluded — they may legitimately use client fetch
-    const CORE_LIST_PAGES = [
-        'practices',
-        'evidence',
-        'tasks',
-        'policies',
-        'vendors',
-        'assets',
-    ];
+    // Same GRC teardown narrowing as CORE_ENTITIES above — practices /
+    // policies / vendors pages were deleted with their models.
+    const CORE_LIST_PAGES = ['evidence', 'tasks', 'assets'];
 
     // Known allowlist: pages that legitimately need useEffect fetch
     // (detail pages, dashboard aggregation, create wizards, etc.)
@@ -157,7 +159,6 @@ describe('Guardrail: clampLimit enforces pagination boundaries', () => {
 
 describe('Guardrail: Route handler Zod schemas must bound limit to max(100)', () => {
     const ROUTE_BASE = path.join(SRC_ROOT, 'app', 'api', 't', '[tenantSlug]');
-    const CORE_ENTITIES = ['practices', 'evidence', 'tasks', 'policies', 'vendors', 'assets'];
 
     for (const entity of CORE_ENTITIES) {
         it(`GET /${entity} route must use z.coerce.number() with .max(100) for limit`, () => {

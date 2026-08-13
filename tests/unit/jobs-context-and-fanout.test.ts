@@ -1,10 +1,13 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- standard test-mock pattern. */
 
 /**
- * Zero-coverage jobs, wave 4: `soil-fetch`, `sharepoint-delta-sync`,
- * `sharepoint-policy-jobs`.
+ * Zero-coverage jobs, wave 4: `soil-fetch`, `sharepoint-delta-sync`.
  *
- * Three job modules with no test importing them. They look like thin
+ * (`sharepoint-policy-jobs` was the third; GRC teardown phase 2 removed it
+ *  with the POLICY half of the SharePoint integration. The EVIDENCE
+ *  delta-sync below is untouched and still carries the same contracts.)
+ *
+ * Job modules with no test importing them. They look like thin
  * delegators, but each one privately builds the `RequestContext` its work
  * runs under — and that context is the **authorization boundary for
  * background work**. A request handler gets its context from an
@@ -23,9 +26,9 @@
  * single bad row cannot abort the sweep.
  */
 
+// `policy` left the mock with sharepoint-policy-jobs (GRC teardown phase 2).
 const mockPrisma = {
     tenantMembership: { findFirst: jest.fn(), findMany: jest.fn() },
-    policy: { findFirst: jest.fn(), findMany: jest.fn() },
     integrationConnection: { findMany: jest.fn() },
 };
 jest.mock('@/lib/prisma', () => ({ __esModule: true, default: mockPrisma }));
@@ -40,12 +43,9 @@ jest.mock('@/app-layer/integrations/providers/sharepoint/import', () => ({
     runSharePointDeltaSync: (...a: unknown[]) => mockRunSharePointDeltaSync(...a),
 }));
 
-const mockPullPolicyFromSharePoint = jest.fn();
-const mockGetSharePointClientForTenant = jest.fn();
-jest.mock('@/app-layer/usecases/policy-sharepoint-sync', () => ({
-    pullPolicyFromSharePoint: (...a: unknown[]) => mockPullPolicyFromSharePoint(...a),
-    getSharePointClientForTenant: (...a: unknown[]) => mockGetSharePointClientForTenant(...a),
-}));
+// The `@/app-layer/usecases/policy-sharepoint-sync` mock went with the
+// module itself in GRC teardown phase 2 — jest.mock on a path that no
+// longer resolves fails the whole suite at load, not just its own tests.
 
 const mockEnqueue = jest.fn();
 jest.mock('@/app-layer/jobs/queue', () => ({ enqueue: (...a: unknown[]) => mockEnqueue(...a) }));

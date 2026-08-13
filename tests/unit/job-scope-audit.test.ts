@@ -123,51 +123,47 @@ describe('Executor Registry — tenantId propagation audit', () => {
 // 2. Service API — tenantId acceptance audit
 // ═════════════════════════════════════════════════════════════════════
 
+// GRC teardown phase 2 removed `src/app-layer/services/vendor-renewals.ts`
+// and `src/app-layer/jobs/policyReviewReminder.ts` with the Vendor-renewal
+// and policy-review jobs. The bound they carried is NOT dropped — it is
+// RE-POINTED at the scanners that survive, so the original bug (a service
+// that silently widens from one tenant to every tenant) is still caught.
+//
+// The re-pointed form is also stronger than what it replaces: instead of
+// "at least N tenantFilter spreads" it DERIVES the expected count from the
+// file's own `findMany` calls, so a new unscoped scanner fails immediately
+// rather than sliding under a hand-written floor.
 describe('Service API — tenantId acceptance audit', () => {
     const services = [
-        {
-            name: 'vendor-renewals',
-            path: 'src/app-layer/services/vendor-renewals.ts',
-            expectedPattern: /tenantId/,
-        },
-        {
-            name: 'policyReviewReminder',
-            path: 'src/app-layer/jobs/policyReviewReminder.ts',
-            expectedPattern: /tenantId/,
-        },
+        { name: 'deadline-monitor', path: 'src/app-layer/jobs/deadline-monitor.ts' },
+        { name: 'evidence-expiry-monitor', path: 'src/app-layer/jobs/evidence-expiry-monitor.ts' },
+        { name: 'task-due-notification', path: 'src/app-layer/jobs/task-due-notification.ts' },
     ];
 
     for (const svc of services) {
-        test(`${svc.name} accepts tenantId in its API`, () => {
+        test(`${svc.name} accepts tenantId in its options API`, () => {
             const source = readFileSync(resolve(__dirname, '../../', svc.path), 'utf8');
-            expect(source).toMatch(svc.expectedPattern);
+            // An optional `tenantId?: string` on the options type is what makes
+            // the job addressable to one tenant at all.
+            expect(source).toMatch(/tenantId\?:\s*string/);
+        });
+
+        test(`${svc.name} applies tenantId to EVERY query it issues`, () => {
+            const source = readFileSync(resolve(__dirname, '../../', svc.path), 'utf8');
+
+            // Measured on the post-teardown sources (2026-08-12):
+            //   deadline-monitor       3 findMany / 3 `if (tenantId)`
+            //   evidence-expiry-monitor 3 findMany / 3 `if (tenantId)`
+            //   task-due-notification   1 findMany / 1 `if (tenantId)`
+            // Derived rather than hardcoded: adding a scanner without a
+            // tenant gate breaks the equality on the next run.
+            const queries = (source.match(/\.findMany\(/g) || []).length;
+            const tenantGates = (source.match(/if\s*\(tenantId\)/g) || []).length;
+
+            expect(queries).toBeGreaterThan(0);
+            expect(tenantGates).toBe(queries);
         });
     }
-
-    /**
-     * Verify that the vendor-renewals service uses tenantFilter pattern.
-     * This ensures the fix is structural, not just a parameter addition.
-     */
-    test('vendor-renewals service applies tenantFilter to queries', () => {
-        const source = readFileSync(
-            resolve(__dirname, '../../src/app-layer/services/vendor-renewals.ts'),
-            'utf8'
-        );
-        // Must spread tenantFilter into all 4 query where clauses
-        const filterApplications = (source.match(/\.\.\.tenantFilter/g) || []).length;
-        expect(filterApplications).toBeGreaterThanOrEqual(4);
-    });
-
-    /**
-     * Verify that policyReviewReminder adds tenantId to its where clause.
-     */
-    test('policyReviewReminder applies tenantId to query where', () => {
-        const source = readFileSync(
-            resolve(__dirname, '../../src/app-layer/jobs/policyReviewReminder.ts'),
-            'utf8'
-        );
-        expect(source).toMatch(/if\s*\(tenantId\)\s*where\.tenantId\s*=\s*tenantId/);
-    });
 });
 
 // ═════════════════════════════════════════════════════════════════════
