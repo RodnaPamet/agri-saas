@@ -132,7 +132,12 @@ export const SCHEDULED_JOBS: ScheduleDefinition[] = [
         // Manual/targeted single-source runs use the `source` payload field.
         name: 'market-prices-pull',
         pattern: '30 5 * * 1',     // weekly Monday at 05:30 UTC
-        description: 'Pull market prices (EC AGRI-food + Alpha Vantage + own-listings median) into the global market-price cache',
+        // Names all six sources deliberately. It listed three, which read as
+        // an exhaustive list and made the keyless diesel + fertiliser feeds
+        // look like they were on some other schedule when their charts were
+        // empty. `defaultPayload: {}` means no `source` filter, so the job
+        // runs every one of them.
+        description: 'Pull market prices (EC AGRI-food + EC Oil Bulletin + World Bank Pink Sheet + Alpha Vantage + Barchart + own-listings median) into the global market-price cache',
         defaultPayload: {},
     },
     // Intraday Barchart pull for near-real-time (10-15 min delayed) MATIF

@@ -165,12 +165,20 @@ describe('input commodities', () => {
     });
 
     it('classifies every slug in both lists — no unclassified commodity', () => {
+        // kind + category are uniform per group and asserted exactly. `feed`
+        // is NOT uniform (wheat is EC, oats is nothing, urea is the World
+        // Bank), so it is asserted as merely PRESENT here and its per-slug
+        // correctness is held against the real client constants in
+        // commodity-feed-consistency.test.ts — restating the mapping here
+        // would be a third copy to drift.
         for (const slug of CANONICAL_COMMODITIES) {
-            expect(commodityMeta(slug)).toEqual({ kind: 'output', category: 'grain' });
+            expect(commodityMeta(slug)).toMatchObject({ kind: 'output', category: 'grain' });
+            expect(commodityMeta(slug)?.feed).toBeDefined();
         }
-        expect(commodityMeta('diesel')).toEqual({ kind: 'input', category: 'fuel' });
+        expect(commodityMeta('diesel')).toMatchObject({ kind: 'input', category: 'fuel' });
         for (const slug of ['urea', 'dap', 'map', 'ammonium-nitrate']) {
-            expect(commodityMeta(slug)).toEqual({ kind: 'input', category: 'fertilizer' });
+            expect(commodityMeta(slug)).toMatchObject({ kind: 'input', category: 'fertilizer' });
+            expect(commodityMeta(slug)?.feed).toBeDefined();
         }
         expect(commodityMeta('not-a-commodity')).toBeNull();
     });
