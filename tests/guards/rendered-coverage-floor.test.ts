@@ -140,7 +140,18 @@ const ROOT = path.resolve(__dirname, '../..');
 // `trends-operator-hint.test.tsx`, covering the Prices tab's empty-state hint
 // per commodity feed — the branch that told an operator staring at an empty
 // urea chart to configure two env vars that cannot produce a urea row.
-const RENDERED_TEST_FLOOR = 216;
+//
+// Lowered 216 → 211 in GRC teardown phase 2 (2026-08-13). Five rendered
+// suites lost their subject entirely — every one is a deleted GRC surface,
+// and each was verified to have no surviving component to re-point at:
+//   audit-cycle-date-range   — the AuditCycle period picker (/audits gone)
+//   create-finding-modal     — the Finding create modal (/findings gone)
+//   policies-list-columns    — PoliciesClient's column set (/policies gone)
+//   traceability-panel-link  \ TraceabilityPanel, the cross-entity link/
+//   traceability-panel-undo  / unlink surface, deleted with the component
+// The Epic 67 undo-toast contract the two traceability suites also carried
+// survives on the other registered sites (see epic-67-rollout-coverage).
+const RENDERED_TEST_FLOOR = 211;
 // Lowered 55 → 54 in the risk-quantification uproot (2026-08-08).
 // `ai-risk-assessment.spec.ts` and `new-risk-modal.spec.ts` were both
 // wholly about the deleted register; the specs that merely REFERENCED a
