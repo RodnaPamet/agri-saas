@@ -273,6 +273,49 @@ function ecObservationsToItems(
     return items;
 }
 
+/** EC's country-wide row, recognised from either field it has lived in. */
+function isNationalAverageObs(o: EcObservation): boolean {
+    return `${o.market ?? ''} ${o.stage ?? ''}`.toLowerCase().includes('national average');
+}
+
+/**
+ * Keep only EC's country-wide rows — per (region), falling back to everything.
+ *
+ * EC publishes cereals PER MARKET (Burgas, Plovdiv, Varna, Ruse, Dobrich,
+ * Pleven, Stara Zagora) alongside a National Average. `ecObservationsToItems`
+ * keys a series on `stage` and DROPS `market`, so storing all of it produced
+ * twelve series in one Bulgarian wheat group: the national average, nine
+ * per-market rows under EC's old stage naming, and two under its new naming
+ * that are silently a MEDIAN across seven markets — an aggregation nobody
+ * chose and nothing documents. Only the national average is ever charted, so
+ * only the national average is worth storing.
+ *
+ * The per-region fallback is the load-bearing part. EC restructures its
+ * vocabulary — it did exactly that shortly before 2026-08-10, moving the
+ * market out of `stageName`, which changed our series key and orphaned nine
+ * Bulgarian wheat series mid-chart. A filter that can return NOTHING would
+ * turn the next such rename into the silent total loss of a commodity, which
+ * is a far worse failure than the noise it is removing. Sunflower relies on
+ * this today: the oilseeds endpoint publishes no country-wide row at all.
+ *
+ * Scoped per REGION because EC coverage genuinely differs by member state —
+ * BG having a national average must not empty EL, which does not.
+ */
+export function nationalAverageOnly(obs: EcObservation[]): EcObservation[] {
+    const byRegion = new Map<string, EcObservation[]>();
+    for (const o of obs) {
+        const rows = byRegion.get(o.memberStateCode);
+        if (rows) rows.push(o);
+        else byRegion.set(o.memberStateCode, [o]);
+    }
+    const kept: EcObservation[] = [];
+    for (const rows of byRegion.values()) {
+        const national = rows.filter(isNationalAverageObs);
+        kept.push(...(national.length > 0 ? national : rows));
+    }
+    return kept;
+}
+
 async function pullEc(
     years: number[],
     deps: MarketPricesPullDeps,
@@ -290,7 +333,7 @@ async function pullEc(
                 { memberStateCodes: EC_MEMBER_STATES, productCodes: [code], years },
                 opts,
             );
-            items.push(...ecObservationsToItems('ec-agrifood', slug, obs));
+            items.push(...ecObservationsToItems('ec-agrifood', slug, nationalAverageOnly(obs)));
         } catch (err) {
             logger.warn('market-prices-pull: EC cereal fetch failed', {
                 component: COMPONENT,
@@ -304,7 +347,11 @@ async function pullEc(
     try {
         const obs = await fetchOilseed({ memberStateCodes: EC_MEMBER_STATES, years }, opts);
         const sunflower = obs.filter((o) => o.productName === 'Sunflower seed');
-        items.push(...ecObservationsToItems('ec-agrifood', 'sunflower', sunflower));
+        // Oilseeds publish no country-wide row, so this keeps everything —
+        // the fallback exists for exactly this case, not as a safety net.
+        items.push(
+            ...ecObservationsToItems('ec-agrifood', 'sunflower', nationalAverageOnly(sunflower)),
+        );
     } catch (err) {
         logger.warn('market-prices-pull: EC oilseed fetch failed', {
             component: COMPONENT,
