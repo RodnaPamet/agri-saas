@@ -57,6 +57,7 @@ import {
     chartSeriesFor,
     leadSeriesOf,
     buildMergedData,
+    chartValueAccessor,
     seriesKey,
     sourceLabelKey,
     findListingsSeries,
@@ -190,7 +191,11 @@ function UnitGroupChart({
                 return {
                     id: k,
                     isActive: true,
-                    valueAccessor: (d) => d.values[k] ?? 0,
+                    // NOT `?? 0` — see chartValueAccessor. buildMergedData
+                    // omits the key outside a series' reporting span so a dead
+                    // feed stops; coercing to zero drew a cliff to the floor
+                    // and pulled the y-axis down with it.
+                    valueAccessor: chartValueAccessor(k),
                     colorClassName: SERIES_TEXT[idx % SERIES_TEXT.length],
                 };
             }),

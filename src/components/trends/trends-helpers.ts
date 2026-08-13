@@ -218,6 +218,26 @@ export function buildMergedData(group: ChartGroup): MergedDatum[] {
     });
 }
 
+/**
+ * The chart's value for one series at one merged row — `undefined` where the
+ * series has nothing to say, NEVER zero.
+ *
+ * {@link buildMergedData} deliberately omits a series' key outside its own
+ * reporting span so a feed that went silent visibly stops. The consumer used
+ * to undo that with `?? 0`, which turned "no data" into a real price of zero:
+ * on 2026-08-13 two EC wheat series that ended on 2026-07-20 plunged from ~190
+ * to the floor at the right edge, and because a genuine 0 enters the y-domain
+ * the axis rendered 0–200 for data spanning 175–200 — flattening every real
+ * movement into the top tenth of the chart.
+ *
+ * A genuine zero still passes through. `0` is a price; absent is not.
+ */
+export function chartValueAccessor(
+    key: string,
+): (d: { values: Record<string, number> }) => number | undefined {
+    return (d) => d.values[key];
+}
+
 /** The latest (most recent) point of a series, or null when empty. */
 export function latestPoint(s: TrendSeries): TrendPoint | null {
     if (s.points.length === 0) return null;
