@@ -322,18 +322,21 @@ describe('provenance helpers', () => {
         expect(stalenessDays({ lastObservedAt: null }, generatedAt)).toBeNull();
     });
 
-    it('tolerates one missed weekly publication but flags two', () => {
-        // The pull is weekly, so a single late publication is routine — a
-        // warning that fires every time the feed slips a day is a warning
-        // nobody reads.
+    it('tolerates lateness up to the source’s own bound and flags past it', () => {
+        // A warning that fires every time a feed slips a day is a warning
+        // nobody reads. The BOUNDARY is what this pins; which number the
+        // boundary sits at is a per-source property, asked for rather than
+        // restated — EC's moved from the generic 15 to 25 once the chart
+        // switched to the national average, which trails by a cycle.
         const generatedAt = '2026-03-20T09:00:00.000Z';
         const daysAgo = (n: number) =>
             new Date(Date.UTC(2026, 2, 20) - n * 86_400_000).toISOString().slice(0, 10);
 
-        const ec = (lastObservedAt: string | null) => ({ lastObservedAt, source: 'ec-agrifood' });
+        const ec = (lastObservedAt: string | null) => ({ lastObservedAt, source: SOURCE_EC });
+        const bound = staleAfterDaysForSource(SOURCE_EC);
         expect(isStale(ec(daysAgo(8)), generatedAt)).toBe(false);
-        expect(isStale(ec(daysAgo(STALE_AFTER_DAYS)), generatedAt)).toBe(false);
-        expect(isStale(ec(daysAgo(STALE_AFTER_DAYS + 1)), generatedAt)).toBe(true);
+        expect(isStale(ec(daysAgo(bound)), generatedAt)).toBe(false);
+        expect(isStale(ec(daysAgo(bound + 1)), generatedAt)).toBe(true);
         // Never reported at all is "unknown", not "stale".
         expect(isStale(ec(null), generatedAt)).toBe(false);
     });
@@ -384,6 +387,72 @@ describe('findEcSeries stage pinning', () => {
         ];
         expect(findEcSeries(input)?.stage).toBe('ALPHA');
         expect(findEcSeries([...input].reverse())?.stage).toBe('ALPHA');
+    });
+});
+
+/**
+ * A warning that fires on every view is not a warning.
+ *
+ * `STALE_AFTER_DAYS_BY_SOURCE` exists because 15 days — two weekly cycles —
+ * is meaningless for a monthly feed. World Bank and manual got exemptions.
+ * Alpha Vantage, which is the SAME monthly IMF cadence (its commodity
+ * endpoints are a FRED/IMF passthrough), was missed: on 2026-08-13 its newest
+ * observation was 73 days old and its tile had been amber continuously.
+ *
+ * And EC's bound became too tight when the chart switched to the national
+ * average (#550/#551): the country-wide row trails its own per-market rows by
+ * a week, so the displayed series carries a full extra cycle of lag under a
+ * threshold written for the per-market ones.
+ *
+ * Ages below are measured against real production data on 2026-08-13.
+ */
+describe('staleness bounds match each source’s real cadence', () => {
+    const GENERATED = '2026-08-13T12:00:00.000Z';
+    const at = (source: string, lastObservedAt: string) => ({ source, lastObservedAt });
+
+    it('does not cry wolf over the monthly Alpha Vantage reference', () => {
+        // Newest AV observation on the day: 2026-06-01 → 73 days. The series
+        // is monthly with a ~6-week publication lag, so it can never be
+        // fresher than about 45 days and was permanently orange.
+        expect(isStale(at(SOURCE_AV, '2026-06-01'), GENERATED)).toBe(false);
+    });
+
+    it('still calls a genuinely dead Alpha Vantage feed stale', () => {
+        // The bound has to stay a bound. Two missed monthly publications on
+        // top of the normal lag is a real outage.
+        expect(isStale(at(SOURCE_AV, '2026-04-01'), GENERATED)).toBe(true);
+    });
+
+    it('does not cry wolf over EC’s national average, which trails by a week', () => {
+        // 2026-07-27 → 17 days. EC's per-market rows were at 2026-08-03 the
+        // same day; the country-wide row is simply one cycle behind.
+        expect(isStale(at(SOURCE_EC, '2026-07-27'), GENERATED)).toBe(false);
+    });
+
+    it('still calls a genuinely dead EC feed stale', () => {
+        // The nine orphaned per-market series stopped on 2026-07-20 and never
+        // resumed. A month of silence on a weekly feed is real.
+        expect(isStale(at(SOURCE_EC, '2026-07-06'), GENERATED)).toBe(true);
+    });
+
+    it('leaves the weekly own-listings bound alone', () => {
+        // Our own noticeboard publishes weekly with no lag — nothing about
+        // this change should loosen it.
+        expect(staleAfterDaysForSource(SOURCE_LISTINGS)).toBe(STALE_AFTER_DAYS);
+        expect(isStale(at(SOURCE_LISTINGS, '2026-07-27'), GENERATED)).toBe(true);
+    });
+
+    it('orders the bounds by cadence — weekly tightest, monthly loosest', () => {
+        // Guards against someone "simplifying" them back to one number.
+        expect(staleAfterDaysForSource(SOURCE_LISTINGS)).toBeLessThan(
+            staleAfterDaysForSource(SOURCE_EC),
+        );
+        expect(staleAfterDaysForSource(SOURCE_EC)).toBeLessThan(
+            staleAfterDaysForSource(SOURCE_WORLD_BANK),
+        );
+        expect(staleAfterDaysForSource(SOURCE_WORLD_BANK)).toBeLessThan(
+            staleAfterDaysForSource(SOURCE_AV),
+        );
     });
 });
 

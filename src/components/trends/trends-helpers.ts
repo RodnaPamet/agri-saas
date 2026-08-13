@@ -351,22 +351,51 @@ export function stalenessDays(
 export const STALE_AFTER_DAYS = 15;
 
 /**
- * Staleness is a property of the SOURCE'S CADENCE, not a constant.
+ * Staleness is a property of the SOURCE'S CADENCE **plus its publication
+ * LAG**, not a constant — and the lag is the half that kept getting missed.
  *
- * 15 days is two weekly cycles plus slack, which is right for the weekly EC
- * and listings feeds. Applied to the World Bank Pink Sheet it is simply
- * wrong: that feed is MONTHLY with a ~1-month publication lag, so a urea
- * point is 30-60 days old at all times and would render permanently orange
- * with a "not reported recently" warning — a false alarm on every single
- * view, which is how a warning stops being read at all.
+ * 15 days is two weekly cycles plus slack. It is right only for a feed that
+ * publishes weekly AND publishes promptly, which of everything here is just
+ * our own listings index.
+ *
+ * Cadences measured from production on 2026-08-13, gaps since 2024:
+ *
+ * | source        | cadence      | max gap | age that day |
+ * |---------------|--------------|---------|--------------|
+ * | listings      | weekly, live | —       | —            |
+ * | ec-agrifood   | weekly (7d)  | 14d     | 17d          |
+ * | world-bank    | monthly      | 31d     | 43d          |
+ * | alpha-vantage | monthly      | 31d     | 73d          |
+ *
+ * Two entries were missing, and both produced a warning that fired on every
+ * single view — which is how a warning stops being read at all.
+ *
+ * ALPHA VANTAGE is the same monthly IMF cadence as the Pink Sheet (its
+ * commodity endpoints are a FRED/IMF passthrough) but with a longer
+ * publication lag: on 2026-08-13 its newest observation was 73 days old and
+ * the next had not landed, so its steady-state age oscillates ~43-75 days. It
+ * can never be fresher than about 45. 95 = one 31-day cycle on top of the
+ * observed ~45-day lag, plus slack; only a genuinely dead feed exceeds it.
+ *
+ * EC only became wrong when the chart switched to the NATIONAL AVERAGE
+ * (#550/#551). That row trails EC's own per-market rows by a week — verified
+ * live: per-market at 2026-08-03, country-wide at 2026-07-27 — so the series
+ * we now display carries a full extra cycle of lag under a threshold written
+ * for the per-market ones. 25 = EC's worst observed gap (14d) plus our own
+ * weekly pull cadence (7d) plus slack.
  *
  * A manual series gets a wide bound for a different reason: it is somebody's
  * typing and its age is already stated explicitly next to it, so a staleness
  * warning would be both redundant and unactionable. Only a year of silence
  * says something the provenance line does not.
+ *
+ * Adding a source? Measure its real gaps and its lag before picking a number.
+ * A bound tighter than `cadence + lag` is an alarm that never stops ringing.
  */
 export const STALE_AFTER_DAYS_BY_SOURCE: Readonly<Record<string, number>> = {
+    [SOURCE_EC]: 25,
     [SOURCE_WORLD_BANK]: 75,
+    [SOURCE_AV]: 95,
     [SOURCE_MANUAL]: 400,
 };
 
