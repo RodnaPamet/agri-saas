@@ -3,10 +3,13 @@
 /**
  * Trends → Prices tab.
  *
- * A commodity picker + range selector driving one line chart PER UNIT-GROUP
- * (EC EUR/t, listings BGN, Alpha Vantage USD each get their own Y axis — units
- * are never mixed on one axis). Above the charts sit stat tiles (latest BG
- * official price + week-over-week delta, listings index + sample count,
+ * A commodity picker + range selector driving ONE line chart — the group
+ * `selectPrimaryGroup` chooses (Bulgaria, else the EU average, else whatever
+ * reported most recently). Units are still never mixed on one axis; the
+ * grouping that guarantees it is unchanged, but only one group is drawn,
+ * because the pull covers four EC member states and all four are EUR/t since
+ * Bulgaria's euro adoption. Above the chart sit stat tiles (the drawn series'
+ * latest price + week-over-week delta, listings index + sample count,
  * reference-benchmark latest). Degrades to a skeleton while loading, and to a
  * combined empty + operator-configuration panel when the payload has no data
  * (the endpoint returns empty series when EC / Alpha Vantage are unconfigured
@@ -23,6 +26,7 @@ import {
     commoditiesInCategory,
     commodityMeta,
     type CommodityCategory,
+    type CommodityFeed,
 } from '@/lib/market/commodity-vocabulary';
 import { TREND_CHARTABLE, type TrendCommodity } from '@/app-layer/schemas/trends.schemas';
 
@@ -49,11 +53,13 @@ import {
     type MergedDatum,
     type TrendSeries,
     groupSeriesByRegionUnit,
+    selectPrimaryGroup,
+    chartSeriesFor,
+    leadSeriesOf,
     buildMergedData,
+    chartValueAccessor,
     seriesKey,
     sourceLabelKey,
-    findEcSeries,
-    primarySeries,
     findListingsSeries,
     findReferenceSeries,
     latestPoint,
@@ -81,6 +87,20 @@ type Range = (typeof RANGES)[number];
 const CATEGORIES = ['grain', 'fuel', 'fertilizer'] as const satisfies readonly CommodityCategory[];
 
 const CHARTABLE = new Set<string>(TREND_CHARTABLE);
+
+/**
+ * i18n key suffix under `trends.operator.feeds` for each upstream.
+ *
+ * A TOTAL Record over {@link CommodityFeed}, so adding a feed to the
+ * vocabulary without writing its operator copy is a compile error rather than
+ * a `trends.operator.feeds.undefined` rendered to an admin.
+ */
+const OPERATOR_FEED_KEY: Record<CommodityFeed, string> = {
+    'ec-agrifood': 'ecAgrifood',
+    'oil-bulletin': 'oilBulletin',
+    'world-bank': 'worldBank',
+    none: 'none',
+};
 
 function commoditiesFor(category: CommodityCategory): Commodity[] {
     return commoditiesInCategory(category).filter((c): c is Commodity => CHARTABLE.has(c));
@@ -171,7 +191,11 @@ function UnitGroupChart({
                 return {
                     id: k,
                     isActive: true,
-                    valueAccessor: (d) => d.values[k] ?? 0,
+                    // NOT `?? 0` — see chartValueAccessor. buildMergedData
+                    // omits the key outside a series' reporting span so a dead
+                    // feed stops; coercing to zero drew a cliff to the floor
+                    // and pulled the y-axis down with it.
+                    valueAccessor: chartValueAccessor(k),
                     colorClassName: SERIES_TEXT[idx % SERIES_TEXT.length],
                 };
             }),
@@ -304,21 +328,45 @@ export function PricesTab() {
         [data],
     );
 
+    // ── The one chart, and the series its tile quotes ──
+    //
+    // The tab used to draw EVERY group, and the pull fetches EC prices for BG,
+    // RO, EL and EU — all EUR/t since Bulgaria's euro adoption — so wheat drew
+    // four cards distinguished only by a region chip.
+    const chartGroup = useMemo(() => selectPrimaryGroup(groups), [groups]);
+    // One card was not one line. EC publishes per market and the pull drops
+    // marketName, so a single BG/EUR/t group held twelve series in production
+    // — ten of them dead ends left behind by an EC stage rename.
+    const drawn = useMemo(() => (chartGroup ? chartSeriesFor(chartGroup) : []), [chartGroup]);
+    // Built from the DRAWN series, so the tile can only ever quote a line that
+    // is actually on screen.
+    const headline = useMemo(
+        () =>
+            chartGroup && drawn.length > 0
+                ? leadSeriesOf({ ...chartGroup, series: drawn })
+                : null,
+        [chartGroup, drawn],
+    );
+    const headlineLatest = headline ? latestPoint(headline) : null;
+    const headlineDelta = headline ? weekOverWeekDelta(headline) : null;
+
     // ── Stat-tile derivations ──
     //
-    // The three crop tiles look up EC / listings / Alpha Vantage BY NAME, and
-    // none of those publish diesel or fertiliser — so for an input they would
-    // render three "no data" tiles above a perfectly good chart. Inputs get a
-    // single tile driven by whichever series actually reported most recently.
+    // The listings + reference tiles look up their sources BY NAME, and
+    // neither publishes diesel or fertiliser — so for an input they would
+    // render two "no data" tiles above a perfectly good chart. The headline
+    // tile needs no such fork: it quotes whatever the chart drew.
     const isInput = commodityMeta(shownCommodity)?.kind === 'input';
+    // Which upstream actually publishes this commodity — drives the operator
+    // hint, which used to name EC_AGRIFOOD_BASE_URL + ALPHA_VANTAGE_API_KEY
+    // for everything including urea, where neither can produce a single row.
+    const feed: CommodityFeed = commodityMeta(shownCommodity)?.feed ?? 'none';
     const tiles = useMemo(() => {
         if (!data) return null;
-        const ec = findEcSeries(data.series, 'BG');
         const listings = findListingsSeries(data.series);
         const reference = findReferenceSeries(data.series);
-        return { ec, listings, reference };
+        return { listings, reference };
     }, [data]);
-    const primary = useMemo(() => (data ? primarySeries(data.series) : null), [data]);
 
     // ── Practices (always visible so a user can switch even on empty) ──
     const practices = (
@@ -400,14 +448,26 @@ export function PricesTab() {
                     description={isInput ? t('noSeries.body') : t('empty.description')}
                     data-testid="trends-empty"
                 >
-                    {/* Operator-configuration explainer, ADMINS ONLY.
-                        It names environment variables — EC_AGRIFOOD_BASE_URL,
-                        ALPHA_VANTAGE_API_KEY — which is an instruction a
-                        farmer cannot act on and should not have to read. It
-                        also leaks a little of our deployment shape to every
-                        user of every tenant. Operators still see it; everyone
-                        else gets the plain empty state. */}
-                    {isAdmin && (
+                    {/* Operator explainer, ADMINS ONLY — it describes internal
+                        plumbing and a cron cadence, which is an instruction a
+                        farmer cannot act on and should not have to read, and it
+                        leaks a little of our deployment shape.
+
+                        It names the feed that publishes THIS commodity. The
+                        previous version was one hard-coded string pointing at
+                        EC_AGRIFOOD_BASE_URL + ALPHA_VANTAGE_API_KEY for every
+                        commodity: on the fertiliser tab that told an operator
+                        to configure two variables that cannot produce a single
+                        urea row, and stayed silent about the World Bank Pink
+                        Sheet, which is where urea comes from and which needs no
+                        configuration at all.
+
+                        Nothing is shown when there is no feed. MAP and
+                        ammonium nitrate are hand-typed by nature, so an
+                        operator box would send someone hunting for a broken
+                        pipeline that was never built; the plain empty state
+                        already tells everyone to ask an admin. */}
+                    {isAdmin && feed !== 'none' && (
                         <div
                             className="mt-default rounded-lg border border-border-subtle bg-bg-muted px-4 py-3 text-left"
                             data-testid="trends-operator-hint"
@@ -416,10 +476,10 @@ export function PricesTab() {
                                 {t('operator.title')}
                             </p>
                             <p className="mt-1 text-xs text-content-muted">
-                                {t('operator.body', {
-                                    ec: 'EC_AGRIFOOD_BASE_URL',
-                                    av: 'ALPHA_VANTAGE_API_KEY',
-                                })}
+                                {t(`operator.feeds.${OPERATOR_FEED_KEY[feed]}`)}
+                            </p>
+                            <p className="mt-1 text-xs text-content-subtle">
+                                {t('operator.stillEmpty')}
                             </p>
                         </div>
                     )}
@@ -428,67 +488,55 @@ export function PricesTab() {
                 <>
                     {/* Stat tiles — wrap on 390px. */}
                     <div className="flex flex-wrap gap-default">
-                        {isInput ? (
-                            <StatTile
-                                label={t('tiles.bgLatest')}
-                                value={
-                                    primary && latestPoint(primary)
-                                        ? formatPriceWithCurrency(
-                                              latestPoint(primary)!.price,
-                                              primary.currency,
-                                          )
-                                        : t('tiles.noData')
-                                }
-                                footer={
-                                    primary && data ? (
-                                        // Source SHOWN, not hidden: a hand-typed
-                                        // fertiliser price and a fed one must not
-                                        // look alike here of all places.
-                                        <SeriesProvenance
-                                            series={primary}
-                                            generatedAt={data.generatedAt}
-                                            className="mt-1"
-                                        />
-                                    ) : undefined
-                                }
-                            />
-                        ) : (
-                        <>
+                        {/* The headline quotes the series the chart drew, so the
+                            two cannot disagree. It used to read
+                            findEcSeries(series, 'BG') with the region spelled
+                            out, which on an EU fallback printed the no-data dash
+                            directly above a populated line.
+
+                            Its label names neither region nor source, because it
+                            can now be any of them — EC for a crop, the Oil
+                            Bulletin for diesel, somebody's typing for MAP. The
+                            provenance line below says which, and is NOT hidden
+                            here: a hand-typed fertiliser price and a fed one
+                            must not look alike on the number a farmer prices
+                            against. */}
                         <StatTile
-                            label={t('tiles.bgLatest')}
+                            label={t('tiles.latestPrice')}
                             value={
-                                tiles?.ec && latestPoint(tiles.ec)
+                                headline && headlineLatest
                                     ? formatPriceWithCurrency(
-                                          latestPoint(tiles.ec)!.price,
-                                          tiles.ec.currency,
+                                          headlineLatest.price,
+                                          headline.currency,
                                       )
                                     : t('tiles.noData')
                             }
                             sub={
-                                tiles?.ec && weekOverWeekDelta(tiles.ec) != null
-                                    ? formatDelta(weekOverWeekDelta(tiles.ec)!)
+                                headlineDelta != null
+                                    ? formatDelta(headlineDelta)
                                     : undefined
                             }
                             tone={
-                                tiles?.ec && weekOverWeekDelta(tiles.ec) != null
-                                    ? weekOverWeekDelta(tiles.ec)! > 0
+                                headlineDelta != null
+                                    ? headlineDelta > 0
                                         ? 'up'
-                                        : weekOverWeekDelta(tiles.ec)! < 0
+                                        : headlineDelta < 0
                                           ? 'down'
                                           : 'flat'
                                     : undefined
                             }
                             footer={
-                                tiles?.ec && data ? (
+                                headline && data ? (
                                     <SeriesProvenance
-                                        series={tiles.ec}
+                                        series={headline}
                                         generatedAt={data.generatedAt}
-                                        hideSource
                                         className="mt-1"
                                     />
                                 ) : undefined
                             }
                         />
+                        {!isInput && (
+                        <>
                         <StatTile
                             label={t('tiles.listings')}
                             value={
@@ -556,17 +604,18 @@ export function PricesTab() {
                         )}
                     </div>
 
-                    {/* One chart per unit-group. */}
-                    {groups.map((g) => (
+                    {/* Exactly one chart (selectPrimaryGroup), and for EC
+                        exactly one LINE in it (chartSeriesFor). */}
+                    {chartGroup && drawn.length > 0 && (
                         <UnitGroupChart
-                            key={g.key}
-                            unit={g.unit}
-                            merged={buildMergedData(g)}
-                            series={g.series}
+                            key={chartGroup.key}
+                            unit={chartGroup.unit}
+                            merged={buildMergedData({ ...chartGroup, series: drawn })}
+                            series={drawn}
                             colorIndex={colorIndex}
                             commodityLabel={t(`commodities.${shownCommodity}`)}
                         />
-                    ))}
+                    )}
                 </>
             )}
         </div>

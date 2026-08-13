@@ -26,22 +26,44 @@
  * bug), and every piece of chrome AROUND the canvas is token-driven.
  * That is the same split `ExchangeMap` makes.
  *
+ * HOW YOU MOVE AROUND IT. Three ranges, one set of state.
+ *   - IN, to a parcel: wheel, the + button, a pinch, or the crosshairs
+ *     button, which walks the parcels north to south and flies to each.
+ *   - OUT, past the holding, to the whole of Bulgaria: the country
+ *     outlines are already drawn through the projection bridge, so the
+ *     only thing that stood between a farmer and seeing their land in
+ *     national context was the zoom floor. It is now MEASURED from that
+ *     same bridge (`minZoomScale`) rather than being a constant, and the
+ *     globe button gets there in one press. Individual outlines stop
+ *     drawing on the way out — see `shouldDrawParcelShapes`.
+ *   - AROUND: mouse drag, or two fingers, which both zoom AND pan. One
+ *     finger is left to the page, deliberately.
+ *
  * WHERE THE LOGIC LIVES. jsdom implements no 2D context, so `getContext`
- * returns null and every drawing and hit-testing path below silently
- * no-ops under test. The arithmetic that must be verified — zoom
- * tiering, the cluster-token codec, the projection bridge, selection
- * resolution — is therefore in `./parcel-overview-model`, where an
- * executing unit test can reach it. What remains here is refs, effects
- * and paint. The cluster LIST is the accessible counterpart: it performs
- * exactly the same filtering, so the feature never depends on pixels a
- * screen reader cannot see.
+ * returns null and every drawing and hit-testing path below no-ops in an
+ * ordinary rendered test. The arithmetic that must be verified — zoom
+ * tiering, the cluster-token codec, the projection bridge, the zoom floor
+ * and clamp extents, the stepping order, selection resolution — is
+ * therefore in `./parcel-overview-model`, where an executing unit test
+ * can reach it. What remains here is refs, effects and paint.
+ *
+ * That is not licence for the paint to go unexecuted:
+ * `tests/rendered/parcel-overview-map-gestures.test.tsx` installs a
+ * recording 2D context and a `Path2D`, then drives real touch events and
+ * reads the view back out of the `setTransform` calls — the gestures and
+ * the zoom range are pinned by what was PAINTED, not by a grep.
+ *
+ * The cluster LIST is the accessible counterpart: it performs exactly the
+ * same filtering, so the feature never depends on pixels a screen reader
+ * cannot see, and the stepper's position is rendered as TEXT beside the
+ * canvas for the same reason.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { Heading } from '@/components/ui/typography';
-import { Plus, Minus } from '@/components/ui/icons/nucleo';
+import { Plus, Minus, Crosshairs3, Earth } from '@/components/ui/icons/nucleo';
 import { loadBgMapGeometry } from '@/lib/geo/bg-geometry-client';
 import {
     fitToExtent,
@@ -52,14 +74,25 @@ import type { ParcelCluster } from '@/lib/geo/parcel-clustering';
 import type { ParcelOverview } from '@/app-layer/usecases/parcel-overview';
 import {
     bboxSpanMetres,
+    bridgedExtent,
+    centreOn,
+    clampExtentFor,
+    clampTranslation,
     composeBridgeTransform,
+    farmExtent,
+    fitScaleForExtent,
+    minZoomScale,
+    nextStepIndex,
+    orderParcelsForStepping,
     polygonBBox,
     polygonRings,
     projectionBridge,
     shouldDrawParcels,
+    shouldDrawParcelShapes,
     zoomTierForSpan,
     UNPOSITIONED_CLUSTER_ID,
     type ClusterSelection,
+    type WorldExtent,
 } from './parcel-overview-model';
 import { cn } from '@/lib/cn';
 
@@ -83,6 +116,25 @@ const C_SELECTED_FILL = 'rgba(250,204,21,.28)';
 const C_LABEL = '#e2e8f0';
 const C_LABEL_SHADOW = 'rgba(4,8,12,.85)';
 
+/** How long a stepper flight takes, in ms. */
+const STEP_FLIGHT_MS = 380;
+
+/** Share of the pane a stepped-to parcel is framed to occupy. */
+const STEP_PARCEL_FILL = 0.45;
+
+/** Fallback magnification for a parcel with a point but no outline. */
+const STEP_POINT_ZOOM = 8;
+
+/**
+ * Slack when asking "is the view at country scale?".
+ *
+ * The floor is reached by a multiply-by-a-factor zoom, which lands on it
+ * only approximately, and a flight eases to it in floating point. An
+ * exact comparison would leave the toggle occasionally refusing to come
+ * back because the view is a rounding error below where it should be.
+ */
+const COUNTRY_SCALE_EPSILON = 1.05;
+
 /** A drawn cluster marker, kept from the last frame so hit-testing reads exactly what was painted. */
 interface MapItem {
     sx: number;
@@ -90,6 +142,13 @@ interface MapItem {
     r: number;
     label: string;
     cluster: ParcelCluster;
+}
+
+/** A parcel outline plus the world box it occupies, for framing it. */
+interface ParcelPath {
+    id: string;
+    path: Path2D;
+    extent: WorldExtent;
 }
 
 export interface ParcelOverviewMapProps {
@@ -154,6 +213,22 @@ export function ParcelOverviewMap({
 
     const [geom, setGeom] = useState<BgMapGeometry | null>(null);
     const [geomFailed, setGeomFailed] = useState(false);
+
+    /**
+     * Whether the view is framed on the country rather than the holding.
+     *
+     * The ONE piece of view state React is told about, and only because
+     * the button's label has to say which way it goes — a toggle whose
+     * label never changes is a toggle nobody trusts. It is written from
+     * `reportTier`, which already runs after every zoom, and React bails
+     * out of a set to the same value, so it costs a render exactly when
+     * the answer flips rather than once per drag frame.
+     *
+     * The ACTION never reads it: `toggleCountry` re-derives from
+     * `view.current.k`, so a wheel or a pinch that left country scale
+     * cannot make the button do the opposite of what it says.
+     */
+    const [atCountry, setAtCountry] = useState(false);
 
     useEffect(() => {
         let alive = true;
@@ -220,23 +295,48 @@ export function ParcelOverviewMap({
     const parcelPaths = useMemo(() => {
         if (!fitted || typeof Path2D === 'undefined') return [];
         const project = makeProjector(fitted);
-        const out: Array<{ id: string; path: Path2D }> = [];
+        const out: ParcelPath[] = [];
         for (const p of parcelShapes) {
             const rings = polygonRings(p.geometry);
             if (rings.length === 0) continue;
             const path = new Path2D();
+            // The world box is accumulated in the same pass that builds
+            // the path — the stepper needs it to frame a parcel, and a
+            // second walk over every vertex to recover it would be a
+            // second walk over every vertex.
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
             for (const ring of rings) {
                 for (let i = 0; i < ring.length; i++) {
                     const [x, y] = project(ring[i][0], ring[i][1]);
+                    if (x < minX) minX = x;
+                    if (x > maxX) maxX = x;
+                    if (y < minY) minY = y;
+                    if (y > maxY) maxY = y;
                     if (i === 0) path.moveTo(x, y);
                     else path.lineTo(x, y);
                 }
                 path.closePath();
             }
-            out.push({ id: p.id, path });
+            out.push({ id: p.id, path, extent: { minX, minY, maxX, maxY } });
         }
         return out;
     }, [fitted, parcelShapes]);
+
+    /**
+     * The country's own box, in this view's world space.
+     *
+     * The same bridge that re-places the oblast outlines, read as an
+     * extent rather than as a transform: it is what decides how far the
+     * view may zoom out and what the pan clamp holds onto once it does.
+     */
+    const countryExtent = useMemo<WorldExtent | null>(
+        () => (geom && bridge ? bridgedExtent(bridge, geom.W, geom.H) : null),
+        [geom, bridge],
+    );
+    const countryExtentRef = useRef<WorldExtent | null>(null);
+    useEffect(() => {
+        countryExtentRef.current = countryExtent;
+    }, [countryExtent]);
 
     const drawParcelTier = shouldDrawParcels(zoomTier);
 
@@ -277,11 +377,19 @@ export function ParcelOverviewMap({
 
         // Parcel outlines — the shapes themselves, in world space, so a
         // field is recognisable here exactly as it is on the satellite
-        // map. Drawn at EVERY zoom: at cluster pitch they are the texture
-        // of the holding, at parcel pitch they are the subject. Line
-        // widths divide by `k` so a boundary stays one CSS pixel however
-        // far in the operator has zoomed.
-        if (parcelPaths.length > 0) {
+        // map. At cluster pitch they are the texture of the holding, at
+        // parcel pitch they are the subject. Line widths divide by `k` so
+        // a boundary stays one CSS pixel however far in the operator has
+        // zoomed.
+        //
+        // They stop at country scale. Not as an optimisation: a hundred
+        // outlines inside a holding that is now forty pixels wide are a
+        // hundred one-pixel marks, which reads as damage to the country
+        // outline rather than as fields. The cluster markers below are
+        // what carries the holding at that magnification.
+        const drawShapes = shouldDrawParcelShapes(geom.W * k, cw);
+
+        if (parcelPaths.length > 0 && drawShapes) {
             const dim = selectedIds.size > 0;
             ctx.save();
             ctx.setTransform(dpr * k, 0, 0, dpr * k, dpr * tx, dpr * ty);
@@ -299,7 +407,13 @@ export function ParcelOverviewMap({
         const project = makeProjector(fitted);
         const items: MapItem[] = [];
 
-        if (!drawParcelTier && overview) {
+        // Cluster markers stand in whenever the shapes are not the
+        // subject — either because the tier says clustering still helps,
+        // or because the view is too far out for an outline to read. The
+        // second half also covers the frame or two where a zoom-out has
+        // happened but the payload for the new tier has not arrived: the
+        // holding must not blink out of existence in between.
+        if ((!drawParcelTier || !drawShapes) && overview) {
             const maxCount = overview.clusters.reduce((m, c) => Math.max(m, c.count), 1);
             for (const c of overview.clusters) {
                 const [wx, wy] = project(c.lon, c.lat);
@@ -345,7 +459,7 @@ export function ParcelOverviewMap({
         // Past the clustering floor the shapes carry their own names,
         // centred on the parcel rather than trailing a marker — there is
         // no marker any more.
-        if (drawParcelTier && overview) {
+        if (drawParcelTier && drawShapes && overview) {
             ctx.textAlign = 'center';
             for (const p of overview.parcels) {
                 const name = parcelNames.get(p.id);
@@ -378,6 +492,11 @@ export function ParcelOverviewMap({
         geomRef.current = geom;
     });
 
+    /**
+     * Hold the view inside whichever extent the current magnification
+     * belongs to — the holding while zoomed in, the country once the
+     * view is out past the holding's own framing. See `clampExtentFor`.
+     */
     const clampView = useCallback(() => {
         const canvas = canvasRef.current;
         const g = geomRef.current;
@@ -385,21 +504,38 @@ export function ParcelOverviewMap({
         const v = view.current;
         const cw = canvas.clientWidth;
         const ch = canvas.clientHeight;
-        const contentW = g.W * v.k;
-        const contentH = g.H * v.k;
-        v.tx = contentW <= cw ? (cw - contentW) / 2 : Math.min(0, Math.max(cw - contentW, v.tx));
-        v.ty = contentH <= ch ? (ch - contentH) / 2 : Math.min(0, Math.max(ch - contentH, v.ty));
+        const extent = clampExtentFor(
+            v.k,
+            v.fit,
+            farmExtent(g.W, g.H),
+            countryExtentRef.current,
+        );
+        const next = clampTranslation(extent, v.k, cw, ch, v.tx, v.ty);
+        v.tx = next.tx;
+        v.ty = next.ty;
     }, []);
 
     /**
-     * Report the tier the current magnification wants.
+     * Report the tier the current magnification wants, and whether the
+     * view has reached country scale.
      *
      * `fit` frames the whole holding, so `fit / k` is the fraction of it
      * on screen — the visible ground span without a second projection.
+     *
+     * The country flag rides along here because this already runs after
+     * every zoom, from every source (wheel, buttons, pinch, a flight
+     * settling). Both writes are conditional or React-bailed, so a drag
+     * that changes neither answer costs no render.
      */
     const reportTier = useCallback(() => {
-        if (!bbox) return;
         const v = view.current;
+        const canvas = canvasRef.current;
+        const country = countryExtentRef.current;
+        if (canvas && country) {
+            const floor = minZoomScale(v.fit, country, canvas.clientWidth, canvas.clientHeight);
+            setAtCountry(v.k <= floor * COUNTRY_SCALE_EPSILON);
+        }
+        if (!bbox) return;
         const span = bboxSpanMetres(bbox) * (v.fit / Math.max(1e-6, v.k));
         const next = zoomTierForSpan(span);
         if (next !== zoomTier) onZoomTierChange(next);
@@ -453,10 +589,26 @@ export function ParcelOverviewMap({
         reportTier();
     }, [reportTier]);
 
+    /**
+     * The floor the zoom may reach, measured rather than chosen.
+     *
+     * It used to be `fit * 0.35` — enough headroom to see a little
+     * around the holding and nowhere near enough to see the holding
+     * inside the country, which in this world space is tens of times
+     * larger. Now it is whichever is further out: that same 0.35, or the
+     * scale at which the country fits the pane.
+     */
+    const minScale = useCallback(() => {
+        const canvas = canvasRef.current;
+        const v = view.current;
+        if (!canvas) return v.fit * 0.35;
+        return minZoomScale(v.fit, countryExtentRef.current, canvas.clientWidth, canvas.clientHeight);
+    }, []);
+
     const zoomAt = useCallback(
         (cx: number, cy: number, factor: number) => {
             const v = view.current;
-            const nk = Math.max(v.fit * 0.35, Math.min(v.fit * 64, v.k * factor));
+            const nk = Math.max(minScale(), Math.min(v.fit * 64, v.k * factor));
             v.tx = cx - (cx - v.tx) * (nk / v.k);
             v.ty = cy - (cy - v.ty) * (nk / v.k);
             v.k = nk;
@@ -464,7 +616,7 @@ export function ParcelOverviewMap({
             drawRef.current();
             reportTier();
         },
-        [clampView, reportTier],
+        [clampView, minScale, reportTier],
     );
 
     const selectAt = useCallback(
@@ -577,11 +729,22 @@ export function ParcelOverviewMap({
      *
      * ONE gesture per target, and one finger is left entirely to the
      * browser: the page scrolls, and the tab panel's own horizontal-swipe
-     * navigation keeps working. Two fingers take the gesture and zoom the
-     * map. A one-finger tap that did not move selects. `preventDefault`
-     * is called ONLY on the two-finger paths — the #449 lesson is that a
-     * preventDefault on a single-touch path silently kills the default
-     * action of everything underneath it.
+     * navigation keeps working. Two fingers take the gesture and both
+     * ZOOM and PAN the map. A one-finger tap that did not move selects.
+     * `preventDefault` is called ONLY on the two-finger paths — the #449
+     * lesson is that a preventDefault on a single-touch path silently
+     * kills the default action of everything underneath it.
+     *
+     * The pan half is not a separate gesture. Two fingers moving together
+     * are a drag and two fingers moving apart are a zoom, but a real hand
+     * does both at once, and a map that only honoured the second would
+     * slide the ground back under the fingers on every pinch — the thing
+     * a user reads as the map fighting them. So the midpoint is carried
+     * frame to frame and its travel is applied as a translation, which is
+     * exactly what `ExchangeMap` and `MapCanvas` already do. Since one
+     * finger deliberately belongs to the page here, two-finger drag is
+     * also the ONLY way to pan on a phone: without it, pinch alone leaves
+     * the operator able to magnify a corner they cannot move away from.
      */
     const pinch = useRef<{ d: number; cx: number; cy: number } | null>(null);
     const tap = useRef<{ x: number; y: number; moved: boolean } | null>(null);
@@ -594,17 +757,17 @@ export function ParcelOverviewMap({
             const [a, b] = [e.touches[0], e.touches[1]];
             return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
         };
+        const midpoint = (e: TouchEvent, rect: DOMRect) => ({
+            x: (e.touches[0].clientX + e.touches[1].clientX) / 2 - rect.left,
+            y: (e.touches[0].clientY + e.touches[1].clientY) / 2 - rect.top,
+        });
 
         const onStart = (e: TouchEvent) => {
             if (e.touches.length >= 2) {
                 e.preventDefault();
                 tap.current = null; // a second finger cancels a pending tap
-                const rect = canvas.getBoundingClientRect();
-                pinch.current = {
-                    d: dist(e),
-                    cx: (e.touches[0].clientX + e.touches[1].clientX) / 2 - rect.left,
-                    cy: (e.touches[0].clientY + e.touches[1].clientY) / 2 - rect.top,
-                };
+                const m = midpoint(e, canvas.getBoundingClientRect());
+                pinch.current = { d: dist(e), cx: m.x, cy: m.y };
                 return;
             }
             const touch = e.touches[0];
@@ -613,11 +776,21 @@ export function ParcelOverviewMap({
 
         const onMove = (e: TouchEvent) => {
             if (e.touches.length >= 2 && pinch.current) {
-                e.preventDefault(); // take the gesture from the page → zoom the map
+                e.preventDefault(); // take the gesture from the page → drive the map
                 const d = dist(e);
+                const m = midpoint(e, canvas.getBoundingClientRect());
                 const p = pinch.current;
-                if (p.d > 0) zoomAt(p.cx, p.cy, d / p.d);
-                p.d = d;
+                // Zoom about the CURRENT midpoint, then translate by how
+                // far that midpoint travelled since the last frame. Order
+                // matters: zooming about the old centre and panning after
+                // would rotate the ground around the wrong point.
+                if (p.d > 0) zoomAt(m.x, m.y, d / p.d);
+                const v = view.current;
+                v.tx += m.x - p.cx;
+                v.ty += m.y - p.cy;
+                clampView();
+                drawRef.current();
+                pinch.current = { d, cx: m.x, cy: m.y };
                 return;
             }
             const tp = tap.current;
@@ -647,7 +820,7 @@ export function ParcelOverviewMap({
             canvas.removeEventListener('touchend', onEnd);
             canvas.removeEventListener('touchcancel', onEnd);
         };
-    }, [selectAt, zoomAt]);
+    }, [clampView, selectAt, zoomAt]);
 
     const zoomButton = useCallback(
         (factor: number) => {
@@ -657,6 +830,176 @@ export function ParcelOverviewMap({
         },
         [zoomAt],
     );
+
+    // ── Flying the view ───────────────────────────────────────────────
+
+    /**
+     * Ease the view to a target, through the SAME ref a drag writes to.
+     *
+     * Pan/zoom deliberately lives outside React so a drag never re-renders
+     * the tree; a jump-to-parcel that set state per frame would undo that
+     * for the sake of an animation. So each frame mutates `view.current`
+     * and repaints directly, exactly as `onPointerMove` does — React is
+     * told once, about the step INDEX, because that is what the position
+     * readout renders.
+     *
+     * A jump would also be the wrong thing to look at: on a map that now
+     * reaches country scale, teleporting between two parcels destroys the
+     * only cue for how far apart they are. Under
+     * `prefers-reduced-motion` it is a jump, because there the cue is
+     * worth less than the discomfort.
+     */
+    const flight = useRef<number | null>(null);
+
+    const cancelFlight = useCallback(() => {
+        if (flight.current != null) {
+            cancelAnimationFrame(flight.current);
+            flight.current = null;
+        }
+    }, []);
+
+    const flyTo = useCallback(
+        (target: { k: number; tx: number; ty: number }) => {
+            cancelFlight();
+            const v = view.current;
+            const from = { k: v.k, tx: v.tx, ty: v.ty };
+            const settle = () => {
+                clampView();
+                drawRef.current();
+                reportTier();
+            };
+
+            const reduced =
+                typeof window !== 'undefined' &&
+                typeof window.matchMedia === 'function' &&
+                window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+            if (reduced || typeof requestAnimationFrame !== 'function') {
+                v.k = target.k;
+                v.tx = target.tx;
+                v.ty = target.ty;
+                settle();
+                return;
+            }
+
+            const started = performance.now();
+            const frame = (now: number) => {
+                const t = Math.min(1, (now - started) / STEP_FLIGHT_MS);
+                // easeOutCubic — leaves fast, arrives gently.
+                const e = 1 - Math.pow(1 - t, 3);
+                v.k = from.k + (target.k - from.k) * e;
+                v.tx = from.tx + (target.tx - from.tx) * e;
+                v.ty = from.ty + (target.ty - from.ty) * e;
+                drawRef.current();
+                if (t < 1) {
+                    flight.current = requestAnimationFrame(frame);
+                    return;
+                }
+                flight.current = null;
+                settle();
+            };
+            flight.current = requestAnimationFrame(frame);
+        },
+        [cancelFlight, clampView, reportTier],
+    );
+
+    useEffect(() => cancelFlight, [cancelFlight]);
+
+    // ── Whole country ⇄ this holding ──────────────────────────────────
+
+    /** Country framing for the current pane, or null before geometry. */
+    const countryFraming = useCallback(() => {
+        const canvas = canvasRef.current;
+        const country = countryExtentRef.current;
+        if (!canvas || !country) return null;
+        const cw = canvas.clientWidth;
+        const ch = canvas.clientHeight;
+        const k = minZoomScale(view.current.fit, country, cw, ch);
+        return {
+            k,
+            ...centreOn(
+                (country.minX + country.maxX) / 2,
+                (country.minY + country.maxY) / 2,
+                k,
+                cw,
+                ch,
+            ),
+        };
+    }, []);
+
+    const toggleCountry = useCallback(() => {
+        const canvas = canvasRef.current;
+        const g = geomRef.current;
+        if (!canvas || !g) return;
+        const v = view.current;
+        const country = countryFraming();
+
+        // Already out there (or nothing to go out to) → back to the
+        // holding, using the framing `resize` computes for a first paint
+        // so the two can never disagree about what "the whole holding"
+        // looks like.
+        if (!country || v.k <= country.k * COUNTRY_SCALE_EPSILON) {
+            flyTo({
+                k: v.fit,
+                tx: (canvas.clientWidth - g.W * v.fit) / 2,
+                ty: (canvas.clientHeight - g.H * v.fit) / 2,
+            });
+            return;
+        }
+        flyTo(country);
+    }, [countryFraming, flyTo]);
+
+    // ── Stepping through the parcels ──────────────────────────────────
+
+    /**
+     * The walk order. With a group selected it walks that group — a
+     * stepper that wandered outside the active filter would be answering
+     * a different question from the one the table is showing.
+     */
+    const stepOrder = useMemo(
+        () =>
+            orderParcelsForStepping(
+                overview?.parcels ?? [],
+                selection ? new Set(selection.parcelIds) : null,
+            ),
+        [overview, selection],
+    );
+    const [stepIndex, setStepIndex] = useState(-1);
+
+    // A changed order is a changed walk — restart it rather than resume
+    // at a position that now means a different parcel.
+    useEffect(() => {
+        setStepIndex(-1);
+    }, [stepOrder]);
+
+    const stepToNext = useCallback(() => {
+        const canvas = canvasRef.current;
+        if (!canvas || !fitted || stepOrder.length === 0) return;
+        const next = nextStepIndex(stepIndex, stepOrder.length);
+        const id = stepOrder[next];
+        const point = overview?.parcels.find((p) => p.id === id);
+        if (!point) return;
+
+        const cw = canvas.clientWidth;
+        const ch = canvas.clientHeight;
+        const v = view.current;
+        const [wx, wy] = makeProjector(fitted)(point.lon, point.lat);
+
+        // Frame the parcel's own outline where there is one, so a 60 ha
+        // field and a 0.4 ha strip both arrive filling a similar share of
+        // the pane. A parcel with a centroid but no geometry has no size
+        // to frame, so it gets a fixed magnification instead.
+        const shape = parcelPaths.find((p) => p.id === id);
+        const wanted = shape
+            ? fitScaleForExtent(shape.extent, cw, ch) * STEP_PARCEL_FILL
+            : v.fit * STEP_POINT_ZOOM;
+        const k = Math.max(minScale(), Math.min(v.fit * 64, wanted));
+
+        setStepIndex(next);
+        flyTo({ k, ...centreOn(wx, wy, k, cw, ch) });
+    }, [fitted, flyTo, minScale, overview, parcelPaths, stepIndex, stepOrder]);
+
+    const steppedId = stepIndex >= 0 ? stepOrder[stepIndex] : null;
+    const steppedName = steppedId ? parcelNames.get(steppedId) : null;
 
     // ── The accessible half ───────────────────────────────────────────
 
@@ -770,8 +1113,49 @@ export function ParcelOverviewMap({
                         icon={<Minus />}
                         onClick={() => zoomButton(1 / 1.5)}
                     />
+                    {/* One press to the country and one press back.
+                        Reaching country scale on the minus button alone is
+                        eight presses from the holding's own framing, which
+                        on a phone is not a feature anyone finds. */}
+                    <Button
+                        variant="secondary"
+                        size="icon"
+                        className="h-7 w-7"
+                        aria-label={atCountry ? t('fitHolding') : t('fitCountry')}
+                        aria-pressed={atCountry}
+                        icon={<Earth />}
+                        onClick={toggleCountry}
+                    />
+                    {stepOrder.length > 0 && (
+                        <Button
+                            variant="secondary"
+                            size="icon"
+                            className="h-7 w-7"
+                            aria-label={t('stepNextParcel')}
+                            icon={<Crosshairs3 />}
+                            onClick={stepToNext}
+                        />
+                    )}
                 </div>
             </div>
+
+            {/* Where the walk currently is. A stepper without a position
+                readout leaves the operator unable to tell whether they
+                have seen everything or gone round twice — and the canvas
+                cannot say it, because canvas pixels are not text. */}
+            {steppedId && (
+                <p
+                    aria-live="polite"
+                    data-testid="parcel-step-position"
+                    className="text-xs text-content-secondary"
+                >
+                    {t('stepPosition', {
+                        name: steppedName ?? t('clusterUnnamed'),
+                        index: stepIndex + 1,
+                        total: stepOrder.length,
+                    })}
+                </p>
+            )}
 
             {overview?.truncated && (
                 <p className="text-xs text-content-secondary">

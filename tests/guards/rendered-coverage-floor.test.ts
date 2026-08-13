@@ -135,7 +135,12 @@ const ROOT = path.resolve(__dirname, '../..');
 //     was replaced by the support-measures page.
 // No surviving component lost its rendered coverage. The floor resumes its
 // upward-only ratchet from 207.
-const RENDERED_TEST_FLOOR = 207;
+//
+// Raised 207 → 216 (2026-08-13). Six of the nine are
+// `trends-operator-hint.test.tsx`, covering the Prices tab's empty-state hint
+// per commodity feed — the branch that told an operator staring at an empty
+// urea chart to configure two env vars that cannot produce a urea row.
+const RENDERED_TEST_FLOOR = 216;
 // Lowered 55 → 54 in the risk-quantification uproot (2026-08-08).
 // `ai-risk-assessment.spec.ts` and `new-risk-modal.spec.ts` were both
 // wholly about the deleted register; the specs that merely REFERENCED a

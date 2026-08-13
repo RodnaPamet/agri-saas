@@ -27,7 +27,13 @@ import {
     STALE_AFTER_DAYS,
     staleAfterDaysForSource,
     SOURCE_BARCHART,
+    SOURCE_MANUAL,
+    SOURCE_OIL_BULLETIN,
+    SOURCE_WORLD_BANK,
     firstInterestedCommodity,
+    selectPrimaryGroup,
+    leadSeriesOf,
+    chartSeriesFor,
 } from '@/components/trends/trends-helpers';
 
 const GENERATED_AT = '2026-03-20T09:00:00.000Z';
@@ -316,18 +322,21 @@ describe('provenance helpers', () => {
         expect(stalenessDays({ lastObservedAt: null }, generatedAt)).toBeNull();
     });
 
-    it('tolerates one missed weekly publication but flags two', () => {
-        // The pull is weekly, so a single late publication is routine — a
-        // warning that fires every time the feed slips a day is a warning
-        // nobody reads.
+    it('tolerates lateness up to the source’s own bound and flags past it', () => {
+        // A warning that fires every time a feed slips a day is a warning
+        // nobody reads. The BOUNDARY is what this pins; which number the
+        // boundary sits at is a per-source property, asked for rather than
+        // restated — EC's moved from the generic 15 to 25 once the chart
+        // switched to the national average, which trails by a cycle.
         const generatedAt = '2026-03-20T09:00:00.000Z';
         const daysAgo = (n: number) =>
             new Date(Date.UTC(2026, 2, 20) - n * 86_400_000).toISOString().slice(0, 10);
 
-        const ec = (lastObservedAt: string | null) => ({ lastObservedAt, source: 'ec-agrifood' });
+        const ec = (lastObservedAt: string | null) => ({ lastObservedAt, source: SOURCE_EC });
+        const bound = staleAfterDaysForSource(SOURCE_EC);
         expect(isStale(ec(daysAgo(8)), generatedAt)).toBe(false);
-        expect(isStale(ec(daysAgo(STALE_AFTER_DAYS)), generatedAt)).toBe(false);
-        expect(isStale(ec(daysAgo(STALE_AFTER_DAYS + 1)), generatedAt)).toBe(true);
+        expect(isStale(ec(daysAgo(bound)), generatedAt)).toBe(false);
+        expect(isStale(ec(daysAgo(bound + 1)), generatedAt)).toBe(true);
         // Never reported at all is "unknown", not "stale".
         expect(isStale(ec(null), generatedAt)).toBe(false);
     });
@@ -381,6 +390,72 @@ describe('findEcSeries stage pinning', () => {
     });
 });
 
+/**
+ * A warning that fires on every view is not a warning.
+ *
+ * `STALE_AFTER_DAYS_BY_SOURCE` exists because 15 days — two weekly cycles —
+ * is meaningless for a monthly feed. World Bank and manual got exemptions.
+ * Alpha Vantage, which is the SAME monthly IMF cadence (its commodity
+ * endpoints are a FRED/IMF passthrough), was missed: on 2026-08-13 its newest
+ * observation was 73 days old and its tile had been amber continuously.
+ *
+ * And EC's bound became too tight when the chart switched to the national
+ * average (#550/#551): the country-wide row trails its own per-market rows by
+ * a week, so the displayed series carries a full extra cycle of lag under a
+ * threshold written for the per-market ones.
+ *
+ * Ages below are measured against real production data on 2026-08-13.
+ */
+describe('staleness bounds match each source’s real cadence', () => {
+    const GENERATED = '2026-08-13T12:00:00.000Z';
+    const at = (source: string, lastObservedAt: string) => ({ source, lastObservedAt });
+
+    it('does not cry wolf over the monthly Alpha Vantage reference', () => {
+        // Newest AV observation on the day: 2026-06-01 → 73 days. The series
+        // is monthly with a ~6-week publication lag, so it can never be
+        // fresher than about 45 days and was permanently orange.
+        expect(isStale(at(SOURCE_AV, '2026-06-01'), GENERATED)).toBe(false);
+    });
+
+    it('still calls a genuinely dead Alpha Vantage feed stale', () => {
+        // The bound has to stay a bound. Two missed monthly publications on
+        // top of the normal lag is a real outage.
+        expect(isStale(at(SOURCE_AV, '2026-04-01'), GENERATED)).toBe(true);
+    });
+
+    it('does not cry wolf over EC’s national average, which trails by a week', () => {
+        // 2026-07-27 → 17 days. EC's per-market rows were at 2026-08-03 the
+        // same day; the country-wide row is simply one cycle behind.
+        expect(isStale(at(SOURCE_EC, '2026-07-27'), GENERATED)).toBe(false);
+    });
+
+    it('still calls a genuinely dead EC feed stale', () => {
+        // The nine orphaned per-market series stopped on 2026-07-20 and never
+        // resumed. A month of silence on a weekly feed is real.
+        expect(isStale(at(SOURCE_EC, '2026-07-06'), GENERATED)).toBe(true);
+    });
+
+    it('leaves the weekly own-listings bound alone', () => {
+        // Our own noticeboard publishes weekly with no lag — nothing about
+        // this change should loosen it.
+        expect(staleAfterDaysForSource(SOURCE_LISTINGS)).toBe(STALE_AFTER_DAYS);
+        expect(isStale(at(SOURCE_LISTINGS, '2026-07-27'), GENERATED)).toBe(true);
+    });
+
+    it('orders the bounds by cadence — weekly tightest, monthly loosest', () => {
+        // Guards against someone "simplifying" them back to one number.
+        expect(staleAfterDaysForSource(SOURCE_LISTINGS)).toBeLessThan(
+            staleAfterDaysForSource(SOURCE_EC),
+        );
+        expect(staleAfterDaysForSource(SOURCE_EC)).toBeLessThan(
+            staleAfterDaysForSource(SOURCE_WORLD_BANK),
+        );
+        expect(staleAfterDaysForSource(SOURCE_WORLD_BANK)).toBeLessThan(
+            staleAfterDaysForSource(SOURCE_AV),
+        );
+    });
+});
+
 describe('firstInterestedCommodity', () => {
     it('resolves a stated interest to the commodity Prices should open on', () => {
         // UserInterest persisted and synced across devices, but its only
@@ -413,5 +488,237 @@ describe('firstInterestedCommodity', () => {
         expect(firstInterestedCommodity([])).toBeNull();
         expect(firstInterestedCommodity(undefined)).toBeNull();
         expect(firstInterestedCommodity(['nonsense'])).toBeNull();
+    });
+});
+
+/**
+ * The tab renders ONE chart, and this is what picks it.
+ *
+ * Before this, every (region, currency, unit) group got its own card — and the
+ * pull job fetches EC prices for BG, RO, EL and EU, all of them EUR/t since
+ * Bulgaria's euro adoption. So wheat drew four near-identical cards, three of
+ * them about countries a Bulgarian operator is not paid in.
+ */
+describe('selectPrimaryGroup', () => {
+    /** A non-EC series in an arbitrary region, for the fallback cases. */
+    function otherSeries(
+        source: string,
+        region: string,
+        unit: string,
+        currency: string,
+        points: Array<[string, number]>,
+    ): TrendSeries {
+        return {
+            source,
+            region,
+            stage: null,
+            unit,
+            currency,
+            label: source,
+            lastObservedAt: points.length > 0 ? points[points.length - 1][0] : null,
+            points: points.map(([date, price]) => ({ date, price })),
+        };
+    }
+
+    it('prefers Bulgaria over every other member state', () => {
+        // The whole point: RO and EL are noise for a Bulgarian farmer, and EU
+        // is an average rather than the market they sell into.
+        const groups = groupSeriesByRegionUnit([
+            ecSeries('EU', [['2026-01-01', 205]]),
+            ecSeries('RO', [['2026-01-01', 190]]),
+            ecSeries('BG', [['2026-01-01', 512]]),
+            ecSeries('EL', [['2026-01-01', 400]]),
+        ]);
+        expect(selectPrimaryGroup(groups)?.region).toBe('BG');
+    });
+
+    it('falls back to the EU average when Bulgaria has no data', () => {
+        const groups = groupSeriesByRegionUnit([
+            ecSeries('RO', [['2026-01-01', 190]]),
+            ecSeries('EU', [['2026-01-01', 205]]),
+            ecSeries('EL', [['2026-01-01', 400]]),
+        ]);
+        expect(selectPrimaryGroup(groups)?.region).toBe('EU');
+    });
+
+    it('falls back to the most recently observed group when neither exists', () => {
+        // Fertilizer is World Bank region GLOBAL and nothing else — without
+        // this arm the tab would render no chart at all for urea.
+        const groups = groupSeriesByRegionUnit([
+            otherSeries(SOURCE_WORLD_BANK, 'GLOBAL', 'USD/t', 'USD', [
+                ['2026-01-01', 340],
+                ['2026-02-01', 355],
+            ]),
+            otherSeries(SOURCE_MANUAL, 'XX', 'BGN/t', 'BGN', [['2025-06-01', 900]]),
+        ]);
+        expect(selectPrimaryGroup(groups)?.region).toBe('GLOBAL');
+    });
+
+    it('returns null when there is nothing to draw', () => {
+        expect(selectPrimaryGroup([])).toBeNull();
+    });
+
+    it('never leads with our own noticeboard when a real quote exists', () => {
+        // A region can hold two groups — EC in EUR/t and the own-listings
+        // median in BGN/t are both region BG. Taking "the first BG group"
+        // would resolve on backend ordering, and the losing outcome is the
+        // page presenting the median of our own users' ASKING prices as the
+        // official price. Order-independent by construction.
+        const ec = ecSeries('BG', [['2026-01-10', 212]]);
+        const listings = otherSeries(SOURCE_LISTINGS, 'BG', 'BGN/t', 'BGN', [
+            ['2026-01-10', 400],
+        ]);
+        expect(selectPrimaryGroup(groupSeriesByRegionUnit([ec, listings]))?.unit).toBe('EUR/t');
+        expect(selectPrimaryGroup(groupSeriesByRegionUnit([listings, ec]))?.unit).toBe('EUR/t');
+    });
+
+    it('still draws the noticeboard when it is the only thing there is', () => {
+        const groups = groupSeriesByRegionUnit([
+            otherSeries(SOURCE_LISTINGS, 'BG', 'BGN/t', 'BGN', [['2026-01-10', 400]]),
+        ]);
+        expect(selectPrimaryGroup(groups)?.unit).toBe('BGN/t');
+    });
+
+    it('keeps both diesel tax stages on the one chart it picks', () => {
+        // with-tax and without-tax are the SAME (region, currency, unit) and
+        // genuinely different numbers — narrowing to one CARD must not narrow
+        // to one LINE.
+        const groups = groupSeriesByRegionUnit([
+            otherSeries(SOURCE_OIL_BULLETIN, 'BG', 'EUR/1000l', 'EUR', [['2026-01-05', 1820]]),
+            {
+                ...otherSeries(SOURCE_OIL_BULLETIN, 'BG', 'EUR/1000l', 'EUR', [
+                    ['2026-01-05', 1490],
+                ]),
+                stage: 'without-tax',
+            },
+            otherSeries(SOURCE_OIL_BULLETIN, 'RO', 'EUR/1000l', 'EUR', [['2026-01-05', 1750]]),
+        ]);
+        const chosen = selectPrimaryGroup(groups);
+        expect(chosen?.region).toBe('BG');
+        expect(chosen?.series).toHaveLength(2);
+    });
+});
+
+/**
+ * How many LINES the one chart draws.
+ *
+ * Narrowing to one CARD was not the whole job. EC publishes wheat per market
+ * — Burgas, Plovdiv, Varna, Ruse, Dobrich… — and the pull keys series on
+ * stageName while dropping marketName, so a single (BG, EUR, EUR/t) group
+ * held TWELVE series in production: one National Average, nine per-market
+ * rows under EC's old stage naming, and two under its new naming. The card
+ * count was 1 and the line count was 12.
+ *
+ * Ten of those twelve were dead ends. EC moved the market out of `stageName`
+ * (`"Burgas - DEPPROD"` → `"Departure from farm…"` + `marketName: "Burgas"`),
+ * which changed the series key, so the old rows stopped receiving points and
+ * flatline at their last pre-change observation while the new ones carry on.
+ */
+describe('chartSeriesFor', () => {
+    function ec(stage: string, points: Array<[string, number]>, label = 'Breadmaking common wheat') {
+        return { ...ecSeries('BG', points, stage), label };
+    }
+
+    it('draws only the National Average when EC publishes one', () => {
+        // The nine per-market rows measure THE SAME quantity in different
+        // places; the national average is the answer to "what is wheat worth
+        // in Bulgaria". Overlaying all ten says nothing the one line does not.
+        const group = groupSeriesByRegionUnit([
+            ec('Burgas - DEPPROD', [['2026-07-20', 191]]),
+            ec('Plovdiv - DEPPROD', [['2026-07-20', 188]]),
+            ec('National Average - Not Specified', [['2026-07-27', 190]]),
+            ec('Departure from farm or from production area', [['2026-08-03', 193]], 'BLTPAN|PAN'),
+        ])[0];
+        const drawn = chartSeriesFor(group);
+        expect(drawn).toHaveLength(1);
+        expect(drawn[0].stage).toBe('National Average - Not Specified');
+    });
+
+    it('falls back to the freshest EC series when no national average exists', () => {
+        // EC restructures its vocabulary — it just did. If the national
+        // average disappears, one live line beats twelve overlapping ones,
+        // and the freshest is the only defensible choice among equivalents.
+        const group = groupSeriesByRegionUnit([
+            ec('Burgas - DEPPROD', [['2026-07-20', 191]]),
+            ec('Departure from farm or from production area', [['2026-08-03', 193]], 'BLTPAN|PAN'),
+        ])[0];
+        const drawn = chartSeriesFor(group);
+        expect(drawn).toHaveLength(1);
+        expect(drawn[0].stage).toBe('Departure from farm or from production area');
+    });
+
+    it('keeps every line for a non-EC group', () => {
+        // Diesel's with-tax and without-tax are DIFFERENT quantities and both
+        // are wanted. Collapsing by count rather than by source would have
+        // silently dropped one of them.
+        const withTax: TrendSeries = {
+            source: SOURCE_OIL_BULLETIN,
+            region: 'BG',
+            stage: 'with-tax',
+            unit: 'EUR/1000l',
+            currency: 'EUR',
+            label: 'diesel',
+            lastObservedAt: '2026-08-10',
+            points: [{ date: '2026-08-10', price: 1820 }],
+        };
+        const withoutTax: TrendSeries = { ...withTax, stage: 'without-tax', points: [{ date: '2026-08-10', price: 1490 }] };
+        const group = groupSeriesByRegionUnit([withTax, withoutTax])[0];
+        expect(chartSeriesFor(group)).toHaveLength(2);
+    });
+
+    it('is a no-op on a single-series group', () => {
+        const group = groupSeriesByRegionUnit([ec('National Average - Not Specified', [['2026-07-27', 190]])])[0];
+        expect(chartSeriesFor(group)).toHaveLength(1);
+    });
+
+    it('matches the national average however EC cases or pads the stage', () => {
+        // The stage text is EC's, not ours, and they have already renamed it
+        // once. Matching a literal would break on the next rename.
+        for (const stage of ['National Average - Not Specified', 'national average', '  National Average  ']) {
+            const group = groupSeriesByRegionUnit([
+                ec('Burgas - DEPPROD', [['2026-08-03', 191]]),
+                ec(stage, [['2026-07-27', 190]]),
+            ])[0];
+            expect(chartSeriesFor(group)).toHaveLength(1);
+            expect(chartSeriesFor(group)[0].stage).toBe(stage);
+        }
+    });
+});
+
+/**
+ * The headline tile reads THIS, so it can never disagree with the chart.
+ *
+ * It used to read `findEcSeries(series, 'BG')` with the region hard-coded,
+ * which the moment the chart falls back to EU would print "no data" directly
+ * above a populated line.
+ */
+describe('leadSeriesOf', () => {
+    it('applies the EC stage preference inside the chosen group', () => {
+        const groups = groupSeriesByRegionUnit([
+            ecSeries('BG', [['2026-01-01', 200]], 'DEPPORT'),
+            ecSeries('BG', [['2026-01-01', 180]], 'FGATE'),
+        ]);
+        expect(leadSeriesOf(groups[0]).stage).toBe('FGATE');
+    });
+
+    it('takes the most recently observed series when the group is not EC', () => {
+        const stale: TrendSeries = {
+            source: SOURCE_OIL_BULLETIN,
+            region: 'BG',
+            stage: 'with-tax',
+            unit: 'EUR/1000l',
+            currency: 'EUR',
+            label: 'diesel',
+            lastObservedAt: '2025-11-01',
+            points: [{ date: '2025-11-01', price: 1700 }],
+        };
+        const fresh: TrendSeries = {
+            ...stale,
+            stage: 'without-tax',
+            lastObservedAt: '2026-01-05',
+            points: [{ date: '2026-01-05', price: 1490 }],
+        };
+        const groups = groupSeriesByRegionUnit([stale, fresh]);
+        expect(leadSeriesOf(groups[0]).stage).toBe('without-tax');
     });
 });

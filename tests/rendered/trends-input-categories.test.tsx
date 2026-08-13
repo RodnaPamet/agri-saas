@@ -208,7 +208,7 @@ describe('inputs the farm buys', () => {
         fireEvent.click(document.getElementById('trends-category-fuel')!);
         expect(screen.queryByText('tiles.listings')).not.toBeInTheDocument();
         expect(screen.queryByText('tiles.reference')).not.toBeInTheDocument();
-        expect(screen.getByText('tiles.bgLatest')).toBeInTheDocument();
+        expect(screen.getByText('tiles.latestPrice')).toBeInTheDocument();
     });
 
     // Break: a blank chart behind a dropdown entry, which reads as a broken

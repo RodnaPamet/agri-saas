@@ -6167,7 +6167,11 @@
             "clusterActive": "Showing {count, plural, one {# parcel} other {# parcels}} near {label}",
             "clusterActiveUnpositioned": "Showing {count, plural, one {# parcel} other {# parcels}} without a location",
             "zoomIn": "Zoom in",
-            "zoomOut": "Zoom out"
+            "zoomOut": "Zoom out",
+            "fitCountry": "Show the whole country",
+            "fitHolding": "Back to this holding",
+            "stepNextParcel": "Go to the next parcel, north to south",
+            "stepPosition": "{name} · {index} of {total}, north to south"
         },
         "spray": {
             "title": "New spray job",
@@ -6996,10 +7000,15 @@
         },
         "operator": {
             "title": "For operators",
-            "body": "Market data is populated by a scheduled job. Configure {ec} and {av} to enable it."
+            "feeds": {
+                "ecAgrifood": "Grain prices come from the EC AGRI-food data portal. It is public — no key and no configuration are needed. Prices load on the weekly job, Mondays at 05:30 UTC.",
+                "oilBulletin": "Diesel comes from the EC Weekly Oil Bulletin. It is public — no key and no configuration are needed. Prices load on the weekly job, Mondays at 05:30 UTC, one observation per week.",
+                "worldBank": "Urea and DAP come from the World Bank Pink Sheet. It is public — no key and no configuration are needed. The data is monthly and loads on the weekly job, Mondays at 05:30 UTC."
+            },
+            "stillEmpty": "If this is still empty after the next run, check the worker logs."
         },
         "tiles": {
-            "bgLatest": "BG price (official)",
+            "latestPrice": "Latest price",
             "listings": "Listings index",
             "listingsCount": "{count} listings",
             "reference": "Reference price",

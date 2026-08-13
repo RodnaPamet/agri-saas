@@ -67,6 +67,243 @@ export function shouldDrawParcels(zoomTier: number): boolean {
     return zoomTier >= PARCEL_TIER_THRESHOLD;
 }
 
+/**
+ * How much of the pane the holding's own frame has to span before
+ * individual parcel outlines are worth drawing.
+ *
+ * A SHARE rather than a pixel count, because a pixel count answers
+ * differently on a 290 px phone card and a 900 px desktop slot, while
+ * the question — "is a field big enough on screen to read as a field?"
+ * — does not. It also has to sit above one fixed boundary: the zoom-out
+ * that shipped bottoms out at `fit * 0.35`, putting the holding at
+ * roughly 0.30–0.34 of the pane, and outlines must still be drawn there
+ * or this quietly narrows the pre-existing range.
+ *
+ * The other side is deliberately NOT a fixed boundary. How small the
+ * holding gets at country scale depends on how large the holding is: a
+ * 6 km one lands near 0.03 of the pane, a 40 km one near 0.14, and a
+ * holding spanning a third of Bulgaria stays around 0.29 — where its
+ * outlines are still perfectly legible and should still be drawn. The
+ * predicate therefore says nothing about zoom LEVEL, and a huge holding
+ * keeping its outlines all the way out is the right answer rather than a
+ * hole in the rule.
+ */
+export const PARCEL_SHAPE_MIN_PANE_SHARE = 0.2;
+
+/**
+ * Whether to draw parcel OUTLINES, as opposed to cluster markers.
+ *
+ * The sibling of {@link shouldDrawParcels}, and deliberately asking a
+ * different question. That one reads a zoom TIER, which is a statement
+ * about visible ground span: at 20 km of ground per cell, clustering says
+ * more than a hundred separate dots do. This one is about legibility at
+ * the current magnification — once the whole holding spans a fifth of the
+ * pane, its parcels are not outlines any more, they are a smear of
+ * one-pixel marks that reads as noise on top of the country.
+ *
+ * Both are needed because neither implies the other. A large holding can
+ * sit at the lowest tier while still filling the pane (draw the shapes);
+ * the same holding zoomed out to country scale is at the same tier and
+ * must not (draw the clusters instead). Ground span and screen size only
+ * moved together while the view could not zoom out past the holding.
+ *
+ * An unmeasurable pane draws them: whatever else is wrong, it is not this
+ * function's business to blank the map.
+ */
+export function shouldDrawParcelShapes(
+    holdingScreenWidthPx: number,
+    paneWidthPx: number,
+): boolean {
+    if (!(paneWidthPx > 0)) return true;
+    return holdingScreenWidthPx >= paneWidthPx * PARCEL_SHAPE_MIN_PANE_SHARE;
+}
+
+// ── World extents, and how far out the view may go ───────────────────
+//
+// The farm view's world is the geometry file's own W×H box, with the
+// holding fitted into it. Zooming OUT past that box used to be capped at
+// `fit * 0.35` — an arbitrary bit of headroom, and nowhere near enough to
+// place the holding inside the country, which in this world space is
+// tens of times larger. The functions below replace that constant with
+// the actual answer, measured from the same bridge that draws the oblast
+// outlines, so "zoomed all the way out" means "the country fits" rather
+// than a number somebody picked.
+
+export interface WorldExtent {
+    minX: number;
+    minY: number;
+    maxX: number;
+    maxY: number;
+}
+
+/** The national geometry's own box, expressed in the FARM view's world. */
+export function bridgedExtent(
+    bridge: ProjectionBridge,
+    width: number,
+    height: number,
+): WorldExtent {
+    const x0 = bridge.tx;
+    const x1 = bridge.scaleX * width + bridge.tx;
+    const y0 = bridge.ty;
+    const y1 = bridge.scaleY * height + bridge.ty;
+    return {
+        minX: Math.min(x0, x1),
+        maxX: Math.max(x0, x1),
+        minY: Math.min(y0, y1),
+        maxY: Math.max(y0, y1),
+    };
+}
+
+/** The farm world box itself — the holding, framed. */
+export function farmExtent(width: number, height: number): WorldExtent {
+    return { minX: 0, minY: 0, maxX: width, maxY: height };
+}
+
+/** The smallest box containing both. */
+export function unionExtent(a: WorldExtent, b: WorldExtent): WorldExtent {
+    return {
+        minX: Math.min(a.minX, b.minX),
+        minY: Math.min(a.minY, b.minY),
+        maxX: Math.max(a.maxX, b.maxX),
+        maxY: Math.max(a.maxY, b.maxY),
+    };
+}
+
+/** The scale at which `extent` exactly fills a `cw × ch` pane. */
+export function fitScaleForExtent(extent: WorldExtent, cw: number, ch: number): number {
+    const w = Math.max(1e-6, extent.maxX - extent.minX);
+    const h = Math.max(1e-6, extent.maxY - extent.minY);
+    return Math.min(cw / w, ch / h);
+}
+
+/** Breathing room around the coastline at full zoom-out. */
+const COUNTRY_FIT_MARGIN = 0.95;
+
+/**
+ * How far out the view may zoom.
+ *
+ * `fit * 0.35` is kept as a floor for the case where there is no country
+ * extent to measure against (the geometry has not loaded), so the range
+ * can only ever grow relative to what shipped. Where the country IS
+ * known, the floor becomes the scale that frames it.
+ */
+export function minZoomScale(
+    fit: number,
+    country: WorldExtent | null,
+    cw: number,
+    ch: number,
+): number {
+    const farmFloor = fit * 0.35;
+    if (!country || cw <= 0 || ch <= 0) return farmFloor;
+    return Math.min(farmFloor, fitScaleForExtent(country, cw, ch) * COUNTRY_FIT_MARGIN);
+}
+
+/**
+ * Which extent the pan clamp should hold the view inside.
+ *
+ * Zoomed in at or past the default framing (`k >= fit`), it is the farm
+ * box — exactly what shipped, and what stops a drag wandering off a
+ * holding into empty world space. Only in the newly-reachable range below
+ * `fit` does the country become the boundary, which is what lets the
+ * whole of it be centred rather than the holding being centred with half
+ * the country hanging off the pane.
+ */
+export function clampExtentFor(
+    k: number,
+    fit: number,
+    farm: WorldExtent,
+    country: WorldExtent | null,
+): WorldExtent {
+    if (!country || k >= fit) return farm;
+    return unionExtent(farm, country);
+}
+
+/**
+ * Clamp a translation so the extent cannot be dragged away.
+ *
+ * Smaller than the pane on an axis → centred on it, which is what makes
+ * "zoom all the way out" land on a centred country rather than on a
+ * country pushed to whichever corner the holding sits in.
+ */
+export function clampTranslation(
+    extent: WorldExtent,
+    k: number,
+    cw: number,
+    ch: number,
+    tx: number,
+    ty: number,
+): { tx: number; ty: number } {
+    const contentW = (extent.maxX - extent.minX) * k;
+    const contentH = (extent.maxY - extent.minY) * k;
+    const originX = extent.minX * k;
+    const originY = extent.minY * k;
+    return {
+        tx:
+            contentW <= cw
+                ? (cw - contentW) / 2 - originX
+                : Math.min(-originX, Math.max(cw - contentW - originX, tx)),
+        ty:
+            contentH <= ch
+                ? (ch - contentH) / 2 - originY
+                : Math.min(-originY, Math.max(ch - contentH - originY, ty)),
+    };
+}
+
+/** Translation that puts world point `(wx, wy)` at the centre of the pane. */
+export function centreOn(
+    wx: number,
+    wy: number,
+    k: number,
+    cw: number,
+    ch: number,
+): { tx: number; ty: number } {
+    return { tx: cw / 2 - wx * k, ty: ch / 2 - wy * k };
+}
+
+// ── Stepping through parcels ─────────────────────────────────────────
+
+/**
+ * The order the "next parcel" button walks, NORTH TO SOUTH.
+ *
+ * Stated rather than incidental, because a stepper whose order the user
+ * cannot predict reads as a shuffle. Creation order — the order the rows
+ * happen to arrive in — is meaningless to a farmer: it records when a
+ * parcel was typed in, not where it is. Latitude descending is the one
+ * ordering that matches what the map is showing, so pressing the button
+ * repeatedly walks down the holding the way an eye would.
+ *
+ * Longitude ascending breaks ties (two parcels on the same line run west
+ * to east), and the id breaks the remainder, so the sequence is TOTAL:
+ * the same press from the same position always lands on the same parcel,
+ * including for parcels sharing a coordinate.
+ *
+ * `eligible` narrows to an active cluster selection — with a group
+ * picked, stepping walks that group rather than silently leaving it.
+ */
+export function orderParcelsForStepping(
+    parcels: ReadonlyArray<{ id: string; lon: number; lat: number }>,
+    eligible?: ReadonlySet<string> | null,
+): string[] {
+    return parcels
+        .filter((p) => !eligible || eligible.has(p.id))
+        .filter((p) => Number.isFinite(p.lon) && Number.isFinite(p.lat))
+        .slice()
+        .sort((a, b) => b.lat - a.lat || a.lon - b.lon || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+        .map((p) => p.id);
+}
+
+/**
+ * Where the stepper goes next, wrapping at the end.
+ *
+ * Wrapping rather than dead-ending: a button that stops responding at the
+ * last parcel is indistinguishable from a broken one. `-1` (nothing
+ * visited yet) steps to the first.
+ */
+export function nextStepIndex(current: number, total: number): number {
+    if (total <= 0) return -1;
+    return current < 0 ? 0 : (current + 1) % total;
+}
+
 // ── Cluster token ────────────────────────────────────────────────────
 //
 // A cluster id is an FNV-1a hash of its member set, so it changes

@@ -20,7 +20,7 @@ import {
     SOURCE_BARCHART,
     SOURCE_EC,
     SOURCE_LISTINGS,
-    STALE_AFTER_DAYS,
+    staleAfterDaysForSource,
 } from '@/components/trends/trends-helpers';
 
 const GENERATED_AT = '2026-03-20T09:00:00.000Z';
@@ -111,9 +111,13 @@ describe('SeriesProvenance — freshness', () => {
     });
 
     it('warns instead of reassuring once a series stops reporting', () => {
+        // Past the source's OWN bound, not the generic one. EC's is 25 since
+        // the chart moved to the national average, which trails its per-market
+        // rows by a cycle; asking for the bound keeps this about the warning
+        // rather than about a number that lives elsewhere.
         renderProvenance({
             source: SOURCE_EC,
-            lastObservedAt: daysBefore(STALE_AFTER_DAYS + 5),
+            lastObservedAt: daysBefore(staleAfterDaysForSource(SOURCE_EC) + 5),
         });
         expect(screen.getByText(/not updated since/i)).toBeInTheDocument();
         expect(screen.queryByText(/^as of /i)).not.toBeInTheDocument();

@@ -23,11 +23,26 @@ export type TimeSeriesDatum<T extends Datum = any> = {
   values: T;
 };
 
-export type AccessorFn<T extends Datum, TValue = number> = (
+/**
+ * `undefined` is part of the contract, not an oversight.
+ *
+ * A series legitimately has NOTHING to say at some dates — it started later
+ * than its neighbours, or stopped reporting earlier. The default used to be
+ * plain `number`, which made every consumer's null-handling look like
+ * paranoia: `computeYDomain` guarded with `if (v != null)` and `Areas` wrote
+ * `?? 0`, both against a case the type said could not happen. It could, and
+ * the `?? 0` turned it into a real price of zero — a cliff to the floor that
+ * also dragged the y-axis down (production, 2026-08-13: axis 0-200 for data
+ * spanning 175-200).
+ *
+ * With `undefined` in the type, "what does this mean here?" is a question the
+ * compiler asks at every consumer instead of one each author answers alone.
+ */
+export type AccessorFn<T extends Datum, TValue = number | undefined> = (
   datum: TimeSeriesDatum<T>,
 ) => TValue;
 
-export type Series<T extends Datum = any, TValue = number> = {
+export type Series<T extends Datum = any, TValue = number | undefined> = {
   id: string;
   isActive?: boolean;
   valueAccessor: AccessorFn<T, TValue>;

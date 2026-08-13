@@ -218,6 +218,26 @@ export function buildMergedData(group: ChartGroup): MergedDatum[] {
     });
 }
 
+/**
+ * The chart's value for one series at one merged row — `undefined` where the
+ * series has nothing to say, NEVER zero.
+ *
+ * {@link buildMergedData} deliberately omits a series' key outside its own
+ * reporting span so a feed that went silent visibly stops. The consumer used
+ * to undo that with `?? 0`, which turned "no data" into a real price of zero:
+ * on 2026-08-13 two EC wheat series that ended on 2026-07-20 plunged from ~190
+ * to the floor at the right edge, and because a genuine 0 enters the y-domain
+ * the axis rendered 0–200 for data spanning 175–200 — flattening every real
+ * movement into the top tenth of the chart.
+ *
+ * A genuine zero still passes through. `0` is a price; absent is not.
+ */
+export function chartValueAccessor(
+    key: string,
+): (d: { values: Record<string, number> }) => number | undefined {
+    return (d) => d.values[key];
+}
+
 /** The latest (most recent) point of a series, or null when empty. */
 export function latestPoint(s: TrendSeries): TrendPoint | null {
     if (s.points.length === 0) return null;
@@ -331,22 +351,51 @@ export function stalenessDays(
 export const STALE_AFTER_DAYS = 15;
 
 /**
- * Staleness is a property of the SOURCE'S CADENCE, not a constant.
+ * Staleness is a property of the SOURCE'S CADENCE **plus its publication
+ * LAG**, not a constant — and the lag is the half that kept getting missed.
  *
- * 15 days is two weekly cycles plus slack, which is right for the weekly EC
- * and listings feeds. Applied to the World Bank Pink Sheet it is simply
- * wrong: that feed is MONTHLY with a ~1-month publication lag, so a urea
- * point is 30-60 days old at all times and would render permanently orange
- * with a "not reported recently" warning — a false alarm on every single
- * view, which is how a warning stops being read at all.
+ * 15 days is two weekly cycles plus slack. It is right only for a feed that
+ * publishes weekly AND publishes promptly, which of everything here is just
+ * our own listings index.
+ *
+ * Cadences measured from production on 2026-08-13, gaps since 2024:
+ *
+ * | source        | cadence      | max gap | age that day |
+ * |---------------|--------------|---------|--------------|
+ * | listings      | weekly, live | —       | —            |
+ * | ec-agrifood   | weekly (7d)  | 14d     | 17d          |
+ * | world-bank    | monthly      | 31d     | 43d          |
+ * | alpha-vantage | monthly      | 31d     | 73d          |
+ *
+ * Two entries were missing, and both produced a warning that fired on every
+ * single view — which is how a warning stops being read at all.
+ *
+ * ALPHA VANTAGE is the same monthly IMF cadence as the Pink Sheet (its
+ * commodity endpoints are a FRED/IMF passthrough) but with a longer
+ * publication lag: on 2026-08-13 its newest observation was 73 days old and
+ * the next had not landed, so its steady-state age oscillates ~43-75 days. It
+ * can never be fresher than about 45. 95 = one 31-day cycle on top of the
+ * observed ~45-day lag, plus slack; only a genuinely dead feed exceeds it.
+ *
+ * EC only became wrong when the chart switched to the NATIONAL AVERAGE
+ * (#550/#551). That row trails EC's own per-market rows by a week — verified
+ * live: per-market at 2026-08-03, country-wide at 2026-07-27 — so the series
+ * we now display carries a full extra cycle of lag under a threshold written
+ * for the per-market ones. 25 = EC's worst observed gap (14d) plus our own
+ * weekly pull cadence (7d) plus slack.
  *
  * A manual series gets a wide bound for a different reason: it is somebody's
  * typing and its age is already stated explicitly next to it, so a staleness
  * warning would be both redundant and unactionable. Only a year of silence
  * says something the provenance line does not.
+ *
+ * Adding a source? Measure its real gaps and its lag before picking a number.
+ * A bound tighter than `cadence + lag` is an alarm that never stops ringing.
  */
 export const STALE_AFTER_DAYS_BY_SOURCE: Readonly<Record<string, number>> = {
+    [SOURCE_EC]: 25,
     [SOURCE_WORLD_BANK]: 75,
+    [SOURCE_AV]: 95,
     [SOURCE_MANUAL]: 400,
 };
 
@@ -381,6 +430,122 @@ export function primarySeries(series: TrendSeries[]): TrendSeries | null {
             (b.lastObservedAt ?? '').localeCompare(a.lastObservedAt ?? '') ||
             b.points.length - a.points.length,
     )[0];
+}
+
+/**
+ * Regions worth leading with, most-relevant-first for a Bulgarian operator.
+ *
+ * BG is the market a farmer here is actually paid in. EU is an average across
+ * the union — a reasonable benchmark when BG has not reported, and wrong to
+ * present as the local price when it has.
+ */
+const REGION_PREFERENCE = ['BG', 'EU'] as const;
+
+/**
+ * The ONE chart-group the Prices tab draws.
+ *
+ * The tab used to render every group {@link groupSeriesByRegionUnit} returned,
+ * and the pull job fetches EC prices for BG, RO, EL and EU — all EUR/t since
+ * Bulgaria's euro adoption, so region is the only thing separating them. Wheat
+ * therefore drew four cards with the same title, the same source label and the
+ * same unit, three of them about countries the reader is not paid in. The
+ * grouping is still right (those series must not share a Y axis); showing all
+ * of it was not.
+ *
+ * The third arm is what makes this ONE rule rather than a crop rule with
+ * exceptions. Fertilizer is World Bank region `GLOBAL` and nothing else, and a
+ * future commodity may arrive in a region nobody listed here — both fall
+ * through to whichever group reported most recently and draw a chart, rather
+ * than matching no preference and drawing nothing.
+ *
+ * Series WITHIN the chosen group are untouched: narrowing to one card must not
+ * narrow to one line, or diesel would lose either its with-tax or its
+ * without-tax series, which are different numbers and both wanted.
+ */
+export function selectPrimaryGroup(groups: ChartGroup[]): ChartGroup | null {
+    if (groups.length === 0) return null;
+    // A region can hold more than one group — EC in EUR/t and the own-listings
+    // median in BGN/t are BOTH region BG. Picking "the first BG group" would
+    // resolve on backend result ordering, and the losing outcome is this page
+    // presenting the median of our own users' ASKING prices as the official
+    // one. The noticeboard is a last resort, never a default.
+    const quotes = groups.filter(
+        (g) => !g.series.every((s) => isOwnMarketplaceSource(s.source)),
+    );
+    const candidates = quotes.length > 0 ? quotes : groups;
+    for (const region of REGION_PREFERENCE) {
+        const preferred = candidates.find((g) => g.region === region);
+        if (preferred) return preferred;
+    }
+    const lead = primarySeries(candidates.flatMap((g) => g.series));
+    if (!lead) return null;
+    return candidates.find((g) => g.series.includes(lead)) ?? candidates[0];
+}
+
+/**
+ * How EC names its country-wide series, loosely matched.
+ *
+ * The text is EC's and they have already renamed it once — the market moved
+ * out of `stageName` (`'Burgas - DEPPROD'` → `'Departure from farm…'` plus a
+ * separate `marketName`) some time before 2026-08-10, which changed our series
+ * key and orphaned ten Bulgarian wheat series mid-chart. Matching a literal
+ * would break on the next rename; matching a substring, case- and
+ * whitespace-insensitively, survives one.
+ */
+function isNationalAverage(s: TrendSeries): boolean {
+    return (s.stage ?? '').trim().toLowerCase().includes('national average');
+}
+
+/**
+ * The lines the one chart draws, out of the group {@link selectPrimaryGroup}
+ * chose.
+ *
+ * Narrowing to one CARD was not the whole job. EC publishes wheat per market —
+ * Burgas, Plovdiv, Varna, Ruse, Dobrich… — and the pull keys a series on
+ * `stageName` while dropping `marketName`, so production held TWELVE series in
+ * a single (BG, EUR, EUR/t) group. The card count was 1 and the line count was
+ * 12, ten of them dead ends flatlining weeks back because EC's rename changed
+ * their key.
+ *
+ * The collapse is decided by SOURCE, not by count. Those per-market rows are
+ * ALTERNATIVES — the same quantity measured in different places, for which the
+ * national average is the answer to "what is wheat worth in Bulgaria". Diesel's
+ * with-tax and without-tax are COMPLEMENTS: different quantities, both wanted,
+ * on the same axis. No property of the group distinguishes those two cases, so
+ * a count- or freshness-based rule would silently drop one of the diesel lines.
+ * Only the EC feed collapses; every other source keeps every line it has.
+ */
+export function chartSeriesFor(group: ChartGroup): TrendSeries[] {
+    if (group.series.length <= 1) return group.series;
+    if (!group.series.every((s) => s.source === SOURCE_EC)) return group.series;
+    const national = group.series.find(isNationalAverage);
+    if (national) return [national];
+    // No national average — EC restructures, and it just did. One live line
+    // beats a dozen overlapping ones, and among series measuring the same
+    // thing the freshest is the only defensible pick.
+    const freshest = primarySeries(group.series);
+    return freshest ? [freshest] : group.series;
+}
+
+/**
+ * The series a group's headline tile should quote.
+ *
+ * The tile used to call `findEcSeries(series, 'BG')` with the region spelled
+ * out, so the moment {@link selectPrimaryGroup} fell back to EU the tile read
+ * "no data" directly above a populated chart. Reading the group the chart drew
+ * makes the two incapable of disagreeing.
+ *
+ * EC stage preference applies first because it encodes a material distinction
+ * — ex-farm and delivered-to-port are separated by haulage — and only then the
+ * most-recent rule, which is all a non-EC group (oil bulletin, World Bank,
+ * hand-typed) has to go on.
+ */
+export function leadSeriesOf(group: ChartGroup): TrendSeries {
+    return (
+        findEcSeries(group.series, group.region) ??
+        primarySeries(group.series) ??
+        group.series[0]
+    );
 }
 
 /** Round-trip-safe display number: fixed to at most 2 decimals, trimmed. */

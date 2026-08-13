@@ -85,10 +85,20 @@ export function Areas({
                 />
 
                 {/* Area */}
+                {/* `defined` is what makes a gap a GAP.
+                    A series with nothing to say at a date yields undefined
+                    (see computeYDomain, which already skips those). Without
+                    `defined`, the `?? 0` below plots it at the baseline, so a
+                    feed that stopped reporting draws a cliff to the floor
+                    instead of ending. The `?? 0` stays because d3 still calls
+                    `y` for undefined points and must get a number — `defined`
+                    decides whether the point is drawn, `y` only has to not
+                    throw. */}
                 <AreaClosed
                   data={data}
                   x={(d) => xScale(d.date)}
                   y={(d) => yScale(s.valueAccessor(d) ?? 0)}
+                  defined={(d) => s.valueAccessor(d) != null}
                   yScale={yScale}
                 >
                   {({ path }) => {
@@ -130,6 +140,7 @@ export function Areas({
                   data={data}
                   x={(d) => xScale(d.date)}
                   y={(d) => yScale(s.valueAccessor(d) ?? 0)}
+                  defined={(d) => s.valueAccessor(d) != null}
                 >
                   {({ path }) => (
                     <motion.path
@@ -147,19 +158,35 @@ export function Areas({
                   )}
                 </Area>
 
-                {/* Latest value circle */}
-                {showLatestValueCircle && !tooltipData && data.length > 0 && (
-                  <Circle
-                    cx={xScale(data.at(-1)!.date)}
-                    cy={yScale(s.valueAccessor(data.at(-1)!))}
-                    r={4}
-                    className={cn(
-                      s.colorClassName ?? "text-brand-emphasis",
-                      seriesStyle?.lineClassName,
-                    )}
-                    fill="currentColor"
-                  />
-                )}
+                {/* Latest value circle — on the series' OWN last reported
+                    point, not the last row in the dataset.
+                    Those differ the moment a series stops early: the final
+                    row belongs to whichever series is still reporting, and
+                    reading this one's value there yields undefined, so
+                    yScale(undefined) is NaN and the browser drops the circle
+                    (or paints it at the origin). Walking back to the last
+                    defined value puts the dot where the line actually ends. */}
+                {showLatestValueCircle &&
+                  !tooltipData &&
+                  (() => {
+                    const last = [...data]
+                      .reverse()
+                      .find((d) => s.valueAccessor(d) != null);
+                    const lastValue = last && s.valueAccessor(last);
+                    if (!last || lastValue == null) return null;
+                    return (
+                      <Circle
+                        cx={xScale(last.date)}
+                        cy={yScale(lastValue)}
+                        r={4}
+                        className={cn(
+                          s.colorClassName ?? "text-brand-emphasis",
+                          seriesStyle?.lineClassName,
+                        )}
+                        fill="currentColor"
+                      />
+                    );
+                  })()}
               </motion.g>
             );
           })}

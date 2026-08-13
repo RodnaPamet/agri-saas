@@ -131,14 +131,17 @@ describe('PricesTab', () => {
         expect(screen.queryByTestId('ts-chart')).not.toBeInTheDocument();
     });
 
-    it('renders source-tagged legend labels + charts when data is ready', () => {
+    it('renders ONE chart — the official quote, not the noticeboard', () => {
         useTenantSWR.mockReturnValue({ data: READY, error: undefined });
         renderTab();
-        // One chart per unit-group (EUR/t + BGN/t = 2).
-        expect(screen.getAllByTestId('ts-chart')).toHaveLength(2);
-        // Source legend labels (mocked intl → the i18n key path renders).
+        // The fixture holds two BG groups (EC EUR/t + own-listings BGN/t).
+        // Exactly one is drawn, and it is the official one — leading with the
+        // median of our own users' asking prices would be the expensive error.
+        expect(screen.getAllByTestId('ts-chart')).toHaveLength(1);
         expect(screen.getAllByText('sources.official').length).toBeGreaterThan(0);
-        expect(screen.getAllByText('sources.listings').length).toBeGreaterThan(0);
+        expect(screen.queryByText('sources.listings')).not.toBeInTheDocument();
+        // The listings TILE stays — it is a number, not a fourth chart.
+        expect(screen.getByText('tiles.listings')).toBeInTheDocument();
     });
 
     it('refetches when the range selector changes', () => {
@@ -161,6 +164,100 @@ describe('PricesTab', () => {
         expect(useTenantSWR).toHaveBeenCalledWith(
             '/trends/prices?commodity=maize&range=3m',
         );
+    });
+});
+
+/**
+ * The four-card complaint, written down.
+ *
+ * `market-prices-pull` fetches EC prices for BG, RO, EL and EU, and since
+ * Bulgaria's euro adoption all four are EUR/t — so region was the only thing
+ * separating four cards with the same title, same source label and same unit.
+ */
+describe('PricesTab — one chart, whichever regions the feed carries', () => {
+    function ec(region: string, price: number) {
+        return {
+            source: 'ec-agrifood',
+            region,
+            stage: 'FGATE',
+            unit: 'EUR/t',
+            currency: 'EUR',
+            label: 'Wheat',
+            lastObservedAt: '2026-01-10',
+            points: [
+                { date: '2026-01-01', price: price - 8 },
+                { date: '2026-01-10', price },
+            ],
+        };
+    }
+    const payload = (series: unknown[]) => ({
+        commodity: 'wheat',
+        range: '3m',
+        generatedAt: '2026-01-12T00:00:00.000Z',
+        series,
+    });
+
+    it('draws Bulgaria, not four member states', () => {
+        useTenantSWR.mockReturnValue({
+            data: payload([ec('EU', 205), ec('RO', 190), ec('BG', 212), ec('EL', 400)]),
+            error: undefined,
+        });
+        renderTab();
+        expect(screen.getAllByTestId('ts-chart')).toHaveLength(1);
+        expect(screen.getByText('BG')).toBeInTheDocument();
+        expect(screen.queryByText('RO')).not.toBeInTheDocument();
+        expect(screen.queryByText('EL')).not.toBeInTheDocument();
+    });
+
+    it('falls back to the EU average when Bulgaria has not reported', () => {
+        useTenantSWR.mockReturnValue({
+            data: payload([ec('RO', 190), ec('EU', 205), ec('EL', 400)]),
+            error: undefined,
+        });
+        renderTab();
+        expect(screen.getAllByTestId('ts-chart')).toHaveLength(1);
+        expect(screen.getByText('EU')).toBeInTheDocument();
+    });
+
+    it('draws ONE line for the twelve series production actually has', () => {
+        // The shape no fixture had. EC publishes wheat per market and the pull
+        // keys on stageName while dropping marketName, so prod's BG/EUR/t
+        // group held 12 series: one National Average, nine per-market rows
+        // under EC's old stage naming (dead ends since the rename), and two
+        // under the new naming. The card count was already 1; the LINE count
+        // was 12, ten of them flatlining weeks back.
+        const perMarket = ['Burgas', 'Plovdiv', 'Varna', 'Ruse', 'Dobrich', 'Pleven', 'Stara Zagora'].map(
+            (m) => ({ ...ec('BG', 191), stage: `${m} - DEPPROD`, lastObservedAt: '2026-07-20' }),
+        );
+        useTenantSWR.mockReturnValue({
+            data: payload([
+                ...perMarket,
+                { ...ec('BG', 190), stage: 'National Average - Not Specified' },
+                { ...ec('BG', 193), stage: 'Departure from farm or from production area', label: 'BLTPAN|PAN' },
+            ]),
+            error: undefined,
+        });
+        renderTab();
+
+        expect(screen.getAllByTestId('ts-chart')).toHaveLength(1);
+        // One legend entry === one line. Counted via the REGION chip, which
+        // only the legend renders — `sources.official` also appears in the
+        // tile's provenance line, so counting that would count two and read
+        // as a failure when the chart is correct.
+        expect(screen.getAllByText('BG')).toHaveLength(1);
+    });
+
+    it('quotes the series it drew, so the tile cannot contradict the chart', () => {
+        // The tile used to read findEcSeries(series, 'BG') with the region
+        // hard-coded: on an EU fallback it printed the no-data dash directly
+        // above a populated line.
+        useTenantSWR.mockReturnValue({
+            data: payload([ec('EU', 205)]),
+            error: undefined,
+        });
+        renderTab();
+        expect(screen.getByText('205 EUR')).toBeInTheDocument();
+        expect(screen.getByText('tiles.latestPrice')).toBeInTheDocument();
     });
 });
 
