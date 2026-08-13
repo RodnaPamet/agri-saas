@@ -74,7 +74,7 @@ describe('Infrastructure Regression Guards', () => {
             }
         });
 
-        test('exactly 25 scheduled jobs exist', () => {
+        test('exactly 24 scheduled jobs exist', () => {
             // 29 → 30: `evidence-stale-review-sweep` was written in 2026-05
             // and never registered or scheduled, so `nextReviewDate` was
             // settable, shown in the calendar, counted on the dashboard — and
@@ -85,7 +85,11 @@ describe('Infrastructure Regression Guards', () => {
             // `risk-appetite-monitor`, `risk-snapshot` and `report-delivery`.
             // All three were scheduled with NO executor registered, so the
             // scheduler was enqueuing three jobs a day that nothing consumed.
-            expect(SCHEDULED_JOBS).toHaveLength(25);
+            //
+            // 25 → 24: GRC teardown phase 2 removed `compliance-digest`, the
+            // weekly executive-summary email. It read ComplianceSnapshot's
+            // GRC columns, which stopped being computed with their models.
+            expect(SCHEDULED_JOBS).toHaveLength(24);
         });
 
         test('scheduled job names match expected set', () => {
@@ -99,7 +103,7 @@ describe('Infrastructure Regression Guards', () => {
                 // campaigns approaching their dueAt.
                 'access-review-reminder',
                 'automation-runner',
-                'compliance-digest',
+                // 'compliance-digest' removed in GRC teardown phase 2.
                 'compliance-snapshot',
                 // Grain fulfilment — daily 07:30 UTC sweep firing
                 // delivery-window alerts for ACTIVE contracts. Shares its
