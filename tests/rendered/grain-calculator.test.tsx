@@ -293,21 +293,17 @@ describe('grain calculator — on a PHONE (setViewport("mobile"))', () => {
         expect(screen.getByText(COPY.exclusionsNone)).toBeVisible();
     });
 
-    it('renders both value panels — expected beside actual', () => {
+    it('states both asset terms — expected and actual — inside the one sum', () => {
         setViewport('mobile');
         renderPage();
 
-        // Queried by ROLE: "Standing crop" is also a column header in the
-        // per-commodity table below, and a plain text query cannot tell
-        // the panel from the column.
-        expect(
-            screen.getByRole('heading', { name: COPY.panelStandingTitle }),
-        ).toBeVisible();
-        expect(
-            screen.getByRole('heading', { name: COPY.panelOnHandTitle }),
-        ).toBeVisible();
-        expect(screen.getByText(COPY.panelStandingSubtitle)).toBeVisible();
-        expect(screen.getByText(COPY.panelOnHandSubtitle)).toBeVisible();
+        // Still both named. What changed is that they are TERMS in one
+        // arithmetic, not two panels each ending in their own total.
+        const sum = screen.getByRole('group', { name: COPY.waterfallAria });
+        expect(within(sum).getByText(COPY.panelStandingTitle)).toBeVisible();
+        expect(within(sum).getByText(COPY.panelOnHandTitle)).toBeVisible();
+        expect(within(sum).getByText(COPY.panelStandingSubtitle)).toBeVisible();
+        expect(within(sum).getByText(COPY.panelOnHandSubtitle)).toBeVisible();
     });
 
     it('displays the standing-crop area in DECARES (storage stays hectares)', () => {
@@ -322,26 +318,102 @@ describe('grain calculator — on a PHONE (setViewport("mobile"))', () => {
         setViewport('mobile');
         renderPage();
 
-        // Both panels carry the badge — the same allocated cost is
-        // charged in each, which is exactly what sharedCostNote warns
-        // about.
-        expect(screen.getAllByText(COPY.payrollAllocatedBadge).length).toBeGreaterThan(0);
-        expect(screen.getAllByText(COPY.payrollAllocatedNote).length).toBeGreaterThan(0);
-        expect(screen.getByText(COPY.sharedCostNote)).toBeVisible();
+        // ONCE now. There is one cost line, so there is one place to say
+        // the payroll inside it was apportioned rather than measured.
+        expect(screen.getByText(COPY.payrollAllocatedBadge)).toBeVisible();
+        expect(screen.getByText(COPY.payrollAllocatedNote)).toBeVisible();
     });
 
-    it('shows the certified net worth and both per-panel nets', () => {
+    it('shows the certified net worth once, and no per-panel nets', () => {
         setViewport('mobile');
         renderPage();
 
-        // The headline figure appears twice by design — the summary card
-        // and the table row must agree.
+        // The headline figure appears in the sum and again in the table
+        // row — those must agree, and the table is an appendix listing
+        // every commodity, not a second answer to the same question.
         const netWorth = screen.getAllByText('€18,750'); // 24,250 − 5,500
         expect(netWorth.length).toBeGreaterThan(0);
         netWorth.forEach((node) => expect(node).toBeVisible());
 
-        expect(screen.getByText('€9,500')).toBeVisible(); // standing 15,000 − 5,500
-        expect(screen.getByText('€4,500')).toBeVisible(); // on hand 10,000 − 5,500
+        // THE DEFECT THIS PAGE SHIPPED WITH. Two panels each ending in a
+        // net line is the universal idiom for "these sum" — and they did
+        // not: both charged the same cashCostTotal, so 9,500 and 4,500
+        // were each the whole farm cost taken off one asset. Neither is a
+        // quantity anyone can act on, and their sum is meaningless.
+        expect(screen.queryByText('€9,500')).not.toBeInTheDocument();
+        expect(screen.queryByText('€4,500')).not.toBeInTheDocument();
+    });
+
+    // ─────────────────────────────────────────────────────────────────
+    // ONE ANSWER. The page previously rendered two ValuePanels side by
+    // side, each ending in a net line, plus a sentence explaining that
+    // the two nets could not be added. Side-by-side panels each ending
+    // in a total is the universal idiom for "these sum"; a prose
+    // disclaimer cannot beat a layout.
+    // ─────────────────────────────────────────────────────────────────
+
+    it('states exactly ONE net figure', () => {
+        setViewport('mobile');
+        renderPage();
+
+        // The net label is the page's answer, and it is claimed once.
+        // Scoped to the sum: the appendix table below has a "Net worth"
+        // COLUMN header, which is a different assertion about a
+        // different surface.
+        const sum = screen.getByRole('group', { name: COPY.waterfallAria });
+        expect(within(sum).getAllByText(COPY.netWorthLabel)).toHaveLength(1);
+
+        // And the retired idiom is gone in both its parts — the per-asset
+        // net line, and the note that existed only to disclaim it. Their
+        // i18n keys are deleted, so the retired COPY is spelled out here:
+        // the assertion is that this wording never returns, and a key
+        // reference could not express that once the key is gone.
+        expect(screen.queryByText('Net after cost')).not.toBeInTheDocument();
+        expect(
+            screen.queryByText(/the two nets cannot be added/i),
+        ).not.toBeInTheDocument();
+    });
+
+    it('puts every money figure in the sum on one signed column', () => {
+        setViewport('mobile');
+        renderPage();
+
+        // No two figures sit in a layout implying summation UNLESS they
+        // genuinely sum. Here they do, so each is signed and the reader
+        // can add them down the column:
+        //   +15,000  standing
+        //   +10,000  on hand
+        //     −750   rent paid in grain
+        //   −5,500   farm cost
+        //   =18,750  net worth
+        const sum = screen.getByRole('group', { name: COPY.waterfallAria });
+        expect(within(sum).getByText('+€15,000')).toBeVisible();
+        expect(within(sum).getByText('+€10,000')).toBeVisible();
+        expect(within(sum).getByText('−€750')).toBeVisible();
+        expect(within(sum).getByText('−€5,500')).toBeVisible();
+        expect(within(sum).getByText('€18,750')).toBeVisible();
+    });
+
+    it('subtracts rent-paid-in-grain visibly, not as a footnote', () => {
+        // netAssetPosition = standing + onHand − rentCostProduceValue, so
+        // this 750 is already inside the headline. It used to appear only
+        // as a note under a panel's cost breakdown, which put a term of
+        // the arithmetic somewhere the arithmetic could not be read.
+        setViewport('mobile');
+        renderPage();
+
+        const sum = screen.getByRole('group', { name: COPY.waterfallAria });
+        expect(within(sum).getByText(COPY.produceRentLabel)).toBeVisible();
+        expect(within(sum).getByText('−€750')).toBeVisible();
+    });
+
+    it('omits the rent term entirely when no rent is paid in grain', () => {
+        // A line reading "− €0" is ceremony: it states a term that is not
+        // part of this farm's arithmetic.
+        setViewport('mobile');
+        renderPage(data({ rows: [wheatRow({ rentCostProduceKg: 0, rentCostProduceValue: 0 })] }));
+
+        expect(screen.queryByText(COPY.produceRentLabel)).not.toBeInTheDocument();
     });
 
     it('stamps WHEN the report was priced, and when the price was observed', () => {
@@ -471,6 +543,33 @@ describe('grain calculator — per-commodity table on a DESKTOP (setViewport("de
         expect(within(table).getByText(COPY.colOnHandValue)).toBeVisible();
         expect(within(table).getByText(COPY.colCashCost)).toBeVisible();
         expect(within(table).getByText(COPY.colNetWorth)).toBeVisible();
+    });
+
+    it('lists only commodities the farm actually has', () => {
+        // A REGRESSION LOCK, not a fix. The concern was that the appendix
+        // iterated CANONICAL_COMMODITIES, so a wheat-and-sunflower farm
+        // would read eight rows of zeros for crops it does not grow. It
+        // does not: `grain-net-worth.ts` keys its accumulator only from
+        // real plantings, lots, leases and payroll (`ensureAcc` is never
+        // called from the catalogue), and CANONICAL_COMMODITIES is used
+        // solely to SORT via byCanonicalOrder. Two commodities in, two
+        // rows out.
+        //
+        // Nothing is hidden, so nothing is stated — a "2 of 10 shown" line
+        // would claim eight rows were suppressed when they never existed
+        // for this farm, which is a worse lie than the silence it
+        // replaces. Locked here so a future change that seeds the
+        // accumulator from the catalogue fails instead of quietly
+        // padding the table.
+        setViewport('desktop');
+        renderPage();
+
+        const table = screen.getByRole('table');
+        expect(within(table).getAllByRole('row')).toHaveLength(2 + 1); // + header
+        expect(within(table).getByText(/wheat/i)).toBeVisible();
+        expect(within(table).getByText(/maize/i)).toBeVisible();
+        expect(within(table).queryByText(/barley/i)).not.toBeInTheDocument();
+        expect(within(table).queryByText(/sunflower/i)).not.toBeInTheDocument();
     });
 
     it('prints the refusal wording in a withheld net-worth cell, never a zero', () => {
