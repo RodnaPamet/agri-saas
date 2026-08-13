@@ -10,6 +10,8 @@ the findings **corrected the teardown plan itself** (see §8 of
 | `severance-map.json` | 713 references INTO doomed GRC surfaces from code that SURVIVES the teardown. Each entry: `{file, line, kind, detail, surface}`. `kind` ∈ import / prisma-delegate / fetch-url / permission-key / route-permission / nav-entry / registry-entry / i18n-namespace / link-href / other. |
 | `completeness-critique.md` | An adversarial pass over the sweep asking what it MISSED. This is the higher-value document of the two — it found four whole reference classes the sweep's four modalities structurally cannot see, plus five files that break on deletion and appear in no reference list. |
 | `failing-guards-after-route-deletion.txt` | Raw jest output naming the 80 guard suites (225 assertions) that went red once the pages and routes were deleted. |
+| `app-layer-work-order.md` | The APP-LAYER execution plan (2026-08-13). Seven clusters mapped in parallel, each then handed to an adversarial reviewer told to REFUTE it. Three came back **UNSAFE**; 28 findings would have broken a KEEP surface. Section A is the blocking list, B resolves cluster disagreements, D is the tranche order, E is the phase-3 handoff. ~3.1M tokens to produce. |
+| `app-layer-cluster-verdicts.json` | Per-cluster verdict + blocker count from that pass. |
 
 ## How to use the severance map
 

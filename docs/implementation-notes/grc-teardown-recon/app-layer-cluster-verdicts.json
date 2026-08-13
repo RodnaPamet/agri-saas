@@ -1,0 +1,37 @@
+[
+  {
+    "cluster": "vendor",
+    "verdict": "SAFE_WITH_FIXES",
+    "blockers": 2
+  },
+  {
+    "cluster": "policy",
+    "verdict": "UNSAFE",
+    "blockers": 10
+  },
+  {
+    "cluster": "practice",
+    "verdict": "UNSAFE",
+    "blockers": 6
+  },
+  {
+    "cluster": "framework-mapping",
+    "verdict": "SAFE_WITH_FIXES",
+    "blockers": 2
+  },
+  {
+    "cluster": "audit-finding-clause",
+    "verdict": "SAFE_WITH_FIXES",
+    "blockers": 1
+  },
+  {
+    "cluster": "keep-file-severance",
+    "verdict": "UNSAFE",
+    "blockers": 5
+  },
+  {
+    "cluster": "registries",
+    "verdict": "SAFE_WITH_FIXES",
+    "blockers": 2
+  }
+]
