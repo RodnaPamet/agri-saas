@@ -521,3 +521,41 @@ read-only role can fetch evidence that is attached to a known farm record,
 and cannot fetch a free-floating upload. This is a security-relevant change
 and ships in its own commit with an executing test, which the gate has never
 had.
+
+### 8i. THE DELETION CRITERION WAS WRONG (learned in T3, 2026-08-13)
+
+T3 deleted the KILL closure using this rule: **delete a source file, then fix
+whatever `npx tsc --noEmit` flags.** The tree went typecheck-clean and the
+five structural tiers (`guards`, `guardrails`, `regression`, `contracts`,
+`pdf`) reported 578/578 green.
+
+CI then failed **47 test files**.
+
+The rule is wrong because TypeScript only sees `import`-shaped references.
+This repo's structural tests — hundreds of them — reference source by STRING
+PATH:
+
+```ts
+readFileSync('src/app/t/[tenantSlug]/(app)/practices/PracticesClient.tsx')
+```
+
+That compiles perfectly against a deleted file and fails at runtime. 43 of the
+47 were exactly this shape. The CLAUDE.md warning that "guards assert on
+source TEXT and contribute no runtime coverage" has a corollary nobody had
+written down: **the same property makes them invisible to the compiler**, so
+`tsc` clean is not evidence that a deletion is complete.
+
+**The corrected criterion, for T4 / T5 / phase 3:**
+
+1. Delete the source file.
+2. `npx tsc --noEmit` — catches the import-graph half.
+3. **`grep -rn '<deleted-path>' tests/`** — catches the string-path half.
+   Do this for EVERY deleted path, including directories, before committing.
+4. Run the FULL `npx jest`, not a tier subset.
+
+A second lesson rides along: the verification tier itself was the problem.
+`tests/guards` + `tests/guardrails` + `regression` + `contracts` + `pdf` is
+**93 of 1,180 suites — under 8%**. It was chosen because it is fast (~9
+minutes) and it is where teardown breakage was expected to land. It is a fine
+smoke test and a terrible completion check. The full suite is ~30 minutes;
+run it in the background and read it before claiming a tranche is done.
