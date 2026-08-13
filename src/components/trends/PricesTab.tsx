@@ -26,6 +26,7 @@ import {
     commoditiesInCategory,
     commodityMeta,
     type CommodityCategory,
+    type CommodityFeed,
 } from '@/lib/market/commodity-vocabulary';
 import { TREND_CHARTABLE, type TrendCommodity } from '@/app-layer/schemas/trends.schemas';
 
@@ -84,6 +85,20 @@ type Range = (typeof RANGES)[number];
 const CATEGORIES = ['grain', 'fuel', 'fertilizer'] as const satisfies readonly CommodityCategory[];
 
 const CHARTABLE = new Set<string>(TREND_CHARTABLE);
+
+/**
+ * i18n key suffix under `trends.operator.feeds` for each upstream.
+ *
+ * A TOTAL Record over {@link CommodityFeed}, so adding a feed to the
+ * vocabulary without writing its operator copy is a compile error rather than
+ * a `trends.operator.feeds.undefined` rendered to an admin.
+ */
+const OPERATOR_FEED_KEY: Record<CommodityFeed, string> = {
+    'ec-agrifood': 'ecAgrifood',
+    'oil-bulletin': 'oilBulletin',
+    'world-bank': 'worldBank',
+    none: 'none',
+};
 
 function commoditiesFor(category: CommodityCategory): Commodity[] {
     return commoditiesInCategory(category).filter((c): c is Commodity => CHARTABLE.has(c));
@@ -327,6 +342,10 @@ export function PricesTab() {
     // render two "no data" tiles above a perfectly good chart. The headline
     // tile needs no such fork: it quotes whatever the chart drew.
     const isInput = commodityMeta(shownCommodity)?.kind === 'input';
+    // Which upstream actually publishes this commodity — drives the operator
+    // hint, which used to name EC_AGRIFOOD_BASE_URL + ALPHA_VANTAGE_API_KEY
+    // for everything including urea, where neither can produce a single row.
+    const feed: CommodityFeed = commodityMeta(shownCommodity)?.feed ?? 'none';
     const tiles = useMemo(() => {
         if (!data) return null;
         const listings = findListingsSeries(data.series);
@@ -414,14 +433,26 @@ export function PricesTab() {
                     description={isInput ? t('noSeries.body') : t('empty.description')}
                     data-testid="trends-empty"
                 >
-                    {/* Operator-configuration explainer, ADMINS ONLY.
-                        It names environment variables — EC_AGRIFOOD_BASE_URL,
-                        ALPHA_VANTAGE_API_KEY — which is an instruction a
-                        farmer cannot act on and should not have to read. It
-                        also leaks a little of our deployment shape to every
-                        user of every tenant. Operators still see it; everyone
-                        else gets the plain empty state. */}
-                    {isAdmin && (
+                    {/* Operator explainer, ADMINS ONLY — it describes internal
+                        plumbing and a cron cadence, which is an instruction a
+                        farmer cannot act on and should not have to read, and it
+                        leaks a little of our deployment shape.
+
+                        It names the feed that publishes THIS commodity. The
+                        previous version was one hard-coded string pointing at
+                        EC_AGRIFOOD_BASE_URL + ALPHA_VANTAGE_API_KEY for every
+                        commodity: on the fertiliser tab that told an operator
+                        to configure two variables that cannot produce a single
+                        urea row, and stayed silent about the World Bank Pink
+                        Sheet, which is where urea comes from and which needs no
+                        configuration at all.
+
+                        Nothing is shown when there is no feed. MAP and
+                        ammonium nitrate are hand-typed by nature, so an
+                        operator box would send someone hunting for a broken
+                        pipeline that was never built; the plain empty state
+                        already tells everyone to ask an admin. */}
+                    {isAdmin && feed !== 'none' && (
                         <div
                             className="mt-default rounded-lg border border-border-subtle bg-bg-muted px-4 py-3 text-left"
                             data-testid="trends-operator-hint"
@@ -430,10 +461,10 @@ export function PricesTab() {
                                 {t('operator.title')}
                             </p>
                             <p className="mt-1 text-xs text-content-muted">
-                                {t('operator.body', {
-                                    ec: 'EC_AGRIFOOD_BASE_URL',
-                                    av: 'ALPHA_VANTAGE_API_KEY',
-                                })}
+                                {t(`operator.feeds.${OPERATOR_FEED_KEY[feed]}`)}
+                            </p>
+                            <p className="mt-1 text-xs text-content-subtle">
+                                {t('operator.stillEmpty')}
                             </p>
                         </div>
                     )}

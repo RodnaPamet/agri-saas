@@ -17,9 +17,17 @@
  * or extended without touching the pull job.
  *
  * Licensing note (see docs): showing DELAYED exchange prices to end users is
- * "redistribution" and needs a per-exchange licence (Euronext EMDA + ~€164/mo
- * for delayed MATIF; CBOT is far dearer). This client is the technical seam;
- * the operator enables it with a key ONLY once the licence is in place.
+ * "redistribution" and needs a per-exchange licence. Two bills, not one, and
+ * the second is not Barchart's to grant: EMDA clause 13.2 makes a Sub Vendor's
+ * use governed by ITS OWN agreement, reported and invoiced directly by
+ * Euronext, and clause 6.8 obliges Barchart to verify that agreement exists
+ * first — so paying Barchart alone does not make the display lawful. As of the
+ * fee schedule effective 2026-01-01 (v18.0): Euronext Commodity Derivatives
+ * delayed Last Price is €167.55/mo, and Barchart OnDemand starts at $500/mo.
+ * ~€650/mo all-in for delayed MATIF; CBOT is far dearer ($21,840/yr plus a
+ * $250/mo sub-vendor fee, which is why those contracts stay commented out).
+ * This client is the technical seam; the operator enables it with a key ONLY
+ * once both agreements are in place.
  *
  * @module lib/market/barchart-client
  */
@@ -102,7 +110,16 @@ export interface BarchartQuote {
     lastPrice: number | null;
     /** ISO trade timestamp as reported (may be null). */
     tradeTimestamp: string | null;
-    /** Barchart feed mode: 'r' realtime | 'd' delayed | 'i' internal/other. */
+    /**
+     * Barchart feed mode, per their getQuote documentation: `R` real-time,
+     * `I` DELAYED, `D` end-of-day.
+     *
+     * Spelled out because the obvious reading is wrong and the cost of the
+     * mistake is licensing, not cosmetics. `d` looks like "delayed" and is
+     * end-of-day; delayed is `I`. Nothing filters on this today, but the
+     * natural future use is proving a quote is delayed before displaying it —
+     * and `mode === 'd'` would select exactly the quotes that are not.
+     */
     mode: string | null;
 }
 

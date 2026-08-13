@@ -112,9 +112,29 @@ export type CommodityKind = 'output' | 'input';
 /** The grouping Trends offers as its first-level picker. */
 export type CommodityCategory = 'grain' | 'fuel' | 'fertilizer';
 
+/**
+ * The upstream that publishes a commodity's price, if any does.
+ *
+ * `'none'` is a STATEMENT, not a gap. MAP and ammonium nitrate have no free
+ * feed anywhere, and oats / rye / peas / lentils are named by the exchange
+ * vocabulary but quoted by nothing we pull — so the only price they can ever
+ * have is one an admin typed. Saying that is useful; leaving the reader to
+ * infer it from an empty chart is not.
+ *
+ * This exists because the Prices tab's operator hint used to name
+ * `EC_AGRIFOOD_BASE_URL` and `ALPHA_VANTAGE_API_KEY` for EVERY commodity.
+ * Neither can populate urea — that is the World Bank Pink Sheet — and the
+ * first is not a credential at all, just an optional base-URL override. An
+ * operator following that hint would configure two irrelevant things and
+ * still see an empty chart.
+ */
+export type CommodityFeed = 'ec-agrifood' | 'oil-bulletin' | 'world-bank' | 'none';
+
 export interface CommodityMeta {
     kind: CommodityKind;
     category: CommodityCategory;
+    /** Which upstream actually publishes this price — see {@link CommodityFeed}. */
+    feed: CommodityFeed;
 }
 
 /**
@@ -134,21 +154,21 @@ export interface CommodityMeta {
  * later without touching a consumer.
  */
 const COMMODITY_META: Readonly<Record<AnyCommodity, CommodityMeta>> = {
-    wheat: { kind: 'output', category: 'grain' },
-    maize: { kind: 'output', category: 'grain' },
-    barley: { kind: 'output', category: 'grain' },
-    sunflower: { kind: 'output', category: 'grain' },
-    rapeseed: { kind: 'output', category: 'grain' },
-    oats: { kind: 'output', category: 'grain' },
-    rye: { kind: 'output', category: 'grain' },
-    soybean: { kind: 'output', category: 'grain' },
-    peas: { kind: 'output', category: 'grain' },
-    lentils: { kind: 'output', category: 'grain' },
-    diesel: { kind: 'input', category: 'fuel' },
-    urea: { kind: 'input', category: 'fertilizer' },
-    dap: { kind: 'input', category: 'fertilizer' },
-    map: { kind: 'input', category: 'fertilizer' },
-    'ammonium-nitrate': { kind: 'input', category: 'fertilizer' },
+    wheat: { kind: 'output', category: 'grain', feed: 'ec-agrifood' },
+    maize: { kind: 'output', category: 'grain', feed: 'ec-agrifood' },
+    barley: { kind: 'output', category: 'grain', feed: 'ec-agrifood' },
+    sunflower: { kind: 'output', category: 'grain', feed: 'ec-agrifood' },
+    rapeseed: { kind: 'output', category: 'grain', feed: 'none' },
+    oats: { kind: 'output', category: 'grain', feed: 'none' },
+    rye: { kind: 'output', category: 'grain', feed: 'none' },
+    soybean: { kind: 'output', category: 'grain', feed: 'none' },
+    peas: { kind: 'output', category: 'grain', feed: 'none' },
+    lentils: { kind: 'output', category: 'grain', feed: 'none' },
+    diesel: { kind: 'input', category: 'fuel', feed: 'oil-bulletin' },
+    urea: { kind: 'input', category: 'fertilizer', feed: 'world-bank' },
+    dap: { kind: 'input', category: 'fertilizer', feed: 'world-bank' },
+    map: { kind: 'input', category: 'fertilizer', feed: 'none' },
+    'ammonium-nitrate': { kind: 'input', category: 'fertilizer', feed: 'none' },
 };
 
 const INPUT_SET: ReadonlySet<string> = new Set(INPUT_COMMODITIES);
