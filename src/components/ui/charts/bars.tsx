@@ -113,9 +113,13 @@ export function Bars({
             const barWidth = xScale.bandwidth();
             const x = xScale(d.date) ?? 0;
 
+            // A series with no value at this date contributes no bar. The
+            // `?? 0` fallbacks keep the arithmetic total: an absent value and
+            // a zero-height bar are the same thing for a stack, unlike for a
+            // line, where absent must be a gap rather than a point at zero.
             const sortedSeries = activeSeries
-              .filter((s) => s.valueAccessor(d) > 0)
-              .sort((a, b) => b.valueAccessor(d) - a.valueAccessor(d));
+              .filter((s) => (s.valueAccessor(d) ?? 0) > 0)
+              .sort((a, b) => (b.valueAccessor(d) ?? 0) - (a.valueAccessor(d) ?? 0));
 
             const bars = sortedSeries.reduce((acc, s) => {
               const stackHeight = acc.reduce((sum, b) => sum + b.height, 0);

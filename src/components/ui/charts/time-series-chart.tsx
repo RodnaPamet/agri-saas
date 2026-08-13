@@ -124,7 +124,9 @@ function TimeSeriesChartInner<T extends Datum>({
     children,
     data,
     series,
-    tooltipContent = (d) => series[0].valueAccessor(d).toString(),
+    // "—" rather than "undefined": the default tooltip renders whatever the
+    // first series says, and it can legitimately say nothing at this date.
+    tooltipContent = (d) => series[0].valueAccessor(d)?.toString() ?? "—",
     tooltipClassName = "",
     defaultTooltipIndex = null,
     onHoverDateChange,
@@ -268,21 +270,29 @@ function TimeSeriesChartInner<T extends Datum>({
                                     />
                                     {series
                                         .filter(({ isActive }) => isActive)
-                                        .map((s) => (
-                                            <Circle
-                                                key={s.id}
-                                                cx={xScale(tooltipData.date)}
-                                                cy={yScale(
-                                                    s.valueAccessor(tooltipData),
-                                                )}
-                                                r={4}
-                                                className={
-                                                    s.colorClassName ??
-                                                    "text-brand-emphasis"
-                                                }
-                                                fill="currentColor"
-                                            />
-                                        ))}
+                                        .map((s) => {
+                                            // No dot where the series has no
+                                            // value. yScale(undefined) is NaN,
+                                            // which the browser silently drops
+                                            // or paints at the origin — a dot
+                                            // on the floor of a hovered chart
+                                            // reads as a real reading of zero.
+                                            const v = s.valueAccessor(tooltipData);
+                                            if (v == null) return null;
+                                            return (
+                                                <Circle
+                                                    key={s.id}
+                                                    cx={xScale(tooltipData.date)}
+                                                    cy={yScale(v)}
+                                                    r={4}
+                                                    className={
+                                                        s.colorClassName ??
+                                                        "text-brand-emphasis"
+                                                    }
+                                                    fill="currentColor"
+                                                />
+                                            );
+                                        })}
                                 </>
                             ))}
 

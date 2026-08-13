@@ -56,11 +56,14 @@ export function useTooltip<T extends Datum>({
         ? {
             tooltipData: defaultTooltipDatum,
             tooltipLeft: snapToX ? xScale(defaultTooltipDatum.date) : 0,
+            // A series can have nothing at this date. yScale(undefined) is
+            // NaN, which pins the tooltip to the top-left corner rather than
+            // to the point the reader is pointing at.
             tooltipTop: snapToY
               ? yScale(
                   series
                     .find((s) => s.id === seriesId)!
-                    .valueAccessor(defaultTooltipDatum),
+                    .valueAccessor(defaultTooltipDatum) ?? 0,
                 )
               : 0,
           }
@@ -138,7 +141,7 @@ export function useTooltip<T extends Datum>({
         tooltipData: d,
         tooltipLeft: xScale(d.date) ?? 0,
         tooltipTop: snapToY
-          ? yScale(series.find((s) => s.id === seriesId)!.valueAccessor(d))
+          ? yScale(series.find((s) => s.id === seriesId)!.valueAccessor(d) ?? 0)
           : 0,
       });
       onHoverDateChange?.(d.date);
@@ -199,7 +202,7 @@ export function useTooltip<T extends Datum>({
         tooltipData: d,
         tooltipLeft: snapToX ? xScale(d.date) ?? 0 : x,
         tooltipTop: snapToY
-          ? yScale(series.find((s) => s.id === seriesId)!.valueAccessor(d))
+          ? yScale(series.find((s) => s.id === seriesId)!.valueAccessor(d) ?? 0)
           : 0,
       });
 
