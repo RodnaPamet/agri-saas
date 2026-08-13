@@ -172,32 +172,23 @@ describe('getPortfolioSummary', () => {
             { id: 't-red',   slug: 'r', name: 'Red Co' },
             { id: 't-pending', slug: 'p', name: 'Pending Co' },
         ]);
+        // RAG is driven by overdue EVIDENCE now, not practice coverage —
+        // see computeRag's docblock and plan §8f. The fixture drives the
+        // three buckets through the axis that still exists.
         complianceSnapshotFindManyMock.mockResolvedValue([
-            // GREEN: cov=95%, no criticals, no overdue
-            makeSnapshot('t-green', {
-                practicesApplicable: 100, practicesImplemented: 95,
-                practiceCoverageBps: 950, evidenceOverdue: 0,
-            }),
-            // AMBER: cov=70%, no criticals, no overdue
-            makeSnapshot('t-amber', {
-                practicesApplicable: 100, practicesImplemented: 70,
-                practiceCoverageBps: 700, evidenceOverdue: 0,
-            }),
-            // RED: cov=50%, no criticals, no overdue
-            makeSnapshot('t-red', {
-                practicesApplicable: 100, practicesImplemented: 50,
-                practiceCoverageBps: 500, evidenceOverdue: 0,
-            }),
+            // GREEN: nothing overdue.
+            makeSnapshot('t-green', { evidenceOverdue: 0 }),
+            // AMBER: 1–9 overdue.
+            makeSnapshot('t-amber', { evidenceOverdue: 3 }),
+            // RED: 10 or more overdue.
+            makeSnapshot('t-red', { evidenceOverdue: 14 }),
         ]);
 
         const summary = await getPortfolioSummary(ctxFor());
 
         expect(summary.tenants).toEqual({ total: 4, snapshotted: 3, pending: 1 });
         expect(summary.rag).toEqual({ green: 1, amber: 1, red: 1, pending: 1 });
-        // Org-wide coverage = (95 + 70 + 50) / (100 + 100 + 100) = 71.667…%
-        expect(summary.practices.applicable).toBe(300);
-        expect(summary.practices.implemented).toBe(215);
-        expect(summary.practices.coveragePercent).toBeCloseTo(71.6667, 2);
+        expect(summary.evidence.overdue).toBe(17);
     });
 });
 

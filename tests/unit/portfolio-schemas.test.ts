@@ -152,36 +152,32 @@ describe('Epic O-3 — Portfolio DTO schemas', () => {
     // ── computeRag thresholds ────────────────────────────────────────
 
     describe('computeRag', () => {
-        // The `criticalRisks` axis went with the risk register; coverage
-        // and overdue-evidence are the two remaining inputs and their
-        // thresholds are unchanged.
-        it('returns GREEN when coverage ≥ 80% AND no overdue evidence', () => {
-            expect(computeRag({ coveragePercent: 80, overdueEvidence: 0 })).toBe('GREEN');
-            expect(computeRag({ coveragePercent: 95, overdueEvidence: 0 })).toBe('GREEN');
+        // Two axes have now left this function. `criticalRisks` went with
+        // the risk register; COVERAGE went with the GRC teardown (plan
+        // §8f) because `practiceCoverageBps` stopped being computed —
+        // every new snapshot carries the column default of 0, and the old
+        // `coveragePercent < 60` arm would have painted EVERY tenant RED
+        // while looking like a measurement. Overdue evidence is the one
+        // remaining input, and evidence is a KEEP model.
+        it('returns GREEN when there is no overdue evidence', () => {
+            expect(computeRag({ overdueEvidence: 0 })).toBe('GREEN');
         });
 
-        it('returns AMBER when coverage is 60–79.9% (no other reds)', () => {
-            expect(computeRag({ coveragePercent: 79, overdueEvidence: 0 })).toBe('AMBER');
-            expect(computeRag({ coveragePercent: 60, overdueEvidence: 0 })).toBe('AMBER');
+        it('returns AMBER for 1–9 overdue evidence records', () => {
+            expect(computeRag({ overdueEvidence: 1 })).toBe('AMBER');
+            expect(computeRag({ overdueEvidence: 9 })).toBe('AMBER');
         });
 
-        it('returns AMBER when there is overdue evidence (1–9, coverage ok)', () => {
-            expect(computeRag({ coveragePercent: 95, overdueEvidence: 1 })).toBe('AMBER');
-            expect(computeRag({ coveragePercent: 95, overdueEvidence: 9 })).toBe('AMBER');
+        it('returns RED at 10 or more overdue evidence records', () => {
+            expect(computeRag({ overdueEvidence: 10 })).toBe('RED');
+            expect(computeRag({ overdueEvidence: 250 })).toBe('RED');
         });
 
-        it('returns RED when coverage < 60%', () => {
-            expect(computeRag({ coveragePercent: 59.9, overdueEvidence: 0 })).toBe('RED');
-            expect(computeRag({ coveragePercent: 0, overdueEvidence: 0 })).toBe('RED');
-        });
-
-        it('returns RED when overdueEvidence ≥ 10', () => {
-            expect(computeRag({ coveragePercent: 95, overdueEvidence: 10 })).toBe('RED');
-        });
-
-        it('RED dominates AMBER (single-axis worst case wins)', () => {
-            // Coverage borderline-AMBER + overdue-evidence worth-RED → RED.
-            expect(computeRag({ coveragePercent: 70, overdueEvidence: 12 })).toBe('RED');
+        it('a tenant with nothing overdue is GREEN, not RED', () => {
+            // The regression this replaces: a fresh tenant with an empty
+            // snapshot scored 0% coverage and was reported RED. Zero
+            // overdue evidence is the honest reading of "nothing wrong".
+            expect(computeRag({ overdueEvidence: 0 })).toBe('GREEN');
         });
     });
 });

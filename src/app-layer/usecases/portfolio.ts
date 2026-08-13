@@ -152,10 +152,7 @@ function projectPortfolioSummary(
         tasksOverdue += s.tasksOverdue;
         findingsOpen += s.findingsOpen;
 
-        const rag = computeRag({
-            coveragePercent: bpsToPercent(s.practiceCoverageBps),
-            overdueEvidence: s.evidenceOverdue,
-        });
+        const rag = computeRag({ overdueEvidence: s.evidenceOverdue });
         if (rag === 'GREEN') green++;
         else if (rag === 'AMBER') amber++;
         else red++;
@@ -225,10 +222,7 @@ function projectPortfolioTenantHealth(base: PortfolioBaseData): TenantHealthRow[
             snapshotDate: toIsoDate(s.snapshotDate),
             coveragePercent,
             overdueEvidence: s.evidenceOverdue,
-            rag: computeRag({
-                coveragePercent,
-                overdueEvidence: s.evidenceOverdue,
-            }),
+            rag: computeRag({ overdueEvidence: s.evidenceOverdue }),
         };
     });
 }
