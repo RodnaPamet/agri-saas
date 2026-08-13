@@ -5,11 +5,11 @@
  *      `AssetKeySequence.upsert`. The Assets list page leads with
  *      the new Code column.
  *
- *   2. Practice gains a `PracticeKeySequence` counter, with the
- *      `createPractice` usecase minting `CTL-N` for the custom-
- *      practice create path (`isCustom && !code`). Framework-
- *      installed practices always supply their own `code` /
- *      `code` from the catalogue and bypass the counter.
+ *   2. (The Practice half — a `PracticeKeySequence` counter minting
+ *      `CTL-N` — went with the model in GRC teardown phase 2. The
+ *      MIGRATION assertions below stay: applied migrations are asserted
+ *      verbatim, because rewriting one changes its checksum and breaks
+ *      `migrate deploy` on every existing database.)
  *
  *   3. The first-column registry flips Assets from `name` to
  *      `code` (Risk/Practices parity) and adds a written note.
@@ -64,18 +64,6 @@ describe('Asset Code column + Asset/Practice code generation', () => {
             // Same shape Risk/Task counters use: tenantId PK +
             // lastValue Int counter.
             const start = schema.indexOf('model AssetKeySequence');
-            const block = schema.slice(start, start + 400);
-            expect(block).toMatch(/tenantId\s+String\s+@id/);
-            expect(block).toMatch(/lastValue\s+Int\s+@default\(0\)/);
-        });
-    });
-
-    describe('Practice key sequence schema', () => {
-        const schema = readSchema();
-
-        it('PracticeKeySequence model exists', () => {
-            expect(schema).toMatch(/model PracticeKeySequence/);
-            const start = schema.indexOf('model PracticeKeySequence');
             const block = schema.slice(start, start + 400);
             expect(block).toMatch(/tenantId\s+String\s+@id/);
             expect(block).toMatch(/lastValue\s+Int\s+@default\(0\)/);
@@ -160,22 +148,6 @@ describe('Asset Code column + Asset/Practice code generation', () => {
 
         it('mints only when no key is supplied', () => {
             expect(repo).toMatch(/if\s*\(!key\)\s*\{/);
-        });
-    });
-
-    describe('createPractice usecase mints CTL-N for custom practices', () => {
-        const usecase = read('src/app-layer/usecases/practice/mutations.ts');
-
-        it('mints CTL-N via practiceKeySequence.upsert', () => {
-            expect(usecase).toMatch(/practiceKeySequence\.upsert/);
-            expect(usecase).toMatch(/`CTL-\$\{seq\.lastValue\}`/);
-        });
-
-        it('only mints when isCustom AND no explicit code supplied', () => {
-            // The gate is `!code && isCustom` — both must hold for
-            // the counter to advance. Framework-installed practices
-            // (`isCustom: false`) never consume the sequence.
-            expect(usecase).toMatch(/if\s*\(!code\s*&&\s*isCustom\)\s*\{/);
         });
     });
 

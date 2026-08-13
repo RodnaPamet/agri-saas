@@ -124,26 +124,10 @@ describe('Epic 49 — calendar feature wiring', () => {
         expect(src).toMatch(/href\(['"]\/calendar['"]\)/);
     });
 
-    it('the calendar-deadlines monitor exists and exports the shared helper', () => {
-        expect(exists('src/app-layer/jobs/calendar-deadlines.ts')).toBe(true);
-        const src = read('src/app-layer/jobs/calendar-deadlines.ts');
-        expect(src).toMatch(/export\s+async\s+function\s+runCalendarDeadlineMonitor/);
-        // `runCalendarDeadlineJob` (a standalone BullMQ-registrable
-        // wrapper) was removed 2026-08-06: it was never a `JobName`,
-        // never registered in the executor registry, never scheduled,
-        // and had zero callers — the real production path is
-        // `notification-dispatch.ts` calling `runCalendarDeadlineMonitor`
-        // directly inside the DEADLINE_DIGEST category. Don't re-add the
-        // wrapper without also registering it (JobPayloadMap +
-        // JOB_DEFAULTS + executor-registry + schedules.ts).
-        //
-        // It must scan the three NEW sources the base deadline monitor
-        // doesn't cover. If a future PR drops one of these, deadline
-        // notifications for that source disappear silently.
-        expect(src).toMatch(/scanAuditCycles/);
-        expect(src).toMatch(/scanVendorDocuments/);
-        expect(src).toMatch(/scanFindings/);
-    });
+    // The calendar-deadlines monitor block was removed in GRC teardown
+    // phase 2 (T3). It scanned AuditCycle / VendorDocument / Finding — all
+    // three KILL models — so the job went with them. The surviving
+    // DEADLINE_DIGEST path is asserted by the next test.
 
     it('the orchestrator scans deadlines through runDeadlineMonitor', () => {
         // GRC teardown phase 2: the calendar-deadlines monitor scanned

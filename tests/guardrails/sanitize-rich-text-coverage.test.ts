@@ -54,13 +54,11 @@ type Sanitizer = 'sanitizeRichTextHtml' | 'sanitizePlainText' | 'sanitizePolicyC
 const RICH_TEXT_COVERAGE: Readonly<
     Record<string, { usecases: readonly string[]; sanitizer: Sanitizer }>
 > = {
-    PolicyVersion: { usecases: ['src/app-layer/usecases/policy.ts'], sanitizer: 'sanitizePolicyContent' },
     Task: { usecases: ['src/app-layer/usecases/task.ts'], sanitizer: 'sanitizePlainText' },
     TaskComment: {
         usecases: ['src/app-layer/usecases/task.ts', 'src/app-layer/usecases/issue.ts'],
         sanitizer: 'sanitizePlainText',
     },
-    Finding: { usecases: ['src/app-layer/usecases/finding.ts'], sanitizer: 'sanitizePlainText' },
     // Lease counterparty PII — sanitised at the single `mapLeaseData` write
     // seam that both create and update route through.
     ParcelLease: { usecases: ['src/app-layer/usecases/parcel-lease.ts'], sanitizer: 'sanitizePlainText' },
@@ -78,15 +76,6 @@ const RICH_TEXT_COVERAGE: Readonly<
     // RQ3-6 — loss-event narrative + reviewer justification; sanitised
     // at the single createLossEvent write seam before the Epic B
     // middleware persists them.
-    Vendor: { usecases: ['src/app-layer/usecases/vendor.ts'], sanitizer: 'sanitizePlainText' },
-    VendorDocument: { usecases: ['src/app-layer/usecases/vendor.ts'], sanitizer: 'sanitizePlainText' },
-    VendorAssessment: { usecases: ['src/app-layer/usecases/vendor.ts'], sanitizer: 'sanitizePlainText' },
-    VendorEvidenceBundle: {
-        usecases: ['src/app-layer/usecases/vendor-assessment-review.ts'],
-        sanitizer: 'sanitizePlainText',
-    },
-    Audit: { usecases: ['src/app-layer/usecases/audit.ts'], sanitizer: 'sanitizePlainText' },
-    AuditChecklistItem: { usecases: ['src/app-layer/usecases/audit.ts'], sanitizer: 'sanitizePlainText' },
     AccessReview: { usecases: ['src/app-layer/usecases/access-review.ts'], sanitizer: 'sanitizePlainText' },
     AccessReviewDecision: { usecases: ['src/app-layer/usecases/access-review.ts'], sanitizer: 'sanitizePlainText' },
     // RQ2-1/RQ2-2 — score-change justification narrative; sanitised

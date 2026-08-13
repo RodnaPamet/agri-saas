@@ -30,11 +30,8 @@ interface SiteContract {
 }
 
 const SITE_CONTRACTS: ReadonlyArray<SiteContract> = [
-    {
-        file: 'src/components/TraceabilityPanel.tsx',
-        name: 'Cross-entity unlink (TraceabilityPanel)',
-        handlers: ['handleUnlink'],
-    },
+    // The cross-entity unlink site (TraceabilityPanel) went with the GRC
+    // teardown in phase 2; the remaining sites are unchanged.
     {
         file: 'src/app/t/[tenantSlug]/(app)/farm-tasks/[taskId]/FarmTaskDetailClient.tsx',
         name: 'Farm task link removal (task detail)',

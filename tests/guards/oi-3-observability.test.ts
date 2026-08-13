@@ -143,7 +143,6 @@ describe('OI-3 — repository metric instruments', () => {
 
 describe('OI-3 — sample repository instrumentation', () => {
     const SAMPLES = [
-        ['src/app-layer/repositories/PracticeRepository.ts',  ['practice.list', 'practice.listPaginated', 'practice.getById', 'practice.create']],
         ['src/app-layer/repositories/EvidenceRepository.ts', ['evidence.list', 'evidence.listPaginated', 'evidence.getById', 'evidence.create']],
     ] as const;
 

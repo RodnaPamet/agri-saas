@@ -38,7 +38,6 @@ const SCAN_ROOT = path.join(ROOT, 'src');
 // exists. Default answer: migrate to Nucleo.
 const LEGACY_LUCIDE_USERS = new Set<string>([
     'src/app/org/[orgSlug]/(app)/audit/AuditLogTable.tsx',
-    'src/app/org/[orgSlug]/(app)/practices/PracticesTable.tsx',
     'src/app/org/[orgSlug]/(app)/dashboard-sections.tsx',
     'src/app/org/[orgSlug]/(app)/evidence/EvidenceTable.tsx',
     'src/app/org/[orgSlug]/(app)/members/MembersTable.tsx',

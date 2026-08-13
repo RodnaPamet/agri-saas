@@ -40,7 +40,14 @@ const AUTH_SERVER_GATE_TESTS: ReadonlyArray<{
             'Per-email rate limit (checkCredentialsAttempt) — N consecutive failures lock + reset on success',
     },
     {
-        file: 'tests/integration/auth-gating.test.ts',
+        // Re-pointed in GRC teardown phase 2. This entry named
+        // `tests/integration/auth-gating.test.ts`, which contained ZERO
+        // email-verification tests — its two describes were Practices and
+        // Policy auth gating, and it was deleted with them. The claim was
+        // false before the teardown, not because of it. The enforcement IS
+        // covered, by the file below (see its `blocked unverified login`
+        // case at :150) and by tests/unit/credentials-auth.test.ts.
+        file: 'tests/integration/credentials-end-to-end.test.ts',
         covers:
             'AUTH_REQUIRE_EMAIL_VERIFICATION enforcement on the authenticate path',
     },

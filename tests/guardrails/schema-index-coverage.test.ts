@@ -472,33 +472,17 @@ const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
         'filtered only by tenantId plus leading-indexed FK / status columns — Layers A/B cover its query shapes; no curated composite index needed today.',
     AssetMaintenance:
         'listForAsset / listOpenForAsset filter tenantId + assetId (+ closedAt IS NULL) ordered by openedAt DESC — covered by @@index([tenantId, assetId, openedAt]) and @@index([tenantId, closedAt]); both take-bounded at MAINTENANCE_PAGE_SIZE.',
-    Audit:
-        'filtered only by tenantId plus leading-indexed FK / status columns — Layers A/B cover its query shapes; no curated composite index needed today.',
-    AuditCycle:
-        'filtered only by tenantId plus leading-indexed FK / status columns — Layers A/B cover its query shapes; no curated composite index needed today.',
     AuditLog:
         'append-only audit trail — read tenant-scoped and time-ordered via [tenantId, createdAt]; Layers A/B cover it; no curated composite index needed.',
-    AuditPack:
-        'filtered only by tenantId plus leading-indexed FK / status columns — Layers A/B cover its query shapes; no curated composite index needed today.',
-    AuditorPackAccess:
-        'join table — fetched by tenantId plus a leading-indexed FK; Layers A/B cover its query shapes; no curated composite index needed.',
     AutomationExecution:
         'filtered only by tenantId plus leading-indexed FK / status columns — Layers A/B cover its query shapes; no curated composite index needed today.',
     AutomationRule:
         'filtered only by tenantId plus leading-indexed FK / status columns — Layers A/B cover its query shapes; no curated composite index needed today.',
-    ClauseProgress:
-        'join table — fetched by tenantId plus a leading-indexed FK; Layers A/B cover its query shapes; no curated composite index needed.',
     ComplianceSnapshot:
         'time-series snapshot rows — read tenant-scoped and time-ordered; Layers A/B cover it; no curated composite index needed today.',
-    PracticeAsset:
-        'join table — fetched by tenantId plus a leading-indexed FK; Layers A/B cover its query shapes; no curated composite index needed.',
-    PracticeEvidenceLink:
-        'join table — fetched by tenantId plus a leading-indexed FK; Layers A/B cover its query shapes; no curated composite index needed.',
     PracticeRequirementLink:
         'join table — fetched by tenantId plus a leading-indexed FK; Layers A/B cover its query shapes; no curated composite index needed.',
     FileRecord:
-        'filtered only by tenantId plus leading-indexed FK / status columns — Layers A/B cover its query shapes; no curated composite index needed today.',
-    Finding:
         'filtered only by tenantId plus leading-indexed FK / status columns — Layers A/B cover its query shapes; no curated composite index needed today.',
     IntegrationConnection:
         'filtered only by tenantId plus leading-indexed FK / status columns — Layers A/B cover its query shapes; no curated composite index needed today.',
@@ -512,18 +496,12 @@ const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
         'outbox queue — drained tenant-scoped by status; Layers A/B cover it; no curated composite index needed today.',
     Policy:
         'filtered only by tenantId plus leading-indexed FK / status columns — Layers A/B cover its query shapes; no curated composite index needed today.',
-    PolicyApproval:
-        'listPending filters by tenantId + status only (the [tenantId, policyId] / [tenantId, policyVersionId] composites are FK reverse-lookup indexes) — Layers A/B cover its query shapes; no curated composite index needed today.',
-    PolicyVersion:
-        'fetched per policy via a leading-indexed FK; Layers A/B cover its query shapes; no curated composite index needed today.',
     ProcessEdgePractice:
         'Epic P2-PR-C reverse-lookup: filtered by (tenantId, practiceId) which is the model\'s leading `@@index([tenantId, practiceId])`. Result set bounded by the number of edges referencing one practice (typically <10) — Layer A already covers it.',
     ProcessMap:
         'filtered only by tenantId plus leading-indexed FK / status columns — Layers A/B cover its query shapes; no curated composite index needed today.',
     ProcessMapSnapshot:
         'Epic P5-PR-A version-history list: filtered by (tenantId, processMapId) which is covered by the model\'s leading `@@index([tenantId, processMapId, version])`. Capped at 200 rows in the repo (`take: 200`); no curated composite index needed.',
-    ReadinessSnapshot:
-        'time-series readiness chart query (Audit S5, 2026-05-24); the model carries [tenantId, frameworkKey, computedAt] composite index for the trend lookup, covered structurally by its own index — no separate LIST_QUERY_INDEXES entry needed.',
     TaskComment:
         'fetched per task via a leading-indexed FK; Layers A/B cover its query shapes; no curated composite index needed today.',
     TaskWatcher:
@@ -542,24 +520,6 @@ const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
         'filtered only by tenantId plus leading-indexed FK / status columns — Layers A/B cover its query shapes; no curated composite index needed today.',
     UserIdentityLink:
         'fetched per tenant / user via a leading-indexed FK; Layers A/B cover its query shapes; no curated composite index needed today.',
-    Vendor:
-        'filtered only by tenantId plus leading-indexed FK / status columns — Layers A/B cover its query shapes; no curated composite index needed today.',
-    VendorAssessment:
-        'filtered only by tenantId plus leading-indexed FK / status columns — Layers A/B cover its query shapes; no curated composite index needed today.',
-    VendorAssessmentAnswer:
-        'fetched per assessment via a leading-indexed FK; Layers A/B cover its query shapes; no curated composite index needed today.',
-    VendorAssessmentTemplate:
-        'filtered only by tenantId plus leading-indexed FK / status columns — Layers A/B cover its query shapes; no curated composite index needed today.',
-    VendorAssessmentTemplateQuestion:
-        'fetched per template via a leading-indexed FK; Layers A/B cover its query shapes; no curated composite index needed today.',
-    VendorDocument:
-        'fetched per vendor via a leading-indexed FK; Layers A/B cover its query shapes; no curated composite index needed today.',
-    VendorEvidenceBundle:
-        'fetched per vendor via a leading-indexed FK; Layers A/B cover its query shapes; no curated composite index needed today.',
-    VendorLink:
-        'join table — fetched by tenantId plus a leading-indexed FK; Layers A/B cover its query shapes; no curated composite index needed.',
-    VendorRelationship:
-        'fetched per vendor via a leading-indexed FK; Layers A/B cover its query shapes; no curated composite index needed today.',
     // ─── Crop Planning (succession planning + plan-vs-actual) ───
     Season:
         'listSeasons filters by tenantId + deletedAt, orders by startDate DESC — covered by @@index([tenantId, startDate]); bounded take:500.',

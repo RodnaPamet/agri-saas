@@ -10,7 +10,8 @@
  *   2. Task assignee population — `UserCombobox` reads from a
  *      non-admin endpoint (`/users/assignable`) so EDITOR / READER
  *      users see the roster.
- *   3. Linking dropdowns — `TraceabilityPanel` unwraps the
+ *   3. Linking dropdowns — the TraceabilityPanel block was removed in
+ *      GRC teardown phase 2 with the component. It unwrapped the
  *      `{ rows, truncated }` cap shape that the list endpoints
  *      return; pre-fix the dropdowns silently rendered empty.
  *   4. Dashboard card filtering — every KPI either focuses a
@@ -98,39 +99,6 @@ describe('B1 — bug-fix bundle', () => {
         });
     });
 
-    describe('Bug 3 — linking dropdowns (TraceabilityPanel)', () => {
-        const src = read('src/components/TraceabilityPanel.tsx');
-
-        it('unwraps every list-endpoint shape via the `unwrap` helper', () => {
-            // The helper recognises bare arrays, `{ rows }` cap shape,
-            // entity-keyed shape, and `{ items }` pagination shape.
-            expect(src).toMatch(/const unwrap/);
-            expect(src).toMatch(/Array\.isArray\(d\.rows\)/);
-            expect(src).toMatch(/Array\.isArray\(d\.items\)/);
-        });
-
-        it('every list fetcher routes through `unwrap`', () => {
-            // One fetcher per linkable entity. This asserted "at least
-            // three" until the Risks arm went with the risk register,
-            // leaving practices + assets — a hard-coded count turns a
-            // deliberate removal into a red build and, worse, would let a
-            // NEW un-unwrapped fetcher slip in as long as the total stayed
-            // above the floor. Derive the expectation from the fetchers
-            // themselves so it holds at any arity.
-            const fetchers = src.match(/setAvailable\w+\(/g) ?? [];
-            const unwrapped = src.match(/unwrap\(d,/g) ?? [];
-            expect(fetchers.length).toBeGreaterThan(0);
-            expect(unwrapped.length).toBe(fetchers.length);
-        });
-
-        it('legacy `d.risks || []` shape fallback is retired', () => {
-            // The old shape never matched the cap'd response and
-            // collapsed every dropdown to empty.
-            expect(src).not.toMatch(/Array\.isArray\(d\)\s*\?\s*d\s*:\s*d\.risks\s*\|\|\s*\[\]/);
-            expect(src).not.toMatch(/Array\.isArray\(d\)\s*\?\s*d\s*:\s*d\.practices\s*\|\|\s*\[\]/);
-            expect(src).not.toMatch(/Array\.isArray\(d\)\s*\?\s*d\s*:\s*d\.assets\s*\|\|\s*\[\]/);
-        });
-    });
 
     describe('Bug 4 — dashboard card filtering', () => {
         const src = read(

@@ -94,8 +94,6 @@ const EXEMPTIONS: Record<string, string> = {
     // Sort + cursor pagination is the entire interaction surface.
     "src/app/org/[orgSlug]/(app)/audit/AuditLogTable.tsx":
         "Org-level cross-tenant audit log — chronological view with sort + load-more, no faceted filters appropriate at the portfolio aggregation tier.",
-    "src/app/org/[orgSlug]/(app)/practices/PracticesTable.tsx":
-        "Org-level non-performing practices digest — fixed scope (status != IMPLEMENTED) + sort, no per-tenant facets.",
     "src/app/org/[orgSlug]/(app)/evidence/EvidenceTable.tsx":
         "Org-level overdue-evidence digest — fixed scope (review past due) + sort, no per-tenant facets.",
     "src/app/org/[orgSlug]/(app)/members/MembersTable.tsx":
