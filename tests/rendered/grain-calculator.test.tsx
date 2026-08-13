@@ -157,6 +157,8 @@ function wheatRow(over: Partial<CalculatorRow> = {}): CalculatorRow {
         netAssetPosition: 24_250,
         netWorth: 18_750,
         netWorthUnavailableReason: null,
+        netWorthUnavailableCode: null,
+        netWorthUnavailableParams: null,
         ...over,
     };
 }
@@ -202,6 +204,8 @@ function maizeRow(over: Partial<CalculatorRow> = {}): CalculatorRow {
         netAssetPosition: null,
         netWorth: null,
         netWorthUnavailableReason: 'No market price is available for maize.',
+        netWorthUnavailableCode: 'NO_MARKET_PRICE',
+        netWorthUnavailableParams: { commodity: 'maize' },
         ...over,
     };
 }
@@ -414,6 +418,134 @@ describe('grain calculator — on a PHONE (setViewport("mobile"))', () => {
         renderPage(data({ rows: [wheatRow({ rentCostProduceKg: 0, rentCostProduceValue: 0 })] }));
 
         expect(screen.queryByText(COPY.produceRentLabel)).not.toBeInTheDocument();
+    });
+
+    // ─────────────────────────────────────────────────────────────────
+    // ONE UNCERTAINTY VOCABULARY. The page spoke four dialects for "this
+    // number is not what it appears" — an em-dash plus English for a
+    // refusal, a badge for an allocation, a count for exclusions, a
+    // header takeover for truncation. And the hero could be an UPPER
+    // BOUND while printing as a definite figure, with the caveat two
+    // surfaces below it.
+    // ─────────────────────────────────────────────────────────────────
+
+    it('changes the HERO’s claim when the cost is a floor, not just a footnote', () => {
+        // THE DEFECT. `unvaluedNoUnitCost` makes cashCostTotal a floor,
+        // which makes net worth a MAXIMUM. The old page printed €18,750
+        // flat and put the explanation under a panel's cost line — a
+        // qualifier on a different surface from the number it qualifies
+        // is not a qualifier.
+        setViewport('mobile');
+        renderPage(data({ rows: [wheatRow({ unvaluedNoUnitCost: 2 })] }));
+
+        const sum = screen.getByRole('group', { name: COPY.waterfallAria });
+        expect(
+            within(sum).getByText(
+                COPY.uncertaintyAtMost.replace('{value}', '€18,750'),
+            ),
+        ).toBeVisible();
+        // The bare figure is NOT on screen as the headline claim.
+        expect(within(sum).queryByText('€18,750')).not.toBeInTheDocument();
+    });
+
+    it('bounds the COST the other way — a floor is "at least"', () => {
+        // Same cause, opposite direction: cost ≥ X ⇒ net ≤ assets − X.
+        // Calling the floor "at most" would be plainly wrong.
+        setViewport('mobile');
+        renderPage(data({ rows: [wheatRow({ unvaluedUnitMismatch: 1 })] }));
+
+        const sum = screen.getByRole('group', { name: COPY.waterfallAria });
+        expect(
+            within(sum).getByText(
+                COPY.uncertaintyAtLeast.replace('{value}', '−€5,500'),
+            ),
+        ).toBeVisible();
+    });
+
+    it('leaves an exact figure unqualified', () => {
+        // The vocabulary has to be able to say nothing. If every figure
+        // wore a hedge, none of them would carry information.
+        setViewport('mobile');
+        renderPage(data({ rows: [wheatRow()] }));
+
+        const sum = screen.getByRole('group', { name: COPY.waterfallAria });
+        expect(within(sum).getByText('€18,750')).toBeVisible();
+        expect(
+            within(sum).queryByText(
+                COPY.uncertaintyAtMost.replace('{value}', '€18,750'),
+            ),
+        ).not.toBeInTheDocument();
+    });
+
+    it('renders PARTIAL in its one treatment, and keeps the count at zero', () => {
+        // Folded into the vocabulary, not replaced by it. The badge is the
+        // shared PARTIAL marker; the count stays because "0 records
+        // excluded" is a statement and an absent line is not.
+        setViewport('mobile');
+        const { unmount } = renderPage();
+        expect(screen.getByText(COPY.uncertaintyPartialBadge)).toBeVisible();
+        unmount();
+
+        // Nothing excluded: no PARTIAL marker, but the count still states
+        // itself — asserted in full by "still states the count when
+        // nothing was excluded" above.
+        renderPage(data({ exclusions: emptyExclusions() }));
+        expect(screen.queryByText(COPY.uncertaintyPartialBadge)).not.toBeInTheDocument();
+        expect(screen.getByText('0 records excluded')).toBeVisible();
+    });
+
+    it('renders ALLOCATED in its one treatment — badge plus sentence', () => {
+        setViewport('mobile');
+        renderPage(data({ rows: [wheatRow({ payrollAllocated: true })] }));
+
+        expect(screen.getByText(COPY.payrollAllocatedBadge)).toBeVisible();
+        expect(screen.getByText(COPY.payrollAllocatedNote)).toBeVisible();
+    });
+
+    it('renders REFUSED in its one treatment — em-dash, named, explained', () => {
+        setViewport('mobile');
+        renderPage(data({ rows: [maizeRow()] }));
+
+        const sum = screen.getByRole('group', { name: COPY.waterfallAria });
+        // The RESULT's em-dash specifically. The two asset terms also show
+        // one — maize has no price, so neither is valued — and that is
+        // correct, which is why this cannot be a bare text query.
+        expect(sum.querySelector('[data-metric-value="true"]')).toHaveTextContent('—');
+        // Scoped: the appendix table's net-worth CELL carries the same
+        // wording, deliberately — that is a separate assertion about a
+        // separate surface, and the shared vocabulary is why they match.
+        expect(within(sum).getByText(COPY.netWorthUnavailableTitle)).toBeVisible();
+        // TRANSLATED from the code, not the server's English.
+        expect(
+            screen.getByText(
+                COPY.refusal.NO_MARKET_PRICE.replace('{commodity}', 'maize'),
+            ),
+        ).toBeVisible();
+    });
+
+    it('explains a refusal whose code this client has never heard of', () => {
+        // The fallback, end to end. A newer server emits a code this
+        // bundle does not know; the page must still say WHY rather than
+        // show a bare em-dash. Unit-proven in
+        // tests/unit/grain/uncertainty-vocabulary.test.ts; asserted here
+        // through the render that actually depends on it.
+        setViewport('mobile');
+        renderPage(
+            data({
+                rows: [
+                    maizeRow({
+                        netWorthUnavailableCode: 'SOME_FUTURE_REASON',
+                        netWorthUnavailableParams: null,
+                        netWorthUnavailableReason:
+                            'A reason this client cannot translate yet.',
+                    }),
+                ],
+            }),
+        );
+
+        expect(
+            screen.getByText('A reason this client cannot translate yet.'),
+        ).toBeVisible();
     });
 
     it('stamps WHEN the report was priced, and when the price was observed', () => {
