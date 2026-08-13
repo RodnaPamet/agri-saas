@@ -95,7 +95,7 @@ const WIDGET_TYPES: ReadonlyArray<WidgetTypeOption> = [
     {
         type: 'TREND',
         defaultSize: { w: 6, h: 3 },
-        defaultChartType: 'risks-open',
+        defaultChartType: 'evidence-overdue',
     },
     {
         type: 'TENANT_LIST',
@@ -112,7 +112,8 @@ const WIDGET_TYPES: ReadonlyArray<WidgetTypeOption> = [
 const CHART_TYPE_OPTIONS: Record<WidgetTypeKey, ReadonlyArray<string>> = {
     KPI: ['coverage', 'critical-risks', 'overdue-evidence', 'tenants'],
     DONUT: ['rag-distribution'],
-    TREND: ['risks-open', 'practices-coverage', 'evidence-overdue'],
+    // GRC teardown phase 2: 'risks-open' + 'practices-coverage' removed.
+    TREND: ['evidence-overdue'],
     TENANT_LIST: ['coverage'],
     DRILLDOWN_CTAS: ['default'],
 };
@@ -208,8 +209,6 @@ export function WidgetPicker({
         'overdue-evidence': t('widgetPicker.chartOverdueEvidence'),
         tenants: t('widgetPicker.chartTenants'),
         'rag-distribution': t('widgetPicker.chartRagDistribution'),
-        'risks-open': t('widgetPicker.chartOpenRisks'),
-        'practices-coverage': t('widgetPicker.chartPracticesCoverage'),
         'evidence-overdue': t('widgetPicker.chartOverdueEvidence'),
         default: t('widgetPicker.chartDefault'),
     };

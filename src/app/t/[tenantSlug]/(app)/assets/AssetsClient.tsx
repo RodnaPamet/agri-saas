@@ -28,7 +28,7 @@ import { KpiFilterCard } from '@/components/ui/kpi-filter-card';
 import { firstAssetDataIndex } from '@/lib/assets/asset-sparkline';
 import { useKpiFilter, type KpiFilterDef } from '@/components/ui/kpi-filter';
 import { Plus, Trash } from '@/components/ui/icons/nucleo';
-import type { TrendPayload } from '@/app-layer/usecases/compliance-trends';
+import type { TrendPayload } from '@/app-layer/usecases/metric-trends';
 import type { TimeSeriesPoint } from '@/components/ui/charts';
 import { NewAssetModal } from './NewAssetModal';
 import { DeletedAssetsView } from './DeletedAssetsView';

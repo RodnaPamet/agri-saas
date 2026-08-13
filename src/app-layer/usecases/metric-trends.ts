@@ -1,12 +1,19 @@
 /**
- * Compliance Trends — Retrieval Layer
+ * Metric Trends — Retrieval Layer
  *
- * Provides trend queries for the executive dashboard:
+ * Provides trend queries over the daily snapshot rollup:
  *  - 90-day KPI time series
  *  - Configurable date range
  *  - Tenant-scoped via RLS
  *
- * @module app-layer/usecases/compliance-trends
+ * The surviving consumer is the `/assets` KPI sparkline strip (30 days of
+ * asset history). GRC teardown phase 2 (plan §8f) trimmed the DTO to the
+ * columns that are still computed — evidence, tasks and assets. The
+ * practice / policy / vendor / finding columns still EXIST on the table and
+ * still hold real historical values; they are dropped in the phase-3
+ * migration, and nothing reads them in the meantime.
+ *
+ * @module app-layer/usecases/metric-trends
  */
 import { RequestContext } from '../types';
 import { assertCanRead } from '../policies/common';
@@ -23,21 +30,10 @@ export interface TrendDataPoint {
     /** ISO date string (YYYY-MM-DD) */
     date: string;
 
-    // Practices
-    practiceCoveragePercent: number;
-    practicesImplemented: number;
-    practicesApplicable: number;
-
-    // Risks
-
     // Evidence
     evidenceOverdue: number;
     evidenceDueSoon7d: number;
     evidenceCurrent: number;
-
-    // Policies
-    policiesTotal: number;
-    policiesOverdueReview: number;
 
     // Tasks
     tasksOpen: number;
@@ -48,9 +44,6 @@ export interface TrendDataPoint {
     assetsActive: number;
     assetsHighCriticality: number;
     assetsRetired: number;
-
-    // Findings
-    findingsOpen: number;
 }
 
 /**
@@ -77,28 +70,22 @@ export interface TrendPayload {
 function toDataPoint(s: ComplianceSnapshot): TrendDataPoint {
     return {
         date: s.snapshotDate.toISOString().slice(0, 10),
-        practiceCoveragePercent: s.practiceCoverageBps / 10,
-        practicesImplemented: s.practicesImplemented,
-        practicesApplicable: s.practicesApplicable,
         evidenceOverdue: s.evidenceOverdue,
         evidenceDueSoon7d: s.evidenceDueSoon7d,
         evidenceCurrent: s.evidenceCurrent,
-        policiesTotal: s.policiesTotal,
-        policiesOverdueReview: s.policiesOverdueReview,
         tasksOpen: s.tasksOpen,
         tasksOverdue: s.tasksOverdue,
         assetsTotal: s.assetsTotal,
         assetsActive: s.assetsActive,
         assetsHighCriticality: s.assetsHighCriticality,
         assetsRetired: s.assetsRetired,
-        findingsOpen: s.findingsOpen,
     };
 }
 
 // ─── Usecase ────────────────────────────────────────────────────────
 
 /**
- * Retrieve compliance trend data for the last N days.
+ * Retrieve metric trend data for the last N days.
  *
  * Uses the ComplianceSnapshot table — no live aggregation from
  * operational tables. Fast O(days) query on the composite index.
@@ -107,7 +94,7 @@ function toDataPoint(s: ComplianceSnapshot): TrendDataPoint {
  * @param days — number of days of history (default: 90, max: 365)
  * @returns ordered trend data points
  */
-export async function getComplianceTrends(
+export async function getMetricTrends(
     ctx: RequestContext,
     days: number = 90,
 ): Promise<TrendPayload> {

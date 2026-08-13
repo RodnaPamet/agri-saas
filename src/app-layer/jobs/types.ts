@@ -267,15 +267,6 @@ export interface SubflowDispatchPayload {
  * due. No payload (scans every tenant's enabled SCHEDULE rules). */
 export type ScheduleTriggerSweepPayload = Record<string, never>;
 
-/** Weekly compliance digest — executive summary email */
-export interface ComplianceDigestPayload {
-    tenantId?: string;
-    /** Override recipient emails (default: tenant ADMIN/OWNER members) */
-    recipientOverrides?: string[];
-    /** Number of days to include in trend summary (default: 7) */
-    trendDays?: number;
-}
-
 /**
  * Epic B.3 — Master-KEK rotation, per-tenant scope.
  *
@@ -728,7 +719,6 @@ export interface JobPayloadMap {
     'rule-chain-dispatch': RuleChainDispatchPayload;
     'subflow-dispatch': SubflowDispatchPayload;
     'schedule-trigger-sweep': ScheduleTriggerSweepPayload;
-    'compliance-digest': ComplianceDigestPayload;
     'automation-event-dispatch': AutomationEventDispatchPayload;
     'key-rotation': KeyRotationPayload;
     'tenant-dek-rotation': TenantDekRotationPayload;
@@ -1056,12 +1046,6 @@ export const JOB_DEFAULTS: Record<JobName, {
         attempts: 2,
         backoff: { type: 'exponential', delay: 10000 },
         removeOnComplete: 200,
-        removeOnFail: 500,
-    },
-    'compliance-digest': {
-        attempts: 2,
-        backoff: { type: 'exponential', delay: 15000 },
-        removeOnComplete: 100,
         removeOnFail: 500,
     },
     'automation-event-dispatch': {

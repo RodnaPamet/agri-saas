@@ -169,12 +169,11 @@ function resolveTrendContent(
     widget: OrgDashboardWidgetDto,
     data: PortfolioData,
 ): ChartRendererProps {
+    // GRC teardown phase 2: the 'practices-coverage' case went with the
+    // model. 'evidence-overdue' is the only trend chart type left.
     const points = data.trends.dataPoints.map((p) => {
         let value = 0;
         switch (widget.chartType) {
-            case 'practices-coverage':
-                value = p.practiceCoveragePercent;
-                break;
             case 'evidence-overdue':
                 value = p.evidenceOverdue;
                 break;
@@ -183,7 +182,6 @@ function resolveTrendContent(
     });
 
     const colorMap: Record<string, string> = {
-        'practices-coverage': 'text-content-success',
         'evidence-overdue': 'text-content-warning',
     };
 

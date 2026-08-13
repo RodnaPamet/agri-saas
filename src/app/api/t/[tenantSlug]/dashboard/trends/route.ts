@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { getTenantCtx } from '@/app-layer/context';
-import { getComplianceTrends } from '@/app-layer/usecases/compliance-trends';
+import { getMetricTrends } from '@/app-layer/usecases/metric-trends';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
 
@@ -13,6 +13,6 @@ export const GET = withApiErrorHandling(async (req: NextRequest, { params: param
     const params = await paramsPromise;
     const ctx = await getTenantCtx(params, req);
     const days = parseInt(req.nextUrl.searchParams.get('days') ?? '90', 10);
-    const payload = await getComplianceTrends(ctx, isNaN(days) ? 90 : days);
+    const payload = await getMetricTrends(ctx, isNaN(days) ? 90 : days);
     return jsonResponse(payload);
 });

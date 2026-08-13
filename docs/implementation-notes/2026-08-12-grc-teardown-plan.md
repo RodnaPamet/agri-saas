@@ -400,3 +400,55 @@ org routes; `usecases/farm-record-traceability.ts` — **the trap**: the filenam
 says *farm-record*, so a name-driven sweep keeps it, and every model it touches
 is KILL; and all of `src/lib/framework-tree/`, whose consumers are platform
 primitives under `src/components/ui/` carrying no GRC noun in their path.
+
+### 8f. AMENDMENT (phase 2 execution) — `ComplianceSnapshot` comes OFF the KILL list
+
+§2 lists `ComplianceSnapshot` under `compliance.prisma`'s KILL set. That is
+wrong, and the way it is wrong is the same shape as §8a/§8b: the model was
+classified by the FILE it lives in and the noun in its name, not by what reads
+it.
+
+It is a daily metrics rollup, and its columns are split down the middle:
+
+| section | verdict |
+|---|---|
+| `practices*`, `policies*`, `vendors*`, `findingsOpen` | GRC — go |
+| `evidence*`, `tasks*`, `assets*` | agri — stay |
+
+Two SURVIVING surfaces read it, and one of them is explicitly never-touch:
+
+1. **The `/assets` KPI sparklines.** `AssetsClient` fetches
+   `/api/t/:slug/dashboard/trends` → `compliance-trends.ts` →
+   `db.complianceSnapshot`, and renders a 30-day history strip across four
+   asset KPI cards. `/assets` is on the never-touch list in §1f.
+2. **The org portfolio roll-up.** `PortfolioRepository` reads it for the
+   cross-tenant 14-day view behind the surviving `/org/:slug` pages.
+
+There is also a data argument that has nothing to do with code: the table has
+been accumulating one row per tenant per day in production. A phase-3 `DROP
+TABLE` destroys that history irreversibly, and no snapshot restore brings it
+back selectively.
+
+**DECIDED (operator, 2026-08-13): keep a trimmed snapshot.**
+
+- **Phase 2** — move the model OUT of `compliance.prisma` into a surviving
+  schema file. This is a pure file move: `prismaSchemaFolder` concatenates the
+  folder, so relocating a model between files produces NO migration. Then trim
+  `jobs/snapshot.ts` to compute only the surviving columns, trim
+  `compliance-trends.ts` and `PortfolioRepository` to the surviving aggregates,
+  and keep `/dashboard/trends` + the sparklines working.
+  `jobs/compliance-digest.ts` is a GRC digest and goes.
+- **Phase 3** — drop the GRC COLUMNS in the main destructive migration, with a
+  `.down.sql` inverse (`tests/guards/destructive-migration-has-inverse.test.ts`
+  DERIVES the destructive set by scanning for `DROP COLUMN`, so the inverse is
+  not optional). Deferring the drop to phase 3 avoids standing up a second
+  destructive migration — and its rollback script — in the middle of the
+  teardown.
+
+The model KEEPS its name for now. Renaming it off the `Compliance` prefix means
+a `RENAME TO` migration plus its own inverse; if that is wanted it should ride
+the phase-3 migration rather than land on its own.
+
+**The general lesson, third time it has bitten:** a model's file and a model's
+name are both evidence about its owner, and both are weaker than the list of
+things that read it.

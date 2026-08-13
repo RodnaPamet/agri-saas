@@ -291,11 +291,5 @@ export const SCHEDULED_JOBS: ScheduleDefinition[] = [
         description: 'Generate daily ComplianceSnapshot for trend reporting. Idempotent — safe to re-run.',
         defaultPayload: {},
     },
-    {
-        name: 'compliance-digest',
-        pattern: '0 8 * * 1',     // weekly Monday at 08:00 UTC
-        description: 'Send weekly compliance digest email to tenant admins. Reuses snapshot data — no live aggregation.',
-        defaultPayload: {},
-    },
 ];
 

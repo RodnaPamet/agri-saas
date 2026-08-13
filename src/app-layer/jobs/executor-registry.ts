@@ -862,18 +862,6 @@ executorRegistry.register('schedule-trigger-sweep', async () => {
     return result;
 });
 
-// ── compliance-digest ────────────────────────────────────────────────
-
-executorRegistry.register('compliance-digest', async (payload) => {
-    const { runComplianceDigest } = await import('./compliance-digest');
-    const { result } = await runComplianceDigest({
-        tenantId: payload.tenantId,
-        recipientOverrides: payload.recipientOverrides,
-        trendDays: payload.trendDays,
-    });
-    return result;
-});
-
 // ── key-rotation (Epic B.3) ──────────────────────────────────────────
 
 executorRegistry.register('key-rotation', async (payload) => {

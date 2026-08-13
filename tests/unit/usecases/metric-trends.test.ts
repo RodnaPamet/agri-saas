@@ -2,9 +2,9 @@
  * fakeDb shims mirror runtime Prisma contracts; per-line typing has
  * poor cost/benefit in test files (codebase convention). */
 /**
- * Unit tests for src/app-layer/usecases/compliance-trends.ts
+ * Unit tests for src/app-layer/usecases/metric-trends.ts
  *
- * `getComplianceTrends` powers the executive dashboard time-series.
+ * `getMetricTrends` powers the executive dashboard time-series.
  * The branches worth protecting:
  *
  *   - the read-permission gate,
@@ -22,7 +22,7 @@ jest.mock('@/lib/db-context', () => ({
     runInTenantContext: jest.fn(),
 }));
 
-import { getComplianceTrends } from '@/app-layer/usecases/compliance-trends';
+import { getMetricTrends } from '@/app-layer/usecases/metric-trends';
 import { runInTenantContext } from '@/lib/db-context';
 import { makeRequestContext } from '../../helpers/make-context';
 
@@ -60,7 +60,7 @@ function fakeDb(rows: any[]) {
     };
 }
 
-describe('getComplianceTrends', () => {
+describe('getMetricTrends', () => {
     it('rejects a caller without read permission before any query', async () => {
         const ctx = makeRequestContext('READER', {
             permissions: {
@@ -71,23 +71,27 @@ describe('getComplianceTrends', () => {
                 canExport: false,
             },
         });
-        await expect(getComplianceTrends(ctx)).rejects.toThrow(/permission/i);
+        await expect(getMetricTrends(ctx)).rejects.toThrow(/permission/i);
         expect(mockRunInTx).not.toHaveBeenCalled();
     });
 
-    it('converts a snapshot row to a chart DTO with bps→percent maths', async () => {
+    it('converts a snapshot row to the surviving chart DTO fields', async () => {
         const db = fakeDb([snapshotRow()]);
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(db as never));
 
-        const payload = await getComplianceTrends(makeRequestContext('EDITOR'));
+        const payload = await getMetricTrends(makeRequestContext('EDITOR'));
 
         expect(payload.dataPoints).toHaveLength(1);
         const dp = payload.dataPoints[0];
-        // 925 bps / 10 → 92.5 %
-        expect(dp.practiceCoveragePercent).toBe(92.5);
         expect(dp.date).toBe('2026-05-10');
-        expect(dp.practicesImplemented).toBe(37);
-        expect(dp.findingsOpen).toBe(3);
+        // GRC teardown phase 2 (plan §8f): the practice / policy / vendor /
+        // finding fields left the DTO with their models. The columns still
+        // exist on the table until the phase-3 migration, but the DTO must
+        // not carry them — a chart reading a column nothing computes would
+        // render a flat line as if it were data.
+        expect(dp).not.toHaveProperty('practiceCoveragePercent');
+        expect(dp).not.toHaveProperty('practicesImplemented');
+        expect(dp).not.toHaveProperty('findingsOpen');
         // asset KPI series — backs the Assets-page sparklines
         expect(dp.assetsTotal).toBe(42);
         expect(dp.assetsActive).toBe(30);
@@ -99,7 +103,7 @@ describe('getComplianceTrends', () => {
         const db = fakeDb([]);
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(db as never));
 
-        const payload = await getComplianceTrends(makeRequestContext('EDITOR'));
+        const payload = await getMetricTrends(makeRequestContext('EDITOR'));
 
         expect(payload.daysRequested).toBe(90);
     });
@@ -108,7 +112,7 @@ describe('getComplianceTrends', () => {
         const db = fakeDb([]);
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(db as never));
 
-        const payload = await getComplianceTrends(makeRequestContext('EDITOR'), 0);
+        const payload = await getMetricTrends(makeRequestContext('EDITOR'), 0);
 
         expect(payload.daysRequested).toBe(1);
     });
@@ -117,7 +121,7 @@ describe('getComplianceTrends', () => {
         const db = fakeDb([]);
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(db as never));
 
-        const payload = await getComplianceTrends(makeRequestContext('EDITOR'), 100000);
+        const payload = await getMetricTrends(makeRequestContext('EDITOR'), 100000);
 
         expect(payload.daysRequested).toBe(365);
     });
@@ -130,7 +134,7 @@ describe('getComplianceTrends', () => {
         ]);
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(db as never));
 
-        const payload = await getComplianceTrends(makeRequestContext('EDITOR'), 30);
+        const payload = await getMetricTrends(makeRequestContext('EDITOR'), 30);
 
         expect(payload.daysRequested).toBe(30);
         expect(payload.daysAvailable).toBe(2);
@@ -141,7 +145,7 @@ describe('getComplianceTrends', () => {
         const db = fakeDb([]);
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(db as never));
 
-        const payload = await getComplianceTrends(makeRequestContext('EDITOR'), 7);
+        const payload = await getMetricTrends(makeRequestContext('EDITOR'), 7);
 
         expect(payload.dataPoints).toEqual([]);
         expect(payload.daysAvailable).toBe(0);
@@ -156,7 +160,7 @@ describe('getComplianceTrends', () => {
         const db = fakeDb([]);
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(db as never));
 
-        await getComplianceTrends(makeRequestContext('EDITOR'), 14);
+        await getMetricTrends(makeRequestContext('EDITOR'), 14);
 
         const queryArg = db.complianceSnapshot.findMany.mock.calls[0][0];
         expect(queryArg.where.tenantId).toBe('tenant-1');

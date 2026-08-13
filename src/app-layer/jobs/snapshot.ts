@@ -123,43 +123,20 @@ export async function generateSnapshotForTenant(
     const ctx = makeSystemCtx(tenantId);
 
     await withTenantDb(tenantId, async (db) => {
-        // Run all aggregation queries in parallel within the transaction
-        const [
-            practiceCoverage,
-            evidenceExpiry,
-            policySummary,
-            taskSummary,
-            vendorSummary,
-            assetSummary,
-            findingsOpen,
-        ] = await Promise.all([
-            DashboardRepository.getPracticeCoverage(db, ctx),
+        // Run all aggregation queries in parallel within the transaction.
+        //
+        // GRC teardown phase 2 (plan §8f): the practice / policy / vendor /
+        // finding aggregates are gone with their models. The snapshot COLUMNS
+        // still exist — they carry real historical values and are dropped in
+        // the phase-3 migration, not here — but nothing computes them any
+        // more, so a new row simply leaves them at their `@default(0)`.
+        const [evidenceExpiry, taskSummary, assetSummary] = await Promise.all([
             DashboardRepository.getEvidenceExpiry(db, ctx),
-            DashboardRepository.getPolicySummary(db, ctx),
             DashboardRepository.getTaskSummary(db, ctx),
-            DashboardRepository.getVendorSummary(db, ctx),
             DashboardRepository.getAssetSummary(db, ctx),
-            db.finding.count({ where: { tenantId, status: { not: 'CLOSED' } } }),
         ]);
 
-        // Coverage BPS = coveragePercent × 10 (e.g. 75.3% → 753)
-        const practiceCoverageBps = Math.round(practiceCoverage.coveragePercent * 10);
-
         const data = {
-            // Practices
-            practicesTotal: practiceCoverage.total,
-            practicesApplicable: practiceCoverage.applicable,
-            practicesImplemented: practiceCoverage.implemented,
-            practicesInProgress: practiceCoverage.inProgress,
-            practicesNotStarted: practiceCoverage.notStarted,
-            practiceCoverageBps,
-
-            // Risks
-            // The GRC risk register was removed with the compliance uproot.
-            // The snapshot columns stay (historical rows still carry real
-            // values and the trend charts read them); new snapshots record
-            // zero rather than a fabricated number.
-
             // Evidence
             evidenceTotal: evidenceExpiry.overdue + evidenceExpiry.dueSoon30d + evidenceExpiry.noReviewDate + evidenceExpiry.current,
             evidenceOverdue: evidenceExpiry.overdue,
@@ -167,28 +144,16 @@ export async function generateSnapshotForTenant(
             evidenceDueSoon30d: evidenceExpiry.dueSoon30d,
             evidenceCurrent: evidenceExpiry.current,
 
-            // Policies
-            policiesTotal: policySummary.total,
-            policiesPublished: policySummary.published,
-            policiesOverdueReview: policySummary.overdueReview,
-
             // Tasks
             tasksTotal: taskSummary.total,
             tasksOpen: taskSummary.open,
             tasksOverdue: taskSummary.overdue,
-
-            // Vendors
-            vendorsTotal: vendorSummary.total,
-            vendorsOverdueReview: vendorSummary.overdueReview,
 
             // Assets
             assetsTotal: assetSummary.total,
             assetsActive: assetSummary.active,
             assetsHighCriticality: assetSummary.highCriticality,
             assetsRetired: assetSummary.retired,
-
-            // Findings
-            findingsOpen,
         };
 
         // Upsert: idempotent — same (tenantId, snapshotDate) overwrites

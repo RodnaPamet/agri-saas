@@ -121,11 +121,17 @@ const DonutConfigSchema = z.object({
         .strict(),
 });
 
-const TrendChartType = z.enum([
-    'risks-open',
-    'practices-coverage',
-    'evidence-overdue',
-]);
+// GRC teardown phase 2: `risks-open` and `practices-coverage` are gone with
+// their models. `risks-open` was ALREADY dead before the teardown — the risk
+// register left with the compliance uproot and the dispatcher has carried no
+// case for it since, so a widget configured that way rendered a flat zero
+// line as though it were measured data.
+//
+// NOTE for the DB-resident-reference sweep (plan §8d.4): persisted
+// `OrgDashboardWidget.chartType` rows may still hold either dead value. They
+// need a data migration — rewrite to 'evidence-overdue' or delete the widget
+// — not just this enum edit.
+const TrendChartType = z.enum(['evidence-overdue']);
 
 const TrendConfigSchema = z.object({
     type: z.literal('TREND'),

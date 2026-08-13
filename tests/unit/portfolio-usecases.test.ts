@@ -302,9 +302,14 @@ describe('getPortfolioTrends', () => {
         expect(trend.daysAvailable).toBe(2);
         expect(trend.tenantsAggregated).toBe(2);
         expect(trend.dataPoints[0].date).toBe('2026-04-25');
-        expect(trend.dataPoints[0].practiceCoveragePercent).toBe(75);
         expect(trend.dataPoints[1].date).toBe('2026-04-26');
-        expect(trend.dataPoints[1].practiceCoveragePercent).toBe(85);
+        // GRC teardown phase 2 (plan §8f): the practice-coverage percentage
+        // left the portfolio DTO with its model. The surviving aggregates
+        // are the evidence + task sums, so assert on those instead of
+        // dropping the assertion altogether.
+        expect(trend.dataPoints[0]).not.toHaveProperty('practiceCoveragePercent');
+        expect(trend.dataPoints[0].evidenceOverdue).toBeGreaterThanOrEqual(0);
+        expect(trend.dataPoints[0].tasksOpen).toBeGreaterThanOrEqual(0);
     });
 
     it('caps days to 365', async () => {

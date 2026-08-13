@@ -73,7 +73,7 @@ describe('Farm Dashboard Page', () => {
         // them entirely.
         const content = readPage();
         expect(content).not.toContain('getExecutiveDashboard');
-        expect(content).not.toContain('getComplianceTrends');
+        expect(content).not.toContain('getMetricTrends');
     });
 });
 

@@ -11,7 +11,7 @@
  *   - `PortfolioTrend`       — time-series for the org's coverage /
  *                              risk / evidence charts. Reuses the
  *                              shape of `TrendDataPoint` from the
- *                              tenant-level `compliance-trends.ts`
+ *                              tenant-level `metric-trends.ts`
  *                              so charting code can be shared.
  *
  * Pure types — no DB access, no usecase logic. Imported by the
@@ -137,24 +137,22 @@ export type TenantHealthRow = z.infer<typeof TenantHealthRowSchema>;
 //
 // One data point per snapshotDate, summed across all org tenants.
 // Shape matches `TrendDataPoint` from
-// `src/app-layer/usecases/compliance-trends.ts` so the org dashboard
+// `src/app-layer/usecases/metric-trends.ts` so the org dashboard
 // can reuse the same chart components.
 
 export const PortfolioTrendDataPointSchema = z
     .object({
         /** ISO date string (YYYY-MM-DD) — same shape as TrendDataPoint. */
         date: z.string().min(1),
-        practiceCoveragePercent: z.number().min(0).max(100),
-        practicesImplemented: NonNegInt,
-        practicesApplicable: NonNegInt,
+        // GRC teardown phase 2 (plan §8f): the practice / policy / finding
+        // fields left this DTO with their models. The snapshot columns
+        // survive until the phase-3 migration but nothing computes them, so
+        // publishing them would report a measured zero instead of nothing.
         evidenceOverdue: NonNegInt,
         evidenceDueSoon7d: NonNegInt,
         evidenceCurrent: NonNegInt,
-        policiesTotal: NonNegInt,
-        policiesOverdueReview: NonNegInt,
         tasksOpen: NonNegInt,
         tasksOverdue: NonNegInt,
-        findingsOpen: NonNegInt,
     })
     .strict();
 
