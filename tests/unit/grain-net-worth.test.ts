@@ -37,6 +37,7 @@ jest.mock('@/app-layer/usecases/trends', () => ({
 
 import { getGrainNetWorth } from '@/app-layer/usecases/grain-net-worth';
 import { makeRequestContext } from '../helpers/make-context';
+import { assertNetWorthInvariants } from '../helpers/grain-net-worth-invariants';
 
 const ctx = makeRequestContext('ADMIN', { tenantSlug: 'acme', tenantId: 'tenant-1' });
 
@@ -50,6 +51,22 @@ function planting(overrides: Partial<Record<string, any>> = {}) {
         cropPlan: { seasonId: 's-1', cropType: { commodityCanonical: 'wheat' } },
         ...overrides,
     };
+}
+
+/**
+ * EVERY scenario in this file goes through here, which is the point.
+ *
+ * The identity `netWorth === netAssetPosition − cashCostTotal` used to be
+ * asserted nowhere: each test hardcoded its own outputs, and the original
+ * bug — `netWorth = netAssetPosition`, no cost subtracted — produced
+ * numbers that were internally consistent and passed. Wrapping the call
+ * means a scenario written about lease rent, payroll or exclusions now
+ * checks the arithmetic too, without its author having thought about it.
+ */
+async function netWorthResult(...args: Parameters<typeof getGrainNetWorth>) {
+    const result = await getGrainNetWorth(...args);
+    assertNetWorthInvariants(result.rows);
+    return result;
 }
 
 function resetMocks() {
@@ -75,7 +92,7 @@ describe('getGrainNetWorth — standing crop', () => {
             new Map([['wheat', { commodity: 'wheat', pricePerTonne: 300, currency: 'BGN', observedAt: '2026-01-01', source: 'ec-agrifood' }]]),
         );
 
-        const result = await getGrainNetWorth(ctx);
+        const result = await netWorthResult(ctx);
 
         expect(result.rows).toHaveLength(1);
         const wheat = result.rows[0];
@@ -93,7 +110,7 @@ describe('getGrainNetWorth — standing crop', () => {
             planting({ id: 'p-3', cropPlan: { seasonId: 's-1', cropType: { commodityCanonical: null } } }),
         ]);
 
-        const result = await getGrainNetWorth(ctx);
+        const result = await netWorthResult(ctx);
 
         expect(result.rows).toEqual([]);
         expect(result.exclusions.plantingsUnknownCommodity).toEqual(['p-3']);
@@ -114,7 +131,7 @@ describe('getGrainNetWorth — grain on hand', () => {
             new Map([['wheat', { commodity: 'wheat', pricePerTonne: 300, currency: 'BGN', observedAt: '2026-01-01', source: 'ec-agrifood' }]]),
         );
 
-        const result = await getGrainNetWorth(ctx);
+        const result = await netWorthResult(ctx);
 
         const wheat = result.rows.find((r) => r.commodity === 'wheat')!;
         expect(wheat.grainOnHandTonnes).toBe(7);
@@ -129,7 +146,7 @@ describe('getGrainNetWorth — grain on hand', () => {
         ]);
         mockDb.unit.findMany.mockResolvedValue([{ id: 'u-each', key: 'each' }]);
 
-        const result = await getGrainNetWorth(ctx);
+        const result = await netWorthResult(ctx);
 
         expect(result.rows).toEqual([]);
         expect(result.exclusions.lotsUnresolvedUnit).toEqual(
@@ -146,7 +163,7 @@ describe('getGrainNetWorth — grain on hand', () => {
         ]);
         mockDb.unit.findMany.mockResolvedValue([{ id: 'u-kg', key: 'kg' }]);
 
-        const result = await getGrainNetWorth(ctx);
+        const result = await netWorthResult(ctx);
 
         expect(result.rows).toEqual([]);
         expect(result.exclusions.lotsUnknownCommodity).toEqual(['lot-5']);
@@ -168,7 +185,7 @@ describe('getGrainNetWorth — attributed crop cost (reused from cost-rollup)', 
             unvalued: { noUnitCost: 0, unitMismatch: 0 },
         });
 
-        const result = await getGrainNetWorth(ctx);
+        const result = await netWorthResult(ctx);
 
         const wheat = result.rows.find((r) => r.commodity === 'wheat')!;
         expect(wheat.attributedCropCost).toBe(1500);
@@ -186,7 +203,7 @@ describe('getGrainNetWorth — attributed crop cost (reused from cost-rollup)', 
             unvalued: { noUnitCost: 0, unitMismatch: 0 },
         });
 
-        const result = await getGrainNetWorth(ctx);
+        const result = await netWorthResult(ctx);
 
         expect(result.rows).toEqual([]);
         expect(result.exclusions.plantingsUnknownCommodity).toEqual(['p-orphan']);
@@ -210,7 +227,7 @@ describe('getGrainNetWorth — rent attribution', () => {
             },
         ]);
 
-        const result = await getGrainNetWorth(ctx);
+        const result = await netWorthResult(ctx);
 
         const wheat = result.rows.find((r) => r.commodity === 'wheat')!;
         // perHa = 50 × 10 = 500 leva/ha; total for the 3 ha parcel = 1500;
@@ -235,7 +252,7 @@ describe('getGrainNetWorth — rent attribution', () => {
             new Map([['wheat', { commodity: 'wheat', pricePerTonne: 300, currency: 'BGN', observedAt: '2026-01-01', source: 'ec-agrifood' }]]),
         );
 
-        const result = await getGrainNetWorth(ctx);
+        const result = await netWorthResult(ctx);
 
         const wheat = result.rows.find((r) => r.commodity === 'wheat')!;
         // kgPerHa = 100 × 10 = 1000 kg/ha; total for 0.5 ha = 500 kg.
@@ -259,7 +276,7 @@ describe('getGrainNetWorth — rent attribution', () => {
         ]);
         // No market reference for wheat.
 
-        const result = await getGrainNetWorth(ctx);
+        const result = await netWorthResult(ctx);
 
         const wheat = result.rows.find((r) => r.commodity === 'wheat')!;
         expect(wheat.rentCostProduceKg).toBe(500);
@@ -279,7 +296,7 @@ describe('getGrainNetWorth — rent attribution', () => {
             },
         ]);
 
-        const result = await getGrainNetWorth(ctx);
+        const result = await netWorthResult(ctx);
 
         expect(result.exclusions.leasesUnresolvedRent).toHaveLength(1);
         expect(result.exclusions.leasesUnresolvedRent[0].leaseId).toBe('lease-3');
@@ -297,7 +314,7 @@ describe('getGrainNetWorth — rent attribution', () => {
             },
         ]);
 
-        const result = await getGrainNetWorth(ctx);
+        const result = await netWorthResult(ctx);
 
         expect(result.exclusions.leasesUnattributed).toEqual(['lease-4']);
     });
@@ -310,7 +327,7 @@ describe('getGrainNetWorth — payroll allocation', () => {
             { id: 'pay-1', category: 'PAYROLL', amount: 200, currency: 'BGN', plantingId: 'p-1', seasonId: null },
         ]);
 
-        const result = await getGrainNetWorth(ctx);
+        const result = await netWorthResult(ctx);
 
         const wheat = result.rows.find((r) => r.commodity === 'wheat')!;
         expect(wheat.payrollCost).toBe(200);
@@ -328,7 +345,7 @@ describe('getGrainNetWorth — payroll allocation', () => {
             { id: 'pay-3', category: 'PAYROLL', amount: 60, currency: 'EUR', plantingId: null, seasonId: 's-1' },
         ]);
 
-        const result = await getGrainNetWorth(ctx);
+        const result = await netWorthResult(ctx);
 
         const wheat = result.rows.find((r) => r.commodity === 'wheat')!;
         const maize = result.rows.find((r) => r.commodity === 'maize')!;
@@ -346,7 +363,7 @@ describe('getGrainNetWorth — payroll allocation', () => {
             { id: 'pay-4', category: 'PAYROLL', amount: 15, currency: 'BGN', plantingId: null, seasonId: 'season-with-no-plantings' },
         ]);
 
-        const result = await getGrainNetWorth(ctx);
+        const result = await netWorthResult(ctx);
 
         expect(result.exclusions.payrollUnattributable).toEqual(['pay-4']);
     });
@@ -356,7 +373,7 @@ describe('getGrainNetWorth — payroll allocation', () => {
             { id: 'pay-5', category: 'PAYROLL', amount: 10, currency: 'BGN', plantingId: 'p-missing', seasonId: null },
         ]);
 
-        const result = await getGrainNetWorth(ctx);
+        const result = await netWorthResult(ctx);
 
         expect(result.exclusions.payrollUnattributable).toEqual(['pay-5']);
         expect(result.exclusions.plantingsUnknownCommodity).toEqual(['p-missing']);
@@ -374,7 +391,7 @@ describe('getGrainNetWorth — currency handling and net worth', () => {
             new Map([['wheat', { commodity: 'wheat', pricePerTonne: 250, currency: 'BGN', observedAt: '2026-01-01', source: 'ec-agrifood' }]]),
         );
 
-        const result = await getGrainNetWorth(ctx);
+        const result = await netWorthResult(ctx);
 
         const wheat = result.rows.find((r) => r.commodity === 'wheat')!;
         // standing crop = 3 t × 250 = 750; cash cost = 100 (BGN, matches price currency).
@@ -395,7 +412,7 @@ describe('getGrainNetWorth — currency handling and net worth', () => {
             new Map([['wheat', { commodity: 'wheat', pricePerTonne: 250, currency: 'BGN', observedAt: '2026-01-01', source: 'ec-agrifood' }]]),
         );
 
-        const result = await getGrainNetWorth(ctx);
+        const result = await netWorthResult(ctx);
 
         const wheat = result.rows.find((r) => r.commodity === 'wheat')!;
         expect(wheat.netWorth).toBeNull();
@@ -427,7 +444,7 @@ describe('getGrainNetWorth — currency handling and net worth', () => {
             new Map([['wheat', { commodity: 'wheat', pricePerTonne: 250, currency: 'BGN', observedAt: '2026-01-01', source: 'ec-agrifood' }]]),
         );
 
-        const result = await getGrainNetWorth(ctx);
+        const result = await netWorthResult(ctx);
 
         const wheat = result.rows.find((r) => r.commodity === 'wheat')!;
         expect(wheat.cashCostCurrencies).toEqual([]);
@@ -450,7 +467,7 @@ describe('getGrainNetWorth — currency handling and net worth', () => {
             new Map([['wheat', { commodity: 'wheat', pricePerTonne: 250, currency: 'BGN', observedAt: '2026-01-01', source: 'ec-agrifood' }]]),
         );
 
-        const result = await getGrainNetWorth(ctx);
+        const result = await netWorthResult(ctx);
 
         const wheat = result.rows.find((r) => r.commodity === 'wheat')!;
         expect(wheat.cashCostTotal).toBe(0);
@@ -462,7 +479,7 @@ describe('getGrainNetWorth — currency handling and net worth', () => {
         mockDb.planting.findMany.mockResolvedValue([planting({ id: 'p-1', plannedYieldKgPerHa: 3000 })]);
         // No market reference registered for wheat.
 
-        const result = await getGrainNetWorth(ctx);
+        const result = await netWorthResult(ctx);
 
         const wheat = result.rows.find((r) => r.commodity === 'wheat')!;
         expect(wheat.standingCropValue).toBeNull();
@@ -493,7 +510,7 @@ describe('getGrainNetWorth — divergence from ATTRIBUTED_CROP_COST (the fourth-
         const rollupRows = [{ plantingId: 'p-1', totalCost: 100, currencies: ['BGN'], currencyMixed: false, unvaluedNoUnitCost: 0, unvaluedUnitMismatch: 0 }];
         mockGetCostRollupByPlanting.mockResolvedValue({ rows: rollupRows, truncated: false });
 
-        const result = await getGrainNetWorth(ctx, { seasonId: 's-1' });
+        const result = await netWorthResult(ctx, { seasonId: 's-1' });
 
         const rollupTotal = rollupRows.reduce((sum, r) => sum + r.totalCost, 0);
         const netWorthTotal = result.rows.reduce((sum, r) => sum + r.cashCostTotal, 0);
@@ -510,7 +527,7 @@ describe('getGrainNetWorth — divergence from ATTRIBUTED_CROP_COST (the fourth-
         const rollupRows = [{ plantingId: 'p-1', totalCost: 100, currencies: ['BGN'], currencyMixed: false, unvaluedNoUnitCost: 0, unvaluedUnitMismatch: 0 }];
         mockGetCostRollupByPlanting.mockResolvedValue({ rows: rollupRows, truncated: false });
 
-        const result = await getGrainNetWorth(ctx);
+        const result = await netWorthResult(ctx);
 
         const rollupTotal = rollupRows.reduce((sum, r) => sum + r.totalCost, 0);
         const netWorthTotal = result.rows.reduce((sum, r) => sum + r.cashCostTotal, 0);
@@ -529,12 +546,12 @@ describe('getGrainNetWorth — access control + truncation', () => {
 
     it('propagates truncation from either the tenant reads or the cost rollup', async () => {
         mockGetCostRollupByPlanting.mockResolvedValue({ rows: [], truncated: true });
-        const result = await getGrainNetWorth(ctx);
+        const result = await netWorthResult(ctx);
         expect(result.truncated).toBe(true);
     });
 
     it('every batched findMany is bounded with take', async () => {
-        await getGrainNetWorth(ctx);
+        await netWorthResult(ctx);
         for (const call of mockDb.planting.findMany.mock.calls) expect(call[0].take).toBeGreaterThan(0);
         for (const call of mockDb.inventoryLot.findMany.mock.calls) expect(call[0].take).toBeGreaterThan(0);
         for (const call of mockDb.parcelLease.findMany.mock.calls) expect(call[0].take).toBeGreaterThan(0);
@@ -567,7 +584,7 @@ describe('getGrainNetWorth — unvalued consumptions', () => {
             new Map([['wheat', { commodity: 'wheat', pricePerTonne: 250, currency: 'BGN', observedAt: '2026-01-01', source: 'ec-agrifood' }]]),
         );
 
-        const result = await getGrainNetWorth(ctx);
+        const result = await netWorthResult(ctx);
 
         // Both plantings are wheat, so the row counts add up.
         const wheat = result.rows.find((r) => r.commodity === 'wheat')!;
@@ -580,7 +597,7 @@ describe('getGrainNetWorth — unvalued consumptions', () => {
     });
 
     it('reports zeroes when every consumption was valued', async () => {
-        const result = await getGrainNetWorth(ctx);
+        const result = await netWorthResult(ctx);
         expect(result.unvalued).toEqual({ noUnitCost: 0, unitMismatch: 0 });
     });
 
@@ -597,7 +614,7 @@ describe('getGrainNetWorth — unvalued consumptions', () => {
             new Map([['wheat', { commodity: 'wheat', pricePerTonne: 250, currency: 'BGN', observedAt: '2026-01-01', source: 'ec-agrifood' }]]),
         );
 
-        const result = await getGrainNetWorth(ctx);
+        const result = await netWorthResult(ctx);
         const wheat = result.rows.find((r) => r.commodity === 'wheat')!;
 
         // Eight unvalued movements, and the money is untouched: 750 − 100.
@@ -665,7 +682,7 @@ describe('getGrainNetWorth — purchases never enter crop cost', () => {
             new Map([['wheat', { commodity: 'wheat', pricePerTonne: 250, currency: 'BGN', observedAt: '2026-01-01', source: 'ec-agrifood' }]]),
         );
 
-        const result = await getGrainNetWorth(ctx);
+        const result = await netWorthResult(ctx);
         const wheat = result.rows.find((r) => r.commodity === 'wheat')!;
 
         // 400, not 900: the purchase is NOT in crop cost.
@@ -691,7 +708,7 @@ describe('getGrainNetWorth — purchases never enter crop cost', () => {
                 new Map([['wheat', { commodity: 'wheat', pricePerTonne: 250, currency: 'BGN', observedAt: '2026-01-01', source: 'ec-agrifood' }]]),
             );
 
-            const result = await getGrainNetWorth(ctx);
+            const result = await netWorthResult(ctx);
             const wheat = result.rows.find((r) => r.commodity === 'wheat')!;
 
             expect(wheat.payrollCost).toBe(0);
@@ -711,7 +728,7 @@ describe('getGrainNetWorth — purchases never enter crop cost', () => {
             new Map([['wheat', { commodity: 'wheat', pricePerTonne: 250, currency: 'BGN', observedAt: '2026-01-01', source: 'ec-agrifood' }]]),
         );
 
-        const result = await getGrainNetWorth(ctx);
+        const result = await netWorthResult(ctx);
         const wheat = result.rows.find((r) => r.commodity === 'wheat')!;
 
         expect(wheat.payrollCost).toBe(300);
@@ -735,7 +752,7 @@ describe('getGrainNetWorth — cash-out never blends currencies', () => {
             costEntry({ id: 'c', category: 'FUEL', amount: 50, currency: 'BGN' }),
         ]);
 
-        const result = await getGrainNetWorth(ctx);
+        const result = await netWorthResult(ctx);
 
         expect(result.cashOut).toEqual([
             { currency: 'BGN', amount: 250, categories: ['FUEL', 'SEED'] },
@@ -744,7 +761,7 @@ describe('getGrainNetWorth — cash-out never blends currencies', () => {
     });
 
     it('is an empty list when the farm entered nothing', async () => {
-        const result = await getGrainNetWorth(ctx);
+        const result = await netWorthResult(ctx);
         expect(result.cashOut).toEqual([]);
     });
 });

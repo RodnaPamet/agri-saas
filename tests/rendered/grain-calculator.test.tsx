@@ -41,6 +41,7 @@ import { render, screen, within } from '@testing-library/react';
 import enMessages from '../../messages/en.json';
 import { formatDate, formatDateTime } from '@/lib/format-date';
 
+import { costUncertainty, netWorthUncertainty } from '@/lib/grain/uncertainty';
 import { restoreViewport, setViewport } from './viewport';
 
 jest.mock('next/navigation', () => ({
@@ -89,6 +90,28 @@ import {
 
 const COPY = enMessages.grain.calculator;
 
+/**
+ * Applies the SAME derivations `calculator/page.tsx` applies.
+ *
+ * Those three fields moved server-side, so a fixture that hardcoded them
+ * would let a test set `unvaluedNoUnitCost: 2` and still assert against an
+ * EXACT headline — passing while production showed a bound. Deriving them
+ * here keeps the fixture a model of the server rather than a wish about
+ * it. An explicit override still wins, for the cases that mean to pin a
+ * state directly.
+ */
+function withServerDerived(
+    row: Omit<CalculatorRow, 'netUncertainty' | 'costUncertainty' | 'showProduceRent'> &
+        Partial<Pick<CalculatorRow, 'netUncertainty' | 'costUncertainty' | 'showProduceRent'>>,
+): CalculatorRow {
+    return {
+        ...row,
+        netUncertainty: row.netUncertainty ?? netWorthUncertainty(row),
+        costUncertainty: row.costUncertainty ?? costUncertainty(row),
+        showProduceRent: row.showProduceRent ?? row.rentCostProduceKg > 0,
+    };
+}
+
 function emptyExclusions(): CalculatorExclusions {
     return {
         plantingsMissingYieldEstimate: [],
@@ -114,7 +137,7 @@ function emptyExclusions(): CalculatorExclusions {
  *   net worth 24,250 − 5,500 = €18,750
  */
 function wheatRow(over: Partial<CalculatorRow> = {}): CalculatorRow {
-    return {
+    return withServerDerived({
         commodity: 'wheat',
         pricePerTonne: 250,
         priceCurrency: 'EUR',
@@ -127,43 +150,40 @@ function wheatRow(over: Partial<CalculatorRow> = {}): CalculatorRow {
 
         standingCropAreaHa: 12.5,
         standingCropExpectedKg: 60_000,
-        standingCropPlantingIds: ['planting-w1'],
         standingCropValue: 15_000,
 
         grainOnHandTonnes: 40,
-        grainOnHandLotIds: ['lot-w1'],
         grainOnHandValue: 10_000,
 
-        attributedCropCost: 4_000,
-        attributedCropCostCurrencies: ['EUR'],
-        attributedCropCostCurrencyMixed: false,
+        costBreakdown: [
+            { id: 'field', labelKey: 'costFieldLabel', value: 4_000, variant: 'brand' },
+            { id: 'rent', labelKey: 'costRentLabel', value: 0, variant: 'warning' },
+            { id: 'payroll', labelKey: 'costPayrollLabel', value: 1_500, variant: 'info' },
+        ],
 
-        rentCostMoneyAmount: 0,
         rentCostProduceKg: 3_000,
         rentCostProduceValue: 750,
 
-        payrollCost: 1_500,
-        payrollCostCurrencies: ['EUR'],
-        payrollCostCurrencyMixed: false,
         payrollAllocated: true,
 
         cashCostTotal: 5_500,
-        cashCostCurrencies: ['EUR'],
-        cashCostCurrencyMixed: false,
 
         unvaluedNoUnitCost: 0,
         unvaluedUnitMismatch: 0,
-
-        netAssetPosition: 24_250,
         netWorth: 18_750,
         netWorthUnavailableReason: null,
+        netWorthUnavailableCode: null,
+        netWorthUnavailableParams: null,
+
+        costCurrencyCodes: ['EUR'],
+        rentCurrencyUnknown: false,
         ...over,
-    };
+    });
 }
 
 /** Maize with no market price — the usecase's stated refusal. */
 function maizeRow(over: Partial<CalculatorRow> = {}): CalculatorRow {
-    return {
+    return withServerDerived({
         commodity: 'maize',
         pricePerTonne: null,
         priceCurrency: null,
@@ -172,38 +192,35 @@ function maizeRow(over: Partial<CalculatorRow> = {}): CalculatorRow {
 
         standingCropAreaHa: 8,
         standingCropExpectedKg: 32_000,
-        standingCropPlantingIds: ['planting-m1'],
         standingCropValue: null,
 
         grainOnHandTonnes: 0,
-        grainOnHandLotIds: [],
         grainOnHandValue: null,
 
-        attributedCropCost: 900,
-        attributedCropCostCurrencies: ['EUR'],
-        attributedCropCostCurrencyMixed: false,
+        costBreakdown: [
+            { id: 'field', labelKey: 'costFieldLabel', value: 900, variant: 'brand' },
+            { id: 'rent', labelKey: 'costRentLabel', value: 0, variant: 'warning' },
+            { id: 'payroll', labelKey: 'costPayrollLabel', value: 0, variant: 'info' },
+        ],
 
-        rentCostMoneyAmount: 0,
         rentCostProduceKg: 0,
         rentCostProduceValue: 0,
 
-        payrollCost: 0,
-        payrollCostCurrencies: [],
-        payrollCostCurrencyMixed: false,
         payrollAllocated: false,
 
         cashCostTotal: 900,
-        cashCostCurrencies: ['EUR'],
-        cashCostCurrencyMixed: false,
 
         unvaluedNoUnitCost: 0,
         unvaluedUnitMismatch: 0,
-
-        netAssetPosition: null,
         netWorth: null,
         netWorthUnavailableReason: 'No market price is available for maize.',
+        netWorthUnavailableCode: 'NO_MARKET_PRICE',
+        netWorthUnavailableParams: { commodity: 'maize' },
+
+        costCurrencyCodes: ['EUR'],
+        rentCurrencyUnknown: false,
         ...over,
-    };
+    });
 }
 
 function data(over: Partial<CalculatorData> = {}): CalculatorData {
@@ -293,21 +310,17 @@ describe('grain calculator — on a PHONE (setViewport("mobile"))', () => {
         expect(screen.getByText(COPY.exclusionsNone)).toBeVisible();
     });
 
-    it('renders both value panels — expected beside actual', () => {
+    it('states both asset terms — expected and actual — inside the one sum', () => {
         setViewport('mobile');
         renderPage();
 
-        // Queried by ROLE: "Standing crop" is also a column header in the
-        // per-commodity table below, and a plain text query cannot tell
-        // the panel from the column.
-        expect(
-            screen.getByRole('heading', { name: COPY.panelStandingTitle }),
-        ).toBeVisible();
-        expect(
-            screen.getByRole('heading', { name: COPY.panelOnHandTitle }),
-        ).toBeVisible();
-        expect(screen.getByText(COPY.panelStandingSubtitle)).toBeVisible();
-        expect(screen.getByText(COPY.panelOnHandSubtitle)).toBeVisible();
+        // Still both named. What changed is that they are TERMS in one
+        // arithmetic, not two panels each ending in their own total.
+        const sum = screen.getByRole('group', { name: COPY.waterfallAria });
+        expect(within(sum).getByText(COPY.panelStandingTitle)).toBeVisible();
+        expect(within(sum).getByText(COPY.panelOnHandTitle)).toBeVisible();
+        expect(within(sum).getByText(COPY.panelStandingSubtitle)).toBeVisible();
+        expect(within(sum).getByText(COPY.panelOnHandSubtitle)).toBeVisible();
     });
 
     it('displays the standing-crop area in DECARES (storage stays hectares)', () => {
@@ -322,26 +335,230 @@ describe('grain calculator — on a PHONE (setViewport("mobile"))', () => {
         setViewport('mobile');
         renderPage();
 
-        // Both panels carry the badge — the same allocated cost is
-        // charged in each, which is exactly what sharedCostNote warns
-        // about.
-        expect(screen.getAllByText(COPY.payrollAllocatedBadge).length).toBeGreaterThan(0);
-        expect(screen.getAllByText(COPY.payrollAllocatedNote).length).toBeGreaterThan(0);
-        expect(screen.getByText(COPY.sharedCostNote)).toBeVisible();
+        // ONCE now. There is one cost line, so there is one place to say
+        // the payroll inside it was apportioned rather than measured.
+        expect(screen.getByText(COPY.payrollAllocatedBadge)).toBeVisible();
+        expect(screen.getByText(COPY.payrollAllocatedNote)).toBeVisible();
     });
 
-    it('shows the certified net worth and both per-panel nets', () => {
+    it('shows the certified net worth once, and no per-panel nets', () => {
         setViewport('mobile');
         renderPage();
 
-        // The headline figure appears twice by design — the summary card
-        // and the table row must agree.
+        // The headline figure appears in the sum and again in the table
+        // row — those must agree, and the table is an appendix listing
+        // every commodity, not a second answer to the same question.
         const netWorth = screen.getAllByText('€18,750'); // 24,250 − 5,500
         expect(netWorth.length).toBeGreaterThan(0);
         netWorth.forEach((node) => expect(node).toBeVisible());
 
-        expect(screen.getByText('€9,500')).toBeVisible(); // standing 15,000 − 5,500
-        expect(screen.getByText('€4,500')).toBeVisible(); // on hand 10,000 − 5,500
+        // THE DEFECT THIS PAGE SHIPPED WITH. Two panels each ending in a
+        // net line is the universal idiom for "these sum" — and they did
+        // not: both charged the same cashCostTotal, so 9,500 and 4,500
+        // were each the whole farm cost taken off one asset. Neither is a
+        // quantity anyone can act on, and their sum is meaningless.
+        expect(screen.queryByText('€9,500')).not.toBeInTheDocument();
+        expect(screen.queryByText('€4,500')).not.toBeInTheDocument();
+    });
+
+    // ─────────────────────────────────────────────────────────────────
+    // ONE ANSWER. The page previously rendered two ValuePanels side by
+    // side, each ending in a net line, plus a sentence explaining that
+    // the two nets could not be added. Side-by-side panels each ending
+    // in a total is the universal idiom for "these sum"; a prose
+    // disclaimer cannot beat a layout.
+    // ─────────────────────────────────────────────────────────────────
+
+    it('states exactly ONE net figure', () => {
+        setViewport('mobile');
+        renderPage();
+
+        // The net label is the page's answer, and it is claimed once.
+        // Scoped to the sum: the appendix table below has a "Net worth"
+        // COLUMN header, which is a different assertion about a
+        // different surface.
+        const sum = screen.getByRole('group', { name: COPY.waterfallAria });
+        expect(within(sum).getAllByText(COPY.netWorthLabel)).toHaveLength(1);
+
+        // And the retired idiom is gone in both its parts — the per-asset
+        // net line, and the note that existed only to disclaim it. Their
+        // i18n keys are deleted, so the retired COPY is spelled out here:
+        // the assertion is that this wording never returns, and a key
+        // reference could not express that once the key is gone.
+        expect(screen.queryByText('Net after cost')).not.toBeInTheDocument();
+        expect(
+            screen.queryByText(/the two nets cannot be added/i),
+        ).not.toBeInTheDocument();
+    });
+
+    it('puts every money figure in the sum on one signed column', () => {
+        setViewport('mobile');
+        renderPage();
+
+        // No two figures sit in a layout implying summation UNLESS they
+        // genuinely sum. Here they do, so each is signed and the reader
+        // can add them down the column:
+        //   +15,000  standing
+        //   +10,000  on hand
+        //     −750   rent paid in grain
+        //   −5,500   farm cost
+        //   =18,750  net worth
+        const sum = screen.getByRole('group', { name: COPY.waterfallAria });
+        expect(within(sum).getByText('+€15,000')).toBeVisible();
+        expect(within(sum).getByText('+€10,000')).toBeVisible();
+        expect(within(sum).getByText('−€750')).toBeVisible();
+        expect(within(sum).getByText('−€5,500')).toBeVisible();
+        expect(within(sum).getByText('€18,750')).toBeVisible();
+    });
+
+    it('subtracts rent-paid-in-grain visibly, not as a footnote', () => {
+        // netAssetPosition = standing + onHand − rentCostProduceValue, so
+        // this 750 is already inside the headline. It used to appear only
+        // as a note under a panel's cost breakdown, which put a term of
+        // the arithmetic somewhere the arithmetic could not be read.
+        setViewport('mobile');
+        renderPage();
+
+        const sum = screen.getByRole('group', { name: COPY.waterfallAria });
+        expect(within(sum).getByText(COPY.produceRentLabel)).toBeVisible();
+        expect(within(sum).getByText('−€750')).toBeVisible();
+    });
+
+    it('omits the rent term entirely when no rent is paid in grain', () => {
+        // A line reading "− €0" is ceremony: it states a term that is not
+        // part of this farm's arithmetic.
+        setViewport('mobile');
+        renderPage(data({ rows: [wheatRow({ rentCostProduceKg: 0, rentCostProduceValue: 0 })] }));
+
+        expect(screen.queryByText(COPY.produceRentLabel)).not.toBeInTheDocument();
+    });
+
+    // ─────────────────────────────────────────────────────────────────
+    // ONE UNCERTAINTY VOCABULARY. The page spoke four dialects for "this
+    // number is not what it appears" — an em-dash plus English for a
+    // refusal, a badge for an allocation, a count for exclusions, a
+    // header takeover for truncation. And the hero could be an UPPER
+    // BOUND while printing as a definite figure, with the caveat two
+    // surfaces below it.
+    // ─────────────────────────────────────────────────────────────────
+
+    it('changes the HERO’s claim when the cost is a floor, not just a footnote', () => {
+        // THE DEFECT. `unvaluedNoUnitCost` makes cashCostTotal a floor,
+        // which makes net worth a MAXIMUM. The old page printed €18,750
+        // flat and put the explanation under a panel's cost line — a
+        // qualifier on a different surface from the number it qualifies
+        // is not a qualifier.
+        setViewport('mobile');
+        renderPage(data({ rows: [wheatRow({ unvaluedNoUnitCost: 2 })] }));
+
+        const sum = screen.getByRole('group', { name: COPY.waterfallAria });
+        expect(
+            within(sum).getByText(
+                COPY.uncertaintyAtMost.replace('{value}', '€18,750'),
+            ),
+        ).toBeVisible();
+        // The bare figure is NOT on screen as the headline claim.
+        expect(within(sum).queryByText('€18,750')).not.toBeInTheDocument();
+    });
+
+    it('bounds the COST the other way — a floor is "at least"', () => {
+        // Same cause, opposite direction: cost ≥ X ⇒ net ≤ assets − X.
+        // Calling the floor "at most" would be plainly wrong.
+        setViewport('mobile');
+        renderPage(data({ rows: [wheatRow({ unvaluedUnitMismatch: 1 })] }));
+
+        const sum = screen.getByRole('group', { name: COPY.waterfallAria });
+        expect(
+            within(sum).getByText(
+                COPY.uncertaintyAtLeast.replace('{value}', '−€5,500'),
+            ),
+        ).toBeVisible();
+    });
+
+    it('leaves an exact figure unqualified', () => {
+        // The vocabulary has to be able to say nothing. If every figure
+        // wore a hedge, none of them would carry information.
+        setViewport('mobile');
+        renderPage(data({ rows: [wheatRow()] }));
+
+        const sum = screen.getByRole('group', { name: COPY.waterfallAria });
+        expect(within(sum).getByText('€18,750')).toBeVisible();
+        expect(
+            within(sum).queryByText(
+                COPY.uncertaintyAtMost.replace('{value}', '€18,750'),
+            ),
+        ).not.toBeInTheDocument();
+    });
+
+    it('renders PARTIAL in its one treatment, and keeps the count at zero', () => {
+        // Folded into the vocabulary, not replaced by it. The badge is the
+        // shared PARTIAL marker; the count stays because "0 records
+        // excluded" is a statement and an absent line is not.
+        setViewport('mobile');
+        const { unmount } = renderPage();
+        expect(screen.getByText(COPY.uncertaintyPartialBadge)).toBeVisible();
+        unmount();
+
+        // Nothing excluded: no PARTIAL marker, but the count still states
+        // itself — asserted in full by "still states the count when
+        // nothing was excluded" above.
+        renderPage(data({ exclusions: emptyExclusions() }));
+        expect(screen.queryByText(COPY.uncertaintyPartialBadge)).not.toBeInTheDocument();
+        expect(screen.getByText('0 records excluded')).toBeVisible();
+    });
+
+    it('renders ALLOCATED in its one treatment — badge plus sentence', () => {
+        setViewport('mobile');
+        renderPage(data({ rows: [wheatRow({ payrollAllocated: true })] }));
+
+        expect(screen.getByText(COPY.payrollAllocatedBadge)).toBeVisible();
+        expect(screen.getByText(COPY.payrollAllocatedNote)).toBeVisible();
+    });
+
+    it('renders REFUSED in its one treatment — em-dash, named, explained', () => {
+        setViewport('mobile');
+        renderPage(data({ rows: [maizeRow()] }));
+
+        const sum = screen.getByRole('group', { name: COPY.waterfallAria });
+        // The RESULT's em-dash specifically. The two asset terms also show
+        // one — maize has no price, so neither is valued — and that is
+        // correct, which is why this cannot be a bare text query.
+        expect(sum.querySelector('[data-metric-value="true"]')).toHaveTextContent('—');
+        // Scoped: the appendix table's net-worth CELL carries the same
+        // wording, deliberately — that is a separate assertion about a
+        // separate surface, and the shared vocabulary is why they match.
+        expect(within(sum).getByText(COPY.netWorthUnavailableTitle)).toBeVisible();
+        // TRANSLATED from the code, not the server's English.
+        expect(
+            screen.getByText(
+                COPY.refusal.NO_MARKET_PRICE.replace('{commodity}', 'maize'),
+            ),
+        ).toBeVisible();
+    });
+
+    it('explains a refusal whose code this client has never heard of', () => {
+        // The fallback, end to end. A newer server emits a code this
+        // bundle does not know; the page must still say WHY rather than
+        // show a bare em-dash. Unit-proven in
+        // tests/unit/grain/uncertainty-vocabulary.test.ts; asserted here
+        // through the render that actually depends on it.
+        setViewport('mobile');
+        renderPage(
+            data({
+                rows: [
+                    maizeRow({
+                        netWorthUnavailableCode: 'SOME_FUTURE_REASON',
+                        netWorthUnavailableParams: null,
+                        netWorthUnavailableReason:
+                            'A reason this client cannot translate yet.',
+                    }),
+                ],
+            }),
+        );
+
+        expect(
+            screen.getByText('A reason this client cannot translate yet.'),
+        ).toBeVisible();
     });
 
     it('stamps WHEN the report was priced, and when the price was observed', () => {
@@ -409,12 +626,23 @@ describe('grain calculator — on a PHONE (setViewport("mobile"))', () => {
         // Money rent present ⇒ the usecase pushes UNKNOWN_RENT_CURRENCY into
         // cashCostCurrencies. Joining that array verbatim printed a farmer
         // "Costs in EUR, UNKNOWN".
+        //
+        // The sentinel no longer reaches this island at all: page.tsx
+        // filters it and hands over `costCurrencyCodes` plus a boolean, so
+        // the fixture states what the server would state. That IS the fix
+        // — the island cannot print a sentinel it is never given — and the
+        // assertion stays because the wording it guards is still ours.
         renderPage(
             data({
                 rows: [
                     wheatRow({
-                        rentCostMoneyAmount: 300,
-                        cashCostCurrencies: ['EUR', 'UNKNOWN'],
+                        costBreakdown: [
+                            { id: 'field', labelKey: 'costFieldLabel', value: 4_000, variant: 'brand' },
+                            { id: 'rent', labelKey: 'costRentLabel', value: 300, variant: 'warning' },
+                            { id: 'payroll', labelKey: 'costPayrollLabel', value: 1_500, variant: 'info' },
+                        ],
+                        costCurrencyCodes: ['EUR'],
+                        rentCurrencyUnknown: true,
                     }),
                 ],
             }),
@@ -432,7 +660,7 @@ describe('grain calculator — on a PHONE (setViewport("mobile"))', () => {
         // Bulgarian a preposition followed by a finite verb.
         renderPage(
             data({
-                rows: [wheatRow({ priceCurrency: null, cashCostCurrencies: [] })],
+                rows: [wheatRow({ priceCurrency: null, costCurrencyCodes: [] })],
             }),
         );
 
@@ -471,6 +699,33 @@ describe('grain calculator — per-commodity table on a DESKTOP (setViewport("de
         expect(within(table).getByText(COPY.colOnHandValue)).toBeVisible();
         expect(within(table).getByText(COPY.colCashCost)).toBeVisible();
         expect(within(table).getByText(COPY.colNetWorth)).toBeVisible();
+    });
+
+    it('lists only commodities the farm actually has', () => {
+        // A REGRESSION LOCK, not a fix. The concern was that the appendix
+        // iterated CANONICAL_COMMODITIES, so a wheat-and-sunflower farm
+        // would read eight rows of zeros for crops it does not grow. It
+        // does not: `grain-net-worth.ts` keys its accumulator only from
+        // real plantings, lots, leases and payroll (`ensureAcc` is never
+        // called from the catalogue), and CANONICAL_COMMODITIES is used
+        // solely to SORT via byCanonicalOrder. Two commodities in, two
+        // rows out.
+        //
+        // Nothing is hidden, so nothing is stated — a "2 of 10 shown" line
+        // would claim eight rows were suppressed when they never existed
+        // for this farm, which is a worse lie than the silence it
+        // replaces. Locked here so a future change that seeds the
+        // accumulator from the catalogue fails instead of quietly
+        // padding the table.
+        setViewport('desktop');
+        renderPage();
+
+        const table = screen.getByRole('table');
+        expect(within(table).getAllByRole('row')).toHaveLength(2 + 1); // + header
+        expect(within(table).getByText(/wheat/i)).toBeVisible();
+        expect(within(table).getByText(/maize/i)).toBeVisible();
+        expect(within(table).queryByText(/barley/i)).not.toBeInTheDocument();
+        expect(within(table).queryByText(/sunflower/i)).not.toBeInTheDocument();
     });
 
     it('prints the refusal wording in a withheld net-worth cell, never a zero', () => {

@@ -3,6 +3,7 @@ import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { assertCanRead } from '../policies/common';
 import { getCostRollupByPlanting } from './cost-rollup';
 import { getMarketReferences } from './trends';
+import type { NetWorthRefusalCode } from '@/lib/grain/uncertainty';
 import {
     CANONICAL_COMMODITIES,
     isCanonicalCommodity,
@@ -271,7 +272,19 @@ export interface CommodityNetWorthRow {
      *  costs are a single known currency equal to `priceCurrency` — no FX
      *  is ever invented. Null otherwise; see `netWorthUnavailableReason`. */
     netWorth: number | null;
+    /**
+     * The English sentence, authored here. It is the FALLBACK, not dead
+     * weight: a client that does not recognise `netWorthUnavailableCode`
+     * — an older bundle against a newer server — must still be able to
+     * explain itself, because "a refusal is always explained" is the
+     * property the calculator is built around. An untranslated
+     * explanation beats a bare em-dash.
+     */
     netWorthUnavailableReason: string | null;
+    /** Machine-readable reason, for the client to translate. */
+    netWorthUnavailableCode: NetWorthRefusalCode | null;
+    /** Interpolation values for the translated reason, if it takes any. */
+    netWorthUnavailableParams: Record<string, string> | null;
 }
 
 /**
@@ -749,9 +762,17 @@ function finalizeRow(
 
     let netWorth: number | null = null;
     let netWorthUnavailableReason: string | null = null;
+    // The CODE is what the client translates; the sentence is the fallback
+    // for a client that does not recognise the code. Both are set on every
+    // refusal branch — see NET_WORTH_REFUSAL_CODES.
+    let netWorthUnavailableCode: NetWorthRefusalCode | null = null;
+    let netWorthUnavailableParams: Record<string, string> | null = null;
     if (pricePerTonne == null) {
+        netWorthUnavailableCode = 'NO_MARKET_PRICE';
+        netWorthUnavailableParams = { commodity };
         netWorthUnavailableReason = `No market price is available for ${commodity}.`;
     } else if (cashCostCurrencyMixed) {
+        netWorthUnavailableCode = 'MIXED_COST_CURRENCY';
         netWorthUnavailableReason =
             'Cash costs were recorded in more than one currency; blending them into net worth would misstate the total.';
     } else if (cashCostCurrencies.size === 0) {
@@ -785,9 +806,15 @@ function finalizeRow(
     } else {
         const onlyCurrency = [...cashCostCurrencies][0];
         if (onlyCurrency === UNKNOWN_RENT_CURRENCY) {
+            netWorthUnavailableCode = 'RENT_CURRENCY_UNRECORDED';
             netWorthUnavailableReason =
                 'Rent cost currency is not recorded on the lease (ParcelLease has no currency column); it cannot be combined with market-priced assets without inventing one.';
         } else if (onlyCurrency !== priceCurrency) {
+            netWorthUnavailableCode = 'COST_PRICE_CURRENCY_MISMATCH';
+            netWorthUnavailableParams = {
+                costCurrency: onlyCurrency,
+                priceCurrency: priceCurrency ?? '',
+            };
             netWorthUnavailableReason = `Cost currency (${onlyCurrency}) does not match the market price currency (${priceCurrency}); no currency conversion is performed.`;
         } else {
             netWorth = round2((netAssetPosition ?? 0) - cashCostTotal);
@@ -835,6 +862,8 @@ function finalizeRow(
         netAssetPosition,
         netWorth,
         netWorthUnavailableReason,
+        netWorthUnavailableCode,
+        netWorthUnavailableParams,
     };
 }
 
