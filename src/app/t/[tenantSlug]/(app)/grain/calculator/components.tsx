@@ -25,6 +25,8 @@ import { Heading, TextLink } from '@/components/ui/typography';
 import { useExactMoneyFormatter } from '@/lib/tenant-context-provider';
 import { formatDecimal } from '@/lib/number-format';
 import { UNCERTAINTY, type UncertaintyState } from '@/lib/grain/uncertainty';
+import type { BreakEvenFigures } from '@/lib/grain/break-even';
+import { ProgressBar } from '@/components/ui/progress-bar';
 import { cn } from '@/lib/cn';
 
 import type { CalculatorExclusions, ExclusionEntry } from './CalculatorClient';
@@ -254,6 +256,8 @@ export interface CommodityStripItem {
     netWorth: number | null;
     currency: string | null;
     uncertainty: UncertaintyState;
+    /** Market price against the price that clears cost. */
+    breakEven: BreakEvenFigures;
 }
 
 interface CommodityStripProps {
@@ -267,10 +271,11 @@ interface CommodityStripProps {
  *
  * `commodityOptions` fed a ToggleGroup, so a farmer with five crops saw
  * ONE at a time and could not answer "which crop is actually carrying this
- * farm?" without stepping through them. The appendix table did show every
- * row, but it sits below the sum, the breakdown, the KPI and the
+ * farm?" without stepping through them. An appendix table did show every
+ * row, but it sat below the sum, the breakdown, the KPI and the
  * exclusions — the comparison they most want was the last thing on the
- * page.
+ * page. This strip took its place near the top, and the table was deleted
+ * rather than kept alongside.
  *
  * This REPLACES the ToggleGroup rather than joining it. The toggle's only
  * job was selection, which these rows also do; keeping both would put two
@@ -335,10 +340,110 @@ export function CommodityStrip({ items, selected, onSelect }: CommodityStripProp
                                         : amount}
                                 </span>
                             </button>
+                            <BreakEvenRow commodityLabel={item.label} figures={item.breakEven} />
                         </li>
                     );
                 })}
             </ul>
         </Card>
+    );
+}
+
+// ─── Break-even cover ────────────────────────────────────────────────
+
+/**
+ * How far the market price goes toward clearing this crop's cost.
+ *
+ * `ProgressBar`, per the platform decision table: "a single value that
+ * advances toward a max". Break-even IS that max, and the primitive
+ * already marks a value beyond it — which here is the good case, a crop
+ * fetching more than it cost. `StatusBreakdown` was the tempting
+ * alternative and is wrong for the reason its own doc section gives: its
+ * rows share a total, and crops share nothing.
+ *
+ * ── The scale carries no currency ───────────────────────────────────
+ *
+ * The bar plots a RATIO. Both sides of `market / breakEven` are in the
+ * same currency by construction — the usecase refuses a row whose cost
+ * currency differs from its price currency — so the quotient is
+ * dimensionless and a EUR crop and a BGN crop are comparable without
+ * anything being blended. The money is stated beside it, each in its own
+ * code, because the ratio is the comparison and the figures are the
+ * evidence.
+ *
+ * ── The text is not a fallback ──────────────────────────────────────
+ *
+ * A bar conveys nothing to a screen reader, and this page deleted the
+ * table that used to be its text equivalent. The percentage, the verdict
+ * and both prices are rendered as text for every row, so the ranking and
+ * the magnitudes survive without the visual entirely.
+ */
+export function BreakEvenRow({
+    commodityLabel,
+    figures,
+}: {
+    commodityLabel: string;
+    figures: BreakEvenFigures;
+}) {
+    const tc = useTranslations('grain.calculator');
+
+    if (figures.refusalCode != null) {
+        // Absent-and-named. A crop with no yield estimate must not simply
+        // vanish from the comparison, or the picture quietly describes a
+        // smaller farm than the one being read about.
+        return (
+            <p className="px-2 pb-1 text-xs text-content-attention">
+                {figures.refusalCode === 'NO_EXPECTED_TONNAGE'
+                    ? tc('breakEvenNoTonnage')
+                    : tc('breakEvenNoPrice')}
+            </p>
+        );
+    }
+
+    const money = (v: number | null) =>
+        v == null ? '—' : `${formatDecimal(v, 2)}${figures.currency ? ` ${figures.currency}` : ''}`;
+    const detail = tc('breakEvenDetail', {
+        market: money(figures.marketPricePerTonne),
+        breakEven: money(figures.breakEvenPricePerTonne),
+    });
+
+    if (figures.coverPercent == null) {
+        return (
+            <p className="px-2 pb-1 text-xs text-content-muted">
+                {tc('breakEvenCostless')} {detail}
+            </p>
+        );
+    }
+
+    const percent = Math.round(figures.coverPercent);
+    return (
+        <div className="space-y-tight px-2 pb-1">
+            <ProgressBar
+                value={figures.coverPercent}
+                variant={figures.covered ? 'success' : 'warning'}
+                size="sm"
+                aria-label={tc('breakEvenBarAria', {
+                    commodity: commodityLabel,
+                    percent: String(percent),
+                })}
+            />
+            <p className="text-xs text-content-muted">
+                <span
+                    className={
+                        figures.covered ? 'text-content-success' : 'text-content-warning'
+                    }
+                >
+                    {percent}% — {figures.covered ? tc('breakEvenCovered') : tc('breakEvenShort')}
+                </span>{' '}
+                <span className="tabular-nums">{detail}</span>
+                {figures.uncertainty === UNCERTAINTY.AT_LEAST && (
+                    // The bound does NOT invert here, unlike the per-dca
+                    // margin: an understated cost understates the price
+                    // needed to clear it, so the true break-even is this or
+                    // higher and the cover is this or LOWER.
+                    <> — {tc('uncertaintyAtLeast', { value: `${percent}%` })}</>
+                )}
+            </p>
+        </div>
     );
 }
