@@ -21,7 +21,7 @@ import { useTranslations } from 'next-intl';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
-import { Heading } from '@/components/ui/typography';
+import { Heading, TextLink } from '@/components/ui/typography';
 import { useExactMoneyFormatter } from '@/lib/tenant-context-provider';
 
 import type { CalculatorExclusions, ExclusionEntry } from './CalculatorClient';
@@ -118,7 +118,11 @@ interface ExclusionsCardProps {
         key: keyof CalculatorExclusions;
         labelKey: string;
         entries: ReadonlyArray<ExclusionEntry>;
+        /** Where a farmer fixes this class — see EXCLUSION_CLASSES. */
+        destination: { path: string; labelKey: string };
     }>;
+    /** Tenant-scoped href builder, passed in so this stays presentational. */
+    hrefFor: (path: string) => string;
 }
 
 /**
@@ -127,7 +131,7 @@ interface ExclusionsCardProps {
  * accordion is the "which ones" affordance the count is useless
  * without.
  */
-export function ExclusionsCard({ count, classes }: ExclusionsCardProps) {
+export function ExclusionsCard({ count, classes, hrefFor }: ExclusionsCardProps) {
     const tc = useTranslations('grain.calculator');
 
     return (
@@ -165,10 +169,73 @@ export function ExclusionsCard({ count, classes }: ExclusionsCardProps) {
                                 </AccordionTrigger>
                                 <AccordionContent size="sm">
                                     <ul className="space-y-tight pt-2 font-mono text-xs text-content-muted">
-                                        {cls.entries.map((entry, i) => (
-                                            <li key={`${cls.key}-${i}`}>{describeEntry(entry)}</li>
-                                        ))}
+                                        {cls.entries.map((entry, i) => {
+                                            // Only LOTS support a per-entry
+                                            // deep link: /inventory?lotId
+                                            // opens that lot's detail modal,
+                                            // an affordance built for QR
+                                            // codes. /rent takes a location
+                                            // id and /planning a crop-plan
+                                            // id, neither of which these
+                                            // entries carry — so those get
+                                            // the class destination below
+                                            // rather than a link that would
+                                            // silently ignore its argument.
+                                            //
+                                            // Keyed on the CLASS, not the
+                                            // entry's shape: lotsUnresolvedUnit
+                                            // carries {lotId, unitKey} while
+                                            // lotsUnknownCommodity carries a
+                                            // bare id string, and a bare lot
+                                            // id is indistinguishable from a
+                                            // bare planting id. The class
+                                            // knows what its entries are.
+                                            const lotId = cls.key.startsWith('lots')
+                                                ? typeof entry === 'string'
+                                                    ? entry
+                                                    : 'lotId' in entry
+                                                      ? entry.lotId
+                                                      : null
+                                                : null;
+                                            const lotHref =
+                                                lotId != null
+                                                    ? hrefFor(`/inventory?lotId=${lotId}`)
+                                                    : null;
+                                            return (
+                                                <li key={`${cls.key}-${i}`}>
+                                                    {describeEntry(entry)}
+                                                    {lotHref != null && (
+                                                        <>
+                                                            {' '}
+                                                            <TextLink
+                                                                tone="link"
+                                                                href={lotHref}
+                                                                className="font-sans"
+                                                            >
+                                                                {tc('exclOpenLot')}
+                                                            </TextLink>
+                                                        </>
+                                                    )}
+                                                </li>
+                                            );
+                                        })}
                                     </ul>
+                                    {/* The class destination. Present for
+                                        every class — EXCLUSION_CLASSES makes
+                                        it required — so no diagnosis is a
+                                        dead end. It does not soften the
+                                        finding: the count and the class name
+                                        above are unchanged, this only adds
+                                        somewhere to go. */}
+                                    <p className="pt-2">
+                                        <TextLink
+                                            tone="link"
+                                            href={hrefFor(cls.destination.path)}
+                                            className="text-xs"
+                                        >
+                                            {tc(cls.destination.labelKey)}
+                                        </TextLink>
+                                    </p>
                                 </AccordionContent>
                             </AccordionItem>
                         ))}

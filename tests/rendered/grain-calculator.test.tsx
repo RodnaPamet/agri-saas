@@ -37,7 +37,7 @@
  */
 
 import * as React from 'react';
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import enMessages from '../../messages/en.json';
 import { formatDate, formatDateTime } from '@/lib/format-date';
 
@@ -84,6 +84,7 @@ jest.mock('@/lib/tenant-context-provider', () => {
 
 import {
     CalculatorClient,
+    EXCLUSION_CLASS_DESTINATIONS,
     type CalculatorData,
     type CalculatorExclusions,
     type CalculatorRow,
@@ -659,6 +660,113 @@ describe('grain calculator — on a PHONE (setViewport("mobile"))', () => {
         expect(
             screen.getByText(COPY.uncertaintyAtMost.replace('{value}', '23,750 EUR')),
         ).toBeVisible();
+    });
+
+    // ─────────────────────────────────────────────────────────────────
+    // DIAGNOSES BECOME DESTINATIONS. The only href in the whole feature
+    // was the dashboard breadcrumb: nine named classes of excluded record
+    // and no way to reach one. Knowing what is wrong never became fixing
+    // it, which is the gap between an honest report and a tool.
+    // ─────────────────────────────────────────────────────────────────
+
+    it('gives EVERY exclusion class with entries somewhere to go', () => {
+        // DERIVED from the class table, not nine hand-listed cases — a
+        // tenth class added later without a destination must fail here,
+        // and a hand-written list would simply not mention it.
+        setViewport('mobile');
+        renderPage(
+            data({
+                exclusions: {
+                    plantingsMissingYieldEstimate: ['p-1'],
+                    plantingsUnknownCommodity: ['p-2'],
+                    lotsUnresolvedUnit: [{ lotId: 'lot-1', unitKey: 'bag' }],
+                    lotsUnknownCommodity: ['lot-2'],
+                    commoditiesWithNoPrice: ['maize'],
+                    leasesUnresolvedRent: [{ leaseId: 'l-1', reason: 'unreadable' }],
+                    leasesUnattributed: ['l-2'],
+                    leasesProduceRentUnpriced: ['l-3'],
+                    payrollUnattributable: ['c-1'],
+                },
+            }),
+        );
+
+        // The accordion is `type="single"`, so only the OPEN item's content
+        // is mounted — the destination lives with the entries it relates to,
+        // which means opening each class in turn is what a farmer does and
+        // what this asserts.
+        const triggers = screen.getAllByRole('button', { name: /\(\d+\)$/ });
+        expect(triggers.length).toBe(9); // every class has entries in this fixture
+
+        const seen = new Set<string>();
+        for (const trigger of triggers) {
+            fireEvent.click(trigger);
+            for (const a of Array.from(document.querySelectorAll('a[href^="/t/acme"]'))) {
+                seen.add(a.getAttribute('href')!);
+            }
+        }
+
+        // Every destination the TABLE declares was reachable. Derived, so a
+        // tenth class added without one fails here.
+        for (const path of EXCLUSION_CLASS_DESTINATIONS) {
+            expect(seen).toContain(`/t/acme${path}`);
+        }
+        // Non-trivial — a table that lost its destinations would make the
+        // loop above vacuously true.
+        expect(EXCLUSION_CLASS_DESTINATIONS.length).toBeGreaterThanOrEqual(4);
+    });
+
+    it('deep-links a LOT to its own detail, the one entry type that supports it', () => {
+        // /inventory?lotId opens that lot's modal — an affordance built for
+        // QR codes. /rent takes a locationId and /planning a cropPlanId,
+        // neither of which these entries carry, so those stay class-level.
+        setViewport('mobile');
+        renderPage(
+            data({
+                exclusions: {
+                    ...emptyExclusions(),
+                    lotsUnresolvedUnit: [{ lotId: 'lot-42', unitKey: 'bag' }],
+                },
+            }),
+        );
+
+        fireEvent.click(screen.getByRole('button', { name: /\(1\)$/ }));
+        expect(
+            document.querySelector('a[href="/t/acme/inventory?lotId=lot-42"]'),
+        ).not.toBeNull();
+    });
+
+    it('offers a way out of the empty state, not just a precondition', () => {
+        setViewport('mobile');
+        renderPage(data({ rows: [] }));
+
+        const action = screen.getByText(COPY.emptyAction);
+        expect(action).toBeVisible();
+        expect(action.closest('a')).toHaveAttribute('href', '/t/acme/planning');
+    });
+
+    it('links a FIXABLE refusal, and leaves an unfixable one explanatory', () => {
+        setViewport('mobile');
+        // NO_MARKET_PRICE is fixable — prices live on /trends.
+        renderPage(data({ rows: [maizeRow()] }));
+        expect(
+            document.querySelector('a[href="/t/acme/trends"]'),
+        ).not.toBeNull();
+
+        // A mixed cost currency is NOT: it needs an FX rate this product
+        // deliberately does not have. Offering a destination that cannot
+        // resolve the cause would be worse than the plain explanation.
+        renderPage(
+            data({
+                rows: [
+                    maizeRow({
+                        netWorthUnavailableCode: 'MIXED_COST_CURRENCY',
+                        netWorthUnavailableParams: null,
+                        netWorthUnavailableReason: 'Costs in more than one currency.',
+                    }),
+                ],
+            }),
+        );
+        expect(screen.getAllByText(COPY.refusal.MIXED_COST_CURRENCY).length).toBeGreaterThan(0);
     });
 
     it('stamps WHEN the report was priced, and when the price was observed', () => {
