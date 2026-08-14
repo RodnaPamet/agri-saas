@@ -22,6 +22,7 @@ import {
     netWorthUncertainty,
     isKnownRefusalCode,
     explainRefusal,
+    composeFarmUncertainty,
     NET_WORTH_REFUSAL_CODES,
 } from '@/lib/grain/uncertainty';
 
@@ -99,6 +100,102 @@ describe('costUncertainty', () => {
 
     it('is EXACT otherwise', () => {
         expect(costUncertainty(exact)).toBe(UNCERTAINTY.EXACT);
+    });
+});
+
+/**
+ * The farm total's state is COMPOSED from its rows, never invented.
+ *
+ * A total is a new figure and it would be easy to give it new words. It
+ * gets the same six states, so a farmer who has learned what "at most"
+ * means on one crop reads it the same way on the farm.
+ *
+ * The precedence is the argument. PARTIAL outranks every bound because a
+ * total that is not the whole farm is a bigger caveat than a bound on a
+ * complete one — "at most X" invites you to treat X as the ceiling for the
+ * FARM, and if two commodities are missing from it, that is false in a way
+ * a bound does not capture.
+ */
+describe('composeFarmUncertainty', () => {
+    const row = (over: Partial<Parameters<typeof composeFarmUncertainty>[0][number]> = {}) => ({
+        unvaluedNoUnitCost: 0,
+        unvaluedUnitMismatch: 0,
+        payrollAllocated: false,
+        netWorth: 100 as number | null,
+        ...over,
+    });
+
+    it('is EXACT when every row is exact', () => {
+        expect(composeFarmUncertainty([row(), row()])).toEqual({
+            state: UNCERTAINTY.EXACT,
+            refusedCount: 0,
+        });
+    });
+
+    it('is PARTIAL, with a COUNT, when a row was refused', () => {
+        // Never silently short. The number of commodities missing from the
+        // total is the thing that makes it interpretable at all.
+        expect(composeFarmUncertainty([row(), row({ netWorth: null })])).toEqual({
+            state: UNCERTAINTY.PARTIAL,
+            refusedCount: 1,
+        });
+    });
+
+    it('is AT_MOST when any contributing cost is a floor', () => {
+        expect(composeFarmUncertainty([row(), row({ unvaluedNoUnitCost: 2 })])).toEqual({
+            state: UNCERTAINTY.AT_MOST,
+            refusedCount: 0,
+        });
+    });
+
+    it('is ALLOCATED when any contributing payroll was apportioned', () => {
+        expect(composeFarmUncertainty([row(), row({ payrollAllocated: true })])).toEqual({
+            state: UNCERTAINTY.ALLOCATED,
+            refusedCount: 0,
+        });
+    });
+
+    it('prefers PARTIAL over a bound — incompleteness outranks imprecision', () => {
+        // "At most X" reads as a ceiling for the farm. With a commodity
+        // missing from the total that claim is not merely imprecise, it is
+        // about a different farm.
+        expect(
+            composeFarmUncertainty([
+                row({ unvaluedNoUnitCost: 5, payrollAllocated: true }),
+                row({ netWorth: null }),
+            ]),
+        ).toEqual({ state: UNCERTAINTY.PARTIAL, refusedCount: 1 });
+    });
+
+    it('prefers a bound over an allocation, matching the row-level rule', () => {
+        // Same precedence costUncertainty already uses, so the two levels
+        // cannot disagree about which qualifier matters more.
+        expect(
+            composeFarmUncertainty([row({ unvaluedUnitMismatch: 1, payrollAllocated: true })]),
+        ).toEqual({ state: UNCERTAINTY.AT_MOST, refusedCount: 0 });
+    });
+
+    it('ignores a REFUSED row’s own floor — it contributes nothing to bound', () => {
+        // Its cost is not in the total, so it cannot make the total a
+        // ceiling. It makes the total INCOMPLETE, which is already said.
+        expect(
+            composeFarmUncertainty([row(), row({ netWorth: null, unvaluedNoUnitCost: 9 })]),
+        ).toEqual({ state: UNCERTAINTY.PARTIAL, refusedCount: 1 });
+    });
+
+    it('is REFUSED when nothing at all could be computed', () => {
+        // Not "partial with everything missing" — there is no total.
+        expect(composeFarmUncertainty([row({ netWorth: null })])).toEqual({
+            state: UNCERTAINTY.REFUSED,
+            refusedCount: 1,
+        });
+    });
+
+    it('is REFUSED for an empty farm rather than a confident zero', () => {
+        expect(composeFarmUncertainty([])).toEqual({
+            state: UNCERTAINTY.REFUSED,
+            refusedCount: 0,
+        });
     });
 });
 

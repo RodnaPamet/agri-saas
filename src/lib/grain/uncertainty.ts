@@ -89,6 +89,48 @@ export function costUncertainty(row: UncertaintyInput): UncertaintyState {
     return UNCERTAINTY.EXACT;
 }
 
+/**
+ * The state a FARM-level total carries, composed from its rows.
+ *
+ * A total is a new figure and it would be easy to give it new words. It
+ * gets the same six states, so a farmer who has learned what "at most"
+ * means on one crop reads it the same way on the farm.
+ *
+ * ── The precedence is the argument ──────────────────────────────────
+ *
+ * PARTIAL outranks every bound. "At most X" invites the reader to treat X
+ * as the ceiling for the FARM; if two commodities are missing from the
+ * total, that claim is not merely imprecise, it is about a different farm.
+ * Incompleteness has to be said first.
+ *
+ * Below PARTIAL, the order matches {@link costUncertainty} exactly — bound
+ * before allocation — so the row level and the farm level cannot disagree
+ * about which qualifier matters more.
+ *
+ * A REFUSED row contributes NOTHING to the bound. Its cost is not in the
+ * total, so it cannot make the total a ceiling; it makes the total
+ * incomplete, which `refusedCount` already says.
+ *
+ * Nothing computable at all is REFUSED, not "partial with everything
+ * missing" — there is no total to qualify. An empty farm is the same
+ * answer rather than a confident zero.
+ */
+export function composeFarmUncertainty(rows: readonly UncertaintyInput[]): {
+    state: UncertaintyState;
+    refusedCount: number;
+} {
+    const contributing = rows.filter((r) => r.netWorth != null);
+    const refusedCount = rows.length - contributing.length;
+
+    if (contributing.length === 0) return { state: UNCERTAINTY.REFUSED, refusedCount };
+    if (refusedCount > 0) return { state: UNCERTAINTY.PARTIAL, refusedCount };
+    if (contributing.some(costIsFloor)) return { state: UNCERTAINTY.AT_MOST, refusedCount };
+    if (contributing.some((r) => r.payrollAllocated)) {
+        return { state: UNCERTAINTY.ALLOCATED, refusedCount };
+    }
+    return { state: UNCERTAINTY.EXACT, refusedCount };
+}
+
 // ─── Refusal reason codes ────────────────────────────────────────────
 
 /**

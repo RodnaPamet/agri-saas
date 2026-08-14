@@ -118,6 +118,7 @@ export default async function GrainCalculatorPage({
         generatedAt: result.generatedAt,
         seasonId: result.seasonId,
         rows: result.rows.map(toCalculatorRow),
+        farm: result.farm,
         exclusions: result.exclusions,
         unvalued: result.unvalued,
         cashOut: result.cashOut,

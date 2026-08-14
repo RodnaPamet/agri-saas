@@ -41,6 +41,7 @@ import { render, screen, within } from '@testing-library/react';
 import enMessages from '../../messages/en.json';
 import { formatDate, formatDateTime } from '@/lib/format-date';
 
+import { foldFarmTotals } from '@/lib/grain/farm-total';
 import { costUncertainty, netWorthUncertainty } from '@/lib/grain/uncertainty';
 import { restoreViewport, setViewport } from './viewport';
 
@@ -224,10 +225,22 @@ function maizeRow(over: Partial<CalculatorRow> = {}): CalculatorRow {
 }
 
 function data(over: Partial<CalculatorData> = {}): CalculatorData {
+    // `farm` is FOLDED from the rows, exactly as the usecase folds it.
+    // Hardcoding it would let a fixture claim a farm total that its own
+    // rows do not add up to — the fixture would pass while production
+    // disagreed with itself. Same reason `withServerDerived` exists above.
+    const rows = over.rows ?? [wheatRow(), maizeRow()];
     return {
         generatedAt: '2026-08-11T06:00:00.000Z',
         seasonId: null,
-        rows: [wheatRow(), maizeRow()],
+        rows,
+        farm: {
+            totals: foldFarmTotals(rows),
+            refusedWithoutCurrency: rows
+                .filter((r) => r.netWorth == null && r.priceCurrency == null)
+                .map((r) => r.commodity)
+                .sort(),
+        },
         exclusions: {
             ...emptyExclusions(),
             plantingsMissingYieldEstimate: ['planting-a', 'planting-b'],
@@ -558,6 +571,93 @@ describe('grain calculator — on a PHONE (setViewport("mobile"))', () => {
 
         expect(
             screen.getByText('A reason this client cannot translate yet.'),
+        ).toBeVisible();
+    });
+
+    // ─────────────────────────────────────────────────────────────────
+    // THE FARM ANSWER. The page's docblock claims it answers "what is the
+    // grain worth, after everything it cost me?" — and answered it per
+    // COMMODITY, so a three-crop farm got three figures behind a toggle
+    // and had to add them in its head.
+    // ─────────────────────────────────────────────────────────────────
+
+    it('answers for the whole FARM without touching the toggle', () => {
+        setViewport('mobile');
+        renderPage(
+            data({
+                rows: [
+                    wheatRow(),
+                    wheatRow({ commodity: 'barley', netWorth: 5_000, cashCostTotal: 1_000 }),
+                    wheatRow({ commodity: 'sunflower', netWorth: 3_250, cashCostTotal: 900 }),
+                ],
+            }),
+        );
+
+        // 18,750 + 5,000 + 3,250 = 27,000. Present on first paint, no
+        // interaction — which is the whole complaint.
+        expect(screen.getByText(COPY.farmTotalTitle)).toBeVisible();
+        expect(screen.getByText('27,000 EUR')).toBeVisible();
+    });
+
+    it('shows no farm card for a single-crop farm', () => {
+        // It would restate the commodity sum below it exactly. An
+        // affordance that says nothing must not occupy space on a simple
+        // farm — the same instinct the toggle already had.
+        setViewport('mobile');
+        renderPage(data({ rows: [wheatRow()] }));
+        expect(screen.queryByText(COPY.farmTotalTitle)).not.toBeInTheDocument();
+    });
+
+    it('keeps currencies apart and says why, never summing them', () => {
+        setViewport('mobile');
+        renderPage(
+            data({
+                rows: [
+                    wheatRow(),
+                    wheatRow({ commodity: 'barley', priceCurrency: 'BGN', netWorth: 4_000 }),
+                ],
+            }),
+        );
+
+        expect(screen.getByText('18,750 EUR')).toBeVisible();
+        expect(screen.getByText('4,000 BGN')).toBeVisible();
+        // No blended figure anywhere — 22,750 would reconcile against
+        // nothing, since this product applies no exchange rate.
+        expect(screen.queryByText(/22750/)).not.toBeInTheDocument();
+        expect(screen.getByText(COPY.farmCurrencyNote)).toBeVisible();
+    });
+
+    it('names the commodities missing from the total, never going silently short', () => {
+        // maize is REFUSED (no market price). Its standing crop is real,
+        // but its cost cannot be subtracted, so folding its value in would
+        // overstate the farm — and dropping it silently would report a
+        // smaller number with nothing saying it is not the whole farm.
+        setViewport('mobile');
+        renderPage(data({ rows: [wheatRow(), maizeRow(), wheatRow({ commodity: 'barley', netWorth: 5_000 })] }));
+
+        // One element, matched whole: "maize" alone also appears in the
+        // toggle and the appendix table, which are different claims on
+        // different surfaces.
+        expect(
+            screen.getByText(/1 commodity is not in this total:.*maize/i),
+        ).toBeVisible();
+    });
+
+    it('bounds the FARM total when any contributing cost is a floor', () => {
+        // Composed, not invented: one crop's unpriced consumption makes
+        // the farm net a ceiling too.
+        setViewport('mobile');
+        renderPage(
+            data({
+                rows: [
+                    wheatRow({ unvaluedNoUnitCost: 2 }),
+                    wheatRow({ commodity: 'barley', netWorth: 5_000 }),
+                ],
+            }),
+        );
+
+        expect(
+            screen.getByText(COPY.uncertaintyAtMost.replace('{value}', '23,750 EUR')),
         ).toBeVisible();
     });
 

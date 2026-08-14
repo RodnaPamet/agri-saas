@@ -4,6 +4,7 @@ import { assertCanRead } from '../policies/common';
 import { getCostRollupByPlanting } from './cost-rollup';
 import { getMarketReferences } from './trends';
 import type { NetWorthRefusalCode } from '@/lib/grain/uncertainty';
+import { foldFarmTotals, type FarmNetWorthTotal } from '@/lib/grain/farm-total';
 import {
     CANONICAL_COMMODITIES,
     isCanonicalCommodity,
@@ -298,10 +299,32 @@ export interface GrainCashOutLine {
     categories: string[];
 }
 
+/**
+ * The FARM-level answer, which is what the calculator page claims to give.
+ *
+ * One total per currency, because this product blends none: cost-rollup
+ * refuses to, prices carry their own, and there is no FX table. A refused
+ * commodity is excluded from the arithmetic and named — its assets without
+ * its cost would overstate the farm, and dropping it silently would report
+ * a smaller number with nothing saying it is not the whole farm.
+ */
+export interface GrainFarmNetWorth {
+    /** Biggest net first, so the farm's main currency leads. */
+    totals: FarmNetWorthTotal[];
+    /**
+     * Refused commodities with no price currency either — the "no market
+     * price" case, which belongs to no currency bucket. Reported here so
+     * the omission is still visible.
+     */
+    refusedWithoutCurrency: string[];
+}
+
 export interface GrainNetWorthResult {
     generatedAt: string;
     seasonId: string | null;
     rows: CommodityNetWorthRow[];
+    /** The farm answer. See {@link GrainFarmNetWorth}. */
+    farm: GrainFarmNetWorth;
     exclusions: GrainNetWorthExclusions;
     /**
      * Farm-wide DISTINCT counts of unvalued consumptions, passed through
@@ -1067,6 +1090,18 @@ export async function getGrainNetWorth(
         generatedAt: new Date().toISOString(),
         seasonId: seasonId ?? null,
         rows,
+        // A FOLD over rows already computed — no additional read, so the
+        // D1/D2 query guardrails are untouched. Computed here rather than
+        // in the island because /grain/calculator's stated property is
+        // that it "never re-derives a cost, a yield or a price", and a
+        // client-side reduce over money is exactly that.
+        farm: {
+            totals: foldFarmTotals(rows),
+            refusedWithoutCurrency: rows
+                .filter((r) => r.netWorth == null && r.priceCurrency == null)
+                .map((r) => r.commodity)
+                .sort(),
+        },
         exclusions,
         // Passed straight through, NOT recomputed from `rows` — the rollup
         // counted TRANSACTIONS, and summing the per-commodity counts would
