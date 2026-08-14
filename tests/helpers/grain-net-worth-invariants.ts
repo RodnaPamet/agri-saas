@@ -43,6 +43,30 @@ function round2(n: number): number {
  */
 export function assertNetWorthInvariants(rows: readonly CommodityNetWorthRow[]): void {
     for (const row of rows) {
+        // ── cashCostTotal IS its three named parts ──────────────────
+        //
+        // Asserted for every row, refused or not, because this clause is
+        // about the COST side and a row can be refused for want of a
+        // price while its cost is perfectly well known.
+        //
+        // The gap this closes: the identity below is written in terms of
+        // `cashCostTotal`, so a fourth term added to the sum flows through
+        // it and stays green. `COST_METRICS` forbids that widening in
+        // writing — twice, in two files — and until now nothing executed
+        // the rule. An imputed land charge, a purchase folded into crop
+        // cost, anything that is not one of these three: the sum stops
+        // matching its own printed slices, which is the #556 defect in
+        // the opposite direction.
+        expect({
+            commodity: row.commodity,
+            cashCostTotal: row.cashCostTotal,
+        }).toEqual({
+            commodity: row.commodity,
+            cashCostTotal: round2(
+                row.attributedCropCost + row.rentCostMoneyAmount + row.payrollCost,
+            ),
+        });
+
         if (row.netWorth != null) {
             // A computed net worth cannot rest on an absent asset
             // position: the usecase only reaches the arithmetic once a

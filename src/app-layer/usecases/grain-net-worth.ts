@@ -1,3 +1,4 @@
+import { allocateByWeights, computeAreaWeights } from '@/lib/grain/allocate';
 import type { RequestContext } from '../types';
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { assertCanRead } from '../policies/common';
@@ -464,25 +465,6 @@ function ensureAcc(map: Map<CanonicalCommodity, CommodityAcc>, commodity: Canoni
     return acc;
 }
 
-/**
- * Area-share weights for a set of targets — pro-rata by `areaHa`, falling
- * back to an EVEN split when the total area is zero/unknown (mirrors
- * cost-rollup's own even-split fallback for exactly the same reason: a
- * predictable default beats one that silently favours whichever row
- * happens to carry an area).
- */
-function computeAreaWeights(targets: readonly { id: string; areaHa: number }[]): Map<string, number> {
-    const weights = new Map<string, number>();
-    if (targets.length === 0) return weights;
-    const totalArea = targets.reduce((sum, t) => sum + (t.areaHa > 0 ? t.areaHa : 0), 0);
-    if (totalArea > 0) {
-        for (const t of targets) weights.set(t.id, (t.areaHa > 0 ? t.areaHa : 0) / totalArea);
-    } else {
-        const even = 1 / targets.length;
-        for (const t of targets) weights.set(t.id, even);
-    }
-    return weights;
-}
 
 /** Batched-read row shapes (subset of the Prisma select). */
 interface PlantingRow {
@@ -691,8 +673,12 @@ function computeRent(
 
         if (basis.kind === 'money') {
             const totalForParcel = basis.perHa * parcelAreaHa;
+            // Cent-exact, for the reason spelled out in `computePayroll`:
+            // per-share rounding drops the remainder and the farm total ends
+            // up a few cents under the rent actually owed.
+            const moneyShares = allocateByWeights(totalForParcel, weights);
             for (const p of known) {
-                const share = totalForParcel * (weights.get(p.id) ?? 0);
+                const share = moneyShares.get(p.id) ?? 0;
                 ensureAcc(acc, p.commodity).rentCostMoneyAmount += share;
             }
         } else {
@@ -745,9 +731,14 @@ function computePayroll(
         }
 
         const weights = computeAreaWeights(targets.map((p) => ({ id: p.id, areaHa: p.areaHa })));
+        // Cent-exact shares. `amount * weight` per target rounds independently
+        // and loses the remainder — 100.00 over three plantings used to reach
+        // the farm total as 99.99. `allocateByWeights` settles the odd cents
+        // deterministically so a redistribution never changes the amount.
+        const shares = allocateByWeights(amount, weights);
         for (const p of targets) {
             if (p.commodity == null) continue; // filtered into `targets` only when known — defensive.
-            const share = amount * (weights.get(p.id) ?? 0);
+            const share = shares.get(p.id) ?? 0;
             const a = ensureAcc(acc, p.commodity);
             a.payrollCost += share;
             a.payrollCostCurrencies.add(row.currency);

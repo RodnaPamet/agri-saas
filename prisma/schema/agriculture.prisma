@@ -420,6 +420,7 @@ model Parcel {
   plantings      Planting[]
   cropPlans      CropPlan[]
   leases         ParcelLease[]
+  costEntryAllocations CostEntryAllocationParcel[]
 
   @@unique([id, tenantId])
   @@index([tenantId, locationId])

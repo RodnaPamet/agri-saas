@@ -1285,3 +1285,30 @@ enum CostCategory {
   SERVICE
   OTHER
 }
+
+/// WHICH land a `CostEntry` is spread across.
+///
+/// Changing the basis REDISTRIBUTES a cost and never changes it. The
+/// allocator settles the rounding remainder in integer cents
+/// (`lib/grain/allocate.ts`), so the shares sum to the entry amount
+/// exactly whichever basis is chosen.
+///
+///   TARGET         — the entry's single domain link and nothing else.
+///                    Today's behaviour, and the DEFAULT: an existing row
+///                    means exactly what it meant before this column
+///                    existed.
+///   HOLDING        — every live parcel of the tenant, owned and leased
+///                    alike, weighted by `Parcel.areaHa`. A parcel with no
+///                    known-commodity planting still takes its share, and
+///                    that share is REPORTED rather than pushed onto the
+///                    crops: land that costs nothing looks free, and a
+///                    farmer comparing "plant this or leave it" would be
+///                    shown an alternative that does not exist.
+///   PARCEL_SUBSET  — a chosen set of parcels, held in
+///                    `CostEntryAllocationParcel`. Two or more; a subset
+///                    of one is a `parcelId` link with extra steps.
+enum CostAllocationBasis {
+  TARGET
+  HOLDING
+  PARCEL_SUBSET
+}
