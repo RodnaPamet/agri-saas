@@ -626,8 +626,13 @@ describe('grain calculator — on a PHONE (setViewport("mobile"))', () => {
             }),
         );
 
-        expect(screen.getByText('18,750 EUR')).toBeVisible();
-        expect(screen.getByText('4,000 BGN')).toBeVisible();
+        // Scoped to the farm card: the per-crop strip below legitimately
+        // shows the same figures — with one crop per currency, each total
+        // IS its crop's net — and that agreement is the point, not a
+        // duplicate to assert around.
+        const farmCard = screen.getByText(COPY.farmTotalTitle).closest('section')!;
+        expect(within(farmCard).getByText('18,750 EUR')).toBeVisible();
+        expect(within(farmCard).getByText('4,000 BGN')).toBeVisible();
         // No blended figure anywhere — 22,750 would reconcile against
         // nothing, since this product applies no exchange rate.
         expect(screen.queryByText(/22750/)).not.toBeInTheDocument();
@@ -822,6 +827,101 @@ describe('grain calculator — on a PHONE (setViewport("mobile"))', () => {
         const { container } = renderPage();
         fireEvent.click(screen.getAllByRole('button', { name: /\(\d+\)$/ })[0]);
         expect(container.querySelector('.font-mono')).toBeNull();
+    });
+
+    // ─────────────────────────────────────────────────────────────────
+    // THE SHAPE OF THE FARM. commodityOptions fed a ToggleGroup, so a
+    // five-crop farm saw ONE crop at a time and could not answer "which
+    // crop is carrying this farm?" without stepping through them.
+    // ─────────────────────────────────────────────────────────────────
+
+    const threeCrops = () =>
+        data({
+            rows: [
+                wheatRow(),
+                wheatRow({ commodity: 'barley', netWorth: 5_000 }),
+                wheatRow({ commodity: 'sunflower', netWorth: 30_000 }),
+            ],
+        });
+
+    it.each(['mobile', 'desktop'] as const)(
+        'compares every crop without interacting — %s',
+        (viewport) => {
+            // BOTH viewports, named. jsdom answers matches:false to every
+            // query so the default is a phone; the desktop case has to be
+            // asked for or it is never executed.
+            setViewport(viewport);
+            renderPage(threeCrops());
+
+            const strip = screen.getByLabelText(COPY.comparisonAria);
+            // All three present on first paint, no clicks.
+            expect(within(strip).getAllByRole('button')).toHaveLength(3);
+            expect(within(strip).getByText('30,000 EUR')).toBeVisible();
+            expect(within(strip).getByText('18,750 EUR')).toBeVisible();
+            expect(within(strip).getByText('5,000 EUR')).toBeVisible();
+        },
+    );
+
+    it('orders by contribution, biggest first, and says so', () => {
+        setViewport('desktop');
+        renderPage(threeCrops());
+
+        const strip = screen.getByLabelText(COPY.comparisonAria);
+        const amounts = within(strip)
+            .getAllByRole('button')
+            .map((b) => b.textContent);
+        expect(amounts[0]).toContain('30,000');
+        expect(amounts[1]).toContain('18,750');
+        expect(amounts[2]).toContain('5,000');
+        expect(screen.getByText(COPY.comparisonOrderNote)).toBeVisible();
+    });
+
+    it('gives a single-crop farm neither toggle nor comparison furniture', () => {
+        // A simpler farm should see a simpler page, not the same page with
+        // empty affordances — the instinct the ToggleGroup already had.
+        setViewport('mobile');
+        renderPage(data({ rows: [wheatRow()] }));
+
+        expect(screen.queryByLabelText(COPY.comparisonAria)).not.toBeInTheDocument();
+        expect(screen.queryByText(COPY.comparisonTitle)).not.toBeInTheDocument();
+    });
+
+    it('carries uncertainty into the compact view, where it most easily lies', () => {
+        // A refused net and a bounded net rendered as bare figures sit in
+        // the same column as exact ones and invite exactly the comparison
+        // they cannot support.
+        setViewport('mobile');
+        renderPage(
+            data({
+                rows: [
+                    wheatRow({ unvaluedNoUnitCost: 2 }),
+                    maizeRow(),
+                    wheatRow({ commodity: 'barley', netWorth: 5_000 }),
+                ],
+            }),
+        );
+
+        const strip = screen.getByLabelText(COPY.comparisonAria);
+        // AT_MOST rides the value, exactly as it does on the headline.
+        expect(
+            within(strip).getByText(COPY.uncertaintyAtMost.replace('{value}', '18,750 EUR')),
+        ).toBeVisible();
+        // REFUSED shows the em-dash, never a bare number that looks
+        // comparable — and sorts last, having no figure to rank.
+        const rows_ = within(strip).getAllByRole('button');
+        expect(rows_[rows_.length - 1].textContent).toContain('—');
+    });
+
+    it('selecting a crop expands it below', () => {
+        setViewport('mobile');
+        renderPage(threeCrops());
+
+        const strip = screen.getByLabelText(COPY.comparisonAria);
+        const barley = within(strip)
+            .getAllByRole('button')
+            .find((b) => /barley/i.test(b.textContent ?? ''))!;
+        fireEvent.click(barley);
+        expect(barley).toHaveAttribute('aria-pressed', 'true');
     });
 
     it('stamps WHEN the report was priced, and when the price was observed', () => {

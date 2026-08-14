@@ -57,7 +57,7 @@ const EXEMPTIONS: Record<string, string> = {
 
     // Grain calculator (GRAIN_NET_WORTH report).
     'grain/calculator/CalculatorClient.tsx':
-        'multi-section report, not an entity list — a net-worth summary card, two side-by-side value panels (standing crop / grain on hand), a shared-cost note, an exclusions accordion, and only THEN the per-commodity table. Viewport-clamping the page would pin the panels and give the ≤10-row table its own internal scrollbar, which is the wrong emphasis: the panels are the answer and the table is the appendix. Natural document scroll is the right shape.',
+        'multi-section report, not an entity list — a farm total per currency, a per-crop comparison strip, the selected crop\'s sum written out as its own arithmetic, a cash-out card, an exclusions accordion, and only THEN the per-commodity table. Viewport-clamping the page would pin those sections and give the small table its own internal scrollbar, which is the wrong emphasis: the sum is the answer and the table is the appendix. Natural document scroll is the right shape. (Reason rewritten 2026-08-14: it described two side-by-side value panels and a shared-cost note, both removed when the page became one sum.)',
 
     // Grain bin detail (bins roadmap PR2).
     "grain/bins/[binId]/BinDetailClient.tsx":
