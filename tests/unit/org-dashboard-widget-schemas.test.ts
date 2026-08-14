@@ -60,14 +60,15 @@ describe('Epic 41 — widget Zod schemas', () => {
     describe('WidgetTypedShapeSchema — KPI', () => {
         const valid = {
             type: 'KPI',
-            chartType: 'coverage',
-            config: { format: 'percent', gradient: 'from-emerald-500 to-teal-500' },
+            chartType: 'tenants',
+            config: { format: 'number', gradient: 'from-emerald-500 to-teal-500' },
         };
 
         it('accepts every canonical KPI chartType', () => {
+            // GRC teardown phase 2 removed 'coverage' (read
+            // PortfolioSummary.practices) and 'critical-risks' (dead since
+            // the risk uproot). Both are asserted REJECTED below.
             for (const chartType of [
-                'coverage',
-                'critical-risks',
                 'overdue-evidence',
                 'tenants',
             ]) {
@@ -198,8 +199,8 @@ describe('Epic 41 — widget Zod schemas', () => {
     describe('KPI trend indicator config (previousValue + trendPolarity)', () => {
         const base = {
             type: 'KPI' as const,
-            chartType: 'coverage' as const,
-            config: { format: 'percent' as const },
+            chartType: 'tenants' as const,
+            config: { format: 'number' as const },
         };
 
         it('accepts a previousValue + trendPolarity pair', () => {
@@ -327,9 +328,9 @@ describe('Epic 41 — widget Zod schemas', () => {
     describe('CreateOrgDashboardWidgetInput', () => {
         const valid = {
             type: 'KPI',
-            chartType: 'coverage',
-            config: { format: 'percent' },
-            title: 'Coverage',
+            chartType: 'tenants',
+            config: { format: 'number' },
+            title: 'Tenants',
             position: { x: 0, y: 0 },
             size: { w: 3, h: 2 },
         };
@@ -376,15 +377,17 @@ describe('Epic 41 — widget Zod schemas', () => {
 
         it('accepts chartType + config moved together', () => {
             const r = UpdateOrgDashboardWidgetInput.safeParse({
-                chartType: 'critical-risks',
+                chartType: 'tenants',
                 config: { format: 'number' },
             });
             expect(r.success).toBe(true);
         });
 
         it('rejects chartType without config', () => {
+            // Must be a VALID chartType, else this passes because the enum
+            // rejected it and the refine rule under test never runs.
             const r = UpdateOrgDashboardWidgetInput.safeParse({
-                chartType: 'critical-risks',
+                chartType: 'tenants',
             });
             expect(r.success).toBe(false);
         });
@@ -411,11 +414,11 @@ describe('Epic 41 — widget Zod schemas', () => {
         it('returns the parsed shape on a valid combination', () => {
             const result = assertWidgetTypedShape({
                 type: 'KPI',
-                chartType: 'coverage',
-                config: { format: 'percent' },
+                chartType: 'tenants',
+                config: { format: 'number' },
             });
             expect(result.type).toBe('KPI');
-            expect(result.chartType).toBe('coverage');
+            expect(result.chartType).toBe('tenants');
         });
 
         it('throws when config is incompatible with the type', () => {

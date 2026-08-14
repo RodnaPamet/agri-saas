@@ -6,11 +6,13 @@
  * No drag, no edit mode — the dispatcher is the unit under test.
  *
  * Coverage:
- *   - KPI variants (coverage / overdue-evidence /
- *     tenants) render with the right value pulled from PortfolioData
+ *   - KPI variants (overdue-evidence / tenants) render with the right
+ *     value pulled from PortfolioData
+ *   - a KPI chartType the GRC teardown deleted falls to the tail
+ *     branch and renders the "—" placeholder, not a fabricated zero
  *   - DONUT (rag-distribution) renders the four legend bands
  *   - TENANT_LIST renders rows with drill-down links
- *   - DRILLDOWN_CTAS renders the three navigation cards
+ *   - DRILLDOWN_CTAS renders the surviving evidence navigation card
  */
 
 import { render, screen } from '@testing-library/react';
@@ -45,11 +47,8 @@ function makeData(): PortfolioData {
             organizationSlug: 'acme-org',
             generatedAt: new Date().toISOString(),
             tenants: { total: 12, snapshotted: 10, pending: 2 },
-            practices: { applicable: 100, implemented: 75, coveragePercent: 75 },
             evidence: { total: 200, overdue: 8, dueSoon7d: 5 },
-            policies: { total: 20, overdueReview: 2 },
             tasks: { open: 30, overdue: 4 },
-            findings: { open: 5 },
             rag: { green: 6, amber: 3, red: 1, pending: 2 },
         },
         tenantHealth: [
@@ -60,7 +59,6 @@ function makeData(): PortfolioData {
                 drillDownUrl: '/t/alpha/dashboard',
                 hasSnapshot: true,
                 snapshotDate: '2026-04-29',
-                coveragePercent: 75,
                 overdueEvidence: 2,
                 rag: 'AMBER',
             },
@@ -71,7 +69,6 @@ function makeData(): PortfolioData {
                 drillDownUrl: '/t/beta/dashboard',
                 hasSnapshot: true,
                 snapshotDate: '2026-04-29',
-                coveragePercent: 90,
                 overdueEvidence: 0,
                 rag: 'GREEN',
             },
@@ -111,7 +108,21 @@ function makeWidget(
 describe('Epic 41 — DispatchedWidget per (type, chartType)', () => {
     // ─── KPI ──────────────────────────────────────────────────────
 
-    it('KPI/coverage renders the coverage percent + implemented/applicable subtitle', () => {
+    // This used to assert KPI/coverage rendered 75.0% + a "75 of 100
+    // practices implemented" subtitle. GRC teardown phase 2 removed
+    // 'coverage' from KpiChartType along with PortfolioSummary.practices,
+    // so that metric has no subject. The test is re-pointed rather than
+    // deleted because the chartType is NOT gone from the DATA: the read
+    // path does not re-validate persisted rows, and the default preset
+    // had seeded a KPI/'coverage' tile into every org before it was
+    // re-pointed at 'tenants' (schemas note §8d.4), so the dispatcher
+    // keeps meeting the literal until the §8d.4 data migration rewrites
+    // those rows. What it must do meanwhile is the assertion below —
+    // fall to the tail branch and render the "—" placeholder.
+    // Fabricating a 0 (or a 0.0%) would report "measured zero coverage"
+    // as fact, which is the exact class of lie this teardown keeps
+    // finding.
+    it('KPI/coverage — a deleted chartType degrades to "—", never a fabricated zero', () => {
         const widget = makeWidget({
             type: 'KPI',
             chartType: 'coverage',
@@ -120,10 +131,12 @@ describe('Epic 41 — DispatchedWidget per (type, chartType)', () => {
         });
         render(<DispatchedWidget widget={widget} data={makeData()} />);
         expect(screen.getByText('Coverage')).toBeInTheDocument();
-        expect(screen.getByText('75.0%')).toBeInTheDocument();
-        expect(
-            screen.getByText(/75 of 100 practices implemented/),
-        ).toBeInTheDocument();
+        expect(screen.getByText('—')).toBeInTheDocument();
+        expect(screen.queryByText('0')).toBeNull();
+        expect(screen.queryByText('0.0%')).toBeNull();
+        // The tail branch carries no subtitle — the practices-implemented
+        // line went with the model it counted.
+        expect(screen.queryByText(/practices implemented/)).toBeNull();
     });
 
     it('KPI/overdue-evidence renders the overdue count + due-soon subtitle', () => {
@@ -181,6 +194,10 @@ describe('Epic 41 — DispatchedWidget per (type, chartType)', () => {
     // ─── TENANT_LIST ─────────────────────────────────────────────
 
     it('TENANT_LIST renders tenant rows with drill-down hrefs', () => {
+        // `chartType: 'coverage'` here is the OPAQUE one-member identifier
+        // for the tenant-list widget, not a coverage metric — the rows now
+        // carry RAG + overdue evidence. Renaming it would need a data
+        // migration for no user-visible gain, so it stays; don't "tidy" it.
         const widget = makeWidget({
             type: 'TENANT_LIST',
             chartType: 'coverage',
@@ -201,7 +218,7 @@ describe('Epic 41 — DispatchedWidget per (type, chartType)', () => {
 
     // ─── DRILLDOWN_CTAS ──────────────────────────────────────────
 
-    it('DRILLDOWN_CTAS renders the nav cards pointing at /org/<slug>/{practices,evidence}', () => {
+    it('DRILLDOWN_CTAS renders the nav card pointing at /org/<slug>/evidence', () => {
         const widget = makeWidget({
             type: 'DRILLDOWN_CTAS',
             chartType: 'default',

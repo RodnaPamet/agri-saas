@@ -23,11 +23,8 @@ describe('Epic O-3 — Portfolio DTO schemas', () => {
             organizationSlug: 'acme-org',
             generatedAt: new Date().toISOString(),
             tenants: { total: 3, snapshotted: 2, pending: 1 },
-            practices: { applicable: 100, implemented: 75, coveragePercent: 75 },
             evidence: { total: 200, overdue: 4, dueSoon7d: 10 },
-            policies: { total: 12, overdueReview: 1 },
             tasks: { open: 25, overdue: 3 },
-            findings: { open: 7 },
             rag: { green: 1, amber: 1, red: 0, pending: 1 },
         };
         expect(() => PortfolioSummarySchema.parse(payload)).not.toThrow();
@@ -39,31 +36,18 @@ describe('Epic O-3 — Portfolio DTO schemas', () => {
             organizationSlug: 'acme-org',
             generatedAt: new Date().toISOString(),
             tenants: { total: -1, snapshotted: 0, pending: 0 },
-            practices: { applicable: 0, implemented: 0, coveragePercent: 0 },
             evidence: { total: 0, overdue: 0, dueSoon7d: 0 },
-            policies: { total: 0, overdueReview: 0 },
             tasks: { open: 0, overdue: 0 },
-            findings: { open: 0 },
             rag: { green: 0, amber: 0, red: 0, pending: 0 },
         };
         expect(() => PortfolioSummarySchema.parse(payload)).toThrow();
     });
 
-    it('PortfolioSummary rejects coveragePercent > 100', () => {
-        const payload = {
-            organizationId: 'org-1',
-            organizationSlug: 'acme-org',
-            generatedAt: new Date().toISOString(),
-            tenants: { total: 0, snapshotted: 0, pending: 0 },
-            practices: { applicable: 100, implemented: 100, coveragePercent: 105 },
-            evidence: { total: 0, overdue: 0, dueSoon7d: 0 },
-            policies: { total: 0, overdueReview: 0 },
-            tasks: { open: 0, overdue: 0 },
-            findings: { open: 0 },
-            rag: { green: 0, amber: 0, red: 0, pending: 0 },
-        };
-        expect(() => PortfolioSummarySchema.parse(payload)).toThrow();
-    });
+    // 'PortfolioSummary rejects coveragePercent > 100' lived here. Its
+    // subject was the practices block's 0..100 bound, which left the DTO
+    // with the practice models (GRC teardown phase 2). No surviving field
+    // carries a range bound, so the case has nothing to assert — the
+    // non-negative-integer rule is already covered by the test above.
 
     // ── TenantHealthRow ───────────────────────────────────────────────
 
@@ -75,7 +59,6 @@ describe('Epic O-3 — Portfolio DTO schemas', () => {
             drillDownUrl: '/t/acme-corp/dashboard',
             hasSnapshot: true,
             snapshotDate: '2026-04-26',
-            coveragePercent: 82.5,
             overdueEvidence: 0,
             rag: 'GREEN',
         };
@@ -90,7 +73,6 @@ describe('Epic O-3 — Portfolio DTO schemas', () => {
             drillDownUrl: '/t/fresh-tenant/dashboard',
             hasSnapshot: false,
             snapshotDate: null,
-            coveragePercent: null,
             overdueEvidence: null,
             rag: null,
         };
@@ -105,7 +87,6 @@ describe('Epic O-3 — Portfolio DTO schemas', () => {
             drillDownUrl: '/t/acme-corp/dashboard',
             hasSnapshot: true,
             snapshotDate: '2026-04-26',
-            coveragePercent: 82.5,
             overdueEvidence: 0,
             rag: 'PURPLE', // not a valid enum value
         };

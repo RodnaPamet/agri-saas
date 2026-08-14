@@ -14,6 +14,14 @@
  *   4. Empty-org and partial-snapshot edge cases produce the same
  *      DTO shapes the standalone usecases produced.
  *
+ * GRC teardown phase 2 narrowed the projected metric set: the
+ * practice / policy / finding blocks left `PortfolioSummary` and
+ * `coveragePercent` left `TenantHealthRow` along with their models.
+ * What the DTOs still carry — and what this file asserts on — is
+ * evidence, tasks and the RAG bucket derived from overdue evidence.
+ * The orchestration contract (fetch-once, parallel trends, permission
+ * gate) is unchanged and is the point of this file.
+ *
  * Companion to `tests/unit/portfolio-schemas.test.ts` (DTO shape) and
  * `tests/unit/portfolio-usecases.test.ts` (usecase business logic).
  * The dedicated DB-backed test for the new orchestrator lives at
@@ -64,27 +72,23 @@ const TENANTS = [
     { id: 't-2', slug: 'beta', name: 'Beta' },
 ];
 
+// Only the snapshot columns the projections actually read. The risk
+// columns are gone from ComplianceSnapshot outright; the practice /
+// policy / finding columns survive until the phase-3 migration but
+// nothing computes or publishes them any more — a fixture carrying
+// them would imply a metric the DTOs no longer project.
+// evidenceOverdue: 3 lands this tenant in the AMBER RAG bucket
+// (computeRag: 0 → GREEN, 1-9 → AMBER, 10+ → RED).
 function snapshotFixture(tenantId: string) {
     return {
         id: `snap-${tenantId}`,
         tenantId,
         snapshotDate: new Date('2026-04-25T00:00:00Z'),
-        practicesApplicable: 100,
-        practicesImplemented: 80,
-        // bpsToPercent divides by 10, so 800 represents 80%.
-        practiceCoverageBps: 800,
-        risksTotal: 10,
-        risksOpen: 5,
-        risksCritical: 1,
-        risksHigh: 2,
         evidenceTotal: 50,
         evidenceOverdue: 3,
         evidenceDueSoon7d: 4,
-        policiesTotal: 12,
-        policiesOverdueReview: 1,
         tasksOpen: 8,
         tasksOverdue: 2,
-        findingsOpen: 1,
     };
 }
 
@@ -251,18 +255,29 @@ describe('getPortfolioOverview — edge cases', () => {
         expect(overview.summary.tenants.snapshotted).toBe(1);
         expect(overview.summary.tenants.pending).toBe(1);
         expect(overview.summary.rag.pending).toBe(1);
+        expect(overview.summary.rag.amber).toBe(1);
+
+        // Only the snapshotted tenant contributes to the org totals —
+        // the pending one adds nothing rather than adding zeroes.
+        expect(overview.summary.evidence.overdue).toBe(3);
+        expect(overview.summary.tasks.open).toBe(8);
 
         // Pending tenant in tenantHealth has nullable metric fields.
         const pendingRow = overview.tenantHealth.find((r) => r.tenantId === 't-2');
         expect(pendingRow).toBeDefined();
         expect(pendingRow!.hasSnapshot).toBe(false);
-        expect(pendingRow!.coveragePercent).toBeNull();
+        expect(pendingRow!.snapshotDate).toBeNull();
+        expect(pendingRow!.overdueEvidence).toBeNull();
         expect(pendingRow!.rag).toBeNull();
 
-        // Snapshotted tenant has populated metrics.
+        // Snapshotted tenant has populated metrics. `overdueEvidence`
+        // is the surviving per-tenant metric — it carries the exact
+        // snapshot value and drives the row's RAG badge.
         const snapshottedRow = overview.tenantHealth.find((r) => r.tenantId === 't-1');
         expect(snapshottedRow!.hasSnapshot).toBe(true);
-        expect(snapshottedRow!.coveragePercent).toBe(80);
+        expect(snapshottedRow!.snapshotDate).toBe('2026-04-25');
+        expect(snapshottedRow!.overdueEvidence).toBe(3);
+        expect(snapshottedRow!.rag).toBe('AMBER');
     });
 
     it('throws forbidden when canViewPortfolio is false', async () => {

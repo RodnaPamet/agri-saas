@@ -1,17 +1,25 @@
 /**
  * Cross-tenant drill-down auditor fan-out integrity check.
  *
- * Mocks the repository + Prisma at module boundaries to verify that
- * the drill-down usecases (`getNonPerformingPractices`,
- * `getOverdueEvidenceAcrossOrg`) both call the integrity check before
- * iterating, that the structured drift warning fires only when
- * memberships are missing, and that the iteration filters down to the
- * accessible subset rather than silently masking missing memberships
- * as empty results.
+ * Mocks the repository + Prisma at module boundaries to verify that the
+ * surviving drill-down usecase (`getOverdueEvidenceAcrossOrg`) runs the
+ * shared integrity check before iterating, that the structured drift
+ * warning fires only when memberships are missing, and that the
+ * iteration filters down to the accessible subset rather than silently
+ * masking missing memberships as empty results.
  *
- * A third path, `getCriticalRisksAcrossOrg`, was covered here until the
- * risk register was removed; the two remaining paths exercise the same
- * shared `assertAuditorFanoutIntegrity` helper.
+ * The property under test is a SECURITY one, not a reporting one: each
+ * per-tenant read runs inside `withTenantDb(tenantId, ...)` as
+ * `app_user`, so RLS returns zero rows when the org admin holds no
+ * membership in that tenant. Without the pre-flight check that reads
+ * back to the operator as "no overdue evidence" instead of "you cannot
+ * see this tenant".
+ *
+ * Two sibling paths were covered here and both are now gone:
+ * `getCriticalRisksAcrossOrg` (removed with the risk register) and
+ * `getNonPerformingPractices` (removed by the GRC teardown). Evidence is
+ * the last per-tenant fan-out and it exercises the same shared helper, so
+ * their assertions were re-pointed at it rather than dropped.
  */
 
 const getOrgTenantIdsMock = jest.fn();
@@ -53,10 +61,7 @@ jest.mock('@/lib/observability/logger', () => ({
     },
 }));
 
-import {
-    getNonPerformingPractices,
-    getOverdueEvidenceAcrossOrg,
-} from '@/app-layer/usecases/portfolio';
+import { getOverdueEvidenceAcrossOrg } from '@/app-layer/usecases/portfolio';
 import type { OrgContext } from '@/app-layer/types';
 
 function ctxFor(): OrgContext {
@@ -90,9 +95,11 @@ beforeEach(() => {
     loggerWarnMock.mockReset();
     loggerInfoMock.mockReset();
     // Default: every per-tenant fan-out invocation returns no rows.
+    // `evidence` is the only delegate left — the practice fan-out was
+    // deleted, and a stub for it here would let a re-pointed query pass
+    // against a model the drill-down no longer reads.
     withTenantDbMock.mockImplementation(async (_tenantId: string, fn: (db: unknown) => Promise<unknown>) => {
         const db = {
-            practice: { findMany: () => Promise.resolve([]) },
             evidence: { findMany: () => Promise.resolve([]) },
         };
         return fn(db);
@@ -110,7 +117,7 @@ describe('drill-down integrity check — healthy fan-out (all tenants accessible
             { tenantId: 't-3' },
         ]);
 
-        await getNonPerformingPractices(ctxFor());
+        await getOverdueEvidenceAcrossOrg(ctxFor());
 
         // Single integrity query.
         expect(tenantMembershipFindManyMock).toHaveBeenCalledTimes(1);
@@ -135,7 +142,15 @@ describe('drill-down integrity check — healthy fan-out (all tenants accessible
             { tenantId: 't-2' },
             { tenantId: 't-3' },
         ]);
+
         await getOverdueEvidenceAcrossOrg(ctxFor());
+
+        // The projection is what makes "any membership counts" true by
+        // construction: role is never read back, so it cannot be
+        // filtered on downstream.
+        const arg = tenantMembershipFindManyMock.mock.calls[0][0];
+        expect(arg.select).toEqual({ tenantId: true });
+
         expect(loggerWarnMock).not.toHaveBeenCalled();
         expect(withTenantDbMock).toHaveBeenCalledTimes(3);
     });
@@ -163,7 +178,7 @@ describe('drill-down integrity check — fan-out drift detected', () => {
             { tenantId: 't-2' },
         ]);
 
-        await getNonPerformingPractices(ctxFor());
+        await getOverdueEvidenceAcrossOrg(ctxFor());
 
         expect(loggerWarnMock).toHaveBeenCalledTimes(1);
         const [event, payload] = loggerWarnMock.mock.calls[0] as [
@@ -193,7 +208,7 @@ describe('drill-down integrity check — fan-out drift detected', () => {
             { tenantId: 't-3' },
         ]);
 
-        await getNonPerformingPractices(ctxFor());
+        await getOverdueEvidenceAcrossOrg(ctxFor());
 
         // The fan-out only touches t-1 and t-3 — t-2 is skipped.
         const tenantIdsIterated = withTenantDbMock.mock.calls.map((c) => c[0]);
@@ -219,13 +234,18 @@ describe('drill-down integrity check — fan-out drift detected', () => {
     });
 });
 
-// ── Reuse across the drill-down paths ────────────────────────────────
+// ── Ordering — the check runs before any per-tenant read ─────────────
+//
+// This was an `it.each` table across the drill-down usecases until the
+// practice and risk paths were removed. `getOverdueEvidenceAcrossOrg` is
+// now the only caller of the integrity helper, so the table collapsed to
+// its one surviving row. Its paginated sibling
+// `listOverdueEvidenceAcrossOrg` fans out over the raw org tenant list
+// without calling the helper at all, so there is nothing to assert for it
+// here.
 
-describe('drill-down integrity check — reused consistently across usecases', () => {
-    it.each([
-        ['getNonPerformingPractices', getNonPerformingPractices],
-        ['getOverdueEvidenceAcrossOrg', getOverdueEvidenceAcrossOrg],
-    ])('%s runs the integrity check before fan-out', async (_label, fn) => {
+describe('drill-down integrity check — ordered before the fan-out', () => {
+    it('getOverdueEvidenceAcrossOrg runs the integrity check before fan-out', async () => {
         getOrgTenantIdsMock.mockResolvedValue(TENANTS);
         tenantMembershipFindManyMock.mockResolvedValue([
             { tenantId: 't-1' },
@@ -233,7 +253,7 @@ describe('drill-down integrity check — reused consistently across usecases', (
             { tenantId: 't-3' },
         ]);
 
-        await fn(ctxFor());
+        await getOverdueEvidenceAcrossOrg(ctxFor());
 
         expect(tenantMembershipFindManyMock).toHaveBeenCalledTimes(1);
         // Integrity query fires BEFORE the per-tenant fan-out.

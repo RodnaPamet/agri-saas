@@ -37,8 +37,6 @@ import {
     type TenantHealthRow,
     type PortfolioTrend,
     type PortfolioTrendDataPoint,
-    type NonPerformingPracticeRow,
-    type CriticalRiskRow,
     type OverdueEvidenceRow,
     type PaginatedDrillDownInput,
     type PaginatedDrillDownResult,
@@ -55,17 +53,6 @@ import prisma from '@/lib/prisma';
 import { logger } from '@/lib/observability/logger';
 
 // ── Internal helpers ──────────────────────────────────────────────────
-
-function bpsToPercent(bps: number): number {
-    return bps / 10;
-}
-
-/** Avoid divide-by-zero for the org-wide coverage. Returns 0 when the
- *  org has no applicable practices anywhere. */
-function safeCoveragePercent(implemented: number, applicable: number): number {
-    if (applicable <= 0) return 0;
-    return Math.min(100, Math.max(0, (implemented / applicable) * 100));
-}
 
 function toIsoDate(d: Date): string {
     return d.toISOString().slice(0, 10);
@@ -119,16 +106,11 @@ function projectPortfolioSummary(
 ): PortfolioSummary {
     const { tenants, snapshots, snapshotsByTenant } = base;
 
-    let practicesApplicable = 0;
-    let practicesImplemented = 0;
     let evidenceTotal = 0;
     let evidenceOverdue = 0;
     let evidenceDueSoon7d = 0;
-    let policiesTotal = 0;
-    let policiesOverdueReview = 0;
     let tasksOpen = 0;
     let tasksOverdue = 0;
-    let findingsOpen = 0;
 
     let green = 0;
     let amber = 0;
@@ -141,16 +123,11 @@ function projectPortfolioSummary(
             pending++;
             continue;
         }
-        practicesApplicable += s.practicesApplicable;
-        practicesImplemented += s.practicesImplemented;
         evidenceTotal += s.evidenceTotal;
         evidenceOverdue += s.evidenceOverdue;
         evidenceDueSoon7d += s.evidenceDueSoon7d;
-        policiesTotal += s.policiesTotal;
-        policiesOverdueReview += s.policiesOverdueReview;
         tasksOpen += s.tasksOpen;
         tasksOverdue += s.tasksOverdue;
-        findingsOpen += s.findingsOpen;
 
         const rag = computeRag({ overdueEvidence: s.evidenceOverdue });
         if (rag === 'GREEN') green++;
@@ -167,29 +144,14 @@ function projectPortfolioSummary(
             snapshotted: snapshots.length,
             pending,
         },
-        practices: {
-            applicable: practicesApplicable,
-            implemented: practicesImplemented,
-            coveragePercent: safeCoveragePercent(
-                practicesImplemented,
-                practicesApplicable,
-            ),
-        },
         evidence: {
             total: evidenceTotal,
             overdue: evidenceOverdue,
             dueSoon7d: evidenceDueSoon7d,
         },
-        policies: {
-            total: policiesTotal,
-            overdueReview: policiesOverdueReview,
-        },
         tasks: {
             open: tasksOpen,
             overdue: tasksOverdue,
-        },
-        findings: {
-            open: findingsOpen,
         },
         rag: { green, amber, red, pending },
     };
@@ -207,12 +169,10 @@ function projectPortfolioTenantHealth(base: PortfolioBaseData): TenantHealthRow[
                 drillDownUrl: `/t/${t.slug}/dashboard`,
                 hasSnapshot: false,
                 snapshotDate: null,
-                coveragePercent: null,
                 overdueEvidence: null,
                 rag: null,
             };
         }
-        const coveragePercent = bpsToPercent(s.practiceCoverageBps);
         return {
             tenantId: t.id,
             slug: t.slug,
@@ -220,7 +180,6 @@ function projectPortfolioTenantHealth(base: PortfolioBaseData): TenantHealthRow[
             drillDownUrl: `/t/${t.slug}/dashboard`,
             hasSnapshot: true,
             snapshotDate: toIsoDate(s.snapshotDate),
-            coveragePercent,
             overdueEvidence: s.evidenceOverdue,
             rag: computeRag({ overdueEvidence: s.evidenceOverdue }),
         };
@@ -434,79 +393,6 @@ async function checkAuditorFanOutIntegrity(
     return { accessibleTenants, missingTenantIds };
 }
 
-// Status priority for the non-performing practices sort. Higher number
-// = more urgent. Locks the visual ordering: NEEDS_REVIEW first
-// (something acted-on but not finished), then NOT_STARTED (forgotten),
-// then in-flight states.
-const CONTROL_STATUS_PRIORITY: Record<string, number> = {
-    NEEDS_REVIEW: 5,
-    NOT_STARTED: 4,
-    PLANNED: 3,
-    IN_PROGRESS: 2,
-    IMPLEMENTING: 1,
-};
-
-export async function getNonPerformingPractices(
-    ctx: OrgContext,
-): Promise<NonPerformingPracticeRow[]> {
-    assertCanViewPortfolio(ctx);
-    // Drill-down only needs the tenant list — opt out of the
-    // snapshots fetch. The tenants read still memoises in-request,
-    // so a CSV export's 5 portfolio usecases share a single fetch.
-    const { tenants } = await getPortfolioData(ctx.organizationId, {
-        includeSnapshots: false,
-    });
-    const integrity = await checkAuditorFanOutIntegrity(ctx, tenants);
-
-    return fanOutPerTenant<NonPerformingPracticeRow>(
-        integrity.accessibleTenants,
-        async (db, tenant) => {
-            const rows = await db.practice.findMany({
-                where: {
-                    tenantId: tenant.id,
-                    status: { notIn: ['IMPLEMENTED', 'NOT_APPLICABLE'] },
-                    applicability: 'APPLICABLE',
-                    deletedAt: null,
-                },
-                select: {
-                    id: true,
-                    name: true,
-                    code: true,
-                    status: true,
-                    updatedAt: true,
-                },
-                orderBy: { updatedAt: 'desc' },
-                take: PER_TENANT_LIMIT,
-            });
-            return rows.map((c): NonPerformingPracticeRow => ({
-                practiceId: c.id,
-                tenantId: tenant.id,
-                tenantSlug: tenant.slug,
-                tenantName: tenant.name,
-                name: c.name,
-                code: c.code ?? null,
-                // The Prisma enum is a TS string union by codegen; the DTO
-                // narrows to the non-performing subset via Zod at the API
-                // boundary. The runtime invariant matches because the
-                // findMany WHERE clause excludes the two terminal states.
-                status: c.status as NonPerformingPracticeRow['status'],
-                updatedAt: c.updatedAt.toISOString(),
-                drillDownUrl: `/t/${tenant.slug}/practices/${c.id}`,
-            }));
-        },
-        (rows) =>
-            rows
-                .sort((a, b) => {
-                    const pa = CONTROL_STATUS_PRIORITY[a.status] ?? 0;
-                    const pb = CONTROL_STATUS_PRIORITY[b.status] ?? 0;
-                    if (pa !== pb) return pb - pa;
-                    return b.updatedAt.localeCompare(a.updatedAt);
-                })
-                .slice(0, PORTFOLIO_DRILLDOWN_LIMIT),
-    );
-}
-
-
 export async function getOverdueEvidenceAcrossOrg(
     ctx: OrgContext,
 ): Promise<OverdueEvidenceRow[]> {
@@ -658,8 +544,7 @@ export async function getPortfolioOverview(
 // Paginated drill-down (cursor-based)
 // ═════════════════════════════════════════════════════════════════════
 //
-// The dashboard summary (`getNonPerformingPractices`,
-// `getCriticalRisksAcrossOrg`, `getOverdueEvidenceAcrossOrg`) caps at
+// The dashboard summary (`getOverdueEvidenceAcrossOrg`) caps at
 // `PORTFOLIO_DRILLDOWN_LIMIT` (50) and is the right shape for a
 // summary card. The dedicated drill-down pages need to browse beyond
 // that — this section adds `list*` counterparts that take a cursor +
@@ -678,8 +563,6 @@ export async function getPortfolioOverview(
 //     overall, encode `nextCursor` from the limit-th row when present.
 //
 // The cursor is opaque base64-JSON. Shape is per-entity:
-//   Practices : { p: number, d: string, i: string }   priority + updatedAt + id
-//   Risks    : { s: number, d: string, i: string }   inherentScore + updatedAt + id
 //   Evidence : { d: string, i: string }              nextReviewDate + id
 //
 // `id` is the entity row id (cuid). It's per-tenant unique under
@@ -717,149 +600,6 @@ function decodeJson<T>(cursor: string | undefined): T | null {
     } catch {
         return null;
     }
-}
-
-// ── Practices ─────────────────────────────────────────────────────────
-
-interface PracticesCursor {
-    /** Status priority (1-5). See CONTROL_STATUS_PRIORITY. */
-    p: number;
-    /** ISO timestamp of the last emitted row's updatedAt. */
-    d: string;
-    /** Last emitted row id. */
-    i: string;
-}
-
-const STATUSES_AT_PRIORITY: Record<number, NonPerformingPracticeRow['status'][]> = {
-    5: ['NEEDS_REVIEW'],
-    4: ['NOT_STARTED'],
-    3: ['PLANNED'],
-    2: ['IN_PROGRESS'],
-    1: ['IMPLEMENTING'],
-};
-
-function statusesAtOrBelow(priority: number): NonPerformingPracticeRow['status'][] {
-    const out: NonPerformingPracticeRow['status'][] = [];
-    for (let p = priority; p >= 1; p--) {
-        out.push(...STATUSES_AT_PRIORITY[p]);
-    }
-    return out;
-}
-
-function statusesBelow(priority: number): NonPerformingPracticeRow['status'][] {
-    return statusesAtOrBelow(priority - 1);
-}
-
-export async function listNonPerformingPractices(
-    ctx: OrgContext,
-    input: PaginatedDrillDownInput = {},
-): Promise<PaginatedDrillDownResult<NonPerformingPracticeRow>> {
-    assertCanViewPortfolio(ctx);
-    const limit = clampPageLimit(input.limit);
-    const cursor = decodeJson<PracticesCursor>(input.cursor);
-    const { tenants } = await getPortfolioData(ctx.organizationId, {
-        includeSnapshots: false,
-    });
-
-    // Per-tenant where clause — applies the cursor compound predicate
-    // when a cursor is supplied. The compound mirrors the global sort
-    // order so no row from any tenant is re-emitted on subsequent
-    // pages.
-    const cursorWhere = cursor
-        ? {
-              OR: [
-                  // Strictly lower priority — any status below cursor.p.
-                  ...(statusesBelow(cursor.p).length > 0
-                      ? [{ status: { in: statusesBelow(cursor.p) } }]
-                      : []),
-                  // Same priority bucket, older updatedAt.
-                  {
-                      AND: [
-                          { status: { in: STATUSES_AT_PRIORITY[cursor.p] ?? [] } },
-                          { updatedAt: { lt: new Date(cursor.d) } },
-                      ],
-                  },
-                  // Same priority + same updatedAt — id tiebreaker.
-                  {
-                      AND: [
-                          { status: { in: STATUSES_AT_PRIORITY[cursor.p] ?? [] } },
-                          { updatedAt: new Date(cursor.d) },
-                          { id: { gt: cursor.i } },
-                      ],
-                  },
-              ],
-          }
-        : undefined;
-
-    const merged = await fanOutPerTenant<NonPerformingPracticeRow>(
-        tenants,
-        async (db, tenant) => {
-            const rows = await db.practice.findMany({
-                where: {
-                    tenantId: tenant.id,
-                    status: { notIn: ['IMPLEMENTED', 'NOT_APPLICABLE'] },
-                    applicability: 'APPLICABLE',
-                    deletedAt: null,
-                    ...(cursorWhere ?? {}),
-                },
-                select: {
-                    id: true,
-                    name: true,
-                    code: true,
-                    status: true,
-                    updatedAt: true,
-                },
-                orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }],
-                take: perTenantTake(limit),
-            });
-            return rows.map((c): NonPerformingPracticeRow => ({
-                practiceId: c.id,
-                tenantId: tenant.id,
-                tenantSlug: tenant.slug,
-                tenantName: tenant.name,
-                name: c.name,
-                code: c.code ?? null,
-                status: c.status as NonPerformingPracticeRow['status'],
-                updatedAt: c.updatedAt.toISOString(),
-                drillDownUrl: `/t/${tenant.slug}/practices/${c.id}`,
-            }));
-        },
-        // Identity sortAndLimit — we apply the page-limit cut below.
-        // Reusing fanOutPerTenant for the RLS plumbing only.
-        (rows) => rows,
-    );
-
-    // Global merged sort: priority DESC, updatedAt DESC, id ASC.
-    merged.sort((a, b) => {
-        const pa = CONTROL_STATUS_PRIORITY[a.status] ?? 0;
-        const pb = CONTROL_STATUS_PRIORITY[b.status] ?? 0;
-        if (pa !== pb) return pb - pa;
-        const cmp = b.updatedAt.localeCompare(a.updatedAt);
-        if (cmp !== 0) return cmp;
-        return a.practiceId.localeCompare(b.practiceId);
-    });
-
-    const trimmed = merged.slice(0, limit);
-    const hasMore = merged.length > limit;
-    const last = trimmed[trimmed.length - 1];
-    const nextCursor =
-        hasMore && last
-            ? encodeJson<PracticesCursor>({
-                  p: CONTROL_STATUS_PRIORITY[last.status] ?? 0,
-                  d: last.updatedAt,
-                  i: last.practiceId,
-              })
-            : null;
-
-    return { rows: trimmed, nextCursor };
-}
-
-// ── Risks ────────────────────────────────────────────────────────────
-
-interface RisksCursor {
-    s: number;
-    d: string;
-    i: string;
 }
 
 // ── Evidence ─────────────────────────────────────────────────────────

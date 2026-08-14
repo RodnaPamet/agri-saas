@@ -90,13 +90,24 @@ describe('seedDefaultOrgDashboard — payload shape', () => {
     });
 
     it('preserves the preset KPI ordering (the leading widgets are KPIs)', async () => {
-        // Was four KPIs; the `critical-risks` tile went with the risk
-        // register, leaving coverage / overdue-evidence / tenants.
+        // Derived, not hardcoded. Was four KPIs; the `critical-risks` tile
+        // went with the risk register (→ 3), then the `coverage` tile went
+        // with the GRC teardown (→ 2). The property is "the preset's
+        // leading KPI run survives the seeder in order", which does not
+        // depend on how many KPIs there are.
+        const kpiCount = DEFAULT_ORG_DASHBOARD_PRESET.findIndex(
+            (w) => w.type !== 'KPI',
+        );
+        expect(kpiCount).toBeGreaterThan(0);
+
         const { db, createMany } = makeStub({ existing: 0 });
         await seedDefaultOrgDashboard(db, 'org-1');
         const payload = createMany.mock.calls[0][0].data;
-        const types = payload.slice(0, 3).map((r: any) => r.type);
-        expect(types).toEqual(['KPI', 'KPI', 'KPI']);
+        const types = payload.slice(0, kpiCount).map((r: any) => r.type);
+        expect(types).toEqual(Array(kpiCount).fill('KPI'));
+        // ...and the widget right after the run is NOT a KPI, so the slice
+        // above cannot silently under-count.
+        expect(payload[kpiCount].type).not.toBe('KPI');
     });
 
     it('maps preset fields through unchanged — chartType, title, config, position, size', async () => {

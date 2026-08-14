@@ -8,13 +8,21 @@
  *   2. CREATE the CISO + their auto-provisioned AUDITOR membership in
  *      both tenants (mirrors what `provisionOrgAdminToTenants` does
  *      at runtime)
- *   3. SEED tenant-scoped Practice + Evidence rows in each tenant —
- *      including some that should be excluded by the drill-down
- *      filter (IMPLEMENTED practice, APPROVED evidence)
- *   4. CALL the drill-down usecases via the OrgContext
+ *   3. SEED tenant-scoped Evidence rows in each tenant — including
+ *      some that should be excluded by the drill-down filter
+ *      (APPROVED evidence, future review date)
+ *   4. CALL the drill-down usecases via the OrgContext — both the
+ *      bounded dashboard preview (`getOverdueEvidenceAcrossOrg`) and
+ *      the cursor-paginated drill-down page
+ *      (`listOverdueEvidenceAcrossOrg`)
  *   5. ASSERT the returned rows are merged across both tenants,
- *      tenant-attributed, and exclude the rows that should be
- *      filtered out
+ *      tenant-attributed, exclude the rows that should be filtered
+ *      out, and — for the paginated variant — that the cursor hands
+ *      off cleanly across the tenant fan-out (no gaps, no repeats)
+ *
+ * The GRC teardown removed the practices drill-down; evidence is the
+ * surviving cross-tenant drill-down surface and carries the same
+ * property.
  *
  * Each per-tenant query inside the usecase runs through
  * `withTenantDb(tid, ...)` — `SET LOCAL ROLE app_user` + `SELECT
@@ -34,10 +42,10 @@ import { prismaTestClient } from '../helpers/db';
 import type { PrismaClient } from '@prisma/client';
 
 import {
-    getNonPerformingPractices,
     getOverdueEvidenceAcrossOrg,
     getPortfolioSummary,
     getPortfolioTenantHealth,
+    listOverdueEvidenceAcrossOrg,
 } from '@/app-layer/usecases/portfolio';
 import type { OrgContext } from '@/app-layer/types';
 import { generateAndWrapDek } from '@/lib/security/tenant-keys';
@@ -118,36 +126,6 @@ describeFn('Epic O-3 — portfolio drill-down lifecycle (DB-backed)', () => {
                 },
             });
 
-            // ── Practices ──
-            // One non-performing (NOT_STARTED) + one excluded (IMPLEMENTED).
-            await prisma.practice.create({
-                data: {
-                    tenantId: tenant.id,
-                    name: `t${i + 1} pending practice`,
-                    code: `T${i + 1}-PENDING`,
-                    status: 'NOT_STARTED',
-                    applicability: 'APPLICABLE',
-                },
-            });
-            await prisma.practice.create({
-                data: {
-                    tenantId: tenant.id,
-                    name: `t${i + 1} done practice`,
-                    code: `T${i + 1}-DONE`,
-                    status: 'IMPLEMENTED',
-                    applicability: 'APPLICABLE',
-                },
-            });
-            await prisma.practice.create({
-                data: {
-                    tenantId: tenant.id,
-                    name: `t${i + 1} N/A practice`,
-                    code: `T${i + 1}-NA`,
-                    status: 'NOT_STARTED',
-                    applicability: 'NOT_APPLICABLE', // excluded
-                },
-            });
-
             // ── Evidence ──
             // One overdue + one excluded (APPROVED, regardless of date) + one excluded (future review).
             const tenDaysAgo = new Date(Date.now() - 10 * 86400_000);
@@ -184,7 +162,6 @@ describeFn('Epic O-3 — portfolio drill-down lifecycle (DB-backed)', () => {
 
     afterAll(async () => {
         await prisma.evidence.deleteMany({ where: { tenantId: { in: tenantIds } } }).catch(() => {});
-        await prisma.practice.deleteMany({ where: { tenantId: { in: tenantIds } } }).catch(() => {});
         await prisma.tenantMembership.deleteMany({ where: { tenantId: { in: tenantIds } } }).catch(() => {});
         await prisma.tenant.deleteMany({ where: { id: { in: tenantIds } } }).catch(() => {});
         await prisma.orgMembership.deleteMany({ where: { organizationId: orgId } }).catch(() => {});
@@ -193,26 +170,7 @@ describeFn('Epic O-3 — portfolio drill-down lifecycle (DB-backed)', () => {
         await prisma.$disconnect();
     });
 
-    // ── Drill-down: practices ──────────────────────────────────────
-
-    it('getNonPerformingPractices returns one row per tenant, IMPLEMENTED + N/A excluded', async () => {
-        const rows = await getNonPerformingPractices(ctxFor());
-
-        // 2 tenants × 1 NOT_STARTED applicable = 2 rows.
-        expect(rows).toHaveLength(2);
-
-        // Both tenants represented, attribution intact.
-        const slugs = rows.map((r) => r.tenantSlug).sort();
-        expect(slugs).toEqual(tenantSlugs.slice().sort());
-
-        for (const r of rows) {
-            expect(r.status).toBe('NOT_STARTED');
-            expect(r.code).toMatch(/PENDING/);
-            expect(r.drillDownUrl).toBe(`/t/${r.tenantSlug}/practices/${r.practiceId}`);
-        }
-    });
-
-    // ── Drill-down: evidence ──────────────────────────────────────
+    // ── Drill-down: evidence (bounded preview) ────────────────────
 
     it('getOverdueEvidenceAcrossOrg returns rows with nextReviewDate<now AND status≠APPROVED', async () => {
         const rows = await getOverdueEvidenceAcrossOrg(ctxFor());
@@ -220,9 +178,52 @@ describeFn('Epic O-3 — portfolio drill-down lifecycle (DB-backed)', () => {
         // 2 tenants × 1 SUBMITTED-overdue = 2 rows. APPROVED and
         // future-review rows must be excluded.
         expect(rows).toHaveLength(2);
+
+        // Both tenants represented, attribution intact.
+        const slugs = rows.map((r) => r.tenantSlug).sort();
+        expect(slugs).toEqual(tenantSlugs.slice().sort());
+
         for (const r of rows) {
             expect(r.status).not.toBe('APPROVED');
             expect(r.daysOverdue).toBeGreaterThanOrEqual(9);
+            expect(r.title).toMatch(/overdue evidence$/);
+            expect(r.drillDownUrl).toBe(`/t/${r.tenantSlug}/evidence/${r.evidenceId}`);
+        }
+    });
+
+    // ── Drill-down: evidence (cursor-paginated) ───────────────────
+    //
+    // Same withTenantDb fan-out as the preview above, but walked one
+    // row at a time so the cursor hand-off is exercised across the
+    // tenant boundary: page 1 is served from one tenant's slice and
+    // page 2 from the other's, and the encoded cursor is what stops
+    // the second call re-emitting the first row.
+
+    it('listOverdueEvidenceAcrossOrg pages across both tenants with no gaps or repeats', async () => {
+        const preview = await getOverdueEvidenceAcrossOrg(ctxFor());
+        const expectedIds = preview.map((r) => r.evidenceId).sort();
+        expect(expectedIds).toHaveLength(2);
+
+        const page1 = await listOverdueEvidenceAcrossOrg(ctxFor(), { limit: 1 });
+        expect(page1.rows).toHaveLength(1);
+        expect(page1.nextCursor).not.toBeNull();
+
+        const page2 = await listOverdueEvidenceAcrossOrg(ctxFor(), {
+            limit: 1,
+            cursor: page1.nextCursor as string,
+        });
+        expect(page2.rows).toHaveLength(1);
+        // Only 2 overdue rows exist org-wide, so page 2 is the last.
+        expect(page2.nextCursor).toBeNull();
+
+        // No repeats, no gaps: the two pages reconstruct exactly the
+        // preview's row set, and each page came from a different tenant.
+        const pagedIds = [page1.rows[0].evidenceId, page2.rows[0].evidenceId].sort();
+        expect(pagedIds).toEqual(expectedIds);
+        expect(page1.rows[0].tenantSlug).not.toBe(page2.rows[0].tenantSlug);
+
+        for (const r of [...page1.rows, ...page2.rows]) {
+            expect(r.status).not.toBe('APPROVED');
             expect(r.title).toMatch(/overdue evidence$/);
             expect(r.drillDownUrl).toBe(`/t/${r.tenantSlug}/evidence/${r.evidenceId}`);
         }
@@ -247,9 +248,12 @@ describeFn('Epic O-3 — portfolio drill-down lifecycle (DB-backed)', () => {
         const slugs = rows.map((r) => r.slug).sort();
         expect(slugs).toEqual(tenantSlugs.slice().sort());
         // No snapshots yet → metric fields null, hasSnapshot=false.
+        // (coveragePercent left the DTO with the practice models; the
+        // surviving metric field is overdueEvidence.)
         for (const r of rows) {
             expect(r.hasSnapshot).toBe(false);
-            expect(r.coveragePercent).toBeNull();
+            expect(r.snapshotDate).toBeNull();
+            expect(r.overdueEvidence).toBeNull();
             expect(r.rag).toBeNull();
             expect(r.drillDownUrl).toBe(`/t/${r.slug}/dashboard`);
         }

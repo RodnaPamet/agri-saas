@@ -214,8 +214,14 @@ describe('Epic 41 — WidgetPicker', () => {
         const optionTexts = screen
             .getAllByRole('option')
             .map((o) => o.textContent);
-        expect(optionTexts).toContain('Coverage');
-        expect(optionTexts).toContain('Critical risks');
+        // GRC teardown phase 2: the KPI variant list lost 'Coverage'
+        // (PortfolioSummary.practices stopped being computed) and
+        // 'Critical risks' (dead since the risk uproot). Both are asserted
+        // ABSENT below so a revert is visible rather than silent.
+        expect(optionTexts).toContain('Overdue evidence');
+        expect(optionTexts).toContain('Tenants');
+        expect(optionTexts).not.toContain('Coverage');
+        expect(optionTexts).not.toContain('Critical risks');
     });
 
     it('switching to TREND replaces the chartType options + shows the days field', async () => {
@@ -255,9 +261,9 @@ describe('Epic 41 — WidgetPicker', () => {
             id: 'w-new',
             organizationId: 'org-1',
             type: 'KPI' as const,
-            chartType: 'coverage',
+            chartType: 'tenants',
             title: null,
-            config: { format: 'percent' },
+            config: { format: 'number' },
             position: { x: 0, y: 0 },
             size: { w: 3, h: 2 },
             enabled: true,
@@ -277,12 +283,12 @@ describe('Epic 41 — WidgetPicker', () => {
         const payload = onSubmit.mock.calls[0][0];
         expect(payload).toMatchObject({
             type: 'KPI',
-            chartType: 'coverage',
+            chartType: 'tenants',
             position: { x: 0, y: 0 },
             size: { w: 3, h: 2 },
             enabled: true,
         });
-        expect(payload.config).toEqual({ format: 'percent' });
+        expect(payload.config).toEqual({ format: 'number' });
         expect(onCreated).toHaveBeenCalledWith(created);
     });
 

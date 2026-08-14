@@ -16,10 +16,8 @@ const getOrgCtxMock = jest.fn();
 const getPortfolioSummaryMock = jest.fn();
 const getPortfolioTenantHealthMock = jest.fn();
 const getPortfolioTrendsMock = jest.fn();
-const getNonPerformingPracticesMock = jest.fn();
 const getOverdueEvidenceAcrossOrgMock = jest.fn();
 // Paginated counterparts — the drill-down API now uses these.
-const listNonPerformingPracticesMock = jest.fn();
 const listOverdueEvidenceAcrossOrgMock = jest.fn();
 
 jest.mock('@/app-layer/context', () => ({
@@ -32,9 +30,7 @@ jest.mock('@/app-layer/usecases/portfolio', () => ({
     getPortfolioSummary: (...a: unknown[]) => getPortfolioSummaryMock(...a),
     getPortfolioTenantHealth: (...a: unknown[]) => getPortfolioTenantHealthMock(...a),
     getPortfolioTrends: (...a: unknown[]) => getPortfolioTrendsMock(...a),
-    getNonPerformingPractices: (...a: unknown[]) => getNonPerformingPracticesMock(...a),
     getOverdueEvidenceAcrossOrg: (...a: unknown[]) => getOverdueEvidenceAcrossOrgMock(...a),
-    listNonPerformingPractices: (...a: unknown[]) => listNonPerformingPracticesMock(...a),
     listOverdueEvidenceAcrossOrg: (...a: unknown[]) => listOverdueEvidenceAcrossOrgMock(...a),
 }));
 
@@ -78,9 +74,7 @@ beforeEach(() => {
     getPortfolioSummaryMock.mockReset();
     getPortfolioTenantHealthMock.mockReset();
     getPortfolioTrendsMock.mockReset();
-    getNonPerformingPracticesMock.mockReset();
     getOverdueEvidenceAcrossOrgMock.mockReset();
-    listNonPerformingPracticesMock.mockReset();
     listOverdueEvidenceAcrossOrgMock.mockReset();
 });
 
@@ -165,38 +159,41 @@ describe('GET /api/org/[orgSlug]/portfolio', () => {
         expect(res.status).toBe(400);
     });
 
-    it('drill-down view "practices" is allowed for ORG_ADMIN (canDrillDown=true)', async () => {
+    // The 'practices' drill-down left with the Practice model (GRC teardown
+    // phase 2). Evidence is the surviving drill-down and carries the same
+    // route contract, so these assertions moved rather than being dropped.
+    it('drill-down view "evidence" is allowed for ORG_ADMIN (canDrillDown=true)', async () => {
         getOrgCtxMock.mockResolvedValue(adminCtx);
-        listNonPerformingPracticesMock.mockResolvedValue({
-            rows: [{ practiceId: 'c-1' }],
+        listOverdueEvidenceAcrossOrgMock.mockResolvedValue({
+            rows: [{ evidenceId: 'e-1' }],
             nextCursor: null,
         });
 
         const res = await viewGET(
-            makeRequest('/api/org/acme-org/portfolio?view=practices'),
+            makeRequest('/api/org/acme-org/portfolio?view=evidence'),
             { params: Promise.resolve({ orgSlug: 'acme-org' }) },
         );
         const body = await res.json();
-        expect(body.rows).toEqual([{ practiceId: 'c-1' }]);
+        expect(body.rows).toEqual([{ evidenceId: 'e-1' }]);
         expect(body.nextCursor).toBeNull();
     });
 
-    it('drill-down view "practices" forwards cursor + limit query params to the usecase', async () => {
+    it('drill-down view "evidence" forwards cursor + limit query params to the usecase', async () => {
         getOrgCtxMock.mockResolvedValue(adminCtx);
-        listNonPerformingPracticesMock.mockResolvedValue({
+        listOverdueEvidenceAcrossOrgMock.mockResolvedValue({
             rows: [],
             nextCursor: 'cursor-page-3',
         });
 
         const res = await viewGET(
             makeRequest(
-                '/api/org/acme-org/portfolio?view=practices&cursor=opaque-cursor&limit=25',
+                '/api/org/acme-org/portfolio?view=evidence&cursor=opaque-cursor&limit=25',
             ),
             { params: Promise.resolve({ orgSlug: 'acme-org' }) },
         );
         expect(res.status).toBe(200);
-        expect(listNonPerformingPracticesMock).toHaveBeenCalledTimes(1);
-        const args = listNonPerformingPracticesMock.mock.calls[0];
+        expect(listOverdueEvidenceAcrossOrgMock).toHaveBeenCalledTimes(1);
+        const args = listOverdueEvidenceAcrossOrgMock.mock.calls[0];
         expect(args[1]).toEqual({ cursor: 'opaque-cursor', limit: 25 });
 
         const body = await res.json();
@@ -206,14 +203,13 @@ describe('GET /api/org/[orgSlug]/portfolio', () => {
     it('drill-down views are blocked for ORG_READER with 403 — usecase NOT called', async () => {
         getOrgCtxMock.mockResolvedValue(readerCtx);
 
-        for (const v of ['practices', 'evidence']) {
+        for (const v of ['evidence']) {
             const res = await viewGET(
                 makeRequest(`/api/org/acme-org/portfolio?view=${v}`),
                 { params: Promise.resolve({ orgSlug: 'acme-org' }) },
             );
             expect(res.status).toBe(403);
         }
-        expect(listNonPerformingPracticesMock).not.toHaveBeenCalled();
         expect(listOverdueEvidenceAcrossOrgMock).not.toHaveBeenCalled();
     });
 
@@ -251,15 +247,15 @@ describe('GET /api/org/[orgSlug]/portfolio', () => {
 
     it('drill-down ignores invalid limit parameter (lenient on read)', async () => {
         getOrgCtxMock.mockResolvedValue(adminCtx);
-        listNonPerformingPracticesMock.mockResolvedValue({ rows: [], nextCursor: null });
+        listOverdueEvidenceAcrossOrgMock.mockResolvedValue({ rows: [], nextCursor: null });
 
         const res = await viewGET(
-            makeRequest('/api/org/acme-org/portfolio?view=practices&limit=not-a-number'),
+            makeRequest('/api/org/acme-org/portfolio?view=evidence&limit=not-a-number'),
             { params: Promise.resolve({ orgSlug: 'acme-org' }) },
         );
         expect(res.status).toBe(200);
         // No `limit` key in the call args → usecase falls back to default.
-        const args = listNonPerformingPracticesMock.mock.calls[0];
+        const args = listOverdueEvidenceAcrossOrgMock.mock.calls[0];
         expect(args[1].limit).toBeUndefined();
     });
 });
@@ -273,11 +269,8 @@ describe('GET /api/org/[orgSlug]/portfolio/export', () => {
             organizationSlug: 'acme-org',
             generatedAt: '2026-04-26T00:00:00Z',
             tenants: { total: 2, snapshotted: 1, pending: 1 },
-            practices: { applicable: 100, implemented: 75, coveragePercent: 75 },
             evidence: { total: 50, overdue: 3, dueSoon7d: 4 },
-            policies: { total: 5, overdueReview: 1 },
             tasks: { open: 12, overdue: 2 },
-            findings: { open: 1 },
             rag: { green: 0, amber: 1, red: 0, pending: 1 },
         };
     }
@@ -290,7 +283,6 @@ describe('GET /api/org/[orgSlug]/portfolio/export', () => {
                 drillDownUrl: '/t/alpha/dashboard',
                 hasSnapshot: true,
                 snapshotDate: '2026-04-25',
-                coveragePercent: 75,
                 overdueEvidence: 3,
                 rag: 'AMBER',
             },
@@ -301,7 +293,6 @@ describe('GET /api/org/[orgSlug]/portfolio/export', () => {
         getOrgCtxMock.mockResolvedValue(adminCtx);
         getPortfolioSummaryMock.mockResolvedValue(summaryFixture());
         getPortfolioTenantHealthMock.mockResolvedValue(healthFixture());
-        getNonPerformingPracticesMock.mockResolvedValue([]);
         getOverdueEvidenceAcrossOrgMock.mockResolvedValue([]);
 
         const res = await exportGET(
@@ -315,21 +306,10 @@ describe('GET /api/org/[orgSlug]/portfolio/export', () => {
         );
     });
 
-    it('CSV body contains all 4 expected sections for an ORG_ADMIN', async () => {
+    it('CSV body contains all 3 expected sections for an ORG_ADMIN', async () => {
         getOrgCtxMock.mockResolvedValue(adminCtx);
         getPortfolioSummaryMock.mockResolvedValue(summaryFixture());
         getPortfolioTenantHealthMock.mockResolvedValue(healthFixture());
-        getNonPerformingPracticesMock.mockResolvedValue([
-            {
-                practiceId: 'c-1',
-                tenantName: 'Alpha Co',
-                tenantSlug: 'alpha',
-                name: 'AC-1',
-                code: 'AC-1',
-                status: 'NOT_STARTED',
-                updatedAt: '2026-04-25T00:00:00Z',
-            },
-        ]);
         getOverdueEvidenceAcrossOrgMock.mockResolvedValue([]);
 
         const res = await exportGET(
@@ -340,14 +320,13 @@ describe('GET /api/org/[orgSlug]/portfolio/export', () => {
         // Section banners present
         expect(body).toContain('# Portfolio Summary');
         expect(body).toContain('# Tenant Health');
-        expect(body).toContain('# Non-Performing Practices');
         expect(body).toContain('# Overdue Evidence');
-        // Summary values present
-        expect(body).toContain('Coverage %,75.0');
-        // Tenant health row present
-        expect(body).toContain('Alpha Co,alpha,2026-04-25,75.0,3,AMBER');
-        // Drill-down row present
-        expect(body).toContain('Alpha Co,alpha,AC-1,AC-1,NOT_STARTED,2026-04-25T00:00:00Z');
+        // Summary values present. 'Coverage %' left with the practice
+        // models (GRC teardown phase 2); asserted ABSENT so a revert is
+        // visible rather than silent.
+        expect(body).not.toContain('Coverage %');
+        // Tenant health row present — no coverage column any more.
+        expect(body).toContain('Alpha Co,alpha,2026-04-25,3,AMBER');
     });
 
     it('ORG_READER export includes summary + health, OMITS drill-down sections', async () => {
@@ -363,13 +342,11 @@ describe('GET /api/org/[orgSlug]/portfolio/export', () => {
         const body = await res.text();
         expect(body).toContain('# Portfolio Summary');
         expect(body).toContain('# Tenant Health');
-        expect(body).not.toContain('# Non-Performing Practices');
         expect(body).not.toContain('# Overdue Evidence');
 
         // The drill-down usecases must NOT have been called for the
         // partial-export branch — saves DB round-trips when canDrillDown
         // is false.
-        expect(getNonPerformingPracticesMock).not.toHaveBeenCalled();
         expect(getOverdueEvidenceAcrossOrgMock).not.toHaveBeenCalled();
     });
 
@@ -402,7 +379,6 @@ describe('GET /api/org/[orgSlug]/portfolio/export', () => {
                 name: 'Alpha, Inc. "Special"',
             },
         ]);
-        getNonPerformingPracticesMock.mockResolvedValue([]);
         getOverdueEvidenceAcrossOrgMock.mockResolvedValue([]);
 
         const res = await exportGET(

@@ -85,7 +85,7 @@ const WIDGET_TYPES: ReadonlyArray<WidgetTypeOption> = [
     {
         type: 'KPI',
         defaultSize: { w: 3, h: 2 },
-        defaultChartType: 'coverage',
+        defaultChartType: 'tenants',
     },
     {
         type: 'DONUT',
@@ -110,7 +110,10 @@ const WIDGET_TYPES: ReadonlyArray<WidgetTypeOption> = [
 ];
 
 const CHART_TYPE_OPTIONS: Record<WidgetTypeKey, ReadonlyArray<string>> = {
-    KPI: ['coverage', 'critical-risks', 'overdue-evidence', 'tenants'],
+    // GRC teardown phase 2: 'coverage' and 'critical-risks' removed —
+    // neither is computed any more. 'critical-risks' had been dead since
+    // the risk uproot.
+    KPI: ['overdue-evidence', 'tenants'],
     DONUT: ['rag-distribution'],
     // GRC teardown phase 2: 'risks-open' + 'practices-coverage' removed.
     TREND: ['evidence-overdue'],
@@ -124,7 +127,8 @@ function defaultConfigFor(
 ): Record<string, unknown> {
     switch (type) {
         case 'KPI':
-            return { format: chartType === 'coverage' ? 'percent' : 'number' };
+            // No KPI metric is a percentage since 'coverage' left the enum.
+            return { format: 'number' };
         case 'DONUT':
             return { showLegend: true };
         case 'TREND':
@@ -170,14 +174,14 @@ export function WidgetPicker({
 }: WidgetPickerProps) {
     const t = useTranslations('ui');
     const [type, setType] = useState<WidgetTypeKey>('KPI');
-    const [chartType, setChartType] = useState<string>('coverage');
+    const [chartType, setChartType] = useState<string>('tenants');
     const [title, setTitle] = useState<string>('');
     const [days, setDays] = useState<number>(90);
     const [showLegend, setShowLegend] = useState<boolean>(true);
     const [kpiFormat, setKpiFormat] = useState<'number' | 'percent'>(
-        'percent',
+        'number',
     );
-    const [tenantSort, setTenantSort] = useState<'rag' | 'name' | 'coverage'>(
+    const [tenantSort, setTenantSort] = useState<'rag' | 'name'>(
         'rag',
     );
     const [submitting, setSubmitting] = useState(false);
@@ -204,8 +208,9 @@ export function WidgetPicker({
         DRILLDOWN_CTAS: t('widgetPicker.drilldownCtasDescription'),
     };
     const chartLabels: Record<string, string> = {
+        // Still needed: 'coverage' remains the one-member TENANT_LIST
+        // chartType identifier (see org-dashboard-widget.schemas.ts).
         coverage: t('widgetPicker.chartCoverage'),
-        'critical-risks': t('widgetPicker.chartCriticalRisks'),
         'overdue-evidence': t('widgetPicker.chartOverdueEvidence'),
         tenants: t('widgetPicker.chartTenants'),
         'rag-distribution': t('widgetPicker.chartRagDistribution'),
@@ -222,7 +227,7 @@ export function WidgetPicker({
     // resurfacing on the next open.
     function resetState() {
         setType('KPI');
-        setChartType('coverage');
+        setChartType('tenants');
         setTitle('');
         setDays(90);
         setShowLegend(true);
@@ -452,7 +457,7 @@ export function WidgetPicker({
                                 value={tenantSort}
                                 onValueChange={(v) =>
                                     setTenantSort(
-                                        v as 'rag' | 'name' | 'coverage',
+                                        v as 'rag' | 'name',
                                     )
                                 }
                                 data-testid="widget-picker-tenant-sort"
@@ -461,7 +466,6 @@ export function WidgetPicker({
                                 {[
                                     { value: 'rag', label: t('widgetPicker.sortRag') },
                                     { value: 'name', label: t('widgetPicker.sortName') },
-                                    { value: 'coverage', label: t('widgetPicker.sortCoverage') },
                                 ].map((opt) => (
                                     <div
                                         key={opt.value}

@@ -66,9 +66,9 @@ const adminCtx = {
 
 const VALID_KPI_PAYLOAD = {
     type: 'KPI',
-    chartType: 'coverage',
-    config: { format: 'percent' },
-    title: 'Coverage',
+    chartType: 'tenants',
+    config: { format: 'number' },
+    title: 'Tenants',
     position: { x: 0, y: 0 },
     size: { w: 3, h: 2 },
 };
@@ -95,7 +95,7 @@ describe('GET /api/org/[orgSlug]/dashboard/widgets', () => {
     it('returns 200 + widgets array', async () => {
         getOrgCtxMock.mockResolvedValue(adminCtx);
         listOrgDashboardWidgetsMock.mockResolvedValue([
-            { id: 'w-1', type: 'KPI', chartType: 'coverage' },
+            { id: 'w-1', type: 'KPI', chartType: 'tenants' },
             { id: 'w-2', type: 'DONUT', chartType: 'rag-distribution' },
         ]);
 
@@ -115,7 +115,7 @@ describe('POST /api/org/[orgSlug]/dashboard/widgets', () => {
         createOrgDashboardWidgetMock.mockResolvedValue({
             id: 'w-new',
             type: 'KPI',
-            chartType: 'coverage',
+            chartType: 'tenants',
         });
 
         const res = await createPost(makeReq('POST', VALID_KPI_PAYLOAD), {
@@ -188,7 +188,10 @@ describe('PATCH /api/org/[orgSlug]/dashboard/widgets/[widgetId]', () => {
         getOrgCtxMock.mockResolvedValue(adminCtx);
 
         const res = await updatePatch(
-            makePatchReq({ chartType: 'critical-risks' }),
+            // Must be a VALID chartType, or this 400s because the enum
+            // rejected it and the refine rule under test never runs.
+            // 'critical-risks' was valid until the GRC teardown removed it.
+            makePatchReq({ chartType: 'tenants' }),
             { params: Promise.resolve({ orgSlug: 'acme-org', widgetId: 'w-1' }) },
         );
         expect(res.status).toBe(400);

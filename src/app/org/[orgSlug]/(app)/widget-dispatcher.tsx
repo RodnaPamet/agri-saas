@@ -60,13 +60,11 @@ interface DispatcherProps {
 // surface".
 
 const KPI_GRADIENTS: Record<string, string> = {
-    coverage: 'from-emerald-500 to-teal-500',
     'overdue-evidence': 'from-amber-500 to-orange-500',
     tenants: 'from-blue-500 to-indigo-500',
 };
 
 const KPI_ICONS = {
-    coverage: ShieldCheck,
     'overdue-evidence': Paperclip,
     tenants: Building2,
 } as const;
@@ -82,18 +80,6 @@ function resolveKpiContent(
         ?? 'from-brand-default to-brand-muted';
 
     switch (widget.chartType) {
-        case 'coverage':
-            return {
-                chartType: 'kpi',
-                config: {
-                    label: widget.title ?? 'Coverage',
-                    value: data.summary.practices.coveragePercent,
-                    format,
-                    gradient,
-                    icon: KPI_ICONS.coverage,
-                    subtitle: `${data.summary.practices.implemented.toLocaleString()} of ${data.summary.practices.applicable.toLocaleString()} practices implemented`,
-                },
-            };
         case 'overdue-evidence':
             return {
                 chartType: 'kpi',
@@ -254,7 +240,7 @@ export function DispatchedWidget({
         }
         case 'TENANT_LIST': {
             const cfg = widget.config as {
-                sortBy?: 'rag' | 'name' | 'coverage';
+                sortBy?: 'rag' | 'name';
                 limit?: number;
                 display?: 'list' | 'cards';
             };

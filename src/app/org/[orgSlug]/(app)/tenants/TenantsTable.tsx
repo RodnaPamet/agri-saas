@@ -31,10 +31,6 @@ const RAG_RANK: Record<RagBadge | 'PENDING', number> = {
     PENDING: 3,
 };
 
-function formatPercent(value: number | null): string {
-    return value === null ? '—' : `${value.toFixed(1)}%`;
-}
-
 function RagPill({ rag }: { rag: RagBadge | null }) {
     const t = useTranslations('org.tenants');
     if (rag === null) {
@@ -113,8 +109,6 @@ export function TenantsTable({ rows, orgSlug }: Props) {
             switch (sortBy) {
                 case 'name':
                     return dir * a.name.localeCompare(b.name);
-                case 'coverage':
-                    return dir * ((a.coveragePercent ?? -1) - (b.coveragePercent ?? -1));
                 case 'overdueEvidence':
                     return dir * ((a.overdueEvidence ?? -1) - (b.overdueEvidence ?? -1));
                 case 'rag':
@@ -151,16 +145,6 @@ export function TenantsTable({ rows, orgSlug }: Props) {
                     header: t('colHealth'),
                     cell: ({ row }) => <RagPill rag={row.original.rag} />,
                     meta: { mobileCard: { slot: 'status', label: t('colHealth') } },
-                },
-                {
-                    id: 'coverage',
-                    header: t('colCoverage'),
-                    cell: ({ row }) => (
-                        <span className="tabular-nums text-content-emphasis">
-                            {formatPercent(row.original.coveragePercent)}
-                        </span>
-                    ),
-                    meta: { mobileCard: { slot: 'meta', label: t('colCoverage') } },
                 },
                 {
                     id: 'overdueEvidence',
@@ -241,7 +225,6 @@ export function TenantsTable({ rows, orgSlug }: Props) {
                     sortableColumns={[
                         'name',
                         'rag',
-                        'coverage',
                         'overdueEvidence',
                     ]}
                     sortBy={sortBy}

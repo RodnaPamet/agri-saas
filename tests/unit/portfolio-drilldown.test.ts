@@ -13,11 +13,18 @@
  *   * sort + limit are applied across the merged set
  *   * empty-org and no-matching-rows cases short-circuit cleanly
  *   * canViewPortfolio gate refuses callers without the flag
+ *
+ * The GRC teardown left exactly ONE drill-down surface: overdue
+ * evidence. The practices drill-down (`getNonPerformingPractices`)
+ * and the risk-register drill-down (`getCriticalRisksAcrossOrg`)
+ * are both deleted, so every fan-out assertion above is now made
+ * against `getOverdueEvidenceAcrossOrg` — which routes through the
+ * SAME `fanOutPerTenant` + `checkAuditorFanOutIntegrity` helpers
+ * the deleted usecases did, and therefore carries the identical
+ * regression class.
  */
 
 const tenantFindManyMock = jest.fn();
-const practiceFindManyMock = jest.fn();
-const riskFindManyMock = jest.fn();
 const evidenceFindManyMock = jest.fn();
 const tenantMembershipFindManyMock = jest.fn();
 const withTenantDbCalls: string[] = [];
@@ -44,9 +51,11 @@ jest.mock('@/lib/db-context', () => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         withTenantDb: jest.fn(async (tenantId: string, callback: any) => {
             withTenantDbCalls.push(tenantId);
+            // Only `evidence` is stubbed: the practice + risk delegates
+            // this fake DB used to carry belonged to drill-downs the GRC
+            // teardown deleted. Leaving them would let a future test
+            // "pass" against a model no usecase reads any more.
             const fakeDb = {
-                practice: { findMany: practiceFindManyMock },
-                risk: { findMany: riskFindManyMock },
                 evidence: { findMany: evidenceFindManyMock },
             };
             return callback(fakeDb);
@@ -54,10 +63,7 @@ jest.mock('@/lib/db-context', () => {
     };
 });
 
-import {
-    getNonPerformingPractices,
-    getOverdueEvidenceAcrossOrg,
-} from '@/app-layer/usecases/portfolio';
+import { getOverdueEvidenceAcrossOrg } from '@/app-layer/usecases/portfolio';
 import type { OrgContext } from '@/app-layer/types';
 
 function ctxFor(overrides: Partial<OrgContext> = {}): OrgContext {
@@ -85,8 +91,6 @@ const tenantC = { id: 't-c', slug: 'gamma', name: 'Gamma Co' };
 
 beforeEach(() => {
     tenantFindManyMock.mockReset();
-    practiceFindManyMock.mockReset();
-    riskFindManyMock.mockReset();
     evidenceFindManyMock.mockReset();
     tenantMembershipFindManyMock.mockReset();
     withTenantDbCalls.length = 0;
@@ -100,93 +104,73 @@ beforeEach(() => {
     });
 });
 
-// ── getNonPerformingPractices ──────────────────────────────────────────
+// ── Per-tenant fan-out shape ──────────────────────────────────────────
+//
+// These four cases were originally written against
+// `getNonPerformingPractices`. Their subject is not the practices
+// query — it is `fanOutPerTenant`: one `withTenantDb` per org tenant,
+// correct tenantId per call, tenant attribution stamped onto every
+// merged row, and the merged list capped. All of that survives on the
+// evidence drill-down, so they are re-pointed rather than deleted.
 
-describe('getNonPerformingPractices', () => {
+describe('getOverdueEvidenceAcrossOrg fan-out', () => {
     it('returns empty for an org with no tenants (no withTenantDb calls)', async () => {
         tenantFindManyMock.mockResolvedValue([]);
 
-        const rows = await getNonPerformingPractices(ctxFor());
+        const rows = await getOverdueEvidenceAcrossOrg(ctxFor());
 
         expect(rows).toEqual([]);
         expect(withTenantDbCalls).toHaveLength(0);
-        expect(practiceFindManyMock).not.toHaveBeenCalled();
+        expect(evidenceFindManyMock).not.toHaveBeenCalled();
     });
 
     it('iterates every org tenant inside withTenantDb', async () => {
         tenantFindManyMock.mockResolvedValue([tenantA, tenantB, tenantC]);
-        practiceFindManyMock.mockResolvedValue([]);
+        evidenceFindManyMock.mockResolvedValue([]);
 
-        await getNonPerformingPractices(ctxFor());
+        await getOverdueEvidenceAcrossOrg(ctxFor());
 
         expect(withTenantDbCalls).toEqual(['t-a', 't-b', 't-c']);
-        expect(practiceFindManyMock).toHaveBeenCalledTimes(3);
-    });
-
-    it('filters non-applicable + soft-deleted practices at the WHERE clause', async () => {
-        tenantFindManyMock.mockResolvedValue([tenantA]);
-        practiceFindManyMock.mockResolvedValue([]);
-
-        await getNonPerformingPractices(ctxFor());
-
-        expect(practiceFindManyMock).toHaveBeenCalledTimes(1);
-        const where = practiceFindManyMock.mock.calls[0][0].where;
-        expect(where.tenantId).toBe('t-a');
-        expect(where.applicability).toBe('APPLICABLE');
-        expect(where.deletedAt).toBeNull();
-        expect(where.status.notIn).toEqual(['IMPLEMENTED', 'NOT_APPLICABLE']);
+        expect(evidenceFindManyMock).toHaveBeenCalledTimes(3);
     });
 
     it('enriches every row with tenant attribution + drill-down URL', async () => {
         tenantFindManyMock.mockResolvedValue([tenantA, tenantB]);
-        practiceFindManyMock
+        const threeDaysAgo = new Date(Date.now() - 3 * 86400_000);
+        const fourDaysAgo = new Date(Date.now() - 4 * 86400_000);
+        evidenceFindManyMock
             .mockResolvedValueOnce([
                 {
-                    id: 'ctrl-a1',
-                    name: 'AC-1 Access Control',
-                    code: 'AC-1',
-                    status: 'NOT_STARTED',
-                    updatedAt: new Date('2026-04-25T10:00:00Z'),
+                    id: 'ev-a1',
+                    title: 'Soil sample log',
+                    nextReviewDate: threeDaysAgo,
+                    status: 'SUBMITTED',
                 },
             ])
             .mockResolvedValueOnce([
                 {
-                    id: 'ctrl-b1',
-                    name: 'AU-2 Audit Events',
-                    code: 'AU-2',
-                    status: 'IN_PROGRESS',
-                    updatedAt: new Date('2026-04-25T11:00:00Z'),
+                    id: 'ev-b1',
+                    title: 'Spray application record',
+                    nextReviewDate: fourDaysAgo,
+                    status: 'DRAFT',
                 },
             ]);
 
-        const rows = await getNonPerformingPractices(ctxFor());
+        const rows = await getOverdueEvidenceAcrossOrg(ctxFor());
 
         expect(rows).toHaveLength(2);
         const a = rows.find((r) => r.tenantId === 't-a')!;
         expect(a.tenantSlug).toBe('alpha');
         expect(a.tenantName).toBe('Alpha Co');
-        expect(a.drillDownUrl).toBe('/t/alpha/practices/ctrl-a1');
-        expect(a.code).toBe('AC-1');
-        expect(a.status).toBe('NOT_STARTED');
-        expect(a.updatedAt).toBe('2026-04-25T10:00:00.000Z');
+        expect(a.drillDownUrl).toBe('/t/alpha/evidence/ev-a1');
+        expect(a.title).toBe('Soil sample log');
+        expect(a.status).toBe('SUBMITTED');
+        expect(a.nextReviewDate).toBe(threeDaysAgo.toISOString().slice(0, 10));
 
         const b = rows.find((r) => r.tenantId === 't-b')!;
-        expect(b.drillDownUrl).toBe('/t/beta/practices/ctrl-b1');
-    });
-
-    it('sorts by status priority (NEEDS_REVIEW > NOT_STARTED > IN_PROGRESS), then most-recent first', async () => {
-        tenantFindManyMock.mockResolvedValue([tenantA]);
-        practiceFindManyMock.mockResolvedValue([
-            { id: 'c-1', name: 'C1', code: null, status: 'IN_PROGRESS',  updatedAt: new Date('2026-04-25T10:00:00Z') },
-            { id: 'c-2', name: 'C2', code: null, status: 'NEEDS_REVIEW', updatedAt: new Date('2026-04-25T08:00:00Z') },
-            { id: 'c-3', name: 'C3', code: null, status: 'NOT_STARTED',  updatedAt: new Date('2026-04-25T12:00:00Z') },
-            { id: 'c-4', name: 'C4', code: null, status: 'NEEDS_REVIEW', updatedAt: new Date('2026-04-25T11:00:00Z') },
-        ]);
-
-        const rows = await getNonPerformingPractices(ctxFor());
-
-        // NEEDS_REVIEW first (newer of the two NEEDS_REVIEW first), then NOT_STARTED, then IN_PROGRESS
-        expect(rows.map((r) => r.practiceId)).toEqual(['c-4', 'c-2', 'c-3', 'c-1']);
+        expect(b.tenantSlug).toBe('beta');
+        expect(b.tenantName).toBe('Beta Co');
+        expect(b.drillDownUrl).toBe('/t/beta/evidence/ev-b1');
     });
 
     it('caps the merged result list at 50 even when per-tenant + tenant-count exceeds it', async () => {
@@ -199,24 +183,33 @@ describe('getNonPerformingPractices', () => {
         tenantFindManyMock.mockResolvedValue(tenants);
         // Each tenant returns 20 rows.
         for (let i = 0; i < tenants.length; i++) {
-            practiceFindManyMock.mockResolvedValueOnce(
+            evidenceFindManyMock.mockResolvedValueOnce(
                 Array.from({ length: 20 }, (_, j) => ({
-                    id: `c-${i}-${j}`,
-                    name: `C${i}-${j}`,
-                    code: null,
-                    status: 'NOT_STARTED',
-                    updatedAt: new Date(`2026-04-25T${(j % 24).toString().padStart(2, '0')}:00:00Z`),
+                    id: `ev-${i}-${j}`,
+                    title: `E${i}-${j}`,
+                    nextReviewDate: new Date(Date.now() - (j + 1) * 86400_000),
+                    status: 'SUBMITTED',
                 })),
             );
         }
 
-        const rows = await getNonPerformingPractices(ctxFor());
+        const rows = await getOverdueEvidenceAcrossOrg(ctxFor());
         expect(rows).toHaveLength(50);
     });
 });
 
-// ── getCriticalRisksAcrossOrg ─────────────────────────────────────────
-
+// The practices drill-down had two further cases that do NOT transfer,
+// and are deleted rather than hollowed out:
+//
+//   * "filters non-applicable + soft-deleted practices at the WHERE
+//     clause" — asserted `applicability: 'APPLICABLE'` and
+//     `status.notIn: ['IMPLEMENTED', 'NOT_APPLICABLE']` on a query the
+//     teardown removed. The equivalent WHERE-clause lockdown for the
+//     surviving surface is the first case in the describe block below.
+//   * "sorts by status priority (NEEDS_REVIEW > NOT_STARTED >
+//     IN_PROGRESS), then most-recent first" — its subject was
+//     `CONTROL_STATUS_PRIORITY` / `statusesAtOrBelow`, deleted with the
+//     usecase. Evidence sorts on `daysOverdue`, already asserted below.
 
 // ── getOverdueEvidenceAcrossOrg ───────────────────────────────────────
 
@@ -285,6 +278,44 @@ describe('getOverdueEvidenceAcrossOrg', () => {
 
 // ── canViewPortfolio gate ─────────────────────────────────────────────
 
+describe('drill-down canViewPortfolio gate', () => {
+    it('refuses the drill-down when canViewPortfolio is false', async () => {
+        const ctx = ctxFor({
+            permissions: {
+                canViewPortfolio: false,
+                canDrillDown: false,
+                canExportReports: false,
+                canManageTenants: false,
+                canManageMembers: false,
+                canConfigureDashboard: false,
+            },
+        });
+
+        await expect(getOverdueEvidenceAcrossOrg(ctx)).rejects.toMatchObject({ status: 403 });
+
+        // The org tenant lookup must NOT be reached when the gate fails —
+        // a denied caller produces zero data-plane queries.
+        expect(tenantFindManyMock).not.toHaveBeenCalled();
+        expect(withTenantDbCalls).toHaveLength(0);
+    });
+});
 
 // ── Schema-level lockdown of the drill-down rows ─────────────────────
 
+describe('drill-down DTO schemas', () => {
+    it('OverdueEvidenceRowSchema rejects APPROVED status and zero/negative daysOverdue', async () => {
+        const { OverdueEvidenceRowSchema } = await import('@/app-layer/schemas/portfolio');
+        const base = {
+            evidenceId: 'e-1',
+            tenantId: 't-a',
+            tenantSlug: 'alpha',
+            tenantName: 'Alpha Co',
+            title: 'E1',
+            nextReviewDate: '2026-04-20',
+            drillDownUrl: '/t/alpha/evidence/e-1',
+        };
+        expect(() => OverdueEvidenceRowSchema.parse({ ...base, status: 'APPROVED', daysOverdue: 5 })).toThrow();
+        expect(() => OverdueEvidenceRowSchema.parse({ ...base, status: 'SUBMITTED', daysOverdue: 0 })).toThrow();
+        expect(() => OverdueEvidenceRowSchema.parse({ ...base, status: 'SUBMITTED', daysOverdue: 5 })).not.toThrow();
+    });
+});

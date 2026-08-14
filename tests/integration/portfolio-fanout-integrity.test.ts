@@ -12,10 +12,22 @@
  *      `portfolio.auditor_fanout_drift` warning fires naming
  *      tenant-2.
  *
- * Test seeds critical-score risks in every tenant so the silent-
- * empty failure mode (which the integrity check is designed to
- * eliminate) would have been observable as "tenant-2 had data but
- * the drill-down returned nothing for it".
+ * Test seeds overdue evidence in EVERY tenant so the silent-empty
+ * failure mode (which the integrity check is designed to eliminate)
+ * is observable against a real database: tenant-2 holds a row that
+ * matches the drill-down predicate, so if it disappears from the
+ * result the only possible cause is the missing membership. That is
+ * a SECURITY property, not a reporting one — the per-tenant read runs
+ * inside `withTenantDb(tenantId, ...)` as `app_user`, so RLS itself
+ * returns zero rows for a tenant the CISO holds no membership in, and
+ * without the pre-flight check the operator reads that as "nothing
+ * overdue" rather than "you cannot see this tenant".
+ *
+ * The suite drilled into the risk register, then non-performing
+ * practices, before both were removed; overdue evidence is the last
+ * surviving per-tenant fan-out and runs the same
+ * `checkAuditorFanOutIntegrity` helper, so the scenarios were
+ * re-pointed at it rather than dropped.
  *
  * Gated by DB_AVAILABLE — skips locally without Postgres + migrations
  * applied; runs in CI.
@@ -24,7 +36,7 @@ import { DB_AVAILABLE } from './db-helper';
 import { prismaTestClient } from '../helpers/db';
 import type { PrismaClient } from '@prisma/client';
 
-import { getNonPerformingPractices } from '@/app-layer/usecases/portfolio';
+import { getOverdueEvidenceAcrossOrg } from '@/app-layer/usecases/portfolio';
 import type { OrgContext } from '@/app-layer/types';
 import { generateAndWrapDek } from '@/lib/security/tenant-keys';
 import { logger } from '@/lib/observability/logger';
@@ -61,7 +73,7 @@ describeFn('Portfolio drill-down — auditor fan-out integrity (DB-backed)', () 
         prisma = prismaTestClient();
         await prisma.$connect();
 
-        // Org + CISO + 3 tenants, each with a critical risk seeded.
+        // Org + CISO + 3 tenants, each with one overdue evidence row.
         const ciso = await prisma.user.create({
             data: { email: `${uniq}-ciso@example.com`, name: 'CISO Test' },
         });
@@ -97,24 +109,28 @@ describeFn('Portfolio drill-down — auditor fan-out integrity (DB-backed)', () 
                 },
             });
 
-            // One non-performing practice per tenant. This suite is about
+            // One overdue evidence row per tenant. This suite is about
             // the FAN-OUT integrity property (does the drill-down reach
             // every tenant, and does a missing AUDITOR row surface as a
             // warning), not about the entity being drilled into — it used
-            // the risk register until that was removed.
-            await prisma.practice.create({
+            // the risk register, then non-performing practices, until each
+            // was removed. SUBMITTED + a past nextReviewDate is what
+            // `getOverdueEvidenceAcrossOrg` selects on (APPROVED is
+            // excluded regardless of date).
+            await prisma.evidence.create({
                 data: {
                     tenantId: tenant.id,
-                    name: `t${i} non-performing practice`,
-                    status: 'NOT_STARTED',
-                    applicability: 'APPLICABLE',
+                    title: `t${i} overdue evidence`,
+                    type: 'TEXT',
+                    nextReviewDate: new Date(Date.now() - 10 * 86400_000),
+                    status: 'SUBMITTED',
                 },
             });
         }
     });
 
     afterAll(async () => {
-        await prisma.practice.deleteMany({ where: { tenantId: { in: tenantIds } } }).catch(() => {});
+        await prisma.evidence.deleteMany({ where: { tenantId: { in: tenantIds } } }).catch(() => {});
         await prisma.tenantMembership.deleteMany({ where: { tenantId: { in: tenantIds } } }).catch(() => {});
         await prisma.tenant.deleteMany({ where: { id: { in: tenantIds } } }).catch(() => {});
         await prisma.orgMembership.deleteMany({ where: { organizationId: orgId } }).catch(() => {});
@@ -126,8 +142,8 @@ describeFn('Portfolio drill-down — auditor fan-out integrity (DB-backed)', () 
     it('healthy fan-out: drill-down returns rows from ALL three tenants, no warning', async () => {
         const warnSpy = jest.spyOn(logger, 'warn');
         try {
-            const rows = await getNonPerformingPractices(ctxFor());
-            // 3 non-performing practices visible (one per tenant).
+            const rows = await getOverdueEvidenceAcrossOrg(ctxFor());
+            // 3 overdue evidence rows visible (one per tenant).
             expect(rows).toHaveLength(3);
             // No drift warning emitted on the healthy path.
             const driftWarnings = warnSpy.mock.calls.filter(
@@ -147,7 +163,7 @@ describeFn('Portfolio drill-down — auditor fan-out integrity (DB-backed)', () 
 
         const warnSpy = jest.spyOn(logger, 'warn');
         try {
-            const rows = await getNonPerformingPractices(ctxFor());
+            const rows = await getOverdueEvidenceAcrossOrg(ctxFor());
 
             // Drill-down still works for the 2 accessible tenants.
             // Without the integrity check, the result would still be
