@@ -78,9 +78,11 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { PageHeader } from '@/components/layout/PageHeader';
+import Link from 'next/link';
+import { buttonVariants } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Heading } from '@/components/ui/typography';
+import { Heading, TextLink } from '@/components/ui/typography';
 import { ToggleGroup } from '@/components/ui/toggle-group';
 import { StatusBreakdown, type StatusBreakdownItem } from '@/components/ui/status-breakdown';
 import { DataTable, createColumns } from '@/components/ui/table';
@@ -240,19 +242,66 @@ export interface CalculatorClientProps {
  * Every class in `GrainNetWorthExclusions` appears here — the whole
  * point of the usecase returning counts is that the page shows them.
  */
+/**
+ * Every exclusion class, and WHERE A FARMER FIXES IT.
+ *
+ * The page diagnosed precisely and then stranded the reader: nine named
+ * classes of excluded record and no way to reach one. Knowing what is
+ * wrong never became fixing it, which is the difference between an honest
+ * report and a tool.
+ *
+ * `destination` is REQUIRED, not optional. A new class added without one
+ * fails to compile, and the rendered test derives its assertions from this
+ * table rather than listing nine cases — so a tenth class cannot ship
+ * silently linkless.
+ *
+ * ── What these paths are, and are not ───────────────────────────────
+ *
+ * Only lots support a per-ENTRY deep link. `/inventory?lotId=` opens that
+ * lot's detail modal — an affordance built for QR codes on lots, verified
+ * present in InventoryClient. The others are LIST destinations, and that
+ * is a finding rather than laziness:
+ *
+ *   • `/rent` reads `?locationId`, not a lease id; these entries carry
+ *     lease ids, so a deep link would silently ignore the parameter.
+ *   • `/planning`'s only detail route is `[cropPlanId]` — a crop PLAN.
+ *     These entries carry planting ids, which is a different thing.
+ *   • `/trends` and `/grain/costs` read no query parameters at all.
+ *
+ * A link that appears to target a record and lands on an unfiltered list
+ * is worse than one that plainly says "Open Rent", so these say that.
+ */
 const EXCLUSION_CLASSES: ReadonlyArray<{
     key: keyof CalculatorExclusions;
     labelKey: string;
+    destination: { path: string; labelKey: string };
 }> = [
-    { key: 'plantingsMissingYieldEstimate', labelKey: 'exclPlantingsMissingYieldEstimate' },
-    { key: 'plantingsUnknownCommodity', labelKey: 'exclPlantingsUnknownCommodity' },
-    { key: 'lotsUnresolvedUnit', labelKey: 'exclLotsUnresolvedUnit' },
-    { key: 'lotsUnknownCommodity', labelKey: 'exclLotsUnknownCommodity' },
-    { key: 'commoditiesWithNoPrice', labelKey: 'exclCommoditiesWithNoPrice' },
-    { key: 'leasesUnresolvedRent', labelKey: 'exclLeasesUnresolvedRent' },
-    { key: 'leasesUnattributed', labelKey: 'exclLeasesUnattributed' },
-    { key: 'leasesProduceRentUnpriced', labelKey: 'exclLeasesProduceRentUnpriced' },
-    { key: 'payrollUnattributable', labelKey: 'exclPayrollUnattributable' },
+    { key: 'plantingsMissingYieldEstimate', labelKey: 'exclPlantingsMissingYieldEstimate', destination: { path: '/planning', labelKey: 'exclFixPlanning' } },
+    { key: 'plantingsUnknownCommodity', labelKey: 'exclPlantingsUnknownCommodity', destination: { path: '/planning', labelKey: 'exclFixPlanning' } },
+    { key: 'lotsUnresolvedUnit', labelKey: 'exclLotsUnresolvedUnit', destination: { path: '/inventory', labelKey: 'exclFixInventory' } },
+    { key: 'lotsUnknownCommodity', labelKey: 'exclLotsUnknownCommodity', destination: { path: '/inventory', labelKey: 'exclFixInventory' } },
+    { key: 'commoditiesWithNoPrice', labelKey: 'exclCommoditiesWithNoPrice', destination: { path: '/trends', labelKey: 'exclFixTrends' } },
+    { key: 'leasesUnresolvedRent', labelKey: 'exclLeasesUnresolvedRent', destination: { path: '/rent', labelKey: 'exclFixRent' } },
+    { key: 'leasesUnattributed', labelKey: 'exclLeasesUnattributed', destination: { path: '/rent', labelKey: 'exclFixRent' } },
+    // /rent, NOT /trends. The missing PRICE is the proximate cause, but a
+    // farmer cannot add one — market prices arrive from EC and the World
+    // Bank, and a hand-typed price is a platform-admin action. What they
+    // CAN change is the lease: rent recorded in money instead of grain
+    // values without a market price at all. The price side is already
+    // reachable from commoditiesWithNoPrice above.
+    { key: 'leasesProduceRentUnpriced', labelKey: 'exclLeasesProduceRentUnpriced', destination: { path: '/rent', labelKey: 'exclFixRent' } },
+    { key: 'payrollUnattributable', labelKey: 'exclPayrollUnattributable', destination: { path: '/grain/costs', labelKey: 'exclFixCosts' } },
+];
+
+/**
+ * Every DISTINCT destination the exclusion table declares.
+ *
+ * Exported so a test can derive its assertions from the table instead of
+ * restating nine cases — a tenth class added without a destination then
+ * fails, where a hand-written list would simply not mention it.
+ */
+export const EXCLUSION_CLASS_DESTINATIONS: readonly string[] = [
+    ...new Set(EXCLUSION_CLASSES.map((c) => c.destination.path)),
 ];
 
 /**
@@ -508,13 +557,29 @@ export function CalculatorClient({ tenantSlug, data }: CalculatorClientProps) {
             <div className="animate-fadeIn space-y-section">
                 {header}
                 <GrainSectionNav tenantSlug={tenantSlug} active="calculator" />
+                {/* The description already names the precondition — "figures
+                    appear once a planting carries a yield estimate". Naming a
+                    precondition without offering the way to satisfy it is a
+                    puzzle, so the way is here. /planning, because a yield
+                    estimate on a planting is the first of the two paths and
+                    the one a farmer controls directly. */}
                 <EmptyState
                     size="sm"
                     variant="no-records"
                     title={tc('emptyTitle')}
                     description={tc('emptyDescription')}
-                />
-                <ExclusionsCard count={exclusionCount} classes={exclusionClasses} />
+                >
+                    {/* A LINK wearing the primary button's clothes —
+                        `Button` is not polymorphic, and `buttonVariants` is
+                        exported for exactly this (see TenantsTable). */}
+                    <Link
+                        href={tenantHref('/planning')}
+                        className={buttonVariants({ variant: 'primary', size: 'sm' })}
+                    >
+                        {tc('emptyAction')}
+                    </Link>
+                </EmptyState>
+                <ExclusionsCard count={exclusionCount} classes={exclusionClasses} hrefFor={tenantHref} />
             </div>
         );
     }
@@ -799,6 +864,21 @@ export function CalculatorClient({ tenantSlug, data }: CalculatorClientProps) {
                         />
                     </div>
                 </div>
+                {/* A refusal that a farmer can act on says where. The
+                    fixable one is a missing market price — /trends is where
+                    prices live. The others are NOT fixable from here and get
+                    no action: a mixed cost currency needs an FX rate this
+                    product deliberately does not have, and an unrecorded rent
+                    currency needs a column ParcelLease does not carry.
+                    Offering a destination that cannot resolve the cause would
+                    be worse than the plain explanation. */}
+                {row.netWorthUnavailableCode === 'NO_MARKET_PRICE' && (
+                    <p className="text-xs">
+                        <TextLink tone="link" href={tenantHref('/trends')}>
+                            {tc('exclFixTrends')}
+                        </TextLink>
+                    </p>
+                )}
                 {refusalText != null && (
                     // A refusal is stated, never blanked. Translated from
                     // the usecase's CODE when this client knows it, and
@@ -905,7 +985,7 @@ export function CalculatorClient({ tenantSlug, data }: CalculatorClientProps) {
                 </Card>
             )}
 
-            <ExclusionsCard count={exclusionCount} classes={exclusionClasses} />
+            <ExclusionsCard count={exclusionCount} classes={exclusionClasses} hrefFor={tenantHref} />
 
             {/* Every commodity at once. `mobileFallback="scroll"` (not
                 "card") because these money columns are only meaningful
