@@ -110,6 +110,7 @@ import {
 import { GrainSectionNav } from '../GrainSectionNav';
 import type { FarmNetWorthTotal } from '@/lib/grain/farm-total';
 import type { ExclusionEntry } from '@/lib/grain/exclusion-labels';
+import type { PerAreaFigures } from '@/lib/grain/per-area';
 import { CommodityStrip, ExclusionsCard, SumLine } from './components';
 
 // ─── Serialised DTOs (mirror the grain-net-worth usecase output) ────
@@ -125,6 +126,8 @@ export interface CalculatorRow {
     standingCropAreaHa: number;
     standingCropExpectedKg: number;
     standingCropValue: number | null;
+    /** Per-decare figures over the terms that share this area. */
+    perArea: PerAreaFigures;
 
     grainOnHandTonnes: number;
     grainOnHandValue: number | null;
@@ -628,6 +631,13 @@ export function CalculatorClient({ tenantSlug, data }: CalculatorClientProps) {
     // The uncertainty vocabulary, resolved once for this row and used the
     // same way wherever it appears — headline, cost line, table cell.
     const netState = row.netUncertainty;
+    // Currency CODE, not the tenant symbol — the same reason the farm card
+    // and the per-crop strip use it: this figure can be in a currency the
+    // tenant is not configured with, and `useExactMoneyFormatter` would put
+    // the tenant's sign on it regardless.
+    const marginPerDcaText = tc('marginPerDcaValue', {
+        value: `${formatDecimal(row.perArea.marginPerDca ?? 0, 2)}${row.priceCurrency ? ` ${row.priceCurrency}` : ''}`,
+    });
     const refusalText = explainRefusal(
         row.netWorthUnavailableCode,
         row.netWorthUnavailableParams,
@@ -874,6 +884,53 @@ export function CalculatorClient({ tenantSlug, data }: CalculatorClientProps) {
                             lives on a different surface from the number
                             it qualifies is not a qualifier — so it is in
                             the VALUE. */}
+                        {/* PER DECARE — the unit a Bulgarian farmer plans
+                            in, and the one the land market quotes rent in.
+
+                            Beside the result, not inside the sum: this is
+                            not a TERM of the arithmetic above, it is a
+                            different question asked of a SUBSET of the same
+                            figures. Only terms sharing the standing crop's
+                            own area are in it — grain in store has no area,
+                            and farm-wide overhead is not this planting's.
+                            Dividing net worth by an area would mix those
+                            scopes, and a guard now forbids it.
+
+                            The qualifier rides the value, and a refusal
+                            names WHICH denominator was missing rather than
+                            printing a dash. */}
+                        <div className="flex flex-wrap items-baseline justify-between gap-tight pb-2 text-sm">
+                            <span className="text-content-muted">
+                                {tc('marginPerDcaLabel')}
+                            </span>
+                            {row.perArea.marginPerDca == null ? (
+                                <span className="text-xs text-content-attention">
+                                    {row.perArea.refusalCode === 'NO_STANDING_CROP_AREA'
+                                        ? tc('perAreaNoArea')
+                                        : tc('perAreaNoValue')}
+                                </span>
+                            ) : (
+                                <span
+                                    className={
+                                        row.perArea.uncertainty === UNCERTAINTY.EXACT
+                                            ? 'font-medium tabular-nums text-content-emphasis'
+                                            : 'font-medium tabular-nums text-content-attention'
+                                    }
+                                >
+                                    {row.perArea.uncertainty === UNCERTAINTY.AT_MOST
+                                        ? tc('uncertaintyAtMost', { value: marginPerDcaText })
+                                        : marginPerDcaText}
+                                </span>
+                            )}
+                        </div>
+                        {row.perArea.uncertainty === UNCERTAINTY.PARTIAL && (
+                            <p className="pb-2 text-xs text-content-attention">
+                                {tc('perAreaPartial')}
+                            </p>
+                        )}
+                        <p className="pb-2 text-xs text-content-subtle">
+                            {tc('marginPerDcaHint')}
+                        </p>
                         <KPIStat
                             size="md"
                             value={

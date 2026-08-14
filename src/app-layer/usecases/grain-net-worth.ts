@@ -5,6 +5,7 @@ import { getCostRollupByPlanting } from './cost-rollup';
 import { getMarketReferences } from './trends';
 import type { NetWorthRefusalCode } from '@/lib/grain/uncertainty';
 import { foldFarmTotals, type FarmNetWorthTotal } from '@/lib/grain/farm-total';
+import { computePerArea, type PerAreaFigures } from '@/lib/grain/per-area';
 import {
     buildExclusionLabels,
     type ExclusionEntry,
@@ -223,6 +224,9 @@ export interface CommodityNetWorthRow {
     standingCropPlantingIds: string[];
     /** `standingCropExpectedKg / 1000 × pricePerTonne`; null with no price. */
     standingCropValue: number | null;
+    /** Per-decare figures over the terms that share this area — see
+     *  `@/lib/grain/per-area`. Deliberately NOT net worth per dca. */
+    perArea: PerAreaFigures;
 
     // ── 2. Grain on hand (actual) ──
     grainOnHandTonnes: number;
@@ -401,6 +405,15 @@ interface CommodityAcc {
     standingCropExpectedKg: number;
     standingCropAreaHa: number;
     standingCropPlantingIds: string[];
+    /**
+     * Plantings of THIS commodity dropped for a missing yield estimate.
+     *
+     * Needed because `cashCostTotal` still carries their cost while
+     * `standingCropAreaHa` and `standingCropValue` do not — so a per-dca
+     * margin over them covers more land on the cost side than the revenue
+     * side. The count is what lets that figure say it is incomplete.
+     */
+    standingCropExcludedCount: number;
     grainOnHandTonnes: number;
     grainOnHandLotIds: string[];
     attributedCropCost: number;
@@ -421,6 +434,7 @@ function newAcc(): CommodityAcc {
         standingCropExpectedKg: 0,
         standingCropAreaHa: 0,
         standingCropPlantingIds: [],
+        standingCropExcludedCount: 0,
         grainOnHandTonnes: 0,
         grainOnHandLotIds: [],
         attributedCropCost: 0,
@@ -565,6 +579,7 @@ function computeStandingCrop(
         a.standingCropExpectedKg = summary.totalPlannedYieldKg;
         a.standingCropAreaHa = round3(areaHa);
         a.standingCropPlantingIds = summary.includedPlantingIds;
+        a.standingCropExcludedCount = summary.excludedPlantingIds.length;
     }
 }
 
@@ -919,6 +934,18 @@ function finalizeRow(
 
         netAssetPosition,
         netWorth,
+        // Only terms that share the standing crop's own area. netWorth is
+        // NOT among them: it carries grainOnHandValue, which has no area at
+        // all, and farm-wide overhead.
+        perArea: computePerArea({
+            standingCropAreaHa: a.standingCropAreaHa,
+            standingCropValue,
+            attributableCost: cashCostTotal,
+            standingCropExcludedCount: a.standingCropExcludedCount,
+            unvaluedNoUnitCost: a.unvaluedNoUnitCost,
+            unvaluedUnitMismatch: a.unvaluedUnitMismatch,
+            payrollAllocated: a.payrollAllocated,
+        }),
         netWorthUnavailableReason,
         netWorthUnavailableCode,
         netWorthUnavailableParams,

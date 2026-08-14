@@ -57,6 +57,7 @@ function toCalculatorRow(row: CommodityNetWorthRow): CalculatorRow {
         standingCropAreaHa: row.standingCropAreaHa,
         standingCropExpectedKg: row.standingCropExpectedKg,
         standingCropValue: row.standingCropValue,
+        perArea: row.perArea,
 
         grainOnHandTonnes: row.grainOnHandTonnes,
         grainOnHandValue: row.grainOnHandValue,

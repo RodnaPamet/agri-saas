@@ -117,6 +117,68 @@ describe('getGrainNetWorth — standing crop', () => {
     });
 });
 
+describe('getGrainNetWorth — per-decare figures', () => {
+    it('divides by the INCLUDED-planting area, not everything planted', async () => {
+        // THE DENOMINATOR. Two plantings, one with no yield estimate. Only
+        // the estimated one contributes tonnage and value, so only its area
+        // may sit under the line — otherwise the margin silently understates
+        // by however many plantings lacked an estimate.
+        mockDb.planting.findMany.mockResolvedValue([
+            planting({ id: 'p-in', areaM2: 100_000, plannedYieldKgPerHa: 4000 }), // 10 ha
+            planting({ id: 'p-out', areaM2: 300_000, plannedYieldKgPerHa: null }), // 30 ha, excluded
+        ]);
+        mockGetMarketReferences.mockResolvedValue(
+            new Map([['wheat', { commodity: 'wheat', pricePerTonne: 300, currency: 'BGN', observedAt: '2026-01-01', source: 'ec-agrifood' }]]),
+        );
+
+        const result = await netWorthResult(ctx);
+        const wheat = result.rows[0];
+
+        // 10 ha included ⇒ 100 dca, NOT 400.
+        expect(wheat.standingCropAreaHa).toBe(10);
+        expect(wheat.perArea.areaDca).toBe(100);
+        // 10 ha × 4000 kg/ha = 40 t × 300 = 12,000 over 100 dca.
+        expect(wheat.perArea.standingValuePerDca).toBe(120);
+    });
+
+    it('says the margin is PARTIAL when cost covers land the revenue does not', async () => {
+        // The excluded planting keeps its cost in cashCostTotal while
+        // contributing no area and no value, so the two sides describe
+        // different amounts of land.
+        mockDb.planting.findMany.mockResolvedValue([
+            planting({ id: 'p-in', areaM2: 100_000, plannedYieldKgPerHa: 4000 }),
+            planting({ id: 'p-out', areaM2: 100_000, plannedYieldKgPerHa: null }),
+        ]);
+        mockGetMarketReferences.mockResolvedValue(
+            new Map([['wheat', { commodity: 'wheat', pricePerTonne: 300, currency: 'BGN', observedAt: '2026-01-01', source: 'ec-agrifood' }]]),
+        );
+
+        const result = await netWorthResult(ctx);
+        expect(result.rows[0].perArea.uncertainty).toBe('partial');
+    });
+
+    it('refuses per-dca for a commodity that is only in store', async () => {
+        // No standing crop ⇒ no area ⇒ nothing to divide by. A stated
+        // refusal, never Infinity.
+        mockDb.planting.findMany.mockResolvedValue([]);
+        mockDb.inventoryLot.findMany.mockResolvedValue([
+            { id: 'lot-1', quantityOnHand: 7000, unitId: 'u-kg', item: { name: 'Wheat' } },
+        ]);
+        mockDb.unit.findMany.mockResolvedValue([{ id: 'u-kg', key: 'kg' }]);
+        mockGetMarketReferences.mockResolvedValue(
+            new Map([['wheat', { commodity: 'wheat', pricePerTonne: 300, currency: 'BGN', observedAt: '2026-01-01', source: 'ec-agrifood' }]]),
+        );
+
+        const result = await netWorthResult(ctx);
+        const wheat = result.rows[0];
+
+        expect(wheat.grainOnHandValue).toBe(2100);
+        expect(wheat.perArea.marginPerDca).toBeNull();
+        expect(wheat.perArea.uncertainty).toBe('refused');
+        expect(wheat.perArea.refusalCode).toBe('NO_STANDING_CROP_AREA');
+    });
+});
+
 describe('getGrainNetWorth — grain on hand', () => {
     it('converts quantityOnHand to tonnes via the lot\'s own unit, never assuming it is already tonnes', async () => {
         mockDb.inventoryLot.findMany.mockResolvedValue([

@@ -42,6 +42,7 @@ import enMessages from '../../messages/en.json';
 import { formatDate, formatDateTime } from '@/lib/format-date';
 
 import { foldFarmTotals } from '@/lib/grain/farm-total';
+import { computePerArea } from '@/lib/grain/per-area';
 import { costUncertainty, netWorthUncertainty } from '@/lib/grain/uncertainty';
 import { restoreViewport, setViewport } from './viewport';
 
@@ -103,11 +104,30 @@ const COPY = enMessages.grain.calculator;
  * state directly.
  */
 function withServerDerived(
-    row: Omit<CalculatorRow, 'netUncertainty' | 'costUncertainty' | 'showProduceRent'> &
-        Partial<Pick<CalculatorRow, 'netUncertainty' | 'costUncertainty' | 'showProduceRent'>>,
+    row: Omit<CalculatorRow, 'netUncertainty' | 'costUncertainty' | 'showProduceRent' | 'perArea'> &
+        Partial<
+            Pick<
+                CalculatorRow,
+                'netUncertainty' | 'costUncertainty' | 'showProduceRent' | 'perArea'
+            >
+        >,
 ): CalculatorRow {
     return {
         ...row,
+        // Folded with the SAME function the usecase calls. Hardcoding it
+        // would let a fixture claim a margin its own numerator and
+        // denominator do not produce.
+        perArea:
+            row.perArea ??
+            computePerArea({
+                standingCropAreaHa: row.standingCropAreaHa,
+                standingCropValue: row.standingCropValue,
+                attributableCost: row.cashCostTotal,
+                standingCropExcludedCount: 0,
+                unvaluedNoUnitCost: row.unvaluedNoUnitCost,
+                unvaluedUnitMismatch: row.unvaluedUnitMismatch,
+                payrollAllocated: row.payrollAllocated,
+            }),
         netUncertainty: row.netUncertainty ?? netWorthUncertainty(row),
         costUncertainty: row.costUncertainty ?? costUncertainty(row),
         showProduceRent: row.showProduceRent ?? row.rentCostProduceKg > 0,
@@ -924,6 +944,62 @@ describe('grain calculator — on a PHONE (setViewport("mobile"))', () => {
         expect(barley).toHaveAttribute('aria-pressed', 'true');
     });
 
+    // ─────────────────────────────────────────────────────────────────
+    // PER DECARE — the unit a Bulgarian farmer plans in.
+    // ─────────────────────────────────────────────────────────────────
+
+    it('states the standing-crop margin per dca', () => {
+        setViewport('mobile');
+        // 12.5 ha = 125 dca; (15,000 − 5,500) / 125 = 76.
+        renderPage(data({ rows: [wheatRow()] }));
+
+        expect(screen.getByText(COPY.marginPerDcaLabel)).toBeVisible();
+        expect(
+            screen.getByText(COPY.marginPerDcaValue.replace('{value}', '76 EUR')),
+        ).toBeVisible();
+    });
+
+    it('never presents it as net worth per dca', () => {
+        // netWorth/area would be 18,750/125 = 150. That number must not
+        // appear: net worth carries grain in store, which has no area.
+        setViewport('mobile');
+        renderPage(data({ rows: [wheatRow()] }));
+        expect(screen.queryByText(/150 EUR \/ dca/)).not.toBeInTheDocument();
+        expect(screen.getByText(COPY.marginPerDcaHint)).toBeVisible();
+    });
+
+    it('carries AT_MOST into the per-dca figure when the cost is a floor', () => {
+        setViewport('mobile');
+        renderPage(data({ rows: [wheatRow({ unvaluedNoUnitCost: 2 })] }));
+
+        expect(
+            screen.getByText(
+                COPY.uncertaintyAtMost.replace(
+                    '{value}',
+                    COPY.marginPerDcaValue.replace('{value}', '76 EUR'),
+                ),
+            ),
+        ).toBeVisible();
+    });
+
+    it('states WHICH denominator was missing rather than printing a dash', () => {
+        // A commodity only in store: real value, no standing-crop area.
+        setViewport('mobile');
+        renderPage(
+            data({
+                rows: [
+                    wheatRow({
+                        standingCropAreaHa: 0,
+                        standingCropExpectedKg: 0,
+                        standingCropValue: 0,
+                    }),
+                ],
+            }),
+        );
+
+        expect(screen.getByText(COPY.perAreaNoArea)).toBeVisible();
+    });
+
     it('stamps WHEN the report was priced, and when the price was observed', () => {
         setViewport('mobile');
         renderPage();
@@ -1154,7 +1230,12 @@ describe('grain calculator — unvalued consumptions (setViewport("mobile"))', (
         // overwhelmingly common healthy case, unlike the exclusion count
         // which is deliberately stated at zero.
         expect(screen.queryByText(/could not be valued/)).not.toBeInTheDocument();
-        expect(screen.queryByText(/farm-wide/)).not.toBeInTheDocument();
+        // `/unvalued consumption/`, not `/farm-wide/`. The looser matcher
+        // was standing in for the `unvaluedFarmWide` string and started
+        // catching the per-dca hint, which says "farm-wide overhead" for
+        // an unrelated and accurate reason. A matcher broad enough to hit
+        // innocent copy tests the copy, not the behaviour.
+        expect(screen.queryByText(/unvalued consumption/)).not.toBeInTheDocument();
     });
 
     it('omits a reason line whose count is zero', () => {
