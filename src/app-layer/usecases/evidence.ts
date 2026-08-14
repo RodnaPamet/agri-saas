@@ -810,9 +810,29 @@ export async function getEvidenceFileRecord(ctx: RequestContext, fileId: string)
 
 /**
  * STRICT DOWNLOAD POLICY (Option A):
- * - ADMIN/EDITOR: can download any tenant file evidence.
- * - READER/AUDITOR: can download ONLY if evidence is linked to a practice (practiceId not null).
+ * - ADMIN/EDITOR (canWrite): can download any tenant file evidence.
+ * - READER/AUDITOR: can download ONLY evidence with a PROVENANCE — a row
+ *   attached to a known farm record (asset, task, or journal entry).
  * - Soft-deleted evidence blocks download for all roles.
+ *
+ * The provenance gate used to read `practiceId`. GRC teardown phase 2
+ * RE-BASED it onto `assetId ?? taskId ?? sourceLogEntryId` rather than
+ * deleting it — deleting the condition would have widened READER/AUDITOR
+ * access to EVERY file in the tenant, which is the opposite of what the
+ * teardown is for. All three replacement columns are live and written:
+ * assetId by `linkAssetEvidence` + the upload metadata, taskId by
+ * `linkTaskEvidence` + the farm-task upload form, sourceLogEntryId by
+ * `attachAutoEvidenceFromLogEntry`.
+ *
+ * Note the `evidence ? … : null` shape below. `!evidence?.practiceId` was
+ * true when NO Evidence row existed at all, so a file with no evidence row
+ * was denied to a reader; the explicit form preserves that rather than
+ * letting an absent row read as "no provenance required".
+ *
+ * Pre-flight before applying this anywhere else (plan §8j): count
+ * `practiceId IS NOT NULL AND assetId IS NULL AND taskId IS NULL AND
+ * sourceLogEntryId IS NULL`. Those rows lose READER access. On `agrent` the
+ * count was 0, but that is a fact about that database, not about the shape.
  */
 export async function downloadEvidenceFile(ctx: RequestContext, fileId: string) {
     assertCanRead(ctx);
@@ -837,10 +857,10 @@ export async function downloadEvidenceFile(ctx: RequestContext, fileId: string) 
             throw forbidden('This file is pending antivirus scan and cannot be downloaded yet. Please try again later.');
         }
 
-        // ─── Strict Policy: practice-aware access ───
+        // ─── Strict Policy: provenance-aware access ───
         const evidence = await db.evidence.findFirst({
             where: { tenantId: ctx.tenantId, fileRecordId: fileId },
-            select: { id: true, practiceId: true, deletedAt: true },
+            select: { id: true, assetId: true, taskId: true, sourceLogEntryId: true, deletedAt: true },
         });
 
         if (evidence?.deletedAt) {
@@ -848,8 +868,11 @@ export async function downloadEvidenceFile(ctx: RequestContext, fileId: string) 
         }
 
         if (!ctx.permissions.canWrite) {
-            if (!evidence?.practiceId) {
-                throw forbidden('You can only download evidence that is linked to a practice. Contact an admin to link this evidence.');
+            const provenance = evidence
+                ? (evidence.assetId ?? evidence.taskId ?? evidence.sourceLogEntryId)
+                : null;
+            if (!provenance) {
+                throw forbidden('You can only download evidence that is attached to an asset, a task, or a farm record. Contact an admin to attach this evidence.');
             }
         }
 
