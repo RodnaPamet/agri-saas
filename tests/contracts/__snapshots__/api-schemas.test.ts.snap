@@ -3833,14 +3833,13 @@ exports[`API contract — per-schema snapshots schema: TaskLinkAddRequest 1`] = 
     "entityType": {
       "type": "string",
       "enum": [
-        "PRACTICE",
-        "FRAMEWORK_REQUIREMENT",
         "ASSET",
-        "POLICY",
         "EVIDENCE",
         "FILE",
-        "AUDIT_PACK",
-        "VENDOR"
+        "LOCATION",
+        "PARCEL",
+        "EQUIPMENT",
+        "PLANTING"
       ]
     },
     "entityId": {
