@@ -107,6 +107,7 @@ import {
     type UncertaintyState,
 } from '@/lib/grain/uncertainty';
 import { GrainSectionNav } from '../GrainSectionNav';
+import type { FarmNetWorthTotal } from '@/lib/grain/farm-total';
 import { ExclusionsCard, SumLine } from './components';
 
 // ─── Serialised DTOs (mirror the grain-net-worth usecase output) ────
@@ -202,6 +203,11 @@ export interface CalculatorData {
     generatedAt: string;
     seasonId: string | null;
     rows: CalculatorRow[];
+    /** The farm-level answer — one total per currency. Folded server-side. */
+    farm: {
+        totals: FarmNetWorthTotal[];
+        refusedWithoutCurrency: string[];
+    };
     exclusions: CalculatorExclusions;
     /**
      * Farm-wide DISTINCT counts, NOT the sum of the rows'. Deliberately
@@ -458,6 +464,45 @@ export function CalculatorClient({ tenantSlug, data }: CalculatorClientProps) {
         />
     );
 
+    // ── The farm answer ──
+    //
+    // ABOVE the empty-state early return, with the other top-level hooks:
+    // a hook after a conditional return changes React's hook ORDER between
+    // an empty farm and a populated one, which is a real defect and not a
+    // lint nicety.
+    //
+    // Shown only for a farm with more than one crop: with one, it would
+    // restate the commodity sum below it exactly, and an affordance that
+    // says nothing should not occupy space on a simple farm.
+    const farm = data.farm;
+    const showFarmTotal = rows.length > 1 && farm.totals.length > 0;
+    // Every refused commodity, from both places one can hide: inside a
+    // currency bucket (a mixed-cost-currency refusal keeps its price
+    // currency) and outside every bucket (no market price, so no currency
+    // at all).
+    const farmRefused = useMemo(
+        () =>
+            [
+                ...farm.totals.flatMap((t) => t.refusedCommodities),
+                ...farm.refusedWithoutCurrency,
+            ].sort(),
+        [farm],
+    );
+    // CURRENCY CODE, not the tenant symbol — `useExactMoneyFormatter`
+    // renders whatever the tenant is configured with, which would print a
+    // BGN total with a euro sign. The cash-out card below already does it
+    // this way for exactly the same reason.
+    const farmTotalValue = useCallback(
+        (total: FarmNetWorthTotal) => {
+            const amount = `${formatDecimal(total.netWorth, 2)} ${total.currency}`;
+            return total.uncertainty === UNCERTAINTY.AT_MOST
+                ? tc('uncertaintyAtMost', { value: amount })
+                : amount;
+        },
+        [tc],
+    );
+
+
     if (row == null) {
         return (
             <div className="animate-fadeIn space-y-section">
@@ -525,6 +570,64 @@ export function CalculatorClient({ tenantSlug, data }: CalculatorClientProps) {
         <div className="animate-fadeIn space-y-section">
             {header}
             <GrainSectionNav tenantSlug={tenantSlug} active="calculator" />
+
+            {/* ── The farm answer, when there is more than one crop ──
+
+                The page's docblock claims it answers "what is the grain
+                worth, after everything it cost me?". It answered that per
+                COMMODITY: three crops meant three figures behind a toggle
+                and a farmer adding them in their head — the same defect
+                the two-panel layout had, one level up.
+
+                It sits ABOVE the toggle deliberately. The toggle selects
+                which crop the detailed sum below expands; it must not look
+                like it also selects which farm you are looking at.
+
+                ONE CARD PER CURRENCY, never blended. This product applies
+                no exchange rate anywhere — cost-rollup refuses to, prices
+                carry their own — so a single figure across two currencies
+                would reconcile against nothing. And the amounts print
+                their CURRENCY CODE rather than the tenant's symbol, which
+                is the same reason the cash-out card does: the tenant
+                formatter would render a BGN total with a euro sign. */}
+            {showFarmTotal && (
+                <Card as="section" density="compact" className="space-y-default border-border-subtle">
+                    <Heading level={2}>{tc('farmTotalTitle')}</Heading>
+                    <div className="flex flex-wrap gap-section">
+                        {farm.totals.map((total) => (
+                            <KPIStat
+                                key={total.currency}
+                                size="md"
+                                value={farmTotalValue(total)}
+                                label={
+                                    farm.totals.length > 1
+                                        ? `${tc('farmTotalLabel')} · ${total.currency}`
+                                        : tc('farmTotalLabel')
+                                }
+                                tone={
+                                    total.uncertainty === UNCERTAINTY.EXACT
+                                        ? 'default'
+                                        : 'attention'
+                                }
+                            />
+                        ))}
+                    </div>
+                    {farm.totals.length > 1 && (
+                        <p className="text-xs text-content-subtle">{tc('farmCurrencyNote')}</p>
+                    )}
+                    {farmRefused.length > 0 && (
+                        // NEVER silently short. A total missing a commodity
+                        // is a different claim from a complete one, and the
+                        // reader cannot tell without being told which.
+                        <p className="text-xs text-content-attention">
+                            {tc('farmRefusedNote', {
+                                count: farmRefused.length,
+                                names: farmRefused.map((c) => commodityLabel(c)).join(', '),
+                            })}
+                        </p>
+                    )}
+                </Card>
+            )}
 
             {commodityOptions.length > 1 && (
                 <ToggleGroup
