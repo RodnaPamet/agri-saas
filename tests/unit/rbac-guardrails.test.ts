@@ -98,7 +98,12 @@ describe('RBAC Guardrail Scans', () => {
 
         test('PermissionSet type covers all critical resources', () => {
             const content = readFile('lib/permissions.ts');
-            const requiredResources = ['practices', 'evidence', 'policies', 'tasks', 'vendors', 'tests', 'frameworks', 'audits', 'reports', 'admin'];
+            // GRC teardown phase 2 (T4) removed six domains — practices,
+            // policies, vendors, tests, frameworks, audits. The five below
+            // are the surviving PermissionSet domains; the assertion is
+            // still exhaustive over them, so a domain quietly disappearing
+            // from the type still fails here.
+            const requiredResources = ['evidence', 'tasks', 'knowledge', 'reports', 'admin'];
             for (const resource of requiredResources) {
                 expect(content).toContain(`${resource}:`);
             }
