@@ -84,7 +84,6 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Heading, TextLink } from '@/components/ui/typography';
 import { StatusBreakdown, type StatusBreakdownItem } from '@/components/ui/status-breakdown';
-import { DataTable, createColumns } from '@/components/ui/table';
 import { EmptyState } from '@/components/ui/empty-state';
 import {
     Accordion,
@@ -111,7 +110,8 @@ import { GrainSectionNav } from '../GrainSectionNav';
 import type { FarmNetWorthTotal } from '@/lib/grain/farm-total';
 import type { ExclusionEntry } from '@/lib/grain/exclusion-labels';
 import type { PerAreaFigures } from '@/lib/grain/per-area';
-import { CommodityStrip, ExclusionsCard, SumLine } from './components';
+import type { BreakEvenFigures } from '@/lib/grain/break-even';
+import { BreakEvenRow, CommodityStrip, ExclusionsCard, SumLine } from './components';
 
 // ─── Serialised DTOs (mirror the grain-net-worth usecase output) ────
 
@@ -128,6 +128,8 @@ export interface CalculatorRow {
     standingCropValue: number | null;
     /** Per-decare figures over the terms that share this area. */
     perArea: PerAreaFigures;
+    /** Market price against the price that clears cost. */
+    breakEven: BreakEvenFigures;
 
     grainOnHandTonnes: number;
     grainOnHandValue: number | null;
@@ -403,71 +405,6 @@ export function CalculatorClient({ tenantSlug, data }: CalculatorClientProps) {
     // would report more unvalued movements than the farm actually has.
     const farmWideUnvalued = data.unvalued.noUnitCost + data.unvalued.unitMismatch;
 
-    const columns = useMemo(
-        () =>
-            createColumns<CalculatorRow>([
-                {
-                    id: 'commodity',
-                    header: tc('colCommodity'),
-                    accessorFn: (r) => r.commodity,
-                    cell: ({ row: r }) => (
-                        <span className="text-content-emphasis">
-                            {commodityLabel(r.original.commodity)}
-                        </span>
-                    ),
-                },
-                {
-                    id: 'standingCropValue',
-                    header: tc('colStandingValue'),
-                    accessorFn: (r) => r.standingCropValue ?? -1,
-                    cell: ({ row: r }) => (
-                        <span className="block text-right text-xs tabular-nums text-content-muted">
-                            {money(r.original.standingCropValue)}
-                        </span>
-                    ),
-                },
-                {
-                    id: 'grainOnHandValue',
-                    header: tc('colOnHandValue'),
-                    accessorFn: (r) => r.grainOnHandValue ?? -1,
-                    cell: ({ row: r }) => (
-                        <span className="block text-right text-xs tabular-nums text-content-muted">
-                            {money(r.original.grainOnHandValue)}
-                        </span>
-                    ),
-                },
-                {
-                    id: 'cashCostTotal',
-                    header: tc('colCashCost'),
-                    accessorFn: (r) => r.cashCostTotal,
-                    cell: ({ row: r }) => (
-                        <span className="block text-right text-xs tabular-nums text-content-muted">
-                            {money(r.original.cashCostTotal)}
-                        </span>
-                    ),
-                },
-                {
-                    // A refused net worth prints the refusal wording, never
-                    // a zero. The full sentence lives in the summary card
-                    // above — a table cell is the wrong place for it, but a
-                    // blank cell would read as "nothing".
-                    id: 'netWorth',
-                    header: tc('colNetWorth'),
-                    accessorFn: (r) => r.netWorth ?? -1,
-                    cell: ({ row: r }) =>
-                        r.original.netWorth == null ? (
-                            <span className="block text-right text-xs text-content-subtle">
-                                {tc('netWorthUnavailableTitle')}
-                            </span>
-                        ) : (
-                            <span className="block text-right text-xs tabular-nums text-content-emphasis">
-                                {money(r.original.netWorth)}
-                            </span>
-                        ),
-                },
-            ]),
-        [tc, money, commodityLabel],
-    );
 
     const header = (
         <PageHeader
@@ -561,6 +498,7 @@ export function CalculatorClient({ tenantSlug, data }: CalculatorClientProps) {
                     netWorth: r.netWorth,
                     currency: r.priceCurrency,
                     uncertainty: r.netUncertainty,
+                    breakEven: r.breakEven,
                 }))
                 .sort((a, b) => {
                     if (a.netWorth == null && b.netWorth == null) return 0;
@@ -954,6 +892,18 @@ export function CalculatorClient({ tenantSlug, data }: CalculatorClientProps) {
                                       : undefined
                             }
                         />
+                        {/* A single-crop farm has nothing to compare, so the
+                            strip above is suppressed — but "does this clear
+                            its cost?" is still the question, and for a
+                            monoculture it is the ONLY one. The comparison is
+                            what one crop makes meaningless; the cover is not.
+                            Same component, no extra card. */}
+                        {comparisonItems.length === 1 && (
+                            <BreakEvenRow
+                                commodityLabel={comparisonItems[0].label}
+                                figures={row.breakEven}
+                            />
+                        )}
                     </div>
                 </div>
                 {/* A refusal that a farmer can act on says where. The
@@ -1079,37 +1029,15 @@ export function CalculatorClient({ tenantSlug, data }: CalculatorClientProps) {
 
             <ExclusionsCard count={exclusionCount} classes={exclusionClasses} hrefFor={tenantHref} />
 
-            {/* Every commodity at once. `mobileFallback="scroll"` (not
-                "card") because these money columns are only meaningful
-                read side by side — a card that shows a net worth without
-                the cost beside it is the misleading half of the row. */}
-            <Card as="section" density="compact" className="space-y-default border-border-subtle">
-                <Heading level={3} as="h2" tone="muted">
-                    {tc('tableTitle')}
-                </Heading>
-                <DataTable<CalculatorRow>
-                    // Peer convention (grain-costs-table / grain-bins-table),
-                    // and required: tests/unit/data-table.test.ts asserts every
-                    // client page mounting <DataTable> carries a data-testid.
-                    data-testid="grain-calculator-table"
-                    mobileFallback="scroll"
-                    data={rows}
-                    columns={columns}
-                    getRowId={(r) => r.commodity}
-                    selectionEnabled={false}
-                    resourceName={(plural) =>
-                        plural ? tc('resourceCommodities') : tc('resourceCommodity')
-                    }
-                    emptyState={
-                        <EmptyState
-                            size="sm"
-                            variant="no-records"
-                            title={tc('emptyTitle')}
-                            description={tc('emptyDescription')}
-                        />
-                    }
-                />
-            </Card>
+            {/* THE APPENDIX TABLE IS GONE, and this is the surface it
+                paid for. It listed every commodity's five money columns
+                below the sum, the cost breakdown, the KPI and the
+                exclusions — and CommodityStrip already shows every crop's
+                net side by side, higher up, which is what the strip's own
+                docblock says it exists for. Net worth appeared in THREE
+                places; it now appears in two, and the break-even bars ride
+                the surface that was already there. Nine surfaces became
+                eight. Its guard exemptions went with it. */}
         </div>
     );
 }

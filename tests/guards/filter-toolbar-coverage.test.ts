@@ -54,8 +54,6 @@ const EXEMPTIONS: Record<string, string> = {
     // Certification scheme detail (schemes roadmap PR2).
 
     // Grain calculator (GRAIN_NET_WORTH report).
-    "src/app/t/[tenantSlug]/(app)/grain/calculator/CalculatorClient.tsx":
-        "report appendix, not a list page. The row set is the commodities the farm actually has — the usecase keys its accumulator from real plantings, lots, leases and payroll, so a wheat-and-sunflower farm gets two rows — and every one is already on screen. There is nothing to filter TO: a facet whose options enumerate the visible rows is a control that can only ever hide data the reader can already see, and the per-crop comparison strip above now lists the same commodities a second time. Commodity SELECTION is served by that strip (it replaced the <ToggleGroup>), which expands the detailed sum rather than filtering the table.",
 
     // Grain bin detail (bins roadmap PR2).
     "src/app/t/[tenantSlug]/(app)/grain/bins/[binId]/BinDetailClient.tsx":

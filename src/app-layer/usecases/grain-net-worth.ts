@@ -6,6 +6,7 @@ import { getMarketReferences } from './trends';
 import type { NetWorthRefusalCode } from '@/lib/grain/uncertainty';
 import { foldFarmTotals, type FarmNetWorthTotal } from '@/lib/grain/farm-total';
 import { computePerArea, type PerAreaFigures } from '@/lib/grain/per-area';
+import { computeBreakEven, type BreakEvenFigures } from '@/lib/grain/break-even';
 import {
     buildExclusionLabels,
     type ExclusionEntry,
@@ -227,6 +228,9 @@ export interface CommodityNetWorthRow {
     /** Per-decare figures over the terms that share this area — see
      *  `@/lib/grain/per-area`. Deliberately NOT net worth per dca. */
     perArea: PerAreaFigures;
+    /** The price this crop must fetch to clear its cost, against the price
+     *  it currently fetches — see `@/lib/grain/break-even`. */
+    breakEven: BreakEvenFigures;
 
     // ── 2. Grain on hand (actual) ──
     grainOnHandTonnes: number;
@@ -941,6 +945,16 @@ function finalizeRow(
             standingCropAreaHa: a.standingCropAreaHa,
             standingCropValue,
             attributableCost: cashCostTotal,
+            standingCropExcludedCount: a.standingCropExcludedCount,
+            unvaluedNoUnitCost: a.unvaluedNoUnitCost,
+            unvaluedUnitMismatch: a.unvaluedUnitMismatch,
+            payrollAllocated: a.payrollAllocated,
+        }),
+        breakEven: computeBreakEven({
+            standingCropExpectedKg: a.standingCropExpectedKg,
+            attributableCost: cashCostTotal,
+            pricePerTonne,
+            priceCurrency,
             standingCropExcludedCount: a.standingCropExcludedCount,
             unvaluedNoUnitCost: a.unvaluedNoUnitCost,
             unvaluedUnitMismatch: a.unvaluedUnitMismatch,

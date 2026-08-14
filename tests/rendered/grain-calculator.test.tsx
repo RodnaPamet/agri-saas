@@ -43,6 +43,7 @@ import { formatDate, formatDateTime } from '@/lib/format-date';
 
 import { foldFarmTotals } from '@/lib/grain/farm-total';
 import { computePerArea } from '@/lib/grain/per-area';
+import { computeBreakEven } from '@/lib/grain/break-even';
 import { costUncertainty, netWorthUncertainty } from '@/lib/grain/uncertainty';
 import { restoreViewport, setViewport } from './viewport';
 
@@ -104,11 +105,18 @@ const COPY = enMessages.grain.calculator;
  * state directly.
  */
 function withServerDerived(
-    row: Omit<CalculatorRow, 'netUncertainty' | 'costUncertainty' | 'showProduceRent' | 'perArea'> &
+    row: Omit<
+        CalculatorRow,
+        'netUncertainty' | 'costUncertainty' | 'showProduceRent' | 'perArea' | 'breakEven'
+    > &
         Partial<
             Pick<
                 CalculatorRow,
-                'netUncertainty' | 'costUncertainty' | 'showProduceRent' | 'perArea'
+                | 'netUncertainty'
+                | 'costUncertainty'
+                | 'showProduceRent'
+                | 'perArea'
+                | 'breakEven'
             >
         >,
 ): CalculatorRow {
@@ -117,6 +125,18 @@ function withServerDerived(
         // Folded with the SAME function the usecase calls. Hardcoding it
         // would let a fixture claim a margin its own numerator and
         // denominator do not produce.
+        breakEven:
+            row.breakEven ??
+            computeBreakEven({
+                standingCropExpectedKg: row.standingCropExpectedKg,
+                attributableCost: row.cashCostTotal,
+                pricePerTonne: row.pricePerTonne,
+                priceCurrency: row.priceCurrency,
+                standingCropExcludedCount: 0,
+                unvaluedNoUnitCost: row.unvaluedNoUnitCost,
+                unvaluedUnitMismatch: row.unvaluedUnitMismatch,
+                payrollAllocated: row.payrollAllocated,
+            }),
         perArea:
             row.perArea ??
             computePerArea({
@@ -414,9 +434,11 @@ describe('grain calculator — on a PHONE (setViewport("mobile"))', () => {
         renderPage();
 
         // The net label is the page's answer, and it is claimed once.
-        // Scoped to the sum: the appendix table below has a "Net worth"
-        // COLUMN header, which is a different assertion about a
-        // different surface.
+        // Still scoped to the sum. The appendix table that used to carry
+        // a second "Net worth" is gone, but the scoping is what makes the
+        // assertion mean "claimed once HERE" rather than "appears once on
+        // the page" — the weaker claim would start passing the day a
+        // second surface repeats the figure.
         const sum = screen.getByRole('group', { name: COPY.waterfallAria });
         expect(within(sum).getAllByText(COPY.netWorthLabel)).toHaveLength(1);
 
@@ -564,9 +586,9 @@ describe('grain calculator — on a PHONE (setViewport("mobile"))', () => {
         // one — maize has no price, so neither is valued — and that is
         // correct, which is why this cannot be a bare text query.
         expect(sum.querySelector('[data-metric-value="true"]')).toHaveTextContent('—');
-        // Scoped: the appendix table's net-worth CELL carries the same
-        // wording, deliberately — that is a separate assertion about a
-        // separate surface, and the shared vocabulary is why they match.
+        // Scoped for the same reason: the refusal wording is shared
+        // vocabulary and any surface may legitimately repeat it, so the
+        // assertion has to name which one it is about.
         expect(within(sum).getByText(COPY.netWorthUnavailableTitle)).toBeVisible();
         // TRANSLATED from the code, not the server's English.
         expect(
@@ -668,8 +690,8 @@ describe('grain calculator — on a PHONE (setViewport("mobile"))', () => {
         renderPage(data({ rows: [wheatRow(), maizeRow(), wheatRow({ commodity: 'barley', netWorth: 5_000 })] }));
 
         // One element, matched whole: "maize" alone also appears in the
-        // toggle and the appendix table, which are different claims on
-        // different surfaces.
+        // comparison strip, which is a different claim on a different
+        // surface.
         expect(
             screen.getByText(/1 commodity is not in this total:.*maize/i),
         ).toBeVisible();
@@ -1000,6 +1022,111 @@ describe('grain calculator — on a PHONE (setViewport("mobile"))', () => {
         expect(screen.getByText(COPY.perAreaNoArea)).toBeVisible();
     });
 
+    // ─────────────────────────────────────────────────────────────────
+    // BREAK-EVEN COVER. ProgressBar per the platform decision table — a
+    // single value advancing toward a max, where the max is the price
+    // that clears cost. The appendix table was deleted to pay for it, so
+    // the text beside each bar is now the ONLY text equivalent.
+    // ─────────────────────────────────────────────────────────────────
+
+    /** The cover bars only — not the cost-breakdown bars beside them. */
+    const coverBars = () => screen.queryAllByRole('progressbar', { name: /of break-even/ });
+
+    const mixedCrops = () =>
+        data({
+            rows: [
+                // 60 t, cost 5,500 ⇒ break-even 91.67; market 250 ⇒ 273%
+                wheatRow(),
+                // 60 t, cost 30,000 ⇒ break-even 500; market 250 ⇒ 50%
+                wheatRow({ commodity: 'barley', cashCostTotal: 30_000, netWorth: -5_000 }),
+            ],
+        });
+
+    it('shows the cover for a SINGLE-crop farm, which has nothing to compare', () => {
+        // The comparison strip is suppressed below two crops. The cover is
+        // not a comparison — for a monoculture it is the whole question.
+        setViewport('mobile');
+        renderPage(data({ rows: [wheatRow()] }));
+        expect(coverBars()).toHaveLength(1);
+        expect(screen.getByText(/273% — covers cost/)).toBeVisible();
+    });
+
+    it('shows cover as a bar AND as text, so the visual is not the only reading', () => {
+        setViewport('mobile');
+        renderPage(mixedCrops());
+
+        // A real ProgressBar per crop. Queried BY NAME, not by role alone:
+        // the cost-breakdown bars are progressbars too, and a bare role
+        // query would count them and pass for the wrong reason.
+        expect(coverBars()).toHaveLength(2);
+
+        // The text equivalent: percentage, verdict and both prices. This
+        // is what a screen reader gets, and since the appendix table is
+        // gone it is the only thing that conveys the ranking.
+        expect(screen.getByText(/273% — covers cost/)).toBeVisible();
+        expect(screen.getByText(/50% — short of cost/)).toBeVisible();
+    });
+
+    it('distinguishes a covered crop from one short of cost', () => {
+        setViewport('mobile');
+        renderPage(mixedCrops());
+        expect(screen.getByText(/covers cost/)).toBeVisible();
+        expect(screen.getByText(/short of cost/)).toBeVisible();
+    });
+
+    it('marks an AT_LEAST crop as bounded, in the text as well as the bar', () => {
+        // An unpriced consumption understates the cost, so it understates
+        // the price needed to clear it — the true cover is this or LOWER.
+        // Note the bound does NOT invert here, unlike the per-dca margin.
+        setViewport('mobile');
+        renderPage(
+            data({
+                rows: [wheatRow({ unvaluedNoUnitCost: 2 }), wheatRow({ commodity: 'barley' })],
+            }),
+        );
+        expect(screen.getByText(/at least 273%/)).toBeVisible();
+    });
+
+    it('gives a REFUSED crop no bar at all, and names why', () => {
+        // Not a zero-length bar — that would sit in the comparison looking
+        // like a crop that covers nothing, which is a different claim from
+        // "we could not work it out".
+        setViewport('mobile');
+        renderPage(data({ rows: [wheatRow(), maizeRow()] }));
+
+        // maize has no market price.
+        expect(screen.getByText(COPY.breakEvenNoPrice)).toBeVisible();
+        // One cover bar, for wheat — not two.
+        expect(coverBars()).toHaveLength(1);
+    });
+
+    it('puts no currency on the shared scale', () => {
+        // The bar plots a RATIO, which is dimensionless — both sides of
+        // market/break-even are in the same currency by construction. So a
+        // EUR crop and a BGN crop are comparable without blending, and the
+        // money beside each carries its OWN code.
+        setViewport('mobile');
+        renderPage(
+            data({
+                rows: [
+                    wheatRow(),
+                    wheatRow({ commodity: 'barley', priceCurrency: 'BGN', netWorth: 4_000 }),
+                ],
+            }),
+        );
+
+        expect(screen.getByText(/250 EUR market/)).toBeVisible();
+        expect(screen.getByText(/250 BGN market/)).toBeVisible();
+        // Both cover bars are on the same 0-100 percent scale, carrying no
+        // currency at all — so nothing is blended by putting them side by
+        // side. The true figure survives the clamp in `aria-valuetext`.
+        const bars = coverBars();
+        expect(bars).toHaveLength(2);
+        for (const bar of bars) {
+            expect(bar.getAttribute('aria-valuemax')).toBe('100');
+        }
+    });
+
     it('stamps WHEN the report was priced, and when the price was observed', () => {
         setViewport('mobile');
         renderPage();
@@ -1118,64 +1245,6 @@ describe('grain calculator — on a PHONE (setViewport("mobile"))', () => {
         ).toBeVisible();
         // …and never a zero in its place.
         expect(screen.queryByText('€0')).not.toBeInTheDocument();
-    });
-});
-
-// ─────────────────────────────────────────────────────────────────────
-// DESKTOP — the per-commodity table. `mobileFallback="scroll"` means the
-// real <table> renders at both viewports, but these assertions describe
-// the desktop column layout, so the viewport is pinned and named.
-// ─────────────────────────────────────────────────────────────────────
-
-describe('grain calculator — per-commodity table on a DESKTOP (setViewport("desktop"))', () => {
-    it('renders a real <table> with the money columns side by side', () => {
-        setViewport('desktop');
-        renderPage();
-
-        const table = screen.getByRole('table');
-        expect(within(table).getByText(COPY.colCommodity)).toBeVisible();
-        expect(within(table).getByText(COPY.colStandingValue)).toBeVisible();
-        expect(within(table).getByText(COPY.colOnHandValue)).toBeVisible();
-        expect(within(table).getByText(COPY.colCashCost)).toBeVisible();
-        expect(within(table).getByText(COPY.colNetWorth)).toBeVisible();
-    });
-
-    it('lists only commodities the farm actually has', () => {
-        // A REGRESSION LOCK, not a fix. The concern was that the appendix
-        // iterated CANONICAL_COMMODITIES, so a wheat-and-sunflower farm
-        // would read eight rows of zeros for crops it does not grow. It
-        // does not: `grain-net-worth.ts` keys its accumulator only from
-        // real plantings, lots, leases and payroll (`ensureAcc` is never
-        // called from the catalogue), and CANONICAL_COMMODITIES is used
-        // solely to SORT via byCanonicalOrder. Two commodities in, two
-        // rows out.
-        //
-        // Nothing is hidden, so nothing is stated — a "2 of 10 shown" line
-        // would claim eight rows were suppressed when they never existed
-        // for this farm, which is a worse lie than the silence it
-        // replaces. Locked here so a future change that seeds the
-        // accumulator from the catalogue fails instead of quietly
-        // padding the table.
-        setViewport('desktop');
-        renderPage();
-
-        const table = screen.getByRole('table');
-        expect(within(table).getAllByRole('row')).toHaveLength(2 + 1); // + header
-        expect(within(table).getByText(/wheat/i)).toBeVisible();
-        expect(within(table).getByText(/maize/i)).toBeVisible();
-        expect(within(table).queryByText(/barley/i)).not.toBeInTheDocument();
-        expect(within(table).queryByText(/sunflower/i)).not.toBeInTheDocument();
-    });
-
-    it('prints the refusal wording in a withheld net-worth cell, never a zero', () => {
-        setViewport('desktop');
-        renderPage();
-
-        const table = screen.getByRole('table');
-        expect(
-            within(table).getByText(COPY.netWorthUnavailableTitle),
-        ).toBeVisible();
-        expect(within(table).getByText('€18,750')).toBeVisible();
     });
 });
 
