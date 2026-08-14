@@ -6,6 +6,10 @@ import { getMarketReferences } from './trends';
 import type { NetWorthRefusalCode } from '@/lib/grain/uncertainty';
 import { foldFarmTotals, type FarmNetWorthTotal } from '@/lib/grain/farm-total';
 import {
+    buildExclusionLabels,
+    type ExclusionEntry,
+} from '@/lib/grain/exclusion-labels';
+import {
     CANONICAL_COMMODITIES,
     isCanonicalCommodity,
     normalizeCommodity,
@@ -148,7 +152,17 @@ function byCanonicalOrder(a: CanonicalCommodity, b: CanonicalCommodity): number 
 
 // ─── Exclusions ───────────────────────────────────────────────────────
 
-export interface GrainNetWorthExclusions {
+/**
+ * The RAW shape the compute functions collect — ids, plus the one or two
+ * extra facts each class carries. Internal: the published contract is
+ * {@link GrainNetWorthExclusions}, whose entries carry a human LABEL.
+ *
+ * Kept separate rather than labelling in place because the compute
+ * functions run before the label sources are assembled, and threading
+ * lookup maps through five of them to save one pass would be a worse
+ * trade than the pass.
+ */
+interface RawExclusions {
     /** Plantings with a known commodity but no `plannedYieldKgPerHa` or no
      *  `areaM2` — excluded, not zeroed, from standing crop. */
     plantingsMissingYieldEstimate: string[];
@@ -178,7 +192,7 @@ export interface GrainNetWorthExclusions {
     payrollUnattributable: string[];
 }
 
-function emptyExclusions(): GrainNetWorthExclusions {
+function emptyExclusions(): RawExclusions {
     return {
         plantingsMissingYieldEstimate: [],
         plantingsUnknownCommodity: [],
@@ -317,6 +331,27 @@ export interface GrainFarmNetWorth {
      * the omission is still visible.
      */
     refusedWithoutCurrency: string[];
+}
+
+/**
+ * Excluded records, each with a label a person can recognise.
+ *
+ * Every class is the SAME shape now. It used to be three — a bare string,
+ * `{lotId, unitKey}`, `{leaseId, reason}` — which forced the renderer to
+ * branch on structure to work out what it was holding, and produced a
+ * monospace list of cuids either way.
+ */
+export interface GrainNetWorthExclusions {
+    plantingsMissingYieldEstimate: ExclusionEntry[];
+    plantingsUnknownCommodity: ExclusionEntry[];
+    lotsUnresolvedUnit: ExclusionEntry[];
+    lotsUnknownCommodity: ExclusionEntry[];
+    /** The `id` is the commodity SLUG — the client translates it. */
+    commoditiesWithNoPrice: ExclusionEntry[];
+    leasesUnresolvedRent: ExclusionEntry[];
+    leasesUnattributed: ExclusionEntry[];
+    leasesProduceRentUnpriced: ExclusionEntry[];
+    payrollUnattributable: ExclusionEntry[];
 }
 
 export interface GrainNetWorthResult {
@@ -496,7 +531,7 @@ function buildPlantingInfo(rows: readonly PlantingRow[]): Map<string, PlantingIn
 function computeStandingCrop(
     plantings: readonly PlantingInfo[],
     acc: Map<CanonicalCommodity, CommodityAcc>,
-    exclusions: GrainNetWorthExclusions,
+    exclusions: RawExclusions,
 ): void {
     const byCommodity = new Map<CanonicalCommodity, PlantingInfo[]>();
     for (const p of plantings) {
@@ -543,7 +578,7 @@ function computeGrainOnHand(
     lots: readonly LotRow[],
     unitById: Map<string, UnitRow>,
     acc: Map<CanonicalCommodity, CommodityAcc>,
-    exclusions: GrainNetWorthExclusions,
+    exclusions: RawExclusions,
 ): void {
     for (const lot of lots) {
         const unit = unitById.get(lot.unitId);
@@ -578,7 +613,7 @@ function computeAttributedCost(
     }[],
     plantingInfo: Map<string, PlantingInfo>,
     acc: Map<CanonicalCommodity, CommodityAcc>,
-    exclusions: GrainNetWorthExclusions,
+    exclusions: RawExclusions,
 ): void {
     for (const row of rollupRows) {
         const info = plantingInfo.get(row.plantingId);
@@ -609,7 +644,7 @@ function computeRent(
     leases: readonly LeaseRow[],
     plantingsByParcel: Map<string, PlantingInfo[]>,
     acc: Map<CanonicalCommodity, CommodityAcc>,
-    exclusions: GrainNetWorthExclusions,
+    exclusions: RawExclusions,
 ): void {
     for (const lease of leases) {
         const areaHa = decOrNull(lease.parcel?.areaHa);
@@ -666,7 +701,7 @@ function computePayroll(
     plantingsBySeason: Map<string | null, PlantingInfo[]>,
     allKnownPlantings: PlantingInfo[],
     acc: Map<CanonicalCommodity, CommodityAcc>,
-    exclusions: GrainNetWorthExclusions,
+    exclusions: RawExclusions,
 ): void {
     for (const row of rows) {
         const amount = dec(row.amount);
@@ -746,7 +781,7 @@ function finalizeRow(
     commodity: CanonicalCommodity,
     a: CommodityAcc,
     reference: { pricePerTonne: number; currency: string; observedAt: string; source: string } | null,
-    exclusions: GrainNetWorthExclusions,
+    exclusions: RawExclusions,
 ): CommodityNetWorthRow {
     const pricePerTonne = reference?.pricePerTonne ?? null;
     const priceCurrency = reference?.currency ?? null;
@@ -904,7 +939,17 @@ async function loadTenantRows(db: PrismaTx, ctx: RequestContext, seasonId: strin
             areaM2: true,
             plannedYieldKgPerHa: true,
             parcelId: true,
-            cropPlan: { select: { seasonId: true, cropType: { select: { commodityCanonical: true } } } },
+            // `parcel.name` and `cropType.name` are for the EXCLUSION LABEL,
+            // not the arithmetic. Widening a select that already runs costs
+            // two columns; a second query per excluded planting would trip
+            // D1 and read once per bullet point.
+            parcel: { select: { name: true } },
+            cropPlan: {
+                select: {
+                    seasonId: true,
+                    cropType: { select: { commodityCanonical: true, name: true } },
+                },
+            },
         },
         orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         take: PLANTING_TAKE + 1,
@@ -944,7 +989,8 @@ async function loadTenantRows(db: PrismaTx, ctx: RequestContext, seasonId: strin
             rentAmount: true,
             rentUnit: true,
             rentUnitRaw: true,
-            parcel: { select: { areaHa: true } },
+            lessorName: true,
+            parcel: { select: { areaHa: true, name: true } },
         },
         orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         take: LEASE_TAKE + 1,
@@ -983,6 +1029,9 @@ async function loadTenantRows(db: PrismaTx, ctx: RequestContext, seasonId: strin
             currency: true,
             plantingId: true,
             seasonId: true,
+            supplier: true,
+            description: true,
+            incurredOn: true,
         },
         orderBy: [{ incurredOn: 'desc' }, { id: 'desc' }],
         take: PAYROLL_TAKE + 1,
@@ -1086,6 +1135,62 @@ export async function getGrainNetWorth(
     exclusions.payrollUnattributable = [...new Set(exclusions.payrollUnattributable)].sort();
     exclusions.commoditiesWithNoPrice = [...new Set(exclusions.commoditiesWithNoPrice)].sort();
 
+    // ── Labelling pass ──
+    //
+    // ONE pass over ids already collected, resolved against rows already
+    // in memory. No query: the selects above were widened by a few columns
+    // (parcel.name, cropType.name, lessorName, supplier, description,
+    // incurredOn) rather than adding a read, so this cannot trip D1 and
+    // costs nothing per entry.
+    const label = buildExclusionLabels({
+        plantings: fetched.plantings,
+        lots: fetched.lots,
+        units: new Map(fetched.units.map((u) => [u.id, u.key])),
+        leases: fetched.leases,
+        costEntries: fetched.costEntries,
+    });
+    const labelled: GrainNetWorthExclusions = {
+        plantingsMissingYieldEstimate: exclusions.plantingsMissingYieldEstimate.map((id) => ({
+            id,
+            label: label.planting(id),
+        })),
+        plantingsUnknownCommodity: exclusions.plantingsUnknownCommodity.map((id) => ({
+            id,
+            label: label.planting(id),
+        })),
+        lotsUnresolvedUnit: exclusions.lotsUnresolvedUnit.map((e) => ({
+            id: e.lotId,
+            label: label.lot(e.lotId, e.unitKey),
+        })),
+        lotsUnknownCommodity: exclusions.lotsUnknownCommodity.map((id) => ({
+            id,
+            label: label.lot(id),
+        })),
+        // The id IS the commodity slug, and the label with it: commodity
+        // names are the one thing here the CLIENT can translate, and it
+        // already does everywhere else on this page.
+        commoditiesWithNoPrice: exclusions.commoditiesWithNoPrice.map((id) => ({
+            id,
+            label: id,
+        })),
+        leasesUnresolvedRent: exclusions.leasesUnresolvedRent.map((e) => ({
+            id: e.leaseId,
+            label: label.lease(e.leaseId),
+        })),
+        leasesUnattributed: exclusions.leasesUnattributed.map((id) => ({
+            id,
+            label: label.lease(id),
+        })),
+        leasesProduceRentUnpriced: exclusions.leasesProduceRentUnpriced.map((id) => ({
+            id,
+            label: label.lease(id),
+        })),
+        payrollUnattributable: exclusions.payrollUnattributable.map((id) => ({
+            id,
+            label: label.costEntry(id),
+        })),
+    };
+
     return {
         generatedAt: new Date().toISOString(),
         seasonId: seasonId ?? null,
@@ -1102,7 +1207,7 @@ export async function getGrainNetWorth(
                 .map((r) => r.commodity)
                 .sort(),
         },
-        exclusions,
+        exclusions: labelled,
         // Passed straight through, NOT recomputed from `rows` — the rollup
         // counted TRANSACTIONS, and summing the per-commodity counts would
         // multiply a shared one by the commodities it touched.

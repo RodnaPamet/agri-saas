@@ -26,11 +26,16 @@ import { useExactMoneyFormatter } from '@/lib/tenant-context-provider';
 
 import type { CalculatorExclusions, ExclusionEntry } from './CalculatorClient';
 
-/** One exclusion entry rendered as a readable line. */
+/**
+ * There is nothing left to describe.
+ *
+ * This branched on the entry's STRUCTURE to work out what it was holding —
+ * a bare string, a `{lotId, unitKey}`, a `{leaseId, reason}` — and printed
+ * a cuid whichever it found. The usecase now resolves a label against rows
+ * it already read, so the renderer reads a field.
+ */
 function describeEntry(entry: ExclusionEntry): string {
-    if (typeof entry === 'string') return entry;
-    if ('lotId' in entry) return entry.unitKey ? `${entry.lotId} (${entry.unitKey})` : entry.lotId;
-    return `${entry.leaseId} — ${entry.reason}`;
+    return entry.label;
 }
 
 // ─── One line of the sum ────────────────────────────────────────────
@@ -168,7 +173,7 @@ export function ExclusionsCard({ count, classes, hrefFor }: ExclusionsCardProps)
                                     </span>
                                 </AccordionTrigger>
                                 <AccordionContent size="sm">
-                                    <ul className="space-y-tight pt-2 font-mono text-xs text-content-muted">
+                                    <ul className="space-y-tight pt-2 text-xs text-content-muted">
                                         {cls.entries.map((entry, i) => {
                                             // Only LOTS support a per-entry
                                             // deep link: /inventory?lotId
@@ -191,11 +196,7 @@ export function ExclusionsCard({ count, classes, hrefFor }: ExclusionsCardProps)
                                             // bare planting id. The class
                                             // knows what its entries are.
                                             const lotId = cls.key.startsWith('lots')
-                                                ? typeof entry === 'string'
-                                                    ? entry
-                                                    : 'lotId' in entry
-                                                      ? entry.lotId
-                                                      : null
+                                                ? entry.id
                                                 : null;
                                             const lotHref =
                                                 lotId != null
@@ -207,11 +208,7 @@ export function ExclusionsCard({ count, classes, hrefFor }: ExclusionsCardProps)
                                                     {lotHref != null && (
                                                         <>
                                                             {' '}
-                                                            <TextLink
-                                                                tone="link"
-                                                                href={lotHref}
-                                                                className="font-sans"
-                                                            >
+                                                            <TextLink tone="link" href={lotHref}>
                                                                 {tc('exclOpenLot')}
                                                             </TextLink>
                                                         </>

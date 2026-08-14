@@ -114,6 +114,11 @@ function withServerDerived(
     };
 }
 
+/** An excluded record as the usecase now returns it: id + human label. */
+function ex(id: string, label?: string) {
+    return { id, label: label ?? id };
+}
+
 function emptyExclusions(): CalculatorExclusions {
     return {
         plantingsMissingYieldEstimate: [],
@@ -244,12 +249,13 @@ function data(over: Partial<CalculatorData> = {}): CalculatorData {
         },
         exclusions: {
             ...emptyExclusions(),
-            plantingsMissingYieldEstimate: ['planting-a', 'planting-b'],
-            lotsUnresolvedUnit: [{ lotId: 'lot-1', unitKey: 'bag' }],
-            leasesUnresolvedRent: [
-                { leaseId: 'lease-1', reason: 'rent unit not recognised' },
+            plantingsMissingYieldEstimate: [
+                ex('planting-a', 'Нива 3 · Пшеница'),
+                ex('planting-b', 'Нива 4 · Пшеница'),
             ],
-            commoditiesWithNoPrice: ['maize'],
+            lotsUnresolvedUnit: [ex('lot-1', 'Пшеница, реколта 2026 (bag)')],
+            leasesUnresolvedRent: [ex('lease-1', 'Иван Петров · Нива 7')],
+            commoditiesWithNoPrice: [ex('maize')],
         },
         unvalued: { noUnitCost: 0, unitMismatch: 0 },
         cashOut: [],
@@ -677,15 +683,15 @@ describe('grain calculator — on a PHONE (setViewport("mobile"))', () => {
         renderPage(
             data({
                 exclusions: {
-                    plantingsMissingYieldEstimate: ['p-1'],
-                    plantingsUnknownCommodity: ['p-2'],
-                    lotsUnresolvedUnit: [{ lotId: 'lot-1', unitKey: 'bag' }],
-                    lotsUnknownCommodity: ['lot-2'],
-                    commoditiesWithNoPrice: ['maize'],
-                    leasesUnresolvedRent: [{ leaseId: 'l-1', reason: 'unreadable' }],
-                    leasesUnattributed: ['l-2'],
-                    leasesProduceRentUnpriced: ['l-3'],
-                    payrollUnattributable: ['c-1'],
+                    plantingsMissingYieldEstimate: [ex('p-1')],
+                    plantingsUnknownCommodity: [ex('p-2')],
+                    lotsUnresolvedUnit: [ex('lot-1')],
+                    lotsUnknownCommodity: [ex('lot-2')],
+                    commoditiesWithNoPrice: [ex('maize')],
+                    leasesUnresolvedRent: [ex('l-1')],
+                    leasesUnattributed: [ex('l-2')],
+                    leasesProduceRentUnpriced: [ex('l-3')],
+                    payrollUnattributable: [ex('c-1')],
                 },
             }),
         );
@@ -724,7 +730,7 @@ describe('grain calculator — on a PHONE (setViewport("mobile"))', () => {
             data({
                 exclusions: {
                     ...emptyExclusions(),
-                    lotsUnresolvedUnit: [{ lotId: 'lot-42', unitKey: 'bag' }],
+                    lotsUnresolvedUnit: [ex('lot-42', 'Ечемик, склад 2 (bag)')],
                 },
             }),
         );
@@ -767,6 +773,55 @@ describe('grain calculator — on a PHONE (setViewport("mobile"))', () => {
             }),
         );
         expect(screen.getAllByText(COPY.refusal.MIXED_COST_CURRENCY).length).toBeGreaterThan(0);
+    });
+
+    it('shows NAMES in the accordion, never a raw database id', () => {
+        // Open "3 plantings missing a yield estimate" and you used to get
+        // three cuids in a monospace list — no parcel, no crop, nothing a
+        // person can recognise. The count was honest; the detail was
+        // decoration.
+        setViewport('mobile');
+        renderPage();
+
+        // The accordion is `type="single"`, so only the item just clicked
+        // is mounted — the text has to be gathered as each opens, not read
+        // once at the end when eight of the nine have closed again.
+        let seen = '';
+        for (const trigger of screen.getAllByRole('button', { name: /\(\d+\)$/ })) {
+            fireEvent.click(trigger);
+            seen += document.body.textContent ?? '';
+        }
+
+        // A cuid is 25 lowercase alphanumerics starting `c`. None should
+        // reach the page for records that resolved to a name.
+        expect(seen).not.toMatch(/\bc[a-z0-9]{24}\b/);
+        expect(seen).toContain('Нива 3 · Пшеница');
+        expect(seen).toContain('Иван Петров · Нива 7');
+    });
+
+    it('falls back to the id rather than an empty bullet', () => {
+        // A record deleted between the read and the label, or beyond a
+        // TAKE cap. A blank bullet loses even the count.
+        setViewport('mobile');
+        renderPage(
+            data({
+                exclusions: {
+                    ...emptyExclusions(),
+                    plantingsMissingYieldEstimate: [ex('cmslvwqsj0000j44se0pwtxns')],
+                },
+            }),
+        );
+
+        fireEvent.click(screen.getByRole('button', { name: /\(1\)$/ }));
+        expect(screen.getByText('cmslvwqsj0000j44se0pwtxns')).toBeVisible();
+    });
+
+    it('renders entries as prose, not as machine identifiers', () => {
+        // Monospace signals "this is an id". These have stopped being ids.
+        setViewport('mobile');
+        const { container } = renderPage();
+        fireEvent.click(screen.getAllByRole('button', { name: /\(\d+\)$/ })[0]);
+        expect(container.querySelector('.font-mono')).toBeNull();
     });
 
     it('stamps WHEN the report was priced, and when the price was observed', () => {
