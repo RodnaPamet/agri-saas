@@ -13,6 +13,7 @@ pick the right primitive before writing new chart JSX.
 | A **sparkline** inside a KPI tile / table cell (no tooltip, no axes) | `MiniAreaChart` | `@/components/ui/mini-area-chart` |
 | A **dashboard trend tile** (label + current value + hoverable sparkline) | `TrendCard` | `@/components/ui/TrendCard` |
 | A **single-value progress** metric (one bar, advances toward a max) | `ProgressBar` | `@/components/ui/progress-bar` |
+| A **signed magnitude** either side of zero (profit/loss per row, on a shared scale) | `DivergingBar` | `@/components/ui/diverging-bar` |
 | A **categorical distribution** of rows sharing a total (status / severity / coverage breakdown) | `StatusBreakdown` | `@/components/ui/status-breakdown` |
 | A **headline gauge** (single percentage that deserves its own real estate) | `ProgressCircle` | `@/components/ui/progress-circle` |
 | A **segmented % bar with a legend** (e.g. control coverage breakdown) | `ProgressCard` | `@/components/ui/ProgressCard` |
@@ -22,6 +23,27 @@ pick the right primitive before writing new chart JSX.
 If none of the above fits, **don't open a new file with raw `<svg>` in a
 dashboard page**. Ask about extending the platform instead — a one-off
 hand-rolled chart is exactly the pattern this epic replaced.
+
+
+### `ProgressBar` vs. `DivergingBar` — the sign decides
+
+`ProgressBar` floors its input with `Math.max(0, value)` before computing
+anything, so **a negative and a zero are indistinguishable** in the fill,
+the visible label, `aria-valuenow` and `aria-valuetext`. That is correct
+for progress — you cannot be less than 0% done — and wrong for any signed
+quantity.
+
+If the value can go below zero and the reader needs to know that it did,
+use `DivergingBar`. It renders either side of a visible baseline, takes a
+shared `max` (pass `max(|value|)` across the group, or every row looks the
+same length), announces itself as `role="meter"` with a negative
+`aria-valuemin`, and states `data-scale="none"` rather than drawing
+anything when there is no positive scale to draw on.
+
+Note it plots a bare magnitude, so pass `valueText` with the units — or,
+if the row already prints the figure as text, mark the bar `aria-hidden`
+so the value is not announced twice. The grain calculator does the latter.
+
 
 ## `TimeSeriesChart`
 

@@ -21,16 +21,28 @@ import { useTranslations } from 'next-intl';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
-import { Heading } from '@/components/ui/typography';
+import { Heading, TextLink } from '@/components/ui/typography';
 import { useExactMoneyFormatter } from '@/lib/tenant-context-provider';
+import { formatDecimal } from '@/lib/number-format';
+import { UNCERTAINTY, type UncertaintyState } from '@/lib/grain/uncertainty';
+import type { BreakEvenFigures } from '@/lib/grain/break-even';
+import type { MarginScaleGroup, MarginScaleResult } from '@/lib/grain/margin-scale';
+import { ProgressBar } from '@/components/ui/progress-bar';
+import { DivergingBar } from '@/components/ui/diverging-bar';
+import { cn } from '@/lib/cn';
 
 import type { CalculatorExclusions, ExclusionEntry } from './CalculatorClient';
 
-/** One exclusion entry rendered as a readable line. */
+/**
+ * There is nothing left to describe.
+ *
+ * This branched on the entry's STRUCTURE to work out what it was holding —
+ * a bare string, a `{lotId, unitKey}`, a `{leaseId, reason}` — and printed
+ * a cuid whichever it found. The usecase now resolves a label against rows
+ * it already read, so the renderer reads a field.
+ */
 function describeEntry(entry: ExclusionEntry): string {
-    if (typeof entry === 'string') return entry;
-    if ('lotId' in entry) return entry.unitKey ? `${entry.lotId} (${entry.unitKey})` : entry.lotId;
-    return `${entry.leaseId} — ${entry.reason}`;
+    return entry.label;
 }
 
 // ─── One line of the sum ────────────────────────────────────────────
@@ -118,7 +130,11 @@ interface ExclusionsCardProps {
         key: keyof CalculatorExclusions;
         labelKey: string;
         entries: ReadonlyArray<ExclusionEntry>;
+        /** Where a farmer fixes this class — see EXCLUSION_CLASSES. */
+        destination: { path: string; labelKey: string };
     }>;
+    /** Tenant-scoped href builder, passed in so this stays presentational. */
+    hrefFor: (path: string) => string;
 }
 
 /**
@@ -127,7 +143,7 @@ interface ExclusionsCardProps {
  * accordion is the "which ones" affordance the count is useless
  * without.
  */
-export function ExclusionsCard({ count, classes }: ExclusionsCardProps) {
+export function ExclusionsCard({ count, classes, hrefFor }: ExclusionsCardProps) {
     const tc = useTranslations('grain.calculator');
 
     return (
@@ -164,11 +180,66 @@ export function ExclusionsCard({ count, classes }: ExclusionsCardProps) {
                                     </span>
                                 </AccordionTrigger>
                                 <AccordionContent size="sm">
-                                    <ul className="space-y-tight pt-2 font-mono text-xs text-content-muted">
-                                        {cls.entries.map((entry, i) => (
-                                            <li key={`${cls.key}-${i}`}>{describeEntry(entry)}</li>
-                                        ))}
+                                    <ul className="space-y-tight pt-2 text-xs text-content-muted">
+                                        {cls.entries.map((entry, i) => {
+                                            // Only LOTS support a per-entry
+                                            // deep link: /inventory?lotId
+                                            // opens that lot's detail modal,
+                                            // an affordance built for QR
+                                            // codes. /rent takes a location
+                                            // id and /planning a crop-plan
+                                            // id, neither of which these
+                                            // entries carry — so those get
+                                            // the class destination below
+                                            // rather than a link that would
+                                            // silently ignore its argument.
+                                            //
+                                            // Keyed on the CLASS, not the
+                                            // entry's shape: lotsUnresolvedUnit
+                                            // carries {lotId, unitKey} while
+                                            // lotsUnknownCommodity carries a
+                                            // bare id string, and a bare lot
+                                            // id is indistinguishable from a
+                                            // bare planting id. The class
+                                            // knows what its entries are.
+                                            const lotId = cls.key.startsWith('lots')
+                                                ? entry.id
+                                                : null;
+                                            const lotHref =
+                                                lotId != null
+                                                    ? hrefFor(`/inventory?lotId=${lotId}`)
+                                                    : null;
+                                            return (
+                                                <li key={`${cls.key}-${i}`}>
+                                                    {describeEntry(entry)}
+                                                    {lotHref != null && (
+                                                        <>
+                                                            {' '}
+                                                            <TextLink tone="link" href={lotHref}>
+                                                                {tc('exclOpenLot')}
+                                                            </TextLink>
+                                                        </>
+                                                    )}
+                                                </li>
+                                            );
+                                        })}
                                     </ul>
+                                    {/* The class destination. Present for
+                                        every class — EXCLUSION_CLASSES makes
+                                        it required — so no diagnosis is a
+                                        dead end. It does not soften the
+                                        finding: the count and the class name
+                                        above are unchanged, this only adds
+                                        somewhere to go. */}
+                                    <p className="pt-2">
+                                        <TextLink
+                                            tone="link"
+                                            href={hrefFor(cls.destination.path)}
+                                            className="text-xs"
+                                        >
+                                            {tc(cls.destination.labelKey)}
+                                        </TextLink>
+                                    </p>
                                 </AccordionContent>
                             </AccordionItem>
                         ))}
@@ -176,5 +247,376 @@ export function ExclusionsCard({ count, classes }: ExclusionsCardProps) {
                 </>
             )}
         </Card>
+    );
+}
+
+// ─── Per-crop comparison ─────────────────────────────────────────────
+
+export interface CommodityStripItem {
+    commodity: string;
+    label: string;
+    netWorth: number | null;
+    currency: string | null;
+    uncertainty: UncertaintyState;
+    /** Market price against the price that clears cost. */
+    breakEven: BreakEvenFigures;
+}
+
+interface CommodityStripProps {
+    items: readonly CommodityStripItem[];
+    selected: string;
+    onSelect: (commodity: string) => void;
+}
+
+/**
+ * Every crop's net worth, side by side, without clicking anything.
+ *
+ * `commodityOptions` fed a ToggleGroup, so a farmer with five crops saw
+ * ONE at a time and could not answer "which crop is actually carrying this
+ * farm?" without stepping through them. An appendix table did show every
+ * row, but it sat below the sum, the breakdown, the KPI and the
+ * exclusions — the comparison they most want was the last thing on the
+ * page. This strip took its place near the top, and the table was deleted
+ * rather than kept alongside.
+ *
+ * This REPLACES the ToggleGroup rather than joining it. The toggle's only
+ * job was selection, which these rows also do; keeping both would put two
+ * controls for one decision on the same screen, and a farmer would try to
+ * click the numbers anyway.
+ *
+ * ── Where a comparison view most easily lies ────────────────────────
+ *
+ * By making unlike things look alike. A refused net and a bounded net
+ * rendered as bare figures sit in the same column as exact ones and invite
+ * exactly the comparison they cannot support, so each row carries its own
+ * state in the shared vocabulary: "at most" rides the value, a refusal
+ * shows the em-dash every formatter here already uses.
+ *
+ * Currency code, not the tenant symbol — the farm card's reasoning applies
+ * unchanged, and this column can genuinely mix currencies.
+ */
+export function CommodityStrip({ items, selected, onSelect }: CommodityStripProps) {
+    const tc = useTranslations('grain.calculator');
+
+    return (
+        <Card as="section" density="compact" className="space-y-default border-border-subtle">
+            <div className="flex flex-wrap items-baseline justify-between gap-tight">
+                <Heading level={2}>{tc('comparisonTitle')}</Heading>
+                {/* The order is a claim, so it is stated. CANONICAL_COMMODITIES
+                    order is arbitrary to a farmer; contribution is not. */}
+                <span className="text-xs text-content-subtle">
+                    {tc('comparisonOrderNote')}
+                </span>
+            </div>
+            <ul className="space-y-tight" aria-label={tc('comparisonAria')}>
+                {items.map((item) => {
+                    const isSelected = item.commodity === selected;
+                    const amount =
+                        item.netWorth == null
+                            ? '—'
+                            : `${formatDecimal(item.netWorth, 2)}${item.currency ? ` ${item.currency}` : ''}`;
+                    return (
+                        <li key={item.commodity}>
+                            <button
+                                type="button"
+                                aria-pressed={isSelected}
+                                onClick={() => onSelect(item.commodity)}
+                                className={cn(
+                                    'flex w-full items-baseline justify-between gap-tight rounded-md px-2 py-1 text-sm',
+                                    isSelected
+                                        ? 'border border-border-emphasis bg-bg-muted'
+                                        : 'border border-transparent hover:bg-bg-muted',
+                                )}
+                            >
+                                <span className="text-content-default">{item.label}</span>
+                                <span
+                                    className={cn(
+                                        'font-medium tabular-nums',
+                                        item.uncertainty === UNCERTAINTY.EXACT
+                                            ? 'text-content-emphasis'
+                                            : 'text-content-attention',
+                                    )}
+                                >
+                                    {item.uncertainty === UNCERTAINTY.AT_MOST
+                                        ? tc('uncertaintyAtMost', { value: amount })
+                                        : amount}
+                                </span>
+                            </button>
+                            <BreakEvenRow commodityLabel={item.label} figures={item.breakEven} />
+                        </li>
+                    );
+                })}
+            </ul>
+        </Card>
+    );
+}
+
+// ─── Break-even cover ────────────────────────────────────────────────
+
+/**
+ * How far the market price goes toward clearing this crop's cost.
+ *
+ * `ProgressBar`, per the platform decision table: "a single value that
+ * advances toward a max". Break-even IS that max, and the primitive
+ * already marks a value beyond it — which here is the good case, a crop
+ * fetching more than it cost. `StatusBreakdown` was the tempting
+ * alternative and is wrong for the reason its own doc section gives: its
+ * rows share a total, and crops share nothing.
+ *
+ * ── The scale carries no currency ───────────────────────────────────
+ *
+ * The bar plots a RATIO. Both sides of `market / breakEven` are in the
+ * same currency by construction — the usecase refuses a row whose cost
+ * currency differs from its price currency — so the quotient is
+ * dimensionless and a EUR crop and a BGN crop are comparable without
+ * anything being blended. The money is stated beside it, each in its own
+ * code, because the ratio is the comparison and the figures are the
+ * evidence.
+ *
+ * ── The text is not a fallback ──────────────────────────────────────
+ *
+ * A bar conveys nothing to a screen reader, and this page deleted the
+ * table that used to be its text equivalent. The percentage, the verdict
+ * and both prices are rendered as text for every row, so the ranking and
+ * the magnitudes survive without the visual entirely.
+ */
+export function BreakEvenRow({
+    commodityLabel,
+    figures,
+}: {
+    commodityLabel: string;
+    figures: BreakEvenFigures;
+}) {
+    const tc = useTranslations('grain.calculator');
+
+    if (figures.refusalCode != null) {
+        // Absent-and-named. A crop with no yield estimate must not simply
+        // vanish from the comparison, or the picture quietly describes a
+        // smaller farm than the one being read about.
+        return (
+            <p className="px-2 pb-1 text-xs text-content-attention">
+                {figures.refusalCode === 'NO_EXPECTED_TONNAGE'
+                    ? tc('breakEvenNoTonnage')
+                    : tc('breakEvenNoPrice')}
+            </p>
+        );
+    }
+
+    const money = (v: number | null) =>
+        v == null ? '—' : `${formatDecimal(v, 2)}${figures.currency ? ` ${figures.currency}` : ''}`;
+    const detail = tc('breakEvenDetail', {
+        market: money(figures.marketPricePerTonne),
+        breakEven: money(figures.breakEvenPricePerTonne),
+    });
+
+    if (figures.coverPercent == null) {
+        return (
+            <p className="px-2 pb-1 text-xs text-content-muted">
+                {tc('breakEvenCostless')} {detail}
+            </p>
+        );
+    }
+
+    const percent = Math.round(figures.coverPercent);
+    return (
+        <div className="space-y-tight px-2 pb-1">
+            <ProgressBar
+                value={figures.coverPercent}
+                variant={figures.covered ? 'success' : 'warning'}
+                size="sm"
+                aria-label={tc('breakEvenBarAria', {
+                    commodity: commodityLabel,
+                    percent: String(percent),
+                })}
+            />
+            <p className="text-xs text-content-muted">
+                <span
+                    className={
+                        figures.covered ? 'text-content-success' : 'text-content-warning'
+                    }
+                >
+                    {percent}% — {figures.covered ? tc('breakEvenCovered') : tc('breakEvenShort')}
+                </span>{' '}
+                <span className="tabular-nums">{detail}</span>
+                {figures.uncertainty === UNCERTAINTY.AT_LEAST && (
+                    // The bound does NOT invert here, unlike the per-dca
+                    // margin: an understated cost understates the price
+                    // needed to clear it, so the true break-even is this or
+                    // higher and the cover is this or LOWER.
+                    <> — {tc('uncertaintyAtLeast', { value: `${percent}%` })}</>
+                )}
+            </p>
+        </div>
+    );
+}
+
+// ─── Margin per decare ───────────────────────────────────────────────
+
+/**
+ * Profit per unit of LAND, one bar per crop, diverging around zero.
+ *
+ * ── Why this sits beside the cover bars and does not replace them ───
+ *
+ * The two rank crops differently, and both rankings are real. Cover is
+ * `value / cost`: return on the money spent. Margin per decare is
+ * `(value − cost) / area`: return on the land used. A cheap crop with a
+ * tiny outlay can lead on cover and trail on margin, and which one
+ * matters depends on which input is scarce. On a Bulgarian farm that is
+ * usually the land, which is the case for showing this one at all — but
+ * it is not a reason to hide the other, so the disagreement is stated
+ * rather than resolved by deleting a figure.
+ *
+ * ── Why the bar is decorative here ──────────────────────────────────
+ *
+ * Every figure it encodes is already printed as text beside it, with its
+ * sign, its currency and its qualifier. Leaving the meter in the
+ * accessibility tree would announce each crop twice, so the row is the
+ * labelled unit and the bar is marked away from assistive tech. The
+ * primitive itself is fully described for callers that have no text.
+ *
+ * ── Where a signed comparison most easily lies ──────────────────────
+ *
+ * By making the scale invisible. Bar lengths are meaningless without the
+ * number they are relative to, so the axis ends are printed; and they are
+ * relative to the largest crop in THIS currency group, never across
+ * groups.
+ */
+export function MarginPerDcaCard({
+    scales,
+    labelFor,
+}: {
+    scales: MarginScaleResult;
+    /** Commodity key → the farmer's word for it. Kept out of the fold, which
+        is arithmetic and has no business knowing about translations. */
+    labelFor: (commodity: string) => string;
+}) {
+    const tc = useTranslations('grain.calculator');
+
+    if (scales.groups.length === 0 && scales.unscaled.length === 0) return null;
+
+    return (
+        <Card as="section" density="compact" className="space-y-default border-border-subtle">
+            <div className="space-y-tight">
+                <Heading level={2}>{tc('marginScaleTitle')}</Heading>
+                {/* Two visuals that order the crops differently have to say
+                    why, or they are two confident answers to one question. */}
+                <p className="text-xs text-content-subtle">{tc('marginScaleVsCover')}</p>
+            </div>
+
+            {scales.groups.map((group) => (
+                <MarginScaleGroupRows key={group.currency} group={group} labelFor={labelFor} />
+            ))}
+
+            {scales.unscaled.length > 0 && (
+                // Named, not omitted — the farm total's rule. A comparison
+                // that quietly shrinks describes a smaller farm.
+                <p className="text-xs text-content-attention">
+                    {tc('marginScaleUnpriced', {
+                        commodities: scales.unscaled.map(labelFor).join(', '),
+                    })}
+                </p>
+            )}
+        </Card>
+    );
+}
+
+function MarginScaleGroupRows({
+    group,
+    labelFor,
+}: {
+    group: MarginScaleGroup;
+    labelFor: (commodity: string) => string;
+}) {
+    const tc = useTranslations('grain.calculator');
+
+    return (
+        <div className="space-y-tight">
+            {group.comparable ? (
+                // The axis, stated. Both ends carry the currency, so no
+                // reader has to work out which money this group is in.
+                <div className="flex items-baseline justify-between text-xs text-content-subtle">
+                    <span className="tabular-nums">
+                        {tc('marginScaleEnd', {
+                            value: `\u2212${formatDecimal(group.maxAbs, 2)}`,
+                            currency: group.currency,
+                        })}
+                    </span>
+                    <span>{tc('marginScaleZero')}</span>
+                    <span className="tabular-nums">
+                        {tc('marginScaleEnd', {
+                            value: `+${formatDecimal(group.maxAbs, 2)}`,
+                            currency: group.currency,
+                        })}
+                    </span>
+                </div>
+            ) : (
+                // One crop fills its own scale because it IS the scale.
+                // The figures still stand; only the comparison is withheld.
+                <p className="text-xs text-content-subtle">{tc('marginScaleTooFew')}</p>
+            )}
+
+            <ul className="space-y-tight" aria-label={tc('marginScaleAria', { currency: group.currency })}>
+                {group.items.map((item) => {
+                    const margin = item.marginPerDca;
+
+                    if (!item.drawable || margin == null) {
+                        return (
+                            <li
+                                key={item.commodity}
+                                className="flex flex-wrap items-baseline justify-between gap-tight text-xs">
+                                <span className="text-content-default">
+                                    {labelFor(item.commodity)}
+                                </span>
+                                <span className="text-content-attention">
+                                    {item.refusalCode === 'NO_STANDING_CROP_AREA'
+                                        ? tc('perAreaNoArea')
+                                        : tc('perAreaNoValue')}
+                                </span>
+                            </li>
+                        );
+                    }
+
+                    // U+2212, not a hyphen: beside tabular numerals a hyphen
+                    // reads as a dash. `KpiCard` already made this choice.
+                    const money = tc('marginPerDcaSigned', {
+                        value: `${margin < 0 ? '\u2212' : '+'}${formatDecimal(Math.abs(margin), 2)}`,
+                        currency: group.currency,
+                    });
+
+                    return (
+                        <li key={item.commodity} className="space-y-tight">
+                            <div className="flex flex-wrap items-baseline justify-between gap-tight text-xs">
+                                <span className="text-content-default">
+                                    {labelFor(item.commodity)}
+                                </span>
+                                <span
+                                    className={cn(
+                                        'font-medium tabular-nums',
+                                        item.uncertainty !== UNCERTAINTY.EXACT
+                                            ? 'text-content-attention'
+                                            : margin < 0
+                                              ? 'text-content-error'
+                                              : 'text-content-success',
+                                    )}>
+                                    {item.uncertainty === UNCERTAINTY.AT_MOST
+                                        ? tc('uncertaintyAtMost', { value: money })
+                                        : money}
+                                </span>
+                            </div>
+                            {group.comparable && (
+                                <div aria-hidden="true">
+                                    <DivergingBar
+                                        value={margin}
+                                        max={group.maxAbs}
+                                        size="sm"
+                                        aria-label={labelFor(item.commodity)}
+                                    />
+                                </div>
+                            )}
+                        </li>
+                    );
+                })}
+            </ul>
+        </div>
     );
 }

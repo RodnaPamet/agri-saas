@@ -75,13 +75,12 @@ const PAGES: ReadonlyArray<{ label: string; path: (slug: string) => string }> = 
     { label: 'grain/bins', path: (s) => `/t/${s}/grain/bins` },
     { label: 'grain/contracts', path: (s) => `/t/${s}/grain/contracts` },
     { label: 'grain/yield', path: (s) => `/t/${s}/grain/yield` },
-    // Grain calculator — the net-worth report, and the shape most exposed
-    // to drift in this complex: its per-commodity table is
-    // `mobileFallback="scroll"` (five money columns are only meaningful read
-    // side by side, so there is no card branch to escape into), which means
-    // a phone gets a genuinely wider-than-viewport table. That is fine while
-    // the overflow stays INSIDE the table's own scroll container and a bug
-    // the moment it reaches the document. Renders its empty state on a
+    // Grain calculator — the net-worth report. Its wider-than-viewport
+    // appendix table was deleted in favour of the per-crop cover bars, so
+    // the drift risk changed shape rather than going away: a bar whose
+    // fill is driven by a ratio can exceed 100% (a crop fetching more than
+    // it cost), and a fill that escaped its track would push the document
+    // instead of clamping. Renders its empty state on a
     // tenant with no plantings or lots, so no seed dependency.
     { label: 'grain/calculator', path: (s) => `/t/${s}/grain/calculator` },
     // Planning visualisations (boards / calendars).

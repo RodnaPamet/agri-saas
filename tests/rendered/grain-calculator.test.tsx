@@ -37,10 +37,13 @@
  */
 
 import * as React from 'react';
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import enMessages from '../../messages/en.json';
 import { formatDate, formatDateTime } from '@/lib/format-date';
 
+import { foldFarmTotals } from '@/lib/grain/farm-total';
+import { computePerArea } from '@/lib/grain/per-area';
+import { computeBreakEven } from '@/lib/grain/break-even';
 import { costUncertainty, netWorthUncertainty } from '@/lib/grain/uncertainty';
 import { restoreViewport, setViewport } from './viewport';
 
@@ -83,6 +86,7 @@ jest.mock('@/lib/tenant-context-provider', () => {
 
 import {
     CalculatorClient,
+    EXCLUSION_CLASS_DESTINATIONS,
     type CalculatorData,
     type CalculatorExclusions,
     type CalculatorRow,
@@ -101,15 +105,58 @@ const COPY = enMessages.grain.calculator;
  * state directly.
  */
 function withServerDerived(
-    row: Omit<CalculatorRow, 'netUncertainty' | 'costUncertainty' | 'showProduceRent'> &
-        Partial<Pick<CalculatorRow, 'netUncertainty' | 'costUncertainty' | 'showProduceRent'>>,
+    row: Omit<
+        CalculatorRow,
+        'netUncertainty' | 'costUncertainty' | 'showProduceRent' | 'perArea' | 'breakEven'
+    > &
+        Partial<
+            Pick<
+                CalculatorRow,
+                | 'netUncertainty'
+                | 'costUncertainty'
+                | 'showProduceRent'
+                | 'perArea'
+                | 'breakEven'
+            >
+        >,
 ): CalculatorRow {
     return {
         ...row,
+        // Folded with the SAME function the usecase calls. Hardcoding it
+        // would let a fixture claim a margin its own numerator and
+        // denominator do not produce.
+        breakEven:
+            row.breakEven ??
+            computeBreakEven({
+                standingCropExpectedKg: row.standingCropExpectedKg,
+                attributableCost: row.cashCostTotal,
+                pricePerTonne: row.pricePerTonne,
+                priceCurrency: row.priceCurrency,
+                standingCropExcludedCount: 0,
+                unvaluedNoUnitCost: row.unvaluedNoUnitCost,
+                unvaluedUnitMismatch: row.unvaluedUnitMismatch,
+                payrollAllocated: row.payrollAllocated,
+            }),
+        perArea:
+            row.perArea ??
+            computePerArea({
+                standingCropAreaHa: row.standingCropAreaHa,
+                standingCropValue: row.standingCropValue,
+                attributableCost: row.cashCostTotal,
+                standingCropExcludedCount: 0,
+                unvaluedNoUnitCost: row.unvaluedNoUnitCost,
+                unvaluedUnitMismatch: row.unvaluedUnitMismatch,
+                payrollAllocated: row.payrollAllocated,
+            }),
         netUncertainty: row.netUncertainty ?? netWorthUncertainty(row),
         costUncertainty: row.costUncertainty ?? costUncertainty(row),
         showProduceRent: row.showProduceRent ?? row.rentCostProduceKg > 0,
     };
+}
+
+/** An excluded record as the usecase now returns it: id + human label. */
+function ex(id: string, label?: string) {
+    return { id, label: label ?? id };
 }
 
 function emptyExclusions(): CalculatorExclusions {
@@ -224,18 +271,31 @@ function maizeRow(over: Partial<CalculatorRow> = {}): CalculatorRow {
 }
 
 function data(over: Partial<CalculatorData> = {}): CalculatorData {
+    // `farm` is FOLDED from the rows, exactly as the usecase folds it.
+    // Hardcoding it would let a fixture claim a farm total that its own
+    // rows do not add up to — the fixture would pass while production
+    // disagreed with itself. Same reason `withServerDerived` exists above.
+    const rows = over.rows ?? [wheatRow(), maizeRow()];
     return {
         generatedAt: '2026-08-11T06:00:00.000Z',
         seasonId: null,
-        rows: [wheatRow(), maizeRow()],
+        rows,
+        farm: {
+            totals: foldFarmTotals(rows),
+            refusedWithoutCurrency: rows
+                .filter((r) => r.netWorth == null && r.priceCurrency == null)
+                .map((r) => r.commodity)
+                .sort(),
+        },
         exclusions: {
             ...emptyExclusions(),
-            plantingsMissingYieldEstimate: ['planting-a', 'planting-b'],
-            lotsUnresolvedUnit: [{ lotId: 'lot-1', unitKey: 'bag' }],
-            leasesUnresolvedRent: [
-                { leaseId: 'lease-1', reason: 'rent unit not recognised' },
+            plantingsMissingYieldEstimate: [
+                ex('planting-a', 'Нива 3 · Пшеница'),
+                ex('planting-b', 'Нива 4 · Пшеница'),
             ],
-            commoditiesWithNoPrice: ['maize'],
+            lotsUnresolvedUnit: [ex('lot-1', 'Пшеница, реколта 2026 (bag)')],
+            leasesUnresolvedRent: [ex('lease-1', 'Иван Петров · Нива 7')],
+            commoditiesWithNoPrice: [ex('maize')],
         },
         unvalued: { noUnitCost: 0, unitMismatch: 0 },
         cashOut: [],
@@ -374,9 +434,11 @@ describe('grain calculator — on a PHONE (setViewport("mobile"))', () => {
         renderPage();
 
         // The net label is the page's answer, and it is claimed once.
-        // Scoped to the sum: the appendix table below has a "Net worth"
-        // COLUMN header, which is a different assertion about a
-        // different surface.
+        // Still scoped to the sum. The appendix table that used to carry
+        // a second "Net worth" is gone, but the scoping is what makes the
+        // assertion mean "claimed once HERE" rather than "appears once on
+        // the page" — the weaker claim would start passing the day a
+        // second surface repeats the figure.
         const sum = screen.getByRole('group', { name: COPY.waterfallAria });
         expect(within(sum).getAllByText(COPY.netWorthLabel)).toHaveLength(1);
 
@@ -524,9 +586,9 @@ describe('grain calculator — on a PHONE (setViewport("mobile"))', () => {
         // one — maize has no price, so neither is valued — and that is
         // correct, which is why this cannot be a bare text query.
         expect(sum.querySelector('[data-metric-value="true"]')).toHaveTextContent('—');
-        // Scoped: the appendix table's net-worth CELL carries the same
-        // wording, deliberately — that is a separate assertion about a
-        // separate surface, and the shared vocabulary is why they match.
+        // Scoped for the same reason: the refusal wording is shared
+        // vocabulary and any surface may legitimately repeat it, so the
+        // assertion has to name which one it is about.
         expect(within(sum).getByText(COPY.netWorthUnavailableTitle)).toBeVisible();
         // TRANSLATED from the code, not the server's English.
         expect(
@@ -559,6 +621,644 @@ describe('grain calculator — on a PHONE (setViewport("mobile"))', () => {
         expect(
             screen.getByText('A reason this client cannot translate yet.'),
         ).toBeVisible();
+    });
+
+    // ─────────────────────────────────────────────────────────────────
+    // THE FARM ANSWER. The page's docblock claims it answers "what is the
+    // grain worth, after everything it cost me?" — and answered it per
+    // COMMODITY, so a three-crop farm got three figures behind a toggle
+    // and had to add them in its head.
+    // ─────────────────────────────────────────────────────────────────
+
+    it('answers for the whole FARM without touching the toggle', () => {
+        setViewport('mobile');
+        renderPage(
+            data({
+                rows: [
+                    wheatRow(),
+                    wheatRow({ commodity: 'barley', netWorth: 5_000, cashCostTotal: 1_000 }),
+                    wheatRow({ commodity: 'sunflower', netWorth: 3_250, cashCostTotal: 900 }),
+                ],
+            }),
+        );
+
+        // 18,750 + 5,000 + 3,250 = 27,000. Present on first paint, no
+        // interaction — which is the whole complaint.
+        expect(screen.getByText(COPY.farmTotalTitle)).toBeVisible();
+        expect(screen.getByText('27,000 EUR')).toBeVisible();
+    });
+
+    it('shows no farm card for a single-crop farm', () => {
+        // It would restate the commodity sum below it exactly. An
+        // affordance that says nothing must not occupy space on a simple
+        // farm — the same instinct the toggle already had.
+        setViewport('mobile');
+        renderPage(data({ rows: [wheatRow()] }));
+        expect(screen.queryByText(COPY.farmTotalTitle)).not.toBeInTheDocument();
+    });
+
+    it('keeps currencies apart and says why, never summing them', () => {
+        setViewport('mobile');
+        renderPage(
+            data({
+                rows: [
+                    wheatRow(),
+                    wheatRow({ commodity: 'barley', priceCurrency: 'BGN', netWorth: 4_000 }),
+                ],
+            }),
+        );
+
+        // Scoped to the farm card: the per-crop strip below legitimately
+        // shows the same figures — with one crop per currency, each total
+        // IS its crop's net — and that agreement is the point, not a
+        // duplicate to assert around.
+        const farmCard = screen.getByText(COPY.farmTotalTitle).closest('section')!;
+        expect(within(farmCard).getByText('18,750 EUR')).toBeVisible();
+        expect(within(farmCard).getByText('4,000 BGN')).toBeVisible();
+        // No blended figure anywhere — 22,750 would reconcile against
+        // nothing, since this product applies no exchange rate.
+        expect(screen.queryByText(/22750/)).not.toBeInTheDocument();
+        expect(screen.getByText(COPY.farmCurrencyNote)).toBeVisible();
+    });
+
+    it('names the commodities missing from the total, never going silently short', () => {
+        // maize is REFUSED (no market price). Its standing crop is real,
+        // but its cost cannot be subtracted, so folding its value in would
+        // overstate the farm — and dropping it silently would report a
+        // smaller number with nothing saying it is not the whole farm.
+        setViewport('mobile');
+        renderPage(data({ rows: [wheatRow(), maizeRow(), wheatRow({ commodity: 'barley', netWorth: 5_000 })] }));
+
+        // One element, matched whole: "maize" alone also appears in the
+        // comparison strip, which is a different claim on a different
+        // surface.
+        expect(
+            screen.getByText(/1 commodity is not in this total:.*maize/i),
+        ).toBeVisible();
+    });
+
+    it('bounds the FARM total when any contributing cost is a floor', () => {
+        // Composed, not invented: one crop's unpriced consumption makes
+        // the farm net a ceiling too.
+        setViewport('mobile');
+        renderPage(
+            data({
+                rows: [
+                    wheatRow({ unvaluedNoUnitCost: 2 }),
+                    wheatRow({ commodity: 'barley', netWorth: 5_000 }),
+                ],
+            }),
+        );
+
+        expect(
+            screen.getByText(COPY.uncertaintyAtMost.replace('{value}', '23,750 EUR')),
+        ).toBeVisible();
+    });
+
+    // ─────────────────────────────────────────────────────────────────
+    // DIAGNOSES BECOME DESTINATIONS. The only href in the whole feature
+    // was the dashboard breadcrumb: nine named classes of excluded record
+    // and no way to reach one. Knowing what is wrong never became fixing
+    // it, which is the gap between an honest report and a tool.
+    // ─────────────────────────────────────────────────────────────────
+
+    it('gives EVERY exclusion class with entries somewhere to go', () => {
+        // DERIVED from the class table, not nine hand-listed cases — a
+        // tenth class added later without a destination must fail here,
+        // and a hand-written list would simply not mention it.
+        setViewport('mobile');
+        renderPage(
+            data({
+                exclusions: {
+                    plantingsMissingYieldEstimate: [ex('p-1')],
+                    plantingsUnknownCommodity: [ex('p-2')],
+                    lotsUnresolvedUnit: [ex('lot-1')],
+                    lotsUnknownCommodity: [ex('lot-2')],
+                    commoditiesWithNoPrice: [ex('maize')],
+                    leasesUnresolvedRent: [ex('l-1')],
+                    leasesUnattributed: [ex('l-2')],
+                    leasesProduceRentUnpriced: [ex('l-3')],
+                    payrollUnattributable: [ex('c-1')],
+                },
+            }),
+        );
+
+        // The accordion is `type="single"`, so only the OPEN item's content
+        // is mounted — the destination lives with the entries it relates to,
+        // which means opening each class in turn is what a farmer does and
+        // what this asserts.
+        const triggers = screen.getAllByRole('button', { name: /\(\d+\)$/ });
+        expect(triggers.length).toBe(9); // every class has entries in this fixture
+
+        const seen = new Set<string>();
+        for (const trigger of triggers) {
+            fireEvent.click(trigger);
+            for (const a of Array.from(document.querySelectorAll('a[href^="/t/acme"]'))) {
+                seen.add(a.getAttribute('href')!);
+            }
+        }
+
+        // Every destination the TABLE declares was reachable. Derived, so a
+        // tenth class added without one fails here.
+        for (const path of EXCLUSION_CLASS_DESTINATIONS) {
+            expect(seen).toContain(`/t/acme${path}`);
+        }
+        // Non-trivial — a table that lost its destinations would make the
+        // loop above vacuously true.
+        expect(EXCLUSION_CLASS_DESTINATIONS.length).toBeGreaterThanOrEqual(4);
+    });
+
+    it('deep-links a LOT to its own detail, the one entry type that supports it', () => {
+        // /inventory?lotId opens that lot's modal — an affordance built for
+        // QR codes. /rent takes a locationId and /planning a cropPlanId,
+        // neither of which these entries carry, so those stay class-level.
+        setViewport('mobile');
+        renderPage(
+            data({
+                exclusions: {
+                    ...emptyExclusions(),
+                    lotsUnresolvedUnit: [ex('lot-42', 'Ечемик, склад 2 (bag)')],
+                },
+            }),
+        );
+
+        fireEvent.click(screen.getByRole('button', { name: /\(1\)$/ }));
+        expect(
+            document.querySelector('a[href="/t/acme/inventory?lotId=lot-42"]'),
+        ).not.toBeNull();
+    });
+
+    it('offers a way out of the empty state, not just a precondition', () => {
+        setViewport('mobile');
+        renderPage(data({ rows: [] }));
+
+        const action = screen.getByText(COPY.emptyAction);
+        expect(action).toBeVisible();
+        expect(action.closest('a')).toHaveAttribute('href', '/t/acme/planning');
+    });
+
+    it('links a FIXABLE refusal, and leaves an unfixable one explanatory', () => {
+        setViewport('mobile');
+        // NO_MARKET_PRICE is fixable — prices live on /trends.
+        renderPage(data({ rows: [maizeRow()] }));
+        expect(
+            document.querySelector('a[href="/t/acme/trends"]'),
+        ).not.toBeNull();
+
+        // A mixed cost currency is NOT: it needs an FX rate this product
+        // deliberately does not have. Offering a destination that cannot
+        // resolve the cause would be worse than the plain explanation.
+        renderPage(
+            data({
+                rows: [
+                    maizeRow({
+                        netWorthUnavailableCode: 'MIXED_COST_CURRENCY',
+                        netWorthUnavailableParams: null,
+                        netWorthUnavailableReason: 'Costs in more than one currency.',
+                    }),
+                ],
+            }),
+        );
+        expect(screen.getAllByText(COPY.refusal.MIXED_COST_CURRENCY).length).toBeGreaterThan(0);
+    });
+
+    it('shows NAMES in the accordion, never a raw database id', () => {
+        // Open "3 plantings missing a yield estimate" and you used to get
+        // three cuids in a monospace list — no parcel, no crop, nothing a
+        // person can recognise. The count was honest; the detail was
+        // decoration.
+        setViewport('mobile');
+        renderPage();
+
+        // The accordion is `type="single"`, so only the item just clicked
+        // is mounted — the text has to be gathered as each opens, not read
+        // once at the end when eight of the nine have closed again.
+        let seen = '';
+        for (const trigger of screen.getAllByRole('button', { name: /\(\d+\)$/ })) {
+            fireEvent.click(trigger);
+            seen += document.body.textContent ?? '';
+        }
+
+        // A cuid is 25 lowercase alphanumerics starting `c`. None should
+        // reach the page for records that resolved to a name.
+        expect(seen).not.toMatch(/\bc[a-z0-9]{24}\b/);
+        expect(seen).toContain('Нива 3 · Пшеница');
+        expect(seen).toContain('Иван Петров · Нива 7');
+    });
+
+    it('falls back to the id rather than an empty bullet', () => {
+        // A record deleted between the read and the label, or beyond a
+        // TAKE cap. A blank bullet loses even the count.
+        setViewport('mobile');
+        renderPage(
+            data({
+                exclusions: {
+                    ...emptyExclusions(),
+                    plantingsMissingYieldEstimate: [ex('cmslvwqsj0000j44se0pwtxns')],
+                },
+            }),
+        );
+
+        fireEvent.click(screen.getByRole('button', { name: /\(1\)$/ }));
+        expect(screen.getByText('cmslvwqsj0000j44se0pwtxns')).toBeVisible();
+    });
+
+    it('renders entries as prose, not as machine identifiers', () => {
+        // Monospace signals "this is an id". These have stopped being ids.
+        setViewport('mobile');
+        const { container } = renderPage();
+        fireEvent.click(screen.getAllByRole('button', { name: /\(\d+\)$/ })[0]);
+        expect(container.querySelector('.font-mono')).toBeNull();
+    });
+
+    // ─────────────────────────────────────────────────────────────────
+    // THE SHAPE OF THE FARM. commodityOptions fed a ToggleGroup, so a
+    // five-crop farm saw ONE crop at a time and could not answer "which
+    // crop is carrying this farm?" without stepping through them.
+    // ─────────────────────────────────────────────────────────────────
+
+    const threeCrops = () =>
+        data({
+            rows: [
+                wheatRow(),
+                wheatRow({ commodity: 'barley', netWorth: 5_000 }),
+                wheatRow({ commodity: 'sunflower', netWorth: 30_000 }),
+            ],
+        });
+
+    it.each(['mobile', 'desktop'] as const)(
+        'compares every crop without interacting — %s',
+        (viewport) => {
+            // BOTH viewports, named. jsdom answers matches:false to every
+            // query so the default is a phone; the desktop case has to be
+            // asked for or it is never executed.
+            setViewport(viewport);
+            renderPage(threeCrops());
+
+            const strip = screen.getByLabelText(COPY.comparisonAria);
+            // All three present on first paint, no clicks.
+            expect(within(strip).getAllByRole('button')).toHaveLength(3);
+            expect(within(strip).getByText('30,000 EUR')).toBeVisible();
+            expect(within(strip).getByText('18,750 EUR')).toBeVisible();
+            expect(within(strip).getByText('5,000 EUR')).toBeVisible();
+        },
+    );
+
+    it('orders by contribution, biggest first, and says so', () => {
+        setViewport('desktop');
+        renderPage(threeCrops());
+
+        const strip = screen.getByLabelText(COPY.comparisonAria);
+        const amounts = within(strip)
+            .getAllByRole('button')
+            .map((b) => b.textContent);
+        expect(amounts[0]).toContain('30,000');
+        expect(amounts[1]).toContain('18,750');
+        expect(amounts[2]).toContain('5,000');
+        expect(screen.getByText(COPY.comparisonOrderNote)).toBeVisible();
+    });
+
+    it('gives a single-crop farm neither toggle nor comparison furniture', () => {
+        // A simpler farm should see a simpler page, not the same page with
+        // empty affordances — the instinct the ToggleGroup already had.
+        setViewport('mobile');
+        renderPage(data({ rows: [wheatRow()] }));
+
+        expect(screen.queryByLabelText(COPY.comparisonAria)).not.toBeInTheDocument();
+        expect(screen.queryByText(COPY.comparisonTitle)).not.toBeInTheDocument();
+    });
+
+    it('carries uncertainty into the compact view, where it most easily lies', () => {
+        // A refused net and a bounded net rendered as bare figures sit in
+        // the same column as exact ones and invite exactly the comparison
+        // they cannot support.
+        setViewport('mobile');
+        renderPage(
+            data({
+                rows: [
+                    wheatRow({ unvaluedNoUnitCost: 2 }),
+                    maizeRow(),
+                    wheatRow({ commodity: 'barley', netWorth: 5_000 }),
+                ],
+            }),
+        );
+
+        const strip = screen.getByLabelText(COPY.comparisonAria);
+        // AT_MOST rides the value, exactly as it does on the headline.
+        expect(
+            within(strip).getByText(COPY.uncertaintyAtMost.replace('{value}', '18,750 EUR')),
+        ).toBeVisible();
+        // REFUSED shows the em-dash, never a bare number that looks
+        // comparable — and sorts last, having no figure to rank.
+        const rows_ = within(strip).getAllByRole('button');
+        expect(rows_[rows_.length - 1].textContent).toContain('—');
+    });
+
+    it('selecting a crop expands it below', () => {
+        setViewport('mobile');
+        renderPage(threeCrops());
+
+        const strip = screen.getByLabelText(COPY.comparisonAria);
+        const barley = within(strip)
+            .getAllByRole('button')
+            .find((b) => /barley/i.test(b.textContent ?? ''))!;
+        fireEvent.click(barley);
+        expect(barley).toHaveAttribute('aria-pressed', 'true');
+    });
+
+    // ─────────────────────────────────────────────────────────────────
+    // PER DECARE — the unit a Bulgarian farmer plans in.
+    // ─────────────────────────────────────────────────────────────────
+
+    it('states the standing-crop margin per dca', () => {
+        setViewport('mobile');
+        // 12.5 ha = 125 dca; (15,000 − 5,500) / 125 = 76.
+        renderPage(data({ rows: [wheatRow()] }));
+
+        expect(screen.getByText(COPY.marginPerDcaLabel)).toBeVisible();
+        expect(
+            screen.getByText(COPY.marginPerDcaValue.replace('{value}', '76 EUR')),
+        ).toBeVisible();
+    });
+
+    it('never presents it as net worth per dca', () => {
+        // netWorth/area would be 18,750/125 = 150. That number must not
+        // appear: net worth carries grain in store, which has no area.
+        setViewport('mobile');
+        renderPage(data({ rows: [wheatRow()] }));
+        expect(screen.queryByText(/150 EUR \/ dca/)).not.toBeInTheDocument();
+        expect(screen.getByText(COPY.marginPerDcaHint)).toBeVisible();
+    });
+
+    it('carries AT_MOST into the per-dca figure when the cost is a floor', () => {
+        setViewport('mobile');
+        renderPage(data({ rows: [wheatRow({ unvaluedNoUnitCost: 2 })] }));
+
+        expect(
+            screen.getByText(
+                COPY.uncertaintyAtMost.replace(
+                    '{value}',
+                    COPY.marginPerDcaValue.replace('{value}', '76 EUR'),
+                ),
+            ),
+        ).toBeVisible();
+    });
+
+    it('states WHICH denominator was missing rather than printing a dash', () => {
+        // A commodity only in store: real value, no standing-crop area.
+        setViewport('mobile');
+        renderPage(
+            data({
+                rows: [
+                    wheatRow({
+                        standingCropAreaHa: 0,
+                        standingCropExpectedKg: 0,
+                        standingCropValue: 0,
+                    }),
+                ],
+            }),
+        );
+
+        // Scoped to the answer card: the margin comparison below now names
+        // the same refusal for the same crop, which is the point of it —
+        // an undrawable crop is listed there rather than vanishing. Two
+        // surfaces stating one refusal is agreement, not duplication.
+        const answer = screen.getByRole('group', { name: COPY.waterfallAria });
+        expect(within(answer).getByText(COPY.perAreaNoArea)).toBeVisible();
+    });
+
+    // ─────────────────────────────────────────────────────────────────
+    // BREAK-EVEN COVER. ProgressBar per the platform decision table — a
+    // single value advancing toward a max, where the max is the price
+    // that clears cost. The appendix table was deleted to pay for it, so
+    // the text beside each bar is now the ONLY text equivalent.
+    // ─────────────────────────────────────────────────────────────────
+
+    /** The cover bars only — not the cost-breakdown bars beside them. */
+    const coverBars = () => screen.queryAllByRole('progressbar', { name: /of break-even/ });
+
+    const mixedCrops = () =>
+        data({
+            rows: [
+                // 60 t, cost 5,500 ⇒ break-even 91.67; market 250 ⇒ 273%
+                wheatRow(),
+                // 60 t, cost 30,000 ⇒ break-even 500; market 250 ⇒ 50%
+                wheatRow({ commodity: 'barley', cashCostTotal: 30_000, netWorth: -5_000 }),
+            ],
+        });
+
+    it('shows the cover for a SINGLE-crop farm, which has nothing to compare', () => {
+        // The comparison strip is suppressed below two crops. The cover is
+        // not a comparison — for a monoculture it is the whole question.
+        setViewport('mobile');
+        renderPage(data({ rows: [wheatRow()] }));
+        expect(coverBars()).toHaveLength(1);
+        expect(screen.getByText(/273% — covers cost/)).toBeVisible();
+    });
+
+    it('shows cover as a bar AND as text, so the visual is not the only reading', () => {
+        setViewport('mobile');
+        renderPage(mixedCrops());
+
+        // A real ProgressBar per crop. Queried BY NAME, not by role alone:
+        // the cost-breakdown bars are progressbars too, and a bare role
+        // query would count them and pass for the wrong reason.
+        expect(coverBars()).toHaveLength(2);
+
+        // The text equivalent: percentage, verdict and both prices. This
+        // is what a screen reader gets, and since the appendix table is
+        // gone it is the only thing that conveys the ranking.
+        expect(screen.getByText(/273% — covers cost/)).toBeVisible();
+        expect(screen.getByText(/50% — short of cost/)).toBeVisible();
+    });
+
+    it('distinguishes a covered crop from one short of cost', () => {
+        setViewport('mobile');
+        renderPage(mixedCrops());
+        expect(screen.getByText(/covers cost/)).toBeVisible();
+        expect(screen.getByText(/short of cost/)).toBeVisible();
+    });
+
+    it('marks an AT_LEAST crop as bounded, in the text as well as the bar', () => {
+        // An unpriced consumption understates the cost, so it understates
+        // the price needed to clear it — the true cover is this or LOWER.
+        // Note the bound does NOT invert here, unlike the per-dca margin.
+        setViewport('mobile');
+        renderPage(
+            data({
+                rows: [wheatRow({ unvaluedNoUnitCost: 2 }), wheatRow({ commodity: 'barley' })],
+            }),
+        );
+        expect(screen.getByText(/at least 273%/)).toBeVisible();
+    });
+
+    it('gives a REFUSED crop no bar at all, and names why', () => {
+        // Not a zero-length bar — that would sit in the comparison looking
+        // like a crop that covers nothing, which is a different claim from
+        // "we could not work it out".
+        setViewport('mobile');
+        renderPage(data({ rows: [wheatRow(), maizeRow()] }));
+
+        // maize has no market price.
+        expect(screen.getByText(COPY.breakEvenNoPrice)).toBeVisible();
+        // One cover bar, for wheat — not two.
+        expect(coverBars()).toHaveLength(1);
+    });
+
+    it('puts no currency on the shared scale', () => {
+        // The bar plots a RATIO, which is dimensionless — both sides of
+        // market/break-even are in the same currency by construction. So a
+        // EUR crop and a BGN crop are comparable without blending, and the
+        // money beside each carries its OWN code.
+        setViewport('mobile');
+        renderPage(
+            data({
+                rows: [
+                    wheatRow(),
+                    wheatRow({ commodity: 'barley', priceCurrency: 'BGN', netWorth: 4_000 }),
+                ],
+            }),
+        );
+
+        expect(screen.getByText(/250 EUR market/)).toBeVisible();
+        expect(screen.getByText(/250 BGN market/)).toBeVisible();
+        // Both cover bars are on the same 0-100 percent scale, carrying no
+        // currency at all — so nothing is blended by putting them side by
+        // side. The true figure survives the clamp in `aria-valuetext`.
+        const bars = coverBars();
+        expect(bars).toHaveLength(2);
+        for (const bar of bars) {
+            expect(bar.getAttribute('aria-valuemax')).toBe('100');
+        }
+    });
+
+    // ─────────────────────────────────────────────────────────────────
+    // MARGIN PER DECARE. The second visual, kept BESIDE cover rather than
+    // replacing it: cover ranks by return on the money spent, this by
+    // return on the land used, and on a farm where land is the scarce
+    // input they are two real answers that can disagree.
+    //
+    // wheatRow: 125 dca, value 15,000, cost 5,500 ⇒ +76/dca.
+    // ─────────────────────────────────────────────────────────────────
+
+    /** The bars are decorative, so they are NOT in the accessibility tree. */
+    const marginBars = () => Array.from(document.querySelectorAll('[role="meter"]'));
+
+    const lossRow = (over: Partial<CalculatorRow> = {}) =>
+        // 125 dca, value 1,000, cost 15,000 ⇒ −112/dca.
+        wheatRow({
+            commodity: 'barley',
+            standingCropValue: 1_000,
+            cashCostTotal: 15_000,
+            netWorth: -4_000,
+            ...over,
+        });
+
+    it('shows a loss as a loss, signed, and never floored to zero', () => {
+        // The defect that forced a new primitive: ProgressBar floors a
+        // negative to 0 before it computes anything, so a losing crop
+        // would have rendered exactly like one that broke even.
+        setViewport('mobile');
+        renderPage(data({ rows: [wheatRow(), lossRow()] }));
+
+        expect(screen.getByText('+76 EUR/dca')).toBeVisible();
+        expect(screen.getByText('\u2212112 EUR/dca')).toBeVisible();
+
+        const signs = marginBars().map((b) => b.getAttribute('data-sign'));
+        expect(signs).toContain('positive');
+        expect(signs).toContain('negative');
+    });
+
+    it('prints the axis, because bar lengths mean nothing without it', () => {
+        setViewport('mobile');
+        renderPage(data({ rows: [wheatRow(), lossRow()] }));
+
+        // Scale is the largest MAGNITUDE in the group — the 112 loss, not
+        // the 76 profit — so the loss sits on-axis instead of past its end.
+        expect(screen.getByText('\u2212112 EUR')).toBeVisible();
+        expect(screen.getByText('+112 EUR')).toBeVisible();
+        expect(screen.getByText(COPY.marginScaleZero)).toBeVisible();
+    });
+
+    it('never puts two currencies on one scale', () => {
+        setViewport('mobile');
+        renderPage(
+            data({
+                rows: [
+                    wheatRow(),
+                    lossRow(),
+                    // 125 dca, value 40,000, cost 15,000 ⇒ +200 BGN/dca.
+                    wheatRow({
+                        commodity: 'rapeseed',
+                        priceCurrency: 'BGN',
+                        standingCropValue: 40_000,
+                        cashCostTotal: 15_000,
+                        netWorth: 20_000,
+                    }),
+                    // A second BGN crop, so that group is comparable too and
+                    // both axes get drawn. 125 dca, 20,000 − 15,000 ⇒ +40.
+                    wheatRow({
+                        commodity: 'sunflower',
+                        priceCurrency: 'BGN',
+                        standingCropValue: 20_000,
+                        cashCostTotal: 15_000,
+                        netWorth: 5_000,
+                    }),
+                ],
+            }),
+        );
+
+        // Two axes, each ending at its OWN group maximum. If the BGN 200
+        // had stretched the EUR axis, this EUR end would read 200.
+        expect(screen.getByText('+112 EUR')).toBeVisible();
+        expect(screen.getByText('+200 BGN')).toBeVisible();
+        expect(screen.getByText('+200 BGN/dca')).toBeVisible();
+    });
+
+    it('withholds the bars when a single crop would only measure itself', () => {
+        setViewport('mobile');
+        renderPage(data({ rows: [wheatRow()] }));
+
+        expect(marginBars()).toHaveLength(0);
+        expect(screen.getByText(COPY.marginScaleTooFew)).toBeVisible();
+        // The figure itself is NOT withheld — only the comparison is.
+        expect(screen.getByText('+76 EUR/dca')).toBeVisible();
+    });
+
+    it('names a crop that has no currency instead of dropping it', () => {
+        // maize has no market price, so there is no axis it could sit on.
+        // A comparison that quietly shrinks describes a smaller farm.
+        setViewport('mobile');
+        renderPage();
+        expect(screen.getByText(/Not on any scale, for want of a market price/)).toBeVisible();
+    });
+
+    it('marks a bounded margin as a ceiling, not a figure', () => {
+        setViewport('mobile');
+        renderPage(
+            data({ rows: [wheatRow({ unvaluedNoUnitCost: 2 }), lossRow()] }),
+        );
+        // Cost understated ⇒ margin overstated ⇒ the margin is a ceiling.
+        expect(screen.getByText(/at most \+76 EUR\/dca/)).toBeVisible();
+    });
+
+    it('states that cover and margin rank crops differently', () => {
+        // Two visuals that order the same crops differently must say why,
+        // or the page gives two confident answers to one question.
+        setViewport('mobile');
+        renderPage(data({ rows: [wheatRow(), lossRow()] }));
+        expect(screen.getByText(COPY.marginScaleVsCover)).toBeVisible();
+    });
+
+    it('announces each crop once — the bar is decorative, the text is the record', () => {
+        setViewport('mobile');
+        renderPage(data({ rows: [wheatRow(), lossRow()] }));
+
+        // Present in the DOM as a visual...
+        expect(marginBars().length).toBeGreaterThan(0);
+        // ...and absent from the accessibility tree, because every figure
+        // it encodes is already printed as text beside it.
+        expect(screen.queryAllByRole('meter')).toHaveLength(0);
     });
 
     it('stamps WHEN the report was priced, and when the price was observed', () => {
@@ -683,64 +1383,6 @@ describe('grain calculator — on a PHONE (setViewport("mobile"))', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────
-// DESKTOP — the per-commodity table. `mobileFallback="scroll"` means the
-// real <table> renders at both viewports, but these assertions describe
-// the desktop column layout, so the viewport is pinned and named.
-// ─────────────────────────────────────────────────────────────────────
-
-describe('grain calculator — per-commodity table on a DESKTOP (setViewport("desktop"))', () => {
-    it('renders a real <table> with the money columns side by side', () => {
-        setViewport('desktop');
-        renderPage();
-
-        const table = screen.getByRole('table');
-        expect(within(table).getByText(COPY.colCommodity)).toBeVisible();
-        expect(within(table).getByText(COPY.colStandingValue)).toBeVisible();
-        expect(within(table).getByText(COPY.colOnHandValue)).toBeVisible();
-        expect(within(table).getByText(COPY.colCashCost)).toBeVisible();
-        expect(within(table).getByText(COPY.colNetWorth)).toBeVisible();
-    });
-
-    it('lists only commodities the farm actually has', () => {
-        // A REGRESSION LOCK, not a fix. The concern was that the appendix
-        // iterated CANONICAL_COMMODITIES, so a wheat-and-sunflower farm
-        // would read eight rows of zeros for crops it does not grow. It
-        // does not: `grain-net-worth.ts` keys its accumulator only from
-        // real plantings, lots, leases and payroll (`ensureAcc` is never
-        // called from the catalogue), and CANONICAL_COMMODITIES is used
-        // solely to SORT via byCanonicalOrder. Two commodities in, two
-        // rows out.
-        //
-        // Nothing is hidden, so nothing is stated — a "2 of 10 shown" line
-        // would claim eight rows were suppressed when they never existed
-        // for this farm, which is a worse lie than the silence it
-        // replaces. Locked here so a future change that seeds the
-        // accumulator from the catalogue fails instead of quietly
-        // padding the table.
-        setViewport('desktop');
-        renderPage();
-
-        const table = screen.getByRole('table');
-        expect(within(table).getAllByRole('row')).toHaveLength(2 + 1); // + header
-        expect(within(table).getByText(/wheat/i)).toBeVisible();
-        expect(within(table).getByText(/maize/i)).toBeVisible();
-        expect(within(table).queryByText(/barley/i)).not.toBeInTheDocument();
-        expect(within(table).queryByText(/sunflower/i)).not.toBeInTheDocument();
-    });
-
-    it('prints the refusal wording in a withheld net-worth cell, never a zero', () => {
-        setViewport('desktop');
-        renderPage();
-
-        const table = screen.getByRole('table');
-        expect(
-            within(table).getByText(COPY.netWorthUnavailableTitle),
-        ).toBeVisible();
-        expect(within(table).getByText('€18,750')).toBeVisible();
-    });
-});
-
-// ─────────────────────────────────────────────────────────────────────
 // Unvalued consumptions.
 //
 // A consumption the usecase could not price leaves `cashCostTotal` SHORT,
@@ -791,7 +1433,12 @@ describe('grain calculator — unvalued consumptions (setViewport("mobile"))', (
         // overwhelmingly common healthy case, unlike the exclusion count
         // which is deliberately stated at zero.
         expect(screen.queryByText(/could not be valued/)).not.toBeInTheDocument();
-        expect(screen.queryByText(/farm-wide/)).not.toBeInTheDocument();
+        // `/unvalued consumption/`, not `/farm-wide/`. The looser matcher
+        // was standing in for the `unvaluedFarmWide` string and started
+        // catching the per-dca hint, which says "farm-wide overhead" for
+        // an unrelated and accurate reason. A matcher broad enough to hit
+        // innocent copy tests the copy, not the behaviour.
+        expect(screen.queryByText(/unvalued consumption/)).not.toBeInTheDocument();
     });
 
     it('omits a reason line whose count is zero', () => {

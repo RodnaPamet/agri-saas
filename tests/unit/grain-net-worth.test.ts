@@ -102,7 +102,7 @@ describe('getGrainNetWorth — standing crop', () => {
         expect(wheat.standingCropPlantingIds).toEqual(['p-1']);
         // 4000 kg = 4 t × 300 BGN/t = 1200
         expect(wheat.standingCropValue).toBe(1200);
-        expect(result.exclusions.plantingsMissingYieldEstimate).toEqual(['p-2']);
+        expect(result.exclusions.plantingsMissingYieldEstimate.map((e) => e.id)).toEqual(['p-2']);
     });
 
     it('excludes a planting whose crop has no canonical commodity, naming it', async () => {
@@ -113,7 +113,69 @@ describe('getGrainNetWorth — standing crop', () => {
         const result = await netWorthResult(ctx);
 
         expect(result.rows).toEqual([]);
-        expect(result.exclusions.plantingsUnknownCommodity).toEqual(['p-3']);
+        expect(result.exclusions.plantingsUnknownCommodity.map((e) => e.id)).toEqual(['p-3']);
+    });
+});
+
+describe('getGrainNetWorth — per-decare figures', () => {
+    it('divides by the INCLUDED-planting area, not everything planted', async () => {
+        // THE DENOMINATOR. Two plantings, one with no yield estimate. Only
+        // the estimated one contributes tonnage and value, so only its area
+        // may sit under the line — otherwise the margin silently understates
+        // by however many plantings lacked an estimate.
+        mockDb.planting.findMany.mockResolvedValue([
+            planting({ id: 'p-in', areaM2: 100_000, plannedYieldKgPerHa: 4000 }), // 10 ha
+            planting({ id: 'p-out', areaM2: 300_000, plannedYieldKgPerHa: null }), // 30 ha, excluded
+        ]);
+        mockGetMarketReferences.mockResolvedValue(
+            new Map([['wheat', { commodity: 'wheat', pricePerTonne: 300, currency: 'BGN', observedAt: '2026-01-01', source: 'ec-agrifood' }]]),
+        );
+
+        const result = await netWorthResult(ctx);
+        const wheat = result.rows[0];
+
+        // 10 ha included ⇒ 100 dca, NOT 400.
+        expect(wheat.standingCropAreaHa).toBe(10);
+        expect(wheat.perArea.areaDca).toBe(100);
+        // 10 ha × 4000 kg/ha = 40 t × 300 = 12,000 over 100 dca.
+        expect(wheat.perArea.standingValuePerDca).toBe(120);
+    });
+
+    it('says the margin is PARTIAL when cost covers land the revenue does not', async () => {
+        // The excluded planting keeps its cost in cashCostTotal while
+        // contributing no area and no value, so the two sides describe
+        // different amounts of land.
+        mockDb.planting.findMany.mockResolvedValue([
+            planting({ id: 'p-in', areaM2: 100_000, plannedYieldKgPerHa: 4000 }),
+            planting({ id: 'p-out', areaM2: 100_000, plannedYieldKgPerHa: null }),
+        ]);
+        mockGetMarketReferences.mockResolvedValue(
+            new Map([['wheat', { commodity: 'wheat', pricePerTonne: 300, currency: 'BGN', observedAt: '2026-01-01', source: 'ec-agrifood' }]]),
+        );
+
+        const result = await netWorthResult(ctx);
+        expect(result.rows[0].perArea.uncertainty).toBe('partial');
+    });
+
+    it('refuses per-dca for a commodity that is only in store', async () => {
+        // No standing crop ⇒ no area ⇒ nothing to divide by. A stated
+        // refusal, never Infinity.
+        mockDb.planting.findMany.mockResolvedValue([]);
+        mockDb.inventoryLot.findMany.mockResolvedValue([
+            { id: 'lot-1', quantityOnHand: 7000, unitId: 'u-kg', item: { name: 'Wheat' } },
+        ]);
+        mockDb.unit.findMany.mockResolvedValue([{ id: 'u-kg', key: 'kg' }]);
+        mockGetMarketReferences.mockResolvedValue(
+            new Map([['wheat', { commodity: 'wheat', pricePerTonne: 300, currency: 'BGN', observedAt: '2026-01-01', source: 'ec-agrifood' }]]),
+        );
+
+        const result = await netWorthResult(ctx);
+        const wheat = result.rows[0];
+
+        expect(wheat.grainOnHandValue).toBe(2100);
+        expect(wheat.perArea.marginPerDca).toBeNull();
+        expect(wheat.perArea.uncertainty).toBe('refused');
+        expect(wheat.perArea.refusalCode).toBe('NO_STANDING_CROP_AREA');
     });
 });
 
@@ -149,12 +211,14 @@ describe('getGrainNetWorth — grain on hand', () => {
         const result = await netWorthResult(ctx);
 
         expect(result.rows).toEqual([]);
-        expect(result.exclusions.lotsUnresolvedUnit).toEqual(
-            expect.arrayContaining([
-                { lotId: 'lot-3', unitKey: 'each' },
-                { lotId: 'lot-4', unitKey: null },
-            ]),
-        );
+        // The LABEL names both, which is what this test always meant:
+        // the lot by its item name and the unit that failed to resolve.
+        // It used to assert {lotId, unitKey} — the raw shape a farmer was
+        // then shown as a cuid.
+        expect(result.exclusions.lotsUnresolvedUnit).toEqual([
+            { id: 'lot-3', label: 'Wheat (each)' },
+            { id: 'lot-4', label: 'Wheat' },
+        ]);
     });
 
     it('excludes a HARVESTED_PRODUCE lot whose item name names no canonical commodity', async () => {
@@ -166,7 +230,7 @@ describe('getGrainNetWorth — grain on hand', () => {
         const result = await netWorthResult(ctx);
 
         expect(result.rows).toEqual([]);
-        expect(result.exclusions.lotsUnknownCommodity).toEqual(['lot-5']);
+        expect(result.exclusions.lotsUnknownCommodity.map((e) => e.id)).toEqual(['lot-5']);
     });
 });
 
@@ -206,7 +270,7 @@ describe('getGrainNetWorth — attributed crop cost (reused from cost-rollup)', 
         const result = await netWorthResult(ctx);
 
         expect(result.rows).toEqual([]);
-        expect(result.exclusions.plantingsUnknownCommodity).toEqual(['p-orphan']);
+        expect(result.exclusions.plantingsUnknownCommodity.map((e) => e.id)).toEqual(['p-orphan']);
     });
 });
 
@@ -281,7 +345,7 @@ describe('getGrainNetWorth — rent attribution', () => {
         const wheat = result.rows.find((r) => r.commodity === 'wheat')!;
         expect(wheat.rentCostProduceKg).toBe(500);
         expect(wheat.rentCostProduceValue).toBeNull();
-        expect(result.exclusions.leasesProduceRentUnpriced).toEqual(['lease-2']);
+        expect(result.exclusions.leasesProduceRentUnpriced.map((e) => e.id)).toEqual(['lease-2']);
     });
 
     it('names a lease whose rent unit does not resolve', async () => {
@@ -299,7 +363,9 @@ describe('getGrainNetWorth — rent attribution', () => {
         const result = await netWorthResult(ctx);
 
         expect(result.exclusions.leasesUnresolvedRent).toHaveLength(1);
-        expect(result.exclusions.leasesUnresolvedRent[0].leaseId).toBe('lease-3');
+        // `.id`, not `.leaseId` — every exclusion class is one shape now,
+        // and each entry carries a human label beside the id.
+        expect(result.exclusions.leasesUnresolvedRent[0].id).toBe('lease-3');
     });
 
     it('names a resolved lease with no in-scope planting to attribute its rent to', async () => {
@@ -316,7 +382,7 @@ describe('getGrainNetWorth — rent attribution', () => {
 
         const result = await netWorthResult(ctx);
 
-        expect(result.exclusions.leasesUnattributed).toEqual(['lease-4']);
+        expect(result.exclusions.leasesUnattributed.map((e) => e.id)).toEqual(['lease-4']);
     });
 });
 
@@ -365,7 +431,7 @@ describe('getGrainNetWorth — payroll allocation', () => {
 
         const result = await netWorthResult(ctx);
 
-        expect(result.exclusions.payrollUnattributable).toEqual(['pay-4']);
+        expect(result.exclusions.payrollUnattributable.map((e) => e.id)).toEqual(['pay-4']);
     });
 
     it('names a directly-linked row whose planting has no resolvable commodity', async () => {
@@ -375,8 +441,8 @@ describe('getGrainNetWorth — payroll allocation', () => {
 
         const result = await netWorthResult(ctx);
 
-        expect(result.exclusions.payrollUnattributable).toEqual(['pay-5']);
-        expect(result.exclusions.plantingsUnknownCommodity).toEqual(['p-missing']);
+        expect(result.exclusions.payrollUnattributable.map((e) => e.id)).toEqual(['pay-5']);
+        expect(result.exclusions.plantingsUnknownCommodity.map((e) => e.id)).toEqual(['p-missing']);
     });
 });
 
@@ -485,7 +551,7 @@ describe('getGrainNetWorth — currency handling and net worth', () => {
         expect(wheat.standingCropValue).toBeNull();
         expect(wheat.netWorth).toBeNull();
         expect(wheat.netWorthUnavailableReason).toContain('wheat');
-        expect(result.exclusions.commoditiesWithNoPrice).toEqual(['wheat']);
+        expect(result.exclusions.commoditiesWithNoPrice.map((e) => e.id)).toEqual(['wheat']);
     });
 });
 

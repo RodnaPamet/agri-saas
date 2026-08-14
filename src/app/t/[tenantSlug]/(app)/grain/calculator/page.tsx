@@ -57,6 +57,8 @@ function toCalculatorRow(row: CommodityNetWorthRow): CalculatorRow {
         standingCropAreaHa: row.standingCropAreaHa,
         standingCropExpectedKg: row.standingCropExpectedKg,
         standingCropValue: row.standingCropValue,
+        perArea: row.perArea,
+        breakEven: row.breakEven,
 
         grainOnHandTonnes: row.grainOnHandTonnes,
         grainOnHandValue: row.grainOnHandValue,
@@ -118,6 +120,7 @@ export default async function GrainCalculatorPage({
         generatedAt: result.generatedAt,
         seasonId: result.seasonId,
         rows: result.rows.map(toCalculatorRow),
+        farm: result.farm,
         exclusions: result.exclusions,
         unvalued: result.unvalued,
         cashOut: result.cashOut,

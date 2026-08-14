@@ -78,12 +78,12 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { PageHeader } from '@/components/layout/PageHeader';
+import Link from 'next/link';
+import { buttonVariants } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Heading } from '@/components/ui/typography';
-import { ToggleGroup } from '@/components/ui/toggle-group';
+import { Heading, TextLink } from '@/components/ui/typography';
 import { StatusBreakdown, type StatusBreakdownItem } from '@/components/ui/status-breakdown';
-import { DataTable, createColumns } from '@/components/ui/table';
 import { EmptyState } from '@/components/ui/empty-state';
 import {
     Accordion,
@@ -107,7 +107,18 @@ import {
     type UncertaintyState,
 } from '@/lib/grain/uncertainty';
 import { GrainSectionNav } from '../GrainSectionNav';
-import { ExclusionsCard, SumLine } from './components';
+import type { FarmNetWorthTotal } from '@/lib/grain/farm-total';
+import type { ExclusionEntry } from '@/lib/grain/exclusion-labels';
+import type { PerAreaFigures } from '@/lib/grain/per-area';
+import type { BreakEvenFigures } from '@/lib/grain/break-even';
+import {
+    BreakEvenRow,
+    CommodityStrip,
+    ExclusionsCard,
+    MarginPerDcaCard,
+    SumLine,
+} from './components';
+import { foldMarginScales } from '@/lib/grain/margin-scale';
 
 // ─── Serialised DTOs (mirror the grain-net-worth usecase output) ────
 
@@ -122,6 +133,10 @@ export interface CalculatorRow {
     standingCropAreaHa: number;
     standingCropExpectedKg: number;
     standingCropValue: number | null;
+    /** Per-decare figures over the terms that share this area. */
+    perArea: PerAreaFigures;
+    /** Market price against the price that clears cost. */
+    breakEven: BreakEvenFigures;
 
     grainOnHandTonnes: number;
     grainOnHandValue: number | null;
@@ -175,20 +190,27 @@ export interface CalculatorCostSlice {
     variant: StatusBreakdownItem['variant'];
 }
 
-export type LotExclusion = { lotId: string; unitKey: string | null };
-export type LeaseExclusion = { leaseId: string; reason: string };
-export type ExclusionEntry = string | LotExclusion | LeaseExclusion;
+export type { ExclusionEntry } from '@/lib/grain/exclusion-labels';
 
+/**
+ * ONE shape for every class.
+ *
+ * It used to be three — a bare string, `{lotId, unitKey}`,
+ * `{leaseId, reason}` — which forced the renderer to branch on structure
+ * to work out what it was holding, and rendered a cuid either way. Each
+ * entry now carries the id (the deep links need it) and a label a person
+ * recognises, resolved server-side.
+ */
 export interface CalculatorExclusions {
-    plantingsMissingYieldEstimate: string[];
-    plantingsUnknownCommodity: string[];
-    lotsUnresolvedUnit: LotExclusion[];
-    lotsUnknownCommodity: string[];
-    commoditiesWithNoPrice: string[];
-    leasesUnresolvedRent: LeaseExclusion[];
-    leasesUnattributed: string[];
-    leasesProduceRentUnpriced: string[];
-    payrollUnattributable: string[];
+    plantingsMissingYieldEstimate: ExclusionEntry[];
+    plantingsUnknownCommodity: ExclusionEntry[];
+    lotsUnresolvedUnit: ExclusionEntry[];
+    lotsUnknownCommodity: ExclusionEntry[];
+    commoditiesWithNoPrice: ExclusionEntry[];
+    leasesUnresolvedRent: ExclusionEntry[];
+    leasesUnattributed: ExclusionEntry[];
+    leasesProduceRentUnpriced: ExclusionEntry[];
+    payrollUnattributable: ExclusionEntry[];
 }
 
 /** One currency's worth of money that left the bank. */
@@ -202,6 +224,11 @@ export interface CalculatorData {
     generatedAt: string;
     seasonId: string | null;
     rows: CalculatorRow[];
+    /** The farm-level answer — one total per currency. Folded server-side. */
+    farm: {
+        totals: FarmNetWorthTotal[];
+        refusedWithoutCurrency: string[];
+    };
     exclusions: CalculatorExclusions;
     /**
      * Farm-wide DISTINCT counts, NOT the sum of the rows'. Deliberately
@@ -234,19 +261,66 @@ export interface CalculatorClientProps {
  * Every class in `GrainNetWorthExclusions` appears here — the whole
  * point of the usecase returning counts is that the page shows them.
  */
+/**
+ * Every exclusion class, and WHERE A FARMER FIXES IT.
+ *
+ * The page diagnosed precisely and then stranded the reader: nine named
+ * classes of excluded record and no way to reach one. Knowing what is
+ * wrong never became fixing it, which is the difference between an honest
+ * report and a tool.
+ *
+ * `destination` is REQUIRED, not optional. A new class added without one
+ * fails to compile, and the rendered test derives its assertions from this
+ * table rather than listing nine cases — so a tenth class cannot ship
+ * silently linkless.
+ *
+ * ── What these paths are, and are not ───────────────────────────────
+ *
+ * Only lots support a per-ENTRY deep link. `/inventory?lotId=` opens that
+ * lot's detail modal — an affordance built for QR codes on lots, verified
+ * present in InventoryClient. The others are LIST destinations, and that
+ * is a finding rather than laziness:
+ *
+ *   • `/rent` reads `?locationId`, not a lease id; these entries carry
+ *     lease ids, so a deep link would silently ignore the parameter.
+ *   • `/planning`'s only detail route is `[cropPlanId]` — a crop PLAN.
+ *     These entries carry planting ids, which is a different thing.
+ *   • `/trends` and `/grain/costs` read no query parameters at all.
+ *
+ * A link that appears to target a record and lands on an unfiltered list
+ * is worse than one that plainly says "Open Rent", so these say that.
+ */
 const EXCLUSION_CLASSES: ReadonlyArray<{
     key: keyof CalculatorExclusions;
     labelKey: string;
+    destination: { path: string; labelKey: string };
 }> = [
-    { key: 'plantingsMissingYieldEstimate', labelKey: 'exclPlantingsMissingYieldEstimate' },
-    { key: 'plantingsUnknownCommodity', labelKey: 'exclPlantingsUnknownCommodity' },
-    { key: 'lotsUnresolvedUnit', labelKey: 'exclLotsUnresolvedUnit' },
-    { key: 'lotsUnknownCommodity', labelKey: 'exclLotsUnknownCommodity' },
-    { key: 'commoditiesWithNoPrice', labelKey: 'exclCommoditiesWithNoPrice' },
-    { key: 'leasesUnresolvedRent', labelKey: 'exclLeasesUnresolvedRent' },
-    { key: 'leasesUnattributed', labelKey: 'exclLeasesUnattributed' },
-    { key: 'leasesProduceRentUnpriced', labelKey: 'exclLeasesProduceRentUnpriced' },
-    { key: 'payrollUnattributable', labelKey: 'exclPayrollUnattributable' },
+    { key: 'plantingsMissingYieldEstimate', labelKey: 'exclPlantingsMissingYieldEstimate', destination: { path: '/planning', labelKey: 'exclFixPlanning' } },
+    { key: 'plantingsUnknownCommodity', labelKey: 'exclPlantingsUnknownCommodity', destination: { path: '/planning', labelKey: 'exclFixPlanning' } },
+    { key: 'lotsUnresolvedUnit', labelKey: 'exclLotsUnresolvedUnit', destination: { path: '/inventory', labelKey: 'exclFixInventory' } },
+    { key: 'lotsUnknownCommodity', labelKey: 'exclLotsUnknownCommodity', destination: { path: '/inventory', labelKey: 'exclFixInventory' } },
+    { key: 'commoditiesWithNoPrice', labelKey: 'exclCommoditiesWithNoPrice', destination: { path: '/trends', labelKey: 'exclFixTrends' } },
+    { key: 'leasesUnresolvedRent', labelKey: 'exclLeasesUnresolvedRent', destination: { path: '/rent', labelKey: 'exclFixRent' } },
+    { key: 'leasesUnattributed', labelKey: 'exclLeasesUnattributed', destination: { path: '/rent', labelKey: 'exclFixRent' } },
+    // /rent, NOT /trends. The missing PRICE is the proximate cause, but a
+    // farmer cannot add one — market prices arrive from EC and the World
+    // Bank, and a hand-typed price is a platform-admin action. What they
+    // CAN change is the lease: rent recorded in money instead of grain
+    // values without a market price at all. The price side is already
+    // reachable from commoditiesWithNoPrice above.
+    { key: 'leasesProduceRentUnpriced', labelKey: 'exclLeasesProduceRentUnpriced', destination: { path: '/rent', labelKey: 'exclFixRent' } },
+    { key: 'payrollUnattributable', labelKey: 'exclPayrollUnattributable', destination: { path: '/grain/costs', labelKey: 'exclFixCosts' } },
+];
+
+/**
+ * Every DISTINCT destination the exclusion table declares.
+ *
+ * Exported so a test can derive its assertions from the table instead of
+ * restating nine cases — a tenth class added without a destination then
+ * fails, where a hand-written list would simply not mention it.
+ */
+export const EXCLUSION_CLASS_DESTINATIONS: readonly string[] = [
+    ...new Set(EXCLUSION_CLASSES.map((c) => c.destination.path)),
 ];
 
 /**
@@ -317,10 +391,6 @@ export function CalculatorClient({ tenantSlug, data }: CalculatorClientProps) {
     const [selected, setSelected] = useState<string>(rows[0]?.commodity ?? '');
     const row = rows.find((r) => r.commodity === selected) ?? rows[0] ?? null;
 
-    const commodityOptions = useMemo(
-        () => rows.map((r) => ({ value: r.commodity, label: commodityLabel(r.commodity) })),
-        [rows, commodityLabel],
-    );
 
     // ── Exclusions: a COUNT, always shown, never a silent zero ──
     const exclusionClasses = useMemo(
@@ -342,71 +412,6 @@ export function CalculatorClient({ tenantSlug, data }: CalculatorClientProps) {
     // would report more unvalued movements than the farm actually has.
     const farmWideUnvalued = data.unvalued.noUnitCost + data.unvalued.unitMismatch;
 
-    const columns = useMemo(
-        () =>
-            createColumns<CalculatorRow>([
-                {
-                    id: 'commodity',
-                    header: tc('colCommodity'),
-                    accessorFn: (r) => r.commodity,
-                    cell: ({ row: r }) => (
-                        <span className="text-content-emphasis">
-                            {commodityLabel(r.original.commodity)}
-                        </span>
-                    ),
-                },
-                {
-                    id: 'standingCropValue',
-                    header: tc('colStandingValue'),
-                    accessorFn: (r) => r.standingCropValue ?? -1,
-                    cell: ({ row: r }) => (
-                        <span className="block text-right text-xs tabular-nums text-content-muted">
-                            {money(r.original.standingCropValue)}
-                        </span>
-                    ),
-                },
-                {
-                    id: 'grainOnHandValue',
-                    header: tc('colOnHandValue'),
-                    accessorFn: (r) => r.grainOnHandValue ?? -1,
-                    cell: ({ row: r }) => (
-                        <span className="block text-right text-xs tabular-nums text-content-muted">
-                            {money(r.original.grainOnHandValue)}
-                        </span>
-                    ),
-                },
-                {
-                    id: 'cashCostTotal',
-                    header: tc('colCashCost'),
-                    accessorFn: (r) => r.cashCostTotal,
-                    cell: ({ row: r }) => (
-                        <span className="block text-right text-xs tabular-nums text-content-muted">
-                            {money(r.original.cashCostTotal)}
-                        </span>
-                    ),
-                },
-                {
-                    // A refused net worth prints the refusal wording, never
-                    // a zero. The full sentence lives in the summary card
-                    // above — a table cell is the wrong place for it, but a
-                    // blank cell would read as "nothing".
-                    id: 'netWorth',
-                    header: tc('colNetWorth'),
-                    accessorFn: (r) => r.netWorth ?? -1,
-                    cell: ({ row: r }) =>
-                        r.original.netWorth == null ? (
-                            <span className="block text-right text-xs text-content-subtle">
-                                {tc('netWorthUnavailableTitle')}
-                            </span>
-                        ) : (
-                            <span className="block text-right text-xs tabular-nums text-content-emphasis">
-                                {money(r.original.netWorth)}
-                            </span>
-                        ),
-                },
-            ]),
-        [tc, money, commodityLabel],
-    );
 
     const header = (
         <PageHeader
@@ -458,18 +463,115 @@ export function CalculatorClient({ tenantSlug, data }: CalculatorClientProps) {
         />
     );
 
+    // ── The farm answer ──
+    //
+    // ABOVE the empty-state early return, with the other top-level hooks:
+    // a hook after a conditional return changes React's hook ORDER between
+    // an empty farm and a populated one, which is a real defect and not a
+    // lint nicety.
+    //
+    // Shown only for a farm with more than one crop: with one, it would
+    // restate the commodity sum below it exactly, and an affordance that
+    // says nothing should not occupy space on a simple farm.
+    const farm = data.farm;
+    const showFarmTotal = rows.length > 1 && farm.totals.length > 0;
+    // Every refused commodity, from both places one can hide: inside a
+    // currency bucket (a mixed-cost-currency refusal keeps its price
+    // currency) and outside every bucket (no market price, so no currency
+    // at all).
+    const farmRefused = useMemo(
+        () =>
+            [
+                ...farm.totals.flatMap((t) => t.refusedCommodities),
+                ...farm.refusedWithoutCurrency,
+            ].sort(),
+        [farm],
+    );
+    // CURRENCY CODE, not the tenant symbol — `useExactMoneyFormatter`
+    // renders whatever the tenant is configured with, which would print a
+    // BGN total with a euro sign. The cash-out card below already does it
+    // this way for exactly the same reason.
+    // Sorted by CONTRIBUTION, biggest first — CANONICAL_COMMODITIES order
+    // is arbitrary to a farmer, and the order is a claim the UI states.
+    // A refused crop has no figure to rank, so it sorts last rather than
+    // as a zero, which would put it below a loss-making crop that at least
+    // has a number.
+    const comparisonItems = useMemo(
+        () =>
+            rows
+                .map((r) => ({
+                    commodity: r.commodity,
+                    label: commodityLabel(r.commodity),
+                    netWorth: r.netWorth,
+                    currency: r.priceCurrency,
+                    uncertainty: r.netUncertainty,
+                    breakEven: r.breakEven,
+                }))
+                .sort((a, b) => {
+                    if (a.netWorth == null && b.netWorth == null) return 0;
+                    if (a.netWorth == null) return 1;
+                    if (b.netWorth == null) return -1;
+                    return b.netWorth - a.netWorth;
+                }),
+        [rows, commodityLabel],
+    );
+
+    // Grouped by currency, because margin is MONEY — unlike cover, which is
+    // a dimensionless ratio and can share one scale across currencies. The
+    // fold is the farm total's rule applied to a second figure.
+    const marginScales = useMemo(
+        () =>
+            foldMarginScales(
+                rows.map((r) => ({
+                    commodity: r.commodity,
+                    marginPerDca: r.perArea.marginPerDca,
+                    refusalCode: r.perArea.refusalCode,
+                    uncertainty: r.perArea.uncertainty,
+                    priceCurrency: r.priceCurrency,
+                })),
+            ),
+        [rows],
+    );
+
+    const farmTotalValue = useCallback(
+        (total: FarmNetWorthTotal) => {
+            const amount = `${formatDecimal(total.netWorth, 2)} ${total.currency}`;
+            return total.uncertainty === UNCERTAINTY.AT_MOST
+                ? tc('uncertaintyAtMost', { value: amount })
+                : amount;
+        },
+        [tc],
+    );
+
+
     if (row == null) {
         return (
             <div className="animate-fadeIn space-y-section">
                 {header}
                 <GrainSectionNav tenantSlug={tenantSlug} active="calculator" />
+                {/* The description already names the precondition — "figures
+                    appear once a planting carries a yield estimate". Naming a
+                    precondition without offering the way to satisfy it is a
+                    puzzle, so the way is here. /planning, because a yield
+                    estimate on a planting is the first of the two paths and
+                    the one a farmer controls directly. */}
                 <EmptyState
                     size="sm"
                     variant="no-records"
                     title={tc('emptyTitle')}
                     description={tc('emptyDescription')}
-                />
-                <ExclusionsCard count={exclusionCount} classes={exclusionClasses} />
+                >
+                    {/* A LINK wearing the primary button's clothes —
+                        `Button` is not polymorphic, and `buttonVariants` is
+                        exported for exactly this (see TenantsTable). */}
+                    <Link
+                        href={tenantHref('/planning')}
+                        className={buttonVariants({ variant: 'primary', size: 'sm' })}
+                    >
+                        {tc('emptyAction')}
+                    </Link>
+                </EmptyState>
+                <ExclusionsCard count={exclusionCount} classes={exclusionClasses} hrefFor={tenantHref} />
             </div>
         );
     }
@@ -491,6 +593,13 @@ export function CalculatorClient({ tenantSlug, data }: CalculatorClientProps) {
     // The uncertainty vocabulary, resolved once for this row and used the
     // same way wherever it appears — headline, cost line, table cell.
     const netState = row.netUncertainty;
+    // Currency CODE, not the tenant symbol — the same reason the farm card
+    // and the per-crop strip use it: this figure can be in a currency the
+    // tenant is not configured with, and `useExactMoneyFormatter` would put
+    // the tenant's sign on it regardless.
+    const marginPerDcaText = tc('marginPerDcaValue', {
+        value: `${formatDecimal(row.perArea.marginPerDca ?? 0, 2)}${row.priceCurrency ? ` ${row.priceCurrency}` : ''}`,
+    });
     const refusalText = explainRefusal(
         row.netWorthUnavailableCode,
         row.netWorthUnavailableParams,
@@ -526,14 +635,90 @@ export function CalculatorClient({ tenantSlug, data }: CalculatorClientProps) {
             {header}
             <GrainSectionNav tenantSlug={tenantSlug} active="calculator" />
 
-            {commodityOptions.length > 1 && (
-                <ToggleGroup
-                    ariaLabel={tc('commodityAria')}
-                    options={commodityOptions}
-                    selected={selected}
-                    selectAction={setSelected}
+            {/* ── The farm answer, when there is more than one crop ──
+
+                The page's docblock claims it answers "what is the grain
+                worth, after everything it cost me?". It answered that per
+                COMMODITY: three crops meant three figures behind a toggle
+                and a farmer adding them in their head — the same defect
+                the two-panel layout had, one level up.
+
+                It sits ABOVE the toggle deliberately. The toggle selects
+                which crop the detailed sum below expands; it must not look
+                like it also selects which farm you are looking at.
+
+                ONE CARD PER CURRENCY, never blended. This product applies
+                no exchange rate anywhere — cost-rollup refuses to, prices
+                carry their own — so a single figure across two currencies
+                would reconcile against nothing. And the amounts print
+                their CURRENCY CODE rather than the tenant's symbol, which
+                is the same reason the cash-out card does: the tenant
+                formatter would render a BGN total with a euro sign. */}
+            {showFarmTotal && (
+                <Card as="section" density="compact" className="space-y-default border-border-subtle">
+                    <Heading level={2}>{tc('farmTotalTitle')}</Heading>
+                    <div className="flex flex-wrap gap-section">
+                        {farm.totals.map((total) => (
+                            <KPIStat
+                                key={total.currency}
+                                size="md"
+                                value={farmTotalValue(total)}
+                                label={
+                                    farm.totals.length > 1
+                                        ? `${tc('farmTotalLabel')} · ${total.currency}`
+                                        : tc('farmTotalLabel')
+                                }
+                                tone={
+                                    total.uncertainty === UNCERTAINTY.EXACT
+                                        ? 'default'
+                                        : 'attention'
+                                }
+                            />
+                        ))}
+                    </div>
+                    {farm.totals.length > 1 && (
+                        <p className="text-xs text-content-subtle">{tc('farmCurrencyNote')}</p>
+                    )}
+                    {farmRefused.length > 0 && (
+                        // NEVER silently short. A total missing a commodity
+                        // is a different claim from a complete one, and the
+                        // reader cannot tell without being told which.
+                        <p className="text-xs text-content-attention">
+                            {tc('farmRefusedNote', {
+                                count: farmRefused.length,
+                                names: farmRefused.map((c) => commodityLabel(c)).join(', '),
+                            })}
+                        </p>
+                    )}
+                </Card>
+            )}
+
+            {/* Replaces the ToggleGroup, which showed one crop at a time
+                and could not answer "which crop is carrying this farm?".
+                Same conditional instinct: nothing at all for a single-crop
+                farm, which should see a simpler page rather than the same
+                page with empty affordances. */}
+            {comparisonItems.length > 1 && (
+                <CommodityStrip
+                    items={comparisonItems}
+                    // `row.commodity`, not `selected` — `selected` seeds
+                    // from rows[0] and the row lookup falls back to rows[0]
+                    // too, so on first paint the strip must mark the crop
+                    // actually expanded below rather than an empty string.
+                    selected={row.commodity}
+                    onSelect={setSelected}
                 />
             )}
+
+            {/* Beside the cover bars ON PURPOSE, and this puts the page at
+                nine surfaces rather than the eight the budget wanted. The
+                two rank crops differently — cover by return on the money
+                spent, this by return on the land used — and on a farm where
+                land is the scarce input the second ranking is the one that
+                decides what to plant. Showing one and calling it "the"
+                answer would be the confident half-truth this page exists to
+                avoid, so both are shown and the disagreement is stated. */}
+            <MarginPerDcaCard scales={marginScales} labelFor={commodityLabel} />
 
             {/* ── The answer: net worth, or the stated refusal ── */}
             <Card as="section" density="compact" className="space-y-default border-border-subtle">
@@ -671,6 +856,53 @@ export function CalculatorClient({ tenantSlug, data }: CalculatorClientProps) {
                             lives on a different surface from the number
                             it qualifies is not a qualifier — so it is in
                             the VALUE. */}
+                        {/* PER DECARE — the unit a Bulgarian farmer plans
+                            in, and the one the land market quotes rent in.
+
+                            Beside the result, not inside the sum: this is
+                            not a TERM of the arithmetic above, it is a
+                            different question asked of a SUBSET of the same
+                            figures. Only terms sharing the standing crop's
+                            own area are in it — grain in store has no area,
+                            and farm-wide overhead is not this planting's.
+                            Dividing net worth by an area would mix those
+                            scopes, and a guard now forbids it.
+
+                            The qualifier rides the value, and a refusal
+                            names WHICH denominator was missing rather than
+                            printing a dash. */}
+                        <div className="flex flex-wrap items-baseline justify-between gap-tight pb-2 text-sm">
+                            <span className="text-content-muted">
+                                {tc('marginPerDcaLabel')}
+                            </span>
+                            {row.perArea.marginPerDca == null ? (
+                                <span className="text-xs text-content-attention">
+                                    {row.perArea.refusalCode === 'NO_STANDING_CROP_AREA'
+                                        ? tc('perAreaNoArea')
+                                        : tc('perAreaNoValue')}
+                                </span>
+                            ) : (
+                                <span
+                                    className={
+                                        row.perArea.uncertainty === UNCERTAINTY.EXACT
+                                            ? 'font-medium tabular-nums text-content-emphasis'
+                                            : 'font-medium tabular-nums text-content-attention'
+                                    }
+                                >
+                                    {row.perArea.uncertainty === UNCERTAINTY.AT_MOST
+                                        ? tc('uncertaintyAtMost', { value: marginPerDcaText })
+                                        : marginPerDcaText}
+                                </span>
+                            )}
+                        </div>
+                        {row.perArea.uncertainty === UNCERTAINTY.PARTIAL && (
+                            <p className="pb-2 text-xs text-content-attention">
+                                {tc('perAreaPartial')}
+                            </p>
+                        )}
+                        <p className="pb-2 text-xs text-content-subtle">
+                            {tc('marginPerDcaHint')}
+                        </p>
                         <KPIStat
                             size="md"
                             value={
@@ -694,8 +926,35 @@ export function CalculatorClient({ tenantSlug, data }: CalculatorClientProps) {
                                       : undefined
                             }
                         />
+                        {/* A single-crop farm has nothing to compare, so the
+                            strip above is suppressed — but "does this clear
+                            its cost?" is still the question, and for a
+                            monoculture it is the ONLY one. The comparison is
+                            what one crop makes meaningless; the cover is not.
+                            Same component, no extra card. */}
+                        {comparisonItems.length === 1 && (
+                            <BreakEvenRow
+                                commodityLabel={comparisonItems[0].label}
+                                figures={row.breakEven}
+                            />
+                        )}
                     </div>
                 </div>
+                {/* A refusal that a farmer can act on says where. The
+                    fixable one is a missing market price — /trends is where
+                    prices live. The others are NOT fixable from here and get
+                    no action: a mixed cost currency needs an FX rate this
+                    product deliberately does not have, and an unrecorded rent
+                    currency needs a column ParcelLease does not carry.
+                    Offering a destination that cannot resolve the cause would
+                    be worse than the plain explanation. */}
+                {row.netWorthUnavailableCode === 'NO_MARKET_PRICE' && (
+                    <p className="text-xs">
+                        <TextLink tone="link" href={tenantHref('/trends')}>
+                            {tc('exclFixTrends')}
+                        </TextLink>
+                    </p>
+                )}
                 {refusalText != null && (
                     // A refusal is stated, never blanked. Translated from
                     // the usecase's CODE when this client knows it, and
@@ -802,39 +1061,17 @@ export function CalculatorClient({ tenantSlug, data }: CalculatorClientProps) {
                 </Card>
             )}
 
-            <ExclusionsCard count={exclusionCount} classes={exclusionClasses} />
+            <ExclusionsCard count={exclusionCount} classes={exclusionClasses} hrefFor={tenantHref} />
 
-            {/* Every commodity at once. `mobileFallback="scroll"` (not
-                "card") because these money columns are only meaningful
-                read side by side — a card that shows a net worth without
-                the cost beside it is the misleading half of the row. */}
-            <Card as="section" density="compact" className="space-y-default border-border-subtle">
-                <Heading level={3} as="h2" tone="muted">
-                    {tc('tableTitle')}
-                </Heading>
-                <DataTable<CalculatorRow>
-                    // Peer convention (grain-costs-table / grain-bins-table),
-                    // and required: tests/unit/data-table.test.ts asserts every
-                    // client page mounting <DataTable> carries a data-testid.
-                    data-testid="grain-calculator-table"
-                    mobileFallback="scroll"
-                    data={rows}
-                    columns={columns}
-                    getRowId={(r) => r.commodity}
-                    selectionEnabled={false}
-                    resourceName={(plural) =>
-                        plural ? tc('resourceCommodities') : tc('resourceCommodity')
-                    }
-                    emptyState={
-                        <EmptyState
-                            size="sm"
-                            variant="no-records"
-                            title={tc('emptyTitle')}
-                            description={tc('emptyDescription')}
-                        />
-                    }
-                />
-            </Card>
+            {/* THE APPENDIX TABLE IS GONE, and this is the surface it
+                paid for. It listed every commodity's five money columns
+                below the sum, the cost breakdown, the KPI and the
+                exclusions — and CommodityStrip already shows every crop's
+                net side by side, higher up, which is what the strip's own
+                docblock says it exists for. Net worth appeared in THREE
+                places; it now appears in two, and the break-even bars ride
+                the surface that was already there. Nine surfaces became
+                eight. Its guard exemptions went with it. */}
         </div>
     );
 }
