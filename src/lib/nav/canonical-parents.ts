@@ -55,25 +55,10 @@ const PARENT_MAP: Record<string, CanonicalParent> = {
     '/admin/security': { href: '/admin', label: 'admin' },
     '/admin/sso': { href: '/admin', label: 'admin' },
 
-    // ── Audits ────────────────────────────────────────────────────────
-    '/audits/auditor': { href: '/audits', label: 'audits' },
-    '/audits/cycles': { href: '/audits', label: 'audits' },
-    '/audits/cycles/[cycleId]': { href: '/audits/cycles', label: 'auditCycles' },
-    '/audits/cycles/[cycleId]/readiness': { href: '/audits/cycles/[cycleId]', label: 'auditCycle' },
-    '/audits/new': { href: '/audits', label: 'audits' },
-    '/audits/packs/[packId]': { href: '/audits', label: 'audits' },
-    '/audits/readiness': { href: '/audits', label: 'audits' },
-
     // ── Practices ──────────────────────────────────────────────────────
-    '/practices/[practiceId]': { href: '/practices', label: 'practices' },
     // Test-plan detail lives URL-wise under a practice, but the mental
     // model is "I'm working on a test"; canonical parent is the Tests list
     // (the in-tab referrer still wins when drilling in from a practice).
-    '/practices/[practiceId]/tests/[planId]': { href: '/tests', label: 'tests' },
-    '/practices/dashboard': { href: '/practices', label: 'practices' },
-    '/practices/new': { href: '/practices', label: 'practices' },
-    '/practices/sankey': { href: '/practices', label: 'practices' },
-    '/practices/templates': { href: '/practices', label: 'practices' },
 
     // ── Frameworks ────────────────────────────────────────────────────
 
@@ -82,29 +67,11 @@ const PARENT_MAP: Record<string, CanonicalParent> = {
     '/issues/dashboard': { href: '/issues', label: 'issues' },
     '/issues/new': { href: '/issues', label: 'issues' },
 
-    // ── Policies ──────────────────────────────────────────────────────
-    '/policies/[policyId]': { href: '/policies', label: 'policies' },
-    '/policies/new': { href: '/policies', label: 'policies' },
-    '/policies/templates': { href: '/policies', label: 'policies' },
-
     // ── Processes ─────────────────────────────────────────────────────
     '/processes/governance': { href: '/processes', label: 'processes' },
 
-    // ── Reports ───────────────────────────────────────────────────────
-    '/reports/soa/print': { href: '/reports/soa', label: 'soa' },
-
     // ── Risks ─────────────────────────────────────────────────────────
 
-    // ── Tests ─────────────────────────────────────────────────────────
-    '/tests/dashboard': { href: '/tests', label: 'tests' },
-    '/tests/due': { href: '/tests', label: 'tests' },
-    '/tests/runs/[runId]': { href: '/tests', label: 'tests' },
-
-    // ── Vendors ───────────────────────────────────────────────────────
-    '/vendors/[vendorId]': { href: '/vendors', label: 'vendors' },
-    '/vendors/[vendorId]/assessment/[assessmentId]': { href: '/vendors/[vendorId]', label: 'vendor' },
-    '/vendors/dashboard': { href: '/vendors', label: 'vendors' },
-    '/vendors/new': { href: '/vendors', label: 'vendors' },
 };
 
 /**
@@ -136,8 +103,18 @@ export function resolveCanonicalParent(
  * Substitute `[param]` placeholders in the parent's href with concrete
  * values from the child's pathname. Only segments that appear in BOTH the
  * child pattern and the parent href are substituted.
+ *
+ * EXPORTED FOR TESTING. No route in the app currently has a dynamic
+ * PARENT — `/vendors/[vendorId]/assessment/[assessmentId]` was the only
+ * two-level dynamic route and left with the GRC teardown, so today every
+ * parent href is static and this function is an identity map in practice.
+ * It is kept because the capability is real (e.g. a future
+ * `/locations/[locationId]/parcels/[parcelId]`), and exported so the
+ * behaviour stays covered directly rather than depending on some route
+ * happening to exercise it — testing it only through `resolveCanonicalParent`
+ * would have silently lost the coverage when that route was deleted.
  */
-function expandDynamicSegments(
+export function expandDynamicSegments(
     parentHref: string,
     childPattern: string,
     childPathname: string,

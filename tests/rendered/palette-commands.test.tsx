@@ -120,7 +120,7 @@ describe('Command Palette — navigation commands', () => {
         const expected = [
             'nav:dashboard',
             'nav:evidence',
-            'nav:vendors',
+            'nav:calendar',
             'nav:admin',
         ];
         for (const id of expected) {
@@ -174,9 +174,12 @@ describe('Command Palette — navigation commands', () => {
         fireEvent.change(input, { target: { value: 'evidence' } });
 
         // Commands filter immediately (no debounce). Nav:evidence stays,
-        // non-matching commands (e.g. nav:vendors) disappear.
-        // (This used 'risk' as the query until the register was removed;
-        // the assertion is about the FILTER, not the entity.)
+        // non-matching commands (e.g. nav:calendar) disappear.
+        // (This used 'risk' as the query until the risk register was
+        // removed, then nav:vendors as the non-matching row until the GRC
+        // teardown removed that command too. The assertion is about the
+        // FILTER, not any particular entity — pick any nav id whose label
+        // does not contain the query.)
         await waitFor(() => {
             expect(
                 document.querySelector(
@@ -186,7 +189,7 @@ describe('Command Palette — navigation commands', () => {
         });
         expect(
             document.querySelector(
-                '[data-testid="command-palette-nav-nav:vendors"]',
+                '[data-testid="command-palette-nav-nav:calendar"]',
             ),
         ).toBeNull();
     });

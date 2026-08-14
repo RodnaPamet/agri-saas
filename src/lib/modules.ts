@@ -16,6 +16,13 @@ export const ALL_MODULES: readonly ModuleKey[] = [
     'INVENTORY',
     'PLANNING',
     'CERTIFICATION',
+    // GRC teardown: VENDORS now gates NOTHING — the only references left
+    // are this list, its label, and the admin/modules request enum. It
+    // stays until phase 3 because ModuleKey is a Prisma enum and every
+    // `Record<ModuleKey, …>` in this file is total, so dropping the value
+    // needs a migration (plus a deploy/rollback/*.down.sql) rather than a
+    // source edit. CERTIFICATION by contrast is LIVE and KEEP: it gates
+    // /processes, /access-reviews and the ag-dashboard.
     'VENDORS',
     'AUTOMATION',
     'PROCESSES',
@@ -84,25 +91,6 @@ export function resolveEnabledModules(row: { enabledModules: ModuleKey[] } | nul
 
 export function isModuleEnabledIn(modules: readonly ModuleKey[], key: ModuleKey): boolean {
     return modules.includes(key);
-}
-
-/**
- * The "compliance exoskeleton" gate for farm assets.
- *
- * An asset's GRC surfaces — practice/risk traceability, inherited evidence,
- * mappings, practice-test plans, and the coverage shield — only make sense for
- * a tenant that actually runs a compliance module (CERTIFICATION or RISK). A
- * plain farm (simple mode) gets a clean asset register with none of that
- * chrome. Callers pass the tenant's `availableModules` (from the tenant
- * context on the client, or `getAvailableModules` on the server); `undefined`
- * — an older provider payload with no module list — degrades to "show it", so
- * existing tenants behave exactly as before until their context re-mints.
- */
-export function hasComplianceModules(
-    availableModules: readonly ModuleKey[] | undefined,
-): boolean {
-    if (availableModules === undefined) return true;
-    return availableModules.includes('CERTIFICATION');
 }
 
 /** Validate an arbitrary string[] down to known ModuleKey values. */

@@ -13,7 +13,7 @@ import {
     MAIN_PAGES,
     SUBPAGES,
 } from '@/lib/nav/page-segregation';
-import { resolveCanonicalParent } from '@/lib/nav/canonical-parents';
+import { resolveCanonicalParent, expandDynamicSegments } from '@/lib/nav/canonical-parents';
 import { tenantSlugFromPath } from '@/lib/nav/usePreviousPath';
 
 describe('page-segregation', () => {
@@ -28,7 +28,7 @@ describe('page-segregation', () => {
     it('classifies drilled-in routes as subpages', () => {
         expect(classifyRoute('/t/acme/locations/loc-123')).toBe('subpage');
         expect(classifyRoute('/t/acme/assets/a1')).toBe('subpage');
-        expect(classifyRoute('/t/acme/vendors/v1/assessment/a1')).toBe('subpage');
+        expect(classifyRoute('/t/acme/access-reviews/r1')).toBe('subpage');
     });
 
     it('returns unknown for unclassified / non-tenant paths', () => {
@@ -39,8 +39,8 @@ describe('page-segregation', () => {
     it('normalises a runtime path to its [param] pattern', () => {
         expect(normalizePathname('/t/acme/locations/abc-123')).toBe('/locations/[locationId]');
         expect(normalizePathname('/t/acme/dashboard')).toBe('/dashboard');
-        expect(normalizePathname('/t/acme/vendors/v1/assessment/a1')).toBe(
-            '/vendors/[vendorId]/assessment/[assessmentId]',
+        expect(normalizePathname('/t/acme/access-reviews/r1')).toBe(
+            '/access-reviews/[reviewId]',
         );
     });
 
@@ -74,11 +74,37 @@ describe('canonical-parents', () => {
     });
 
     it('inherits concrete dynamic segments into a nested parent href', () => {
-        // /vendors/v1/assessment/a1 → the vendor detail (v1), NOT /vendors.
-        expect(resolveCanonicalParent('/t/acme/vendors/v1/assessment/a1', 'acme')).toEqual({
-            href: '/t/acme/vendors/v1',
-            label: 'vendor',
-        });
+        // Tested against the MECHANISM, not a route. This used to drive
+        // `/vendors/v1/assessment/a1` → `/vendors/v1`; that was the only
+        // two-level dynamic route in the app and it left with the GRC
+        // teardown, so no real path exercises the substitution today.
+        //
+        // Deleting the assertion was the tempting move and the wrong one:
+        // `expandDynamicSegments` is still live, still called on every
+        // back-affordance render, and would have become the kind of
+        // untested-but-green code CLAUDE.md warns about. Driving it
+        // directly keeps the property covered no matter which routes exist.
+        expect(
+            expandDynamicSegments(
+                '/vendors/[vendorId]',
+                '/vendors/[vendorId]/assessment/[assessmentId]',
+                '/t/acme/vendors/v1/assessment/a1',
+            ),
+        ).toBe('/vendors/v1');
+    });
+
+    it('leaves a static parent href untouched — the shape every real route has today', () => {
+        expect(
+            expandDynamicSegments('/access-reviews', '/access-reviews/[reviewId]', '/t/acme/access-reviews/r1'),
+        ).toBe('/access-reviews');
+    });
+
+    it('substitutes only segments present in BOTH child pattern and parent href', () => {
+        // A placeholder the child does not define must survive verbatim
+        // rather than being silently blanked.
+        expect(
+            expandDynamicSegments('/x/[missingId]', '/x/[aId]/y/[bId]', '/t/acme/x/1/y/2'),
+        ).toBe('/x/[missingId]');
     });
 
     it('returns null for a main page (no back fallback)', () => {
