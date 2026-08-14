@@ -102,7 +102,7 @@ describe('getGrainNetWorth — standing crop', () => {
         expect(wheat.standingCropPlantingIds).toEqual(['p-1']);
         // 4000 kg = 4 t × 300 BGN/t = 1200
         expect(wheat.standingCropValue).toBe(1200);
-        expect(result.exclusions.plantingsMissingYieldEstimate).toEqual(['p-2']);
+        expect(result.exclusions.plantingsMissingYieldEstimate.map((e) => e.id)).toEqual(['p-2']);
     });
 
     it('excludes a planting whose crop has no canonical commodity, naming it', async () => {
@@ -113,7 +113,7 @@ describe('getGrainNetWorth — standing crop', () => {
         const result = await netWorthResult(ctx);
 
         expect(result.rows).toEqual([]);
-        expect(result.exclusions.plantingsUnknownCommodity).toEqual(['p-3']);
+        expect(result.exclusions.plantingsUnknownCommodity.map((e) => e.id)).toEqual(['p-3']);
     });
 });
 
@@ -149,12 +149,14 @@ describe('getGrainNetWorth — grain on hand', () => {
         const result = await netWorthResult(ctx);
 
         expect(result.rows).toEqual([]);
-        expect(result.exclusions.lotsUnresolvedUnit).toEqual(
-            expect.arrayContaining([
-                { lotId: 'lot-3', unitKey: 'each' },
-                { lotId: 'lot-4', unitKey: null },
-            ]),
-        );
+        // The LABEL names both, which is what this test always meant:
+        // the lot by its item name and the unit that failed to resolve.
+        // It used to assert {lotId, unitKey} — the raw shape a farmer was
+        // then shown as a cuid.
+        expect(result.exclusions.lotsUnresolvedUnit).toEqual([
+            { id: 'lot-3', label: 'Wheat (each)' },
+            { id: 'lot-4', label: 'Wheat' },
+        ]);
     });
 
     it('excludes a HARVESTED_PRODUCE lot whose item name names no canonical commodity', async () => {
@@ -166,7 +168,7 @@ describe('getGrainNetWorth — grain on hand', () => {
         const result = await netWorthResult(ctx);
 
         expect(result.rows).toEqual([]);
-        expect(result.exclusions.lotsUnknownCommodity).toEqual(['lot-5']);
+        expect(result.exclusions.lotsUnknownCommodity.map((e) => e.id)).toEqual(['lot-5']);
     });
 });
 
@@ -206,7 +208,7 @@ describe('getGrainNetWorth — attributed crop cost (reused from cost-rollup)', 
         const result = await netWorthResult(ctx);
 
         expect(result.rows).toEqual([]);
-        expect(result.exclusions.plantingsUnknownCommodity).toEqual(['p-orphan']);
+        expect(result.exclusions.plantingsUnknownCommodity.map((e) => e.id)).toEqual(['p-orphan']);
     });
 });
 
@@ -281,7 +283,7 @@ describe('getGrainNetWorth — rent attribution', () => {
         const wheat = result.rows.find((r) => r.commodity === 'wheat')!;
         expect(wheat.rentCostProduceKg).toBe(500);
         expect(wheat.rentCostProduceValue).toBeNull();
-        expect(result.exclusions.leasesProduceRentUnpriced).toEqual(['lease-2']);
+        expect(result.exclusions.leasesProduceRentUnpriced.map((e) => e.id)).toEqual(['lease-2']);
     });
 
     it('names a lease whose rent unit does not resolve', async () => {
@@ -299,7 +301,9 @@ describe('getGrainNetWorth — rent attribution', () => {
         const result = await netWorthResult(ctx);
 
         expect(result.exclusions.leasesUnresolvedRent).toHaveLength(1);
-        expect(result.exclusions.leasesUnresolvedRent[0].leaseId).toBe('lease-3');
+        // `.id`, not `.leaseId` — every exclusion class is one shape now,
+        // and each entry carries a human label beside the id.
+        expect(result.exclusions.leasesUnresolvedRent[0].id).toBe('lease-3');
     });
 
     it('names a resolved lease with no in-scope planting to attribute its rent to', async () => {
@@ -316,7 +320,7 @@ describe('getGrainNetWorth — rent attribution', () => {
 
         const result = await netWorthResult(ctx);
 
-        expect(result.exclusions.leasesUnattributed).toEqual(['lease-4']);
+        expect(result.exclusions.leasesUnattributed.map((e) => e.id)).toEqual(['lease-4']);
     });
 });
 
@@ -365,7 +369,7 @@ describe('getGrainNetWorth — payroll allocation', () => {
 
         const result = await netWorthResult(ctx);
 
-        expect(result.exclusions.payrollUnattributable).toEqual(['pay-4']);
+        expect(result.exclusions.payrollUnattributable.map((e) => e.id)).toEqual(['pay-4']);
     });
 
     it('names a directly-linked row whose planting has no resolvable commodity', async () => {
@@ -375,8 +379,8 @@ describe('getGrainNetWorth — payroll allocation', () => {
 
         const result = await netWorthResult(ctx);
 
-        expect(result.exclusions.payrollUnattributable).toEqual(['pay-5']);
-        expect(result.exclusions.plantingsUnknownCommodity).toEqual(['p-missing']);
+        expect(result.exclusions.payrollUnattributable.map((e) => e.id)).toEqual(['pay-5']);
+        expect(result.exclusions.plantingsUnknownCommodity.map((e) => e.id)).toEqual(['p-missing']);
     });
 });
 
@@ -485,7 +489,7 @@ describe('getGrainNetWorth — currency handling and net worth', () => {
         expect(wheat.standingCropValue).toBeNull();
         expect(wheat.netWorth).toBeNull();
         expect(wheat.netWorthUnavailableReason).toContain('wheat');
-        expect(result.exclusions.commoditiesWithNoPrice).toEqual(['wheat']);
+        expect(result.exclusions.commoditiesWithNoPrice.map((e) => e.id)).toEqual(['wheat']);
     });
 });
 

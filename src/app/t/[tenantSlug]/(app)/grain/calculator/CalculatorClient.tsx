@@ -110,6 +110,7 @@ import {
 } from '@/lib/grain/uncertainty';
 import { GrainSectionNav } from '../GrainSectionNav';
 import type { FarmNetWorthTotal } from '@/lib/grain/farm-total';
+import type { ExclusionEntry } from '@/lib/grain/exclusion-labels';
 import { ExclusionsCard, SumLine } from './components';
 
 // ─── Serialised DTOs (mirror the grain-net-worth usecase output) ────
@@ -178,20 +179,27 @@ export interface CalculatorCostSlice {
     variant: StatusBreakdownItem['variant'];
 }
 
-export type LotExclusion = { lotId: string; unitKey: string | null };
-export type LeaseExclusion = { leaseId: string; reason: string };
-export type ExclusionEntry = string | LotExclusion | LeaseExclusion;
+export type { ExclusionEntry } from '@/lib/grain/exclusion-labels';
 
+/**
+ * ONE shape for every class.
+ *
+ * It used to be three — a bare string, `{lotId, unitKey}`,
+ * `{leaseId, reason}` — which forced the renderer to branch on structure
+ * to work out what it was holding, and rendered a cuid either way. Each
+ * entry now carries the id (the deep links need it) and a label a person
+ * recognises, resolved server-side.
+ */
 export interface CalculatorExclusions {
-    plantingsMissingYieldEstimate: string[];
-    plantingsUnknownCommodity: string[];
-    lotsUnresolvedUnit: LotExclusion[];
-    lotsUnknownCommodity: string[];
-    commoditiesWithNoPrice: string[];
-    leasesUnresolvedRent: LeaseExclusion[];
-    leasesUnattributed: string[];
-    leasesProduceRentUnpriced: string[];
-    payrollUnattributable: string[];
+    plantingsMissingYieldEstimate: ExclusionEntry[];
+    plantingsUnknownCommodity: ExclusionEntry[];
+    lotsUnresolvedUnit: ExclusionEntry[];
+    lotsUnknownCommodity: ExclusionEntry[];
+    commoditiesWithNoPrice: ExclusionEntry[];
+    leasesUnresolvedRent: ExclusionEntry[];
+    leasesUnattributed: ExclusionEntry[];
+    leasesProduceRentUnpriced: ExclusionEntry[];
+    payrollUnattributable: ExclusionEntry[];
 }
 
 /** One currency's worth of money that left the bank. */
