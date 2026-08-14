@@ -50,14 +50,8 @@ interface CreatedKeyResponse extends ApiKeyRecord {
 // ─── Scope Categories for UI Grouping ───
 
 const SCOPE_GROUPS: Record<string, { label: string; scopes: string[] }> = {
-    practices:   { label: 'Practices',   scopes: ['practices:read', 'practices:write'] },
     evidence:   { label: 'Evidence',   scopes: ['evidence:read', 'evidence:write'] },
-    policies:   { label: 'Policies',   scopes: ['policies:read', 'policies:write', 'policies:admin'] },
     tasks:      { label: 'Tasks',      scopes: ['tasks:read', 'tasks:write'] },
-    vendors:    { label: 'Vendors',    scopes: ['vendors:read', 'vendors:write'] },
-    tests:      { label: 'Tests',      scopes: ['tests:read', 'tests:write'] },
-    frameworks: { label: 'Frameworks', scopes: ['frameworks:read', 'frameworks:write'] },
-    audits:     { label: 'Audits',     scopes: ['audits:read', 'audits:write'] },
     reports:    { label: 'Reports',    scopes: ['reports:read', 'reports:write'] },
     admin:      { label: 'Admin',      scopes: ['admin:read', 'admin:write'] },
 };

@@ -9,9 +9,9 @@
  *   import { requirePermission } from '@/lib/security/permission-middleware';
  *
  *   export const POST = withApiErrorHandling(
- *       requirePermission('risks.create', async (req, { params }, ctx) => {
+ *       requirePermission('tasks.create', async (req, { params }, ctx) => {
  *           // ctx is the resolved RequestContext; permission has been verified.
- *           return NextResponse.json(await createRisk(ctx, await req.json()));
+ *           return NextResponse.json(await createTask(ctx, await req.json()));
  *       }),
  *   );
  *
@@ -42,7 +42,7 @@ import { logger } from '@/lib/observability/logger';
 
 /**
  * Dotted permission key derived from `PermissionSet`. Examples:
- *   - "practices.create"
+ *   - "tasks.create"
  *   - "evidence.upload"
  *   - "admin.scim"
  *

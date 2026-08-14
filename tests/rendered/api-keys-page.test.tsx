@@ -94,7 +94,11 @@ function makeKey(over: Record<string, unknown> = {}) {
         id: 'k-1',
         name: 'CI pipeline',
         keyPrefix: VISIBLE_PREFIX,
-        scopes: ['practices:read'],
+        // A scope that can still be MINTED — 'practices:read' left with the
+        // GRC teardown. The page renders whatever the API returns without
+        // validating it, so a stale fixture here passes while showing the
+        // reader a scope that no longer exists.
+        scopes: ['evidence:read'],
         expiresAt: null,
         revokedAt: null,
         lastUsedAt: null,

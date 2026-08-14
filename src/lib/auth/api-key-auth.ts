@@ -13,7 +13,7 @@
  * Key format: "iflk_" + 48 random hex chars (total 53 chars)
  * Storage: SHA-256(full key) — deterministic, fast, collision-resistant
  *
- * Scope format: "resource:action" (e.g. "practices:read", "evidence:write")
+ * Scope format: "resource:action" (e.g. "evidence:read", "tasks:write")
  * Special scopes:
  *   - "*" = full access (all resources, all actions)
  *   - "resource:*" = all actions on a resource
@@ -61,14 +61,8 @@ const KEY_PREFIX_DISPLAY_LENGTH = 8;
  * to the full PermissionSet internally.
  */
 const SCOPE_ACTION_MAP: Record<string, Record<string, string[]>> = {
-    practices:   { read: ['view'], write: ['create', 'edit'] },
     evidence:   { read: ['view', 'download'], write: ['upload', 'edit'] },
-    policies:   { read: ['view'], write: ['create', 'edit'], admin: ['approve'] },
     tasks:      { read: ['view'], write: ['create', 'edit', 'assign'] },
-    vendors:    { read: ['view'], write: ['create', 'edit'] },
-    tests:      { read: ['view'], write: ['create', 'execute'] },
-    frameworks: { read: ['view'], write: ['install'] },
-    audits:     { read: ['view'], write: ['manage', 'freeze', 'share'] },
     reports:    { read: ['view'], write: ['export'] },
     admin:      { read: ['view'], write: ['manage', 'members', 'sso', 'scim'] },
 };

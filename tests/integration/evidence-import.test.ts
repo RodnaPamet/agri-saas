@@ -47,6 +47,7 @@ import { FileRepository } from '@/app-layer/repositories/FileRepository';
 import { runInTenantContext } from '@/lib/db/rls-middleware';
 import { runEvidenceImport } from '@/app-layer/jobs/evidence-import';
 import { getPermissionsForRole } from '@/lib/permissions';
+import { computePermissions } from '@/lib/tenant-context';
 import type { RequestContext } from '@/app-layer/types';
 
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
@@ -73,13 +74,20 @@ function ctxFor(
         userId,
         tenantId,
         role,
-        permissions: {
-            canRead: appPermissions.evidence.view,
-            canWrite: appPermissions.evidence.upload,
-            canAdmin: appPermissions.admin.manage,
-            canAudit: appPermissions.audits.view,
-            canExport: appPermissions.reports.export,
-        },
+        // Mirrors `buildJobContext` in the job under test, which switched
+        // to `computePermissions(role)` when GRC teardown phase 2 removed
+        // the `audits` domain this literal used to read
+        // (`canAudit: appPermissions.audits.view`).
+        //
+        // For the three roles this helper takes, only canAudit differs:
+        // audits.view was true for ADMIN/EDITOR/READER alike, whereas
+        // computePermissions gives `role === 'AUDITOR' || level >= 4`, so
+        // EDITOR and READER now read false. The other four flags are
+        // unchanged for all three roles, including the canWrite=false that
+        // the READER permission-denied test below depends on. Nothing in
+        // the staging path (FileRepository.createPending / markStored)
+        // reads canAudit.
+        permissions: computePermissions(role),
         appPermissions,
     };
 }

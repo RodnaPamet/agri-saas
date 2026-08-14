@@ -1,14 +1,8 @@
 import type { Role, OrgRole } from '@prisma/client';
 
 export type PermissionSet = {
-    practices: { view: boolean; create: boolean; edit: boolean };
     evidence: { view: boolean; upload: boolean; edit: boolean; download: boolean };
-    policies: { view: boolean; create: boolean; edit: boolean; approve: boolean };
     tasks: { view: boolean; create: boolean; edit: boolean; assign: boolean };
-    vendors: { view: boolean; create: boolean; edit: boolean };
-    tests: { view: boolean; create: boolean; execute: boolean };
-    frameworks: { view: boolean; install: boolean };
-    audits: { view: boolean; manage: boolean; freeze: boolean; share: boolean };
     reports: { view: boolean; export: boolean };
     /**
      * The knowledge base (versioned SOPs/guides + the RAG-grounded ask
@@ -68,14 +62,8 @@ export const OWNER_ONLY_PERMISSIONS: ReadonlyArray<{ domain: keyof PermissionSet
  * the only reason the escalation below was not one click away in the UI.
  */
 export const PERMISSION_SCHEMA: Record<keyof PermissionSet, string[]> = {
-    practices: ['view', 'create', 'edit'],
     evidence: ['view', 'upload', 'edit', 'download'],
-    policies: ['view', 'create', 'edit', 'approve'],
     tasks: ['view', 'create', 'edit', 'assign'],
-    vendors: ['view', 'create', 'edit'],
-    tests: ['view', 'create', 'execute'],
-    frameworks: ['view', 'install'],
-    audits: ['view', 'manage', 'freeze', 'share'],
     reports: ['view', 'export'],
     knowledge: ['view'],
     admin: ['view', 'manage', 'members', 'sso', 'scim', 'tenant_lifecycle', 'owner_management'],
@@ -96,14 +84,8 @@ export function getPermissionsForRole(role: Role): PermissionSet {
             // Only role that can delete the tenant, rotate DEK, transfer
             // ownership, invite/remove other OWNERs, or assign OWNER role.
             return {
-                practices: { view: true, create: true, edit: true },
                 evidence: { view: true, upload: true, edit: true, download: true },
-                policies: { view: true, create: true, edit: true, approve: true },
                 tasks: { view: true, create: true, edit: true, assign: true },
-                vendors: { view: true, create: true, edit: true },
-                tests: { view: true, create: true, execute: true },
-                frameworks: { view: true, install: true },
-                audits: { view: true, manage: true, freeze: true, share: true },
                 reports: { view: true, export: true },
                 knowledge: { view: true },
                 admin: {
@@ -113,14 +95,8 @@ export function getPermissionsForRole(role: Role): PermissionSet {
             };
         case 'ADMIN':
             return {
-                practices: { view: true, create: true, edit: true },
                 evidence: { view: true, upload: true, edit: true, download: true },
-                policies: { view: true, create: true, edit: true, approve: true },
                 tasks: { view: true, create: true, edit: true, assign: true },
-                vendors: { view: true, create: true, edit: true },
-                tests: { view: true, create: true, execute: true },
-                frameworks: { view: true, install: true },
-                audits: { view: true, manage: true, freeze: true, share: true },
                 reports: { view: true, export: true },
                 knowledge: { view: true },
                 admin: {
@@ -132,33 +108,21 @@ export function getPermissionsForRole(role: Role): PermissionSet {
             };
         case 'EDITOR':
             return {
-                practices: { view: true, create: true, edit: true },
                 evidence: { view: true, upload: true, edit: true, download: true },
                 // Editors cannot approve policies usually, or maybe they can?
                 // Aligning with standard EDITOR: can't approve or admin.
-                policies: { view: true, create: true, edit: true, approve: false },
                 tasks: { view: true, create: true, edit: true, assign: true },
-                vendors: { view: true, create: true, edit: true },
-                tests: { view: true, create: true, execute: true },
-                frameworks: { view: true, install: false },
-                audits: { view: true, manage: false, freeze: false, share: false },
                 reports: { view: true, export: true },
                 knowledge: { view: true },
                 admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false },
             };
         case 'AUDITOR':
             return {
-                practices: { view: true, create: false, edit: false },
                 // Auditors can often download evidence but not upload/edit
                 evidence: { view: true, upload: false, edit: false, download: true },
-                policies: { view: true, create: false, edit: false, approve: false },
                 // Auditors might be able to assign or comment on tasks, but typically read-only. We'll set read-only here.
                 tasks: { view: true, create: false, edit: false, assign: false },
-                vendors: { view: true, create: false, edit: false },
-                tests: { view: true, create: false, execute: false },
-                frameworks: { view: true, install: false },
                 // Auditors can view and maybe export/share depending on policy, but let's keep view/share
-                audits: { view: true, manage: false, freeze: false, share: true },
                 reports: { view: true, export: true },
                 knowledge: { view: true },
                 admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false },
@@ -174,14 +138,8 @@ export function getPermissionsForRole(role: Role): PermissionSet {
             // is load-bearing — without it MECHANISATOR would fall through
             // to the READER default below and silently see every screen.
             return {
-                practices: { view: false, create: false, edit: false },
                 evidence: { view: false, upload: false, edit: false, download: false },
-                policies: { view: false, create: false, edit: false, approve: false },
                 tasks: { view: true, create: false, edit: true, assign: false },
-                vendors: { view: false, create: false, edit: false },
-                tests: { view: false, create: false, execute: false },
-                frameworks: { view: false, install: false },
-                audits: { view: false, manage: false, freeze: false, share: false },
                 reports: { view: false, export: false },
                 // Restricted persona — the same "opposite of READER" reasoning
                 // as every other domain above applies to the knowledge base.
@@ -191,14 +149,8 @@ export function getPermissionsForRole(role: Role): PermissionSet {
         case 'READER':
         default:
             return {
-                practices: { view: true, create: false, edit: false },
                 evidence: { view: true, upload: false, edit: false, download: true },
-                policies: { view: true, create: false, edit: false, approve: false },
                 tasks: { view: true, create: false, edit: false, assign: false },
-                vendors: { view: true, create: false, edit: false },
-                tests: { view: true, create: false, execute: false },
-                frameworks: { view: true, install: false },
-                audits: { view: true, manage: false, freeze: false, share: false },
                 reports: { view: true, export: false },
                 knowledge: { view: true },
                 admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false },

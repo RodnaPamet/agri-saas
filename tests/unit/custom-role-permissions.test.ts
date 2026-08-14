@@ -3,6 +3,14 @@
  *
  * Tests for validatePermissionsJson, parsePermissionsJson, and
  * backward compatibility of getPermissionsForRole.
+ *
+ * GRC teardown phase 2 removed the `practices`, `policies`, `vendors`,
+ * `tests`, `frameworks` and `audits` permission domains. Every case that
+ * used `practices` as its worked example is re-pointed at `evidence`
+ * (four actions — view/upload/edit/download, the same arity `practices`
+ * had was three, so the missing/unexpected-action cases still exercise
+ * both directions) or `tasks`. No validator behaviour is asserted more
+ * loosely than before.
  */
 import {
     getPermissionsForRole,
@@ -34,14 +42,18 @@ describe('getPermissionsForRole', () => {
         const perms = getPermissionsForRole('ADMIN');
         expect(perms.admin.manage).toBe(true);
         expect(perms.admin.members).toBe(true);
-        expect(perms.practices.create).toBe(true);
-        expect(perms.frameworks.install).toBe(true);
+        // GRC teardown phase 2 removed the practices + frameworks
+        // domains; the bound (ADMIN holds the write tier AND the
+        // privileged-config tier) is re-pointed at what survives.
+        expect(perms.tasks.create).toBe(true);
+        expect(perms.admin.scim).toBe(true);
     });
 
     test('READER gets view-only', () => {
         const perms = getPermissionsForRole('READER');
-        expect(perms.practices.view).toBe(true);
-        expect(perms.practices.create).toBe(false);
+        expect(perms.evidence.view).toBe(true);
+        expect(perms.evidence.upload).toBe(false);
+        expect(perms.tasks.create).toBe(false);
         expect(perms.admin.manage).toBe(false);
     });
 
@@ -49,15 +61,16 @@ describe('getPermissionsForRole', () => {
         const roles = ['ADMIN', 'EDITOR', 'AUDITOR', 'READER', 'MECHANISATOR'] as const;
         for (const role of roles) {
             const perms = getPermissionsForRole(role);
-            // Every PermissionSet must have all 11 domains. `knowledge`
+            // Every PermissionSet must have all 5 domains. `knowledge`
             // joined the set with the KB ask surface — a role that resolves
             // without it would fail open or closed depending on the caller,
             // so the shape is asserted exhaustively rather than by subset.
-            // `risks` left it with the risk register: 12 → 11.
+            // `risks` left it with the risk register: 12 → 11. GRC teardown
+            // phase 2 then removed practices, policies, vendors, tests,
+            // frameworks and audits: 11 → 5. Still exhaustive — an added
+            // or dropped domain fails here.
             expect(Object.keys(perms).sort()).toEqual([
-                'admin', 'audits', 'evidence', 'frameworks', 'knowledge',
-                'policies', 'practices', 'reports', 'tasks', 'tests',
-                'vendors',
+                'admin', 'evidence', 'knowledge', 'reports', 'tasks',
             ]);
         }
     });
@@ -100,20 +113,21 @@ describe('validatePermissionsJson', () => {
     test('missing action within a domain is flagged', () => {
         const perms = getPermissionsForRole('READER');
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const modified = { ...perms, practices: { view: true, create: true } } as any;
-        // "edit" is missing
+        const modified = { ...perms, evidence: { view: true, upload: true } } as any;
+        // "edit" is missing (GRC teardown phase 2 removed the practices
+        // domain this case used to work on)
         const errors = validatePermissionsJson(modified);
-        expect(errors).toContain('Missing action "practices.edit"');
+        expect(errors).toContain('Missing action "evidence.edit"');
     });
 
     test('non-boolean action value is flagged', () => {
         const perms = getPermissionsForRole('READER');
         const modified = {
             ...perms,
-            practices: { view: 'yes', create: false, edit: false },
+            evidence: { view: 'yes', upload: false, edit: false, download: false },
         };
         const errors = validatePermissionsJson(modified);
-        expect(errors).toContain('"practices.view" must be boolean, got string');
+        expect(errors).toContain('"evidence.view" must be boolean, got string');
     });
 
     test('unexpected domain is flagged', () => {
@@ -127,22 +141,22 @@ describe('validatePermissionsJson', () => {
         const perms = getPermissionsForRole('READER');
         const modified = {
             ...perms,
-            practices: { ...perms.practices, destroy: true },
+            evidence: { ...perms.evidence, destroy: true },
         };
         const errors = validatePermissionsJson(modified);
-        expect(errors).toContain('Unexpected action "practices.destroy"');
+        expect(errors).toContain('Unexpected action "evidence.destroy"');
     });
 
     test('domain that is not an object is flagged', () => {
         const perms = getPermissionsForRole('READER');
-        const modified = { ...perms, practices: 'invalid' };
+        const modified = { ...perms, evidence: 'invalid' };
         const errors = validatePermissionsJson(modified);
-        expect(errors).toContain('Permission domain "practices" must be an object');
+        expect(errors).toContain('Permission domain "evidence" must be an object');
     });
 
     test('custom role with all permissions valid passes', () => {
         const custom = makeValidPermissions({
-            practices: { create: true, edit: true },
+            tasks: { create: true, edit: true },
             admin: { view: true, manage: true, members: true, sso: false, scim: false },
         });
         expect(validatePermissionsJson(custom)).toEqual([]);
@@ -172,12 +186,14 @@ describe('parsePermissionsJson', () => {
 
     test('partial override merges with base role defaults', () => {
         const partial = {
-            practices: { view: true, create: true, edit: true },
+            // GRC teardown phase 2 removed the practices domain this case
+            // overrode; `tasks` carries the same merge semantics.
+            tasks: { view: true, create: true, edit: true, assign: true },
             // Other domains missing — should fall back to READER defaults
         };
         const result = parsePermissionsJson(partial, 'READER');
         // Override applied
-        expect(result.practices.create).toBe(true);
+        expect(result.tasks.create).toBe(true);
         // Fallback preserved
         expect(result.admin).toEqual(getPermissionsForRole('READER').admin);
         expect(result.evidence).toEqual(getPermissionsForRole('READER').evidence);
@@ -186,27 +202,27 @@ describe('parsePermissionsJson', () => {
     test('invalid action types within a domain fall back to base role', () => {
         const input = {
             ...getPermissionsForRole('READER'),
-            practices: { view: 'not-a-boolean', create: false, edit: false },
+            evidence: { view: 'not-a-boolean', upload: false, edit: false, download: false },
         };
         const result = parsePermissionsJson(input, 'ADMIN');
         // The invalid "view" falls back to ADMIN default (true)
-        expect(result.practices.view).toBe(true);
+        expect(result.evidence.view).toBe(true);
         // The valid booleans are preserved
-        expect(result.practices.create).toBe(false);
+        expect(result.evidence.upload).toBe(false);
     });
 
     test('missing actions within a domain fall back to base role', () => {
         const input = {
             ...getPermissionsForRole('READER'),
-            // "edit" is missing from practices
-            practices: { view: false, create: true },
+            // "edit" and "download" are missing from evidence
+            evidence: { view: false, upload: true },
         };
         const result = parsePermissionsJson(input, 'EDITOR');
         // Present fields used
-        expect(result.practices.view).toBe(false);
-        expect(result.practices.create).toBe(true);
+        expect(result.evidence.view).toBe(false);
+        expect(result.evidence.upload).toBe(true);
         // Missing "edit" falls back to EDITOR default (true)
-        expect(result.practices.edit).toBe(true);
+        expect(result.evidence.edit).toBe(true);
     });
 
     test('array input falls back to base role defaults', () => {
