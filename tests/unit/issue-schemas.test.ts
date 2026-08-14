@@ -23,7 +23,7 @@ describe('Issue Schemas', () => {
         it('accepts valid input', () => {
             const result = CreateIssueSchema.safeParse({
                 title: 'Test Issue',
-                type: 'INCIDENT',
+                type: 'TASK',
                 severity: 'HIGH',
                 priority: 'P1',
             });
@@ -31,7 +31,7 @@ describe('Issue Schemas', () => {
         });
 
         it('requires title', () => {
-            const result = CreateIssueSchema.safeParse({ type: 'INCIDENT' });
+            const result = CreateIssueSchema.safeParse({ type: 'TASK' });
             expect(result.success).toBe(false);
         });
 

@@ -22,47 +22,13 @@ import {
 } from '../domain/work-item-status';
 import { getSlaStatus } from '../services/sla';
 
-// ─── Type-Specific Validation ───
-
-type TaskType = 'AUDIT_FINDING' | 'PRACTICE_GAP' | 'INCIDENT' | 'IMPROVEMENT' | 'TASK';
-
-/**
- * Validate type-specific relevance rules.
- * - AUDIT_FINDING / PRACTICE_GAP: must have practiceId OR a link to PRACTICE/FRAMEWORK_REQUIREMENT
- * - INCIDENT: must have practiceId OR a link to PRACTICE/ASSET
- * - TASK / IMPROVEMENT: no additional requirement
- */
-async function validateTypeRelevance(
-    db: PrismaTx,
-    ctx: RequestContext,
-    taskId: string,
-    type: TaskType,
-    practiceId: string | null | undefined,
-) {
-    if (type === 'TASK' || type === 'IMPROVEMENT') return;
-
-    if (practiceId) return; // practiceId satisfies all type constraints
-
-    // Check links
-    const links = await TaskLinkRepository.listByTask(db, ctx, taskId);
-    const linkEntityTypes = links.map(l => l.entityType);
-
-    if (type === 'AUDIT_FINDING' || type === 'PRACTICE_GAP') {
-        if (!linkEntityTypes.includes('PRACTICE') && !linkEntityTypes.includes('FRAMEWORK_REQUIREMENT')) {
-            throw badRequest(
-                `${type} tasks must have a practiceId or a link to PRACTICE or FRAMEWORK_REQUIREMENT.`
-            );
-        }
-    }
-
-    if (type === 'INCIDENT') {
-        if (!linkEntityTypes.includes('PRACTICE') && !linkEntityTypes.includes('ASSET')) {
-            throw badRequest(
-                'INCIDENT tasks must have a practiceId or a link to PRACTICE or ASSET.'
-            );
-        }
-    }
-}
+// GRC teardown phase 2 (operator decision A6). `validateTypeRelevance`
+// lived here: AUDIT_FINDING / PRACTICE_GAP had to carry a practiceId or a
+// PRACTICE / FRAMEWORK_REQUIREMENT link, and INCIDENT an ASSET / PRACTICE
+// one, checked on the move to RESOLVED / CLOSED. All three task types are
+// gone and so are Practice and FrameworkRequirement, and the surviving
+// TASK / IMPROVEMENT returned on the function's first line — so it was a
+// total no-op, not a shrunken rule.
 
 // ─── List / Get ───
 
@@ -141,18 +107,6 @@ export async function createTask(ctx: RequestContext, input: {
             input.metadataJson = validateTaskMetadata(input.metadataJson);
         }
         const task = await WorkItemRepository.create(db, ctx, input);
-
-        // Type-specific validation (deferred: allow creation, then check after links can be added)
-        // For create, we validate immediately since practiceId is already set
-        const type = (input.type || 'TASK') as TaskType;
-        if (type !== 'TASK' && type !== 'IMPROVEMENT') {
-            // Only validate if practiceId is required and not provided
-            // Links can't exist yet at creation time, so we only enforce practiceId here
-            if (!input.practiceId && (type === 'AUDIT_FINDING' || type === 'PRACTICE_GAP' || type === 'INCIDENT')) {
-                // Don't fail — allow creation; validation happens on status transitions
-                // Store a warning in metadataJson
-            }
-        }
 
         await logEvent(db, ctx, {
             action: 'TASK_CREATED',
@@ -344,10 +298,6 @@ export async function setTaskStatus(ctx: RequestContext, taskId: string, status:
                 );
             }
             resolution = trimmed;
-        }
-
-        if (['RESOLVED', 'CLOSED'].includes(status)) {
-            await validateTypeRelevance(db, ctx, taskId, existing.type as TaskType, existing.practiceId);
         }
 
         const task = await WorkItemRepository.setStatus(db, ctx, taskId, status, resolution);

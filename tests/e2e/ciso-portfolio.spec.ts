@@ -125,7 +125,7 @@ test.describe('CISO portfolio journey (Epic O-4)', () => {
 
     // Titled "four stat cards" until the critical-risks tile went with
     // the risk register; the body has asserted three ever since.
-    test('B — portfolio overview renders three stat cards + drill-down CTAs + tenant list', async ({ page }) => {
+    test('B — portfolio overview renders the stat cards + drill-down CTAs + tenant list', async ({ page }) => {
         await loginAsCiso(page);
         await safeGoto(page, `/org/${ORG_SLUG}`);
 
@@ -133,11 +133,14 @@ test.describe('CISO portfolio journey (Epic O-4)', () => {
             page.getByRole('heading', { name: /Portfolio Overview/i }),
         ).toBeVisible({ timeout: 30_000 });
 
-        // The stat cards are present and rendered. (The critical-risks
-        // tile went with the risk register.)
-        await expect(page.locator('#org-stat-coverage')).toBeVisible();
+        // The stat cards are present and rendered. Was four, then three
+        // when the critical-risks tile went with the risk register, and now
+        // two: the GRC teardown removed the coverage KPI because
+        // PortfolioSummary.practices stopped being computed (plan §8f).
+        // Asserted ABSENT rather than just dropped, so a revert is visible.
         await expect(page.locator('#org-stat-overdue-evidence')).toBeVisible();
         await expect(page.locator('#org-stat-tenants')).toBeVisible();
+        await expect(page.locator('#org-stat-coverage')).toHaveCount(0);
 
         // Drill-down + tenant coverage sections are present.
         await expect(page.locator('#org-drilldown-ctas')).toBeVisible();

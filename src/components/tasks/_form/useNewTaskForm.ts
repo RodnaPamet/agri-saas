@@ -11,14 +11,14 @@
  *   - `pendingLinks` — staging buffer for secondary POSTs after
  *     the task is minted. Not part of the canonical task body so
  *     it stays in local state.
- *   - `findingSource` / `practiceGapType` — type-conditional
- *     metadata that lands in `metadataJson` only when set.
- *   - `validationMessage` — derived semantic gate
- *     (AUDIT_FINDING / PRACTICE_GAP require a practice link;
- *     INCIDENT requires an asset / practice link). Zod alone can't
- *     express this because the link list is sibling state, not a
- *     field of the form. The hook ANDs the validation message into
- *     canSubmit so the legacy contract holds.
+ *   - `validationMessage` — retained as a constant empty string. It
+ *     was a derived semantic gate for three task types that the GRC
+ *     teardown removed (operator decision A6), and `canSubmit` still
+ *     ANDs it in, so the contract with `<NewTaskFields>` is unchanged.
+ *
+ * The `findingSource` / `practiceGapType` extras — and with them the
+ * mixed-keyset setField/touchField/fieldError bridge that existed purely
+ * to carry non-Zod fields — went with those task types.
  */
 import { useState } from 'react';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
@@ -36,14 +36,7 @@ export interface PendingLink {
     entityId: string;
 }
 
-// Extra type-conditional fields kept outside Zod (see file
-// header). Combined with NewTaskFormValues for the field surface.
-export interface NewTaskFormExtras {
-    findingSource: string;
-    practiceGapType: string;
-}
-
-export type NewTaskFormFields = NewTaskFormValues & NewTaskFormExtras;
+export type NewTaskFormFields = NewTaskFormValues;
 
 export interface NewTaskFormReturn {
     fields: NewTaskFormFields;
@@ -96,7 +89,6 @@ const INITIAL: NewTaskFormValues = {
     dueAt: '',
     assigneeUserId: '',
     reviewerUserId: '',
-    practiceId: '',
 };
 
 export function useNewTaskForm({
@@ -108,14 +100,16 @@ export function useNewTaskForm({
     const telemetry = useFormTelemetry('NewTaskPage');
 
     // Extras kept outside Zod — see file header.
-    const [findingSource, setFindingSource] = useState('');
-    const [practiceGapType, setPracticeGapType] = useState('');
     const [pendingLinks, setPendingLinks] = useState<PendingLink[]>(
         initialPendingLinks ?? [],
     );
-    const [linkEntityType, setLinkEntityType] = useState('PRACTICE');
+    // `pendingLinks` lives outside the Zod form, so `zod.isDirty` cannot
+    // see it. This was `extrasDirty` and also covered the findingSource /
+    // practiceGapType extras; those went with the GRC teardown, the links
+    // did not.
+    const [linksDirty, setLinksDirty] = useState(false);
+    const [linkEntityType, setLinkEntityType] = useState('ASSET');
     const [linkEntityId, setLinkEntityId] = useState('');
-    const [extrasDirty, setExtrasDirty] = useState(false);
 
     const zod = useZodForm({
         schema: NewTaskFormSchema,
@@ -134,10 +128,6 @@ export function useNewTaskForm({
             });
 
             try {
-                const metadataJson: Record<string, string> = {};
-                if (findingSource) metadataJson.findingSource = findingSource;
-                if (practiceGapType) metadataJson.practiceGapType = practiceGapType;
-
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 const body: any = {
                     title: payload.title,
@@ -147,11 +137,6 @@ export function useNewTaskForm({
                     description: payload.description || undefined,
                     dueAt: payload.dueAt || undefined,
                     assigneeUserId: payload.assigneeUserId || undefined,
-                    practiceId: payload.practiceId || undefined,
-                    metadataJson:
-                        Object.keys(metadataJson).length > 0
-                            ? metadataJson
-                            : undefined,
                 };
                 const res = await fetch(apiUrl('/tasks'), {
                     method: 'POST',
@@ -194,43 +179,19 @@ export function useNewTaskForm({
         },
     });
 
-    // Mixed field setter — Zod schema-managed for the core fields,
-    // local state for the extras. Keeps the consumer's
-    // `form.setField('findingSource', '…')` ergonomics intact.
+    // Every field is Zod-managed now that the extras are gone, so these
+    // delegate straight through.
     const setField: NewTaskFormReturn['setField'] = (key, value) => {
-        if (key === 'findingSource') {
-            setFindingSource(value as string);
-            setExtrasDirty(true);
-            return;
-        }
-        if (key === 'practiceGapType') {
-            setPracticeGapType(value as string);
-            setExtrasDirty(true);
-            return;
-        }
-        // The mixed-keyset means we have to widen the value type
-        // at the hook boundary. The unknown-cast bridge satisfies
-        // the generic without weakening the call-site type.
-        type FormKey = keyof NewTaskFormValues;
-        type FormValue = NewTaskFormValues[FormKey];
-        zod.setField(key as FormKey, value as unknown as FormValue);
+        zod.setField(key, value);
     };
 
     const touchField: NewTaskFormReturn['touchField'] = (key) => {
-        if (key === 'findingSource' || key === 'practiceGapType') return;
-        zod.touchField(key as keyof NewTaskFormValues);
+        zod.touchField(key);
     };
 
-    const fieldError: NewTaskFormReturn['fieldError'] = (key) => {
-        if (key === 'findingSource' || key === 'practiceGapType') return undefined;
-        return zod.fieldError(key as keyof NewTaskFormValues);
-    };
+    const fieldError: NewTaskFormReturn['fieldError'] = (key) => zod.fieldError(key);
 
-    const fields: NewTaskFormFields = {
-        ...zod.values,
-        findingSource,
-        practiceGapType,
-    };
+    const fields: NewTaskFormFields = { ...zod.values };
 
     const addPendingLink = () => {
         if (!linkEntityId.trim()) return;
@@ -239,35 +200,21 @@ export function useNewTaskForm({
             { entityType: linkEntityType, entityId: linkEntityId.trim() },
         ]);
         setLinkEntityId('');
-        setExtrasDirty(true);
+        setLinksDirty(true);
     };
     const removePendingLink = (idx: number) => {
         setPendingLinks((prev) => prev.filter((_, i) => i !== idx));
     };
 
-    // Validation: certain types require a practice or link.
-    const needsPracticeOrLink = ['AUDIT_FINDING', 'PRACTICE_GAP'].includes(
-        fields.type,
-    );
-    const needsAssetOrPractice = fields.type === 'INCIDENT';
-    const hasPracticeOrLink =
-        !!fields.practiceId ||
-        pendingLinks.some((l) =>
-            ['PRACTICE', 'FRAMEWORK_REQUIREMENT'].includes(l.entityType),
-        );
-    const hasAssetOrPractice =
-        !!fields.practiceId ||
-        pendingLinks.some((l) => ['PRACTICE', 'ASSET'].includes(l.entityType));
-
-    const validationMessage = (() => {
-        if (needsPracticeOrLink && !hasPracticeOrLink) {
-            return 'Audit Finding / Practice Gap requires a practice or framework requirement link.';
-        }
-        if (needsAssetOrPractice && !hasAssetOrPractice) {
-            return 'Incident requires an asset or practice link.';
-        }
-        return '';
-    })();
+    // GRC teardown phase 2 (operator decision A6). The cross-field
+    // validation here existed for three task types that are gone:
+    // AUDIT_FINDING / PRACTICE_GAP required a practice or
+    // framework-requirement link, INCIDENT required an asset or practice.
+    // Both Practice and FrameworkRequirement are KILL models, so neither
+    // rule has a subject. TASK and IMPROVEMENT never carried a
+    // type-conditional requirement, which is why this collapses to a
+    // constant rather than shrinking.
+    const validationMessage = '';
 
     return {
         fields,
@@ -293,6 +240,6 @@ export function useNewTaskForm({
             }
             await zod.submit();
         },
-        isDirty: zod.isDirty || extrasDirty,
+        isDirty: zod.isDirty || linksDirty,
     };
 }

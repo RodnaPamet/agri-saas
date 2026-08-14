@@ -361,7 +361,11 @@ export const UpdateAuditSchema = z.object({
 
 export const CreateTaskSchema = z.object({
     title: z.string().min(1).max(500),
-    type: z.enum(['AUDIT_FINDING', 'PRACTICE_GAP', 'INCIDENT', 'IMPROVEMENT', 'TASK']).optional().default('TASK'),
+    // GRC teardown phase 2 (operator decision A6): AUDIT_FINDING /
+    // PRACTICE_GAP / INCIDENT removed. The WorkItemType Prisma enum keeps
+    // the values until phase 3 — dropping an enum value needs a migration
+    // plus a deploy/rollback/*.down.sql — but nothing can create one.
+    type: z.enum(['IMPROVEMENT', 'TASK']).optional().default('TASK'),
     description: z.string().max(10000).nullable().optional(),
     severity: z.enum(['INFO', 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL']).optional(),
     priority: z.enum(['P0', 'P1', 'P2', 'P3']).optional(),
@@ -369,20 +373,18 @@ export const CreateTaskSchema = z.object({
     dueAt: z.string().nullable().optional(),
     assigneeUserId: z.string().nullable().optional(),
     reviewerUserId: z.string().nullable().optional(),
-    practiceId: z.string().nullable().optional(),
     metadataJson: z.any().optional(),
 }).strip().openapi('TaskCreateRequest', {
-    description: 'Create a task (unified work-item type covering audit findings, practice gaps, incidents, improvements, and ad-hoc tasks). The type discriminator gates which UI surfaces this work item appears in.',
+    description: 'Create a task (unified work-item type covering improvements and ad-hoc tasks). The type discriminator gates which UI surfaces this work item appears in.',
 });
 
 export const UpdateTaskSchema = z.object({
     title: z.string().min(1).max(500).optional(),
     description: z.string().max(10000).nullable().optional(),
-    type: z.enum(['TASK', 'AUDIT_FINDING', 'PRACTICE_GAP', 'INCIDENT', 'IMPROVEMENT']).optional(),
+    type: z.enum(['TASK', 'IMPROVEMENT']).optional(),
     severity: z.enum(['INFO', 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL']).optional(),
     priority: z.enum(['P0', 'P1', 'P2', 'P3']).optional(),
     dueAt: z.string().nullable().optional(),
-    practiceId: z.string().nullable().optional(),
     reviewerUserId: z.string().nullable().optional(),
     metadataJson: z.any().optional(),
 }).strip().openapi('TaskUpdateRequest', {

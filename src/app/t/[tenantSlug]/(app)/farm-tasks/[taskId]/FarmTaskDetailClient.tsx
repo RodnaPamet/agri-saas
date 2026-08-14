@@ -679,16 +679,6 @@ export function FarmTaskDetailClient({
                             <span className="text-xs text-content-subtle uppercase">{t('created')}</span>
                             <p className="text-sm text-content-default mt-1">{formatDateTime(task.createdAt)}</p>
                         </div>
-                        {task.practice && (
-                            <div>
-                                <span className="text-xs text-content-subtle uppercase">{t('practice')}</span>
-                                <p className="text-sm mt-1">
-                                    <Link href={tenantHref(`/practices/${task.practice.id}`)} className={textLinkVariants({ tone: 'link' })} id="task-practice-link">
-                                        {task.practice.code} — {task.practice.name}
-                                    </Link>
-                                </p>
-                            </div>
-                        )}
                         {task.completedAt && (
                             <div>
                                 <span className="text-xs text-content-subtle uppercase">{t('completedAt')}</span>
@@ -703,25 +693,6 @@ export function FarmTaskDetailClient({
                         )}
                     </div>
 
-                    {(task.type === 'AUDIT_FINDING' || task.type === 'PRACTICE_GAP') && (metadata.findingSource || metadata.practiceGapType) && (
-                        <div className="border-t border-border-default pt-4 mt-4">
-                            <Heading level={3} className="mb-3">{t('auditDetails')}</Heading>
-                            <div className="grid grid-cols-2 gap-default">
-                                {metadata.findingSource && (
-                                    <div>
-                                        <span className="text-xs text-content-subtle uppercase">{t('findingSource')}</span>
-                                        <p className="text-sm text-content-default mt-1">{te.has(`findingSource.${metadata.findingSource}`) ? te(`findingSource.${metadata.findingSource}`) : metadata.findingSource}</p>
-                                    </div>
-                                )}
-                                {metadata.practiceGapType && (
-                                    <div>
-                                        <span className="text-xs text-content-subtle uppercase">{t('practiceGapType')}</span>
-                                        <p className="text-sm text-content-default mt-1">{te.has(`gapType.${metadata.practiceGapType}`) ? te(`gapType.${metadata.practiceGapType}`) : metadata.practiceGapType}</p>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                    )}
                 </div>
             )}
 

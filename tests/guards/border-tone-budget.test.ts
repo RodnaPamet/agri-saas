@@ -113,7 +113,7 @@ const ROOT = path.resolve(__dirname, '../..');
 // as a popover/tooltip outline, which the policy assigns to `default`): the
 // pull-to-refresh spinner pill (use-pull-to-refresh.tsx) and the
 // scroll-to-top button (scroll-to-top.tsx).
-const BORDER_DEFAULT_BUDGET = 74;
+const BORDER_DEFAULT_BUDGET = 62;
 
 function countMatches(re: RegExp): number {
     let total = 0;

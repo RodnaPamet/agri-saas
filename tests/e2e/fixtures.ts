@@ -26,7 +26,7 @@
  * import { test, expect } from './fixtures';
  *
  * test('create a practice', async ({ authedPage, isolatedTenant }) => {
- *     await authedPage.goto(`/t/${isolatedTenant.tenantSlug}/practices/new`);
+ *     await authedPage.goto(`/t/${isolatedTenant.tenantSlug}/assets`);
  *     // …the tenant is empty; create what you need here.
  * });
  * ```

@@ -83,7 +83,7 @@ const CURRENT_BASELINE = 17;
 // 'Frameworks', 'Audits') with them. MEASURED from the drift sentinel's
 // own arithmetic — it asserts BASELINE <= count + 15 and reported 233 as
 // the ceiling, so the live count is 218 — not estimated.
-const CONFIG_PROP_BASELINE = 218;
+const CONFIG_PROP_BASELINE = 201;
 
 /** A string counts as user-facing copy if — after stripping HTML entities —
  *  it has a real word (≥2 latin letters) and is not an ALL-CAPS enum/acronym
