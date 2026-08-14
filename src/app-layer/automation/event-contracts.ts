@@ -4,7 +4,7 @@
  * Where `events.ts` is the *string* catalogue, this file is the
  * *shape* catalogue: one discriminated-union member per event with
  * its own `data` payload. Producers get compile-time guarantees:
- * emitting `TEST_PLAN_CREATED` with the wrong `data` shape is a type
+ * emitting `TASK_CREATED` with the wrong `data` shape is a type
  * error, not a silently non-firing rule later.
  *
  * Shared metadata (tenantId, actor, entity, timestamp) lives on the
@@ -36,43 +36,12 @@ export interface AutomationEventMetadata {
 
 // ─── Per-event payload shapes ──────────────────────────────────────────
 
-export interface TestPlanCreatedData {
-    name: string;
-    practiceId: string;
-}
-export interface TestPlanUpdatedData {
-    changedFields: string[];
-}
-export interface TestPlanStatusChangedData {
-    fromStatus: string;
-    toStatus: string;
-}
-export interface TestRunCreatedData {
-    testPlanId: string;
-}
-export interface TestRunCompletedData {
-    testPlanId: string;
-    result: string;
-}
-export interface TestRunFailedData {
-    findingSummary: string | null;
-}
-export interface TestEvidenceLinkedData {
-    testRunId: string;
-    kind: string;
-}
-export interface TestEvidenceUnlinkedData {
-    testRunId: string;
-}
-
 export interface EvidenceExpiringData {
     title: string;
-    practiceId: string | null;
     retentionUntil: string | null;
 }
 export interface EvidenceExpiredData {
     title: string;
-    practiceId: string | null;
     expiredAt: string | null;
 }
 
@@ -83,22 +52,6 @@ export interface ScheduleFiredData {
     dueAt: string | null;
     /** Days-before-due the rule was configured to fire. */
     offsetDays: number;
-}
-
-export interface PracticeStatusChangedData {
-    fromStatus: string;
-    toStatus: string;
-}
-export interface PolicyReviewDueData {
-    title: string;
-    nextReviewAt: string | null;
-    daysOverdue: number;
-}
-export interface VendorAssessmentOverdueData {
-    vendorName: string;
-    /** REVIEW_OVERDUE | RENEWAL_OVERDUE — which deadline lapsed. */
-    kind: string;
-    daysOverdue: number;
 }
 
 export interface OnboardingStartedData {
@@ -194,25 +147,13 @@ export interface HarvestYieldRecordedData {
 // ─── Discriminated union ───────────────────────────────────────────────
 //
 // The whole point: `event` is the tag; `data` narrows off it. Any
-// handler that checks `evt.event === 'TEST_PLAN_CREATED'` gets
-// `TestPlanCreatedData` on `evt.data` automatically.
+// handler that checks `evt.event === 'TASK_CREATED'` gets
+// `TaskCreatedData` on `evt.data` automatically.
 
 export type AutomationDomainEvent =
-    | (AutomationEventMetadata & { event: 'TEST_PLAN_CREATED'; data: TestPlanCreatedData })
-    | (AutomationEventMetadata & { event: 'TEST_PLAN_UPDATED'; data: TestPlanUpdatedData })
-    | (AutomationEventMetadata & { event: 'TEST_PLAN_PAUSED'; data: TestPlanStatusChangedData })
-    | (AutomationEventMetadata & { event: 'TEST_PLAN_RESUMED'; data: TestPlanStatusChangedData })
-    | (AutomationEventMetadata & { event: 'TEST_RUN_CREATED'; data: TestRunCreatedData })
-    | (AutomationEventMetadata & { event: 'TEST_RUN_COMPLETED'; data: TestRunCompletedData })
-    | (AutomationEventMetadata & { event: 'TEST_RUN_FAILED'; data: TestRunFailedData })
-    | (AutomationEventMetadata & { event: 'TEST_EVIDENCE_LINKED'; data: TestEvidenceLinkedData })
-    | (AutomationEventMetadata & { event: 'TEST_EVIDENCE_UNLINKED'; data: TestEvidenceUnlinkedData })
     | (AutomationEventMetadata & { event: 'EVIDENCE_EXPIRING'; data: EvidenceExpiringData })
     | (AutomationEventMetadata & { event: 'EVIDENCE_EXPIRED'; data: EvidenceExpiredData })
     | (AutomationEventMetadata & { event: 'SCHEDULE'; data: ScheduleFiredData })
-    | (AutomationEventMetadata & { event: 'CONTROL_STATUS_CHANGED'; data: PracticeStatusChangedData })
-    | (AutomationEventMetadata & { event: 'POLICY_REVIEW_DUE'; data: PolicyReviewDueData })
-    | (AutomationEventMetadata & { event: 'VENDOR_ASSESSMENT_OVERDUE'; data: VendorAssessmentOverdueData })
     | (AutomationEventMetadata & { event: 'ONBOARDING_STARTED'; data: OnboardingStartedData })
     | (AutomationEventMetadata & { event: 'ONBOARDING_STEP_COMPLETED'; data: OnboardingStepCompletedData })
     | (AutomationEventMetadata & { event: 'ONBOARDING_FINISHED'; data: OnboardingFinishedData })

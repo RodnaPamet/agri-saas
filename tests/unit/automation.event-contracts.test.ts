@@ -30,50 +30,17 @@ function buildFakeEvent(
         emittedAt: new Date(),
     };
     switch (name) {
-        case 'TEST_PLAN_PAUSED':
-        case 'TEST_PLAN_RESUMED':
-            return {
-                ...base,
-                event: name,
-                data: { fromStatus: 'A', toStatus: 'B' },
-            };
-        case 'TEST_PLAN_CREATED':
-            return {
-                ...base,
-                event: name,
-                data: { name: 'n', practiceId: 'c' },
-            };
-        case 'TEST_PLAN_UPDATED':
-            return { ...base, event: name, data: { changedFields: [] } };
-        case 'TEST_RUN_CREATED':
-            return { ...base, event: name, data: { testPlanId: 'p' } };
-        case 'TEST_RUN_COMPLETED':
-            return {
-                ...base,
-                event: name,
-                data: { testPlanId: 'p', result: 'PASS' },
-            };
-        case 'TEST_RUN_FAILED':
-            return { ...base, event: name, data: { findingSummary: null } };
-        case 'TEST_EVIDENCE_LINKED':
-            return {
-                ...base,
-                event: name,
-                data: { testRunId: 'r', kind: 'file' },
-            };
-        case 'TEST_EVIDENCE_UNLINKED':
-            return { ...base, event: name, data: { testRunId: 'r' } };
         case 'EVIDENCE_EXPIRING':
             return {
                 ...base,
                 event: name,
-                data: { title: 'e', practiceId: null, retentionUntil: null },
+                data: { title: 'e', retentionUntil: null },
             };
         case 'EVIDENCE_EXPIRED':
             return {
                 ...base,
                 event: name,
-                data: { title: 'e', practiceId: null, expiredAt: null },
+                data: { title: 'e', expiredAt: null },
             };
         case 'SCHEDULE':
             return {
@@ -81,12 +48,6 @@ function buildFakeEvent(
                 event: name,
                 data: { target: 'Evidence', dueAt: null, offsetDays: 7 },
             };
-        case 'CONTROL_STATUS_CHANGED':
-            return { ...base, event: name, data: { fromStatus: 'NOT_STARTED', toStatus: 'IMPLEMENTED' } };
-        case 'POLICY_REVIEW_DUE':
-            return { ...base, event: name, data: { title: 'p', nextReviewAt: null, daysOverdue: 3 } };
-        case 'VENDOR_ASSESSMENT_OVERDUE':
-            return { ...base, event: name, data: { vendorName: 'v', kind: 'REVIEW_OVERDUE', daysOverdue: 5 } };
         case 'ONBOARDING_STARTED':
         case 'ONBOARDING_FINISHED':
         case 'ONBOARDING_RESTARTED':
@@ -187,13 +148,18 @@ describe('Automation event contracts', () => {
     });
 
     it('isEvent narrows correctly', () => {
-        const plan = buildFakeEvent('TEST_PLAN_CREATED');
-        expect(isEvent(plan, 'TEST_PLAN_CREATED')).toBe(true);
-        expect(isEvent(plan, 'TEST_PLAN_UPDATED')).toBe(false);
+        // Exemplar only — any two catalogue entries with different data
+        // shapes prove the narrowing. This used TEST_PLAN_CREATED /
+        // TEST_PLAN_UPDATED until the GRC teardown removed them (plan
+        // §8k: their subject models had already been dropped).
+        const ev = buildFakeEvent('EVIDENCE_EXPIRING');
+        expect(isEvent(ev, 'EVIDENCE_EXPIRING')).toBe(true);
+        expect(isEvent(ev, 'EVIDENCE_EXPIRED')).toBe(false);
 
-        if (isEvent(plan, 'TEST_PLAN_CREATED')) {
-            // TypeScript-narrowed — `plan.data.name` is string at compile time.
-            expect(plan.data.name).toBe('n');
+        if (isEvent(ev, 'EVIDENCE_EXPIRING')) {
+            // TypeScript-narrowed — `ev.data.retentionUntil` exists on this
+            // variant only; it is absent from EvidenceExpiredData.
+            expect(ev.data.retentionUntil).toBeNull();
         }
     });
 
@@ -203,11 +169,11 @@ describe('Automation event contracts', () => {
         // check that the shape we hand to the bus is narrower than
         // the full event.
         const input: EmitAutomationEvent = {
-            event: 'TEST_PLAN_CREATED',
-            entityType: 'PracticeTestPlan',
-            entityId: 'p-1',
+            event: 'EVIDENCE_EXPIRING',
+            entityType: 'Evidence',
+            entityId: 'e-1',
             actorUserId: null,
-            data: { name: 'n', practiceId: 'c' },
+            data: { title: 'e', retentionUntil: null },
         };
         expect('tenantId' in input).toBe(false);
         expect('emittedAt' in input).toBe(false);

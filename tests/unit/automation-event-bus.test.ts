@@ -135,7 +135,7 @@ describe('Automation Bus', () => {
             getAutomationBus().subscribe('TASK_CREATED', (e) => {
                 tasks.push(e.event);
             });
-            getAutomationBus().subscribe('TEST_RUN_FAILED', (e) => {
+            getAutomationBus().subscribe('EVIDENCE_EXPIRED', (e) => {
                 tests.push(e.event);
             });
 

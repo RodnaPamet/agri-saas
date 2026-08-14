@@ -71,17 +71,20 @@ describe('matchesFilter', () => {
     });
 
     it('boolean + number equality', () => {
+        // Exemplar only — any catalogue entry with a string-valued data
+        // field works. This used TEST_RUN_COMPLETED / `result` until the
+        // GRC teardown removed that family (plan §8k).
         const evt: AutomationDomainEvent = {
-            event: 'TEST_RUN_COMPLETED',
+            event: 'TASK_STATUS_CHANGED',
             tenantId: 't',
-            entityType: 'PracticeTestRun',
+            entityType: 'Task',
             entityId: 'r-1',
             actorUserId: null,
             emittedAt: new Date(),
-            data: { testPlanId: 'p', result: 'PASS' },
+            data: { fromStatus: 'OPEN', toStatus: 'DONE', resolution: null },
         };
-        expect(matchesFilter(evt, { result: 'PASS' })).toBe(true);
-        expect(matchesFilter(evt, { result: 'FAIL' })).toBe(false);
+        expect(matchesFilter(evt, { toStatus: 'DONE' })).toBe(true);
+        expect(matchesFilter(evt, { toStatus: 'OPEN' })).toBe(false);
     });
 });
 

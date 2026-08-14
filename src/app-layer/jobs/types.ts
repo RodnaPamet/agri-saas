@@ -386,8 +386,6 @@ export interface EvidenceImportPayload {
     stagingPathKey: string;
     /** Storage `FileRecord.id` of the staging upload, deleted on success. */
     stagingFileRecordId: string;
-    /** Optional practice to attach every extracted evidence to. */
-    practiceId?: string | null;
     /** Optional retention date applied to every extracted evidence. */
     retentionUntilIso?: string | null;
     /** Optional category tag applied to every extracted evidence. */

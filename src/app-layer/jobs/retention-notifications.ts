@@ -20,7 +20,7 @@ import type { RequestContext } from '../types';
 /** Fire-and-forget automation trigger — never blocks the notification job. */
 function emitEvidenceTrigger(
     event: 'EVIDENCE_EXPIRING' | 'EVIDENCE_EXPIRED',
-    ev: { id: string; tenantId: string; title: string; practiceId: string | null },
+    ev: { id: string; tenantId: string; title: string },
     dateIso: string | null,
 ): Promise<void> {
     // The bus only reads ctx.tenantId + ctx.userId; a full context isn't
@@ -32,13 +32,13 @@ function emitEvidenceTrigger(
             ? emitAutomationEvent(ctx, {
                   event: 'EVIDENCE_EXPIRING',
                   ...meta,
-                  data: { title: ev.title, practiceId: ev.practiceId, retentionUntil: dateIso },
+                  data: { title: ev.title, retentionUntil: dateIso },
                   stableKey: `evidence-expiring-${ev.id}`,
               })
             : emitAutomationEvent(ctx, {
                   event: 'EVIDENCE_EXPIRED',
                   ...meta,
-                  data: { title: ev.title, practiceId: ev.practiceId, expiredAt: dateIso },
+                  data: { title: ev.title, expiredAt: dateIso },
                   stableKey: `evidence-expired-${ev.id}`,
               });
     return p.catch(() => {
@@ -73,7 +73,7 @@ export async function runEvidenceRetentionNotifications(
     const expiring = await prisma.evidence.findMany({
         where,
         select: {
-            id: true, tenantId: true, title: true, owner: true, practiceId: true,
+            id: true, tenantId: true, title: true, owner: true,
             retentionUntil: true,
         },
     });
@@ -117,7 +117,6 @@ export async function runEvidenceRetentionNotifications(
                 description: `Evidence "${ev.title}" expires in ${daysLeft} days (${formatDate(ev.retentionUntil)}). Please upload refreshed evidence or extend the retention date.`,
                 status: 'OPEN',
                 priority: daysLeft <= 7 ? 'HIGH' : 'MEDIUM',
-                ...(ev.practiceId ? { practiceId: ev.practiceId } : {}),
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- createdByUserId missing: background job has no actor; requires system-user id (tracked #BUG-retention-task-creator)
             } as any,
         });
@@ -209,7 +208,7 @@ export async function runEvidenceRetentionNotifications(
     if (options.tenantId) expiredWhere.tenantId = options.tenantId;
     const expired = await prisma.evidence.findMany({
         where: expiredWhere,
-        select: { id: true, tenantId: true, title: true, practiceId: true, expiredAt: true },
+        select: { id: true, tenantId: true, title: true, expiredAt: true },
         take: 1000,
     });
     for (const ev of expired) {

@@ -21,9 +21,9 @@ const SUGGESTIONS = [
     {
         id: 's1',
         rank: 1,
-        title: 'Notify the team when a practice test fails',
-        rationale: 'Surface failing tests fast.',
-        triggerEvent: 'TEST_RUN_FAILED',
+        title: 'Notify the agronomist when a spray job starts',
+        rationale: 'Surface field operations fast.',
+        triggerEvent: 'SPRAY_JOB_STARTED',
         actionType: 'NOTIFY_USER' as const,
         confidenceScore: 0.82,
     },

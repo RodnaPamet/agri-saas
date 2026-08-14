@@ -599,3 +599,36 @@ and record the result in the PR body rather than asserting the set is empty.
 Auto-evidence rows were never at risk either way: `auto-evidence.ts:168-170`
 writes `sourceLogEntryId` alongside `practiceId`, so they satisfy the
 re-based gate. That is probably what produced the original false confidence.
+
+### §8k — an entire event family was already orphaned, and nothing said so
+
+T4 turned up nine automation events — `TEST_PLAN_CREATED/UPDATED/PAUSED/
+RESUMED`, `TEST_RUN_CREATED/COMPLETED/FAILED`, `TEST_EVIDENCE_LINKED/
+UNLINKED` — whose subject models, `PracticeTestPlan` and `PracticeTestRun`,
+**do not exist in `prisma/schema/`**. They were dropped earlier (the risk +
+control-exoskeleton uproot) and the event catalog was never touched.
+
+Nothing anywhere was red. The events are string literals in a `const`
+object, so `tsc` has nothing to check them against; the schema no longer
+mentions them, so no schema guardrail sees them; and their consumers — the
+label registry that feeds the rule-builder trigger picker, two entries in
+`AUTOMATION_TEMPLATES`, one candidate in `rankRuleSuggestions` — are all
+internally consistent with each other. The catalog agrees with the labels
+which agree with the templates. The only thing they disagree with is the
+database, and no test compares those two.
+
+The user-visible consequence is worse than dead code: the rule builder
+still OFFERS these as triggers, and the suggestions rail still RECOMMENDS
+"Notify the team when a practice test fails" with a 0.82 confidence score.
+A tenant can build that rule, save it, and it can never fire. That is the
+same failure shape as the RAG badge and the practices drill-down tile
+recorded earlier in this document — a value derived from something nothing
+computes, rendered as fact — and it is the third instance, which makes it a
+pattern rather than an accident.
+
+**Rule for the rest of the teardown:** an event / trigger / filter-field
+catalog is a claim about the schema. When a model dies, grep the catalogs
+for it BY MODEL NAME, not just by import. The three that exist today are
+`src/app-layer/automation/events.ts`, `src/lib/automation/event-labels.ts`
+and `src/data/automation-templates/index.ts`, plus the candidate list in
+`usecases/automation-suggestions.ts`.

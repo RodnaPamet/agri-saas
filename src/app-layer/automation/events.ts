@@ -14,19 +14,6 @@
  */
 
 export const AUTOMATION_EVENTS = {
-    // ─── Practice testing ───
-    TEST_PLAN_CREATED: 'TEST_PLAN_CREATED',
-    TEST_PLAN_UPDATED: 'TEST_PLAN_UPDATED',
-    TEST_PLAN_PAUSED: 'TEST_PLAN_PAUSED',
-    TEST_PLAN_RESUMED: 'TEST_PLAN_RESUMED',
-    TEST_RUN_CREATED: 'TEST_RUN_CREATED',
-    TEST_RUN_COMPLETED: 'TEST_RUN_COMPLETED',
-    TEST_RUN_FAILED: 'TEST_RUN_FAILED',
-    // Emitted by emitTestEvidenceLinked/Unlinked — now subscribable (was
-    // producer/catalog drift: emitted but absent from the catalog).
-    TEST_EVIDENCE_LINKED: 'TEST_EVIDENCE_LINKED',
-    TEST_EVIDENCE_UNLINKED: 'TEST_EVIDENCE_UNLINKED',
-
     // ─── Evidence lifecycle (high-value automation: "notify the owner
     //     when their evidence is about to go stale / has expired") ───
     EVIDENCE_EXPIRING: 'EVIDENCE_EXPIRING',
@@ -53,13 +40,6 @@ export const AUTOMATION_EVENTS = {
     //     time/schedule trigger; the schedule lives in
     //     AutomationRule.scheduleConfigJson, the fired entity in the payload. ───
     SCHEDULE: 'SCHEDULE',
-
-    // ─── Domain coverage fill (cycle-2 follow-up) — three high-value triggers
-    //     the audit flagged as missing: practice lifecycle, policy governance,
-    //     and vendor-risk deadlines. ───
-    CONTROL_STATUS_CHANGED: 'CONTROL_STATUS_CHANGED',
-    POLICY_REVIEW_DUE: 'POLICY_REVIEW_DUE',
-    VENDOR_ASSESSMENT_OVERDUE: 'VENDOR_ASSESSMENT_OVERDUE',
 
     // ─── Ag field workflows — the observability epic writes these to the
     //     audit log; now subscribable so a tenant can "notify the agronomist
