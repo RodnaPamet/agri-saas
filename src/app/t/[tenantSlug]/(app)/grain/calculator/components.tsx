@@ -26,7 +26,9 @@ import { useExactMoneyFormatter } from '@/lib/tenant-context-provider';
 import { formatDecimal } from '@/lib/number-format';
 import { UNCERTAINTY, type UncertaintyState } from '@/lib/grain/uncertainty';
 import type { BreakEvenFigures } from '@/lib/grain/break-even';
+import type { MarginScaleGroup, MarginScaleResult } from '@/lib/grain/margin-scale';
 import { ProgressBar } from '@/components/ui/progress-bar';
+import { DivergingBar } from '@/components/ui/diverging-bar';
 import { cn } from '@/lib/cn';
 
 import type { CalculatorExclusions, ExclusionEntry } from './CalculatorClient';
@@ -444,6 +446,177 @@ export function BreakEvenRow({
                     <> — {tc('uncertaintyAtLeast', { value: `${percent}%` })}</>
                 )}
             </p>
+        </div>
+    );
+}
+
+// ─── Margin per decare ───────────────────────────────────────────────
+
+/**
+ * Profit per unit of LAND, one bar per crop, diverging around zero.
+ *
+ * ── Why this sits beside the cover bars and does not replace them ───
+ *
+ * The two rank crops differently, and both rankings are real. Cover is
+ * `value / cost`: return on the money spent. Margin per decare is
+ * `(value − cost) / area`: return on the land used. A cheap crop with a
+ * tiny outlay can lead on cover and trail on margin, and which one
+ * matters depends on which input is scarce. On a Bulgarian farm that is
+ * usually the land, which is the case for showing this one at all — but
+ * it is not a reason to hide the other, so the disagreement is stated
+ * rather than resolved by deleting a figure.
+ *
+ * ── Why the bar is decorative here ──────────────────────────────────
+ *
+ * Every figure it encodes is already printed as text beside it, with its
+ * sign, its currency and its qualifier. Leaving the meter in the
+ * accessibility tree would announce each crop twice, so the row is the
+ * labelled unit and the bar is marked away from assistive tech. The
+ * primitive itself is fully described for callers that have no text.
+ *
+ * ── Where a signed comparison most easily lies ──────────────────────
+ *
+ * By making the scale invisible. Bar lengths are meaningless without the
+ * number they are relative to, so the axis ends are printed; and they are
+ * relative to the largest crop in THIS currency group, never across
+ * groups.
+ */
+export function MarginPerDcaCard({
+    scales,
+    labelFor,
+}: {
+    scales: MarginScaleResult;
+    /** Commodity key → the farmer's word for it. Kept out of the fold, which
+        is arithmetic and has no business knowing about translations. */
+    labelFor: (commodity: string) => string;
+}) {
+    const tc = useTranslations('grain.calculator');
+
+    if (scales.groups.length === 0 && scales.unscaled.length === 0) return null;
+
+    return (
+        <Card as="section" density="compact" className="space-y-default border-border-subtle">
+            <div className="space-y-tight">
+                <Heading level={2}>{tc('marginScaleTitle')}</Heading>
+                {/* Two visuals that order the crops differently have to say
+                    why, or they are two confident answers to one question. */}
+                <p className="text-xs text-content-subtle">{tc('marginScaleVsCover')}</p>
+            </div>
+
+            {scales.groups.map((group) => (
+                <MarginScaleGroupRows key={group.currency} group={group} labelFor={labelFor} />
+            ))}
+
+            {scales.unscaled.length > 0 && (
+                // Named, not omitted — the farm total's rule. A comparison
+                // that quietly shrinks describes a smaller farm.
+                <p className="text-xs text-content-attention">
+                    {tc('marginScaleUnpriced', {
+                        commodities: scales.unscaled.map(labelFor).join(', '),
+                    })}
+                </p>
+            )}
+        </Card>
+    );
+}
+
+function MarginScaleGroupRows({
+    group,
+    labelFor,
+}: {
+    group: MarginScaleGroup;
+    labelFor: (commodity: string) => string;
+}) {
+    const tc = useTranslations('grain.calculator');
+
+    return (
+        <div className="space-y-tight">
+            {group.comparable ? (
+                // The axis, stated. Both ends carry the currency, so no
+                // reader has to work out which money this group is in.
+                <div className="flex items-baseline justify-between text-xs text-content-subtle">
+                    <span className="tabular-nums">
+                        {tc('marginScaleEnd', {
+                            value: `\u2212${formatDecimal(group.maxAbs, 2)}`,
+                            currency: group.currency,
+                        })}
+                    </span>
+                    <span>{tc('marginScaleZero')}</span>
+                    <span className="tabular-nums">
+                        {tc('marginScaleEnd', {
+                            value: `+${formatDecimal(group.maxAbs, 2)}`,
+                            currency: group.currency,
+                        })}
+                    </span>
+                </div>
+            ) : (
+                // One crop fills its own scale because it IS the scale.
+                // The figures still stand; only the comparison is withheld.
+                <p className="text-xs text-content-subtle">{tc('marginScaleTooFew')}</p>
+            )}
+
+            <ul className="space-y-tight" aria-label={tc('marginScaleAria', { currency: group.currency })}>
+                {group.items.map((item) => {
+                    const margin = item.marginPerDca;
+
+                    if (!item.drawable || margin == null) {
+                        return (
+                            <li
+                                key={item.commodity}
+                                className="flex flex-wrap items-baseline justify-between gap-tight text-xs">
+                                <span className="text-content-default">
+                                    {labelFor(item.commodity)}
+                                </span>
+                                <span className="text-content-attention">
+                                    {item.refusalCode === 'NO_STANDING_CROP_AREA'
+                                        ? tc('perAreaNoArea')
+                                        : tc('perAreaNoValue')}
+                                </span>
+                            </li>
+                        );
+                    }
+
+                    // U+2212, not a hyphen: beside tabular numerals a hyphen
+                    // reads as a dash. `KpiCard` already made this choice.
+                    const money = tc('marginPerDcaSigned', {
+                        value: `${margin < 0 ? '\u2212' : '+'}${formatDecimal(Math.abs(margin), 2)}`,
+                        currency: group.currency,
+                    });
+
+                    return (
+                        <li key={item.commodity} className="space-y-tight">
+                            <div className="flex flex-wrap items-baseline justify-between gap-tight text-xs">
+                                <span className="text-content-default">
+                                    {labelFor(item.commodity)}
+                                </span>
+                                <span
+                                    className={cn(
+                                        'font-medium tabular-nums',
+                                        item.uncertainty !== UNCERTAINTY.EXACT
+                                            ? 'text-content-attention'
+                                            : margin < 0
+                                              ? 'text-content-error'
+                                              : 'text-content-success',
+                                    )}>
+                                    {item.uncertainty === UNCERTAINTY.AT_MOST
+                                        ? tc('uncertaintyAtMost', { value: money })
+                                        : money}
+                                </span>
+                            </div>
+                            {group.comparable && (
+                                <div aria-hidden="true">
+                                    <DivergingBar
+                                        value={margin}
+                                        max={group.maxAbs}
+                                        size="sm"
+                                        aria-label={labelFor(item.commodity)}
+                                    />
+                                </div>
+                            )}
+                        </li>
+                    );
+                })}
+            </ul>
         </div>
     );
 }

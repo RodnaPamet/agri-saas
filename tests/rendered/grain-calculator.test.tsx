@@ -1019,7 +1019,12 @@ describe('grain calculator — on a PHONE (setViewport("mobile"))', () => {
             }),
         );
 
-        expect(screen.getByText(COPY.perAreaNoArea)).toBeVisible();
+        // Scoped to the answer card: the margin comparison below now names
+        // the same refusal for the same crop, which is the point of it —
+        // an undrawable crop is listed there rather than vanishing. Two
+        // surfaces stating one refusal is agreement, not duplication.
+        const answer = screen.getByRole('group', { name: COPY.waterfallAria });
+        expect(within(answer).getByText(COPY.perAreaNoArea)).toBeVisible();
     });
 
     // ─────────────────────────────────────────────────────────────────
@@ -1125,6 +1130,135 @@ describe('grain calculator — on a PHONE (setViewport("mobile"))', () => {
         for (const bar of bars) {
             expect(bar.getAttribute('aria-valuemax')).toBe('100');
         }
+    });
+
+    // ─────────────────────────────────────────────────────────────────
+    // MARGIN PER DECARE. The second visual, kept BESIDE cover rather than
+    // replacing it: cover ranks by return on the money spent, this by
+    // return on the land used, and on a farm where land is the scarce
+    // input they are two real answers that can disagree.
+    //
+    // wheatRow: 125 dca, value 15,000, cost 5,500 ⇒ +76/dca.
+    // ─────────────────────────────────────────────────────────────────
+
+    /** The bars are decorative, so they are NOT in the accessibility tree. */
+    const marginBars = () => Array.from(document.querySelectorAll('[role="meter"]'));
+
+    const lossRow = (over: Partial<CalculatorRow> = {}) =>
+        // 125 dca, value 1,000, cost 15,000 ⇒ −112/dca.
+        wheatRow({
+            commodity: 'barley',
+            standingCropValue: 1_000,
+            cashCostTotal: 15_000,
+            netWorth: -4_000,
+            ...over,
+        });
+
+    it('shows a loss as a loss, signed, and never floored to zero', () => {
+        // The defect that forced a new primitive: ProgressBar floors a
+        // negative to 0 before it computes anything, so a losing crop
+        // would have rendered exactly like one that broke even.
+        setViewport('mobile');
+        renderPage(data({ rows: [wheatRow(), lossRow()] }));
+
+        expect(screen.getByText('+76 EUR/dca')).toBeVisible();
+        expect(screen.getByText('\u2212112 EUR/dca')).toBeVisible();
+
+        const signs = marginBars().map((b) => b.getAttribute('data-sign'));
+        expect(signs).toContain('positive');
+        expect(signs).toContain('negative');
+    });
+
+    it('prints the axis, because bar lengths mean nothing without it', () => {
+        setViewport('mobile');
+        renderPage(data({ rows: [wheatRow(), lossRow()] }));
+
+        // Scale is the largest MAGNITUDE in the group — the 112 loss, not
+        // the 76 profit — so the loss sits on-axis instead of past its end.
+        expect(screen.getByText('\u2212112 EUR')).toBeVisible();
+        expect(screen.getByText('+112 EUR')).toBeVisible();
+        expect(screen.getByText(COPY.marginScaleZero)).toBeVisible();
+    });
+
+    it('never puts two currencies on one scale', () => {
+        setViewport('mobile');
+        renderPage(
+            data({
+                rows: [
+                    wheatRow(),
+                    lossRow(),
+                    // 125 dca, value 40,000, cost 15,000 ⇒ +200 BGN/dca.
+                    wheatRow({
+                        commodity: 'rapeseed',
+                        priceCurrency: 'BGN',
+                        standingCropValue: 40_000,
+                        cashCostTotal: 15_000,
+                        netWorth: 20_000,
+                    }),
+                    // A second BGN crop, so that group is comparable too and
+                    // both axes get drawn. 125 dca, 20,000 − 15,000 ⇒ +40.
+                    wheatRow({
+                        commodity: 'sunflower',
+                        priceCurrency: 'BGN',
+                        standingCropValue: 20_000,
+                        cashCostTotal: 15_000,
+                        netWorth: 5_000,
+                    }),
+                ],
+            }),
+        );
+
+        // Two axes, each ending at its OWN group maximum. If the BGN 200
+        // had stretched the EUR axis, this EUR end would read 200.
+        expect(screen.getByText('+112 EUR')).toBeVisible();
+        expect(screen.getByText('+200 BGN')).toBeVisible();
+        expect(screen.getByText('+200 BGN/dca')).toBeVisible();
+    });
+
+    it('withholds the bars when a single crop would only measure itself', () => {
+        setViewport('mobile');
+        renderPage(data({ rows: [wheatRow()] }));
+
+        expect(marginBars()).toHaveLength(0);
+        expect(screen.getByText(COPY.marginScaleTooFew)).toBeVisible();
+        // The figure itself is NOT withheld — only the comparison is.
+        expect(screen.getByText('+76 EUR/dca')).toBeVisible();
+    });
+
+    it('names a crop that has no currency instead of dropping it', () => {
+        // maize has no market price, so there is no axis it could sit on.
+        // A comparison that quietly shrinks describes a smaller farm.
+        setViewport('mobile');
+        renderPage();
+        expect(screen.getByText(/Not on any scale, for want of a market price/)).toBeVisible();
+    });
+
+    it('marks a bounded margin as a ceiling, not a figure', () => {
+        setViewport('mobile');
+        renderPage(
+            data({ rows: [wheatRow({ unvaluedNoUnitCost: 2 }), lossRow()] }),
+        );
+        // Cost understated ⇒ margin overstated ⇒ the margin is a ceiling.
+        expect(screen.getByText(/at most \+76 EUR\/dca/)).toBeVisible();
+    });
+
+    it('states that cover and margin rank crops differently', () => {
+        // Two visuals that order the same crops differently must say why,
+        // or the page gives two confident answers to one question.
+        setViewport('mobile');
+        renderPage(data({ rows: [wheatRow(), lossRow()] }));
+        expect(screen.getByText(COPY.marginScaleVsCover)).toBeVisible();
+    });
+
+    it('announces each crop once — the bar is decorative, the text is the record', () => {
+        setViewport('mobile');
+        renderPage(data({ rows: [wheatRow(), lossRow()] }));
+
+        // Present in the DOM as a visual...
+        expect(marginBars().length).toBeGreaterThan(0);
+        // ...and absent from the accessibility tree, because every figure
+        // it encodes is already printed as text beside it.
+        expect(screen.queryAllByRole('meter')).toHaveLength(0);
     });
 
     it('stamps WHEN the report was priced, and when the price was observed', () => {

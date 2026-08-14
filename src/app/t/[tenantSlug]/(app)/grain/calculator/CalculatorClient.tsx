@@ -111,7 +111,14 @@ import type { FarmNetWorthTotal } from '@/lib/grain/farm-total';
 import type { ExclusionEntry } from '@/lib/grain/exclusion-labels';
 import type { PerAreaFigures } from '@/lib/grain/per-area';
 import type { BreakEvenFigures } from '@/lib/grain/break-even';
-import { BreakEvenRow, CommodityStrip, ExclusionsCard, SumLine } from './components';
+import {
+    BreakEvenRow,
+    CommodityStrip,
+    ExclusionsCard,
+    MarginPerDcaCard,
+    SumLine,
+} from './components';
+import { foldMarginScales } from '@/lib/grain/margin-scale';
 
 // ─── Serialised DTOs (mirror the grain-net-worth usecase output) ────
 
@@ -509,6 +516,23 @@ export function CalculatorClient({ tenantSlug, data }: CalculatorClientProps) {
         [rows, commodityLabel],
     );
 
+    // Grouped by currency, because margin is MONEY — unlike cover, which is
+    // a dimensionless ratio and can share one scale across currencies. The
+    // fold is the farm total's rule applied to a second figure.
+    const marginScales = useMemo(
+        () =>
+            foldMarginScales(
+                rows.map((r) => ({
+                    commodity: r.commodity,
+                    marginPerDca: r.perArea.marginPerDca,
+                    refusalCode: r.perArea.refusalCode,
+                    uncertainty: r.perArea.uncertainty,
+                    priceCurrency: r.priceCurrency,
+                })),
+            ),
+        [rows],
+    );
+
     const farmTotalValue = useCallback(
         (total: FarmNetWorthTotal) => {
             const amount = `${formatDecimal(total.netWorth, 2)} ${total.currency}`;
@@ -685,6 +709,16 @@ export function CalculatorClient({ tenantSlug, data }: CalculatorClientProps) {
                     onSelect={setSelected}
                 />
             )}
+
+            {/* Beside the cover bars ON PURPOSE, and this puts the page at
+                nine surfaces rather than the eight the budget wanted. The
+                two rank crops differently — cover by return on the money
+                spent, this by return on the land used — and on a farm where
+                land is the scarce input the second ranking is the one that
+                decides what to plant. Showing one and calling it "the"
+                answer would be the confident half-truth this page exists to
+                avoid, so both are shown and the disagreement is stated. */}
+            <MarginPerDcaCard scales={marginScales} labelFor={commodityLabel} />
 
             {/* ── The answer: net worth, or the stated refusal ── */}
             <Card as="section" density="compact" className="space-y-default border-border-subtle">
