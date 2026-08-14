@@ -22,6 +22,8 @@
  *      provenance-bearing infected file is still refused
  */
 
+import { Readable } from 'stream';
+
 const mockGetById = jest.fn();
 const mockFindFirst = jest.fn();
 const mockLogEvent = jest.fn();
@@ -39,9 +41,24 @@ jest.mock('@/app-layer/events/audit', () => ({
     logEvent: (...a: unknown[]) => mockLogEvent(...a),
 }));
 
+// `@/lib/storage` is `src/lib/storage.ts` — the shim. `downloadEvidenceFile`
+// used to reach the abstraction through `@/lib/storage/index`, a DIFFERENT
+// module that this factory therefore did not cover, so the real
+// LocalStorageProvider ran and `createReadStream` opened the fixture path
+// for real. The stream's async 'error' had no listener, which kills the
+// worker PROCESS instead of failing a test: CI shard 3/4 died with
+// `ENOENT ... /tmp/ci-uploads/tenants/tenant-1/evidence/file-1.pdf` and no
+// jest summary at all, while these tests "passed" locally because
+// `resolves.toBeDefined()` is satisfied by a doomed stream.
+//
+// The source now uses one specifier; `mockReadStream` below is what proves
+// this factory is still the thing being called.
+const mockReadStream = jest.fn(() => Readable.from([Buffer.from('pdf-bytes')]));
+
 jest.mock('@/lib/storage', () => ({
     assertTenantKey: jest.fn(),
-    getStorageProvider: () => ({ readStream: jest.fn(), getSignedUrl: jest.fn() }),
+    getStorageProvider: () => ({ readStream: mockReadStream, getSignedUrl: jest.fn() }),
+    getProviderByName: () => ({ name: 'local', readStream: mockReadStream }),
     buildTenantObjectKey: jest.fn(),
 }));
 
@@ -88,6 +105,7 @@ const NO_PROVENANCE = {
 
 beforeEach(() => {
     jest.clearAllMocks();
+    mockReadStream.mockImplementation(() => Readable.from([Buffer.from('pdf-bytes')]));
     mockGetById.mockResolvedValue({ ...STORED_FILE });
     mockFindFirst.mockResolvedValue({ ...NO_PROVENANCE });
     mockLogEvent.mockResolvedValue(undefined);
@@ -140,6 +158,18 @@ describe('downloadEvidenceFile — the gate actually denies', () => {
     it('does not write an EVIDENCE_DOWNLOADED audit row when it refuses', async () => {
         await expect(downloadEvidenceFile(readerCtx(), 'file-1')).rejects.toThrow();
         expect(mockLogEvent).not.toHaveBeenCalled();
+    });
+});
+
+describe('downloadEvidenceFile — reads through the MOCKED provider', () => {
+    // Load-bearing. Without this, a mock that stops intercepting is
+    // invisible: the usecase returns a real fs ReadStream, every
+    // assertion above still passes, and the only symptom is a worker
+    // process dying asynchronously somewhere else in the run.
+    it('streams from the mocked provider, never the real filesystem', async () => {
+        const res = await downloadEvidenceFile(writerCtx(), 'file-1');
+        expect(mockReadStream).toHaveBeenCalledWith('tenants/tenant-1/evidence/file-1.pdf');
+        expect(res).toMatchObject({ mode: 'stream' });
     });
 });
 

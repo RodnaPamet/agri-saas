@@ -1,5 +1,10 @@
 /**
- * VR-9 — the Practice-page AI suggestions rail renders ranked cards + actions.
+ * VR-9 — the AI suggestions rail renders ranked cards + actions.
+ *
+ * Fixtures use SURVIVING catalogue events. They named TEST_RUN_FAILED and
+ * RISK_CREATED until the GRC teardown; both events are gone (plan §8k), and
+ * a fixture pinned to a dead event is how a rail can look tested while
+ * rendering a trigger no rule can ever fire on.
  */
 import { render, screen, fireEvent } from '@testing-library/react';
 import * as React from 'react';
@@ -30,9 +35,9 @@ const SUGGESTIONS = [
     {
         id: 's2',
         rank: 2,
-        title: 'Open a remediation task for every new risk',
-        rationale: '5 risks are active.',
-        triggerEvent: 'RISK_CREATED',
+        title: 'Turn new issues into tracked tasks',
+        rationale: 'Track remediation to closure.',
+        triggerEvent: 'ISSUE_CREATED',
         actionType: 'CREATE_TASK' as const,
         confidenceScore: 0.7,
     },
@@ -43,21 +48,21 @@ describe('AutomationSuggestionsRail', () => {
         mockSWR.mockReturnValue({ data: { suggestions: SUGGESTIONS }, isLoading: false });
         render(<AutomationSuggestionsRail />);
         expect(screen.getByTestId('automation-suggestions-rail')).toBeInTheDocument();
-        expect(screen.getByText('Notify the team when a practice test fails')).toBeInTheDocument();
-        expect(screen.getByText('Open a remediation task for every new risk')).toBeInTheDocument();
+        expect(screen.getByText('Notify the agronomist when a spray job starts')).toBeInTheDocument();
+        expect(screen.getByText('Turn new issues into tracked tasks')).toBeInTheDocument();
         // human-readable trigger badge
-        expect(screen.getByText('Test Run Failed')).toBeInTheDocument();
+        expect(screen.getByText('Spray Job Started')).toBeInTheDocument();
     });
 
     it('dismiss removes a suggestion from the list', () => {
         mockSWR.mockReturnValue({ data: { suggestions: SUGGESTIONS }, isLoading: false });
         render(<AutomationSuggestionsRail />);
-        const firstCard = screen.getByText('Notify the team when a practice test fails');
+        const firstCard = screen.getByText('Notify the agronomist when a spray job starts');
         expect(firstCard).toBeInTheDocument();
         // dismiss the first card
         fireEvent.click(screen.getAllByText('Dismiss')[0]);
         expect(
-            screen.queryByText('Notify the team when a practice test fails'),
+            screen.queryByText('Notify the agronomist when a spray job starts'),
         ).not.toBeInTheDocument();
     });
 

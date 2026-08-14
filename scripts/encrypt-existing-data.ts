@@ -187,14 +187,10 @@ export const PII_BACKFILL_MANIFEST: readonly PiiBackfillTarget[] = [
     { model: 'User', plaintextColumn: 'email', encryptedColumn: 'emailEncrypted', hashColumn: 'emailHash' },
     { model: 'User', plaintextColumn: 'name', encryptedColumn: 'nameEncrypted' },
 
-    // AuditorAccount — external auditor invitations.
-    { model: 'AuditorAccount', plaintextColumn: 'email', encryptedColumn: 'emailEncrypted', hashColumn: 'emailHash' },
-    { model: 'AuditorAccount', plaintextColumn: 'name', encryptedColumn: 'nameEncrypted' },
-
-    // VendorContact — third-party vendor contact records.
-    { model: 'VendorContact', plaintextColumn: 'email', encryptedColumn: 'emailEncrypted', hashColumn: 'emailHash' },
-    { model: 'VendorContact', plaintextColumn: 'name', encryptedColumn: 'nameEncrypted' },
-    { model: 'VendorContact', plaintextColumn: 'phone', encryptedColumn: 'phoneEncrypted' },
+    // GRC teardown phase 2: AuditorAccount + VendorContact left this
+    // manifest with the PII middleware registry. Their tables survive
+    // until the phase-3 drop, but nothing reads or writes them, so a
+    // backfill would encrypt columns on the way to being dropped.
 
     // NotificationOutbox — outbound email recipients.
     { model: 'NotificationOutbox', plaintextColumn: 'toEmail', encryptedColumn: 'toEmailEncrypted' },

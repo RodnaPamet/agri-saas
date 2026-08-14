@@ -1,8 +1,8 @@
 /**
  * GAP-21 — pii-middleware WHERE-clause hash rewriter.
  *
- * After dropping the plaintext `email`/`name` columns from User,
- * AuditorAccount, and UserIdentityLink, the schema-level field name
+ * After dropping the plaintext `email`/`name` columns from User and
+ * UserIdentityLink, the schema-level field name
  * (`email`) is `@map`'d to the encrypted DB column. A naive
  * `where: { email: 'foo@bar.com' }` would compare the plaintext
  * lookup value against the random-IV ciphertext column and never
@@ -42,12 +42,15 @@ describe('pii-middleware — WHERE rewriter (pure)', () => {
         });
     });
 
-    test('AuditorAccount.email bare equality → emailHash', () => {
+    test('a tenant-scoped bare equality keeps its other predicates', () => {
+        // Exemplar was AuditorAccount until the GRC teardown removed it
+        // from the registry. The property under test is that rewriting
+        // `email` leaves sibling predicates (here tenantId) untouched.
         const where: Record<string, unknown> = {
             tenantId: 't-1',
             email: 'auditor@example.com',
         };
-        _rewriteWhereForHash(where, 'AuditorAccount');
+        _rewriteWhereForHash(where, 'User');
         expect(where).toEqual({
             tenantId: 't-1',
             emailHash: hashForLookup('auditor@example.com'),

@@ -790,7 +790,16 @@ export async function downloadEvidenceFile(ctx: RequestContext, fileId: string) 
         // During migration, old files may be on 'local' while app is configured for 's3'.
         // Always read from the backend that stored the file.
         const recordProvider = (fileRecord.storageProvider || 'local') as import('@/lib/storage/types').StorageProviderType;
-        const { getProviderByName } = await import('@/lib/storage/index');
+        // `@/lib/storage` — NOT `@/lib/storage/index`. Those are two
+        // DIFFERENT modules: `src/lib/storage.ts` (a file, which wins over
+        // the directory) re-exports the abstraction in
+        // `src/lib/storage/index.ts`. This line said `/index` while the
+        // static import at the top of this section says `@/lib/storage`,
+        // so a test mocking the latter still got the REAL provider here —
+        // and the real local provider's `createReadStream` on a fixture
+        // path emits an unhandled 'error' that kills the worker process
+        // rather than failing an assertion. Keep one specifier per module.
+        const { getProviderByName } = await import('@/lib/storage');
         const readProvider = getProviderByName(recordProvider);
 
         if (readProvider.name === 's3') {

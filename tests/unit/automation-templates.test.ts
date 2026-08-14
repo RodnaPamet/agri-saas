@@ -11,12 +11,25 @@ import { CreateAutomationRuleSchema } from '@/app-layer/schemas/automation.schem
 import { isKnownAutomationEvent } from '@/app-layer/automation/events';
 
 describe('automation templates', () => {
-    it('ships at least 5 templates with unique ids', () => {
-        // Floor lowered from 8 when the risk-register uproot removed the
-        // three RISK_* templates — their trigger events no longer exist,
-        // so keeping them would have shipped catalogue entries a user
-        // could install and never see fire.
-        expect(AUTOMATION_TEMPLATES.length).toBeGreaterThanOrEqual(5);
+    it('ships a non-empty catalogue with unique ids', () => {
+        // This assertion used to carry a floor: >= 8, then >= 5 when the
+        // risk-register uproot took the three RISK_* templates, then it
+        // would have been >= 3 after the GRC teardown took
+        // tpl_failed_test_task and tpl_evidence_practice_review (both
+        // triggered on TEST_RUN_* events whose subject models no longer
+        // exist — plan §8k).
+        //
+        // A floor that is lowered every time it fails is not measuring
+        // anything; it is the "green by running less" shape CLAUDE.md
+        // warns about. What actually matters is that the catalogue is
+        // non-empty and internally consistent — and, crucially, that no
+        // template points at a stranded trigger. The latter is NOT
+        // provable here: `isKnownAutomationEvent` below compares
+        // templates against the CATALOGUE, so when the catalogue is the
+        // thing that is wrong it passes with full confidence. That gap
+        // is covered by
+        // tests/guards/automation-catalog-emitter-coverage.test.ts.
+        expect(AUTOMATION_TEMPLATES.length).toBeGreaterThan(0);
         const ids = new Set(AUTOMATION_TEMPLATES.map((t) => t.id));
         expect(ids.size).toBe(AUTOMATION_TEMPLATES.length);
     });

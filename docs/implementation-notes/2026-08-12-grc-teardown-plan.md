@@ -632,3 +632,61 @@ for it BY MODEL NAME, not just by import. The three that exist today are
 `src/app-layer/automation/events.ts`, `src/lib/automation/event-labels.ts`
 and `src/data/automation-templates/index.ts`, plus the candidate list in
 `usecases/automation-suggestions.ts`.
+
+### §8l — a green local suite, a red CI shard, and a test that killed the process
+
+The A20 commit (f55c96ef) turned PR #557 red on `Test (shard 3/4)` while
+shards 1, 2 and 4 passed, and the full local suite passed too. The shard log
+carried no jest summary at all — it ended with:
+
+```
+Error: ENOENT: no such file or directory,
+       open '/tmp/ci-uploads/tenants/tenant-1/evidence/file-1.pdf'
+Emitted 'error' event on ReadStream instance at: …
+##[error]Process completed with exit code 1.
+```
+
+That path is the fixture in the new `evidence-download-gate.test.ts`. The
+cause is a module-resolution trap worth writing down, because nothing about
+it is visible at a call site:
+
+**`src/lib/storage.ts` and `src/lib/storage/index.ts` both exist.** A bare
+`@/lib/storage` resolves to the FILE (a file beats a sibling directory), so
+the two specifiers are two different modules that read as one.
+`storage.ts` re-exports the abstraction, so production behaviour is
+identical — the difference only bites under `jest.mock`, which is keyed on
+the resolved path.
+
+`downloadEvidenceFile` statically imported `@/lib/storage` and then
+dynamically imported `@/lib/storage/index` twenty lines later. The test
+mocked the former, so the latter handed back the REAL LocalStorageProvider
+and `createReadStream` opened a path that does not exist.
+
+Four things made this much worse than a failing assertion:
+
+1. The stream's `error` fires ASYNCHRONOUSLY with no listener, so it
+   terminates the worker PROCESS instead of failing a test.
+2. Jest prints no summary when that happens, so the log names the file it
+   could not open and nothing else — no suite, no test, no `Tests:` line.
+3. Whether the process was still alive when the error landed depended on
+   timing, so it read as a FLAKY shard: two runs of the SAME sha, one red
+   and one green. It would have been very easy to re-run it into green and
+   ship the landmine.
+4. **The tests passed.** `resolves.toBeDefined()` is satisfied by a stream
+   that is about to blow up, so all eleven assertions were green about a
+   code path that was reading the real filesystem.
+
+Fixed at three levels: the source now uses ONE specifier; the test asserts
+`mockReadStream` was called with the pathKey, so a mock that stops
+intercepting fails loudly instead of silently opening a file; and
+`tests/guards/storage-module-specifier.test.ts` bans
+`@/lib/storage/index` outside `src/lib/storage/`. The fix was
+mutation-proved by reverting the specifier — the new assertion fails and
+the ENOENT crash reproduces locally.
+
+**The general lesson, and it is not about storage.** "The mock did not
+apply" is normally a loud failure. It is silent whenever the un-mocked real
+thing returns a lazily-failing handle — a stream, a socket, a deferred
+promise — because the test finishes before the failure exists. When you mock
+a module, assert that the mock was CALLED, not merely that the result is
+defined.
