@@ -29,17 +29,18 @@ import type { SearchHit, SearchHitType } from './types';
 /**
  * Tiebreak hint when two hits across different kinds match the
  * query equally well. Bias toward the entities operators search
- * for most often in the palette (practices > policies >
- * frameworks > evidence). Magnitudes are tiny relative to the
+ * for most often in the palette (tasks > assets > evidence /
+ * knowledge). Magnitudes are tiny relative to the
  * match-quality bands so ranking is dominated by relevance, not
  * type bias.
  */
 const TYPE_BASELINE: Record<SearchHitType, number> = {
-    practice: 7,
+    // Values are the survivors' ORIGINAL weights, unchanged — the GRC
+    // teardown removed practice (7), policy (4) and framework (1)
+    // without re-tuning what was left, so relative ordering among the
+    // agri entities is exactly what it always was.
     task: 5,
-    policy: 4,
     asset: 2,
-    framework: 1,
     evidence: 0,
     knowledge: 0,
 };
@@ -108,9 +109,6 @@ export function capPerType(
     limit: number,
 ): { kept: SearchHit[]; perTypeCounts: Record<SearchHitType, number>; truncated: boolean } {
     const counts: Record<SearchHitType, number> = {
-        practice: 0,
-        policy: 0,
-        framework: 0,
         evidence: 0,
         asset: 0,
         task: 0,

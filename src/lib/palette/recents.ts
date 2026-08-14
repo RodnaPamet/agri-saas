@@ -27,6 +27,7 @@
  */
 
 import type { SearchHit, SearchHitType } from '@/lib/search/types';
+import { SEARCH_TYPE_DEFAULTS } from '@/lib/search/types';
 
 // ─── Public types ─────────────────────────────────────────────────────
 
@@ -119,13 +120,17 @@ export function serializeRecents(items: ReadonlyArray<RecentItem>): RecentsBlob 
     return { version: 1, items: items.slice(0, MAX_RECENTS) };
 }
 
-const VALID_TYPES: ReadonlySet<SearchHitType> = new Set([
-    'practice',
-    'policy',
-    'evidence',
-    'framework',
-    'knowledge',
-]);
+// DERIVED, not hand-listed. The literal version had drifted: it named
+// practice / policy / framework but never `asset` or `task`, so recents
+// silently discarded two of the four hit kinds the palette can produce.
+// The GRC teardown would have made that worse — removing the three dead
+// entries by hand leaves {evidence, knowledge}, i.e. the two LEAST
+// common agri kinds. Deriving from the display registry means a new
+// SearchHitType is accepted the moment it exists, and this set can
+// never disagree with the union again.
+const VALID_TYPES: ReadonlySet<SearchHitType> = new Set(
+    Object.keys(SEARCH_TYPE_DEFAULTS) as SearchHitType[],
+);
 
 const VALID_ICONS: ReadonlySet<SearchHit['iconKey']> = new Set([
     'shield-check',

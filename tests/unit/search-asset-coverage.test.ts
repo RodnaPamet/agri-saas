@@ -2,7 +2,9 @@
  * Asset search coverage — the palette-search-fix-for-assets PR.
  *
  * The unified search usecase originally covered five entity kinds:
- * practice / risk / policy / evidence / framework. Assets weren't
+ * practice / risk / policy / evidence / framework — all five since
+ * removed by the risk uproot and the GRC teardown, which is why the
+ * union below is now the agri set. Assets weren't
  * searchable, so users typing an asset's externalRef tag
  * (`patent1`, `srv-prod-04`, …) into the palette got zero hits
  * even when the asset existed in their tenant.
@@ -35,11 +37,10 @@ describe('Asset search coverage', () => {
         // this is the runtime sanity check that no future codemod
         // strips the literal.
         const types: SearchHitType[] = [
-            'practice',
-            'policy',
             'evidence',
-            'framework',
             'asset',
+            'task',
+            'knowledge',
         ];
         expect(types).toContain('asset');
     });

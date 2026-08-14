@@ -4,7 +4,8 @@
  *
  * The original Epic 57 hook fanned out to 5 per-entity routes
  * (`/practices`, `/risks`, `/policies`, `/evidence`,
- * `/frameworks`) and merged the results client-side. The
+ * `/frameworks` — four of which no longer exist) and merged the
+ * results client-side. The
  * migration consolidates that into ONE round-trip to
  * `/api/t/<slug>/search?q=`.
  *
@@ -20,6 +21,8 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import type { SearchHitType } from '@/lib/search/types';
+import { __SEARCHABLE_TYPES__ } from '@/app-layer/usecases/search';
 
 const HOOK = path.resolve(
     __dirname,
@@ -150,15 +153,30 @@ describe('Search route + usecase — structural shape', () => {
     });
 
     it('searches every canonical entity type', () => {
-        // Mirrors the SearchHitType union; if a new type is added
-        // there, the usecase must add a query branch + this test
-        // grows. Catches accidental drops.
-        expect(usecase).toMatch(/db\.practice\.findMany/);
-        expect(usecase).toMatch(/db\.policy\.findMany/);
-        expect(usecase).toMatch(/db\.evidence\.findMany/);
-        expect(usecase).toMatch(/prisma\.framework\.findMany/);
-        // Knowledge Base articles are searchable too.
-        expect(usecase).toMatch(/db\.knowledgeArticle\.findMany/);
+        // DERIVED from the union, not hand-listed. The previous version
+        // spelled out five `findMany` calls and therefore drifted: it was
+        // still demanding db.practice / db.policy / prisma.framework long
+        // after those models were on the teardown KILL list, so the test
+        // that exists to catch an accidental DROP would instead have
+        // blocked a deliberate one.
+        //
+        // `Record<SearchHitType, …>` is the load-bearing part: adding a
+        // member to the union fails to COMPILE here until its query is
+        // named, and removing one forces this map to shrink in the same
+        // diff. The mapping cannot be inferred (knowledge → knowledgeArticle),
+        // which is why it is spelled out rather than generated.
+        const QUERY_FOR_TYPE: Record<SearchHitType, RegExp> = {
+            evidence: /db\.evidence\.findMany/,
+            asset: /db\.asset\.findMany/,
+            task: /db\.task\.findMany/,
+            knowledge: /db\.knowledgeArticle\.findMany/,
+        };
+        for (const [type, re] of Object.entries(QUERY_FOR_TYPE)) {
+            expect({ type, found: re.test(usecase) }).toEqual({ type, found: true });
+        }
+        // Totality is compile-time; this guards against the map being
+        // emptied out to make the loop vacuous.
+        expect(Object.keys(QUERY_FOR_TYPE).length).toBe(__SEARCHABLE_TYPES__.length);
     });
 
     it('contract carries one mixed-entity result type, not a union', () => {

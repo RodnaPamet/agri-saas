@@ -56,17 +56,14 @@ export function toggleKind(
 
 /**
  * Per-chip count for the badge — derived from the FULL hit list
- * (not the post-filter list). Lets a user see "Policies (3)" even
- * when the Policies chip isn't currently active.
+ * (not the post-filter list). Lets a user see "Assets (3)" even
+ * when the Assets chip isn't currently active.
  */
 export function countHitsByKind<T>(
     items: ReadonlyArray<T>,
     getKind: (item: T) => SearchHitType,
 ): Record<SearchHitType, number> {
     const out: Record<SearchHitType, number> = {
-        practice: 0,
-        policy: 0,
-        framework: 0,
         evidence: 0,
         asset: 0,
         task: 0,

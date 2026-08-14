@@ -88,10 +88,7 @@ function searchResponse(
         meta: {
             query,
             perTypeCounts: {
-                practice: hits.filter((h) => h.type === 'practice').length,
-                policy: hits.filter((h) => h.type === 'policy').length,
                 evidence: hits.filter((h) => h.type === 'evidence').length,
-                framework: hits.filter((h) => h.type === 'framework').length,
                 asset: hits.filter((h) => h.type === 'asset').length,
                 task: hits.filter((h) => h.type === 'task').length,
                 knowledge: hits.filter((h) => h.type === 'knowledge').length,
@@ -104,26 +101,26 @@ function searchResponse(
 
 const SAMPLE_HITS: SearchHit[] = [
     {
-        type: 'practice',
-        id: 'ctrl-1',
-        title: 'Information security policies',
-        subtitle: 'A.5.1',
-        badge: 'IMPLEMENTED',
-        href: '/t/acme-corp/practices/ctrl-1',
+        type: 'task',
+        id: 'tsk-1',
+        title: 'Spray the north block',
+        subtitle: 'TSK-51',
+        badge: 'OPEN',
+        href: '/t/acme-corp/farm-tasks/tsk-1',
         score: 0.95,
-        iconKey: 'shield-check',
-        category: 'Practices',
+        iconKey: 'check-square',
+        category: 'Tasks',
     },
     {
-        type: 'policy',
-        id: 'pol-1',
-        title: 'Access Control Policy',
+        type: 'asset',
+        id: 'ast-1',
+        title: 'John Deere 6155R',
         subtitle: null,
-        badge: 'PUBLISHED',
-        href: '/t/acme-corp/policies/pol-1',
+        badge: 'ACTIVE',
+        href: '/t/acme-corp/assets/ast-1',
         score: 0.85,
-        iconKey: 'file-text',
-        category: 'Policies',
+        iconKey: 'package',
+        category: 'Assets',
     },
     {
         type: 'evidence',
@@ -137,15 +134,15 @@ const SAMPLE_HITS: SearchHit[] = [
         category: 'Evidence',
     },
     {
-        type: 'framework',
-        id: 'ISO27001',
-        title: 'ISO 27001:2022',
-        subtitle: '2022',
+        type: 'knowledge',
+        id: 'kb-1',
+        title: 'Pre-harvest interval guidance',
+        subtitle: 'Plant protection',
         badge: null,
-        href: '/t/acme-corp/frameworks/ISO27001',
+        href: '/t/acme-corp/knowledge/kb-1',
         score: 0.7,
-        iconKey: 'layers',
-        category: 'Frameworks',
+        iconKey: 'file-text',
+        category: 'Knowledge',
     },
 ];
 
@@ -249,28 +246,28 @@ describe('CommandPalette — entity search (unified /search)', () => {
 
     it('renders hits grouped by type with title/subtitle/badge', async () => {
         render(<Shell />);
-        await openPaletteAndType('security');
+        await openPaletteAndType('spray');
 
         await waitFor(() => {
             expect(
                 document.querySelector(
-                    '[data-testid="command-palette-result-practice"]',
+                    '[data-testid="command-palette-result-task"]',
                 ),
             ).not.toBeNull();
         });
 
         const row = document.querySelector(
-            '[data-testid="command-palette-result-practice"]',
+            '[data-testid="command-palette-result-task"]',
         )!;
-        expect(row.textContent).toContain('A.5.1');
-        expect(row.textContent).toContain('Information security policies');
-        expect(row.textContent).toContain('IMPLEMENTED');
+        expect(row.textContent).toContain('TSK-51');
+        expect(row.textContent).toContain('Spray the north block');
+        expect(row.textContent).toContain('OPEN');
 
-        const policy = document.querySelector(
-            '[data-testid="command-palette-result-policy"]',
+        const asset = document.querySelector(
+            '[data-testid="command-palette-result-asset"]',
         )!;
-        expect(policy.textContent).toContain('Access Control Policy');
-        expect(policy.textContent).toContain('PUBLISHED');
+        expect(asset.textContent).toContain('John Deere 6155R');
+        expect(asset.textContent).toContain('ACTIVE');
 
         const evidence = document.querySelector(
             '[data-testid="command-palette-result-evidence"]',
@@ -279,19 +276,19 @@ describe('CommandPalette — entity search (unified /search)', () => {
         expect(evidence.textContent).toContain('FILE');
     });
 
-    it('renders framework hits returned by the server', async () => {
-        // Server-side ranking now decides what frameworks come back.
-        // The palette no longer client-filters frameworks — the
-        // unified API does it server-side from the same `?q=`. The
-        // test asserts a framework hit renders when present in the
-        // canned response.
+    it('renders knowledge hits returned by the server', async () => {
+        // Server-side ranking decides what comes back; the palette no
+        // longer client-filters by kind — the unified API does it
+        // server-side from the same `?q=`. This asserted `framework`
+        // until the GRC teardown removed that hit type; `knowledge` is
+        // the surviving kind with the same server-ranked shape.
         render(<Shell />);
-        await openPaletteAndType('iso');
+        await openPaletteAndType('harvest');
 
         await waitFor(() => {
             expect(
                 document.querySelectorAll(
-                    '[data-testid="command-palette-result-framework"]',
+                    '[data-testid="command-palette-result-knowledge"]',
                 ).length,
             ).toBeGreaterThan(0);
         });
@@ -299,17 +296,17 @@ describe('CommandPalette — entity search (unified /search)', () => {
 
     it('navigates to the entity detail route on select + closes the palette', async () => {
         const { getByTestId, queryByTestId } = render(<Shell />);
-        await openPaletteAndType('security');
+        await openPaletteAndType('spray');
 
         const row = await waitFor(() =>
-            getByTestId('command-palette-result-practice'),
+            getByTestId('command-palette-result-task'),
         );
         const href = row.getAttribute('data-href');
-        expect(href).toBe('/t/acme-corp/practices/ctrl-1');
+        expect(href).toBe('/t/acme-corp/farm-tasks/tsk-1');
 
         fireEvent.click(row);
         expect(navigationMock.push).toHaveBeenCalledWith(
-            '/t/acme-corp/practices/ctrl-1',
+            '/t/acme-corp/farm-tasks/tsk-1',
         );
         // Palette closes after navigation.
         await waitFor(() => {
