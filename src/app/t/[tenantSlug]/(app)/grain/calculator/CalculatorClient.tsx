@@ -83,7 +83,6 @@ import { buttonVariants } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Heading, TextLink } from '@/components/ui/typography';
-import { ToggleGroup } from '@/components/ui/toggle-group';
 import { StatusBreakdown, type StatusBreakdownItem } from '@/components/ui/status-breakdown';
 import { DataTable, createColumns } from '@/components/ui/table';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -111,7 +110,7 @@ import {
 import { GrainSectionNav } from '../GrainSectionNav';
 import type { FarmNetWorthTotal } from '@/lib/grain/farm-total';
 import type { ExclusionEntry } from '@/lib/grain/exclusion-labels';
-import { ExclusionsCard, SumLine } from './components';
+import { CommodityStrip, ExclusionsCard, SumLine } from './components';
 
 // ─── Serialised DTOs (mirror the grain-net-worth usecase output) ────
 
@@ -380,10 +379,6 @@ export function CalculatorClient({ tenantSlug, data }: CalculatorClientProps) {
     const [selected, setSelected] = useState<string>(rows[0]?.commodity ?? '');
     const row = rows.find((r) => r.commodity === selected) ?? rows[0] ?? null;
 
-    const commodityOptions = useMemo(
-        () => rows.map((r) => ({ value: r.commodity, label: commodityLabel(r.commodity) })),
-        [rows, commodityLabel],
-    );
 
     // ── Exclusions: a COUNT, always shown, never a silent zero ──
     const exclusionClasses = useMemo(
@@ -549,6 +544,30 @@ export function CalculatorClient({ tenantSlug, data }: CalculatorClientProps) {
     // renders whatever the tenant is configured with, which would print a
     // BGN total with a euro sign. The cash-out card below already does it
     // this way for exactly the same reason.
+    // Sorted by CONTRIBUTION, biggest first — CANONICAL_COMMODITIES order
+    // is arbitrary to a farmer, and the order is a claim the UI states.
+    // A refused crop has no figure to rank, so it sorts last rather than
+    // as a zero, which would put it below a loss-making crop that at least
+    // has a number.
+    const comparisonItems = useMemo(
+        () =>
+            rows
+                .map((r) => ({
+                    commodity: r.commodity,
+                    label: commodityLabel(r.commodity),
+                    netWorth: r.netWorth,
+                    currency: r.priceCurrency,
+                    uncertainty: r.netUncertainty,
+                }))
+                .sort((a, b) => {
+                    if (a.netWorth == null && b.netWorth == null) return 0;
+                    if (a.netWorth == null) return 1;
+                    if (b.netWorth == null) return -1;
+                    return b.netWorth - a.netWorth;
+                }),
+        [rows, commodityLabel],
+    );
+
     const farmTotalValue = useCallback(
         (total: FarmNetWorthTotal) => {
             const amount = `${formatDecimal(total.netWorth, 2)} ${total.currency}`;
@@ -702,12 +721,20 @@ export function CalculatorClient({ tenantSlug, data }: CalculatorClientProps) {
                 </Card>
             )}
 
-            {commodityOptions.length > 1 && (
-                <ToggleGroup
-                    ariaLabel={tc('commodityAria')}
-                    options={commodityOptions}
-                    selected={selected}
-                    selectAction={setSelected}
+            {/* Replaces the ToggleGroup, which showed one crop at a time
+                and could not answer "which crop is carrying this farm?".
+                Same conditional instinct: nothing at all for a single-crop
+                farm, which should see a simpler page rather than the same
+                page with empty affordances. */}
+            {comparisonItems.length > 1 && (
+                <CommodityStrip
+                    items={comparisonItems}
+                    // `row.commodity`, not `selected` — `selected` seeds
+                    // from rows[0] and the row lookup falls back to rows[0]
+                    // too, so on first paint the strip must mark the crop
+                    // actually expanded below rather than an empty string.
+                    selected={row.commodity}
+                    onSelect={setSelected}
                 />
             )}
 

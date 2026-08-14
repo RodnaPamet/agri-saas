@@ -23,6 +23,9 @@ import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { Heading, TextLink } from '@/components/ui/typography';
 import { useExactMoneyFormatter } from '@/lib/tenant-context-provider';
+import { formatDecimal } from '@/lib/number-format';
+import { UNCERTAINTY, type UncertaintyState } from '@/lib/grain/uncertainty';
+import { cn } from '@/lib/cn';
 
 import type { CalculatorExclusions, ExclusionEntry } from './CalculatorClient';
 
@@ -239,6 +242,103 @@ export function ExclusionsCard({ count, classes, hrefFor }: ExclusionsCardProps)
                     </Accordion>
                 </>
             )}
+        </Card>
+    );
+}
+
+// ─── Per-crop comparison ─────────────────────────────────────────────
+
+export interface CommodityStripItem {
+    commodity: string;
+    label: string;
+    netWorth: number | null;
+    currency: string | null;
+    uncertainty: UncertaintyState;
+}
+
+interface CommodityStripProps {
+    items: readonly CommodityStripItem[];
+    selected: string;
+    onSelect: (commodity: string) => void;
+}
+
+/**
+ * Every crop's net worth, side by side, without clicking anything.
+ *
+ * `commodityOptions` fed a ToggleGroup, so a farmer with five crops saw
+ * ONE at a time and could not answer "which crop is actually carrying this
+ * farm?" without stepping through them. The appendix table did show every
+ * row, but it sits below the sum, the breakdown, the KPI and the
+ * exclusions — the comparison they most want was the last thing on the
+ * page.
+ *
+ * This REPLACES the ToggleGroup rather than joining it. The toggle's only
+ * job was selection, which these rows also do; keeping both would put two
+ * controls for one decision on the same screen, and a farmer would try to
+ * click the numbers anyway.
+ *
+ * ── Where a comparison view most easily lies ────────────────────────
+ *
+ * By making unlike things look alike. A refused net and a bounded net
+ * rendered as bare figures sit in the same column as exact ones and invite
+ * exactly the comparison they cannot support, so each row carries its own
+ * state in the shared vocabulary: "at most" rides the value, a refusal
+ * shows the em-dash every formatter here already uses.
+ *
+ * Currency code, not the tenant symbol — the farm card's reasoning applies
+ * unchanged, and this column can genuinely mix currencies.
+ */
+export function CommodityStrip({ items, selected, onSelect }: CommodityStripProps) {
+    const tc = useTranslations('grain.calculator');
+
+    return (
+        <Card as="section" density="compact" className="space-y-default border-border-subtle">
+            <div className="flex flex-wrap items-baseline justify-between gap-tight">
+                <Heading level={2}>{tc('comparisonTitle')}</Heading>
+                {/* The order is a claim, so it is stated. CANONICAL_COMMODITIES
+                    order is arbitrary to a farmer; contribution is not. */}
+                <span className="text-xs text-content-subtle">
+                    {tc('comparisonOrderNote')}
+                </span>
+            </div>
+            <ul className="space-y-tight" aria-label={tc('comparisonAria')}>
+                {items.map((item) => {
+                    const isSelected = item.commodity === selected;
+                    const amount =
+                        item.netWorth == null
+                            ? '—'
+                            : `${formatDecimal(item.netWorth, 2)}${item.currency ? ` ${item.currency}` : ''}`;
+                    return (
+                        <li key={item.commodity}>
+                            <button
+                                type="button"
+                                aria-pressed={isSelected}
+                                onClick={() => onSelect(item.commodity)}
+                                className={cn(
+                                    'flex w-full items-baseline justify-between gap-tight rounded-md px-2 py-1 text-sm',
+                                    isSelected
+                                        ? 'border border-border-emphasis bg-bg-muted'
+                                        : 'border border-transparent hover:bg-bg-muted',
+                                )}
+                            >
+                                <span className="text-content-default">{item.label}</span>
+                                <span
+                                    className={cn(
+                                        'font-medium tabular-nums',
+                                        item.uncertainty === UNCERTAINTY.EXACT
+                                            ? 'text-content-emphasis'
+                                            : 'text-content-attention',
+                                    )}
+                                >
+                                    {item.uncertainty === UNCERTAINTY.AT_MOST
+                                        ? tc('uncertaintyAtMost', { value: amount })
+                                        : amount}
+                                </span>
+                            </button>
+                        </li>
+                    );
+                })}
+            </ul>
         </Card>
     );
 }
