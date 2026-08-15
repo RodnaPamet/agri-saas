@@ -1,5 +1,7 @@
 /**
- * The three cost metrics this product reports, named apart.
+ * The cost metrics this product reports, named apart. Six today; the
+ * registry below is the count, and every addition carries the argument for
+ * why it is not a wider spelling of one already here.
  *
  * ─── The problem ────────────────────────────────────────────────────
  *
@@ -101,6 +103,32 @@ export const COST_METRICS = {
      * named metric here — never a quiet addition to an existing one.
      */
     GRAIN_CASH_OUT: 'grain-cash-out',
+    /**
+     * A rent charge on land the farm OWNS, at the rate its own leases
+     * establish — the opportunity cost of farming your own hectare
+     * instead of letting it.
+     *
+     * A SIXTH metric rather than a term inside `GRAIN_NET_WORTH`'s cost
+     * side, for one reason: no lev leaves the bank. `cashCostTotal` is
+     * named for what it is, its docblock defines it as exactly
+     * `attributedCropCost + rentCostMoneyAmount + payrollCost`, and every
+     * surface that prints it prints those three slices beside it. Adding a
+     * fourth term would leave the printed slices short of the printed
+     * total — two figures four inches apart contradicting each other,
+     * which is the defect #556 was written about, in the opposite
+     * direction.
+     *
+     * It is not a rent ACCRUAL either. `resolveRentBasis` prices a real
+     * contractual obligation the farmer owes whether or not it is paid
+     * (see `GRAIN_CASH_OUT` above); this prices an obligation that does
+     * not exist. Blending them would make "what do I owe my landlords"
+     * unanswerable from the figure that claims to answer it.
+     *
+     * Reported BESIDE, and REFUSED rather than zeroed when the farm has no
+     * observed rate. A consumer that wants a full-economic-cost view adds
+     * the two itself, visibly, and says so.
+     */
+    IMPUTED_LAND_CHARGE: 'imputed-land-charge',
 } as const;
 
 export type CostMetric = (typeof COST_METRICS)[keyof typeof COST_METRICS];
@@ -133,4 +161,5 @@ export const COST_METRIC_LABEL_KEYS: Record<CostMetric, string> = {
     [COST_METRICS.SEASON_ACTIVITY_COST]: 'metricSeasonActivityCost',
     [COST_METRICS.GRAIN_NET_WORTH]: 'metricGrainNetWorth',
     [COST_METRICS.GRAIN_CASH_OUT]: 'metricGrainCashOut',
+    [COST_METRICS.IMPUTED_LAND_CHARGE]: 'metricImputedLandCharge',
 };

@@ -224,6 +224,7 @@ model Tenant {
   yieldRecords             YieldRecord[]
   grainDeliveries          GrainDelivery[]
   costEntries              CostEntry[]
+  costEntryAllocationParcels CostEntryAllocationParcel[]
   // Phase 1 — inventory ledger + journal.
   inventoryLots            InventoryLot[]
   stockTransactions        StockTransaction[]

@@ -247,6 +247,36 @@ export interface CalculatorData {
      * questions.
      */
     cashOut: CalculatorCashOutLine[];
+    /**
+     * Cost that landed on land carrying no crop — a fallow parcel's share
+     * of a spread cost, and money rent on an unplanted parcel.
+     *
+     * Rendered BECAUSE the rows are short by exactly this. A spread
+     * conserves the amount across `rows + this`, so a page printing only
+     * the rows would show a cost that shrank when the farmer changed how
+     * it spreads — the one thing the allocator promises never happens.
+     */
+    unallocatedToCrop: {
+        amount: number;
+        areaHa: number;
+        parcelIds: string[];
+        currencies: string[];
+    };
+    /**
+     * `COST_METRICS.IMPUTED_LAND_CHARGE` — what the farm's OWN land would
+     * fetch as rent, at the rate its own leases establish.
+     *
+     * Beside the cost side and never inside it: no lev left the bank, and
+     * every cost figure on this page is money that did. Refused rather
+     * than zeroed when there is no observed rate, because a zero says
+     * owned land is free.
+     */
+    imputedLandCharge: {
+        perHa: number | null;
+        areaHa: number;
+        totalAmount: number | null;
+        refusalCode: string | null;
+    };
     truncated: boolean;
 }
 
@@ -1058,6 +1088,74 @@ export function CalculatorClient({ tenantSlug, data }: CalculatorClientProps) {
                         ))}
                     </dl>
                     <p className="text-xs text-content-subtle">{tc('cashOutNote')}</p>
+                </Card>
+            )}
+
+            {/* ── Beside the cost, and neither one of its terms ──
+                Two figures that belong to the farm rather than to a crop.
+                `unallocatedToCrop` is money the allocator conserved onto
+                land with nothing growing on it: the rows above are short
+                by exactly this, so printing it is what makes "changing
+                the basis redistributes and never changes the total"
+                something a reader can check rather than take on trust.
+                The imputed land charge is not money at all — it is what
+                the farm's own land would fetch as rent, which is why it
+                is here and not in the cost line. */}
+            {(data.unallocatedToCrop.amount !== 0 || data.imputedLandCharge.areaHa > 0) && (
+                <Card as="section" density="compact" className="space-y-default border-border-subtle">
+                    <Heading level={3} as="h2" tone="muted">
+                        {tc('besideCostTitle')}
+                    </Heading>
+                    <dl className="space-y-default text-sm">
+                        {data.imputedLandCharge.areaHa > 0 && (
+                            <div className="space-y-tight">
+                                <div className="flex items-baseline justify-between gap-tight">
+                                    <dt className="text-content-muted">
+                                        {tc(COST_METRIC_LABEL_KEYS[COST_METRICS.IMPUTED_LAND_CHARGE])}
+                                    </dt>
+                                    <dd className="font-medium tabular-nums text-content-emphasis">
+                                        {data.imputedLandCharge.totalAmount != null
+                                            ? formatDecimal(data.imputedLandCharge.totalAmount, 2)
+                                            : tc('imputedLandChargeRefused')}
+                                    </dd>
+                                </div>
+                                <div className="flex flex-wrap items-center gap-tight">
+                                    {/* The SAME word a pro-rata payroll share
+                                        carries. An apportioned figure must
+                                        never read as a measurement. */}
+                                    <Badge variant="warning" size="sm">
+                                        {tc('payrollAllocatedBadge')}
+                                    </Badge>
+                                    <p className="text-xs text-content-muted">
+                                        {data.imputedLandCharge.perHa != null
+                                            ? tc('imputedLandChargeNote', {
+                                                  rate: formatDecimal(data.imputedLandCharge.perHa, 2),
+                                                  area: formatDecimal(data.imputedLandCharge.areaHa, 2),
+                                              })
+                                            : tc('imputedLandChargeRefusedWhy')}
+                                    </p>
+                                </div>
+                            </div>
+                        )}
+                        {data.unallocatedToCrop.amount !== 0 && (
+                            <div className="space-y-tight">
+                                <div className="flex items-baseline justify-between gap-tight">
+                                    <dt className="text-content-muted">
+                                        {tc('unallocatedToCropLabel')}
+                                    </dt>
+                                    <dd className="font-medium tabular-nums text-content-emphasis">
+                                        {formatDecimal(data.unallocatedToCrop.amount, 2)}
+                                    </dd>
+                                </div>
+                                <p className="text-xs text-content-muted">
+                                    {tc('unallocatedToCropNote', {
+                                        count: data.unallocatedToCrop.parcelIds.length,
+                                        area: formatDecimal(data.unallocatedToCrop.areaHa, 2),
+                                    })}
+                                </p>
+                            </div>
+                        )}
+                    </dl>
                 </Card>
             )}
 

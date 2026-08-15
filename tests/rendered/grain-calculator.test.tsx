@@ -299,6 +299,11 @@ function data(over: Partial<CalculatorData> = {}): CalculatorData {
         },
         unvalued: { noUnitCost: 0, unitMismatch: 0 },
         cashOut: [],
+        // Both empty by default: a farm with every parcel cropped and no
+        // owned land has neither figure, and the card carrying them stays
+        // off the page entirely.
+        unallocatedToCrop: { amount: 0, areaHa: 0, parcelIds: [], currencies: [] },
+        imputedLandCharge: { perHa: null, areaHa: 0, totalAmount: null, refusalCode: null },
         truncated: false,
         ...over,
     };
@@ -1535,6 +1540,100 @@ describe('grain calculator — cash out (setViewport("mobile"))', () => {
         // Cash out is a disclosure beside the answer, not part of it.
         renderPage(
             data({ cashOut: [{ currency: 'BGN', amount: 99_999, categories: ['FUEL'] }] }),
+        );
+        expect(screen.getAllByText('€18,750').length).toBeGreaterThan(0);
+    });
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// BESIDE THE COST — the two figures that belong to the farm, not a crop.
+//
+// Both exist because of a decision that could have gone the other way,
+// and both fail SILENTLY if the page drops them. A spread cost that
+// lands on fallow land makes the rows short by exactly that amount, and
+// a page printing only the rows would show a cost that shrank when the
+// farmer changed how it spreads — the one thing the allocator promises
+// cannot happen. The imputed land charge fails the other way: folded
+// into the cost line it would inflate every figure with money nobody
+// paid.
+// ─────────────────────────────────────────────────────────────────────
+
+describe('grain calculator — beside the cost', () => {
+    it('prints what landed on land with no crop', () => {
+        setViewport('mobile');
+        renderPage(
+            data({
+                unallocatedToCrop: {
+                    amount: 2000,
+                    areaHa: 20,
+                    parcelIds: ['parcel-a', 'parcel-b'],
+                    currencies: ['BGN'],
+                },
+            }),
+        );
+
+        expect(screen.getByText(COPY.unallocatedToCropLabel)).toBeVisible();
+        expect(screen.getByText('2,000')).toBeVisible();
+    });
+
+    it('names the imputed land charge as its own metric, marked ALLOCATED', () => {
+        setViewport('mobile');
+        renderPage(
+            data({
+                imputedLandCharge: {
+                    perHa: 50,
+                    areaHa: 10,
+                    totalAmount: 500,
+                    refusalCode: null,
+                },
+            }),
+        );
+
+        expect(screen.getByText(COPY.metricImputedLandCharge)).toBeVisible();
+        expect(screen.getByText('500')).toBeVisible();
+        // The SAME word a pro-rata payroll share carries. An apportioned
+        // figure must never read as a measurement.
+        expect(screen.getAllByText(COPY.payrollAllocatedBadge).length).toBeGreaterThan(0);
+    });
+
+    it('REFUSES the imputed charge rather than printing a zero', () => {
+        setViewport('mobile');
+        // A zero would say owned land is free, which is the defect the
+        // figure exists to fix.
+        renderPage(
+            data({
+                imputedLandCharge: {
+                    perHa: null,
+                    areaHa: 10,
+                    totalAmount: null,
+                    refusalCode: 'NO_OBSERVED_RENT_RATE',
+                },
+            }),
+        );
+
+        expect(screen.getByText(COPY.imputedLandChargeRefused)).toBeVisible();
+        expect(screen.getByText(COPY.imputedLandChargeRefusedWhy)).toBeVisible();
+    });
+
+    it('is ABSENT for a farm with every parcel cropped and no owned land', () => {
+        setViewport('mobile');
+        renderPage();
+        expect(screen.queryByText(COPY.besideCostTitle)).not.toBeInTheDocument();
+    });
+
+    it('does not move the farm net worth', () => {
+        setViewport('mobile');
+        // Both are disclosures beside the answer, not part of it.
+        renderPage(
+            data({
+                unallocatedToCrop: {
+                    amount: 9_999,
+                    areaHa: 40,
+                    parcelIds: ['parcel-x'],
+                    currencies: ['BGN'],
+                },
+                imputedLandCharge: { perHa: 50, areaHa: 100, totalAmount: 5_000, refusalCode: null },
+            }),
         );
         expect(screen.getAllByText('€18,750').length).toBeGreaterThan(0);
     });

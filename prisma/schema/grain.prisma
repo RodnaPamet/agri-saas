@@ -341,6 +341,15 @@ model CostEntry {
   /// what lets a product page SHOW its purchases beside its consumption —
   /// not what merges them.
   itemId          String?
+  /// Which land this cost is spread across — see `CostAllocationBasis`.
+  ///
+  /// Defaults to TARGET so every row written before this column keeps its
+  /// exact previous meaning. Deliberately NOT indexed: the allocator reads
+  /// it for every in-scope row and nothing filters on it. Should it ever
+  /// become a list facet, that is a new `[tenantId, allocationBasis,
+  /// incurredOn]` composite AND a `LIST_QUERY_INDEXES` entry, which the
+  /// index guardrail matches order-sensitively.
+  allocationBasis CostAllocationBasis @default(TARGET)
   createdByUserId String?
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
@@ -362,6 +371,8 @@ model CostEntry {
   /// `assertUsableInvoice` checks it alongside STORED and not-deleted.
   invoiceFile FileRecord?  @relation(fields: [invoiceFileId], references: [id])
   createdBy   User?        @relation("CostEntryCreator", fields: [createdByUserId], references: [id])
+  /// Populated only when `allocationBasis = PARCEL_SUBSET`.
+  allocationParcels CostEntryAllocationParcel[]
 
   @@unique([id, tenantId])
   /// List filter+sort shape: newest-incurred-first, tenant-scoped, with the
@@ -380,4 +391,41 @@ model CostEntry {
   @@index([tenantId, leaseId])
   @@index([tenantId, itemId])
   @@index([tenantId, invoiceFileId])
+}
+
+
+/// The parcels a `PARCEL_SUBSET` cost entry is spread across.
+///
+/// ── Why a join table and not a `String[]` of parcel ids ─────────────
+///
+/// The integrity is load-bearing rather than hygiene: this set IS the
+/// allocation DENOMINATOR. A dangling id in an array column is
+/// indistinguishable from a smaller subset, so deleting a parcel would
+/// silently re-weight a historical cost with nothing anywhere to notice.
+/// A row that still exists can be counted, and one cascaded away changes
+/// the subset visibly.
+///
+/// `Parcel` is tenant-scoped and carries `@@unique([id, tenantId])`, so
+/// the composite FK below also gives the cross-tenant barrier the rest of
+/// grain.prisma uses — which an array of bare ids cannot express.
+///
+/// It is the cheaper read too: one `findMany` over `costEntryId IN (…)`
+/// for a whole page of entries, rather than unnesting arrays.
+model CostEntryAllocationParcel {
+  id          String   @id @default(cuid())
+  tenantId    String
+  costEntryId String
+  parcelId    String
+  createdAt   DateTime @default(now())
+
+  tenant    Tenant    @relation(fields: [tenantId], references: [id])
+  costEntry CostEntry @relation(fields: [costEntryId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  parcel    Parcel    @relation(fields: [parcelId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  @@unique([id, tenantId])
+  /// A parcel appears at most once in an entry's subset. A duplicate would
+  /// double that parcel's weight and skew the split with no visible cause.
+  @@unique([costEntryId, parcelId])
+  @@index([tenantId, costEntryId])
+  @@index([tenantId, parcelId])
 }

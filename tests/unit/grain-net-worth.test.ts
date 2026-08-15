@@ -18,7 +18,9 @@ const mockDb = {
     inventoryLot: { findMany: jest.fn() },
     unit: { findMany: jest.fn() },
     parcelLease: { findMany: jest.fn() },
+    parcel: { findMany: jest.fn() },
     costEntry: { findMany: jest.fn() },
+    costEntryAllocationParcel: { findMany: jest.fn() },
 } as any;
 
 jest.mock('@/lib/db-context', () => ({
@@ -38,6 +40,7 @@ jest.mock('@/app-layer/usecases/trends', () => ({
 import { getGrainNetWorth } from '@/app-layer/usecases/grain-net-worth';
 import { makeRequestContext } from '../helpers/make-context';
 import { assertNetWorthInvariants } from '../helpers/grain-net-worth-invariants';
+import { costUncertainty } from '@/lib/grain/uncertainty';
 
 const ctx = makeRequestContext('ADMIN', { tenantSlug: 'acme', tenantId: 'tenant-1' });
 
@@ -75,7 +78,9 @@ function resetMocks() {
     mockDb.inventoryLot.findMany.mockResolvedValue([]);
     mockDb.unit.findMany.mockResolvedValue([]);
     mockDb.parcelLease.findMany.mockResolvedValue([]);
+    mockDb.parcel.findMany.mockResolvedValue([]);
     mockDb.costEntry.findMany.mockResolvedValue([]);
+    mockDb.costEntryAllocationParcel.findMany.mockResolvedValue([]);
     mockGetCostRollupByPlanting.mockResolvedValue({ rows: [], truncated: false, unvalued: { noUnitCost: 0, unitMismatch: 0 } });
     mockGetMarketReferences.mockResolvedValue(new Map());
 }
@@ -829,5 +834,630 @@ describe('getGrainNetWorth — cash-out never blends currencies', () => {
     it('is an empty list when the farm entered nothing', async () => {
         const result = await netWorthResult(ctx);
         expect(result.cashOut).toEqual([]);
+    });
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+//  Selectable cost allocation — CostEntry.allocationBasis
+// ═══════════════════════════════════════════════════════════════════════
+
+/**
+ * A PAYROLL entry, since payroll is the only category that reaches the
+ * cost side. `allocationBasis` defaults to the column's own default.
+ */
+function payroll(over: Record<string, unknown> = {}) {
+    return costEntry({ id: 'pay-1', category: 'PAYROLL', amount: 100, allocationBasis: 'TARGET', ...over });
+}
+
+function parcel(id: string, areaHa: number | null) {
+    return { id, areaHa };
+}
+
+/** Money the farm entered, wherever the allocator put it, to the cent. */
+function allocatedCents(result: Awaited<ReturnType<typeof getGrainNetWorth>>) {
+    const rows = result.rows.reduce((sum, r) => sum + r.payrollCost, 0);
+    return Math.round((rows + result.unallocatedToCrop.amount) * 100);
+}
+
+const priced = (commodities: string[]) =>
+    new Map(
+        commodities.map((c) => [
+            c,
+            { commodity: c, pricePerTonne: 300, currency: 'BGN', observedAt: '2026-01-01', source: 'ec-agrifood' },
+        ]),
+    );
+
+describe('allocation basis — conservation is the contract', () => {
+    it('splits 100.00 over three parcels without losing the odd cent', async () => {
+        // Naive per-share rounding reaches the farm total as 99.99. Every
+        // downstream figure — cash cost, net worth, margin per decare —
+        // inherits that error and none of them can say where it came from.
+        mockDb.parcel.findMany.mockResolvedValue([
+            parcel('parcel-a', 1),
+            parcel('parcel-b', 1),
+            parcel('parcel-c', 1),
+        ]);
+        mockDb.planting.findMany.mockResolvedValue([
+            planting({ id: 'plant-a', parcelId: 'parcel-a', areaM2: 10_000 }),
+            planting({ id: 'plant-b', parcelId: 'parcel-b', areaM2: 10_000 }),
+            planting({
+                id: 'plant-c',
+                parcelId: 'parcel-c',
+                areaM2: 10_000,
+                cropPlan: { seasonId: 's-1', cropType: { commodityCanonical: 'maize' } },
+            }),
+        ]);
+        mockDb.costEntry.findMany.mockResolvedValue([payroll({ allocationBasis: 'HOLDING' })]);
+        mockGetMarketReferences.mockResolvedValue(priced(['wheat', 'maize']));
+
+        const result = await netWorthResult(ctx);
+
+        expect(allocatedCents(result)).toBe(10_000);
+        // Deterministic, not merely conserved: the odd cent goes to the
+        // lexicographically first parcel id, never to whichever row the
+        // query happened to return first.
+        const wheat = result.rows.find((r) => r.commodity === 'wheat')!;
+        const maize = result.rows.find((r) => r.commodity === 'maize')!;
+        expect(wheat.payrollCost).toBe(66.67);
+        expect(maize.payrollCost).toBe(33.33);
+    });
+
+    it('conserves under every basis, over awkward amounts', async () => {
+        for (const basis of ['TARGET', 'HOLDING', 'PARCEL_SUBSET'] as const) {
+            for (const amount of [100, 0.01, 999.99, 1_234.56, 7]) {
+                resetMocks();
+                mockDb.parcel.findMany.mockResolvedValue([
+                    parcel('parcel-a', 1.7),
+                    parcel('parcel-b', 2.3),
+                    parcel('parcel-c', 0.9),
+                ]);
+                mockDb.planting.findMany.mockResolvedValue([
+                    planting({ id: 'plant-a', parcelId: 'parcel-a', areaM2: 17_000 }),
+                    planting({ id: 'plant-b', parcelId: 'parcel-b', areaM2: 23_000 }),
+                ]);
+                mockDb.costEntryAllocationParcel.findMany.mockResolvedValue([
+                    { costEntryId: 'pay-1', parcelId: 'parcel-a' },
+                    { costEntryId: 'pay-1', parcelId: 'parcel-c' },
+                ]);
+                mockDb.costEntry.findMany.mockResolvedValue([payroll({ amount, allocationBasis: basis })]);
+                mockGetMarketReferences.mockResolvedValue(priced(['wheat']));
+
+                const result = await netWorthResult(ctx);
+                expect({ basis, amount, cents: allocatedCents(result) }).toEqual({
+                    basis,
+                    amount,
+                    cents: Math.round(amount * 100),
+                });
+            }
+        }
+    });
+
+    it('REDISTRIBUTES when the basis changes and never changes the total', async () => {
+        // The same 100.00 read two ways. Under TARGET the denominator is
+        // the plantings (2 ha of crop); under HOLDING it is the LAND
+        // (3 ha, one of it fallow). Different homes, identical total.
+        const fixture = () => {
+            mockDb.parcel.findMany.mockResolvedValue([
+                parcel('parcel-maize', 1),
+                parcel('parcel-wheat', 1),
+                parcel('parcel-fallow', 1),
+            ]);
+            mockDb.planting.findMany.mockResolvedValue([
+                planting({
+                    id: 'plant-maize',
+                    parcelId: 'parcel-maize',
+                    areaM2: 10_000,
+                    cropPlan: { seasonId: 's-1', cropType: { commodityCanonical: 'maize' } },
+                }),
+                planting({ id: 'plant-w1', parcelId: 'parcel-wheat', areaM2: 5_000 }),
+                planting({ id: 'plant-w2', parcelId: 'parcel-wheat', areaM2: 5_000 }),
+            ]);
+            mockGetMarketReferences.mockResolvedValue(priced(['wheat', 'maize']));
+        };
+
+        resetMocks();
+        fixture();
+        mockDb.costEntry.findMany.mockResolvedValue([payroll({ allocationBasis: 'TARGET' })]);
+        const target = await netWorthResult(ctx);
+
+        resetMocks();
+        fixture();
+        mockDb.costEntry.findMany.mockResolvedValue([payroll({ allocationBasis: 'HOLDING' })]);
+        const holding = await netWorthResult(ctx);
+
+        // TARGET weights PLANTINGS: 1 ha of maize against 1 ha of wheat
+        // in two halves ⇒ 50/50, and the fallow parcel does not exist to it.
+        expect(target.rows.find((r) => r.commodity === 'maize')!.payrollCost).toBe(50);
+        expect(target.rows.find((r) => r.commodity === 'wheat')!.payrollCost).toBe(50);
+        expect(target.unallocatedToCrop.amount).toBe(0);
+
+        // HOLDING weights LAND: three parcels, so the fallow one takes a
+        // third and the wheat parcel takes one third however many
+        // plantings share it — splitting a field must not double what it
+        // attracts.
+        expect(holding.rows.find((r) => r.commodity === 'maize')!.payrollCost).toBe(33.33);
+        expect(holding.rows.find((r) => r.commodity === 'wheat')!.payrollCost).toBe(33.33);
+        // The odd cent goes to `parcel-fallow` — first by id, which is the
+        // tie-break, and NOT the order the query returned the rows in.
+        expect(holding.unallocatedToCrop.amount).toBe(33.34);
+
+        expect(allocatedCents(target)).toBe(allocatedCents(holding));
+        expect(allocatedCents(holding)).toBe(10_000);
+    });
+});
+
+describe('allocation basis — land with no crop', () => {
+    it('gives a fallow parcel its share and reports it instead of dropping it', async () => {
+        // 5000 over 500 dca of which 300 dca is wheat. The instinct of
+        // every allocator already in this file is to `continue` past land
+        // with no commodity to charge; that money would leave the report
+        // and every per-dca figure would rise with nothing saying why.
+        mockDb.parcel.findMany.mockResolvedValue([
+            parcel('parcel-cropped', 30),
+            parcel('parcel-fallow', 20),
+        ]);
+        mockDb.planting.findMany.mockResolvedValue([
+            planting({ id: 'plant-wheat', parcelId: 'parcel-cropped', areaM2: 300_000 }),
+        ]);
+        mockDb.costEntry.findMany.mockResolvedValue([
+            payroll({ amount: 5000, allocationBasis: 'HOLDING' }),
+        ]);
+        mockGetMarketReferences.mockResolvedValue(priced(['wheat']));
+
+        const result = await netWorthResult(ctx);
+        const wheat = result.rows[0];
+
+        expect(wheat.payrollCost).toBe(3000);
+        expect(result.unallocatedToCrop).toEqual({
+            amount: 2000,
+            areaHa: 20,
+            parcelIds: ['parcel-fallow'],
+            currencies: ['BGN'],
+        });
+        // THE ARITHMETIC PROOF the spread was pure: the same rate either
+        // side of the fallow line. Concentrating the fallow share onto the
+        // crop would make wheat 16.67 лв/dca against a fallow zero.
+        expect(3000 / 30).toBe(result.unallocatedToCrop.amount / result.unallocatedToCrop.areaHa);
+        expect(allocatedCents(result)).toBe(500_000);
+    });
+
+    it('counts a fallow parcel\'s hectares ONCE across several spread costs', async () => {
+        // Area is the denominator of the rate check above. Adding the same
+        // parcel's hectares once per entry would inflate it silently.
+        mockDb.parcel.findMany.mockResolvedValue([
+            parcel('parcel-cropped', 30),
+            parcel('parcel-fallow', 20),
+        ]);
+        mockDb.planting.findMany.mockResolvedValue([
+            planting({ id: 'plant-wheat', parcelId: 'parcel-cropped', areaM2: 300_000 }),
+        ]);
+        mockDb.costEntry.findMany.mockResolvedValue([
+            payroll({ id: 'pay-1', amount: 5000, allocationBasis: 'HOLDING' }),
+            payroll({ id: 'pay-2', amount: 2500, allocationBasis: 'HOLDING' }),
+        ]);
+        mockGetMarketReferences.mockResolvedValue(priced(['wheat']));
+
+        const result = await netWorthResult(ctx);
+
+        expect(result.unallocatedToCrop.areaHa).toBe(20);
+        expect(result.unallocatedToCrop.amount).toBe(3000);
+        expect(allocatedCents(result)).toBe(750_000);
+    });
+
+    it('treats a parcel whose only crop has no canonical commodity as fallow', async () => {
+        mockDb.parcel.findMany.mockResolvedValue([parcel('parcel-a', 1), parcel('parcel-b', 1)]);
+        mockDb.planting.findMany.mockResolvedValue([
+            planting({ id: 'plant-known', parcelId: 'parcel-a', areaM2: 10_000 }),
+            planting({
+                id: 'plant-unknown',
+                parcelId: 'parcel-b',
+                areaM2: 10_000,
+                cropPlan: { seasonId: 's-1', cropType: { commodityCanonical: null } },
+            }),
+        ]);
+        mockDb.costEntry.findMany.mockResolvedValue([payroll({ allocationBasis: 'HOLDING' })]);
+        mockGetMarketReferences.mockResolvedValue(priced(['wheat']));
+
+        const result = await netWorthResult(ctx);
+
+        expect(result.rows[0].payrollCost).toBe(50);
+        expect(result.unallocatedToCrop.parcelIds).toEqual(['parcel-b']);
+        expect(allocatedCents(result)).toBe(10_000);
+    });
+
+    it('splits evenly across a holding whose parcels all have no recorded area', async () => {
+        // Dropping the cost is the silent failure mode; an even split is a
+        // stated one. `computeAreaWeights` is the ONE weighting rule, so
+        // its zero-area fallback has to survive the parcel path too.
+        mockDb.parcel.findMany.mockResolvedValue([
+            parcel('parcel-a', null),
+            parcel('parcel-b', null),
+            parcel('parcel-c', null),
+        ]);
+        mockDb.planting.findMany.mockResolvedValue([
+            planting({ id: 'plant-a', parcelId: 'parcel-a', areaM2: null }),
+            planting({ id: 'plant-b', parcelId: 'parcel-b', areaM2: null }),
+        ]);
+        mockDb.costEntry.findMany.mockResolvedValue([payroll({ allocationBasis: 'HOLDING' })]);
+        mockGetMarketReferences.mockResolvedValue(priced(['wheat']));
+
+        const result = await netWorthResult(ctx);
+
+        expect(result.rows[0].payrollCost).toBe(66.67);
+        expect(result.unallocatedToCrop.amount).toBe(33.33);
+        expect(allocatedCents(result)).toBe(10_000);
+    });
+
+    it('reports money rent on an unplanted parcel instead of dropping it', async () => {
+        // This one is not new behaviour bolted on: it is the same idea
+        // arriving where money already went missing. The lease was named
+        // in an exclusion list, which said THAT rent was unattributed and
+        // never HOW MUCH.
+        mockDb.parcel.findMany.mockResolvedValue([parcel('parcel-idle', 10)]);
+        mockDb.parcelLease.findMany.mockResolvedValue([
+            {
+                id: 'lease-1',
+                parcelId: 'parcel-idle',
+                rentAmount: 5,
+                rentUnit: 'лв/дка',
+                rentUnitRaw: null,
+                parcel: { areaHa: 10 },
+            },
+        ]);
+
+        const result = await netWorthResult(ctx);
+
+        // 5 лв/дка × 10 дка/ха × 10 ха = 500.
+        expect(result.unallocatedToCrop.amount).toBe(500);
+        expect(result.unallocatedToCrop.currencies).toEqual(['UNKNOWN']);
+        expect(result.exclusions.leasesUnattributed.map((e) => e.id)).toEqual(['lease-1']);
+    });
+});
+
+describe('allocation basis — a chosen subset of parcels', () => {
+    it('spreads over exactly the chosen parcels, and no others', async () => {
+        mockDb.parcel.findMany.mockResolvedValue([
+            parcel('parcel-a', 1),
+            parcel('parcel-b', 1),
+            parcel('parcel-untouched', 1),
+        ]);
+        mockDb.planting.findMany.mockResolvedValue([
+            planting({ id: 'plant-a', parcelId: 'parcel-a', areaM2: 10_000 }),
+            planting({
+                id: 'plant-b',
+                parcelId: 'parcel-b',
+                areaM2: 10_000,
+                cropPlan: { seasonId: 's-1', cropType: { commodityCanonical: 'maize' } },
+            }),
+            planting({
+                id: 'plant-untouched',
+                parcelId: 'parcel-untouched',
+                areaM2: 10_000,
+                cropPlan: { seasonId: 's-1', cropType: { commodityCanonical: 'barley' } },
+            }),
+        ]);
+        mockDb.costEntryAllocationParcel.findMany.mockResolvedValue([
+            { costEntryId: 'pay-1', parcelId: 'parcel-a' },
+            { costEntryId: 'pay-1', parcelId: 'parcel-b' },
+        ]);
+        mockDb.costEntry.findMany.mockResolvedValue([payroll({ allocationBasis: 'PARCEL_SUBSET' })]);
+        mockGetMarketReferences.mockResolvedValue(priced(['wheat', 'maize', 'barley']));
+
+        const result = await netWorthResult(ctx);
+
+        expect(result.rows.find((r) => r.commodity === 'wheat')!.payrollCost).toBe(50);
+        expect(result.rows.find((r) => r.commodity === 'maize')!.payrollCost).toBe(50);
+        expect(result.rows.find((r) => r.commodity === 'barley')!.payrollCost).toBe(0);
+        expect(allocatedCents(result)).toBe(10_000);
+    });
+
+    it('reports an entry whose chosen parcels have all gone rather than allocating to nothing', async () => {
+        // A subset whose parcels were deleted resolves to no land. Reading
+        // that as an allocation would silently drop the cost; it is named
+        // in the same list an unattributable payroll row has always used.
+        mockDb.parcel.findMany.mockResolvedValue([parcel('parcel-live', 1)]);
+        mockDb.planting.findMany.mockResolvedValue([
+            planting({ id: 'plant-live', parcelId: 'parcel-live', areaM2: 10_000 }),
+        ]);
+        mockDb.costEntryAllocationParcel.findMany.mockResolvedValue([
+            { costEntryId: 'pay-1', parcelId: 'parcel-deleted' },
+        ]);
+        mockDb.costEntry.findMany.mockResolvedValue([payroll({ allocationBasis: 'PARCEL_SUBSET' })]);
+        mockGetMarketReferences.mockResolvedValue(priced(['wheat']));
+
+        const result = await netWorthResult(ctx);
+
+        expect(result.rows[0].payrollCost).toBe(0);
+        expect(result.exclusions.payrollUnattributable.map((e) => e.id)).toEqual(['pay-1']);
+    });
+});
+
+describe('allocation basis — existing rows keep their meaning', () => {
+    it('allocates a TARGET row exactly as it did before the column existed', async () => {
+        // The migration test. A row written before `allocationBasis`
+        // reads as TARGET (the column default), and a row whose basis the
+        // projection never saw must behave identically — otherwise every
+        // historical figure moves on deploy. Parcels are present and
+        // deliberately weighted so that a HOLDING reading would differ.
+        const fixture = () => {
+            mockDb.parcel.findMany.mockResolvedValue([
+                parcel('parcel-big', 9),
+                parcel('parcel-small', 1),
+            ]);
+            mockDb.planting.findMany.mockResolvedValue([
+                planting({ id: 'plant-a', parcelId: 'parcel-small', areaM2: 10_000 }),
+                planting({
+                    id: 'plant-b',
+                    parcelId: 'parcel-big',
+                    areaM2: 10_000,
+                    cropPlan: { seasonId: 's-1', cropType: { commodityCanonical: 'maize' } },
+                }),
+            ]);
+            mockGetMarketReferences.mockResolvedValue(priced(['wheat', 'maize']));
+        };
+
+        resetMocks();
+        fixture();
+        mockDb.costEntry.findMany.mockResolvedValue([payroll({ allocationBasis: 'TARGET' })]);
+        const explicit = await netWorthResult(ctx);
+
+        resetMocks();
+        fixture();
+        // A projection with no basis column at all — the pre-migration shape.
+        mockDb.costEntry.findMany.mockResolvedValue([payroll({ allocationBasis: undefined })]);
+        const legacy = await netWorthResult(ctx);
+
+        // Pro-rata by PLANTING area, both equal ⇒ 50/50, and the 9-ha
+        // parcel's weight is nowhere in it.
+        for (const result of [explicit, legacy]) {
+            expect(result.rows.find((r) => r.commodity === 'wheat')!.payrollCost).toBe(50);
+            expect(result.rows.find((r) => r.commodity === 'maize')!.payrollCost).toBe(50);
+            expect(result.unallocatedToCrop.amount).toBe(0);
+        }
+    });
+
+    it('keeps honouring a direct plantingId link under TARGET', async () => {
+        mockDb.parcel.findMany.mockResolvedValue([parcel('parcel-a', 1), parcel('parcel-b', 1)]);
+        mockDb.planting.findMany.mockResolvedValue([
+            planting({ id: 'plant-a', parcelId: 'parcel-a', areaM2: 10_000 }),
+            planting({
+                id: 'plant-b',
+                parcelId: 'parcel-b',
+                areaM2: 10_000,
+                cropPlan: { seasonId: 's-1', cropType: { commodityCanonical: 'maize' } },
+            }),
+        ]);
+        mockDb.costEntry.findMany.mockResolvedValue([payroll({ plantingId: 'plant-a' })]);
+        mockGetMarketReferences.mockResolvedValue(priced(['wheat', 'maize']));
+
+        const result = await netWorthResult(ctx);
+
+        expect(result.rows.find((r) => r.commodity === 'wheat')!.payrollCost).toBe(100);
+        expect(result.rows.find((r) => r.commodity === 'maize')!.payrollCost).toBe(0);
+        // A direct link is a MEASUREMENT, not an apportionment.
+        expect(result.rows.find((r) => r.commodity === 'wheat')!.payrollAllocated).toBe(false);
+    });
+});
+
+describe('allocation basis — a spread share says it is allocated', () => {
+    it('marks a HOLDING spread ALLOCATED in the shared uncertainty vocabulary', async () => {
+        mockDb.parcel.findMany.mockResolvedValue([parcel('parcel-a', 1)]);
+        mockDb.planting.findMany.mockResolvedValue([
+            planting({ id: 'plant-a', parcelId: 'parcel-a', areaM2: 10_000 }),
+        ]);
+        mockDb.costEntry.findMany.mockResolvedValue([payroll({ allocationBasis: 'HOLDING' })]);
+        mockGetMarketReferences.mockResolvedValue(priced(['wheat']));
+
+        const result = await netWorthResult(ctx);
+        const wheat = result.rows[0];
+
+        expect(wheat.payrollAllocated).toBe(true);
+        // The SAME word payroll's own pro-rata share already carries — a
+        // spread cost must never read as a measurement.
+        expect(costUncertainty(wheat)).toBe('allocated');
+    });
+});
+
+describe('imputed land charge — beside the cash cost, never inside it', () => {
+    function ownedAndLeased() {
+        mockDb.parcel.findMany.mockResolvedValue([parcel('parcel-owned', 10), parcel('parcel-leased', 10)]);
+        mockDb.parcelLease.findMany.mockResolvedValue([
+            {
+                id: 'lease-1',
+                parcelId: 'parcel-leased',
+                rentAmount: 5, // 5 лв/дка ⇒ 50 лв/ха
+                rentUnit: 'лв/дка',
+                rentUnitRaw: null,
+                parcel: { areaHa: 10 },
+            },
+        ]);
+        mockDb.planting.findMany.mockResolvedValue([
+            planting({ id: 'plant-owned', parcelId: 'parcel-owned', areaM2: 100_000 }),
+            planting({ id: 'plant-leased', parcelId: 'parcel-leased', areaM2: 100_000 }),
+        ]);
+        mockGetMarketReferences.mockResolvedValue(priced(['wheat']));
+    }
+
+    it('prices owned land at the rate the farm\'s own leases establish', async () => {
+        ownedAndLeased();
+
+        const result = await netWorthResult(ctx);
+        const wheat = result.rows[0];
+
+        expect(result.imputedLandCharge).toEqual({
+            perHa: 50,
+            areaHa: 10,
+            totalAmount: 500,
+            refusalCode: null,
+        });
+        expect(wheat.imputedLandCharge).toBe(500);
+        expect(wheat.imputedLandChargeAreaHa).toBe(10);
+        expect(wheat.imputedLandChargePerHa).toBe(50);
+    });
+
+    it('does NOT enter cashCostTotal, and does not move net worth', async () => {
+        // No new named metric was registered INSIDE the cost side, so the
+        // three printed slices must still be the whole of the printed
+        // total. `assertNetWorthInvariants` asserts the composition for
+        // every row already; this states the consequence in one place.
+        ownedAndLeased();
+
+        const result = await netWorthResult(ctx);
+        const wheat = result.rows[0];
+
+        // Only the real lease is cash: 50 лв/ха × 10 ха = 500. The farm
+        // also owns 10 ha worth another 500 in opportunity cost, and the
+        // total stays 500 — not 1000.
+        expect(wheat.rentCostMoneyAmount).toBe(500);
+        expect(wheat.cashCostTotal).toBe(500);
+        expect(wheat.imputedLandCharge).toBe(500);
+        expect(wheat.cashCostTotal).toBe(
+            Math.round((wheat.attributedCropCost + wheat.rentCostMoneyAmount + wheat.payrollCost) * 100) / 100,
+        );
+    });
+
+    it('does not enter netWorth either', async () => {
+        // Same rate, but the leased parcel carries no crop, so no rent
+        // lands on the row and net worth is computable. The imputed charge
+        // is 500 and the net is the asset position minus a cash cost of
+        // zero — the charge is beside the arithmetic, not in it.
+        mockDb.parcel.findMany.mockResolvedValue([parcel('parcel-owned', 10), parcel('parcel-idle', 10)]);
+        mockDb.parcelLease.findMany.mockResolvedValue([
+            {
+                id: 'lease-1',
+                parcelId: 'parcel-idle',
+                rentAmount: 5,
+                rentUnit: 'лв/дка',
+                rentUnitRaw: null,
+                parcel: { areaHa: 10 },
+            },
+        ]);
+        mockDb.planting.findMany.mockResolvedValue([
+            planting({ id: 'plant-owned', parcelId: 'parcel-owned', areaM2: 100_000 }),
+        ]);
+        mockGetMarketReferences.mockResolvedValue(priced(['wheat']));
+
+        const result = await netWorthResult(ctx);
+        const wheat = result.rows[0];
+
+        expect(wheat.imputedLandCharge).toBe(500);
+        expect(wheat.cashCostTotal).toBe(0);
+        expect(wheat.netWorth).toBe(wheat.netAssetPosition);
+    });
+
+    it('refuses, rather than zeroing, when the farm has no money lease to observe', async () => {
+        // A zero would say owned land is free, which is the whole defect.
+        mockDb.parcel.findMany.mockResolvedValue([parcel('parcel-owned', 10)]);
+        mockDb.planting.findMany.mockResolvedValue([
+            planting({ id: 'plant-owned', parcelId: 'parcel-owned', areaM2: 100_000 }),
+        ]);
+        mockGetMarketReferences.mockResolvedValue(priced(['wheat']));
+
+        const result = await netWorthResult(ctx);
+
+        expect(result.rows[0].imputedLandCharge).toBeNull();
+        expect(result.rows[0].imputedLandChargeRefusalCode).toBe('NO_OBSERVED_RENT_RATE');
+        expect(result.imputedLandCharge.refusalCode).toBe('NO_OBSERVED_RENT_RATE');
+        expect(result.imputedLandCharge.totalAmount).toBeNull();
+    });
+
+    it('ignores produce rent when observing a rate', async () => {
+        // кг/дка priced into money needs a grain price, which would make
+        // the opportunity cost of a field move with this week's market.
+        mockDb.parcel.findMany.mockResolvedValue([parcel('parcel-owned', 10), parcel('parcel-leased', 10)]);
+        mockDb.parcelLease.findMany.mockResolvedValue([
+            {
+                id: 'lease-produce',
+                parcelId: 'parcel-leased',
+                rentAmount: 60,
+                rentUnit: 'кг/дка',
+                rentUnitRaw: null,
+                parcel: { areaHa: 10 },
+            },
+        ]);
+        mockDb.planting.findMany.mockResolvedValue([
+            planting({ id: 'plant-owned', parcelId: 'parcel-owned', areaM2: 100_000 }),
+        ]);
+        mockGetMarketReferences.mockResolvedValue(priced(['wheat']));
+
+        const result = await netWorthResult(ctx);
+
+        expect(result.imputedLandCharge.perHa).toBeNull();
+        expect(result.rows[0].imputedLandChargeRefusalCode).toBe('NO_OBSERVED_RENT_RATE');
+    });
+
+    it('charges nothing for a crop grown entirely on leased land', async () => {
+        // Leased land already carries real rent; imputing on top would
+        // bill the same hectare twice.
+        mockDb.parcel.findMany.mockResolvedValue([parcel('parcel-leased', 10)]);
+        mockDb.parcelLease.findMany.mockResolvedValue([
+            {
+                id: 'lease-1',
+                parcelId: 'parcel-leased',
+                rentAmount: 5,
+                rentUnit: 'лв/дка',
+                rentUnitRaw: null,
+                parcel: { areaHa: 10 },
+            },
+        ]);
+        mockDb.planting.findMany.mockResolvedValue([
+            planting({ id: 'plant-leased', parcelId: 'parcel-leased', areaM2: 100_000 }),
+        ]);
+        mockGetMarketReferences.mockResolvedValue(priced(['wheat']));
+
+        const result = await netWorthResult(ctx);
+
+        expect(result.rows[0].imputedLandChargeAreaHa).toBe(0);
+        expect(result.rows[0].imputedLandCharge).toBe(0);
+        expect(result.rows[0].imputedLandChargeRefusalCode).toBeNull();
+    });
+});
+
+describe('allocation basis — query shape', () => {
+    it('reads the land once, and the chosen parcels in ONE batched call', async () => {
+        // D1 bans a read inside a loop. Two entries with different subsets
+        // must still be one `costEntryId IN (…)` read, not one per entry.
+        mockDb.parcel.findMany.mockResolvedValue([parcel('parcel-a', 1), parcel('parcel-b', 1)]);
+        mockDb.planting.findMany.mockResolvedValue([
+            planting({ id: 'plant-a', parcelId: 'parcel-a', areaM2: 10_000 }),
+            planting({ id: 'plant-b', parcelId: 'parcel-b', areaM2: 10_000 }),
+        ]);
+        mockDb.costEntryAllocationParcel.findMany.mockResolvedValue([
+            { costEntryId: 'pay-1', parcelId: 'parcel-a' },
+            { costEntryId: 'pay-2', parcelId: 'parcel-b' },
+        ]);
+        mockDb.costEntry.findMany.mockResolvedValue([
+            payroll({ id: 'pay-1', allocationBasis: 'PARCEL_SUBSET' }),
+            payroll({ id: 'pay-2', allocationBasis: 'PARCEL_SUBSET' }),
+        ]);
+        mockGetMarketReferences.mockResolvedValue(priced(['wheat']));
+
+        await netWorthResult(ctx);
+
+        expect(mockDb.parcel.findMany).toHaveBeenCalledTimes(1);
+        expect(mockDb.costEntryAllocationParcel.findMany).toHaveBeenCalledTimes(1);
+        expect(mockDb.costEntryAllocationParcel.findMany.mock.calls[0][0].where.costEntryId).toEqual({
+            in: ['pay-1', 'pay-2'],
+        });
+    });
+
+    it('does not read allocation parcels at all when no entry chose a subset', async () => {
+        mockDb.costEntry.findMany.mockResolvedValue([payroll({ allocationBasis: 'HOLDING' })]);
+        await netWorthResult(ctx);
+        expect(mockDb.costEntryAllocationParcel.findMany).not.toHaveBeenCalled();
+    });
+
+    it('bounds both new reads and discloses truncation', async () => {
+        // A truncated parcel page silently shrinks an allocation's
+        // denominator. It has to reach the same disclosure every other
+        // capped read does.
+        mockDb.parcel.findMany.mockResolvedValue(
+            Array.from({ length: 5001 }, (_, i) => parcel(`parcel-${i}`, 1)),
+        );
+
+        const result = await netWorthResult(ctx);
+
+        expect(mockDb.parcel.findMany.mock.calls[0][0].take).toBe(5001);
+        expect(result.truncated).toBe(true);
     });
 });
