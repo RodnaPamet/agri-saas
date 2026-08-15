@@ -17,6 +17,7 @@
  */
 
 import { DB_AVAILABLE } from './db-helper';
+import { DEFAULT_ORG_DASHBOARD_PRESET } from '@/app-layer/usecases/org-dashboard-presets';
 import { prismaTestClient } from '../helpers/db';
 import type { PrismaClient } from '@prisma/client';
 
@@ -100,13 +101,16 @@ describeFn('Epic 41 — POST /api/org seeds default widgets (DB-backed)', () => 
         const orgId = body.organization.id;
         orgIds.push(orgId);
 
-        // Eight widgets persisted, all scoped to the new org.
+        // Every preset widget persisted, all scoped to the new org.
         const widgets = await prisma.orgDashboardWidget.findMany({
             where: { organizationId: orgId },
         });
-        // 8 → 6: the critical-risks KPI and open-risks trend went with
-        // the risk register.
-        expect(widgets).toHaveLength(6);
+        // Derived, not hardcoded. This read 8, then 6 (the critical-risks
+        // KPI and open-risks trend went with the risk register), and would
+        // now need editing again for the GRC teardown's coverage KPI. The
+        // property is "org creation seeds the WHOLE preset", which does not
+        // depend on how big the preset is.
+        expect(widgets).toHaveLength(DEFAULT_ORG_DASHBOARD_PRESET.length);
 
         const distinctOrgIds = new Set(widgets.map((w) => w.organizationId));
         expect(distinctOrgIds).toEqual(new Set([orgId]));

@@ -74,8 +74,8 @@ interface PiiFieldSpec {
     hash?: string;
     /**
      * When true, the schema field name `plain` maps to the encrypted
-     * DB column (post-GAP-21 for User, AuditorAccount,
-     * UserIdentityLink). When false, the plaintext column is its own
+     * DB column (post-GAP-21 for User and UserIdentityLink). When
+     * false, the plaintext column is its own
      * column and the middleware dual-writes (legacy models).
      */
     mapped: boolean;
@@ -86,10 +86,6 @@ const PII_FIELD_MAP: Record<string, PiiFieldSpec[]> = {
         { plain: 'email', encrypted: 'emailEncrypted', hash: 'emailHash', mapped: true },
         { plain: 'name', encrypted: 'nameEncrypted', mapped: true },
     ],
-    AuditorAccount: [
-        { plain: 'email', encrypted: 'emailEncrypted', hash: 'emailHash', mapped: true },
-        { plain: 'name', encrypted: 'nameEncrypted', mapped: true },
-    ],
     UserIdentityLink: [
         { plain: 'emailAtLinkTime', encrypted: 'emailAtLinkTimeEncrypted', hash: 'emailAtLinkTimeHash', mapped: true },
     ],
@@ -97,11 +93,6 @@ const PII_FIELD_MAP: Record<string, PiiFieldSpec[]> = {
     // These models keep their plaintext columns until a follow-up PR
     // ports them to the @map'd / hash-only model. The middleware
     // continues to write both columns so reads stay consistent.
-    VendorContact: [
-        { plain: 'name', encrypted: 'nameEncrypted', mapped: false },
-        { plain: 'email', encrypted: 'emailEncrypted', hash: 'emailHash', mapped: false },
-        { plain: 'phone', encrypted: 'phoneEncrypted', mapped: false },
-    ],
     NotificationOutbox: [
         { plain: 'toEmail', encrypted: 'toEmailEncrypted', mapped: false },
     ],
@@ -215,7 +206,6 @@ const RELATION_KEY_TO_MODEL: Record<string, string> = {
     creator: 'User',
     owner: 'User',
     assignee: 'User',
-    auditor: 'AuditorAccount',
     identityLink: 'UserIdentityLink',
 };
 
@@ -422,7 +412,7 @@ async function runPiiEncryption(
 
     // We MUST NOT early-out when `fields` is undefined: a non-managed
     // model like `OrgMembership` or `AuditLog` may include nested
-    // relations (`user`, `auditor`, …) that ARE managed, and the
+    // relations (`user`, `creator`, …) that ARE managed, and the
     // result-side decryption walks those. Encryption / WHERE
     // rewriting is gated on `fields` further down.
 

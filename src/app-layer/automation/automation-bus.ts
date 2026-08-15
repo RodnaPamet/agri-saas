@@ -181,11 +181,11 @@ export function resetAutomationBus(): void {
  * lookup so emit sites stay one line:
  *
  *   await emitAutomationEvent(ctx, {
- *       event: 'TEST_PLAN_CREATED',
- *       entityType: 'PracticeTestPlan',
- *       entityId: plan.id,
+ *       event: 'TASK_CREATED',
+ *       entityType: 'Task',
+ *       entityId: task.id,
  *       actorUserId: ctx.userId,
- *       data: { name: plan.name, practiceId: plan.practiceId },
+ *       data: { key: task.key, title: task.title, … },
  *   });
  */
 export async function emitAutomationEvent(

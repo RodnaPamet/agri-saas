@@ -71,15 +71,23 @@ beforeEach(() => {
 // ─── Scope Validation ───
 
 describe('API Key Scopes — Validation', () => {
+    // GRC teardown phase 2 removed the practices / policies / vendors /
+    // tests / frameworks / audits permission domains from
+    // SCOPE_ACTION_MAP, so every scope in this file is re-pointed at a
+    // SURVIVING resource. `tasks` stands in for the old `practices`
+    // wherever the point was "a resource with distinct read and write
+    // action groups" — the bound under test (read ≠ write, wildcard
+    // covers both, one resource's grant doesn't leak to another) is
+    // unchanged.
     it('accepts valid scopes', () => {
-        expect(validateScopes(['practices:read'])).toEqual([]);
+        expect(validateScopes(['tasks:read'])).toEqual([]);
         expect(validateScopes(['*'])).toEqual([]);
-        expect(validateScopes(['practices:read', 'evidence:write'])).toEqual([]);
-        expect(validateScopes(['practices:*'])).toEqual([]);
+        expect(validateScopes(['tasks:read', 'evidence:write'])).toEqual([]);
+        expect(validateScopes(['tasks:*'])).toEqual([]);
     });
 
     it('rejects non-array', () => {
-        expect(validateScopes('practices:read')).toContainEqual(expect.stringMatching(/array/i));
+        expect(validateScopes('tasks:read')).toContainEqual(expect.stringMatching(/array/i));
     });
 
     it('rejects empty array', () => {
@@ -92,13 +100,38 @@ describe('API Key Scopes — Validation', () => {
         expect(errors[0]).toContain('Invalid scope');
     });
 
+    // The removed domains must be REJECTED, not silently accepted and
+    // ignored: a key minted with `practices:*` after the teardown would
+    // otherwise look granted while conferring nothing.
+    it('rejects scopes for the domains removed by the GRC teardown', () => {
+        for (const scope of [
+            'practices:read',
+            'practices:*',
+            'policies:write',
+            'vendors:*',
+            'tests:read',
+            'frameworks:read',
+            'audits:read',
+        ]) {
+            const errors = validateScopes([scope]);
+            expect(errors).toHaveLength(1);
+            expect(errors[0]).toContain(`Invalid scope: "${scope}"`);
+        }
+    });
+
     it('VALID_SCOPES contains expected scopes', () => {
         expect(VALID_SCOPES).toContain('*');
-        expect(VALID_SCOPES).toContain('practices:read');
-        expect(VALID_SCOPES).toContain('practices:write');
-        expect(VALID_SCOPES).toContain('practices:*');
+        expect(VALID_SCOPES).toContain('tasks:read');
+        expect(VALID_SCOPES).toContain('tasks:write');
+        expect(VALID_SCOPES).toContain('tasks:*');
         expect(VALID_SCOPES).toContain('evidence:read');
         expect(VALID_SCOPES).toContain('admin:write');
+        // Post-teardown truth: the scope vocabulary spans exactly the
+        // four surviving M2M resources.
+        expect(VALID_SCOPES).not.toContain('practices:read');
+        expect(
+            [...new Set(VALID_SCOPES.filter(s => s !== '*').map(s => s.split(':')[0]))].sort(),
+        ).toEqual(['admin', 'evidence', 'reports', 'tasks']);
     });
 });
 
@@ -111,25 +144,30 @@ describe('API Key Scopes — scopesToPermissions', () => {
         expect(perms).toEqual(adminPerms);
     });
 
-    it('practices:read grants only practices.view', () => {
-        const perms = scopesToPermissions(['practices:read']);
-        expect(perms.practices.view).toBe(true);
-        expect(perms.practices.create).toBe(false);
-        expect(perms.practices.edit).toBe(false);
+    // Re-pointed practices → tasks (GRC teardown phase 2 removed the
+    // practices domain). Same read/write split, same bound.
+    it('tasks:read grants only tasks.view', () => {
+        const perms = scopesToPermissions(['tasks:read']);
+        expect(perms.tasks.view).toBe(true);
+        expect(perms.tasks.create).toBe(false);
+        expect(perms.tasks.edit).toBe(false);
+        expect(perms.tasks.assign).toBe(false);
     });
 
-    it('practices:write grants practices.create and practices.edit', () => {
-        const perms = scopesToPermissions(['practices:write']);
-        expect(perms.practices.create).toBe(true);
-        expect(perms.practices.edit).toBe(true);
-        expect(perms.practices.view).toBe(false); // read not included in write
+    it('tasks:write grants tasks.create, tasks.edit and tasks.assign', () => {
+        const perms = scopesToPermissions(['tasks:write']);
+        expect(perms.tasks.create).toBe(true);
+        expect(perms.tasks.edit).toBe(true);
+        expect(perms.tasks.assign).toBe(true);
+        expect(perms.tasks.view).toBe(false); // read not included in write
     });
 
-    it('practices:* grants all practices actions', () => {
-        const perms = scopesToPermissions(['practices:*']);
-        expect(perms.practices.view).toBe(true);
-        expect(perms.practices.create).toBe(true);
-        expect(perms.practices.edit).toBe(true);
+    it('tasks:* grants all tasks actions', () => {
+        const perms = scopesToPermissions(['tasks:*']);
+        expect(perms.tasks.view).toBe(true);
+        expect(perms.tasks.create).toBe(true);
+        expect(perms.tasks.edit).toBe(true);
+        expect(perms.tasks.assign).toBe(true);
     });
 
     it('evidence:read grants view and download', () => {
@@ -140,9 +178,9 @@ describe('API Key Scopes — scopesToPermissions', () => {
     });
 
     it('multiple scopes combine correctly', () => {
-        const perms = scopesToPermissions(['practices:read', 'evidence:write']);
-        expect(perms.practices.view).toBe(true);
-        expect(perms.practices.create).toBe(false);
+        const perms = scopesToPermissions(['tasks:read', 'evidence:write']);
+        expect(perms.tasks.view).toBe(true);
+        expect(perms.tasks.create).toBe(false);
         expect(perms.evidence.upload).toBe(true);
         expect(perms.evidence.edit).toBe(true);
         expect(perms.evidence.view).toBe(false); // read not granted
@@ -151,7 +189,7 @@ describe('API Key Scopes — scopesToPermissions', () => {
     it('grants nothing for empty scopes', () => {
         const perms = scopesToPermissions([]);
         // All should be false
-        expect(perms.practices.view).toBe(false);
+        expect(perms.tasks.view).toBe(false);
         expect(perms.evidence.upload).toBe(false);
         expect(perms.admin.manage).toBe(false);
     });
@@ -160,28 +198,31 @@ describe('API Key Scopes — scopesToPermissions', () => {
 // ─── Scope Enforcement ───
 
 describe('API Key Scopes — enforceApiKeyScope', () => {
+    // Re-pointed practices → tasks (GRC teardown phase 2). The
+    // enforcement bound is resource+action string matching, so a
+    // surviving resource proves it identically.
     it('no-op for session-authenticated requests (no apiKeyId)', () => {
         const ctx = makeCtx();
         // Should not throw
-        expect(() => enforceApiKeyScope(ctx, 'practices', 'read')).not.toThrow();
+        expect(() => enforceApiKeyScope(ctx, 'tasks', 'read')).not.toThrow();
     });
 
     it('allows access when scope matches', () => {
         const ctx = makeCtx('ADMIN', {
             apiKeyId: 'ak-1',
-            apiKeyScopes: ['practices:read', 'evidence:write'],
+            apiKeyScopes: ['tasks:read', 'evidence:write'],
         });
-        expect(() => enforceApiKeyScope(ctx, 'practices', 'read')).not.toThrow();
+        expect(() => enforceApiKeyScope(ctx, 'tasks', 'read')).not.toThrow();
         expect(() => enforceApiKeyScope(ctx, 'evidence', 'write')).not.toThrow();
     });
 
     it('blocks access when scope is missing', () => {
         const ctx = makeCtx('ADMIN', {
             apiKeyId: 'ak-1',
-            apiKeyScopes: ['practices:read'],
+            apiKeyScopes: ['tasks:read'],
         });
         expect(() => enforceApiKeyScope(ctx, 'evidence', 'write')).toThrow(/does not have scope/);
-        expect(() => enforceApiKeyScope(ctx, 'practices', 'write')).toThrow(/does not have scope/);
+        expect(() => enforceApiKeyScope(ctx, 'tasks', 'write')).toThrow(/does not have scope/);
     });
 
     it('full access (*) allows everything', () => {
@@ -189,17 +230,17 @@ describe('API Key Scopes — enforceApiKeyScope', () => {
             apiKeyId: 'ak-1',
             apiKeyScopes: ['*'],
         });
-        expect(() => enforceApiKeyScope(ctx, 'practices', 'read')).not.toThrow();
+        expect(() => enforceApiKeyScope(ctx, 'tasks', 'read')).not.toThrow();
         expect(() => enforceApiKeyScope(ctx, 'admin', 'write')).not.toThrow();
     });
 
-    it('resource wildcard (practices:*) allows all actions on resource', () => {
+    it('resource wildcard (tasks:*) allows all actions on resource', () => {
         const ctx = makeCtx('ADMIN', {
             apiKeyId: 'ak-1',
-            apiKeyScopes: ['practices:*'],
+            apiKeyScopes: ['tasks:*'],
         });
-        expect(() => enforceApiKeyScope(ctx, 'practices', 'read')).not.toThrow();
-        expect(() => enforceApiKeyScope(ctx, 'practices', 'write')).not.toThrow();
+        expect(() => enforceApiKeyScope(ctx, 'tasks', 'read')).not.toThrow();
+        expect(() => enforceApiKeyScope(ctx, 'tasks', 'write')).not.toThrow();
         expect(() => enforceApiKeyScope(ctx, 'evidence', 'read')).toThrow(/does not have scope/);
     });
 });
@@ -240,8 +281,11 @@ describe('API Key Management — Create', () => {
         };
 
         const result = await createApiKey(makeCtx(), {
+            // Re-pointed practices → tasks: GRC teardown phase 2 removed
+            // the practices domain, so that scope is now rejected by
+            // validateScopes and would never reach the create path.
             name: 'CI Key',
-            scopes: ['practices:read'],
+            scopes: ['tasks:read'],
         });
 
         expect(result.name).toBe('CI Key');

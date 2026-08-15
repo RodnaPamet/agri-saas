@@ -459,11 +459,10 @@ describe('PII_BACKFILL_MANIFEST', () => {
         // alongside the manifest update.
         expect(triples).toContain('User.email->emailEncrypted+emailHash');
         expect(triples).toContain('User.name->nameEncrypted');
-        expect(triples).toContain('AuditorAccount.email->emailEncrypted+emailHash');
-        expect(triples).toContain('AuditorAccount.name->nameEncrypted');
-        expect(triples).toContain('VendorContact.email->emailEncrypted+emailHash');
-        expect(triples).toContain('VendorContact.name->nameEncrypted');
-        expect(triples).toContain('VendorContact.phone->phoneEncrypted');
+        // AuditorAccount + VendorContact triples left the manifest with
+        // the GRC teardown; asserted absent so a revert is visible.
+        expect(triples.some((t) => t.startsWith('AuditorAccount.'))).toBe(false);
+        expect(triples.some((t) => t.startsWith('VendorContact.'))).toBe(false);
         expect(triples).toContain('NotificationOutbox.toEmail->toEmailEncrypted');
         expect(triples).toContain(
             'UserIdentityLink.emailAtLinkTime->emailAtLinkTimeEncrypted+emailAtLinkTimeHash',

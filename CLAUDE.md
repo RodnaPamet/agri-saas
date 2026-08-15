@@ -1148,6 +1148,18 @@ stands for that PR only — not as a precedent.
       with a reason.
   `i18n-diff.mjs --check` runs in CI (the `Lint` job) and `.husky/pre-commit`.
 - **Path alias**: `@/` maps to `src/`. Always use this alias — never relative paths crossing layer boundaries.
+- **`@/lib/storage`, never `@/lib/storage/index`.** `src/lib/storage.ts`
+  AND `src/lib/storage/index.ts` both exist; the bare specifier resolves to
+  the FILE, so the two name different modules that read as one. Production
+  behaviour is identical (the shim re-exports the abstraction) — but
+  `jest.mock` is keyed on the resolved path, so mocking one leaves the other
+  REAL. That shipped a test which got the real `LocalStorageProvider`, whose
+  `createReadStream` on a fixture path emitted an unhandled async `error`
+  and killed the worker PROCESS: CI showed a flaky shard with no jest
+  summary while the tests themselves passed. Guarded by
+  `tests/guards/storage-module-specifier.test.ts`. More generally: **when
+  you mock a module, assert the mock was CALLED** — "the mock did not apply"
+  is silent whenever the real thing returns a lazily-failing handle.
 - **Two `DATABASE_URL` vars**: `DATABASE_URL` points to PgBouncer (transaction-mode, used at runtime). `DIRECT_DATABASE_URL` points directly to Postgres (used for Prisma migrations).
 - **Page-section rhythm** (Roadmap-5 PR-9): the spacing scale
   (`tight` / `compact` / `default` / `section` / `page`) is rich, but
@@ -1536,7 +1548,17 @@ Emit via `emitAutomationEvent(ctx, input)` — never construct
 `AutomationExecution` rows directly from a usecase. When adding a
 new event: add to `events.ts`, add the typed variant to
 `event-contracts.ts`, emit from the usecase (or audit emitter), and
-write a wiring test. Action handlers, rule-builder UI, and filter
+write a wiring test. **The "emit from the usecase" half is
+now enforced**: `tests/guards/automation-catalog-emitter-coverage.test.ts`
+fails if any `AUTOMATION_EVENTS` entry has no producer. It exists because
+nine events (`TEST_PLAN_*` / `TEST_RUN_*` / `TEST_EVIDENCE_*`) outlived the
+models they described — the rule builder went on OFFERING them as triggers
+and the suggestions rail went on RECOMMENDING one at 0.82 confidence, so a
+tenant could build a rule that could never fire. Nothing caught it because
+`automation-templates.test.ts` validates templates against the CATALOGUE,
+and the catalogue was the thing that was wrong. **A trigger / filter-field
+catalogue is a claim about the schema: when a model dies, grep the
+catalogues for it BY MODEL NAME.** Action handlers, rule-builder UI, and filter
 DSL evolution all plug into clearly-marked seams — don't bypass
 them. See `docs/automation-events.md` for the full contributor
 guide and the decision-tree for extensions.

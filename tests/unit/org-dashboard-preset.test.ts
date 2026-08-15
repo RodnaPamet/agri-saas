@@ -24,10 +24,14 @@ import { CreateOrgDashboardWidgetInput } from '@/app-layer/schemas/org-dashboard
 describe('Epic 41 — default org dashboard preset', () => {
     it('contains exactly six widgets', () => {
         // Was 8: four KPI cards + one donut + one trend + one tenant
-        // list + one drilldown CTA group. The risk-quantification
-        // uproot removed the `critical-risks` KPI and the `risks-open`
-        // trend, both of which read columns that no longer exist.
-        expect(DEFAULT_ORG_DASHBOARD_PRESET.length).toBe(6);
+        // list + one drilldown CTA group. The risk-quantification uproot
+        // removed the `critical-risks` KPI and the `risks-open` trend,
+        // both of which read columns that no longer exist (→ 6). The GRC
+        // teardown then removed the `coverage` KPI, which read
+        // PortfolioSummary.practices (→ 5). It was DROPPED rather than
+        // re-pointed at a surviving metric, because only two KPI metrics
+        // remain and reusing one would seed the same tile twice.
+        expect(DEFAULT_ORG_DASHBOARD_PRESET.length).toBe(5);
     });
 
     it('every entry is Zod-valid against CreateOrgDashboardWidgetInput', () => {
@@ -51,20 +55,22 @@ describe('Epic 41 — default org dashboard preset', () => {
         const kpis = DEFAULT_ORG_DASHBOARD_PRESET.filter(
             (w) => w.type === 'KPI',
         );
-        expect(kpis).toHaveLength(3);
+        expect(kpis).toHaveLength(2);
 
         // Order matches StatCardsRow in the prior page.tsx.
         expect(kpis.map((w) => w.chartType)).toEqual([
-            'coverage',
             'overdue-evidence',
             'tenants',
         ]);
+        // No metric appears twice — the whole reason the coverage tile was
+        // dropped instead of re-pointed.
+        expect(new Set(kpis.map((w) => w.chartType)).size).toBe(kpis.length);
 
-        // All three sit on row y=0, columns 0/4/8 — re-flowed from
-        // 0/3/6/9 when the critical-risks tile was removed.
+        // Both sit on row y=0, columns 0/6 — re-flowed from 0/4/8 when the
+        // coverage tile was removed.
         for (let i = 0; i < kpis.length; i++) {
-            expect(kpis[i].position).toEqual({ x: i * 4, y: 0 });
-            expect(kpis[i].size).toEqual({ w: 4, h: 2 });
+            expect(kpis[i].position).toEqual({ x: i * 6, y: 0 });
+            expect(kpis[i].size).toEqual({ w: 6, h: 2 });
         }
     });
 
@@ -164,8 +170,12 @@ describe('Epic 41 — default org dashboard preset', () => {
     // ─── Mutation regression ──────────────────────────────────────────
 
     it('mutation regression — dropping a widget trips the count assertion', () => {
+        // Derived, not hardcoded. This asserted `toBe(5) / not.toBe(6)`
+        // and had to be hand-edited on every teardown that changed the
+        // preset — the property is "a dropped widget changes the count",
+        // which does not depend on what the count happens to be.
         const broken = DEFAULT_ORG_DASHBOARD_PRESET.slice(0, -1);
-        expect(broken.length).toBe(5);
-        expect(broken.length).not.toBe(6);
+        expect(broken.length).toBe(DEFAULT_ORG_DASHBOARD_PRESET.length - 1);
+        expect(broken.length).not.toBe(DEFAULT_ORG_DASHBOARD_PRESET.length);
     });
 });

@@ -5,9 +5,15 @@
  * values on data refetch:
  *
  *   1. PortfolioDashboard header — total tenants + pending count
- *   2. DrillDownCtas — non-performing practices /
- *      overdue evidence headline counters
- *   3. TenantCoverageList — per-row coveragePercent
+ *   2. DrillDownCtas — overdue-evidence headline counter
+ *   3. TenantCoverageList — per-row overdue-evidence count
+ *
+ * GRC teardown phase 2 narrowed (2) and (3) rather than removing them.
+ * The non-performing-practices CTA and the per-row `coveragePercent`
+ * left with the Practice models; overdue evidence is the metric both
+ * surfaces animate now, and it exercises exactly the same rollout
+ * property (value flows through `<AnimatedNumber>`, one instance per
+ * counter/row, re-render updates the rendered text).
  *
  * Tests render against the global `@number-flow/react` mock wired in
  * `jest.config.js → jsdomProject.moduleNameMapper`, so every assertion
@@ -55,11 +61,8 @@ function makeSummary(overrides: Partial<PortfolioSummary> = {}): PortfolioSummar
         organizationSlug: 'acme-org',
         generatedAt: '2026-05-03T00:00:00Z',
         tenants: { total: 7, snapshotted: 5, pending: 2 },
-        practices: { applicable: 200, implemented: 150, coveragePercent: 75 },
         evidence: { total: 120, overdue: 9, dueSoon7d: 3 },
-        policies: { total: 12, overdueReview: 1 },
         tasks: { open: 22, overdue: 4 },
-        findings: { open: 6 },
         rag: { green: 3, amber: 2, red: 0, pending: 2 },
     };
     return { ...base, ...overrides };
@@ -90,7 +93,6 @@ function makeTenantRow(over: Partial<TenantHealthRow> = {}): TenantHealthRow {
         drillDownUrl: '/org/acme-org/tenants/acme-corp',
         hasSnapshot: true,
         snapshotDate: '2026-05-01',
-        coveragePercent: 75.3,
         overdueEvidence: 2,
         rag: 'GREEN',
         ...over,
@@ -179,7 +181,6 @@ describe('PortfolioDashboard — header stats animate', () => {
 describe('DrillDownCtas — counters animate', () => {
     it('renders all CTA counters through AnimatedNumber', () => {
         const summary = makeSummary({
-            practices: { applicable: 200, implemented: 150, coveragePercent: 75 },
             evidence: { total: 120, overdue: 9, dueSoon7d: 3 },
         });
         const { container } = render(
@@ -198,7 +199,6 @@ describe('DrillDownCtas — counters animate', () => {
 
     it('counters reflect the summary values exactly', () => {
         const summary = makeSummary({
-            practices: { applicable: 200, implemented: 150, coveragePercent: 75 },
             evidence: { total: 120, overdue: 9, dueSoon7d: 3 },
         });
         const { container } = render(
@@ -221,11 +221,6 @@ describe('DrillDownCtas — counters animate', () => {
         rerender(
             <DrillDownCtas
                 summary={makeSummary({
-                    practices: {
-                        applicable: 300,
-                        implemented: 250,
-                        coveragePercent: 83,
-                    },
                     evidence: { total: 140, overdue: 14, dueSoon7d: 5 },
                 })}
                 orgSlug="acme-org"
@@ -239,55 +234,86 @@ describe('DrillDownCtas — counters animate', () => {
 });
 
 // ─── TenantCoverageList ─────────────────────────────────────────────
+//
+// GRC teardown phase 2: the per-row headline metric was
+// `coveragePercent`; it left the DTO with the Practice models and the
+// row now animates `overdueEvidence`. Same rollout property, different
+// column — these are the coverage tests re-pointed, not new ones.
+// (The component keeps its `TenantCoverageList` name +
+// `org-tenant-coverage-list` testid; both are src-side and out of scope
+// for this file.)
 
-describe('TenantCoverageList — per-row coverage animates', () => {
-    it('renders coveragePercent through AnimatedNumber when present', () => {
+describe('TenantCoverageList — per-row overdue-evidence count animates', () => {
+    it('renders overdueEvidence through AnimatedNumber when present', () => {
         const { container, getByText } = render(
-            <TenantCoverageList rows={[makeTenantRow({ coveragePercent: 75.3 })]} />,
+            <TenantCoverageList rows={[makeTenantRow({ overdueEvidence: 12 })]} />,
         );
         const animated = container.querySelectorAll(
             '[data-testid="org-tenant-coverage-list"] [data-animated-number]',
         );
         expect(animated.length).toBe(1);
-        expect(getByText('75.3%')).toBeInTheDocument();
+        expect(getByText('12')).toBeInTheDocument();
     });
 
-    it('renders "—" when coveragePercent is null (no AnimatedNumber)', () => {
+    it('renders 0 through AnimatedNumber when overdueEvidence is null', () => {
+        // The "—" placeholder went with `coveragePercent`. The nullable
+        // branch itself survives (`overdueEvidence` is null on a tenant
+        // with no snapshot) and the row now coalesces it to 0 in BOTH
+        // the animated value and the descriptive line — so pin that,
+        // rather than dropping the only test covering the null path.
+        // The snapshot-less tenant is still marked by the RagPill,
+        // which renders "Pending" for a null rag.
         const { container, getByText } = render(
-            <TenantCoverageList rows={[makeTenantRow({ coveragePercent: null })]} />,
+            <TenantCoverageList
+                rows={[
+                    // The shape the DTO documents for a tenant with no
+                    // snapshot: every metric field null, rag null.
+                    makeTenantRow({
+                        hasSnapshot: false,
+                        snapshotDate: null,
+                        overdueEvidence: null,
+                        rag: null,
+                    }),
+                ]}
+            />,
         );
         expect(
             container.querySelectorAll(
                 '[data-testid="org-tenant-coverage-list"] [data-animated-number]',
             ).length,
-        ).toBe(0);
-        expect(getByText('—')).toBeInTheDocument();
+        ).toBe(1);
+        expect(getByText('0')).toBeInTheDocument();
+        expect(getByText('Pending')).toBeInTheDocument();
     });
 
-    it('updates rendered coverage when the value changes', () => {
+    it('updates the rendered overdue count when the value changes', () => {
         const { container, rerender } = render(
-            <TenantCoverageList rows={[makeTenantRow({ coveragePercent: 60 })]} />,
+            <TenantCoverageList rows={[makeTenantRow({ overdueEvidence: 6 })]} />,
         );
-        expect(container.textContent).toContain('60.0%');
+        const animated = () =>
+            container.querySelector(
+                '[data-testid="org-tenant-coverage-list"] [data-animated-number]',
+            );
+        expect(animated()?.textContent).toBe('6');
         rerender(
-            <TenantCoverageList rows={[makeTenantRow({ coveragePercent: 88.5 })]} />,
+            <TenantCoverageList rows={[makeTenantRow({ overdueEvidence: 14 })]} />,
         );
-        expect(container.textContent).toContain('88.5%');
+        expect(animated()?.textContent).toBe('14');
     });
 
-    it('mounts one animated coverage per row across many tenants', () => {
+    it('mounts one animated counter per row across many tenants', () => {
         const rows = Array.from({ length: 6 }, (_, i) =>
             makeTenantRow({
                 tenantId: `t${i}`,
                 slug: `t-${i}`,
                 name: `Tenant ${i}`,
-                coveragePercent: 50 + i * 5,
+                overdueEvidence: 50 + i * 5,
             }),
         );
         const { container } = render(<TenantCoverageList rows={rows} />);
-        // Six rows → six animated coverage spans (perf sanity check
-        // that we don't accidentally lift the AnimatedNumber out of
-        // the row map and lose per-row identity).
+        // Six rows → six animated spans (perf sanity check that we
+        // don't accidentally lift the AnimatedNumber out of the row map
+        // and lose per-row identity).
         expect(
             container.querySelectorAll(
                 '[data-testid="org-tenant-coverage-list"] [data-animated-number]',

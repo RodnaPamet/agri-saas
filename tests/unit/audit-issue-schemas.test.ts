@@ -10,23 +10,29 @@ import { CreateIssueSchema, UpdateIssueSchema, SetIssueStatusSchema, CreateBundl
 
 describe('Audit Issue Schemas', () => {
     describe('CreateIssueSchema audit fields', () => {
-        it('accepts AUDIT_FINDING type', () => {
-            const result = CreateIssueSchema.safeParse({
-                title: 'Finding 1', type: 'AUDIT_FINDING',
-            });
-            expect(result.success).toBe(true);
-        });
+        // GRC teardown phase 2 (operator decision A6). These asserted that
+        // AUDIT_FINDING / PRACTICE_GAP were ACCEPTED. Both are gone from the
+        // enum, so the assertion is inverted rather than deleted — that way
+        // re-adding a type nothing can render fails here.
+        it.each(['AUDIT_FINDING', 'PRACTICE_GAP', 'INCIDENT'])(
+            'rejects the removed %s type',
+            (type) => {
+                const result = CreateIssueSchema.safeParse({ title: 'x', type });
+                expect(result.success).toBe(false);
+            },
+        );
 
-        it('accepts PRACTICE_GAP type', () => {
-            const result = CreateIssueSchema.safeParse({
-                title: 'Gap 1', type: 'PRACTICE_GAP',
-            });
-            expect(result.success).toBe(true);
+        it('accepts the surviving TASK / IMPROVEMENT types', () => {
+            for (const type of ['TASK', 'IMPROVEMENT']) {
+                expect(
+                    CreateIssueSchema.safeParse({ title: 'x', type }).success,
+                ).toBe(true);
+            }
         });
 
         it('accepts metadataJson for extended fields', () => {
             const result = CreateIssueSchema.safeParse({
-                title: 'Finding 2', type: 'AUDIT_FINDING',
+                title: 'Finding 2', type: 'TASK',
                 metadataJson: {
                     findingSource: 'EXTERNAL_AUDITOR',
                     remediationPlan: 'Fix all the things',
@@ -50,7 +56,7 @@ describe('Audit Issue Schemas', () => {
 
         it('accepts source field', () => {
             const result = CreateIssueSchema.safeParse({
-                title: 'Finding 3', type: 'AUDIT_FINDING',
+                title: 'Finding 3', type: 'TASK',
                 source: 'AUDIT',
             });
             expect(result.success).toBe(true);
@@ -58,18 +64,21 @@ describe('Audit Issue Schemas', () => {
 
         it('rejects invalid source', () => {
             const result = CreateIssueSchema.safeParse({
-                title: 'Finding 4', type: 'AUDIT_FINDING',
+                title: 'Finding 4', type: 'TASK',
                 source: 'INVALID_SOURCE',
             });
             expect(result.success).toBe(false);
         });
 
-        it('accepts practiceId', () => {
-            const result = CreateIssueSchema.safeParse({
-                title: 'Finding 5', type: 'AUDIT_FINDING',
+        it('STRIPS practiceId — the field left the schema with the practice models', () => {
+            // `.strip()`, so an old client still sending practiceId gets a
+            // 200 with the field dropped rather than a 400. Asserting the
+            // strip (not just success) is what makes the removal visible.
+            const result = CreateIssueSchema.parse({
+                title: 'Finding 5', type: 'TASK',
                 practiceId: 'ctrl-1',
             });
-            expect(result.success).toBe(true);
+            expect(result).not.toHaveProperty('practiceId');
         });
     });
 

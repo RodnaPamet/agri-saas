@@ -34,33 +34,37 @@ const getKind = (h: SearchHit) => h.type;
 
 describe('filterHitsByKind', () => {
     it('passes everything through when active set is empty (no chips selected = all kinds)', () => {
-        const hits = [hit('c1', 'practice'), hit('a1', 'asset')];
+        const hits = [hit('c1', 'task'), hit('a1', 'asset')];
         expect(filterHitsByKind(hits, new Set(), getKind)).toEqual(hits);
     });
 
     it('keeps only hits whose kind is in the active set', () => {
+        // Three DISTINCT kinds, two of them selected — the middle hit
+        // must be filtered out. (Keep them distinct: an earlier re-base
+        // collapsed two of these onto the same kind, which left the
+        // assertion passing vacuously with nothing filtered.)
         const hits = [
-            hit('c1', 'practice'),
+            hit('c1', 'task'),
             hit('a1', 'asset'),
-            hit('p1', 'policy'),
+            hit('p1', 'evidence'),
         ];
         const out = filterHitsByKind(
             hits,
-            new Set<SearchHitType>(['practice', 'policy']),
+            new Set<SearchHitType>(['task', 'evidence']),
             getKind,
         );
         expect(out.map((h) => h.id).sort()).toEqual(['c1', 'p1']);
     });
 
     it('returns a new array — never mutates input', () => {
-        const hits = [hit('c1', 'practice'), hit('a1', 'asset')];
+        const hits = [hit('c1', 'task'), hit('a1', 'asset')];
         const before = JSON.stringify(hits);
-        filterHitsByKind(hits, new Set<SearchHitType>(['practice']), getKind);
+        filterHitsByKind(hits, new Set<SearchHitType>(['task']), getKind);
         expect(JSON.stringify(hits)).toBe(before);
     });
 
     it('returns an empty array when no hit matches the active set', () => {
-        const hits = [hit('c1', 'practice')];
+        const hits = [hit('c1', 'task')];
         const out = filterHitsByKind(
             hits,
             new Set<SearchHitType>(['asset']),
@@ -74,20 +78,20 @@ describe('filterHitsByKind', () => {
 
 describe('toggleKind', () => {
     it('adds a kind that is not in the active set', () => {
-        const out = toggleKind(new Set<SearchHitType>(['practice']), 'asset');
-        expect([...out].sort()).toEqual(['asset', 'practice']);
+        const out = toggleKind(new Set<SearchHitType>(['task']), 'asset');
+        expect([...out].sort()).toEqual(['asset', 'task']);
     });
 
     it('removes a kind that IS in the active set', () => {
         const out = toggleKind(
-            new Set<SearchHitType>(['practice', 'asset']),
+            new Set<SearchHitType>(['task', 'asset']),
             'asset',
         );
-        expect([...out]).toEqual(['practice']);
+        expect([...out]).toEqual(['task']);
     });
 
     it('returns a new Set — never mutates input', () => {
-        const input = new Set<SearchHitType>(['practice']);
+        const input = new Set<SearchHitType>(['task']);
         const before = [...input];
         toggleKind(input, 'asset');
         expect([...input]).toEqual(before);
@@ -106,9 +110,6 @@ describe('countHitsByKind', () => {
         // literal without a defensive existence check.
         const out = countHitsByKind([], getKind);
         expect(out).toEqual({
-            practice: 0,
-            policy: 0,
-            framework: 0,
             evidence: 0,
             asset: 0,
             task: 0,
@@ -118,22 +119,21 @@ describe('countHitsByKind', () => {
 
     it('counts each hit under its kind', () => {
         const hits = [
-            hit('c1', 'practice'),
-            hit('c2', 'practice'),
+            hit('c1', 'task'),
+            hit('c2', 'task'),
             hit('a1', 'asset'),
-            hit('p1', 'policy'),
+            hit('e1', 'evidence'),
         ];
         const out = countHitsByKind(hits, getKind);
-        expect(out.practice).toBe(2);
+        expect(out.task).toBe(2);
         expect(out.asset).toBe(1);
-        expect(out.policy).toBe(1);
-        expect(out.evidence).toBe(0);
-        expect(out.framework).toBe(0);
+        expect(out.evidence).toBe(1);
+        expect(out.knowledge).toBe(0);
     });
 
     it('counts the FULL list — independent of any filter that may be applied later', () => {
-        const hits = [hit('c1', 'practice'), hit('a1', 'asset')];
-        // Even if we then filter to 'practice', the count for asset
+        const hits = [hit('c1', 'task'), hit('a1', 'asset')];
+        // Even if we then filter to 'task', the count for asset
         // stays at 1 — the chip should still display "Assets (1)" so
         // the user can toggle it back on.
         const out = countHitsByKind(hits, getKind);

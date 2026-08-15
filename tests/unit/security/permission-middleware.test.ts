@@ -8,6 +8,15 @@
  *   - tenant-safe: handler can only see the ctx the middleware resolved
  *   - any/all modes
  *   - misconfiguration (empty key list) fails loud
+ *
+ * GRC teardown phase 2 removed the practices / policies / vendors /
+ * tests / frameworks / audits permission domains. Every case that used
+ * `practices.create` as its "write key an ADMIN/EDITOR holds and a
+ * READER does not" fixture now uses `tasks.create`, which sits at the
+ * same tier (ADMIN/EDITOR true, READER false) — the deny/grant bounds
+ * are unchanged. `admin.scim` and `evidence.upload` were already on
+ * surviving domains. The stand-in request path moved off the deleted
+ * `/risks` surface for the same reason.
  */
 
 // ─── Mocks (declared before imports — Jest hoists `jest.mock` calls) ───
@@ -68,7 +77,7 @@ function makeCtx(
     };
 }
 
-function makeReq(method = 'POST', path = '/api/t/acme/risks') {
+function makeReq(method = 'POST', path = '/api/t/acme/farm-tasks') {
     // Minimal NextRequest stand-in — middleware only reads `method` and
     // `nextUrl.pathname`. Avoids pulling next/server's runtime in tests.
     return {
@@ -84,13 +93,13 @@ const routeArgs = { params: Promise.resolve({ tenantSlug: 'acme' }) };
 describe('hasPermission', () => {
     it('returns true when the granular flag is granted', () => {
         const perms = getPermissionsForRole('ADMIN');
-        expect(hasPermission(perms, 'practices.create')).toBe(true);
+        expect(hasPermission(perms, 'tasks.create')).toBe(true);
         expect(hasPermission(perms, 'admin.scim')).toBe(true);
     });
 
     it('returns false when the granular flag is denied', () => {
         const perms = getPermissionsForRole('READER');
-        expect(hasPermission(perms, 'practices.create')).toBe(false);
+        expect(hasPermission(perms, 'tasks.create')).toBe(false);
         expect(hasPermission(perms, 'admin.scim')).toBe(false);
     });
 
@@ -115,7 +124,7 @@ describe('requirePermission — allowed', () => {
         mockGetTenantCtx.mockResolvedValue(ctx);
 
         const handler = jest.fn().mockResolvedValue(new Response('ok'));
-        const wrapped = requirePermission('practices.create', handler);
+        const wrapped = requirePermission('tasks.create', handler);
 
         const req = makeReq();
         const res = await wrapped(req, routeArgs);
@@ -142,7 +151,7 @@ describe('requirePermission — allowed', () => {
             return new Response('ok');
         });
 
-        await requirePermission('practices.create', handler)(makeReq(), routeArgs);
+        await requirePermission('tasks.create', handler)(makeReq(), routeArgs);
         expect(handler).toHaveBeenCalled();
     });
 });
@@ -160,7 +169,7 @@ describe('requirePermission — denied', () => {
         mockGetTenantCtx.mockResolvedValue(makeCtx('READER'));
 
         const handler = jest.fn();
-        const wrapped = requirePermission('practices.create', handler);
+        const wrapped = requirePermission('tasks.create', handler);
 
         await expect(wrapped(makeReq(), routeArgs)).rejects.toMatchObject({
             status: 403,
@@ -182,9 +191,9 @@ describe('requirePermission — denied', () => {
             previousHash: null,
         });
 
-        const wrapped = requirePermission('practices.create', jest.fn());
+        const wrapped = requirePermission('tasks.create', jest.fn());
         await expect(
-            wrapped(makeReq('POST', '/api/t/acme/risks'), routeArgs),
+            wrapped(makeReq('POST', '/api/t/acme/farm-tasks'), routeArgs),
         ).rejects.toThrow();
 
         expect(mockAppendAuditEntry).toHaveBeenCalledTimes(1);
@@ -194,17 +203,17 @@ describe('requirePermission — denied', () => {
             userId: 'user-1',
             actorType: 'USER',
             entity: 'Permission',
-            entityId: 'practices.create',
+            entityId: 'tasks.create',
             action: 'AUTHZ_DENIED',
             requestId: 'req-test-1',
         });
         expect(entry.detailsJson).toMatchObject({
             category: 'access',
             event: 'authz_denied',
-            permissionKeys: ['practices.create'],
+            permissionKeys: ['tasks.create'],
             role: 'READER',
             method: 'POST',
-            path: '/api/t/acme/risks',
+            path: '/api/t/acme/farm-tasks',
         });
     });
 
@@ -219,7 +228,7 @@ describe('requirePermission — denied', () => {
         });
 
         await expect(
-            requirePermission('practices.create', jest.fn())(makeReq(), routeArgs),
+            requirePermission('tasks.create', jest.fn())(makeReq(), routeArgs),
         ).rejects.toThrow();
 
         expect(mockAppendAuditEntry).toHaveBeenCalledTimes(1);
@@ -233,7 +242,7 @@ describe('requirePermission — denied', () => {
         mockAppendAuditEntry.mockRejectedValue(new Error('audit DB down'));
 
         await expect(
-            requirePermission('practices.create', jest.fn())(makeReq(), routeArgs),
+            requirePermission('tasks.create', jest.fn())(makeReq(), routeArgs),
         ).rejects.toMatchObject({ status: 403 });
 
         // The telemetry failure surfaces through the logger so ops can
@@ -307,7 +316,7 @@ describe('requirePermission — modes', () => {
 
         const handler = jest.fn().mockResolvedValue(new Response('ok'));
         await requireAllPermissions(
-            ['practices.create', 'evidence.upload'],
+            ['tasks.create', 'evidence.upload'],
             handler,
         )(makeReq(), routeArgs);
 
@@ -324,15 +333,15 @@ describe('requirePermission — modes', () => {
 
         await expect(
             requireAllPermissions(
-                ['practices.create', 'admin.scim'],
+                ['tasks.create', 'admin.scim'],
                 jest.fn(),
             )(makeReq(), routeArgs),
         ).rejects.toMatchObject({ status: 403 });
 
         const entry = mockAppendAuditEntry.mock.calls[0][0];
-        expect(entry.entityId).toBe('practices.create,admin.scim');
+        expect(entry.entityId).toBe('tasks.create,admin.scim');
         expect(entry.detailsJson.permissionKeys).toEqual([
-            'practices.create',
+            'tasks.create',
             'admin.scim',
         ]);
     });

@@ -51,28 +51,11 @@ export const PortfolioSummarySchema = z
             })
             .strict(),
 
-        practices: z
-            .object({
-                applicable: NonNegInt,
-                implemented: NonNegInt,
-                /** Org-wide coverage = sum(implemented) / sum(applicable) × 100.
-                 *  0 when applicable === 0 (no applicable practices anywhere). */
-                coveragePercent: z.number().min(0).max(100),
-            })
-            .strict(),
-
         evidence: z
             .object({
                 total: NonNegInt,
                 overdue: NonNegInt,
                 dueSoon7d: NonNegInt,
-            })
-            .strict(),
-
-        policies: z
-            .object({
-                total: NonNegInt,
-                overdueReview: NonNegInt,
             })
             .strict(),
 
@@ -83,11 +66,16 @@ export const PortfolioSummarySchema = z
             })
             .strict(),
 
-        findings: z
-            .object({
-                open: NonNegInt,
-            })
-            .strict(),
+        // GRC teardown phase 2 (plan §8f). The `practices`, `policies` and
+        // `findings` blocks left this DTO with their models. The
+        // ComplianceSnapshot COLUMNS survive until the phase-3 migration —
+        // they hold real historical values — but nothing computes them any
+        // more (jobs/snapshot.ts writes only evidence / task / asset
+        // aggregates), so every NEW row carries the @default(0). Publishing
+        // them would report a measured zero instead of "not measured": the
+        // org dashboard rendered "0% coverage / 0 policies / 0 open
+        // findings" as fact. Same fix already applied to
+        // PortfolioTrendDataPointSchema below.
 
         /** RAG distribution across the org's tenants. */
         rag: z
@@ -125,7 +113,8 @@ export const TenantHealthRowSchema = z
         /** ISO date (YYYY-MM-DD) of the latest snapshot — or null. */
         snapshotDate: z.string().nullable(),
 
-        coveragePercent: z.number().min(0).max(100).nullable(),
+        // coveragePercent left with the practice models — see the note on
+        // PortfolioSummarySchema above. overdueEvidence is still computed.
         overdueEvidence: NonNegInt.nullable(),
         rag: RagBadgeSchema.nullable(),
     })
@@ -181,64 +170,14 @@ export type PortfolioTrend = z.infer<typeof PortfolioTrendSchema>;
 // `drillDownUrl` that lands the user on the standard per-tenant
 // detail page (where the CISO's auto-provisioned AUDITOR membership
 // unlocks read access). The row IDs are tenant-scoped — the CISO
-// clicks → /t/{slug}/risks/{riskId} → existing tenant routing +
+// clicks → /t/{slug}/evidence/{evidenceId} → existing tenant routing +
 // RLS take over.
 
-const PracticeStatusEnum = z.enum([
-    'NOT_STARTED',
-    'PLANNED',
-    'IN_PROGRESS',
-    'IMPLEMENTING',
-    'NEEDS_REVIEW',
-    // 'IMPLEMENTED' and 'NOT_APPLICABLE' are intentionally excluded from
-    // this DTO — non-performing means status NOT IN those two. A row
-    // appearing with one of those values would be a logic bug at the
-    // query layer, and the strict enum surfaces it.
-]);
-
-export const NonPerformingPracticeRowSchema = z
-    .object({
-        practiceId: z.string().min(1),
-        tenantId: z.string().min(1),
-        tenantSlug: z.string().min(1),
-        tenantName: z.string().min(1),
-        name: z.string().min(1),
-        code: z.string().nullable(),
-        status: PracticeStatusEnum,
-        /** ISO timestamp — last time the practice row was updated. */
-        updatedAt: z.string().min(1),
-        /** /t/{slug}/practices/{practiceId}. */
-        drillDownUrl: z.string().min(1),
-    })
-    .strict();
-
-export type NonPerformingPracticeRow = z.infer<typeof NonPerformingPracticeRowSchema>;
-
-const ActiveRiskStatusEnum = z.enum([
-    'OPEN',
-    'MITIGATING',
-    'ACCEPTED',
-    // 'CLOSED' intentionally excluded — a closed risk shouldn't surface
-    // in the org's "critical risks" view, and the strict enum catches
-    // a query-side regression that lets one through.
-]);
-
-export const CriticalRiskRowSchema = z
-    .object({
-        riskId: z.string().min(1),
-        tenantId: z.string().min(1),
-        tenantSlug: z.string().min(1),
-        tenantName: z.string().min(1),
-        title: z.string().min(1),
-        inherentScore: z.number().int().nonnegative(),
-        status: ActiveRiskStatusEnum,
-        updatedAt: z.string().min(1),
-        /** /t/{slug}/risks/{riskId}. */
-        drillDownUrl: z.string().min(1),
-    })
-    .strict();
-
-export type CriticalRiskRow = z.infer<typeof CriticalRiskRowSchema>;
+// GRC teardown phase 2 + the earlier risk uproot removed the two
+// cross-tenant drill-down row DTOs that used to live here:
+// NonPerformingPracticeRowSchema (Practice is a KILL model) and
+// CriticalRiskRowSchema (the risk register was deleted before this
+// teardown began, and its schema was left behind).
 
 const OverdueEvidenceStatusEnum = z.enum([
     'DRAFT',
@@ -269,10 +208,9 @@ export type OverdueEvidenceRow = z.infer<typeof OverdueEvidenceRowSchema>;
 
 // ── Drill-down pagination (cursor-based) ─────────────────────────────
 //
-// The dashboard summary views still consume the top-50 functions
-// (`getNonPerformingPractices`, `getCriticalRisksAcrossOrg`,
-// `getOverdueEvidenceAcrossOrg`) — fast, bounded, ideal for a card-
-// sized preview. The DEDICATED drill-down pages browse beyond that
+// The dashboard summary view still consumes the top-50 function
+// (`getOverdueEvidenceAcrossOrg`) — fast, bounded, ideal for a card-
+// sized preview. The DEDICATED drill-down page browses beyond that
 // cap via the `list*` usecase counterparts which accept a cursor
 // payload and return `nextCursor` alongside the rows.
 //
@@ -286,9 +224,11 @@ export type OverdueEvidenceRow = z.infer<typeof OverdueEvidenceRowSchema>;
 // page 1 of the paginated view matches the first 50 rows of the
 // preview byte-for-byte (modulo the optional `nextCursor`).
 //
-//   Practices  : (statusPriority DESC, updatedAt DESC, id ASC)
-//   Risks     : (inherentScore   DESC, updatedAt DESC, id ASC)
 //   Evidence  : (nextReviewDate  ASC,  id ASC)        ← daysOverdue DESC
+//
+// Practices and Risks had their own cursor shapes here until the risk
+// uproot and the GRC teardown removed both drill-downs; evidence is the
+// one that remains.
 //
 // `id` ASC as the final tiebreaker is per-tenant unique by Prisma
 // cuid; cuid collisions across tenants are not a concern at the

@@ -1,9 +1,10 @@
 /**
  * Epic E.3 — CSV export request deduplication regression.
  *
- * The CSV export route composes 5 portfolio usecases in one HTTP
- * request: summary + tenant-health + 3 drill-downs (practices /
- * evidence). Before E.3 each usecase fetched its own
+ * The CSV export route composes portfolio usecases in one HTTP
+ * request: summary + tenant-health + the evidence drill-down (the
+ * practices and risks drill-downs have since been removed with their
+ * models). Before E.3 each usecase fetched its own
  * tenants list (5×) and the two snapshot-driven ones each fetched
  * their own snapshots (2×) — 7 DB round-trips per export.
  *
@@ -14,8 +15,8 @@
  *
  *   - `getOrgTenantIds` fires EXACTLY ONCE
  *   - `getLatestSnapshots` fires EXACTLY ONCE
- *   - the export's body still contains all five sections (proves
- *     the dedup didn't drop a usecase by accident)
+ *   - the export's body still contains every section (proves the
+ *     dedup didn't drop a usecase by accident)
  *
  * Mutation regression: stripping the helper from one drill-down
  * (i.e. reverting it to the direct `PortfolioRepository.getOrgTenantIds`
@@ -112,12 +113,11 @@ describe('Epic E.3 — CSV export tenants/snapshots deduplication', () => {
                 expect(res.status).toBe(200);
                 const body = await res.text();
 
-                // All five sections must still be present — proves we
+                // Every section must still be present — proves we
                 // didn't accidentally drop a usecase from the export
                 // when wiring the dedup.
                 expect(body).toContain('# Portfolio Summary');
                 expect(body).toContain('# Tenant Health');
-                expect(body).toContain('# Non-Performing Practices');
                 expect(body).toContain('# Overdue Evidence');
             },
         );
@@ -149,7 +149,6 @@ describe('Epic E.3 — CSV export tenants/snapshots deduplication', () => {
                 const body = await res.text();
                 expect(body).toContain('# Portfolio Summary');
                 expect(body).toContain('# Tenant Health');
-                expect(body).not.toContain('# Non-Performing Practices');
             },
         );
 

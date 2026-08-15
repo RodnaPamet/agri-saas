@@ -76,7 +76,14 @@ const CURRENT_BASELINE = 17;
 // pages, filter-defs, org widget config and permission modules carried
 // 40 of the counted hard-coded config-prop strings. The drift sentinel
 // below forbids leaving slack, so this tracks reality, not headroom.
-const CONFIG_PROP_BASELINE = 238;
+//
+// Lowered 238 → 218 in GRC teardown phase 2 (T4). The six GRC permission
+// domains left SCOPE_GROUPS in admin/api-keys, taking their hard-coded
+// `label:` strings ('Practices', 'Policies', 'Vendors', 'Tests',
+// 'Frameworks', 'Audits') with them. MEASURED from the drift sentinel's
+// own arithmetic — it asserts BASELINE <= count + 15 and reported 233 as
+// the ceiling, so the live count is 218 — not estimated.
+const CONFIG_PROP_BASELINE = 201;
 
 /** A string counts as user-facing copy if — after stripping HTML entities —
  *  it has a real word (≥2 latin letters) and is not an ALL-CAPS enum/acronym

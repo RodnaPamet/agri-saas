@@ -34,7 +34,6 @@ import { escapeCSV } from '@/lib/reports/csv-escape';
 import {
     getPortfolioSummary,
     getPortfolioTenantHealth,
-    getNonPerformingPractices,
     getOverdueEvidenceAcrossOrg,
 } from '@/app-layer/usecases/portfolio';
 
@@ -76,14 +75,9 @@ export const GET = withApiErrorHandling(
             ['Tenants Total', summary.tenants.total],
             ['Tenants Snapshotted', summary.tenants.snapshotted],
             ['Tenants Pending', summary.tenants.pending],
-            ['Practices Applicable', summary.practices.applicable],
-            ['Practices Implemented', summary.practices.implemented],
-            ['Coverage %', summary.practices.coveragePercent.toFixed(1)],
             ['Evidence Overdue', summary.evidence.overdue],
             ['Evidence Due Soon (7d)', summary.evidence.dueSoon7d],
-            ['Policies Overdue Review', summary.policies.overdueReview],
             ['Tasks Overdue', summary.tasks.overdue],
-            ['Findings Open', summary.findings.open],
             ['RAG Green', summary.rag.green],
             ['RAG Amber', summary.rag.amber],
             ['RAG Red', summary.rag.red],
@@ -97,7 +91,7 @@ export const GET = withApiErrorHandling(
         sections.push('');
         sections.push(sectionHeader('Tenant Health', HEALTH_COLUMNS));
         sections.push(
-            ['Tenant', 'Slug', 'Snapshot Date', 'Coverage %', 'Overdue Evidence', 'RAG']
+            ['Tenant', 'Slug', 'Snapshot Date', 'Overdue Evidence', 'RAG']
                 .map(escapeCSV)
                 .join(','),
         );
@@ -107,39 +101,17 @@ export const GET = withApiErrorHandling(
                     escapeCSV(row.name),
                     escapeCSV(row.slug),
                     escapeCSV(row.snapshotDate ?? ''),
-                    escapeCSV(row.coveragePercent !== null ? row.coveragePercent.toFixed(1) : ''),
                     escapeCSV(row.overdueEvidence ?? ''),
                     escapeCSV(row.rag ?? 'PENDING'),
                 ].join(','),
             );
         }
 
-        // ── Sections 3-5: drill-down (only when canDrillDown) ────────
+        // ── Drill-down section (only when canDrillDown) ──────────────
+        // The "Non-Performing Practices" section left with the Practice
+        // model in the GRC teardown; overdue evidence is what remains.
         if (ctx.permissions.canDrillDown) {
-            const [practices, evidence] = await Promise.all([
-                getNonPerformingPractices(ctx),
-                getOverdueEvidenceAcrossOrg(ctx),
-            ]);
-
-            sections.push('');
-            sections.push(sectionHeader('Non-Performing Practices', CONTROLS_COLUMNS));
-            sections.push(
-                ['Tenant', 'Slug', 'Practice', 'Code', 'Status', 'Updated At']
-                    .map(escapeCSV)
-                    .join(','),
-            );
-            for (const c of practices) {
-                sections.push(
-                    [
-                        escapeCSV(c.tenantName),
-                        escapeCSV(c.tenantSlug),
-                        escapeCSV(c.name),
-                        escapeCSV(c.code ?? ''),
-                        escapeCSV(c.status),
-                        escapeCSV(c.updatedAt),
-                    ].join(','),
-                );
-            }
+            const evidence = await getOverdueEvidenceAcrossOrg(ctx);
 
             sections.push('');
             sections.push(sectionHeader('Overdue Evidence', EVIDENCE_COLUMNS));

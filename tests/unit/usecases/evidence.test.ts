@@ -4,15 +4,19 @@
  * Wave 2 of GAP-02. Existing tests cover plumbing; this file locks
  * in the security-load-bearing review-flow assertions:
  *
- *   1. Cross-tenant practice id rejection on createEvidence — admin
- *      in tenant A cannot link evidence to tenant B's practice even
- *      if A knows B's practiceId.
- *   2. reviewEvidence step gates: SUBMITTED requires canWrite,
+ *   1. reviewEvidence step gates: SUBMITTED requires canWrite,
  *      APPROVED / REJECTED require canAdmin (separation of duty).
  *      An unknown action errors out — no silent transition.
- *   3. STATUS_CHANGE audit fired with correct from/to status.
- *   4. Notification created for the evidence owner on APPROVED /
+ *   2. STATUS_CHANGE audit fired with correct from/to status.
+ *   3. Notification created for the evidence owner on APPROVED /
  *      REJECTED, NOT on SUBMITTED.
+ *
+ * The cross-tenant practice-id rejection that used to head this list
+ * went with the GRC teardown: `createEvidence` no longer accepts a
+ * `practiceId`, so there is no cross-tenant practice link to reject.
+ * The equivalent guarantee for the surviving attachment columns
+ * (assetId / taskId / sourceLogEntryId) is the download provenance
+ * gate, covered in tests/unit/security/evidence-download-gate.test.ts.
  */
 
 jest.mock('@/lib/db-context', () => ({
@@ -56,31 +60,7 @@ beforeEach(() => {
     jest.clearAllMocks();
 });
 
-describe('createEvidence — cross-tenant practice rejection', () => {
-    it('rejects when practiceId points at a practice NOT in caller tenant', async () => {
-        const fakeDb = {
-            practice: { findFirst: jest.fn().mockResolvedValue(null) },
-        };
-        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(fakeDb as never));
-
-        await expect(
-            createEvidence(
-                makeRequestContext('EDITOR', { tenantId: 'tenant-A' }),
-                {
-                    type: 'LINK',
-                    title: 'Bad cross-tenant evidence',
-                    practiceId: 'tenant-B-practice',
-                    content: 'https://example.com/file',
-                },
-            ),
-        ).rejects.toThrow(/INVALID_CONTROL/);
-        // Regression: a bug that drops `tenantId` from the WHERE on
-        // practice.findFirst would let admin in A attach evidence to a
-        // practice in tenant B — cross-tenant linkage in the audit
-        // surface.
-        expect(mockCreate).not.toHaveBeenCalled();
-    });
-
+describe('createEvidence — write gates', () => {
     it('rejects READER on create (canWrite gate)', async () => {
         await expect(
             createEvidence(makeRequestContext('READER'), {
@@ -91,10 +71,7 @@ describe('createEvidence — cross-tenant practice rejection', () => {
     });
 
     it('persists status=DRAFT by default', async () => {
-        const fakeDb = {
-            practice: { findFirst: jest.fn() },
-            practiceEvidenceLink: { create: jest.fn() },
-        };
+        const fakeDb = {};
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(fakeDb as never));
         mockCreate.mockResolvedValue({ id: 'e1', fileRecordId: null } as never);
 

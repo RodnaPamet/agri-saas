@@ -26,6 +26,11 @@ import {
 
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 
+// Derived from the preset itself — these counts used to be hardcoded 6/12
+// and had to be hand-edited on every teardown that resized the preset.
+const PRESET_SIZE = DEFAULT_ORG_DASHBOARD_PRESET.length;
+
+
 describeFn('Epic 41 — default-preset seeding (DB-backed)', () => {
     let prisma: PrismaClient;
     const uniq = `preset-seed-${Date.now()}`;
@@ -61,12 +66,12 @@ describeFn('Epic 41 — default-preset seeding (DB-backed)', () => {
         const result = await seedDefaultOrgDashboard(prisma, orgId);
 
         expect(result.seeded).toBe(true);
-        expect(result.created).toBe(6);
+        expect(result.created).toBe(PRESET_SIZE);
 
         const persisted = await prisma.orgDashboardWidget.count({
             where: { organizationId: orgId },
         });
-        expect(persisted).toBe(6);
+        expect(persisted).toBe(PRESET_SIZE);
     });
 
     // ─── Idempotency ──────────────────────────────────────────────
@@ -76,7 +81,7 @@ describeFn('Epic 41 — default-preset seeding (DB-backed)', () => {
 
         const first = await seedDefaultOrgDashboard(prisma, orgId);
         expect(first.seeded).toBe(true);
-        expect(first.created).toBe(6);
+        expect(first.created).toBe(PRESET_SIZE);
 
         const second = await seedDefaultOrgDashboard(prisma, orgId);
         expect(second.seeded).toBe(false);
@@ -85,7 +90,7 @@ describeFn('Epic 41 — default-preset seeding (DB-backed)', () => {
         const persisted = await prisma.orgDashboardWidget.count({
             where: { organizationId: orgId },
         });
-        expect(persisted).toBe(6);
+        expect(persisted).toBe(PRESET_SIZE);
     });
 
     it('seeding an org that already has a manual widget is a no-op', async () => {
@@ -98,9 +103,9 @@ describeFn('Epic 41 — default-preset seeding (DB-backed)', () => {
             data: {
                 organizationId: orgId,
                 type: 'KPI',
-                chartType: 'coverage',
+                chartType: 'tenants',
                 title: 'Custom-built',
-                config: { format: 'percent' },
+                config: { format: 'number' },
                 position: { x: 0, y: 0 },
                 size: { w: 3, h: 2 },
                 enabled: true,
@@ -144,7 +149,7 @@ describeFn('Epic 41 — default-preset seeding (DB-backed)', () => {
         const total = await prisma.orgDashboardWidget.count({
             where: { organizationId: orgId },
         });
-        expect([6, 12]).toContain(total);
+        expect([PRESET_SIZE, PRESET_SIZE * 2]).toContain(total);
     });
 
     // ─── Layout fidelity ──────────────────────────────────────────
@@ -157,7 +162,7 @@ describeFn('Epic 41 — default-preset seeding (DB-backed)', () => {
             where: { organizationId: orgId },
             orderBy: { createdAt: 'asc' },
         });
-        expect(rows).toHaveLength(6);
+        expect(rows).toHaveLength(PRESET_SIZE);
 
         // Group by (type, chartType) since createMany doesn't preserve
         // input order across drivers. Map key type is a string —

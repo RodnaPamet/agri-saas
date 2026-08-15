@@ -29,24 +29,24 @@ import * as path from 'path';
 const ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
 
-const ENTITIES = [
-    'assets',
-    'practices',
-    'evidence',
-    'policies',
-    'audits',
-    'findings',
-] as const;
-
 interface ClientFile {
-    entity: (typeof ENTITIES)[number];
+    entity: string;
     file: string;
 }
 
+// The GRC teardown deleted the practices / policies / audits / findings
+// list pages. CLIENTS was trimmed to the survivors at the time; ENTITIES
+// was NOT, so this guard went on demanding a `listDescription` for four
+// message sections whose pages no longer exist — and, once the i18n purge
+// removed those sections, failed. The two lists are one list now, so they
+// cannot drift apart again: a page that gains a description registers
+// here once and both assertions pick it up.
 const CLIENTS: ClientFile[] = [
     { entity: 'assets', file: 'src/app/t/[tenantSlug]/(app)/assets/AssetsClient.tsx' },
     { entity: 'evidence', file: 'src/app/t/[tenantSlug]/(app)/evidence/EvidenceClient.tsx' },
 ];
+
+const ENTITIES = CLIENTS.map((c) => c.entity);
 
 describe('List-page editorial descriptions (Roadmap-2 PR-4)', () => {
     it('each entity section in messages/en.json carries a listDescription', () => {

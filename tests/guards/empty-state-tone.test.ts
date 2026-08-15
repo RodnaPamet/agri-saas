@@ -74,9 +74,6 @@ describe('Empty-state copy tone (Roadmap-3 PR-6)', () => {
                 'dashboard.noAlerts',    // emoji prefix + sentence — different shape
                 'dashboard.noRecentActivity',  // "No recent activity" — already canonical
                 'admin.noNotifications', // already canonical, no period
-                'clauses.notStarted',    // not an empty-state — passes the regex but isn't one
-                'clauses.notApplicable', // not an empty-state
-                'practices.notApplicable',
                 'tests.notTested',
                 // T04 i18n migration — pre-existing inline empty-state
                 // MESSAGES (full sentences with legitimate terminal
@@ -93,7 +90,6 @@ describe('Empty-state copy tone (Roadmap-3 PR-6)', () => {
                 'automationSuggestions.noSuggestions',
                 'commandPalette.noMatchesInCategories',
                 'commandPalette.noResults',
-                'frameworkExplorer.noMappedPractices',
                 'switcher.noWorkspaces',
                 'switcher.noOrganizations',
                 'onboarding.noFrameworksSelected',
@@ -145,19 +141,12 @@ describe('Empty-state copy tone (Roadmap-3 PR-6)', () => {
                 // titles), so their terminal punctuation is legitimate and
                 // matches origin/main — same rationale as the T04/T05/T06
                 // exemptions above.
-                'practices.list.noCategorised',
-                'practices.detail.noDescription',
-                'practices.detail.noActivityDesc',
-                'practices.testPlan.noRuns',
                 // T09 i18n migration (policies/vendors batch) — pre-existing
                 // inline empty-state MESSAGES migrated verbatim from the
                 // policy detail page's hardcoded JSX (inline `<p>` / `<Card>`
                 // / activity-feed fallbacks). Full sentences with legitimate
                 // terminal punctuation, not terse EmptyState titles — same
                 // rationale as the T04–T07 exemptions above.
-                'policies.detail.noVersionPublished',
-                'policies.detail.noVersions',
-                'policies.detail.noActivity',
                 // T10 i18n migration (tasks/issues/journal/findings/calendar/
                 // farm-tasks batch) — inline empty-state MESSAGES migrated
                 // verbatim from the hardcoded JSX: standalone `<p>` fallbacks
@@ -167,7 +156,6 @@ describe('Empty-state copy tone (Roadmap-3 PR-6)', () => {
                 // terminal punctuation, not terse EmptyState titles — same
                 // rationale as the T04–T09 exemptions above.
                 'calendar.noEventsDay',
-                'findings.createModal.noRisksToLink',
                 'tasks.detail.noDescription',
                 'tasks.detail.noCommentsDescription',
                 'tasks.detail.noActivityDescription',

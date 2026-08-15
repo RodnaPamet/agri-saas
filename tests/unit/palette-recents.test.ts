@@ -21,7 +21,7 @@ import type { SearchHit } from '@/lib/search/types';
 
 function makeItem(
     id: string,
-    type: RecentItem['type'] = 'practice',
+    type: RecentItem['type'] = 'task',
     overrides: Partial<RecentItem> = {},
 ): RecentItem {
     return {
@@ -57,8 +57,8 @@ describe('addRecent — FIFO + dedupe + cap', () => {
 
     it('moves an existing (type, id) pair to the head and updates timestamp', () => {
         const list = [
-            makeItem('a', 'practice', { lastVisitedAt: 100 }),
-            makeItem('b', 'practice', { lastVisitedAt: 200 }),
+            makeItem('a', 'task', { lastVisitedAt: 100 }),
+            makeItem('b', 'task', { lastVisitedAt: 200 }),
         ];
         const out = addRecent(list, makeItem('a'), 999);
         expect(out.map((r) => r.id)).toEqual(['a', 'b']);
@@ -67,14 +67,14 @@ describe('addRecent — FIFO + dedupe + cap', () => {
     });
 
     it('treats a different type with the same id as a separate entry', () => {
-        const list = [makeItem('a', 'practice')];
-        const out = addRecent(list, makeItem('a', 'policy'));
+        const list = [makeItem('a', 'task')];
+        const out = addRecent(list, makeItem('a', 'asset'));
         expect(out).toHaveLength(2);
     });
 
     it('caps at MAX_RECENTS and drops the oldest', () => {
         const list = Array.from({ length: MAX_RECENTS }, (_, i) =>
-            makeItem(`r-${i}`, 'practice', { lastVisitedAt: i }),
+            makeItem(`r-${i}`, 'task', { lastVisitedAt: i }),
         );
         const out = addRecent(list, makeItem('new'));
         expect(out).toHaveLength(MAX_RECENTS);
@@ -139,7 +139,7 @@ describe('loadRecents — defensive load', () => {
             version: 1,
             items: [
                 makeItem('a'),
-                { type: 'practice', id: 'b' }, // missing title/href/iconKey/lastVisitedAt
+                { type: 'task', id: 'b' }, // missing title/href/iconKey/lastVisitedAt
                 makeItem('c'),
             ],
         });
@@ -150,7 +150,7 @@ describe('loadRecents — defensive load', () => {
         const out = loadRecents({
             version: 1,
             items: [
-                { ...makeItem('bad'), type: 'unknown-kind' as 'practice' },
+                { ...makeItem('bad'), type: 'unknown-kind' as 'task' },
                 makeItem('good'),
             ],
         });
@@ -189,7 +189,7 @@ describe('serializeRecents — wire shape', () => {
     });
 
     it('round-trips through loadRecents', () => {
-        const items = [makeItem('a'), makeItem('b', 'policy')];
+        const items = [makeItem('a'), makeItem('b', 'asset')];
         const restored = loadRecents(serializeRecents(items));
         expect(restored).toEqual(items);
     });

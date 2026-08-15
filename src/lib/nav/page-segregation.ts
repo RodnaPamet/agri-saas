@@ -24,16 +24,12 @@ export type RouteClass = 'main' | 'subpage' | 'unknown';
  */
 export const BACK_AFFORDANCE_EXEMPT_SUBPAGES: readonly string[] = [
     '/assets/new',          // redirect shim
-    '/audits/new',          // redirect shim
     '/auth/mfa',            // auth flow — back would bypass MFA challenge
-    '/practices/new',        // redirect shim
     '/issues/[issueId]',    // legacy redirect → /farm-tasks/[taskId]
     '/issues/dashboard',    // legacy redirect
     '/issues/new',          // legacy redirect
     '/onboarding',          // forced flow — back would skip a required step
-    '/policies/new',        // redirect shim
     '/security/mfa',        // self-service security flow
-    '/vendors/new',         // redirect shim
 ] as const;
 
 /**
@@ -55,14 +51,10 @@ export const MAIN_PAGES: readonly string[] = [
     '/access-reviews',
     '/admin',
     '/assets',
-    '/audits',
     '/calendar',
-    '/clauses',
-    '/practices',
     '/dashboard',
     '/evidence',
     '/farm-tasks',
-    '/findings',
     '/grain/bins',
     '/grain/calculator',
     '/grain/contracts',
@@ -73,12 +65,9 @@ export const MAIN_PAGES: readonly string[] = [
     '/journal',
     '/knowledge',
     '/locations',
-    '/mapping',
     '/notifications',
     '/planning',
-    '/policies',
     '/processes',
-    '/vendors',
 ] as const;
 
 /**
@@ -110,21 +99,8 @@ export const SUBPAGES: readonly string[] = [
     '/assets/[id]',
     '/assets/new',
 
-    // Audits
-    '/audits/auditor',
-    '/audits/cycles',
-    '/audits/cycles/[cycleId]',
-    '/audits/cycles/[cycleId]/readiness',
-    '/audits/new',
-    '/audits/packs/[packId]',
-    '/audits/readiness',
-
     // Auth (in-app)
     '/auth/mfa',
-
-    // Practices
-    '/practices/[practiceId]',
-    '/practices/new',
 
     // Field operator view
     '/field/[taskId]',
@@ -151,11 +127,6 @@ export const SUBPAGES: readonly string[] = [
     '/planning/[cropPlanId]',
     '/planning/seasons',
 
-    // Policies
-    '/policies/[policyId]',
-    '/policies/new',
-    '/policies/templates',
-
     // Processes
     '/processes/governance',
 
@@ -166,13 +137,6 @@ export const SUBPAGES: readonly string[] = [
 
     // Farm tasks (the single task detail — reached from /farm-tasks)
     '/farm-tasks/[taskId]',
-
-
-    // Vendors
-    '/vendors/[vendorId]',
-    '/vendors/[vendorId]/assessment/[assessmentId]',
-    '/vendors/dashboard',
-    '/vendors/new',
 ] as const;
 
 /**

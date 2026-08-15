@@ -12,6 +12,12 @@
  *     (no information disclosure across orgs)
  *   - ORG_READER write attempts are blocked at the usecase layer
  *
+ * The KPI fixtures below ride the surviving metric set
+ * (`overdue-evidence` | `tenants`) — the GRC teardown removed the
+ * `coverage` and `critical-risks` KPI variants along with the practice
+ * models that fed them. Nothing about the CRUD / cross-org properties
+ * under test was specific to those metrics.
+ *
  * Gated by DB_AVAILABLE — skips locally without Postgres + migrations
  * applied; runs in CI.
  */
@@ -127,16 +133,16 @@ describeFn('Epic 41 — OrgDashboardWidget CRUD (DB-backed)', () => {
         const ctx = adminCtxFor(acmeOrgId, `${uniq}-acme`, acmeUserId);
         const widget = await createOrgDashboardWidget(ctx, {
             type: 'KPI',
-            chartType: 'coverage',
-            config: { format: 'percent' },
-            title: 'Coverage',
+            chartType: 'overdue-evidence',
+            config: { format: 'number' },
+            title: 'Overdue Evidence',
             position: { x: 0, y: 0 },
             size: { w: 3, h: 2 },
         });
         expect(widget.id).toBeDefined();
         expect(widget.organizationId).toBe(acmeOrgId);
         expect(widget.type).toBe('KPI');
-        expect(widget.chartType).toBe('coverage');
+        expect(widget.chartType).toBe('overdue-evidence');
         expect(widget.position).toEqual({ x: 0, y: 0 });
     });
 
@@ -194,20 +200,23 @@ describeFn('Epic 41 — OrgDashboardWidget CRUD (DB-backed)', () => {
         const ctx = adminCtxFor(acmeOrgId, `${uniq}-acme`, acmeUserId);
         const created = await createOrgDashboardWidget(ctx, {
             type: 'KPI',
-            chartType: 'coverage',
-            config: { format: 'percent' },
+            chartType: 'tenants',
+            config: { format: 'number' },
             position: { x: 0, y: 5 },
             size: { w: 3, h: 2 },
         });
         // valid in-type swap
         const ok = await updateOrgDashboardWidget(ctx, created.id, {
-            chartType: 'critical-risks',
+            chartType: 'overdue-evidence',
             config: { format: 'number' },
         });
-        expect(ok.chartType).toBe('critical-risks');
+        expect(ok.chartType).toBe('overdue-evidence');
 
-        // INVALID — KPI row but a TREND chartType. The schema's
-        // discriminated union rejects.
+        // INVALID — KPI row but the TREND chartType. Note this is a
+        // near-miss of the KPI 'overdue-evidence' value swapped in
+        // above (the two enums spell the same words in the opposite
+        // order), so it also pins that the union matches the literal
+        // rather than fuzzily. The discriminated union rejects.
         await expect(
             updateOrgDashboardWidget(ctx, created.id, {
                 chartType: 'evidence-overdue',
@@ -222,8 +231,8 @@ describeFn('Epic 41 — OrgDashboardWidget CRUD (DB-backed)', () => {
 
         const created = await createOrgDashboardWidget(acmeAdmin, {
             type: 'KPI',
-            chartType: 'coverage',
-            config: { format: 'percent' },
+            chartType: 'overdue-evidence',
+            config: { format: 'number' },
             position: { x: 0, y: 7 },
             size: { w: 3, h: 2 },
         });
@@ -266,8 +275,8 @@ describeFn('Epic 41 — OrgDashboardWidget CRUD (DB-backed)', () => {
         await expect(
             createOrgDashboardWidget(reader, {
                 type: 'KPI',
-                chartType: 'coverage',
-                config: { format: 'percent' },
+                chartType: 'overdue-evidence',
+                config: { format: 'number' },
                 position: { x: 0, y: 11 },
                 size: { w: 3, h: 2 },
             }),
@@ -276,8 +285,8 @@ describeFn('Epic 41 — OrgDashboardWidget CRUD (DB-backed)', () => {
         // But a reader CAN list (canViewPortfolio is true).
         const created = await createOrgDashboardWidget(admin, {
             type: 'KPI',
-            chartType: 'coverage',
-            config: { format: 'percent' },
+            chartType: 'overdue-evidence',
+            config: { format: 'number' },
             position: { x: 0, y: 12 },
             size: { w: 3, h: 2 },
         });

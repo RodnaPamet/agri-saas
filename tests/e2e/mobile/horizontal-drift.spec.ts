@@ -98,7 +98,7 @@ const PAGES: ReadonlyArray<{ label: string; path: (slug: string) => string }> = 
  * drift with the seed), each entry resolves the FIRST entity from its own list
  * page via the title-cell `<Link href="/t/<slug>/<entity>/<id>">` anchor, then
  * measures that detail page. Entities the shared seed doesn't populate today
- * (vendors / journal / locations / field tasks) resolve to `null` and the test
+ * (journal / locations / field tasks) resolve to `null` and the test
  * skips — coverage grows automatically as the seed grows. One line each.
  */
 const DETAIL_PAGES: ReadonlyArray<{
@@ -106,8 +106,12 @@ const DETAIL_PAGES: ReadonlyArray<{
     list: (slug: string) => string;
     entity: string; // path segment after the slug, e.g. 'practices'
 }> = [
-    { label: 'practices/[practiceId]', list: (s) => `/t/${s}/practices`, entity: 'practices' },
-    { label: 'vendors/[vendorId]', list: (s) => `/t/${s}/vendors`, entity: 'vendors' },
+    // GRC teardown phase 2 removed the practices/[practiceId] and
+    // vendors/[vendorId] entries. They did not FAIL once those routes were
+    // deleted — `resolveFirstDetailUrl` returns null for an empty/absent
+    // list and the case skips — so they were quietly costing two detail
+    // pages of drift coverage while still reading as present.
+    { label: 'assets/[id]', list: (s) => `/t/${s}/assets`, entity: 'assets' },
     { label: 'journal/[id]', list: (s) => `/t/${s}/journal`, entity: 'journal' },
     { label: 'field/[taskId]', list: (s) => `/t/${s}/farm-tasks`, entity: 'field' },
     { label: 'locations/[locationId]', list: (s) => `/t/${s}/locations`, entity: 'locations' },

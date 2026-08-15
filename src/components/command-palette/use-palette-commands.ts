@@ -38,7 +38,6 @@ import {
     Moon,
     Paperclip,
     Settings,
-    Truck,
     type LucideIcon,
 } from 'lucide-react';
 import { signOut } from 'next-auth/react';
@@ -101,13 +100,6 @@ export function usePaletteCommands(tenantSlug: string | null): PaletteCommand[] 
                 label: t('navCalendar'),
                 icon: CalendarIcon,
                 href: href('/calendar'),
-            },
-            {
-                id: 'nav:vendors',
-                group: 'Navigation',
-                label: t('navVendors'),
-                icon: Truck,
-                href: href('/vendors'),
             },
             {
                 id: 'nav:admin',

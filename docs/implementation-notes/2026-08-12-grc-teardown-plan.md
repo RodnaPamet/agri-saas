@@ -559,3 +559,134 @@ A second lesson rides along: the verification tier itself was the problem.
 minutes) and it is where teardown breakage was expected to land. It is a fine
 smoke test and a terrible completion check. The full suite is ~30 minutes;
 run it in the background and read it before claiming a tranche is done.
+
+### 8j. A20 PRE-FLIGHT (2026-08-13) — and a correction to the reasoning behind it
+
+§8h decided the evidence download gate is RE-BASED, not widened: READER /
+AUDITOR may download when `assetId ?? taskId ?? sourceLogEntryId` is non-null,
+instead of when `practiceId` is non-null.
+
+The T4 map justified that as costless with this claim:
+
+> "The only rows whose READER access CHANGES are practice-linked-but-otherwise-
+> unattached rows, which cannot exist after phase 2 anyway."
+
+**That reasoning is wrong, and it is worth keeping the correction visible.**
+Phase 2 deleted the code that CREATES such rows; it did not delete the rows.
+`Evidence.practiceId` is not dropped until phase 3, so any file a tenant had
+filed through the old evidence practice picker is still sitting there with
+`practiceId` set and no other provenance. Today a READER can download it;
+after the re-base they get a 403. Code deletion is not data deletion — the
+same conflation §8g had to correct once already.
+
+Measured rather than argued (`agrent`, read-only):
+
+```
+evidence_total          0
+with_practiceId         0
+AT_RISK_practice_only   0     -- practiceId set, no asset/task/logEntry
+reachable_after_rebase  0
+readers_or_auditors     0
+```
+
+So the at-risk set is empty — but note WHY. It is empty because this tenant
+holds no Evidence rows at all and has no READER/AUDITOR members, NOT because
+the row shape is impossible. On a stack with real evidence history the
+re-base would revoke access, and the count is the only thing that can tell
+you. **Re-run this predicate before applying A20 to any other environment**,
+and record the result in the PR body rather than asserting the set is empty.
+
+Auto-evidence rows were never at risk either way: `auto-evidence.ts:168-170`
+writes `sourceLogEntryId` alongside `practiceId`, so they satisfy the
+re-based gate. That is probably what produced the original false confidence.
+
+### §8k — an entire event family was already orphaned, and nothing said so
+
+T4 turned up nine automation events — `TEST_PLAN_CREATED/UPDATED/PAUSED/
+RESUMED`, `TEST_RUN_CREATED/COMPLETED/FAILED`, `TEST_EVIDENCE_LINKED/
+UNLINKED` — whose subject models, `PracticeTestPlan` and `PracticeTestRun`,
+**do not exist in `prisma/schema/`**. They were dropped earlier (the risk +
+control-exoskeleton uproot) and the event catalog was never touched.
+
+Nothing anywhere was red. The events are string literals in a `const`
+object, so `tsc` has nothing to check them against; the schema no longer
+mentions them, so no schema guardrail sees them; and their consumers — the
+label registry that feeds the rule-builder trigger picker, two entries in
+`AUTOMATION_TEMPLATES`, one candidate in `rankRuleSuggestions` — are all
+internally consistent with each other. The catalog agrees with the labels
+which agree with the templates. The only thing they disagree with is the
+database, and no test compares those two.
+
+The user-visible consequence is worse than dead code: the rule builder
+still OFFERS these as triggers, and the suggestions rail still RECOMMENDS
+"Notify the team when a practice test fails" with a 0.82 confidence score.
+A tenant can build that rule, save it, and it can never fire. That is the
+same failure shape as the RAG badge and the practices drill-down tile
+recorded earlier in this document — a value derived from something nothing
+computes, rendered as fact — and it is the third instance, which makes it a
+pattern rather than an accident.
+
+**Rule for the rest of the teardown:** an event / trigger / filter-field
+catalog is a claim about the schema. When a model dies, grep the catalogs
+for it BY MODEL NAME, not just by import. The three that exist today are
+`src/app-layer/automation/events.ts`, `src/lib/automation/event-labels.ts`
+and `src/data/automation-templates/index.ts`, plus the candidate list in
+`usecases/automation-suggestions.ts`.
+
+### §8l — a green local suite, a red CI shard, and a test that killed the process
+
+The A20 commit (f55c96ef) turned PR #557 red on `Test (shard 3/4)` while
+shards 1, 2 and 4 passed, and the full local suite passed too. The shard log
+carried no jest summary at all — it ended with:
+
+```
+Error: ENOENT: no such file or directory,
+       open '/tmp/ci-uploads/tenants/tenant-1/evidence/file-1.pdf'
+Emitted 'error' event on ReadStream instance at: …
+##[error]Process completed with exit code 1.
+```
+
+That path is the fixture in the new `evidence-download-gate.test.ts`. The
+cause is a module-resolution trap worth writing down, because nothing about
+it is visible at a call site:
+
+**`src/lib/storage.ts` and `src/lib/storage/index.ts` both exist.** A bare
+`@/lib/storage` resolves to the FILE (a file beats a sibling directory), so
+the two specifiers are two different modules that read as one.
+`storage.ts` re-exports the abstraction, so production behaviour is
+identical — the difference only bites under `jest.mock`, which is keyed on
+the resolved path.
+
+`downloadEvidenceFile` statically imported `@/lib/storage` and then
+dynamically imported `@/lib/storage/index` twenty lines later. The test
+mocked the former, so the latter handed back the REAL LocalStorageProvider
+and `createReadStream` opened a path that does not exist.
+
+Four things made this much worse than a failing assertion:
+
+1. The stream's `error` fires ASYNCHRONOUSLY with no listener, so it
+   terminates the worker PROCESS instead of failing a test.
+2. Jest prints no summary when that happens, so the log names the file it
+   could not open and nothing else — no suite, no test, no `Tests:` line.
+3. Whether the process was still alive when the error landed depended on
+   timing, so it read as a FLAKY shard: two runs of the SAME sha, one red
+   and one green. It would have been very easy to re-run it into green and
+   ship the landmine.
+4. **The tests passed.** `resolves.toBeDefined()` is satisfied by a stream
+   that is about to blow up, so all eleven assertions were green about a
+   code path that was reading the real filesystem.
+
+Fixed at three levels: the source now uses ONE specifier; the test asserts
+`mockReadStream` was called with the pathKey, so a mock that stops
+intercepting fails loudly instead of silently opening a file; and
+`tests/guards/storage-module-specifier.test.ts` bans
+`@/lib/storage/index` outside `src/lib/storage/`. The fix was
+mutation-proved by reverting the specifier — the new assertion fails and
+the ENOENT crash reproduces locally.
+
+**The general lesson, and it is not about storage.** "The mock did not
+apply" is normally a loud failure. It is silent whenever the un-mocked real
+thing returns a lazily-failing handle — a stream, a socket, a deferred
+promise — because the test finishes before the failure exists. When you mock
+a module, assert that the mock was CALLED, not merely that the result is
+defined.

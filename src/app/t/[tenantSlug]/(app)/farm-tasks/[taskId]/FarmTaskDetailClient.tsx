@@ -57,7 +57,11 @@ import {
 // from a repointed deep-link. Farm-first: the header leads with the field-work
 // catalog type; severity / practice / audit fields only surface when the row
 // actually carries them.
-const ENTITY_TYPE_OPTIONS = ['PRACTICE', 'ASSET', 'EVIDENCE', 'FRAMEWORK_REQUIREMENT', 'LOCATION', 'PARCEL', 'EQUIPMENT'];
+// Must stay a SUBSET of AddTaskLinkSchema's entityType enum — the POST goes
+// through `withValidatedBody`, so anything offered here that the schema
+// rejects is a 400 the user cannot avoid. PRACTICE and
+// FRAMEWORK_REQUIREMENT left with the GRC teardown.
+const ENTITY_TYPE_OPTIONS = ['ASSET', 'EVIDENCE', 'LOCATION', 'PARCEL', 'EQUIPMENT'];
 const RELATION_OPTIONS = ['RELATES_TO', 'CAUSED_BY', 'MITIGATED_BY', 'EVIDENCE_FOR'];
 const SELECTABLE_STATUSES = ['OPEN', 'TRIAGED', 'IN_PROGRESS', 'BLOCKED', 'CLOSED', 'CANCELED'];
 // Statuses a task can legally move to RESOLVED from (BLOCKED must be unblocked
@@ -675,16 +679,6 @@ export function FarmTaskDetailClient({
                             <span className="text-xs text-content-subtle uppercase">{t('created')}</span>
                             <p className="text-sm text-content-default mt-1">{formatDateTime(task.createdAt)}</p>
                         </div>
-                        {task.practice && (
-                            <div>
-                                <span className="text-xs text-content-subtle uppercase">{t('practice')}</span>
-                                <p className="text-sm mt-1">
-                                    <Link href={tenantHref(`/practices/${task.practice.id}`)} className={textLinkVariants({ tone: 'link' })} id="task-practice-link">
-                                        {task.practice.code} — {task.practice.name}
-                                    </Link>
-                                </p>
-                            </div>
-                        )}
                         {task.completedAt && (
                             <div>
                                 <span className="text-xs text-content-subtle uppercase">{t('completedAt')}</span>
@@ -699,25 +693,6 @@ export function FarmTaskDetailClient({
                         )}
                     </div>
 
-                    {(task.type === 'AUDIT_FINDING' || task.type === 'PRACTICE_GAP') && (metadata.findingSource || metadata.practiceGapType) && (
-                        <div className="border-t border-border-default pt-4 mt-4">
-                            <Heading level={3} className="mb-3">{t('auditDetails')}</Heading>
-                            <div className="grid grid-cols-2 gap-default">
-                                {metadata.findingSource && (
-                                    <div>
-                                        <span className="text-xs text-content-subtle uppercase">{t('findingSource')}</span>
-                                        <p className="text-sm text-content-default mt-1">{te.has(`findingSource.${metadata.findingSource}`) ? te(`findingSource.${metadata.findingSource}`) : metadata.findingSource}</p>
-                                    </div>
-                                )}
-                                {metadata.practiceGapType && (
-                                    <div>
-                                        <span className="text-xs text-content-subtle uppercase">{t('practiceGapType')}</span>
-                                        <p className="text-sm text-content-default mt-1">{te.has(`gapType.${metadata.practiceGapType}`) ? te(`gapType.${metadata.practiceGapType}`) : metadata.practiceGapType}</p>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                    )}
                 </div>
             )}
 

@@ -92,7 +92,9 @@ describe('Encryption Infrastructure', () => {
     });
 
     it('PII field map covers all expected models', () => {
-        const expectedModels = ['User', 'VendorContact', 'AuditorAccount', 'NotificationOutbox', 'UserIdentityLink'];
+        // VendorContact + AuditorAccount left the registry with the GRC
+        // teardown — both are KILL models dropped in phase 3.
+        const expectedModels = ['User', 'NotificationOutbox', 'UserIdentityLink'];
         for (const model of expectedModels) {
             const fields = _getPiiFieldMap(model);
             expect(fields).toBeDefined();

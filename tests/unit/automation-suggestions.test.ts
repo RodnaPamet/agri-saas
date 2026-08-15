@@ -6,6 +6,19 @@
  * confidence" test has no subject. What survives — rank contiguity,
  * covered-event exclusion, and the score ceiling — is the part that
  * governs what a tenant actually sees in the suggestions rail.
+ *
+ * GRC teardown phase 2 then removed the `practice-test-failed-notify`
+ * candidate, whose `TEST_RUN_FAILED` trigger pointed at an event family
+ * whose models no longer exist (plan §8k). **That leaves the ranker with
+ * exactly ONE candidate**, which makes the exclusion and re-rank tests
+ * below degenerate — they exercise the code path, but with a candidate
+ * list too short for contiguity to mean much. They are kept (the ranker
+ * is still live and still reachable from the rail) and this note is here
+ * so the next reader does not mistake a one-element pass for coverage.
+ * The real follow-up is a product one: a suggestions rail with a single
+ * hard-coded entry is worth either restocking with agri triggers
+ * (SPRAY_JOB_STARTED, HARVEST_YIELD_RECORDED, EVIDENCE_EXPIRING) or
+ * retiring.
  */
 import { rankRuleSuggestions } from '@/app-layer/usecases/automation-suggestions';
 
@@ -22,16 +35,19 @@ describe('rankRuleSuggestions', () => {
     });
 
     it('excludes suggestions whose trigger event is already covered by an enabled rule', () => {
-        const covered = new Set(['TEST_RUN_FAILED']);
-        const out = rankRuleSuggestions({ coveredEvents: covered });
-        expect(out.find((s) => s.triggerEvent === 'TEST_RUN_FAILED')).toBeUndefined();
-        // non-covered ones survive
-        expect(out.find((s) => s.triggerEvent === 'ISSUE_CREATED')).toBeDefined();
+        // Sanity: the candidate is offered when nothing covers it...
+        expect(
+            rankRuleSuggestions({ coveredEvents: new Set() })
+                .find((s) => s.triggerEvent === 'ISSUE_CREATED'),
+        ).toBeDefined();
+        // ...and withheld when an enabled rule already handles that event.
+        const out = rankRuleSuggestions({ coveredEvents: new Set(['ISSUE_CREATED']) });
+        expect(out.find((s) => s.triggerEvent === 'ISSUE_CREATED')).toBeUndefined();
     });
 
     it('re-ranks contiguously after an exclusion (no gap where the dropped one sat)', () => {
         const full = rankRuleSuggestions({ coveredEvents: new Set() });
-        const trimmed = rankRuleSuggestions({ coveredEvents: new Set(['TEST_RUN_FAILED']) });
+        const trimmed = rankRuleSuggestions({ coveredEvents: new Set(['ISSUE_CREATED']) });
         expect(trimmed.length).toBe(full.length - 1);
         trimmed.forEach((s, i) => expect(s.rank).toBe(i + 1));
     });

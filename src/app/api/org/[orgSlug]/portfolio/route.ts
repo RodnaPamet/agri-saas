@@ -27,7 +27,6 @@ import {
     getPortfolioSummary,
     getPortfolioTenantHealth,
     getPortfolioTrends,
-    listNonPerformingPractices,
     listOverdueEvidenceAcrossOrg,
 } from '@/app-layer/usecases/portfolio';
 
@@ -35,12 +34,11 @@ const SUPPORTED_VIEWS = [
     'summary',
     'health',
     'trends',
-    'practices',
     'evidence',
 ] as const;
 type View = (typeof SUPPORTED_VIEWS)[number];
 
-const DRILL_DOWN_VIEWS: ReadonlySet<View> = new Set(['practices', 'evidence']);
+const DRILL_DOWN_VIEWS: ReadonlySet<View> = new Set(['evidence']);
 
 interface RouteContext {
     params: Promise<{ orgSlug: string }>;
@@ -91,14 +89,6 @@ export const GET = withApiErrorHandling(
                 return NextResponse.json(await getPortfolioTrends(ctx, days));
             }
 
-            case 'practices': {
-                const page = parsePagination(req);
-                const result = await listNonPerformingPractices(ctx, page);
-                return NextResponse.json({
-                    rows: result.rows,
-                    nextCursor: result.nextCursor,
-                });
-            }
 
             case 'evidence': {
                 const page = parsePagination(req);

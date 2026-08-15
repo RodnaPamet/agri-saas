@@ -55,9 +55,22 @@ export type WidgetSize = z.infer<typeof WidgetSizeSchema>;
 // overview page (StatCardsRow). Adding a new metric is one Zod enum
 // extension here + one switch arm in the frontend dispatcher.
 
+// GRC teardown phase 2: 'coverage' and 'critical-risks' are gone with their
+// models — 'coverage' read `PortfolioSummary.practices.coveragePercent`,
+// which stopped being computed (plan §8f), and 'critical-risks' had ALREADY
+// been dead since the risk uproot. Same shape as the TrendChartType note
+// below.
+//
+// The KPI read path degrades HONESTLY, unlike TREND: an unknown chartType
+// falls to the dispatcher's tail branch and renders `value: null` → the
+// KpiCard "—" placeholder. It does not fabricate a zero.
+//
+// NOTE for the DB-resident-reference sweep (plan §8d.4): persisted
+// `OrgDashboardWidget.chartType` rows may still hold either value — the read
+// path does NOT re-validate — and the default preset seeded a
+// KPI/'coverage' tile into every org. Rewriting them belongs in the same
+// migration as the dead TrendChartType values.
 const KpiChartType = z.enum([
-    'coverage',
-    'critical-risks',
     'overdue-evidence',
     'tenants',
 ]);
@@ -170,6 +183,10 @@ const TrendConfigSchema = z.object({
         .strict(),
 });
 
+// The literal is an opaque IDENTIFIER for "the tenant-list widget", not a
+// claim that it renders a coverage metric — it is a one-member enum and the
+// widget now lists RAG + overdue evidence. Renaming it would need a data
+// migration for zero user-visible benefit, so it stays.
 const TenantListChartType = z.enum(['coverage']);
 
 const TenantListConfigSchema = z.object({
@@ -177,8 +194,10 @@ const TenantListConfigSchema = z.object({
     chartType: TenantListChartType,
     config: z
         .object({
-            /** Sort key for the rendered list. */
-            sortBy: z.enum(['rag', 'name', 'coverage']).optional(),
+            /** Sort key for the rendered list. 'coverage' left with the
+             *  practice models; persisted configs holding it fall through
+             *  to the name sort rather than throwing. */
+            sortBy: z.enum(['rag', 'name']).optional(),
             /** Optional cap on rendered rows. Default = render all. */
             limit: z.number().int().min(1).max(200).optional(),
         })

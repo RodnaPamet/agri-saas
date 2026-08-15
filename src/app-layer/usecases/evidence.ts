@@ -127,19 +127,7 @@ export async function createEvidence(
     }
 
     const created = await runInTenantContext(ctx, async (db) => {
-        const practiceId = data.practiceId || null;
-
-        // Validate practice belongs to the same tenant
-        if (practiceId) {
-            const practice = await db.practice.findFirst({
-                where: { id: practiceId, tenantId: ctx.tenantId },
-                select: { id: true },
-            });
-            if (!practice) throw badRequest('INVALID_CONTROL', 'Practice not found or belongs to a different tenant');
-        }
-
         const evidence = await EvidenceRepository.create(db, ctx, {
-            practiceId,
 
             type: data.type as EvidenceType,
             title: sanitizePlainText(data.title),
@@ -161,26 +149,6 @@ export async function createEvidence(
             status: 'DRAFT',
         });
 
-        // Bridge: create PracticeEvidenceLink so evidence shows in the practice evidence tab
-        if (practiceId) {
-            // ON CONFLICT DO NOTHING, not try/catch — see the note on the
-            // same bridge in `uploadEvidenceFile` below. Catching a 23505 in
-            // JS does not un-abort the surrounding Postgres transaction.
-            const linkKind = data.type === 'LINK' ? 'LINK' : 'FILE';
-            await db.practiceEvidenceLink.createMany({
-                data: [{
-                    tenantId: ctx.tenantId,
-                    practiceId,
-                    kind: linkKind,
-                    fileId: evidence.fileRecordId || null,
-                    url: data.type === 'LINK' ? (content || null) : null,
-                    note: evidence.title,
-                    createdByUserId: ctx.userId,
-                }],
-                skipDuplicates: true,
-            });
-        }
-
         await logEvent(db, ctx, {
             action: 'CREATE',
             entityType: 'Evidence',
@@ -197,10 +165,8 @@ export async function createEvidence(
 
         return evidence;
     });
-    // Linking back to a practice also affects the practice list view
-    // (`_count.evidence`); bump both entities.
+    // List-cache invalidation.
     await bumpEntityCacheVersion(ctx, 'evidence');
-    if (data.practiceId) await bumpEntityCacheVersion(ctx, 'practice');
     return created;
 }
 
@@ -208,23 +174,9 @@ export async function updateEvidence(ctx: RequestContext, id: string, data: z.in
     assertCanWrite(ctx);
 
     const updated = await runInTenantContext(ctx, async (db) => {
-        // Same tenant check `createEvidence` does. Re-assignment is a write
-        // that crosses entities, so it gets the same gate — otherwise a
-        // caller could attach their evidence to another tenant's practice by
-        // id, which the create path has always refused.
-        if (data.practiceId) {
-            const practice = await db.practice.findFirst({
-                where: { id: data.practiceId, tenantId: ctx.tenantId },
-                select: { id: true },
-            });
-            if (!practice) throw badRequest('INVALID_CONTROL', 'Practice not found or belongs to a different tenant');
-        }
-
         const evidence = await EvidenceRepository.update(db, ctx, id, {
             title: sanitizeOptional(data.title),
             content: sanitizeOptional(data.content),
-            // Three-state: undefined = no change, null = detach, id = re-assign.
-            practiceId: data.practiceId === undefined ? undefined : (data.practiceId || null),
             category: sanitizeOptional(data.category),
             // B8 follow-up — folder is editable post-create. The
             // three-state contract is preserved (undefined = no
@@ -466,58 +418,30 @@ export async function getEvidenceMetrics(ctx: RequestContext) {
     const tenantId = ctx.tenantId;
 
     return runInTenantContext(ctx, async (db) => {
-        const [totalEvidence, fileEvidence, linkedFileEvidence, fileRecordAgg, topPractices] = await Promise.all([
+        // GRC teardown phase 2: the practice-linkage metrics went with the
+        // model — `linkedFileEvidence`, `linkedRate` and
+        // `topPracticesByEvidence` all counted Evidence.practiceId.
+        const [totalEvidence, fileEvidence, fileRecordAgg] = await Promise.all([
             db.evidence.count({ where: { tenantId, deletedAt: null } }),
             db.evidence.count({ where: { tenantId, type: 'FILE', deletedAt: null } }),
-            db.evidence.count({ where: { tenantId, type: 'FILE', practiceId: { not: null }, deletedAt: null } }),
-
             db.fileRecord.aggregate({
                 where: { tenantId, status: 'STORED' },
                 _sum: { sizeBytes: true },
                 _count: { id: true },
             }),
-            db.evidence.groupBy({
-                by: ['practiceId'],
-                where: { tenantId, practiceId: { not: null }, deletedAt: null },
-                _count: { id: true },
-                orderBy: { _count: { id: 'desc' } },
-                take: 10,
-            }),
         ]);
 
-        const practiceIds = topPractices
-            .map((g: { practiceId: string | null }) => g.practiceId)
-            .filter(Boolean) as string[];
-        const practiceNames = practiceIds.length > 0
-            ? await db.practice.findMany({
-                where: { id: { in: practiceIds } },
-                select: { id: true, name: true, code: true },
-            })
-            : [];
-
-        const practiceLookup = new Map(practiceNames.map(c => [c.id, c]));
         const totalBytesStored = fileRecordAgg._sum?.sizeBytes ?? 0;
         const storedFileCount = fileRecordAgg._count?.id ?? 0;
-        const linkedRate = fileEvidence > 0 ? Math.round((linkedFileEvidence / fileEvidence) * 100) : 0;
 
         return {
             totalEvidence,
             fileEvidence,
-            linkedFileEvidence,
-            linkedRate,
             storedFileCount,
             totalBytesStored,
             totalBytesFormatted: totalBytesStored < 1048576
                 ? `${(totalBytesStored / 1024).toFixed(1)} KB`
                 : `${(totalBytesStored / 1048576).toFixed(1)} MB`,
-            topPracticesByEvidence: topPractices.map((g: { practiceId: string | null; _count: { id: number } }) => {
-                const ctrl = g.practiceId ? practiceLookup.get(g.practiceId) : null;
-                return {
-                    practiceId: g.practiceId,
-                    practiceName: ctrl ? `${ctrl.code || ''} ${ctrl.name}`.trim() : '—',
-                    evidenceCount: g._count.id,
-                };
-            }),
         };
     });
 }
@@ -551,7 +475,6 @@ export async function uploadEvidenceFile(
     file: File,
     metadata: {
         title?: string;
-        practiceId?: string | null;
         /** Source task — set when uploaded from a task's Evidence tab. */
         taskId?: string | null;
         /** Source asset — set when uploaded from that entity's Evidence tab. */
@@ -626,18 +549,8 @@ export async function uploadEvidenceFile(
 
     // Create FileRecord + Evidence in a transaction
     const result = await runInTenantContext(ctx, async (db) => {
-        const practiceId = metadata.practiceId || null;
         const taskId = metadata.taskId || null;
         const assetId = metadata.assetId || null;
-
-        // Validate practice belongs to the same tenant
-        if (practiceId) {
-            const practice = await db.practice.findFirst({
-                where: { id: practiceId, tenantId: ctx.tenantId },
-                select: { id: true },
-            });
-            if (!practice) throw badRequest('INVALID_CONTROL', 'Practice not found or belongs to a different tenant');
-        }
 
         // Validate task belongs to the same tenant
         if (taskId) {
@@ -698,7 +611,6 @@ export async function uploadEvidenceFile(
             fileName: originalName,
             fileSize: writeResult.sizeBytes,
             fileRecordId,
-            practiceId,
             taskId,
             assetId,
             category: metadata.category ? sanitizePlainText(metadata.category) : undefined,
@@ -731,19 +643,6 @@ export async function uploadEvidenceFile(
         // raised. Nothing is swallowed either: a real failure (bad FK, RLS
         // denial) still throws and still rolls the upload back, which is what
         // should happen.
-        if (practiceId) {
-            await db.practiceEvidenceLink.createMany({
-                data: [{
-                    tenantId: ctx.tenantId,
-                    practiceId,
-                    kind: 'FILE',
-                    fileId: fileRecordId,
-                    note: evidence.title,
-                    createdByUserId: ctx.userId,
-                }],
-                skipDuplicates: true,
-            });
-        }
 
         const eventAction = deduplicated ? 'FILE_DEDUP_REUSED' : 'EVIDENCE_FILE_UPLOADED';
         await logEvent(db, ctx, {
@@ -770,7 +669,6 @@ export async function uploadEvidenceFile(
 
         return {
             ...evidence,
-            practiceId,
             fileRecord: {
                 id: fileRecordId,
                 originalName,
@@ -790,7 +688,6 @@ export async function uploadEvidenceFile(
     // pre-upload view for up to 60s (TTL), and the e2e
     // upload-then-verify flow times out waiting for the new row.
     await bumpEntityCacheVersion(ctx, 'evidence');
-    if (result.practiceId) await bumpEntityCacheVersion(ctx, 'practice');
     return result;
 }
 
@@ -810,9 +707,29 @@ export async function getEvidenceFileRecord(ctx: RequestContext, fileId: string)
 
 /**
  * STRICT DOWNLOAD POLICY (Option A):
- * - ADMIN/EDITOR: can download any tenant file evidence.
- * - READER/AUDITOR: can download ONLY if evidence is linked to a practice (practiceId not null).
+ * - ADMIN/EDITOR (canWrite): can download any tenant file evidence.
+ * - READER/AUDITOR: can download ONLY evidence with a PROVENANCE — a row
+ *   attached to a known farm record (asset, task, or journal entry).
  * - Soft-deleted evidence blocks download for all roles.
+ *
+ * The provenance gate used to read `practiceId`. GRC teardown phase 2
+ * RE-BASED it onto `assetId ?? taskId ?? sourceLogEntryId` rather than
+ * deleting it — deleting the condition would have widened READER/AUDITOR
+ * access to EVERY file in the tenant, which is the opposite of what the
+ * teardown is for. All three replacement columns are live and written:
+ * assetId by `linkAssetEvidence` + the upload metadata, taskId by
+ * `linkTaskEvidence` + the farm-task upload form, sourceLogEntryId by
+ * `attachAutoEvidenceFromLogEntry`.
+ *
+ * Note the `evidence ? … : null` shape below. `!evidence?.practiceId` was
+ * true when NO Evidence row existed at all, so a file with no evidence row
+ * was denied to a reader; the explicit form preserves that rather than
+ * letting an absent row read as "no provenance required".
+ *
+ * Pre-flight before applying this anywhere else (plan §8j): count
+ * `practiceId IS NOT NULL AND assetId IS NULL AND taskId IS NULL AND
+ * sourceLogEntryId IS NULL`. Those rows lose READER access. On `agrent` the
+ * count was 0, but that is a fact about that database, not about the shape.
  */
 export async function downloadEvidenceFile(ctx: RequestContext, fileId: string) {
     assertCanRead(ctx);
@@ -837,10 +754,10 @@ export async function downloadEvidenceFile(ctx: RequestContext, fileId: string) 
             throw forbidden('This file is pending antivirus scan and cannot be downloaded yet. Please try again later.');
         }
 
-        // ─── Strict Policy: practice-aware access ───
+        // ─── Strict Policy: provenance-aware access ───
         const evidence = await db.evidence.findFirst({
             where: { tenantId: ctx.tenantId, fileRecordId: fileId },
-            select: { id: true, practiceId: true, deletedAt: true },
+            select: { id: true, assetId: true, taskId: true, sourceLogEntryId: true, deletedAt: true },
         });
 
         if (evidence?.deletedAt) {
@@ -848,8 +765,11 @@ export async function downloadEvidenceFile(ctx: RequestContext, fileId: string) 
         }
 
         if (!ctx.permissions.canWrite) {
-            if (!evidence?.practiceId) {
-                throw forbidden('You can only download evidence that is linked to a practice. Contact an admin to link this evidence.');
+            const provenance = evidence
+                ? (evidence.assetId ?? evidence.taskId ?? evidence.sourceLogEntryId)
+                : null;
+            if (!provenance) {
+                throw forbidden('You can only download evidence that is attached to an asset, a task, or a farm record. Contact an admin to attach this evidence.');
             }
         }
 
@@ -870,7 +790,16 @@ export async function downloadEvidenceFile(ctx: RequestContext, fileId: string) 
         // During migration, old files may be on 'local' while app is configured for 's3'.
         // Always read from the backend that stored the file.
         const recordProvider = (fileRecord.storageProvider || 'local') as import('@/lib/storage/types').StorageProviderType;
-        const { getProviderByName } = await import('@/lib/storage/index');
+        // `@/lib/storage` — NOT `@/lib/storage/index`. Those are two
+        // DIFFERENT modules: `src/lib/storage.ts` (a file, which wins over
+        // the directory) re-exports the abstraction in
+        // `src/lib/storage/index.ts`. This line said `/index` while the
+        // static import at the top of this section says `@/lib/storage`,
+        // so a test mocking the latter still got the REAL provider here —
+        // and the real local provider's `createReadStream` on a fixture
+        // path emits an unhandled 'error' that kills the worker process
+        // rather than failing an assertion. Keep one specifier per module.
+        const { getProviderByName } = await import('@/lib/storage');
         const readProvider = getProviderByName(recordProvider);
 
         if (readProvider.name === 's3') {

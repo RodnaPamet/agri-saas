@@ -7,6 +7,8 @@
  * Both the legacy `/tasks/new` page and the future `<NewTaskModal>`
  * (P2) compose this component unchanged.
  */
+import { z } from 'zod';
+import { AddTaskLinkSchema } from '@/lib/schemas';
 import { Button } from '@/components/ui/button';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { FormField } from '@/components/ui/form-field';
@@ -30,11 +32,11 @@ import { Heading } from '@/components/ui/typography';
 import { useTranslations } from 'next-intl';
 import type { NewTaskFormFields, NewTaskFormReturn } from './useNewTaskForm';
 
+// GRC teardown phase 2 (operator decision A6): Audit Finding, Practice Gap
+// and Incident removed — each required a practice link, and Practice is a
+// KILL model.
 const TYPE_OPTIONS: ComboboxOption[] = [
     { value: 'TASK', label: 'Task' },
-    { value: 'AUDIT_FINDING', label: 'Audit Finding' },
-    { value: 'PRACTICE_GAP', label: 'Practice Gap' },
-    { value: 'INCIDENT', label: 'Incident' },
     { value: 'IMPROVEMENT', label: 'Improvement' },
 ];
 const SEVERITY_OPTIONS: ComboboxOption[] = [
@@ -50,23 +52,30 @@ const PRIORITY_OPTIONS: ComboboxOption[] = [
     { value: 'P2', label: 'P2 — Medium' },
     { value: 'P3', label: 'P3 — Low' },
 ];
-const LINK_ENTITY_OPTIONS: ComboboxOption[] = [
-    { value: 'PRACTICE', label: 'Practice' },
-    { value: 'FRAMEWORK_REQUIREMENT', label: 'Framework Requirement' },
-    { value: 'ASSET', label: 'Asset' },
-    { value: 'EVIDENCE', label: 'Evidence' },
-];
-const FINDING_OPTIONS: ComboboxOption[] = [
-    { value: 'INTERNAL', label: 'Internal' },
-    { value: 'EXTERNAL_AUDITOR', label: 'External Auditor' },
-    { value: 'PEN_TEST', label: 'Pen Test' },
-    { value: 'INCIDENT', label: 'Incident' },
-];
-const GAP_TYPE_OPTIONS: ComboboxOption[] = [
-    { value: 'DESIGN', label: 'Design' },
-    { value: 'OPERATING_EFFECTIVENESS', label: 'Operating Effectiveness' },
-    { value: 'DOCUMENTATION', label: 'Documentation' },
-];
+// DERIVED from the schema the API actually validates against, not
+// hand-listed. The literal version offered PRACTICE and
+// FRAMEWORK_REQUIREMENT — both removed from AddTaskLinkSchema with their
+// models — and DEFAULTED to PRACTICE, so adding a link with the default
+// selection 400'd on `schema.parse`. `Record<…, string>` gives
+// compile-time totality: a member added to the zod enum fails to build
+// here until it has a label.
+const LINK_ENTITY_LABELS: Record<
+    z.infer<typeof AddTaskLinkSchema>['entityType'],
+    string
+> = {
+    ASSET: 'Asset',
+    EVIDENCE: 'Evidence',
+    FILE: 'File',
+    LOCATION: 'Location',
+    PARCEL: 'Parcel',
+    EQUIPMENT: 'Equipment',
+    PLANTING: 'Planting',
+};
+const LINK_ENTITY_OPTIONS: ComboboxOption[] =
+    AddTaskLinkSchema.shape.entityType.options.map((value) => ({
+        value,
+        label: LINK_ENTITY_LABELS[value],
+    }));
 
 export function NewTaskFields({
     form,
@@ -201,75 +210,6 @@ export function NewTaskFields({
                 </FormField>
             </div>
 
-            <FormField label={t('practice')}>
-                <EntityPicker
-                    id="task-practice-input"
-                    tenantSlug={tenantSlug}
-                    entityType="PRACTICE"
-                    value={form.fields.practiceId ?? ''}
-                    onChange={(id) => form.setField('practiceId', id)}
-                    placeholder={t('practicePlaceholder')}
-                    testId="task-practice-picker"
-                />
-            </FormField>
-
-            {(form.fields.type === 'AUDIT_FINDING' ||
-                form.fields.type === 'PRACTICE_GAP') && (
-                <div className="border-t border-border-default pt-4 space-y-default">
-                    <Heading level={3}>{t('auditDetails')}</Heading>
-                    <div className="grid grid-cols-2 gap-default">
-                        <FormField label={t('findingSource')}>
-                            <Combobox
-                                id="finding-source-select"
-                                name="findingSource"
-                                options={FINDING_OPTIONS}
-                                selected={
-                                    FINDING_OPTIONS.find(
-                                        (o) =>
-                                            o.value === form.fields.findingSource,
-                                    ) ?? null
-                                }
-                                setSelected={(o) =>
-                                    form.setField('findingSource', o?.value ?? '')
-                                }
-                                placeholder={t('findingSourcePlaceholder')}
-                                hideSearch
-                                matchTriggerWidth
-                                buttonProps={{ className: 'w-full' }}
-                                caret
-                            />
-                        </FormField>
-                        {form.fields.type === 'PRACTICE_GAP' && (
-                            <FormField label={t('practiceGapType')}>
-                                <Combobox
-                                    id="gap-type-select"
-                                    name="practiceGapType"
-                                    options={GAP_TYPE_OPTIONS}
-                                    selected={
-                                        GAP_TYPE_OPTIONS.find(
-                                            (o) =>
-                                                o.value ===
-                                                form.fields.practiceGapType,
-                                        ) ?? null
-                                    }
-                                    setSelected={(o) =>
-                                        form.setField(
-                                            'practiceGapType',
-                                            o?.value ?? '',
-                                        )
-                                    }
-                                    placeholder={t('practiceGapTypePlaceholder')}
-                                    hideSearch
-                                    matchTriggerWidth
-                                    buttonProps={{ className: 'w-full' }}
-                                    caret
-                                />
-                            </FormField>
-                        )}
-                    </div>
-                </div>
-            )}
-
             {/* Links section */}
             <div className="border-t border-border-default pt-4 space-y-compact">
                 <Heading level={3}>{t('links')}</Heading>
@@ -293,7 +233,7 @@ export function NewTaskFields({
                                 ) ?? null
                             }
                             setSelected={(o) =>
-                                form.setLinkEntityType(o?.value ?? 'PRACTICE')
+                                form.setLinkEntityType(o?.value ?? 'ASSET')
                             }
                             placeholder={t('entityTypePlaceholder')}
                             hideSearch

@@ -37,106 +37,12 @@ const SEVERITY_OPTS = [
 ] as const;
 
 export const EVENT_LABELS: Record<AutomationEventName, EventLabel> = {
-    [AUTOMATION_EVENTS.TEST_PLAN_CREATED]: {
-        name: AUTOMATION_EVENTS.TEST_PLAN_CREATED,
-        label: 'Test plan created',
-        description: 'A practice test plan is created.',
-        domain: 'Practice testing',
-        filterFields: [],
-    },
-    [AUTOMATION_EVENTS.TEST_PLAN_UPDATED]: {
-        name: AUTOMATION_EVENTS.TEST_PLAN_UPDATED,
-        label: 'Test plan updated',
-        description: 'A practice test plan is edited.',
-        domain: 'Practice testing',
-        filterFields: [],
-    },
-    [AUTOMATION_EVENTS.TEST_PLAN_PAUSED]: {
-        name: AUTOMATION_EVENTS.TEST_PLAN_PAUSED,
-        label: 'Test plan paused',
-        description: 'A practice test plan is paused.',
-        domain: 'Practice testing',
-        filterFields: [],
-    },
-    [AUTOMATION_EVENTS.TEST_PLAN_RESUMED]: {
-        name: AUTOMATION_EVENTS.TEST_PLAN_RESUMED,
-        label: 'Test plan resumed',
-        description: 'A paused practice test plan resumes.',
-        domain: 'Practice testing',
-        filterFields: [],
-    },
-    [AUTOMATION_EVENTS.TEST_RUN_CREATED]: {
-        name: AUTOMATION_EVENTS.TEST_RUN_CREATED,
-        label: 'Test run started',
-        description: 'A practice test run begins.',
-        domain: 'Practice testing',
-        filterFields: [],
-    },
-    [AUTOMATION_EVENTS.TEST_RUN_COMPLETED]: {
-        name: AUTOMATION_EVENTS.TEST_RUN_COMPLETED,
-        label: 'Test run completed',
-        description: 'A practice test run finishes.',
-        domain: 'Practice testing',
-        filterFields: [
-            { field: 'outcome', label: 'Outcome', type: 'string' },
-        ],
-    },
-    [AUTOMATION_EVENTS.TEST_RUN_FAILED]: {
-        name: AUTOMATION_EVENTS.TEST_RUN_FAILED,
-        label: 'Test run failed',
-        description: 'A practice test run fails.',
-        domain: 'Practice testing',
-        filterFields: [],
-    },
-    [AUTOMATION_EVENTS.TEST_EVIDENCE_LINKED]: {
-        name: AUTOMATION_EVENTS.TEST_EVIDENCE_LINKED,
-        label: 'Test evidence linked',
-        description: 'Evidence is attached to a practice test run.',
-        domain: 'Practice testing',
-        filterFields: [],
-    },
-    [AUTOMATION_EVENTS.TEST_EVIDENCE_UNLINKED]: {
-        name: AUTOMATION_EVENTS.TEST_EVIDENCE_UNLINKED,
-        label: 'Test evidence unlinked',
-        description: 'Evidence is detached from a practice test run.',
-        domain: 'Practice testing',
-        filterFields: [],
-    },
     [AUTOMATION_EVENTS.SCHEDULE]: {
         name: AUTOMATION_EVENTS.SCHEDULE,
         label: 'On a schedule',
         description: 'Fire N days before a target entity’s due date (evidence retention, practice-test due, exception expiry).',
         domain: 'Schedule',
         filterFields: [],
-    },
-    [AUTOMATION_EVENTS.CONTROL_STATUS_CHANGED]: {
-        name: AUTOMATION_EVENTS.CONTROL_STATUS_CHANGED,
-        label: 'Practice status changed',
-        description: 'A practice moves between implementation states.',
-        domain: 'Practice',
-        filterFields: [
-            { field: 'toStatus', label: 'New status', type: 'string' },
-            { field: 'fromStatus', label: 'Old status', type: 'string' },
-        ],
-    },
-    [AUTOMATION_EVENTS.POLICY_REVIEW_DUE]: {
-        name: AUTOMATION_EVENTS.POLICY_REVIEW_DUE,
-        label: 'Policy review due',
-        description: 'A policy has passed its scheduled review date.',
-        domain: 'Policy',
-        filterFields: [
-            { field: 'daysOverdue', label: 'Days overdue', type: 'number' },
-        ],
-    },
-    [AUTOMATION_EVENTS.VENDOR_ASSESSMENT_OVERDUE]: {
-        name: AUTOMATION_EVENTS.VENDOR_ASSESSMENT_OVERDUE,
-        label: 'Vendor assessment overdue',
-        description: 'A vendor review or contract renewal has passed its deadline.',
-        domain: 'Vendor',
-        filterFields: [
-            { field: 'kind', label: 'Deadline kind', type: 'string' },
-            { field: 'daysOverdue', label: 'Days overdue', type: 'number' },
-        ],
     },
     [AUTOMATION_EVENTS.EVIDENCE_EXPIRING]: {
         name: AUTOMATION_EVENTS.EVIDENCE_EXPIRING,

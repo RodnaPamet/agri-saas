@@ -17,8 +17,8 @@
  * an empty state, and a "Keyboard shortcuts" group seeded from the
  * shared registry. Later Epic 57 prompts will layer in:
  *   - navigation commands (tenant-aware routes)
- *   - entity search (practices, policies, tasks, evidence, …)
- *   - quick actions (new practice, toggle theme, sign out, …)
+ *   - entity search (tasks, evidence, assets, knowledge)
+ *   - quick actions (toggle theme, sign out, …)
  *
  * Adding a group is declarative: feed `Command.Group` with an array
  * of items. No palette-local state beyond the search query and the
@@ -152,21 +152,15 @@ const ENTITY_META: Record<
     EntityKind,
     { heading: string; icon: LucideIcon }
 > = {
-    practice: { heading: 'Practices', icon: ShieldCheck },
     task: { heading: 'Tasks', icon: CheckSquare },
-    policy: { heading: 'Policies', icon: FileText },
     evidence: { heading: 'Evidence', icon: Paperclip },
-    framework: { heading: 'Frameworks', icon: Layers },
     asset: { heading: 'Assets', icon: Package },
     knowledge: { heading: 'Knowledge', icon: BookOpen },
 };
 
 const ENTITY_ORDER: EntityKind[] = [
-    'practice',
     'task',
-    'policy',
     'evidence',
-    'framework',
     'asset',
     'knowledge',
 ];
@@ -186,11 +180,8 @@ function groupByKind(
 export function CommandPalette() {
     const t = useTranslations('commandPalette');
     const entityHeadings: Record<EntityKind, string> = {
-        practice: t('entPractices'),
         task: t('entTasks'),
-        policy: t('entPolicies'),
         evidence: t('entEvidence'),
-        framework: t('entFrameworks'),
         asset: t('entAssets'),
         knowledge: t('entKnowledge'),
     };
@@ -378,7 +369,7 @@ export function CommandPalette() {
 
                     <Command
                         loop
-                        // Backend filters for practices/policies/
+                        // Backend filters for the surviving entity kinds/
                         // evidence; client-side filtering happens in
                         // `useEntitySearch` for frameworks. cmdk's own
                         // fuzzy filter would double-filter away good

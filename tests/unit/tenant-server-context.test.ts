@@ -208,10 +208,13 @@ describe('getTenantServerContext', () => {
             userId: 'user-1',
         });
 
-        // appPermissions should have the expected shape
+        // appPermissions should have the expected shape.
+        // GRC teardown phase 2 removed the practices domain; `tasks` is
+        // the surviving content domain and proves the same bound — an
+        // ADMIN gets content access AND admin access.
         expect(ctx.appPermissions).toBeDefined();
-        expect(ctx.appPermissions.practices).toBeDefined();
-        expect(ctx.appPermissions.practices.view).toBe(true);
+        expect(ctx.appPermissions.tasks).toBeDefined();
+        expect(ctx.appPermissions.tasks.view).toBe(true);
         expect(ctx.appPermissions.admin.manage).toBe(true);
     });
 
@@ -224,9 +227,12 @@ describe('getTenantServerContext', () => {
             userId: 'user-1',
         });
 
+        // Same bound as before the GRC teardown removed the practices
+        // domain: an EDITOR keeps full content read/write but gets no
+        // admin flag. `tasks` is the surviving content domain.
         expect(ctx.appPermissions.admin.view).toBe(false);
         expect(ctx.appPermissions.admin.manage).toBe(false);
-        expect(ctx.appPermissions.practices.view).toBe(true);
-        expect(ctx.appPermissions.practices.edit).toBe(true);
+        expect(ctx.appPermissions.tasks.view).toBe(true);
+        expect(ctx.appPermissions.tasks.edit).toBe(true);
     });
 });

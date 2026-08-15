@@ -25,21 +25,21 @@ describe('computeRankScore — match bands', () => {
     });
 
     it('exact code match outranks substring title match', () => {
-        const exactCode = computeRankScore('a.5.1', {
-            type: 'practice',
-            title: 'Information security policies',
-            code: 'A.5.1',
+        const exactCode = computeRankScore('tsk-51', {
+            type: 'task',
+            title: 'Spray the north block',
+            code: 'TSK-51',
         });
-        const substr = computeRankScore('information', {
-            type: 'practice',
-            title: 'Information security policies',
+        const substr = computeRankScore('spray', {
+            type: 'task',
+            title: 'Spray the north block',
         });
         expect(exactCode).toBeGreaterThan(substr);
     });
 
     it('prefix match outranks substring title match', () => {
-        const prefix = computeRankScore('inf', { type: 'practice', title: 'Information' });
-        const substr = computeRankScore('orma', { type: 'practice', title: 'Information' });
+        const prefix = computeRankScore('irr', { type: 'task', title: 'Irrigation' });
+        const substr = computeRankScore('gati', { type: 'task', title: 'Irrigation' });
         expect(prefix).toBeGreaterThan(substr);
     });
 
@@ -65,24 +65,26 @@ describe('computeRankScore — match bands', () => {
     });
 
     it('returns only the type-baseline when no field matches', () => {
-        const score = computeRankScore('zzz', { type: 'practice', title: 'anything' });
-        // No match band fires; only the per-type baseline (practice = 4).
+        const score = computeRankScore('zzz', { type: 'task', title: 'anything' });
+        // No match band fires; only the per-type baseline (task = 5).
+        // NOTE: this needs a type whose baseline is NON-ZERO — `evidence`
+        // and `knowledge` are both 0 and would fail the > 0 assertion.
         expect(score).toBeGreaterThan(0);
         expect(score).toBeLessThan(10);
     });
 
-    it('practice type gets a higher baseline than evidence', () => {
-        const c = computeRankScore('zzz', { type: 'practice', title: 'anything' });
+    it('task type gets a higher baseline than evidence', () => {
+        const c = computeRankScore('zzz', { type: 'task', title: 'anything' });
         const e = computeRankScore('zzz', { type: 'evidence', title: 'anything' });
         expect(c).toBeGreaterThan(e);
     });
 
     it('type baseline cannot promote a weak match over a strong one', () => {
-        // Substring on title (30 + practice_baseline=4) should NOT
+        // Substring on title (30 + task_baseline=5) should NOT
         // outrank an exact match on evidence (100 + evidence_baseline=0).
-        const weakPractice = computeRankScore('orma', {
-            type: 'practice',
-            title: 'Information',
+        const weakPractice = computeRankScore('gati', {
+            type: 'task',
+            title: 'Irrigation',
         });
         const strongEvidence = computeRankScore('logs', {
             type: 'evidence',
@@ -116,20 +118,20 @@ function hit(
 
 describe('sortHits', () => {
     it('orders by score DESC', () => {
-        const out = sortHits([hit('a', 'practice', 10), hit('b', 'practice', 50), hit('c', 'practice', 30)]);
+        const out = sortHits([hit('a', 'task', 10), hit('b', 'task', 50), hit('c', 'task', 30)]);
         expect(out.map((h) => h.id)).toEqual(['b', 'c', 'a']);
     });
 
-    it('breaks ties by type baseline (practice > evidence)', () => {
-        const out = sortHits([hit('e1', 'evidence', 30), hit('c1', 'practice', 30)]);
+    it('breaks ties by type baseline (task > evidence)', () => {
+        const out = sortHits([hit('e1', 'evidence', 30), hit('c1', 'task', 30)]);
         expect(out.map((h) => h.id)).toEqual(['c1', 'e1']);
     });
 
     it('breaks remaining ties by id ASC (deterministic)', () => {
         const out = sortHits([
-            hit('z', 'practice', 30),
-            hit('a', 'practice', 30),
-            hit('m', 'practice', 30),
+            hit('z', 'task', 30),
+            hit('a', 'task', 30),
+            hit('m', 'task', 30),
         ]);
         expect(out.map((h) => h.id)).toEqual(['a', 'm', 'z']);
     });
@@ -139,23 +141,23 @@ describe('sortHits', () => {
 
 describe('capPerType', () => {
     it('keeps everything when under the cap', () => {
-        const out = capPerType([hit('c1', 'practice', 50), hit('r1', 'asset', 40)], 5);
+        const out = capPerType([hit('c1', 'task', 50), hit('r1', 'asset', 40)], 5);
         expect(out.kept).toHaveLength(2);
         expect(out.truncated).toBe(false);
-        expect(out.perTypeCounts.practice).toBe(1);
+        expect(out.perTypeCounts.task).toBe(1);
         expect(out.perTypeCounts.asset).toBe(1);
     });
 
     it('caps each type independently and flags truncated', () => {
         const hits = [
-            hit('c1', 'practice', 50),
-            hit('c2', 'practice', 49),
-            hit('c3', 'practice', 48),
+            hit('c1', 'task', 50),
+            hit('c2', 'task', 49),
+            hit('c3', 'task', 48),
             hit('r1', 'asset', 40),
         ];
         const out = capPerType(hits, 2);
         expect(out.kept.map((h) => h.id)).toEqual(['c1', 'c2', 'r1']);
-        expect(out.perTypeCounts.practice).toBe(2);
+        expect(out.perTypeCounts.task).toBe(2);
         expect(out.perTypeCounts.asset).toBe(1);
         expect(out.truncated).toBe(true);
     });
@@ -163,9 +165,6 @@ describe('capPerType', () => {
     it('zero-fills perTypeCounts so callers do not have to defensively check', () => {
         const out = capPerType([], 5);
         expect(out.perTypeCounts).toEqual({
-            practice: 0,
-            policy: 0,
-            framework: 0,
             evidence: 0,
             asset: 0,
             task: 0,
@@ -177,7 +176,7 @@ describe('capPerType', () => {
     it('respects the input order — caller must pre-sort by score', () => {
         // First-in, first-kept until cap. Demonstrates the
         // "sort then cap" contract.
-        const out = capPerType([hit('low', 'practice', 10), hit('high', 'practice', 90)], 1);
+        const out = capPerType([hit('low', 'task', 10), hit('high', 'task', 90)], 1);
         expect(out.kept.map((h) => h.id)).toEqual(['low']);
     });
 });

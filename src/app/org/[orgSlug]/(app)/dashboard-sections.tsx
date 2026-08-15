@@ -35,7 +35,7 @@ export function TenantCoverageList({
     limit,
 }: {
     rows: TenantHealthRow[];
-    sortBy?: 'rag' | 'name' | 'coverage';
+    sortBy?: 'rag' | 'name';
     limit?: number;
 }) {
     const t = useTranslations('org.sections');
@@ -57,12 +57,6 @@ export function TenantCoverageList({
             const ra = ragOrder[a.rag ?? 'PENDING'];
             const rb = ragOrder[b.rag ?? 'PENDING'];
             if (ra !== rb) return ra - rb;
-            return a.name.localeCompare(b.name);
-        }
-        if (sortBy === 'coverage') {
-            const ca = a.coveragePercent ?? -1;
-            const cb = b.coveragePercent ?? -1;
-            if (ca !== cb) return ca - cb;
             return a.name.localeCompare(b.name);
         }
         return a.name.localeCompare(b.name);
@@ -88,17 +82,12 @@ export function TenantCoverageList({
                                     {row.name}
                                 </span>
                                 <span className="text-xs tabular-nums text-content-muted">
-                                    {row.coveragePercent !== null ? (
-                                        <AnimatedNumber
-                                            value={row.coveragePercent}
-                                            format={{ kind: 'percent', fractionDigits: 1 }}
-                                        />
-                                    ) : (
-                                        '—'
-                                    )}
+                                    <AnimatedNumber
+                                        value={row.overdueEvidence ?? 0}
+                                        format={{ kind: 'integer' }}
+                                    />
                                 </span>
                             </div>
-                            <CoverageBar percent={row.coveragePercent} rag={row.rag} />
                             <div className="mt-1.5 flex items-center gap-default text-xs text-content-muted">
                                 <span>{row.overdueEvidence ?? 0} {t('overdueEvidence')}</span>
                             </div>
@@ -122,38 +111,6 @@ export function RagPill({ rag }: { rag: RagBadge | null }) {
     return <StatusBadge variant={variant}>{rag}</StatusBadge>;
 }
 
-export function CoverageBar({
-    percent,
-    rag,
-}: {
-    percent: number | null;
-    rag: RagBadge | null;
-}) {
-    const t = useTranslations('org.sections');
-    const width = percent === null ? 0 : Math.min(100, Math.max(0, percent));
-    const colorClass =
-        rag === 'GREEN' ? 'bg-bg-success-emphasis'
-        : rag === 'AMBER' ? 'bg-bg-warning-emphasis'
-        : rag === 'RED' ? 'bg-bg-error-emphasis'
-        : 'bg-border-emphasis';
-    return (
-        <div className="mt-1 h-1.5 rounded-full bg-bg-muted overflow-hidden">
-            <div
-                className={`h-full ${colorClass} transition-all`}
-                style={{ width: `${width}%` }}
-                role="progressbar"
-                aria-valuenow={width}
-                aria-valuemin={0}
-                aria-valuemax={100}
-                aria-label={
-                    percent !== null
-                        ? t('coverageAria', { percent: percent.toFixed(1) })
-                        : t('coveragePending')
-                }
-            />
-        </div>
-    );
-}
 
 // ─── Tenant coverage cards (Epic 66) ──────────────────────────────
 //
@@ -168,7 +125,7 @@ export function CoverageBar({
 
 export interface TenantCoverageCardsProps {
     rows: TenantHealthRow[];
-    sortBy?: 'rag' | 'name' | 'coverage';
+    sortBy?: 'rag' | 'name';
     limit?: number;
     /**
      * Optional per-tenant trend series for the sparkline. Keyed by
@@ -214,12 +171,6 @@ export function TenantCoverageCards({
             const ra = ragOrder[a.rag ?? 'PENDING'];
             const rb = ragOrder[b.rag ?? 'PENDING'];
             if (ra !== rb) return ra - rb;
-            return a.name.localeCompare(b.name);
-        }
-        if (sortBy === 'coverage') {
-            const ca = a.coveragePercent ?? -1;
-            const cb = b.coveragePercent ?? -1;
-            if (ca !== cb) return ca - cb;
             return a.name.localeCompare(b.name);
         }
         return a.name.localeCompare(b.name);
@@ -272,13 +223,6 @@ export function TenantCoverageCards({
                         <CardList.CardContent
                             kv={[
                                 {
-                                    label: t('cardCoverage'),
-                                    value:
-                                        row.coveragePercent !== null
-                                            ? `${row.coveragePercent.toFixed(1)}%`
-                                            : '—',
-                                },
-                                {
                                     label: t('cardOverdueEvidence'),
                                     value: row.overdueEvidence ?? 0,
                                 },
@@ -297,12 +241,7 @@ export function TenantCoverageCards({
                                         })}
                                     />
                                 </div>
-                            ) : (
-                                <CoverageBar
-                                    percent={row.coveragePercent}
-                                    rag={row.rag}
-                                />
-                            )}
+                            ) : null}
                             {row.snapshotDate && (
                                 <p className="text-xs text-content-subtle">
                                     {t('lastActivity')}{' '}

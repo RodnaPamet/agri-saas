@@ -157,7 +157,7 @@ describe('AutomationRuleRepository — tenant scoping + query shape', () => {
         const { db, automationRule } = makeDb();
         await AutomationRuleRepository.create(db, makeCtx(), {
             name: 'High-priority rule',
-            triggerEvent: 'TEST_RUN_FAILED',
+            triggerEvent: 'TASK_CREATED',
             actionType: 'CREATE_TASK',
             actionConfig: { title: 'Investigate' },
             status: 'ENABLED',

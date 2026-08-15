@@ -3725,9 +3725,6 @@ exports[`API contract — per-schema snapshots schema: TaskCreateRequest 1`] = `
     "type": {
       "type": "string",
       "enum": [
-        "AUDIT_FINDING",
-        "PRACTICE_GAP",
-        "INCIDENT",
         "IMPROVEMENT",
         "TASK"
       ],
@@ -3787,18 +3784,12 @@ exports[`API contract — per-schema snapshots schema: TaskCreateRequest 1`] = `
         "null"
       ]
     },
-    "practiceId": {
-      "type": [
-        "string",
-        "null"
-      ]
-    },
     "metadataJson": {}
   },
   "required": [
     "title"
   ],
-  "description": "Create a task (unified work-item type covering audit findings, practice gaps, incidents, improvements, and ad-hoc tasks). The type discriminator gates which UI surfaces this work item appears in."
+  "description": "Create a task (unified work-item type covering improvements and ad-hoc tasks). The type discriminator gates which UI surfaces this work item appears in."
 }"
 `;
 
@@ -3833,14 +3824,13 @@ exports[`API contract — per-schema snapshots schema: TaskLinkAddRequest 1`] = 
     "entityType": {
       "type": "string",
       "enum": [
-        "PRACTICE",
-        "FRAMEWORK_REQUIREMENT",
         "ASSET",
-        "POLICY",
         "EVIDENCE",
         "FILE",
-        "AUDIT_PACK",
-        "VENDOR"
+        "LOCATION",
+        "PARCEL",
+        "EQUIPMENT",
+        "PLANTING"
       ]
     },
     "entityId": {
@@ -3917,9 +3907,6 @@ exports[`API contract — per-schema snapshots schema: TaskUpdateRequest 1`] = `
       "type": "string",
       "enum": [
         "TASK",
-        "AUDIT_FINDING",
-        "PRACTICE_GAP",
-        "INCIDENT",
         "IMPROVEMENT"
       ]
     },
@@ -3943,12 +3930,6 @@ exports[`API contract — per-schema snapshots schema: TaskUpdateRequest 1`] = `
       ]
     },
     "dueAt": {
-      "type": [
-        "string",
-        "null"
-      ]
-    },
-    "practiceId": {
       "type": [
         "string",
         "null"

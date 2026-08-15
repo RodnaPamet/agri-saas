@@ -9,9 +9,9 @@
  *
  * Design notes:
  *
- *   - **parallel queries** (practice / policy / evidence
- *     / framework). Same fan-out the client used to do; just
- *     consolidated server-side so one round-trip replaces five.
+ *   - **parallel queries** (evidence / asset / task / knowledge).
+ *     Same fan-out the client used to do; just consolidated
+ *     server-side so one round-trip replaces four.
  *   - **Per-type cap before sort.** Each underlying query is
  *     bounded at `perTypeLimit * 3` rows so the substring filter
  *     never scans an unbounded table. The post-sort step then
@@ -25,7 +25,6 @@
 
 import type { RequestContext } from '../types';
 import { runInTenantContext } from '@/lib/db-context';
-import { prisma } from '@/lib/prisma';
 import { forbidden } from '@/lib/errors/types';
 import { capPerType, computeRankScore, sortHits } from '@/lib/search/rank';
 import {
@@ -76,26 +75,7 @@ export async function getUnifiedSearch(
     const allHits: SearchHit[] = [];
 
     await runInTenantContext(ctx, async (db) => {
-        const [practices, policies, evidence, assets, tasks, knowledge] = await Promise.all([
-            db.practice.findMany({
-                where: {
-                    tenantId,
-                    OR: [
-                        { name: { contains, mode: 'insensitive' } },
-                        { code: { contains, mode: 'insensitive' } },
-                    ],
-                },
-                select: { id: true, code: true, name: true, status: true },
-                take: dbLimit,
-            }),
-            db.policy.findMany({
-                where: {
-                    tenantId,
-                    title: { contains, mode: 'insensitive' },
-                },
-                select: { id: true, title: true, status: true },
-                take: dbLimit,
-            }),
+        const [evidence, assets, tasks, knowledge] = await Promise.all([
             db.evidence.findMany({
                 where: {
                     tenantId,
@@ -165,16 +145,6 @@ export async function getUnifiedSearch(
             }),
         ]);
 
-        for (const c of practices as Row<{
-            code: string | null;
-            name: string;
-            status: string;
-        }>[]) {
-            allHits.push(buildPracticeHit(c, trimmed, tenantSlug));
-        }
-        for (const p of policies as Row<{ title: string; status: string }>[]) {
-            allHits.push(buildPolicyHit(p, trimmed, tenantSlug));
-        }
         for (const e of evidence as Row<{ title: string; type: string }>[]) {
             allHits.push(buildEvidenceHit(e, trimmed, tenantSlug));
         }
@@ -203,23 +173,6 @@ export async function getUnifiedSearch(
         }
     });
 
-    // Frameworks are global rows (no tenantId). Read them with the
-    // bare prisma client; the search is still scoped to a logged-
-    // in tenant member by the route's `getTenantCtx` gate above.
-    const frameworks = await prisma.framework.findMany({
-        where: {
-            OR: [
-                { key: { contains, mode: 'insensitive' } },
-                { name: { contains, mode: 'insensitive' } },
-            ],
-        },
-        select: { id: true, key: true, name: true, version: true },
-        take: dbLimit,
-    });
-    for (const f of frameworks) {
-        allHits.push(buildFrameworkHit(f, trimmed, tenantSlug));
-    }
-
     // Rank + cap. Capping happens AFTER sort so a strong substring
     // match within a kind survives even when the DB returned more
     // rows than the cap.
@@ -245,10 +198,7 @@ function emptyResponse(query: string, limit: number): SearchResponse {
         meta: {
             query,
             perTypeCounts: {
-                practice: 0,
-                policy: 0,
                 evidence: 0,
-                framework: 0,
                 asset: 0,
                 task: 0,
                 knowledge: 0,
@@ -256,46 +206,6 @@ function emptyResponse(query: string, limit: number): SearchResponse {
             truncated: false,
             perTypeLimit: limit,
         },
-    };
-}
-
-function buildPracticeHit(
-    row: { id: string; code: string | null; name: string; status: string },
-    query: string,
-    slug: string,
-): SearchHit {
-    const meta = SEARCH_TYPE_DEFAULTS.practice;
-    return {
-        type: 'practice',
-        id: row.id,
-        title: row.code ? `${row.code} — ${row.name}` : row.name,
-        subtitle: null,
-        badge: row.status,
-        href: `/t/${slug}/practices/${row.id}`,
-        score: computeRankScore(query, {
-            type: 'practice',
-            title: row.name,
-            code: row.code,
-        }),
-        ...meta,
-    };
-}
-
-function buildPolicyHit(
-    row: { id: string; title: string; status: string },
-    query: string,
-    slug: string,
-): SearchHit {
-    const meta = SEARCH_TYPE_DEFAULTS.policy;
-    return {
-        type: 'policy',
-        id: row.id,
-        title: row.title,
-        subtitle: null,
-        badge: row.status,
-        href: `/t/${slug}/policies/${row.id}`,
-        score: computeRankScore(query, { type: 'policy', title: row.title }),
-        ...meta,
     };
 }
 
@@ -403,41 +313,13 @@ function buildKnowledgeHit(
     };
 }
 
-function buildFrameworkHit(
-    row: { id: string; key: string; name: string; version: string | null },
-    query: string,
-    slug: string,
-): SearchHit {
-    const meta = SEARCH_TYPE_DEFAULTS.framework;
-    // Use the framework KEY as the hit id — every other surface
-    // (URLs, the framework picker) keys frameworks by `key` not
-    // `id`. Keeps the contract consistent across the codebase.
-    return {
-        type: 'framework',
-        id: row.key,
-        title: `${row.key} — ${row.name}`,
-        subtitle: row.version,
-        badge: null,
-        href: `/t/${slug}/frameworks/${encodeURIComponent(row.key)}`,
-        score: computeRankScore(query, {
-            type: 'framework',
-            title: row.name,
-            code: row.key,
-        }),
-        ...meta,
-    };
-}
-
 // Re-export the shape so route + clients have one import path.
 export type { SearchHit, SearchResponse } from '@/lib/search/types';
 
 // Test-only export so structural assertions can verify the
 // expected union of types without re-deriving it.
 export const __SEARCHABLE_TYPES__: ReadonlyArray<SearchHitType> = [
-    'practice',
-    'policy',
     'evidence',
-    'framework',
     'asset',
     'task',
     'knowledge',

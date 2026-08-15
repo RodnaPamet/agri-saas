@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Agrent API",
-    "version": "1.133.3",
+    "version": "1.143.0",
     "description": "Multi-tenant agriculture-operations API. The schema layer in `src/lib/schemas/index.ts` (request bodies) and `src/lib/dto/*.dto.ts` (response shapes) is the single source of truth — this document is generated from those Zod schemas via `npm run openapi:generate`.",
     "license": {
       "name": "Proprietary"
@@ -3577,9 +3577,6 @@
           "type": {
             "type": "string",
             "enum": [
-              "AUDIT_FINDING",
-              "PRACTICE_GAP",
-              "INCIDENT",
               "IMPROVEMENT",
               "TASK"
             ],
@@ -3639,18 +3636,12 @@
               "null"
             ]
           },
-          "practiceId": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
           "metadataJson": {}
         },
         "required": [
           "title"
         ],
-        "description": "Create a task (unified work-item type covering audit findings, practice gaps, incidents, improvements, and ad-hoc tasks). The type discriminator gates which UI surfaces this work item appears in."
+        "description": "Create a task (unified work-item type covering improvements and ad-hoc tasks). The type discriminator gates which UI surfaces this work item appears in."
       },
       "TaskEvidenceLinkRequest": {
         "type": "object",
@@ -3679,14 +3670,13 @@
           "entityType": {
             "type": "string",
             "enum": [
-              "PRACTICE",
-              "FRAMEWORK_REQUIREMENT",
               "ASSET",
-              "POLICY",
               "EVIDENCE",
               "FILE",
-              "AUDIT_PACK",
-              "VENDOR"
+              "LOCATION",
+              "PARCEL",
+              "EQUIPMENT",
+              "PLANTING"
             ]
           },
           "entityId": {
@@ -3757,9 +3747,6 @@
             "type": "string",
             "enum": [
               "TASK",
-              "AUDIT_FINDING",
-              "PRACTICE_GAP",
-              "INCIDENT",
               "IMPROVEMENT"
             ]
           },
@@ -3783,12 +3770,6 @@
             ]
           },
           "dueAt": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "practiceId": {
             "type": [
               "string",
               "null"

@@ -168,8 +168,9 @@ describe('Permission Resolution', () => {
     });
 
     test('PermissionSet covers all resource domains', () => {
-        const domains = ['practices', 'evidence', 'policies', 'tasks',
-            'vendors', 'tests', 'frameworks', 'audits', 'reports', 'admin'];
+        // GRC teardown phase 2 (T4): six domains removed. These five are
+        // the surviving set — still an exhaustive check over them.
+        const domains = ['evidence', 'tasks', 'knowledge', 'reports', 'admin'];
         for (const domain of domains) {
             expect(permissions).toContain(`${domain}:`);
         }

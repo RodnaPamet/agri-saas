@@ -45,15 +45,6 @@ export function rankRuleSuggestions(posture: SuggestionPosture): RuleSuggestion[
 
     const candidates: Candidate[] = [
         {
-            id: 'practice-test-failed-notify',
-            title: 'Notify the team when a practice test fails',
-            rationale:
-                'Failing practice tests are the earliest signal of a slipping practice — route them to an owner the moment they fail.',
-            triggerEvent: 'TEST_RUN_FAILED',
-            actionType: 'NOTIFY_USER',
-            confidenceScore: 0.82,
-        },
-        {
             id: 'issue-created-task',
             title: 'Turn new issues into tracked tasks',
             rationale:

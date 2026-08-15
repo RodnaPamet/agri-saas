@@ -7,20 +7,28 @@
  * (real RLS, real merge across multiple seeded tenants) lives in
  * `tests/integration/portfolio-drilldown-pagination.test.ts`.
  *
+ * The GRC teardown removed the practices and risks drill-downs, so
+ * OVERDUE EVIDENCE is the one surviving paginated drill-down and
+ * every contract below is asserted against it. The security
+ * property is unchanged and is the reason this file exists: each
+ * per-tenant page runs inside `withTenantDb(tenantId)`, so RLS —
+ * not application code — governs what the fan-out can read.
+ *
  * Coverage:
+ *   - Every per-tenant page is issued inside withTenantDb(tenantId)
  *   - First page returns rows + nextCursor when there are more
  *   - Last page returns rows + nextCursor: null
- *   - Cursor decode is opaque (round-trips through encode)
+ *   - Cursor round-trips: page 1's nextCursor decodes into page 2's
+ *     per-tenant predicate
  *   - Invalid cursor falls back to first page (lenient on read)
  *   - limit parameter clamps to [1, MAX_DRILLDOWN_PAGE_LIMIT]
- *   - Per-tenant cursor predicate is shaped correctly for each entity
+ *   - Per-tenant cursor predicate is shaped correctly (single-dim)
  *   - Tenant attribution survives the merge across pages
+ *   - canViewPortfolio gates the paginated path
  */
 
 const getOrgTenantIdsMock = jest.fn();
 const withTenantDbMock = jest.fn();
-const practiceFindManyMock = jest.fn();
-const riskFindManyMock = jest.fn();
 const evidenceFindManyMock = jest.fn();
 
 jest.mock('@/app-layer/repositories/PortfolioRepository', () => ({
@@ -35,10 +43,7 @@ jest.mock('@/lib/db-context', () => ({
     withTenantDb: (...a: unknown[]) => withTenantDbMock(...a),
 }));
 
-import {
-    listNonPerformingPractices,
-    listOverdueEvidenceAcrossOrg,
-} from '@/app-layer/usecases/portfolio';
+import { listOverdueEvidenceAcrossOrg } from '@/app-layer/usecases/portfolio';
 import type { OrgContext } from '@/app-layer/types';
 
 function ctxFor(): OrgContext {
@@ -67,8 +72,6 @@ interface CapturedQuery {
 
 beforeEach(() => {
     getOrgTenantIdsMock.mockReset();
-    practiceFindManyMock.mockReset();
-    riskFindManyMock.mockReset();
     evidenceFindManyMock.mockReset();
     withTenantDbMock.mockReset();
     // Default tenant fixture: two tenants under the org.
@@ -81,167 +84,137 @@ beforeEach(() => {
     // asserts on the captured WHERE/orderBy/take.
     withTenantDbMock.mockImplementation(async (_tenantId: string, fn: (db: unknown) => Promise<unknown>) => {
         const db = {
-            practice: { findMany: practiceFindManyMock },
-            risk: { findMany: riskFindManyMock },
             evidence: { findMany: evidenceFindManyMock },
         };
         return fn(db);
     });
 });
 
-// ── Practices ───────────────────────────────────────────────────────────
+// ── Evidence ───────────────────────────────────────────────────────────
 
-describe('listNonPerformingPractices — cursor pagination', () => {
+describe('listOverdueEvidenceAcrossOrg — cursor pagination', () => {
+    it('issues one query per tenant, each inside withTenantDb(tenantId)', async () => {
+        evidenceFindManyMock.mockResolvedValue([]);
+
+        await listOverdueEvidenceAcrossOrg(ctxFor());
+
+        // Both tenants queried, each in its own RLS-bound transaction.
+        expect(evidenceFindManyMock).toHaveBeenCalledTimes(2);
+        expect(withTenantDbMock.mock.calls.map((c) => c[0])).toEqual(['t-1', 't-2']);
+    });
+
     it('first page (no cursor) does not apply a cursor predicate', async () => {
-        practiceFindManyMock.mockResolvedValue([]);
+        evidenceFindManyMock.mockResolvedValue([]);
 
-        await listNonPerformingPractices(ctxFor());
+        await listOverdueEvidenceAcrossOrg(ctxFor());
 
-        // Both tenants queried.
-        expect(practiceFindManyMock).toHaveBeenCalledTimes(2);
         // No `OR` cursor clause merged in.
-        const where = (practiceFindManyMock.mock.calls[0][0] as CapturedQuery).where;
+        const where = (evidenceFindManyMock.mock.calls[0][0] as CapturedQuery).where;
         expect(where).not.toHaveProperty('OR');
-        // Base filters intact.
+        // Base filters intact, and the query is pinned to one tenant.
         expect(where).toMatchObject({
-            applicability: 'APPLICABLE',
+            tenantId: 't-1',
+            status: { not: 'APPROVED' },
             deletedAt: null,
         });
     });
 
     it('returns rows + nextCursor when there are more rows than the limit', async () => {
         // Each tenant returns one row. limit=1 → page = 1 row + 1 leftover.
-        practiceFindManyMock
+        evidenceFindManyMock
             .mockResolvedValueOnce([
                 {
-                    id: 'c-1',
-                    name: 'High priority alpha',
-                    code: 'A-1',
-                    status: 'NEEDS_REVIEW',
-                    updatedAt: new Date('2026-04-25T00:00:00Z'),
+                    id: 'e-1',
+                    title: 'Soil test alpha',
+                    nextReviewDate: new Date('2026-04-20T09:30:00Z'),
+                    status: 'SUBMITTED',
                 },
             ])
             .mockResolvedValueOnce([
                 {
-                    id: 'c-2',
-                    name: 'High priority beta',
-                    code: 'B-1',
-                    status: 'NEEDS_REVIEW',
-                    updatedAt: new Date('2026-04-24T00:00:00Z'),
+                    id: 'e-2',
+                    title: 'Soil test beta',
+                    nextReviewDate: new Date('2026-04-24T00:00:00Z'),
+                    status: 'SUBMITTED',
                 },
             ]);
 
-        const result = await listNonPerformingPractices(ctxFor(), { limit: 1 });
+        const result = await listOverdueEvidenceAcrossOrg(ctxFor(), { limit: 1 });
 
         expect(result.rows).toHaveLength(1);
-        // Sort prefers higher priority first; both NEEDS_REVIEW (5),
-        // so updatedAt DESC tiebreaker → alpha (newer) wins.
-        expect(result.rows[0].practiceId).toBe('c-1');
+        // Sort is nextReviewDate ASC (== most overdue first), so the
+        // older alpha row wins the merge.
+        expect(result.rows[0].evidenceId).toBe('e-1');
         expect(result.rows[0].tenantSlug).toBe('alpha');
         expect(result.nextCursor).not.toBeNull();
         expect(typeof result.nextCursor).toBe('string');
     });
 
-    it('cursor encodes priority + updatedAt + id; second page decodes and applies predicate', async () => {
-        // Build a cursor for the alpha row we'd have returned on page 1.
-        const cursor = Buffer.from(
-            JSON.stringify({
-                p: 5, // NEEDS_REVIEW priority
-                d: '2026-04-25T00:00:00.000Z',
-                i: 'c-1',
-            }),
-        ).toString('base64url');
-
-        practiceFindManyMock.mockResolvedValue([]);
-        await listNonPerformingPractices(ctxFor(), { cursor, limit: 50 });
-
-        // Per-tenant where now carries the cursor compound predicate.
-        const where = (practiceFindManyMock.mock.calls[0][0] as CapturedQuery).where;
-        expect(where).toHaveProperty('OR');
-        const orClauses = (where.OR as Array<Record<string, unknown>>);
-        // Exactly three branches: lower priority statuses; same priority
-        // older updatedAt; same priority same updatedAt larger id.
-        expect(orClauses).toHaveLength(3);
-        // First: status IN [lower priorities]. Cursor.p == 5 means
-        // statuses 4,3,2,1 → 4 statuses below.
-        const lowerBranch = orClauses[0] as { status: { in: string[] } };
-        expect(lowerBranch.status.in).toEqual([
-            'NOT_STARTED',
-            'PLANNED',
-            'IN_PROGRESS',
-            'IMPLEMENTING',
-        ]);
-    });
-
-    it('last page returns nextCursor: null', async () => {
-        practiceFindManyMock.mockResolvedValue([]);
-        const result = await listNonPerformingPractices(ctxFor(), { limit: 50 });
-        expect(result.rows).toEqual([]);
-        expect(result.nextCursor).toBeNull();
-    });
-
-    it('limit is clamped to [1, 200]', async () => {
-        practiceFindManyMock.mockResolvedValue([]);
-        // Negative + zero clamp to 1.
-        await listNonPerformingPractices(ctxFor(), { limit: -5 });
-        let take = (practiceFindManyMock.mock.calls[0][0] as CapturedQuery).take;
-        // Per-tenant take is `max(25, limit*2) + 1` → for limit=1, that's 26.
-        expect(take).toBe(26);
-
-        practiceFindManyMock.mockClear();
-        // Large limit clamps to 200; per-tenant take = 200*2 + 1 = 401.
-        await listNonPerformingPractices(ctxFor(), { limit: 5000 });
-        take = (practiceFindManyMock.mock.calls[0][0] as CapturedQuery).take;
-        expect(take).toBe(401);
-    });
-
-    it('invalid cursor (garbage string) falls back to first-page behaviour', async () => {
-        practiceFindManyMock.mockResolvedValue([]);
-        await listNonPerformingPractices(ctxFor(), {
-            cursor: 'not-base64-json-at-all',
-        });
-        const where = (practiceFindManyMock.mock.calls[0][0] as CapturedQuery).where;
-        expect(where).not.toHaveProperty('OR');
-    });
-
-    it('preserves tenant attribution on every returned row', async () => {
-        practiceFindManyMock
+    // Re-pointed from the deleted practices/risks cursor tests: the
+    // "page 1's cursor is the page 2 predicate" round-trip is a
+    // property of every paginated drill-down, and evidence is the one
+    // that survives. What genuinely has NO subject any more is the
+    // MULTI-DIMENSIONAL variant those two proved — the three-branch
+    // compound predicate (lower priority / same priority + older
+    // updatedAt / same priority + larger id) and the
+    // CONTROL_STATUS_PRIORITY ladder that fed its `status IN [...]`
+    // branch. Both the practices status ladder and the risks
+    // inherentScore ladder were deleted with their usecases, and the
+    // evidence cursor is single-dimension (date + id), so there is no
+    // surviving surface that sorts on more than one non-id key.
+    it('cursor round-trips: page 1 nextCursor decodes into the page 2 predicate', async () => {
+        evidenceFindManyMock
             .mockResolvedValueOnce([
                 {
-                    id: 'c-1',
-                    name: 'A',
-                    code: null,
-                    status: 'NOT_STARTED',
-                    updatedAt: new Date('2026-04-20T00:00:00Z'),
+                    id: 'e-1',
+                    title: 'Soil test alpha',
+                    // Non-midnight time-of-day: the cursor must carry
+                    // full precision, not the date-only DTO string.
+                    nextReviewDate: new Date('2026-04-20T09:30:00Z'),
+                    status: 'SUBMITTED',
                 },
             ])
             .mockResolvedValueOnce([
                 {
-                    id: 'c-2',
-                    name: 'B',
-                    code: null,
-                    status: 'NOT_STARTED',
-                    updatedAt: new Date('2026-04-21T00:00:00Z'),
+                    id: 'e-2',
+                    title: 'Soil test beta',
+                    nextReviewDate: new Date('2026-04-24T00:00:00Z'),
+                    status: 'SUBMITTED',
                 },
             ]);
 
-        const result = await listNonPerformingPractices(ctxFor());
+        const page1 = await listOverdueEvidenceAcrossOrg(ctxFor(), { limit: 1 });
+        expect(page1.nextCursor).not.toBeNull();
 
-        const byId = new Map(result.rows.map((r) => [r.practiceId, r]));
-        expect(byId.get('c-1')?.tenantSlug).toBe('alpha');
-        expect(byId.get('c-1')?.tenantName).toBe('Alpha');
-        expect(byId.get('c-1')?.tenantId).toBe('t-1');
-        expect(byId.get('c-2')?.tenantSlug).toBe('beta');
-        expect(byId.get('c-2')?.tenantName).toBe('Beta');
+        // The cursor points at the last row page 1 actually emitted.
+        const decoded = JSON.parse(
+            Buffer.from(page1.nextCursor!, 'base64url').toString('utf-8'),
+        );
+        expect(decoded.d).toBe('2026-04-20T09:30:00.000Z');
+        expect(decoded.i).toBe('e-1');
+
+        // Feeding it back turns into the after-cursor predicate.
+        evidenceFindManyMock.mockReset();
+        evidenceFindManyMock.mockResolvedValue([]);
+        await listOverdueEvidenceAcrossOrg(ctxFor(), {
+            cursor: page1.nextCursor!,
+            limit: 1,
+        });
+
+        const where = (evidenceFindManyMock.mock.calls[0][0] as CapturedQuery).where;
+        const orClauses = where.OR as Array<Record<string, unknown>>;
+        expect(orClauses).toHaveLength(2);
+        expect(orClauses[0]).toEqual({
+            nextReviewDate: { gt: new Date('2026-04-20T09:30:00.000Z') },
+        });
+        expect(orClauses[1]).toEqual({
+            AND: [
+                { nextReviewDate: new Date('2026-04-20T09:30:00.000Z') },
+                { id: { gt: 'e-1' } },
+            ],
+        });
     });
-});
 
-// ── Risks ──────────────────────────────────────────────────────────────
-
-
-// ── Evidence ───────────────────────────────────────────────────────────
-
-describe('listOverdueEvidenceAcrossOrg — cursor pagination', () => {
     it('cursor encodes nextReviewDate + id (single-dim sort)', async () => {
         const cursor = Buffer.from(
             JSON.stringify({
@@ -269,7 +242,77 @@ describe('listOverdueEvidenceAcrossOrg — cursor pagination', () => {
         const orderBy = (evidenceFindManyMock.mock.calls[0][0] as CapturedQuery).orderBy;
         expect(orderBy).toEqual([{ nextReviewDate: 'asc' }, { id: 'asc' }]);
     });
+
+    it('last page returns nextCursor: null', async () => {
+        evidenceFindManyMock.mockResolvedValue([]);
+        const result = await listOverdueEvidenceAcrossOrg(ctxFor(), { limit: 50 });
+        expect(result.rows).toEqual([]);
+        expect(result.nextCursor).toBeNull();
+    });
+
+    it('limit is clamped to [1, 200]', async () => {
+        evidenceFindManyMock.mockResolvedValue([]);
+        // Negative + zero clamp to 1.
+        await listOverdueEvidenceAcrossOrg(ctxFor(), { limit: -5 });
+        let take = (evidenceFindManyMock.mock.calls[0][0] as CapturedQuery).take;
+        // Per-tenant take is `max(25, limit*2) + 1` → for limit=1, that's 26.
+        expect(take).toBe(26);
+
+        evidenceFindManyMock.mockClear();
+        // Large limit clamps to 200; per-tenant take = 200*2 + 1 = 401.
+        await listOverdueEvidenceAcrossOrg(ctxFor(), { limit: 5000 });
+        take = (evidenceFindManyMock.mock.calls[0][0] as CapturedQuery).take;
+        expect(take).toBe(401);
+    });
+
+    it('invalid cursor (garbage string) falls back to first-page behaviour', async () => {
+        evidenceFindManyMock.mockResolvedValue([]);
+        await listOverdueEvidenceAcrossOrg(ctxFor(), {
+            cursor: 'not-base64-json-at-all',
+        });
+        const where = (evidenceFindManyMock.mock.calls[0][0] as CapturedQuery).where;
+        expect(where).not.toHaveProperty('OR');
+    });
+
+    it('preserves tenant attribution on every returned row', async () => {
+        evidenceFindManyMock
+            .mockResolvedValueOnce([
+                {
+                    id: 'e-1',
+                    title: 'A',
+                    nextReviewDate: new Date('2026-04-20T00:00:00Z'),
+                    status: 'SUBMITTED',
+                },
+            ])
+            .mockResolvedValueOnce([
+                {
+                    id: 'e-2',
+                    title: 'B',
+                    nextReviewDate: new Date('2026-04-21T00:00:00Z'),
+                    status: 'SUBMITTED',
+                },
+            ]);
+
+        const result = await listOverdueEvidenceAcrossOrg(ctxFor());
+
+        const byId = new Map(result.rows.map((r) => [r.evidenceId, r]));
+        expect(byId.get('e-1')?.tenantSlug).toBe('alpha');
+        expect(byId.get('e-1')?.tenantName).toBe('Alpha');
+        expect(byId.get('e-1')?.tenantId).toBe('t-1');
+        expect(byId.get('e-2')?.tenantSlug).toBe('beta');
+        expect(byId.get('e-2')?.tenantName).toBe('Beta');
+    });
 });
 
 // ── Permission gate (shared) ──────────────────────────────────────────
 
+describe('paginated drill-down — permission gate', () => {
+    it('throws forbidden when canViewPortfolio is false', async () => {
+        const denied = ctxFor();
+        denied.permissions.canViewPortfolio = false;
+
+        await expect(listOverdueEvidenceAcrossOrg(denied)).rejects.toMatchObject({
+            status: 403,
+        });
+    });
+});

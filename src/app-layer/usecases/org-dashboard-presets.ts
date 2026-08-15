@@ -53,23 +53,21 @@ import type { CreateOrgDashboardWidgetInput } from '@/app-layer/schemas/org-dash
  * `tests/unit/org-dashboard-preset.test.ts`.
  */
 export const DEFAULT_ORG_DASHBOARD_PRESET: ReadonlyArray<CreateOrgDashboardWidgetInput> = [
-    // ─── Row 1: three KPI tiles, evenly across the 12-col row ───────
-    {
-        type: 'KPI',
-        chartType: 'coverage',
-        title: 'Coverage',
-        config: { format: 'percent' },
-        position: { x: 0, y: 0 },
-        size: { w: 4, h: 2 },
-        enabled: true,
-    },
+    // ─── Row 1: two KPI tiles, evenly across the 12-col row ─────────
+    //
+    // Was THREE tiles (coverage / overdue-evidence / tenants). The GRC
+    // teardown removed the 'coverage' KPI — it read
+    // PortfolioSummary.practices, which stopped being computed (plan §8f)
+    // — and KpiChartType now holds exactly two metrics. Re-pointing the
+    // dead tile at one of the survivors would have seeded the SAME metric
+    // twice, so the row drops to two and re-flows to 6 columns each.
     {
         type: 'KPI',
         chartType: 'overdue-evidence',
         title: 'Overdue Evidence',
         config: { format: 'number' },
-        position: { x: 4, y: 0 },
-        size: { w: 4, h: 2 },
+        position: { x: 0, y: 0 },
+        size: { w: 6, h: 2 },
         enabled: true,
     },
     {
@@ -77,8 +75,8 @@ export const DEFAULT_ORG_DASHBOARD_PRESET: ReadonlyArray<CreateOrgDashboardWidge
         chartType: 'tenants',
         title: 'Tenants',
         config: { format: 'number' },
-        position: { x: 8, y: 0 },
-        size: { w: 4, h: 2 },
+        position: { x: 6, y: 0 },
+        size: { w: 6, h: 2 },
         enabled: true,
     },
 
@@ -94,11 +92,13 @@ export const DEFAULT_ORG_DASHBOARD_PRESET: ReadonlyArray<CreateOrgDashboardWidge
         enabled: true,
     },
 
-    // ─── Row 3: tenant coverage list (full width) ───────────────────
+    // ─── Row 3: tenant health list (full width) ─────────────────────
+    // chartType 'coverage' is the one-member TENANT_LIST identifier, not a
+    // coverage metric — see the note in org-dashboard-widget.schemas.ts.
     {
         type: 'TENANT_LIST',
         chartType: 'coverage',
-        title: 'Coverage by Tenant',
+        title: 'Tenant Health',
         config: { sortBy: 'rag' },
         position: { x: 0, y: 6 },
         size: { w: 12, h: 6 },

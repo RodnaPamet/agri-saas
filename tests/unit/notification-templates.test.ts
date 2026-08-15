@@ -18,7 +18,7 @@ describe('Notification Templates', () => {
         const payload = {
             taskTitle: 'Fix ISMS gap in access control',
             taskKey: 'TSK-42',
-            taskType: 'AUDIT_FINDING',
+            taskType: 'TASK',
             assigneeName: 'Alice Smith',
             assignerName: 'Bob Manager',
             tenantSlug: 'acme-corp',
@@ -36,7 +36,7 @@ describe('Notification Templates', () => {
 
         it('returns bodyText mentioning task type', () => {
             const result = buildTaskAssignedEmail(payload);
-            expect(result.bodyText).toContain('audit_finding');
+            expect(result.bodyText).toContain('task');
         });
 
         it('returns bodyText mentioning assigner', () => {

@@ -21,7 +21,7 @@
  *      for emitAutomationEvent — without this the automation payload
  *      can't drive transition-aware rules (e.g. "OPEN → IN_PROGRESS").
  *   4. validateTypeRelevance fires on RESOLVED/CLOSED transitions:
- *      AUDIT_FINDING / PRACTICE_GAP without practiceId AND without a
+ *      (removed) AUDIT_FINDING / PRACTICE_GAP without practiceId and without a
  *      PRACTICE / FRAMEWORK_REQUIREMENT link must be blocked.
  *   5. createTask + assignTask enqueue an assignment notification
  *      (best-effort try/catch — never breaks the task op).
@@ -214,26 +214,13 @@ describe('setTaskStatus — fromStatus capture + validateTypeRelevance', () => {
         ).rejects.toThrow(/Task not found/);
     });
 
-    it('blocks RESOLVED for AUDIT_FINDING without practiceId AND without PRACTICE/FRAMEWORK link', async () => {
-        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn({} as never));
-        mockGetById.mockResolvedValueOnce({
-            id: 't1', status: 'OPEN', type: 'AUDIT_FINDING', practiceId: null,
-        } as never);
-        mockLinkList.mockResolvedValueOnce([
-            { entityType: 'POLICY' }, // wrong type — not PRACTICE / FRAMEWORK_REQUIREMENT
-        ] as never);
-
-        await expect(
-            // S8 — resolution required on terminal transitions.
-            // Supply one so the type-relevance gate is the rejection
-            // path under test, not the resolution-required gate.
-            setTaskStatus(makeRequestContext('EDITOR'), 't1', 'RESOLVED', 'fix shipped'),
-        ).rejects.toThrow(/AUDIT_FINDING tasks must have a practiceId/);
-        // Regression: a refactor that skipped validateTypeRelevance
-        // would let an audit finding be marked "resolved" without
-        // pointing at WHICH practice was remediated — the audit-pack
-        // export downstream loses the traceability link.
-    });
+    // 'blocks RESOLVED for AUDIT_FINDING without practiceId AND without
+    // PRACTICE/FRAMEWORK link' lived here. It drove `validateTypeRelevance`,
+    // which the GRC teardown deleted (operator decision A6): AUDIT_FINDING /
+    // PRACTICE_GAP / INCIDENT are no longer creatable task types, and
+    // Practice / FrameworkRequirement are KILL models, so the gate returned
+    // on its first line for every surviving type. There is no traceability
+    // link left to enforce.
 
     it('allows RESOLVED for INCIDENT when an ASSET link is present', async () => {
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn({} as never));

@@ -4,8 +4,9 @@
  * Locks in the final migration batch and the architectural doc that
  * guides future contributors:
  *
- *   1. tasks/new                 — remaining findingSource / gapType /
- *                                  linkEntityType selects migrated.
+ *   1. tasks/new                 — remaining linkEntityType select
+ *                                  migrated. (findingSource / gapType
+ *                                  went with the GRC teardown — see below.)
  *   2. docs/combobox-form-strategy.md exists + covers the decision tree.
  *   3. The native-<select> ratchet guardrail is installed and still
  *      enumerates its surviving drift sentinels.
@@ -36,15 +37,18 @@ const STRATEGY_DOC = read('docs/combobox-form-strategy.md');
 
 // ─── tasks/new remaining selects ────────────────────────────────
 
-describe('tasks/new — findingSource / gapType / linkEntityType', () => {
+// GRC teardown phase 2 (operator decision A6) removed the AUDIT_FINDING /
+// PRACTICE_GAP task types and with them the whole audit-details sub-form,
+// so `finding-source-select` and `gap-type-select` no longer exist. The
+// surviving contract is the link-entity select — and the point of this
+// block is the NATIVE-<select> ban, which is unchanged.
+describe('tasks/new — linkEntityType select', () => {
     it('zero native <select> remain in tasks/new', () => {
         expect(TASKS_NEW_SRC).not.toMatch(/<select\b/);
     });
 
     it('preserves finding-source-select / gap-type-select / link-entity-type ids', () => {
         for (const id of [
-            'finding-source-select',
-            'gap-type-select',
             'link-entity-type',
         ]) {
             expect(TASKS_NEW_SRC).toMatch(
@@ -54,8 +58,10 @@ describe('tasks/new — findingSource / gapType / linkEntityType', () => {
     });
 
     it('option arrays are typed ComboboxOption[] (no leftover sentinel empty rows)', () => {
-        expect(TASKS_NEW_SRC).toMatch(/FINDING_OPTIONS:\s*ComboboxOption\[\]/);
-        expect(TASKS_NEW_SRC).toMatch(/GAP_TYPE_OPTIONS:\s*ComboboxOption\[\]/);
+        // FINDING_OPTIONS / GAP_TYPE_OPTIONS went with the audit-details
+        // sub-form. LINK_ENTITY_OPTIONS survives but is now DERIVED from
+        // AddTaskLinkSchema rather than hand-listed, so the annotation sits
+        // on the declaration rather than the literal.
         expect(TASKS_NEW_SRC).toMatch(
             /LINK_ENTITY_OPTIONS:\s*ComboboxOption\[\]/,
         );

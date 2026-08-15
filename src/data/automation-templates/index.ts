@@ -29,16 +29,6 @@ export interface AutomationTemplate {
 
 export const AUTOMATION_TEMPLATES: ReadonlyArray<AutomationTemplate> = [
     {
-        id: 'tpl_failed_test_task',
-        name: 'Create remediation task on failed test run',
-        description: 'Fires on TEST_RUN_FAILED and opens a remediation task.',
-        trigger: 'TEST_RUN_FAILED',
-        filter: null,
-        actionType: 'CREATE_TASK',
-        actionConfig: { title: 'Remediate failed practice test {{practice.code}}', priority: 'P2' },
-        tags: ['practice', 'task'],
-    },
-    {
         id: 'tpl_overdue_task_escalate',
         name: 'Escalate overdue task to manager',
         description: 'Notifies a manager when a task changes to an overdue/blocked state.',
@@ -57,16 +47,6 @@ export const AUTOMATION_TEMPLATES: ReadonlyArray<AutomationTemplate> = [
         actionType: 'NOTIFY_USER',
         actionConfig: { userIds: ['{{tenant.cisoId}}'], message: 'Critical issue: {{issue.title}}.' },
         tags: ['issue', 'notify'],
-    },
-    {
-        id: 'tpl_evidence_practice_review',
-        name: 'Move practice to IN_REVIEW on evidence upload',
-        description: 'When a test run completes, set the practice to IN_REVIEW.',
-        trigger: 'TEST_RUN_COMPLETED',
-        filter: null,
-        actionType: 'UPDATE_STATUS',
-        actionConfig: { entityType: 'Practice', field: 'status', toStatus: 'IN_REVIEW' },
-        tags: ['practice'],
     },
     {
         id: 'tpl_slack_finding_webhook',

@@ -65,15 +65,14 @@ const mockCtx: RequestContext = {
     requestId: 'req-test',
     role: 'ADMIN',
     permissions: { canRead: true, canWrite: true, canAdmin: true, canAudit: true, canExport: true },
+    // GRC teardown phase 2 removed the practices / policies / vendors / tests /
+    // frameworks / audits permission domains from PermissionSet, so those rows
+    // left this fixture. Nothing is lost: the sync orchestrator never reads
+    // appPermissions (ctx is threaded through as an opaque carrier for
+    // tenantId / userId / requestId), and no test in this file asserts on it.
     appPermissions: {
-        practices: { view: true, create: true, edit: true },
         evidence: { view: true, upload: true, edit: true, download: true },
-        policies: { view: true, create: true, edit: true, approve: true },
         tasks: { view: true, create: true, edit: true, assign: true },
-        vendors: { view: true, create: true, edit: true },
-        tests: { view: true, create: true, execute: true },
-        frameworks: { view: true, install: true },
-        audits: { view: true, manage: true, freeze: true, share: true },
         reports: { view: true, export: true },
         knowledge: { view: true },
         admin: { view: true, manage: true, members: true, sso: true, scim: true, tenant_lifecycle: true, owner_management: true },
