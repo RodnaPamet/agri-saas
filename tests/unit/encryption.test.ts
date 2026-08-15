@@ -245,7 +245,9 @@ describe('Data Classification', () => {
         const appEncrypted = DATA_CLASSIFICATION.filter(
             (c) => c.tier === 'APP_ENCRYPTED',
         );
-        expect(appEncrypted.length).toBeGreaterThanOrEqual(9);
+        // Floor lowered with the GRC teardown: the VendorContact (x3) and
+        // AuditorAccount (x2) PII entries went with their models.
+        expect(appEncrypted.length).toBeGreaterThanOrEqual(4);
     });
 
     it('User.email is classified as APP_ENCRYPTED with search hash', () => {
@@ -275,7 +277,7 @@ describe('Data Classification', () => {
 
     it('getFieldsNeedingSearchHash returns only hash-needed fields', () => {
         const fields = getFieldsNeedingSearchHash();
-        expect(fields.length).toBeGreaterThanOrEqual(4);
+        expect(fields.length).toBeGreaterThanOrEqual(2);
         expect(fields.every((f) => f.needsSearchHash === true)).toBe(true);
     });
 
@@ -298,22 +300,32 @@ describe('Data Classification', () => {
 
 describe('Soft-Delete Targets', () => {
     it('has at least 12 target models', () => {
-        expect(SOFT_DELETE_TARGETS.length).toBeGreaterThanOrEqual(12);
+        // Was >= 12. A floor that every teardown edits measures nothing —
+        // Risk took it from 13, the seven GRC models take it to 5. The
+        // property is that the registry is non-empty and that its
+        // hasDeletedAt split is still meaningful, both asserted below.
+        expect(SOFT_DELETE_TARGETS.length).toBeGreaterThan(0);
     });
 
-    it('Asset, Practice, Evidence, Policy already have deletedAt', () => {
+    // Both halves named GRC models (Practice / Policy / Vendor) that left
+    // the registry with the teardown. The PROPERTY each was asserting is
+    // that the hasDeletedAt split is real in both directions — that some
+    // models already carry the column and some still need it — which does
+    // not depend on which models those happen to be.
+    it('the hasDeletedAt split is populated on both sides', () => {
         const existing = SOFT_DELETE_TARGETS.filter((t) => t.hasDeletedAt);
-        const names = existing.map((t) => t.model).sort();
-        expect(names).toContain('Asset');
-        expect(names).toContain('Practice');
-        expect(names).toContain('Evidence');
-        expect(names).toContain('Policy');
-    });
-
-    it('Vendor and FileRecord need deletedAt', () => {
         const needed = SOFT_DELETE_TARGETS.filter((t) => !t.hasDeletedAt);
-        const names = needed.map((t) => t.model);
-        expect(names).toContain('Vendor');
-        expect(names).toContain('FileRecord');
+        expect(existing.length).toBeGreaterThan(0);
+        expect(needed.length).toBeGreaterThan(0);
+        expect(existing.length + needed.length).toBe(SOFT_DELETE_TARGETS.length);
+        // Asset and Evidence are the surviving P0 pair; FileRecord and Task
+        // are the surviving not-yet-migrated pair. Named so a regression
+        // that empties one side is visible, not just counted.
+        expect(existing.map((t) => t.model)).toEqual(
+            expect.arrayContaining(['Asset', 'Evidence']),
+        );
+        expect(needed.map((t) => t.model)).toEqual(
+            expect.arrayContaining(['FileRecord', 'Task']),
+        );
     });
 });

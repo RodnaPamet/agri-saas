@@ -65,7 +65,6 @@ function buildFakeEvent(
                     severity: 'MEDIUM',
                     priority: 'P2',
                     assigneeUserId: null,
-                    practiceId: null,
                 },
             };
         case 'TASK_STATUS_CHANGED':

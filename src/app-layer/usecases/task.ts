@@ -96,7 +96,6 @@ export async function createTask(ctx: RequestContext, input: {
     dueAt?: string | null;
     assigneeUserId?: string | null;
     reviewerUserId?: string | null;
-    practiceId?: string | null;
     clientMutationId?: string | null;
     metadataJson?: unknown;
 }) {
@@ -130,7 +129,6 @@ export async function createTask(ctx: RequestContext, input: {
                 severity: task.severity,
                 priority: task.priority,
                 assigneeUserId: task.assigneeUserId,
-                practiceId: task.practiceId,
             },
         });
 
@@ -164,7 +162,6 @@ export async function updateTask(ctx: RequestContext, taskId: string, patch: {
     severity?: string;
     priority?: string;
     dueAt?: string | null;
-    practiceId?: string | null;
     reviewerUserId?: string | null;
     metadataJson?: unknown;
 }) {
@@ -876,18 +873,3 @@ export async function bulkSetTaskDueDate(ctx: RequestContext, taskIds: string[],
     return outcome;
 }
 
-// ─── By Practice ───
-
-export async function listTasksByPractice(ctx: RequestContext, practiceId: string) {
-    assertCanReadTasks(ctx);
-    return cachedListRead({
-        ctx,
-        entity: 'task',
-        operation: 'listByPractice',
-        params: { practiceId },
-        loader: () =>
-            runInTenantContext(ctx, (db) =>
-                WorkItemRepository.list(db, ctx, { practiceId }),
-            ),
-    });
-}

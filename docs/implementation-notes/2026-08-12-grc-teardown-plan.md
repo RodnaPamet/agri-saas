@@ -690,3 +690,54 @@ thing returns a lazily-failing handle — a stream, a socket, a deferred
 promise — because the test finishes before the failure exists. When you mock
 a module, assert that the mock was CALLED, not merely that the result is
 defined.
+
+### §8m — phase-3 pre-flight, re-measured after T4/T5 (2026-08-15)
+
+§8g measured zero GRC rows BEFORE T4/T5 landed. Re-measured on `agrent`
+after the whole of T4/T5, because "code deletion is not data deletion"
+cuts both ways: the earlier number does not license a drop weeks later.
+
+```
+KILL models                47
+present as tables          47
+TOTAL GRC ROWS              0
+tables with rows > 0        0
+```
+
+**No data migration is required.** Every dead-value class that §8d.4 and
+this document deferred to the migration sweep is empty in production:
+
+| surface | rows |
+|---|---|
+| `OrgDashboardWidget` (all rows) | **0** — the dead-chartType sweep has nothing to migrate |
+| `Task.practiceId` set | 0 (of 6 Task rows) |
+| `Task.type` in AUDIT_FINDING / PRACTICE_GAP / INCIDENT | 0 |
+| `TaskLink.entityType` in PRACTICE / FRAMEWORK_REQUIREMENT / POLICY / AUDIT_PACK / VENDOR | 0 (of 6) |
+| `Evidence.practiceId` set | 0 |
+| `TenantApiKey` (dead scopes) | 0 — no keys at all |
+| `Organization` | 0 — the org/portfolio surface has no data |
+
+`ComplianceSnapshot` holds **49 real rows**. That is the evidence §8f was
+right: its practice / policy / finding columns carry real history, so they
+are dropped as COLUMNS in phase 3 rather than going with the models.
+
+**The empty data removes the DATA risk, not the ROLLBACK requirement.**
+CLAUDE.md's rule stands: the previous image queries the dropped objects,
+so an image-only rollback fails outright after a drop. Phase 3 still needs
+`deploy/rollback/*.down.sql` inverse scripts.
+
+**Two ways this measurement could have lied, both checked.** The
+production database on the agrent VM is named `inflect_production` — a
+legacy name from before the rebrand — and CLAUDE.md warns that
+`inflect-compliance` is a DIFFERENT, live product. Host identity was
+verified first (`hostname` = `agrent`, agri schema present via
+`LogEntry`, `Tenant` = 1). And the first attempt silently mis-ran: shell
+quoting through the ssh + `docker compose exec` layers stripped the
+`"Model"` identifiers, so Postgres lowercased them and errored. A query
+shaped slightly differently could have returned zeros for the wrong
+reason. The counts above come from `query_to_xml` with `%I` over
+`information_schema`, which has no quoting exposure, cross-referenced
+against the 47 model names locally.
+
+**Re-run before executing phase 3.** This is a 2026-08-15 snapshot and
+rows can arrive.

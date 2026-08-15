@@ -84,28 +84,25 @@ describe('GAP-10 step 3 — generated OpenAPI 3.1 spec', () => {
     // ─── Schema coverage ────────────────────────────────────────────
 
     it('registers all canonical request schemas (CRUD across the domains)', () => {
+        // GRC teardown: the Practice / Policy / Audit / Vendor / Finding
+        // request shapes went with their models and their zod schemas. The
+        // RESPONSE list below already carried that note; this REQUEST list
+        // had not been updated, so it went on demanding shapes the spec no
+        // longer publishes.
+        //
+        // (Component-ID uniqueness is already guarded — see the
+        // 'Duplicate OpenAPI component ID' assertion in
+        // openapi-foundation.test.ts, which scans @/lib/schemas among
+        // others.)
         const expectedRequests = [
             // Asset
             'AssetCreateRequest', 'AssetUpdateRequest',
-            // Practice
-            'PracticeCreateRequest', 'PracticeUpdateRequest',
-            'PracticeSetStatusRequest', 'PracticeSetApplicabilityRequest',
-            'PracticeSetOwnerRequest',
-            // Policy
-            'PolicyCreateRequest', 'PolicyMetadataUpdateRequest',
-            'PolicyVersionCreateRequest', 'PolicyPublishRequest',
             // Evidence
             'EvidenceCreateRequest', 'EvidenceUpdateRequest',
-            'EvidenceReviewRequest', 'EvidenceLinkRequest',
-            // Audit
-            'AuditCreateRequest', 'AuditUpdateRequest',
+            'EvidenceReviewRequest',
             // Task
             'TaskCreateRequest', 'TaskUpdateRequest',
             'TaskSetStatusRequest', 'TaskAssignRequest',
-            // Vendor
-            'VendorCreateRequest', 'VendorUpdateRequest',
-            // Finding (audit-issue)
-            'FindingCreateRequest', 'FindingUpdateRequest',
             // Auth
             'AuthRegisterRequest',
         ];
@@ -145,12 +142,19 @@ describe('GAP-10 step 3 — generated OpenAPI 3.1 spec', () => {
         }
     });
 
-    it('has at least 60 schemas registered (canonical surface coverage floor)', () => {
-        // Floor below the actual count (65 at the time of writing) so
-        // future additions don't trip this; if a refactor accidentally
-        // drops below 60 something major was deleted.
+    it('has a plausible number of schemas registered (coverage floor)', () => {
+        // Floor was 60, set below an actual count of 65. The GRC teardown
+        // removed 26 orphan zod schemas whose models are gone, so the spec
+        // legitimately publishes far fewer — the floor was measuring the
+        // size of the old surface, not the health of the current one.
+        //
+        // Kept as a floor rather than deleted: its real job is catching a
+        // refactor that accidentally empties the registry. Set well below
+        // the current count so ordinary removals don't trip it, and paired
+        // with the named-schema assertions above, which are what actually
+        // pin the canonical surface.
         const count = Object.keys(spec.components!.schemas!).length;
-        expect(count).toBeGreaterThanOrEqual(60);
+        expect(count).toBeGreaterThanOrEqual(20);
     });
 
     // ─── Per-schema sanity ──────────────────────────────────────────

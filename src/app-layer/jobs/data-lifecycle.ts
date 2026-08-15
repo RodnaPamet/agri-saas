@@ -41,9 +41,18 @@ export const DEFAULT_EVIDENCE_PURGE_DAYS = 365;
  * Asset dropped its `retentionUntil` column in the agricultural-assets
  * rework (data-retention is an information-asset concept, not a machine
  * one), so it is no longer swept. */
+// Models the retention sweep walks. NOT the same set as
+// SOFT_DELETE_MODELS: every entry here must carry a `retentionUntil`
+// column, because the loop below filters on it — a model without one
+// would throw at `findMany`. All four below have it (verified against
+// prisma/schema/).
+//
+// This list had drifted twice over: it still named `Risk`, dead since the
+// risk-register uproot, and Practice / Policy / Vendor, removed by the GRC
+// teardown. Nothing failed, because a model that no longer exists just
+// resolves to no delegate and hits the `continue` on the next line.
 const RETENTION_MODELS = [
-    'Risk', 'Practice', 'Evidence', 'Policy',
-    'Vendor', 'FileRecord', 'Task',
+    'Evidence', 'FileRecord', 'Task',
     // Grain marketing contracts hold commercial terms (encrypted) and a
     // counterparty name, so they are exactly the kind of row a retention
     // policy exists for. The column was already there; nothing swept it.

@@ -18,7 +18,6 @@ export interface TaskFilters {
     severity?: string;
     priority?: string;
     assigneeUserId?: string[];
-    practiceId?: string;
     due?: 'overdue' | 'next7d';
     q?: string;
     linkedEntityType?: string;
@@ -97,115 +96,11 @@ export class WorkItemRepository {
     }
 
     /**
-     * Total + completed count of the unified tasks linked to a practice,
-     * using the SAME where-shape the LinkedTasksPanel list renders
-     * (TaskLink with entityType=PRACTICE OR the direct `Task.practiceId`
-     * FK). Backs the practice header's Tasks-tab badge + Overview
-     * progress so they reflect the table — not the legacy `PracticeTask`
-     * relation count, which diverged after the work-item unification.
-     *
-     * "Completed" is `COMPLETED_WORK_ITEM_STATUSES` — RESOLVED or CLOSED.
-     * A CANCELED task is terminal but not completed work, so it doesn't
-     * count toward progress.
-     */
-    static async countLinkedToPractice(
-        db: PrismaTx,
-        ctx: RequestContext,
-        practiceId: string,
-    ): Promise<{ total: number; done: number }> {
-        const where = WorkItemRepository._buildWhere(ctx, {
-            linkedEntityType: 'PRACTICE',
-            linkedEntityId: practiceId,
-        });
-        const [total, done] = await Promise.all([
-            db.task.count({ where }),
-            db.task.count({
-                where: {
-                    AND: [
-                        where,
-                        { status: { in: [...COMPLETED_WORK_ITEM_STATUSES] as WorkItemStatus[] } },
-                    ],
-                },
-            }),
-        ]);
-        return { total, done };
-    }
-
-    /**
-     * Batched version of `countLinkedToPractice` for the practices LIST.
-     * Returns a `practiceId → { total, done }` map using the SAME
-     * linkage rule (TaskLink with entityType=PRACTICE OR the direct
-     * `Task.practiceId` FK), deduped by task id so a task linked BOTH
-     * ways counts once. Two indexed queries — NOT an N+1 over practices
-     * — so the list-page Tasks column reflects the real linked-task
-     * count instead of the legacy `PracticeTask` relation (which read
-     * 0/0 for unified tasks).
-     */
-    static async countLinkedToPractices(
-        db: PrismaTx,
-        ctx: RequestContext,
-        practiceIds: string[],
-    ): Promise<Map<string, { total: number; done: number }>> {
-        const result = new Map<string, { total: number; done: number }>();
-        if (practiceIds.length === 0) return result;
-
-        // practiceId → (taskId → status). The inner map dedupes a task
-        // that is linked to the same practice via both paths.
-        const perPractice = new Map<string, Map<string, string>>();
-        const add = (practiceId: string, taskId: string, status: string) => {
-            let m = perPractice.get(practiceId);
-            if (!m) {
-                m = new Map();
-                perPractice.set(practiceId, m);
-            }
-            m.set(taskId, status);
-        };
-
-        // Direct FK. Bounded by practiceIds; counting needs every match.
-        const direct = await db.task.findMany({ // guardrail-allow: unbounded -- aggregate count, bounded by the practiceIds set
-            where: { tenantId: ctx.tenantId, practiceId: { in: practiceIds } },
-            select: { id: true, practiceId: true, status: true },
-        });
-        for (const t of direct) {
-            if (t.practiceId) add(t.practiceId, t.id, t.status);
-        }
-
-        // Generic TaskLink path (the practice-tab create flow links via
-        // TaskLink, not the FK). Indexed by [tenantId, entityType, entityId].
-        const links = await db.taskLink.findMany({ // guardrail-allow: unbounded -- aggregate count, bounded by the practiceIds set
-            where: {
-                tenantId: ctx.tenantId,
-                entityType: 'PRACTICE' as TaskLinkEntityType,
-                entityId: { in: practiceIds },
-            },
-            select: {
-                entityId: true,
-                taskId: true,
-                task: { select: { status: true } },
-            },
-        });
-        for (const l of links) {
-            add(l.entityId, l.taskId, l.task.status);
-        }
-
-        for (const [practiceId, taskMap] of perPractice) {
-            let done = 0;
-            for (const status of taskMap.values()) {
-                if (isCompletedStatus(status)) done++;
-            }
-            result.set(practiceId, { total: taskMap.size, done });
-        }
-        return result;
-    }
-
-    /**
      * B7 (2026-06-07) — generic batched linked-task counter for entities
      * that link tasks ONLY via TaskLink (no direct FK) — Asset, Risk, … .
      * Returns an `entityId → { total, done }` map. ONE indexed query over
      * [tenantId, entityType, entityId]; NOT an N+1 over the entity list.
-     * (Practices carry an extra direct-`Task.practiceId` FK path, so they keep
-     * their own `countLinkedToPractices`.) `done` = RESOLVED|CLOSED, matching
-     * the practices column.
+     * `done` = RESOLVED|CLOSED.
      */
     static async countLinkedToEntities(
         db: PrismaTx,
@@ -283,7 +178,6 @@ export class WorkItemRepository {
         if (filters.severity) where.severity = filters.severity as WorkItemSeverity;
         if (filters.priority) where.priority = filters.priority as WorkItemPriority;
         if (filters.assigneeUserId?.length) where.assigneeUserId = { in: filters.assigneeUserId };
-        if (filters.practiceId) where.practiceId = filters.practiceId;
         if (filters.due === 'overdue') {
             where.dueAt = { lt: new Date() };
             if (!filters.status?.length) where.status = { notIn: [...TERMINAL_WORK_ITEM_STATUSES] as WorkItemStatus[] };
@@ -310,20 +204,11 @@ export class WorkItemRepository {
                     },
                 },
             };
-            if (filters.linkedEntityType === 'PRACTICE') {
-                // A task is linked to a practice via EITHER the generic
-                // TaskLink OR the direct `Task.practiceId` FK. The latter
-                // is what pack install and the task-create form set, and
-                // it's what the task's OWN view shows as its linked
-                // practice — so the practice's Tasks tab must mirror it.
-                // Without this, pack-installed tasks (practiceId set, no
-                // TaskLink row) never appear in the practice's Tasks tab.
-                and.push({
-                    OR: [viaLink, { practiceId: filters.linkedEntityId }],
-                });
-            } else {
-                and.push(viaLink);
-            }
+            // The PRACTICE branch that also matched the direct
+            // `Task.practiceId` FK went with the GRC teardown — the
+            // practice Tasks tab it existed for is deleted, and
+            // TaskLinkEntityType.PRACTICE is dropped in phase 3.
+            and.push(viaLink);
         }
 
         if (and.length) where.AND = and;
@@ -361,7 +246,6 @@ export class WorkItemRepository {
         dueAt?: string | null;
         assigneeUserId?: string | null;
         reviewerUserId?: string | null;
-        practiceId?: string | null;
         // Offline exactly-once handle (outbox-item id). Dedupe key for a
         // replayed FIELD_OPERATION create — see the Task.clientMutationId note.
         clientMutationId?: string | null;
@@ -395,7 +279,6 @@ export class WorkItemRepository {
                 dueAt: data.dueAt ? new Date(data.dueAt) : null,
                 assigneeUserId: data.assigneeUserId || null,
                 reviewerUserId: data.reviewerUserId || null,
-                practiceId: data.practiceId || null,
                 clientMutationId: data.clientMutationId || null,
                 createdByUserId: ctx.userId,
                 metadataJson: data.metadataJson != null ? data.metadataJson : Prisma.JsonNull,
@@ -414,7 +297,6 @@ export class WorkItemRepository {
         severity?: string;
         priority?: string;
         dueAt?: string | null;
-        practiceId?: string | null;
         reviewerUserId?: string | null;
         // eslint-disable-next-line @typescript-eslint/no-explicit-any -- caller-supplied JSON blob from Zod parse, typed as any at the usecase boundary
         metadataJson?: any;
@@ -429,7 +311,6 @@ export class WorkItemRepository {
             ...(data.severity !== undefined && { severity: data.severity as WorkItemSeverity }),
             ...(data.priority !== undefined && { priority: data.priority as WorkItemPriority }),
             ...(data.dueAt !== undefined && { dueAt: data.dueAt ? new Date(data.dueAt) : null }),
-            ...(data.practiceId !== undefined && { practiceId: data.practiceId }),
             ...(data.reviewerUserId !== undefined && { reviewerUserId: data.reviewerUserId }),
             ...(data.metadataJson !== undefined && { metadataJson: data.metadataJson != null ? data.metadataJson : Prisma.JsonNull }),
         };
@@ -496,25 +377,12 @@ export class WorkItemRepository {
             db.task.count({ where: { tenantId, completedAt: { gte: ago30d } } }),
         ]);
 
-        // Top practices with most open tasks (via practiceId)
-        const topPracticesRaw = await db.task.groupBy({
-            by: ['practiceId'],
-            where: { tenantId, practiceId: { not: null }, status: openFilter },
-            _count: true,
-            orderBy: { _count: { practiceId: 'desc' } },
-            take: 5,
-        });
-        const practiceIds = topPracticesRaw.map(r => r.practiceId).filter(Boolean) as string[];
-        const practices = practiceIds.length > 0
-            ? await db.practice.findMany({ where: { id: { in: practiceIds } }, select: { id: true, code: true, name: true } })
-            : [];
-        const practiceMap = new Map(practices.map(c => [c.id, c]));
-        const topPractices = topPracticesRaw.map(r => ({
-            practiceId: r.practiceId!,
-            code: practiceMap.get(r.practiceId!)?.code || '',
-            name: practiceMap.get(r.practiceId!)?.name || '',
-            openTaskCount: r._count,
-        }));
+        // GRC teardown: the "top practices with most open tasks" block
+        // lived here. It was a groupBy on Task.practiceId plus a
+        // db.practice.findMany — a LIVE query against a KILL model, reached
+        // by both /tasks/metrics and /issues/metrics, so it would have 500'd
+        // the moment phase 3 dropped the table. `topLinkedEntities` below
+        // covers the surviving ASSET path.
 
         // Top linked entities (ASSET / RISK) with most open tasks.
         // Pushdown: groupBy + take 5 instead of loading every TaskLink
@@ -546,7 +414,6 @@ export class WorkItemRepository {
             dueIn7d: due7dCount,
             dueIn30d: due30dCount,
             trend: { created30d: recentCreated, resolved30d: recentResolved },
-            topPractices,
             topLinkedEntities,
         };
     }

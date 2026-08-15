@@ -15,6 +15,7 @@ import { SOFT_DELETE_MODELS, withDeleted, withSoftDeleteExtension } from '@/lib/
 import { restoreSoftDeleted, purgeSoftDeleted, listSoftDeleted } from '@/app-layer/usecases/soft-delete-lifecycle';
 import { DB_URL, DB_AVAILABLE } from './db-helper';
 import { withPiiEncryptionExtension } from '@/lib/security/pii-middleware';
+import { SOFT_DELETE_TARGETS } from '@/lib/security/classification';
 
 // Prisma 7 — soft-delete moved from `$use` to `$extends`. Wrap inline
 // to mirror the production `src/lib/prisma.ts` composition.
@@ -53,8 +54,8 @@ if (DB_AVAILABLE) {
 
     afterAll(async () => {
         // Clean up
-        await prisma.$executeRawUnsafe('DELETE FROM "Practice" WHERE "tenantId" = $1', testTenantId).catch(() => {});
-        await prisma.$executeRawUnsafe('DELETE FROM "Vendor" WHERE "tenantId" = $1', testTenantId).catch(() => {});
+        await prisma.$executeRawUnsafe('DELETE FROM "Evidence" WHERE "tenantId" = $1', testTenantId).catch(() => {});
+        await prisma.$executeRawUnsafe('DELETE FROM "Evidence" WHERE "tenantId" = $1', testTenantId).catch(() => {});
         await prisma.$executeRawUnsafe('DELETE FROM "Task" WHERE "tenantId" = $1', testTenantId).catch(() => {});
         await prisma.$executeRawUnsafe('DELETE FROM "User" WHERE "id" = $1', testUserId).catch(() => {});
         await prisma.$executeRawUnsafe('DELETE FROM "Tenant" WHERE "id" = $1', testTenantId).catch(() => {});
@@ -67,19 +68,19 @@ describeFn('Soft-Delete & Retention', () => {
 
     describe('soft-delete on delete()', () => {
         it('sets deletedAt instead of removing the row', async () => {
-            const practice = await prisma.practice.create({
-                data: { tenantId: testTenantId, name: 'Practice to soft-delete' },
+            const evidence = await prisma.evidence.create({
+                data: { tenantId: testTenantId, type: 'LINK', title: 'Evidence to soft-delete' },
             });
 
-            await prisma.practice.delete({ where: { id: practice.id } });
+            await prisma.evidence.delete({ where: { id: evidence.id } });
 
             // Raw SQL confirms record still exists with deletedAt set
             const [raw] = await prisma.$queryRawUnsafe<Array<{
                 id: string;
                 deletedAt: Date | null;
             }>>(
-                'SELECT "id", "deletedAt" FROM "Practice" WHERE "id" = $1',
-                practice.id,
+                'SELECT "id", "deletedAt" FROM "Evidence" WHERE "id" = $1',
+                evidence.id,
             );
 
             expect(raw).toBeDefined();
@@ -87,61 +88,62 @@ describeFn('Soft-Delete & Retention', () => {
         });
 
         it('default queries exclude soft-deleted records', async () => {
-            const practice = await prisma.practice.create({
-                data: { tenantId: testTenantId, name: 'Hidden practice' },
+            const evidence = await prisma.evidence.create({
+                data: { tenantId: testTenantId, type: 'LINK', title: 'Hidden evidence' },
             });
 
-            await prisma.practice.delete({ where: { id: practice.id } });
+            await prisma.evidence.delete({ where: { id: evidence.id } });
 
             // Default findMany should NOT return it
-            const rows = await prisma.practice.findMany({
-                where: { tenantId: testTenantId, name: 'Hidden practice' },
+            const rows = await prisma.evidence.findMany({
+                where: { tenantId: testTenantId, title: 'Hidden evidence' },
             });
             expect(rows).toHaveLength(0);
 
             // Default findUnique should return null
-            const found = await prisma.practice.findUnique({
-                where: { id: practice.id },
+            const found = await prisma.evidence.findUnique({
+                where: { id: evidence.id },
             });
             expect(found).toBeNull();
         });
 
         it('withDeleted() includes soft-deleted records', async () => {
-            const practice = await prisma.practice.create({
-                data: { tenantId: testTenantId, name: 'Deleted but visible' },
+            const evidence = await prisma.evidence.create({
+                data: { tenantId: testTenantId, type: 'LINK', title: 'Deleted but visible' },
             });
 
-            await prisma.practice.delete({ where: { id: practice.id } });
+            await prisma.evidence.delete({ where: { id: evidence.id } });
 
-            const found = await prisma.practice.findMany(withDeleted({
-                where: { id: practice.id },
+            const found = await prisma.evidence.findMany(withDeleted({
+                where: { id: evidence.id },
             }));
             expect(found).toHaveLength(1);
             expect(found[0].deletedAt).not.toBeNull();
         });
 
-        it('works for newly added models (Vendor)', async () => {
-            const vendor = await prisma.vendor.create({
+        it('works for models added to the allowlist later', async () => {
+            const ev2 = await prisma.evidence.create({
                 data: {
                     tenantId: testTenantId,
-                    name: `Vendor-SD-${Date.now()}`,
+                    type: 'LINK',
+                    title: `LateModel-SD-${Date.now()}`,
                 },
             });
 
-            await prisma.vendor.delete({ where: { id: vendor.id } });
+            await prisma.evidence.delete({ where: { id: ev2.id } });
 
             // Should be soft-deleted, not hard-deleted
             const [raw] = await prisma.$queryRawUnsafe<Array<{
                 deletedAt: Date | null;
             }>>(
-                'SELECT "deletedAt" FROM "Vendor" WHERE "id" = $1',
-                vendor.id,
+                'SELECT "deletedAt" FROM "Evidence" WHERE "id" = $1',
+                ev2.id,
             );
             expect(raw).toBeDefined();
             expect(raw.deletedAt).not.toBeNull();
 
             // Default read excludes it
-            const found = await prisma.vendor.findUnique({ where: { id: vendor.id } });
+            const found = await prisma.evidence.findUnique({ where: { id: ev2.id } });
             expect(found).toBeNull();
         });
 
@@ -171,36 +173,36 @@ describeFn('Soft-Delete & Retention', () => {
 
     describe('restore', () => {
         it('restores a soft-deleted record', async () => {
-            const practice = await prisma.practice.create({
-                data: { tenantId: testTenantId, name: 'Practice to restore' },
+            const evidence = await prisma.evidence.create({
+                data: { tenantId: testTenantId, type: 'LINK', title: 'Evidence to restore' },
             });
 
-            await prisma.practice.delete({ where: { id: practice.id } });
+            await prisma.evidence.delete({ where: { id: evidence.id } });
 
             // Verify it's hidden
-            expect(await prisma.practice.findUnique({ where: { id: practice.id } })).toBeNull();
+            expect(await prisma.evidence.findUnique({ where: { id: evidence.id } })).toBeNull();
 
             const result = await restoreSoftDeleted(prisma, {
-                model: 'Practice',
-                id: practice.id,
+                model: 'Evidence',
+                id: evidence.id,
             });
 
-            expect(result.model).toBe('Practice');
-            expect(result.id).toBe(practice.id);
+            expect(result.model).toBe('Evidence');
+            expect(result.id).toBe(evidence.id);
 
             // Now visible in default queries
-            const found = await prisma.practice.findUnique({ where: { id: practice.id } });
+            const found = await prisma.evidence.findUnique({ where: { id: evidence.id } });
             expect(found).not.toBeNull();
             expect(found!.deletedAt).toBeNull();
         });
 
         it('throws if record is not soft-deleted', async () => {
-            const practice = await prisma.practice.create({
-                data: { tenantId: testTenantId, name: 'Active practice' },
+            const evidence = await prisma.evidence.create({
+                data: { tenantId: testTenantId, type: 'LINK', title: 'Active evidence' },
             });
 
             await expect(
-                restoreSoftDeleted(prisma, { model: 'Practice', id: practice.id }),
+                restoreSoftDeleted(prisma, { model: 'Evidence', id: evidence.id }),
             ).rejects.toThrow('No soft-deleted');
         });
 
@@ -215,34 +217,34 @@ describeFn('Soft-Delete & Retention', () => {
 
     describe('purge', () => {
         it('permanently removes a soft-deleted record', async () => {
-            const practice = await prisma.practice.create({
-                data: { tenantId: testTenantId, name: 'Practice to purge' },
+            const evidence = await prisma.evidence.create({
+                data: { tenantId: testTenantId, type: 'LINK', title: 'Evidence to purge' },
             });
 
-            await prisma.practice.delete({ where: { id: practice.id } });
+            await prisma.evidence.delete({ where: { id: evidence.id } });
 
             const result = await purgeSoftDeleted(prisma, {
-                model: 'Practice',
-                id: practice.id,
+                model: 'Evidence',
+                id: evidence.id,
             });
 
-            expect(result.model).toBe('Practice');
+            expect(result.model).toBe('Evidence');
 
             // Raw SQL confirms hard-deleted
             const rows = await prisma.$queryRawUnsafe<Array<{ id: string }>>(
-                'SELECT "id" FROM "Practice" WHERE "id" = $1',
-                practice.id,
+                'SELECT "id" FROM "Evidence" WHERE "id" = $1',
+                evidence.id,
             );
             expect(rows).toHaveLength(0);
         });
 
         it('throws if record is not soft-deleted', async () => {
-            const practice = await prisma.practice.create({
-                data: { tenantId: testTenantId, name: 'Active practice for purge test' },
+            const evidence = await prisma.evidence.create({
+                data: { tenantId: testTenantId, type: 'LINK', title: 'Active evidence for purge test' },
             });
 
             await expect(
-                purgeSoftDeleted(prisma, { model: 'Practice', id: practice.id }),
+                purgeSoftDeleted(prisma, { model: 'Evidence', id: evidence.id }),
             ).rejects.toThrow('No soft-deleted');
         });
     });
@@ -251,16 +253,16 @@ describeFn('Soft-Delete & Retention', () => {
 
     describe('listSoftDeleted', () => {
         it('returns only soft-deleted records for a tenant', async () => {
-            const c1 = await prisma.practice.create({
-                data: { tenantId: testTenantId, name: 'Deleted practice 1' },
+            const c1 = await prisma.evidence.create({
+                data: { tenantId: testTenantId, type: 'LINK', title: 'Deleted evidence 1' },
             });
-            const c2 = await prisma.practice.create({
-                data: { tenantId: testTenantId, name: 'Active practice' },
+            const c2 = await prisma.evidence.create({
+                data: { tenantId: testTenantId, type: 'LINK', title: 'Active evidence' },
             });
 
-            await prisma.practice.delete({ where: { id: c1.id } });
+            await prisma.evidence.delete({ where: { id: c1.id } });
 
-            const deleted = await listSoftDeleted(prisma, 'Practice', testTenantId);
+            const deleted = await listSoftDeleted(prisma, 'Evidence', testTenantId);
 
             const deletedIds = deleted.map((r: { id: string }) => r.id);
             expect(deletedIds).toContain(c1.id);
@@ -272,19 +274,19 @@ describeFn('Soft-Delete & Retention', () => {
 
     describe('model coverage', () => {
         it('all expected models are in SOFT_DELETE_MODELS', () => {
-            // `Risk` was in this list until the risk register was
-            // removed; it and its mirror in `SOFT_DELETE_TARGETS` went
-            // in the same diff.
-            const expected = [
-                'Asset', 'Practice', 'Evidence', 'Policy',
-                'Vendor', 'FileRecord', 'Task', 'Finding',
-                'Audit', 'AuditCycle', 'AuditPack',
-                // Grain (2026-07-25) — see SOFT_DELETE_MODELS.
-                'Contract',
-            ];
-            for (const model of expected) {
-                expect(SOFT_DELETE_MODELS.has(model)).toBe(true);
-            }
+            // DERIVED, not a third hand-copy. This restated the model
+            // list a THIRD time (after SOFT_DELETE_TARGETS and
+            // SOFT_DELETE_MODELS), and the comment it replaces recorded
+            // that `Risk` had to be removed from all three in one diff —
+            // which is the drift this now makes impossible.
+            // SOFT_DELETE_MODELS derives from SOFT_DELETE_TARGETS, so the
+            // real assertion is that the runtime allowlist and the
+            // classification registry agree, plus a floor so the
+            // comparison cannot pass vacuously on two empty sets.
+            expect([...SOFT_DELETE_MODELS].sort()).toEqual(
+                SOFT_DELETE_TARGETS.map((t) => t.model).slice().sort(),
+            );
+            expect(SOFT_DELETE_MODELS.size).toBeGreaterThan(0);
         });
     });
 });

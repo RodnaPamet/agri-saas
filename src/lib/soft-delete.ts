@@ -8,32 +8,17 @@
  * All other models retain hard-delete semantics.
  */
 import { getAuditContext } from './audit-context';
+import { SOFT_DELETE_TARGETS } from './security/classification';
 
 // ─── Models that support soft delete ───
-// Must match SOFT_DELETE_TARGETS in src/lib/security/classification.ts
-export const SOFT_DELETE_MODELS = new Set([
-    // P0 — already had deletedAt
-    'Asset',
-    'Practice',
-    'Evidence',
-    'Policy',
-    // P1 — added in soft-delete rollout migration
-    'Vendor',
-    'FileRecord',
-    // P2
-    'Task',
-    'Finding',
-    // P3
-    'Audit',
-    'AuditCycle',
-    'AuditPack',
-    // Grain (2026-07-25) — Contract carries the full soft-delete trio
-    // (deletedAt / deletedByUserId / retentionUntil) and its usecase
-    // soft-deletes, but it was in neither this set nor the retention
-    // sweep, so `retentionUntil` was written by nothing and read by
-    // nothing.
-    'Contract',
-]);
+// DERIVED from SOFT_DELETE_TARGETS, not a hand-copy. The two were
+// "documented mirrors" maintained by hand, and a third copy lived in
+// tests/integration/soft-delete.test.ts — the comments there record that
+// `Risk` had to be removed from all three in one diff. A mirror nothing
+// enforces is how these drift, so there is one list now.
+export const SOFT_DELETE_MODELS = new Set<string>(
+    SOFT_DELETE_TARGETS.map((t) => t.model),
+);
 
 // ─── Read actions that should filter out deleted records ───
 

@@ -130,7 +130,9 @@ describe('API contract — full-spec drift check', () => {
 
 describe('API contract — per-schema snapshots', () => {
     it('the schema-name set is non-empty (sanity)', () => {
-        expect(schemaNames.length).toBeGreaterThan(60);
+        // Was > 60. The GRC teardown removed 26 orphan zod schemas whose
+        // models are gone, so the spec legitimately publishes fewer.
+        expect(schemaNames.length).toBeGreaterThan(30);
     });
 
     // Generate one test per registered component, keyed on the

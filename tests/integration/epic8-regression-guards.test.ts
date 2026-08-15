@@ -47,8 +47,8 @@ if (DB_AVAILABLE) {
 
     afterAll(async () => {
         await prisma.$executeRawUnsafe('DELETE FROM "AuditLog" WHERE "tenantId" = $1', testTenantId).catch(() => {});
-        await prisma.$executeRawUnsafe('DELETE FROM "Practice" WHERE "tenantId" = $1', testTenantId).catch(() => {});
-        await prisma.$executeRawUnsafe('DELETE FROM "Vendor" WHERE "tenantId" = $1', testTenantId).catch(() => {});
+        await prisma.$executeRawUnsafe('DELETE FROM "Evidence" WHERE "tenantId" = $1', testTenantId).catch(() => {});
+        await prisma.$executeRawUnsafe('DELETE FROM "Evidence" WHERE "tenantId" = $1', testTenantId).catch(() => {});
         await prisma.$executeRawUnsafe('DELETE FROM "Asset" WHERE "tenantId" = $1', testTenantId).catch(() => {});
         await prisma.$executeRawUnsafe('DELETE FROM "User" WHERE "id" = $1', testUserId).catch(() => {});
         await prisma.$executeRawUnsafe('DELETE FROM "Tenant" WHERE "id" = $1', testTenantId).catch(() => {});
@@ -193,19 +193,19 @@ describeFn('Dual-Write Verification', () => {
 describeFn('Soft-Delete Guards', () => {
 
 
-    it('deleting a Vendor sets deletedAt instead of hard-deleting', async () => {
-        const vendor = await prisma.vendor.create({
-            data: { tenantId: testTenantId, name: `SD Guard Vendor ${Date.now()}` },
+    it('deleting a soft-delete model sets deletedAt instead of hard-deleting', async () => {
+        const ev2 = await prisma.evidence.create({
+            data: { tenantId: testTenantId, type: 'LINK', title: `SD Guard ${Date.now()}` },
         });
 
-        await prisma.vendor.delete({ where: { id: vendor.id } });
+        await prisma.evidence.delete({ where: { id: ev2.id } });
 
-        const found = await prisma.vendor.findUnique({ where: { id: vendor.id } });
+        const found = await prisma.evidence.findUnique({ where: { id: ev2.id } });
         expect(found).toBeNull();
 
         const raw = await prisma.$queryRawUnsafe<Array<{ deletedAt: Date | null }>>(
-            'SELECT "deletedAt" FROM "Vendor" WHERE "id" = $1',
-            vendor.id,
+            'SELECT "deletedAt" FROM "Evidence" WHERE "id" = $1',
+            ev2.id,
         );
         expect(raw).toHaveLength(1);
         expect(raw[0].deletedAt).not.toBeNull();
@@ -229,25 +229,25 @@ describeFn('Soft-Delete Guards', () => {
     });
 
     it('hard-delete only possible via raw SQL (purge path)', async () => {
-        const practice = await prisma.practice.create({
-            data: { tenantId: testTenantId, code: `RG-${Date.now()}`, name: 'Purge guard' },
+        const evidence = await prisma.evidence.create({
+            data: { tenantId: testTenantId, type: 'LINK', title: `Purge guard ${Date.now()}` },
         });
 
         // Normal delete = soft-delete
-        await prisma.practice.delete({ where: { id: practice.id } });
+        await prisma.evidence.delete({ where: { id: evidence.id } });
 
         // Still exists in DB
         let raw = await prisma.$queryRawUnsafe<Array<{ id: string }>>(
-            'SELECT "id" FROM "Practice" WHERE "id" = $1', practice.id,
+            'SELECT "id" FROM "Evidence" WHERE "id" = $1', evidence.id,
         );
         expect(raw).toHaveLength(1);
 
         // Raw SQL delete = actual hard-delete
         await prisma.$executeRawUnsafe(
-            'DELETE FROM "Practice" WHERE "id" = $1', practice.id,
+            'DELETE FROM "Evidence" WHERE "id" = $1', evidence.id,
         );
         raw = await prisma.$queryRawUnsafe<Array<{ id: string }>>(
-            'SELECT "id" FROM "Practice" WHERE "id" = $1', practice.id,
+            'SELECT "id" FROM "Evidence" WHERE "id" = $1', evidence.id,
         );
         expect(raw).toHaveLength(0);
     });
