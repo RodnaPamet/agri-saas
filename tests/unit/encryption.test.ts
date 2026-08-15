@@ -27,6 +27,7 @@ import {
     getFieldClassification,
     SOFT_DELETE_TARGETS,
 } from '../../src/lib/security/classification';
+import { readPrismaSchema } from '../helpers/prisma-schema';
 
 // ─── Setup ──────────────────────────────────────────────────────────
 
@@ -284,7 +285,26 @@ describe('Data Classification', () => {
     it('isFieldAppEncrypted returns correct booleans', () => {
         expect(isFieldAppEncrypted('User', 'email')).toBe(true);
         expect(isFieldAppEncrypted('User', 'id')).toBe(false);
-        expect(isFieldAppEncrypted('Risk', 'title')).toBe(false);
+        // A classified model + an UNclassified field on it. This was
+        // `('Risk', 'title')` — a model deleted long before the GRC
+        // teardown, so the false it asserted was true for the wrong
+        // reason (unknown model, not unclassified field).
+        expect(isFieldAppEncrypted('Evidence', 'title')).toBe(false);
+    });
+
+    it('every classified model still exists in the Prisma schema', () => {
+        // DATA_CLASSIFICATION is hand-maintained and nothing tied it to
+        // the schema, so it kept `AuditPackShare.tokenHash` and
+        // `PolicyVersion.contentText` after GRC teardown phase 3 dropped
+        // both models. Stale entries are inert — `getFieldClassification`
+        // simply never matches them — which is exactly why they survive:
+        // the registry goes on ASSERTING that PII on those tables is
+        // protected, and there is no table.
+        const all = readPrismaSchema();
+        const missing = [...new Set(DATA_CLASSIFICATION.map((c) => c.model))].filter(
+            (m) => !new RegExp(`^model ${m}\\s*\\{`, 'm').test(all),
+        );
+        expect({ missing }).toEqual({ missing: [] });
     });
 
     it('every classification has a reason', () => {

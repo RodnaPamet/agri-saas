@@ -88,12 +88,6 @@ export const DATA_CLASSIFICATION: readonly FieldClassification[] = [
         tier: 'ALREADY_SECURED',
         reason: 'Hashed backup codes',
     },
-    {
-        model: 'AuditPackShare',
-        field: 'tokenHash',
-        tier: 'ALREADY_SECURED',
-        reason: 'SHA-256 hash only — no plaintext stored',
-    },
 
     // ─── Tier 3: DB/Storage-Encrypted ───────────────────────────────
     {
@@ -101,12 +95,6 @@ export const DATA_CLASSIFICATION: readonly FieldClassification[] = [
         field: 'content',
         tier: 'DB_ENCRYPTED',
         reason: 'Sensitive business content — relies on PostgreSQL TDE / volume encryption',
-    },
-    {
-        model: 'PolicyVersion',
-        field: 'contentText',
-        tier: 'DB_ENCRYPTED',
-        reason: 'Policy content — needs full-text search, relies on DB encryption',
     },
     {
         model: 'AuditLog',
