@@ -156,6 +156,28 @@ export const NET_WORTH_REFUSAL_CODES = [
 
 export type NetWorthRefusalCode = (typeof NET_WORTH_REFUSAL_CODES)[number];
 
+/**
+ * Why an imputed land charge could not be stated.
+ *
+ * Its own list rather than a member of the one above, because the two
+ * refuse DIFFERENT figures: a net worth withheld says nothing about the
+ * opportunity cost of the land, and a missing rent rate says nothing about
+ * net worth. Sharing one union would let a client show a rate refusal
+ * where a net-worth refusal belongs.
+ *
+ * There is exactly one reason today, and that is not an argument for a
+ * bare boolean: `COST_METRICS.IMPUTED_LAND_CHARGE` is refused rather than
+ * zeroed, and a refusal without a nameable reason is the failure mode this
+ * whole vocabulary exists to prevent.
+ */
+export const IMPUTED_LAND_CHARGE_REFUSAL_CODES = [
+    /** The farm has no resolved MONEY lease to observe a rate from. */
+    'NO_OBSERVED_RENT_RATE',
+] as const;
+
+export type ImputedLandChargeRefusalCode =
+    (typeof IMPUTED_LAND_CHARGE_REFUSAL_CODES)[number];
+
 const CODE_SET: ReadonlySet<string> = new Set(NET_WORTH_REFUSAL_CODES);
 
 /** Narrowing guard — an unknown code sends the caller to the English fallback. */

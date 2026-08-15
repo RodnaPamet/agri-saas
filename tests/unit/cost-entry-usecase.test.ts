@@ -33,9 +33,10 @@ const mockDb = {
     planting: { findFirst: jest.fn() },
     season: { findFirst: jest.fn() },
     location: { findFirst: jest.fn() },
-    parcel: { findFirst: jest.fn() },
+    parcel: { findFirst: jest.fn(), findMany: jest.fn() },
     parcelLease: { findFirst: jest.fn() },
     item: { findFirst: jest.fn() },
+    costEntryAllocationParcel: { deleteMany: jest.fn(), createMany: jest.fn() },
 } as any;
 
 jest.mock('@/lib/db-context', () => ({
@@ -71,6 +72,7 @@ import {
     updateCostEntry,
     deleteCostEntry,
     assertSingleDomainLink,
+    assertAllocationBasis,
     listCostEntriesForDomain,
     uploadCostInvoice,
     detachCostInvoice,
@@ -97,6 +99,11 @@ function row(over: Record<string, unknown> = {}) {
         parcelId: null,
         leaseId: null,
         itemId: null,
+        // Both always present on a repository read — `COST_INCLUDE` and
+        // `COST_LIST_SELECT` carry them, and the update path reads the
+        // stored subset to work out what the resulting row would be.
+        allocationBasis: 'TARGET',
+        allocationParcels: [] as { parcelId: string }[],
         createdByUserId: 'u-1',
         createdAt: new Date('2026-08-01T00:00:00Z'),
         updatedAt: new Date('2026-08-01T00:00:00Z'),
@@ -133,6 +140,7 @@ beforeEach(() => {
     mockDb.season.findFirst.mockResolvedValue({ id: 's-1' });
     mockDb.location.findFirst.mockResolvedValue({ id: 'loc-1' });
     mockDb.parcel.findFirst.mockResolvedValue({ id: 'par-1' });
+    mockDb.parcel.findMany.mockResolvedValue([]);
     mockDb.parcelLease.findFirst.mockResolvedValue({ id: 'lease-1' });
     mockDb.item.findFirst.mockResolvedValue({ id: 'item-1' });
     mockDb.fileRecord.findFirst.mockResolvedValue({
@@ -481,5 +489,195 @@ describe('detachCostInvoice', () => {
         // audit pack. Deleting the bytes to fix an attachment typo would
         // destroy evidence.
         expect(logEvent).toHaveBeenCalledTimes(1);
+    });
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+//  Allocation basis — WHICH land a cost spreads across
+// ═══════════════════════════════════════════════════════════════════════
+
+describe('assertAllocationBasis — the rules Prisma cannot express', () => {
+    it('accepts the default, with nothing else set', () => {
+        expect(() => assertAllocationBasis({})).not.toThrow();
+        expect(() => assertAllocationBasis({ allocationBasis: 'TARGET' })).not.toThrow();
+    });
+
+    it('refuses a spatial link alongside a basis that already chose the land', () => {
+        // Stored, this row would say "charge it to that parcel" on the
+        // costs page and spread it farm-wide on the calculator, with
+        // nothing on either screen saying which one won.
+        for (const link of ['plantingId', 'parcelId', 'locationId'] as const) {
+            expect(() =>
+                assertAllocationBasis({ allocationBasis: 'HOLDING', [link]: 'x-1' }),
+            ).toThrow(/cannot also link to/);
+        }
+    });
+
+    it('leaves a season, an item or a lease link alone — none names a place', () => {
+        // A season is a TIME scope, and the calculator's season filter
+        // reads it: forbidding it would make every spread cost invisible
+        // to a season-scoped run. An item is what was bought, not where
+        // it went.
+        for (const link of ['seasonId', 'itemId', 'leaseId'] as const) {
+            expect(() =>
+                assertAllocationBasis({ allocationBasis: 'HOLDING', [link]: 'x-1' }),
+            ).not.toThrow();
+        }
+    });
+
+    it('refuses a PARCEL_SUBSET of fewer than two distinct parcels', () => {
+        expect(() => assertAllocationBasis({ allocationBasis: 'PARCEL_SUBSET' })).toThrow(
+            /at least two distinct parcels/,
+        );
+        expect(() =>
+            assertAllocationBasis({ allocationBasis: 'PARCEL_SUBSET', allocationParcelIds: ['a'] }),
+        ).toThrow(/at least two distinct parcels/);
+        // A duplicate is not a second parcel — it would also double that
+        // parcel's weight if it reached the allocator.
+        expect(() =>
+            assertAllocationBasis({
+                allocationBasis: 'PARCEL_SUBSET',
+                allocationParcelIds: ['a', 'a'],
+            }),
+        ).toThrow(/at least two distinct parcels/);
+        expect(() =>
+            assertAllocationBasis({
+                allocationBasis: 'PARCEL_SUBSET',
+                allocationParcelIds: ['a', 'b'],
+            }),
+        ).not.toThrow();
+    });
+
+    it('refuses chosen parcels on any other basis', () => {
+        // Rows left behind by a basis change are invisible on every
+        // screen and instantly load-bearing again on the way back.
+        for (const basis of ['TARGET', 'HOLDING'] as const) {
+            expect(() =>
+                assertAllocationBasis({ allocationBasis: basis, allocationParcelIds: ['a', 'b'] }),
+            ).toThrow(/only be set on a PARCEL_SUBSET/);
+        }
+    });
+});
+
+describe('createCostEntry — allocation basis', () => {
+    it('defaults to TARGET so an unchanged form writes what it always did', async () => {
+        await createCostEntry(ctx, baseInput() as any);
+        expect(mockDb.costEntry.create.mock.calls[0][0].data.allocationBasis).toBe('TARGET');
+        expect(mockDb.costEntryAllocationParcel.createMany).not.toHaveBeenCalled();
+    });
+
+    it('writes the chosen parcels in ONE insert, inside the entry\'s own transaction', async () => {
+        mockDb.parcel.findMany.mockResolvedValue([{ id: 'par-1' }, { id: 'par-2' }]);
+        await createCostEntry(
+            ctx,
+            baseInput({
+                category: 'PAYROLL',
+                allocationBasis: 'PARCEL_SUBSET',
+                allocationParcelIds: ['par-1', 'par-2'],
+            }) as any,
+        );
+
+        expect(mockDb.costEntry.create.mock.calls[0][0].data.allocationBasis).toBe('PARCEL_SUBSET');
+        // A `create` per parcel is what D1 bans — 200 chosen parcels would
+        // be 200 round trips before the entry is usable.
+        expect(mockDb.costEntryAllocationParcel.createMany).toHaveBeenCalledTimes(1);
+        expect(mockDb.costEntryAllocationParcel.createMany.mock.calls[0][0].data).toEqual([
+            { tenantId: 'tenant-1', costEntryId: 'ce-1', parcelId: 'par-1' },
+            { tenantId: 'tenant-1', costEntryId: 'ce-1', parcelId: 'par-2' },
+        ]);
+    });
+
+    it('validates every chosen parcel in ONE batched read, and refuses a foreign one', async () => {
+        // Only one of the two comes back — the other is another tenant's,
+        // or deleted. Either way the subset is not the denominator the
+        // farmer chose, so nothing is written.
+        mockDb.parcel.findMany.mockResolvedValue([{ id: 'par-1' }]);
+        await expect(
+            createCostEntry(
+                ctx,
+                baseInput({
+                    allocationBasis: 'PARCEL_SUBSET',
+                    allocationParcelIds: ['par-1', 'par-foreign'],
+                }) as any,
+            ),
+        ).rejects.toThrow(/not found or belong to a different tenant/);
+
+        expect(mockDb.parcel.findMany).toHaveBeenCalledTimes(1);
+        expect(mockDb.costEntry.create).not.toHaveBeenCalled();
+    });
+
+    it('records the basis in the audit trail beside the amount', async () => {
+        // Where a cost spreads decides which crop carries it, so a change
+        // of basis is a change of money.
+        mockDb.parcel.findMany.mockResolvedValue([{ id: 'par-1' }, { id: 'par-2' }]);
+        await createCostEntry(
+            ctx,
+            baseInput({
+                allocationBasis: 'PARCEL_SUBSET',
+                allocationParcelIds: ['par-1', 'par-2'],
+            }) as any,
+        );
+        const entry = (logEvent as jest.Mock).mock.calls[0][2];
+        expect(entry.detailsJson.after).toMatchObject({
+            allocationBasis: 'PARCEL_SUBSET',
+            allocationParcelCount: 2,
+        });
+    });
+});
+
+describe('updateCostEntry — allocation basis', () => {
+    it('clears the old denominator when the basis moves away from PARCEL_SUBSET', async () => {
+        // The rows would otherwise sit invisible in the database and come
+        // back to life the moment someone switched back.
+        mockDb.costEntry.findFirst.mockResolvedValue(
+            row({
+                allocationBasis: 'PARCEL_SUBSET',
+                allocationParcels: [{ parcelId: 'par-1' }, { parcelId: 'par-2' }],
+            }),
+        );
+
+        await updateCostEntry(ctx, 'ce-1', { allocationBasis: 'HOLDING', allocationParcelIds: [] } as any);
+
+        expect(mockDb.costEntryAllocationParcel.deleteMany).toHaveBeenCalledTimes(1);
+        expect(mockDb.costEntryAllocationParcel.createMany).not.toHaveBeenCalled();
+    });
+
+    it('leaves the subset untouched when the patch does not mention it', async () => {
+        mockDb.costEntry.findFirst.mockResolvedValue(
+            row({
+                allocationBasis: 'PARCEL_SUBSET',
+                allocationParcels: [{ parcelId: 'par-1' }, { parcelId: 'par-2' }],
+            }),
+        );
+
+        await updateCostEntry(ctx, 'ce-1', { supplier: 'Someone else' } as any);
+
+        expect(mockDb.costEntryAllocationParcel.deleteMany).not.toHaveBeenCalled();
+    });
+
+    it('validates the RESULTING row, not the patch', async () => {
+        // Switching an entry that still carries a parcelId to HOLDING is
+        // a contradiction the patch alone cannot see.
+        mockDb.costEntry.findFirst.mockResolvedValue(row({ parcelId: 'par-1' }));
+
+        await expect(
+            updateCostEntry(ctx, 'ce-1', { allocationBasis: 'HOLDING' } as any),
+        ).rejects.toThrow(/cannot also link to/);
+        expect(mockDb.costEntry.update).not.toHaveBeenCalled();
+    });
+
+    it('accepts clearing the link and switching the basis in ONE patch', async () => {
+        mockDb.costEntry.findFirst.mockResolvedValue(row({ parcelId: 'par-1' }));
+
+        await updateCostEntry(
+            ctx,
+            'ce-1',
+            { allocationBasis: 'HOLDING', parcelId: null } as any,
+        );
+
+        expect(mockDb.costEntry.update.mock.calls[0][0].data).toMatchObject({
+            allocationBasis: 'HOLDING',
+            parcelId: null,
+        });
     });
 });

@@ -75,6 +75,10 @@ export interface CostRow {
     parcelId: string | null;
     leaseId: string | null;
     itemId: string | null;
+    /** WHICH land the cost spreads across — see `CostAllocationBasis`. */
+    allocationBasis?: string;
+    /** The chosen parcels, present only on a PARCEL_SUBSET entry. */
+    allocationParcelIds?: string[];
     planting?: { id: string; successionNumber: number; cropPlan?: { name: string | null } | null } | null;
     season?: { id: string; name: string } | null;
     location?: { id: string; name: string } | null;

@@ -1,10 +1,13 @@
-import { allocateByWeights, computeAreaWeights } from '@/lib/grain/allocate';
+import { allocateByWeights, computeAreaWeights, spreadOverParcels } from '@/lib/grain/allocate';
 import type { RequestContext } from '../types';
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { assertCanRead } from '../policies/common';
 import { getCostRollupByPlanting } from './cost-rollup';
 import { getMarketReferences } from './trends';
-import type { NetWorthRefusalCode } from '@/lib/grain/uncertainty';
+import type {
+    ImputedLandChargeRefusalCode,
+    NetWorthRefusalCode,
+} from '@/lib/grain/uncertainty';
 import { foldFarmTotals, type FarmNetWorthTotal } from '@/lib/grain/farm-total';
 import { computePerArea, type PerAreaFigures } from '@/lib/grain/per-area';
 import { computeBreakEven, type BreakEvenFigures } from '@/lib/grain/break-even';
@@ -65,12 +68,23 @@ import { canConvert, convert } from '@/lib/units/unit-conversion';
  *          it is reported separately and never assumed to match the cost
  *          currency (see the currency section below).
  *        - `payrollCost` — `CostEntry` rows in the PAYROLL category.
- *          Directly-linked
- *          (`plantingId`/`seasonId`) rows attribute straight to that
- *          planting/season; unattributed rows allocate pro-rata by AREA
- *          SHARE across the plantings in scope, and `payrollAllocated` is
- *          set on the commodity row so a reader can tell an allocation from
- *          a measurement.
+ *          WHERE a row spreads is the farmer's choice, held in
+ *          `CostEntry.allocationBasis` (see `CostAllocationBasis`):
+ *            · TARGET (the default, and every row written before the
+ *              column existed) — directly-linked (`plantingId`/`seasonId`)
+ *              rows attribute straight to that planting/season;
+ *              unattributed rows allocate pro-rata by AREA SHARE across
+ *              the plantings in scope. Unchanged, to the cent.
+ *            · HOLDING — across every live parcel of the tenant, owned and
+ *              leased alike.
+ *            · PARCEL_SUBSET — across the parcels chosen on the entry
+ *              (`CostEntryAllocationParcel`).
+ *          The last two weight PARCELS and then carry each parcel's share
+ *          onward to the plantings standing on it, because the report is
+ *          per commodity and a commodity is only reachable through a
+ *          planting — see `spreadOverParcels`. `payrollAllocated` is set on
+ *          the commodity row so a reader can tell an allocation from a
+ *          measurement, whichever basis produced it.
  *   4. PRICE — `getMarketReferences` (src/app-layer/usecases/trends.ts),
  *      the SAME commodity-vocabulary bridge `contract.ts` already uses.
  *      This module does not re-derive the commodity→price join.
@@ -99,6 +113,20 @@ import { canConvert, convert } from '@/lib/units/unit-conversion';
  *   8. QUERY SHAPE — every read here is a single BOUNDED `findMany`/batched
  *      `id: { in: [...] }` lookup; nothing reads inside a loop (see the
  *      inline comments at each call site).
+ *   9. LAND WITH NO CROP — `unallocatedToCrop`. A spread reaches parcels
+ *      that have no in-scope, known-commodity planting, and rent reaches
+ *      leases whose parcel has none. That money is REPORTED beside the
+ *      rows rather than redistributed onto the crops: pushing it back
+ *      would make idle land free and make the remaining crop look more
+ *      expensive the more land is left fallow, which is backwards as a
+ *      decision aid. `Σ rows + unallocatedToCrop` is what conserves — a
+ *      consumer must print the bucket, not drop it.
+ *  10. IMPUTED LAND CHARGE — `COST_METRICS.IMPUTED_LAND_CHARGE`. Rent
+ *      priced onto land the farm OWNS, at the rate its own leases
+ *      establish. It is NOT in `cashCostTotal` and NOT in `netWorth`: no
+ *      lev leaves the bank, and `cashCostTotal` is exactly the three terms
+ *      named below. Reported beside, refused (never zeroed) when the farm
+ *      has no resolved money lease to take a rate from.
  *
  * `getCostRollupByPlanting` and `getMarketReferences` are called as SIBLING
  * usecases (their own I/O), not nested inside this module's own
@@ -115,6 +143,10 @@ const LOT_TAKE = 2000;
 const LEASE_TAKE = 2000;
 const PAYROLL_TAKE = 2000;
 const UNIT_TAKE = 200;
+/** Matches `listTenantParcelOptions` — the tenant's whole live land base. */
+const PARCEL_TAKE = 5000;
+/** `PAYROLL_TAKE` entries × 10 chosen parcels apiece, generously. */
+const ALLOCATION_TAKE = 20_000;
 
 /** `InventoryLot.unitId` target — `Location.capacityTonnes` / grain figures are tonnes. */
 const TONNES_UNIT_KEY = 't';
@@ -275,6 +307,32 @@ export interface CommodityNetWorthRow {
     cashCostCurrencies: string[];
     cashCostCurrencyMixed: boolean;
 
+    /**
+     * `COST_METRICS.IMPUTED_LAND_CHARGE` — rent priced onto the land this
+     * commodity occupies that the farm OWNS, at the rate the farm's own
+     * money leases establish.
+     *
+     * Deliberately NOT a fourth term in `cashCostTotal`, and NOT in
+     * `netWorth`. No lev leaves the bank, `cashCostTotal` is defined above
+     * as exactly three terms, and every surface that prints it prints
+     * those three slices beside it — a fourth term would leave the printed
+     * slices short of the printed total, which is the same contradiction
+     * #556 was written about, in the opposite direction. It is not a rent
+     * ACCRUAL either: `resolveRentBasis` prices an obligation the farmer
+     * really owes, this prices one that does not exist.
+     *
+     * Null — never zero — when the farm has no resolved money lease to
+     * take a rate from; a zero would say owned land is free, which is the
+     * defect this figure exists to fix. See
+     * `imputedLandChargeRefusalCode`.
+     */
+    imputedLandCharge: number | null;
+    /** The owned land under this commodity, in hectares. */
+    imputedLandChargeAreaHa: number;
+    /** The observed rate applied, or null when there is none. */
+    imputedLandChargePerHa: number | null;
+    imputedLandChargeRefusalCode: ImputedLandChargeRefusalCode | null;
+
     /** `standingCropValue + grainOnHandValue - rentCostProduceValue`, all
      *  in `priceCurrency`. Null when `pricePerTonne` is null. */
     /**
@@ -363,6 +421,56 @@ export interface GrainNetWorthExclusions {
     payrollUnattributable: ExclusionEntry[];
 }
 
+/**
+ * Money that landed on land carrying no in-scope, known-commodity planting.
+ *
+ * Two sources, one idea: a cost spread across the holding (or a chosen
+ * subset) reaching a fallow parcel, and money rent on a leased parcel with
+ * nothing growing on it — the second of which this module used to drop on
+ * the floor, naming only the lease.
+ *
+ * ── Why it is beside the rows and not inside them ───────────────────
+ *
+ * There is no commodity to charge. The two alternatives are both wrong:
+ * dropping it makes idle land free (and makes the remaining crop look more
+ * expensive the more land is idled, which is backwards as a decision aid),
+ * and redistributing it onto the crops charges a crop for land it never
+ * grew on. So it is reported — the `GRAIN_CASH_OUT` pattern.
+ *
+ * The consequence a consumer MUST honour: `Σ rows` is no longer the money
+ * spent. `Σ rows + amount` is. A surface that prints the first without the
+ * second is short by exactly this figure.
+ *
+ * The arithmetic check worth knowing: under a pure area spread,
+ * `amount / areaHa` equals the per-hectare rate the cropped parcels
+ * received. A discrepancy means something was concentrated.
+ */
+export interface GrainUnallocatedToCrop {
+    amount: number;
+    /** The land that absorbed it — DISTINCT parcels, counted once. */
+    areaHa: number;
+    parcelIds: string[];
+    /** May contain `UNKNOWN_RENT_CURRENCY`, for the rent half. */
+    currencies: string[];
+}
+
+/**
+ * The farm-level view of `COST_METRICS.IMPUTED_LAND_CHARGE`, so a page can
+ * state the figure and its rate without re-deriving either.
+ *
+ * `totalAmount` is null with a `refusalCode` rather than 0: a farm with
+ * owned land and no observed rent rate has an UNKNOWN opportunity cost,
+ * not a zero one.
+ */
+export interface GrainImputedLandCharge {
+    /** Area-weighted mean of the tenant's own resolved money-lease rates. */
+    perHa: number | null;
+    /** Owned land under a known-commodity planting, in hectares. */
+    areaHa: number;
+    totalAmount: number | null;
+    refusalCode: ImputedLandChargeRefusalCode | null;
+}
+
 export interface GrainNetWorthResult {
     generatedAt: string;
     seasonId: string | null;
@@ -389,6 +497,10 @@ export interface GrainNetWorthResult {
      * twice. A consumer must render it as its own figure.
      */
     cashOut: GrainCashOutLine[];
+    /** See {@link GrainUnallocatedToCrop}. Printed, never dropped. */
+    unallocatedToCrop: GrainUnallocatedToCrop;
+    /** See {@link GrainImputedLandCharge}. Beside `cashCostTotal`, never in it. */
+    imputedLandCharge: GrainImputedLandCharge;
     /** True when any batched read hit its cap — the figures below cover
      *  only part of the farm. */
     truncated: boolean;
@@ -430,8 +542,54 @@ interface CommodityAcc {
     payrollCost: number;
     payrollCostCurrencies: Set<string>;
     payrollAllocated: boolean;
+    /** Owned land under this commodity — the imputed charge's denominator. */
+    ownedAreaHa: number;
     unvaluedNoUnitCost: number;
     unvaluedUnitMismatch: number;
+}
+
+/**
+ * The running bucket behind {@link GrainUnallocatedToCrop}.
+ *
+ * Area is kept PER PARCEL rather than summed as it arrives, because the
+ * same fallow parcel absorbs a share of every spread cost — adding its
+ * hectares once per entry would inflate the denominator and quietly break
+ * the "same rate on both sides of the fallow line" check that proves the
+ * spread was pure.
+ */
+interface UnallocatedAcc {
+    amount: number;
+    areaHaByParcel: Map<string, number>;
+    currencies: Set<string>;
+}
+
+function emptyUnallocated(): UnallocatedAcc {
+    return { amount: 0, areaHaByParcel: new Map(), currencies: new Set() };
+}
+
+function addUnallocated(
+    acc: UnallocatedAcc,
+    amount: number,
+    parcelIds: readonly string[],
+    areaHaOf: (parcelId: string) => number,
+    currency: string,
+): void {
+    acc.amount += amount;
+    for (const id of parcelIds) {
+        if (!acc.areaHaByParcel.has(id)) acc.areaHaByParcel.set(id, Math.max(0, areaHaOf(id)));
+    }
+    if (amount !== 0 || parcelIds.length > 0) acc.currencies.add(currency);
+}
+
+function finalizeUnallocated(acc: UnallocatedAcc): GrainUnallocatedToCrop {
+    let areaHa = 0;
+    for (const v of acc.areaHaByParcel.values()) areaHa += v;
+    return {
+        amount: round2(acc.amount),
+        areaHa: round3(areaHa),
+        parcelIds: [...acc.areaHaByParcel.keys()].sort(),
+        currencies: [...acc.currencies].sort(),
+    };
 }
 
 function newAcc(): CommodityAcc {
@@ -451,6 +609,7 @@ function newAcc(): CommodityAcc {
         payrollCost: 0,
         payrollCostCurrencies: new Set(),
         payrollAllocated: false,
+        ownedAreaHa: 0,
         unvaluedNoUnitCost: 0,
         unvaluedUnitMismatch: 0,
     };
@@ -499,6 +658,22 @@ interface CostEntryRow {
     currency: string;
     plantingId: string | null;
     seasonId: string | null;
+    /** `CostAllocationBasis`. Absent on a row read by an older projection. */
+    allocationBasis?: string | null;
+}
+interface ParcelRow {
+    id: string;
+    areaHa: unknown;
+}
+interface AllocationParcelRow {
+    costEntryId: string;
+    parcelId: string;
+}
+
+/** A live parcel, area coerced once. */
+interface ParcelInfo {
+    id: string;
+    areaHa: number;
 }
 
 /** Resolve a `CropType.commodityCanonical` string to a validated slug, or null. */
@@ -646,6 +821,7 @@ function computeRent(
     plantingsByParcel: Map<string, PlantingInfo[]>,
     acc: Map<CanonicalCommodity, CommodityAcc>,
     exclusions: RawExclusions,
+    unallocated: UnallocatedAcc,
 ): void {
     for (const lease of leases) {
         const areaHa = decOrNull(lease.parcel?.areaHa);
@@ -661,15 +837,34 @@ function computeRent(
         const known = candidates.filter((p) => p.commodity != null) as (PlantingInfo & {
             commodity: CanonicalCommodity;
         })[];
+        // areaHa is guaranteed non-null/positive here — `resolveRentBasis`
+        // only resolves when the parcel area is a finite, positive number.
+        const parcelAreaHa = areaHa as number;
+
         if (known.length === 0) {
             exclusions.leasesUnattributed.push(lease.id);
+            // The lease is still owed. Naming it in an exclusion list said
+            // so; it did not say HOW MUCH, so rent on an unplanted parcel
+            // was invisible money. It goes in the same bucket a spread
+            // cost's fallow share goes in — same idea, same reporting.
+            //
+            // Money only: produce rent is a MASS, and a kilogram in a money
+            // bucket is the dimensional error `rent-basis.ts` exists to
+            // prevent. Produce rent on an unattributed lease stays named in
+            // `leasesUnattributed` alone.
+            if (basis.kind === 'money') {
+                addUnallocated(
+                    unallocated,
+                    round2(basis.perHa * parcelAreaHa),
+                    [lease.parcelId],
+                    () => parcelAreaHa,
+                    UNKNOWN_RENT_CURRENCY,
+                );
+            }
             continue;
         }
 
         const weights = computeAreaWeights(known.map((p) => ({ id: p.id, areaHa: p.areaHa })));
-        // areaHa is guaranteed non-null/positive here — `resolveRentBasis`
-        // only resolves when the parcel area is a finite, positive number.
-        const parcelAreaHa = areaHa as number;
 
         if (basis.kind === 'money') {
             const totalForParcel = basis.perHa * parcelAreaHa;
@@ -694,11 +889,41 @@ function computeRent(
 }
 
 /**
- * 3c/6. PAYROLL — direct `plantingId`/`seasonId` links attribute straight
- * through; unattributed rows allocate pro-rata by area share across the
- * plantings in scope (season-scoped when the row carries one, tenant-wide
- * otherwise). `payrollAllocated` marks any commodity that received an
- * allocated (not directly linked) share.
+ * The land a spread cost can reach, assembled once and read per entry.
+ *
+ * Every field is an in-memory map built from reads already made. The
+ * allocator does no I/O of its own — a read per parcel or per entry is
+ * exactly what the D1 guardrail bans, and the two batched `findMany`s in
+ * `loadTenantRows` are the remedy it prescribes.
+ */
+interface AllocationLand {
+    /** Every live parcel of the tenant, in a stable order. */
+    parcels: ParcelInfo[];
+    parcelById: Map<string, ParcelInfo>;
+    /** Known-commodity plantings standing on each parcel, in scope. */
+    knownPlantingsByParcel: Map<string, PlantingInfo[]>;
+    /** `PARCEL_SUBSET` entry id → the parcels chosen on it. */
+    subsetByEntry: Map<string, string[]>;
+}
+
+/**
+ * 3c/6. PAYROLL — attributed, or spread across land the farmer chose.
+ *
+ * TARGET (the default, and every row written before `allocationBasis`
+ * existed) is untouched: direct `plantingId`/`seasonId` links attribute
+ * straight through, and an unlinked row allocates pro-rata by area share
+ * across the plantings in scope. Not "equivalent to" the old behaviour —
+ * the same code path, so an existing row cannot move by a cent.
+ *
+ * HOLDING and PARCEL_SUBSET spread over PARCELS and carry each parcel's
+ * share onward to the plantings on it (`spreadOverParcels`). A parcel with
+ * no in-scope known-commodity planting keeps its share, which lands in
+ * `unallocatedToCrop` rather than being pushed onto the crops.
+ *
+ * `payrollAllocated` marks any commodity that received an allocated (not
+ * directly linked) share, whichever basis produced it — the calculator
+ * reads it through the shared uncertainty vocabulary, so a spread cost
+ * reads as ALLOCATED exactly as a pro-rata payroll share always has.
  */
 function computePayroll(
     rows: readonly CostEntryRow[],
@@ -707,9 +932,46 @@ function computePayroll(
     allKnownPlantings: PlantingInfo[],
     acc: Map<CanonicalCommodity, CommodityAcc>,
     exclusions: RawExclusions,
+    land: AllocationLand,
+    unallocated: UnallocatedAcc,
 ): void {
     for (const row of rows) {
         const amount = dec(row.amount);
+
+        if (row.allocationBasis === 'HOLDING' || row.allocationBasis === 'PARCEL_SUBSET') {
+            const parcels =
+                row.allocationBasis === 'HOLDING'
+                    ? land.parcels
+                    : (land.subsetByEntry.get(row.id) ?? [])
+                          .map((id) => land.parcelById.get(id))
+                          .filter((p): p is ParcelInfo => p != null);
+
+            // No land to spread over — every chosen parcel deleted, or a
+            // tenant with no parcels at all. Reported as unattributable
+            // rather than allocated to nothing, which would drop the cost.
+            if (parcels.length === 0) {
+                exclusions.payrollUnattributable.push(row.id);
+                continue;
+            }
+
+            const spread = spreadOverParcels(amount, parcels, land.knownPlantingsByParcel);
+            for (const [plantingId, share] of spread.byTarget) {
+                const info = plantingInfo.get(plantingId);
+                if (info?.commodity == null) continue; // targets are known-commodity by construction.
+                const a = ensureAcc(acc, info.commodity);
+                a.payrollCost += share;
+                a.payrollCostCurrencies.add(row.currency);
+                a.payrollAllocated = true;
+            }
+            addUnallocated(
+                unallocated,
+                spread.unallocatedAmount,
+                spread.unallocatedParcelIds,
+                (id) => land.parcelById.get(id)?.areaHa ?? 0,
+                row.currency,
+            );
+            continue;
+        }
 
         if (row.plantingId) {
             const info = plantingInfo.get(row.plantingId);
@@ -783,6 +1045,74 @@ function computeCashOut(rows: readonly CostEntryRow[]): GrainCashOutLine[] {
 }
 
 /**
+ * 3e. THE IMPUTED RATE — what a hectare of this farm's land rents for,
+ * observed from the farm's OWN money leases.
+ *
+ * Area-weighted, so a 60-hectare lease counts for more than a 2-hectare
+ * one; a plain mean would let one small odd contract set the price of the
+ * whole holding. Produce leases are skipped: converting кг/дка to money
+ * needs a grain price, and pricing land at whatever wheat happens to cost
+ * this week would make the opportunity cost of a field move with the
+ * market rather than with the land.
+ *
+ * Null — never a default rate, never zero — when the farm has no resolved
+ * money lease. An invented benchmark would be a figure the operator never
+ * authored and would rightly dispute; a zero would say owned land is free,
+ * which is the defect the charge exists to fix.
+ */
+function computeImputedLandRate(leases: readonly LeaseRow[]): number | null {
+    let weightedTotal = 0;
+    let totalArea = 0;
+    for (const lease of leases) {
+        const areaHa = decOrNull(lease.parcel?.areaHa);
+        const basis = resolveRentBasis(
+            {
+                rentAmount: decOrNull(lease.rentAmount),
+                rentUnit: lease.rentUnit,
+                rentUnitRaw: lease.rentUnitRaw,
+            },
+            areaHa,
+        );
+        if (!basis.resolved || basis.kind !== 'money') continue;
+        // `resolveRentBasis` only resolves on a finite, positive area.
+        const a = areaHa as number;
+        weightedTotal += basis.perHa * a;
+        totalArea += a;
+    }
+    return totalArea > 0 ? weightedTotal / totalArea : null;
+}
+
+/**
+ * The OWNED land under each commodity — the imputed charge's denominator.
+ *
+ * Owned means "live parcel with no active lease", derived by subtracting
+ * the active-lease parcel set this module already loaded rather than by
+ * asking the database a fourth time with a fourth copy of the
+ * active-lease predicate (`rent-roll.ts` and `ParcelRepository` hold the
+ * other two; a fourth would be the one that drifts).
+ *
+ * Leased land is excluded because it already carries real rent in
+ * `rentCostMoneyAmount`; imputing on top would bill the same hectare
+ * twice. A planting with no parcel is excluded because there is no land
+ * to say anything about.
+ *
+ * The PLANTING's own area is the measure, not the parcel's: this figure
+ * prices the land a crop occupies, and a half-planted parcel should carry
+ * half the charge.
+ */
+function computeOwnedArea(
+    plantings: readonly PlantingInfo[],
+    ownedParcelIds: ReadonlySet<string>,
+    acc: Map<CanonicalCommodity, CommodityAcc>,
+): void {
+    for (const p of plantings) {
+        if (p.commodity == null || p.parcelId == null) continue;
+        if (!ownedParcelIds.has(p.parcelId)) continue;
+        ensureAcc(acc, p.commodity).ownedAreaHa += p.areaHa > 0 ? p.areaHa : 0;
+    }
+}
+
+/**
  * Finalize one commodity's accumulator into its DTO row — values the
  * priced quantities, resolves `netAssetPosition` / `netWorth`, and names
  * unpriced produce rent.
@@ -792,6 +1122,7 @@ function finalizeRow(
     a: CommodityAcc,
     reference: { pricePerTonne: number; currency: string; observedAt: string; source: string } | null,
     exclusions: RawExclusions,
+    imputedPerHa: number | null,
 ): CommodityNetWorthRow {
     const pricePerTonne = reference?.pricePerTonne ?? null;
     const priceCurrency = reference?.currency ?? null;
@@ -815,6 +1146,19 @@ function finalizeRow(
     }
 
     const cashCostTotal = round2(a.attributedCropCost + a.rentCostMoneyAmount + a.payrollCost);
+
+    // BESIDE cashCostTotal, never inside it — see the field's docblock and
+    // COST_METRICS.IMPUTED_LAND_CHARGE. No owned land under this crop is a
+    // real zero; owned land with no observed rate is a refusal.
+    const imputedLandChargeAreaHa = round3(a.ownedAreaHa);
+    const imputedLandCharge =
+        imputedLandChargeAreaHa <= 0
+            ? 0
+            : imputedPerHa != null
+              ? round2(imputedPerHa * imputedLandChargeAreaHa)
+              : null;
+    const imputedLandChargeRefusalCode: ImputedLandChargeRefusalCode | null =
+        imputedLandCharge == null ? 'NO_OBSERVED_RENT_RATE' : null;
     const cashCostCurrencies = new Set<string>([
         ...a.attributedCropCostCurrencies,
         ...a.payrollCostCurrencies,
@@ -921,6 +1265,11 @@ function finalizeRow(
         cashCostTotal,
         cashCostCurrencies: [...cashCostCurrencies].sort(),
         cashCostCurrencyMixed,
+
+        imputedLandCharge,
+        imputedLandChargeAreaHa,
+        imputedLandChargePerHa: imputedPerHa,
+        imputedLandChargeRefusalCode,
 
         // Carried beside the cost they qualify: cashCostTotal above is a
         // floor whenever either of these is non-zero.
@@ -1030,6 +1379,23 @@ async function loadTenantRows(db: PrismaTx, ctx: RequestContext, seasonId: strin
     const leasesTruncated = leaseRows.length > LEASE_TAKE;
     const leases = leasesTruncated ? leaseRows.slice(0, LEASE_TAKE) : leaseRows;
 
+    // Every live parcel — the denominator for a HOLDING spread.
+    //
+    // This one cannot be folded into a read that already runs, and that is
+    // the point of the fallow decision: the planting read yields only
+    // PLANTED parcels by construction and the lease read only LEASED ones,
+    // so the parcels that are neither — precisely the ones a spread must
+    // reach for idle land not to look free — appear in neither. Geometry
+    // is not selected; the tenantId-leading index serves the scan.
+    const parcelRows = await db.parcel.findMany({
+        where: { tenantId: ctx.tenantId, deletedAt: null },
+        select: { id: true, areaHa: true },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        take: PARCEL_TAKE + 1,
+    });
+    const parcelsTruncated = parcelRows.length > PARCEL_TAKE;
+    const parcels = parcelsTruncated ? parcelRows.slice(0, PARCEL_TAKE) : parcelRows;
+
     // Cost entries — the /grain/costs register, and the SOLE source of
     // payroll since it replaced the separate PayrollExpense surface.
     //
@@ -1061,6 +1427,9 @@ async function loadTenantRows(db: PrismaTx, ctx: RequestContext, seasonId: strin
             currency: true,
             plantingId: true,
             seasonId: true,
+            // Two columns on a query that already runs — the basis is read
+            // for every in-scope row, so it is never worth a second read.
+            allocationBasis: true,
             supplier: true,
             description: true,
             incurredOn: true,
@@ -1073,14 +1442,45 @@ async function loadTenantRows(db: PrismaTx, ctx: RequestContext, seasonId: strin
         ? costEntryRows.slice(0, PAYROLL_TAKE)
         : costEntryRows;
 
+    // The chosen parcels of every PARCEL_SUBSET entry, in ONE read.
+    //
+    // Sequenced after the cost entries because it depends on their ids —
+    // the same shape as the `unitIds` lookup above, and the exact remedy
+    // D1 prescribes: one batched `IN` plus an in-memory map, never a read
+    // per entry.
+    const subsetEntryIds = costEntries
+        .filter((e) => e.allocationBasis === 'PARCEL_SUBSET')
+        .map((e) => e.id);
+    const allocationRows = subsetEntryIds.length
+        ? await db.costEntryAllocationParcel.findMany({
+              where: { tenantId: ctx.tenantId, costEntryId: { in: subsetEntryIds } },
+              select: { costEntryId: true, parcelId: true },
+              take: ALLOCATION_TAKE + 1,
+          })
+        : [];
+    const allocationsTruncated = allocationRows.length > ALLOCATION_TAKE;
+    const allocationParcels = allocationsTruncated
+        ? allocationRows.slice(0, ALLOCATION_TAKE)
+        : allocationRows;
+
     return {
         plantings,
         lots,
         units,
         leases,
+        parcels,
         costEntries,
+        allocationParcels,
+        // A truncated parcel page silently shrinks an allocation's
+        // denominator, so it has to reach the same disclosure every other
+        // capped read does rather than being dropped on the floor.
         truncated:
-            plantingsTruncated || lotsTruncated || leasesTruncated || costEntriesTruncated,
+            plantingsTruncated ||
+            lotsTruncated ||
+            leasesTruncated ||
+            parcelsTruncated ||
+            costEntriesTruncated ||
+            allocationsTruncated,
     };
 }
 
@@ -1099,6 +1499,7 @@ export async function getGrainNetWorth(
 
     const exclusions = emptyExclusions();
     const acc = new Map<CanonicalCommodity, CommodityAcc>();
+    const unallocated = emptyUnallocated();
 
     const plantingInfo = buildPlantingInfo(fetched.plantings);
     const allPlantings = [...plantingInfo.values()];
@@ -1124,7 +1525,7 @@ export async function getGrainNetWorth(
         }
         group.push(p);
     }
-    computeRent(fetched.leases, plantingsByParcel, acc, exclusions);
+    computeRent(fetched.leases, plantingsByParcel, acc, exclusions, unallocated);
 
     // ── 3c/6. Payroll, direct + pro-rata by area ──
     const knownCommodityPlantings = allPlantings.filter((p) => p.commodity != null);
@@ -1142,7 +1543,53 @@ export async function getGrainNetWorth(
     // would double-count against consumption-based crop cost or the
     // lease-terms rent accrual — see COST_METRICS.GRAIN_CASH_OUT.
     const payrollEntries = fetched.costEntries.filter((e) => e.category === 'PAYROLL');
-    computePayroll(payrollEntries, plantingInfo, plantingsBySeason, knownCommodityPlantings, acc, exclusions);
+
+    // The land a spread can reach, assembled ONCE from rows already in
+    // memory — the allocator itself performs no I/O.
+    const parcelInfos: ParcelInfo[] = fetched.parcels.map((p: ParcelRow) => ({
+        id: p.id,
+        areaHa: dec(p.areaHa),
+    }));
+    const knownPlantingsByParcel = new Map<string, PlantingInfo[]>();
+    for (const [parcelId, group] of plantingsByParcel) {
+        const known = group.filter((p) => p.commodity != null);
+        if (known.length > 0) knownPlantingsByParcel.set(parcelId, known);
+    }
+    const subsetByEntry = new Map<string, string[]>();
+    for (const link of fetched.allocationParcels as AllocationParcelRow[]) {
+        const bucket = subsetByEntry.get(link.costEntryId);
+        if (bucket) bucket.push(link.parcelId);
+        else subsetByEntry.set(link.costEntryId, [link.parcelId]);
+    }
+    const land: AllocationLand = {
+        parcels: parcelInfos,
+        parcelById: new Map(parcelInfos.map((p) => [p.id, p])),
+        knownPlantingsByParcel,
+        subsetByEntry,
+    };
+
+    computePayroll(
+        payrollEntries,
+        plantingInfo,
+        plantingsBySeason,
+        knownCommodityPlantings,
+        acc,
+        exclusions,
+        land,
+        unallocated,
+    );
+
+    // ── 3e. Imputed land charge — owned land, at the farm's own rate ──
+    //
+    // Owned is derived by SUBTRACTING the active-lease parcel set already
+    // loaded above, not by asking the database again with a fourth copy of
+    // the active-lease predicate.
+    const leasedParcelIds = new Set(fetched.leases.map((l) => l.parcelId));
+    const ownedParcelIds = new Set(
+        parcelInfos.filter((p) => !leasedParcelIds.has(p.id)).map((p) => p.id),
+    );
+    computeOwnedArea(allPlantings, ownedParcelIds, acc);
+    const imputedPerHa = computeImputedLandRate(fetched.leases);
 
     // Cash-out: EVERY entry, grouped by the currency it was recorded in.
     // Never summed across currencies — there is no FX table in this repo,
@@ -1154,8 +1601,29 @@ export async function getGrainNetWorth(
     const references = await getMarketReferences(commodities);
 
     const rows = commodities.map((commodity) =>
-        finalizeRow(commodity, acc.get(commodity) ?? newAcc(), references.get(commodity) ?? null, exclusions),
+        finalizeRow(
+            commodity,
+            acc.get(commodity) ?? newAcc(),
+            references.get(commodity) ?? null,
+            exclusions,
+            imputedPerHa,
+        ),
     );
+
+    // A FOLD over rows already computed. `totalAmount` is null when ANY
+    // row was refused for want of a rate — a partial total here would read
+    // as the farm's whole opportunity cost while silently omitting the
+    // land the rate could not price.
+    const imputedAreaHa = round3(rows.reduce((s, r) => s + r.imputedLandChargeAreaHa, 0));
+    const imputedRefused = rows.some((r) => r.imputedLandChargeRefusalCode != null);
+    const imputedLandCharge: GrainImputedLandCharge = {
+        perHa: imputedPerHa,
+        areaHa: imputedAreaHa,
+        totalAmount: imputedRefused
+            ? null
+            : round2(rows.reduce((s, r) => s + (r.imputedLandCharge ?? 0), 0)),
+        refusalCode: imputedRefused ? 'NO_OBSERVED_RENT_RATE' : null,
+    };
 
     // De-duplicate + sort every exclusion list — several sources can name
     // the same planting/lease (e.g. a planting with no yield estimate AND
@@ -1247,6 +1715,11 @@ export async function getGrainNetWorth(
         // Beside the cost side, never inside it. Per currency, never
         // blended — see COST_METRICS.GRAIN_CASH_OUT.
         cashOut,
+        // Also beside, and for the same reason: there is no commodity to
+        // charge. `Σ rows` is short by exactly this; printing it is what
+        // makes the conservation visible instead of merely true.
+        unallocatedToCrop: finalizeUnallocated(unallocated),
+        imputedLandCharge,
         truncated: fetched.truncated || costRollup.truncated,
     };
 }

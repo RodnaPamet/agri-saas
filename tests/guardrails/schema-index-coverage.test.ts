@@ -412,7 +412,7 @@ const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
     Location:
         'listLocations filters by tenantId + status and searches name/description, orders by createdAt — covered by @@index([tenantId, status]) / @@index([tenantId, name]); the paginated path is cursor-bounded.',
     Parcel:
-        'Parcel reads are normally scoped to a location (ParcelRepository.listForLocation, [tenantId, locationId]) or to an id set (validIdsForLocation, PK). The one tenant-wide read is listTenantParcelOptions (Rent-page create picker) — filters (tenantId, deletedAt), selects id/name/location, orders by name, take:5000 — narrowed by the tenantId-leading @@index([tenantId, locationId]); the name sort runs in memory over the picker\'s bounded option set (a lightweight id+name projection, not the geometry-bearing row).',
+        'Parcel reads are normally scoped to a location (ParcelRepository.listForLocation, [tenantId, locationId]) or to an id set (validIdsForLocation, PK). Three tenant-wide reads, all narrowed by the tenantId-leading @@index([tenantId, locationId]) and none selecting the geometry-bearing row: listTenantParcelOptions (Rent-page + cost-allocation picker) — filters (tenantId, deletedAt), selects id/name/location, orders by name, take:5000, with the name sort in memory over the picker\'s bounded option set; grain-net-worth\'s loadTenantRows — filters (tenantId, deletedAt), selects id/areaHa only, orders by createdAt/id, take:5001, because a spread cost must reach parcels that are neither planted nor leased (the planting and lease reads yield only those two sets by construction, so land with no crop appears in neither and idle land would look free); and cost-entry\'s allocation-parcel tenancy check — an id-set read (PK) bounded by the submitted subset.',
     Item:
         'listItems filters by tenantId + category and searches name — covered by @@index([tenantId, category]) / @@index([tenantId, name]).',
     OperationParcel:
@@ -480,6 +480,8 @@ const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
         'filtered only by tenantId plus leading-indexed FK / status columns — Layers A/B cover its query shapes; no curated composite index needed today.',
     ComplianceSnapshot:
         'time-series snapshot rows — read tenant-scoped and time-ordered; Layers A/B cover it; no curated composite index needed today.',
+    CostEntryAllocationParcel:
+        'join table — read as ONE batched `costEntryId IN (…)` per calculator run (grain-net-worth loadTenantRows, take:20001), covered by @@index([tenantId, costEntryId]); never listed on its own and never filtered on anything else. Writes are a deleteMany + createMany on the same (tenantId, costEntryId) scope.',
     PracticeRequirementLink:
         'join table — fetched by tenantId plus a leading-indexed FK; Layers A/B cover its query shapes; no curated composite index needed.',
     FileRecord:

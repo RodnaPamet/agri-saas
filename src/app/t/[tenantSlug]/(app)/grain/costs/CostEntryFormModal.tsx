@@ -21,6 +21,23 @@
  * the same rule: a diesel invoice filed against a lease would surface on
  * the rent page, where it reads as rent.
  *
+ * ── Attribution and ALLOCATION are two different questions ──────────
+ *
+ * The link above says which page a cost appears on. The BASIS says which
+ * land carries it in the calculator, and they are deliberately separate
+ * controls: a payroll cost filed under a season still has to spread over
+ * something, and a cost spread over the whole holding is filed under
+ * nothing in particular.
+ *
+ * The default is TARGET, which is exactly what this form did before the
+ * control existed — a farmer who ignores it gets the behaviour they
+ * already had, and every cost written before it keeps its meaning.
+ *
+ * The two controls can still contradict each other, so the form removes
+ * the contradictions rather than offering them and rejecting the result:
+ * a non-TARGET basis drops the three attribution kinds that name a PLACE
+ * (planting, field, parcel), because the basis has already answered that.
+ *
  * `description` is NOT broadcast on the list (commercial free text,
  * encrypted at rest) — it is fetched on demand for the record being
  * edited, same shape as `PayrollFormModal`.
@@ -45,6 +62,15 @@ import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 import { COST_CATEGORY_VALUES } from './filter-defs';
 import type { CostRow } from './CostsClient';
 
+/**
+ * Mirrors `COST_ALLOCATION_BASES` in `grain.schemas.ts`, spelled out here
+ * for the same reason `COST_CATEGORY_VALUES` is: that module imports
+ * `@prisma/client`, and pulling the Prisma client into a browser bundle to
+ * read three string literals is not a trade worth making.
+ */
+const ALLOCATION_BASES = ['TARGET', 'HOLDING', 'PARCEL_SUBSET'] as const;
+type AllocationBasis = (typeof ALLOCATION_BASES)[number];
+
 interface PlantingOption {
     id: string;
     successionNumber: number;
@@ -62,6 +88,11 @@ interface LeaseOption {
     parcel?: { id: string; name: string } | null;
     landlordName?: string | null;
 }
+interface ParcelOption {
+    id: string;
+    name: string;
+    locationName?: string | null;
+}
 
 /** Mirrors the server bound in grain.schemas.ts (`Decimal(14, 2)`), so the
  *  form refuses what the API would refuse instead of letting a 400 be the
@@ -71,6 +102,13 @@ const MAX_AMOUNT = 999_999_999_999;
 /** The attribution kinds, mapped to their CostEntry column. */
 const LINK_KINDS = ['none', 'planting', 'season', 'location', 'parcel', 'lease', 'item'] as const;
 type LinkKind = (typeof LINK_KINDS)[number];
+
+/**
+ * The kinds that name a PLACE. A basis other than TARGET has already
+ * chosen the land, so offering these too would let the farmer state two
+ * answers to one question and see only one of them honoured.
+ */
+const SPATIAL_LINK_KINDS: readonly LinkKind[] = ['planting', 'location', 'parcel'];
 
 const LINK_COLUMN: Record<Exclude<LinkKind, 'none'>, string> = {
     planting: 'plantingId',
@@ -121,6 +159,8 @@ type FormValues = {
     description?: string;
     linkKind: LinkKind;
     linkId?: string;
+    allocationBasis: AllocationBasis;
+    allocationParcelIds: string[];
 };
 
 const DEFAULT_VALUES: FormValues = {
@@ -132,6 +172,10 @@ const DEFAULT_VALUES: FormValues = {
     description: '',
     linkKind: 'none',
     linkId: '',
+    // The behaviour this form has always had. Changing this default would
+    // silently re-spread every cost a farmer records from now on.
+    allocationBasis: 'TARGET',
+    allocationParcelIds: [],
 };
 
 export interface CostEntryFormModalProps {
@@ -185,6 +229,21 @@ export function CostEntryFormModal({
                 description: z.string().optional(),
                 linkKind: z.enum(LINK_KINDS),
                 linkId: z.string().optional(),
+                allocationBasis: z.enum(ALLOCATION_BASES),
+                allocationParcelIds: z.array(z.string()),
+            })
+            .superRefine((v, ctx) => {
+                // A subset of one is a parcel link with extra steps, and a
+                // subset of none has no denominator at all — the server
+                // refuses both, and being refused after typing a whole
+                // cost is a worse experience than not being offered it.
+                if (v.allocationBasis === 'PARCEL_SUBSET' && v.allocationParcelIds.length < 2) {
+                    ctx.addIssue({
+                        code: z.ZodIssueCode.custom,
+                        path: ['allocationParcelIds'],
+                        message: t('errSubsetTooSmall'),
+                    });
+                }
             }),
         [t],
     );
@@ -208,6 +267,7 @@ export function CostEntryFormModal({
     const watchedCategory = useWatch({ control, name: 'category' });
     const watchedLinkKind = useWatch({ control, name: 'linkKind' });
     const watchedCurrency = useWatch({ control, name: 'currency' });
+    const watchedBasis = useWatch({ control, name: 'allocationBasis' });
 
     // Option sources — fetched lazily, and only the one the chosen kind
     // needs. Loading five pickers to show one is five requests a farmer on
@@ -240,7 +300,22 @@ export function CostEntryFormModal({
             const data = await res.json();
             return Array.isArray(data) ? data : (data.rows ?? []);
         },
-        enabled: open && (watchedLinkKind === 'location' || watchedLinkKind === 'parcel'),
+        enabled: open && watchedLinkKind === 'location',
+        staleTime: 60_000,
+    });
+    // Parcels serve two controls — the `parcel` attribution kind and the
+    // PARCEL_SUBSET picker — so one query, enabled for either. The kind
+    // used to be fed the LOCATIONS list, which submitted a location id
+    // against `parcelId` and was rejected as a foreign key.
+    const parcelsQuery = useQuery<ParcelOption[]>({
+        queryKey: ['grain', tenantSlug, 'parcel-options'],
+        queryFn: async () => {
+            const res = await fetch(apiUrl('/leases/parcel-options'));
+            if (!res.ok) throw new Error('Failed to load parcels');
+            const data = await res.json();
+            return Array.isArray(data) ? data : (data.rows ?? []);
+        },
+        enabled: open && (watchedLinkKind === 'parcel' || watchedBasis === 'PARCEL_SUBSET'),
         staleTime: 60_000,
     });
     const itemsQuery = useQuery<NamedOption[]>({
@@ -287,15 +362,38 @@ export function CostEntryFormModal({
         [tEnums],
     );
 
+    const allocationBasisOptions: ComboboxOption[] = useMemo(
+        () =>
+            ALLOCATION_BASES.map((value) => ({
+                value,
+                label: t(`allocationBasis.${value}`),
+            })),
+        [t],
+    );
+
+    const parcelOptions: ComboboxOption[] = useMemo(
+        () =>
+            (parcelsQuery.data ?? []).map((p) => ({
+                value: p.id,
+                label: [p.name, p.locationName].filter(Boolean).join(' · '),
+            })),
+        [parcelsQuery.data],
+    );
+
     // `lease` is offered ONLY on a RENT entry — the same rule the usecase
-    // enforces, applied where the farmer can still change their mind.
+    // enforces, applied where the farmer can still change their mind. The
+    // three PLACE kinds drop out entirely once a basis has chosen the
+    // land, for the same reason: the server refuses the combination, and
+    // an offer that ends in a 400 is worse than no offer.
     const linkKindOptions: ComboboxOption[] = useMemo(
         () =>
-            LINK_KINDS.filter((k) => k !== 'lease' || watchedCategory === 'RENT').map((k) => ({
-                value: k,
-                label: t(`linkKind.${k}`),
-            })),
-        [t, watchedCategory],
+            LINK_KINDS.filter((k) => k !== 'lease' || watchedCategory === 'RENT')
+                .filter((k) => watchedBasis === 'TARGET' || !SPATIAL_LINK_KINDS.includes(k))
+                .map((k) => ({
+                    value: k,
+                    label: t(`linkKind.${k}`),
+                })),
+        [t, watchedCategory, watchedBasis],
     );
 
     const linkOptions: ComboboxOption[] = useMemo(() => {
@@ -317,7 +415,7 @@ export function CostEntryFormModal({
             case 'location':
                 return (locationsQuery.data ?? []).map((l) => ({ value: l.id, label: l.name }));
             case 'parcel':
-                return (locationsQuery.data ?? []).map((l) => ({ value: l.id, label: l.name }));
+                return parcelOptions;
             case 'item':
                 return (itemsQuery.data ?? []).map((i) => ({ value: i.id, label: i.name }));
             case 'lease':
@@ -328,7 +426,7 @@ export function CostEntryFormModal({
             default:
                 return [];
         }
-    }, [watchedLinkKind, plantingsQuery.data, seasonsQuery.data, locationsQuery.data, itemsQuery.data, leasesQuery.data, t]);
+    }, [watchedLinkKind, plantingsQuery.data, seasonsQuery.data, locationsQuery.data, itemsQuery.data, leasesQuery.data, parcelOptions, t]);
 
     const currencyChoices = useMemo(
         () => currencyOptions(watchedCurrency ?? record?.currency),
@@ -346,6 +444,10 @@ export function CostEntryFormModal({
                 supplier: record.supplier ?? '',
                 linkKind: linkKindOf(record),
                 linkId: linkIdOf(record),
+                // A row written before the column reads as TARGET, which is
+                // what it has always meant.
+                allocationBasis: (record.allocationBasis as AllocationBasis) ?? 'TARGET',
+                allocationParcelIds: record.allocationParcelIds ?? [],
                 // Filled in by the effect below once the detail read lands.
                 description: '',
             });
@@ -387,6 +489,22 @@ export function CostEntryFormModal({
         }
     }, [watchedCategory, watchedLinkKind, open, setValue]);
 
+    // Choosing a basis retires whichever answer the two controls no longer
+    // agree on. Left in place, a stale spatial link would be submitted
+    // and refused, and a stale subset would sit invisible in the row —
+    // ready to become the denominator again the moment someone switched
+    // back to PARCEL_SUBSET.
+    useEffect(() => {
+        if (!open) return;
+        if (watchedBasis !== 'TARGET' && SPATIAL_LINK_KINDS.includes(watchedLinkKind)) {
+            setValue('linkKind', 'none');
+            setValue('linkId', '');
+        }
+        if (watchedBasis !== 'PARCEL_SUBSET') {
+            setValue('allocationParcelIds', []);
+        }
+    }, [watchedBasis, watchedLinkKind, open, setValue]);
+
     const onSubmit = async (values: FormValues) => {
         try {
             const links: Record<string, string | null> = {
@@ -407,6 +525,14 @@ export function CostEntryFormModal({
                 incurredOn: values.incurredOn ? values.incurredOn.toISOString() : null,
                 supplier: values.supplier?.trim() || null,
                 description: values.description?.trim() || null,
+                allocationBasis: values.allocationBasis,
+                // Always sent, empty included: on an EDIT away from
+                // PARCEL_SUBSET the empty array is the instruction that
+                // clears the old denominator. Omitting it would leave the
+                // rows behind, because the server treats `undefined` as
+                // "not part of this patch".
+                allocationParcelIds:
+                    values.allocationBasis === 'PARCEL_SUBSET' ? values.allocationParcelIds : [],
                 ...links,
             };
             const res = await fetch(
@@ -587,6 +713,63 @@ export function CostEntryFormModal({
                                                 selected={linkOptions.find((o) => o.value === (field.value ?? '')) ?? null}
                                                 setSelected={(o) => field.onChange(o?.value ?? '')}
                                                 placeholder={t('linkTargetPlaceholder')}
+                                            />
+                                        )}
+                                    />
+                                </FormField>
+                            )}
+                        </div>
+
+                        {/* Allocation — WHICH land carries this cost. A
+                            separate question from the link above, and it
+                            defaults to what the form always did. */}
+                        <div className="grid grid-cols-1 gap-default sm:grid-cols-2">
+                            <FormField
+                                label={t('allocationBasisLabel')}
+                                // `description`, not `hint`: FormField puts a
+                                // hint behind an InfoTooltip, and on a phone
+                                // — the operator's real device — that is a tap
+                                // nobody makes. What each basis DOES is the
+                                // whole decision, so it stays on the surface.
+                                description={t(`allocationBasisHint.${watchedBasis}`)}
+                            >
+                                <Controller
+                                    control={control}
+                                    name="allocationBasis"
+                                    render={({ field }) => (
+                                        <Combobox
+                                            id="cost-allocation-basis-input"
+                                            options={allocationBasisOptions}
+                                            selected={
+                                                allocationBasisOptions.find(
+                                                    (o) => o.value === field.value,
+                                                ) ?? null
+                                            }
+                                            setSelected={(o) => field.onChange(o?.value ?? 'TARGET')}
+                                        />
+                                    )}
+                                />
+                            </FormField>
+                            {watchedBasis === 'PARCEL_SUBSET' && (
+                                <FormField
+                                    label={t('allocationParcelsLabel')}
+                                    error={errors.allocationParcelIds?.message}
+                                >
+                                    <Controller
+                                        control={control}
+                                        name="allocationParcelIds"
+                                        render={({ field }) => (
+                                            <Combobox
+                                                multiple
+                                                id="cost-allocation-parcels-input"
+                                                options={parcelOptions}
+                                                selected={parcelOptions.filter((o) =>
+                                                    (field.value ?? []).includes(o.value),
+                                                )}
+                                                setSelected={(opts) =>
+                                                    field.onChange(opts.map((o) => o.value))
+                                                }
+                                                placeholder={t('allocationParcelsPlaceholder')}
                                             />
                                         )}
                                     />

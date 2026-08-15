@@ -1,6 +1,7 @@
 import { Prisma, type CostCategory } from '@prisma/client';
 import { PrismaTx } from '@/lib/db-context';
 import { RequestContext } from '../types';
+import { MAX_ALLOCATION_PARCELS } from '../schemas/grain.schemas';
 
 /**
  * CostEntry repository — the cost register behind `/grain/costs`
@@ -55,6 +56,14 @@ const COST_INCLUDE = {
     parcel: { select: { id: true, name: true } },
     item: { select: { id: true, name: true, category: true } },
     invoiceFile: { select: { id: true, originalName: true, mimeType: true, sizeBytes: true } },
+    /**
+     * The PARCEL_SUBSET denominator, so the edit form can prefill what was
+     * chosen. `take` matches `MAX_ALLOCATION_PARCELS`, the cap the write
+     * schema enforces — equal by design, so a subset written through the
+     * API can never come back shorter than it went in. A shorter list is a
+     * smaller allocation denominator, which would move money silently.
+     */
+    allocationParcels: { select: { parcelId: true }, take: MAX_ALLOCATION_PARCELS },
 } satisfies Prisma.CostEntryInclude;
 
 /**
@@ -81,6 +90,7 @@ const COST_LIST_SELECT = {
     parcelId: true,
     leaseId: true,
     itemId: true,
+    allocationBasis: true,
     createdByUserId: true,
     createdAt: true,
     updatedAt: true,
@@ -248,6 +258,39 @@ export class CostEntryRepository {
         data: Prisma.CostEntryUncheckedUpdateInput,
     ) {
         return db.costEntry.update({ where: { id }, data, include: COST_INCLUDE });
+    }
+
+    /**
+     * Replace an entry's chosen parcels wholesale.
+     *
+     * Delete-then-insert rather than a diff, because this set IS the
+     * allocation denominator: a partial failure that leaves a stale row
+     * behind re-weights a historical cost, and "the subset is exactly what
+     * was submitted" is a property the caller's transaction can then
+     * guarantee outright. Two statements, no read, no loop.
+     *
+     * `createMany` is one INSERT — a `create` per parcel inside a loop is
+     * what the D1 guardrail bans, and 200 of them would be 200 round
+     * trips inside one transaction.
+     */
+    static async replaceAllocationParcels(
+        db: PrismaTx,
+        ctx: RequestContext,
+        costEntryId: string,
+        parcelIds: readonly string[],
+    ) {
+        await db.costEntryAllocationParcel.deleteMany({
+            where: { tenantId: ctx.tenantId, costEntryId },
+        });
+        if (parcelIds.length === 0) return;
+        await db.costEntryAllocationParcel.createMany({
+            data: parcelIds.map((parcelId) => ({
+                tenantId: ctx.tenantId,
+                costEntryId,
+                parcelId,
+            })),
+            skipDuplicates: true,
+        });
     }
 
     /** Soft delete — CostEntry is not in SOFT_DELETE_MODELS. */

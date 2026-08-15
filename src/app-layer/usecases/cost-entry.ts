@@ -1,4 +1,4 @@
-import { Prisma, type CostCategory } from '@prisma/client';
+import { Prisma, type CostAllocationBasis, type CostCategory } from '@prisma/client';
 import { RequestContext } from '../types';
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { assertCanRead, assertCanWrite } from '../policies/common';
@@ -8,7 +8,7 @@ import { sanitizePlainText } from '@/lib/security/sanitize';
 import { CostEntryRepository, type CostEntryFilters } from '../repositories/CostEntryRepository';
 import { FileRepository } from '../repositories/FileRepository';
 import { ingestUploadedFile } from '@/lib/upload/ingest';
-import { COST_DOMAIN_LINKS } from '../schemas/grain.schemas';
+import { COST_DOMAIN_LINKS, COST_SPATIAL_LINKS } from '../schemas/grain.schemas';
 import type { CreateCostEntryInput, UpdateCostEntryInput } from '../schemas/grain.schemas';
 
 /**
@@ -89,6 +89,67 @@ export function assertSingleDomainLink(input: {
 }
 
 /**
+ * The allocation basis and its chosen parcels have to agree with each
+ * other, and with the entry's spatial links.
+ *
+ * Three rules, each closing a way for the stored row to say one thing and
+ * the calculator to do another:
+ *
+ *   • A non-TARGET basis cannot also carry a spatial link. The basis has
+ *     already answered "where does this sit"; the allocator reads it and
+ *     ignores the link, so accepting both stores an instruction that never
+ *     runs. The farmer would see a parcel on the costs page and a
+ *     holding-wide spread on the calculator with nothing saying which won.
+ *   • PARCEL_SUBSET needs at least TWO distinct parcels. A subset of one
+ *     is a `parcelId` link with extra steps, and a subset of none is not a
+ *     denominator at all — the calculator would have nothing to spread
+ *     over and would report the cost unattributed.
+ *   • Any other basis must carry NO chosen parcels. Rows left behind by a
+ *     basis change are the classic stale-denominator bug: invisible on
+ *     every screen, and instantly load-bearing again the moment someone
+ *     switches back to PARCEL_SUBSET.
+ *
+ * Prisma can express none of them, so — like `assertSingleDomainLink` —
+ * this is the only thing standing between a caller and a contradictory
+ * row, and it is asserted by an executing test rather than by this
+ * comment.
+ */
+export function assertAllocationBasis(input: {
+    allocationBasis?: CostAllocationBasis | string | null;
+    allocationParcelIds?: readonly string[] | null;
+    plantingId?: string | null;
+    parcelId?: string | null;
+    locationId?: string | null;
+    /** Accepted and IGNORED — see `COST_SPATIAL_LINKS`. Neither names a place. */
+    seasonId?: string | null;
+    itemId?: string | null;
+    leaseId?: string | null;
+}): void {
+    const basis = input.allocationBasis ?? 'TARGET';
+    const chosen = input.allocationParcelIds ?? [];
+
+    if (basis !== 'TARGET') {
+        const spatial = COST_SPATIAL_LINKS.filter((k) => input[k] != null);
+        if (spatial.length > 0) {
+            throw badRequest(
+                `A ${basis} cost entry spreads across land of its own, so it cannot also link to ${spatial.join(', ')}`,
+            );
+        }
+    }
+
+    if (basis === 'PARCEL_SUBSET') {
+        const distinct = new Set(chosen);
+        if (distinct.size < 2) {
+            throw badRequest(
+                'A PARCEL_SUBSET cost entry must choose at least two distinct parcels — one parcel is a parcelId link',
+            );
+        }
+    } else if (chosen.length > 0) {
+        throw badRequest(`allocationParcelIds may only be set on a PARCEL_SUBSET cost entry`);
+    }
+}
+
+/**
  * An invoice must be a file that actually finished uploading and still
  * exists, in THIS tenant.
  *
@@ -130,6 +191,8 @@ function toDto(row: {
     parcelId: string | null;
     leaseId: string | null;
     itemId: string | null;
+    allocationBasis?: CostAllocationBasis;
+    allocationParcels?: { parcelId: string }[];
     createdByUserId: string | null;
     description?: string | null;
     createdAt: Date;
@@ -160,6 +223,11 @@ function toDto(row: {
         parcelId: row.parcelId,
         leaseId: row.leaseId,
         itemId: row.itemId,
+        allocationBasis: row.allocationBasis ?? 'TARGET',
+        // Flattened to ids: the join row's own id is bookkeeping, and the
+        // form that prefills from this only ever means "which parcels".
+        // Sorted so a payload cannot change because a query planner did.
+        allocationParcelIds: (row.allocationParcels ?? []).map((p) => p.parcelId).sort(),
         createdByUserId: row.createdByUserId,
         // Present only on a single-record read — the list projection omits
         // it entirely, so `undefined` means "not sent here" rather than
@@ -220,8 +288,27 @@ async function assertFksBelongToTenant(
         parcelId?: string | null;
         leaseId?: string | null;
         itemId?: string | null;
+        allocationParcelIds?: readonly string[] | null;
     },
 ): Promise<void> {
+    if (input.allocationParcelIds?.length) {
+        // ONE batched read for the whole subset. A `findFirst` per chosen
+        // parcel is what D1 bans, and 200 of them would be 200 round trips
+        // before a single row is written. Counting DISTINCT ids rather
+        // than the array length so a duplicated id cannot mask a missing
+        // one by making the counts agree.
+        const wanted = [...new Set(input.allocationParcelIds)];
+        const found = await db.parcel.findMany({
+            where: { id: { in: wanted }, tenantId: ctx.tenantId, deletedAt: null },
+            select: { id: true },
+            take: wanted.length,
+        });
+        if (found.length !== wanted.length) {
+            throw badRequest(
+                'One or more chosen parcels were not found or belong to a different tenant',
+            );
+        }
+    }
     if (input.plantingId) {
         const row = await db.planting.findFirst({
             where: { id: input.plantingId, tenantId: ctx.tenantId, deletedAt: null },
@@ -270,6 +357,7 @@ export async function createCostEntry(ctx: RequestContext, input: CreateCostEntr
     assertCanWrite(ctx);
 
     assertSingleDomainLink(input);
+    assertAllocationBasis(input);
     const supplier = input.supplier != null ? sanitizePlainText(input.supplier) : null;
     const description = input.description != null ? sanitizePlainText(input.description) : null;
     const incurredOn = parseRequiredDate(input.incurredOn, 'Incurred-on date');
@@ -293,8 +381,21 @@ export async function createCostEntry(ctx: RequestContext, input: CreateCostEntr
             parcelId: input.parcelId ?? null,
             leaseId: input.leaseId ?? null,
             itemId: input.itemId ?? null,
+            allocationBasis: input.allocationBasis ?? 'TARGET',
             createdByUserId: ctx.userId ?? null,
         });
+
+        // Inside the same transaction as the entry: a subset written after
+        // a committed row could fail and leave a PARCEL_SUBSET entry with
+        // no denominator, which the calculator would report unattributed.
+        if (input.allocationParcelIds?.length) {
+            await CostEntryRepository.replaceAllocationParcels(
+                db,
+                ctx,
+                record.id,
+                [...new Set(input.allocationParcelIds)],
+            );
+        }
 
         await logEvent(db, ctx, {
             action: 'CREATE',
@@ -310,11 +411,22 @@ export async function createCostEntry(ctx: RequestContext, input: CreateCostEntr
                     amount: input.amount,
                     currency,
                     hasInvoice: input.invoiceFileId != null,
+                    // WHERE a cost spreads decides which crop carries it,
+                    // so a change of basis is a change of money and
+                    // belongs in the trail beside the amount.
+                    allocationBasis: input.allocationBasis ?? 'TARGET',
+                    allocationParcelCount: input.allocationParcelIds?.length ?? 0,
                 },
                 summary: `Recorded a ${input.category} cost of ${input.amount} ${currency}`,
             },
         });
 
+        // The create's own `include` ran before the subset rows existed,
+        // so the response would claim an empty denominator. One extra
+        // read, on the subset path only.
+        if (input.allocationParcelIds?.length) {
+            return (await CostEntryRepository.getById(db, ctx, record.id)) ?? record;
+        }
         return record;
     });
 
@@ -344,6 +456,7 @@ export async function updateCostEntry(
     for (const key of ['invoiceFileId', ...COST_DOMAIN_LINKS] as const) {
         if (input[key] !== undefined) data[key] = input[key] ?? null;
     }
+    if (input.allocationBasis !== undefined) data.allocationBasis = input.allocationBasis;
 
     const row = await runInTenantContext(ctx, async (db) => {
         const existing = await CostEntryRepository.getById(db, ctx, id);
@@ -362,10 +475,41 @@ export async function updateCostEntry(
             itemId: input.itemId !== undefined ? input.itemId : existing.itemId,
         });
 
+        // Same "validate the RESULTING row" rule, and it matters more
+        // here: switching an entry to HOLDING while it still carries a
+        // parcelId from before, or away from PARCEL_SUBSET while its
+        // chosen parcels stay behind, are both states the patch alone
+        // cannot see.
+        const resultingBasis = input.allocationBasis ?? existing.allocationBasis;
+        const resultingParcelIds =
+            input.allocationParcelIds !== undefined
+                ? input.allocationParcelIds
+                : existing.allocationParcels.map((p) => p.parcelId);
+        assertAllocationBasis({
+            allocationBasis: resultingBasis,
+            allocationParcelIds: resultingParcelIds,
+            plantingId: input.plantingId !== undefined ? input.plantingId : existing.plantingId,
+            parcelId: input.parcelId !== undefined ? input.parcelId : existing.parcelId,
+            locationId: input.locationId !== undefined ? input.locationId : existing.locationId,
+        });
+
         await assertFksBelongToTenant(db, ctx, input);
         if (input.invoiceFileId) await assertUsableInvoice(db, ctx, input.invoiceFileId);
 
         const record = await CostEntryRepository.update(db, ctx, id, data);
+
+        // Rewritten whenever the resulting subset differs from what is
+        // stored — including the clear-on-basis-change case, where the
+        // caller sends no ids at all and the rows left behind would be an
+        // invisible denominator waiting to come back to life.
+        const storedParcelIds = existing.allocationParcels.map((p) => p.parcelId).sort();
+        const nextParcelIds = [...new Set(resultingParcelIds)].sort();
+        const subsetChanged =
+            storedParcelIds.length !== nextParcelIds.length ||
+            storedParcelIds.some((v, i) => v !== nextParcelIds[i]);
+        if (subsetChanged) {
+            await CostEntryRepository.replaceAllocationParcels(db, ctx, id, nextParcelIds);
+        }
 
         await logEvent(db, ctx, {
             action: 'UPDATE',
@@ -376,11 +520,16 @@ export async function updateCostEntry(
                 category: 'entity_lifecycle',
                 entityName: 'CostEntry',
                 operation: 'updated',
-                changedFields: Object.keys(data),
+                changedFields: [...Object.keys(data), ...(subsetChanged ? ['allocationParcels'] : [])],
                 summary: `Updated a cost entry`,
             },
         });
 
+        // As on create: `update`'s own `include` ran before the subset was
+        // rewritten, so the response would echo the OLD denominator.
+        if (subsetChanged) {
+            return (await CostEntryRepository.getById(db, ctx, id)) ?? record;
+        }
         return record;
     });
 

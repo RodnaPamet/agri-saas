@@ -5365,7 +5365,21 @@
                 "invoice": "Invoice",
                 "invoiceHint": "Optional. A PDF or a photo of the paperwork.",
                 "invoiceAttached": "Currently attached: {name}",
-                "invoiceUploadFailed": "The cost was saved, but the invoice could not be uploaded."
+                "invoiceUploadFailed": "The cost was saved, but the invoice could not be uploaded.",
+                "allocationBasisLabel": "Spread across",
+                "allocationBasisHint": {
+                    "TARGET": "Charged to what it is attributed to, exactly as before.",
+                    "HOLDING": "Split over every parcel by area, owned land included. Land with no crop keeps its share and is reported separately.",
+                    "PARCEL_SUBSET": "Split by area over the parcels you choose, and nothing else."
+                },
+                "allocationBasis": {
+                    "TARGET": "Only what it is attributed to",
+                    "HOLDING": "The whole holding",
+                    "PARCEL_SUBSET": "Chosen parcels"
+                },
+                "allocationParcelsLabel": "Which parcels",
+                "allocationParcelsPlaceholder": "Choose parcels",
+                "errSubsetTooSmall": "Choose at least two parcels — for one, attribute the cost to that parcel instead."
             },
             "deletedToast": "Cost deleted",
             "undo": "Undo",
@@ -5497,7 +5511,14 @@
             "resourceCommodity": "commodity",
             "resourceCommodities": "commodities",
             "metricGrainCashOut": "Cash out",
-            "cashOutNote": "What actually left the bank. Kept apart from the figures above on purpose — a bag of fertiliser is a cost when it goes on the field, not when it is bought, and rent is owed whether or not it has been paid. Adding the two would charge the same money twice."
+            "cashOutNote": "What actually left the bank. Kept apart from the figures above on purpose — a bag of fertiliser is a cost when it goes on the field, not when it is bought, and rent is owed whether or not it has been paid. Adding the two would charge the same money twice.",
+            "besideCostTitle": "Beside the cost",
+            "metricImputedLandCharge": "Imputed land charge",
+            "imputedLandChargeNote": "What {area} ha of your own land would fetch as rent, at {rate} per hectare — the rate your own leases set. No money left the bank, so it is not in the cost above.",
+            "imputedLandChargeRefused": "Not stated",
+            "imputedLandChargeRefusedWhy": "You own land, but none of your leases sets a money rent to price it at. Record a lease in лв/дка and this figure appears.",
+            "unallocatedToCropLabel": "On land with no crop",
+            "unallocatedToCropNote": "Spread cost and rent that landed on land with no crop — {count, plural, one {# parcel} other {# parcels}}, {area} ha in total. Not charged to any crop, so the cost above is short by exactly this."
         },
         "nav": {
             "ariaLabel": "Grain sections",

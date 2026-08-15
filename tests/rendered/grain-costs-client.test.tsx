@@ -229,3 +229,53 @@ describe('grain costs — the empty state', () => {
         ).toBeGreaterThan(0);
     });
 });
+
+// ─────────────────────────────────────────────────────────────────────
+// THE ALLOCATION BASIS — the farmer's choice of which land carries a
+// cost. Its default is the whole promise of the feature: a form nobody
+// touches must keep writing what it always wrote.
+// ─────────────────────────────────────────────────────────────────────
+
+describe('grain costs — the allocation basis (PHONE)', () => {
+    it('offers the basis, defaulting to today\'s behaviour', async () => {
+        setViewport('mobile');
+        renderPage();
+
+        const user = userEvent.setup();
+        await user.click(screen.getByRole('button', { name: COPY.addCost }));
+
+        expect(await screen.findByText(COPY.form.allocationBasisLabel)).toBeVisible();
+        // TARGET, and it says what TARGET means rather than leaving the
+        // farmer to infer it from the option label.
+        expect(screen.getByText(COPY.form.allocationBasis.TARGET)).toBeVisible();
+        expect(screen.getByText(COPY.form.allocationBasisHint.TARGET)).toBeVisible();
+        // The parcel picker belongs to PARCEL_SUBSET alone.
+        expect(
+            screen.queryByText(COPY.form.allocationParcelsLabel),
+        ).not.toBeInTheDocument();
+    });
+
+    it('reveals the parcel picker only once a subset is chosen', async () => {
+        setViewport('mobile');
+        renderPage();
+
+        const user = userEvent.setup();
+        await user.click(screen.getByRole('button', { name: COPY.addCost }));
+        await screen.findByText(COPY.form.allocationBasisLabel);
+
+        // By id — FormField gives the Combobox trigger its LABEL as the
+        // accessible name, so a role+name lookup cannot tell the basis
+        // picker apart from any other labelled control by its value.
+        const trigger = document.getElementById('cost-allocation-basis-input');
+        await user.click(trigger!);
+        await user.click(
+            await screen.findByRole('option', { name: COPY.form.allocationBasis.PARCEL_SUBSET }),
+        );
+
+        expect(await screen.findByText(COPY.form.allocationParcelsLabel)).toBeVisible();
+        // And the explanation follows the choice — each basis spends the
+        // money differently, so a static sentence would be wrong for two
+        // of the three.
+        expect(screen.getByText(COPY.form.allocationBasisHint.PARCEL_SUBSET)).toBeVisible();
+    });
+});

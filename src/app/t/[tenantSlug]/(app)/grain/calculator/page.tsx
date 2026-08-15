@@ -124,6 +124,13 @@ export default async function GrainCalculatorPage({
         exclusions: result.exclusions,
         unvalued: result.unvalued,
         cashOut: result.cashOut,
+        // Both BESIDE the cost side, both for the same reason: neither is
+        // money attributable to a crop. They travel to the island because
+        // a spread that is conserved but not PRINTED reads as a cost that
+        // shrank — see COST_METRICS.IMPUTED_LAND_CHARGE and the usecase's
+        // `unallocatedToCrop` docblock.
+        unallocatedToCrop: result.unallocatedToCrop,
+        imputedLandCharge: result.imputedLandCharge,
         truncated: result.truncated,
     };
 

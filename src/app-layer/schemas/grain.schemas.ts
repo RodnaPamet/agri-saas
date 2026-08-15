@@ -295,6 +295,45 @@ export const COST_DOMAIN_LINKS = [
  */
 export const CostCategorySchema = z.enum(COST_CATEGORIES);
 
+/**
+ * WHICH land a cost spreads across, mirrored from the Prisma
+ * `CostAllocationBasis` enum — spelled out rather than derived so the wire
+ * contract is readable here and a schema change is a visible diff.
+ */
+export const COST_ALLOCATION_BASES = ['TARGET', 'HOLDING', 'PARCEL_SUBSET'] as const;
+
+export const CostAllocationBasisSchema = z.enum(COST_ALLOCATION_BASES);
+
+/**
+ * The spatial links a basis makes contradictory.
+ *
+ * `plantingId` / `parcelId` / `locationId` each say WHERE a cost sits, and
+ * that is the question a non-TARGET basis has already answered. Accepting
+ * both would store an instruction the allocator ignores, which is worse
+ * than refusing it — the farmer would see a link on the costs page and a
+ * spread on the calculator and have no way to tell which one won.
+ *
+ * `seasonId` and `itemId` are deliberately NOT here: a season is a time
+ * scope (and the calculator's season filter reads it, so forbidding it
+ * would make every spread cost invisible to a season-scoped run), and an
+ * item is what was bought, not where it went.
+ */
+export const COST_SPATIAL_LINKS = ['plantingId', 'parcelId', 'locationId'] as const;
+
+/**
+ * Upper bound on a PARCEL_SUBSET's chosen parcels.
+ *
+ * Matches the `take` on the nested read in `CostEntryRepository`, so a
+ * subset written through this schema can never be silently truncated on
+ * the way back out — a shorter list read back is a smaller allocation
+ * denominator, which would move money with nothing to notice it.
+ */
+export const MAX_ALLOCATION_PARCELS = 200;
+
+const AllocationParcelIds = z
+    .array(z.string().min(1))
+    .max(MAX_ALLOCATION_PARCELS, `at most ${MAX_ALLOCATION_PARCELS} parcels may be chosen`);
+
 export const CreateCostEntrySchema = z
     .object({
         category: CostCategorySchema,
@@ -310,6 +349,8 @@ export const CreateCostEntrySchema = z
         parcelId: z.string().min(1).nullable().optional(),
         leaseId: z.string().min(1).nullable().optional(),
         itemId: z.string().min(1).nullable().optional(),
+        allocationBasis: CostAllocationBasisSchema.optional(),
+        allocationParcelIds: AllocationParcelIds.optional(),
     })
     .strip();
 
@@ -330,6 +371,8 @@ export const UpdateCostEntrySchema = z
         parcelId: z.string().min(1).nullable().optional(),
         leaseId: z.string().min(1).nullable().optional(),
         itemId: z.string().min(1).nullable().optional(),
+        allocationBasis: CostAllocationBasisSchema.optional(),
+        allocationParcelIds: AllocationParcelIds.optional(),
     })
     .strip();
 

@@ -108,3 +108,101 @@ export function allocateByWeights(
     for (const p of parts) shares.set(p.id, (sign * p.floorCents) / 100);
     return shares;
 }
+
+/** A parcel taking a share of a spread cost. `areaHa` may be 0 or negative-as-unknown. */
+export interface SpreadParcel {
+    id: string;
+    areaHa: number;
+}
+
+/** Something ON a parcel that can carry the parcel's share onward — a planting. */
+export interface SpreadTarget {
+    id: string;
+    areaHa: number;
+}
+
+export interface ParcelSpread {
+    /**
+     * Target id → money. Together with `unallocatedAmount` this sums to
+     * `round2(amount)` exactly — that is the whole contract.
+     */
+    byTarget: Map<string, number>;
+    /** What landed on parcels with no target at all. */
+    unallocatedAmount: number;
+    /** Those parcels, named. */
+    unallocatedParcelIds: string[];
+    /** Their area — the land that absorbed `unallocatedAmount`. */
+    unallocatedAreaHa: number;
+}
+
+/**
+ * Spread a cost over PARCELS, then carry each parcel's share onward to the
+ * targets standing on it.
+ *
+ * ── Why two levels and not one ──────────────────────────────────────
+ *
+ * The farmer chooses land ("spread this across the whole holding"), but the
+ * calculator reports per COMMODITY, and a commodity is only reachable
+ * through a planting. Flattening to one level — weighting every planting of
+ * every parcel in one pass — silently answers a different question: two
+ * plantings sharing one parcel would pull twice that parcel's weight, so
+ * splitting a field in half would double the cost it attracts. Weighting
+ * parcels first makes the land the denominator, which is what was asked
+ * for; the second pass only decides who on that parcel carries it.
+ *
+ * ── A parcel with nothing on it still takes its share ────────────────
+ *
+ * That share is returned in `unallocatedAmount` rather than pushed back
+ * onto the cropped parcels. Redistributing it would make idle land free
+ * and, worse, would make the remaining crop look MORE expensive the more
+ * land you leave fallow — backwards as a decision aid. Reporting it keeps
+ * the arithmetic honest in both directions: the per-hectare rate is
+ * identical either side of the fallow line, which is the proof that the
+ * spread was pure.
+ *
+ * Conservation holds at BOTH levels: parcel shares are settled to the cent
+ * against the amount, and each parcel's own share is settled to the cent
+ * against its targets. Nothing is rounded twice.
+ *
+ * With NO parcels there is nothing to name and nothing to weigh; the caller
+ * gets an empty spread and must report the cost as unattributable rather
+ * than treating a zero as an allocation.
+ */
+export function spreadOverParcels(
+    amount: number,
+    parcels: readonly SpreadParcel[],
+    targetsByParcel: ReadonlyMap<string, readonly SpreadTarget[]>,
+): ParcelSpread {
+    const byTarget = new Map<string, number>();
+    const unallocatedParcelIds: string[] = [];
+    let unallocatedAmount = 0;
+    let unallocatedAreaHa = 0;
+    if (parcels.length === 0) {
+        return { byTarget, unallocatedAmount: 0, unallocatedParcelIds, unallocatedAreaHa: 0 };
+    }
+
+    const parcelShares = allocateByWeights(amount, computeAreaWeights(parcels));
+
+    for (const parcel of parcels) {
+        const share = parcelShares.get(parcel.id) ?? 0;
+        const targets = targetsByParcel.get(parcel.id) ?? [];
+        if (targets.length === 0) {
+            unallocatedAmount += share;
+            unallocatedParcelIds.push(parcel.id);
+            unallocatedAreaHa += parcel.areaHa > 0 ? parcel.areaHa : 0;
+            continue;
+        }
+        const inner = allocateByWeights(share, computeAreaWeights(targets));
+        for (const target of targets) {
+            byTarget.set(target.id, (byTarget.get(target.id) ?? 0) + (inner.get(target.id) ?? 0));
+        }
+    }
+
+    return {
+        byTarget,
+        // A sum of exact cent values — the rounding only clears float noise.
+        unallocatedAmount: Math.round(unallocatedAmount * 100) / 100,
+        unallocatedParcelIds,
+        unallocatedAreaHa: Math.round(unallocatedAreaHa * 1000) / 1000,
+    };
+}
