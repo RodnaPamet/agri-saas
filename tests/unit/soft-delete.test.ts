@@ -19,6 +19,7 @@
  * 6. Non-allowlisted models are not affected
  */
 import { SOFT_DELETE_MODELS, withDeleted } from '../../src/lib/soft-delete';
+import { SOFT_DELETE_TARGETS } from '@/lib/security/classification';
 
 // ─── Middleware simulation ───
 // We test the middleware logic by simulating the $use callback behavior
@@ -80,14 +81,14 @@ describe('Soft-Delete Middleware', () => {
             expect(result.args.data.deletedAt).toBeDefined();
         });
 
-        test('delete on Practice becomes update with deletedAt', () => {
-            const result = simulateMiddleware('Practice', 'delete', { where: { id: 'r1' } });
+        test('delete on Evidence becomes update with deletedAt', () => {
+            const result = simulateMiddleware('Evidence', 'delete', { where: { id: 'r1' } });
             expect(result.action).toBe('update');
             expect(result.args.data.deletedAt).toBeDefined();
         });
 
-        test('delete on Practice becomes update with deletedAt', () => {
-            const result = simulateMiddleware('Practice', 'delete', { where: { id: 'c1' } });
+        test('delete on Evidence becomes update with deletedAt', () => {
+            const result = simulateMiddleware('Evidence', 'delete', { where: { id: 'c1' } });
             expect(result.action).toBe('update');
             expect(result.args.data.deletedAt).toBeDefined();
         });
@@ -98,8 +99,8 @@ describe('Soft-Delete Middleware', () => {
             expect(result.args.data.deletedAt).toBeDefined();
         });
 
-        test('delete on Policy becomes update with deletedAt', () => {
-            const result = simulateMiddleware('Policy', 'delete', { where: { id: 'p1' } });
+        test('delete on Task becomes update with deletedAt', () => {
+            const result = simulateMiddleware('Task', 'delete', { where: { id: 'p1' } });
             expect(result.action).toBe('update');
             expect(result.args.data.deletedAt).toBeDefined();
         });
@@ -110,8 +111,8 @@ describe('Soft-Delete Middleware', () => {
             expect(result.args.data.deletedAt).toBeDefined();
         });
 
-        test('deleteMany on Practice becomes updateMany with deletedAt', () => {
-            const result = simulateMiddleware('Practice', 'deleteMany', { where: { tenantId: 't1' } });
+        test('deleteMany on Evidence becomes updateMany with deletedAt', () => {
+            const result = simulateMiddleware('Evidence', 'deleteMany', { where: { tenantId: 't1' } });
             expect(result.action).toBe('updateMany');
             expect(result.args.data.deletedAt).toBeDefined();
         });
@@ -124,12 +125,12 @@ describe('Soft-Delete Middleware', () => {
         });
 
         test('findFirst on Risk adds deletedAt:null filter', () => {
-            const result = simulateMiddleware('Practice', 'findFirst', { where: { id: 'r1' } });
+            const result = simulateMiddleware('Evidence', 'findFirst', { where: { id: 'r1' } });
             expect(result.args.where.deletedAt).toBeNull();
         });
 
         test('findUnique on Practice adds deletedAt:null filter', () => {
-            const result = simulateMiddleware('Practice', 'findUnique', { where: { id: 'c1' } });
+            const result = simulateMiddleware('Evidence', 'findUnique', { where: { id: 'c1' } });
             expect(result.args.where.deletedAt).toBeNull();
         });
 
@@ -139,7 +140,7 @@ describe('Soft-Delete Middleware', () => {
         });
 
         test('groupBy on Policy adds deletedAt:null filter', () => {
-            const result = simulateMiddleware('Policy', 'groupBy', { where: { tenantId: 't1' } });
+            const result = simulateMiddleware('Task', 'groupBy', { where: { tenantId: 't1' } });
             expect(result.args.where.deletedAt).toBeNull();
         });
 
@@ -203,29 +204,23 @@ describe('Soft-Delete Middleware', () => {
     });
 
     describe('SOFT_DELETE_MODELS allowlist', () => {
-        test('contains exactly the expected models', () => {
-            // P0 models
-            expect(SOFT_DELETE_MODELS.has('Asset')).toBe(true);
-            expect(SOFT_DELETE_MODELS.has('Practice')).toBe(true);
-            expect(SOFT_DELETE_MODELS.has('Evidence')).toBe(true);
-            expect(SOFT_DELETE_MODELS.has('Policy')).toBe(true);
-            // P1 models
-            expect(SOFT_DELETE_MODELS.has('Vendor')).toBe(true);
-            expect(SOFT_DELETE_MODELS.has('FileRecord')).toBe(true);
-            // P2 models
-            expect(SOFT_DELETE_MODELS.has('Task')).toBe(true);
-            expect(SOFT_DELETE_MODELS.has('Finding')).toBe(true);
-            // P3 models
-            expect(SOFT_DELETE_MODELS.has('Audit')).toBe(true);
-            expect(SOFT_DELETE_MODELS.has('AuditCycle')).toBe(true);
-            expect(SOFT_DELETE_MODELS.has('AuditPack')).toBe(true);
-            // Grain (2026-07-25) — Contract already carried the full
-            // soft-delete trio and its usecase soft-deletes, but it was
-            // registered in neither this set nor the retention sweep, so
-            // `retentionUntil` was written by nothing and read by
-            // nothing.
-            expect(SOFT_DELETE_MODELS.has('Contract')).toBe(true);
-            expect(SOFT_DELETE_MODELS.size).toBe(12);
+        test('contains exactly the classification registry models', () => {
+            // Was a member-by-member hand-copy of the whole list — the
+            // FIFTH copy, after SOFT_DELETE_TARGETS, SOFT_DELETE_MODELS,
+            // the integration test's `expected` array and
+            // soft-delete-guardrails' local const. Every teardown had to
+            // edit all five, which is how they drifted apart (the guardrail
+            // copy still named the GRC models AND omitted Contract).
+            //
+            // SOFT_DELETE_MODELS now DERIVES from SOFT_DELETE_TARGETS, so
+            // the honest assertion is that the two agree — plus the
+            // exclusion test below, which is what actually pins the
+            // allowlist's boundary.
+            expect([...SOFT_DELETE_MODELS].sort()).toEqual(
+                SOFT_DELETE_TARGETS.map((t) => t.model).slice().sort(),
+            );
+            expect(SOFT_DELETE_MODELS.size).toBe(SOFT_DELETE_TARGETS.length);
+            expect(SOFT_DELETE_MODELS.size).toBeGreaterThan(0);
         });
 
         test('does NOT include ephemeral models', () => {

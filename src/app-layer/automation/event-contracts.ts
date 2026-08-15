@@ -76,7 +76,6 @@ export interface TaskCreatedData {
     severity: string;
     priority: string;
     assigneeUserId: string | null;
-    practiceId: string | null;
 }
 export interface TaskStatusChangedData {
     fromStatus: string;

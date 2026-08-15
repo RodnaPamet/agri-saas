@@ -81,8 +81,8 @@ describe('Task + Issue usecase emission', () => {
         (WorkItemRepository.create as jest.Mock).mockResolvedValue({
             id: 'task-1',
             key: 'TSK-42',
-            title: 'Patch SQLi',
-            type: 'INCIDENT',
+            title: 'Replace the sprayer nozzles',
+            type: 'TASK',
             severity: 'CRITICAL',
             priority: 'P0',
             status: 'OPEN',
@@ -96,8 +96,8 @@ describe('Task + Issue usecase emission', () => {
         });
 
         await createTask(makeCtx(), {
-            title: 'Patch SQLi',
-            type: 'INCIDENT',
+            title: 'Replace the sprayer nozzles',
+            type: 'TASK',
             severity: 'CRITICAL',
             priority: 'P0',
             assigneeUserId: 'user-2',
@@ -112,12 +112,11 @@ describe('Task + Issue usecase emission', () => {
         if (evt.event === 'TASK_CREATED') {
             expect(evt.data).toEqual({
                 key: 'TSK-42',
-                title: 'Patch SQLi',
-                type: 'INCIDENT',
+                title: 'Replace the sprayer nozzles',
+                type: 'TASK',
                 severity: 'CRITICAL',
                 priority: 'P0',
                 assigneeUserId: 'user-2',
-                practiceId: null,
             });
         }
     });
@@ -170,7 +169,7 @@ describe('Task + Issue usecase emission', () => {
 
         await createIssue(makeCtx(), {
             title: 'Backup failure',
-            type: 'INCIDENT',
+            type: 'TASK',
             severity: 'HIGH',
         });
 

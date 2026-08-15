@@ -118,10 +118,11 @@ describe('GAP-10 foundation — annotated schemas have metadata', () => {
             'CreateAssetSchema', 'UpdateAssetSchema',
             'CreateEvidenceSchema', 'UpdateEvidenceSchema',
             'CreateTaskSchema', 'UpdateTaskSchema',
-            // Focused mutation requests
-            'SetPracticeStatusSchema',
-            'SetPracticeApplicabilitySchema', 'SetTaskStatusSchema',
-            'EvidenceReviewSchema', 'PublishPolicySchema',
+            // Focused mutation requests. The GRC teardown removed
+            // SetPracticeStatusSchema, SetPracticeApplicabilitySchema and
+            // PublishPolicySchema along with their models.
+            'SetTaskStatusSchema',
+            'EvidenceReviewSchema',
         ],
     };
 

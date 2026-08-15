@@ -48,8 +48,8 @@ if (DB_AVAILABLE) {
     afterAll(async () => {
         // Clean up raw (bypass middleware)
         await prisma.$executeRawUnsafe('DELETE FROM "AuditLog" WHERE "tenantId" = $1', testTenantId).catch(() => {});
-        await prisma.$executeRawUnsafe('DELETE FROM "Practice" WHERE "tenantId" = $1', testTenantId).catch(() => {});
-        await prisma.$executeRawUnsafe('DELETE FROM "Vendor" WHERE "tenantId" = $1', testTenantId).catch(() => {});
+        await prisma.$executeRawUnsafe('DELETE FROM "Evidence" WHERE "tenantId" = $1', testTenantId).catch(() => {});
+        await prisma.$executeRawUnsafe('DELETE FROM "Evidence" WHERE "tenantId" = $1', testTenantId).catch(() => {});
         await prisma.$executeRawUnsafe('DELETE FROM "User" WHERE "id" = $1', testUserId).catch(() => {});
         await prisma.$executeRawUnsafe('DELETE FROM "Tenant" WHERE "id" = $1', testTenantId).catch(() => {});
         await prisma.$disconnect();
@@ -61,15 +61,15 @@ describeFn('Data Lifecycle', () => {
 
     describe('purgeSoftDeletedOlderThan', () => {
         it('purges records whose grace period has elapsed', async () => {
-            const practice = await prisma.practice.create({
-                data: { tenantId: testTenantId, name: 'Old deleted practice' },
+            const evidence = await prisma.evidence.create({
+                data: { tenantId: testTenantId, type: 'LINK', title: 'Old deleted evidence' },
             });
 
             // Set deletedAt to 100 days ago via raw SQL
             const oldDate = new Date(Date.now() - 100 * 86_400_000);
             await prisma.$executeRawUnsafe(
-                'UPDATE "Practice" SET "deletedAt" = $1 WHERE "id" = $2',
-                oldDate, practice.id,
+                'UPDATE "Evidence" SET "deletedAt" = $1 WHERE "id" = $2',
+                oldDate, evidence.id,
             );
 
             // Run purge with 90-day grace
@@ -79,24 +79,24 @@ describeFn('Data Lifecycle', () => {
                 db: prisma,
             });
 
-            const practiceResult = results.find(r => r.model === 'Practice');
-            expect(practiceResult).toBeDefined();
-            expect(practiceResult!.purged).toBeGreaterThanOrEqual(1);
+            const evidenceResult = results.find(r => r.model === 'Evidence');
+            expect(evidenceResult).toBeDefined();
+            expect(evidenceResult!.purged).toBeGreaterThanOrEqual(1);
 
             // Verify hard-deleted
             const rows = await prisma.$queryRawUnsafe<Array<{ id: string }>>(
-                'SELECT "id" FROM "Practice" WHERE "id" = $1', practice.id,
+                'SELECT "id" FROM "Evidence" WHERE "id" = $1', evidence.id,
             );
             expect(rows).toHaveLength(0);
         });
 
         it('does NOT purge recently deleted records', async () => {
-            const practice = await prisma.practice.create({
-                data: { tenantId: testTenantId, name: 'Recently deleted' },
+            const evidence = await prisma.evidence.create({
+                data: { tenantId: testTenantId, type: 'LINK', title: 'Recently deleted' },
             });
 
             // Soft-delete it (deletedAt = now)
-            await prisma.practice.delete({ where: { id: practice.id } });
+            await prisma.evidence.delete({ where: { id: evidence.id } });
 
             // Run purge with 90-day grace — should NOT purge
             await purgeSoftDeletedOlderThan({
@@ -107,14 +107,14 @@ describeFn('Data Lifecycle', () => {
 
             // Verify still exists (soft-deleted but not purged)
             const rows = await prisma.$queryRawUnsafe<Array<{ id: string }>>(
-                'SELECT "id" FROM "Practice" WHERE "id" = $1', practice.id,
+                'SELECT "id" FROM "Evidence" WHERE "id" = $1', evidence.id,
             );
             expect(rows).toHaveLength(1);
         });
 
         it('does NOT purge active (non-deleted) records', async () => {
-            const practice = await prisma.practice.create({
-                data: { tenantId: testTenantId, name: 'Active practice' },
+            const evidence = await prisma.evidence.create({
+                data: { tenantId: testTenantId, type: 'LINK', title: 'Active practice' },
             });
 
             await purgeSoftDeletedOlderThan({
@@ -123,19 +123,19 @@ describeFn('Data Lifecycle', () => {
                 db: prisma,
             });
 
-            const found = await prisma.practice.findUnique({ where: { id: practice.id } });
+            const found = await prisma.evidence.findUnique({ where: { id: evidence.id } });
             expect(found).not.toBeNull();
         });
 
         it('emits DATA_PURGED audit event', async () => {
-            const practice = await prisma.practice.create({
-                data: { tenantId: testTenantId, name: 'Purge audit test' },
+            const evidence = await prisma.evidence.create({
+                data: { tenantId: testTenantId, type: 'LINK', title: 'Purge audit test' },
             });
 
             const oldDate = new Date(Date.now() - 100 * 86_400_000);
             await prisma.$executeRawUnsafe(
-                'UPDATE "Practice" SET "deletedAt" = $1 WHERE "id" = $2',
-                oldDate, practice.id,
+                'UPDATE "Evidence" SET "deletedAt" = $1 WHERE "id" = $2',
+                oldDate, evidence.id,
             );
 
             await purgeSoftDeletedOlderThan({
@@ -147,7 +147,7 @@ describeFn('Data Lifecycle', () => {
             const auditLogs = await prisma.auditLog.findMany({
                 where: {
                     tenantId: testTenantId,
-                    entityId: practice.id,
+                    entityId: evidence.id,
                     action: 'DATA_PURGED',
                 },
             });
@@ -157,14 +157,14 @@ describeFn('Data Lifecycle', () => {
         });
 
         it('dryRun does not delete anything', async () => {
-            const practice = await prisma.practice.create({
-                data: { tenantId: testTenantId, name: 'DryRun test' },
+            const evidence = await prisma.evidence.create({
+                data: { tenantId: testTenantId, type: 'LINK', title: 'DryRun test' },
             });
 
             const oldDate = new Date(Date.now() - 200 * 86_400_000);
             await prisma.$executeRawUnsafe(
-                'UPDATE "Practice" SET "deletedAt" = $1 WHERE "id" = $2',
-                oldDate, practice.id,
+                'UPDATE "Evidence" SET "deletedAt" = $1 WHERE "id" = $2',
+                oldDate, evidence.id,
             );
 
             const results = await purgeSoftDeletedOlderThan({
@@ -174,14 +174,14 @@ describeFn('Data Lifecycle', () => {
                 db: prisma,
             });
 
-            const practiceResult = results.find(r => r.model === 'Practice');
-            expect(practiceResult).toBeDefined();
-            expect(practiceResult!.scanned).toBeGreaterThanOrEqual(1);
-            expect(practiceResult!.purged).toBe(0);
+            const evidenceResult = results.find(r => r.model === 'Evidence');
+            expect(evidenceResult).toBeDefined();
+            expect(evidenceResult!.scanned).toBeGreaterThanOrEqual(1);
+            expect(evidenceResult!.purged).toBe(0);
 
             // Record still exists
             const rows = await prisma.$queryRawUnsafe<Array<{ id: string }>>(
-                'SELECT "id" FROM "Practice" WHERE "id" = $1', practice.id,
+                'SELECT "id" FROM "Evidence" WHERE "id" = $1', evidence.id,
             );
             expect(rows).toHaveLength(1);
         });
@@ -191,18 +191,22 @@ describeFn('Data Lifecycle', () => {
 
     describe('runRetentionSweep', () => {
         it('soft-deletes records with elapsed retentionUntil', async () => {
-            const vendor = await prisma.vendor.create({
+            // NOT Evidence: runRetentionSweep skips it deliberately
+            // ("Evidence has its own specialized sweep"), so a record there
+            // can never appear in these results. Contract is the surviving
+            // model the sweep actually walks.
+            const ev2 = await prisma.contract.create({
                 data: {
                     tenantId: testTenantId,
-                    name: `Retention vendor ${Date.now()}`,
+                    counterparty: `Retention counterparty ${Date.now()}`,
                 },
             });
 
             // Set retentionUntil to the past
             const pastDate = new Date(Date.now() - 10 * 86_400_000);
             await prisma.$executeRawUnsafe(
-                'UPDATE "Vendor" SET "retentionUntil" = $1 WHERE "id" = $2',
-                pastDate, vendor.id,
+                'UPDATE "Contract" SET "retentionUntil" = $1 WHERE "id" = $2',
+                pastDate, ev2.id,
             );
 
             const results = await runRetentionSweep({
@@ -210,55 +214,55 @@ describeFn('Data Lifecycle', () => {
                 db: prisma,
             });
 
-            const vendorResult = results.find(r => r.model === 'Vendor');
-            expect(vendorResult).toBeDefined();
-            expect(vendorResult!.expired).toBeGreaterThanOrEqual(1);
+            const evidenceRetentionResult = results.find(r => r.model === 'Contract');
+            expect(evidenceRetentionResult).toBeDefined();
+            expect(evidenceRetentionResult!.expired).toBeGreaterThanOrEqual(1);
 
-            // Verify vendor is now soft-deleted
-            const found = await prisma.vendor.findUnique({ where: { id: vendor.id } });
+            // Verify the record is now soft-deleted
+            const found = await prisma.contract.findUnique({ where: { id: ev2.id } });
             expect(found).toBeNull(); // excluded by soft-delete filter
 
             // But raw SQL still has it
             const [raw] = await prisma.$queryRawUnsafe<Array<{ deletedAt: Date | null }>>(
-                'SELECT "deletedAt" FROM "Vendor" WHERE "id" = $1', vendor.id,
+                'SELECT "deletedAt" FROM "Contract" WHERE "id" = $1', ev2.id,
             );
             expect(raw).toBeDefined();
             expect(raw.deletedAt).not.toBeNull();
         });
 
         it('does NOT soft-delete records with future retentionUntil', async () => {
-            const vendor = await prisma.vendor.create({
+            const ev2 = await prisma.contract.create({
                 data: {
                     tenantId: testTenantId,
-                    name: `Future vendor ${Date.now()}`,
+                    counterparty: `Future evidence ${Date.now()}`,
                 },
             });
 
             // Set retentionUntil to the future
             const futureDate = new Date(Date.now() + 365 * 86_400_000);
             await prisma.$executeRawUnsafe(
-                'UPDATE "Vendor" SET "retentionUntil" = $1 WHERE "id" = $2',
-                futureDate, vendor.id,
+                'UPDATE "Contract" SET "retentionUntil" = $1 WHERE "id" = $2',
+                futureDate, ev2.id,
             );
 
             await runRetentionSweep({ tenantId: testTenantId, db: prisma });
 
-            const found = await prisma.vendor.findUnique({ where: { id: vendor.id } });
+            const found = await prisma.contract.findUnique({ where: { id: ev2.id } });
             expect(found).not.toBeNull();
         });
 
         it('emits DATA_EXPIRED audit events', async () => {
-            const vendor = await prisma.vendor.create({
+            const ev2 = await prisma.contract.create({
                 data: {
                     tenantId: testTenantId,
-                    name: `Retention audit test ${Date.now()}`,
+                    counterparty: `Retention audit test ${Date.now()}`,
                 },
             });
 
             const pastDate = new Date(Date.now() - 5 * 86_400_000);
             await prisma.$executeRawUnsafe(
-                'UPDATE "Vendor" SET "retentionUntil" = $1 WHERE "id" = $2',
-                pastDate, vendor.id,
+                'UPDATE "Contract" SET "retentionUntil" = $1 WHERE "id" = $2',
+                pastDate, ev2.id,
             );
 
             await runRetentionSweep({ tenantId: testTenantId, db: prisma });
@@ -266,7 +270,7 @@ describeFn('Data Lifecycle', () => {
             const auditLogs = await prisma.auditLog.findMany({
                 where: {
                     tenantId: testTenantId,
-                    entityId: vendor.id,
+                    entityId: ev2.id,
                     action: 'DATA_EXPIRED',
                 },
             });
@@ -276,18 +280,17 @@ describeFn('Data Lifecycle', () => {
         });
 
         it('dryRun does not soft-delete', async () => {
-            const practice = await prisma.practice.create({
+            const evidence = await prisma.contract.create({
                 data: {
                     tenantId: testTenantId,
-                    code: `DRY-${Date.now()}`,
-                    name: 'DryRun retention',
+                    counterparty: `DryRun retention ${Date.now()}`,
                 },
             });
 
             const pastDate = new Date(Date.now() - 5 * 86_400_000);
             await prisma.$executeRawUnsafe(
-                'UPDATE "Practice" SET "retentionUntil" = $1 WHERE "id" = $2',
-                pastDate, practice.id,
+                'UPDATE "Contract" SET "retentionUntil" = $1 WHERE "id" = $2',
+                pastDate, evidence.id,
             );
 
             const results = await runRetentionSweep({
@@ -296,12 +299,12 @@ describeFn('Data Lifecycle', () => {
                 db: prisma,
             });
 
-            const practiceResult = results.find(r => r.model === 'Practice');
-            expect(practiceResult).toBeDefined();
-            expect(practiceResult!.scanned).toBeGreaterThanOrEqual(1);
+            const evidenceResult = results.find(r => r.model === 'Contract');
+            expect(evidenceResult).toBeDefined();
+            expect(evidenceResult!.scanned).toBeGreaterThanOrEqual(1);
 
             // Should still be active
-            const found = await prisma.practice.findUnique({ where: { id: practice.id } });
+            const found = await prisma.contract.findUnique({ where: { id: evidence.id } });
             expect(found).not.toBeNull();
         });
     });

@@ -55,41 +55,6 @@ export const DATA_CLASSIFICATION: readonly FieldClassification[] = [
         needsSearchHash: false,
     },
     {
-        model: 'VendorContact',
-        field: 'name',
-        tier: 'APP_ENCRYPTED',
-        reason: 'Third-party contact name is PII',
-        needsSearchHash: false,
-    },
-    {
-        model: 'VendorContact',
-        field: 'email',
-        tier: 'APP_ENCRYPTED',
-        reason: 'Third-party contact email is PII',
-        needsSearchHash: true,
-    },
-    {
-        model: 'VendorContact',
-        field: 'phone',
-        tier: 'APP_ENCRYPTED',
-        reason: 'Phone number is PII',
-        needsSearchHash: false,
-    },
-    {
-        model: 'AuditorAccount',
-        field: 'email',
-        tier: 'APP_ENCRYPTED',
-        reason: 'External auditor email is PII',
-        needsSearchHash: true,
-    },
-    {
-        model: 'AuditorAccount',
-        field: 'name',
-        tier: 'APP_ENCRYPTED',
-        reason: 'External auditor name is PII',
-        needsSearchHash: false,
-    },
-    {
         model: 'NotificationOutbox',
         field: 'toEmail',
         tier: 'APP_ENCRYPTED',
@@ -234,20 +199,19 @@ export function isFieldAppEncrypted(model: string, field: string): boolean {
  */
 export const SOFT_DELETE_TARGETS = [
     { model: 'Asset',      hasDeletedAt: true,  priority: 'P0' },
-    { model: 'Practice',    hasDeletedAt: true,  priority: 'P0' },
     { model: 'Evidence',   hasDeletedAt: true,  priority: 'P0' },
-    { model: 'Policy',     hasDeletedAt: true,  priority: 'P0' },
-    { model: 'Vendor',     hasDeletedAt: false, priority: 'P1' },
     { model: 'FileRecord', hasDeletedAt: false, priority: 'P1' },
     { model: 'Task',       hasDeletedAt: false, priority: 'P2' },
-    { model: 'Finding',    hasDeletedAt: false, priority: 'P2' },
-    { model: 'Audit',      hasDeletedAt: false, priority: 'P3' },
-    { model: 'AuditCycle', hasDeletedAt: false, priority: 'P3' },
-    { model: 'AuditPack',  hasDeletedAt: false, priority: 'P3' },
     // Grain (2026-07-25). Contract shipped with the full soft-delete
     // trio and a soft-deleting usecase but was registered nowhere, so
-    // `retentionUntil` was written by nothing and read by nothing. Kept
-    // in step with SOFT_DELETE_MODELS in `src/lib/soft-delete.ts` — the
-    // two lists are documented as mirrors of each other.
+    // `retentionUntil` was written by nothing and read by nothing.
+    //
+    // THIS LIST IS THE SOURCE OF TRUTH. `SOFT_DELETE_MODELS` in
+    // `src/lib/soft-delete.ts` now DERIVES from it rather than being a
+    // hand-kept mirror, and `retention-purge.ts` iterates that. The GRC
+    // teardown removed Practice / Policy / Vendor / Finding / Audit /
+    // AuditCycle / AuditPack from here; dropping a model from this list
+    // restores HARD-delete semantics for it, which is why that shipped
+    // alongside the phase-3 drop rather than ahead of it.
     { model: 'Contract',   hasDeletedAt: true,  priority: 'P3' },
 ] as const;

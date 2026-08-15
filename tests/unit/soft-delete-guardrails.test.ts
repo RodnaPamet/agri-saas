@@ -7,16 +7,18 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { readPrismaSchema } from '../helpers/prisma-schema';
+import { SOFT_DELETE_MODELS } from '@/lib/soft-delete';
+import { SOFT_DELETE_TARGETS } from '@/lib/security/classification';
 
 const SRC_DIR = path.join(__dirname, '..', '..', 'src');
 const PRISMA_FILE = path.join(__dirname, '..', '..', 'src', 'lib', 'prisma.ts');
 const SOFT_DELETE_FILE = path.join(__dirname, '..', '..', 'src', 'lib', 'soft-delete.ts');
 
-const SOFT_DELETE_MODELS = [
-    'Asset', 'Practice', 'Evidence', 'Policy',
-    'Vendor', 'FileRecord', 'Task', 'Finding',
-    'Audit', 'AuditCycle', 'AuditPack',
-];
+// This file used to carry its OWN hardcoded copy of the model list — the
+// FOURTH, after SOFT_DELETE_TARGETS, SOFT_DELETE_MODELS and the integration
+// test's `expected` array. It had already drifted: it still named the seven
+// GRC models AND omitted Contract, so the route-scan below was checking the
+// wrong set in both directions. Imported now.
 
 /** Recursively collect .ts/.tsx files from a directory */
 function collectFiles(dir: string, extensions = ['.ts', '.tsx']): string[] {
@@ -47,10 +49,19 @@ describe('Soft-Delete CI Guardrails', () => {
         expect(content).toContain("import { withSoftDeleteExtension } from './soft-delete'");
     });
 
-    test('soft-delete.ts exports SOFT_DELETE_MODELS with the P0 models', () => {
-        const content = fs.readFileSync(SOFT_DELETE_FILE, 'utf-8');
-        for (const model of SOFT_DELETE_MODELS) {
-            expect(content).toContain(`'${model}'`);
+    test('SOFT_DELETE_MODELS agrees with the classification registry', () => {
+        // Asserted on the RUNTIME set, not on the source text of
+        // soft-delete.ts. The GRC teardown made SOFT_DELETE_MODELS DERIVE
+        // from SOFT_DELETE_TARGETS (they had been hand-kept "mirrors", with
+        // a third copy in the integration test), so the model literals no
+        // longer appear in that file at all — a text scan for them now
+        // asserts nothing about where the list actually comes from.
+        expect([...SOFT_DELETE_MODELS].sort()).toEqual(
+            SOFT_DELETE_TARGETS.map((t) => t.model).slice().sort(),
+        );
+        // The P0 models specifically — the ones with a real deletedAt column.
+        for (const t of SOFT_DELETE_TARGETS.filter((x) => x.hasDeletedAt)) {
+            expect(SOFT_DELETE_MODELS.has(t.model)).toBe(true);
         }
     });
 
@@ -152,12 +163,15 @@ describe('Soft-Delete CI Guardrails', () => {
         expect(softDeleteIdx).toBeLessThan(auditCallIdx);
     });
 
-    test('SOFT_DELETE_MODELS allowlist has exactly 11 models', () => {
-        const content = fs.readFileSync(SOFT_DELETE_FILE, 'utf-8');
-        // Count the models in the Set
-        const modelMatches = content.match(/'(Asset|Practice|Evidence|Policy|Vendor|FileRecord|Task|Finding|Audit|AuditCycle|AuditPack)'/g);
-        expect(modelMatches).not.toBeNull();
-        expect(new Set(modelMatches).size).toBe(11);
+    test('the SOFT_DELETE_MODELS allowlist is non-empty and has no duplicates', () => {
+        // Was 'has exactly 11 models', counted by regexing eleven hardcoded
+        // names out of the source. That number has been edited by every
+        // teardown (Risk, then the seven GRC models) and the regex would
+        // silently stop matching once the list moved to another file. A Set
+        // cannot contain duplicates, so the real properties left are
+        // non-emptiness and agreement with the registry (asserted above).
+        expect(SOFT_DELETE_MODELS.size).toBe(SOFT_DELETE_TARGETS.length);
+        expect(SOFT_DELETE_MODELS.size).toBeGreaterThan(0);
     });
 
     test('withDeleted helper is exported from soft-delete.ts', () => {

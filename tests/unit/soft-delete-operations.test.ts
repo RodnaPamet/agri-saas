@@ -13,6 +13,7 @@
  * shared soft-delete-operations module.
  */
 import { SOFT_DELETE_MODELS, withDeleted } from '../../src/lib/soft-delete';
+import { SOFT_DELETE_TARGETS } from '@/lib/security/classification';
 
 describe('Soft-Delete Operations', () => {
     describe('restoreEntity behavior', () => {
@@ -96,21 +97,29 @@ describe('Soft-Delete Operations', () => {
             expect(auditAction).not.toBe('DELETE');
         });
 
-        test('the P0 models support soft delete operations', () => {
-            const models = ['Asset', 'Practice', 'Evidence', 'Policy'];
-            for (const model of models) {
-                expect(SOFT_DELETE_MODELS.has(model)).toBe(true);
+        test('every model with a deletedAt column is in the allowlist', () => {
+            // Was a hand-copy of the model names checked against the
+            // allowlist. Deriving the loop from SOFT_DELETE_MODELS would
+            // have made it tautological, so it now crosses the TWO sources:
+            // a model declaring hasDeletedAt in the classification registry
+            // must be in the runtime allowlist.
+            const p0 = SOFT_DELETE_TARGETS.filter((t) => t.hasDeletedAt);
+            expect(p0.length).toBeGreaterThan(0);
+            for (const t of p0) {
+                expect(SOFT_DELETE_MODELS.has(t.model)).toBe(true);
             }
         });
     });
 
     describe('API endpoint patterns', () => {
+        // 'risks' went with the risk register; 'practices' and 'policies'
+        // with the GRC teardown. These two tests only ever asserted that a
+        // template string contains a literal they just interpolated into
+        // it, so they were never load-bearing — the list is trimmed to the
+        // surviving surfaces rather than the tests being rewritten.
         const entities = [
             { name: 'assets', idParam: 'id' },
-            { name: 'risks', idParam: 'riskId' },
-            { name: 'practices', idParam: 'practiceId' },
             { name: 'evidence', idParam: 'id' },
-            { name: 'policies', idParam: 'id' },
         ];
 
         test('each entity has restore endpoint pattern', () => {
