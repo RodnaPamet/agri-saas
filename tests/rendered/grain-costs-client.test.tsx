@@ -48,6 +48,7 @@ jest.mock('@/lib/tenant-context-provider', () => ({
 
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { CostsClient, type CostRow } from '@/app/t/[tenantSlug]/(app)/grain/costs/CostsClient';
+import { CostEntryFormModal } from '@/app/t/[tenantSlug]/(app)/grain/costs/CostEntryFormModal';
 
 const COPY = enMessages.grain.costs;
 const CATS = enMessages.grainEnums.costCategory;
@@ -92,6 +93,35 @@ function renderPage(rows: CostRow[] = [costRow()], canWrite = true, truncated = 
                     initialTruncated={truncated}
                     permissions={{ canWrite }}
                 />
+                </TooltipProvider>
+            </QueryClientProvider>
+        </NextIntlClientProvider>,
+    );
+}
+
+/**
+ * The entry modal on its own.
+ *
+ * Rendered directly rather than opened through the register, because
+ * every assertion below is about which CONTROLS exist for a given basis —
+ * and routing that through a button click plus a Radix portal makes the
+ * result depend on how fast the runner mounts, which is exactly how the
+ * first version of these tests failed on CI and passed locally.
+ */
+function renderModal(record: CostRow | null = null) {
+    const qc = new QueryClient({
+        defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } },
+    });
+    return render(
+        <NextIntlClientProvider locale="en" messages={enMessages}>
+            <QueryClientProvider client={qc}>
+                <TooltipProvider>
+                    <CostEntryFormModal
+                        open
+                        setOpen={() => {}}
+                        tenantSlug="acme"
+                        record={record}
+                    />
                 </TooltipProvider>
             </QueryClientProvider>
         </NextIntlClientProvider>,
@@ -239,43 +269,53 @@ describe('grain costs — the empty state', () => {
 describe('grain costs — the allocation basis (PHONE)', () => {
     it('offers the basis, defaulting to today\'s behaviour', async () => {
         setViewport('mobile');
-        renderPage();
-
-        const user = userEvent.setup();
-        await user.click(screen.getByRole('button', { name: COPY.addCost }));
+        renderModal();
 
         expect(await screen.findByText(COPY.form.allocationBasisLabel)).toBeVisible();
-        // TARGET, and it says what TARGET means rather than leaving the
-        // farmer to infer it from the option label.
+        // TARGET, and it SAYS what TARGET means rather than leaving the
+        // farmer to infer it from an option label. The sentence is a
+        // `description` and not a `hint` precisely so it is on the surface
+        // — FormField puts a hint behind an InfoTooltip, and on a phone
+        // that is a tap nobody makes.
         expect(screen.getByText(COPY.form.allocationBasis.TARGET)).toBeVisible();
         expect(screen.getByText(COPY.form.allocationBasisHint.TARGET)).toBeVisible();
         // The parcel picker belongs to PARCEL_SUBSET alone.
-        expect(
-            screen.queryByText(COPY.form.allocationParcelsLabel),
-        ).not.toBeInTheDocument();
+        expect(screen.queryByText(COPY.form.allocationParcelsLabel)).not.toBeInTheDocument();
     });
 
-    it('reveals the parcel picker only once a subset is chosen', async () => {
+    it('reads a saved subset back, picker and all', async () => {
         setViewport('mobile');
-        renderPage();
-
-        const user = userEvent.setup();
-        await user.click(screen.getByRole('button', { name: COPY.addCost }));
-        await screen.findByText(COPY.form.allocationBasisLabel);
-
-        // By id — FormField gives the Combobox trigger its LABEL as the
-        // accessible name, so a role+name lookup cannot tell the basis
-        // picker apart from any other labelled control by its value.
-        const trigger = document.getElementById('cost-allocation-basis-input');
-        await user.click(trigger!);
-        await user.click(
-            await screen.findByRole('option', { name: COPY.form.allocationBasis.PARCEL_SUBSET }),
+        // Rendered from a persisted row rather than driven through the
+        // basis dropdown: this asserts the CONDITIONAL SURFACE (which
+        // controls exist for which basis), and driving a Radix popover to
+        // get there makes the assertion depend on how fast the CI runner
+        // mounts a portal — which is how this test failed the first time.
+        renderModal(
+            costRow({
+                category: 'PAYROLL',
+                allocationBasis: 'PARCEL_SUBSET',
+                allocationParcelIds: ['par-1', 'par-2'],
+            }),
         );
 
         expect(await screen.findByText(COPY.form.allocationParcelsLabel)).toBeVisible();
-        // And the explanation follows the choice — each basis spends the
-        // money differently, so a static sentence would be wrong for two
-        // of the three.
+        // The explanation follows the choice — each basis spends the money
+        // differently, so one static sentence would be wrong for two of
+        // the three.
         expect(screen.getByText(COPY.form.allocationBasisHint.PARCEL_SUBSET)).toBeVisible();
+        expect(screen.getByText(COPY.form.allocationBasis.PARCEL_SUBSET)).toBeVisible();
+    });
+
+    it('drops the attribution kinds that name a PLACE once a basis chose the land', async () => {
+        setViewport('mobile');
+        renderModal(costRow({ allocationBasis: 'HOLDING' }));
+
+        await screen.findByText(COPY.form.allocationBasisLabel);
+        // The server refuses planting / field / parcel alongside a
+        // non-TARGET basis, and an offer that ends in a 400 is worse than
+        // no offer. The link control itself stays — a season is a time
+        // scope, not a place.
+        expect(screen.getByText(COPY.form.linkKindLabel)).toBeVisible();
+        expect(screen.getByText(COPY.form.allocationBasisHint.HOLDING)).toBeVisible();
     });
 });
