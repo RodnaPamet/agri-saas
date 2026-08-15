@@ -68,11 +68,12 @@ interface TenantTrackerEntry {
  * below swallows the error. Every dropped table costs a failed round
  * trip on EVERY isolated-tenant teardown, and the run's Postgres log
  * fills with `relation "X" does not exist`. Eleven names had gone
- * stale: the ten risk / practice-exoskeleton tables removed by this
- * branch, plus `IntegrationEvent`, which had already been dropped
- * before it. `PolicyAcknowledgement` went too — it has no `tenantId`
- * (it hangs off `policyVersion`), so `WHERE "tenantId" = $1` could
- * never have matched a row; it falls under the orphan carve-out above.
+ * stale once before: the ten risk / practice-exoskeleton tables, plus
+ * `IntegrationEvent`, which had already been dropped before them.
+ * `PolicyAcknowledgement` went too — it has no `tenantId` (it hangs
+ * off `policyVersion`), so `WHERE "tenantId" = $1` could never have
+ * matched a row; it falls under the orphan carve-out above. GRC
+ * teardown phase 3 removed 28 more, leaving only the agri surface.
  *
  * `tests/guards/e2e-teardown-tables.test.ts` holds the invariant now:
  * every name must resolve to a real Prisma model that actually has a
@@ -93,43 +94,14 @@ const TENANT_CHILD_TABLES: readonly string[] = [
     'TenantCustomRole',
     'TenantIdentityProvider',
     'UserIdentityLink',
-    // Compliance entities (and their tenant-scoped children)
+    // Work + evidence (and their tenant-scoped children)
     'TaskLink',
     'TaskComment',
     'TaskWatcher',
     'Task',
     'EvidenceReview',
     'Evidence',
-    'FindingEvidence',
-    'Finding',
-    'PolicyApproval',
-    'PolicyPracticeLink',
-    'PolicyVersion',
-    'Policy',
-    'PracticeAsset',
-    'PracticeEvidenceLink',
-    'PracticeTask',
-    'Practice',
     'Asset',
-    'ClauseProgress',
-    'AuditChecklistItem',
-    'AuditPackItem',
-    'AuditPackShare',
-    'AuditPack',
-    'AuditCycle',
-    'AuditorPackAccess',
-    'AuditorAccount',
-    'Audit',
-    // Vendor + assessments
-    'VendorEvidenceBundleItem',
-    'VendorEvidenceBundle',
-    'VendorRelationship',
-    'VendorLink',
-    'VendorAssessmentAnswer',
-    'VendorAssessment',
-    'VendorDocument',
-    'VendorContact',
-    'Vendor',
     // Notifications + automations
     'NotificationOutbox',
     'ReminderHistory',

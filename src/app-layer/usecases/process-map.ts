@@ -165,21 +165,6 @@ export async function setProcessMapCanvasMode(
 }
 
 /**
- * Epic P2-PR-C — reverse lookup. Returns the process maps + edges
- * referencing a given practice. Read-only; surfaces "Where is this
- * practice used?" on the Practice detail page.
- */
-export async function listMapsUsingPractice(
-    ctx: RequestContext,
-    practiceId: string,
-) {
-    assertCanRead(ctx);
-    return runInTenantContext(ctx, (db) =>
-        ProcessMapRepository.listMapsByPractice(db, ctx, practiceId),
-    );
-}
-
-/**
  * Epic P5-PR-A — list snapshots for a process map. Read-only;
  * surfaces the version-history sidebar.
  */

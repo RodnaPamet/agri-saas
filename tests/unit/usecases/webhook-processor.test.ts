@@ -349,43 +349,35 @@ describe('processIncomingWebhook — provider dispatch', () => {
         });
     });
 
-    it('returns processed with 0 counts when handleWebhook returns no triggeredKeys', async () => {
+    it('returns processed and mints nothing when handleWebhook reports no triggeredKeys', async () => {
         setupHappyPath({ triggeredKeys: [] });
 
         const result = await processIncomingWebhook(makeInput());
 
-        expect(result).toMatchObject({
-            status: 'processed', eventId: 'evt-1',
-            executionsCreated: 0, evidenceCreated: 0,
-        });
+        expect(result).toEqual({ status: 'processed', eventId: 'evt-1' });
         expect(mockPrisma.integrationExecution.create).not.toHaveBeenCalled();
         expect(mockPrisma.evidence.create).not.toHaveBeenCalled();
     });
 
-    it('creates execution + evidence per (triggeredKey × matching practice)', async () => {
-        // Fan-out logic: for each triggered automationKey we find
-        // every practice in the tenant with matching automationKey
-        // and create both an execution row + an evidence row.
+    it('mints nothing even when handleWebhook DOES report triggeredKeys', async () => {
+        // This case was `creates execution + evidence per (triggeredKey ×
+        // matching practice)`. `Practice` was the only entity that
+        // carried an `automationKey`, so with it gone there is nothing
+        // to fan out TO — the processor acknowledges the event and
+        // stops. The counts left the result shape with the fan-out.
+        //
+        // Kept rather than deleted because the property is now a
+        // NEGATIVE one and negatives rot silently: a future change that
+        // reinstates fan-out against some half-wired entity would
+        // otherwise mint IntegrationExecution and Evidence rows with no
+        // test objecting.
         setupHappyPath({ triggeredKeys: ['build-passed', 'tests-ran'] });
-        mockPrisma.practice.findMany
-            .mockResolvedValueOnce([{ id: 'ctrl-1', name: 'Build OK' }])
-            .mockResolvedValueOnce([
-                { id: 'ctrl-2', name: 'Tests' },
-                { id: 'ctrl-3', name: 'Tests Lint' },
-            ]);
-        mockPrisma.integrationExecution.create
-            .mockResolvedValue({ id: 'exec-1' });
 
         const result = await processIncomingWebhook(makeInput());
 
-        // 1 + 2 = 3 practices match across the 2 keys.
-        expect(result).toMatchObject({
-            status: 'processed',
-            executionsCreated: 3,
-            evidenceCreated: 3,
-        });
-        expect(mockPrisma.integrationExecution.create).toHaveBeenCalledTimes(3);
-        expect(mockPrisma.evidence.create).toHaveBeenCalledTimes(3);
+        expect(result).toEqual({ status: 'processed', eventId: 'evt-1' });
+        expect(mockPrisma.integrationExecution.create).not.toHaveBeenCalled();
+        expect(mockPrisma.evidence.create).not.toHaveBeenCalled();
     });
 
     it('returns processed (no fan-out) when isWebhookEventProvider is false', async () => {

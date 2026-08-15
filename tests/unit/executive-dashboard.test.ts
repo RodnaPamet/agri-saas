@@ -2,11 +2,17 @@
  * Executive Dashboard Aggregation Tests
  *
  * Verifies:
- * 1. Practice coverage % is calculated correctly
- * 3. Evidence expiry logic handles edge cases
- * 4. Tenant scoping is preserved
- * 5. Empty datasets return sensible zeros
- * 6. No N+1 — each method uses groupBy/count (not findMany)
+ * 1. Evidence expiry logic handles edge cases
+ * 2. Task status aggregation + overdue count
+ * 3. Empty datasets return sensible zeros
+ * 4. No N+1 — each method uses groupBy/count (not findMany)
+ *
+ * GRC teardown phase 3 removed three of the five aggregations this
+ * file used to cover — `getPracticeCoverage`, `getPolicySummary` and
+ * `getVendorSummary` — along with the models they counted. Nothing was
+ * re-pointed: a coverage percentage over practices has no agri
+ * analogue, and inventing one would assert a shape the dashboard does
+ * not render. The two surviving aggregations keep their cases verbatim.
  */
 
 // ─── Mock db-context ───
@@ -20,8 +26,6 @@ jest.mock('@/lib/db-context', () => ({
 
 import {
     DashboardRepository,
-    type PracticeCoverage,
-    type RiskBySeverity,
     type EvidenceExpiry,
 } from '@/app-layer/repositories/DashboardRepository';
 import { getPermissionsForRole } from '@/lib/permissions';
@@ -44,86 +48,6 @@ beforeEach(() => {
     jest.clearAllMocks();
     Object.keys(mockTx).forEach(k => delete mockTx[k]);
 });
-
-// ─── Practice Coverage ───
-
-describe('Dashboard — Practice Coverage', () => {
-    function setupPracticeMock(groups: { status: string; _count: number }[], total: number) {
-        mockTx.practice = {
-            groupBy: jest.fn(async () => groups),
-            count: jest.fn(async () => total),
-        };
-    }
-
-    it('calculates coverage % correctly', async () => {
-        setupPracticeMock([
-            { status: 'IMPLEMENTED', _count: 7 },
-            { status: 'IN_PROGRESS', _count: 2 },
-            { status: 'NOT_STARTED', _count: 1 },
-        ], 12);
-
-        const result: PracticeCoverage = await DashboardRepository.getPracticeCoverage(mockTx as never, makeCtx());
-
-        // 7 implemented out of 10 applicable = 70%
-        expect(result.implemented).toBe(7);
-        expect(result.applicable).toBe(10);
-        expect(result.coveragePercent).toBe(70);
-        expect(result.inProgress).toBe(2);
-        expect(result.notStarted).toBe(1);
-        expect(result.total).toBe(12);
-    });
-
-    it('returns 0% for empty practice set', async () => {
-        setupPracticeMock([], 0);
-
-        const result = await DashboardRepository.getPracticeCoverage(mockTx as never, makeCtx());
-
-        expect(result.coveragePercent).toBe(0);
-        expect(result.applicable).toBe(0);
-        expect(result.total).toBe(0);
-    });
-
-    it('handles all IMPLEMENTED (100%)', async () => {
-        setupPracticeMock([
-            { status: 'IMPLEMENTED', _count: 20 },
-        ], 22);
-
-        const result = await DashboardRepository.getPracticeCoverage(mockTx as never, makeCtx());
-
-        expect(result.coveragePercent).toBe(100);
-        expect(result.implemented).toBe(20);
-        expect(result.applicable).toBe(20);
-    });
-
-    it('handles rounding to 1 decimal', async () => {
-        setupPracticeMock([
-            { status: 'IMPLEMENTED', _count: 1 },
-            { status: 'NOT_STARTED', _count: 2 },
-        ], 3);
-
-        const result = await DashboardRepository.getPracticeCoverage(mockTx as never, makeCtx());
-
-        // 1/3 = 33.3333... → rounds to 33.3
-        expect(result.coveragePercent).toBe(33.3);
-    });
-
-    it('combines IN_PROGRESS and IMPLEMENTING statuses', async () => {
-        setupPracticeMock([
-            { status: 'IN_PROGRESS', _count: 3 },
-            { status: 'IMPLEMENTING', _count: 2 },
-        ], 5);
-
-        const result = await DashboardRepository.getPracticeCoverage(mockTx as never, makeCtx());
-
-        expect(result.inProgress).toBe(5); // 3 + 2
-    });
-});
-
-// ─── Risk by Severity ───
-
-
-// ─── Risk by Status ───
-
 
 // ─── Evidence Expiry ───
 
@@ -162,31 +86,6 @@ describe('Dashboard — Evidence Expiry', () => {
     });
 });
 
-// ─── Policy Summary ───
-
-describe('Dashboard — Policy Summary', () => {
-    it('aggregates policy statuses correctly', async () => {
-        mockTx.policy = {
-            groupBy: jest.fn(async () => [
-                { status: 'DRAFT', _count: 3 },
-                { status: 'PUBLISHED', _count: 5 },
-                { status: 'APPROVED', _count: 2 },
-            ]),
-            count: jest.fn(async () => 1), // overdueReview
-        };
-
-        const result = await DashboardRepository.getPolicySummary(mockTx as never, makeCtx());
-
-        expect(result.total).toBe(10);
-        expect(result.draft).toBe(3);
-        expect(result.published).toBe(5);
-        expect(result.approved).toBe(2);
-        expect(result.inReview).toBe(0);
-        expect(result.archived).toBe(0);
-        expect(result.overdueReview).toBe(1);
-    });
-});
-
 // ─── Task Summary ───
 
 describe('Dashboard — Task Summary', () => {
@@ -210,23 +109,6 @@ describe('Dashboard — Task Summary', () => {
         expect(result.blocked).toBe(1);
         expect(result.resolved).toBe(4); // RESOLVED
         expect(result.overdue).toBe(2);
-    });
-});
-
-// ─── Vendor Summary ───
-
-describe('Dashboard — Vendor Summary', () => {
-    it('returns total and overdue review count', async () => {
-        mockTx.vendor = {
-            count: jest.fn()
-                .mockResolvedValueOnce(12) // total
-                .mockResolvedValueOnce(3), // overdueReview
-        };
-
-        const result = await DashboardRepository.getVendorSummary(mockTx as never, makeCtx());
-
-        expect(result.total).toBe(12);
-        expect(result.overdueReview).toBe(3);
     });
 });
 

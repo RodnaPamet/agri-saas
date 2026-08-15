@@ -199,24 +199,38 @@ export function prismaTestClient(): any {
  * Uses TRUNCATE CASCADE for PostgreSQL.
  */
 export async function resetDatabase(prisma: PrismaClient): Promise<void> {
+    // This list is deliberately NOT exhaustive — `Tenant`, `User` and the
+    // rest of the fixture scaffolding survive a reset, and several
+    // integration suites depend on that. It is the set of per-test
+    // content tables, and it is hand-maintained.
+    //
+    // It rotted for months without a symptom. Until GRC teardown phase 3
+    // it still named `Membership` (never a model in this schema — it is
+    // `TenantMembership`), `Risk` (removed by the risk uproot), and 18
+    // GRC tables. Every one of those hit the `catch` below, which
+    // swallowed the error, so the list got shorter in effect while
+    // staying long on the page: a test whose rows were never truncated
+    // simply saw leftovers from the previous test and, most of the time,
+    // did not care.
+    //
+    // Hence the throw. An unknown table is now a loud failure naming the
+    // entry, not a silent no-op — the whole point of a reset helper is
+    // that "it ran" and "it worked" are the same statement.
     const tables = [
         'AuditLog', 'TaskLink', 'TaskComment', 'TaskWatcher', 'Task',
-        'EvidenceReview', 'Evidence', 'FileRecord',
-        'PracticeRequirementLink', 'PracticeRiskLink', 'PracticeAssetLink',
-        'Practice', 'Risk', 'Asset',
-        'AuditPackItem', 'AuditPack', 'AuditCycle',
-        'PolicyVersion', 'Policy',
-        'TestRunEvidence', 'TestRun', 'TestPlan',
-        'VendorDocument', 'VendorAssessment', 'VendorContact', 'Vendor',
-        'Membership', 'Framework', 'FrameworkRequirement',
+        'EvidenceReview', 'Evidence', 'FileRecord', 'Asset',
     ];
 
     // Use raw SQL for speed — TRUNCATE CASCADE handles FK constraints
     for (const table of tables) {
         try {
             await prisma.$executeRawUnsafe(`TRUNCATE TABLE "${table}" CASCADE`);
-        } catch {
-            // Table may not exist in schema — skip silently
+        } catch (err) {
+            throw new Error(
+                `resetDatabase: TRUNCATE "${table}" failed — is it still a model? ` +
+                    `Remove it from the list in tests/helpers/db.ts if it was dropped. ` +
+                    `Cause: ${(err as Error).message}`,
+            );
         }
     }
 }

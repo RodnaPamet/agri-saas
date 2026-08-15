@@ -100,9 +100,6 @@ export async function listExpiringEvidence(ctx: RequestContext, days: number = 3
                 deletedAt: null,
             },
             orderBy: { retentionUntil: 'asc' },
-            include: {
-                practice: { select: { id: true, name: true, code: true } },
-            },
         }),
     );
 }
@@ -121,9 +118,6 @@ export async function listExpiredEvidence(ctx: RequestContext) {
                 deletedAt: null,
             },
             orderBy: { expiredAt: 'desc' },
-            include: {
-                practice: { select: { id: true, name: true, code: true } },
-            },
         }),
     );
 }
@@ -246,42 +240,14 @@ export async function getRetentionMetrics(ctx: RequestContext) {
             },
         });
 
-        // Top practices with expiring evidence
-        const expiringEvidence = await db.evidence.findMany({
-            where: {
-                tenantId: ctx.tenantId,
-                retentionUntil: { not: null, lte: in30Days, gt: now },
-                isArchived: false,
-                deletedAt: null,
-                practiceId: { not: null },
-            },
-            select: { practiceId: true, practice: { select: { id: true, name: true, code: true } } },
-        });
-
-        const practiceMap = new Map<string, { practiceId: string; name: string; code: string; count: number }>();
-        for (const ev of expiringEvidence) {
-            const key = ev.practiceId;
-            if (!key) continue;
-            if (!practiceMap.has(key)) {
-                practiceMap.set(key, {
-                    practiceId: key,
-                    name: ev.practice?.name || 'Unknown',
-                    code: ev.practice?.code || '',
-                    count: 0,
-                });
-            }
-            practiceMap.get(key)!.count++;
-        }
-
-        const topPracticesWithExpiringEvidence = [...practiceMap.values()]
-            .sort((a, b) => b.count - a.count)
-            .slice(0, 10);
-
+        // GRC teardown phase 3 — the `topPracticesWithExpiringEvidence`
+        // breakdown that used to accompany these counts grouped by
+        // Evidence.practiceId; both the column and Practice are gone, and
+        // no surviving Evidence relation carries an equivalent grouping.
         return {
             expiringCount,
             archivedCount,
             expiredCount,
-            topPracticesWithExpiringEvidence,
         };
     });
 }

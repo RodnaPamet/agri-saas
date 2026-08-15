@@ -418,25 +418,12 @@ export async function findOverdueIssuesAndEmitEvents(ctx: RequestContext) {
     });
 }
 
-// ─── Practice Gap Linking ───
+// `listIssuesByPractice` lived here. It queried TaskLink rows with
+// entityType = TaskLinkEntityType.PRACTICE — a value phase 3 drops — and
+// was an exported function with ZERO callers anywhere in src/ or tests/.
+// It had to go before the enum value did, or the build would break on a
+// member that no longer exists.
 
-export async function listIssuesByPractice(ctx: RequestContext, practiceId: string) {
-    assertCanReadIssues(ctx);
-    return runInTenantContext(ctx, async (db) => {
-        const links = await db.taskLink.findMany({
-            where: { tenantId: ctx.tenantId, entityType: TaskLinkEntityType.PRACTICE, entityId: practiceId },
-            include: {
-                task: {
-                    include: {
-                        assignee: { select: { id: true, name: true, email: true } },
-                    },
-                },
-            },
-            orderBy: { createdAt: 'desc' },
-        });
-        return links.map((l) => l.task);
-    });
-}
 
 // ─── Evidence Bundles (deprecated stubs) ───
 

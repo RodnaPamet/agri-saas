@@ -28,12 +28,18 @@ import { isNotificationsEnabled } from './settings';
 import {
     buildDeadlineDigestEmail,
     buildEvidenceExpiryDigestEmail,
-    buildVendorRenewalDigestEmail,
 } from './digest-templates';
 
 // ─── Types ──────────────────────────────────────────────────────────
 
-export type DigestCategory = 'DEADLINE_DIGEST' | 'EVIDENCE_EXPIRY_DIGEST' | 'VENDOR_RENEWAL_DIGEST';
+/**
+ * Digest kinds the dispatcher can build. VENDOR_RENEWAL_DIGEST was a
+ * third member until GRC teardown phase 3; its only producer,
+ * `jobs/vendor-renewal-check.ts`, was deleted in phase 2, so for a
+ * while the dispatcher carried a `case` arm nothing could reach and a
+ * template that rendered a link to `/t/:slug/vendors`.
+ */
+export type DigestCategory = 'DEADLINE_DIGEST' | 'EVIDENCE_EXPIRY_DIGEST';
 
 export interface DispatchDigestOptions {
     /** The category of digest to send */
@@ -166,8 +172,6 @@ function buildDigestEmail(
             return buildDeadlineDigestEmail({ recipientName, tenantSlug, items });
         case 'EVIDENCE_EXPIRY_DIGEST':
             return buildEvidenceExpiryDigestEmail({ recipientName, tenantSlug, items });
-        case 'VENDOR_RENEWAL_DIGEST':
-            return buildVendorRenewalDigestEmail({ recipientName, tenantSlug, items });
         default: {
             const _exhaustive: never = category;
             throw new Error(`Unknown digest category: ${_exhaustive}`);

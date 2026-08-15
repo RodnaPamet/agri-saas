@@ -8,7 +8,6 @@
  * Digest types:
  *   - DEADLINE_DIGEST  — practices, policies, tasks, risks, test plans
  *   - EVIDENCE_EXPIRY_DIGEST — evidence expiring/expired
- *   - VENDOR_RENEWAL_DIGEST — vendor reviews/renewals
  *
  * @module app-layer/notifications/digest-templates
  */
@@ -44,29 +43,25 @@ const URGENCY_LABEL: Record<DueItemUrgency, string> = {
 };
 
 const ENTITY_LABEL: Record<MonitoredEntityType, string> = {
-    PRACTICE: 'Practice',
     EVIDENCE: 'Evidence',
-    POLICY: 'Policy',
-    VENDOR: 'Vendor',
     TASK: 'Task',
-    RISK: 'Risk',
-    TEST_PLAN: 'Test Plan',
-    TREATMENT_PLAN: 'Treatment Plan',
-    TREATMENT_MILESTONE: 'Treatment Milestone',
 };
 
+/**
+ * Deep-link path segment per entity type. These must be REAL route
+ * segments under `src/app/t/[tenantSlug]/(app)/` — the digest email is
+ * the one surface where a wrong value is invisible until a user clicks
+ * it and lands on a 404.
+ *
+ * `TASK` mapped to `tasks` here for a long time; the route has been
+ * `farm-tasks` since the farm-task rename, so every task line in every
+ * digest email pointed at a page that does not exist. Nothing caught
+ * it: the map is `Record<MonitoredEntityType, string>`, and any string
+ * satisfies that.
+ */
 const ENTITY_PATH: Record<MonitoredEntityType, string> = {
-    PRACTICE: 'practices',
     EVIDENCE: 'evidence',
-    POLICY: 'policies',
-    VENDOR: 'vendors',
-    TASK: 'tasks',
-    RISK: 'risks',
-    TEST_PLAN: 'practices', // test plans live under practices
-    // Both treatment-plan + milestone deep-link to the parent risk's
-    // detail page where the treatment-plan card surfaces them.
-    TREATMENT_PLAN: 'risks',
-    TREATMENT_MILESTONE: 'risks',
+    TASK: 'farm-tasks',
 };
 
 // ─── Text Rendering Helpers ─────────────────────────────────────────
@@ -210,38 +205,3 @@ export function buildEvidenceExpiryDigestEmail(payload: EvidenceExpiryDigestPayl
 
 // ─── Vendor Renewal Digest ──────────────────────────────────────────
 
-export interface VendorRenewalDigestPayload {
-    recipientName: string;
-    tenantSlug: string;
-    items: DueItem[];
-}
-
-export function buildVendorRenewalDigestEmail(payload: VendorRenewalDigestPayload): EmailTemplateResult {
-    const { recipientName, tenantSlug, items } = payload;
-    const overdue = items.filter(i => i.urgency === 'OVERDUE').length;
-    const urgencyMarker = overdue > 0 ? '🔴 ' : '';
-
-    return {
-        subject: `${urgencyMarker}Vendor Renewal Alert: ${items.length} vendor(s) need attention`,
-        bodyText: [
-            `Hi ${recipientName},`,
-            '',
-            `${items.length} vendor(s) have upcoming or overdue reviews/renewals:`,
-            '',
-            ...items.map(renderItemText),
-            '',
-            `View vendors: /t/${tenantSlug}/vendors`,
-            '',
-            '— Agrent',
-        ].join('\n'),
-        bodyHtml: `
-<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 640px; margin: 0 auto; padding: 24px;">
-  <h2 style="color: #1a1a2e; font-size: 18px; margin-bottom: 8px;">${escapeHtml(urgencyMarker)}Vendor Renewal Alert</h2>
-  <p style="color: #444; line-height: 1.5;">Hi ${escapeHtml(recipientName)},</p>
-  <p style="color: #444; line-height: 1.5;"><strong>${items.length} vendor(s)</strong> have upcoming or overdue reviews/renewals:</p>
-  ${buildDigestTable(items, tenantSlug)}
-  <a href="/t/${escapeHtml(tenantSlug)}/vendors" style="display: inline-block; background: #4f46e5; color: #fff; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: 500; margin-top: 8px;">View Vendors</a>
-  <p style="color: #999; font-size: 12px; margin-top: 24px;">— Agrent</p>
-</div>`.trim(),
-    };
-}

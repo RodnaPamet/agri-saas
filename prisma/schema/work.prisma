@@ -29,7 +29,6 @@ model Task {
   createdByUserId  String
   assigneeUserId   String?
   reviewerUserId   String?
-  practiceId        String?
   metadataJson     Json?
   // Agriculture (БАБХ farm-record) — persisted so the ДНЕВНИК generator can
   // split SPRAY rows (химични обработки) from FERTILIZE rows (торове)
@@ -51,7 +50,6 @@ model Task {
   deletedByUserId  String?
   retentionUntil   DateTime?
   assignee         User?             @relation("TaskAssignee", fields: [assigneeUserId], references: [id])
-  practice          Practice?          @relation(fields: [practiceId], references: [id])
   createdBy        User              @relation("TaskCreator", fields: [createdByUserId], references: [id])
   reviewer         User?             @relation("TaskReviewer", fields: [reviewerUserId], references: [id])
   tenant           Tenant            @relation(fields: [tenantId], references: [id])
@@ -78,10 +76,7 @@ model Task {
   @@index([tenantId, type])
   @@index([tenantId, severity])
   @@index([tenantId, assigneeUserId])
-  @@index([tenantId, practiceId])
   // #102 item 4 — the practice-detail Tasks tab filters by both
-  // practiceId AND status; this composite serves that hot path.
-  @@index([tenantId, practiceId, status])
   @@index([tenantId, deletedAt])
   @@index([tenantId, priority, createdAt])
   // #102 item 4 — `[tenantId, dueAt]` dropped: it is a strict

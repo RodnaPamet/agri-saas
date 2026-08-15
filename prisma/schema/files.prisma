@@ -52,7 +52,6 @@ model FileRecord {
 model Evidence {
   id                String                    @id @default(cuid())
   tenantId          String
-  practiceId         String?
   // Source task — set when this evidence was uploaded/linked from a
   // task's Evidence tab. Powers the task Evidence tab AND the
   // "uploaded from" back-reference on the evidence detail surface.
@@ -97,15 +96,12 @@ model Evidence {
   /// query. NULL for hand-authored evidence.
   sourceLogEntryId  String?
   // their proof here.
-  vendorAnswers     VendorAssessmentAnswer[]  @relation("VendorAnswerEvidence")
-  practice           Practice?                  @relation(fields: [practiceId], references: [id])
   task              Task?                     @relation(fields: [taskId], references: [id])
   asset             Asset?                    @relation(fields: [assetId], references: [id])
   fileRecord        FileRecord?               @relation(fields: [fileRecordId], references: [id])
   ownerUser         User?                     @relation("EvidenceOwner", fields: [ownerUserId], references: [id])
   tenant            Tenant                    @relation(fields: [tenantId], references: [id])
   reviews           EvidenceReview[]
-  findingLinks      FindingEvidence[]
   reminderHistories ReminderHistory[]
 
   @@unique([id, tenantId])
@@ -117,10 +113,6 @@ model Evidence {
   @@index([tenantId, ownerUserId])
   // GAP-perf — supports `status` filter (DRAFT|SUBMITTED|APPROVED|REJECTED).
   @@index([tenantId, status])
-  // GAP-perf — supports `practiceId` filter ("evidence for practice X").
-  // Already a heavily-used UI surface — every practice detail page
-  // pulls evidence by practiceId.
-  @@index([tenantId, practiceId])
   // Supports the task Evidence tab ("evidence for task X") + the
   // evidence "uploaded from" back-reference lookup.
   @@index([tenantId, taskId])
@@ -138,13 +130,20 @@ model Evidence {
   // evidence-review range predicate had no index; every calendar load
   // was a per-tenant seq scan of Evidence.
   @@index([tenantId, nextReviewDate])
-  // One auto-evidence row per (farm record, practice). The attach job used to
-  // rely solely on a read-then-write check, which is TOCTOU: it runs inside a
+  // One auto-evidence row per farm record. The attach job used to rely
+  // solely on a read-then-write check, which is TOCTOU: it runs inside a
   // transaction opened by a journal write, and a retry or a concurrent
   // field-operation save could have two callers each read "not attached" and
   // each insert. NULLs do not collide in Postgres, so hand-filed evidence
   // (sourceLogEntryId IS NULL) is unaffected.
-  @@unique([tenantId, sourceLogEntryId, practiceId])
+  //
+  // Phase 3 dropped `practiceId` from this key. That TIGHTENS it — it was
+  // one row per (record, practice), it is now one row per record — which is
+  // the correct shape once a farm record can no longer be attached to a
+  // practice. On a dataset where one LogEntry had produced evidence for two
+  // practices the index build would fail; production carried 0 Evidence rows
+  // at the time of the drop (plan §8m).
+  @@unique([tenantId, sourceLogEntryId])
 }
 
 model EvidenceReview {

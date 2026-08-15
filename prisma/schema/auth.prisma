@@ -107,26 +107,11 @@ model Tenant {
   createdAt                         DateTime                           @default(now())
   updatedAt                         DateTime                           @updatedAt
   assets                            Asset[]
-  audits                            Audit[]
-  auditCycles                       AuditCycle[]
   auditLogs                         AuditLog[]
-  auditPacks                        AuditPack[]
-  auditPackItems                    AuditPackItem[]
-  readinessSnapshots                ReadinessSnapshot[]
-  auditPackShares                   AuditPackShare[]
-  auditorAccounts                   AuditorAccount[]
   billingAccount                    BillingAccount?
   billingEvents                     BillingEvent[]
-  clauseProgress                    ClauseProgress[]
-  practices                          Practice[]
-  practiceEvidenceLinks              PracticeEvidenceLink[]
-  practiceAssets                     PracticeAsset[]
-  practiceRequirementLinks           PracticeRequirementLink[]
-  frameworkRequirementOrders        FrameworkRequirementOrder[]
-  practiceTasks                      PracticeTask[]
   evidence                          Evidence[]
   fileRecords                       FileRecord[]
-  findings                          Finding[]
   integrationConnections            IntegrationConnection[]
   integrationExecutions             IntegrationExecution[]
   integrationWebhookEvents          IntegrationWebhookEvent[]
@@ -134,9 +119,6 @@ model Tenant {
   pushSubscriptions                 PushSubscription[]
   aiUsageEvents                     AiUsageEvent[]
   notificationOutbox                NotificationOutbox[]
-  policies                          Policy[]
-  policyVersions                    PolicyVersion[]
-  policyApprovals                   PolicyApproval[]
   reminderHistories                 ReminderHistory[]
   tasks                             Task[]
   taskComments                      TaskComment[]
@@ -154,19 +136,7 @@ model Tenant {
   identityLinks                     UserIdentityLink[]
   mfaEnrollments                    UserMfaEnrollment[]
   userNotificationPrefs             UserNotificationPreference[]
-  vendors                           Vendor[]
-  vendorAssessments                 VendorAssessment[]
-  vendorAssessmentAnswers           VendorAssessmentAnswer[]
   // Epic G-3 — normalized vendor questionnaire templates.
-  vendorAssessmentTemplates         VendorAssessmentTemplate[]
-  vendorAssessmentTemplateSections  VendorAssessmentTemplateSection[]
-  vendorAssessmentTemplateQuestions VendorAssessmentTemplateQuestion[]
-  vendorContacts                    VendorContact[]
-  vendorDocuments                   VendorDocument[]
-  vendorEvidenceBundles             VendorEvidenceBundle[]
-  vendorEvidenceBundleItems         VendorEvidenceBundleItem[]
-  vendorLinks                       VendorLink[]
-  vendorRelationships               VendorRelationship[]
   syncMappings                      IntegrationSyncMapping[]
   customRoles                       TenantCustomRole[]
   userInterests                     UserInterest[]                     @relation("TenantUserInterest")
@@ -176,16 +146,11 @@ model Tenant {
   automationExecutions              AutomationExecution[]
   // denorm-tenantId Phase 1 inverse relations.
   evidenceReviews                   EvidenceReview[]
-  auditChecklistItems               AuditChecklistItem[]
-  findingEvidences                  FindingEvidence[]
-  auditorPackAccesses               AuditorPackAccess[]
   // PolicyPracticeLink denormalisation (single-table follow-on).
-  policyPracticeLinks                PolicyPracticeLink[]
   // Epic G-4 — Access Review Campaigns.
   accessReviews                     AccessReview[]
   accessReviewDecisions             AccessReviewDecision[]
   // Epic G-5 — practice exception register.
-  treatmentMilestones               TreatmentMilestone[]
   // Roadmap-26 PR-A — persisted process maps (xyflow canvases).
   processMaps                       ProcessMap[]
   processNodes                      ProcessNode[]
@@ -687,27 +652,12 @@ model User {
   uiLanguage                    String                       @default("bg")
   accounts                      Account[]
   ownedAssets                   Asset[]                      @relation("AssetOwner")
-  auditCyclesCreated            AuditCycle[]
   auditLogs                     AuditLog[]
-  auditPacksFrozen              AuditPack[]                  @relation("AuditPackFrozenBy")
-  auditSharesCreated            AuditPackShare[]
-  practiceApplicabilityDecisions Practice[]                    @relation("PracticeApplicabilityDecider")
-  createdPractices               Practice[]                    @relation("PracticeCreator")
-  ownedPractices                 Practice[]                    @relation("PracticeOwner")
-  practiceEvidenceLinksCreated   PracticeEvidenceLink[]        @relation("PracticeEvidenceCreator")
-  assignedFindings              Finding[]                    @relation("FindingAssignee")
-  practiceAssetsCreated          PracticeAsset[]               @relation("PracticeAssetCreator")
-  practiceTaskAssignments        PracticeTask[]                @relation("PracticeTaskAssignee")
   evidenceReviews               EvidenceReview[]
   ownedEvidence                 Evidence[]                   @relation("EvidenceOwner")
   uploadedFiles                 FileRecord[]                 @relation("FileUploader")
   notifications                 Notification[]
   pushSubscriptions             PushSubscription[]
-  ownedPolicies                 Policy[]                     @relation("PolicyOwner")
-  policyAcknowledgements        PolicyAcknowledgement[]
-  policyApprovals               PolicyApproval[]             @relation("PolicyApprover")
-  policyApprovalRequests        PolicyApproval[]             @relation("PolicyApprovalRequester")
-  policyVersionsCreated         PolicyVersion[]              @relation("PolicyVersionCreator")
   sessions                      AuthSession[]
   assignedTasks                 Task[]                       @relation("TaskAssignee")
   createdTasks                  Task[]                       @relation("TaskCreator")
@@ -720,16 +670,7 @@ model User {
   identityLinks                 UserIdentityLink[]
   mfaEnrollments                UserMfaEnrollment[]
   notificationPreferences       UserNotificationPreference[]
-  ownedVendors                  Vendor[]                     @relation("VendorOwner")
-  assessmentsDecided            VendorAssessment[]           @relation("AssessmentDecider")
-  assessmentsRequested          VendorAssessment[]           @relation("AssessmentRequester")
   // Epic G-3 — assessment lifecycle actors.
-  assessmentsSent               VendorAssessment[]           @relation("AssessmentSender")
-  assessmentsReviewed           VendorAssessment[]           @relation("AssessmentReviewer")
-  assessmentsClosed             VendorAssessment[]           @relation("AssessmentCloser")
-  assessmentTemplatesCreated    VendorAssessmentTemplate[]   @relation("AssessmentTemplateCreator")
-  vendorDocsUploaded            VendorDocument[]             @relation("VendorDocUploader")
-  vendorBundlesCreated          VendorEvidenceBundle[]       @relation("EvidenceBundleCreator")
   apiKeysCreated                TenantApiKey[]               @relation("ApiKeyCreator")
   userSessions                  UserSession[]                @relation("UserSessionOwner")
   interests                     UserInterest[]               @relation("UserInterestOwner")
@@ -755,7 +696,6 @@ model User {
   // per plan (owner, creator, completer, deleter) plus the
   // milestone completer. Distinct relation names so Prisma can
   // disambiguate.
-  treatmentMilestonesCompleted  TreatmentMilestone[]         @relation("TreatmentMilestoneCompleter")
   // Roadmap-26 PR-A — persisted process maps.
   processMapsCreated            ProcessMap[]                 @relation("ProcessMapCreatedBy")
   processMapsDeleted            ProcessMap[]                 @relation("ProcessMapDeletedBy")

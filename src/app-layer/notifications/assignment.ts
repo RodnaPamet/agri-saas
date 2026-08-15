@@ -35,7 +35,7 @@ export interface AssignmentTarget {
     entityId: string;
     /** Display label for the notification body. */
     entityLabel: string;
-    /** Optional key for the body (e.g. `T-123` for tasks, practice code). */
+    /** Optional key for the body (e.g. `T-123` for tasks, `A-7` for assets). */
     entityKey?: string | null;
     /** Tenant slug for the deep link. */
     tenantSlug: string;
@@ -43,8 +43,6 @@ export interface AssignmentTarget {
 
 export type AssignmentNotificationKind =
     | 'TASK_ASSIGNED'
-    | 'PRACTICE_ASSIGNED'
-    | 'RISK_ASSIGNED'
     | 'ASSET_ASSIGNED';
 
 interface AssignmentCopy {
@@ -58,16 +56,6 @@ const COPY: Record<AssignmentNotificationKind, AssignmentCopy> = {
         title: 'You were assigned a task',
         body: (label) => `${label} is now yours.`,
         linkPath: (slug, id) => `/t/${slug}/farm-tasks/${id}`,
-    },
-    PRACTICE_ASSIGNED: {
-        title: 'You were assigned a practice',
-        body: (label) => `${label} is now yours.`,
-        linkPath: (slug, id) => `/t/${slug}/practices/${id}`,
-    },
-    RISK_ASSIGNED: {
-        title: 'You were assigned a risk',
-        body: (label) => `${label} is now yours.`,
-        linkPath: (slug, id) => `/t/${slug}/risks/${id}`,
     },
     ASSET_ASSIGNED: {
         title: 'You were assigned an asset',

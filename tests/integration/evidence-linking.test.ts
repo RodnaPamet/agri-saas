@@ -94,24 +94,13 @@ describe('Evidence Linking — Archived evidence block', () => {
 
 describe('Evidence Linking — Entity structure', () => {
     test('evidence factory includes all required fields', () => {
-        const e = buildEvidence({ tenantId: 'test-tenant', practiceId: 'ctrl-1' });
+        const e = buildEvidence({ tenantId: 'test-tenant' });
         expect(e.tenantId).toBe('test-tenant');
-        expect(e.practiceId).toBe('ctrl-1');
         expect(e.id).toBeDefined();
         expect(e.title).toContain('Test Evidence');
         expect(e.type).toBe('DOCUMENT');
         expect(e.status).toBe('DRAFT');
         expect(e.deletedAt).toBeNull();
-    });
-
-    test('evidence linked to practice has practiceId', () => {
-        const e = buildEvidence({ practiceId: 'ctrl-abc' });
-        expect(e.practiceId).toBe('ctrl-abc');
-    });
-
-    test('evidence without practice has null practiceId', () => {
-        const e = buildEvidence();
-        expect(e.practiceId).toBeNull();
     });
 
     test('cross-tenant evidence has different tenantIds', () => {

@@ -10,6 +10,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { readPrismaSchema } from '../helpers/prisma-schema';
+import { SOFT_DELETE_MODELS } from '@/lib/soft-delete';
 
 const SRC_ROOT = path.resolve(__dirname, '../../src');
 
@@ -187,30 +188,40 @@ describe('Regression: Import hygiene', () => {
 // ── 4. Schema integrity ──
 
 describe('Regression: Schema integrity', () => {
+    // Both tests below used to wrap their assertion in `if (modelMatch)`,
+    // which made them vacuous the moment a model was deleted: the regex
+    // missed, the branch was skipped, and the test reported green about a
+    // model that no longer existed. The lists named `Risk` and `Practice`
+    // long after both were removed. The `expect(modelMatch).not.toBeNull()`
+    // line is the fix — a name that stops resolving now fails and has to
+    // be deleted deliberately.
     test('Prisma schema has tenantId on all tenant-scoped models', () => {
         const content = readPrismaSchema();
 
         // These models MUST have tenantId
-        const tenantScopedModels = ['Risk', 'Practice', 'Evidence', 'Task', 'Asset'];
+        const tenantScopedModels = ['Evidence', 'Task', 'Asset', 'Location', 'LogEntry'];
 
         for (const model of tenantScopedModels) {
             const modelMatch = content.match(new RegExp(`model\\s+${model}\\s*\\{([^}]+)\\}`, 's'));
-            if (modelMatch) {
-                expect(modelMatch[1]).toContain('tenantId');
-            }
+            expect(modelMatch).not.toBeNull();
+            expect(modelMatch![1]).toContain('tenantId');
         }
     });
 
     test('Prisma schema has deletedAt on soft-deletable models', () => {
         const content = readPrismaSchema();
 
-        const softDeleteModels = ['Risk', 'Practice'];
+        // Derived, not transcribed — `SOFT_DELETE_MODELS` is built from
+        // `SOFT_DELETE_TARGETS`, the list the restore/purge machinery
+        // actually walks. A model added there without a `deletedAt`
+        // column fails here instead of at runtime.
+        const softDeleteModels = [...SOFT_DELETE_MODELS];
+        expect(softDeleteModels.length).toBeGreaterThan(0);
 
         for (const model of softDeleteModels) {
             const modelMatch = content.match(new RegExp(`model\\s+${model}\\s*\\{([^}]+)\\}`, 's'));
-            if (modelMatch) {
-                expect(modelMatch[1]).toContain('deletedAt');
-            }
+            expect(modelMatch).not.toBeNull();
+            expect(modelMatch![1]).toContain('deletedAt');
         }
     });
 });

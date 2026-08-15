@@ -414,91 +414,55 @@ describe('PrismaLocalStore', () => {
         capturedTenantIds = [];
     });
 
+    // GRC teardown phase 3 removed `Practice`, which was the ONLY local
+    // entity this store ever supported. `PrismaLocalStore` is now a
+    // deliberate no-op with a warn — the SEAM is kept (sync-pull and
+    // webhook-processor both dispatch through it) so that wiring an
+    // agri entity back in is a `switch` arm plus a field allowlist,
+    // not a re-architecture.
+    //
+    // These tests assert the no-op contract rather than being deleted,
+    // because the failure mode they guard is silent: an `applyChanges`
+    // that returned a non-empty field list, or a `getData` that
+    // returned a stale object, would make the conflict detector in
+    // sync-pull believe a local entity exists and act on it.
+
     describe('applyChanges', () => {
-        it('updates practice entity with allowed fields', async () => {
-            mockPrisma.practice.update.mockResolvedValue({ id: 'ctrl-1' });
+        it('returns an empty field list for every entity type, and warns', async () => {
             const store = new PrismaLocalStoreReal();
             const ctx: any = { tenantId: 'tenant-1' };
 
-            const fields = await store.applyChanges(ctx, 'practice', 'ctrl-1', {
-                status: 'IMPLEMENTED',
-                protectionEnabled: true,
-                requiredReviewCount: 2,
-            });
-
-            expect(fields.length).toBeGreaterThan(0);
-            expect(capturedTenantIds).toContain('tenant-1');
+            for (const entityType of ['practice', 'unknown_entity', 'asset']) {
+                const fields = await store.applyChanges(ctx, entityType, 'id-1', {
+                    status: 'IMPLEMENTED',
+                    hackerField: 'DROP TABLE',
+                });
+                expect(fields).toEqual([]);
+            }
         });
 
-        it('returns empty array for unsupported entity types', async () => {
+        it('writes nothing to the database', async () => {
+            // The allowlist that used to gate which columns a remote may
+            // write is gone with the entity it guarded; "no write at
+            // all" is the stronger property and the one that must hold
+            // until an agri entity is wired in.
             const store = new PrismaLocalStoreReal();
             const ctx: any = { tenantId: 'tenant-1' };
 
-            const fields = await store.applyChanges(ctx, 'unknown_entity', 'id-1', {
-                field: 'value',
-            });
+            await store.applyChanges(ctx, 'practice', 'ctrl-1', { status: 'X' });
 
-            expect(fields).toEqual([]);
-        });
-
-        it('returns empty array when no fields are in the allowlist', async () => {
-            const store = new PrismaLocalStoreReal();
-            const ctx: any = { tenantId: 'tenant-1' };
-
-            const fields = await store.applyChanges(ctx, 'practice', 'ctrl-1', {
-                hackerField: 'DROP TABLE',
-                anotherBadField: 'exploit',
-            });
-
-            expect(fields).toEqual([]);
-            expect(mockPrisma.practice.update).not.toHaveBeenCalled();
+            expect(mockPrisma.practice?.update).not.toHaveBeenCalled();
         });
     });
 
     describe('getData', () => {
-        it('returns practice data when entity exists', async () => {
-            mockPrisma.practice.findUnique.mockResolvedValue({
-                id: 'ctrl-1',
-                name: 'Branch Protection',
-                status: 'IMPLEMENTED',
-            });
+        it('returns null for every entity type', async () => {
             const store = new PrismaLocalStoreReal();
             const ctx: any = { tenantId: 'tenant-1' };
 
-            const data = await store.getData(ctx, 'practice', 'ctrl-1');
-
-            expect(data).toBeTruthy();
-            expect(data!.id).toBe('ctrl-1');
-            expect(data!.status).toBe('IMPLEMENTED');
-        });
-
-        it('returns null when entity does not exist', async () => {
-            mockPrisma.practice.findUnique.mockResolvedValue(null);
-            const store = new PrismaLocalStoreReal();
-            const ctx: any = { tenantId: 'tenant-1' };
-
-            const data = await store.getData(ctx, 'practice', 'ctrl-999');
-
-            expect(data).toBeNull();
-        });
-
-        it('returns null for unsupported entity types', async () => {
-            const store = new PrismaLocalStoreReal();
-            const ctx: any = { tenantId: 'tenant-1' };
-
-            const data = await store.getData(ctx, 'unknown_entity', 'id-1');
-
-            expect(data).toBeNull();
-        });
-
-        it('enforces tenant isolation through withTenantDb', async () => {
-            mockPrisma.practice.findUnique.mockResolvedValue(null);
-            const store = new PrismaLocalStoreReal();
-            const ctx: any = { tenantId: 'tenant-42' };
-
-            await store.getData(ctx, 'practice', 'ctrl-1');
-
-            expect(capturedTenantIds).toContain('tenant-42');
+            for (const entityType of ['practice', 'unknown_entity', 'asset']) {
+                await expect(store.getData(ctx, entityType, 'id-1')).resolves.toBeNull();
+            }
         });
     });
 });

@@ -1,9 +1,13 @@
 /**
  * Constants shared between the auto-evidence WRITER and its READERS.
  *
- * `attachAutoEvidenceFromLogEntry` stamps every row it creates with a category
- * so the UI can tell derived evidence from evidence a person filed. That
- * category was a bare string literal on the write side and, until now, was
+ * `attachAutoEvidenceFromLogEntry` stamped every row it created with a
+ * category so the UI can tell derived evidence from evidence a person filed.
+ * That writer was deleted by GRC teardown phase 3 (it minted through the
+ * Practice graph), so the category is now READ-ONLY: it classifies rows
+ * collected before the teardown, and nothing stamps a new one. That
+ * category was a bare string literal on the write side and, until it was
+ * hoisted here, was
  * neither selected by the list query nor referenced anywhere on the read side
  * — so the distinction existed in the database and nowhere a user could see
  * it. Every auto-collected farm record rendered as a generic "Link", identical

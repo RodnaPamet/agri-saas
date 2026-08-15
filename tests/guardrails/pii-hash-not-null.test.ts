@@ -42,15 +42,22 @@ const HASH_FIELDS_EXPECTED_NULLABLE: Array<{
     field: string;
 }> = [
     { file: 'auth.prisma', model: 'User', field: 'emailHash' },
-    { file: 'audit.prisma', model: 'AuditorAccount', field: 'emailHash' },
     { file: 'auth.prisma', model: 'UserIdentityLink', field: 'emailAtLinkTimeHash' },
 ];
 
 /**
- * The on-disk DB columns that MUST be NOT NULL. The corresponding
+ * The DB columns the GAP-21 migration set NOT NULL. The corresponding
  * schema field is declared nullable for the TS-side ergonomics
  * described above; this list is the safety net that fails CI if
  * anyone writes a migration that drops NOT NULL.
+ *
+ * `AuditorAccount` is still listed even though GRC teardown phase 3
+ * DROPPED that table, and deliberately so: the two assertions below
+ * read MIGRATION TEXT, not the live schema. The GAP-21 migration is
+ * applied history and its `ALTER COLUMN … SET NOT NULL` lines are
+ * still in it; removing the entry would stop asserting something that
+ * remains true. The live-schema half of this ratchet is
+ * `HASH_FIELDS_EXPECTED_NULLABLE` above, which no longer names it.
  */
 const NOT_NULL_DB_COLUMNS = [
     { table: 'User', column: 'emailHash' },

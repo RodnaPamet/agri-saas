@@ -67,7 +67,6 @@ export const ProcessEdgeInputSchema = z.object({
             z.object({
                 practiceKey: z.string().min(1).max(128),
                 label: z.string().max(200),
-                practiceId: z.string().optional().nullable(),
                 dataJson: z.unknown().optional().nullable(),
             }),
         )

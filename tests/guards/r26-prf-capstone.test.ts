@@ -27,8 +27,14 @@ import * as path from "node:path";
 const ROOT = path.resolve(__dirname, "../..");
 
 const R26_FILES_THAT_MUST_EXIST = [
-    // PR-A — domain + persistence
-    "prisma/schema/processes.prisma",
+    // PR-A — domain + persistence.
+    // `prisma/schema/processes.prisma` was here until GRC teardown
+    // phase 3. The DELIVERABLE did not go anywhere — the ProcessMap /
+    // ProcessNode / ProcessEdge / ProcessEdgePractice models live in
+    // `automation.prisma`, where phase 1 moved them; the file left
+    // behind was comment-only and its header still described a
+    // now-deleted `compliance.prisma`. The migration below is the real
+    // record of the persistence deliverable.
     "prisma/migrations/20260519120000_r26_pra_process_maps/migration.sql",
     "src/app-layer/schemas/process-map.ts",
     "src/app-layer/repositories/ProcessMapRepository.ts",

@@ -123,10 +123,16 @@ describe('downloadEvidenceFile — canWrite bypasses the provenance gate', () =>
 });
 
 describe('downloadEvidenceFile — each provenance column independently admits a reader', () => {
-    // Three separate writers populate these (linkAssetEvidence,
-    // linkTaskEvidence, attachAutoEvidenceFromLogEntry), so each has to
-    // work on its own — a gate that only honoured assetId would silently
-    // lock readers out of auto-collected farm evidence.
+    // Each column has to work on its own — a gate that only honoured
+    // assetId would silently lock readers out of the others.
+    //
+    // `assetId` and `taskId` are still written (linkAssetEvidence,
+    // linkTaskEvidence). `sourceLogEntryId` is LEGACY-ONLY since GRC
+    // teardown phase 3 deleted its writer, and that is exactly why this
+    // case matters more than it used to: it is now the only thing
+    // standing between a reader and the farm evidence collected before
+    // the teardown. Drop it from the gate as "dead" and you revoke
+    // access to real rows.
     it.each([
         ['assetId', { assetId: 'asset-9' }],
         ['taskId', { taskId: 'task-9' }],

@@ -144,16 +144,20 @@ describe('EvidenceRepository._buildWhere', () => {
         expect(mockFindMany.mock.calls[0][0].where.type).toBeUndefined();
     });
 
-    it('filters by practiceId', async () => {
+    it('filters by folder', async () => {
+        // Was `practiceId` until GRC teardown phase 3 dropped the column.
+        // `folder` is the surviving exact-match scalar facet on the same
+        // where-builder, so the property under test — a scalar filter
+        // reaching the Prisma `where` unmodified — is unchanged.
         const { EvidenceRepository } = await import('@/app-layer/repositories/EvidenceRepository');
         const mockFindMany = jest.fn().mockResolvedValue([]);
         const mockDb = { evidence: { findMany: mockFindMany } } as unknown as PrismaTx;
         const ctx = { tenantId: 'tenant-1', userId: 'user-1' } as unknown as RequestContext;
 
-        await EvidenceRepository.list(mockDb, ctx, { practiceId: 'ctrl-1' });
+        await EvidenceRepository.list(mockDb, ctx, { folder: 'spray-records' });
 
         const where = mockFindMany.mock.calls[0][0].where;
-        expect(where.practiceId).toBe('ctrl-1');
+        expect(where.folder).toBe('spray-records');
     });
 
     it('enforces tenant boundary', async () => {

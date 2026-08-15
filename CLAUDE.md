@@ -195,23 +195,23 @@ prisma/schema/         → Multi-file Prisma schema (GAP-09):
                             assets.prisma       — Asset + maintenance + key sequence
                             automation.prisma   — AutomationRule/Execution + Notification +
                                                   Integration + the process-map models
-                            compliance.prisma   — INHERITED GRC, being torn down
-                            vendor.prisma       — INHERITED GRC, being torn down
-                            audit.prisma        — AuditLog + OrgAuditLog (PLATFORM, stay) +
-                                                  inherited GRC audit models being torn down
-                            processes.prisma    — emptied; removed in teardown phase 3
+                            audit.prisma        — AuditLog + OrgAuditLog (PLATFORM)
                             schema.prisma       — transitional sediment file (currently empty)
+                          …plus one file per agri domain (agriculture, agro, ai,
+                          exchange, grain, insurance, inventory, journal,
+                          knowledge, market, planning, promotions).
 
-                          THE GRC TEARDOWN. This codebase was spun out of a GRC
-                          SaaS and the inherited surface is being removed in three
+                          THE GRC TEARDOWN IS COMPLETE. This codebase was spun out
+                          of a GRC SaaS; the inherited surface was removed in three
                           phases — see
                           docs/implementation-notes/2026-08-12-grc-teardown-plan.md
-                          for the authoritative KILL/KEEP lists. Phase 1 (done)
-                          moved the load-bearing models OUT of the GRC files, so
-                          the agri product no longer depends on a
-                          compliance-owned file. Do NOT add an agri model to
-                          compliance.prisma, vendor.prisma or audit.prisma —
-                          those files are being deleted.
+                          for the KILL/KEEP lists and
+                          docs/implementation-notes/2026-08-15-grc-teardown-phase3.md
+                          for the schema drop. `compliance.prisma`, `vendor.prisma`
+                          and `processes.prisma` NO LONGER EXIST, and `audit.prisma`
+                          keeps only the two platform audit-log models. Do not
+                          recreate those files — a new model goes in the matching
+                          agri domain file.
                           See prisma/schema/README.md for the full layout + conventions.
                           Adding a new model: pick the matching domain file. Generator
                           and datasource ONLY live in base.prisma — Prisma rejects
@@ -332,8 +332,9 @@ and `docs/rls-tenant-isolation.md` for the RLS deep dive.
 
 ### Field Encryption (Epic B)
 
-Business-content fields (Finding.description, Finding.rootCause,
-PolicyVersion.contentText, TaskComment.body, …) are encrypted at
+Business-content fields (Task.description, Task.resolution,
+TaskComment.body, ParcelLease.lessorName, FarmProfile.egn,
+Contract.terms, …) are encrypted at
 rest by a Prisma `$extends({ query })` client extension (migrated
 from the Prisma 5 `$use` middleware, which Prisma 7 removed — see
 `src/lib/prisma.ts`). The manifest lives in
@@ -845,8 +846,11 @@ The codebase has two billing modes, decided by a single env var:
     Every tenant resolves to `ENTERPRISE` and per-resource limits
     are unlimited. No DB query happens for plan resolution.
 
-The decision is read once at module load. Today only `practice`
-creation is gated (FREE: 10, TRIAL/PRO: 100, ENTERPRISE: unlimited).
+The decision is read once at module load. Four resources are gated
+today — `user` (FREE 3 / working tiers 25), `location` (5 / 50),
+`exchange_listing` (5 / 50) and `ai_tokens` (a monthly token budget:
+50k / 1M / 5M) — with ENTERPRISE unlimited on all four. The fifth,
+`practice`, went with the GRC teardown.
 Adding a new gated resource is a one-line change in `PLAN_LIMITS`,
 a `switch` arm in `getCurrentCount`, and one
 `await assertWithinLimit(ctx, '<resource>')` call at the create-site.
@@ -1356,7 +1360,7 @@ whenever you build a new entity page; never re-introduce the inline
 inline back-link / title / tab-bar / loading-skeleton dance.
 
 ```tsx
-// List page — practices reference impl: PracticesClient.tsx
+// List page — reference impl: grain/contracts ContractsClient.tsx
 <EntityListPage<Row>
   header={{ title, count, actions }}
   filters={{ defs, searchId, searchPlaceholder, toolbarActions }}
@@ -1365,7 +1369,7 @@ inline back-link / title / tab-bar / loading-skeleton dance.
   {/* page-level modals/sheets sit as children */}
 </EntityListPage>
 
-// Detail page — practices reference impl: practices/[practiceId]/page.tsx
+// Detail page — reference impl: journal/[id]/page.tsx
 <EntityDetailLayout
   back={{ href, label }}
   title={…}
@@ -1575,17 +1579,19 @@ happens. The pending state lives at module scope (NOT in component
 state) so commits survive client-side navigation, mirroring Gmail's
 "undo send" UX.
 
-The wired sites today: cross-entity unlink in `TraceabilityPanel`,
-practice-evidence + practice-requirement unlink on the practice detail
-page, task link removal on the task detail page, and vendor
-document removal on the vendor detail page. The structural ratchet
+The wired sites today: farm-task link removal on the task detail
+page, exchange-listing withdraw on My Listings, lease removal on the
+Rent page, and asset delete on the asset detail page. (The four GRC
+sites this list used to name — `TraceabilityPanel`, practice-evidence
+and practice-requirement unlink, vendor document removal — went with
+the teardown.) The structural ratchet
 at `tests/guards/epic-67-rollout-coverage.test.ts` locks the wiring
 in — adding a new site means appending it to `SITE_CONTRACTS`.
 
 Never write a `confirm()` blocking dialog or a fire-and-forget
 direct DELETE for a routine destructive action — those are the
 anti-patterns Epic 67 replaces. Top-level entity deletion (tenant,
-organization, framework) is the documented exception: cascading
+organization) is the documented exception: cascading
 consequences mean the 5-second window is too short, so use a
 typed-confirmation modal there instead.
 

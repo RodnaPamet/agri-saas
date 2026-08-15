@@ -6,7 +6,7 @@
  */
 import {
     buildTenant, buildUser, buildMembership, buildRequestContext,
-    buildPractice, buildRisk, buildEvidence, buildTask,
+    buildEvidence, buildTask,
     resetFactoryCounter,
 } from '../helpers/factories';
 
@@ -63,26 +63,8 @@ describe('Test Factories', () => {
         expect(ctx.permissions.canAudit).toBe(true);
     });
 
-    test('buildPractice returns APPLICABLE, NOT_IMPLEMENTED by default', () => {
-        const c = buildPractice({ tenantId: 'tid' });
-        expect(c.tenantId).toBe('tid');
-        expect(c.applicability).toBe('APPLICABLE');
-        expect(c.status).toBe('NOT_IMPLEMENTED');
-        expect(c.code).toMatch(/^A\.\d+\.\d+$/);
-        expect(c.deletedAt).toBeNull();
-    });
-
-    test('buildRisk computes correct riskScore', () => {
-        const r = buildRisk({ likelihood: 4, impact: 5 });
-        expect(r.riskScore).toBe(20);
-        expect(r.likelihood).toBe(4);
-        expect(r.impact).toBe(5);
-    });
-
-    test('buildRisk default score is 3*3=9', () => {
-        const r = buildRisk();
-        expect(r.riskScore).toBe(9);
-    });
+    // Removed: `buildPractice` defaults + the two `buildRisk` riskScore cases.
+    // Both factories were deleted with the Practice and Risk models.
 
     test('buildEvidence defaults to non-archived, no retention', () => {
         const e = buildEvidence();

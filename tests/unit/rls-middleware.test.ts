@@ -40,18 +40,17 @@ import { prisma } from '@/lib/prisma';
 
 describe('TENANT_SCOPED_MODELS catalogue', () => {
     it('includes every high-value tenant-scoped model', () => {
-        // Spot-check critical names across the three classes.
+        // Spot-check critical names. Class E (ownership-chained, no
+        // direct `tenantId`) is EMPTY since GRC teardown phase 3 —
+        // `PolicyAcknowledgement` was its last member and went with the
+        // Policy model — so every name below is Class A, enumerated
+        // from the DMMF rather than hand-listed in the source.
         const mustInclude = [
-            // Class A (direct tenantId)
-            'Practice', 'Asset', 'Policy', 'Evidence', 'AuditLog',
-            'Task', 'Vendor', 'TenantMembership', 'TenantApiKey',
+            'Asset', 'Evidence', 'EvidenceReview', 'AuditLog',
+            'Task', 'TaskComment', 'TenantMembership', 'TenantApiKey',
             'TenantSecuritySettings', 'UserMfaEnrollment',
             'IntegrationConnection', 'AutomationRule', 'AutomationExecution',
-            // Class A (direct tenantId — migrated from ownership-chained)
-            'EvidenceReview', 'PolicyApproval', 'AuditChecklistItem',
-            'FindingEvidence', 'AuditorPackAccess', 'PolicyPracticeLink',
-            // Class E (ownership-chained — no direct tenantId column)
-            'PolicyAcknowledgement',
+            'Location', 'LogEntry', 'Contract', 'CostEntry',
         ];
         for (const name of mustInclude) {
             expect(TENANT_SCOPED_MODELS.has(name)).toBe(true);
@@ -61,9 +60,11 @@ describe('TENANT_SCOPED_MODELS catalogue', () => {
     it('excludes global / shared tables', () => {
         const mustExclude = [
             'Tenant', 'User', 'Account', 'AuthSession',
-            'VerificationToken', 'Clause', 'PracticeTemplate',
-            'Framework', 'FrameworkRequirement', 'PolicyTemplate',
-            'QuestionnaireTemplate',
+            'VerificationToken', 'ExchangeListing', 'AgricultureEvent',
+            // Deleted by GRC teardown phase 3 — a name that comes back
+            // here means a model came back with it.
+            'Practice', 'Policy', 'Vendor', 'Framework',
+            'PolicyAcknowledgement',
         ];
         for (const name of mustExclude) {
             expect(TENANT_SCOPED_MODELS.has(name)).toBe(false);
@@ -73,7 +74,7 @@ describe('TENANT_SCOPED_MODELS catalogue', () => {
     it('isTenantScopedModel handles undefined/unknown gracefully', () => {
         expect(isTenantScopedModel(undefined)).toBe(false);
         expect(isTenantScopedModel('NotAModel')).toBe(false);
-        expect(isTenantScopedModel('Practice')).toBe(true);
+        expect(isTenantScopedModel('Evidence')).toBe(true);
     });
 });
 
@@ -184,7 +185,7 @@ describe('withRlsTripwireExtension', () => {
         const { handler } = captureHandler();
         const query = jest.fn().mockResolvedValue('result');
 
-        await handler({ model: 'Practice', operation: 'findMany', args: undefined, query });
+        await handler({ model: 'Evidence', operation: 'findMany', args: undefined, query });
 
         expect(query).toHaveBeenCalled();
         expect(logger.warn).not.toHaveBeenCalled();
@@ -198,7 +199,7 @@ describe('withRlsTripwireExtension', () => {
             const { handler } = captureHandler();
             const query = jest.fn().mockResolvedValue('result');
 
-            await handler({ model: 'Practice', operation: 'create', args: undefined, query });
+            await handler({ model: 'Evidence', operation: 'create', args: undefined, query });
 
             expect(query).toHaveBeenCalled();
             expect(logger.warn).not.toHaveBeenCalled();
@@ -210,14 +211,14 @@ describe('withRlsTripwireExtension', () => {
         const { handler } = captureHandler();
         const query = jest.fn().mockResolvedValue('result');
 
-        const result = await handler({ model: 'Practice', operation: 'update', args: undefined, query });
+        const result = await handler({ model: 'Evidence', operation: 'update', args: undefined, query });
 
         expect(result).toBe('result');
         expect(query).toHaveBeenCalled();
         expect(logger.warn).toHaveBeenCalledWith(
             'rls-middleware.missing_tenant_context',
             expect.objectContaining({
-                model: 'Practice',
+                model: 'Evidence',
                 action: 'update',
             })
         );
@@ -228,11 +229,11 @@ describe('withRlsTripwireExtension', () => {
         const { handler } = captureHandler();
         const query = jest.fn().mockResolvedValue([]);
 
-        await handler({ model: 'Practice', operation: 'findMany', args: undefined, query });
+        await handler({ model: 'Evidence', operation: 'findMany', args: undefined, query });
 
         expect(logger.debug).toHaveBeenCalledWith(
             'rls-middleware.missing_tenant_context',
-            expect.objectContaining({ model: 'Practice', action: 'findMany' })
+            expect.objectContaining({ model: 'Evidence', action: 'findMany' })
         );
         expect(logger.warn).not.toHaveBeenCalled();
     });
@@ -243,7 +244,7 @@ describe('withRlsTripwireExtension', () => {
         const query = jest.fn().mockResolvedValue('result');
 
         await handler({
-            model: 'Practice',
+            model: 'Evidence',
             operation: 'update',
             args: { where: { id: 'secret-id' }, data: { title: 'PII here' } },
             query,
@@ -263,7 +264,7 @@ describe('withRlsTripwireExtension', () => {
         const query = jest.fn().mockRejectedValue(new Error('db down'));
 
         await expect(
-            handler({ model: 'Practice', operation: 'findMany', args: undefined, query }),
+            handler({ model: 'Evidence', operation: 'findMany', args: undefined, query }),
         ).rejects.toThrow('db down');
     });
 });

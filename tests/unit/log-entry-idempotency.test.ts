@@ -33,7 +33,13 @@ jest.mock('../../src/app-layer/policies/common', () => ({
 }));
 jest.mock('../../src/app-layer/events/audit', () => ({ logEvent: jest.fn() }));
 jest.mock('../../src/app-layer/usecases/inventory', () => ({ recordHarvestLot: jest.fn() }));
-jest.mock('../../src/app-layer/usecases/auto-evidence', () => ({ attachAutoEvidenceFromLogEntry: jest.fn() }));
+jest.mock('../../src/app-layer/usecases/auto-evidence', () => ({
+    // journal.ts imports BOTH of these; a factory naming only the
+    // deleted `attachAutoEvidenceFromLogEntry` would leave them
+    // undefined and blow up the update / delete / restore paths.
+    syncDerivedEvidenceTitle: jest.fn(),
+    setDerivedEvidenceWithdrawn: jest.fn(),
+}));
 jest.mock('../../src/app-layer/jobs/queue', () => ({ enqueue: jest.fn() }));
 jest.mock('@/lib/security/sanitize', () => ({
     sanitizePlainText: (s: string) => s,

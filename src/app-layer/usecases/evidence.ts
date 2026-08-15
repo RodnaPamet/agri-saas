@@ -716,10 +716,20 @@ export async function getEvidenceFileRecord(ctx: RequestContext, fileId: string)
  * RE-BASED it onto `assetId ?? taskId ?? sourceLogEntryId` rather than
  * deleting it — deleting the condition would have widened READER/AUDITOR
  * access to EVERY file in the tenant, which is the opposite of what the
- * teardown is for. All three replacement columns are live and written:
- * assetId by `linkAssetEvidence` + the upload metadata, taskId by
- * `linkTaskEvidence` + the farm-task upload form, sourceLogEntryId by
- * `attachAutoEvidenceFromLogEntry`.
+ * teardown is for.
+ *
+ * TWO of the three columns are still written: assetId by
+ * `linkAssetEvidence` + the upload metadata, taskId by `linkTaskEvidence`
+ * + the farm-task upload form. `sourceLogEntryId` is now LEGACY-ONLY —
+ * its writer, `attachAutoEvidenceFromLogEntry`, minted evidence by
+ * walking Framework → FrameworkRequirement → PracticeRequirementLink →
+ * Practice, and phase 3 deleted every hop of that chain. Rows that
+ * already carry one keep their READER access and are still maintained
+ * (`syncDerivedEvidenceTitle` / `setDerivedEvidenceWithdrawn` in
+ * `auto-evidence.ts`); no NEW row gets one. Keeping the column in the
+ * gate is therefore deliberate, not oversight — dropping it would
+ * silently revoke reader access to farm evidence collected before the
+ * teardown.
  *
  * Note the `evidence ? … : null` shape below. `!evidence?.practiceId` was
  * true when NO Evidence row existed at all, so a file with no evidence row

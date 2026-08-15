@@ -37,16 +37,31 @@ import * as path from 'path';
 const REPO_ROOT = path.resolve(__dirname, '../..');
 const SCHEMA_DIR = path.resolve(REPO_ROOT, 'prisma/schema');
 
+/**
+ * The files GAP-09 requires to exist. `compliance.prisma` and
+ * `vendor.prisma` were here until GRC teardown phase 3 deleted them
+ * along with the inherited GRC schema; `processes.prisma` was emptied
+ * in phase 1 and deleted in phase 3 (its models live in
+ * `automation.prisma`).
+ */
 const REQUIRED_DOMAIN_FILES = [
     'base.prisma',
     'enums.prisma',
     'auth.prisma',
-    'compliance.prisma',
-    'vendor.prisma',
     'audit.prisma',
     'automation.prisma',
+    'work.prisma',
+    'files.prisma',
+    'assets.prisma',
     'schema.prisma',
 ];
+
+/**
+ * Files that must NOT come back. Recreating one would re-establish the
+ * GRC domain boundary the teardown removed, and a new agri model landing
+ * in it would be invisible to everyone looking in the domain files.
+ */
+const DELETED_GRC_FILES = ['compliance.prisma', 'vendor.prisma', 'processes.prisma'];
 
 describe('GAP-09 — multi-file Prisma schema layout', () => {
     it('prisma/schema/ folder exists', () => {
@@ -66,6 +81,12 @@ describe('GAP-09 — multi-file Prisma schema layout', () => {
         it(`prisma/schema/${fname} exists`, () => {
             const p = path.join(SCHEMA_DIR, fname);
             expect(fs.existsSync(p)).toBe(true);
+        });
+    }
+
+    for (const fname of DELETED_GRC_FILES) {
+        it(`prisma/schema/${fname} stays deleted`, () => {
+            expect(fs.existsSync(path.join(SCHEMA_DIR, fname))).toBe(false);
         });
     }
 

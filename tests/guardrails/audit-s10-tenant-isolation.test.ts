@@ -24,23 +24,14 @@ describe('Audit S10 — Tenant Isolation & Authorization', () => {
         const usecase = read('src/app-layer/usecases/soft-delete-operations.ts');
 
         it('declares the RestorableModel union with every soft-deletable model', () => {
-            // Same set as the legacy SoftDeletableModel union — keep
-            // both in sync. Drift would mean the registry doesn't
-            // cover a model that restoreEntity allows.
-            const expected = [
-                'Asset',
-                'Risk',
-                'Practice',
-                'Evidence',
-                'Policy',
-                'Vendor',
-                'FileRecord',
-                'Task',
-                'Finding',
-                'Audit',
-                'AuditCycle',
-                'AuditPack',
-            ];
+            // Same set as `SOFT_DELETE_MODELS` — keep both in sync.
+            // Drift would mean the registry doesn't cover a model that
+            // restoreEntity allows.
+            //
+            // The union was twelve members until GRC teardown phase 3;
+            // eight of them (Risk, Practice, Policy, Vendor, Finding,
+            // Audit, AuditCycle, AuditPack) went with their models.
+            const expected = ['Asset', 'Evidence', 'FileRecord', 'Task'];
             for (const m of expected) {
                 expect(validators).toMatch(
                     new RegExp(`\\|\\s*['"]${m}['"]`),
@@ -63,31 +54,17 @@ describe('Audit S10 — Tenant Isolation & Authorization', () => {
             );
         });
 
-        it('Task / AuditPack / Evidence have concrete (non-noop) validators', () => {
-            // The three named validators from the audit decision.
-            // A reorganisation that demotes one back to NOOP must
-            // bump the doc + this ratchet at the same time.
-            expect(validators).toMatch(/Task:\s*TASK_VALIDATOR/);
-            expect(validators).toMatch(/AuditPack:\s*AUDIT_PACK_VALIDATOR/);
+        it('Evidence still has a concrete (non-noop) validator', () => {
+            // Task and AuditPack used to be named here too. AuditPack's
+            // model is gone; Task's model SURVIVES but its validator
+            // does not — it checked that the parent Practice was alive,
+            // and with `Task.practiceId` dropped there is no parent to
+            // check, so Task is now wired to NOOP_VALIDATOR. Evidence is
+            // the only model left with a real precondition, which makes
+            // this the assertion that keeps the mechanism honest: demote
+            // it to NOOP and every restore becomes unconditional.
             expect(validators).toMatch(/Evidence:\s*EVIDENCE_VALIDATOR/);
-        });
-
-        it('Task validator checks parent practice deletedAt', () => {
-            const fnStart = validators.indexOf('const TASK_VALIDATOR');
-            const fnBody = validators.slice(fnStart, fnStart + 800);
-            expect(fnBody).toMatch(/db\.practice\.findFirst/);
-            expect(fnBody).toMatch(/deletedAt:\s*null/);
-        });
-
-        it('AuditPack validator refuses COMPLETE + deleted parent cycles', () => {
-            const fnStart = validators.indexOf('const AUDIT_PACK_VALIDATOR');
-            const fnBody = validators.slice(fnStart, fnStart + 1200);
-            expect(fnBody).toMatch(/db\.auditCycle\.findFirst/);
-            // Both refusal paths must be wired. `COMPLETE` is the
-            // terminal status on the AuditCycleStatus enum — the
-            // equivalent of CLOSED on other lifecycles.
-            expect(fnBody).toMatch(/cycle\.deletedAt/);
-            expect(fnBody).toMatch(/cycle\.status\s*===\s*['"]COMPLETE['"]/);
+            expect(validators).not.toMatch(/Evidence:\s*NOOP_VALIDATOR/);
         });
 
         it('Evidence validator checks active tenant membership', () => {

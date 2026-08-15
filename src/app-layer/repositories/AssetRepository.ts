@@ -47,7 +47,6 @@ export class AssetRepository {
             orderBy: { createdAt: 'desc' },
             take: options.take ?? ASSET_LIST_CAP,
             include: {
-                _count: { select: { practices: true } },
                 // B4 — resolve the structured assignee so the list Owner
                 // column can prefer the assigned user's name over the
                 // free-text keeper.
@@ -73,7 +72,6 @@ export class AssetRepository {
             where,
             orderBy: CURSOR_ORDER_BY,
             take: limit + 1,
-            include: { _count: { select: { practices: true } } },
         });
 
         const { trimmedItems, nextCursor, hasNextPage } = computePageInfo(items, limit);
@@ -103,26 +101,14 @@ export class AssetRepository {
     }
 
     /**
-     * One asset.
-     *
-     * `withPractices` is OFF by default. The compliance practice mapping
-     * used to be eagerly joined on EVERY read — including plain-farm
-     * tenants where the compliance tabs are gated off entirely, and
-     * including `update()`/`delete()`, which call this purely to check
-     * the row exists. Only the callers that actually render the
-     * Mappings tab ask for it.
+     * One asset — the row and nothing else. No eager joins: `update()` /
+     * `delete()` call this purely to check the row exists, and the
+     * practice-mapping relation that used to be opt-in here went with the
+     * GRC teardown.
      */
-    static async getById(
-        db: PrismaTx,
-        ctx: RequestContext,
-        id: string,
-        options: { withPractices?: boolean } = {},
-    ) {
+    static async getById(db: PrismaTx, ctx: RequestContext, id: string) {
         return db.asset.findFirst({
             where: { id, tenantId: ctx.tenantId },
-            ...(options.withPractices
-                ? { include: { practices: { include: { practice: true } } } }
-                : {}),
         });
     }
 

@@ -74,7 +74,6 @@ export interface ProcessMapWithGraph {
         practices: Array<{
             practiceKey: string;
             label: string;
-            practiceId: string | null;
             dataJson: unknown;
         }>;
     }>;
@@ -149,7 +148,6 @@ export class ProcessMapRepository {
                             select: {
                                 practiceKey: true,
                                 label: true,
-                                practiceId: true,
                                 dataJson: true,
                             },
                         },
@@ -395,7 +393,6 @@ export class ProcessMapRepository {
                         edgeId: edge.id,
                         practiceKey: c.practiceKey,
                         label: c.label,
-                        practiceId: c.practiceId ?? null,
                         dataJson:
                             c.dataJson === undefined
                                 ? Prisma.JsonNull
@@ -478,7 +475,6 @@ export class ProcessMapRepository {
                 practices: e.practices.map((c) => ({
                     practiceKey: c.practiceKey,
                     label: c.label,
-                    practiceId: c.practiceId ?? null,
                     dataJson: c.dataJson ?? null,
                 })),
             })),
@@ -589,59 +585,5 @@ export class ProcessMapRepository {
             data: { deletedAt: new Date(), deletedByUserId: userId },
         });
         return res.count > 0;
-    }
-
-    /**
-     * Epic P2-PR-C — reverse lookup: process maps referencing a
-     * given practice. Returns one row per (map, edge) pairing —
-     * usually one edge per map, but the schema allows a practice
-     * to gate multiple edges within the same map.
-     *
-     * Uses the `@@index([tenantId, practiceId])` on ProcessEdgePractice
-     * for the seek; bounded by the small process-map graph sizes
-     * (dozens of edges per map) so no take cap is needed.
-     */
-    static async listMapsByPractice(
-        db: PrismaTx,
-        ctx: RequestContext,
-        practiceId: string,
-    ): Promise<
-        Array<{
-            mapId: string;
-            mapName: string;
-            mapStatus: string;
-            edgeKey: string;
-            edgeLabel: string | null;
-        }>
-    > {
-        // P2-PR-C reverse lookup: bounded by edges referencing one practice (typically <10); leading `@@index([tenantId, practiceId])` gates the seek.
-        const rows = await db.processEdgePractice.findMany({ // guardrail-allow: unbounded
-            where: { tenantId: ctx.tenantId, practiceId },
-            select: {
-                edge: {
-                    select: {
-                        edgeKey: true,
-                        labelOverride: true,
-                        processMap: {
-                            select: {
-                                id: true,
-                                name: true,
-                                status: true,
-                                deletedAt: true,
-                            },
-                        },
-                    },
-                },
-            },
-        });
-        return rows
-            .filter((r) => r.edge.processMap.deletedAt === null)
-            .map((r) => ({
-                mapId: r.edge.processMap.id,
-                mapName: r.edge.processMap.name,
-                mapStatus: r.edge.processMap.status,
-                edgeKey: r.edge.edgeKey,
-                edgeLabel: r.edge.labelOverride,
-            }));
     }
 }

@@ -1,23 +1,28 @@
 /**
- * 2026-05-27 — PR-A: in-app TASK_ASSIGNED + PRACTICE_ASSIGNED
- * notification wiring ratchet.
+ * 2026-05-27 — PR-A: in-app assignment-notification wiring ratchet.
  *
- * Locks the four surfaces this feature crosses:
+ * Locks the surfaces this feature crosses:
  *
- *   1. Schema enum has PRACTICE_ASSIGNED (the new value).
- *   2. Migration exists that adds the enum value.
+ *   1. Schema enum carries the surviving assignment values.
+ *   2. Migrations exist that added them.
  *   3. `task.ts` calls `emitTaskAssignedNotification` after
  *      EVERY task write that may have set the assignee
  *      (createTask + assignTask). Pre-PR-A the email path
  *      fired but the in-app bell stayed silent.
- *   4. (removed in GRC teardown phase 2) `practice/mutations.ts::setPracticeOwner` called
- *      `createAssignmentNotification('PRACTICE_ASSIGNED', …)`
- *      after committing the ownership change. Pre-PR-A
- *      practice owner changes wrote only the audit row.
+ *   4. `asset.ts` emits ASSET_ASSIGNED on an actual owner change.
  *
  * Each surface anchored on a verifiable substring so a future
- * refactor that silently drops one of the four trips CI with
- * the per-PR rationale visible in the test docstring.
+ * refactor that silently drops one trips CI with the per-PR
+ * rationale visible in the test docstring.
+ *
+ * GRC teardown phase 3 dropped PRACTICE_ASSIGNED and RISK_ASSIGNED
+ * from `NotificationType`. Neither had a `src/` emission site left —
+ * `setPracticeOwner` went in phase 2 with the Practice model, and
+ * `updateRisk` went with the earlier risk uproot — and both COPY
+ * entries deep-linked to `/practices` and `/risks`, routes that no
+ * longer exist. The two migrations that ADDED them are asserted
+ * verbatim below as applied history; the migration that removes them
+ * is asserted alongside.
  */
 
 import { readFileSync, existsSync } from 'node:fs';
@@ -28,88 +33,64 @@ const read = (p: string) => readFileSync(path.join(ROOT, p), 'utf-8');
 
 describe('PR-A notification-assignment alert wiring', () => {
     describe('1. Schema + migration', () => {
-        it('NotificationType enum includes PRACTICE_ASSIGNED', () => {
+        const notifTypeBlock = () => {
             const enums = read('prisma/schema/enums.prisma');
             // Anchored inside the NotificationType enum block to
-            // distinguish from any other enum that might reuse the
-            // name.
+            // distinguish from any other enum that might reuse a name.
             const block = enums.slice(
                 enums.indexOf('enum NotificationType'),
                 enums.indexOf('enum EmailNotificationType'),
             );
-            expect(block).toMatch(/PRACTICE_ASSIGNED/);
+            // Comments stripped before matching. The block carries a note
+            // explaining WHICH values phase 3 removed, and a bare
+            // `not.toMatch(/PRACTICE_ASSIGNED/)` matched that note rather
+            // than a declaration — the guard failed on its own
+            // documentation. Only declared members are of interest here.
+            return block
+                .split('\n')
+                .filter((l) => !l.trim().startsWith('//'))
+                .join('\n');
+        };
+
+        it('TASK_ASSIGNED + ASSET_ASSIGNED stay in the enum', () => {
+            expect(notifTypeBlock()).toMatch(/TASK_ASSIGNED/);
+            expect(notifTypeBlock()).toMatch(/ASSET_ASSIGNED/);
         });
 
-        it('TASK_ASSIGNED stays in the enum (we did not regress it)', () => {
-            const enums = read('prisma/schema/enums.prisma');
-            const block = enums.slice(
-                enums.indexOf('enum NotificationType'),
-                enums.indexOf('enum EmailNotificationType'),
-            );
-            expect(block).toMatch(/TASK_ASSIGNED/);
+        it('PRACTICE_ASSIGNED and RISK_ASSIGNED are gone', () => {
+            // The other direction, and the load-bearing one now: a
+            // re-add would restore a value whose only COPY entry points
+            // at a deleted route, so the bell would deep-link to a 404.
+            expect(notifTypeBlock()).not.toMatch(/PRACTICE_ASSIGNED/);
+            expect(notifTypeBlock()).not.toMatch(/RISK_ASSIGNED/);
         });
 
-        it('migration directory exists for the PRACTICE_ASSIGNED enum add', () => {
-            const migrationDir = path.join(
-                ROOT,
-                'prisma/migrations/20260527160000_notif_control_assigned',
-            );
-            expect(existsSync(migrationDir)).toBe(true);
-            const sql = readFileSync(
-                path.join(migrationDir, 'migration.sql'),
-                'utf-8',
-            );
-            // Applied history, asserted verbatim. This migration added the
-            // value under its ORIGINAL name; the Control→Practice rename
-            // renamed it in place afterwards (`ALTER TYPE … RENAME VALUE`,
-            // metadata-only). Rewriting an applied migration would change
-            // its checksum and break `migrate deploy` on every existing
-            // database — the value's CURRENT name is asserted against the
-            // live schema above, and the rename itself below.
-            expect(sql).toMatch(
-                /ALTER TYPE "NotificationType" ADD VALUE IF NOT EXISTS 'CONTROL_ASSIGNED'/,
-            );
-        });
-
-        it('the rename migration carries CONTROL_ASSIGNED → PRACTICE_ASSIGNED', () => {
-            const sql = readFileSync(
-                path.join(
-                    ROOT,
-                    'prisma/migrations/20260809120000_rename_control_to_practice/migration.sql',
+        it('the applied migrations that added them are left untouched', () => {
+            // Applied history, asserted verbatim. Rewriting an applied
+            // migration changes its checksum and breaks `migrate deploy`
+            // on every existing database — so the ADDs stay on disk
+            // exactly as they shipped, and phase 3 removes the values
+            // with a NEW migration rather than by editing these.
+            expect(
+                readFileSync(
+                    path.join(ROOT, 'prisma/migrations/20260527160000_notif_control_assigned/migration.sql'),
+                    'utf-8',
                 ),
-                'utf-8',
-            );
-            expect(sql).toMatch(
-                /ALTER TYPE "NotificationType"\s+RENAME VALUE 'CONTROL_ASSIGNED' TO 'PRACTICE_ASSIGNED'/,
-            );
+            ).toMatch(/ALTER TYPE "NotificationType" ADD VALUE IF NOT EXISTS 'CONTROL_ASSIGNED'/);
+            expect(
+                readFileSync(
+                    path.join(ROOT, 'prisma/migrations/20260530120000_notif_risk_asset_assigned/migration.sql'),
+                    'utf-8',
+                ),
+            ).toMatch(/ALTER TYPE "NotificationType" ADD VALUE IF NOT EXISTS 'RISK_ASSIGNED'/);
         });
 
-        it('NotificationType enum includes RISK_ASSIGNED + ASSET_ASSIGNED', () => {
-            const enums = read('prisma/schema/enums.prisma');
-            const block = enums.slice(
-                enums.indexOf('enum NotificationType'),
-                enums.indexOf('enum EmailNotificationType'),
-            );
-            expect(block).toMatch(/RISK_ASSIGNED/);
-            expect(block).toMatch(/ASSET_ASSIGNED/);
-        });
-
-        it('migration exists adding RISK_ASSIGNED + ASSET_ASSIGNED', () => {
-            const migrationDir = path.join(
-                ROOT,
-                'prisma/migrations/20260530120000_notif_risk_asset_assigned',
-            );
-            expect(existsSync(migrationDir)).toBe(true);
-            const sql = readFileSync(
-                path.join(migrationDir, 'migration.sql'),
-                'utf-8',
-            );
-            expect(sql).toMatch(
-                /ALTER TYPE "NotificationType" ADD VALUE IF NOT EXISTS 'RISK_ASSIGNED'/,
-            );
-            expect(sql).toMatch(
-                /ALTER TYPE "NotificationType" ADD VALUE IF NOT EXISTS 'ASSET_ASSIGNED'/,
-            );
+        it('the ASSET_ASSIGNED add migration exists', () => {
+            const dir = path.join(ROOT, 'prisma/migrations/20260530120000_notif_risk_asset_assigned');
+            expect(existsSync(dir)).toBe(true);
+            expect(
+                readFileSync(path.join(dir, 'migration.sql'), 'utf-8'),
+            ).toMatch(/ALTER TYPE "NotificationType" ADD VALUE IF NOT EXISTS 'ASSET_ASSIGNED'/);
         });
     });
 
@@ -117,16 +98,15 @@ describe('PR-A notification-assignment alert wiring', () => {
         const src = () =>
             read('src/app-layer/notifications/assignment.ts');
 
-        it('exports createAssignmentNotification + the four-value KIND union', () => {
+        it('exports createAssignmentNotification + the KIND union', () => {
             const s = src();
             expect(s).toMatch(/export async function createAssignmentNotification/);
-            // 2026-05-30 — union widened to cover risk + asset
-            // assignment alongside task + practice. Assert all four are
-            // present (order-independent) so a future drop trips CI.
+            // Both surviving kinds must be present (order-independent)
+            // so a future drop trips CI. The union was four members
+            // until GRC teardown phase 3 removed PRACTICE_ASSIGNED and
+            // RISK_ASSIGNED along with the routes they linked to.
             for (const kind of [
                 'TASK_ASSIGNED',
-                'PRACTICE_ASSIGNED',
-                'RISK_ASSIGNED',
                 'ASSET_ASSIGNED',
             ]) {
                 expect(s).toMatch(
@@ -219,8 +199,8 @@ describe('PR-A notification-assignment alert wiring', () => {
 
     // Block 4 (practice/mutations.ts wiring PRACTICE_ASSIGNED in
     // setPracticeOwner) was removed in GRC teardown phase 2 with the
-    // Practice model. The PRACTICE_ASSIGNED notification enum member
-    // itself is dropped in phase 3 with the rest of the Prisma enums.
+    // Practice model; phase 3 removed the enum member itself. Block 1
+    // above now asserts its ABSENCE.
 
     describe('5. asset.ts wires ASSET_ASSIGNED on owner change', () => {
         it('updateAsset imports + emits ASSET_ASSIGNED only on an actual change', () => {

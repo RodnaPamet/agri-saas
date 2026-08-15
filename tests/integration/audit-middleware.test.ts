@@ -2,6 +2,13 @@
  * Integration tests for Prisma audit middleware — verifies that write operations
  * automatically produce AuditLog rows with diff and redaction support.
  *
+ * The middleware is model-agnostic (`$allModels`), so the model used here is
+ * only a carrier for the write operations. `Asset` took that role from the
+ * GRC-teardown-deleted `Practice`: it is tenant-scoped, has a required `name`,
+ * a nullable Int (`usefulLifeYears`) to prove a non-string value survives the
+ * diff's JSON round-trip, and a nullable free-text column (`owner`) for the
+ * bulk-update cases.
+ *
  * Requires a running PostgreSQL instance with applied migrations.
  *
  * RUN: npx jest tests/integration/audit-middleware.test.ts
@@ -185,7 +192,7 @@ describeFn('Audit Middleware — Integration Tests', () => {
         // anything actionable.
         if (tenantId) {
             await rawPrisma.$executeRawUnsafe(`DELETE FROM "AuditLog" WHERE "tenantId" = $1`, tenantId).catch(() => {});
-            await rawPrisma.$executeRawUnsafe(`DELETE FROM "Practice" WHERE "tenantId" = $1`, tenantId).catch(() => {});
+            await rawPrisma.$executeRawUnsafe(`DELETE FROM "Asset" WHERE "tenantId" = $1`, tenantId).catch(() => {});
             await rawPrisma.$executeRawUnsafe(`DELETE FROM "Tenant" WHERE "id" = $1`, tenantId).catch(() => {});
             if (userId) await rawPrisma.$executeRawUnsafe(`DELETE FROM "User" WHERE "id" = $1`, userId).catch(() => {});
         }
@@ -202,19 +209,19 @@ describeFn('Audit Middleware — Integration Tests', () => {
 
     // ─── CREATE ───
     describe('create operation', () => {
-        let practiceId: string;
+        let assetId: string;
 
-        it('creates an AuditLog row for a Practice create', async () => {
-            const practice = await runWithAuditContext(
+        it('creates an AuditLog row for an Asset create', async () => {
+            const asset = await runWithAuditContext(
                 { tenantId, actorUserId: userId, requestId: `req-create-${testRunId}` },
-                () => appPrisma.practice.create({
-                    data: { tenantId, name: `AMW Practice Create ${testRunId}` },
+                () => appPrisma.asset.create({
+                    data: { tenantId, name: `AMW Asset Create ${testRunId}`, type: 'TRACTOR' },
                 }),
             );
-            practiceId = practice.id;
+            assetId = asset.id;
 
-            const logs = await getAuditLogs('Practice', 'CREATE');
-            const match = logs.find((l) => l.entityId === practiceId);
+            const logs = await getAuditLogs('Asset', 'CREATE');
+            const match = logs.find((l) => l.entityId === assetId);
             expect(match).toBeDefined();
             expect(match!.userId).toBe(userId);
             expect((match as any).requestId).toBe(`req-create-${testRunId}`);
@@ -224,32 +231,32 @@ describeFn('Audit Middleware — Integration Tests', () => {
         });
 
         afterAll(async () => {
-            if (practiceId) await rawPrisma.practice.deleteMany({ where: { id: practiceId } });
+            if (assetId) await rawPrisma.asset.deleteMany({ where: { id: assetId } });
         });
     });
 
     // ─── UPDATE with DIFF ───
     describe('update operation with diff', () => {
-        let practiceId: string;
+        let assetId: string;
 
         beforeAll(async () => {
-            const practice = await rawPrisma.practice.create({
-                data: { tenantId, name: `AMW Practice Update ${testRunId}` },
+            const asset = await rawPrisma.asset.create({
+                data: { tenantId, name: `AMW Asset Update ${testRunId}`, type: 'TRACTOR' },
             });
-            practiceId = practice.id;
+            assetId = asset.id;
         });
 
-        it('creates an AuditLog row with diffJson for a Practice update', async () => {
+        it('creates an AuditLog row with diffJson for an Asset update', async () => {
             await runWithAuditContext(
                 { tenantId, actorUserId: userId, requestId: `req-update-${testRunId}` },
-                () => appPrisma.practice.update({
-                    where: { id: practiceId },
-                    data: { name: `Updated ${testRunId}`, effectiveness: 8 },
+                () => appPrisma.asset.update({
+                    where: { id: assetId },
+                    data: { name: `Updated ${testRunId}`, usefulLifeYears: 8 },
                 }),
             );
 
-            const logs = await getAuditLogs('Practice', 'UPDATE');
-            const match = logs.find((l) => l.entityId === practiceId);
+            const logs = await getAuditLogs('Asset', 'UPDATE');
+            const match = logs.find((l) => l.entityId === assetId);
             expect(match).toBeDefined();
 
             // Verify diffJson
@@ -257,36 +264,36 @@ describeFn('Audit Middleware — Integration Tests', () => {
             expect(diff).toBeDefined();
             expect(diff).not.toBeNull();
             expect(diff.changedFields).toContain('name');
-            expect(diff.changedFields).toContain('effectiveness');
+            expect(diff.changedFields).toContain('usefulLifeYears');
             expect(diff.after).toBeDefined();
             expect(diff.after.name).toBe(`Updated ${testRunId}`);
-            expect(diff.after.effectiveness).toBe(8);
+            expect(diff.after.usefulLifeYears).toBe(8);
         });
 
         afterAll(async () => {
-            await rawPrisma.$executeRawUnsafe(`DELETE FROM "Practice" WHERE "id" = $1`, practiceId);
+            await rawPrisma.$executeRawUnsafe(`DELETE FROM "Asset" WHERE "id" = $1`, assetId);
         });
     });
 
     // ─── DELETE ───
     describe('delete operation', () => {
-        let practiceId: string;
+        let assetId: string;
 
         beforeAll(async () => {
-            const practice = await rawPrisma.practice.create({
-                data: { tenantId, name: `AMW Practice Delete ${testRunId}` },
+            const asset = await rawPrisma.asset.create({
+                data: { tenantId, name: `AMW Asset Delete ${testRunId}`, type: 'TRACTOR' },
             });
-            practiceId = practice.id;
+            assetId = asset.id;
         });
 
-        it('creates an AuditLog row for a Practice delete', async () => {
+        it('creates an AuditLog row for an Asset delete', async () => {
             await runWithAuditContext(
                 { tenantId, actorUserId: userId, requestId: `req-delete-${testRunId}` },
-                () => appPrisma.practice.delete({ where: { id: practiceId } }),
+                () => appPrisma.asset.delete({ where: { id: assetId } }),
             );
 
-            const logs = await getAuditLogs('Practice', 'DELETE');
-            const match = logs.find((l) => l.entityId === practiceId);
+            const logs = await getAuditLogs('Asset', 'DELETE');
+            const match = logs.find((l) => l.entityId === assetId);
             expect(match).toBeDefined();
             expect(match!.action).toBe('DELETE');
             // DELETE should NOT have diffJson
@@ -296,22 +303,22 @@ describeFn('Audit Middleware — Integration Tests', () => {
 
     // ─── UPSERT with DIFF ───
     describe('upsert operation with diff', () => {
-        let practiceId: string;
+        let assetId: string;
 
-        it('creates an AuditLog row with diffJson for a Risk upsert', async () => {
+        it('creates an AuditLog row with diffJson for an Asset upsert', async () => {
             const tempId = `upsert-${testRunId}`;
-            const practice = await runWithAuditContext(
+            const asset = await runWithAuditContext(
                 { tenantId, actorUserId: userId, requestId: `req-upsert-${testRunId}` },
-                () => appPrisma.practice.upsert({
+                () => appPrisma.asset.upsert({
                     where: { id: tempId },
-                    create: { tenantId, name: `AMW Risk Upsert ${testRunId}` },
+                    create: { tenantId, name: `AMW Asset Upsert ${testRunId}`, type: 'TRACTOR' },
                     update: { name: `Upserted ${testRunId}` },
                 }),
             );
-            practiceId = practice.id;
+            assetId = asset.id;
 
-            const logs = await getAuditLogs('Practice', 'UPSERT');
-            const match = logs.find((l) => l.entityId === practiceId);
+            const logs = await getAuditLogs('Asset', 'UPSERT');
+            const match = logs.find((l) => l.entityId === assetId);
             expect(match).toBeDefined();
             expect(match!.action).toBe('UPSERT');
             // Upsert should have diffJson (from update data)
@@ -321,17 +328,17 @@ describeFn('Audit Middleware — Integration Tests', () => {
         });
 
         afterAll(async () => {
-            if (practiceId) await rawPrisma.practice.deleteMany({ where: { id: practiceId } });
+            if (assetId) await rawPrisma.asset.deleteMany({ where: { id: assetId } });
         });
     });
 
     // ─── UPDATE MANY ───
     describe('updateMany operation', () => {
         beforeAll(async () => {
-            await rawPrisma.practice.createMany({
+            await rawPrisma.asset.createMany({
                 data: [
-                    { tenantId, name: `Bulk1 ${testRunId}` },
-                    { tenantId, name: `Bulk2 ${testRunId}` },
+                    { tenantId, name: `Bulk1 ${testRunId}`, type: 'TRACTOR' },
+                    { tenantId, name: `Bulk2 ${testRunId}`, type: 'TRACTOR' },
                 ],
             });
         });
@@ -339,13 +346,13 @@ describeFn('Audit Middleware — Integration Tests', () => {
         it('creates an AuditLog row for updateMany', async () => {
             await runWithAuditContext(
                 { tenantId, actorUserId: userId, requestId: `req-updateMany-${testRunId}` },
-                () => appPrisma.practice.updateMany({
+                () => appPrisma.asset.updateMany({
                     where: { tenantId, name: { contains: testRunId, startsWith: 'Bulk' } },
-                    data: { description: 'bulk-updated' },
+                    data: { owner: 'bulk-updated' },
                 }),
             );
 
-            const logs = await getAuditLogs('Practice', 'UPDATEMANY');
+            const logs = await getAuditLogs('Asset', 'UPDATEMANY');
             const match = logs.find((l) => (l as any).requestId === `req-updateMany-${testRunId}`);
             expect(match).toBeDefined();
             expect(match!.entityId).toBe('batch');
@@ -354,17 +361,17 @@ describeFn('Audit Middleware — Integration Tests', () => {
         });
 
         afterAll(async () => {
-            await rawPrisma.$executeRawUnsafe(`DELETE FROM "Practice" WHERE "tenantId" = $1 AND "name" LIKE $2`, tenantId, `Bulk%${testRunId}%`);
+            await rawPrisma.$executeRawUnsafe(`DELETE FROM "Asset" WHERE "tenantId" = $1 AND "name" LIKE $2`, tenantId, `Bulk%${testRunId}%`);
         });
     });
 
     // ─── DELETE MANY ───
     describe('deleteMany operation', () => {
         beforeAll(async () => {
-            await rawPrisma.practice.createMany({
+            await rawPrisma.asset.createMany({
                 data: [
-                    { tenantId, name: `DelBulk1 ${testRunId}` },
-                    { tenantId, name: `DelBulk2 ${testRunId}` },
+                    { tenantId, name: `DelBulk1 ${testRunId}`, type: 'TRACTOR' },
+                    { tenantId, name: `DelBulk2 ${testRunId}`, type: 'TRACTOR' },
                 ],
             });
         });
@@ -372,12 +379,12 @@ describeFn('Audit Middleware — Integration Tests', () => {
         it('creates an AuditLog row for deleteMany', async () => {
             await runWithAuditContext(
                 { tenantId, actorUserId: userId, requestId: `req-deleteMany-${testRunId}` },
-                () => appPrisma.practice.deleteMany({
+                () => appPrisma.asset.deleteMany({
                     where: { tenantId, name: { contains: testRunId, startsWith: 'DelBulk' } },
                 }),
             );
 
-            const logs = await getAuditLogs('Practice', 'DELETEMANY');
+            const logs = await getAuditLogs('Asset', 'DELETEMANY');
             const match = logs.find((l) => (l as any).requestId === `req-deleteMany-${testRunId}`);
             expect(match).toBeDefined();
             expect(match!.entityId).toBe('batch');
@@ -410,14 +417,14 @@ describeFn('Audit Middleware — Integration Tests', () => {
         it('operations outside runWithAuditContext skip audit logging', async () => {
             const countBefore = await rawPrisma.auditLog.count({ where: { tenantId } });
 
-            const practice = await appPrisma.practice.create({
-                data: { tenantId, name: `No Context Risk ${testRunId}` },
+            const asset = await appPrisma.asset.create({
+                data: { tenantId, name: `No Context Asset ${testRunId}`, type: 'TRACTOR' },
             });
 
             const countAfter = await rawPrisma.auditLog.count({ where: { tenantId } });
             expect(countAfter).toBe(countBefore);
 
-            await rawPrisma.practice.deleteMany({ where: { id: practice.id } });
+            await rawPrisma.asset.deleteMany({ where: { id: asset.id } });
         });
     });
 
@@ -427,20 +434,20 @@ describeFn('Audit Middleware — Integration Tests', () => {
             // Create a user with known data, then update with "password-like" field
             // Since User model doesn't have password, we test redaction via the unit tests primarily.
             // Here we verify that the redaction integration works end-to-end for normal fields.
-            const practice = await rawPrisma.practice.create({
-                data: { tenantId, name: `Redact Practice ${testRunId}` },
+            const asset = await rawPrisma.asset.create({
+                data: { tenantId, name: `Redact Asset ${testRunId}`, type: 'TRACTOR' },
             });
 
             await runWithAuditContext(
                 { tenantId, actorUserId: userId },
-                () => appPrisma.practice.update({
-                    where: { id: practice.id },
+                () => appPrisma.asset.update({
+                    where: { id: asset.id },
                     data: { name: `Redacted Update ${testRunId}` },
                 }),
             );
 
-            const logs = await getAuditLogs('Practice', 'UPDATE');
-            const match = logs.find((l) => l.entityId === practice.id);
+            const logs = await getAuditLogs('Asset', 'UPDATE');
+            const match = logs.find((l) => l.entityId === asset.id);
             expect(match).toBeDefined();
             const diff = (match as any).diffJson as any;
             expect(diff).not.toBeNull();
@@ -448,7 +455,7 @@ describeFn('Audit Middleware — Integration Tests', () => {
             // Verify name is NOT redacted (it's not sensitive)
             expect(diff.after.name).toBe(`Redacted Update ${testRunId}`);
 
-            await rawPrisma.practice.deleteMany({ where: { id: practice.id } });
+            await rawPrisma.asset.deleteMany({ where: { id: asset.id } });
         });
     });
 });

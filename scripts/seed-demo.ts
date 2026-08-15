@@ -5,7 +5,7 @@
  *   1. A STARTUP FARM (simple mode): a single tenant whose
  *      TenantModuleSettings enables only the core ag modules
  *      (JOURNAL / INVENTORY / PLANNING). On login this operator sees a
- *      focused workspace — no certification / risk / vendor chrome.
+ *      focused workspace — none of the wider module chrome.
  *      BillingAccount.plan = FREE (the per-user / per-location caps bite
  *      in SAAS mode; in dev SELFHOSTED everything resolves to ENTERPRISE).
  *
@@ -24,7 +24,6 @@ import { PrismaClient, Role } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import bcrypt from 'bcryptjs';
 import { randomUUID } from 'crypto';
-import * as fs from 'fs';
 import type { RequestContext } from '@/app-layer/types';
 import { getPermissionsForRole } from '@/lib/permissions';
 import { createTenantWithOwner } from '@/app-layer/usecases/tenant-lifecycle';
@@ -34,10 +33,6 @@ import { createLot } from '@/app-layer/usecases/inventory';
 import { hashForLookup } from '@/lib/security/encryption';
 import { SIMPLE_MODE_MODULES, ALL_MODULES } from '@/lib/modules';
 import type { ModuleKey } from '@prisma/client';
-import { runInTenantContext } from '@/lib/db-context';
-import { attachAutoEvidenceFromLogEntry } from '@/app-layer/usecases/auto-evidence';
-import { loadAndValidateCatalogFile } from '../prisma/catalog-loader';
-import { applyCatalogFile } from '../prisma/catalog-applier';
 import { importUnits } from './import-units';
 import { seedAgriEvents } from './seed-agri-events';
 import { seedPromotions } from './seed-promotions';
@@ -51,7 +46,6 @@ import {
     type CropTiming,
     type CropSpacing,
 } from '@/lib/planning/succession';
-import * as path from 'path';
 
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL ?? '' }) });
 
@@ -363,95 +357,12 @@ async function seedDemoPlanning(tenantId: string, locationId: string | null) {
     });
 }
 
-/**
- * Replicate `installPack`'s tenant-scoped writes for a scheme pack:
- * create one Practice per linked PracticeTemplate + its
- * PracticeRequirementLink rows, so the tenant has Practices mapped to the
- * scheme's requirements (which is what auto-evidence + readiness key on).
- * Direct prisma to avoid the createTask/BullMQ enqueue path; idempotent
- * (skips a practice whose code already exists). RLS-safe enough for a seed:
- * every write carries the explicit tenantId.
- */
-async function installSchemePackForDemo(tenantId: string, userId: string, packKey: string) {
-    const pack = await prisma.frameworkPack.findUnique({
-        where: { key: packKey },
-        include: {
-            templateLinks: { include: { template: { include: { requirementLinks: true } } } },
-        },
-    });
-    if (!pack) {
-        console.warn(`  ⚠️  pack ${packKey} not found — scheme catalog import may have failed`);
-        return;
-    }
-
-    let practicesCreated = 0;
-    let mappingsCreated = 0;
-    for (const link of pack.templateLinks) {
-        const tmpl = link.template;
-        let practice = await prisma.practice.findFirst({ where: { tenantId, code: tmpl.code } });
-        if (!practice) {
-            practice = await prisma.practice.create({
-                data: {
-                    tenantId,
-                    code: tmpl.code,
-                    name: tmpl.title,
-                    description: tmpl.description,
-                    category: tmpl.category,
-                    frequency: tmpl.defaultFrequency,
-                    status: 'NOT_STARTED',
-                    createdByUserId: userId,
-                },
-            });
-            practicesCreated++;
-        }
-        for (const rl of tmpl.requirementLinks) {
-            await prisma.practiceRequirementLink.upsert({
-                where: { practiceId_requirementId: { practiceId: practice.id, requirementId: rl.requirementId } },
-                create: { tenantId, practiceId: practice.id, requirementId: rl.requirementId },
-                update: {},
-            });
-            mappingsCreated++;
-        }
-    }
-    console.log(`✅ Installed ${packKey}: ${practicesCreated} practices, ${mappingsCreated} requirement mappings`);
-}
-
-/**
- * Create one INPUT_APPLICATION spray LogEntry on the tenant and run the
- * auto-evidence attach so the demo shows farm-record → scheme-evidence.
- * The attach runs inside `runInTenantContext` (it needs a tenant-bound db
- * handle). Idempotent: skips when an auto-evidence row already exists for
- * the tenant (category AUTO_FARM_RECORD).
- */
-async function seedSprayAutoEvidence(tenantId: string, tenantSlug: string, userId: string) {
-    const already = await prisma.evidence.findFirst({
-        where: { tenantId, category: 'AUTO_FARM_RECORD' },
-        select: { id: true },
-    });
-    if (already) {
-        console.log('✅ Auto-evidence already present — skipping spray demo');
-        return;
-    }
-
-    const entry = await prisma.logEntry.create({
-        data: {
-            tenantId,
-            type: 'INPUT_APPLICATION',
-            status: 'DONE',
-            occurredAt: new Date(),
-            title: 'Applied fungicide to North Field block A',
-            notes: '<p>Demo spray record — backs the plant-protection practice points.</p>',
-            createdByUserId: userId,
-        },
-        select: { id: true },
-    });
-
-    const ctx: RequestContext = { ...ownerCtx(tenantId, userId), tenantSlug };
-    const { created } = await runInTenantContext(ctx, (db) =>
-        attachAutoEvidenceFromLogEntry(db, ctx, entry.id),
-    );
-    console.log(`✅ Spray record ${entry.id} → ${created} auto-evidence row(s) attached (status SUBMITTED, pending review)`);
-}
+// `seedSprayAutoEvidence` seeded one INPUT_APPLICATION spray LogEntry and ran
+// `attachAutoEvidenceFromLogEntry` so the demo showed the farm-record →
+// derived-evidence chain end to end. The teardown removed the minting path
+// (it walked LogEntry → FrameworkRequirement → PracticeRequirementLink →
+// Practice, all deleted), so there is no longer any way for a seed to produce
+// a derived evidence row honestly.
 
 async function main() {
     console.log('🌱 Seeding the two-persona demo dataset…\n');
@@ -505,51 +416,12 @@ async function main() {
         seededChildren[farm.slug] = { tenant: { id: res.tenant.id, slug: res.tenant.slug }, owner: { id: res.owner.id } };
     }
 
-    // ── Certification schemes (global AG_SCHEME frameworks) ──
-    // Import the two concept-only scheme catalogs (GlobalG.A.P. IFA + EU
-    // Organic) through the SAME loader + applier the `schemes:import` CLI
-    // uses, so the demo shows real, mappable schemes. Idempotent (the
-    // applier upserts on `key`). Concept-only / paraphrased text — no
-    // proprietary scheme wording (LICENSE hygiene; each file is marked
-    // illustrative).
-    const CATALOG_DIR = path.resolve(__dirname, '..', 'prisma', 'catalogs');
-    // EVERY catalogue in the directory, not a hardcoded pair. Two of the four
-    // shipped YAMLs were never loaded by anything automated — the list here
-    // named two, and `schemes:import` is a manual CLI absent from db:seed, CI
-    // and deploy/ — so a catalogue could be added to the repo and simply never
-    // exist in any database. Reading the directory means adding a YAML is the
-    // whole change.
-    const schemeCatalogs = fs
-        .readdirSync(CATALOG_DIR)
-        .filter((f) => f.endsWith('.yaml') || f.endsWith('.yml'))
-        .sort();
-    for (const fileName of schemeCatalogs) {
-        try {
-            const file = loadAndValidateCatalogFile(path.join(CATALOG_DIR, fileName));
-            const result = await applyCatalogFile(prisma, file, path.join(CATALOG_DIR, fileName));
-            console.log(
-                `✅ Certification scheme: ${result.framework.key} (${result.requirements.upserted} requirements, ${result.templates.created} new templates)`,
-            );
-        } catch (e) {
-            console.warn(`  ⚠️  scheme catalog ${fileName} skipped:`, e instanceof Error ? e.message : e);
-        }
-    }
-
-    // ── Install the GlobalG.A.P. pack into one enterprise farm + show the
-    //    spray → auto-evidence chain end-to-end. Direct prisma (Redis-free):
-    //    replicate installPack's practice + PracticeRequirementLink writes so
-    //    Practices mapped to the plant-protection requirements exist, then
-    //    create one INPUT_APPLICATION spray record and let
-    //    attachAutoEvidenceFromLogEntry mint the SUBMITTED scheme evidence.
-    const GG_PACK_KEY = 'GLOBALGAP-IFA-DEMO-BASE';
+    // The scheme-catalog import (framework + requirements + pack install) and
+    // the spray → auto-evidence demo that followed it both went with the GRC
+    // teardown: the Framework / FrameworkPack / Practice tables they wrote no
+    // longer exist.
     const north = seededChildren['bigfarm-north'];
     if (north) {
-        try {
-            await installSchemePackForDemo(north.tenant.id, north.owner.id, GG_PACK_KEY);
-            await seedSprayAutoEvidence(north.tenant.id, north.tenant.slug, north.owner.id);
-        } catch (e) {
-            console.warn('  ⚠️  GlobalG.A.P. demo (pack + auto-evidence) skipped:', e instanceof Error ? e.message : e);
-        }
         // Agro-intel demo data (weather obs + data stream) on North Estate.
         try {
             await seedAgroIntel(north.tenant.id);

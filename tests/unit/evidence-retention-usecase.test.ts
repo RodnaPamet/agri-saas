@@ -323,55 +323,31 @@ describe('runRetentionSweepUsecase', () => {
 // ─── getRetentionMetrics ──────────────────────────────────────────
 
 describe('getRetentionMetrics', () => {
-    it('returns expiring + archived + expired counts plus top-practices aggregation', async () => {
+    it('returns expiring, archived and expired counts', async () => {
         (mockDb.evidence.count as jest.Mock)
             .mockResolvedValueOnce(5)   // expiringCount
             .mockResolvedValueOnce(2)   // archivedCount
             .mockResolvedValueOnce(1);  // expiredCount
-        (mockDb.evidence.findMany as jest.Mock).mockResolvedValue([
-            { practiceId: 'c-1', practice: { id: 'c-1', name: 'Access Control', code: 'A.5' } },
-            { practiceId: 'c-1', practice: { id: 'c-1', name: 'Access Control', code: 'A.5' } },
-            { practiceId: 'c-2', practice: { id: 'c-2', name: 'Backups', code: 'A.8' } },
-        ]);
 
         const res = await getRetentionMetrics(readerCtx);
 
-        expect(res.expiringCount).toBe(5);
-        expect(res.archivedCount).toBe(2);
-        expect(res.expiredCount).toBe(1);
-        expect(res.topPracticesWithExpiringEvidence).toEqual([
-            { practiceId: 'c-1', name: 'Access Control', code: 'A.5', count: 2 },
-            { practiceId: 'c-2', name: 'Backups', code: 'A.8', count: 1 },
-        ]);
+        expect(res).toEqual({ expiringCount: 5, archivedCount: 2, expiredCount: 1 });
     });
 
-    it('drops rows whose practiceId is null from the top-practices aggregation', async () => {
-        (mockDb.evidence.count as jest.Mock).mockResolvedValueOnce(0).mockResolvedValueOnce(0).mockResolvedValueOnce(0);
-        (mockDb.evidence.findMany as jest.Mock).mockResolvedValue([
-            { practiceId: null, practice: null },
-        ]);
+    it('no longer returns a per-practice breakdown', async () => {
+        // GRC teardown phase 3 dropped `Evidence.practiceId` and the
+        // Practice model, so the `topPracticesWithExpiringEvidence`
+        // leaderboard (null-row filtering, top-10 cap, 'Unknown'
+        // fallback for a missing relation) has no subject left. This
+        // asserts the shape is genuinely gone rather than silently
+        // returning an empty array, which the retention page would
+        // render as "no practices have expiring evidence" — a claim
+        // about data instead of an absent feature.
+        (mockDb.evidence.count as jest.Mock)
+            .mockResolvedValueOnce(0).mockResolvedValueOnce(0).mockResolvedValueOnce(0);
         const res = await getRetentionMetrics(readerCtx);
-        expect(res.topPracticesWithExpiringEvidence).toEqual([]);
-    });
-
-    it('caps the leaderboard at 10 entries', async () => {
-        (mockDb.evidence.count as jest.Mock).mockResolvedValueOnce(0).mockResolvedValueOnce(0).mockResolvedValueOnce(0);
-        const rows = [];
-        for (let i = 0; i < 15; i++) {
-            rows.push({ practiceId: `c-${i}`, practice: { id: `c-${i}`, name: `n${i}`, code: '' } });
-        }
-        (mockDb.evidence.findMany as jest.Mock).mockResolvedValue(rows);
-        const res = await getRetentionMetrics(readerCtx);
-        expect(res.topPracticesWithExpiringEvidence).toHaveLength(10);
-    });
-
-    it('handles missing practice relation with Unknown fallback', async () => {
-        (mockDb.evidence.count as jest.Mock).mockResolvedValueOnce(0).mockResolvedValueOnce(0).mockResolvedValueOnce(0);
-        (mockDb.evidence.findMany as jest.Mock).mockResolvedValue([
-            { practiceId: 'c-orphan', practice: null },
-        ]);
-        const res = await getRetentionMetrics(readerCtx);
-        expect(res.topPracticesWithExpiringEvidence[0].name).toBe('Unknown');
+        expect(res).not.toHaveProperty('topPracticesWithExpiringEvidence');
+        expect(mockDb.evidence.findMany).not.toHaveBeenCalled();
     });
 });
 

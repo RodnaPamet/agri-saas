@@ -1,14 +1,17 @@
 /**
  * Deadline Monitor — Periodic Detection of Due/Overdue Items
  *
- * Scans across multiple entity types to detect upcoming and overdue
- * deadlines. Returns normalized `DueItem[]` for downstream processing
- * (notification dispatch, dashboard aggregation, alerting).
+ * Scans for upcoming and overdue deadlines. Returns normalized
+ * `DueItem[]` for downstream processing (notification dispatch,
+ * dashboard aggregation, alerting).
  *
  * Monitored entities:
- *   - Practice       → nextDueAt
- *   - Policy        → nextReviewAt
  *   - Task          → dueAt
+ *
+ * The Practice (nextDueAt) and Policy (nextReviewAt) scanners went
+ * with their models in the GRC teardown; Task is the only monitored
+ * entity type left here. Evidence expiry (retentionUntil / expiredAt)
+ * is scanned by the separate evidence-expiry-monitor.
  *
  * Design principles:
  *   - Detection ONLY — no email sending, no side effects beyond audit logs
@@ -24,7 +27,6 @@ import { runJob } from '@/lib/observability/job-runner';
 import { logger } from '@/lib/observability/logger';
 import type { DueItem, DueItemUrgency, JobRunResult } from './types';
 import { TERMINAL_WORK_ITEM_STATUSES } from '../domain/work-item-status';
-import { appendAuditEntry } from '@/lib/audit';
 
 // ─── Configuration ──────────────────────────────────────────────────
 
@@ -82,115 +84,6 @@ export function classifyUrgency(
 // ─── Entity Scanners ────────────────────────────────────────────────
 
 /**
- * Scan practices with nextDueAt approaching or overdue.
- */
-async function scanPractices(
-    now: Date,
-    maxWindow: number,
-    tenantId?: string,
-): Promise<DueItem[]> {
-    const horizon = new Date(now.getTime() + maxWindow * 86_400_000);
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const where: any = {
-        deletedAt: null,
-        applicability: 'APPLICABLE',
-        nextDueAt: { not: null, lte: horizon },
-    };
-    if (tenantId) where.tenantId = tenantId;
-    else where.tenantId = { not: null };
-
-    const practices = await prisma.practice.findMany({
-        where,
-        select: {
-            id: true,
-            tenantId: true,
-            name: true,
-            nextDueAt: true,
-            ownerUserId: true,
-        },
-        orderBy: { nextDueAt: 'asc' },
-        take: 1000,
-    });
-
-    const items: DueItem[] = [];
-    for (const c of practices) {
-        if (!c.tenantId || !c.nextDueAt) continue;
-        const classification = classifyUrgency(c.nextDueAt, now);
-        if (!classification) continue;
-
-        items.push({
-            entityType: 'PRACTICE',
-            entityId: c.id,
-            tenantId: c.tenantId,
-            name: c.name,
-            reason: classification.urgency === 'OVERDUE'
-                ? `Practice testing overdue by ${Math.abs(classification.daysRemaining)} day(s)`
-                : `Practice testing due in ${classification.daysRemaining} day(s)`,
-            urgency: classification.urgency,
-            dueDate: c.nextDueAt.toISOString(),
-            daysRemaining: classification.daysRemaining,
-            ownerUserId: c.ownerUserId ?? undefined,
-        });
-    }
-    return items;
-}
-
-/**
- * Scan policies with nextReviewAt approaching or overdue.
- */
-async function scanPolicies(
-    now: Date,
-    maxWindow: number,
-    tenantId?: string,
-): Promise<DueItem[]> {
-    const horizon = new Date(now.getTime() + maxWindow * 86_400_000);
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const where: any = {
-        deletedAt: null,
-        status: { notIn: ['ARCHIVED'] },
-        nextReviewAt: { not: null, lte: horizon },
-    };
-    if (tenantId) where.tenantId = tenantId;
-
-    const policies = await prisma.policy.findMany({
-        where,
-        select: {
-            id: true,
-            tenantId: true,
-            title: true,
-            nextReviewAt: true,
-            ownerUserId: true,
-        },
-        orderBy: { nextReviewAt: 'asc' },
-        take: 1000,
-    });
-
-    const items: DueItem[] = [];
-    for (const p of policies) {
-        if (!p.nextReviewAt) continue;
-        const classification = classifyUrgency(p.nextReviewAt, now);
-        if (!classification) continue;
-
-        items.push({
-            entityType: 'POLICY',
-            entityId: p.id,
-            tenantId: p.tenantId,
-            name: p.title,
-            reason: classification.urgency === 'OVERDUE'
-                ? `Policy review overdue by ${Math.abs(classification.daysRemaining)} day(s)`
-                : `Policy review due in ${classification.daysRemaining} day(s)`,
-            urgency: classification.urgency,
-            dueDate: p.nextReviewAt.toISOString(),
-            daysRemaining: classification.daysRemaining,
-            ownerUserId: p.ownerUserId ?? undefined,
-        });
-    }
-    return items;
-}
-
-/**
  * Scan tasks with dueAt approaching or overdue.
  * Only open/in-progress tasks — not completed or cancelled.
  */
@@ -245,13 +138,11 @@ async function scanTasks(
     return items;
 }
 
-// ─── Epic G-7 — treatment-plan + milestone scanners ────────────────
-
 // ─── Main Entry Point ───────────────────────────────────────────────
 
 /**
- * Run the deadline monitor — scans all entity types and returns
- * a normalized list of due/overdue items.
+ * Run the deadline monitor — scans every monitored entity type and
+ * returns a normalized list of due/overdue items.
  *
  * This is a detection-only job. It does NOT:
  *   - Send emails
@@ -272,26 +163,10 @@ export async function runDeadlineMonitor(
         const windows = options.windows ?? [30, 7, 1];
         const maxWindow = Math.max(...windows);
 
-        // Phase 0 — flip past-due treatment plans before scanning so
-        // the urgency classifier sees the post-flip status. Each
-        // transition emits one TREATMENT_PLAN_MARKED_OVERDUE audit row.
-
-        // Run all scanners in parallel
-        const [
-            practices,
-            policies,
-            tasks,
-        ] = await Promise.all([
-            scanPractices(now, maxWindow, options.tenantId),
-            scanPolicies(now, maxWindow, options.tenantId),
-            scanTasks(now, maxWindow, options.tenantId),
-        ]);
-
-        const items = [
-            ...practices,
-            ...policies,
-            ...tasks,
-        ];
+        // Task is the only monitored entity type left — the Practice
+        // and Policy scanners went with their models. The scanner stays
+        // factored out so a second one can rejoin this list.
+        const items = await scanTasks(now, maxWindow, options.tenantId);
 
         // Sort by urgency (OVERDUE first, then by days remaining)
         items.sort((a, b) => {

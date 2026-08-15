@@ -23,8 +23,7 @@
  *   3. Secrets always encrypted via encryptField — plaintext never
  *      reaches the DB column.
  *   4. CREATED / UPDATED / DISABLED audit events.
- *   5. runAutomationForPractice: notFound / badRequest paths.
- *   6. handleIncomingWebhook persists raw event; "ignored" if no
+ *   5. handleIncomingWebhook persists raw event; "ignored" if no
  *      handler; status flip to "processed" on the happy path.
  */
 
@@ -68,7 +67,6 @@ jest.mock('../../../src/app-layer/events/audit', () => ({
 import {
     upsertIntegrationConnection,
     removeIntegrationConnection,
-    runAutomationForPractice,
     handleIncomingWebhook,
 } from '@/app-layer/usecases/integrations';
 import { runInTenantContext } from '@/lib/db-context';
@@ -80,7 +78,6 @@ import { makeRequestContext } from '../../helpers/make-context';
 
 const mockRunInTx = runInTenantContext as jest.MockedFunction<typeof runInTenantContext>;
 const mockGetProvider = registry.getProvider as jest.MockedFunction<typeof registry.getProvider>;
-const mockResolveKey = registry.resolveByAutomationKey as jest.MockedFunction<typeof registry.resolveByAutomationKey>;
 const mockGetWebhookProvider = registry.getWebhookProvider as jest.MockedFunction<typeof registry.getWebhookProvider>;
 const mockEncrypt = encryptField as jest.MockedFunction<typeof encryptField>;
 const mockLog = logEvent as jest.MockedFunction<typeof logEvent>;
@@ -286,76 +283,6 @@ describe('removeIntegrationConnection', () => {
             expect.anything(),
             expect.objectContaining({ action: 'INTEGRATION_CONNECTION_DISABLED' }),
         );
-    });
-});
-
-describe('runAutomationForPractice — failure paths', () => {
-    it('throws notFound when the practice does not exist', async () => {
-        mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
-            fn({
-                practice: { findFirst: jest.fn().mockResolvedValue(null) },
-            } as never),
-        );
-
-        await expect(
-            runAutomationForPractice(makeRequestContext('EDITOR'), 'missing'),
-        ).rejects.toThrow(/Practice not found/);
-    });
-
-    it('throws badRequest when the practice has no automationKey', async () => {
-        mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
-            fn({
-                practice: {
-                    findFirst: jest.fn().mockResolvedValue({
-                        id: 'c1', automationKey: null, tenantId: 'tenant-1',
-                    }),
-                },
-            } as never),
-        );
-
-        await expect(
-            runAutomationForPractice(makeRequestContext('EDITOR'), 'c1'),
-        ).rejects.toThrow(/no automationKey/);
-    });
-
-    it('throws badRequest when no provider matches the automationKey', async () => {
-        mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
-            fn({
-                practice: {
-                    findFirst: jest.fn().mockResolvedValue({
-                        id: 'c1', automationKey: 'datadog:no-such-check', tenantId: 'tenant-1',
-                    }),
-                },
-            } as never),
-        );
-        mockResolveKey.mockReturnValue(null);
-
-        await expect(
-            runAutomationForPractice(makeRequestContext('EDITOR'), 'c1'),
-        ).rejects.toThrow(/No provider/);
-    });
-
-    it('throws badRequest when no active connection exists for the resolved provider', async () => {
-        mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
-            fn({
-                practice: {
-                    findFirst: jest.fn().mockResolvedValue({
-                        id: 'c1', automationKey: 'datadog:check', tenantId: 'tenant-1', name: 'X',
-                    }),
-                },
-                integrationConnection: {
-                    findFirst: jest.fn().mockResolvedValue(null),
-                },
-            } as never),
-        );
-        mockResolveKey.mockReturnValue({
-            provider: { runCheck: jest.fn(), mapResultToEvidence: jest.fn() } as any,
-            parsed: { provider: 'datadog' } as any,
-        } as never);
-
-        await expect(
-            runAutomationForPractice(makeRequestContext('EDITOR'), 'c1'),
-        ).rejects.toThrow(/No active connection/);
     });
 });
 

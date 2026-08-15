@@ -13,31 +13,21 @@ const globalPrisma = new PrismaClient({
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 
 // ═══════════════════════════════════════════════════════════════════
-// CANONICAL LIST: every Prisma table that MUST have tenantId-based RLS.
-// If a table is added to the schema with tenantId, add it here too.
+// CURATED LIST: tenantId-carrying tables whose RLS wiring this suite
+// asserts. It is a sample, NOT the inventory — the exhaustive check
+// (every tenant-scoped model in prisma/schema has RLS + FORCE RLS +
+// a tenant_isolation policy, DERIVED from the schema rather than
+// hand-listed) lives in tests/guardrails/rls-coverage.test.ts.
 // ═══════════════════════════════════════════════════════════════════
 const TENANT_SCOPED_TABLES_WITH_TENANT_ID: string[] = [
     // Core entities
-    'Policy',
-    'PolicyVersion',
     'Evidence',
-    'Practice',
     'Asset',
-    'Audit',
-    'Finding',
     // Tasks
     'Task',
     'TaskLink',
     'TaskComment',
     'TaskWatcher',
-    // Practice sub-entities
-    'PracticeTask',
-    'PracticeEvidenceLink',
-    'PracticeRequirementLink',
-    // Mapping/junction tables
-    'PracticeAsset',
-    // Clause tracker
-    'ClauseProgress',
     // Audit & logging
     'AuditLog',
     // Notifications
@@ -49,22 +39,6 @@ const TENANT_SCOPED_TABLES_WITH_TENANT_ID: string[] = [
     // Membership & onboarding
     'TenantMembership',
     'TenantOnboarding',
-    // Vendor management
-    'Vendor',
-    'VendorContact',
-    'VendorDocument',
-    'VendorAssessment',
-    'VendorAssessmentAnswer',
-    'VendorLink',
-    'VendorEvidenceBundle',
-    'VendorEvidenceBundleItem',
-    'VendorRelationship',
-    // Audit readiness
-    'AuditCycle',
-    'AuditPack',
-    'AuditPackItem',
-    'AuditPackShare',
-    'AuditorAccount',
     // Files
     'FileRecord',
     // Billing
@@ -81,18 +55,17 @@ const TENANT_SCOPED_TABLES_WITH_TENANT_ID: string[] = [
 // that can't reach EXISTS-isolation yet is still explicitly tracked.
 const DEFERRED_USING_TRUE_TABLES: string[] = [];
 
-// Tables that use EXISTS-based RLS policies (no tenantId column, but proper
-// tenant isolation via subquery against parent tenant-scoped tables).
+// Tables whose isolation is proven by an EXISTS subquery against a
+// parent tenant-scoped row rather than by their own tenantId column.
+//
+// GRC teardown phase 3 deleted the other six members of this bucket
+// together with their parents (PolicyPracticeLink, PolicyApproval,
+// PolicyAcknowledgement, FindingEvidence, AuditChecklistItem,
+// AuditorPackAccess). EvidenceReview is the surviving chained table:
+// its policy is EXISTS(Evidence e WHERE e.id = "evidenceId" AND
+// e."tenantId" = app.tenant_id).
 const EXISTS_POLICY_TABLES: string[] = [
-    'PolicyPracticeLink',
-    // Epic A.1 — promoted from DEFERRED_USING_TRUE_TABLES. Each uses an
-    // EXISTS subquery against its tenant-scoped parent row:
-    'PolicyApproval',
-    'PolicyAcknowledgement',
     'EvidenceReview',
-    'FindingEvidence',
-    'AuditChecklistItem',
-    'AuditorPackAccess',
 ];
 
 describeFn('Postgres RLS Tenant Isolation', () => {
@@ -117,62 +90,46 @@ describeFn('Postgres RLS Tenant Isolation', () => {
         });
         tenantAId = tenantA.id;
 
-        const policyA = await globalPrisma.policy.create({
+        const evidenceA = await globalPrisma.evidence.create({
             data: {
                 tenantId: tenantAId,
-                title: `Policy A - ${testRunId}`,
-                slug: `policy-a-${testRunId}`,
+                title: `Evidence A - ${testRunId}`,
+                type: 'TEXT',
+                content: 'Test evidence content A',
+                status: 'DRAFT',
             },
         });
 
-        await globalPrisma.policyVersion.create({
+        // Chained (EXISTS-policy) child of Evidence.
+        await globalPrisma.evidenceReview.create({
             data: {
                 tenantId: tenantAId,
-                policyId: policyA.id,
-                versionNumber: 1,
-                createdById: userAId,
+                evidenceId: evidenceA.id,
+                reviewerId: userAId,
+                action: 'SUBMITTED',
             },
-        });
-
-        // Use raw SQL for Evidence to avoid Prisma Client trying to SELECT
-        // the ownerUserId column which may not exist in the DB yet (pending migration).
-        await globalPrisma.$executeRawUnsafe(
-            `INSERT INTO "Evidence" ("id", "tenantId", "title", "type", "content", "status", "dateCollected", "createdAt", "updatedAt")
-             VALUES (gen_random_uuid()::text, $1, $2, 'TEXT', $3, 'DRAFT', NOW(), NOW(), NOW())`,
-            tenantAId,
-            `Evidence A - ${testRunId}`,
-            'Test evidence content A',
-        );
-
-        await globalPrisma.vendor.create({
-            data: {
-                tenantId: tenantAId,
-                name: `Vendor A - ${testRunId}`,
-            },
-        });
-
-        await globalPrisma.audit.create({
-            data: {
-                tenantId: tenantAId,
-                title: `Audit A - ${testRunId}`,
-            },
-        });
-
-        const practiceA = await globalPrisma.practice.create({
-            data: { tenantId: tenantAId, name: `Practice A - ${testRunId}`, status: 'IMPLEMENTED' },
         });
 
         const assetA = await globalPrisma.asset.create({
             data: { tenantId: tenantAId, name: `Asset A - ${testRunId}`, type: 'TRACTOR' },
         });
 
-        // Create mapping rows for Tenant A
-        await globalPrisma.practiceAsset.create({
-            data: { tenantId: tenantAId, practiceId: practiceA.id, assetId: assetA.id },
+        const taskA = await globalPrisma.task.create({
+            data: { tenantId: tenantAId, title: `Task A - ${testRunId}`, createdByUserId: userAId },
         });
 
-        await globalPrisma.policyPracticeLink.create({
-            data: { tenantId: tenantAId, policyId: policyA.id, practiceId: practiceA.id },
+        await globalPrisma.taskComment.create({
+            data: {
+                tenantId: tenantAId,
+                taskId: taskA.id,
+                body: `Comment A - ${testRunId}`,
+                createdByUserId: userAId,
+            },
+        });
+
+        // Mapping row for Tenant A
+        await globalPrisma.taskLink.create({
+            data: { tenantId: tenantAId, taskId: taskA.id, entityType: 'ASSET', entityId: assetA.id },
         });
 
         // Create Tenant B
@@ -181,60 +138,45 @@ describeFn('Postgres RLS Tenant Isolation', () => {
         });
         tenantBId = tenantB.id;
 
-        const policyB = await globalPrisma.policy.create({
+        const evidenceB = await globalPrisma.evidence.create({
             data: {
                 tenantId: tenantBId,
-                title: `Policy B - ${testRunId}`,
-                slug: `policy-b-${testRunId}`,
+                title: `Evidence B - ${testRunId}`,
+                type: 'TEXT',
+                content: 'Test evidence content B',
+                status: 'DRAFT',
             },
         });
 
-        await globalPrisma.policyVersion.create({
+        await globalPrisma.evidenceReview.create({
             data: {
                 tenantId: tenantBId,
-                policyId: policyB.id,
-                versionNumber: 1,
-                createdById: userAId, // User table is global
+                evidenceId: evidenceB.id,
+                reviewerId: userAId, // User table is global
+                action: 'SUBMITTED',
             },
-        });
-
-        await globalPrisma.$executeRawUnsafe(
-            `INSERT INTO "Evidence" ("id", "tenantId", "title", "type", "content", "status", "dateCollected", "createdAt", "updatedAt")
-             VALUES (gen_random_uuid()::text, $1, $2, 'TEXT', $3, 'DRAFT', NOW(), NOW(), NOW())`,
-            tenantBId,
-            `Evidence B - ${testRunId}`,
-            'Test evidence content B',
-        );
-
-        await globalPrisma.vendor.create({
-            data: {
-                tenantId: tenantBId,
-                name: `Vendor B - ${testRunId}`,
-            },
-        });
-
-        await globalPrisma.audit.create({
-            data: {
-                tenantId: tenantBId,
-                title: `Audit B - ${testRunId}`,
-            },
-        });
-
-        const practiceB = await globalPrisma.practice.create({
-            data: { tenantId: tenantBId, name: `Practice B - ${testRunId}`, status: 'PLANNED' },
         });
 
         const assetB = await globalPrisma.asset.create({
             data: { tenantId: tenantBId, name: `Asset B - ${testRunId}`, type: 'HARVESTER' },
         });
 
-        // Create mapping rows for Tenant B
-        await globalPrisma.practiceAsset.create({
-            data: { tenantId: tenantBId, practiceId: practiceB.id, assetId: assetB.id },
+        const taskB = await globalPrisma.task.create({
+            data: { tenantId: tenantBId, title: `Task B - ${testRunId}`, createdByUserId: userAId },
         });
 
-        await globalPrisma.policyPracticeLink.create({
-            data: { tenantId: tenantBId, policyId: policyB.id, practiceId: practiceB.id },
+        await globalPrisma.taskComment.create({
+            data: {
+                tenantId: tenantBId,
+                taskId: taskB.id,
+                body: `Comment B - ${testRunId}`,
+                createdByUserId: userAId,
+            },
+        });
+
+        // Mapping row for Tenant B
+        await globalPrisma.taskLink.create({
+            data: { tenantId: tenantBId, taskId: taskB.id, entityType: 'ASSET', entityId: assetB.id },
         });
     });
 
@@ -243,14 +185,12 @@ describeFn('Postgres RLS Tenant Isolation', () => {
         try {
             for (const tid of tenantIds) {
                 // Clean up in dependency order (leaf → root)
-                await globalPrisma.$executeRawUnsafe(`DELETE FROM "PolicyPracticeLink" WHERE "policyId" IN (SELECT id FROM "Policy" WHERE "tenantId" = $1)`, tid);
-                await globalPrisma.$executeRawUnsafe(`DELETE FROM "PracticeAsset" WHERE "tenantId" = $1`, tid);
-                await globalPrisma.$executeRawUnsafe(`DELETE FROM "Practice" WHERE "tenantId" = $1`, tid);
-                await globalPrisma.$executeRawUnsafe(`DELETE FROM "Asset" WHERE "tenantId" = $1`, tid);
-                await globalPrisma.$executeRawUnsafe(`DELETE FROM "Audit" WHERE "tenantId" = $1`, tid);
-                await globalPrisma.$executeRawUnsafe(`DELETE FROM "Vendor" WHERE "tenantId" = $1`, tid);
+                await globalPrisma.$executeRawUnsafe(`DELETE FROM "EvidenceReview" WHERE "tenantId" = $1`, tid);
+                await globalPrisma.$executeRawUnsafe(`DELETE FROM "TaskLink" WHERE "tenantId" = $1`, tid);
+                await globalPrisma.$executeRawUnsafe(`DELETE FROM "TaskComment" WHERE "tenantId" = $1`, tid);
+                await globalPrisma.$executeRawUnsafe(`DELETE FROM "Task" WHERE "tenantId" = $1`, tid);
                 await globalPrisma.$executeRawUnsafe(`DELETE FROM "Evidence" WHERE "tenantId" = $1`, tid);
-                await globalPrisma.$executeRawUnsafe(`DELETE FROM "Policy" WHERE "tenantId" = $1`, tid);
+                await globalPrisma.$executeRawUnsafe(`DELETE FROM "Asset" WHERE "tenantId" = $1`, tid);
                 await globalPrisma.$executeRawUnsafe(`DELETE FROM "Tenant" WHERE "id" = $1`, tid);
             }
             if (userAId) await globalPrisma.$executeRawUnsafe(`DELETE FROM "User" WHERE "id" = $1`, userAId);
@@ -400,85 +340,27 @@ describeFn('Postgres RLS Tenant Isolation', () => {
     });
 
     // ═══════════════════════════════════════════════════════════════════
-    // Policy Table
-    // ═══════════════════════════════════════════════════════════════════
-
-    describe('Policy SELECT Isolation', () => {
-        it('Tenant A context only sees its own policies', async () => {
-            await withTenantDb(tenantAId, async (tx) => {
-                const policies = await tx.policy.findMany({
-                    where: { title: { contains: testRunId } }
-                });
-
-                expect(policies.length).toBe(1);
-                expect(policies[0].title).toBe(`Policy A - ${testRunId}`);
-                expect(policies[0].tenantId).toBe(tenantAId);
-            }, globalPrisma);
-        });
-    });
-
-    describe('Policy INSERT Isolation', () => {
-        it('Cannot insert a policy under Tenant B while in Tenant A context', async () => {
-            await expect(
-                withTenantDb(tenantAId, async (tx) => {
-                    await tx.policy.create({
-                        data: {
-                            tenantId: tenantBId,
-                            title: 'Malicious Policy Insert',
-                            slug: `malicious-${Date.now()}`,
-                        },
-                    });
-                }, globalPrisma)
-            ).rejects.toThrow(/new row violates row-level security policy/);
-        });
-    });
-
-    describe('PolicyVersion SELECT Isolation', () => {
-        it('Tenant A context only sees its own policy versions', async () => {
-            await withTenantDb(tenantAId, async (tx) => {
-                const versions = await tx.policyVersion.findMany();
-                // We created exactly 1 policy version for tenant A
-                expect(versions.length).toBeGreaterThan(0);
-                for (const version of versions) {
-                    expect(version.tenantId).toBe(tenantAId);
-                }
-            }, globalPrisma);
-        });
-    });
-
-    describe('PolicyVersion INSERT Isolation', () => {
-        it('Cannot insert a policy version under Tenant B while in Tenant A context', async () => {
-            const policyB = await globalPrisma.policy.findFirst({
-                where: { tenantId: tenantBId, title: { contains: testRunId } }
-            });
-
-            await expect(
-                withTenantDb(tenantAId, async (tx) => {
-                    await tx.policyVersion.create({
-                        data: {
-                            tenantId: tenantBId,
-                            policyId: policyB!.id,
-                            versionNumber: 999,
-                            createdById: userAId,
-                        },
-                    });
-                }, globalPrisma)
-            ).rejects.toThrow(/new row violates row-level security policy/);
-        });
-    });
-
-    // ═══════════════════════════════════════════════════════════════════
     // Evidence Table
     // ═══════════════════════════════════════════════════════════════════
 
     describe('Evidence SELECT Isolation', () => {
+        it('Tenant A context only sees its own evidence', async () => {
+            await withTenantDb(tenantAId, async (tx) => {
+                const evidence = await tx.evidence.findMany({
+                    where: { title: { contains: testRunId } }
+                });
+
+                expect(evidence.length).toBe(1);
+                expect(evidence[0].title).toBe(`Evidence A - ${testRunId}`);
+                expect(evidence[0].tenantId).toBe(tenantAId);
+            }, globalPrisma);
+        });
+
         it('Tenant B context only sees its own evidence', async () => {
             await withTenantDb(tenantBId, async (tx) => {
-                // Use raw SQL to avoid Prisma Client column mismatch on ownerUserId
-                const evidence: Array<{ title: string; tenantId: string }> = await tx.$queryRawUnsafe(
-                    `SELECT "title", "tenantId" FROM "Evidence" WHERE "title" LIKE $1`,
-                    `%${testRunId}%`,
-                );
+                const evidence = await tx.evidence.findMany({
+                    where: { title: { contains: testRunId } }
+                });
 
                 expect(evidence.length).toBe(1);
                 expect(evidence[0].title).toBe(`Evidence B - ${testRunId}`);
@@ -487,95 +369,16 @@ describeFn('Postgres RLS Tenant Isolation', () => {
         });
     });
 
-    // ═══════════════════════════════════════════════════════════════════
-    // Practice Table (nullable tenantId)
-    // ═══════════════════════════════════════════════════════════════════
-
-    describe('Practice with nullable tenantId', () => {
-        let globalPracticeId: string;
-        let tenantAPracticeId: string;
-
-        beforeAll(async () => {
-            const globalCtrl = await globalPrisma.practice.create({
-                data: { name: `Global Practice - ${testRunId}`, status: 'IMPLEMENTED' },
-            });
-            globalPracticeId = globalCtrl.id;
-
-            const tenantCtrl = await globalPrisma.practice.create({
-                data: { tenantId: tenantAId, name: `TenantA Practice - ${testRunId}`, status: 'PLANNED' },
-            });
-            tenantAPracticeId = tenantCtrl.id;
-        });
-
-        afterAll(async () => {
-            for (const ctrlId of [globalPracticeId, tenantAPracticeId].filter(Boolean)) {
-                await globalPrisma.$executeRawUnsafe(`DELETE FROM "Practice" WHERE "id" = $1`, ctrlId);
-            }
-        });
-
-        it('Tenant A can see both global (null tenantId) and its own practices', async () => {
-            await withTenantDb(tenantAId, async (tx) => {
-                const practices = await tx.practice.findMany({
-                    where: { name: { contains: testRunId } },
-                });
-
-                const names = practices.map(c => c.name);
-                expect(names).toContain(`Global Practice - ${testRunId}`);
-                expect(names).toContain(`TenantA Practice - ${testRunId}`);
-            }, globalPrisma);
-        });
-
-        it('Tenant B can see global practices but NOT Tenant A-specific practices', async () => {
-            await withTenantDb(tenantBId, async (tx) => {
-                const practices = await tx.practice.findMany({
-                    where: { name: { contains: testRunId } },
-                });
-
-                const names = practices.map(c => c.name);
-                expect(names).toContain(`Global Practice - ${testRunId}`);
-                expect(names).not.toContain(`TenantA Practice - ${testRunId}`);
-            }, globalPrisma);
-        });
-    });
-
-    // ═══════════════════════════════════════════════════════════════════
-    // Vendor Table (NEW)
-    // ═══════════════════════════════════════════════════════════════════
-
-    describe('Vendor SELECT Isolation', () => {
-        it('Tenant A context only sees its own vendors', async () => {
-            await withTenantDb(tenantAId, async (tx) => {
-                const vendors = await tx.vendor.findMany({
-                    where: { name: { contains: testRunId } }
-                });
-
-                expect(vendors.length).toBe(1);
-                expect(vendors[0].name).toBe(`Vendor A - ${testRunId}`);
-                expect(vendors[0].tenantId).toBe(tenantAId);
-            }, globalPrisma);
-        });
-
-        it('Tenant B context only sees its own vendors', async () => {
-            await withTenantDb(tenantBId, async (tx) => {
-                const vendors = await tx.vendor.findMany({
-                    where: { name: { contains: testRunId } }
-                });
-
-                expect(vendors.length).toBe(1);
-                expect(vendors[0].name).toBe(`Vendor B - ${testRunId}`);
-                expect(vendors[0].tenantId).toBe(tenantBId);
-            }, globalPrisma);
-        });
-    });
-
-    describe('Vendor INSERT Isolation', () => {
-        it('Cannot insert a vendor under Tenant B while in Tenant A context', async () => {
+    describe('Evidence INSERT Isolation', () => {
+        it('Cannot insert evidence under Tenant B while in Tenant A context', async () => {
             await expect(
                 withTenantDb(tenantAId, async (tx) => {
-                    await tx.vendor.create({
+                    await tx.evidence.create({
                         data: {
                             tenantId: tenantBId,
-                            name: `Malicious Vendor - ${Date.now()}`,
+                            title: `Malicious Evidence Insert - ${Date.now()}`,
+                            type: 'TEXT',
+                            content: 'Malicious evidence content',
                         },
                     });
                 }, globalPrisma)
@@ -584,46 +387,33 @@ describeFn('Postgres RLS Tenant Isolation', () => {
     });
 
     // ═══════════════════════════════════════════════════════════════════
-    // Audit Table (NEW)
+    // Asset Table
     // ═══════════════════════════════════════════════════════════════════
 
-    describe('Audit SELECT Isolation', () => {
-        it('Tenant A context only sees its own audits', async () => {
+    describe('Asset SELECT Isolation', () => {
+        it('Tenant A context only sees its own assets', async () => {
             await withTenantDb(tenantAId, async (tx) => {
-                const audits = await tx.audit.findMany({
-                    where: { title: { contains: testRunId } }
+                const assets = await tx.asset.findMany({
+                    where: { name: { contains: testRunId } }
                 });
 
-                expect(audits.length).toBe(1);
-                expect(audits[0].title).toBe(`Audit A - ${testRunId}`);
-                expect(audits[0].tenantId).toBe(tenantAId);
+                expect(assets.length).toBe(1);
+                expect(assets[0].name).toBe(`Asset A - ${testRunId}`);
+                expect(assets[0].tenantId).toBe(tenantAId);
             }, globalPrisma);
         });
     });
 
-    // ═══════════════════════════════════════════════════════════════════
-    // MAPPING TABLE: PracticeAsset (tenantId-based)
-    // ═══════════════════════════════════════════════════════════════════
-
-    describe('PracticeAsset Mapping Isolation', () => {
-        it('Tenant A sees only its own practice-asset links', async () => {
-            await withTenantDb(tenantAId, async (tx) => {
-                const links = await tx.practiceAsset.findMany();
-                for (const link of links) {
-                    expect(link.tenantId).toBe(tenantAId);
-                }
-                expect(links.length).toBeGreaterThan(0);
-            }, globalPrisma);
-        });
-
-        it('Cannot create PracticeAsset with Tenant B tenantId from Tenant A context', async () => {
-            const practiceA = await globalPrisma.practice.findFirst({ where: { tenantId: tenantAId, name: { contains: testRunId } } });
-            const assetB = await globalPrisma.asset.findFirst({ where: { tenantId: tenantBId, name: { contains: testRunId } } });
-
+    describe('Asset INSERT Isolation', () => {
+        it('Cannot insert an asset under Tenant B while in Tenant A context', async () => {
             await expect(
                 withTenantDb(tenantAId, async (tx) => {
-                    await tx.practiceAsset.create({
-                        data: { tenantId: tenantBId, practiceId: practiceA!.id, assetId: assetB!.id },
+                    await tx.asset.create({
+                        data: {
+                            tenantId: tenantBId,
+                            name: `Malicious Asset - ${Date.now()}`,
+                            type: 'TRACTOR',
+                        },
                     });
                 }, globalPrisma)
             ).rejects.toThrow(/new row violates row-level security policy/);
@@ -631,70 +421,129 @@ describeFn('Postgres RLS Tenant Isolation', () => {
     });
 
     // ═══════════════════════════════════════════════════════════════════
-    // MAPPING TABLE: PolicyPracticeLink (EXISTS-based — no tenantId)
+    // TaskComment Table (tenant-scoped child of Task)
     // ═══════════════════════════════════════════════════════════════════
 
-    describe('PolicyPracticeLink Mapping Isolation', () => {
-        it('Tenant A sees only links to its own policies', async () => {
+    describe('TaskComment SELECT Isolation', () => {
+        it('Tenant A context only sees its own task comments', async () => {
             await withTenantDb(tenantAId, async (tx) => {
-                const links = await tx.policyPracticeLink.findMany();
-                // Each link should reference a policy belonging to Tenant A
+                const comments = await tx.taskComment.findMany();
+                // We created exactly 1 task comment for tenant A
+                expect(comments.length).toBeGreaterThan(0);
+                for (const comment of comments) {
+                    expect(comment.tenantId).toBe(tenantAId);
+                }
+            }, globalPrisma);
+        });
+    });
+
+    describe('TaskComment INSERT Isolation', () => {
+        it('Cannot insert a task comment under Tenant B while in Tenant A context', async () => {
+            const taskB = await globalPrisma.task.findFirst({
+                where: { tenantId: tenantBId, title: { contains: testRunId } }
+            });
+
+            await expect(
+                withTenantDb(tenantAId, async (tx) => {
+                    await tx.taskComment.create({
+                        data: {
+                            tenantId: tenantBId,
+                            taskId: taskB!.id,
+                            body: 'Malicious comment',
+                            createdByUserId: userAId,
+                        },
+                    });
+                }, globalPrisma)
+            ).rejects.toThrow(/new row violates row-level security policy/);
+        });
+    });
+
+    // ═══════════════════════════════════════════════════════════════════
+    // MAPPING TABLE: TaskLink (tenantId-based)
+    // ═══════════════════════════════════════════════════════════════════
+
+    describe('TaskLink Mapping Isolation', () => {
+        it('Tenant A sees only its own task links', async () => {
+            await withTenantDb(tenantAId, async (tx) => {
+                const links = await tx.taskLink.findMany();
                 for (const link of links) {
-                    const policy = await globalPrisma.policy.findUnique({ where: { id: link.policyId } });
-                    expect(policy!.tenantId).toBe(tenantAId);
+                    expect(link.tenantId).toBe(tenantAId);
                 }
                 expect(links.length).toBeGreaterThan(0);
             }, globalPrisma);
         });
 
-        it('Tenant B cannot see Tenant A policy-practice links', async () => {
-            const policyA = await globalPrisma.policy.findFirst({ where: { tenantId: tenantAId, title: { contains: testRunId } } });
+        it('Cannot create TaskLink with Tenant B tenantId from Tenant A context', async () => {
+            const taskA = await globalPrisma.task.findFirst({ where: { tenantId: tenantAId, title: { contains: testRunId } } });
+            const assetB = await globalPrisma.asset.findFirst({ where: { tenantId: tenantBId, name: { contains: testRunId } } });
 
-            await withTenantDb(tenantBId, async (tx) => {
-                const links = await tx.policyPracticeLink.findMany({
-                    where: { policyId: policyA!.id },
-                });
-                // Should see zero — RLS blocks access via EXISTS on Policy
-                expect(links.length).toBe(0);
+            await expect(
+                withTenantDb(tenantAId, async (tx) => {
+                    await tx.taskLink.create({
+                        data: { tenantId: tenantBId, taskId: taskA!.id, entityType: 'ASSET', entityId: assetB!.id },
+                    });
+                }, globalPrisma)
+            ).rejects.toThrow(/new row violates row-level security policy/);
+        });
+    });
+
+    // ═══════════════════════════════════════════════════════════════════
+    // CHAINED TABLE: EvidenceReview (EXISTS-based policy on its parent)
+    // ═══════════════════════════════════════════════════════════════════
+
+    describe('EvidenceReview Chained Isolation', () => {
+        it('Tenant A sees only reviews of its own evidence', async () => {
+            await withTenantDb(tenantAId, async (tx) => {
+                const reviews = await tx.evidenceReview.findMany();
+                // Each review should reference evidence belonging to Tenant A
+                for (const review of reviews) {
+                    const evidence = await globalPrisma.evidence.findUnique({ where: { id: review.evidenceId } });
+                    expect(evidence!.tenantId).toBe(tenantAId);
+                }
+                expect(reviews.length).toBeGreaterThan(0);
             }, globalPrisma);
         });
 
-        it('Cannot insert PolicyPracticeLink pointing to Tenant B policy from Tenant A context', async () => {
-            const policyB = await globalPrisma.policy.findFirst({ where: { tenantId: tenantBId, title: { contains: testRunId } } });
-            const practiceA = await globalPrisma.practice.findFirst({ where: { tenantId: tenantAId, name: { contains: testRunId } } });
+        it('Tenant B cannot see Tenant A evidence reviews', async () => {
+            const evidenceA = await globalPrisma.evidence.findFirst({ where: { tenantId: tenantAId, title: { contains: testRunId } } });
 
-            // denorm-tenantId — rejection now lands via the composite
-            // (policyId, tenantId) → Policy(id, tenantId) FK rather
-            // than the chained RLS WITH CHECK. Either rejection
-            // shape is acceptable.
-            await expect(
-                withTenantDb(tenantAId, async (tx) => {
-                    await tx.policyPracticeLink.create({
-                        data: { tenantId: tenantAId, policyId: policyB!.id, practiceId: practiceA!.id },
-                    });
-                }, globalPrisma)
-            ).rejects.toThrow(/(violates row-level security policy|[Ff]oreign key constraint (?:violated|violation))/);
+            await withTenantDb(tenantBId, async (tx) => {
+                const reviews = await tx.evidenceReview.findMany({
+                    where: { evidenceId: evidenceA!.id },
+                });
+                // Should see zero — RLS blocks access via EXISTS on Evidence
+                expect(reviews.length).toBe(0);
+            }, globalPrisma);
         });
 
-        it('Cannot insert PolicyPracticeLink pointing to Tenant B practice from Tenant A context', async () => {
-            const policyA = await globalPrisma.policy.findFirst({ where: { tenantId: tenantAId, title: { contains: testRunId } } });
-            const practiceB = await globalPrisma.practice.findFirst({ where: { tenantId: tenantBId, name: { contains: testRunId } } });
+        it('Cannot insert an EvidenceReview pointing to Tenant B evidence from Tenant A context', async () => {
+            const evidenceB = await globalPrisma.evidence.findFirst({ where: { tenantId: tenantBId, title: { contains: testRunId } } });
 
-            // Practice-side single-column FK doesn't enforce tenant
-            // equality (Practice.tenantId is nullable for global
-            // practices). Rejection here comes from Practice's own RLS
-            // FORCE ROW LEVEL SECURITY: under tenant-A's session,
-            // Practice.id=practiceB.id is invisible, so the FK
-            // resolution returns 0 rows.
+            // denorm-tenantId — rejection can land via the composite
+            // (evidenceId, tenantId) → Evidence(id, tenantId) FK rather
+            // than the chained RLS WITH CHECK. Either rejection shape is
+            // acceptable.
             await expect(
                 withTenantDb(tenantAId, async (tx) => {
-                    await tx.policyPracticeLink.create({
-                        data: { tenantId: tenantAId, policyId: policyA!.id, practiceId: practiceB!.id },
+                    await tx.evidenceReview.create({
+                        data: {
+                            tenantId: tenantAId,
+                            evidenceId: evidenceB!.id,
+                            reviewerId: userAId,
+                            action: 'SUBMITTED',
+                        },
                     });
                 }, globalPrisma)
             ).rejects.toThrow(/(violates row-level security policy|[Ff]oreign key constraint (?:violated|violation))/);
         });
     });
+
+    // Deleted with teardown phase 3: the "nullable tenantId — a tenant sees
+    // GLOBAL rows plus its own, never another tenant's" pair. Its subject was
+    // Practice, whose model is gone; the surviving nullable-tenantId tables
+    // (KnowledgeArticle / KnowledgeArticleVersion, same asymmetric
+    // USING(tenantId IS NULL OR own) / WITH CHECK(own) policy) already have a
+    // dedicated suite at tests/integration/knowledge-article-rls.test.ts.
 
     // ═══════════════════════════════════════════════════════════════════
     // No Context Edge Case

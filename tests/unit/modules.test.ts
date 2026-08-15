@@ -77,13 +77,12 @@ const readerCtx = makeRequestContext('READER');
 // ─── src/lib/modules.ts — pure helpers ─────────────────────────────
 
 describe('pure helpers', () => {
-    it('ALL_MODULES enumerates the ten canonical module keys', () => {
+    it('ALL_MODULES enumerates the nine canonical module keys', () => {
         expect(ALL_MODULES).toEqual([
             'JOURNAL',
             'INVENTORY',
             'PLANNING',
             'CERTIFICATION',
-            'VENDORS',
             'AUTOMATION',
             'PROCESSES',
             'AI',
@@ -137,7 +136,7 @@ describe('pure helpers', () => {
 
     it('isModuleEnabledIn membership test', () => {
         expect(isModuleEnabledIn(['JOURNAL', 'AI'], 'AI')).toBe(true);
-        expect(isModuleEnabledIn(['JOURNAL', 'AI'], 'VENDORS')).toBe(false);
+        expect(isModuleEnabledIn(['JOURNAL', 'AI'], 'INVENTORY')).toBe(false);
         expect(isModuleEnabledIn([], 'JOURNAL')).toBe(false);
     });
 
@@ -264,7 +263,7 @@ describe('getAvailableModules', () => {
         );
     });
 
-    it('PRO plan + all-enabled tenant → core + GRC, never AI', async () => {
+    it('PRO plan + all-enabled tenant → core + CERTIFICATION, never AI', async () => {
         mockGetTenantPlan.mockResolvedValue('PRO');
         (ModuleSettingsRepository.get as jest.Mock).mockResolvedValue(null);
         const available = await getAvailableModules(readerCtx);
