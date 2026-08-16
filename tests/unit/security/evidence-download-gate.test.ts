@@ -100,7 +100,6 @@ const NO_PROVENANCE = {
     id: 'ev-1',
     assetId: null,
     taskId: null,
-    sourceLogEntryId: null,
     deletedAt: null,
 };
 
@@ -125,19 +124,20 @@ describe('downloadEvidenceFile — canWrite bypasses the provenance gate', () =>
 
 describe('downloadEvidenceFile — each provenance column independently admits a reader', () => {
     // Each column has to work on its own — a gate that only honoured
-    // assetId would silently lock readers out of the others.
+    // assetId would silently lock readers out of the other.
     //
-    // `assetId` and `taskId` are still written (linkAssetEvidence,
-    // linkTaskEvidence). `sourceLogEntryId` is LEGACY-ONLY since GRC
-    // teardown phase 3 deleted its writer, and that is exactly why this
-    // case matters more than it used to: it is now the only thing
-    // standing between a reader and the farm evidence collected before
-    // the teardown. Drop it from the gate as "dead" and you revoke
-    // access to real rows.
+    // There was a THIRD arm, `sourceLogEntryId`. It was dropped with the
+    // column: its writer (`attachAutoEvidenceFromLogEntry`) minted through
+    // the Practice graph, which GRC teardown phase 3 deleted, so nothing
+    // had populated it since. Removing an arm from this gate NARROWS who
+    // can download, so it was gated on a measurement rather than an
+    // argument — production carried 0 Evidence rows, re-measured
+    // immediately before the drop. Both survivors are actively written:
+    // assetId by linkAssetEvidence + the upload metadata, taskId by
+    // linkTaskEvidence + the farm-task upload form.
     it.each([
         ['assetId', { assetId: 'asset-9' }],
         ['taskId', { taskId: 'task-9' }],
-        ['sourceLogEntryId', { sourceLogEntryId: 'log-9' }],
     ])('a READER may download evidence attached via %s', async (_label, attach) => {
         mockFindFirst.mockResolvedValue({ ...NO_PROVENANCE, ...attach });
         await expect(downloadEvidenceFile(readerCtx(), 'file-1')).resolves.toBeDefined();
@@ -147,7 +147,7 @@ describe('downloadEvidenceFile — each provenance column independently admits a
 describe('downloadEvidenceFile — the gate actually denies', () => {
     it('refuses a READER when the row carries no provenance', async () => {
         await expect(downloadEvidenceFile(readerCtx(), 'file-1')).rejects.toThrow(
-            /attached to an asset, a task, or a farm record/,
+            /attached to an asset or a task/,
         );
     });
 
@@ -158,7 +158,7 @@ describe('downloadEvidenceFile — the gate actually denies', () => {
         // provenance to speak of, and must not read as "unrestricted".
         mockFindFirst.mockResolvedValue(null);
         await expect(downloadEvidenceFile(readerCtx(), 'file-1')).rejects.toThrow(
-            /attached to an asset, a task, or a farm record/,
+            /attached to an asset or a task/,
         );
     });
 

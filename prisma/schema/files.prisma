@@ -88,13 +88,6 @@ model Evidence {
   /// Sanitised + trimmed at the usecase boundary.
   folder            String?
   /// Phase-8 — auto-evidence provenance. When a farm journal record
-  /// (esp. an INPUT_APPLICATION spray LogEntry) is auto-attached as
-  /// evidence to a certification-scheme requirement's practice, this points
-  /// back at the source LogEntry. Scalar FK (no relation — LogEntry lives
-  /// in the journal domain); drives idempotency (one auto-evidence per
-  /// (logEntry, practice)) and the "which farm records back this scheme"
-  /// query. NULL for hand-authored evidence.
-  sourceLogEntryId  String?
   // their proof here.
   task              Task?                     @relation(fields: [taskId], references: [id])
   asset             Asset?                    @relation(fields: [assetId], references: [id])
@@ -125,25 +118,10 @@ model Evidence {
   @@index([tenantId, folder])
   // Phase-8 — auto-evidence idempotency + "farm records backing this
   // scheme" lookup (FK-shaped scalar; Layer-B index coverage).
-  @@index([tenantId, sourceLogEntryId])
   // Calendar (compliance-calendar loadEvidenceEvents) — the
   // evidence-review range predicate had no index; every calendar load
   // was a per-tenant seq scan of Evidence.
   @@index([tenantId, nextReviewDate])
-  // One auto-evidence row per farm record. The attach job used to rely
-  // solely on a read-then-write check, which is TOCTOU: it runs inside a
-  // transaction opened by a journal write, and a retry or a concurrent
-  // field-operation save could have two callers each read "not attached" and
-  // each insert. NULLs do not collide in Postgres, so hand-filed evidence
-  // (sourceLogEntryId IS NULL) is unaffected.
-  //
-  // Phase 3 dropped `practiceId` from this key. That TIGHTENS it — it was
-  // one row per (record, practice), it is now one row per record — which is
-  // the correct shape once a farm record can no longer be attached to a
-  // practice. On a dataset where one LogEntry had produced evidence for two
-  // practices the index build would fail; production carried 0 Evidence rows
-  // at the time of the drop (plan §8m).
-  @@unique([tenantId, sourceLogEntryId])
 }
 
 model EvidenceReview {

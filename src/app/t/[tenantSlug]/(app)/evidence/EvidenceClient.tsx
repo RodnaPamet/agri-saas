@@ -66,7 +66,6 @@ import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 // IS a farm journal entry. (Iconography is nucleo across app pages; the
 // Roadmap-2 PR-8 guard bans new lucide imports outside its migration list.)
 import { Plus, Pen2, Download, BoxArchive, Note } from '@/components/ui/icons/nucleo';
-import { AUTO_FARM_RECORD_CATEGORY } from '@/lib/evidence/auto-evidence-constants';
 
 interface Permissions {
     canRead: boolean;
@@ -622,23 +621,13 @@ function EvidencePageInner({ initialEvidence, tenantSlug, permissions, translati
                 // part of B5 (Evidence workflow completion), which
                 // also introduces the detail surface.
                 //
-                // The exception is auto-evidence: the farm record IS the
-                // evidence, and it already has a page. The href is built
-                // from `sourceLogEntryId` rather than from the stored
-                // `content` string so a row written under a previous tenant
-                // slug still resolves.
+                // There used to be an exception: auto-evidence rows deep-
+                // linked to their journal entry via `sourceLogEntryId`. That
+                // column has been dropped — its only writer minted through
+                // the Practice graph, which phase 3 deleted, so nothing had
+                // populated it since and no row could take the branch.
                 const ev = row.original;
-                return (
-                    <TableTitleCell
-                        href={
-                            ev.sourceLogEntryId
-                                ? `/t/${tenantSlug}/journal/${ev.sourceLogEntryId}`
-                                : undefined
-                        }
-                    >
-                        {ev.title}
-                    </TableTitleCell>
-                );
+                return <TableTitleCell>{ev.title}</TableTitleCell>;
             },
             meta: { mobileCard: { slot: 'title' } },
         },
@@ -649,21 +638,10 @@ function EvidencePageInner({ initialEvidence, tenantSlug, permissions, translati
 
             cell: ({ row }: { row: any }) => {
                 const ev = row.original;
-                // Auto-collected farm records are LINK rows, so the generic
-                // resolver called every one of them "Link" — indistinguishable
-                // from a hand-filed URL, which is the difference that matters
-                // when deciding whether a row needs review.
-                if (ev.category === AUTO_FARM_RECORD_CATEGORY) {
-                    return (
-                        <span
-                            className="inline-flex items-center gap-1.5 text-xs text-content-muted"
-                            data-file-kind="farm-record"
-                        >
-                            <Note className="size-3.5 text-content-success" aria-hidden />
-                            <span>{tr('client.typeFarmRecord')}</span>
-                        </span>
-                    );
-                }
+                // The AUTO_FARM_RECORD branch lived here — auto-collected
+                // farm records were LINK rows, so the generic resolver called
+                // them all "Link". No row can carry that category any more:
+                // the minting path went with the Practice graph in phase 3.
                 // Mixed-file aware: pick the actual file kind by
                 // extension/MIME when this row is a file; fall back to
                 // the domain kind (LINK / TEXT) for non-file rows.

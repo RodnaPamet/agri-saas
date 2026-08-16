@@ -156,7 +156,7 @@ const RENDERED_TEST_FLOOR = 211;
 // `ai-risk-assessment.spec.ts` and `new-risk-modal.spec.ts` were both
 // wholly about the deleted register; the specs that merely REFERENCED a
 // risk route were edited rather than deleted, and one of them —
-// ciso-portfolio's AUDITOR read-only invariant — was repointed to the
+// ciso-portfolio.spec.ts's AUDITOR read-only invariant — was repointed to the
 // practices page because the assertion is about the ROLE, not the entity.
 // Net: 56 → 54. The floor resumes its upward-only ratchet from 54.
 //
@@ -185,7 +185,8 @@ const RENDERED_TEST_FLOOR = 211;
 // Fourteen more that merely REFERENCED a dead route were EDITED and still
 // count — data-table-platform, entity-detail-layout, epic54-crud-smoke,
 // filters, search-affordances, core-flow, auth, a11y, responsive,
-// tooltip-and-copy, ciso-portfolio and the three practice-* variants whose
+// tooltip-and-copy, ciso-portfolio and the three ex-`practice-*` specs
+// (now asset-edit-modal / asset-evidence / entity-detail-activity-tab) whose
 // surviving halves were re-pointed at /assets and /journal.
 //
 // NOTE the two prose claims above this line that the teardown falsified:

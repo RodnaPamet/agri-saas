@@ -730,37 +730,29 @@ export async function getEvidenceFileRecord(ctx: RequestContext, fileId: string)
  * STRICT DOWNLOAD POLICY (Option A):
  * - ADMIN/EDITOR (canWrite): can download any tenant file evidence.
  * - READER/AUDITOR: can download ONLY evidence with a PROVENANCE — a row
- *   attached to a known farm record (asset, task, or journal entry).
+ *   attached to a known farm record (asset or task).
  * - Soft-deleted evidence blocks download for all roles.
  *
- * The provenance gate used to read `practiceId`. GRC teardown phase 2
- * RE-BASED it onto `assetId ?? taskId ?? sourceLogEntryId` rather than
- * deleting it — deleting the condition would have widened READER/AUDITOR
- * access to EVERY file in the tenant, which is the opposite of what the
- * teardown is for.
+ * The gate read `practiceId` originally; GRC teardown phase 2 re-based it
+ * onto `assetId ?? taskId ?? sourceLogEntryId` rather than deleting it,
+ * because deleting the condition would have widened READER/AUDITOR access
+ * to EVERY file in the tenant.
  *
- * TWO of the three columns are still written: assetId by
+ * `sourceLogEntryId` has now been dropped from that expression along with
+ * the column. Its writer — `attachAutoEvidenceFromLogEntry` — minted
+ * evidence by walking Framework -> FrameworkRequirement ->
+ * PracticeRequirementLink -> Practice, and phase 3 deleted every hop, so
+ * nothing had written it since. Production carried 0 Evidence rows at the
+ * time of removal (re-measured, not assumed), so no row lost access.
+ *
+ * Both surviving columns are still actively written: assetId by
  * `linkAssetEvidence` + the upload metadata, taskId by `linkTaskEvidence`
- * + the farm-task upload form. `sourceLogEntryId` is now LEGACY-ONLY —
- * its writer, `attachAutoEvidenceFromLogEntry`, minted evidence by
- * walking Framework → FrameworkRequirement → PracticeRequirementLink →
- * Practice, and phase 3 deleted every hop of that chain. Rows that
- * already carry one keep their READER access and are still maintained
- * (`syncDerivedEvidenceTitle` / `setDerivedEvidenceWithdrawn` in
- * `auto-evidence.ts`); no NEW row gets one. Keeping the column in the
- * gate is therefore deliberate, not oversight — dropping it would
- * silently revoke reader access to farm evidence collected before the
- * teardown.
+ * + the farm-task upload form.
  *
  * Note the `evidence ? … : null` shape below. `!evidence?.practiceId` was
  * true when NO Evidence row existed at all, so a file with no evidence row
  * was denied to a reader; the explicit form preserves that rather than
  * letting an absent row read as "no provenance required".
- *
- * Pre-flight before applying this anywhere else (plan §8j): count
- * `practiceId IS NOT NULL AND assetId IS NULL AND taskId IS NULL AND
- * sourceLogEntryId IS NULL`. Those rows lose READER access. On `agrent` the
- * count was 0, but that is a fact about that database, not about the shape.
  */
 export async function downloadEvidenceFile(ctx: RequestContext, fileId: string) {
     assertCanRead(ctx);
@@ -799,7 +791,7 @@ export async function downloadEvidenceFile(ctx: RequestContext, fileId: string) 
         // extension never produces.
         const evidence = await db.evidence.findFirst(withDeleted({
             where: { tenantId: ctx.tenantId, fileRecordId: fileId },
-            select: { id: true, assetId: true, taskId: true, sourceLogEntryId: true, deletedAt: true },
+            select: { id: true, assetId: true, taskId: true, deletedAt: true },
         }));
 
         if (evidence?.deletedAt) {
@@ -808,10 +800,10 @@ export async function downloadEvidenceFile(ctx: RequestContext, fileId: string) 
 
         if (!ctx.permissions.canWrite) {
             const provenance = evidence
-                ? (evidence.assetId ?? evidence.taskId ?? evidence.sourceLogEntryId)
+                ? (evidence.assetId ?? evidence.taskId)
                 : null;
             if (!provenance) {
-                throw forbidden('You can only download evidence that is attached to an asset, a task, or a farm record. Contact an admin to attach this evidence.');
+                throw forbidden('You can only download evidence that is attached to an asset or a task. Contact an admin to attach this evidence.');
             }
         }
 

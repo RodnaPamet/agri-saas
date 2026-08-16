@@ -3,52 +3,65 @@
  *
  * ── WHY A GUARD AND NOT THE COMPILER ─────────────────────────────────
  *
- * Because the compiler does not check this. `PrismaTx` (src/lib/db-context.ts)
- * is `Omit<PrismaClient, '$connect' | '$disconnect' | …>`, and that `Omit`
- * DEGRADES the generated delegate typing. Every repository takes a `PrismaTx`,
- * so every `include` / `select` in the repository layer is unchecked.
+ * Because `tsc` only catches a bogus key when it is the ONLY key.
  *
- * Proven, not assumed: adding
+ * Measured, not assumed. Against a bare `PrismaClient` (not our alias):
  *
- *     zzzTotallyBogusRelation: { select: { id: true } }
+ *     include: { zzzOnly: true }                    -> ERROR, caught
+ *     include: { assignee: true, zzzSibling: true } -> NO ERROR
+ *     select:  { id: true, zzzSelect: true }        -> NO ERROR
  *
- * to an include in `WorkItemRepository.ts` and running `npx tsc --noEmit`
- * produces ZERO errors.
+ * **Any valid sibling key suppresses excess-property checking.** Prisma's
+ * generated args are a `Subset<T, …>` over a union; with one key TS resolves
+ * the exact member and flags the excess, and with two the union widens and
+ * the check stops firing. It applies to `select` as much as `include`, and
+ * every real query has more than one key — so effectively the whole
+ * repository layer is unchecked, always has been, and no type change on our
+ * side fixes it.
+ *
+ * AN EARLIER REVISION OF THIS FILE BLAMED `PrismaTx` — `Omit<PrismaClient,
+ * '$connect' | …>` — and instructed deleting this guard if that Omit were
+ * ever narrowed. **That was wrong**, and acting on it would have removed the
+ * only protection there is. Probed three ways: a locally-defined `Omit`,
+ * `Prisma.TransactionClient`, and bare `PrismaClient` all behave identically.
+ * The Omit is innocent. Do not delete this file expecting the compiler to
+ * take over.
  *
  * ── WHAT THAT COST ───────────────────────────────────────────────────
  *
  * GRC teardown phase 3 dropped 47 tables, 44 enums and 5 columns from live
  * agri tables. `tsc` was clean throughout, and the full 1,578-suite jest run
- * was green — because unit tests mock Prisma, so a query that throws against a
- * real database passes against a mock. Two live 500s shipped to a PR branch:
+ * was green — because unit tests mock Prisma, so a query that throws against
+ * a real database passes against a mock. Two live 500s shipped to a PR
+ * branch:
  *
  *   - `WorkItemRepository.getById` included `practice`. It is the FIRST
  *     statement in `getTask`, `setTaskStatus` AND `deleteTask`, so a farm
  *     operator could not open, complete or delete a task from any of three
  *     surfaces. Found only because one E2E spec happened to click into a task.
- *   - `AssetMaintenanceRepository.listForAsset` included `vendor`, killing the
- *     Maintenance tab for every asset in every tenant. Nothing found this —
- *     no E2E covers that tab.
+ *   - `AssetMaintenanceRepository.listForAsset` included `vendor`, killing
+ *     the Maintenance tab for every asset in every tenant. Nothing found this
+ *     — no E2E covers that tab.
  *
- * A schema deletion is therefore not a compile-time event in this codebase. It
- * is a runtime event, discoverable only by executing the query. This guard is
- * the substitute for the type-check that does not happen.
+ * A schema deletion is therefore not a compile-time event in this codebase.
+ * It is a runtime event, discoverable only by executing the query. This guard
+ * is the substitute for the type-check that does not happen, and it is
+ * PERMANENT — not scaffolding awaiting a proper fix.
  *
  * ── SCOPE, STATED HONESTLY ───────────────────────────────────────────
  *
- * It validates the TOP-LEVEL keys of `include: { … }` blocks that are lexically
- * attached to a `db.<model>.` / `prisma.<model>.` / `tx.<model>.` call. It does
- * NOT validate:
- *   - nested includes below the first level
- *   - `select` blocks (they mix scalars and relations; a separate, noisier job)
+ * It validates the TOP-LEVEL keys of `include: { … }` blocks lexically
+ * attached to a `db.<model>.` / `prisma.<model>.` / `tx.<model>.` call, and
+ * the relation-valued keys of top-level `select: { … }` blocks. It does NOT
+ * validate:
+ *   - nested includes/selects below the first level
+ *   - scalar keys in a `select` (they are checked against the model's own
+ *     field list, so a typo'd scalar IS caught — but a nested one is not)
  *   - `where` / `orderBy` / `data` keys
  *   - includes built as a variable and passed in by reference
+ *   - raw SQL (`$queryRaw` and friends name tables as strings)
  *
- * That is a real limit, and it is stated here rather than left for someone to
- * discover: a clean run of this guard means the first level is sound, not that
- * every query is. The right permanent fix is to stop erasing the delegate types
- * — if `PrismaTx` is ever narrowed so that `tsc` checks includes again, DELETE
- * this file rather than carrying both.
+ * A clean run means the first level is sound, not that every query is.
  */
 import { readFileSync, readdirSync, statSync } from 'fs';
 import { join } from 'path';
@@ -71,6 +84,24 @@ function relationsByDelegate(): Map<string, Set<string>> {
         // Prisma also permits `_count` in any include.
         rels.add('_count');
         out.set(m.name.charAt(0).toLowerCase() + m.name.slice(1), rels);
+    }
+    return out;
+}
+
+/**
+ * model delegate -> EVERY field name (scalar, enum and relation).
+ *
+ * `select` legitimately mixes all three, so it is checked against the whole
+ * field list rather than the relation subset. A typo'd scalar in a select is
+ * as invisible to `tsc` as a dropped relation in an include — same rule, same
+ * cause.
+ */
+function allFieldsByDelegate(): Map<string, Set<string>> {
+    const out = new Map<string, Set<string>>();
+    for (const m of parseSchemaModels()) {
+        const names = new Set(m.fields.map((f) => f.name));
+        names.add('_count');
+        out.set(m.name.charAt(0).toLowerCase() + m.name.slice(1), names);
     }
     return out;
 }
@@ -170,6 +201,7 @@ export interface BadInclude {
 export function findBadIncludes(
     files: ReadonlyArray<{ rel: string; text: string }>,
     relations: Map<string, Set<string>>,
+    keyword: 'include' | 'select' = 'include',
 ): BadInclude[] {
     const bad: BadInclude[] = [];
     // `db.task.findFirst({`, `prisma.evidence.findMany({`, `tx.asset.update({`
@@ -188,7 +220,7 @@ export function findBadIncludes(
             // sso.ts against `User` — `tenant` is a relation of
             // TenantMembership, not User. A false positive is worse than a
             // miss here: it is how a guard gets disabled.
-            const incBlock = topLevelObjectValue(argsBlock, 'include');
+            const incBlock = topLevelObjectValue(argsBlock, keyword);
             if (!incBlock) continue;
             for (const key of topLevelKeys(incBlock)) {
                 if (!known.has(key)) {
@@ -207,6 +239,7 @@ export function findBadIncludes(
 
 describe('Prisma includes name real relations', () => {
     const relations = relationsByDelegate();
+    const allFields = allFieldsByDelegate();
     const files = walk(SRC).map((full) => ({
         rel: full.replace(ROOT + '/', ''),
         text: readFileSync(full, 'utf8'),
@@ -223,6 +256,16 @@ describe('Prisma includes name real relations', () => {
         const bad = findBadIncludes(files, relations);
         expect({
             bad: bad.map((b) => `${b.file}:${b.line} ${b.delegate}.include.${b.key}`),
+        }).toEqual({ bad: [] });
+    });
+
+    it('no select names a field that does not exist', () => {
+        // `select` is unchecked by tsc for exactly the same reason as
+        // `include` — a valid sibling key suppresses the excess-property
+        // check — so a typo'd scalar or a dropped column is equally silent.
+        const bad = findBadIncludes(files, allFields, 'select');
+        expect({
+            bad: bad.map((b) => `${b.file}:${b.line} ${b.delegate}.select.${b.key}`),
         }).toEqual({ bad: [] });
     });
 
@@ -276,6 +319,28 @@ describe('Prisma includes name real relations', () => {
                 text: `prisma.user.findUnique({ where: { id }, select: { id: true, tenantMemberships: { include: { tenant: { select: { id: true } } } } } })`,
             }];
             expect(findBadIncludes(files, new Map([['user', new Set(['tenantMemberships', '_count'])]]))).toEqual([]);
+        });
+
+        it('flags a bogus key in a SELECT too', () => {
+            // Not vacuous: `select` is checked with the same detector, over
+            // the model's full field list rather than the relation subset.
+            const fields = new Map([['task', new Set(['id', 'title', 'assignee', '_count'])]]);
+            const files = [{
+                rel: 'src/app-layer/repositories/X.ts',
+                text: `db.task.findMany({ select: { id: true, title: true, zzzTypo: true } })`,
+            }];
+            const bad = findBadIncludes(files, fields, 'select');
+            expect(bad).toHaveLength(1);
+            expect(bad[0].key).toBe('zzzTypo');
+        });
+
+        it('accepts a select mixing scalars and relations', () => {
+            const fields = new Map([['task', new Set(['id', 'title', 'assignee', '_count'])]]);
+            const files = [{
+                rel: 'src/x.ts',
+                text: `db.task.findMany({ select: { id: true, assignee: { select: { id: true } } } })`,
+            }];
+            expect(findBadIncludes(files, fields, 'select')).toEqual([]);
         });
 
         it('ignores a delegate it cannot resolve to a model', () => {

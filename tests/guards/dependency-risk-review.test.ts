@@ -50,16 +50,35 @@ const pkg = JSON.parse(
 };
 
 /**
- * The reviewed runtime dependencies, with the major they must stay
- * on. Section is always `dependencies` — every entry here was proven
- * to be runtime-needed in docs/dependency-risk-review.md, so moving
- * any to devDependencies is a production-image regression.
+ * The reviewed RUNTIME dependencies, with the major they must stay on.
+ * Section is always `dependencies` — each was proven runtime-needed in
+ * docs/dependency-risk-review.md, so moving one to devDependencies is a
+ * production-image regression.
  */
 const REVIEWED: Record<string, { major: number }> = {
-    'js-yaml': { major: 5 },
     jszip: { major: 3 },
     pdfkit: { major: 0 },
     nodemailer: { major: 9 },
+};
+
+/**
+ * Reviewed packages that are DEV-ONLY, with the major they must stay on.
+ *
+ * `js-yaml` moved here when its last production call site went. It was
+ * runtime-needed while three modules parsed YAML on the server —
+ * `mapping-set-importer.ts` (gone in GRC teardown phase 2),
+ * `prisma/catalog-loader.ts` (phase 3) and
+ * `src/app-layer/libraries/library-loader.ts` (gone with the
+ * framework-library subsystem). Nothing in `src/` imports it now; the only
+ * consumers are `tests/guards/*` YAML lint.
+ *
+ * The direction is asserted BOTH ways: a dev-only reviewed package that
+ * reappears in `dependencies` is as much a regression as a runtime one
+ * that leaks out — it would put a package back into the production image
+ * without a review saying why.
+ */
+const REVIEWED_DEV_ONLY: Record<string, { major: number }> = {
+    'js-yaml': { major: 5 },
 };
 
 /** Major of a caret/tilde/plain semver range (`^8.0.7` → 8). */
@@ -82,6 +101,37 @@ describe('dependency risk review — reviewed packages stay classified', () => {
             const range = pkg.dependencies?.[name];
             expect(range).toBeDefined();
             expect(rangeMajor(range as string)).toBe(major);
+        });
+    }
+
+    for (const [name, { major }] of Object.entries(REVIEWED_DEV_ONLY)) {
+        it(`${name} stays dev-only`, () => {
+            expect(pkg.devDependencies?.[name]).toBeDefined();
+            expect(pkg.dependencies?.[name]).toBeUndefined();
+        });
+
+        it(`${name} stays on its reviewed major (${major})`, () => {
+            const range = pkg.devDependencies?.[name];
+            expect(range).toBeDefined();
+            expect(rangeMajor(range as string)).toBe(major);
+        });
+
+        it(`${name} has no production importer`, () => {
+            // The condition that justified the move. If a `src/` file starts
+            // importing it again, the classification has to be revisited —
+            // the production image no longer ships it.
+            const hits: string[] = [];
+            const walk = (dir: string) => {
+                for (const e of fs.readdirSync(dir)) {
+                    const full = path.join(dir, e);
+                    if (fs.statSync(full).isDirectory()) walk(full);
+                    else if (/\.tsx?$/.test(full) && fs.readFileSync(full, 'utf8').includes(`'${name}'`)) {
+                        hits.push(full.replace(ROOT + '/', ''));
+                    }
+                }
+            };
+            walk(path.join(ROOT, 'src'));
+            expect({ productionImporters: hits }).toEqual({ productionImporters: [] });
         });
     }
 
