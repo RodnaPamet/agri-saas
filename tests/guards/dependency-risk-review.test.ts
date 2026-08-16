@@ -120,12 +120,20 @@ describe('dependency risk review — reviewed packages stay classified', () => {
             // The condition that justified the move. If a `src/` file starts
             // importing it again, the classification has to be revisited —
             // the production image no longer ships it.
+            //
+            // `withFileTypes` rather than a `statSync` probe followed by a
+            // read: the entry type comes from the SAME directory read, so
+            // there is no check-then-use window. CodeQL flags the probe form
+            // as `js/file-system-race` (high), and it is right to — the file
+            // it stat'd need not be the file it then reads. Harmless in a
+            // test walking our own `src/`, but the race-free spelling is
+            // also the simpler one, so there is nothing to trade off.
             const hits: string[] = [];
             const walk = (dir: string) => {
-                for (const e of fs.readdirSync(dir)) {
-                    const full = path.join(dir, e);
-                    if (fs.statSync(full).isDirectory()) walk(full);
-                    else if (/\.tsx?$/.test(full) && fs.readFileSync(full, 'utf8').includes(`'${name}'`)) {
+                for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+                    const full = path.join(dir, e.name);
+                    if (e.isDirectory()) walk(full);
+                    else if (/\.tsx?$/.test(e.name) && fs.readFileSync(full, 'utf8').includes(`'${name}'`)) {
                         hits.push(full.replace(ROOT + '/', ''));
                     }
                 }
