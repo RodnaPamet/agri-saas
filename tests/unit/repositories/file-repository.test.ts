@@ -16,6 +16,8 @@
  * double.
  */
 import * as fs from 'fs';
+import { readFileSync } from 'fs';
+import { join } from 'path';
 import * as path from 'path';
 import { FileRepository } from '@/app-layer/repositories/FileRepository';
 import { makeRequestContext } from '../../helpers/make-context';
@@ -324,40 +326,38 @@ describe('FileRepository — AV scan lifecycle', () => {
     });
 });
 
-describe('FileRepository.findOwnedByTenant', () => {
-    it('NEVER derives ownership from Evidence.content', async () => {
-        // The vulnerability. `content` is caller-supplied free text, so a user
+describe('FileRepository — the name-addressed lookup stays deleted', () => {
+    it('exposes no method that resolves a FileRecord by caller-supplied name', () => {
+        // `findOwnedByTenant(db, ctx, fileName)` used to live here. It looked
+        // up `OR: [{ pathKey: fileName }, { originalName: fileName }]` — the
+        // only "address bytes by user-controlled display name" primitive in
+        // the repo — and its three callers were routes that have since been
+        // deleted as uncalled.
+        //
+        // Its own predecessor, `isFileOwnedByTenant`, was a genuine
+        // cross-tenant read: it returned true when `Evidence.content ===
+        // fileName`, and `content` is caller-supplied free text, so a user
         // could create an evidence row whose content was another tenant's
-        // storage key and have the old boolean gate return true for it. The
-        // Evidence table must not be consulted at all.
-        db.fileRecord.findFirst.mockResolvedValue(null);
-
-        expect(await FileRepository.findOwnedByTenant(asTx(db), ctx, 'report.pdf')).toBeNull();
-        expect(db.evidence.findFirst).not.toHaveBeenCalled();
+        // storage key and stream their bytes. `findOwnedByTenant` fixed that
+        // by resolving through a tenant-filtered FileRecord and returning the
+        // RECORD rather than a boolean.
+        //
+        // Removing the method outright is the stronger guarantee, and this
+        // assertion is what keeps it: every surviving lookup takes an id.
+        expect(
+            Object.getOwnPropertyNames(FileRepository).includes('findOwnedByTenant'),
+        ).toBe(false);
     });
 
-    it('resolves through a tenant-filtered FileRecord and returns the RECORD', async () => {
-        // Returning the record, not a boolean, is the point: the caller must
-        // read `pathKey` off it rather than reusing the string it passed in.
-        // A boolean invites "check one value, read another" — which is
-        // exactly how the byte-disclosure bug worked.
-        db.fileRecord.findFirst.mockResolvedValue({
-            id: 'f-1', pathKey: 'tenants/tenant-1/general/a.pdf',
-            originalName: 'report.pdf', mimeType: 'application/pdf',
-            status: 'STORED', scanStatus: 'CLEAN',
-        });
-
-        const rec = await FileRepository.findOwnedByTenant(asTx(db), ctx, 'report.pdf');
-
-        expect(rec?.pathKey).toBe('tenants/tenant-1/general/a.pdf');
-        expect(whereOf(db.fileRecord.findFirst)).toEqual({
-            tenantId: 'tenant-1',
-            OR: [{ pathKey: 'report.pdf' }, { originalName: 'report.pdf' }],
-        });
-    });
-
-    it('scopes to the CALLING tenant, not a fixed one', async () => {
-        await FileRepository.findOwnedByTenant(asTx(db), OTHER_TENANT, 'report.pdf');
-        expect(whereOf(db.fileRecord.findFirst)).toMatchObject({ tenantId: 'tenant-2' });
+    it('no repository method queries fileRecord by originalName', () => {
+        // The shape, not just the name — a re-add under a different name is
+        // the same defect. `originalName` is a display string; it must never
+        // be an addressing key.
+        const src = readFileSync(
+            join(__dirname, '..', '..', '..', 'src', 'app-layer', 'repositories', 'FileRepository.ts'),
+            'utf8',
+        );
+        expect(src).not.toMatch(/originalName:\s*fileName/);
+        expect(src).not.toMatch(/OR:\s*\[\s*\{\s*pathKey/);
     });
 });

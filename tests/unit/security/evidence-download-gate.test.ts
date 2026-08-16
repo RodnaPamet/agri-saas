@@ -63,6 +63,7 @@ jest.mock('@/lib/storage', () => ({
 }));
 
 import { downloadEvidenceFile } from '@/app-layer/usecases/evidence';
+import { withDeleted } from '@/lib/soft-delete';
 import type { RequestContext } from '@/app-layer/types';
 
 /** A reader: canRead true, canWrite FALSE — the role the gate exists for. */
@@ -187,12 +188,35 @@ describe('downloadEvidenceFile — provenance does not override the other guards
     });
 
     it('still refuses soft-deleted evidence that has provenance', async () => {
+        // This case was green for the wrong reason for a long time. The
+        // source query was NOT wrapped in `withDeleted(...)`, and Evidence
+        // is in SOFT_DELETE_TARGETS — so the extension injected
+        // `deletedAt: null` and a soft-deleted row came back as NULL. The
+        // `evidence?.deletedAt` branch was unreachable; this test only
+        // exercised it because the mock returns a shape the real client
+        // cannot produce.
+        //
+        // The source now uses `withDeleted(...)`, so the row really does
+        // arrive with `deletedAt` set. The assertion below is unchanged —
+        // what changed is that it now describes production.
         mockFindFirst.mockResolvedValue({
             ...NO_PROVENANCE,
             assetId: 'asset-9',
             deletedAt: new Date(),
         });
         await expect(downloadEvidenceFile(readerCtx(), 'file-1')).rejects.toThrow(/deleted/i);
+    });
+
+    it('asks the DB for soft-deleted rows too (the withDeleted escape hatch)', async () => {
+        // The behavioural half. Without this, re-removing `withDeleted`
+        // leaves the case above passing against its own mock forever.
+        // `withDeleted` marks the args so the extension skips its
+        // `deletedAt: null` injection; asserting the marker reaches Prisma
+        // is what ties the test to the mechanism.
+        mockFindFirst.mockResolvedValue({ ...NO_PROVENANCE, assetId: 'asset-9' });
+        await downloadEvidenceFile(writerCtx(), 'file-1');
+        const args = mockFindFirst.mock.calls.at(-1)?.[0] ?? {};
+        expect(args).toEqual(withDeleted(args));
     });
 
     it('still refuses a file that is not STORED', async () => {

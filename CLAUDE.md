@@ -1117,7 +1117,10 @@ stands for that PR only — not as a precedent.
       the same transaction as the entity write and passes the returned
       `scanStatus` to `FileRepository.markStored`. Writing before scanning is
       safe *here* because the download route asks `isDownloadAllowed` on the
-      way back out. Never restore a default on that `scanStatus` argument —
+      way back out — a claim that was false for four of five byte-serving
+      routes until `tests/guards/download-route-gate-reachability.test.ts`
+      was added as the EGRESS half of this convention (three ungated routes
+      deleted as uncalled, one gated). Never restore a default on that `scanStatus` argument —
       `isDownloadAllowed('SKIPPED')` is true in every `AV_SCAN_MODE`, so a
       default meaning "unscanned" also means "downloadable".
     - **Record-less** (a fixed key streamed straight back by an image route:

@@ -75,11 +75,30 @@ describe('AV Scan - Download Gate', () => {
             process.env.AV_SCAN_MODE = 'disabled';
         });
 
-        test('all statuses are downloadable when disabled', () => {
+        test('unscanned statuses are downloadable when disabled', () => {
             expect(isDownloadAllowed('CLEAN')).toBe(true);
-            expect(isDownloadAllowed('INFECTED')).toBe(true);
             expect(isDownloadAllowed('PENDING')).toBe(true);
             expect(isDownloadAllowed(null)).toBe(true);
+        });
+
+        test('INFECTED is STILL refused in disabled mode', () => {
+            // This assertion used to read `.toBe(true)`, sitting inside a
+            // case called "all statuses are downloadable when disabled". The
+            // bug was therefore not overlooked — it was ASSERTED, and the
+            // green test is what kept it: `if (mode === 'disabled') return
+            // true;` ran ahead of the INFECTED check, directly under a
+            // comment promising "NEVER downloadable regardless of mode".
+            //
+            // It mattered because `deploy/docker-compose.vm.yml` sets
+            // AV_SCAN_MODE: disabled on the live agrent stack. Latent rather
+            // than exploited — that stack runs no ClamAV and sets no
+            // CLAMAV_HOST, so nothing is ever marked INFECTED (all 5
+            // production FileRecords sit at PENDING) — but it would have
+            // surfaced on the first file a newly-deployed scanner flagged.
+            //
+            // `disabled` means "we are not scanning", not "serve known
+            // malware".
+            expect(isDownloadAllowed('INFECTED')).toBe(false);
         });
     });
 });

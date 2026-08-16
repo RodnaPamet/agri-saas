@@ -164,9 +164,15 @@ describe('LocalStorageProvider', () => {
     });
 
     describe('presigned URLs (local fallback)', () => {
-        it('createSignedDownloadUrl returns API path', async () => {
-            const url = await provider.createSignedDownloadUrl('tenants/t1/file.pdf');
-            expect(url).toContain('/api/files/');
+        it('createSignedDownloadUrl refuses rather than returning a dead link', async () => {
+            // It used to return `/api/files/<key>` — a route now deleted for
+            // serving bytes with no AV gate and no assertTenantKey. Both call
+            // sites of createSignedDownloadUrl are `s3`-gated, so this branch
+            // was already unreachable; the throw makes that explicit instead
+            // of handing back a URL that 404s at the far end.
+            await expect(
+                provider.createSignedDownloadUrl('tenants/t1/file.pdf'),
+            ).rejects.toThrow(/does not issue signed URLs/);
         });
 
         it('createSignedUploadUrl returns API path', async () => {

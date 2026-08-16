@@ -52,6 +52,18 @@
  * That is what makes "write, then scan, then record the verdict" safe —
  * the verdict is consulted on the way back out.
  *
+ * That sentence is the soundness argument for this entire design, and it
+ * was FALSE for four of the five byte-serving routes until the download
+ * gate was closed. Three of them (`/api/t/:slug/files/:name/download`,
+ * `/api/t/:slug/files/:name`, `/api/files/:name`) gated on `assertCanRead`
+ * alone and were deleted — they had no callers. The fourth
+ * (`access-reviews/:id/evidence`) selected neither `status` nor
+ * `scanStatus`, so it could not have consulted a verdict it never fetched;
+ * it now does. An ungated download route does not merely leak one file: it
+ * retroactively removes the reason uploads are allowed to reach disk
+ * unscanned. `tests/guards/download-route-gate-reachability.test.ts` is the
+ * egress half of this convention and exists so the claim above stays true.
+ *
  * Some surfaces store bytes with **no `FileRecord` at all**: a fixed key,
  * one object per subject, streamed straight back by an `<img>` route that
  * has no status to consult (`avatars/<userId>.webp`,

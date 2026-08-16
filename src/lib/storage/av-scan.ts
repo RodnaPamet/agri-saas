@@ -219,11 +219,30 @@ export async function scanStream(stream: Readable, maxBytes = 100 * 1024 * 1024)
 export function isDownloadAllowed(scanStatus: ScanStatus | string | null): boolean {
     const mode = env.AV_SCAN_MODE;
 
-    // Disabled mode: always allow
-    if (mode === 'disabled') return true;
-
-    // Infected files are NEVER downloadable regardless of mode
+    // INFECTED is refused FIRST, ahead of the mode check, because the
+    // comment below it used to be false.
+    //
+    // The two rules were the other way round: `if (mode === 'disabled')
+    // return true;` came first, so in disabled mode this returned true
+    // for INFECTED — while the line immediately under it asserted
+    // "regardless of mode". `deploy/docker-compose.vm.yml` sets
+    // AV_SCAN_MODE: disabled on the live agrent stack, so the invariant
+    // this function documents was not the one it implemented in
+    // production.
+    //
+    // It was latent rather than exploited: agrent runs no ClamAV service
+    // and sets no CLAMAV_HOST, so nothing scans and nothing is ever
+    // marked INFECTED — all 5 production FileRecords sit at PENDING.
+    // That is exactly what made it dangerous. The bug was invisible
+    // until the moment someone deployed a scanner, at which point the
+    // first file it flagged would still have been served.
+    //
+    // `disabled` means "we are not scanning", not "serve anything we
+    // already know is malware".
     if (scanStatus === 'INFECTED') return false;
+
+    // Disabled mode: allow everything else through unscanned.
+    if (mode === 'disabled') return true;
 
     // Clean and skipped files are always allowed
     if (scanStatus === 'CLEAN' || scanStatus === 'SKIPPED') return true;

@@ -72,12 +72,23 @@ describe('scanOrRefuse — which verdicts may be stored', () => {
         await expect(scanOrRefuse(BYTES, OPTS)).rejects.toThrow(/malware/i);
     });
 
-    it('refuses INFECTED even with scanning disabled', async () => {
-        // `isDownloadAllowed` returns true for everything in `disabled` mode
-        // — its mode short-circuit precedes its own infected rule. A verdict
-        // that positively identified malware must not be undone by a flag.
+    it('refuses INFECTED even with scanning disabled — and so does the gate now', async () => {
+        // HISTORY, because this case is the reason the bug survived so long.
+        //
+        // It used to assert `isDownloadAllowed('INFECTED') === true` in
+        // disabled mode, with a comment stating the cause exactly: "its mode
+        // short-circuit precedes its own infected rule". So the defect was
+        // not unknown — it was diagnosed, compensated for HERE at the upload
+        // boundary, and then pinned by this assertion. The download side was
+        // left exposed, and `deploy/docker-compose.vm.yml` runs the live
+        // stack in exactly that mode.
+        //
+        // `isDownloadAllowed` now refuses INFECTED ahead of the mode check,
+        // so the two boundaries finally agree: a verdict that positively
+        // identified malware is not undone by a flag on the way IN or on the
+        // way OUT.
         mockEnv.AV_SCAN_MODE = 'disabled';
-        expect(isDownloadAllowed('INFECTED')).toBe(true); // the gate, executed
+        expect(isDownloadAllowed('INFECTED')).toBe(false); // the gate, executed
         mockScanVerdict.mockResolvedValue('INFECTED');
         await expect(scanOrRefuse(BYTES, OPTS)).rejects.toThrow(/malware/i);
     });
@@ -94,7 +105,11 @@ describe('scanOrRefuse — which verdicts may be stored', () => {
         // record-less path stores; for every verdict it blocks, the
         // record-less path refuses. Written as a loop over the gate's own
         // answers so a change to `isDownloadAllowed` reaches this file.
-        for (const verdict of ['CLEAN', 'SKIPPED', 'PENDING'] as const) {
+        // INFECTED is included now. It was excluded from this loop because
+        // the gate disagreed with the upload path on it in disabled mode,
+        // which would have made the loop fail; with the ordering fixed the
+        // premise holds for every verdict, so the loop covers them all.
+        for (const verdict of ['CLEAN', 'SKIPPED', 'PENDING', 'INFECTED'] as const) {
             mockScanVerdict.mockResolvedValue(verdict);
             const allowed = isDownloadAllowed(verdict);
             if (allowed) {

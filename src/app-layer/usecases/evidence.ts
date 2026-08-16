@@ -706,6 +706,27 @@ export async function getEvidenceFileRecord(ctx: RequestContext, fileId: string)
 }
 
 /**
+ * ── Why `assertTenantKey` is here (inherited from the deleted `file.ts`) ──
+ *
+ * **Resolve, then read what you resolved.** The caller's string is used ONLY
+ * to look up a tenant-owned FileRecord; every subsequent operation uses
+ * `fileRecord.pathKey`. A previous download path checked one value and read
+ * another: it asked `isFileOwnedByTenant(fileName)` — which returned true if
+ * ANY evidence row in the tenant had `content === fileName`, and `content` is
+ * caller-supplied free text — then passed the raw `fileName` to
+ * `storage.readStream` with no `assertTenantKey` on the local branch.
+ *
+ * So the attack was: create an evidence record whose content is another
+ * tenant's storage key, then request that key. The ownership check passed on
+ * your own row and the bytes streamed from theirs. Production runs the local
+ * provider on one shared volume, so "another tenant's key" is a real path.
+ *
+ * That text lived in `src/app-layer/usecases/file.ts`, which is now deleted
+ * along with the three uncalled routes that reached it. It is reproduced here
+ * because it is the only record of WHY the `assertTenantKey` below is not
+ * redundant belt-and-braces, and an unexplained guard is a guard someone
+ * deletes.
+ *
  * STRICT DOWNLOAD POLICY (Option A):
  * - ADMIN/EDITOR (canWrite): can download any tenant file evidence.
  * - READER/AUDITOR: can download ONLY evidence with a PROVENANCE — a row
@@ -765,10 +786,21 @@ export async function downloadEvidenceFile(ctx: RequestContext, fileId: string) 
         }
 
         // ─── Strict Policy: provenance-aware access ───
-        const evidence = await db.evidence.findFirst({
+        // `withDeleted` is load-bearing, not decoration. Evidence is in
+        // SOFT_DELETE_TARGETS, so without it the soft-delete extension
+        // injects `deletedAt: null` and a soft-deleted row comes back as
+        // NULL — which made the `evidence?.deletedAt` check below
+        // UNREACHABLE. A READER was still denied (null row ⇒ no
+        // provenance), but a caller with canWrite skips the provenance
+        // gate entirely and downloaded soft-deleted evidence.
+        //
+        // The unit test for that branch passed throughout, because its
+        // mock returned a row with `deletedAt` set — a shape the real
+        // extension never produces.
+        const evidence = await db.evidence.findFirst(withDeleted({
             where: { tenantId: ctx.tenantId, fileRecordId: fileId },
             select: { id: true, assetId: true, taskId: true, sourceLogEntryId: true, deletedAt: true },
-        });
+        }));
 
         if (evidence?.deletedAt) {
             throw notFound('Evidence has been deleted');

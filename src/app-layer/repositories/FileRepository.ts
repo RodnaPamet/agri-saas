@@ -182,41 +182,4 @@ export class FileRepository {
             where: { pathKey, tenantId },
         });
     }
-
-    /**
-     * Resolve a caller-supplied name to a FileRecord THIS TENANT owns, or null.
-     *
-     * Replaces `isFileOwnedByTenant`, which was a cross-tenant read primitive:
-     * it returned true when `Evidence.content === fileName`, and `content` is
-     * caller-supplied free text (evidence.ts sets it from `data.content` and
-     * only overwrites it for type==='FILE' WITH a file). So a user could
-     * create an evidence record whose content was another tenant's storage
-     * key, pass the ownership check, and have `downloadFile` stream the bytes
-     * — the local branch read the raw name with no `assertTenantKey` at all.
-     *
-     * Ownership is now derived from ONE place, the tenant-filtered FileRecord,
-     * and the RECORD is returned rather than a boolean. That matters: the
-     * caller must read `fileRecord.pathKey`, never the string the caller
-     * supplied. A boolean invites exactly the pattern that caused this bug —
-     * check one value, then use another.
-     */
-    static async findOwnedByTenant(
-        db: PrismaTx,
-        ctx: RequestContext,
-        fileName: string,
-    ): Promise<{ id: string; pathKey: string; originalName: string; mimeType: string; status: string; scanStatus: string | null } | null> {
-        return db.fileRecord.findFirst({
-            where: {
-                tenantId: ctx.tenantId,
-                // originalName is kept for the legacy flow, which addressed
-                // files by display name. It is still tenant-scoped, and the
-                // pathKey it resolves to is asserted by the caller.
-                OR: [{ pathKey: fileName }, { originalName: fileName }],
-            },
-            select: {
-                id: true, pathKey: true, originalName: true,
-                mimeType: true, status: true, scanStatus: true,
-            },
-        });
-    }
 }
