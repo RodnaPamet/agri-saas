@@ -21,7 +21,6 @@ import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { UserCombobox } from '@/components/ui/user-combobox';
-import { EntityPicker } from '@/components/ui/entity-picker';
 import { DatePicker } from '@/components/ui/date-picker/date-picker';
 import {
     parseYMD,
@@ -39,7 +38,6 @@ export interface EditEvidenceModalProps {
         title: string;
         description: string | null;
         ownerUserId: string | null;
-        practiceId: string | null;
         /** B8 follow-up — current folder label (null = unfoldered). */
         folder?: string | null;
         /** Retention date (ISO) — edited here now (was inline in the table). */
@@ -60,7 +58,6 @@ export function EditEvidenceModal({
     const [title, setTitle] = useState('');
     const [description, setDescription] = useState('');
     const [ownerUserId, setOwnerUserId] = useState<string | null>(null);
-    const [practiceId, setPracticeId] = useState('');
     // B8 follow-up — folder is editable post-create.
     const [folder, setFolder] = useState('');
     // Retention date — moved here from the inline table column. Held as a
@@ -80,7 +77,6 @@ export function EditEvidenceModal({
             setTitle(initial.title);
             setDescription(initial.description ?? '');
             setOwnerUserId(initial.ownerUserId);
-            setPracticeId(initial.practiceId ?? '');
             setFolder(initial.folder ?? '');
             const ymd = initial.retentionUntil ? initial.retentionUntil.split('T')[0] : '';
             setRetentionDate(ymd);
@@ -110,11 +106,12 @@ export function EditEvidenceModal({
                     // "description" is the UI label. Sending the label name
                     // meant UpdateEvidenceSchema's `.strip()` dropped the
                     // field and the save reported success having changed
-                    // nothing — the same for `practiceId`, which had no field
-                    // in the schema at all.
+                    // nothing. `practiceId` had the same defect and was fixed
+                    // the same way; GRC teardown phase 3 then removed the
+                    // Practice model outright, so the field, its picker and
+                    // its schema entry are all gone.
                     content: description || undefined,
                     ownerUserId: ownerUserId || null,
-                    practiceId: practiceId || null,
                     // B8 follow-up — empty string clears the folder
                     // (the usecase null-coerces); a non-empty value
                     // sets it. `undefined` would skip the update.
@@ -241,20 +238,6 @@ export function EditEvidenceModal({
                                         markDirty();
                                     }}
                                     placeholder={t('edit.ownerPlaceholder')}
-                                />
-                            </FormField>
-                            <FormField label={t('edit.fieldPractice')}>
-                                <EntityPicker
-                                    id="edit-evidence-practice-input"
-                                    tenantSlug={tenantSlug}
-                                    entityType="PRACTICE"
-                                    value={practiceId}
-                                    onChange={(id) => {
-                                        setPracticeId(id);
-                                        markDirty();
-                                    }}
-                                    placeholder={t('edit.practicePlaceholder')}
-                                    testId="edit-evidence-practice-picker"
                                 />
                             </FormField>
                         </div>

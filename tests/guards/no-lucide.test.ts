@@ -125,7 +125,6 @@ const LEGACY_LUCIDE_USERS = new Set<string>([
     'src/components/theme/ThemeToggle.tsx',
     'src/components/ui/accordion.tsx',
     'src/components/ui/ActionCluster.tsx',
-    'src/components/ui/ApprovalBanner.tsx',
     'src/components/ui/combobox/index.tsx',
     'src/components/ui/copy-button.tsx',
     'src/components/ui/copy-text.tsx',

@@ -2,7 +2,6 @@
 /**
  * Unit tests for `src/app-layer/usecases/evidence-maintenance.ts` — the
  * three background-job usecases that keep the evidence corpus honest:
- *   - `reconcileUnlinkedEvidence` flags FILE evidence still unattached
  *     after a TTL (compliance-required follow-up)
  *   - `cleanupFailedOrPendingUploads` retires stuck uploads + their
  *     temp-storage payloads
@@ -62,7 +61,6 @@ jest.mock('@/lib/storage', () => ({
 }));
 
 import {
-    reconcileUnlinkedEvidence,
     cleanupFailedOrPendingUploads,
     detectBrokenEvidence,
 } from '@/app-layer/usecases/evidence-maintenance';
@@ -80,72 +78,7 @@ beforeEach(() => {
 });
 
 // ──────────────────────────────────────────────────────────────────────
-// reconcileUnlinkedEvidence
 // ──────────────────────────────────────────────────────────────────────
-describe('reconcileUnlinkedEvidence', () => {
-    it('returns flagged=0 + no audit emit when nothing is unlinked', async () => {
-        mockDb.evidence.findMany.mockResolvedValueOnce([]);
-
-        const result = await reconcileUnlinkedEvidence('tenant-1');
-
-        expect(result).toEqual({ flagged: 0, items: [] });
-        expect(appendAuditEntryCalls).toHaveLength(0);
-        expect(withTenantDbCalls).toEqual(['tenant-1']);
-    });
-
-    it('emits ONE EVIDENCE_UNLINKED_WARNING audit per unlinked row', async () => {
-        mockDb.evidence.findMany.mockResolvedValueOnce([
-            {
-                id: 'ev-1',
-                title: 'Q3 SOC2 screenshot',
-                fileName: 'soc2.png',
-                createdAt: new Date('2026-01-01T00:00:00Z'),
-            },
-            {
-                id: 'ev-2',
-                title: null,
-                fileName: 'pen-test.pdf',
-                createdAt: new Date('2026-01-02T00:00:00Z'),
-            },
-        ]);
-
-        const result = await reconcileUnlinkedEvidence('tenant-1');
-
-        expect(result.flagged).toBe(2);
-        expect(appendAuditEntryCalls).toHaveLength(2);
-        // Audit row is JOB-actor (no userId — these come from cron, not requests).
-        for (const call of appendAuditEntryCalls) {
-            expect(call.actorType).toBe('JOB');
-            expect(call.userId).toBeNull();
-            expect(call.action).toBe('EVIDENCE_UNLINKED_WARNING');
-            expect(call.tenantId).toBe('tenant-1');
-            expect(call.entity).toBe('Evidence');
-        }
-        expect(appendAuditEntryCalls[0].entityId).toBe('ev-1');
-        expect(appendAuditEntryCalls[1].entityId).toBe('ev-2');
-    });
-
-    it('passes the configured olderThanMinutes through to the cutoff query', async () => {
-        mockDb.evidence.findMany.mockResolvedValueOnce([]);
-        const before = Date.now();
-
-        await reconcileUnlinkedEvidence('tenant-1', 24 * 60); // 24h
-
-        const where = mockDb.evidence.findMany.mock.calls[0][0].where;
-        // cutoff is `now - minutes * 60_000`. Allow a tiny clock-skew
-        // window for the test's own runtime.
-        const cutoff = where.createdAt.lt as Date;
-        const expectedAbout = before - 24 * 60 * 60_000;
-        expect(cutoff.getTime()).toBeGreaterThanOrEqual(expectedAbout - 2000);
-        expect(cutoff.getTime()).toBeLessThanOrEqual(expectedAbout + 2000);
-        // The query only ever matches unlinked FILE evidence — these
-        // four guards are the load-bearing filters and must not drift.
-        expect(where.tenantId).toBe('tenant-1');
-        expect(where.type).toBe('FILE');
-        expect(where.practiceId).toBeNull();
-        expect(where.deletedAt).toBeNull();
-    });
-});
 
 // ──────────────────────────────────────────────────────────────────────
 // cleanupFailedOrPendingUploads

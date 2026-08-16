@@ -27,8 +27,12 @@ const ROOT = path.resolve(__dirname, "../..");
 const read = (p: string) => readFileSync(path.join(ROOT, p), "utf-8");
 
 describe("PR-D polish — live entity status sync", () => {
+    // `use-tenant-practices.ts` was the second entry. GRC teardown phase 3
+    // deleted it: it fetched `GET /api/t/:slug/practices`, a route removed
+    // with the Practice model, so its cache never populated and its 30s
+    // poll re-404'd forever. Assets is the only tenant-entity hook the
+    // canvas has left.
     const hookFiles = [
-        "src/lib/processes/use-tenant-practices.ts",
         "src/lib/processes/use-tenant-assets.ts",
     ];
 
@@ -89,16 +93,16 @@ describe("PR-D polish — live entity status sync", () => {
             );
         });
 
-        it("imports the three find* helpers", () => {
+        it("imports the find* helper", () => {
             const src = inspector();
-            expect(src).toMatch(/findTenantPractice/);
             expect(src).toMatch(/findTenantAsset/);
+            // And no longer the practices one — its module is deleted.
+            expect(src).not.toMatch(/findTenantPractice/);
         });
 
-        it("passes pollMs to all three hooks", () => {
+        it("passes pollMs to every surviving hook", () => {
             const src = inspector();
             for (const hook of [
-                "useTenantPractices",
                 "useTenantAssets",
             ]) {
                 expect(src).toMatch(

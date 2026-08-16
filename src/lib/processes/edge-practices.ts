@@ -17,7 +17,6 @@ import type { Edge } from "@xyflow/react";
 export interface EdgePracticeWire {
     practiceKey: string;
     label: string;
-    practiceId: string | null;
     dataJson: null;
 }
 
@@ -39,15 +38,12 @@ export function edgePracticesForSave(e: Edge): EdgePracticeWire[] {
             const row = r as {
                 practiceKey?: unknown;
                 label?: unknown;
-                practiceId?: unknown;
             };
             if (typeof row.practiceKey !== "string") return null;
             return {
                 practiceKey: row.practiceKey,
                 label:
                     typeof row.label === "string" ? row.label : row.practiceKey,
-                practiceId:
-                    typeof row.practiceId === "string" ? row.practiceId : null,
                 dataJson: null,
             } satisfies EdgePracticeWire;
         })

@@ -688,16 +688,6 @@ function EvidencePageInner({ initialEvidence, tenantSlug, permissions, translati
             },
         },
         {
-            id: 'practice',
-            header: t.practice,
-            meta: { mobileCard: { slot: 'meta', label: t.practice } },
-
-            accessorFn: (ev: any) => ev.practice ? `${ev.practice.code || ''} ${ev.practice.name}` : '\u2014',
-            cell: ({ getValue }: { getValue: () => string }) => (
-                <span className="text-xs text-content-muted">{getValue()}</span>
-            ),
-        },
-        {
             id: 'folder',
             header: tr('client.colFolder'),
             // B8 follow-up \u2014 the Folder column matches the

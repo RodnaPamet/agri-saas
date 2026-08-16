@@ -14,7 +14,6 @@ const Body = z.object({
     items: z
         .array(z.object({ driveId: z.string().min(1), itemId: z.string().min(1), name: z.string().optional() }))
         .min(1),
-    practiceId: z.string().optional(),
     category: z.string().optional(),
 });
 

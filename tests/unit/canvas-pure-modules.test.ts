@@ -276,12 +276,15 @@ describe('edgePracticesForSave', () => {
     });
 
     it('serialises a full row unchanged and always adds the dataJson slot', () => {
+        // A legacy edge may still carry `practiceId` in its saved `data`.
+        // It is dropped rather than carried forward: phase 3 removed the
+        // column, so there is nowhere to write it.
         const e = edge('e', 'a', 'b', {
             data: { practices: [{ practiceKey: 'C-1', label: 'Temp check', practiceId: 'ctl-1' }] },
         });
 
         expect(edgePracticesForSave(e)).toEqual([
-            { practiceKey: 'C-1', label: 'Temp check', practiceId: 'ctl-1', dataJson: null },
+            { practiceKey: 'C-1', label: 'Temp check', dataJson: null },
         ]);
     });
 
@@ -293,16 +296,22 @@ describe('edgePracticesForSave', () => {
         expect(edgePracticesForSave(e).map((r) => r.label)).toEqual(['C-1', 'C-2']);
     });
 
-    it('normalises a non-string practiceId to null', () => {
+    it('carries no practiceId — the column is gone', () => {
+        // This asserted that a non-string `practiceId` normalised to null.
+        // GRC teardown phase 3 dropped `ProcessEdgePractice.practiceId`
+        // along with the Practice model, so the wire shape no longer has
+        // the field at all. A legacy edge may still carry one in its saved
+        // `data`; it is simply not carried forward.
         const e = edge('e', 'a', 'b', {
-            data: { practices: [{ practiceKey: 'C-1', practiceId: 0 }] },
+            data: { practices: [{ practiceKey: 'C-1', practiceId: 'stale-id' }] },
         });
 
-        expect(edgePracticesForSave(e)[0].practiceId).toBeNull();
+        expect(edgePracticesForSave(e)[0]).not.toHaveProperty('practiceId');
+        expect(edgePracticesForSave(e)[0].practiceKey).toBe('C-1');
     });
 
     it('drops rows with no usable practiceKey', () => {
-        // The key is the join back to the Practice row; without it the entry
+        // The key is the edge-stable identity of the card; without it the entry
         // is unrecoverable, so it must not reach the wire.
         const e = edge('e', 'a', 'b', {
             data: { practices: [{ label: 'orphan' }, { practiceKey: 7 }, { practiceKey: 'C-ok' }] },

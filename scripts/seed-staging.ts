@@ -2,7 +2,17 @@
  * Staging Seed — Deterministic, idempotent seed for staging environments.
  *
  * Runs the base seed (prisma/seed.ts) first, then adds staging-specific
- * demo data: tasks, evidence placeholders, an audit cycle, and more.
+ * demo data: tasks and evidence placeholders.
+ *
+ * GRC teardown phase 3: the audit-cycle and practice→requirement steps are
+ * gone with their models. This script is wired to `npm run seed:staging`
+ * and was calling five dropped delegates, so it died on its first
+ * statement — invisible to `npm run typecheck` because `scripts/` is
+ * excluded from tsconfig. It also carried three PRE-EXISTING field bugs
+ * that the same exclusion hid: `assigneeId` (the field is
+ * `assigneeUserId`) and `name` on Evidence (the field is `title`), plus
+ * `type`/`status` values that are not in `EvidenceType`/`EvidenceStatus`
+ * at all. All corrected here.
  *
  * Usage:
  *   npx tsx scripts/seed-staging.ts
@@ -67,7 +77,7 @@ async function seedStaging() {
                     priority: t.priority,
                     status: t.status,
                     createdByUserId: admin.id,
-                    assigneeId: admin.id,
+                    assigneeUserId: admin.id,
                 },
             });
         }
@@ -75,74 +85,34 @@ async function seedStaging() {
     console.log(`✅ ${demoTasks.length} demo tasks seeded`);
 
     // ── Step 4: Create evidence placeholders ──
+    // `title`, not `name`; and only values that exist in EvidenceType /
+    // EvidenceStatus. The previous rows used DOCUMENT / CERTIFICATE /
+    // SCREENSHOT and CURRENT — none of which are members of either enum.
     const demoEvidence = [
-        { name: 'Access Review Log Q1', type: 'DOCUMENT', status: 'CURRENT' },
-        { name: 'Penetration Test Report 2024', type: 'DOCUMENT', status: 'CURRENT' },
-        { name: 'Security Training Completion Cert', type: 'CERTIFICATE', status: 'CURRENT' },
-        { name: 'Firewall Configuration Snapshot', type: 'SCREENSHOT', status: 'DRAFT' },
+        { title: 'Spray record — north field', type: 'FILE', status: 'APPROVED' },
+        { title: 'Soil analysis 2026', type: 'FILE', status: 'APPROVED' },
+        { title: 'Seed certificate — winter wheat', type: 'FILE', status: 'SUBMITTED' },
+        { title: 'Supplier delivery note', type: 'LINK', status: 'DRAFT' },
     ];
     for (const e of demoEvidence) {
         const existing = await stagingPrisma.evidence.findFirst({
-            where: { tenantId: tenant.id, name: e.name },
+            where: { tenantId: tenant.id, title: e.title },
         });
         if (!existing) {
             await stagingPrisma.evidence.create({
-                data: { tenantId: tenant.id, name: e.name, type: e.type, status: e.status },
+                data: { tenantId: tenant.id, title: e.title, type: e.type, status: e.status },
             });
         }
     }
     console.log(`✅ ${demoEvidence.length} evidence placeholders seeded`);
 
-    // ── Step 5: Create an audit cycle ──
-    const auditCycleTitle = 'ISO 27001 Annual Audit 2024';
-    const existingCycle = await stagingPrisma.auditCycle.findFirst({
-        where: { tenantId: tenant.id, title: auditCycleTitle },
-    });
-    if (!existingCycle) {
-        await stagingPrisma.auditCycle.create({
-            data: {
-                tenantId: tenant.id,
-                title: auditCycleTitle,
-                scope: 'Full ISO 27001:2022 Annex A compliance audit',
-                status: 'OPEN',
-                createdByUserId: admin.id,
-            },
-        });
-        console.log('✅ Demo audit cycle created');
-    } else {
-        console.log('✅ Demo audit cycle already exists');
-    }
-
-    // ── Step 6: Link practices to ISO 27001 requirements ──
-    const practices = await stagingPrisma.practice.findMany({ where: { tenantId: tenant.id }, take: 4 });
-    const iso27001 = await stagingPrisma.framework.findUnique({ where: { key: 'ISO27001' } });
-    if (iso27001 && practices.length > 0) {
-        const requirements = await stagingPrisma.frameworkRequirement.findMany({
-            where: { frameworkId: iso27001.id }, take: 4, orderBy: { sortOrder: 'asc' },
-        });
-        for (let i = 0; i < Math.min(practices.length, requirements.length); i++) {
-            await stagingPrisma.practiceRequirementLink.upsert({
-                where: { practiceId_requirementId: { practiceId: practices[i].id, requirementId: requirements[i].id } },
-                // tenantId is REQUIRED on PracticeRequirementLink; omitting it
-                // made this a hard PrismaClientValidationError at runtime,
-                // invisible to tsc because scripts/ is excluded.
-                create: { tenantId: tenant.id, practiceId: practices[i].id, requirementId: requirements[i].id },
-                update: {},
-            });
-        }
-        console.log(`✅ ${Math.min(practices.length, requirements.length)} practice→requirement links seeded`);
-    }
-
     // ── Summary ──
     const counts = {
         tenants: await stagingPrisma.tenant.count(),
         users: await stagingPrisma.user.count(),
-        practices: await stagingPrisma.practice.count({ where: { tenantId: tenant.id } }),
-        risks: await stagingPrisma.risk.count({ where: { tenantId: tenant.id } }),
         tasks: await stagingPrisma.task.count({ where: { tenantId: tenant.id } }),
         evidence: await stagingPrisma.evidence.count({ where: { tenantId: tenant.id } }),
-        frameworks: await stagingPrisma.framework.count(),
-        auditCycles: await stagingPrisma.auditCycle.count({ where: { tenantId: tenant.id } }),
+        locations: await stagingPrisma.location.count({ where: { tenantId: tenant.id } }),
     };
 
     console.log('\n╔══════════════════════════════════════════╗');
@@ -150,12 +120,9 @@ async function seedStaging() {
     console.log('╠══════════════════════════════════════════╣');
     console.log(`║  Tenants:      ${String(counts.tenants).padStart(4)}                     ║`);
     console.log(`║  Users:        ${String(counts.users).padStart(4)}                     ║`);
-    console.log(`║  Practices:     ${String(counts.practices).padStart(4)}                     ║`);
-    console.log(`║  Risks:        ${String(counts.risks).padStart(4)}                     ║`);
     console.log(`║  Tasks:        ${String(counts.tasks).padStart(4)}                     ║`);
     console.log(`║  Evidence:     ${String(counts.evidence).padStart(4)}                     ║`);
-    console.log(`║  Frameworks:   ${String(counts.frameworks).padStart(4)}                     ║`);
-    console.log(`║  Audit Cycles: ${String(counts.auditCycles).padStart(4)}                     ║`);
+    console.log(`║  Locations:    ${String(counts.locations).padStart(4)}                     ║`);
     console.log('╠══════════════════════════════════════════╣');
     console.log(`║  Login: ${STAGING_ADMIN_EMAIL} / ${STAGING_ADMIN_PASSWORD}    ║`);
     console.log('╚══════════════════════════════════════════╝');

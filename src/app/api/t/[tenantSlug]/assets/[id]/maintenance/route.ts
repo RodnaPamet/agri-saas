@@ -27,7 +27,6 @@ const CreateMaintenanceSchema = z.object({
     meterAtService: z.coerce.number().min(0).nullable().optional(),
     description: z.string().max(5000).nullable().optional(),
     cost: z.coerce.number().min(0).nullable().optional(),
-    vendorId: z.string().min(1).nullable().optional(),
     nextDueAt: z.string().datetime().nullable().optional(),
     nextDueMeter: z.coerce.number().min(0).nullable().optional(),
 });

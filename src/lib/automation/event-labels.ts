@@ -49,8 +49,15 @@ export const EVENT_LABELS: Record<AutomationEventName, EventLabel> = {
         label: 'Evidence expiring',
         description: 'Evidence is approaching its retention/expiry date.',
         domain: 'Evidence',
+        // Fields MUST exist in the event's payload contract
+        // (`EvidenceExpiringData`), or a tenant can build a rule that can
+        // never fire: `evalCondition` returns false on an absent field for
+        // EVERY operator, `neq` included. This list offered `practiceId`,
+        // which the emitter never sends and the contract never had — the
+        // same shape as the TEST_PLAN_* catalogue failure in CLAUDE.md.
         filterFields: [
-            { field: 'practiceId', label: 'Linked practice', type: 'string' },
+            { field: 'title', label: 'Title', type: 'string' },
+            { field: 'retentionUntil', label: 'Retention until', type: 'string' },
         ],
     },
     [AUTOMATION_EVENTS.EVIDENCE_EXPIRED]: {
@@ -59,7 +66,8 @@ export const EVENT_LABELS: Record<AutomationEventName, EventLabel> = {
         description: 'Evidence has passed its expiry date.',
         domain: 'Evidence',
         filterFields: [
-            { field: 'practiceId', label: 'Linked practice', type: 'string' },
+            { field: 'title', label: 'Title', type: 'string' },
+            { field: 'expiredAt', label: 'Expired at', type: 'string' },
         ],
     },
     [AUTOMATION_EVENTS.ONBOARDING_STARTED]: {

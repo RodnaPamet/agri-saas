@@ -1118,12 +1118,6 @@ exports[`API contract — per-schema snapshots schema: EvidenceUpdateRequest 1`]
     "content": {
       "type": "string"
     },
-    "practiceId": {
-      "type": [
-        "string",
-        "null"
-      ]
-    },
     "category": {
       "type": [
         "string",

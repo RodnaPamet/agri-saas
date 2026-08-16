@@ -98,7 +98,11 @@ describe('Evidence Hardening — SHA-256 Dedup', () => {
 describe('Evidence Hardening — Maintenance Jobs', () => {
     test('evidence-maintenance module exports expected functions', () => {
         const mod = require('@/app-layer/usecases/evidence-maintenance');
-        expect(typeof mod.reconcileUnlinkedEvidence).toBe('function');
+        // `reconcileUnlinkedEvidence` was asserted here too. It swept on
+        // `Evidence.practiceId`, dropped by GRC teardown phase 3, and its
+        // purpose died with the Practice model. An existence check is the
+        // weakest possible assertion — it passed for as long as the symbol
+        // existed, regardless of whether the query it issued was valid.
         expect(typeof mod.cleanupFailedOrPendingUploads).toBe('function');
         expect(typeof mod.detectBrokenEvidence).toBe('function');
     });
