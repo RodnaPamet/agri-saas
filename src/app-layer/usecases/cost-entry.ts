@@ -1,4 +1,5 @@
 import { Prisma, type CostAllocationBasis, type CostCategory } from '@prisma/client';
+import { withDeleted } from '@/lib/soft-delete';
 import { RequestContext } from '../types';
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { assertCanRead, assertCanWrite } from '../policies/common';
@@ -166,10 +167,15 @@ export async function assertUsableInvoice(
     ctx: RequestContext,
     invoiceFileId: string,
 ): Promise<void> {
-    const file = await db.fileRecord.findFirst({
+    // `withDeleted` for the same reason as the evidence download gate:
+    // FileRecord is soft-deletable, so without it the extension injects
+    // `deletedAt: null`, the row returns NULL, and the caller gets the
+    // generic "not found" instead of the specific "has been deleted" —
+    // making the `file.deletedAt != null` branch below unreachable.
+    const file = await db.fileRecord.findFirst(withDeleted({
         where: { id: invoiceFileId, tenantId: ctx.tenantId },
         select: { id: true, status: true, deletedAt: true },
-    });
+    }));
     if (!file) throw badRequest('Invoice file not found or belongs to a different tenant');
     if (file.status !== 'STORED') {
         throw badRequest('Invoice file upload has not completed');

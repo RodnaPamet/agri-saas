@@ -13,10 +13,13 @@ import { NextRequest } from 'next/server';
 import { Readable } from 'node:stream';
 import { getTenantCtx } from '@/app-layer/context';
 import { runInTenantContext } from '@/lib/db-context';
-import { getStorageProvider } from '@/lib/storage';
+import { getProviderByName, assertTenantKey } from '@/lib/storage';
+import { isDownloadAllowed, getBlockedReason } from '@/lib/storage/av-scan';
 import { withApiErrorHandling } from '@/lib/errors/api';
-import { notFound } from '@/lib/errors/types';
+import { notFound, forbidden } from '@/lib/errors/types';
 import { assertCanRead } from '@/app-layer/policies/common';
+import { withDeleted } from '@/lib/soft-delete';
+import type { StorageProviderType } from '@/lib/storage/types';
 
 export const GET = withApiErrorHandling(
     async (
@@ -38,7 +41,13 @@ export const GET = withApiErrorHandling(
                     'No evidence artifact has been generated for this campaign yet.',
                 );
             }
-            const fr = await db.fileRecord.findFirst({
+            // `status`, `scanStatus`, `deletedAt` and `storageProvider` were
+            // all absent from this select, so the route could not have gated
+            // even if asked to — it had no status to consult. `withDeleted`
+            // for the same reason as the evidence download gate: FileRecord
+            // is soft-deletable, so without it a deleted row returns NULL and
+            // the caller gets a misleading "not found".
+            const fr = await db.fileRecord.findFirst(withDeleted({
                 where: {
                     id: review.evidenceFileRecordId,
                     tenantId: ctx.tenantId,
@@ -49,13 +58,37 @@ export const GET = withApiErrorHandling(
                     originalName: true,
                     mimeType: true,
                     sizeBytes: true,
+                    status: true,
+                    scanStatus: true,
+                    deletedAt: true,
+                    storageProvider: true,
                 },
-            });
+            }));
             if (!fr) throw notFound('Evidence file not found');
+            if (fr.deletedAt) throw notFound('Evidence file has been deleted');
+            if (fr.status !== 'STORED') {
+                throw notFound('Evidence file is not available for download');
+            }
+            // The AV gate. Derived from `isDownloadAllowed` rather than
+            // restated here — CLAUDE.md is explicit that a second copy of the
+            // policy beside the original is how the two drift.
+            if (!isDownloadAllowed(fr.scanStatus)) {
+                throw forbidden(getBlockedReason(fr.scanStatus));
+            }
             return fr;
         });
 
-        const storage = getStorageProvider();
+        // Assert the RESOLVED key belongs to the caller's tenant — never the
+        // string a caller supplied. See the note on `downloadEvidenceFile`
+        // for the cross-tenant read this prevents.
+        assertTenantKey(fileRecord.pathKey, ctx.tenantId);
+
+        // Read through the provider the RECORD names. `getStorageProvider()`
+        // returns the currently-configured default, which silently reads from
+        // the wrong backend for any object written before a provider switch.
+        const storage = getProviderByName(
+            fileRecord.storageProvider as StorageProviderType,
+        );
         const stream = storage.readStream(fileRecord.pathKey);
 
         // Convert Node Readable → Web ReadableStream for Next.js Response.

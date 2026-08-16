@@ -100,10 +100,22 @@ export class LocalStorageProvider implements StorageProvider {
         return createReadStream(absPath);
     }
 
-    async createSignedDownloadUrl(pathKey: string, _opts?: DownloadUrlOptions): Promise<string> {
-        // Local provider: return a file-serve API path
-        // The actual serving is handled by an API route (e.g., /api/files/[pathKey])
-        return `/api/files/${encodeURIComponent(pathKey)}`;
+    async createSignedDownloadUrl(_pathKey: string, _opts?: DownloadUrlOptions): Promise<string> {
+        // This used to return `/api/files/<key>` — a route that has been
+        // deleted. It served bytes with no AV gate, no assertTenantKey and a
+        // caller-supplied name as the lookup key, and it had no reachable
+        // producer: BOTH call sites of createSignedDownloadUrl sit inside
+        // `if (provider.name === 's3')`, so the local branch was already dead.
+        //
+        // Throwing is deliberate rather than returning a dead link. The local
+        // provider streams through the download seam; it does not issue signed
+        // URLs, and a caller that reaches here has taken a path that no longer
+        // exists. `StorageProvider` therefore has one implementation that
+        // always throws — honest and unreachable, which is better than a URL
+        // that 404s at the far end.
+        throw new Error(
+            'LocalStorageProvider does not issue signed URLs — stream the bytes through the download usecase instead.',
+        );
     }
 
     async createSignedUploadUrl(pathKey: string, _opts?: UploadUrlOptions): Promise<SignedUploadTarget> {
