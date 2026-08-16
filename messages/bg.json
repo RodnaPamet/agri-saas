@@ -43,10 +43,10 @@
         "platformCompanies": "Управление на доставчици"
     },
     "common": {
-            "filterGroups": {
-                "attributes": "Характеристики",
-                "quantitative": "Количествени"
-            },
+        "filterGroups": {
+            "attributes": "Характеристики",
+            "quantitative": "Количествени"
+        },
         "appName": "Agrent",
         "loading": "Зареждане...",
         "save": "Запази",
@@ -2060,7 +2060,6 @@
             "linkedPractice": "Свързана практика",
             "linkedRisk": "Свързан риск",
             "linkedAsset": "Свързан актив",
-            "noPractices": "Все още няма практики",
             "noRisks": "Все още няма рискове",
             "noAssets": "Все още няма активи",
             "statusTitle": "Текущ статус: {status}",
@@ -2069,9 +2068,8 @@
             "connection": "Връзка",
             "variant": "Вариант",
             "edgeVariant": "Вариант на връзката",
-            "loadingPractices": "Зареждане на практики…",
-            "pickPractice": "Изберете практика…",
-            "auditorsSeePractice": "Одиторите виждат избрания практика като щит-значка върху връзката."
+            "pickPractice": "Име на практиката…",
+            "auditorsSeePractice": "Одиторите виждат тази практика като щит-етикет върху връзката."
         },
         "ruleBuilder": {
             "editRule": "Редактиране на правило",

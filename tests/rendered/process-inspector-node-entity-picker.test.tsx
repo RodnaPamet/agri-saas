@@ -1,16 +1,17 @@
 /**
  * Epic P2-PR-B — ProcessInspector node-mode entity picker.
  *
- * Asserts the picker block mounts on the three compliance-entity
- * node kinds (practice / asset), and does NOT mount on the
- * other kinds (processStep / decision / external / annotation /
- * group). Three cases run against the three entity-kind responses
- * so a refactor that swaps a hook breaks loudly.
+ * Asserts the picker block mounts on `asset` nodes and NOT on any other
+ * kind. It also used to mount on `practice` nodes, fed by
+ * `GET /api/t/<slug>/practices` — a route GRC teardown phase 3 deleted
+ * with the model. The `practice` NODE kind survives (node-taxonomy marks
+ * it legacy, with edge-mounted practices as canonical), so an old map
+ * still renders it; what it no longer gets is a picker over rows that do
+ * not exist. That absence is asserted, not just un-tested.
  */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { render, screen, waitFor } from '@testing-library/react';
 import { ProcessInspector } from '@/components/processes/ProcessInspector';
-import { __resetTenantPracticesCacheForTests } from '@/lib/processes/use-tenant-practices';
 import { __resetTenantAssetsCacheForTests } from '@/lib/processes/use-tenant-assets';
 
 function makeNode(kind: string, extra: any = {}) {
@@ -26,7 +27,6 @@ describe('ProcessInspector — node-mode entity picker (P2-PR-B)', () => {
     const originalFetch = global.fetch;
 
     beforeEach(() => {
-        __resetTenantPracticesCacheForTests();
         __resetTenantAssetsCacheForTests();
         global.fetch = jest.fn(async (url: string | URL) => {
             const u = url.toString();
@@ -55,7 +55,7 @@ describe('ProcessInspector — node-mode entity picker (P2-PR-B)', () => {
         jest.clearAllMocks();
     });
 
-    it('mounts the picker on a practice node + fetches practices', async () => {
+    it('does NOT mount the picker on a practice node, and fetches nothing', async () => {
         render(
             <ProcessInspector
                 node={makeNode('practice') as any}
@@ -63,14 +63,11 @@ describe('ProcessInspector — node-mode entity picker (P2-PR-B)', () => {
                 onUpdate={jest.fn()}
             />,
         );
-        const picker = screen.getByTestId('inspector-node-entity-picker');
-        expect(picker).toBeInTheDocument();
-        expect(picker.getAttribute('data-entity-kind')).toBe('practice');
-        await waitFor(() => {
-            expect(global.fetch).toHaveBeenCalledWith(
-                '/api/t/acme/practices',
-            );
-        });
+        expect(screen.queryByTestId('inspector-node-entity-picker')).toBeNull();
+        // The hook call sat ABOVE the nodeKind guard, so it fired on every
+        // node selection — not only practice ones. Asserting no request at
+        // all is what pins that.
+        expect(global.fetch).not.toHaveBeenCalledWith('/api/t/acme/practices');
     });
 
 

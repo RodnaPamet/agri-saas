@@ -3,7 +3,7 @@
 /**
  * Epic P2-PR-B — `useTenantAssets(tenantSlug)`.
  *
- * Sibling of `useTenantPractices` (P2-PR-A) and `useTenantRisks`
+ * Sibling of the former `useTenantPractices` / `useTenantRisks` hooks,
  * (P2-PR-B) for the inspector's asset-node picker. Assets carry a
  * `key` (short code) + `name` so the label format is "<key> · <name>"
  * when key is present, otherwise bare name.
@@ -31,7 +31,8 @@ interface TenantAssetsState {
 interface UseTenantAssetsOptions {
     /**
      * PR-D polish — periodic revalidation cadence in milliseconds.
-     * See `use-tenant-practices` for the full contract.
+     * Both siblings are gone with their models; this is the only
+     * tenant-entity hook the process canvas still has.
      */
     pollMs?: number;
 }

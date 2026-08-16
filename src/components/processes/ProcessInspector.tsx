@@ -32,16 +32,12 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
+import { Input } from '@/components/ui/input';
 import { useTranslations } from "next-intl";
 import type { Edge, Node } from "@xyflow/react";
 import { ToggleGroup } from "@/components/ui/toggle-group";
 import { AsidePanel } from "@/components/ui/aside-panel";
 import { Combobox, type ComboboxOption } from "@/components/ui/combobox";
-import {
-    findTenantPractice,
-    formatPracticeLabel,
-    useTenantPractices,
-} from "@/lib/processes/use-tenant-practices";
 import {
     findTenantAsset,
     formatAssetLabel,
@@ -106,8 +102,6 @@ export interface EdgePracticeRef {
     practiceKey: string;
     /** Human label rendered on the in-canvas pill. */
     label: string;
-    /** Optional FK to a tenant Practice. Null = unbound label. */
-    practiceId: string | null;
 }
 
 export interface ProcessInspectorProps {
@@ -374,33 +368,33 @@ function NodeLinkedEntityPicker({
     // is shared module-scoped, so the 30s poll runs once per
     // tenant even with three concurrent hook mounts.
     const slug = tenantSlug ?? "";
-    const practices = useTenantPractices(slug, { pollMs: ENTITY_STATUS_POLL_MS });
     const assets = useTenantAssets(slug, { pollMs: ENTITY_STATUS_POLL_MS });
 
-    if (nodeKind !== "practice" && nodeKind !== "asset") {
+    // ASSET only. There was a `practice` branch here, fed by
+    // `useTenantPractices` → `GET /api/t/:slug/practices` — a route GRC
+    // teardown phase 3 deleted with the Practice model. The hook's cache
+    // only populates on success, so it re-fetched on every mount and its
+    // 30s poll re-404'd indefinitely, swallowed by an early return; and
+    // because the hook call sat ABOVE this guard it fired on ANY node
+    // selection, not just practice nodes.
+    //
+    // The node kind itself survives — node-taxonomy marks it "legacy
+    // maps", with edge-mounted practices as the canonical form — so an
+    // old map still renders its practice nodes. What it no longer offers
+    // is a picker over rows that do not exist.
+    if (nodeKind !== "asset") {
         return null;
     }
 
-    const active =
-        nodeKind === "practice"
-            ? {
-                  label: t("processInspector.linkedPractice"),
-                  options: practices.options.map((c) => ({
-                      value: c.id,
-                      label: formatPracticeLabel(c),
-                  })),
-                  loading: practices.loading,
-                  emptyHint: t("processInspector.noPractices"),
-              }
-            : {
-                    label: t("processInspector.linkedAsset"),
-                    options: assets.options.map((a) => ({
-                        value: a.id,
-                        label: formatAssetLabel(a),
-                    })),
-                    loading: assets.loading,
-                    emptyHint: t("processInspector.noAssets"),
-                };
+    const active = {
+        label: t("processInspector.linkedAsset"),
+        options: assets.options.map((a) => ({
+            value: a.id,
+            label: formatAssetLabel(a),
+        })),
+        loading: assets.loading,
+        emptyHint: t("processInspector.noAssets"),
+    };
 
     const selectedOption = selectedId
         ? active.options.find((o) => o.value === selectedId) ?? null
@@ -409,10 +403,7 @@ function NodeLinkedEntityPicker({
     // PR-D polish — live status chip for the currently-selected
     // entity. Reads from the same hook state the picker reads;
     // the 30s polling cadence above keeps the value live.
-    const liveStatus =
-        nodeKind === "practice"
-            ? findTenantPractice(practices, selectedId)?.status ?? null
-            : findTenantAsset(assets, selectedId)?.status ?? null;
+    const liveStatus = findTenantAsset(assets, selectedId)?.status ?? null;
 
     return (
         <div
@@ -490,40 +481,39 @@ function EdgeInspectorBody({
     // ({ options: [], loading: false }); the picker block below
     // also gates on `tenantSlug` so absence cleanly hides the
     // affordance.
-    const { options: tenantPractices, loading: practicesLoading } =
-        useTenantPractices(tenantSlug ?? "");
-
-    const practiceOptions = useMemo<ComboboxOption[]>(
-        () =>
-            tenantPractices.map((c) => ({
-                value: c.id,
-                label: formatPracticeLabel(c),
-            })),
-        [tenantPractices],
+    // A free-text label, not a picker.
+    //
+    // This was a Combobox over the tenant's Practice rows. GRC teardown
+    // phase 3 dropped both the Practice model and
+    // `ProcessEdgePractice.practiceId`, so there is no row to select and
+    // nowhere to store a selection — the dropdown could only ever have
+    // rendered empty, and the id it wrote was stripped by
+    // `ProcessEdgeInputSchema` before it reached Prisma.
+    //
+    // What survives is what the table now holds: `practiceKey` (a
+    // client-stable id) plus a human `label`. So the affordance becomes
+    // what the data actually supports — the user types the practice this
+    // edge is gated by.
+    const [practiceLabel, setPracticeLabel] = useState(
+        selectedPractice?.label ?? "",
     );
-    const selectedPracticeOption = useMemo<ComboboxOption | null>(() => {
-        if (!selectedPractice?.practiceId) return null;
-        return (
-            practiceOptions.find((o) => o.value === selectedPractice.practiceId) ??
-            null
-        );
-    }, [practiceOptions, selectedPractice]);
+    useEffect(() => {
+        setPracticeLabel(selectedPractice?.label ?? "");
+    }, [edge.id, selectedPractice?.label]);
 
-    const commitLinkedPractice = (option: ComboboxOption | null) => {
+    const commitLinkedPractice = () => {
         if (!onEdgeUpdate) return;
-        if (option === null) {
-            // Clear: drop every practice attached to this edge.
+        const trimmed = practiceLabel.trim();
+        if (trimmed === "") {
+            // Cleared: drop every practice attached to this edge.
             onEdgeUpdate(edge.id, { practices: [] });
             return;
         }
-        const ref = tenantPractices.find((c) => c.id === option.value);
-        if (!ref) return;
         const next: EdgePracticeRef = {
             practiceKey:
                 selectedPractice?.practiceKey ??
-                `ctrl-${edge.id}-${Date.now().toString(36)}`,
-            practiceId: ref.id,
-            label: formatPracticeLabel(ref),
+                `prac-${edge.id}-${Date.now().toString(36)}`,
+            label: trimmed,
         };
         onEdgeUpdate(edge.id, { practices: [next] });
     };
@@ -593,11 +583,9 @@ function EdgeInspectorBody({
                     {t(`processEdge.variantDescription.${variant}`)}
                 </span>
             </div>
-            {/* Epic P2-PR-A — Linked practice picker. Mounts a tenant-
-                wide Practices combobox so the user can attach a real
-                compliance practice to this edge. The selection writes
-                ProcessEdgePractice rows on the next save; the canvas
-                already round-trips the practices on load. */}
+            {/* Epic P2-PR-A — the practice this edge is gated by. A
+                free-text label since phase 3: ProcessEdgePractice keeps
+                `practiceKey` + `label` and no longer points at a row. */}
             <div
                 className="flex flex-col gap-tight"
                 data-testid="inspector-edge-practice-picker"
@@ -605,19 +593,12 @@ function EdgeInspectorBody({
                 <span className="text-[10px] uppercase tracking-wide text-content-muted">
                     {t("processInspector.linkedPractice")}
                 </span>
-                <Combobox
-                    selected={selectedPracticeOption}
-                    setSelected={commitLinkedPractice}
-                    options={practiceOptions}
-                    disabled={practicesLoading || tenantPractices.length === 0}
+                <Input
+                    value={practiceLabel}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPracticeLabel(e.target.value)}
+                    onBlur={commitLinkedPractice}
                     aria-label={t("processInspector.linkedPractice")}
-                    placeholder={
-                        practicesLoading
-                            ? t("processInspector.loadingPractices")
-                            : tenantPractices.length === 0
-                              ? t("processInspector.noPractices")
-                              : t("processInspector.pickPractice")
-                    }
+                    placeholder={t("processInspector.pickPractice")}
                 />
                 <span className="text-[10px] text-content-subtle">
                     {t("processInspector.auditorsSeePractice")}
@@ -640,20 +621,16 @@ function readEdgePractices(edge: Edge): EdgePracticeRef[] {
     if (!Array.isArray(raw)) return [];
     return raw
         .map((r) => {
-            const row = r as {
-                practiceKey?: unknown;
-                label?: unknown;
-                practiceId?: unknown;
-            };
+            // `practiceId` is read-tolerant by omission: a legacy edge in
+            // a saved map may still carry one, and dropping it here means
+            // it is simply not carried forward. There is no column left to
+            // write it to.
+            const row = r as { practiceKey?: unknown; label?: unknown };
             if (typeof row.practiceKey !== "string") return null;
             return {
                 practiceKey: row.practiceKey,
                 label:
                     typeof row.label === "string" ? row.label : row.practiceKey,
-                practiceId:
-                    typeof row.practiceId === "string"
-                        ? row.practiceId
-                        : null,
             } satisfies EdgePracticeRef;
         })
         .filter((r): r is EdgePracticeRef => r !== null);

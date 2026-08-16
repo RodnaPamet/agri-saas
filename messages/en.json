@@ -43,10 +43,10 @@
         "platformCompanies": "Manage suppliers"
     },
     "common": {
-            "filterGroups": {
-                "attributes": "Attributes",
-                "quantitative": "Quantitative"
-            },
+        "filterGroups": {
+            "attributes": "Attributes",
+            "quantitative": "Quantitative"
+        },
         "appName": "Agrent",
         "loading": "Loading...",
         "save": "Save",
@@ -2060,7 +2060,6 @@
             "linkedPractice": "Linked practice",
             "linkedRisk": "Linked risk",
             "linkedAsset": "Linked asset",
-            "noPractices": "No practices yet",
             "noRisks": "No risks yet",
             "noAssets": "No assets yet",
             "statusTitle": "Current status: {status}",
@@ -2069,9 +2068,8 @@
             "connection": "Connection",
             "variant": "Variant",
             "edgeVariant": "Edge variant",
-            "loadingPractices": "Loading practices…",
-            "pickPractice": "Pick a practice…",
-            "auditorsSeePractice": "Auditors see the chosen practice as a shield pill on the connection."
+            "pickPractice": "Name the practice…",
+            "auditorsSeePractice": "Auditors see this practice as a shield pill on the connection."
         },
         "ruleBuilder": {
             "editRule": "Edit rule",

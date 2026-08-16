@@ -474,7 +474,7 @@ function Inner({
                         edgeKind: string;
                         labelOverride: string | null;
                         // Epic P2-PR-A — practices round-trip on the edge.
-                        practices?: Array<{ practiceKey: string; label: string; practiceId: string | null; dataJson: unknown }>;
+                        practices?: Array<{ practiceKey: string; label: string; dataJson: unknown }>;
                     }>;
                 };
                 if (cancelled) return;
@@ -549,7 +549,7 @@ function Inner({
                     data: {
                         variant: isProcessEdgeVariant(e.edgeKind) ? e.edgeKind : "flow",
                         ...(Array.isArray(e.practices) && e.practices.length > 0
-                            ? { practices: e.practices.map((c) => ({ practiceKey: c.practiceKey, label: c.label, practiceId: c.practiceId })) }
+                            ? { practices: e.practices.map((c) => ({ practiceKey: c.practiceKey, label: c.label })) }
                             : {}),
                     },
                     ...(e.labelOverride ? { label: e.labelOverride } : {}),
@@ -1128,7 +1128,7 @@ function Inner({
                 label?: string | null;
                 variant?: ProcessEdgeVariant;
                 // Epic P2-PR-A — Linked-practice picker patch.
-                practices?: Array<{ practiceKey: string; label: string; practiceId: string | null }>;
+                practices?: Array<{ practiceKey: string; label: string }>;
             },
         ) => {
             history.push({ nodes, edges });

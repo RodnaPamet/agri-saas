@@ -134,11 +134,6 @@ export const UpdateEvidenceSchema = z.object({
     // The wire name matches the column; the user-facing label is a translation
     // string and can say whatever reads best.
     content: z.string().optional(),
-    // Re-assigning evidence to a different practice. The modal has always had
-    // the picker and always sent the value; without a field here `.strip()`
-    // dropped it, so the picker moved and nothing changed. Nullable: clearing
-    // it detaches the evidence.
-    practiceId: z.string().optional().nullable(),
     category: z.string().optional().nullable(),
     // B8 follow-up — folder is editable post-create so a tenant
     // can re-organise their evidence library after the fact.

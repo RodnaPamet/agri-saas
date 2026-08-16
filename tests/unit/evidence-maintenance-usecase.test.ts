@@ -10,7 +10,6 @@
  * the audit-writer entry point.
  *
  * Covers:
- *   - reconcileUnlinkedEvidence — cutoff parameter, deletedAt
  *     exclusion, EVIDENCE_UNLINKED_WARNING audit emission, return
  *     shape with flagged count + items.
  *   - cleanupFailedOrPendingUploads — pending+failed cutoff,
@@ -41,7 +40,6 @@ jest.mock('@/lib/audit/audit-writer', () => ({
 }));
 
 import {
-    reconcileUnlinkedEvidence,
     cleanupFailedOrPendingUploads,
     detectBrokenEvidence,
 } from '@/app-layer/usecases/evidence-maintenance';
@@ -50,60 +48,7 @@ beforeEach(() => {
     jest.clearAllMocks();
 });
 
-// ─── reconcileUnlinkedEvidence ─────────────────────────────────────
 
-describe('reconcileUnlinkedEvidence', () => {
-    it('queries for FILE evidence with no practiceId older than the cutoff', async () => {
-        (mockDb.evidence.findMany as jest.Mock).mockResolvedValue([]);
-        const before = Date.now();
-        await reconcileUnlinkedEvidence('tenant-1', 60);
-        const args = (mockDb.evidence.findMany as jest.Mock).mock.calls[0][0];
-        expect(args.where).toMatchObject({
-            tenantId: 'tenant-1',
-            type: 'FILE',
-            practiceId: null,
-            deletedAt: null,
-        });
-        const cutoff = args.where.createdAt.lt as Date;
-        const delta = before - cutoff.getTime();
-        expect(delta).toBeGreaterThan(60 * 60_000 - 5_000);
-        expect(delta).toBeLessThan(60 * 60_000 + 5_000);
-    });
-
-    it('emits EVIDENCE_UNLINKED_WARNING audit per unlinked row', async () => {
-        (mockDb.evidence.findMany as jest.Mock).mockResolvedValue([
-            { id: 'ev-1', title: 'A', fileName: 'a.pdf', createdAt: new Date() },
-            { id: 'ev-2', title: 'B', fileName: 'b.pdf', createdAt: new Date() },
-        ]);
-
-        const res = await reconcileUnlinkedEvidence('tenant-1');
-
-        expect(res.flagged).toBe(2);
-        expect(res.items).toHaveLength(2);
-        expect(mockAppendAuditEntry).toHaveBeenCalledTimes(2);
-        const first = mockAppendAuditEntry.mock.calls[0][0];
-        expect(first.action).toBe('EVIDENCE_UNLINKED_WARNING');
-        expect(first.actorType).toBe('JOB');
-        expect(first.tenantId).toBe('tenant-1');
-    });
-
-    it('does NOT audit when nothing is unlinked (no-op path)', async () => {
-        (mockDb.evidence.findMany as jest.Mock).mockResolvedValue([]);
-        const res = await reconcileUnlinkedEvidence('tenant-1');
-        expect(res.flagged).toBe(0);
-        expect(mockAppendAuditEntry).not.toHaveBeenCalled();
-    });
-
-    it('honours the olderThanMinutes parameter (default 60 vs custom)', async () => {
-        (mockDb.evidence.findMany as jest.Mock).mockResolvedValue([]);
-        const before = Date.now();
-        await reconcileUnlinkedEvidence('tenant-1', 5); // 5-minute cutoff
-        const cutoff = (mockDb.evidence.findMany as jest.Mock).mock.calls[0][0].where.createdAt.lt as Date;
-        const delta = before - cutoff.getTime();
-        expect(delta).toBeGreaterThan(5 * 60_000 - 5_000);
-        expect(delta).toBeLessThan(5 * 60_000 + 5_000);
-    });
-});
 
 // ─── cleanupFailedOrPendingUploads ─────────────────────────────────
 

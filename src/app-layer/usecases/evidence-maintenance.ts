@@ -12,50 +12,13 @@ import { withTenantDb } from '@/lib/db-context';
 import { getProviderByName } from '@/lib/storage';
 
 /**
- * Find FILE evidence not linked to any practice after N minutes.
- * Emits EVIDENCE_UNLINKED_WARNING events for admin review.
+ * `reconcileUnlinkedEvidence` lived here. It swept for FILE evidence with
+ * `practiceId: null` older than a cutoff and warned about it — a query
+ * against a column GRC teardown phase 3 dropped, and a purpose ("evidence
+ * not linked to any practice") that died with the Practice model. It had no
+ * caller in `src/` and no scheduler registration, so nothing ran it; its
+ * unit tests passed against a mocked Prisma that accepts any args.
  */
-export async function reconcileUnlinkedEvidence(
-    tenantId: string,
-    olderThanMinutes: number = 60,
-) {
-    const cutoff = new Date(Date.now() - olderThanMinutes * 60_000);
-
-    return withTenantDb(tenantId, async (db) => {
-        const unlinked = await db.evidence.findMany({
-            where: {
-                tenantId,
-                type: 'FILE',
-                practiceId: null,
-                createdAt: { lt: cutoff },
-                deletedAt: null,
-            },
-            select: { id: true, title: true, fileName: true, createdAt: true },
-        });
-
-        if (unlinked.length > 0) {
-            const { appendAuditEntry } = require('@/lib/audit/audit-writer');
-            for (const ev of unlinked) {
-                await appendAuditEntry({
-                    tenantId,
-                    userId: null,
-                    actorType: 'JOB',
-                    entity: 'Evidence',
-                    entityId: ev.id,
-                    action: 'EVIDENCE_UNLINKED_WARNING',
-                    details: JSON.stringify({
-                        title: ev.title,
-                        fileName: ev.fileName,
-                        unlinkedSince: ev.createdAt,
-                    }),
-                });
-            }
-        }
-
-        return { flagged: unlinked.length, items: unlinked };
-    });
-}
-
 /**
  * Cleanup old PENDING/FAILED FileRecords: delete temp files and mark FAILED.
  */

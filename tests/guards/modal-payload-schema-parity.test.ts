@@ -8,6 +8,11 @@
  *
  * The evidence edit modal sent `description` (the column is `content`) and
  * `practiceId` (which had no field at all). Both were dropped on every save,
+ * and `practiceId` is now gone entirely — GRC teardown phase 3 removed the
+ * Practice model, so the field left the schema, the payload and the modal's
+ * picker together. This guard is what caught the half-fix: the schema entry
+ * was removed first and the modal went on sending the field, which is the
+ * exact silent-discard shape the file exists to prevent.
  * for as long as the modal has existed. Nothing failed: the request was
  * well-formed, the response was 200, the toast said saved. Editing an evidence
  * description simply did nothing, and re-assigning it to another practice did
@@ -47,7 +52,7 @@ const CONTRACTS: readonly Contract[] = [
         modal: 'src/app/t/[tenantSlug]/(app)/evidence/EditEvidenceModal.tsx',
         schemaName: 'UpdateEvidenceSchema',
         schemaFile: 'src/lib/schemas/index.ts',
-        sends: ['title', 'content', 'ownerUserId', 'practiceId', 'folder'],
+        sends: ['title', 'content', 'ownerUserId', 'folder'],
     },
 ];
 

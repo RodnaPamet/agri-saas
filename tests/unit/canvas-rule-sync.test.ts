@@ -8,6 +8,14 @@
  */
 
 jest.mock('@/app-layer/automation', () => ({
+    // Spread the REAL barrel, then override only the repository. The factory
+    // used to return the repository alone, so every other export — including
+    // `AUTOMATION_EVENTS` — was `undefined` inside the module under test.
+    // That was invisible while the source hard-coded a string literal for the
+    // stub trigger; the moment it referenced the catalogue the mock became a
+    // TypeError. Keeping the real constants means the assertion below is
+    // about the actual catalogue value, not a copy of it.
+    ...jest.requireActual('@/app-layer/automation'),
     AutomationRuleRepository: { create: jest.fn(), update: jest.fn() },
 }));
 
@@ -97,7 +105,7 @@ describe('hydrateCanvasFromRules', () => {
     it('merges live rule status/executionCount/subtitle into action nodes', async () => {
         const db = makeDb([], []);
         db.automationRule.findMany.mockResolvedValue([
-            { id: 'r1', status: 'ENABLED', executionCount: 7, triggerEvent: 'RISK_CREATED', actionType: 'NOTIFY_USER' },
+            { id: 'r1', status: 'ENABLED', executionCount: 7, triggerEvent: 'TASK_CREATED', actionType: 'NOTIFY_USER' },
         ]);
         const out = await hydrateCanvasFromRules(db, ctx, [
             { nodeKey: 'a1', nodeType: 'action', label: 'A', dataJson: { ruleId: 'r1' } },
@@ -107,7 +115,7 @@ describe('hydrateCanvasFromRules', () => {
             ruleId: 'r1',
             ruleStatus: 'ENABLED',
             executionCount: 7,
-            ruleSubtitle: 'RISK_CREATED · NOTIFY_USER',
+            ruleSubtitle: 'TASK_CREATED · NOTIFY_USER',
         });
         // non-action node untouched
         expect(out[1].dataJson).toEqual({ foo: 1 });

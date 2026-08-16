@@ -59,11 +59,16 @@ describe('B5 — Evidence workflow completion', () => {
             expect(modal).toMatch(/\/evidence\/\$\{initial\.id\}/);
         });
 
-        it('EditEvidenceModal has Title (required) + Description + Owner + PracticeId fields', () => {
+        it('EditEvidenceModal has Title (required) + Description + Owner fields', () => {
             expect(modal).toMatch(/edit-evidence-title-input/);
             expect(modal).toMatch(/edit-evidence-description/);
             expect(modal).toMatch(/edit-evidence-owner-input/);
-            expect(modal).toMatch(/edit-evidence-practice-input/);
+            // The practice picker was a fourth field here. GRC teardown
+            // phase 3 removed the Practice model, and its EntityPicker was
+            // fetching a deleted route — the dropdown could only ever have
+            // rendered empty. Asserting its ABSENCE, so a re-add has to be
+            // deliberate rather than a paste from an old branch.
+            expect(modal).not.toMatch(/edit-evidence-practice-input/);
         });
 
         it('EvidenceClient mounts the edit modal + threads onSaved → invalidateEvidence', () => {

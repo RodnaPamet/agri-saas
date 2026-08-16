@@ -23,6 +23,7 @@
  *     + a derived subtitle into the node for DISPLAY only (not persisted).
  */
 import type { PrismaTx } from '@/lib/db-context';
+import { AUTOMATION_EVENTS } from '@/app-layer/automation';
 import type { RequestContext } from '../types';
 import { AutomationRuleRepository } from '../automation';
 
@@ -88,9 +89,17 @@ export async function syncCanvasToRules(
         }
         // Create a stub rule. Default trigger/action are placeholders the
         // user refines via the inspector. NO geometry is written here.
+        //
+        // The placeholder MUST be a real catalogue event. This was
+        // `RISK_CREATED`, which is in neither AUTOMATION_EVENTS nor
+        // EVENT_LABELS — it compiled because `triggerEvent` is
+        // `AutomationEventName | string`, and it persisted because the
+        // column is a plain `String`. Every canvas-born rule was therefore
+        // stored with a trigger that can never fire, and the node painted
+        // `RISK_CREATED · NOTIFY_USER` onto itself as its identity.
         const rule = await AutomationRuleRepository.create(db, ctx, {
             name: `Canvas rule · ${node.nodeKey}`,
-            triggerEvent: 'RISK_CREATED',
+            triggerEvent: AUTOMATION_EVENTS.TASK_CREATED,
             actionType: 'NOTIFY_USER',
             actionConfig: { userIds: [], message: '' },
             status: 'DRAFT',

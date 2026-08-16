@@ -22,7 +22,6 @@ const EvidenceQuerySchema = z.object({
     // so the page rendered "no evidence" for a filter that never ran.
     type: csvEnumField(z.enum(['FILE', 'LINK', 'TEXT'])),
     status: csvEnumField(z.enum(['DRAFT', 'SUBMITTED', 'APPROVED', 'REJECTED'])),
-    practiceId: z.string().optional(),
     q: z.string().optional().transform(normalizeQ),
     archived: z.enum(['true', 'false']).optional(),
     expiring: z.enum(['true', 'false']).optional(),
@@ -47,7 +46,6 @@ export const GET = withApiErrorHandling(async (req: NextRequest, { params: param
     const filters = {
         type: query.type,
         status: query.status,
-        practiceId: query.practiceId,
         folder: query.folder,
         q: query.q,
         archived: query.archived === 'true' ? true : query.archived === 'false' ? false : undefined,

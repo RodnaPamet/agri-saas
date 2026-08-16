@@ -61,31 +61,29 @@ describe("Epic P2-PR-B — entity pickers on nodes", () => {
     describe("ProcessInspector — node mode mounts the picker on practice/asset", () => {
         const src = read("src/components/processes/ProcessInspector.tsx");
 
-        it("imports the sibling hooks", () => {
-            // Was a pair (risks + assets) until the risk register was
-            // removed. The regex accepts a single-import OR a
-            // multi-import form so a future rename doesn't lock the
-            // import shape too tight.
-            expect(src).toMatch(
-                /import\s*\{[\s\S]{0,200}useTenantPractices[\s\S]{0,200}\}\s*from\s*["']@\/lib\/processes\/use-tenant-practices["']/,
-            );
+        it("imports the surviving sibling hook", () => {
+            // Was a pair (risks + assets), then practices + assets. GRC
+            // teardown phase 3 deleted the practices hook with its route,
+            // so assets is the only one left.
             expect(src).toMatch(
                 /import\s*\{[\s\S]{0,200}useTenantAssets[\s\S]{0,200}\}\s*from\s*["']@\/lib\/processes\/use-tenant-assets["']/,
             );
+            expect(src).not.toMatch(/use-tenant-practices/);
         });
 
         it("declares the NodeLinkedEntityPicker child component", () => {
             expect(src).toMatch(/function NodeLinkedEntityPicker/);
         });
 
-        it("the picker mounts only on practice/asset kinds", () => {
+        it("the picker mounts only on asset kinds", () => {
             // The early-return guard is the contract that says
-            // "other kinds get NO picker block". A refactor that
-            // moves the picker to processStep / decision / external
-            // would have to update this assertion.
-            expect(src).toMatch(
-                /if\s*\(nodeKind !== "practice" && nodeKind !== "asset"\)/,
-            );
+            // "other kinds get NO picker block". It read
+            // `nodeKind !== "practice" && nodeKind !== "asset"` until
+            // phase 3: the practice branch picked from a deleted route,
+            // and the `practice` NODE kind is legacy anyway (canonical
+            // practices are edge-mounted). The node kind still renders on
+            // old maps — it just gets no picker.
+            expect(src).toMatch(/if\s*\(nodeKind !== "asset"\)/);
         });
 
         it("picker carries the canonical testid + entity-kind attribute", () => {
