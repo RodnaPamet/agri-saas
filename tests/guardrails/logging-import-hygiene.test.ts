@@ -146,7 +146,6 @@ describe('Dynamic require() usage is minimized', () => {
         // Feature 1 — @tmcw/togeojson is CJS; lazy-required to keep it out
         // of the spatial parser's static graph (the KML parse path).
         'lib/spatial/parse.ts': ['@tmcw/togeojson'],
-        'app-layer/libraries/framework-provider.ts': ['@/data/frameworks', '@/data/clauses'],
         'app-layer/usecases/evidence-maintenance.ts': ['@/lib/audit/audit-writer'],
         'app/api/readyz/route.ts': ['@/lib/redis'],
         // GAP-13 — same conditional Redis check pattern as readyz.

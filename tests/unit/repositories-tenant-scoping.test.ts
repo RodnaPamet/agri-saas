@@ -36,11 +36,6 @@ const mockPrisma = {
 };
 jest.mock('@/lib/prisma', () => ({ __esModule: true, default: mockPrisma }));
 
-const mockGetISO27001Clauses = jest.fn();
-jest.mock('@/app-layer/libraries', () => ({
-    getISO27001Clauses: () => mockGetISO27001Clauses(),
-}));
-
 import { NotificationRepository } from '@/app-layer/repositories/NotificationRepository';
 import { makeRequestContext } from '../helpers/make-context';
 
