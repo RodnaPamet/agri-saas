@@ -124,7 +124,6 @@ model AssetMaintenance {
   /// consumer, so sanitising at render time alone would not be enough.
   description    String?
   cost           Decimal?             @db.Decimal(12, 2)
-  /// Who did the work, when it was a third party.
   /// Next service due — by DATE and/or by METER. Modelled now even
   /// though nothing reads them yet: they are what makes a service-due
   /// signal possible later, and back-filling them onto history is far

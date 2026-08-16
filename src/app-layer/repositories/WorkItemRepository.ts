@@ -222,7 +222,6 @@ export class WorkItemRepository {
                 assignee: { select: { id: true, name: true, email: true } },
                 createdBy: { select: { id: true, name: true, email: true } },
                 reviewer: { select: { id: true, name: true, email: true } },
-                practice: { select: { id: true, code: true, name: true } },
                 links: { orderBy: { createdAt: 'desc' } },
                 comments: {
                     orderBy: { createdAt: 'asc' },

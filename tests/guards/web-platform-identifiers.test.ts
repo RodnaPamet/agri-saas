@@ -78,6 +78,20 @@ const PROTECTED: ReadonlyArray<{
         why: 'HTTP response header — a mangled name silently drops no-store / immutable.',
     },
     {
+        canonical: 'cache_control',
+        mangled: ['cache_practice'],
+        mustExist: true,
+        why:
+            'Anthropic Messages API request field (snake_case). This registry ' +
+            'pinned the HTTP header spelling but not this one, so the ' +
+            'Control→Practice rename mangled it in claude-provider.ts and it ' +
+            'survived: the API ignores unknown fields, so prompt caching was ' +
+            'silently off on every copilot turn with no error anywhere. Its ' +
+            'unit test asserted the mangled spelling too, and the case was ' +
+            'even NAMED for it. A third-party API field is exactly as ' +
+            'un-ownable as a web-platform one — same rule, same registry.',
+    },
+    {
         canonical: 'Access-Control-Allow-Origin',
         mangled: ['Access-Practice-Allow-Origin'],
         mustExist: true,

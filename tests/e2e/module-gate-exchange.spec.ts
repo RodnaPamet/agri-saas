@@ -22,9 +22,12 @@ import { test, expect } from './fixtures';
 // The PUT below validates every member, so leaving it here made the
 // request 400 with a VALIDATION_ERROR on `enabledModules` — the spec
 // then failed on its own setup helper, not on the gate it tests.
+// Every ModuleKey EXCEPT EXCHANGE. `VENDORS` was in this list until GRC
+// teardown phase 3 dropped it from the enum; leaving it made this PUT 400
+// and took all three module-gate cases with it.
 const ENABLED_WITHOUT_EXCHANGE = [
     'JOURNAL', 'INVENTORY', 'PLANNING', 'CERTIFICATION',
-    'VENDORS', 'AUTOMATION', 'PROCESSES', 'AI',
+    'AUTOMATION', 'PROCESSES', 'AI',
 ];
 
 async function disableExchange(page: import('@playwright/test').Page, slug: string): Promise<void> {
