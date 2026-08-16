@@ -15,15 +15,10 @@ export const ALL_MODULES: readonly ModuleKey[] = [
     'JOURNAL',
     'INVENTORY',
     'PLANNING',
+    // CERTIFICATION is LIVE and KEEP: it gates /processes, /access-reviews
+    // and the ag-dashboard. (VENDORS was dropped from the ModuleKey enum in
+    // GRC teardown phase 3 — it gated nothing by then.)
     'CERTIFICATION',
-    // GRC teardown: VENDORS now gates NOTHING — the only references left
-    // are this list, its label, and the admin/modules request enum. It
-    // stays until phase 3 because ModuleKey is a Prisma enum and every
-    // `Record<ModuleKey, …>` in this file is total, so dropping the value
-    // needs a migration (plus a deploy/rollback/*.down.sql) rather than a
-    // source edit. CERTIFICATION by contrast is LIVE and KEEP: it gates
-    // /processes, /access-reviews and the ag-dashboard.
-    'VENDORS',
     'AUTOMATION',
     'PROCESSES',
     'AI',
@@ -34,9 +29,9 @@ export const ALL_MODULES: readonly ModuleKey[] = [
 /**
  * "Simple mode" — the curated module set for a startup farmer. Just the
  * core ag surfaces (field journal, inventory, crop planning); none of the
- * enterprise GRC / automation modules. A tenant opts into simple mode by
- * saving this as its `TenantModuleSettings.enabledModules`. The enterprise
- * persona leaves the row null (all modules) or enables a richer set.
+ * enterprise certification / automation modules. A tenant opts into simple
+ * mode by saving this as its `TenantModuleSettings.enabledModules`. The
+ * enterprise persona leaves the row null (all modules) or enables a richer set.
  *
  * Note: Tasks + Knowledge Base are NOT module-gated (always available), so
  * they aren't listed here — a simple-mode farmer still gets them.
@@ -60,7 +55,6 @@ export const MODULE_LABELS: Record<ModuleKey, string> = {
     INVENTORY: 'Inventory',
     PLANNING: 'Crop Planning',
     CERTIFICATION: 'Certification & Compliance',
-    VENDORS: 'Suppliers & Buyers',
     AUTOMATION: 'Automation',
     PROCESSES: 'Process Maps',
     AI: 'AI Assist',

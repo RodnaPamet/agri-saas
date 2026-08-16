@@ -66,13 +66,6 @@ const STATUS_ALLOWLIST: Record<string, { field: string; values: ReadonlySet<stri
         field: 'status',
         values: new Set(['OPEN', 'TRIAGED', 'IN_PROGRESS', 'BLOCKED', 'RESOLVED', 'CLOSED', 'CANCELED']),
     },
-    Practice: {
-        field: 'status',
-        values: new Set([
-            'NOT_STARTED', 'PLANNED', 'IN_PROGRESS', 'IMPLEMENTING',
-            'IMPLEMENTED', 'NEEDS_REVIEW', 'NOT_APPLICABLE',
-        ]),
-    },
 };
 
 /**
@@ -141,11 +134,10 @@ async function createTask(db: Db, rule: ExecutableRule, event: ActionEvent): Pro
     const cfg = rule.actionConfigJson as CreateTaskActionConfig;
     const createdByUserId = event.actorUserId ?? rule.createdByUserId;
     if (!createdByUserId) return { ok: false, summary: 'No actor to own the created task' };
-    // Resolve an optional linked practice from the event payload.
-    const practiceId =
-        cfg.linkEntityType === 'Practice' && cfg.linkEntityIdField
-            ? (event.data?.[cfg.linkEntityIdField] as string | undefined) ?? null
-            : null;
+    // `cfg.linkEntityType` / `cfg.linkEntityIdField` are inert: the only link
+    // target the executor ever resolved was Practice, and the GRC teardown
+    // dropped both that model and `Task.practiceId`. A new link column wires
+    // in here.
     // Dedupe: a rule firing repeatedly on the same entity shouldn't spawn a new
     // task each time. Skip if a non-terminal task with the deterministic
     // automation key already exists.
@@ -174,7 +166,6 @@ async function createTask(db: Db, rule: ExecutableRule, event: ActionEvent): Pro
             key: dedupeKey,
             createdByUserId,
             assigneeUserId: cfg.assigneeUserId ?? null,
-            practiceId,
         },
     });
     return { ok: true, summary: `Created task ${task.id}`, detail: { taskId: task.id } };
@@ -216,12 +207,12 @@ async function updateStatus(db: Db, rule: ExecutableRule, event: ActionEvent): P
                 },
             })).count;
             break;
-        case 'Practice':
-            updated = (await db.practice.updateMany({ where, data })).count;
-            break;
         default:
-            // 'Issue' has no standalone model (issues are Tasks via WorkItemType)
-            // — unsupported here rather than guessing the backing table.
+            // 'Risk' and 'Practice' were deleted by the GRC teardown, and
+            // 'Issue' has no standalone model (issues are Tasks via
+            // WorkItemType) — unsupported here rather than guessing the
+            // backing table. Task is the only writable target left, so the
+            // allowlist above already rejects the others before this point.
             return { ok: false, summary: `Unsupported entityType: ${cfg?.entityType}` };
     }
     return {

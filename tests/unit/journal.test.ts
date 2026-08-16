@@ -10,11 +10,11 @@
  * list/get + authorization.
  */
 
-// The mock db carries the model methods `attachAutoEvidenceFromLogEntry`
-// (the INPUT_APPLICATION auto-evidence hook in createLogEntry) touches.
-// `logEntry.findFirst` defaults to null so the hook short-circuits to a
-// no-op — these tests assert the repository-call + audit shape, not the
-// auto-evidence path (which has its own suite in auto-evidence.test.ts).
+// `logEntry.findFirst` defaults to null. The INPUT_APPLICATION
+// auto-evidence hook this comment used to describe is gone — GRC
+// teardown phase 3 deleted `attachAutoEvidenceFromLogEntry`, which
+// minted through the Practice graph — so `createLogEntry` no longer
+// fires it at all. These tests assert the repository-call + audit shape.
 const mockDb = {
     logEntry: { findFirst: jest.fn().mockResolvedValue(null) },
     frameworkRequirement: { findMany: jest.fn().mockResolvedValue([]) },

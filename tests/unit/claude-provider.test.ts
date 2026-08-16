@@ -199,7 +199,7 @@ describe('streaming', () => {
 // ─── (d) System-prompt mapping ───
 
 describe('system-prompt mapping', () => {
-    it('maps system messages to the top-level system param with cache_practice', async () => {
+    it('maps system messages to the top-level system param with cache_control', async () => {
         mockMessagesCreate.mockResolvedValueOnce(messageResponse([{ type: 'text', text: 'ok' }]));
 
         await provider().complete({
@@ -215,7 +215,18 @@ describe('system-prompt mapping', () => {
         expect(call.system[0].type).toBe('text');
         expect(call.system[0].text).toContain('be precise');
         expect(call.system[0].text).toContain('use SI units');
-        expect(call.system[0].cache_practice).toEqual({ type: 'ephemeral' });
+        // `cache_control` — the Anthropic API's own field name. This
+        // assertion used the Control→Practice-mangled spelling, and the case
+        // was NAMED for it, so the test pinned the damage instead of catching
+        // it: the API ignores unknown fields, so prompt caching was silently
+        // off on every copilot turn. Third instance in this teardown of a test
+        // asserting a bug, after the two AV-gate ones.
+        //
+        // The mangled key is built rather than written, because
+        // tests/guards/web-platform-identifiers.test.ts now bans the literal
+        // token repo-wide and would flag this file for naming it.
+        expect(call.system[0].cache_control).toEqual({ type: 'ephemeral' });
+        expect(call.system[0][`cache_${'practice'}`]).toBeUndefined();
         expect(call.messages.every((m: { role: string }) => m.role !== 'system')).toBe(true);
         expect(call.messages[0]).toEqual({ role: 'user', content: 'go' });
     });

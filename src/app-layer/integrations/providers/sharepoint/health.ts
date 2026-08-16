@@ -18,10 +18,9 @@ export interface SharePointHealth {
         durationMs: number | null;
     }>;
     evidenceCoverage: { synced: number; stale: number; failed: number; total: number };
-    policyLinks: number;
 }
 
-/** Aggregate connection health, recent executions, sync coverage + policy links. */
+/** Aggregate connection health, recent executions and sync coverage. */
 export async function getSharePointHealth(ctx: RequestContext): Promise<SharePointHealth> {
     assertCanAdmin(ctx);
     return runInTenantContext(ctx, async (db) => {
@@ -50,10 +49,6 @@ export async function getSharePointHealth(ctx: RequestContext): Promise<SharePoi
             total: mappings.length,
         };
 
-        const policyLinks = await db.policy.count({
-            where: { tenantId: ctx.tenantId, spItemId: { not: null } },
-        });
-
         return {
             connections: connections.map((c) => ({
                 id: c.id,
@@ -70,7 +65,6 @@ export async function getSharePointHealth(ctx: RequestContext): Promise<SharePoi
                 durationMs: e.durationMs,
             })),
             evidenceCoverage,
-            policyLinks,
         };
     });
 }

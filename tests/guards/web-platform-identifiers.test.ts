@@ -40,7 +40,15 @@ import * as path from 'node:path';
 const ROOT = path.resolve(__dirname, '../..');
 
 /** Directories worth scanning — source + tests + shipped static assets. */
-const SCAN_ROOTS = ['src', 'tests', 'public', 'scripts', 'deploy'];
+// `messages` is in this list because of a bug it would otherwise have
+// missed — and did. The Control->Practice sweep mangled three i18n KEYS in
+// messages/{en,bg}.json, `controllerTitle`/`Body`/`Contact` ->
+// `practicelerTitle`/..., plus the English copy "the data controller" ->
+// "the data practiceler". The privacy page's data-controller disclosure —
+// a GDPR-relevant section — threw MISSING_MESSAGE at runtime from then on.
+// This guard existed to catch exactly that class and never looked at the
+// message files. `walk()` already accepts .json; only the root was absent.
+const SCAN_ROOTS = ['src', 'tests', 'public', 'scripts', 'deploy', 'messages'];
 
 const SKIP_DIRS = new Set([
     'node_modules',
@@ -68,6 +76,20 @@ const PROTECTED: ReadonlyArray<{
         mangled: ['Cache-Practice'],
         mustExist: true,
         why: 'HTTP response header — a mangled name silently drops no-store / immutable.',
+    },
+    {
+        canonical: 'cache_control',
+        mangled: ['cache_practice'],
+        mustExist: true,
+        why:
+            'Anthropic Messages API request field (snake_case). This registry ' +
+            'pinned the HTTP header spelling but not this one, so the ' +
+            'Control→Practice rename mangled it in claude-provider.ts and it ' +
+            'survived: the API ignores unknown fields, so prompt caching was ' +
+            'silently off on every copilot turn with no error anywhere. Its ' +
+            'unit test asserted the mangled spelling too, and the case was ' +
+            'even NAMED for it. A third-party API field is exactly as ' +
+            'un-ownable as a web-platform one — same rule, same registry.',
     },
     {
         canonical: 'Access-Control-Allow-Origin',
@@ -107,6 +129,16 @@ const PROTECTED: ReadonlyArray<{
  * infrastructure sense of "control plane".
  */
 const BANNED_TOKENS: ReadonlyArray<{ token: string; why: string }> = [
+    {
+        token: 'practiceler',
+        why:
+            'A mangled "controller" — "cont[rol]ler" caught the Control->Practice ' +
+            'sweep. It landed in messages/{en,bg}.json as the privacy page\'s ' +
+            'controllerTitle/Body/Contact keys AND in the English copy itself ' +
+            '("the data practiceler"), so the GDPR data-controller disclosure ' +
+            'rendered a MISSING_MESSAGE error. "controller" is a legal term of ' +
+            'art here, not a domain noun this codebase may rename.',
+    },
     {
         token: "'Practice+",
         why: "Playwright/DOM key name — the modifier is 'Control+…'.",

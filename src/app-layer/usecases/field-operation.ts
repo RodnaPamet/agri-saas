@@ -8,7 +8,6 @@ import { WorkItemRepository, TaskLinkRepository } from '../repositories/WorkItem
 import { ParcelRepository } from '../repositories/ParcelRepository';
 import { TERMINAL_WORK_ITEM_STATUSES } from '../domain/work-item-status';
 import { recordInputApplication, type InputApplicationResult } from './inventory';
-import { attachAutoEvidenceFromLogEntry } from './auto-evidence';
 import { traceAgUsecase } from '@/lib/observability';
 import { logger } from '@/lib/observability/logger';
 import { trace } from '@opentelemetry/api';
@@ -467,23 +466,17 @@ async function markOperationParcelImpl(
                 doseUnitId: line.doseUnitId,
             });
 
-            // The spray record is itself the certification evidence for the
-            // plant-protection / input-record practice points. Attach it to
-            // every scheme practice the tenant has mapped — in the SAME
-            // transaction as the journal write, so they commit atomically.
-            // No-op when the tenant hasn't installed a scheme (no mapped
-            // practices) or when JOURNAL is off (no journalEntryId).
+            // БАБХ farm-record completion snapshot: freeze the applicator's
+            // certificates + the application technique into the
+            // INPUT_APPLICATION LogEntry.conditionsJson AT THIS MOMENT, in the
+            // SAME transaction as the journal write so they commit atomically.
+            // Auditability — a later cert renewal (edit on the membership) must
+            // not rewrite the historical record. The generator falls back to
+            // live membership values for legacy rows that predate this
+            // snapshot. The applicator is the assigned operator (who may also
+            // be the one marking the line), else the actor. Skipped when
+            // JOURNAL is off (no journalEntryId).
             if (application?.journalEntryId) {
-                await attachAutoEvidenceFromLogEntry(db, ctx, application.journalEntryId);
-
-                // БАБХ farm-record completion snapshot: freeze the applicator's
-                // certificates + the application technique into the
-                // INPUT_APPLICATION LogEntry.conditionsJson AT THIS MOMENT.
-                // Auditability — a later cert renewal (edit on the membership)
-                // must not rewrite the historical record. The generator falls
-                // back to live membership values for legacy rows that predate
-                // this snapshot. The applicator is the assigned operator (who
-                // may also be the one marking the line), else the actor.
                 const applicatorUserId = line.task.assigneeUserId ?? ctx.userId;
                 const membership = await db.tenantMembership.findUnique({
                     where: { tenantId_userId: { tenantId: ctx.tenantId, userId: applicatorUserId } },

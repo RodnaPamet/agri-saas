@@ -152,7 +152,6 @@ model IntegrationExecution {
   connectionId  String?
   provider      String
   automationKey String
-  practiceId     String?
   status        IntegrationExecutionStatus @default(PENDING)
   resultJson    Json?
   evidenceId    String?
@@ -164,12 +163,10 @@ model IntegrationExecution {
   completedAt   DateTime?
   createdAt     DateTime                   @default(now())
   connection    IntegrationConnection?     @relation(fields: [connectionId], references: [id])
-  practice       Practice?                   @relation(fields: [practiceId], references: [id])
   tenant        Tenant                     @relation(fields: [tenantId], references: [id])
 
   @@index([tenantId])
   @@index([tenantId, automationKey])
-  @@index([tenantId, practiceId])
   @@index([tenantId, status])
   @@index([jobRunId])
 }
@@ -547,11 +544,11 @@ model ProcessEdgePractice {
   // Client-stable id, scoped to the edge.
   practiceKey   String
   label        String
-  // Future FK to the real Practice row. Nullable today so the
-  // PR-A scope can save edge-mounted practices without forcing
-  // the user to pick a Practice first; PR-D wires the picker UI
-  // and may FLIP this to NOT NULL once the migration is safe.
-  practiceId    String?
+  // Free-form payload for the edge-mounted practice card. This used
+  // to sit below a nullable `practiceId` FK pointing at the GRC
+  // `Practice` table; GRC teardown phase 3 dropped both that column
+  // and its table, so a process-map practice is now identified by
+  // `practiceKey` + `label` alone and has no row to point at.
   dataJson     Json?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
@@ -561,5 +558,4 @@ model ProcessEdgePractice {
 
   @@unique([edgeId, practiceKey])
   @@index([tenantId, processMapId])
-  @@index([tenantId, practiceId])
 }

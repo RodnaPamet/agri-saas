@@ -6,8 +6,7 @@
  *   2. Resolve tenant from connection (never trust caller)
  *   3. Verify webhook signature
  *   4. Dispatch to provider handler
- *   5. Create Evidence when provider emits evidence-worthy results
- *   6. Create IntegrationExecution records for check results
+ *   5. Dispatch to the sync orchestrator when the provider supports CRUD sync
  *
  * SECURITY:
  *   - Tenant ID is resolved from IntegrationConnection, never from request
@@ -16,7 +15,6 @@
  *
  * @module usecases/webhook-processor
  */
-import { EvidenceType } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { registry, integrationRegistry } from '../integrations/registry';
 import { isWebhookEventProvider } from '../integrations/types';
@@ -44,7 +42,7 @@ export interface WebhookInput {
 }
 
 export type WebhookResult =
-    | { status: 'processed'; eventId: string; executionsCreated: number; evidenceCreated: number }
+    | { status: 'processed'; eventId: string }
     | { status: 'ignored'; eventId: string; reason: string }
     | { status: 'auth_failed'; eventId?: string }
     | { status: 'invalid_provider' }
@@ -262,8 +260,6 @@ export async function processIncomingWebhook(input: WebhookInput): Promise<Webho
 
     // 8. Dispatch to provider handler if it supports webhooks
     let processResult: WebhookProcessResult = { status: 'ignored' };
-    let executionsCreated = 0;
-    let evidenceCreated = 0;
 
     if (isWebhookEventProvider(providerImpl)) {
         try {
@@ -305,54 +301,11 @@ export async function processIncomingWebhook(input: WebhookInput): Promise<Webho
                 }
             );
 
-            // 8. Create executions/evidence for triggered automation keys
-            if (processResult.triggeredKeys && processResult.triggeredKeys.length > 0) {
-                for (const automationKey of processResult.triggeredKeys) {
-                    // Find practices with this automationKey in the tenant
-                    const practices = await prisma.practice.findMany({
-                        where: {
-                            tenantId: matchedConnection.tenantId,
-                            automationKey,
-                            deletedAt: null,
-                        },
-                        select: { id: true, name: true },
-                    });
-
-                    for (const practice of practices) {
-                        // Create execution record
-                        const execution = await prisma.integrationExecution.create({
-                            data: {
-                                tenantId: matchedConnection.tenantId,
-                                connectionId: matchedConnection.id,
-                                provider,
-                                automationKey,
-                                practiceId: practice.id,
-                                status: 'PASSED',
-                                triggeredBy: 'webhook',
-                                resultJson: { source: 'webhook', eventId: event.id },
-                                completedAt: new Date(),
-                            },
-                        });
-                        executionsCreated++;
-
-                        // Create evidence for the check result
-                        await prisma.evidence.create({
-                            data: {
-                                tenantId: matchedConnection.tenantId,
-                                practiceId: practice.id,
-                                // Webhook-created evidence is text-based; EvidenceType enum uses FILE/LINK/TEXT.
-                                // Map to TEXT as the semantically closest value for automation-generated content.
-                                type: EvidenceType.TEXT,
-                                title: `[${provider}] Webhook: ${automationKey}`,
-                                content: `Automated evidence from ${provider} webhook event.\nEvent type: ${event.eventType ?? 'unknown'}\nExecution ID: ${execution.id}`,
-                                category: 'integration',
-                                status: 'APPROVED',
-                            },
-                        });
-                        evidenceCreated++;
-                    }
-                }
-            }
+            // A provider handler may report `triggeredKeys` (the automation keys
+            // the event fired). Practice was the only entity that carried an
+            // automationKey and the GRC teardown removed it, so there is nothing
+            // local to fan out to — this path no longer mints IntegrationExecution
+            // or Evidence rows. Wire a new automationKey-bearing entity in here.
 
         } catch (err) {
             const errorMessage = err instanceof Error ? err.message : String(err);
@@ -448,15 +401,11 @@ export async function processIncomingWebhook(input: WebhookInput): Promise<Webho
         eventId: event.id,
         tenantId: matchedConnection.tenantId,
         status: finalStatus,
-        executionsCreated,
-        evidenceCreated,
     });
 
     return {
         status: 'processed',
         eventId: event.id,
-        executionsCreated,
-        evidenceCreated,
     };
 }
 

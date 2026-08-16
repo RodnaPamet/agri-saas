@@ -99,12 +99,6 @@ enum OrgDashboardWidgetType {
   DRILLDOWN_CTAS // Drill-down navigation cards (practices / risks / evidence)
 }
 
-enum ClauseStatus {
-  NOT_STARTED
-  IN_PROGRESS
-  READY
-  NEEDS_REVIEW
-}
 
 enum AssetType {
   TRACTOR
@@ -163,96 +157,17 @@ enum DepreciationMethod {
   STRAIGHT_LINE
 }
 
-enum CoverageType {
-  FULL
-  PARTIAL
-  UNKNOWN
-}
 
-enum ExposureLevel {
-  LOW
-  MEDIUM
-  HIGH
-}
 
-enum TreatmentDecision {
-  TREAT
-  TRANSFER
-  TOLERATE
-  AVOID
-}
 
-/// RQ-1 — analyst confidence in the FAIR inputs for a risk.
-enum FairConfidence {
-  LOW // Rough order-of-magnitude — no data
-  MEDIUM // Some historical / industry-benchmark data
-  HIGH // Calibrated from internal incident or actuarial data
-}
 
-enum PracticeStatus {
-  NOT_STARTED
-  PLANNED
-  IN_PROGRESS
-  IMPLEMENTING
-  IMPLEMENTED
-  NEEDS_REVIEW
-  NOT_APPLICABLE
-}
 
-/// How a practice mitigates a risk. Read by the bow-tie projection
-/// (PREVENTIVE/DETERRENT sit left of the event, DETECTIVE/CORRECTIVE/
-/// COMPENSATING right) and by the residual-risk suggestion.
-enum PracticeMitigationType {
-  PREVENTIVE
-  DETERRENT
-  DETECTIVE
-  CORRECTIVE
-  COMPENSATING
-}
 
-enum Applicability {
-  APPLICABLE
-  NOT_APPLICABLE
-}
 
-enum PracticeFrequency {
-  AD_HOC
-  DAILY
-  WEEKLY
-  MONTHLY
-  QUARTERLY
-  ANNUALLY
-}
 
-// Refines TestMethod for Epic G-2 scheduled execution. MANUAL plans
-// are never picked up by the scheduler; SCRIPT plans run a built-in
-// handler; INTEGRATION plans dispatch to an external connector.
-// `method` (TestMethod) stays the auditor-facing field — DAILY plans
-// can keep `method=AUTOMATED` while distinguishing SCRIPT vs
-// INTEGRATION here without breaking pre-G-2 callers.
-enum AutomationType {
-  MANUAL
-  SCRIPT
-  INTEGRATION
-}
 
-enum EvidenceSourceType {
-  MANUAL
-  INTEGRATION
-}
 
-enum EvidenceLinkKind {
-  FILE
-  LINK
-  INTEGRATION_RESULT
-}
 
-enum PracticeTaskStatus {
-  OPEN
-  IN_PROGRESS
-  DONE
-  BLOCKED
-}
 
 enum EvidenceType {
   FILE
@@ -298,9 +213,6 @@ enum ReviewAction {
 }
 
 enum WorkItemType {
-  AUDIT_FINDING
-  PRACTICE_GAP
-  INCIDENT
   IMPROVEMENT
   TASK
   /// Agriculture: a field operation (e.g. a spray job) assigned to a
@@ -312,6 +224,7 @@ enum WorkItemType {
   /// in `Task.metadataJson` (farmTaskType / farmTaskCategory); links to
   /// Location/Parcel/Equipment via TaskLink. Reuses the IC Task module.
   FARM_TASK
+  // AUDIT_FINDING / PRACTICE_GAP / INCIDENT dropped in phase 3 (operator decision A6).
 }
 
 enum WorkItemSeverity {
@@ -353,21 +266,16 @@ enum WorkItemSource {
 }
 
 enum TaskLinkEntityType {
-  PRACTICE
-  FRAMEWORK_REQUIREMENT
   ASSET
-  POLICY
   EVIDENCE
   FILE
-  AUDIT_PACK
-  VENDOR
-  // Agriculture domain
   LOCATION
   PARCEL
   // Farm Tasks — link a task to a piece of equipment or (reserved) a
   // crop planting. LOCATION/PARCEL landed with Feature 1.
   EQUIPMENT
   PLANTING
+  // PRACTICE / FRAMEWORK_REQUIREMENT / POLICY / AUDIT_PACK / VENDOR dropped in phase 3.
 }
 
 enum TaskLinkRelation {
@@ -378,25 +286,8 @@ enum TaskLinkRelation {
   MITIGATED_BY
 }
 
-enum PolicyStatus {
-  DRAFT
-  IN_REVIEW
-  APPROVED
-  PUBLISHED
-  ARCHIVED
-}
 
-enum PolicyContentType {
-  MARKDOWN
-  HTML
-  EXTERNAL_LINK
-}
 
-enum PolicyApprovalStatus {
-  PENDING
-  APPROVED
-  REJECTED
-}
 
 /// Knowledge Base — mirrors PolicyStatus with a simpler lifecycle (no
 /// IN_REVIEW/APPROVED approval gate): authors draft, publish, then archive.
@@ -428,64 +319,12 @@ enum KnowledgeChunkSourceType {
   EXTERNAL
 }
 
-enum ApprovalDecision {
-  APPROVED
-  REJECTED
-}
 
-enum AuditStatus {
-  PLANNED
-  IN_PROGRESS
-  COMPLETED
-  CANCELLED
-}
 
-enum ChecklistResult {
-  NOT_TESTED
-  PASS
-  FAIL
-}
 
-/// Risk lifecycle status.
-///
-///   OPEN       — the risk is active and unaddressed.
-///   MITIGATING — a treatment plan is in flight.
-///   MITIGATED  — a `MITIGATE`-strategy plan has completed; the risk
-///                is reduced to an acceptable residual but not
-///                eliminated. ISO 27001 Annex A distinguishes this
-///                from CLOSED for residual-risk reporting (Audit
-///                Coherence S1, 2026-05-22).
-///   ACCEPTED   — an `ACCEPT`-strategy plan has completed; the risk
-///                is acknowledged at its inherent level.
-///   CLOSED     — the risk is eliminated, transferred, or otherwise
-///                no longer carried by the tenant.
-enum RiskStatus {
-  OPEN
-  MITIGATING
-  MITIGATED
-  ACCEPTED
-  CLOSED
-}
 
-enum FindingSeverity {
-  LOW
-  MEDIUM
-  HIGH
-  CRITICAL
-}
 
-enum FindingType {
-  NONCONFORMITY
-  OBSERVATION
-  OPPORTUNITY
-}
 
-enum FindingStatus {
-  OPEN
-  IN_PROGRESS
-  READY_FOR_VERIFICATION
-  CLOSED
-}
 
 enum ReviewCadence {
   MONTHLY
@@ -499,20 +338,13 @@ enum NotificationType {
   EVIDENCE_OVERDUE
   EVIDENCE_REJECTED
   EVIDENCE_APPROVED
-  POLICY_APPROVAL_NEEDED
-  POLICY_ACKNOWLEDGED
-  FINDING_ASSIGNED
-  FINDING_VERIFIED
+  // 2026-05-27 — fired by `assignTask` when ownership transfers:
+  // one in-app notification per (task, new owner, day) pair, routed
+  // to the bell. Email + SSE follow the same dedup.
   TASK_ASSIGNED
-  // 2026-05-27 — fired by `setPracticeOwner` (mutations.ts) when
-  // ownership transfers. Mirrors the TASK_ASSIGNED contract:
-  // one in-app notification per (practice, new owner, day) pair,
-  // routed to the bell. Email + SSE follow the same dedup.
-  PRACTICE_ASSIGNED
-  // 2026-05-30 — fired by `updateRisk` / `updateAsset` when the
-  // `ownerUserId` ("Assigned to") changes. Same one-per-(entity,
-  // owner, day) bell contract as PRACTICE_ASSIGNED.
-  RISK_ASSIGNED
+  // 2026-05-30 — fired by `updateAsset` when the `ownerUserId`
+  // ("Assigned to") changes. Same one-per-(entity, owner, day) bell
+  // contract as TASK_ASSIGNED.
   ASSET_ASSIGNED
   // Fired by the `task-due-notification` job at 08:00 UTC. One
   // notification per task at each of three reminder windows — one
@@ -520,12 +352,7 @@ enum NotificationType {
   // task's `dueAt` falls. In-app only — the email deadline digest
   // already covers the same surface.
   TASK_DUE
-  // Audit Coherence S6 (2026-05-22) — daily cron sweeps vendors
-  // whose `nextReviewAt` has passed and fires one of these per
-  // overdue vendor (routed to the vendor's `ownerUserId`). Bumps
-  // the date forward by the cadence so the reminder isn't spam.
-  VENDOR_REVIEW_DUE
-  // Phase 1 inventory (2026-06-14) — fired by the `low-stock-monitor`
+  // Inventory (2026-06) — fired by the `low-stock-sweep`
   // daily job when an item's total on-hand (Σ lot quantityOnHand) drops
   // below `Item.reorderLevel`. One bell notification per (item, owner,
   // day); routed to the tenant's OWNER/ADMIN members.
@@ -545,6 +372,9 @@ enum NotificationType {
   // never daily. Routed to the tenant's OWNER/ADMIN members.
   CONTRACT_DELIVERY_DUE
   GENERAL
+  // Seven GRC values were dropped in phase 3 — none had a src/ emission
+  // site, and PRACTICE_ASSIGNED / RISK_ASSIGNED additionally deep-linked
+  // to /practices and /risks, routes that no longer exist.
 }
 
 enum EmailNotificationType {
@@ -607,19 +437,7 @@ enum OnboardingStatus {
   SKIPPED
 }
 
-enum SuggestionSessionStatus {
-  DRAFT
-  GENERATED
-  APPLIED
-  DISMISSED
-}
 
-enum SuggestionItemStatus {
-  PENDING
-  ACCEPTED
-  REJECTED
-  EDITED
-}
 
 enum IdentityProviderType {
   SAML
@@ -637,148 +455,19 @@ enum MfaType {
   TOTP
 }
 
-enum FrameworkKind {
-  ISO_STANDARD
-  NIST_FRAMEWORK
-  SOC_CRITERIA
-  EU_DIRECTIVE
-  REGULATION
-  INDUSTRY_STANDARD
-  CUSTOM
-  // Phase-7 — agriculture certification schemes (Organic, GlobalGAP, LEAF,
-  // Red Tractor, …). A thin `kind` discriminator over the existing Framework
-  // catalog so ag schemes coexist with ISO/NIST frameworks and reuse the
-  // whole compliance engine (requirements, practice links, readiness scoring).
-  AG_SCHEME
-}
 
-// Defines the semantic strength of a mapping between two requirement nodes.
-// Used by RequirementMapping to express how closely two requirements align.
-enum MappingStrength {
-  EQUAL // Semantically equivalent: source and target express the same obligation
-  SUPERSET // Source fully covers target: implementing source satisfies target
-  SUBSET // Source partially covers target: implementing source only partially satisfies target
-  INTERSECT // Partial overlap: source and target share common ground but neither fully covers the other
-  RELATED // Conceptually related: useful for awareness but no direct coverage claim
-}
 
-enum VendorStatus {
-  ACTIVE
-  ONBOARDING
-  OFFBOARDING
-  OFFBOARDED
-}
 
-enum VendorCriticality {
-  LOW
-  MEDIUM
-  HIGH
-  CRITICAL
-}
 
-enum VendorDataAccess {
-  NONE
-  LOW
-  MEDIUM
-  HIGH
-}
 
-enum VendorDocumentType {
-  CONTRACT
-  SOC2
-  ISO_CERT
-  DPA
-  SECURITY_POLICY
-  PEN_TEST
-  OTHER
-}
 
-enum AnswerType {
-  YES_NO
-  SINGLE_SELECT
-  MULTI_SELECT
-  TEXT
-  NUMBER
-  // Epic G-3 additions for the questionnaire builder.
-  // SCALE        — Likert-style 1..N (configured per-question via scaleConfigJson).
-  // FILE_UPLOAD  — answer is an Evidence row attached to the response.
-  SCALE
-  FILE_UPLOAD
-}
 
-// Vendor assessment lifecycle.
-//
-// Pre-G-3 approval workflow (still valid for paths that surface
-// internal review without an external respondent):
-//   DRAFT → IN_REVIEW → APPROVED / REJECTED
-//
-// G-3 send-and-collect (the new canonical questionnaire flow):
-//   DRAFT → SENT → IN_PROGRESS → SUBMITTED → REVIEWED → CLOSED
-//
-// Both branches share the DRAFT entry point. New code paths drive
-// the G-3 lifecycle; the legacy values remain enumerated so existing
-// rows stay valid without a data migration.
-enum AssessmentStatus {
-  DRAFT
-  IN_REVIEW
-  APPROVED
-  REJECTED
-  SENT
-  IN_PROGRESS
-  SUBMITTED
-  REVIEWED
-  CLOSED
-}
 
-enum VendorLinkEntityType {
-  ASSET
-  ISSUE
-  PRACTICE
-}
 
-enum VendorLinkRelation {
-  USES
-  STORES_DATA_FOR
-  PROVIDES_SERVICE_TO
-  MITIGATES
-  RELATED
-}
 
-enum AuditCycleStatus {
-  PLANNING
-  IN_PROGRESS
-  READY
-  COMPLETE
-}
 
-enum AuditPackStatus {
-  DRAFT
-  FROZEN
-  EXPORTED
-}
 
-enum AuditorStatus {
-  INVITED
-  ACTIVE
-  REVOKED
-}
 
-enum AuditPackItemEntityType {
-  PRACTICE
-  POLICY
-  EVIDENCE
-  FILE
-  ISSUE
-  READINESS_REPORT
-  FRAMEWORK_COVERAGE
-  TEST_RUN
-  /// A generated document attached to a frozen pack rather than a row
-  /// snapshot — today the Statement of Applicability. `packs.ts` inserted
-  /// this value for months while it was absent from the enum, so the write
-  /// threw every time and was swallowed by a bare `catch {}`: the certifier's
-  /// pack shipped without its SoA and nobody was told.
-  EXPORT_ARTIFACT
-}
 
 enum BillingPlan {
   FREE
@@ -885,39 +574,7 @@ enum AccessReviewDecisionType {
   MODIFY
 }
 
-/// Epic G-7 — Risk Treatment Plans (ISO 27001 6.1.3).
-///
-/// Strategy chosen for the risk. Distinct from the legacy
-/// `TreatmentDecision` enum on `Risk.treatment` — that field is the
-/// quick free-text decision; this enum drives the structured plan
-/// shape (milestones, deadlines, tracking).
-///
-///   MITIGATE — implement practices to reduce likelihood/impact
-///   ACCEPT   — formally accept the residual risk
-///   TRANSFER — shift the risk to a third party (insurance, vendor)
-///   AVOID    — eliminate the activity that creates the risk
-enum TreatmentStrategy {
-  MITIGATE
-  ACCEPT
-  TRANSFER
-  AVOID
-}
 
-/// Lifecycle for a structured treatment plan.
-///
-///   DRAFT     — plan created, not yet activated; milestones
-///               can still be reordered/edited freely
-///   ACTIVE    — plan is being executed; milestones gated
-///   COMPLETED — every milestone is done OR plan was closed
-///               with a closing remark; terminal
-///   OVERDUE   — `targetDate` elapsed without COMPLETED status;
-///               set by the daily monitor job, not the user paths
-enum TreatmentPlanStatus {
-  DRAFT
-  ACTIVE
-  COMPLETED
-  OVERDUE
-}
 
 /// Roadmap-26 PR-A — Process Map lifecycle.
 ///
@@ -940,39 +597,8 @@ enum ProcessCanvasMode {
   AUTOMATION
 }
 
-/// RQ2-1 — what a RiskScoreEvent records.
-///   INHERENT — the pre-practices likelihood/impact assessment.
-///   RESIDUAL — the post-practices assessment (asserted or derived).
-enum RiskScoreEventKind {
-  INHERENT
-  RESIDUAL
-}
 
-/// RQ2-1 — provenance of a score change. Distinguishable forever:
-///   USER      — a human entered/edited the values directly.
-///   DERIVED   — the system computed it (e.g. practice-effectiveness
-///               suggestion accepted as-is, RQ2-2).
-///   PLAN      — written by treatment-plan completion.
-///   AI        — accepted from an AI suggestion.
-///   MIGRATION — backfilled from pre-provenance data.
-enum RiskScoreEventSource {
-  USER
-  DERIVED
-  PLAN
-  AI
-  MIGRATION
-}
 
-enum LossEventSource {
-  /// Recorded by a person (manual entry on the loss-event register).
-  USER
-  /// Recorded from a finding's close-out — the actual loss that
-  /// finding ended up costing.
-  FINDING
-  /// Recorded from an incident / ticket — the realised cost the
-  /// incident closed at.
-  INCIDENT
-}
 
 // ═══════════════════════════════════════════════════════════════════
 //  AGRICULTURE DOMAIN (Feature 1 — spray-prescription map module)
@@ -1066,12 +692,12 @@ enum ModuleKey {
   INVENTORY
   PLANNING
   CERTIFICATION
-  VENDORS
   AUTOMATION
   PROCESSES
   AI
   GRAIN
   EXCHANGE
+  // VENDORS dropped in phase 3. CERTIFICATION is LIVE - it gates /processes + /access-reviews.
 }
 
 // ─── Exchange domain (exchange.prisma) ───────────────────────────────

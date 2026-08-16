@@ -90,8 +90,9 @@ describe('Entitlements', () => {
     // A module is AVAILABLE when (plan allows) ∧ (tenant enabled). These
     // tests cover the PLAN half only — the tenant-toggle half lives in
     // tests/unit/modules.test.ts. The persona contract: agriculture core
-    // (journal/inventory/planning) is FREE; the enterprise GRC + automation
-    // modules are PRO; AI is ENTERPRISE; a null plan (self-hosted) allows all.
+    // (journal/inventory/planning) is FREE; the enterprise certification /
+    // automation / process-map modules are PRO; AI is ENTERPRISE; a null plan
+    // (self-hosted) allows all.
 
     describe('planAllowsModule', () => {
         test('null plan (self-hosted / unconfigured) allows every module', () => {
@@ -104,23 +105,21 @@ describe('Entitlements', () => {
             expect(planAllowsModule('FREE', 'JOURNAL')).toBe(true);
             expect(planAllowsModule('FREE', 'INVENTORY')).toBe(true);
             expect(planAllowsModule('FREE', 'PLANNING')).toBe(true);
-            // GRC + automation are gated above FREE.
+            // Certification + process maps + automation are gated above FREE.
             expect(planAllowsModule('FREE', 'CERTIFICATION')).toBe(false);
-            expect(planAllowsModule('FREE', 'VENDORS')).toBe(false);
             expect(planAllowsModule('FREE', 'PROCESSES')).toBe(false);
             expect(planAllowsModule('FREE', 'AUTOMATION')).toBe(false);
             expect(planAllowsModule('FREE', 'AI')).toBe(false);
         });
 
-        test('TRIAL plan still cannot reach the GRC tier (PRO)', () => {
+        test('TRIAL plan still cannot reach the PRO tier', () => {
             expect(planAllowsModule('TRIAL', 'JOURNAL')).toBe(true);
             expect(planAllowsModule('TRIAL', 'CERTIFICATION')).toBe(false);
             expect(planAllowsModule('TRIAL', 'AI')).toBe(false);
         });
 
-        test('PRO plan unlocks the GRC + automation modules but not AI', () => {
+        test('PRO plan unlocks the certification + automation modules but not AI', () => {
             expect(planAllowsModule('PRO', 'CERTIFICATION')).toBe(true);
-            expect(planAllowsModule('PRO', 'VENDORS')).toBe(true);
             expect(planAllowsModule('PRO', 'PROCESSES')).toBe(true);
             expect(planAllowsModule('PRO', 'AUTOMATION')).toBe(true);
             expect(planAllowsModule('PRO', 'AI')).toBe(false);
@@ -158,13 +157,13 @@ describe('Entitlements', () => {
         });
 
         test('null plan returns the full module set', () => {
-            expect(planModules(null)).toHaveLength(10);
+            expect(planModules(null)).toHaveLength(9);
             expect(planModules(null)).toContain('AI');
             expect(planModules(null)).toContain('GRAIN');
         });
 
         test('ENTERPRISE returns the full module set', () => {
-            expect(planModules('ENTERPRISE')).toHaveLength(10);
+            expect(planModules('ENTERPRISE')).toHaveLength(9);
             expect(planModules('ENTERPRISE')).toContain('GRAIN');
         });
     });
@@ -176,7 +175,7 @@ describe('Entitlements', () => {
             expect(getModuleMinPlan('PLANNING')).toBe('FREE');
         });
 
-        test('CERTIFICATION (the GRC umbrella) is PRO', () => {
+        test('CERTIFICATION (gates /processes + /access-reviews) is PRO', () => {
             expect(getModuleMinPlan('CERTIFICATION')).toBe('PRO');
         });
 

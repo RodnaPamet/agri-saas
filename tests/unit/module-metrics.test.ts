@@ -63,8 +63,8 @@ describe('recordModuleAccess', () => {
 
     it('increments the counter tagged by module + desktop device', async () => {
         withHeaders({ 'user-agent': 'Mozilla/5.0 (X11; Linux x86_64)' });
-        await recordModuleAccess('VENDORS');
-        expect(addMock).toHaveBeenCalledWith(1, { module: 'VENDORS', device: 'desktop' });
+        await recordModuleAccess('CERTIFICATION');
+        expect(addMock).toHaveBeenCalledWith(1, { module: 'CERTIFICATION', device: 'desktop' });
     });
 
     it('the device tag is only ever mobile|desktop (no cardinality risk)', async () => {

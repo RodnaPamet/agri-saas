@@ -91,17 +91,16 @@ export function getAvailableFeatures(plan: BillingPlan | string): FeatureKey[] {
 //
 // Tiering follows the two personas: the agriculture CORE (journal /
 // inventory / crop planning) is FREE so a startup farmer on "simple mode"
-// gets the full working surface; the enterprise GRC + automation modules
-// sit behind PRO; AI behind ENTERPRISE. A `null` plan (self-hosted /
-// billing-unconfigured) allows EVERYTHING — so on-prem + dev + the GRC
-// test tenants are unaffected, and the tenant toggle is the only gate.
+// gets the full working surface; the enterprise modules (certification,
+// automation, process maps) sit behind PRO; AI behind ENTERPRISE. A `null`
+// plan (self-hosted / billing-unconfigured) allows EVERYTHING — so on-prem
+// + dev are unaffected, and the tenant toggle is the only gate.
 
 const MODULE_MIN_PLAN: Record<ModuleKey, BillingPlan> = {
     JOURNAL: 'FREE',
     INVENTORY: 'FREE',
     PLANNING: 'FREE',
     CERTIFICATION: 'PRO',
-    VENDORS: 'PRO',
     AUTOMATION: 'PRO',
     PROCESSES: 'PRO',
     AI: 'ENTERPRISE',

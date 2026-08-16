@@ -25,10 +25,8 @@ export {
 export {
     buildDeadlineDigestEmail,
     buildEvidenceExpiryDigestEmail,
-    buildVendorRenewalDigestEmail,
     type DeadlineDigestPayload,
     type EvidenceExpiryDigestPayload,
-    type VendorRenewalDigestPayload,
 } from './digest-templates';
 export {
     dispatchDigest,

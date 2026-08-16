@@ -127,7 +127,7 @@ describe('notification-dispatch: precomputed items skip scanners', () => {
         );
 
         const precomputedItems = [{
-            entityType: 'PRACTICE' as const,
+            entityType: 'TASK' as const,
             entityId: 'ctrl-1',
             tenantId: 'tenant-1',
             name: 'Test Practice',

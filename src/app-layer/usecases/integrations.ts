@@ -2,23 +2,20 @@
  * Integration Framework — App-Layer Usecases
  *
  * Tenant-scoped operations for managing integration connections,
- * executing automation checks, and handling webhook events.
+ * handling webhook events, and reporting integration diagnostics.
  *
  * All mutations require appropriate RBAC permissions.
  * All reads are scoped to the calling tenant.
  *
  * @module usecases/integrations
  */
-import { Prisma, EvidenceType } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import type { RequestContext } from '../types';
 import { runInTenantContext } from '@/lib/db-context';
 import { registry } from '../integrations/registry';
-import { isScheduledCheckProvider } from '../integrations/types';
-import type { CheckResult, EvidencePayload } from '../integrations/types';
-import { encryptField, decryptField } from '@/lib/security/encryption';
+import { encryptField } from '@/lib/security/encryption';
 import { logEvent } from '../events/audit';
 import { notFound, badRequest, forbidden } from '@/lib/errors/types';
-import { logger } from '@/lib/observability/logger';
 
 // ─── Connection Management ───────────────────────────────────────────
 
@@ -195,191 +192,6 @@ export async function removeIntegrationConnection(ctx: RequestContext, connectio
     });
 }
 
-// ─── Automation Execution ────────────────────────────────────────────
-
-/**
- * Decrypt the secrets for a connection. Used internally by execution logic.
- * @internal
- */
-function decryptConnectionSecrets(secretEncrypted: string | null): Record<string, unknown> {
-    if (!secretEncrypted) return {};
-    try {
-        return JSON.parse(decryptField(secretEncrypted));
-    } catch {
-        logger.error('Failed to decrypt integration secrets', { component: 'integrations' });
-        return {};
-    }
-}
-
-/**
- * Run an automation check for a specific Practice.
- * Resolves the Practice's automationKey → provider → executes check → persists result.
- */
-export async function runAutomationForPractice(
-    ctx: RequestContext,
-    practiceId: string,
-    options: { triggeredBy?: 'scheduled' | 'manual' | 'webhook'; jobRunId?: string } = {}
-) {
-    const triggeredBy = options.triggeredBy ?? 'manual';
-
-    return runInTenantContext(ctx, async (db) => {
-        // 1. Fetch practice + automationKey
-        const practice = await db.practice.findFirst({
-            where: { id: practiceId, tenantId: ctx.tenantId, deletedAt: null },
-            select: { id: true, automationKey: true, tenantId: true, name: true },
-        });
-        if (!practice) throw notFound('Practice not found');
-        if (!practice.automationKey) throw badRequest('Practice has no automationKey');
-
-        // 2. Resolve provider
-        const resolution = registry.resolveByAutomationKey(practice.automationKey);
-        if (!resolution) throw badRequest(`No provider for automationKey: ${practice.automationKey}`);
-
-        const { provider, parsed } = resolution;
-        if (!isScheduledCheckProvider(provider)) {
-            throw badRequest(`Provider ${parsed.provider} does not support scheduled checks`);
-        }
-
-        // 3. Find active connection for this provider+tenant
-        const connection = await db.integrationConnection.findFirst({
-            where: {
-                tenantId: ctx.tenantId,
-                provider: parsed.provider,
-                isEnabled: true,
-            },
-        });
-        if (!connection) throw badRequest(`No active connection for provider: ${parsed.provider}`);
-
-        // 4. Create PENDING execution record
-        const execution = await db.integrationExecution.create({
-            data: {
-                tenantId: ctx.tenantId,
-                connectionId: connection.id,
-                provider: parsed.provider,
-                automationKey: practice.automationKey,
-                practiceId: practice.id,
-                status: 'RUNNING',
-                triggeredBy,
-                jobRunId: options.jobRunId,
-            },
-        });
-
-        // 5. Execute check
-        const startTime = Date.now();
-        let result: CheckResult;
-
-        try {
-            const secrets = decryptConnectionSecrets(connection.secretEncrypted);
-            result = await provider.runCheck({
-                automationKey: practice.automationKey,
-                parsed,
-                tenantId: ctx.tenantId,
-                practiceId: practice.id,
-                connectionConfig: {
-                    ...(connection.configJson as Record<string, unknown>),
-                    ...secrets,
-                },
-                triggeredBy,
-                jobRunId: options.jobRunId,
-            });
-        } catch (err) {
-            // Check execution failed at runtime
-            const durationMs = Date.now() - startTime;
-            const errorMessage = err instanceof Error ? err.message : String(err);
-
-            await db.integrationExecution.update({
-                where: { id: execution.id },
-                data: {
-                    status: 'ERROR',
-                    errorMessage,
-                    durationMs,
-                    completedAt: new Date(),
-                },
-            });
-
-            logger.error('Integration check execution error', {
-                component: 'integrations',
-                provider: parsed.provider,
-                automationKey: practice.automationKey,
-                practiceId: practice.id,
-                error: errorMessage,
-            });
-
-            return { execution: { ...execution, status: 'ERROR', errorMessage, durationMs } };
-        }
-
-        const durationMs = result.durationMs ?? (Date.now() - startTime);
-
-        // 6. Persist result
-        let evidenceId: string | undefined;
-
-        // 7. Optionally create evidence
-        if (result.status === 'PASSED' || result.status === 'FAILED') {
-            const evidencePayload: EvidencePayload | null = provider.mapResultToEvidence(
-                {
-                    automationKey: practice.automationKey,
-                    parsed,
-                    tenantId: ctx.tenantId,
-                    practiceId: practice.id,
-                    connectionConfig: {},
-                    triggeredBy,
-                },
-                result
-            );
-
-            if (evidencePayload) {
-                const evidence = await db.evidence.create({
-                    data: {
-                        tenantId: ctx.tenantId,
-                        practiceId: practice.id,
-                        // Integration EvidencePayload.type uses a wider vocabulary
-                        // (DOCUMENT/SCREENSHOT/LOG/CONFIGURATION/REPORT) than the
-                        // Prisma EvidenceType enum (FILE/LINK/TEXT). Integration-created
-                        // evidence is always text-based content; map to TEXT.
-                        type: EvidenceType.TEXT,
-                        title: evidencePayload.title,
-                        content: evidencePayload.content,
-                        category: evidencePayload.category ?? 'integration',
-                        status: 'APPROVED',
-                    },
-                });
-                evidenceId = evidence.id;
-            }
-        }
-
-        // 8. Update execution with result
-        await db.integrationExecution.update({
-            where: { id: execution.id },
-            data: {
-                status: result.status,
-                resultJson: result.details as Prisma.InputJsonValue,
-                evidenceId,
-                errorMessage: result.errorMessage,
-                durationMs,
-                completedAt: new Date(),
-            },
-        });
-
-        logger.info('Integration check completed', {
-            component: 'integrations',
-            provider: parsed.provider,
-            automationKey: practice.automationKey,
-            status: result.status,
-            durationMs,
-        });
-
-        return {
-            execution: {
-                id: execution.id,
-                status: result.status,
-                summary: result.summary,
-                durationMs,
-                evidenceId,
-            },
-        };
-    });
-}
-
 // ─── Webhook Handling ────────────────────────────────────────────────
 
 /**
@@ -438,41 +250,12 @@ export async function handleIncomingWebhook(
     }
 }
 
-// ─── Execution History ───────────────────────────────────────────────
-
-/**
- * List recent executions for a practice.
- */
-export async function listExecutionsForPractice(
-    ctx: RequestContext,
-    practiceId: string,
-    options: { limit?: number } = {}
-) {
-    return runInTenantContext(ctx, (db) =>
-        db.integrationExecution.findMany({
-            where: { tenantId: ctx.tenantId, practiceId },
-            select: {
-                id: true,
-                provider: true,
-                automationKey: true,
-                status: true,
-                resultJson: true,
-                evidenceId: true,
-                durationMs: true,
-                triggeredBy: true,
-                errorMessage: true,
-                executedAt: true,
-                completedAt: true,
-            },
-            orderBy: { executedAt: 'desc' },
-            take: options.limit ?? 20,
-        })
-    );
-}
+// ─── Registry & Connection Metadata ──────────────────────────────────
 
 /**
  * List all automation keys available in the registry.
- * Used by the UI to populate practice automationKey dropdowns.
+ * The practice automationKey dropdown this fed was removed by the GRC
+ * teardown; the registry keys themselves still route incoming webhooks.
  */
 export function listAvailableAutomationKeys(): string[] {
     return registry.listAllAutomationKeys();

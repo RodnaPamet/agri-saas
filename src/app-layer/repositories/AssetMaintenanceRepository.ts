@@ -26,7 +26,6 @@ export class AssetMaintenanceRepository {
         return db.assetMaintenance.findMany({
             where: { tenantId: ctx.tenantId, assetId },
             include: {
-                vendor: { select: { id: true, name: true } },
                 createdBy: { select: { id: true, name: true, email: true } },
             },
             orderBy: [{ openedAt: 'desc' }],

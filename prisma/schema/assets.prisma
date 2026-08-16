@@ -66,7 +66,6 @@ model Asset {
   deletedByUserId     String?
   ownerUser           User?                @relation("AssetOwner", fields: [ownerUserId], references: [id])
   tenant              Tenant               @relation(fields: [tenantId], references: [id])
-  practices            PracticeAsset[]
   // Evidence attached directly to this asset (Evidence Library tag +
   // the asset Evidence tab). Mirrors Practice/Task.
   evidence            Evidence[]
@@ -125,8 +124,6 @@ model AssetMaintenance {
   /// consumer, so sanitising at render time alone would not be enough.
   description    String?
   cost           Decimal?             @db.Decimal(12, 2)
-  /// Who did the work, when it was a third party.
-  vendorId       String?
   /// Next service due — by DATE and/or by METER. Modelled now even
   /// though nothing reads them yet: they are what makes a service-due
   /// signal possible later, and back-filling them onto history is far
@@ -139,14 +136,12 @@ model AssetMaintenance {
 
   tenant    Tenant  @relation(fields: [tenantId], references: [id])
   asset     Asset   @relation(fields: [assetId], references: [id], onDelete: Cascade)
-  vendor    Vendor? @relation(fields: [vendorId], references: [id])
   createdBy User?   @relation("AssetMaintenanceCreator", fields: [createdByUserId], references: [id])
 
   @@index([tenantId, assetId])
   @@index([tenantId, assetId, openedAt])
   /// Open-record lookup: "does this asset still have work in progress?"
   @@index([tenantId, closedAt])
-  @@index([tenantId, vendorId])
 }
 
 /// Per-tenant monotonic counter for minting `AST-N` asset keys.
@@ -175,21 +170,16 @@ model AssetKeySequence {
 /// Daily compliance KPI snapshot for trend reporting.
 /// One row per tenant per day. Idempotent via @@unique([tenantId, snapshotDate]).
 /// Stores denormalized KPI values computed by the daily snapshot job.
+/// Phase 3 dropped the practice / policy / vendor / finding COLUMNS from
+/// this model. The model itself stays (plan §8f): it held 49 real
+/// historical rows at the time of the drop, and the surviving evidence /
+/// task / asset aggregates are what jobs/snapshot.ts still writes.
 model ComplianceSnapshot {
   id           String   @id @default(cuid())
   tenantId     String
   /// Calendar date (midnight UTC) — NOT a full timestamp.
   /// Enables clean GROUP BY / ORDER BY for trend queries.
   snapshotDate DateTime @db.Date
-
-  // ── Practice Coverage ──
-  practicesTotal       Int @default(0)
-  practicesApplicable  Int @default(0)
-  practicesImplemented Int @default(0)
-  practicesInProgress  Int @default(0)
-  practicesNotStarted  Int @default(0)
-  /// Cached coverage % × 10 (e.g. 753 = 75.3%). Int avoids float precision issues.
-  practiceCoverageBps  Int @default(0)
 
   // ── Evidence ──
   evidenceTotal      Int @default(0)
@@ -198,28 +188,16 @@ model ComplianceSnapshot {
   evidenceDueSoon30d Int @default(0)
   evidenceCurrent    Int @default(0)
 
-  // ── Policies ──
-  policiesTotal         Int @default(0)
-  policiesPublished     Int @default(0)
-  policiesOverdueReview Int @default(0)
-
   // ── Tasks ──
   tasksTotal   Int @default(0)
   tasksOpen    Int @default(0)
   tasksOverdue Int @default(0)
-
-  // ── Vendors ──
-  vendorsTotal         Int @default(0)
-  vendorsOverdueReview Int @default(0)
 
   // ── Assets ──
   assetsTotal           Int @default(0)
   assetsActive          Int @default(0)
   assetsHighCriticality Int @default(0)
   assetsRetired         Int @default(0)
-
-  // ── Findings ──
-  findingsOpen Int @default(0)
 
   // ── Meta ──
   createdAt DateTime @default(now())

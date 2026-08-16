@@ -130,9 +130,11 @@ describe('classifyUrgency', () => {
 
 describe('DueItem contract', () => {
     test('all entity types are valid', () => {
-        const validTypes: MonitoredEntityType[] = [
-            'PRACTICE', 'EVIDENCE', 'POLICY', 'VENDOR', 'TASK', 'RISK', 'TEST_PLAN',
-        ];
+        // Two members since GRC teardown phase 3 — one per surviving
+        // producer. This test only checks the names are usable as the
+        // type; the producer↔type correspondence is asserted in
+        // due-item-ownership-guard.test.ts.
+        const validTypes: MonitoredEntityType[] = ['EVIDENCE', 'TASK'];
         for (const type of validTypes) {
             expect(type).toBeTruthy();
         }
@@ -147,11 +149,11 @@ describe('DueItem contract', () => {
 
     test('DueItem is fully JSON-serializable', () => {
         const item: DueItem = {
-            entityType: 'PRACTICE',
-            entityId: 'ctrl-123',
+            entityType: 'TASK',
+            entityId: 'task-123',
             tenantId: 'tenant-abc',
-            name: 'Access Control Review',
-            reason: 'Practice testing overdue by 5 day(s)',
+            name: 'Spray north field',
+            reason: 'Task overdue by 5 day(s)',
             urgency: 'OVERDUE',
             dueDate: '2026-04-12T00:00:00Z',
             daysRemaining: -5,
@@ -190,12 +192,14 @@ describe('Deadline Monitor', () => {
 
     beforeEach(() => {
         jest.clearAllMocks();
-        // Reset all mocked findMany to return empty by default
-        mockPrisma.practice.findMany.mockResolvedValue([]);
-        mockPrisma.policy.findMany.mockResolvedValue([]);
+        // `scanTasks` is the only scanner left — GRC teardown phase 2
+        // took the Risk + PracticeTestPlan scanners and phase 3 took
+        // Practice (nextDueAt) and Policy (nextReviewAt) with their
+        // models. Every case below therefore drives `task.findMany`;
+        // the urgency / sorting / counting logic under test is scanner-
+        // agnostic, so nothing was lost by collapsing the fixtures onto
+        // one entity type.
         mockPrisma.task.findMany.mockResolvedValue([]);
-        mockPrisma.risk.findMany.mockResolvedValue([]);
-        mockPrisma.practiceTestPlan.findMany.mockResolvedValue([]);
     });
 
     test('returns empty items when no entities are due', async () => {
@@ -208,14 +212,14 @@ describe('Deadline Monitor', () => {
         expect(result.itemsScanned).toBe(0);
     });
 
-    test('detects overdue practices', async () => {
-        mockPrisma.practice.findMany.mockResolvedValue([
+    test('detects overdue tasks', async () => {
+        mockPrisma.task.findMany.mockResolvedValue([
             {
-                id: 'ctrl-1',
+                id: 'task-1',
                 tenantId: 'tenant-1',
-                name: 'Firewall Config Review',
-                nextDueAt: new Date('2026-04-10T00:00:00Z'), // 7 days overdue
-                ownerUserId: 'user-1',
+                title: 'Spray north field',
+                dueAt: new Date('2026-04-10T00:00:00Z'), // 7 days overdue
+                assigneeUserId: 'user-1',
             },
         ]);
 
@@ -223,7 +227,7 @@ describe('Deadline Monitor', () => {
         const { items } = await runDeadlineMonitor({ now });
 
         expect(items).toHaveLength(1);
-        expect(items[0].entityType).toBe('PRACTICE');
+        expect(items[0].entityType).toBe('TASK');
         expect(items[0].urgency).toBe('OVERDUE');
         expect(items[0].daysRemaining).toBeLessThan(0);
         expect(items[0].tenantId).toBe('tenant-1');
@@ -231,14 +235,14 @@ describe('Deadline Monitor', () => {
         expect(items[0].reason).toContain('overdue');
     });
 
-    test('detects upcoming policy reviews', async () => {
-        mockPrisma.policy.findMany.mockResolvedValue([
+    test('detects upcoming tasks', async () => {
+        mockPrisma.task.findMany.mockResolvedValue([
             {
-                id: 'pol-1',
+                id: 'task-2',
                 tenantId: 'tenant-1',
-                title: 'Data Privacy Policy',
-                nextReviewAt: new Date('2026-05-10T00:00:00Z'), // ~23 days
-                ownerUserId: 'user-2',
+                title: 'Soil sampling round',
+                dueAt: new Date('2026-05-10T00:00:00Z'), // ~23 days
+                assigneeUserId: 'user-2',
             },
         ]);
 
@@ -246,17 +250,16 @@ describe('Deadline Monitor', () => {
         const { items } = await runDeadlineMonitor({ now });
 
         expect(items).toHaveLength(1);
-        expect(items[0].entityType).toBe('POLICY');
         expect(items[0].urgency).toBe('UPCOMING');
-        expect(items[0].name).toBe('Data Privacy Policy');
+        expect(items[0].name).toBe('Soil sampling round');
     });
 
     test('detects urgent tasks', async () => {
         mockPrisma.task.findMany.mockResolvedValue([
             {
-                id: 'task-1',
+                id: 'task-3',
                 tenantId: 'tenant-1',
-                title: 'Complete SOC 2 audit prep',
+                title: 'Harvest readiness check',
                 dueAt: new Date('2026-04-20T00:00:00Z'), // 3 days
                 assigneeUserId: 'user-3',
             },
@@ -271,30 +274,24 @@ describe('Deadline Monitor', () => {
         expect(items[0].ownerUserId).toBe('user-3');
     });
 
-
-
     test('tenant isolation: filters by tenantId when provided', async () => {
-        mockPrisma.practice.findMany.mockResolvedValue([]);
-
         const { runDeadlineMonitor } = await import('../../src/app-layer/jobs/deadline-monitor');
         await runDeadlineMonitor({ now, tenantId: 'tenant-specific' });
 
-        // Verify practice query included tenantId filter
-        const whereClause = mockPrisma.practice.findMany.mock.calls[0]?.[0]?.where;
+        const whereClause = mockPrisma.task.findMany.mock.calls[0]?.[0]?.where;
         expect(whereClause.tenantId).toBe('tenant-specific');
     });
 
     test('idempotent: same input produces same output', async () => {
-        const practices = [
+        mockPrisma.task.findMany.mockResolvedValue([
             {
-                id: 'ctrl-1',
+                id: 'task-1',
                 tenantId: 'tenant-1',
-                name: 'Test Practice',
-                nextDueAt: new Date('2026-04-20T00:00:00Z'),
-                ownerUserId: 'user-1',
+                title: 'Test Task',
+                dueAt: new Date('2026-04-20T00:00:00Z'),
+                assigneeUserId: 'user-1',
             },
-        ];
-        mockPrisma.practice.findMany.mockResolvedValue(practices);
+        ]);
 
         const { runDeadlineMonitor } = await import('../../src/app-layer/jobs/deadline-monitor');
 
@@ -309,14 +306,12 @@ describe('Deadline Monitor', () => {
     });
 
     test('sorts OVERDUE before URGENT before UPCOMING', async () => {
-        mockPrisma.practice.findMany.mockResolvedValue([
-            { id: 'c1', tenantId: 't', name: 'Upcoming', nextDueAt: new Date('2026-05-10T00:00:00Z'), ownerUserId: null },
-        ]);
+        // Deliberately supplied out of order so the assertion is about
+        // the sort, not about the order they were mocked in.
         mockPrisma.task.findMany.mockResolvedValue([
-            { id: 't1', tenantId: 't', title: 'Urgent', dueAt: new Date('2026-04-20T00:00:00Z'), assigneeUserId: null },
-        ]);
-        mockPrisma.policy.findMany.mockResolvedValue([
-            { id: 'p1', tenantId: 't', title: 'Overdue', nextReviewAt: new Date('2026-04-10T00:00:00Z'), ownerUserId: null },
+            { id: 't1', tenantId: 't', title: 'Upcoming', dueAt: new Date('2026-05-10T00:00:00Z'), assigneeUserId: null },
+            { id: 't2', tenantId: 't', title: 'Urgent', dueAt: new Date('2026-04-20T00:00:00Z'), assigneeUserId: null },
+            { id: 't3', tenantId: 't', title: 'Overdue', dueAt: new Date('2026-04-10T00:00:00Z'), assigneeUserId: null },
         ]);
 
         const { runDeadlineMonitor } = await import('../../src/app-layer/jobs/deadline-monitor');
@@ -329,12 +324,10 @@ describe('Deadline Monitor', () => {
     });
 
     test('counts by entity type are computed correctly', async () => {
-        mockPrisma.practice.findMany.mockResolvedValue([
-            { id: 'c1', tenantId: 't', name: 'C1', nextDueAt: new Date('2026-04-10T00:00:00Z'), ownerUserId: null },
-            { id: 'c2', tenantId: 't', name: 'C2', nextDueAt: new Date('2026-04-20T00:00:00Z'), ownerUserId: null },
-        ]);
-        mockPrisma.policy.findMany.mockResolvedValue([
-            { id: 'p1', tenantId: 't', title: 'P1', nextReviewAt: new Date('2026-04-22T00:00:00Z'), ownerUserId: null },
+        mockPrisma.task.findMany.mockResolvedValue([
+            { id: 't1', tenantId: 't', title: 'T1', dueAt: new Date('2026-04-10T00:00:00Z'), assigneeUserId: null },
+            { id: 't2', tenantId: 't', title: 'T2', dueAt: new Date('2026-04-20T00:00:00Z'), assigneeUserId: null },
+            { id: 't3', tenantId: 't', title: 'T3', dueAt: new Date('2026-04-22T00:00:00Z'), assigneeUserId: null },
         ]);
 
         const { runDeadlineMonitor } = await import('../../src/app-layer/jobs/deadline-monitor');
@@ -342,8 +335,7 @@ describe('Deadline Monitor', () => {
 
         expect(result.details).toBeDefined();
         const byEntity = result.details!.byEntity as Record<string, number>;
-        expect(byEntity.PRACTICE).toBe(2);
-        expect(byEntity.POLICY).toBe(1);
+        expect(byEntity.TASK).toBe(3);
     });
 });
 

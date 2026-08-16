@@ -55,7 +55,6 @@ import type { DueItem } from '../../src/app-layer/jobs/types';
 import {
     buildDeadlineDigestEmail,
     buildEvidenceExpiryDigestEmail,
-    buildVendorRenewalDigestEmail,
 } from '../../src/app-layer/notifications/digest-templates';
 import {
     dispatchDigest,
@@ -66,10 +65,10 @@ import {
 
 function makeDueItem(overrides: Partial<DueItem> = {}): DueItem {
     return {
-        entityType: 'PRACTICE',
-        entityId: 'ctrl-1',
+        entityType: 'TASK',
+        entityId: 'task-1',
         tenantId: 'tenant-1',
-        name: 'Firewall Review',
+        name: 'Spray north field',
         reason: 'Practice testing overdue by 5 day(s)',
         urgency: 'OVERDUE',
         dueDate: '2026-04-12T00:00:00Z',
@@ -171,20 +170,6 @@ describe('Digest Templates', () => {
         });
     });
 
-    describe('buildVendorRenewalDigestEmail', () => {
-        test('renders subject with vendor count', () => {
-            const result = buildVendorRenewalDigestEmail({
-                recipientName: 'Alice',
-                tenantSlug: 'acme',
-                items: [
-                    makeDueItem({ entityType: 'VENDOR', name: 'CloudCorp' }),
-                    makeDueItem({ entityType: 'VENDOR', name: 'SecureInc', entityId: 'v-2' }),
-                ],
-            });
-
-            expect(result.subject).toContain('2 vendor(s)');
-        });
-    });
 });
 
 // ═════════════════════════════════════════════════════════════════════
@@ -383,24 +368,6 @@ describe('Digest Dispatcher', () => {
         expect(tenantIds).toEqual(['tenant-1', 'tenant-2']);
     });
 
-    test('selects correct template by category', async () => {
-        const items: DueItem[] = [
-            makeDueItem({ entityType: 'VENDOR', ownerUserId: 'user-1' }),
-        ];
-
-        mockUserFindMany.mockResolvedValue([
-            { id: 'user-1', email: 'alice@acme.com', name: 'Alice' },
-        ]);
-
-        await dispatchDigest({
-            category: 'VENDOR_RENEWAL_DIGEST',
-            items,
-        });
-
-        const createCall = mockOutboxCreate.mock.calls[0][0];
-        expect(createCall.data.type).toBe('VENDOR_RENEWAL_DIGEST');
-        expect(createCall.data.subject).toContain('Vendor Renewal');
-    });
 
     test('per-tenant breakdown is tracked', async () => {
         const items: DueItem[] = [

@@ -270,6 +270,18 @@ describe('REGRESSION: digest-dispatcher does not query source-entity tables', ()
             'utf8',
         );
 
+        // Comments stripped first. This asserted `not.toContain(mod)`
+        // over the RAW file, so it failed the moment a comment
+        // EXPLAINED that `jobs/vendor-renewal-check.ts` had been
+        // deleted — the guard fired on its own documentation rather
+        // than on an import. The invariant is about the module graph,
+        // so only code should be searched.
+        const code = source
+            .replace(/\/\*[\s\S]*?\*\//g, '')
+            .split('\n')
+            .filter((l: string) => !l.trim().startsWith("//"))
+            .join('\n');
+
         const monitorImports = [
             'deadline-monitor',
             'evidence-expiry-monitor',
@@ -278,7 +290,7 @@ describe('REGRESSION: digest-dispatcher does not query source-entity tables', ()
         ];
 
         for (const mod of monitorImports) {
-            expect(source).not.toContain(mod);
+            expect(code).not.toContain(mod);
         }
     });
 });

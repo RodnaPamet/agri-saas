@@ -41,7 +41,6 @@ export interface CreateMaintenanceInput {
     meterAtService?: number | null;
     description?: string | null;
     cost?: number | null;
-    vendorId?: string | null;
     nextDueAt?: Date | string | null;
     nextDueMeter?: number | null;
 }
@@ -55,7 +54,7 @@ function toDate(value: Date | string | null | undefined): Date | null | undefine
 export async function listAssetMaintenance(ctx: RequestContext, assetId: string) {
     assertCanRead(ctx);
     return runInTenantContext(ctx, async (db) => {
-        const asset = await AssetRepository.getById(db, ctx, assetId, { withPractices: false });
+        const asset = await AssetRepository.getById(db, ctx, assetId);
         if (!asset) throw notFound('Asset not found');
         return AssetMaintenanceRepository.listForAsset(db, ctx, assetId);
     });
@@ -68,7 +67,7 @@ export async function createAssetMaintenance(
 ) {
     assertCanWrite(ctx);
     return runInTenantContext(ctx, async (db) => {
-        const asset = await AssetRepository.getById(db, ctx, assetId, { withPractices: false });
+        const asset = await AssetRepository.getById(db, ctx, assetId);
         if (!asset) throw notFound('Asset not found');
 
         const record = await AssetMaintenanceRepository.create(db, ctx, {
@@ -79,7 +78,6 @@ export async function createAssetMaintenance(
             meterAtService: input.meterAtService ?? null,
             description: clean(input.description) ?? null,
             cost: input.cost ?? null,
-            vendorId: input.vendorId ?? null,
             nextDueAt: toDate(input.nextDueAt) ?? null,
             nextDueMeter: input.nextDueMeter ?? null,
             createdByUserId: ctx.userId ?? null,
@@ -141,7 +139,7 @@ export async function closeAssetMaintenance(
         // right suggestion — a machine with two open repairs is not fixed
         // because one of them finished.
         const stillOpen = await AssetMaintenanceRepository.listOpenForAsset(db, ctx, assetId);
-        const asset = await AssetRepository.getById(db, ctx, assetId, { withPractices: false });
+        const asset = await AssetRepository.getById(db, ctx, assetId);
         const suggestStatus =
             stillOpen.length === 0 && asset?.status === 'IN_MAINTENANCE' ? 'ACTIVE' : null;
 

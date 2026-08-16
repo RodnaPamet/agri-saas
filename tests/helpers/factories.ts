@@ -6,7 +6,7 @@
  * For integration tests: creates records via Prisma.
  *
  * Usage:
- *   import { buildTenant, buildUser, buildPractice, buildRisk } from '../helpers/factories';
+ *   import { buildTenant, buildUser, buildEvidence, buildTask } from '../helpers/factories';
  *   const tenant = buildTenant();
  *   const user = buildUser({ tenantId: tenant.id });
  */
@@ -70,39 +70,8 @@ export function buildRequestContext(overrides: Record<string, unknown> = {}) {
     };
 }
 
-export function buildPractice(overrides: Record<string, unknown> = {}) {
-    return {
-        id: nextId(),
-        tenantId: overrides.tenantId ?? nextId(),
-        code: `A.${Math.floor(Math.random() * 99)}.${Math.floor(Math.random() * 9)}`,
-        name: `Test Practice ${counter}`,
-        description: 'Test practice description',
-        status: 'NOT_IMPLEMENTED',
-        applicability: 'APPLICABLE',
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        deletedAt: null,
-        ...overrides,
-    };
-}
-
-export function buildRisk(overrides: Record<string, unknown> = {}) {
-    return {
-        id: nextId(),
-        tenantId: overrides.tenantId ?? nextId(),
-        name: `Test Risk ${counter}`,
-        description: 'Test risk description',
-        likelihood: overrides.likelihood ?? 3,
-        impact: overrides.impact ?? 3,
-        riskScore: ((overrides.likelihood ?? 3) as number) * ((overrides.impact ?? 3) as number),
-        category: overrides.category ?? 'OPERATIONAL',
-        status: overrides.status ?? 'IDENTIFIED',
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        deletedAt: null,
-        ...overrides,
-    };
-}
+// `buildPractice` / `buildRisk` removed in the GRC teardown — the Practice
+// and Risk models no longer exist.
 
 export function buildEvidence(overrides: Record<string, unknown> = {}) {
     return {
@@ -111,7 +80,6 @@ export function buildEvidence(overrides: Record<string, unknown> = {}) {
         title: `Test Evidence ${counter}`,
         type: overrides.type ?? 'DOCUMENT',
         status: overrides.status ?? 'DRAFT',
-        practiceId: overrides.practiceId ?? null,
         isArchived: overrides.isArchived ?? false,
         retentionUntil: overrides.retentionUntil ?? null,
         expiredAt: overrides.expiredAt ?? null,
@@ -130,7 +98,6 @@ export function buildTask(overrides: Record<string, unknown> = {}) {
         type: overrides.type ?? 'TASK',
         status: overrides.status ?? 'OPEN',
         priority: overrides.priority ?? 'MEDIUM',
-        practiceId: overrides.practiceId ?? null,
         dueAt: overrides.dueAt ?? null,
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -159,37 +126,8 @@ export function createTenantWithAdmin(overrides: Record<string, unknown> = {}) {
     return { tenant, user, membership, ctx };
 }
 
-/**
- * Build a practice with linked evidence.
- */
-export function createPracticeWithEvidence(tenantId?: string, overrides: Record<string, unknown> = {}) {
-    const tid = tenantId ?? buildTenant().id;
-    const practice = buildPractice({ tenantId: tid, ...overrides });
-    const evidence = buildEvidence({
-        tenantId: tid,
-        practiceId: practice.id,
-        title: `Evidence for ${practice.name}`,
-    });
-    return { practice, evidence, tenantId: tid };
-}
-
-/**
- * Build a risk with computed score.
- */
-export function createRiskWithScore(
-    likelihood: number,
-    impact: number,
-    overrides: Record<string, unknown> = {},
-) {
-    const { calculateRiskScore } = require('@/lib/risk-scoring');
-    const score = calculateRiskScore(likelihood, impact);
-    return buildRisk({
-        likelihood,
-        impact,
-        riskScore: score,
-        ...overrides,
-    });
-}
+// `createPracticeWithEvidence` / `createRiskWithScore` removed in the GRC
+// teardown — Practice, Risk and `@/lib/risk-scoring` are all gone.
 
 /**
  * Seed a minimal tenant context for integration tests.
@@ -197,15 +135,13 @@ export function createRiskWithScore(
  */
 export function seedMinimalTenant(role: string = 'ADMIN') {
     const { tenant, user, membership, ctx } = createTenantWithAdmin();
-    const practice = buildPractice({ tenantId: tenant.id, code: 'A.5.1', name: 'Access Control Policy' });
-    const risk = createRiskWithScore(3, 4, { tenantId: tenant.id, name: 'Data Breach Risk' });
-    const evidence = buildEvidence({ tenantId: tenant.id, practiceId: practice.id });
+    const evidence = buildEvidence({ tenantId: tenant.id });
     const ctxWithRole = role === 'ADMIN' ? ctx : buildRequestContext({
         tenantId: tenant.id,
         userId: user.id,
         role,
     });
-    return { tenant, user, membership, ctx: ctxWithRole, practice, risk, evidence };
+    return { tenant, user, membership, ctx: ctxWithRole, evidence };
 }
 
 // ─── DB Factories (integration tests) ───
@@ -233,10 +169,8 @@ export async function createMembership(
     });
 }
 
-export async function createPractice(prisma: PrismaClient, tenantId: string, overrides: Record<string, unknown> = {}) {
-    const data = buildPractice({ tenantId, ...overrides });
-    return prisma.practice.create({ data: data as any }); // eslint-disable-line @typescript-eslint/no-explicit-any
-}
+// `createPractice` removed in the GRC teardown — `prisma.practice` no
+// longer exists.
 
 // ─── Reset helpers ───
 

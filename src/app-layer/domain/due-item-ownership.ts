@@ -44,54 +44,15 @@ export const OWNERSHIP_RULES: Record<MonitoredEntityType, {
     /** Human-readable description for documentation/logging */
     description: string;
 }> = {
-    PRACTICE: {
-        ownerField: 'ownerUserId',
-        adminFallbackIntended: true,
-        description: 'Practice owner (assigned via practice management)',
-    },
     EVIDENCE: {
         ownerField: 'ownerUserId',
         adminFallbackIntended: true,
         description: 'Evidence owner (real user FK, replaces legacy free-text)',
     },
-    POLICY: {
-        ownerField: 'ownerUserId',
-        adminFallbackIntended: true,
-        description: 'Policy owner (assigned via policy management)',
-    },
-    VENDOR: {
-        ownerField: 'ownerUserId',
-        adminFallbackIntended: true,
-        description: 'Vendor owner (assigned via vendor management)',
-    },
     TASK: {
         ownerField: 'assigneeUserId',
         adminFallbackIntended: true,
         description: 'Task assignee (uses assignee, not owner)',
-    },
-    RISK: {
-        ownerField: 'ownerUserId',
-        adminFallbackIntended: true,
-        description: 'Risk owner (assigned via risk register)',
-    },
-    TEST_PLAN: {
-        ownerField: 'ownerUserId',
-        adminFallbackIntended: true,
-        description: 'Test plan owner (assigned via test management)',
-    },
-    TREATMENT_PLAN: {
-        ownerField: 'ownerUserId',
-        adminFallbackIntended: true,
-        description: 'Risk treatment plan owner (assigned at plan creation)',
-    },
-    TREATMENT_MILESTONE: {
-        // Milestones inherit ownership from their parent plan; the
-        // deadline-monitor scanner already populates DueItem.ownerUserId
-        // from `treatmentPlan.ownerUserId`. The "field" here is a
-        // synthetic reference for documentation only.
-        ownerField: 'treatmentPlan.ownerUserId',
-        adminFallbackIntended: true,
-        description: 'Treatment milestone — inherits owner from parent plan',
     },
 };
 

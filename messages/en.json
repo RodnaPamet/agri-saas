@@ -43,6 +43,10 @@
         "platformCompanies": "Manage suppliers"
     },
     "common": {
+            "filterGroups": {
+                "attributes": "Attributes",
+                "quantitative": "Quantitative"
+            },
         "appName": "Agrent",
         "loading": "Loading...",
         "save": "Save",
@@ -5947,9 +5951,9 @@
         "protectConsent": "Your consent to share an offer request is stored with the moment you gave it, so it can be shown if you ever ask why a supplier received your details.",
         "rightsTitle": "Your rights",
         "rightsList": "Under the GDPR you may ask for a copy of your personal data, ask for it to be corrected or erased, object to how it is used, or withdraw a consent you previously gave. Contact the operator of this deployment using the details below.",
-        "practicelerTitle": "Who is responsible",
-        "practicelerBody": "Agrent is software operated by an organisation that decides what is collected and why. That organisation is the data practiceler for the records in this deployment and is the party to contact about them.",
-        "practicelerContact": "Contact:",
+        "controllerTitle": "Who is responsible",
+        "controllerBody": "Agrent is software operated by an organisation that decides what is collected and why. That organisation is the data controller for the records in this deployment and is the party to contact about them.",
+        "controllerContact": "Contact:",
         "keepTitle": "How long we keep it",
         "keepRequests": "An offer request is kept for {months} months from the day you send it, then marked for deletion and permanently removed {graceDays} days later. Farm records and account details are kept while your account is active."
     },

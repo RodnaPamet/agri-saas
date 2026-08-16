@@ -62,19 +62,22 @@ export interface JobRunResult {
  * Entity types that can have due/expiring items.
  * Used for downstream notification grouping.
  */
-export type MonitoredEntityType =
-    | 'PRACTICE'
-    | 'EVIDENCE'
-    | 'POLICY'
-    | 'VENDOR'
-    | 'TASK'
-    | 'RISK'
-    | 'TEST_PLAN'
-    // Epic G-7 — treatment-plan target dates + milestone due dates
-    // both flow through the deadline monitor so the digest pipeline
-    // groups them by owner alongside other deadlines.
-    | 'TREATMENT_PLAN'
-    | 'TREATMENT_MILESTONE';
+/**
+ * The entity kinds a monitor job can flag as due.
+ *
+ * Exactly two, and they correspond one-to-one with the two surviving
+ * producers: `evidence-expiry-monitor` emits EVIDENCE,
+ * `deadline-monitor` emits TASK. The union carried seven more —
+ * PRACTICE, POLICY, VENDOR, RISK, TEST_PLAN, TREATMENT_PLAN,
+ * TREATMENT_MILESTONE — for some time after the jobs that produced them
+ * were deleted, which made it look like the digest pipeline handled
+ * cases no code could reach.
+ *
+ * Add a member only together with the producer that emits it;
+ * `tests/unit/due-item-ownership-guard.test.ts` asserts the
+ * correspondence in both directions.
+ */
+export type MonitoredEntityType = 'EVIDENCE' | 'TASK';
 
 /**
  * Urgency classification for due items.

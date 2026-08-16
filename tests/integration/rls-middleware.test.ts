@@ -11,8 +11,9 @@
  *   3. `runWithoutRls` bypasses (superuser_bypass policy matches) and
  *      sees every row regardless of tenant.
  *
- * Also covers the special cases where the policies differ:
- *   - Ownership-chained (EXISTS against parent) — FindingEvidence.
+ * Also covers the two shapes the plain direct-tenantId case does not:
+ *   - Denorm-tenantId child bound to its parent by a composite FK —
+ *     EvidenceReview.
  *   - Nullable tenantId — IntegrationWebhookEvent.
  *
  * This test runs against the live Postgres (DB_AVAILABLE gate). It is
@@ -56,9 +57,9 @@ describeFn('RLS middleware — live PostgreSQL enforcement', () => {
     let tenantA: string;
     let tenantB: string;
     let ruleAId: string;
-    let findingAId: string;
+    let reviewerUserId: string;
     let evidenceAId: string;
-    let findingEvidenceId: string;
+    let evidenceReviewId: string;
 
     beforeAll(async () => {
         prisma = prismaTestClient();
@@ -85,7 +86,7 @@ describeFn('RLS middleware — live PostgreSQL enforcement', () => {
             data: {
                 tenantId: tenantA,
                 name: `mw-rule-${SUFFIX}`,
-                triggerEvent: 'RISK_CREATED',
+                triggerEvent: 'TASK_CREATED',
                 actionType: 'NOTIFY_USER',
                 actionConfigJson: {},
                 status: 'ENABLED',
@@ -93,16 +94,10 @@ describeFn('RLS middleware — live PostgreSQL enforcement', () => {
         });
         ruleAId = rule.id;
 
-        const finding = await prisma.finding.create({
-            data: {
-                tenantId: tenantA,
-                severity: 'HIGH',
-                type: 'NONCONFORMITY',
-                title: `mw-finding-${SUFFIX}`,
-                description: 'x',
-            },
+        const reviewer = await prisma.user.create({
+            data: { email: `reviewer-${SUFFIX}@example.test`, name: 'MW Reviewer' },
         });
-        findingAId = finding.id;
+        reviewerUserId = reviewer.id;
 
         const evidence = await prisma.evidence.create({
             data: {
@@ -113,22 +108,27 @@ describeFn('RLS middleware — live PostgreSQL enforcement', () => {
         });
         evidenceAId = evidence.id;
 
-        const fe = await prisma.findingEvidence.create({
-            data: { tenantId: tenantA, findingId: findingAId, evidenceId: evidenceAId },
+        const review = await prisma.evidenceReview.create({
+            data: {
+                tenantId: tenantA,
+                evidenceId: evidenceAId,
+                reviewerId: reviewerUserId,
+                action: 'APPROVED',
+            },
         });
-        findingEvidenceId = fe.id;
+        evidenceReviewId = review.id;
     });
 
     afterAll(async () => {
         try {
-            await prisma.findingEvidence.deleteMany({ where: { id: findingEvidenceId } });
+            await prisma.evidenceReview.deleteMany({ where: { tenantId: { in: [tenantA, tenantB] } } });
             await prisma.automationRule.deleteMany({ where: { tenantId: { in: [tenantA, tenantB] } } });
-            await prisma.finding.deleteMany({ where: { tenantId: { in: [tenantA, tenantB] } } });
             await prisma.evidence.deleteMany({ where: { tenantId: { in: [tenantA, tenantB] } } });
             await prisma.integrationWebhookEvent.deleteMany({
                 where: { provider: { startsWith: `mw-${SUFFIX}` } },
             });
             await prisma.tenant.deleteMany({ where: { id: { in: [tenantA, tenantB] } } });
+            await prisma.user.deleteMany({ where: { id: reviewerUserId } });
         } catch {
             /* best effort */
         }
@@ -164,7 +164,7 @@ describeFn('RLS middleware — live PostgreSQL enforcement', () => {
                         data: {
                             tenantId: tenantA, // forged!
                             name: `forge-${SUFFIX}`,
-                            triggerEvent: 'RISK_CREATED',
+                            triggerEvent: 'TASK_CREATED',
                             actionType: 'NOTIFY_USER',
                             actionConfigJson: {},
                         },
@@ -236,7 +236,7 @@ describeFn('RLS middleware — live PostgreSQL enforcement', () => {
                         data: {
                             tenantId: tenantB,
                             name: `bypass-create-${SUFFIX}`,
-                            triggerEvent: 'RISK_CREATED',
+                            triggerEvent: 'TASK_CREATED',
                             actionType: 'NOTIFY_USER',
                             actionConfigJson: {},
                         },
@@ -247,40 +247,43 @@ describeFn('RLS middleware — live PostgreSQL enforcement', () => {
         });
     });
 
-    describe('Ownership-chained — Class E (FindingEvidence)', () => {
-        test('tenant-A sees its FindingEvidence row via parent Finding', async () => {
+    describe('Denorm-tenantId child — Class E (EvidenceReview)', () => {
+        test('tenant-A sees its EvidenceReview row', async () => {
             const rows = await runInTenantContext(makeCtx(tenantA), async (db) => {
-                return db.findingEvidence.findMany({
-                    where: { id: findingEvidenceId },
+                return db.evidenceReview.findMany({
+                    where: { id: evidenceReviewId },
                 });
             });
             expect(rows).toHaveLength(1);
         });
 
-        test('tenant-B sees ZERO FindingEvidence rows from tenant-A', async () => {
+        test('tenant-B sees ZERO EvidenceReview rows from tenant-A', async () => {
             const rows = await runInTenantContext(makeCtx(tenantB), async (db) => {
-                return db.findingEvidence.findMany({
-                    where: { id: findingEvidenceId },
+                return db.evidenceReview.findMany({
+                    where: { id: evidenceReviewId },
                 });
             });
             expect(rows).toHaveLength(0);
         });
 
-        test('tenant-B cannot create a FindingEvidence linking to tenant-A parents', async () => {
-            // denorm-tenantId Phase 2: rejection is now structural
-            // (composite FK from (findingId, tenantId) to Finding(id,
+        test('tenant-B cannot create an EvidenceReview linking to a tenant-A parent', async () => {
+            // denorm-tenantId Phase 3: rejection here is structural
+            // (composite FK from (evidenceId, tenantId) to Evidence(id,
             // tenantId)) rather than RLS WITH CHECK. The call below
             // declares tenantId: tenantB (matching the calling
-            // session) but findingId/evidenceId belong to tenantA —
-            // no parent row matches (findingAId, tenantB) so the FK
-            // rejects the insert.
+            // session) but evidenceId belongs to tenantA — no parent
+            // row matches (evidenceAId, tenantB) so the FK rejects the
+            // insert. That is what makes the trivial direct-tenantId
+            // policy on this table safe: a row's tenantId is guaranteed
+            // by the FK to equal its parent's.
             await expect(
                 runInTenantContext(makeCtx(tenantB), async (db) => {
-                    return db.findingEvidence.create({
+                    return db.evidenceReview.create({
                         data: {
                             tenantId: tenantB,
-                            findingId: findingAId,
                             evidenceId: evidenceAId,
+                            reviewerId: reviewerUserId,
+                            action: 'APPROVED',
                         },
                     });
                 })

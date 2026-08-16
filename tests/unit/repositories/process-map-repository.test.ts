@@ -308,7 +308,7 @@ describe('ProcessMapRepository — replaceGraph write shape', () => {
                     labelOverride: 'approves',
                     dataJson: { weight: 2 },
                     practices: [
-                        { practiceKey: 'c1', label: 'AC-1', practiceId: 'ctrl-1' },
+                        { practiceKey: 'c1', label: 'AC-1' },
                     ],
                 },
             ],
@@ -327,12 +327,11 @@ describe('ProcessMapRepository — replaceGraph write shape', () => {
             tenantId: 'tenant-1',
             practiceKey: 'c1',
             label: 'AC-1',
-            practiceId: 'ctrl-1',
         });
         // The snapshot payload carries the practices through verbatim.
         const snapshot = argOf(db.processMapSnapshot.create).data;
         expect(snapshot.graphJson.edges[0].practices).toEqual([
-            { practiceKey: 'c1', label: 'AC-1', practiceId: 'ctrl-1', dataJson: null },
+            { practiceKey: 'c1', label: 'AC-1', dataJson: null },
         ]);
     });
 
@@ -468,7 +467,7 @@ describe('ProcessMapRepository — snapshots', () => {
     });
 });
 
-describe('ProcessMapRepository — soft delete and practice traceability', () => {
+describe('ProcessMapRepository — soft delete', () => {
     it('stamps the deleter and only touches a live map in the tenant', async () => {
         // Break: omitting `deletedAt: null` lets an already-deleted map
         // be "deleted" again, overwriting who removed it originally.
@@ -496,37 +495,6 @@ describe('ProcessMapRepository — soft delete and practice traceability', () =>
         expect(ok).toBe(false);
     });
 
-    it('hides deleted maps from a practice\'s traceability, in memory', async () => {
-        // The query does NOT filter deleted maps — the guard is a JS
-        // `.filter()` after the fact. Break: dropping it surfaces
-        // deleted process maps in the practice detail panel, which is
-        // exactly the resurfacing class soft delete exists to prevent.
-        db.processEdgePractice.findMany.mockResolvedValue([
-            {
-                edge: {
-                    edgeKey: 'e-live',
-                    labelOverride: 'Live',
-                    processMap: { id: 'm-1', name: 'Live map', status: 'DRAFT', deletedAt: null },
-                },
-            },
-            {
-                edge: {
-                    edgeKey: 'e-dead',
-                    labelOverride: 'Dead',
-                    processMap: { id: 'm-2', name: 'Deleted map', status: 'DRAFT', deletedAt: new Date(0) },
-                },
-            },
-        ]);
-
-        const rows = await ProcessMapRepository.listMapsByPractice(asTx(db), ctx, 'ctrl-1');
-
-        expect(whereOf(db.processEdgePractice.findMany)).toEqual({
-            tenantId: 'tenant-1',
-            practiceId: 'ctrl-1',
-        });
-        expect(rows).toHaveLength(1);
-        expect(rows[0].mapId).toBe('m-1');
-    });
 });
 
 describe('ProcessMapRepository — canvas mode and create', () => {

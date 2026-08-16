@@ -1,13 +1,21 @@
 /**
  * Unit coverage for the assignment notification module (PR-A
  * 2026-05-27). The structural ratchet locks the wiring in task.ts
- * and practice/mutations.ts; this file pins the behavioural
- * contract of the helper:
+ * and asset.ts; this file pins the behavioural contract of the
+ * helper:
  *
  *   1. dedupeKey shape: `{tenantId}:{TYPE}:{entityId}:{userId}:{YYYY-MM-DD}`.
  *   2. duplicate calls within one day collapse (skipDuplicates).
- *   3. TASK_ASSIGNED and PRACTICE_ASSIGNED point at the right
+ *   3. TASK_ASSIGNED and ASSET_ASSIGNED point at the right
  *      tenant-scoped detail-page URL.
+ *
+ * GRC teardown phase 3 removed PRACTICE_ASSIGNED and RISK_ASSIGNED
+ * from the kind union — the deep links they carried pointed at
+ * `/practices` and `/risks`, which no longer exist. Cases that named
+ * them are re-pointed at ASSET_ASSIGNED rather than deleted: the
+ * property under test (two kinds produce different dedupe keys; the
+ * bus fans out to the right subscriber) is about the mechanism, not
+ * about which kinds happen to exist.
  */
 
 import {
@@ -48,14 +56,14 @@ describe('buildAssignmentDedupeKey', () => {
             'user-1',
             new Date('2026-05-27T10:30:00Z'),
         );
-        const practiceKey = buildAssignmentDedupeKey(
+        const assetKey = buildAssignmentDedupeKey(
             'tenant-1',
-            'PRACTICE_ASSIGNED',
+            'ASSET_ASSIGNED',
             'entity-1',
             'user-1',
             new Date('2026-05-27T10:30:00Z'),
         );
-        expect(taskKey).not.toBe(practiceKey);
+        expect(taskKey).not.toBe(assetKey);
     });
 });
 
@@ -116,31 +124,6 @@ describe('createAssignmentNotification', () => {
         expect(row.type).toBe('TASK_ASSIGNED');
         expect(row.linkUrl).toBe('/t/acme/farm-tasks/task-X');
         expect(args.skipDuplicates).toBe(true);
-    });
-
-    it('writes type=PRACTICE_ASSIGNED with the tenant-scoped /practices deep link', async () => {
-        createManyMock.mockResolvedValueOnce({ count: 1 });
-        await createAssignmentNotification(
-            db as never,
-            'PRACTICE_ASSIGNED',
-            makeTarget({ entityId: 'ctrl-X', tenantSlug: 'acme' }),
-        );
-        const args = createManyMock.mock.calls[0][0];
-        const row = args.data[0];
-        expect(row.type).toBe('PRACTICE_ASSIGNED');
-        expect(row.linkUrl).toBe('/t/acme/practices/ctrl-X');
-    });
-
-    it('writes type=RISK_ASSIGNED with the tenant-scoped /risks deep link', async () => {
-        createManyMock.mockResolvedValueOnce({ count: 1 });
-        await createAssignmentNotification(
-            db as never,
-            'RISK_ASSIGNED',
-            makeTarget({ entityId: 'risk-X', tenantSlug: 'acme' }),
-        );
-        const row = createManyMock.mock.calls[0][0].data[0];
-        expect(row.type).toBe('RISK_ASSIGNED');
-        expect(row.linkUrl).toBe('/t/acme/risks/risk-X');
     });
 
     it('writes type=ASSET_ASSIGNED with the tenant-scoped /assets deep link', async () => {
@@ -292,13 +275,13 @@ describe('createAssignmentNotification — SSE publish (2026-05-28 follow-up)', 
         createManyMock.mockResolvedValueOnce({ count: 1 });
         await createAssignmentNotification(
             db as never,
-            'PRACTICE_ASSIGNED',
+            'ASSET_ASSIGNED',
             {
                 tenantId: 'tenant-1',
                 assigneeUserId: 'user-1',
-                entityId: 'ctrl-1',
-                entityLabel: 'Some practice',
-                entityKey: 'C-1',
+                entityId: 'asset-1',
+                entityLabel: 'Some asset',
+                entityKey: 'A-1',
                 tenantSlug: 'acme',
             },
         );

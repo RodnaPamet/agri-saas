@@ -31,7 +31,13 @@ jest.mock('@/lib/security/sanitize', () => ({
 // auto-evidence are stubbed so the module import is cheap).
 jest.mock('@/app-layer/usecases/task', () => ({ createTask: jest.fn() }));
 jest.mock('@/app-layer/usecases/inventory', () => ({ recordInputApplication: jest.fn() }));
-jest.mock('@/app-layer/usecases/auto-evidence', () => ({ attachAutoEvidenceFromLogEntry: jest.fn() }));
+jest.mock('@/app-layer/usecases/auto-evidence', () => ({
+    // journal.ts imports BOTH of these; a factory naming only the
+    // deleted `attachAutoEvidenceFromLogEntry` would leave them
+    // undefined and blow up the update / delete / restore paths.
+    syncDerivedEvidenceTitle: jest.fn(),
+    setDerivedEvidenceWithdrawn: jest.fn(),
+}));
 jest.mock('@/app-layer/repositories/ParcelRepository', () => ({
     ParcelRepository: { validIdsForLocation: jest.fn() },
 }));

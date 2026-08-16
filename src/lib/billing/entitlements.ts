@@ -96,7 +96,6 @@ export type BillingMode = 'SAAS' | 'SELFHOSTED';
  * site.
  */
 export type GatedResource =
-    | 'practice'
     | 'user'
     | 'location'
     | 'ai_tokens'
@@ -110,8 +109,7 @@ export type GatedResource =
  * large grain producer (ENTERPRISE) are TEAM SIZE (`user`) and the
  * number of FARMS/FIELDS (`location`). FREE gets a single-operator,
  * few-fields budget; the working tiers lift it; ENTERPRISE is
- * unlimited. `practice` is retained for tenants running the
- * CERTIFICATION module.
+ * unlimited.
  *
  * TRIAL inherits PRO — a paying-customer-on-trial gets the full
  * working surface, not an artificially constrained one.
@@ -130,10 +128,10 @@ export type GatedResource =
 // a small FREE budget keeps a single tenant from flooding the shared feed,
 // while working tiers lift it and ENTERPRISE is unlimited.
 const PLAN_LIMITS: Record<Plan, Record<GatedResource, number | null>> = {
-    FREE: { practice: 10, user: 3, location: 5, ai_tokens: 50_000, exchange_listing: 5 },
-    TRIAL: { practice: 100, user: 25, location: 50, ai_tokens: 1_000_000, exchange_listing: 50 },
-    PRO: { practice: 100, user: 25, location: 50, ai_tokens: 5_000_000, exchange_listing: 50 },
-    ENTERPRISE: { practice: null, user: null, location: null, ai_tokens: null, exchange_listing: null },
+    FREE: { user: 3, location: 5, ai_tokens: 50_000, exchange_listing: 5 },
+    TRIAL: { user: 25, location: 50, ai_tokens: 1_000_000, exchange_listing: 50 },
+    PRO: { user: 25, location: 50, ai_tokens: 5_000_000, exchange_listing: 50 },
+    ENTERPRISE: { user: null, location: null, ai_tokens: null, exchange_listing: null },
 };
 
 // ─── Mode decision ───────────────────────────────────────────────
@@ -261,7 +259,7 @@ export async function getAiTokensUsedThisMonth(ctx: RequestContext): Promise<num
 /**
  * The current count of `resource` for the tenant — used by the
  * limit assertion. Soft-deleted rows are excluded so a tenant that
- * deleted some practices can immediately create new ones again.
+ * deleted some locations can immediately create new ones again.
  */
 async function getCurrentCount(
     ctx: RequestContext,
@@ -270,10 +268,6 @@ async function getCurrentCount(
 ): Promise<number> {
     return runIn(ctx, tx, async (db) => {
         switch (resource) {
-            case 'practice':
-                return db.practice.count({
-                    where: { tenantId: ctx.tenantId, deletedAt: null },
-                });
             case 'user':
                 // Active team members (the seats the plan pays for).
                 return db.tenantMembership.count({

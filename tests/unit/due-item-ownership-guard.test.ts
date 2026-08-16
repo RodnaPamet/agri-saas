@@ -21,25 +21,13 @@ import type { MonitoredEntityType } from '../../src/app-layer/jobs/types';
 // ═════════════════════════════════════════════════════════════════════
 
 describe('resolveDueItemOwner — resolution correctness', () => {
-    test('PRACTICE: resolves ownerUserId', () => {
-        const result = resolveDueItemOwner('PRACTICE', { ownerUserId: 'user-1' });
-        expect(result).toBe('user-1');
-    });
 
     test('EVIDENCE: resolves ownerUserId', () => {
         const result = resolveDueItemOwner('EVIDENCE', { ownerUserId: 'user-2' });
         expect(result).toBe('user-2');
     });
 
-    test('POLICY: resolves ownerUserId', () => {
-        const result = resolveDueItemOwner('POLICY', { ownerUserId: 'user-3' });
-        expect(result).toBe('user-3');
-    });
 
-    test('VENDOR: resolves ownerUserId', () => {
-        const result = resolveDueItemOwner('VENDOR', { ownerUserId: 'user-4' });
-        expect(result).toBe('user-4');
-    });
 
     test('TASK: resolves assigneeUserId (not ownerUserId)', () => {
         const result = resolveDueItemOwner('TASK', {
@@ -49,15 +37,7 @@ describe('resolveDueItemOwner — resolution correctness', () => {
         expect(result).toBe('user-5');
     });
 
-    test('RISK: resolves ownerUserId', () => {
-        const result = resolveDueItemOwner('RISK', { ownerUserId: 'user-6' });
-        expect(result).toBe('user-6');
-    });
 
-    test('TEST_PLAN: resolves ownerUserId', () => {
-        const result = resolveDueItemOwner('TEST_PLAN', { ownerUserId: 'user-7' });
-        expect(result).toBe('user-7');
-    });
 });
 
 // ═════════════════════════════════════════════════════════════════════
@@ -66,12 +46,12 @@ describe('resolveDueItemOwner — resolution correctness', () => {
 
 describe('resolveDueItemOwner — fallback behavior', () => {
     test('null ownerUserId returns undefined (triggers admin fallback)', () => {
-        const result = resolveDueItemOwner('PRACTICE', { ownerUserId: null });
+        const result = resolveDueItemOwner('EVIDENCE', { ownerUserId: null });
         expect(result).toBeUndefined();
     });
 
     test('undefined ownerUserId returns undefined', () => {
-        const result = resolveDueItemOwner('VENDOR', {});
+        const result = resolveDueItemOwner('EVIDENCE', {});
         expect(result).toBeUndefined();
     });
 
@@ -92,11 +72,12 @@ describe('resolveDueItemOwner — fallback behavior', () => {
 // ═════════════════════════════════════════════════════════════════════
 
 describe('OWNERSHIP_RULES — completeness', () => {
-    // This is the authoritative list from types.ts
-    const ALL_ENTITY_TYPES: MonitoredEntityType[] = [
-        'PRACTICE', 'EVIDENCE', 'POLICY', 'VENDOR', 'TASK', 'RISK', 'TEST_PLAN',
-        'TREATMENT_PLAN', 'TREATMENT_MILESTONE',
-    ];
+    // This is the authoritative list from types.ts. It went from nine
+    // members to two across the GRC teardown; the point of restating it
+    // here rather than iterating `Object.keys(OWNERSHIP_RULES)` is that
+    // a type added to the union without a rule must FAIL, and deriving
+    // the list from the map under test would make that impossible.
+    const ALL_ENTITY_TYPES: MonitoredEntityType[] = ['EVIDENCE', 'TASK'];
 
     test('every MonitoredEntityType has an ownership rule', () => {
         const configured = getConfiguredEntityTypes();
@@ -129,14 +110,16 @@ describe('Structural: all DueItem producers wire ownerUserId', () => {
 
     // GRC teardown phase 2 deleted jobs/vendor-renewal-check.ts (the only
     // VENDOR producer) and, inside deadline-monitor, the Risk and
-    // PracticeTestPlan scanners. Both remaining producers are scanned in
-    // full — nothing about the ownership contract was relaxed, the set of
-    // files that can violate it just got smaller.
+    // PracticeTestPlan scanners; phase 3 took the Practice (nextDueAt)
+    // and Policy (nextReviewAt) scanners with their models, leaving TASK
+    // as deadline-monitor's only producer. Both remaining producer FILES
+    // are scanned in full — nothing about the ownership contract was
+    // relaxed, the set of files that can violate it just got smaller.
     const PRODUCER_FILES = [
         {
             name: 'deadline-monitor',
             path: '../../src/app-layer/jobs/deadline-monitor.ts',
-            expectedEntityTypes: ['PRACTICE', 'POLICY', 'TASK'],
+            expectedEntityTypes: ['TASK'],
         },
         {
             name: 'evidence-expiry-monitor',
@@ -145,18 +128,56 @@ describe('Structural: all DueItem producers wire ownerUserId', () => {
         },
     ];
 
+    /**
+     * Every `{...}` object literal that directly follows `push(` or
+     * `return `, extracted with a brace counter so a literal never runs
+     * past its own closing brace. String and template contents are not
+     * parsed — no DueItem literal in these files contains a brace inside
+     * a string, and the assertion is on substring presence, so a false
+     * split would show up as a spurious violation rather than a silent
+     * pass.
+     */
+    function extractObjectLiterals(source: string): string[] {
+        const out: string[] = [];
+        const starts = [...source.matchAll(/(?:push\(|return\s*)\{/g)];
+        for (const m of starts) {
+            const open = m.index! + m[0].length - 1;
+            let depth = 0;
+            for (let i = open; i < source.length; i++) {
+                if (source[i] === '{') depth++;
+                else if (source[i] === '}') {
+                    depth--;
+                    if (depth === 0) {
+                        out.push(source.slice(open, i + 1));
+                        break;
+                    }
+                }
+            }
+        }
+        return out;
+    }
+
     for (const producer of PRODUCER_FILES) {
         test(`${producer.name}: every DueItem construction includes ownerUserId`, () => {
             const source = readFileSync(resolve(__dirname, producer.path), 'utf8');
 
-            // Find all DueItem pushes/returns — they must include ownerUserId
-            const dueItemPattern = /items\.push\(\{[\s\S]*?\}\)/g;
-            const returnPattern = /return\s*\{[\s\S]*?entityType[\s\S]*?\}/g;
-
-            const allBlocks = [
-                ...(source.match(dueItemPattern) || []),
-                ...(source.match(returnPattern) || []),
-            ].filter(block => block.includes('entityType'));
+            // Find all DueItem constructions — they must include ownerUserId.
+            //
+            // These are extracted by BRACE MATCHING, not by regex. The
+            // previous `return\s*\{[\s\S]*?entityType[\s\S]*?\}`
+            // scanned forward from ANY `return {` until it found the word
+            // `entityType` anywhere later in the file, so it happily
+            // spanned unrelated statements. It went unnoticed while a
+            // real DueItem return happened to sit close by; once GRC
+            // teardown phase 3 removed the Practice and Policy scanners,
+            // the nearest `entityType` was hundreds of lines away and the
+            // guard reported `classifyUrgency`'s
+            // `return { urgency, daysRemaining }` as a DueItem missing
+            // its ownerUserId. A guard that reports the wrong line is
+            // worse than one that reports nothing.
+            const allBlocks = extractObjectLiterals(source).filter((b) =>
+                b.includes('entityType'),
+            );
 
             expect(allBlocks.length).toBeGreaterThan(0);
 
@@ -191,15 +212,13 @@ describe('Structural: all DueItem producers wire ownerUserId', () => {
             }
         }
 
-        // The MonitoredEntityType union in jobs/types.ts still carries
-        // VENDOR / RISK / TEST_PLAN / TREATMENT_* — GRC teardown phase 2 took
-        // their SCANNERS, and phase 3 takes the union members with the schema.
-        // Asserting a producer for a type nothing can produce would fail on a
-        // deletion that is the intended outcome, so this list is the set of
-        // types a surviving job actually emits.
-        const PRODUCED_TYPES: MonitoredEntityType[] = [
-            'PRACTICE', 'EVIDENCE', 'POLICY', 'TASK',
-        ];
+        // The set of types a surviving job actually emits. GRC teardown
+        // phase 2 took the VENDOR / RISK / TEST_PLAN / TREATMENT_*
+        // scanners and phase 3 took the PRACTICE and POLICY ones, along
+        // with those members of the `MonitoredEntityType` union. Two
+        // producers remain: deadline-monitor emits TASK, and
+        // evidence-expiry-monitor emits EVIDENCE.
+        const PRODUCED_TYPES: MonitoredEntityType[] = ['EVIDENCE', 'TASK'];
 
         const uncovered = PRODUCED_TYPES.filter(t => !coveredTypes.has(t));
         expect(uncovered).toEqual([]);
@@ -214,16 +233,19 @@ describe('Structural: scanner queries select owner fields', () => {
     const { readFileSync } = require('fs');
     const { resolve } = require('path');
 
-    test('deadline-monitor: all 3 scanners select ownerUserId or assigneeUserId', () => {
+    test('deadline-monitor: every scanner selects ownerUserId or assigneeUserId', () => {
         const source = readFileSync(
             resolve(__dirname, '../../src/app-layer/jobs/deadline-monitor.ts'), 'utf8'
         );
 
         // Each scanner should have ownerUserId: true or assigneeUserId: true in its select.
-        // Floor was 5 until the Risk + PracticeTestPlan scanners went with
-        // their models; Practice / Policy / Task remain.
+        // The floor was 5, then 3; GRC teardown phase 3 left `scanTasks`
+        // as the only scanner, so it is 1. The per-block assertion below
+        // is the load-bearing half — the floor only guards against the
+        // regex silently matching nothing, which would make the loop
+        // vacuous.
         const selectBlocks = source.match(/select:\s*\{[\s\S]*?\}/g) || [];
-        expect(selectBlocks.length).toBeGreaterThanOrEqual(3);
+        expect(selectBlocks.length).toBeGreaterThanOrEqual(1);
 
         for (const block of selectBlocks) {
             const hasOwnerField =

@@ -13,11 +13,7 @@ import { recordHarvestLot } from './inventory';
 import { recordYieldFromHarvest, type HarvestYieldResult } from './yield-record';
 import { advancePlantingStatusForLinks } from './crop-planning';
 import { emitAutomationEvent } from '../automation';
-import {
-    attachAutoEvidenceFromLogEntry,
-    syncDerivedEvidenceTitle,
-    setDerivedEvidenceWithdrawn,
-} from './auto-evidence';
+import { syncDerivedEvidenceTitle, setDerivedEvidenceWithdrawn } from './auto-evidence';
 import { assertCanRead, assertCanWrite, assertCanAdmin } from '../policies/common';
 import { logEvent } from '../events/audit';
 import { notFound, badRequest } from '@/lib/errors/types';
@@ -349,16 +345,6 @@ async function createLogEntryImpl(
             }
         }
 
-        // A directly-authored INPUT_APPLICATION record (spray/fertiliser) is
-        // itself the certification evidence for the plant-protection /
-        // input-record practice points. Attach it to every scheme practice the
-        // tenant has mapped — in the SAME transaction, so it's atomic with
-        // the journal write. No-op when no scheme is installed. Cheap type
-        // guard keeps the common (non-spray) create path untouched.
-        if (data.type === 'INPUT_APPLICATION') {
-            await attachAutoEvidenceFromLogEntry(db, ctx, entry.id);
-        }
-
         trace.getActiveSpan()?.setAttributes({
             'ag.logEntryId': entry.id,
             'ag.logEntryType': entry.type,
@@ -451,9 +437,9 @@ export async function updateLogEntry(ctx: RequestContext, id: string, data: Upda
 
         const entry = await JournalRepository.updateLogEntry(db, ctx, id, input);
 
-        // Derived scheme evidence copies this title. Leaving the copy behind
-        // showed the same farm record under two names — the old one in the
-        // evidence library, the new one on the entry — with nothing to say
+        // Derived farm-record evidence copies this title. Leaving the copy
+        // behind showed the same farm record under two names — the old one in
+        // the evidence library, the new one on the entry — with nothing to say
         // which was current.
         if (input.title !== undefined && input.title !== existing.title) {
             await syncDerivedEvidenceTitle(db, ctx, id, input.title);
@@ -489,9 +475,9 @@ export async function deleteLogEntry(ctx: RequestContext, id: string) {
 
         await JournalRepository.softDelete(db, ctx, id);
 
-        // Withdraw the scheme evidence derived from this record. Without it
-        // the practice kept reporting itself backed by a record the operator
-        // had just removed, deep-linking to a page that now 404s.
+        // Withdraw the evidence derived from this record. Without it the
+        // evidence library kept listing a farm record the operator had just
+        // removed, deep-linking to a page that now 404s.
         await setDerivedEvidenceWithdrawn(db, ctx, id, true);
 
         await logEvent(db, ctx, {
@@ -530,9 +516,10 @@ export async function restoreLogEntry(ctx: RequestContext, id: string) {
 
         const restored = await JournalRepository.restore(db, ctx, id);
 
-        // Reinstate the derived scheme evidence the soft-delete withdrew.
-        // Restoring the record without its claim would leave the practice
-        // silently uncovered — the opposite failure, equally invisible.
+        // Reinstate the derived evidence the soft-delete withdrew. Restoring
+        // the record while leaving its evidence withdrawn would put the entry
+        // back with its proof still hidden — the opposite failure, equally
+        // invisible.
         await setDerivedEvidenceWithdrawn(db, ctx, id, false);
 
         await logEvent(db, ctx, {

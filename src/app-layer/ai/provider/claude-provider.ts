@@ -9,7 +9,7 @@
  * Why a native adapter instead of pointing OpenAiCompatibleProvider at
  * an OpenAI-compat shim:
  *   - System prompts go in the top-level `system` param (not a message),
- *     which is where Anthropic applies `cache_practice` for prompt
+ *     which is where Anthropic applies `cache_control` for prompt
  *     caching.
  *   - Structured output is done via a single FORCED tool whose
  *     `input_schema` is the Zod schema converted to JSON-Schema. The
@@ -318,7 +318,15 @@ export class ClaudeProvider implements AiProvider {
                           // Prompt caching on the system block — the
                           // system prompt is the stable, repeated prefix
                           // across copilot turns, so cache it.
-                          cache_practice: { type: 'ephemeral' as const },
+                          // `cache_control` — the Anthropic API's own field
+                          // name. The Control→Practice rename mangled it, and
+                          // prompt caching was silently off on every copilot
+                          // turn afterwards because the API ignores unknown
+                          // fields. The identifier registry pinned the HTTP
+                          // header spelling but not this snake_case request
+                          // field, which is why it survived; it is pinned now
+                          // (tests/guards/web-platform-identifiers.test.ts).
+                          cache_control: { type: 'ephemeral' as const },
                       },
                   ]
                 : undefined;

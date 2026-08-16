@@ -70,17 +70,23 @@ if (getBillingMode() === 'SAAS') { /* … */ }
 ## Per-plan limits (SaaS mode)
 
 The full limits table lives in `PLAN_LIMITS` in
-[`entitlements.ts`](../src/lib/billing/entitlements.ts). Today it
-gates one resource:
+[`entitlements.ts`](../src/lib/billing/entitlements.ts). Four
+resources are gated:
 
-| Plan | `control` |
-|---|---:|
-| `FREE` | 10 |
-| `TRIAL` | 100 |
-| `PRO` | 100 |
-| `ENTERPRISE` | unlimited |
+| Plan | `user` | `location` | `exchange_listing` | `ai_tokens` |
+|---|---:|---:|---:|---:|
+| `FREE` | 3 | 5 | 5 | 50,000 |
+| `TRIAL` | 25 | 50 | 50 | 1,000,000 |
+| `PRO` | 25 | 50 | 50 | 5,000,000 |
+| `ENTERPRISE` | unlimited | unlimited | unlimited | unlimited |
 
 `null` in the table means unlimited.
+
+A fifth resource, `practice`, was gated until the GRC teardown removed
+the model. This document described it as `control` — its name from
+before the Control→Practice rename — which is worth noting because the
+staleness was invisible: `getLimit` is typed on `GatedResource`, and
+prose is not.
 
 Notes on the choices:
 
@@ -88,9 +94,12 @@ Notes on the choices:
   full working surface, not an artificially constrained one — the
   alternative is a UX cliff at the moment they enter billing details,
   which is exactly the wrong time for one.
-* **`FREE` is "kick the tyres".** Ten controls is enough to map a
-  couple of policy areas — far short of a full ISO 27001
-  implementation, which is the upgrade trigger.
+* **`FREE` is "kick the tyres".** A single operator with a handful of
+  fields — enough to run one small holding through a season, far short
+  of what a working farm needs, which is the upgrade trigger.
+* **`ai_tokens` is a windowed SUM, not a row count.** It caps total AI
+  tokens consumed per calendar month (UTC) and resets; the other three
+  are counts of live rows.
 * **Status (CANCELED, PAST_DUE, …) is intentionally NOT factored
   in here.** The Stripe webhook handler is the source of truth for
   downgrade timing — it writes `plan` directly when a subscription
@@ -102,17 +111,20 @@ Notes on the choices:
 ## Where the gate runs
 
 Gating happens **server-side at the mutation boundary**, immediately
-after the per-resource RBAC assertion. Today, `createControl` is
-gated:
+after the per-resource RBAC assertion:
 
 ```ts
-// src/app-layer/usecases/control/mutations.ts
-export async function createControl(ctx, data) {
-    assertCanCreateControl(ctx);                    // RBAC
-    await assertWithinLimit(ctx, 'control');         // GAP-18 plan gate
-    // … create the control …
+// src/app-layer/usecases/location.ts
+export async function createLocation(ctx, data) {
+    assertCanWrite(ctx);                              // RBAC
+    await assertWithinLimit(ctx, 'location', tx);     // GAP-18 plan gate
+    // … create the location …
 }
 ```
+
+Pass the transaction (`tx`) where the create runs in one, so the
+check-then-act window is a single statement sequence rather than two
+round trips apart.
 
 The gate runs **before any write** so the DB never observes a row
 that violated the plan. Read paths and UI rendering are NOT
@@ -126,7 +138,7 @@ When the gate trips, it throws `forbidden(...)` from
 with a body that includes:
 
 ```
-plan_limit_exceeded: FREE plan allows 10 control(s); tenant currently has 10. Upgrade to add more.
+plan_limit_exceeded: FREE plan allows 5 location(s); tenant currently has 5. Upgrade to add more.
 ```
 
 The string contains the four pieces a client / billing UI needs to
@@ -136,8 +148,8 @@ render an upgrade CTA:
 |---|---|
 | `plan_limit_exceeded` | Stable error code, machine-grep-friendly |
 | `FREE` | The plan that is currently in effect |
-| `10 control(s)` | The limit + resource (singular/plural literal) |
-| `tenant currently has 10` | The current count for that resource |
+| `5 location(s)` | The limit + resource (singular/plural literal) |
+| `tenant currently has 5` | The current count for that resource |
 
 ---
 
@@ -151,14 +163,18 @@ change at the call site plus a one-line change in the limits table.
 [`entitlements.ts`](../src/lib/billing/entitlements.ts):
 
 ```ts
-export type GatedResource = 'control' | 'risk';     // ← add here
-//                                       ^^^^^^
+export type GatedResource =
+    | 'user'
+    | 'location'
+    | 'ai_tokens'
+    | 'exchange_listing'
+    | 'parcel';                                     // ← add here
 
 const PLAN_LIMITS: Record<Plan, Record<GatedResource, number | null>> = {
-    FREE: { control: 10, risk: 25 },                 // ← add here
-    TRIAL: { control: 100, risk: 250 },
-    PRO: { control: 100, risk: 250 },
-    ENTERPRISE: { control: null, risk: null },
+    FREE: { user: 3, location: 5, ai_tokens: 50_000, exchange_listing: 5, parcel: 10 },       // ← add here
+    TRIAL: { user: 25, location: 50, ai_tokens: 1_000_000, exchange_listing: 50, parcel: 100 },
+    PRO: { user: 25, location: 50, ai_tokens: 5_000_000, exchange_listing: 50, parcel: 100 },
+    ENTERPRISE: { user: null, location: null, ai_tokens: null, exchange_listing: null, parcel: null },
 };
 ```
 
@@ -169,8 +185,11 @@ needs updating:
 ```ts
 async function getCurrentCount(ctx, resource) {
     return runInTenantContext(ctx, async (db) => {
-        if (resource === 'control') return db.control.count(/* … */);
-        if (resource === 'risk')    return db.risk.count(/* … */);  // ← add
+        switch (resource) {
+            case 'location': return db.location.count(/* … */);
+            case 'parcel':   return db.parcel.count(/* … */);   // ← add
+            // … the other arms …
+        }
         const _exhaustive: never = resource;
         return _exhaustive;
     });
@@ -197,7 +216,7 @@ query.
 ### What NOT to do
 
 * **Do not gate in the UI.** The UI is welcome to render a CTA when
-  the gate would trip (e.g. "8 / 10 controls used — upgrade?"), but
+  the gate would trip (e.g. "4 / 5 fields used — upgrade?"), but
   the *enforcement* must live behind the API.
 * **Do not introduce a second mode-detection mechanism.**
   Everything routes through `getBillingMode()` so the decision is
@@ -209,8 +228,10 @@ query.
   entitlement layer reads `plan` only.
 * **Do not duplicate the limits table.** Tests and call sites read
   `PLAN_LIMITS` through `getLimit(plan, resource)`. Anywhere else
-  re-encoding "FREE allows 10 controls" is a place that will silently
-  drift.
+  re-encoding "FREE allows 5 locations" is a place that will silently
+  drift. This document drifted exactly that way: it described the
+  gated resource as `control` for months after the Control→Practice
+  rename, and then after the model was deleted entirely.
 
 ---
 
@@ -237,7 +258,7 @@ in a self-hosted deployment, file an issue — that is a deliberate
 new mode (e.g. "self-hosted-with-quotas") and would need its own
 config surface, not a flag flip on the existing two.
 
-### "A tenant has been downgraded but is still creating controls"
+### "A tenant has been downgraded but is still creating records"
 
 Check `BillingAccount.plan` for the tenant — that is the source of
 truth. The webhook handler is responsible for moving the row from

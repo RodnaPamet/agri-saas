@@ -4,17 +4,21 @@
  *
  * Pre-S10 `restoreEntity` only checked (a) the row exists in the
  * tenant and (b) the row is currently soft-deleted. Every other
- * precondition was left implicit. That left several routes for
- * the admin restore button to undo a soft-delete into an
- * inconsistent state:
+ * precondition was left implicit. That left a route for the admin
+ * restore button to undo a soft-delete into an inconsistent state:
  *
- *   - AuditPack restored under a CLOSED AuditCycle → the pack is
- *     now "open" again but its parent is frozen for audit, which
- *     contradicts the cycle-immutable contract.
- *   - AuditPack restored under a deleted AuditCycle → orphan.
- *   - Task restored whose practiceId points at a deleted Practice.
  *   - Evidence restored whose ownerUserId points at a removed
  *     membership.
+ *
+ * S10 shipped two further validators that the GRC teardown
+ * (phase 3, 2026-08) removed along with their subjects: the Task
+ * validator refused a restore whose `Task.practiceId` pointed at a
+ * deleted Practice (column and model both dropped), and the
+ * AuditPack validator refused a restore under a deleted or
+ * COMPLETE parent AuditCycle (both models dropped). Neither
+ * precondition has anything left to check — `AuditPack` left the
+ * union with its model, and `Task` (which survives) now falls
+ * through to the no-op.
  *
  * This module defines a per-model validator table the restore
  * usecase consults BEFORE clearing `deletedAt`. Validators are
@@ -32,17 +36,9 @@ import type { RequestContext } from '../types';
 
 export type RestorableModel =
     | 'Asset'
-    | 'Risk'
-    | 'Practice'
     | 'Evidence'
-    | 'Policy'
-    | 'Vendor'
     | 'FileRecord'
-    | 'Task'
-    | 'Finding'
-    | 'Audit'
-    | 'AuditCycle'
-    | 'AuditPack';
+    | 'Task';
 
 /**
  * Validator signature. Receives the soft-deleted row + a tenant-
@@ -64,59 +60,6 @@ const NOOP_VALIDATOR: RestoreValidator = async () => {
 };
 
 // ─── Per-Model Validators ────────────────────────────────────────────
-
-/**
- * `Task` restore — refuse if the parent practice was deleted.
- *
- * Rationale: restoring a task under a deleted practice creates an
- * "orphan" that the user can no longer navigate to (the practice
- * page hides the row); the only escape is restoring the practice,
- * which is itself a privileged operation. Better to surface this
- * blocker explicitly at restore time.
- */
-const TASK_VALIDATOR: RestoreValidator = async (ctx, db, record) => {
-    const row = record as { practiceId: string | null };
-    if (!row.practiceId) return;
-    const practice = await db.practice.findFirst({
-        where: { id: row.practiceId, tenantId: ctx.tenantId, deletedAt: null },
-        select: { id: true },
-    });
-    if (!practice) {
-        throw badRequest(
-            'Cannot restore: the parent practice has been deleted. Restore the practice first, then retry.',
-        );
-    }
-};
-
-/**
- * `AuditPack` restore — refuse when:
- *   - parent AuditCycle is deleted, OR
- *   - parent AuditCycle is COMPLETE (cycle-immutable contract).
- *
- * Restoring a pack under a frozen / vanished cycle would
- * silently violate the audit-cycle integrity invariant the
- * closeout flow relies on. The terminal status on `AuditCycleStatus`
- * is `COMPLETE` (the enum has PLANNING / IN_PROGRESS / READY /
- * COMPLETE — there is no CLOSED value); this is the
- * audit-cycle equivalent of CLOSED on other lifecycles.
- */
-const AUDIT_PACK_VALIDATOR: RestoreValidator = async (ctx, db, record) => {
-    const row = record as { auditCycleId: string };
-    const cycle = await db.auditCycle.findFirst({
-        where: { id: row.auditCycleId, tenantId: ctx.tenantId },
-        select: { id: true, status: true, deletedAt: true },
-    });
-    if (!cycle || cycle.deletedAt) {
-        throw badRequest(
-            'Cannot restore: the parent audit cycle has been deleted. Restore the cycle first, then retry.',
-        );
-    }
-    if (cycle.status === 'COMPLETE') {
-        throw badRequest(
-            'Cannot restore: the parent audit cycle is COMPLETE. Reopen the cycle (or restore into a new pack) before restoring this artifact.',
-        );
-    }
-};
 
 /**
  * `Evidence` restore — refuse if the owning user has been removed
@@ -146,17 +89,9 @@ const EVIDENCE_VALIDATOR: RestoreValidator = async (ctx, db, record) => {
 
 export const RESTORE_VALIDATORS: Record<RestorableModel, RestoreValidator> = {
     Asset: NOOP_VALIDATOR,
-    Risk: NOOP_VALIDATOR,
-    Practice: NOOP_VALIDATOR,
     Evidence: EVIDENCE_VALIDATOR,
-    Policy: NOOP_VALIDATOR,
-    Vendor: NOOP_VALIDATOR,
     FileRecord: NOOP_VALIDATOR,
-    Task: TASK_VALIDATOR,
-    Finding: NOOP_VALIDATOR,
-    Audit: NOOP_VALIDATOR,
-    AuditCycle: NOOP_VALIDATOR,
-    AuditPack: AUDIT_PACK_VALIDATOR,
+    Task: NOOP_VALIDATOR,
 };
 
 /**

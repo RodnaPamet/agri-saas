@@ -167,10 +167,6 @@ const KNOWN_N_PLUS_ONE: Record<string, KnownNPlusOne> = {
         reason:
             'sign-in SSO-enforcement check — per-membership lookup of an enforced identity provider. Loop is over the user\'s tenant memberships (typically 1-3); the per-membership query is acceptable at sign-in.',
     },
-    'src/app-layer/usecases/webhook-processor.ts:findMany:practice': {
-        reason:
-            'webhook-processor loop over the automation keys triggered by one inbound webhook — per-key lookup of the practices carrying that automation key. Loop is over the triggered-keys list, a small bounded set.',
-    },
 };
 
 interface NPlusOneFinding {

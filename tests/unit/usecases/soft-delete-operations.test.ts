@@ -48,8 +48,13 @@ jest.mock('@/lib/soft-delete', () => {
 const findFirstMock = jest.fn();
 const updateMock = jest.fn();
 const tenantDb: any = {
+    // One stub per RestorableModel delegate. `risk` was here until the
+    // risk uproot; `fileRecord` is the multi-word name that proves the
+    // camelCase delegate transform.
     asset: { findFirst: findFirstMock, update: updateMock },
-    risk: { findFirst: findFirstMock, update: updateMock },
+    evidence: { findFirst: findFirstMock, update: updateMock },
+    fileRecord: { findFirst: findFirstMock, update: updateMock },
+    task: { findFirst: findFirstMock, update: updateMock },
     $executeRawUnsafe: jest.fn(async (...args: any[]) => {
         execRawCalls.push(args);
         return 1;
@@ -139,18 +144,24 @@ describe('restoreEntity — happy path', () => {
         expect(out).toEqual({ id: 'a-1', deletedAt: null });
     });
 
-    it('lower-cases the model name for delegate lookup (Risk → db.risk)', async () => {
+    it('lower-cases the model name for delegate lookup (FileRecord → db.fileRecord)', async () => {
+        // Was `Risk → db.risk` until the risk uproot, and the name went
+        // on being passed to `restoreEntity` long after the model died —
+        // the call did not throw because the delegate stubs are shared,
+        // so the test asserted the indirection against a model that no
+        // longer existed. `FileRecord` is a live `RestorableModel` AND a
+        // multi-word name, which exercises the transform properly:
+        // `charAt(0).toLowerCase() + slice(1)` must give `fileRecord`,
+        // not `filerecord`.
         findFirstMock.mockResolvedValue({
-            id: 'r-1',
+            id: 'f-1',
             tenantId: 'tenant-1',
             deletedAt: new Date('2026-01-01'),
         });
-        updateMock.mockResolvedValue({ id: 'r-1' });
-        await restoreEntity(ctx, 'Risk', 'r-1');
-        // The delegate is selected by `model.charAt(0).toLowerCase() + model.slice(1)` —
-        // Risk → risk. Our delegate stubs share findFirst/update across
-        // models so this asserts the indirection works.
+        updateMock.mockResolvedValue({ id: 'f-1' });
+        await restoreEntity(ctx, 'FileRecord', 'f-1');
         expect(findFirstMock).toHaveBeenCalled();
+        expect(updateMock).toHaveBeenCalled();
     });
 });
 
@@ -211,16 +222,19 @@ describe('purgeEntity — happy path', () => {
             tenantId: 'tenant-1',
             deletedAt: new Date('2026-01-01'),
         });
-        await purgeEntity(ctx, 'Risk', 'p-1');
+        // `Task`, not `Evidence` — purging Evidence additionally runs
+        // `purgeEvidenceBytes`, and this test is about the audit row,
+        // not the byte-deletion side effect.
+        await purgeEntity(ctx, 'Task', 'p-1');
         expect(auditCalls).toHaveLength(1);
         expect(auditCalls[0]).toMatchObject({
             action: 'ENTITY_PURGED',
-            entityType: 'Risk',
+            entityType: 'Task',
             entityId: 'p-1',
         });
         expect(auditCalls[0].detailsJson.category).toBe('data_lifecycle');
         expect(auditCalls[0].detailsJson.operation).toBe('purged');
-        expect(auditCalls[0].detailsJson.model).toBe('Risk');
+        expect(auditCalls[0].detailsJson.model).toBe('Task');
     });
 
     it('does NOT write an audit log when the early-out rejects fire', async () => {

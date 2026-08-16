@@ -73,11 +73,13 @@ export async function POST(req: NextRequest) {
             create: { tenantId: tenant.id, userId: admin.id, role: 'ADMIN' },
         });
 
+        // GRC teardown phase 3 — the `practices` + `frameworks` counts went
+        // with their models. The receipt now reports exactly what this
+        // handler upserts: the tenant, the admin, and their membership.
         const counts = {
             tenants: await prisma.tenant.count(),
             users: await prisma.user.count(),
-            practices: await prisma.practice.count({ where: { tenantId: tenant.id } }),
-            frameworks: await prisma.framework.count(),
+            memberships: await prisma.tenantMembership.count({ where: { tenantId: tenant.id } }),
         };
 
         logger.info('Staging seed completed', { component: 'staging-seed', ...counts });

@@ -208,14 +208,22 @@ function extractCallerFingerprint(err: Error): string {
  */
 
 const OWNERSHIP_CHAINED_MODELS: readonly string[] = [
-    // Remaining ownership-chained tables — no `tenantId` column, RLS
-    // policy walks the parent. Six ex-members of this list
-    // (EvidenceReview, AuditChecklistItem, FindingEvidence,
-    // AuditorPackAccess, PolicyPracticeLink, PolicyApproval) were
-    // migrated to direct-tenantId by the denorm-tenantId / promote-
-    // tenant migration sequences and are now picked up by
-    // `enumerateDirectTenantScopedModels()`.
-    'PolicyAcknowledgement',
+    // Ownership-chained tables — no `tenantId` column, RLS policy walks
+    // the parent. EMPTY TODAY, and that is the healthy state: every
+    // tenant-scoped table in the schema now carries `tenantId` directly,
+    // so `enumerateDirectTenantScopedModels()` finds all of them from
+    // the DMMF and there is nothing left to maintain by hand.
+    //
+    // Six ex-members (EvidenceReview, AuditChecklistItem,
+    // FindingEvidence, AuditorPackAccess, PolicyPracticeLink,
+    // PolicyApproval) were migrated to direct-tenantId by the
+    // denorm-tenantId / promote-tenant migration sequences. The last
+    // one, PolicyAcknowledgement, went with its model in GRC teardown
+    // phase 3 — it hung off `policyVersion`, and both are gone.
+    //
+    // Add an entry ONLY for a new model that is genuinely tenant-scoped
+    // without a `tenantId` column, and give it an RLS policy that walks
+    // the parent in the same diff.
 ];
 
 function enumerateDirectTenantScopedModels(): string[] {
