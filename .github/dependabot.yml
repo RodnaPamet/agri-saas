@@ -66,6 +66,24 @@ updates:
     ignore:
       - dependency-name: "@types/node"
         update-types: ["version-update:semver-patch"]
+      # @tanstack/react-table v9 is a REWRITE, not a bump, and needs a
+      # planned migration rather than a dependency PR (#575, closed).
+      #   - root exports drop `useReactTable` and `getCoreRowModel`
+      #     entirely; v9 exposes `useTable` / `createTableHook`
+      #   - `ColumnMeta` gains a third generic (TFeatures), so both our
+      #     augmentations stop merging — src/types/tanstack-table.d.ts
+      #     and src/components/ui/table/mobile-card-list.tsx
+      #   - v9's root `useTable` collides with our own export at
+      #     src/components/ui/table/table.tsx:136
+      # `<DataTable>` is mandated for every list page (Epic 52) and
+      # virtualized with a bespoke keyboard layer (Epic 68): 199
+      # `meta.mobileCard` references across 40 files, with ~19k lines of
+      # guards and rendered tests behind the platform.
+      #
+      # PATCH AND MINOR ON 8.x STILL COME THROUGH — only the major is
+      # held. Remove this entry as part of the migration, not before.
+      - dependency-name: "@tanstack/react-table"
+        update-types: ["version-update:semver-major"]
 
   # ── GitHub Actions (monthly) ──
   - package-ecosystem: github-actions
