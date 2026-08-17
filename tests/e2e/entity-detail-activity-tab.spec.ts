@@ -1,4 +1,7 @@
 /**
+ * RENAMED from `practices-enhanced.spec.ts` — the old name described
+ * neither what survives (one activity-tab case) nor where it runs.
+ *
  * Entity-detail activity tab — mutating E2E.
  *
  * GRC teardown phase 2 — this file was `Practices Enhanced` and drove

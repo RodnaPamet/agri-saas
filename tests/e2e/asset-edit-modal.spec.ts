@@ -1,4 +1,8 @@
 /**
+ * RENAMED from `practice-edit-modal.spec.ts` — the filename was the last
+ * thing still claiming this was about practices. The describe has said
+ * 'Asset Edit Modal' since the phase-2 re-point.
+ *
  * Entity Edit Modal — mutating E2E.
  *
  * GRC teardown phase 2 — this file drove the practice detail page's

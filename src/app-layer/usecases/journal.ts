@@ -13,7 +13,6 @@ import { recordHarvestLot } from './inventory';
 import { recordYieldFromHarvest, type HarvestYieldResult } from './yield-record';
 import { advancePlantingStatusForLinks } from './crop-planning';
 import { emitAutomationEvent } from '../automation';
-import { syncDerivedEvidenceTitle, setDerivedEvidenceWithdrawn } from './auto-evidence';
 import { assertCanRead, assertCanWrite, assertCanAdmin } from '../policies/common';
 import { logEvent } from '../events/audit';
 import { notFound, badRequest } from '@/lib/errors/types';
@@ -437,14 +436,6 @@ export async function updateLogEntry(ctx: RequestContext, id: string, data: Upda
 
         const entry = await JournalRepository.updateLogEntry(db, ctx, id, input);
 
-        // Derived farm-record evidence copies this title. Leaving the copy
-        // behind showed the same farm record under two names — the old one in
-        // the evidence library, the new one on the entry — with nothing to say
-        // which was current.
-        if (input.title !== undefined && input.title !== existing.title) {
-            await syncDerivedEvidenceTitle(db, ctx, id, input.title);
-        }
-
         await logEvent(db, ctx, {
             action: 'UPDATE',
             entityType: 'LogEntry',
@@ -474,11 +465,6 @@ export async function deleteLogEntry(ctx: RequestContext, id: string) {
         if (!existing) throw notFound('Journal entry not found');
 
         await JournalRepository.softDelete(db, ctx, id);
-
-        // Withdraw the evidence derived from this record. Without it the
-        // evidence library kept listing a farm record the operator had just
-        // removed, deep-linking to a page that now 404s.
-        await setDerivedEvidenceWithdrawn(db, ctx, id, true);
 
         await logEvent(db, ctx, {
             action: 'SOFT_DELETE',
@@ -520,8 +506,6 @@ export async function restoreLogEntry(ctx: RequestContext, id: string) {
         // the record while leaving its evidence withdrawn would put the entry
         // back with its proof still hidden — the opposite failure, equally
         // invisible.
-        await setDerivedEvidenceWithdrawn(db, ctx, id, false);
-
         await logEvent(db, ctx, {
             action: 'ENTITY_RESTORED',
             entityType: 'LogEntry',

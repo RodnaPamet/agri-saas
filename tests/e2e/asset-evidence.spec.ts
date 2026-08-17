@@ -1,4 +1,8 @@
 /**
+ * RENAMED from `practice-evidence.spec.ts` — the filename was the last
+ * thing still claiming this was about practices. The describe has said
+ * 'Asset → Evidence Linking' since the phase-2 re-point.
+ *
  * Entity → Evidence linking — mutating E2E.
  *
  * GRC teardown phase 2 — this file drove the practice detail page's
