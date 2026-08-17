@@ -958,6 +958,26 @@ database. The structural half of that contract lives in
 `tests/guards/rls-coverage-skip-visibility.test.ts`, modelled on
 `tests/guards/tooltip-kill-switch-consistency.test.ts`.
 
+**A mocked dependency cannot report that the dependency changed.** `bullmq`
+5 → 6 (a MAJOR) went 19/19 green while nothing in the repo executed one line of
+BullMQ: `tests/integration/bullmq-queue.test.ts` and `bullmq-scheduler.test.ts`
+both open with `jest.mock('bullmq', …)`, `redis-connection.test.ts` maps
+`ioredis` to `ioredis-mock`, and the only files that actually construct a
+`Worker` or register a scheduler — `scripts/worker.ts` and `scripts/scheduler.ts`
+— sit **outside `tsconfig.json`**, so not even `tsc` reads them. A rewritten
+constructor or a renamed scheduler verb would have passed CI and surfaced as a
+worker that will not start behind a healthy web tier. The closure is
+`tests/integration/bullmq-real-api.test.ts` — real Redis, no mocks, asserting
+`jest.isMockFunction(Queue) === false` so the file cannot be quietly neutered —
+plus a `redis:7-alpine` service on the `test` job with
+`BULLMQ_SMOKE_REQUIRE_REDIS=1`, which turns a skip into a failure where Redis is
+guaranteed. **When you add a BullMQ verb to `queue.ts` / `worker.ts` /
+`scheduler.ts`, add it there too.** The general rule: when a test mocks the
+thing whose behaviour you actually depend on, it verifies your wiring and
+nothing about the dependency — so a dependency bump needs a path that runs the
+real thing. See
+`docs/implementation-notes/2026-08-17-bullmq-real-api-smoke.md`.
+
 **Under jsdom the app is a PHONE, so a whole branch may be unreachable.**
 `tests/rendered/setup.ts` stubs `matchMedia` to answer `matches: false` to
 *every* query. `useMediaQuery` derives the device from two `min-width`
