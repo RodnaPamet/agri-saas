@@ -82,6 +82,22 @@ Three properties make it hard to render vacuous:
   flaky shard with no failure summary (the `@/lib/storage` specifier incident).
   Every client is tracked and quit in `afterAll`.
 
+- **CI sets `REDIS_URL_TEST`, never `REDIS_URL`** — and this one was learned the
+  expensive way. The first version set `REDIS_URL` job-wide, which looks like the
+  obvious choice. But `getRedisClient()` in `src/lib/redis.ts` returns `null`
+  when `REDIS_URL` is unset, and the whole suite leans on that
+  graceful-degradation path. Setting it flipped every Redis-aware code path in
+  every suite to opening real connections: **shard runtime went from ~500 s to
+  the 35-minute job timeout**, and shards 3 and 4 were cancelled. That surfaces
+  as a red check with *no failing test*, which is a genuinely confusing signal
+  to hand someone. The variable is now read by this one test file and nothing
+  else in the repo.
+
+  The general shape is worth naming: **adding an env var to a CI job is a
+  global change to every test in it.** A var that switches production code
+  between a real backend and an in-memory fallback will silently re-route the
+  entire suite.
+
 - **Queue names are unique per process + jest worker.** A crashed previous run
   cannot poison the next one, and two concurrent runs never share queue state.
 

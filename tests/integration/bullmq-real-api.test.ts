@@ -29,6 +29,21 @@
 import { Queue, Worker } from 'bullmq';
 import IORedis from 'ioredis';
 
+/**
+ * `REDIS_URL_TEST` is checked FIRST and is what CI sets — deliberately not
+ * `REDIS_URL`.
+ *
+ * `getRedisClient()` in `src/lib/redis.ts` returns `null` when `REDIS_URL` is
+ * unset, and the entire suite leans on that graceful-degradation path. The
+ * first version of this change set `REDIS_URL` job-wide; every Redis-aware
+ * code path in every suite switched to opening real connections and shard
+ * runtime went from ~500s to the 35-minute job timeout. Two shards were
+ * cancelled, which surfaces as a red check with no failing test.
+ *
+ * So: this test gets its own variable, read here and nowhere else in the repo.
+ * `REDIS_URL` is still honoured as a fallback for a local run where it happens
+ * to be set, but CI must never set it for the jest job.
+ */
 const REDIS_URL = process.env.REDIS_URL_TEST || process.env.REDIS_URL || 'redis://127.0.0.1:6379';
 
 /**
