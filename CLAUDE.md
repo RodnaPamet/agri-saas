@@ -177,7 +177,12 @@ until the patch is regenerated**. The procedure, in order:
 3. `npx patch-package next`, then CONFIRM the patch names six files.
    patch-package regenerates by diffing a FRESH download, so bundle hunks
    vanish silently after a version bump — that is the #929 failure verbatim.
-4. Run `tests/guards/csp-nonce-component-scripts-patch.test.ts`.
+4. Run `tests/guards/csp-nonce-component-scripts-patch.test.ts` AND the
+   end-to-end check, `tests/e2e/security/csp-nonce.spec.ts`. The guard reads
+   bytes in `node_modules`; the spec renders real pages under `next start` and
+   asserts every executable `<script>` in the SERVER-RENDERED HTML carries the
+   nonce from that same response. Only the second one can catch an unnonced
+   script that arrives for a reason other than our patch failing to apply.
 
 In each minified bundle the injection is `,nonce:<ctx>.nonce` immediately
 after ``key:`script-${…}` ``, anchored on the `${<ctx>.assetPrefix}` src
