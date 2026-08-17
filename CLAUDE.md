@@ -140,7 +140,11 @@ bijection for the one migration it names.
 
 ### Framework baseline
 
-**Next.js 16.2.11** (App Router) + **React 19.2** + **TypeScript 6.0**.
+**Next.js 16.3.1** (App Router) + **React 19.2** + **TypeScript 6.0**.
+`next` is pinned EXACTLY (no caret) and is deliberately EXCLUDED from the
+Dependabot `production` group, so it arrives as its own PR: we carry
+`patches/next+<version>.patch`, and every bump requires regenerating it —
+see **"Bumping Next"** immediately below.
 The React 18 → 19 bump (#67) is complete: React 19 removed
 `propTypes`, function-component `defaultProps`, string refs and
 legacy context — the codebase carries none of those.
@@ -157,6 +161,43 @@ ratchet at `tests/guardrails/security-gate-strictness.test.ts` fails
 CI if either gate is silently re-lowered (`moderate` → `high` /
 `critical`, or `CRITICAL,HIGH` → `CRITICAL`) or `next` is downgraded
 back to 14.x.
+
+**Bumping Next — the CSP nonce patch.** Next's
+`createComponentStylesAndScripts` builds a `<script>` with no `nonce`, which
+`script-src 'nonce-…' 'strict-dynamic'` blocks. Still true upstream as of
+16.3.1. `patches/next+<version>.patch` adds it, and **a Next bump is not done
+until the patch is regenerated**. The procedure, in order:
+
+1. `npm install next@<v> --save-exact`, delete the old patch file.
+2. Add `nonce: ctx.nonce` to the component-script element in **all SIX**
+   files — the two readable sources (`dist/server/...` + `dist/esm/server/...`)
+   AND all four `dist/compiled/next-server/app-page*.runtime.prod.js` bundles.
+   **The bundles are what `next start` executes**; patching only the readable
+   sources is cosmetic and is exactly what #929 shipped for ~7 weeks.
+3. `npx patch-package next`, then CONFIRM the patch names six files.
+   patch-package regenerates by diffing a FRESH download, so bundle hunks
+   vanish silently after a version bump — that is the #929 failure verbatim.
+4. Run `tests/guards/csp-nonce-component-scripts-patch.test.ts`.
+
+In each minified bundle the injection is `,nonce:<ctx>.nonce` immediately
+after ``key:`script-${…}` ``, anchored on the `${<ctx>.assetPrefix}` src
+interpolation in the same object literal. Minifier-assigned names change per
+release, so re-derive them; do not copy the letters from a previous patch.
+
+**Two sites match that shape and only one is ours.** The sibling
+`getLayerAssets` builds an identical-looking element and has carried a nonce
+upstream all along — which is why a "does `nonce:` appear somewhere" check is
+useless: the bystander satisfies it. Both the guard and
+`scripts/verify-image-patches.mjs` therefore assert the **absence** of an
+unnonced site, plus a **positive control** that the fingerprint still matches
+something at all (16.2.x had two matching sites per bundle; 16.3.1 has one,
+because `getLayerAssets` hoisted its `src` to a local). Without that control
+the check fails OPEN on the exact release where the patch most likely broke.
+
+`scripts/verify-image-patches.mjs` runs inside the BUILT IMAGE in CI. It is the
+only one of these signals that describes production rather than a developer's
+machine — the Dockerfile must COPY `patches/` before `npm ci`, without
+`--ignore-scripts`, or the image ships unpatched while CI stays green.
 
 Async-request-API: GAP-05 is **complete**. Every dynamic route
 handler under `src/app/api` types `params` as `Promise<…>` and
