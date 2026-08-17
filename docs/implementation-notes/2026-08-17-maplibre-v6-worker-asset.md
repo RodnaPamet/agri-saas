@@ -96,6 +96,35 @@ first, which is how I know the failure mode is immediate.
   the same duplication. On a data-cost-sensitive product this is worth knowing;
   it is not something the workaround introduced.
 
+  **Measured and then tested, 2026-08-17 — the obvious fix does not work.**
+  A cold first map open (local `next start`, real login, location detail with
+  `?tab=map`) transfers **4488 KB across 101 responses**, of which maplibre is
+  ~1040 KB: a **551 KB** bundled chunk plus **471 KB**
+  `maplibre-gl-shared.mjs` plus the 18 KB worker.
+
+  The tempting fix is to stop bundling maplibre and load it from the same served
+  ESM the worker uses, via react-map-gl's `mapLib` prop with a
+  `webpackIgnore`'d dynamic import, so the shared chunk is fetched once. That was
+  built and measured. It works — `map.spec.ts` and `offline-basemap.spec.ts` both
+  pass against it, and the bundled chunk is genuinely no longer fetched — and it
+  saves **nothing**:
+
+  | | bundled (current) | served ESM |
+  |---|---|---|
+  | main thread | 551 KB (one chunk) | 550 KB + 471 KB |
+  | worker | 18 KB + 471 KB | 18 KB + (shared, cached) |
+  | **maplibre total** | **~1040 KB** | **~1039 KB** |
+
+  The reason is that webpack tree-shakes `maplibre-gl.mjs` and
+  `maplibre-gl-shared.mjs` TOGETHER down to 551 KB, while serving them raw costs
+  1021 KB. Bundling is the more efficient main-thread representation; sharing one
+  copy with the worker just moves the cost. The worker's second copy is the price
+  of a separate execution context and there is no arrangement that avoids it.
+
+  So: **do not re-litigate this without new information** — e.g. maplibre
+  shipping a worker that does not import the shared chunk, or webpack gaining the
+  ability to emit a `new URL(dynamic, import.meta.url)` worker asset.
+
 - **WebGL2 is not a second blocker.** v6 removes WebGL1, so this needed checking
   rather than assuming: probed Playwright's headless Chromium in both mobile
   projects — `{"webgl2":true}` on Pixel 5 and iPhone 13.
