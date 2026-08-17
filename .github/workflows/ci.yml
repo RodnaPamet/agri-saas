@@ -289,6 +289,13 @@ jobs:
       DATABASE_URL: postgresql://ci:ci_password@localhost:5432/ci_testdb?schema=public
       DATABASE_URL_TEST: postgresql://ci:ci_password@localhost:5432/ci_testdb?schema=public
       DIRECT_DATABASE_URL: postgresql://ci:ci_password@localhost:5432/ci_testdb?schema=public
+      # Redis for tests/integration/bullmq-real-api.test.ts — the only place
+      # BullMQ itself is executed rather than mocked. REQUIRE is on because
+      # this job DECLARES a redis service: a skip here would mean the service
+      # is broken, and a silent skip is precisely the failure mode that test
+      # exists to close.
+      REDIS_URL: redis://localhost:6379
+      BULLMQ_SMOKE_REQUIRE_REDIS: "1"
       # GAP-03 — deterministic test key so the startup-encryption-check
       # integration test can simulate NODE_ENV=production with a real
       # key, AND so any future test that asserts prod-only encryption
@@ -308,6 +315,15 @@ jobs:
           - 5432:5432
         options: >-
           --health-cmd="pg_isready -U ci -d ci_testdb"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
           --health-interval=5s
           --health-timeout=5s
           --health-retries=10
