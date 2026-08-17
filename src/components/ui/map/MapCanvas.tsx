@@ -225,6 +225,36 @@ export interface MapCanvasProps {
 const DEMO_STYLE = 'https://demotiles.maplibre.org/style.json';
 
 /**
+ * Where maplibre loads its web worker from. REQUIRED on maplibre v6 — without
+ * it the map does not render at all.
+ *
+ * v5 inlined the worker as a blob and self-configured. v6 is ESM-only and loads
+ * it from a real URL, derived by swapping the filename on its own
+ * `import.meta.url`:
+ *
+ *     let e = import.meta.url;
+ *     let t = e.endsWith('-dev.mjs') ? 'maplibre-gl-worker-dev.mjs' : 'maplibre-gl-worker.mjs';
+ *     return new URL(`./${t}`, e).href
+ *
+ * That assumes the published `dist/` layout survives to the served path — true
+ * for Vite, false for webpack. Bundled, `import.meta.url` is
+ * `/_next/static/chunks/<hash>.js`, so the worker resolves to
+ * `/_next/static/chunks/maplibre-gl-worker.mjs`, which webpack never emits. It
+ * 404s, the map never initializes, and the page just hangs.
+ *
+ * `workerUrl` is react-map-gl's first-class escape hatch: `setGlobals` calls
+ * `mapLib.setWorkerUrl(workerUrl)` synchronously before the Map constructor in
+ * the same resolved `.then()`, so the ordering is guaranteed with no
+ * module-level shim.
+ *
+ * The two files under `public/maplibre/` are checked in and kept in sync by
+ * `tests/guards/maplibre-worker-asset-sync.test.ts`. Both are required:
+ * `maplibre-gl-worker.mjs` does `import … from "./maplibre-gl-shared.mjs"`, so
+ * they must sit in the SAME directory with that relative specifier intact.
+ */
+const MAPLIBRE_WORKER_URL = '/maplibre/maplibre-gl-worker.mjs';
+
+/**
  * Resolve the basemap style URL. With a MapTiler key (referrer-restricted
  * in the dashboard — it's fetched in the browser, so necessarily public)
  * we render a real basemap; `hybrid` (satellite imagery + labels) is the
@@ -770,6 +800,9 @@ export function MapCanvas({
         >
             <Map
                 ref={mapRef}
+                // maplibre v6 cannot resolve its own worker under webpack —
+                // see MAPLIBRE_WORKER_URL. Without this the map never renders.
+                workerUrl={MAPLIBRE_WORKER_URL}
                 initialViewState={initialViewState}
                 mapStyle={activeStyle}
                 interactiveLayerIds={interactive && !drawing ? ['parcel-fill'] : []}
