@@ -113,6 +113,27 @@ const PROD_RUNTIMES = [
 const UNNONCED_SCRIPT_SITE =
     /\{src:`\$\{\w+\.assetPrefix\}[^`]*`,async:!0,key:`script-\$\{\w+\}`\}/;
 
+/**
+ * POSITIVE CONTROL — the same fingerprint, but indifferent to whether a nonce
+ * follows. Matches a component-script site in EITHER state.
+ *
+ * `UNNONCED_SCRIPT_SITE` asserts an absence, which is the right shape but has
+ * one failure mode: it also passes when it matches NOTHING. If a Next release
+ * restructures the minified output, the regex quietly stops describing reality
+ * and a completely unpatched bundle sails through — the guard fails OPEN, in
+ * precisely the release where the patch is most likely to have broken.
+ *
+ * That is not hypothetical. Between 16.2.x and 16.3.1 the sibling
+ * `getLayerAssets` hoisted its `src` to a local (`{src:r,async:!0,…}`), so it
+ * stopped matching this shape at all: the per-bundle count went from 2 to 1.
+ * A larger refactor could just as easily take it to 0.
+ *
+ * So: require the fingerprint to still match SOMETHING. Then "no unnonced site"
+ * means "we looked and found none", not "we no longer know how to look".
+ */
+const ANY_COMPONENT_SCRIPT_SITE =
+    /\{src:`\$\{\w+\.assetPrefix\}[^`]*`,async:!0,key:`script-\$\{\w+\}`[,}]/g;
+
 function findNextPatches(): string[] {
     const dir = path.join(ROOT, 'patches');
     if (!fs.existsSync(dir)) return [];
@@ -266,6 +287,48 @@ describe('CSP nonce — Next.js component-script patch', () => {
             // element, which is also the snippet you need to write the fix.
             const offendingSite = UNNONCED_SCRIPT_SITE.exec(bundle)?.[0] ?? null;
             expect(offendingSite).toBeNull();
+        },
+    );
+
+    it.each(PROD_RUNTIMES)(
+        'the component-script fingerprint still matches something in %s',
+        (runtime) => {
+            // The positive control for the assertion above. Without it, that
+            // check passes both when there is no unnonced site AND when the
+            // regex has stopped matching anything at all — and the second case
+            // arrives exactly when a Next release restructures the bundle,
+            // i.e. the release where the patch most likely broke.
+            //
+            // Real drift, not a hypothetical: 16.2.x had TWO matching sites per
+            // bundle (createComponentStylesAndScripts + getLayerAssets); in
+            // 16.3.1 getLayerAssets hoists its src to a local, so only one
+            // matches. Hence >= 1 rather than a pinned count — the point is
+            // "the shape still exists", not "there are exactly N of them".
+            const bundle = fs.readFileSync(
+                path.join(
+                    ROOT,
+                    'node_modules/next/dist/compiled/next-server',
+                    runtime,
+                ),
+                'utf8',
+            );
+
+            const sites = bundle.match(ANY_COMPONENT_SCRIPT_SITE) ?? [];
+            if (sites.length === 0) {
+                throw new Error(
+                    `${runtime}: the component-script fingerprint matched NOTHING.\n\n` +
+                        `This does not mean the bundle is safe — it means this guard can no ` +
+                        `longer see the thing it is guarding, so "no unnonced site" is ` +
+                        `vacuous. Next has almost certainly restructured its minified output.\n\n` +
+                        `Re-derive the fingerprint: find the createElement('script', …) built ` +
+                        `from ctx.assetPrefix in ` +
+                        `node_modules/next/dist/compiled/next-server/${runtime}, confirm whether ` +
+                        `it carries a nonce, and update UNNONCED_SCRIPT_SITE + ` +
+                        `ANY_COMPONENT_SCRIPT_SITE here AND the copies in ` +
+                        `scripts/verify-image-patches.mjs.`,
+                );
+            }
+            expect(sites.length).toBeGreaterThanOrEqual(1);
         },
     );
 });

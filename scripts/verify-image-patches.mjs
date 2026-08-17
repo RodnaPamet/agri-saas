@@ -59,6 +59,24 @@ const PROD_RUNTIMES = [
 const UNNONCED_SCRIPT_SITE =
     /\{src:`\$\{\w+\.assetPrefix\}[^`]*`,async:!0,key:`script-\$\{\w+\}`\}/;
 
+/**
+ * POSITIVE CONTROL — same fingerprint, indifferent to a trailing nonce.
+ *
+ * The absence check above also passes when it matches NOTHING. If Next
+ * restructures its minified output, the regex stops describing reality and an
+ * entirely unpatched image ships green — the check fails OPEN in exactly the
+ * release where the patch is most likely to have broken.
+ *
+ * Observed for real between 16.2.x and 16.3.1: the sibling `getLayerAssets`
+ * hoisted its `src` to a local, so the per-bundle match count went 2 → 1. A
+ * larger refactor could take it to 0.
+ *
+ * Requiring a match keeps "no unnonced site" meaning "we looked and found
+ * none" rather than "we no longer know how to look".
+ */
+const ANY_COMPONENT_SCRIPT_SITE =
+    /\{src:`\$\{\w+\.assetPrefix\}[^`]*`,async:!0,key:`script-\$\{\w+\}`[,}]/g;
+
 const failures = [];
 
 // The unbundled source is the cheapest signal that postinstall ran at all.
@@ -78,13 +96,28 @@ for (const runtime of PROD_RUNTIMES) {
         failures.push(`missing: ${file}`);
         continue;
     }
-    const found = UNNONCED_SCRIPT_SITE.exec(fs.readFileSync(file, 'utf8'));
+    const contents = fs.readFileSync(file, 'utf8');
+    const found = UNNONCED_SCRIPT_SITE.exec(contents);
     if (found) {
         // Print the match, not the 5 MB bundle.
         failures.push(`${runtime}: unnonced component script -> ${found[0]}`);
-    } else {
-        console.log(`ok   ${runtime}`);
+        continue;
     }
+
+    // Positive control: absence only means something if we can still find the
+    // shape at all. Zero matches = the fingerprint has drifted, not that the
+    // bundle is clean.
+    const sites = contents.match(ANY_COMPONENT_SCRIPT_SITE) ?? [];
+    if (sites.length === 0) {
+        failures.push(
+            `${runtime}: component-script fingerprint matched NOTHING — this check has gone ` +
+                `blind (Next likely restructured its minified output). Re-derive the regex ` +
+                `here AND in tests/guards/csp-nonce-component-scripts-patch.test.ts.`,
+        );
+        continue;
+    }
+
+    console.log(`ok   ${runtime}  (${sites.length} component-script site(s), all nonced)`);
 }
 
 if (failures.length > 0) {

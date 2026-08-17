@@ -157,7 +157,7 @@
         "mammoth": "^1.12.0",
         "maplibre-gl": "5.24.0",
         "motion": "^13.1.0",
-        "next": "16.2.12",
+        "next": "16.3.1",
         "next-auth": "4.24.15",
         "next-intl": "^4.13.5",
         "nodemailer": "^9.0.4",
