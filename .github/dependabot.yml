@@ -105,35 +105,6 @@ updates:
       # held. Remove this entry as part of the migration, not before.
       - dependency-name: "@tanstack/react-table"
         update-types: ["version-update:semver-major"]
-      # maplibre-gl v6 cannot resolve its own worker under our bundler
-      # (#577, closed). v6 is ESM-only — no `main`, no CJS, UMD bundles
-      # dropped — and loads the worker from a real URL derived by swapping
-      # the filename on `import.meta.url`:
-      #
-      #   function bi(){ let e = import.meta.url;
-      #                  if (!/^https?:/.test(e)) return ``;
-      #                  let t = e.endsWith(`-dev.mjs`)
-      #                    ? `maplibre-gl-worker-dev.mjs`
-      #                    : `maplibre-gl-worker.mjs`;
-      #                  return new URL(`./${t}`, e).href }
-      #
-      # That assumes the published dist/ layout survives to the served
-      # path — true for Vite, false for webpack. Bundled, `import.meta.url`
-      # is /_next/static/chunks/<hash>.js, so the worker resolves to
-      # /_next/static/chunks/maplibre-gl-worker.mjs, which webpack never
-      # emits. It 404s, the map never initializes, and the mobile E2E specs
-      # hang — they failed as 3.0m TIMEOUTS, never as drift assertions.
-      #
-      # Fixing it means shipping the worker as a static asset, calling
-      # `setWorkerUrl()` before the first map, and adding a version-sync
-      # guard so a later bump can't ship a stale worker. WebGL2 (which v6
-      # now requires) was probed and IS available in our CI browsers, so
-      # it is not a second blocker.
-      #
-      # PATCH AND MINOR ON 5.x STILL COME THROUGH — only the major is
-      # held. maplibre-gl is pinned exactly at 5.24.0 and works.
-      - dependency-name: "maplibre-gl"
-        update-types: ["version-update:semver-major"]
 
   # ── GitHub Actions (monthly) ──
   - package-ecosystem: github-actions
