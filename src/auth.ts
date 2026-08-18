@@ -766,7 +766,27 @@ export const authOptions: NextAuthOptions = {
 // make the dependency explicit at each call site.
 
 export async function auth(): Promise<Session | null> {
-    return getServerSession(authOptions);
+    // Cookie FIRST, and if one resolves this returns exactly what it always
+    // did — the web client's behaviour is bit-for-bit unchanged.
+    const cookieSession = await getServerSession(authOptions);
+    if (cookieSession) return cookieSession;
+
+    // Native bearer fallback.
+    //
+    // `getToken()` already accepts an `Authorization: Bearer` header, so
+    // middleware authorises a bearer today; `getServerSession()` does NOT —
+    // it reads `sessionStore.value`, i.e. cookies only. Without this fallback a
+    // bearer clears the Edge and then 401s at every `/api/t/**` handler via
+    // requirePermission -> getTenantCtx -> getSessionOrThrow -> auth().
+    //
+    // That divergence lands precisely on the case the native-auth work must
+    // preserve: `checkTenantAccess` returns 'allow' when `membershipsTruncated`
+    // and defers to the DB-backed server gate — which, under a bearer, would
+    // have no principal to defer TO.
+    //
+    // Lazy import so the Edge/middleware bundle never pulls it in.
+    const { resolveBearerSession } = await import('@/lib/auth/native/bearer-principal');
+    return resolveBearerSession();
 }
 
 // Re-export `getServerSession` for ergonomics.
