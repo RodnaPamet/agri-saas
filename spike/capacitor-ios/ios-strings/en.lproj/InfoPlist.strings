@@ -1,0 +1,7 @@
+/* iOS permission prompts. NOT covered by next-intl — these live in the Xcode
+   project, one InfoPlist.strings per locale, and the bg/en parity guards in CI
+   cannot see them. Copy both files into the generated ios/App/App/ project. */
+
+"NSCameraUsageDescription" = "Agrent uses the camera so you can attach photos to field operations and journal entries.";
+"NSPhotoLibraryUsageDescription" = "Agrent uses your photo library so you can attach existing images to field operations and journal entries.";
+"NSPhotoLibraryAddUsageDescription" = "Agrent saves captured photos to your library so you keep a copy of what you recorded in the field.";

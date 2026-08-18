@@ -377,6 +377,70 @@ exists so the device session is **aimed** rather than exploratory.
 committed to in advance. Everything above them is cheap to run and should be run
 first anyway — a failure at 3.1 would make the rest moot.
 
+### F9 [DESK] — native capture CAN join the existing outbox. No second queue.
+
+The question P4 called "worth more than the feature" answers **YES**, from the
+code, without a device.
+
+`enqueuePhoto(store, input)` takes `{ url, blob, fileName, fileType, label }`
+(`outbox.ts:205-244`). `Camera.getPhoto({ resultType: Uri })` returns a
+`webPath` the WKWebView can `fetch()` straight into a `Blob`. So the native path
+makes the **identical call** the web path makes — one queue, one replay loop, one
+`Idempotency-Key`, one drain.
+
+`spike/capacitor-ios/native-capture-bridge.ts` is the proof-of-shape. It is
+deliberately NOT wired into `src/`: shipping untested edits to a production
+component from a machine that cannot build or run the app would be worse than
+shipping none, and the integration is a single call the device session applies.
+
+One contract to respect: `EnqueuePhotoInput.blob` is documented as "the
+already-downscaled photo bytes", and `enqueuePhoto` throws `PhotoTooLargeError`
+above `MAX_QUEUED_PHOTO_BYTES` (8 MB). The web path downscales in a canvas;
+Camera's `width`/`quality` do it natively. **That is one of the few places the
+shell can be genuinely faster** — and P4's table is where it is measured rather
+than asserted.
+
+### F10 [DESK] — the camera is not a capability gain, and the gain list must say so
+
+`file-upload.tsx` already accepts `capture?: boolean | "user" | "environment"`,
+which opens the camera directly on iOS. The honest framing is **taps, bytes and
+Guideline 4.2 mitigation** — not "we would get a camera".
+
+If the comparison table comes back at parity, the native camera's entire
+remaining value is 4.2 mitigation, and the verdict should describe it that way
+rather than count it as a feature.
+
+### F11 [DESK] — the scanner contract is inherited, provided no new endpoint is invented
+
+The journal photo endpoint routes through `uploadLogEntryPhoto`
+(`usecases/journal.ts:570`) → `scanUploadedBuffer` (:616) →
+`FileRepository.markStored(..., scanStatus)` (:665).
+
+A native capture reusing that URL therefore **cannot bypass the scanner** — which
+is why `native-capture-bridge.ts` takes the target `url` as a parameter instead
+of constructing one. Inventing an endpoint is exactly the class
+`tests/guards/upload-route-scan-reachability.test.ts` exists to catch.
+
+Also carried over from CLAUDE.md: never restore a default on the `scanStatus`
+argument — `isDownloadAllowed('SKIPPED')` is true in every `AV_SCAN_MODE`, so a
+default meaning "unscanned" would also mean "downloadable".
+
+### F12 [DESK] — Bulgarian permission copy does not exist, and CI cannot see that it doesn't
+
+iOS usage descriptions live in the Xcode project as one `InfoPlist.strings` per
+locale. They are **outside next-intl**, so `i18n-completeness` and
+`scripts/i18n-diff.mjs` — which hold `bg.json`/`en.json` at exact parity (5,269
+keys each, 0 missing) — have no visibility into them at all.
+
+Written here at `spike/capacitor-ios/ios-strings/{en,bg}.lproj/`, using the app's
+own terminology from `messages/bg.json` (`снимки`, `полски операции`). They must
+be copied into `ios/App/App/` and added to the Xcode target, or a Bulgarian
+operator gets an English system prompt.
+
+**If this shell ever became real, i18n parity would need a second mechanism.**
+That is a standing cost of the native route — and it applies to a React Native
+rewrite equally.
+
 ---
 
 ## 6. Verdict — completed at close
