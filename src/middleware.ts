@@ -8,6 +8,11 @@ import {
 } from '@/lib/rate-limit/apiReadRateLimit';
 import { env } from '@/env';
 import {
+    CLIENT_VERSION_HEADER,
+    checkClientVersion,
+    clientTooOldBody,
+} from '@/lib/api/contract-version';
+import {
     isPublicPath,
     isApiRoute,
     isAdminPath,
@@ -174,6 +179,27 @@ async function authMiddleware(req: NextRequest): Promise<NextResponse> {
             res.cookies.set(name, '', { maxAge: 0, path: '/' });
         }
         return res;
+    }
+
+    // ── 2c. Client contract version ──
+    //
+    // A native binary cannot be rolled back the way an image can — an App Store
+    // release is out of our hands once installed — so a server that has moved
+    // past what an old app understands must say so in a way the app can ACT on.
+    //
+    // The refusal is a distinct machine-readable code, never a generic 400:
+    // an app receiving `{"error":"Bad Request"}` shows the operator a bug; one
+    // receiving `client_version_unsupported` shows "please update".
+    //
+    // Absent header = compatible, deliberately. The web client ships with the
+    // server and cannot be stale, and refusing unversioned requests would break
+    // every existing integration on the day this lands. Only a client that
+    // DECLARES a version older than the floor is refused.
+    if (isApiRoute(pathname)) {
+        const verdict = checkClientVersion(req.headers.get(CLIENT_VERSION_HEADER));
+        if (!verdict.ok) {
+            return NextResponse.json(clientTooOldBody(), { status: 426 });
+        }
     }
 
     // ── 3. Admin-only paths ──
