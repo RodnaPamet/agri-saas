@@ -208,7 +208,24 @@ describe('OI-3 — restore-test.yml wiring', () => {
 
     it('authenticates via Workload Identity Federation, not a long-lived key', () => {
         const src = read(WORKFLOW);
-        expect(src).toMatch(/google-github-actions\/auth@v2/);
+
+        // Pinned to a MAJOR, but deliberately not to a SPECIFIC major.
+        //
+        // The security property this test defends is the three assertions
+        // below — federated short-lived credentials, no long-lived JSON key.
+        // The action's major version is incidental to that: v2 and v3 both
+        // declare `workload_identity_provider` / `service_account` /
+        // `audience`, so a major bump changes the runtime, not the auth model.
+        //
+        // Hard-pinning `@v2` made every routine Dependabot major bump fail a
+        // SECURITY guard for a reason that had nothing to do with security
+        // (#582), which trains people to read a red security check as noise.
+        // That is the expensive failure mode, not the version drift.
+        //
+        // `v[2-9]\d*` still refuses a downgrade to v1, whose input surface
+        // predates the WIF flow this workflow relies on.
+        expect(src).toMatch(/google-github-actions\/auth@v[2-9]\d*/);
+
         expect(src).toMatch(/workload_identity_provider/);
         expect(wf.permissions['id-token']).toBe('write');
         // A JSON key would be a long-lived credential in a PUBLIC repo.
