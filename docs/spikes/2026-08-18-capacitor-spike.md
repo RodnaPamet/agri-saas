@@ -298,6 +298,85 @@ was written on. `npx cap add ios` and everything downstream requires macOS +
 Xcode + a provisioning profile. No observation in §6 may be inferred from the
 scaffold's existence.
 
+### F4 [DESK] — the app never requests persistent storage. K4 is the likeliest kill.
+
+`navigator.storage.persist()` and `navigator.storage.estimate()` appear **nowhere**
+in `public/sw.js`, `src/lib/offline/**`, or `src/components/pwa/**` — zero
+occurrences.
+
+Without `persist()`, all of it is best-effort storage. On iOS that means:
+
+- Safari's ITP deletes **all script-writable storage** (Cache API, IndexedDB)
+  after ~7 days without interaction with the site.
+- Quota pressure evicts by origin, and this origin stores **photo Blobs**
+  (`outbox.ts:74 blob: Blob`) plus a **24 MB basemap budget**
+  (`BASEMAP_CACHE_BUDGET_BYTES = 24 * 1024 * 1024`). That is a large, fast-growing
+  footprint for an evictable origin.
+- §2.5 already argues `server.url` mode probably does not escape web-storage
+  eviction, because the storage belongs to the remote origin.
+
+So the mechanism K4 is testing is **not merely possible, it is the documented
+default behaviour** for an origin that has not requested persistence. Note this
+is a PWA problem too — the shell does not create it — but the spike must not
+report "the shell loses data" as a shell finding if the PWA loses it equally.
+**Measure both**, or the criterion answers the wrong question.
+
+Cheap mitigation worth pricing if K4 fires: call `navigator.storage.persist()`.
+On iOS it is not reliably granted, so price it as "may help", not "fixes it".
+
+### F5 [DESK] — replay duplication is architecturally prevented (K2's fourth clause is likely safe)
+
+`src/lib/offline/sync.ts` sends `Idempotency-Key: item.id` on every replay, and
+the id is the **stable outbox id** minted at enqueue (`crypto.randomUUID()` with
+a fallback, `outbox.ts:114-121`) — the same id rides every retry. Photo items
+replay as multipart from the stored Blob with the same header; mutations
+additionally send `If-Match` for optimistic locking.
+
+Server-side handling exists on the journal, journal-files and location-operations
+routes. So "syncs and is not duplicated" is a designed property, not luck.
+
+**Residual risk is not duplication but Blob durability**: photo bytes live as
+Blobs in IndexedDB, which is exactly the storage class F4 says iOS evicts.
+
+### F6 [DESK] — the service worker's scope and fetch guard survive `server.url`
+
+`ServiceWorkerRegistrar.tsx` registers `/sw.js` at the site's origin, and the SW's
+fetch handler passes through anything cross-origin
+(`sw.js:201  if (url.origin !== self.location.origin) return;`). In `server.url`
+mode the WKWebView's origin **is** the remote site's, so scope and guard both
+behave as in Safari. This lowers the risk on device tests 3.1 and 3.2.
+
+### F7 [DESK] — the shell probably LOSES web push until P5 lands
+
+`sw.js` registers `push` and `notificationclick` handlers and `PushOptIn.tsx`
+drives `pushManager.subscribe()`. On iOS, web push is only available to a site
+**added to the Home Screen as a PWA** — a Capacitor WKWebView is not that
+context.
+
+So the shell plausibly **removes** a capability the PWA has, and P5's APNs work
+is not purely additive: it may be replacing something rather than adding to it.
+Verify on device before crediting native push as a gain — and if web push is
+indeed dead in the shell while P5 is unfinished, the shell is a net regression on
+notifications, which belongs in the verdict.
+
+### F8 [DESK] — risk-ranked pre-assessment of the six device tests
+
+Ordered as P3 requires (cheapest kill first), with the desk view of each. This
+exists so the device session is **aimed** rather than exploratory.
+
+| # | test | desk risk | why |
+|---|---|---|---|
+| 3.1 | SW registers in WKWebView | **LOW** | F6: registration path and origin guard are unchanged by `server.url` |
+| 3.2 | four caches populate | **LOW** | follows from 3.1; check by name, not by absence of errors |
+| 3.3 | **airplane-mode COLD launch** | **HIGH** | nothing is bundled. The launch is a webview load of a remote URL; it survives only if an already-activated SW intercepts the navigation in a fresh process. There is no Capacitor-level offline fallback in `server.url` mode, so the failure mode is a blank/error view with no shell |
+| 3.4 | warm offline write → sync, no duplicate | **LOW** for duplication (F5), **MEDIUM** for photo Blobs (F4) | idempotency is designed in; Blob durability is not |
+| 3.5 | offline basemap + map pan | **MEDIUM** | two variables. Cache side is a 24 MB budgeted cache-first store; WebGL-in-WKWebView is separate and must be recorded separately |
+| 3.6 | **overnight eviction** | **HIGH** | F4: no `persist()` call anywhere, large Blob + 24 MB basemap footprint, remote-origin storage |
+
+**3.3 and 3.6 are where we expect this to die**, which matches what §3 already
+committed to in advance. Everything above them is cheap to run and should be run
+first anyway — a failure at 3.1 would make the rest moot.
+
 ---
 
 ## 6. Verdict — completed at close
