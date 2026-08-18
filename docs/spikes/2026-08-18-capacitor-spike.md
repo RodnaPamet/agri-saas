@@ -441,6 +441,71 @@ operator gets an English system prompt.
 That is a standing cost of the native route — and it applies to a React Native
 rewrite equally.
 
+### F13 [DESK] — P5's precondition is NOT met, and its credentials do not exist
+
+P5 runs "only if P3 and P4 came back positive". **P3 has not run at all** — its
+six tests need a device. So the device half of P5 must not start, and this
+section records the desk work only.
+
+Independently, P5.1 says to stop and record a schedule finding if the Apple
+Developer account, push key/certificate or provisioning profile are not in hand.
+Checked: there is **no APNs credential of any kind in the repo** — no `.p8`, no
+team id, no `APNS_*` env var. `src/env.ts` has only the VAPID trio
+(`VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`) for web push.
+
+**This is a schedule finding, per P5.1.** Obtaining an Apple Developer account
+and a push key is account administration measured in days of waiting, not hours
+of work, and it is on the critical path for *any* iOS route — Capacitor shell or
+React Native rewrite alike. It should be started immediately and in parallel,
+because it does not discriminate between the options and it will otherwise
+silently become the long pole.
+
+### F14 [DESK] — there is no single sender today. The seam is `sendWebPushToUser`.
+
+P5 says "find the existing sender and add a transport". Precisely: there **isn't**
+one sender — `sendWebPushToUser` is called directly from two places:
+
+- `src/app-layer/jobs/weather-pull.ts:261` — spray-window push
+- `src/app-layer/usecases/task.ts:529` — task-assignment push
+
+So the correct seam is **inside `src/lib/notifications/web-push.ts` itself**.
+Adding APNs delivery within `sendWebPushToUser` gives one-sender-two-transports
+for both call sites at once, with no new dispatch path. The honest shape would
+rename it to something transport-neutral (`notifyUserDevices`) so the name stops
+claiming a transport.
+
+Anything hung off a *different* event would be the parallel pipeline P5 forbids.
+
+### F15 [DESK] — where the dedupe actually lives, and why that matters here
+
+The `{tenantId}:{TYPE}:{entityId}:{userId}:{date}` key (`buildDedupeKey` in
+`enqueue.ts`, `buildAgroDedupeKey` in `agro.ts`) belongs to the **notification
+record** layer, not to push delivery. `sendWebPushToUser` has no dedupe of its
+own — it is a best-effort side effect of an already-deduped event, fanning out to
+up to 25 subscriptions.
+
+Consequence for the design: **adding APNs inside `sendWebPushToUser` inherits
+that dedupe for free.** A separate APNs dispatcher subscribed to its own trigger
+would not, and would double-notify exactly as P5 warns. This is the technical
+reason the seam is where F14 says it is, rather than a stylistic preference.
+
+### F16 [DESK] — the schema does not fit an APNs token, and that is the scope tension made concrete
+
+`PushSubscription` (`prisma/schema/automation.prisma:50`) is shaped for Web Push:
+`endpoint`, `p256dh`, `auth`. An APNs device token is a single opaque string with
+none of those, so a transport addition needs either a nullable `apnsToken` column
+plus a `kind` discriminator, or a second table.
+
+Either is a **migration against production**, which is the concrete form of the
+tension flagged when P5 was received: "add a transport to the existing sender"
+cannot be done entirely inside a throwaway spike. The default taken here is that
+**no schema change is made** — the design is recorded, not applied — because a
+migration outliving a spike that may be discarded is exactly the "half a
+Capacitor config found in six months" problem P6.4 exists to prevent.
+
+If the verdict is SHIP THE SHELL, this migration is the first item of real work,
+and it should land on its own merits with its own review, not as spike residue.
+
 ---
 
 ## 6. Verdict — completed at close
