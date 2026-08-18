@@ -39,6 +39,9 @@ const config = [
             // build artefacts, not source.
             '.next-test/**',
             'node_modules/**',
+            // Throwaway Capacitor spike — own package.json, own deps, never
+            // part of the web build. See spike/capacitor-ios/README.md.
+            'spike/**',
             'coverage/**',
             'playwright-report/**',
         ],

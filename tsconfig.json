@@ -39,6 +39,7 @@
   ],
   "exclude": [
     "node_modules",
+    "spike",
     "scripts",
     "prisma/seed.ts",
     "dub-reference"

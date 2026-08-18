@@ -243,6 +243,63 @@ whole value of a time box is that it is allowed to expire.
 
 ---
 
+## 5.5 Findings log — written as the spike runs
+
+Appended in order. Desk findings (answerable by reading the codebase) are marked
+**[DESK]**; device observations are marked **[DEVICE]** and may only be filled in
+from an actual device.
+
+### F1 [DESK] — the shell scaffold is isolated from the app, proven by mutation
+
+`spike/capacitor-ios/` has its own `package.json`; the web build resolves no
+`@capacitor/*`. Isolation needs two config lines, and they were verified rather
+than assumed:
+
+- **With** `spike` in `tsconfig.json`'s `exclude`: `tsc --noEmit` exits 0.
+- **Without** it: `tsc` exits 2 with
+  `spike/capacitor-ios/capacitor.config.ts(1,38): error TS2307: Cannot find
+  module '@capacitor/cli'` — i.e. the root `include: ['**/*.ts']` really would
+  sweep the spike into the app's typecheck.
+
+`npm run lint` exits 0 and 581 guard/guardrail suites (7,449 tests) pass with the
+spike present. Both config lines exist **only on the spike branch**.
+
+### F2 [DESK] — OAuth in an embedded webview may block the auth criterion outright
+
+Found by reading `src/auth.ts` and `deploy/env.prod.example`, before any device
+time. This was **not anticipated by §3's criteria**, and is recorded here rather
+than retrofitted into them.
+
+Production sets `AUTH_CREDENTIALS_UI_HIDDEN=1`, so `/login` hides the
+email/password form. Real operators sign in with **Google** or **Microsoft
+Entra**. Both are off-origin navigations, so Capacitor needs
+`server.allowNavigation` — but that only settles Capacitor's layer.
+
+**Google refuses OAuth from embedded webviews** (`disallowed_useragent`), as an
+anti-phishing measure. `allowNavigation` does not change Google's mind.
+
+Why this matters more than a configuration detail: the standard mitigation is
+`@capacitor/browser` (`ASWebAuthenticationSession`), which is a **separate native
+auth flow**. If that is required, the honest description of the result is no
+longer "we wrapped the PWA" — it is "we wrapped the PWA and hand-built native
+authentication", and the session cookie then has to cross from that auth session
+into the WKWebView, which is precisely the thing to verify rather than assume.
+
+**Consequence for the runbook:** the OAuth check is the cheapest possible kill
+and now runs FIRST, before any other device work. The credentials route is still
+reachable (only the UI is hidden), so a password sign-in can unblock the rest of
+the runbook — but any result obtained that way is testing a path production
+operators do not use, and the auth criterion stays unanswered.
+
+### F3 [DEVICE] — everything in P2.3 and P2.4 remains open
+
+The scaffold cannot be built, signed or installed from the Linux workstation this
+was written on. `npx cap add ios` and everything downstream requires macOS +
+Xcode + a provisioning profile. No observation in §6 may be inferred from the
+scaffold's existence.
+
+---
+
 ## 6. Verdict — completed at close
 
 _To be filled in per P6. Each K is answered in the wording above._
