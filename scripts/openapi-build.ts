@@ -30,6 +30,11 @@ import {
     type OpenAPIRegistry,
 } from '@asteasolutions/zod-to-openapi';
 import { registry } from '@/lib/openapi/registry';
+import {
+    API_CONTRACT_VERSION,
+    MINIMUM_SUPPORTED_CLIENT_VERSION,
+    CLIENT_VERSION_HEADER,
+} from '@/lib/api/contract-version';
 
 // Path resolution. We deliberately use `process.cwd()` rather than
 // `import.meta.url` or `__dirname` — the file is consumed by both
@@ -175,6 +180,17 @@ export function buildOpenApiDoc(opts: BuildOptions = {}): {
                 'truth — this document is generated from those Zod schemas via `npm run openapi:generate`.',
             license: { name: 'Proprietary' },
         },
+        // The contract carries its OWN version, rather than the number living
+        // only in prose that drifts away from the spec.
+        //
+        // Not `info.version`: that is `package.json::version`, which
+        // semantic-release bumps every release and which the contract test
+        // strips before comparing so a routine bump is not read as drift.
+        // Reusing it would make the API version invisible to the very check
+        // that should police it.
+        'x-api-version': API_CONTRACT_VERSION,
+        'x-minimum-client-version': MINIMUM_SUPPORTED_CLIENT_VERSION,
+        'x-client-version-header': CLIENT_VERSION_HEADER,
         servers: [
             { url: 'https://app.example.com', description: 'Production' },
             { url: 'https://staging.example.com', description: 'Staging' },
