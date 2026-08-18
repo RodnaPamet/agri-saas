@@ -117,6 +117,65 @@ async function authMiddleware(req: NextRequest): Promise<NextResponse> {
         );
     }
 
+    // ── 2b. Reject a token whose session is no longer valid ──
+    //
+    // The `jwt` callback signals four distinct failure modes by setting
+    // `token.error`, and until this check existed NOTHING READ ANY OF THEM:
+    //
+    //   SessionRevoked        admin revoke, expiry, maxConcurrentSessions
+    //                         eviction, or a User.sessionVersion bump
+    //                         (auth.ts:637, :727)
+    //   MfaDependencyFailure  a FAIL-CLOSED MFA check could not complete
+    //                         (auth.ts:591, :708) — so it was failing OPEN
+    //   RefreshTokenError     OAuth refresh failed; its own log line says
+    //                         "forcing reauth" (auth.ts:681) — nothing forced
+    //   EntraGroupGateDenied  Entra group gate refused
+    //                         (lib/auth/entra-group-sync.ts:182)
+    //
+    // The flag was written in five places and read in none, so the
+    // /admin/members "revoke session" button, the concurrency cap, session
+    // expiry, and the sessionVersion backstop that password change/reset
+    // relies on were all inert. `session: { strategy: 'jwt' }` sets no
+    // maxAge (30-day default) and NextAuth re-issues on each request, so an
+    // actively-used revoked session was effectively unbounded.
+    //
+    // This is the ONLY enforcement point on purpose. `getToken()` reads the
+    // cookie AND an `Authorization: Bearer` header (next-auth/jwt/index.js:83),
+    // so a bearer credential is denied by exactly the same code — there is no
+    // second, looser path to keep in sync.
+    //
+    // Placed AFTER `isPublicPath` (which covers `/login` and `/api/auth`), so
+    // a denial cannot redirect-loop. A successful refresh clears the flag
+    // (`delete token.error`, auth.ts:664), so a set value is always current.
+    //
+    // NOT changed here: `verifyAndTouchSession` still fails OPEN on a
+    // transient DB error. Failing closed there would turn a database blip
+    // into a fleet-wide sign-out of every operator mid-field. The bug was
+    // never the fail-open on an UNKNOWN answer — it was ignoring a DEFINITE
+    // one.
+    if (typeof token.error === 'string' && token.error.length > 0) {
+        if (isApiRoute(pathname)) {
+            return unauthorizedJson();
+        }
+        const proto = req.headers.get('x-forwarded-proto') || 'http';
+        const host = req.headers.get('host') || req.nextUrl.host;
+        const origin = `${proto}://${host}`;
+        const res = NextResponse.redirect(
+            buildLoginRedirect(origin, pathname),
+        );
+        // Clear the stale session cookie so the browser stops re-presenting a
+        // credential we have just refused; otherwise every subsequent
+        // protected navigation bounces through this same denial. Both names
+        // are cleared because the `__Secure-` prefix is used over HTTPS only.
+        for (const name of [
+            'next-auth.session-token',
+            '__Secure-next-auth.session-token',
+        ]) {
+            res.cookies.set(name, '', { maxAge: 0, path: '/' });
+        }
+        return res;
+    }
+
     // ── 3. Admin-only paths ──
     if (isAdminPath(pathname)) {
         const role = token.role;
