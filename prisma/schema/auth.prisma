@@ -787,6 +787,10 @@ model UserSession {
 
   user User @relation("UserSessionOwner", fields: [userId], references: [id], onDelete: Cascade)
 
+  /// Native-client refresh tokens issued against this session. Cascade on
+  /// delete so a session takedown cannot leave an orphan credential.
+  refreshTokens NativeRefreshToken[] @relation("SessionRefreshTokens")
+
   @@index([userId])
   @@index([tenantId])
   @@index([userId, revokedAt])
@@ -847,6 +851,53 @@ model PasswordResetToken {
   user User @relation("UserPasswordResetTokens", fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+  @@index([expiresAt])
+}
+
+/// A native-client refresh token.
+///
+/// Deliberately a CHILD of `UserSession` rather than a parallel credential. A
+/// bearer that could outlive an admin clicking "revoke session" would be a
+/// credential the product's own security UI cannot kill, so the session row is
+/// the single lineage anchor: revoking it, its expiry, or the
+/// `maxConcurrentSessions` cap invalidates every token beneath it with no
+/// separate bookkeeping.
+///
+/// Only the SHA-256 is stored; the raw token is returned once at issue and is
+/// unrecoverable afterwards, mirroring `PasswordResetToken`. A database
+/// disclosure therefore yields no usable credential.
+model NativeRefreshToken {
+  id            String    @id @default(cuid())
+  /// SHA-256 of the raw token. Unique so a replay lookup is one indexed read.
+  tokenHash     String    @unique
+  /// The session this credential hangs from.
+  userSessionId String
+  userId        String
+  /// Denormalised from the session for RLS + audit. Nullable for the same
+  /// reason `UserSession.tenantId` is: a mint can precede tenant resolution.
+  /// See the ASYMMETRIC single-policy RLS in the migration.
+  tenantId      String?
+  /// Rotation lineage. A token minted by spending an earlier one inherits its
+  /// `familyId`, so replaying a spent token revokes the WHOLE chain rather
+  /// than just the credential presented.
+  familyId      String
+  createdAt     DateTime  @default(now())
+  expiresAt     DateTime
+  /// Set when spent. A second attempt to spend a token that already carries
+  /// this is theft evidence, not a retry.
+  consumedAt    DateTime?
+  /// The token minted when this one was consumed — the audit trail that makes
+  /// a family reconstructable after the fact.
+  replacedById  String?
+  revokedAt     DateTime?
+  revokedReason String?
+
+  session UserSession @relation("SessionRefreshTokens", fields: [userSessionId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([userSessionId])
+  @@index([userId])
+  @@index([familyId])
   @@index([expiresAt])
 }
 

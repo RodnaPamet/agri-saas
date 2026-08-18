@@ -410,6 +410,14 @@ describeFn(DB_SUITE_NAME, () => {
             // would be a permissive sibling that re-introduces the
             // cross-tenant UPDATE leak documented in the migration.
             'UserSession',
+            // Native bearer auth — `NativeRefreshToken` hangs off
+            // `UserSession` and inherits its nullable tenantId (a mint
+            // can precede tenant resolution). Same asymmetric single
+            // policy: USING (tenantId IS NULL OR own), WITH CHECK (own).
+            // A split INSERT policy would let an app_user-bound session
+            // re-point a LIVE refresh token at another tenant — the
+            // permissive-OR leak, on a credential table.
+            'NativeRefreshToken',
             // feat/ai-rag — `KnowledgeChunk` has a NULLABLE tenantId:
             // NULL = the GLOBAL licensed catalog (KCC / FAIR-Forward QA /
             // EU/USDA organic), readable by every tenant; non-null =
