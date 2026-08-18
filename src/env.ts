@@ -188,6 +188,17 @@ export const env = createEnv({
         // Security / CORS
         CORS_ALLOWED_ORIGINS: z.string().default(""),
 
+        // Native OAuth handoff — comma-separated allowlist of redirect
+        // prefixes the authorization code may be delivered to (e.g.
+        // "bg.agrent.app://,https://app.agrent.bg/native/").
+        //
+        // EMPTY BY DEFAULT, and empty means REFUSE EVERYTHING. An unset
+        // allowlist that allowed everything would make the start endpoint an
+        // open redirect that also carries an authorization code — the worst
+        // available combination. A deployment that has not configured this
+        // simply has no native sign-in, which is the safe failure.
+        NATIVE_AUTH_REDIRECT_ALLOWLIST: z.string().default(""),
+
         // SMTP / Email (all optional — when SMTP_HOST is absent, console sink is used)
         SMTP_HOST: z.string().optional(),
         SMTP_PORT: z.coerce.number().optional(),
@@ -605,6 +616,7 @@ export const env = createEnv({
         DATA_ENCRYPTION_KEY_PREVIOUS: process.env.DATA_ENCRYPTION_KEY_PREVIOUS,
 
         CORS_ALLOWED_ORIGINS: process.env.CORS_ALLOWED_ORIGINS,
+        NATIVE_AUTH_REDIRECT_ALLOWLIST: process.env.NATIVE_AUTH_REDIRECT_ALLOWLIST,
         SMTP_HOST: process.env.SMTP_HOST,
         SMTP_PORT: process.env.SMTP_PORT,
         SMTP_USER: process.env.SMTP_USER,
