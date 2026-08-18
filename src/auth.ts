@@ -765,6 +765,65 @@ export const authOptions: NextAuthOptions = {
 // New code should call `getServerSession(authOptions)` directly to
 // make the dependency explicit at each call site.
 
+/**
+ * Build the claims a NATIVE access token carries.
+ *
+ * Lives here, beside `applyMembershipClaims`, so that function can stay private
+ * and there remains exactly ONE producer of `memberships` /
+ * `membershipsTruncated` / `role`. A refresh endpoint that rebuilt those itself
+ * would be a second producer, and one that missed the ACTIVE filter, the
+ * deleted-tenant filter, the `createdAt` ordering or the MAX_JWT_MEMBERSHIPS
+ * slice would be silently more (or less) permissive than the cookie — in a
+ * population no fixture covers.
+ *
+ * Called on REFRESH rather than copying the presented token's claims, so a
+ * refresh cannot keep stale authority alive: a role change, a removed
+ * membership or a deleted tenant is reflected in the next access token.
+ *
+ * Returns null when the user no longer resolves, which the caller turns into
+ * the same generic refusal every other refresh failure produces.
+ */
+export async function buildNativeAccessClaims(input: {
+    userId: string;
+    tenantId: string | null;
+    /** The EXTERNAL `UserSession.sessionId` claim, not the row id. */
+    userSessionId: string;
+}): Promise<JWT | null> {
+    const dbUser = await prisma.user.findUnique({
+        where: { id: input.userId },
+        select: { email: true },
+    });
+    if (!dbUser?.email) return null;
+
+    const token: JWT = {
+        email: dbUser.email,
+        sub: input.userId,
+        userId: input.userId,
+        userSessionId: input.userSessionId,
+    };
+
+    // The single producer. Sets userId, sessionVersion, uiLanguage,
+    // memberships(+Truncated), orgMemberships(+Truncated), and the primary
+    // tenantId/tenantSlug/role.
+    await applyMembershipClaims(token, input.userId);
+
+    // Preserve the session's own tenant when the user is a member of it, so a
+    // native client stays on the tenant it signed in against rather than being
+    // silently moved to the oldest membership.
+    if (input.tenantId) {
+        const match = (token.memberships ?? []).find(
+            (m) => m.tenantId === input.tenantId,
+        );
+        if (match) {
+            token.tenantId = match.tenantId;
+            token.tenantSlug = match.slug;
+            token.role = match.role;
+        }
+    }
+
+    return token;
+}
+
 export async function auth(): Promise<Session | null> {
     // Cookie FIRST, and if one resolves this returns exactly what it always
     // did — the web client's behaviour is bit-for-bit unchanged.

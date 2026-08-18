@@ -47,6 +47,20 @@ function initUpstash() {
  * The strictness depends on the risk of the endpoint to abuse.
  */
 function classifyEndpoint(pathname: string): EndpointTier {
+    // Native token issue + refresh. Classified explicitly because the DEFAULT
+    // below is 'low' (60/min) — the tier meant for /csrf and /providers, i.e.
+    // for getters that leak nothing. A refresh endpoint is neither: it is an
+    // unauthenticated credential exchange, which is the same abuse position as
+    // /signin and belongs in the same tier.
+    //
+    // 'high' = 10/min per (IP, ua-hash). A native client refreshes roughly four
+    // times an hour (ACCESS_TOKEN_TTL_SECONDS = 15 min), so this leaves well
+    // over an order of magnitude of headroom for legitimate traffic while
+    // capping guessing at 10 attempts a minute against a 256-bit token.
+    if (pathname.startsWith('/api/auth/token')) {
+        return 'high';
+    }
+
     if (
         pathname.startsWith('/api/auth/signin') ||
         pathname.startsWith('/api/auth/callback') ||
