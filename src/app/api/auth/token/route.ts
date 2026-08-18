@@ -56,19 +56,19 @@ async function handleIssue(req: NextRequest): Promise<NextResponse> {
     // `token.userSessionId` is the EXTERNAL sessionId claim; the refresh token
     // FK needs the row's primary key. Looking it up also proves the row is
     // live, which is why this is not merely a translation step.
-    const session = await prisma.userSession.findUnique({
+    const sessionRow = await prisma.userSession.findUnique({
         where: { sessionId: externalSessionId },
         select: { id: true, expiresAt: true, revokedAt: true, userId: true, tenantId: true },
     });
-    if (!session || session.revokedAt || session.expiresAt.getTime() <= Date.now()) {
+    if (!sessionRow || sessionRow.revokedAt || sessionRow.expiresAt.getTime() <= Date.now()) {
         return NextResponse.json({ error: 'session_invalid' }, { status: 401 });
     }
 
     const refresh = await issueRefreshToken({
-        userSessionRowId: session.id,
-        userId: session.userId,
-        tenantId: session.tenantId,
-        sessionExpiresAt: session.expiresAt,
+        userSessionRowId: sessionRow.id,
+        userId: sessionRow.userId,
+        tenantId: sessionRow.tenantId,
+        sessionExpiresAt: sessionRow.expiresAt,
     });
 
     // The access token is the SAME claims, re-encoded with a short lifetime.
@@ -85,9 +85,9 @@ async function handleIssue(req: NextRequest): Promise<NextResponse> {
 
     logger.info('native-auth.token_issued', {
         component: 'native-auth',
-        userId: session.userId,
-        tenantId: session.tenantId ?? undefined,
-        userSessionId: session.id,
+        userId: sessionRow.userId,
+        tenantId: sessionRow.tenantId ?? undefined,
+        userSessionId: sessionRow.id,
     });
 
     return NextResponse.json({

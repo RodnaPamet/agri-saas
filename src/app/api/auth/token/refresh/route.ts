@@ -67,11 +67,11 @@ async function handleRefresh(req: NextRequest): Promise<NextResponse> {
     // from anything the client sent. A refresh must not be a way to keep stale
     // authority alive: if the user's role or memberships changed, or the tenant
     // was deleted, the new access token has to reflect that.
-    const session = await prisma.userSession.findUnique({
+    const sessionRow = await prisma.userSession.findUnique({
         where: { id: rotated.userSessionId },
         select: { sessionId: true, userId: true, tenantId: true },
     });
-    if (!session) return refused();
+    if (!sessionRow) return refused();
 
     // Reuse the jwt callback's own claim builder by asking it for a fresh
     // token, so `memberships` / `membershipsTruncated` come from the single
@@ -80,9 +80,9 @@ async function handleRefresh(req: NextRequest): Promise<NextResponse> {
     // cookie path uses (`applyMembershipClaims`), not a copy of it.
     const { buildNativeAccessClaims } = await import('@/auth');
     const claims = await buildNativeAccessClaims({
-        userId: session.userId,
-        tenantId: session.tenantId,
-        userSessionId: session.sessionId,
+        userId: sessionRow.userId,
+        tenantId: sessionRow.tenantId,
+        userSessionId: sessionRow.sessionId,
     });
     if (!claims) return refused();
 
@@ -94,8 +94,8 @@ async function handleRefresh(req: NextRequest): Promise<NextResponse> {
 
     logger.info('native-auth.token_refreshed', {
         component: 'native-auth',
-        userId: session.userId,
-        tenantId: session.tenantId ?? undefined,
+        userId: sessionRow.userId,
+        tenantId: sessionRow.tenantId ?? undefined,
     });
 
     return NextResponse.json({
