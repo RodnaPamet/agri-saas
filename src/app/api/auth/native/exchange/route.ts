@@ -64,8 +64,8 @@ async function handleExchange(req: NextRequest): Promise<NextResponse> {
 
     // Claims come from the single producer (`applyMembershipClaims`), never
     // from anything the client sent — the same rule the refresh endpoint keeps.
-    const { buildNativeAccessClaims } = await import('@/auth');
-    const claims = await buildNativeAccessClaims({
+    const { buildSessionClaims } = await import('@/auth');
+    const claims = await buildSessionClaims({
         userId: sessionRow.userId,
         tenantId: sessionRow.tenantId,
         userSessionId: sessionRow.sessionId,
