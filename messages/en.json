@@ -699,7 +699,8 @@
             "confirmRevokeTitle": "Revoke API key \"{name}\"?",
             "confirmRevokeTitleGeneric": "Revoke API key?",
             "confirmRevokeDesc": "Key prefix {prefix}… will stop working immediately. Any integration using it will lose access. This cannot be undone.",
-            "newApiKeyButton": "API Key"
+            "newApiKeyButton": "API Key",
+            "unavailableNotice": "API keys cannot currently authenticate requests, so new keys can't be created. Existing keys are listed below and can still be revoked."
         },
         "billing": {
             "breadcrumbDashboard": "Dashboard",

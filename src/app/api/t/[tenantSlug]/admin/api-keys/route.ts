@@ -1,4 +1,9 @@
 import { NextRequest } from 'next/server';
+import { gone } from '@/lib/errors/types';
+import {
+    API_KEY_AUTH_ENABLED,
+    API_KEY_DISABLED_MESSAGE,
+} from '@/lib/auth/api-key-availability';
 import { requirePermission } from '@/lib/security/permission-middleware';
 import { listApiKeys, createApiKey } from '@/app-layer/usecases/api-keys';
 import { withApiErrorHandling } from '@/lib/errors/api';
@@ -26,6 +31,13 @@ export const GET = withApiErrorHandling(
 // competes with ordinary mutation traffic.
 export const POST = withApiErrorHandling(
     requirePermission('admin.manage', async (req: NextRequest, _routeArgs, ctx) => {
+        // Minting is closed. A key created here could never authenticate a
+        // request — the Edge refuses an `iflk_` bearer before any handler runs
+        // — so handing an operator one, with "copy it now, it will never be
+        // shown again", costs them a support cycle to discover it was never
+        // going to work. 410 rather than 404: the endpoint EXISTED and the
+        // body says why, because an opaque refusal is the same failure again.
+        if (!API_KEY_AUTH_ENABLED) throw gone(API_KEY_DISABLED_MESSAGE);
         const body = await req.json();
         const input = CreateApiKeySchema.parse(body);
         const result = await createApiKey(ctx, input);
