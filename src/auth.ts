@@ -783,7 +783,17 @@ export const authOptions: NextAuthOptions = {
  * Returns null when the user no longer resolves, which the caller turns into
  * the same generic refusal every other refresh failure produces.
  */
-export async function buildNativeAccessClaims(input: {
+/**
+ * Build the full claim set for a session token.
+ *
+ * Named for the native path originally; it is the producer for ANY
+ * hand-minted session now — native bearer tokens and the SSO callbacks
+ * both use it, so every session carries byte-identical claims to a
+ * password sign-in. Hand-listing claims at a call site drifts the first
+ * time someone adds one, and the Edge tenant gate reads `memberships`,
+ * which is exactly the claim a hand-written list forgets.
+ */
+export async function buildSessionClaims(input: {
     userId: string;
     tenantId: string | null;
     /** The EXTERNAL `UserSession.sessionId` claim, not the row id. */

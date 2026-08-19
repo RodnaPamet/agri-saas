@@ -78,8 +78,8 @@ async function handleRefresh(req: NextRequest): Promise<NextResponse> {
     // producer rather than a copy.
     // Imported from `@/auth` so the claims come from the SAME producer the
     // cookie path uses (`applyMembershipClaims`), not a copy of it.
-    const { buildNativeAccessClaims } = await import('@/auth');
-    const claims = await buildNativeAccessClaims({
+    const { buildSessionClaims } = await import('@/auth');
+    const claims = await buildSessionClaims({
         userId: sessionRow.userId,
         tenantId: sessionRow.tenantId,
         userSessionId: sessionRow.sessionId,

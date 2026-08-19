@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { establishSsoSession } from '@/lib/auth/sso-session';
 import { cookies } from 'next/headers';
 import prisma from '@/lib/prisma';
 import { OidcConfigSchema } from '@/app-layer/schemas/sso-config.schemas';
@@ -214,35 +215,18 @@ export async function GET(req: NextRequest) {
         return redirectToLogin(req, 'config_error');
     }
 
-    const sessionToken = jwt.sign(
-        {
-            userId: user.id,
-            email: user.email,
-            name: user.name,
-            tenantId: tenant.id,
-            role: membership.role,
-            provider: `sso-oidc-${provider.id}`,
-            sub: user.id,
-            iat: Math.floor(Date.now() / 1000),
-        },
-        authSecret,
-        { expiresIn: '7d' }
-    );
-
-    // ── Set session cookie (matching Auth.js cookie name) ──
-    const isProduction = env.NODE_ENV === 'production';
-    const cookieName = isProduction
-        ? '__Secure-authjs.session-token'
-        : 'authjs.session-token';
-
-    const cookieStore = await cookies();
-    cookieStore.set(cookieName, sessionToken, {
-        httpOnly: true,
-        secure: isProduction,
-        sameSite: 'lax',
-        path: '/',
-        maxAge: 7 * 24 * 60 * 60, // 7 days
+    // Mint the session NextAuth v4 can actually read, and TRACK it.
+    // Previously this hand-rolled a `jwt.sign` JWS into the v5 cookie name
+    // with a thin claim set — three independent defects, each fatal. See
+    // src/lib/auth/sso-session.ts.
+    const established = await establishSsoSession({
+        userId: user.id,
+        tenantId: tenant.id,
+        provider: `sso-oidc-${provider.id}`,
     });
+    if (!established) {
+        return NextResponse.redirect(new URL('/login?error=sso_session', baseUrl));
+    }
 
     // ── Redirect to app ──
     const returnTo = state.returnTo || `/t/${tenant.slug}/dashboard`;
