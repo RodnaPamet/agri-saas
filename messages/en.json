@@ -2891,6 +2891,20 @@
             "description": "Your queued change to \"{label}\" clashes with a newer update on the server.",
             "keepMine": "Keep mine",
             "takeServer": "Use server"
+        },
+        "savedOnPhone": "{count, plural, one {# change saved on this phone} other {# changes saved on this phone}}",
+        "photosOnPhone": "{count, plural, one {# photo saved on this phone} other {# photos saved on this phone}}",
+        "notOnServer": "Not on the server yet",
+        "allOnServer": "Everything is on the server",
+        "queueGrowing": "Get to signal soon — work kept on the phone can be deleted before it syncs.",
+        "storageProtected": "This phone has agreed to keep unsent work.",
+        "storageUnprotected": "This phone has not agreed to keep unsent work. Sync as soon as you have signal.",
+        "storageUnknown": "This phone does not report whether unsent work is protected.",
+        "lost": {
+            "title": "Unsent work was deleted by this phone",
+            "description": "{count, plural, one {# change was} other {# changes were}} saved on this phone but never reached the server. The phone removed it before it could sync, and it cannot be recovered — please enter it again.",
+            "itemsLabel": "What was lost",
+            "acknowledge": "I understand"
         }
     },
     "userMenu": {

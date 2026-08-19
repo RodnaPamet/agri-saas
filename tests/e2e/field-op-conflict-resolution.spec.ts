@@ -40,7 +40,7 @@ test('@mobile a stale offline mark surfaces the conflict resolver', async ({ aut
         // Offline: mark the same line Done — queued at the now-stale version.
         await authedPage.context().setOffline(true);
         await authedPage.getByRole('button', { name: 'Done' }).first().click();
-        await expect(authedPage.getByText('1 queued')).toBeVisible();
+        await expect(authedPage.getByTestId('offline-pending-count')).toHaveText('1 change saved on this phone');
 
         // Reconnect → the replay 409s → the conflict resolver appears (NOT a
         // silent clobber).

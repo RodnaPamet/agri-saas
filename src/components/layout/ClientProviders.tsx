@@ -4,6 +4,7 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { getQueryClient } from '@/lib/query-client';
 import { OnboardingTourProvider } from '@/components/ui/OnboardingTour';
 import SWRDevTools from '@/components/dev/swr-devtools';
+import { UnsyncedWorkBanner } from '@/components/offline/UnsyncedWorkBanner';
 
 /**
  * Client-only providers for the tenant app.
@@ -65,6 +66,16 @@ export function ClientProviders({
                 userId={userId ?? null}
                 autoTriggerOnFirstLogin={autoTrigger}
             >
+                {/*
+                  App-wide unsynced-work truth (Roadmap: outbox durability).
+                  Renders NOTHING when the queue is empty and no work has been
+                  lost, so it costs a subscription and no layout on the normal
+                  path. It is mounted here rather than per-page because a
+                  pending count that disappears when the operator navigates is
+                  not a pending count — and because mounting the offline hook
+                  app-wide puts the foreground flush on every tenant page.
+                */}
+                <UnsyncedWorkBanner />
                 {children}
                 {/*
                   Epic 69 — dev-only floating SWR cache inspector.

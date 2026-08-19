@@ -67,7 +67,7 @@ test.describe('mobile offline journal photo @mobile', () => {
         });
 
         // The sync bar surfaces the queued photo distinctly.
-        await expect(main.getByText('1 photos queued')).toBeVisible({ timeout: 15_000 });
+        await expect(main.getByTestId('offline-pending-photos')).toHaveText('1 photo saved on this phone', { timeout: 15_000 });
         expect(uploadPosts, 'no upload while offline').toBe(0);
 
         // ── Reconnect → the queue flushes and the photo attaches once ────
@@ -78,7 +78,7 @@ test.describe('mobile offline journal photo @mobile', () => {
         // The photo appears in the list (live-refresh on drain).
         await expect(main.getByText('leaf.png').first()).toBeVisible({ timeout: 30_000 });
         // Queued indicator clears.
-        await expect(main.getByText('1 photos queued')).toHaveCount(0);
+        await expect(main.getByTestId('offline-pending-photos')).toHaveCount(0);
 
         // Exactly-once: only ONE LogEntryFile row exists for this entry.
         const listRes = await api.get(`/api/t/${slug}/journal/${entryId}`);

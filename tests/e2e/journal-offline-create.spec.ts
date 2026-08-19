@@ -33,13 +33,13 @@ test('@mobile journal entry created offline queues and delivers exactly once', a
     // The modal closes; the outbox holds it and the sync bar shows it queued.
     await expect(authedPage.locator('#journal-entry-title')).toBeHidden();
     await expect(authedPage.getByText('Offline', { exact: true })).toBeVisible();
-    await expect(authedPage.getByText('1 queued')).toBeVisible();
+    await expect(authedPage.getByTestId('offline-pending-count')).toHaveText('1 change saved on this phone');
     // The optimistic row shows the just-logged entry immediately.
     await expect(authedPage.getByText(title)).toBeVisible();
 
     // Reconnect → the outbox drains; the queue clears.
     await authedPage.context().setOffline(false);
-    await expect(authedPage.getByText(/queued/)).toBeHidden({ timeout: 20_000 });
+    await expect(authedPage.getByTestId('offline-pending-count')).toBeHidden({ timeout: 20_000 });
 
     // Server truth: the entry was delivered EXACTLY ONCE (no duplicate row).
     await expect

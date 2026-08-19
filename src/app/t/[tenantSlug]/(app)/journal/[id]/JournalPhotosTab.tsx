@@ -70,7 +70,7 @@ export function JournalPhotosTab({ entryId, photos, apiUrl, canWrite, onChanged 
     // Offline-capable photo upload: sends immediately when online, else
     // queues the downscaled BYTES in the outbox (IndexedDB) for background
     // replay on reconnect. Same seam the field panel uses.
-    const { online, pending, pendingPhotos, submitPhoto, flush } = useOfflineSync();
+    const { online, pending, pendingPhotos, queueGrowing, durability, submitPhoto, flush } = useOfflineSync();
 
     useEffect(() => {
         return () => {
@@ -203,6 +203,8 @@ export function JournalPhotosTab({ entryId, photos, apiUrl, canWrite, onChanged 
                     online={online}
                     pending={pending}
                     pendingPhotos={pendingPhotos}
+                    queueGrowing={queueGrowing}
+                    storagePersisted={durability?.persisted ?? null}
                     onSyncNow={() => void flush()}
                 />
             )}

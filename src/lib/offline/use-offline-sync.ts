@@ -5,23 +5,36 @@
  *
  * `submit` tries the network first when online; on a network failure or
  * when offline it appends the mutation to the outbox and returns
- * 'queued'. The hook tracks `online` + the `pending` count and flushes
- * the outbox automatically on the `online` event (reconnect) and on
- * mount. A terminal 4xx is thrown so the caller can surface it — the
+ * 'queued'. A terminal 4xx is thrown so the caller can surface it — the
  * operation will never succeed, so queueing it would be a lie.
+ *
+ * The queue COUNTS are not owned here: they live in `outbox-state.ts` at
+ * module scope, so they survive navigation and every mounted surface reads
+ * the same numbers. This hook re-reads the queue on mount and drains it on
+ * three signals — the `online` event, a foreground return
+ * (`visibilitychange` / `pageshow`), and an explicit `flush()`.
  */
-import { useCallback, useEffect, useState, useRef } from 'react';
+import { useCallback, useEffect, useState, useRef, useSyncExternalStore } from 'react';
 import {
     getOutboxStore,
     enqueue,
     enqueuePhoto,
-    isPhotoItem,
     type EnqueueInput,
     type EnqueuePhotoInput,
     type OutboxItem,
 } from './outbox';
 import { indexedDbAvailable } from './idb-outbox';
 import { flushOutbox, fetchSender, type FlushSummary } from './sync';
+import {
+    acknowledgeLoss,
+    getOutboxSnapshot,
+    getServerOutboxSnapshot,
+    noteWorkQueued,
+    refreshOutboxState,
+    runExclusiveFlush,
+    subscribeToOutbox,
+} from './outbox-state';
+import type { DurabilityVerdict, LostWorkRecord } from './durability';
 import { haptic } from '@/lib/haptics';
 
 function isTerminalClientError(status: number): boolean {
@@ -75,55 +88,65 @@ export interface OfflineSync {
      * `keep-mine` re-sends it at the server's current version so it wins.
      */
     resolveConflict: (id: string, resolution: ConflictResolution) => Promise<void>;
+    /**
+     * Work that was queued on this phone and then disappeared without being
+     * delivered — the phone evicted it, or website data was cleared. Sticky
+     * until `acknowledgeLostWork()`; NEVER cleared by a successful sync.
+     */
+    lost: LostWorkRecord | null;
+    /** Dismiss the lost-work record. Only an operator action may call this. */
+    acknowledgeLostWork: () => void;
+    /** What `navigator.storage` said about this origin's durability. */
+    durability: DurabilityVerdict | null;
+    /** True when the queue has grown past the point of routine. */
+    queueGrowing: boolean;
 }
 
 export function useOfflineSync(): OfflineSync {
-    const [pending, setPending] = useState(0);
-    const [pendingPhotos, setPendingPhotos] = useState(0);
-    const [conflicts, setConflicts] = useState<OutboxItem[]>([]);
+    // ONE queue truth for the whole app (see outbox-state.ts). Five surfaces
+    // mount this hook; before it was hoisted, each held its own count, so the
+    // pending badge disappeared the moment an operator navigated away from
+    // the page that happened to own it.
+    const snapshot = useSyncExternalStore(
+        subscribeToOutbox,
+        getOutboxSnapshot,
+        getServerOutboxSnapshot,
+    );
+    const { pending, pendingPhotos, conflicts, lost, durability, queueGrowing } = snapshot;
     const [online, setOnline] = useState(true);
-    // Guards against two flushes running at once (the `online` event +
-    // a manual "Sync now" / mount flush) — concurrent drains would read
-    // the same items and double-send them.
-    const flushing = useRef(false);
     // Honors a 429 Retry-After: schedule the next drain instead of hammering.
     const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const flushRef = useRef<(() => Promise<FlushSummary>) | null>(null);
 
     const refresh = useCallback(async () => {
-        const all = await getOutboxStore().all();
-        // Parked conflicts aren't "pending to send" — they need the operator.
-        const live = all.filter((i) => !i.conflict);
-        setPending(live.length);
-        setPendingPhotos(live.filter(isPhotoItem).length);
-        setConflicts(all.filter((i) => i.conflict));
+        await refreshOutboxState();
     }, []);
 
     const flush = useCallback(async (): Promise<FlushSummary> => {
-        if (flushing.current) {
-            const remaining = (await getOutboxStore().all()).length;
-            return { sent: 0, failed: 0, dropped: 0, conflicts: 0, remaining, rateLimited: false };
-        }
-        flushing.current = true;
-        try {
-            const res = await flushOutbox(getOutboxStore(), fetchSender());
+        // The lock is MODULE-scoped, not per-instance: two mounted surfaces
+        // draining at once would read the same items and send each twice.
+        const res = await runExclusiveFlush(async () => {
+            const summary = await flushOutbox(getOutboxStore(), fetchSender());
             // Refresh pending + the photo sub-count + conflicts — a flush can
             // drain photos/mutations AND park a 409 the resolution UI must show.
             await refresh();
-            // Rate-limited mid-burst with work still queued → back off for the
-            // server's Retry-After (default one mutation window) and re-drain,
-            // rather than waiting for the next reconnect that may never come.
-            if (res.rateLimited && res.remaining > 0) {
-                const backoffMs = Math.max(1, res.retryAfterSeconds ?? 60) * 1000;
-                if (retryTimer.current) clearTimeout(retryTimer.current);
-                retryTimer.current = setTimeout(() => {
-                    void flushRef.current?.();
-                }, backoffMs);
-            }
-            return res;
-        } finally {
-            flushing.current = false;
+            return summary;
+        });
+        if (res === null) {
+            const remaining = (await getOutboxStore().all()).length;
+            return { sent: 0, failed: 0, dropped: 0, conflicts: 0, remaining, rateLimited: false };
         }
+        // Rate-limited mid-burst with work still queued → back off for the
+        // server's Retry-After (default one mutation window) and re-drain,
+        // rather than waiting for the next reconnect that may never come.
+        if (res.rateLimited && res.remaining > 0) {
+            const backoffMs = Math.max(1, res.retryAfterSeconds ?? 60) * 1000;
+            if (retryTimer.current) clearTimeout(retryTimer.current);
+            retryTimer.current = setTimeout(() => {
+                void flushRef.current?.();
+            }, backoffMs);
+        }
+        return res;
     }, [refresh]);
     flushRef.current = flush;
 
@@ -140,11 +163,34 @@ export function useOfflineSync(): OfflineSync {
             void flush();
         };
         const onOffline = () => setOnline(false);
+        // FOREGROUND FLUSH. The `online` event is not enough on a phone.
+        // iOS SUSPENDS a backgrounded PWA rather than unloading it: an
+        // operator who queues work in a dead-signal field, pockets the phone,
+        // and drives back into coverage gets no `online` event (the
+        // transition happened while the page was frozen) and no remount. The
+        // queue would then sit untouched until they happened to open one of
+        // the surfaces that mounts this hook — and every extra hour queued is
+        // another chance for the phone to evict it. iOS also has no
+        // Background Sync, so nothing else covers this.
+        //
+        // `pageshow` catches the bfcache restore that fires no
+        // `visibilitychange`. Both are cheap: `flush` no-ops on an empty
+        // queue and the module-scoped lock collapses a double-fire.
+        const onForeground = () => {
+            if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+            setOnline(typeof navigator !== 'undefined' ? navigator.onLine : true);
+            void refresh();
+            void flush();
+        };
         window.addEventListener('online', onOnline);
         window.addEventListener('offline', onOffline);
+        document.addEventListener('visibilitychange', onForeground);
+        window.addEventListener('pageshow', onForeground);
         return () => {
             window.removeEventListener('online', onOnline);
             window.removeEventListener('offline', onOffline);
+            document.removeEventListener('visibilitychange', onForeground);
+            window.removeEventListener('pageshow', onForeground);
             if (retryTimer.current) clearTimeout(retryTimer.current);
         };
     }, [flush, refresh]);
@@ -185,6 +231,10 @@ export function useOfflineSync(): OfflineSync {
             }
             await enqueue(store, input);
             await refresh();
+            // First queued item is the moment to ask the browser to keep this
+            // origin's storage — meaningful engagement, and self-explanatory
+            // if the browser prompts. See durability.ts.
+            void noteWorkQueued();
             // Tactile confirmation that the action was saved offline (gloves +
             // no signal) — capability-gated, no-op on desktop/reduced-motion.
             haptic('tap');
@@ -223,6 +273,7 @@ export function useOfflineSync(): OfflineSync {
             // Enforces MAX_QUEUED_PHOTO_BYTES — an oversized blob throws here.
             await enqueuePhoto(getOutboxStore(), input);
             await refresh();
+            void noteWorkQueued();
             haptic('tap');
             void registerOutboxSync();
             return 'queued';
@@ -264,5 +315,18 @@ export function useOfflineSync(): OfflineSync {
         [refresh],
     );
 
-    return { online, pending, pendingPhotos, submit, submitPhoto, flush, conflicts, resolveConflict };
+    return {
+        online,
+        pending,
+        pendingPhotos,
+        submit,
+        submitPhoto,
+        flush,
+        conflicts,
+        resolveConflict,
+        lost,
+        acknowledgeLostWork: acknowledgeLoss,
+        durability,
+        queueGrowing,
+    };
 }
