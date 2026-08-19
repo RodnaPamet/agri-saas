@@ -677,7 +677,7 @@
             "breadcrumbAdmin": "Admin",
             "breadcrumbApiKeys": "API keys",
             "heading": "API Keys",
-            "description": "Manage machine-to-machine API keys for programmatic access. Keys are scoped to specific resources and actions.",
+            "description": "Review and revoke machine-to-machine API keys. Keys are scoped to specific resources and actions.",
             "copiedDismiss": "I've copied the key — dismiss",
             "createApiKey": "Create API Key",
             "nameLabel": "Name *",
