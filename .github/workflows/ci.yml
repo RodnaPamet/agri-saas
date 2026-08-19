@@ -835,55 +835,70 @@ jobs:
       # a merely slow runner. Deliberately NOT `|| true`: skipping system deps
       # would leave a broken browser and surface as confusing spec failures
       # several steps later, which is worse than an honest red step.
-      # Retry, don't just cap. #608 added an 8-minute cap so a stalled apt
-      # would fail fast and legibly instead of eating the 40-minute job
-      # budget and reporting as `cancelled`. That worked — but on
-      # 2026-08-19 the stall hit FIVE times in a few hours, so every
-      # occurrence still cost a manual re-run, and with two shards each
-      # re-run is a coin flip twice over.
+      # ── Playwright install: what these steps ACTUALLY do ──
       #
-      # apt stalls are transient, so retry in-step: three attempts of four
-      # minutes each. Healthy runs take 11-62s and succeed on the first
-      # attempt, so this costs nothing when things are fine and self-heals
-      # when they are not. `timeout` returns 124 on expiry, which the loop
-      # treats like any other failure.
+      # Established from a real job log on 2026-08-19 (run 32288101523),
+      # after two earlier fixes (#608 cap, #613 retry) that were both built
+      # on the unexamined assumption that this step installs things chromium
+      # needs to run. It does not.
       #
-      # The step cap stays as the backstop, raised to fit the retries
-      # (3 x 4min + overhead). Still deliberately NOT `|| true`: after
-      # three failed attempts something is actually wrong, and a browser
-      # missing system libraries must fail loudly rather than surface as
-      # confusing spec failures several steps later.
+      # On the cache-hit path, `install-deps` reports 26 packages "already
+      # the newest version" — every chromium RUNTIME library (libnss3,
+      # libgbm1, libatk*, libcups, libdrm, …) ships in the ubuntu-24.04
+      # runner image. The 9 it actually installs are ALL FONTS:
+      #   fonts-freefont-ttf fonts-ipafont-gothic fonts-tlwg-loma-otf
+      #   fonts-unifont fonts-wqy-zenhei xfonts-cyrillic xfonts-encodings
+      #   xfonts-scalable xfonts-utils
+      #
+      # So chromium launches fine without this step. What degrades is glyph
+      # rendering for CJK/Thai/Cyrillic in SCREENSHOTS — and screenshots are
+      # `only-on-failure` debugging artifacts, while every assertion reads
+      # the DOM, which is font-independent. That is a real but small loss,
+      # and it is not worth failing a job for.
+      #
+      # WHY THE RETRY IS GONE. `timeout` kills the `npx` wrapper; the
+      # `sudo apt-get` child SURVIVES holding /var/lib/dpkg/lock-frontend.
+      # Every later attempt then dies in milliseconds on
+      #   E: Could not get lock … held by process NNNN (apt-get)
+      # so the retry could never succeed — observed doing exactly that
+      # three times in one job. A retry that cannot work is worse than none:
+      # it looks like resilience.
+      #
+      # The uncached path is DIFFERENT and stays fatal: it downloads the
+      # BROWSER, which genuinely is load-bearing. It keeps a retry, with the
+      # lock recovery the cached path taught us is required.
       - name: Install Playwright browsers
         if: steps.pw-cache.outputs.cache-hit != 'true'
-        timeout-minutes: 15
+        timeout-minutes: 20
         run: |
           for attempt in 1 2 3; do
             echo "::group::playwright install --with-deps (attempt $attempt/3)"
-            if timeout 240 npx playwright install --with-deps chromium; then
+            if timeout 300 npx playwright install --with-deps chromium; then
               echo "::endgroup::"
               exit 0
             fi
             echo "::endgroup::"
-            echo "::warning::playwright install attempt $attempt/3 failed or timed out"
+            echo "::warning::playwright install attempt $attempt/3 failed; clearing apt locks"
+            # timeout killed the wrapper, not the apt-get child. Without
+            # this the next attempt fails instantly on the dpkg lock.
+            sudo pkill -9 -f apt-get || true
+            sudo pkill -9 -f dpkg || true
+            sudo rm -f /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock /var/lib/apt/lists/lock || true
+            sudo dpkg --configure -a || true
           done
-          echo "::error::playwright install failed after 3 attempts"
+          echo "::error::playwright browser install failed after 3 attempts"
           exit 1
 
-      - name: Install Playwright system deps (cached)
+      # Fonts only (see above). Bounded and NON-FATAL: a failure here costs
+      # glyph fidelity in failure screenshots, never a working browser. If a
+      # runtime library ever does go missing, the browser fails to launch in
+      # the E2E step below — loudly, and with a message about the browser
+      # rather than about apt.
+      - name: Install Playwright fonts (cached browser)
         if: steps.pw-cache.outputs.cache-hit == 'true'
-        timeout-minutes: 15
-        run: |
-          for attempt in 1 2 3; do
-            echo "::group::playwright install-deps (attempt $attempt/3)"
-            if timeout 240 npx playwright install-deps chromium; then
-              echo "::endgroup::"
-              exit 0
-            fi
-            echo "::endgroup::"
-            echo "::warning::playwright install-deps attempt $attempt/3 failed or timed out"
-          done
-          echo "::error::playwright install-deps failed after 3 attempts"
-          exit 1
+        timeout-minutes: 6
+        continue-on-error: true
+        run: npx playwright install-deps chromium
 
       # ── GAP-20: accessibility gate ──
       # The a11y spec runs first as a NAMED step so its pass/fail
