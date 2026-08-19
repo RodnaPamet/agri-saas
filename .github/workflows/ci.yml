@@ -835,15 +835,55 @@ jobs:
       # a merely slow runner. Deliberately NOT `|| true`: skipping system deps
       # would leave a broken browser and surface as confusing spec failures
       # several steps later, which is worse than an honest red step.
+      # Retry, don't just cap. #608 added an 8-minute cap so a stalled apt
+      # would fail fast and legibly instead of eating the 40-minute job
+      # budget and reporting as `cancelled`. That worked — but on
+      # 2026-08-19 the stall hit FIVE times in a few hours, so every
+      # occurrence still cost a manual re-run, and with two shards each
+      # re-run is a coin flip twice over.
+      #
+      # apt stalls are transient, so retry in-step: three attempts of four
+      # minutes each. Healthy runs take 11-62s and succeed on the first
+      # attempt, so this costs nothing when things are fine and self-heals
+      # when they are not. `timeout` returns 124 on expiry, which the loop
+      # treats like any other failure.
+      #
+      # The step cap stays as the backstop, raised to fit the retries
+      # (3 x 4min + overhead). Still deliberately NOT `|| true`: after
+      # three failed attempts something is actually wrong, and a browser
+      # missing system libraries must fail loudly rather than surface as
+      # confusing spec failures several steps later.
       - name: Install Playwright browsers
         if: steps.pw-cache.outputs.cache-hit != 'true'
-        timeout-minutes: 8
-        run: npx playwright install --with-deps chromium
+        timeout-minutes: 15
+        run: |
+          for attempt in 1 2 3; do
+            echo "::group::playwright install --with-deps (attempt $attempt/3)"
+            if timeout 240 npx playwright install --with-deps chromium; then
+              echo "::endgroup::"
+              exit 0
+            fi
+            echo "::endgroup::"
+            echo "::warning::playwright install attempt $attempt/3 failed or timed out"
+          done
+          echo "::error::playwright install failed after 3 attempts"
+          exit 1
 
       - name: Install Playwright system deps (cached)
         if: steps.pw-cache.outputs.cache-hit == 'true'
-        timeout-minutes: 8
-        run: npx playwright install-deps chromium
+        timeout-minutes: 15
+        run: |
+          for attempt in 1 2 3; do
+            echo "::group::playwright install-deps (attempt $attempt/3)"
+            if timeout 240 npx playwright install-deps chromium; then
+              echo "::endgroup::"
+              exit 0
+            fi
+            echo "::endgroup::"
+            echo "::warning::playwright install-deps attempt $attempt/3 failed or timed out"
+          done
+          echo "::error::playwright install-deps failed after 3 attempts"
+          exit 1
 
       # ── GAP-20: accessibility gate ──
       # The a11y spec runs first as a NAMED step so its pass/fail
