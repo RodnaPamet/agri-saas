@@ -126,8 +126,11 @@ describe('Roadmap-14 PR-13 — Living Top-Bar capstone bundle', () => {
         it('UserMenu exports + theme row + sign-out', () => {
             expect(USER_MENU_SRC).toMatch(/export\s+function\s+UserMenu\b/);
             expect(USER_MENU_SRC).toMatch(/<ThemeToggle\b/);
+            // `signOutAndPurge`, not raw `signOut` — see
+            // tests/guards/sign-out-purges.test.ts for why the wrapper is
+            // the only sanctioned client sign-out.
             expect(USER_MENU_SRC).toMatch(
-                /signOut\(\s*\{\s*callbackUrl:\s*['"]\/login['"]/,
+                /signOutAndPurge\(\s*\{\s*callbackUrl:\s*['"]\/login['"]/,
             );
         });
     });

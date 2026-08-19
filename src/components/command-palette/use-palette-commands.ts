@@ -40,7 +40,7 @@ import {
     Settings,
     type LucideIcon,
 } from 'lucide-react';
-import { signOut } from 'next-auth/react';
+import { signOutAndPurge } from '@/lib/auth/sign-out';
 import { useCallback, useMemo } from 'react';
 import { useTranslations } from 'next-intl';
 
@@ -72,7 +72,7 @@ export function usePaletteCommands(tenantSlug: string | null): PaletteCommand[] 
     // than JSX, the no-hardcoded-UI-strings AST scan never saw them.
     const t = useTranslations('commandPalette');
     const doSignOut = useCallback(() => {
-        void signOut({ callbackUrl: '/login' });
+        void signOutAndPurge({ callbackUrl: '/login' });
     }, []);
 
     return useMemo<PaletteCommand[]>(() => {

@@ -35,7 +35,7 @@
 import { useCallback, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
-import { signOut } from 'next-auth/react';
+import { signOutAndPurge } from '@/lib/auth/sign-out';
 import { LogOut, ShieldCheck } from 'lucide-react';
 
 import { Popover } from '@/components/ui/popover';
@@ -95,7 +95,7 @@ export function UserMenu({
 
     const handleSignOut = useCallback(async () => {
         close();
-        await signOut({ callbackUrl: '/login' });
+        await signOutAndPurge({ callbackUrl: '/login' });
     }, [close]);
 
     return (
