@@ -142,6 +142,38 @@ describe('offline basemap pack (dedicated cache + LRU eviction)', () => {
         expect(src).toMatch(/if \(!url\.pathname\.startsWith\('\/api\/'\)\) return false/);
     });
 
+    it('bounds the TENANT caches too, not just the basemap', () => {
+        // DATA_CACHE and PAGE_CACHE were unbounded. Unlike the basemap
+        // (immutable public geometry) they hold the operator's own farm:
+        // field-operation API responses — with Task.description and
+        // Task.resolution, Epic B encrypted at rest, cached here DECRYPTED —
+        // and every server-rendered tenant document with its rows inline.
+        // The only exit was a CACHE_VERSION bump plus activation, and install
+        // deliberately skips skipWaiting, so even that waits on operator
+        // consent.
+        const src = read('public/sw.js');
+        expect(src).toMatch(/DATA_CACHE_BUDGET_BYTES\s*=/);
+        expect(src).toMatch(/PAGE_CACHE_BUDGET_BYTES\s*=/);
+        // Both write sites must enforce, not merely define, a budget.
+        expect(src).toMatch(/evictCacheOverBudget\(cache, DATA_CACHE_BUDGET_BYTES\)/);
+        expect(src).toMatch(/evictCacheOverBudget\(cache, PAGE_CACHE_BUDGET_BYTES\)/);
+    });
+
+    it('leaves AGEING those caches to the window, not the service worker', () => {
+        // A byte cap bounds size, not age — a capped cache still holds a
+        // farm indefinitely. Ageing is deliberately done from the window
+        // (client-data-retention.ts deletes both buckets via caches.delete)
+        // because a bug in sw.js ships to phones that will not take an
+        // update until the operator agrees.
+        const retention = read('src/lib/offline/client-data-retention.ts');
+        expect(retention).toMatch(/caches\.delete\(/);
+        // And it must never reach into the outbox: clearing the manifest
+        // without the queue is exactly what the loss detector reads as
+        // "this phone deleted your work".
+        expect(retention).toMatch(/NEVER_SWEPT/);
+        expect(retention).toContain("'agri-offline'");
+    });
+
     it('enforces a byte budget with an LRU eviction helper', () => {
         const src = sw();
         expect(src).toMatch(/BASEMAP_CACHE_BUDGET_BYTES\s*=/);

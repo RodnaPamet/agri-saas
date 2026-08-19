@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next';
 import { auth } from '@/auth';
+import { ClientDataRetentionSweep } from '@/components/offline/ClientDataRetentionSweep';
 import { headers } from 'next/headers';
 import { NextIntlClientProvider } from 'next-intl';
 import { getLocale, getMessages } from 'next-intl/server';
@@ -152,6 +153,15 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                     */}
                     <ServiceWorkerRegistrar />
                     <WebVitalsReporter />
+                    {/*
+                        Bounds how long this device keeps cached farm data —
+                        field snapshots and SWR buckets that otherwise live
+                        forever, plus the tenant Cache Storage buckets. Scoped
+                        to CACHES only: it never touches the outbox, so it
+                        cannot lose unsynced work or race the flush loop. See
+                        src/lib/offline/client-data-retention.ts.
+                    */}
+                    <ClientDataRetentionSweep />
                     <Providers userId={sessionUserId}>
                         {children}
                     </Providers>
