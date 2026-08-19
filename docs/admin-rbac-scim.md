@@ -65,9 +65,33 @@ Navigate to **SSO & Identity** (`/admin/sso`).
 
 | Endpoint | Methods | Purpose |
 |----------|---------|---------|
-| `/api/scim/v2/ServiceProviderConfig` | GET | SCIM capabilities (public) |
+| `/api/scim/v2/ServiceProviderConfig` | GET | SCIM capabilities — anonymous by spec (RFC 7644 §4) |
 | `/api/scim/v2/Users` | GET, POST | List/create users |
 | `/api/scim/v2/Users/:id` | GET, PATCH, PUT, DELETE | User CRUD |
+| `/api/scim/v2/Groups` | GET, POST | List/create groups |
+| `/api/scim/v2/Groups/:id` | GET, PUT, PATCH, DELETE | Group CRUD |
+
+> **Reachability (2026-08-19).** Until this date **no SCIM request reached a
+> handler on any deployment.** The Edge middleware called `getToken()`, which
+> cannot decode an opaque SCIM bearer, and answered
+> `401 {"error":"Unauthorized"}` before any route ran — so the "(public)" claim
+> on the ServiceProviderConfig row above was false too. `/api/scim/` is now in
+> `PUBLIC_PATH_PREFIXES`; the handlers authenticate themselves, held
+> fail-closed by `tests/guards/scim-routes-self-authenticate.test.ts`.
+>
+> **If provisioning breaks, check the 401 BODY first.** A SCIM-schema error
+> (`schemas: [...:2.0:Error]`) means the handler ran and rejected the token —
+> look at `TenantScimToken`. A bare `{"error":"Unauthorized"}` means the Edge
+> refused it and the carve-out has regressed.
+>
+> **These routes carry their own rate tier** (300/min per bearer, 600/min per
+> IP). A 429 here is that tier; see `docs/rate-limiting.md`.
+>
+> **SCIM tokens do not expire.** `TenantScimToken` has no `expiresAt` and
+> `authenticateScimRequest` checks only existence and `revokedAt`. While the
+> Edge 401'd everything a leaked token was inert; now it is a permanent,
+> tenant-wide provisioning credential until an admin revokes it. Rotate on a
+> schedule and revoke promptly on IdP decommission.
 
 ### Setup
 1. Navigate to **SCIM Provisioning** (`/admin/scim`)

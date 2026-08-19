@@ -122,6 +122,24 @@ There is no slug in the path to mismatch.
   a **cookie-less** browser context because `authedPage.request` would carry a
   session cookie that clears the Edge on its own and prove nothing.
 
+- **Residual risk this PR makes live: SCIM tokens do not expire.**
+  `TenantScimToken` has no `expiresAt`, and `authenticateScimRequest` checks
+  only existence and `revokedAt`. While the Edge 401'd every request a leaked
+  token was inert; now it is a permanent, tenant-wide provisioning credential
+  until an admin revokes it. That is not a reason to leave provisioning broken,
+  but it is a real change in exposure and it belongs in the operator runbook —
+  `docs/admin-rbac-scim.md` now says so. Adding expiry + rotation is follow-up
+  work, deliberately not smuggled into a reachability fix.
+
+- **The per-IP ceiling is about COST, not guessing.** The tokens are 256 bits
+  of `randomBytes`, so brute force was never a credible threat and framing the
+  ceiling that way would get it believed and then tuned wrong. What it actually
+  bounds is what an anonymous caller can spend: `authenticateScimRequest` hits
+  the database and emits a `logger.warn` on every unknown or revoked token, so
+  without a ceiling an unauthenticated client generates unbounded query load
+  and unbounded log volume. Per-bearer alone cannot bound that, because a
+  caller sending a different value each request gets a fresh bucket every time.
+
 - **The minting route stays gated.** `POST /api/t/:slug/admin/scim` is not
   under `/api/scim/`, so it keeps the session gate and
   `requirePermission('admin.scim')`. Both the unit test and the e2e assert a
