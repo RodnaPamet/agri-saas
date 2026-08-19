@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { usePathname } from 'next/navigation';
-import { signOut } from 'next-auth/react';
+import { signOutAndPurge } from '@/lib/auth/sign-out';
 import { SidebarContent, MobileDrawer } from '@/components/layout/SidebarNav';
 import { OrgSidebarContent } from '@/components/layout/OrgSidebarNav';
 import { SidebarCollapseProvider } from '@/components/layout/sidebar-collapse-context';
@@ -136,7 +136,7 @@ export function AppShell({
     );
 
     const handleLogout = useCallback(async () => {
-        await signOut({ callbackUrl: '/login' });
+        await signOutAndPurge({ callbackUrl: '/login' });
     }, []);
 
     const closeDrawer = useCallback(() => setDrawerOpen(false), []);

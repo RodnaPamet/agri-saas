@@ -156,13 +156,22 @@ describe('Roadmap-14 PR-5 — UserMenu discipline', () => {
             expect(USER_MENU_SRC).toMatch(
                 /data-testid="user-menu-sign-out"/,
             );
-            // Destructive action — must use signOut from
-            // next-auth/react with `callbackUrl: '/login'`.
+            // Destructive action — must go through `signOutAndPurge`, NOT
+            // the raw `signOut` from next-auth/react.
+            //
+            // Changed 2026-08-19. Signing out has to clear what this device
+            // cached, or a handover leaves the next operator with the
+            // previous one's farm painted from disk. That rule lives in one
+            // wrapper rather than at each call site, because a rule spread
+            // across three sites is one the fourth site will not know about.
+            // `tests/guards/sign-out-purges.test.ts` is what makes the
+            // wrapper the only way in; this assertion pins THIS menu's use
+            // of it.
             expect(USER_MENU_SRC).toMatch(
-                /import\s+\{[^}]*\bsignOut\b[^}]*\}\s+from\s+['"]next-auth\/react['"]/,
+                /import\s+\{[^}]*\bsignOutAndPurge\b[^}]*\}\s+from\s+['"]@\/lib\/auth\/sign-out['"]/,
             );
             expect(USER_MENU_SRC).toMatch(
-                /signOut\(\s*\{\s*callbackUrl:\s*['"]\/login['"]/,
+                /signOutAndPurge\(\s*\{\s*callbackUrl:\s*['"]\/login['"]/,
             );
         });
 
