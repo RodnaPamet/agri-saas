@@ -14,13 +14,15 @@ import { NextRequest, NextResponse } from 'next/server';
 import { env } from '@/env';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { LOGIN_LIMIT } from '@/lib/security/rate-limit';
-import { isAllowedRedirect } from '@/lib/auth/native/auth-codes';
+import {
+    isAllowedRedirect,
+    HANDOFF_COOKIE,
+    HANDOFF_COOKIE_MAX_AGE_SECONDS,
+} from '@/lib/auth/native/auth-codes';
 
 export const runtime = 'nodejs';
 
 /** Short — this only has to survive one Google round trip. */
-const HANDOFF_COOKIE = 'agrent-native-handoff';
-const HANDOFF_COOKIE_MAX_AGE = 10 * 60;
 
 function allowlist(): string[] {
     return env.NATIVE_AUTH_REDIRECT_ALLOWLIST.split(',')
@@ -85,7 +87,7 @@ async function handleStart(req: NextRequest): Promise<NextResponse> {
         httpOnly: true,
         secure: true,
         sameSite: 'lax', // must survive the return trip from Google
-        maxAge: HANDOFF_COOKIE_MAX_AGE,
+        maxAge: HANDOFF_COOKIE_MAX_AGE_SECONDS,
         path: '/',
     });
     return res;
@@ -94,5 +96,3 @@ async function handleStart(req: NextRequest): Promise<NextResponse> {
 export const GET = withApiErrorHandling(handleStart, {
     rateLimit: { config: LOGIN_LIMIT, scope: 'native-auth-start' },
 });
-
-export { HANDOFF_COOKIE };

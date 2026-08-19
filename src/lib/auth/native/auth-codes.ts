@@ -28,6 +28,24 @@ import { logger } from '@/lib/observability/logger';
  * generous for that and still far inside the window where a leaked history
  * entry is useful to anyone.
  */
+/**
+ * Name of the HttpOnly cookie that carries the PKCE challenge + redirect URI
+ * across the system-browser sign-in.
+ *
+ * Defined HERE, not in either route, for two reasons. A Next route module may
+ * only export handlers and a fixed set of config keys — exporting a constant
+ * from one made `.next/types` reject the module (invisible in CI, which
+ * typechecks without a build). And the two routes that need it were each
+ * declaring their OWN copy of the literal, so changing one would have broken
+ * the handoff silently: `/start` would set a cookie `/complete` never reads,
+ * and every native sign-in would fail with a missing-handoff error pointing
+ * nowhere near the cause.
+ */
+export const HANDOFF_COOKIE = 'agrent-native-handoff';
+
+/** How long the handoff cookie lives — the user has to finish sign-in in it. */
+export const HANDOFF_COOKIE_MAX_AGE_SECONDS = 10 * 60;
+
 export const AUTH_CODE_TTL_SECONDS = 60;
 
 export function hashCode(raw: string): string {

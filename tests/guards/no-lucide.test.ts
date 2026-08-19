@@ -46,6 +46,14 @@ const LEGACY_LUCIDE_USERS = new Set<string>([
     'src/app/org/[orgSlug]/(app)/tenants/TenantsTable.tsx',
     'src/app/org/[orgSlug]/(app)/widget-dispatcher.tsx',
     'src/app/t/[tenantSlug]/(app)/admin/api-keys/page.tsx',
+    // Extracted VERBATIM out of the page above, which is already on this list.
+    // A Next page module may only export a default, so `KeyDisplay` had to move
+    // to its own file (see tests/guards/app-router-module-exports.test.ts). The
+    // icons came with it unchanged — this entry adds no new lucide usage, it
+    // follows an existing one to its new path. Migrating these five to Nucleo
+    // is worth doing, but inside a mechanical relocation it would change
+    // rendered output under cover of a typing fix.
+    'src/app/t/[tenantSlug]/(app)/admin/api-keys/KeyDisplay.tsx',
     'src/app/t/[tenantSlug]/(app)/admin/billing/BillingActions.tsx',
     'src/app/t/[tenantSlug]/(app)/admin/billing/BillingEventLog.tsx',
     'src/app/t/[tenantSlug]/(app)/admin/integrations/page.tsx',

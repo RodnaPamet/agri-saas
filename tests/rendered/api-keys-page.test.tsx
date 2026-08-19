@@ -28,9 +28,10 @@ import { TooltipProvider } from '@/components/ui/tooltip';
  */
 const render = (ui: React.ReactElement) =>
     rtlRender(<TooltipProvider>{ui}</TooltipProvider>);
-import ApiKeysPage, {
-    KeyDisplay,
-} from '@/app/t/[tenantSlug]/(app)/admin/api-keys/page';
+import ApiKeysPage from '@/app/t/[tenantSlug]/(app)/admin/api-keys/page';
+// KeyDisplay moved out of the page module: a Next page may only export a
+// default. See tests/guards/app-router-module-exports.test.ts.
+import { KeyDisplay } from '@/app/t/[tenantSlug]/(app)/admin/api-keys/KeyDisplay';
 
 const copy = jest.fn().mockResolvedValue(true);
 let copied = false;
