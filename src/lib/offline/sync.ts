@@ -49,6 +49,12 @@ export interface FlushSummary {
     sent: number;
     failed: number;
     dropped: number;
+    /**
+     * Items left untouched because a DIFFERENT operator queued them. Never
+     * sent (they would land attributed to the wrong person, or 403 and be
+     * destroyed) and never dropped — they wait for their owner to sign in.
+     */
+    foreign: number;
     remaining: number;
     /** True when the pass stopped early because the server rate-limited us. */
     rateLimited: boolean;
@@ -66,11 +72,22 @@ function isTransient(status: number): boolean {
 }
 
 /** Drain the outbox once. Safe to call repeatedly (idempotent per item). */
-export async function flushOutbox(store: OutboxStore, send: Sender): Promise<FlushSummary> {
+export async function flushOutbox(
+    store: OutboxStore,
+    send: Sender,
+    /**
+     * The user this drain is running as. Items queued by someone ELSE are
+     * skipped — see the `foreign` branch below. `null` (no known user, e.g.
+     * the service worker replaying with no session context) drains
+     * everything, which is the pre-existing behaviour.
+     */
+    ownerUserId: string | null = null,
+): Promise<FlushSummary> {
     const items = await store.all(); // FIFO (createdAt asc)
     let sent = 0;
     let failed = 0;
     let dropped = 0;
+    let foreign = 0;
     let conflicts = 0;
     let rateLimited = false;
     let retryAfterSeconds: number | undefined;
@@ -79,6 +96,19 @@ export async function flushOutbox(store: OutboxStore, send: Sender): Promise<Flu
         // A parked 409 conflict awaits operator resolution — never re-send it
         // (a blind retry would 409 again, or clobber once versions align).
         if (item.conflict) continue;
+
+        // Queued by a DIFFERENT operator on this device. A replay uses the
+        // CURRENT session cookie, so sending it would either attribute the
+        // write to the wrong person in a hash-chained audit trail, or — if
+        // the tenants differ — earn a 403, which the terminal-4xx branch
+        // below would treat as undeliverable and REMOVE. That removal is
+        // invisible to the loss detector, because it looks deliberate and
+        // the manifest is re-mirrored from the queue straight after. So:
+        // skip, never send, never drop. It waits for its owner.
+        if (ownerUserId && item.queuedByUserId && item.queuedByUserId !== ownerUserId) {
+            foreign++;
+            continue;
+        }
 
         let res: SendResult;
         try {
@@ -125,7 +155,7 @@ export async function flushOutbox(store: OutboxStore, send: Sender): Promise<Flu
     }
 
     const remaining = (await store.all()).length;
-    return { sent, failed, dropped, conflicts, remaining, rateLimited, retryAfterSeconds };
+    return { sent, failed, dropped, foreign, conflicts, remaining, rateLimited, retryAfterSeconds };
 }
 
 /** A fetch-backed Sender for the browser. */

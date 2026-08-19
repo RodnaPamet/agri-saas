@@ -30,6 +30,13 @@ export interface OfflineSyncBarProps {
     /** True when the queue has grown past the point of routine. */
     queueGrowing?: boolean;
     /**
+     * Work queued on this device by a DIFFERENT operator. Held rather than
+     * sent (it would land attributed to the wrong person, or 403 and be
+     * destroyed) — so it has to be visible, or it is work sitting on a phone
+     * that nobody knows is there.
+     */
+    foreign?: number;
+    /**
      * Whether this origin's storage is persistent — `true` granted, `false`
      * refused, `null`/undefined not yet asked or not reported. Surfaced only
      * as a caution while work is queued: it is the difference between "this
@@ -46,6 +53,7 @@ export function OfflineSyncBar({
     pending,
     pendingPhotos = 0,
     queueGrowing = false,
+    foreign = 0,
     storagePersisted,
     onSyncNow,
     className,
@@ -96,6 +104,11 @@ export function OfflineSyncBar({
             {queueGrowing && (
                 <p className="mt-tight text-xs text-content-warning" data-testid="offline-queue-growing">
                     {t('queueGrowing')}
+                </p>
+            )}
+            {foreign > 0 && (
+                <p className="mt-tight text-xs text-content-muted" data-testid="offline-foreign-count">
+                    {t('heldForOther', { count: foreign })} {t('heldForOtherHint')}
                 </p>
             )}
             {pending > 0 && storagePersisted === false && (

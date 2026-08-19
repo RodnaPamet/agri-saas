@@ -2906,7 +2906,9 @@
             "description": "{count, plural, one {# change was} other {# changes were}} saved on this phone but never reached the server. The phone removed it before it could sync, and it cannot be recovered — please enter it again.",
             "itemsLabel": "What was lost",
             "acknowledge": "I understand"
-        }
+        },
+        "heldForOther": "{count, plural, one {# change saved by another operator} other {# changes saved by another operator}}",
+        "heldForOtherHint": "It will sync when they sign in on this phone. It is not lost."
     },
     "userMenu": {
         "accountMenu": "Account menu",

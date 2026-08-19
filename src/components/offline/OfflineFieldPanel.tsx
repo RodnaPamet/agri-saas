@@ -57,7 +57,7 @@ export function OfflineFieldPanel({ taskId }: { taskId: string }) {
     const buildUrl = useTenantApiUrl();
     const { isMobile } = useMediaQuery();
     const { data, mutate, isLoading } = useTenantSWR<FieldOpView>(`/field-operations/${taskId}`);
-    const { online, pending, pendingPhotos, queueGrowing, durability, submit, flush, conflicts, resolveConflict } = useOfflineSync();
+    const { online, pending, pendingPhotos, queueGrowing, foreign, durability, submit, flush, conflicts, resolveConflict } = useOfflineSync();
     const [resolvingId, setResolvingId] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
     // Tapping a parcel on the map selects it and scrolls its prescription
@@ -198,7 +198,7 @@ export function OfflineFieldPanel({ taskId }: { taskId: string }) {
         // content), on the sanctioned animate-fade-in token.
         <FadeIn className="mx-auto max-w-xl space-y-default p-4">
             {/* sync status bar (shared across offline-capable surfaces) */}
-            <OfflineSyncBar online={online} pending={pending} pendingPhotos={pendingPhotos} queueGrowing={queueGrowing} storagePersisted={durability?.persisted ?? null} onSyncNow={() => void flush()} />
+            <OfflineSyncBar online={online} pending={pending} pendingPhotos={pendingPhotos} queueGrowing={queueGrowing} foreign={foreign} storagePersisted={durability?.persisted ?? null} onSyncNow={() => void flush()} />
 
             {/* 409 conflicts — a queued mark the server rejected because the job
                 changed meanwhile. Surface a keep-mine / take-server choice. */}

@@ -24,6 +24,7 @@ import {
     type OutboxItem,
 } from './outbox';
 import { indexedDbAvailable } from './idb-outbox';
+import { getCurrentUserId } from './current-user';
 import { flushOutbox, fetchSender, type FlushSummary } from './sync';
 import {
     acknowledgeLoss,
@@ -100,6 +101,11 @@ export interface OfflineSync {
     durability: DurabilityVerdict | null;
     /** True when the queue has grown past the point of routine. */
     queueGrowing: boolean;
+    /**
+     * Work queued on this device by another operator. Held, never sent under
+     * this session and never dropped — surfaced so it is not invisible.
+     */
+    foreign: number;
 }
 
 export function useOfflineSync(): OfflineSync {
@@ -112,7 +118,7 @@ export function useOfflineSync(): OfflineSync {
         getOutboxSnapshot,
         getServerOutboxSnapshot,
     );
-    const { pending, pendingPhotos, conflicts, lost, durability, queueGrowing } = snapshot;
+    const { pending, pendingPhotos, conflicts, lost, durability, queueGrowing, foreign } = snapshot;
     const [online, setOnline] = useState(true);
     // Honors a 429 Retry-After: schedule the next drain instead of hammering.
     const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -126,7 +132,7 @@ export function useOfflineSync(): OfflineSync {
         // The lock is MODULE-scoped, not per-instance: two mounted surfaces
         // draining at once would read the same items and send each twice.
         const res = await runExclusiveFlush(async () => {
-            const summary = await flushOutbox(getOutboxStore(), fetchSender());
+            const summary = await flushOutbox(getOutboxStore(), fetchSender(), getCurrentUserId());
             // Refresh pending + the photo sub-count + conflicts — a flush can
             // drain photos/mutations AND park a 409 the resolution UI must show.
             await refresh();
@@ -134,7 +140,7 @@ export function useOfflineSync(): OfflineSync {
         });
         if (res === null) {
             const remaining = (await getOutboxStore().all()).length;
-            return { sent: 0, failed: 0, dropped: 0, conflicts: 0, remaining, rateLimited: false };
+            return { sent: 0, failed: 0, dropped: 0, foreign: 0, conflicts: 0, remaining, rateLimited: false };
         }
         // Rate-limited mid-burst with work still queued → back off for the
         // server's Retry-After (default one mutation window) and re-drain,
@@ -328,5 +334,6 @@ export function useOfflineSync(): OfflineSync {
         acknowledgeLostWork: acknowledgeLoss,
         durability,
         queueGrowing,
+        foreign,
     };
 }

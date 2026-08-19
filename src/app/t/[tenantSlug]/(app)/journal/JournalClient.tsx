@@ -193,7 +193,7 @@ function JournalPageInner({ initialEntries, initialNextCursor, initialFilters, t
 
     // Offline-capable journal-entry create. One shared hook so a create queued
     // from the modal is reflected in this page's OfflineSyncBar pending count.
-    const { online, pending, queueGrowing, durability, submit: offlineSubmit, flush } = useOfflineSync();
+    const { online, pending, queueGrowing, foreign, durability, submit: offlineSubmit, flush } = useOfflineSync();
     const handleEntryCreated = (queued: boolean, optimistic: OptimisticJournalEntry) => {
         // Prepend an optimistic row so the just-logged entry shows at once.
         // Online (!queued): revalidate to swap it for the server row. Offline
@@ -523,7 +523,7 @@ function JournalPageInner({ initialEntries, initialNextCursor, initialFilters, t
                         <OfflineSyncBar
                             online={online}
                             pending={pending}
-                            queueGrowing={queueGrowing}
+                            queueGrowing={queueGrowing} foreign={foreign}
                             storagePersisted={durability?.persisted ?? null}
                             onSyncNow={() => void flush()}
                             className="fixed inset-x-0 bottom-0 z-40 md:left-auto md:right-4 md:bottom-4 md:max-w-sm"

@@ -16,6 +16,7 @@ import { KeyboardShortcutProvider } from '@/lib/hooks/use-keyboard-shortcut';
 import { ShortcutHelpOverlay } from '@/components/app-shell/shortcut-help-overlay';
 import { registerFormTelemetrySink } from '@/lib/telemetry/form-telemetry';
 import { SWRPersistenceProvider } from '@/components/providers/SWRPersistenceProvider';
+import { setCurrentUserId } from '@/lib/offline/current-user';
 import { ViewTransitions } from '@/lib/view-transitions';
 
 /**
@@ -116,6 +117,14 @@ export function Providers({
     // one per-tenant, disk-backed SWR cache. A PWA relaunch then paints
     // lists from the on-device cache instead of refetching the whole
     // farm over rural LTE.
+    // The offline layer needs to know WHO is signed in, and it is not a React
+    // consumer: `enqueue` runs from a hook, `flushOutbox` is a pure function,
+    // and the service worker replays with no React at all. One module-scoped
+    // value, set here from the same server-resolved id that namespaces the SWR
+    // cache, is readable from all three. Set during render rather than in an
+    // effect so an enqueue on the very first interaction is already attributed.
+    setCurrentUserId(userId);
+
     return (
         <SWRPersistenceProvider userId={userId}>
         <KeyboardShortcutProvider>
