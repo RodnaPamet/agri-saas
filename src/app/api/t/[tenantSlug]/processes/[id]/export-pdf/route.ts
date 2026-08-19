@@ -118,4 +118,3 @@ export const POST = withApiErrorHandling(
 // Avoid unused-import warning when this file is the only one
 // re-exporting jsonResponse — keep the alias so future error
 // paths can pivot to JSON without an extra import.
-export { jsonResponse };

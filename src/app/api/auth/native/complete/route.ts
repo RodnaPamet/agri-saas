@@ -31,11 +31,14 @@ import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/observability/logger';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { LOGIN_LIMIT } from '@/lib/security/rate-limit';
-import { issueAuthCode, isAllowedRedirect } from '@/lib/auth/native/auth-codes';
+import {
+    issueAuthCode,
+    isAllowedRedirect,
+    HANDOFF_COOKIE,
+} from '@/lib/auth/native/auth-codes';
 
 export const runtime = 'nodejs';
 
-const HANDOFF_COOKIE = 'agrent-native-handoff';
 
 function allowlist(): string[] {
     return env.NATIVE_AUTH_REDIRECT_ALLOWLIST.split(',')

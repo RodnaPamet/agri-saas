@@ -6,6 +6,7 @@
  * migrate to useTenantSWR (Epic 69 shape) so the rule can lift. */
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { KeyDisplay } from './KeyDisplay';
 import { useTranslations } from 'next-intl';
 import { Card, cardVariants } from '@/components/ui/card';
 import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
@@ -164,59 +165,7 @@ function ScopePicker({
     );
 }
 
-// ─── Copy-Once Key Display ───
 
-export function KeyDisplay({ plaintext }: { plaintext: string }) {
-    const t = useTranslations('admin.apiKeys');
-    const [visible, setVisible] = useState(false);
-    const { copy, copied } = useCopyToClipboard({ timeout: 2500 });
-    const toast = useToast();
-
-    const handleCopy = async () => {
-        const ok = await copy(plaintext);
-        if (ok) {
-            toast.success(t('keyCopied'));
-        } else {
-            toast.error(t('keyCopyFailed'));
-        }
-    };
-
-    return (
-        <InlineNotice
-            variant="warning"
-            id="key-display"
-            icon={AlertTriangle}
-            title={t('copyKeyNow')}
-            className="flex-col items-stretch space-y-tight p-4"
-        >
-            <div className="flex items-center gap-tight">
-                <code className="flex-1 bg-bg-page px-3 py-2 rounded text-sm font-mono text-content-success select-all break-all">
-                    {visible ? plaintext : plaintext.slice(0, 13) + '•'.repeat(40)}
-                </code>
-                <Tooltip content={visible ? t('hideKey') : t('showKey')}>
-                    <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => setVisible(!visible)}
-                        aria-label={visible ? t('hideKey') : t('showKey')}
-                        id="key-toggle-visibility"
-                    >
-                        {visible ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                    </Button>
-                </Tooltip>
-                <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={handleCopy}
-                    id="key-copy-btn"
-                >
-                    {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                    {copied ? t('copiedExclaim') : t('copy')}
-                </Button>
-            </div>
-        </InlineNotice>
-    );
-}
 
 // ─── Main Page ───
 

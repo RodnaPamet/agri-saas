@@ -42,7 +42,7 @@ jest.mock('@/lib/tenant-context-provider', () => ({
     useTenantContext: () => ({ tenantSlug: 'acme' }),
 }));
 
-import { KeyDisplay } from '@/app/t/[tenantSlug]/(app)/admin/api-keys/page';
+import { KeyDisplay } from '@/app/t/[tenantSlug]/(app)/admin/api-keys/KeyDisplay';
 import { TooltipProvider } from '@/components/ui/tooltip';
 
 const FULL_KEY = 'inflk_live_9Z9z9Z9z9Z9z9Z9z9Z9z9Z9z9Z9z9Z9z9Z9z9Z9z9Z9z9Z';
