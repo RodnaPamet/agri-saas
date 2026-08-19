@@ -1,6 +1,6 @@
 # API Rate Limiting
 
-Inflect Compliance has **three distinct rate-limit tiers**, each scoped
+Inflect Compliance has **four distinct rate-limit tiers**, each scoped
 to a different traffic class. None of them share a budget — a runaway
 script that exhausts the read tier can still log in, and a credential
 spray attack does not consume the read budget for legitimate users.
@@ -9,6 +9,7 @@ spray attack does not consume the read budget for legitimate users.
 
 | Tier | Preset | Budget | Applied at | Key shape |
 |------|--------|--------|------------|-----------|
+| **SCIM** | `SCIM_LIMIT` 300/min + `SCIM_IP_LIMIT` 600/min | 300/min per bearer, 600/min per source IP | Edge middleware (public-path branch) | `(bearer-fingerprint)` and `(IP)` |
 | **Auth** | tiered (10/30/60 per min) | 10/min for sign-in callbacks; 30/min for session probes; 60/min for `/csrf` and `/providers` | Edge middleware | `(IP, ua-hash)` |
 | **Mutation** | `API_MUTATION_LIMIT` | 60 per minute | Node route handlers via `withApiErrorHandling` | `(IP, userId)` |
 | **Read** | `API_READ_LIMIT` | 120 per minute | Edge middleware | `(IP, userId, tenantSlug)` |
@@ -109,7 +110,7 @@ X-RateLimit-Reset: 1714328400000
 The body **never** contains the IP, userId, or tenantSlug — those are
 logged on the server side only. Clients get enough information to back
 off intelligently and nothing extra. The `error.code` is stable across
-all three tiers (`RATE_LIMITED`); `error.scope` distinguishes them
+all four tiers (`RATE_LIMITED`); `error.scope` distinguishes them
 (`api-read` for this tier; `api-mutation` and `auth` for the others).
 
 ## Bypass gates (development & test)
@@ -222,3 +223,31 @@ the Upstash env, or each instance enforces only its fraction of every budget.
 - **Production prerequisites**: [`docs/deployment.md`](deployment.md) — Redis is required (GAP-13).
 - **Auth-tier details**: [`docs/auth.md`](auth.md) — login flow + brute-force protection.
 - **Service-level objectives**: [`docs/slos.md`](slos.md) — production targets these limiters defend.
+
+
+## The SCIM tier (2026-08-19)
+
+`/api/scim/` is a public path at the Edge — a SCIM bearer is an opaque hashed
+token and the Edge has no database, so the handler authenticates instead (see
+`docs/epic-c-security.md`). Until then these routes had **no** tier at all: the
+read tier requires an `/api/t/` prefix, and the mutation tier lives in
+`withApiErrorHandling`, which the SCIM handlers do not use.
+
+**Two buckets, and the per-IP one is not about guessing.** The tokens are 256
+bits of `randomBytes`, so brute force was never the threat. What the per-IP
+ceiling actually buys is bounded cost from an unauthenticated caller:
+`authenticateScimRequest` hits the database and emits a `logger.warn` on every
+unknown or revoked token, so without a ceiling an anonymous client can generate
+unbounded query load and unbounded log volume. Per-bearer alone cannot do that
+job, because a caller sending a different value each request lands in a fresh
+bucket every time.
+
+600 vs 300 is deliberate: Entra egresses several tenants' syncs from one
+Microsoft IP pool, so the ceiling must fit more than one legitimate sync.
+
+The presented bearer is **hashed** into the rate-limit key — a rate-limit key
+reaches Redis and logs, and a live provisioning credential must not.
+
+Bypass and mode flags are the shared ones (`RATE_LIMIT_ENABLED=0`,
+`RATE_LIMIT_MODE=memory`). Fail-open on backend error, like the read tier: an
+Upstash outage must not take provisioning down.

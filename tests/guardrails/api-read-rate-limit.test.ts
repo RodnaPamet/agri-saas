@@ -176,7 +176,7 @@ describe('GAP-17 ratchet — middleware wire-up', () => {
 });
 
 describe('GAP-17 ratchet — operator-facing docs', () => {
-    it('docs/rate-limiting.md exists and documents all three tiers', () => {
+    it('docs/rate-limiting.md exists and documents every tier', () => {
         const src = readRepoFile('docs/rate-limiting.md');
         // Regression: deleting the operator doc, or letting it drift
         // out of sync with the actual presets, leaves new contributors

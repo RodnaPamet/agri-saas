@@ -73,6 +73,11 @@ describe('Static Analysis: No process.env fallbacks', () => {
             // read at request time so the Playwright suite can flip the
             // bypass per-test without re-importing the module.
             if (file.endsWith('apiReadRateLimit.ts')) continue;
+            // SCIM tier — same convention and the same reason as the read
+            // tier directly above: NEXT_TEST_MODE has to be read at request
+            // time so a test can flip the bypass without re-importing the
+            // module. See src/lib/rate-limit/scimRateLimit.ts.
+            if (file.endsWith('scimRateLimit.ts')) continue;
             // GAP-10 Swagger-UI route gates prod via process.env.NODE_ENV
             // (HARD 404 in production). Same rationale as health/readyz
             // routes above — env.ts snapshot freezes at import time and

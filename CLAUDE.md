@@ -497,6 +497,30 @@ new admin/privileged routes MUST add a rule in
 `requireAdminCtx` helper for new code — it still works but the
 permission-key model is the canonical pattern.
 
+**C.1a — SCIM authenticates in the HANDLER, not at the Edge.**
+`/api/scim/` is in `PUBLIC_PATH_PREFIXES` on purpose. A SCIM bearer is an
+opaque token compared against a hash in `TenantScimToken`, the Edge runtime
+has no database, and `getToken()` understands only a NextAuth JWE — so the
+Edge cannot verify one. It used to do the only thing it could: return `null`
+and 401 every request, which meant **SCIM provisioning had never worked for
+anyone** while its integration tests stayed green (they import
+`authenticateScimRequest` directly and never cross the middleware). Every
+data-bearing handler under `/api/scim` therefore calls
+`authenticateScimRequest` itself, held FAIL-CLOSED by
+`tests/guards/scim-routes-self-authenticate.test.ts`, which derives the route
+list from the filesystem so a new route is covered the moment it exists. The
+one exemption is `ServiceProviderConfig` (RFC 7644 §4 discovery metadata), and
+the guard fails if that file ever touches the database. The trailing slash on
+the prefix is load-bearing — `'/api/scim'` would also open `/api/scimulator`.
+SCIM has its own rate tier (`SCIM_LIMIT` + `SCIM_IP_LIMIT`) because it is the
+one API surface an anonymous caller can use to reach a token comparison; the
+per-IP ceiling is the half that actually stops a brute force, since a caller
+rotating a fresh guess per request gets a fresh per-bearer bucket every time.
+**When you add an auth scheme that is not the session cookie, add an HTTP-level
+test that crosses the middleware** — `token.error`, the `iflk_` API key and
+SCIM were all complete, unit-tested mechanisms severed at that seam.
+See `docs/epic-c-security.md`.
+
 **C.2 — Secret detection.** Local pre-commit hook
 (`.husky/pre-commit` → `scripts/detect-secrets.sh`) scans staged
 files; CI guardrail (`tests/guardrails/no-secrets.test.ts`) walks
