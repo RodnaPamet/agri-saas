@@ -98,6 +98,31 @@ All fields are `boolean`. Validated on write by `validatePermissionsJson()`.
 
 ## API Keys
 
+> **STATUS (2026-08-19): API-key authentication is DISABLED, and it never
+> worked.** A key issued here **cannot authenticate a request** and never
+> could. The Edge middleware calls `getToken()`, which runs an
+> `Authorization: Bearer` value through NextAuth's JWE decode; an `iflk_`
+> token is not a JWE, so decode throws, `getToken` returns `null`, and the
+> request is refused with a generic 401 **before any handler runs** — and
+> therefore before `verifyApiKey` is ever reached. Confirmed over real HTTP:
+>
+> ```
+> $ curl -H 'Authorization: Bearer iflk_…' /api/t/<slug>/journal
+> 401 {"error":"Unauthorized"}
+> ```
+>
+> Creation is closed (`POST` returns **410 Gone** with a diagnostic body) and
+> the admin page hides the create button. **Listing and revoking existing keys
+> still works** and the page stays reachable for exactly that reason.
+>
+> Everything below describes the design as built. It is accurate about the
+> model, hashing and scopes, and **not** about the request path — that section
+> is marked where it applies. See `src/lib/auth/api-key-availability.ts` for
+> what re-enabling requires (an Edge carve-out, scope enforcement — which has
+> zero callers today — a rate tier, and an HTTP-level test through the
+> middleware). `tests/guards/api-key-auth-disabled.test.ts` fails if the switch
+> is flipped without them.
+
 ### Model
 
 | Field | Type | Purpose |
@@ -162,6 +187,9 @@ Scopes use the format `resource:action`:
 ### Scope Enforcement
 
 ```
+> **Not currently reachable** — see the status note above; the Edge refuses an
+> `iflk_` bearer before this decision point.
+
 Request authenticated via API key?
   ├─ Yes → enforceApiKeyScope(ctx, resource, action)
   │        └─ Checks ctx.apiKeyScopes against requested resource:action

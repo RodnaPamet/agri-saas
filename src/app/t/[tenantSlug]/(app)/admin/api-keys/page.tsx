@@ -7,6 +7,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { KeyDisplay } from './KeyDisplay';
+import { API_KEY_AUTH_ENABLED } from '@/lib/auth/api-key-availability';
 import { useTranslations } from 'next-intl';
 import { Card, cardVariants } from '@/components/ui/card';
 import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
@@ -474,12 +475,23 @@ export default function ApiKeysPage() {
                         {t('description')}
                     </p>
                 </div>
-                {!showCreate && !createdKey && (
+                {API_KEY_AUTH_ENABLED && !showCreate && !createdKey && (
                     <Button variant="primary" icon={<Plus />} onClick={() => setShowCreate(true)} id="create-api-key-btn">
                         {t('newApiKeyButton')}
                     </Button>
                 )}
             </div>
+
+            {/* The page stays reachable with creation closed, on purpose:
+                listing and REVOKING already-issued keys is the one thing here
+                that still works, and it is the thing an operator most needs
+                after being told the keys are useless. Explain rather than
+                silently removing the button. */}
+            {!API_KEY_AUTH_ENABLED && (
+                <InlineNotice variant="warning" id="api-keys-unavailable">
+                    {t('unavailableNotice')}
+                </InlineNotice>
+            )}
 
             {/* Messages */}
             {error && (

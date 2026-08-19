@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import { API_KEY_AUTH_ENABLED } from '@/lib/auth/api-key-availability';
 import { getSessionOrThrow } from '@/lib/auth';
 import { resolveTenantContext } from '@/lib/tenant-context';
 import { RequestContext, OrgContext } from './types';
@@ -37,9 +38,10 @@ export async function getTenantCtx(
     params: { tenantSlug: string },
     req?: NextRequest
 ): Promise<RequestContext> {
-    // Try API key auth first if Authorization header is present
+    // Try API key auth first if Authorization header is present.
+    // The URL's slug is passed and COMPARED — see tryApiKeyAuth.
     if (req) {
-        const apiKeyCtx = await tryApiKeyAuth(req);
+        const apiKeyCtx = await tryApiKeyAuth(req, params.tenantSlug);
         if (apiKeyCtx) return apiKeyCtx;
     }
 
@@ -71,11 +73,12 @@ export async function getTenantCtx(
  * This also performs a membership check that legacy routes previously skipped.
  */
 export async function getLegacyCtx(req?: NextRequest): Promise<RequestContext> {
-    // Try API key auth first if Authorization header is present
-    if (req) {
-        const apiKeyCtx = await tryApiKeyAuth(req);
-        if (apiKeyCtx) return apiKeyCtx;
-    }
+    // NO API-key auth here, deliberately. A legacy route has no `tenantSlug`
+    // in its params, so there is nothing to compare the key's tenant against —
+    // and an unchecked key context would silently REPLACE the session's tenant
+    // and role (see tryApiKeyAuth for what that costs). If API-key auth is
+    // ever enabled, a legacy route needs the session resolved FIRST so the
+    // key can be checked against the session's tenant.
 
     const session = await getSessionOrThrow();
     const requestId = getRequestId(req);
@@ -221,7 +224,22 @@ export async function getOrgCtx(
  * Returns null if the token is not an API key (allowing session auth fallback).
  * Throws unauthorized() if the token IS an API key but is invalid.
  */
-async function tryApiKeyAuth(req: NextRequest): Promise<RequestContext | null> {
+async function tryApiKeyAuth(
+    req: NextRequest,
+    /**
+     * The tenant slug from the ROUTE. Required, not optional: the context this
+     * function returns REPLACES the session's, so without a comparison a
+     * request to tenant A's URL executes against tenant B's data.
+     */
+    expectedTenantSlug: string,
+): Promise<RequestContext | null> {
+    // Disabled — see api-key-availability.ts. An `iflk_` bearer cannot reach
+    // a handler anyway (the Edge refuses it first), so the only way in here is
+    // a request carrying BOTH a valid session cookie and an API-key header.
+    // That is not a machine client; it is a browser session whose context
+    // would be silently swapped for the key's.
+    if (!API_KEY_AUTH_ENABLED) return null;
+
     const authHeader = req.headers.get('authorization');
     const token = extractBearerToken(authHeader);
 
@@ -237,6 +255,18 @@ async function tryApiKeyAuth(req: NextRequest): Promise<RequestContext | null> {
 
     if (!result.valid) {
         throw unauthorized(`API key authentication failed: ${result.reason}`);
+    }
+
+    // The key's tenant must be the tenant in the URL.
+    //
+    // Without this, the returned context replaces the session's wholesale —
+    // `tenantId`/`tenantSlug` become the KEY's, so `runInTenantContext` binds
+    // RLS to a different tenant than the URL names and `logEvent` attributes
+    // the write to the key's creator. The role is separately re-derived from
+    // the key's SCOPES, so a user demoted to READER who kept an old `*` key
+    // would get an ADMIN-permission context on every non-admin tenant route.
+    if (result.ctx.tenantSlug !== expectedTenantSlug) {
+        throw unauthorized('API key does not belong to this tenant');
     }
 
     // Override requestId from the header if available

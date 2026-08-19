@@ -233,17 +233,34 @@ describe('API Key Auth Module', () => {
 // ─── 5. Context Integration ─────────────────────────────────────────
 
 describe('Context Integration', () => {
-    test('getTenantCtx tries API key auth before session', () => {
-        expect(appContext).toContain('tryApiKeyAuth');
+    // These two assertions were INVERTED on 2026-08-19. They used to require
+    // that both context builders attempt API-key auth before the session.
+    // That is now the wrong contract, and the old shape had a second problem:
+    // `expect(legacyCtx).toContain('tryApiKeyAuth')` is a raw source-text grep,
+    // so a COMMENT mentioning the function satisfies it. Removing the call
+    // while leaving an explanatory comment kept it green while it asserted a
+    // call that no longer existed.
+    test('getTenantCtx attempts API-key auth, and passes the URL slug to compare', () => {
+        const fnBodies = appContext.split('export async function');
+        const tenantCtx = fnBodies.find((b) => b.startsWith(' getTenantCtx'));
+        expect(tenantCtx).toBeDefined();
+        // The slug argument is what stops the key's context silently replacing
+        // the session's tenant. Assert the ARGUMENT, not just the call.
+        expect(tenantCtx).toMatch(/tryApiKeyAuth\(req, params\.tenantSlug\)/);
     });
 
-    test('getLegacyCtx tries API key auth before session', () => {
-        // Both context builders should check for API key
-        const fnBodies = appContext.split('export async function');
-        const legacyCtx = fnBodies.find(b => b.includes('getLegacyCtx'));
-        if (legacyCtx) {
-            expect(legacyCtx).toContain('tryApiKeyAuth');
-        }
+    test('getLegacyCtx does NOT attempt API-key auth', () => {
+        // A legacy route has no tenantSlug in its params, so there is nothing
+        // to compare a key's tenant against — an unchecked key context would
+        // replace the session's tenant AND role. Assert on the function body
+        // only: reading to end-of-file would sweep in tryApiKeyAuth's own
+        // definition and pass regardless.
+        const start = appContext.indexOf('export async function getLegacyCtx');
+        expect(start).toBeGreaterThan(-1);
+        const rest = appContext.slice(start + 1);
+        const next = rest.indexOf('\nexport ');
+        const legacyBody = next === -1 ? rest : rest.slice(0, next);
+        expect(legacyBody).not.toMatch(/tryApiKeyAuth\s*\(/);
     });
 
     test('API key auth returns null for non-API-key tokens (no session conflict)', () => {
