@@ -36,6 +36,22 @@ const BASEMAP_CACHE = `${CACHE_VERSION}-basemap`;
 // src/lib/offline/basemap-pack.ts (the SW can't import from src/ — kept in
 // lockstep by tests/guardrails/offline-pwa-coverage.test.ts).
 const BASEMAP_CACHE_BUDGET_BYTES = 24 * 1024 * 1024;
+// Byte budgets for the two TENANT caches. Unlike the basemap (immutable
+// public geometry), these hold the operator's own farm: DATA_CACHE keeps
+// field-operation and location API responses — including Task.description
+// and Task.resolution, which are Epic B encrypted at rest and cached here
+// DECRYPTED — and PAGE_CACHE keeps every server-rendered tenant document
+// with its rows inline. Both were UNBOUNDED: the only exit was a
+// CACHE_VERSION bump plus activation, and install deliberately skips
+// skipWaiting, so even that waits on operator consent.
+//
+// A byte cap is not a retention policy — it bounds size, not age. Ageing
+// them out is the window's job (src/lib/offline/client-data-retention.ts
+// deletes both buckets wholesale via caches.delete), deliberately kept OUT
+// of this file: a bug here ships to phones that will not take an update
+// until the operator agrees.
+const DATA_CACHE_BUDGET_BYTES = 8 * 1024 * 1024;
+const PAGE_CACHE_BUDGET_BYTES = 4 * 1024 * 1024;
 const PRECACHE = ['/icon.svg', '/manifest.webmanifest'];
 
 // ── Outbox IndexedDB contract (shared with src/lib/offline/idb-outbox.ts) ──
@@ -108,7 +124,10 @@ async function networkFirstData(request) {
     const cache = await caches.open(DATA_CACHE);
     try {
         const res = await fetch(request);
-        if (res.ok) cache.put(request, res.clone());
+        if (res.ok) {
+            await cache.put(request, res.clone());
+            await evictCacheOverBudget(cache, DATA_CACHE_BUDGET_BYTES);
+        }
         return res;
     } catch (err) {
         const cached = await cache.match(request);
@@ -153,21 +172,31 @@ function selectBasemapEvictions(entries, budgetBytes) {
     return evict;
 }
 
-// Evict least-recently-used basemap tiles until the cache is within budget.
-// Cache Storage preserves insertion order, and cacheFirstBasemap moves a
-// touched tile to the newest end (delete-then-put) on every hit — so
-// `cache.keys()` order IS the LRU order, oldest first.
-async function evictBasemapOverBudget(cache) {
+// Evict least-recently-used entries until a cache is within budget.
+// Cache Storage preserves insertion order, so `cache.keys()` order is
+// oldest-first. For BASEMAP_CACHE, cacheFirstBasemap additionally moves a
+// touched tile to the newest end (delete-then-put) on every hit, making
+// that order a true LRU; the tenant caches are network-first and rewrite
+// on each fetch, so for them it is insertion order, which is the right
+// approximation and never evicts something just written.
+async function evictCacheOverBudget(cache, budgetBytes) {
     const keys = await cache.keys();
     const entries = [];
     for (const req of keys) {
         const res = await cache.match(req);
         entries.push({ key: req.url, request: req, size: basemapEntrySize(res) });
     }
-    const evictUrls = new Set(selectBasemapEvictions(entries, BASEMAP_CACHE_BUDGET_BYTES));
+    const evictUrls = new Set(selectBasemapEvictions(entries, budgetBytes));
     await Promise.all(
         entries.filter((e) => evictUrls.has(e.key)).map((e) => cache.delete(e.request)),
     );
+}
+
+// Kept as a named wrapper: the offline-pwa-coverage guardrail pins this
+// symbol, and the basemap budget is the one that mirrors a constant in
+// src/lib/offline/basemap-pack.ts.
+async function evictBasemapOverBudget(cache) {
+    return evictCacheOverBudget(cache, BASEMAP_CACHE_BUDGET_BYTES);
 }
 
 // Cache-FIRST for basemap tiles: they're immutable natural-earth geometry, so
@@ -234,7 +263,10 @@ self.addEventListener('fetch', (event) => {
                 .then((res) => {
                     if (res.ok) {
                         const copy = res.clone();
-                        caches.open(PAGE_CACHE).then((cache) => cache.put(request, copy));
+                        caches.open(PAGE_CACHE).then(async (cache) => {
+                            await cache.put(request, copy);
+                            await evictCacheOverBudget(cache, PAGE_CACHE_BUDGET_BYTES);
+                        });
                     }
                     return res;
                 })

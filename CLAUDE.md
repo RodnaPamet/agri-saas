@@ -403,6 +403,33 @@ to evict. Three rules, all load-bearing — see
 New offline surfaces subscribe to the shared state; they do not add another
 `useState` count or another flush loop.
 
+### Client data retention
+
+Epic B's encryption boundary stops at the Postgres row. Anything a client
+persists is outside the KEK/DEK hierarchy entirely — plaintext, on a phone
+that gets lost, sold or handed to another worker. Two rules:
+
+- **`sweepClientStores()` bounds how long the device keeps a farm.** Runs
+  once per launch (`ClientDataRetentionSweep` in the root layout), 24h
+  default. It covers field snapshots (`agri.offline.fieldop.v1.*`, which had
+  no timestamp and no expiry — `clearFieldSnapshot` had zero callers), the
+  persistent SWR buckets (whose own TTL only fires on hydrate, so a tenant
+  the operator stopped visiting never expired), and the tenant Cache Storage
+  buckets.
+- **The sweep NEVER touches the outbox** — that is what makes it safe. An
+  earlier design purged the queue too, and every serious failure it had came
+  from that: clearing the manifest without the queue is exactly the shape the
+  loss detector reads as "this phone deleted your work" (a sticky FALSE
+  banner); `flushOutbox`'s `store.update()` is an upsert, so a flush in
+  flight writes items back into a cleared store; and queued work exists
+  nowhere else, so deleting it is unrecoverable. Scoped to caches, none of
+  those are reachable. The one outbox read is protective: a snapshot whose
+  task still has queued work is never evicted.
+
+`public/sw.js` caps `DATA_CACHE` / `PAGE_CACHE` by BYTES. Ageing them is the
+window's job (`caches.delete`), deliberately kept out of the service worker —
+install skips `skipWaiting`, so a bug there waits on operator consent to fix.
+
 ### Auth Brute-Force Protection (Epic A.3)
 
 `authenticateWithPassword` applies `LOGIN_PROGRESSIVE_POLICY`:

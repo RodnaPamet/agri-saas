@@ -80,7 +80,7 @@ jest.mock('next-intl', () => {
 
 import * as outbox from '@/lib/offline/outbox';
 import { OfflineFieldPanel } from '@/components/offline/OfflineFieldPanel';
-import { saveFieldSnapshot } from '@/lib/offline/field-snapshot';
+import { saveFieldSnapshot, readFieldSnapshot } from '@/lib/offline/field-snapshot';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const store: any = (outbox as any).__store;
@@ -154,8 +154,13 @@ describe('OfflineFieldPanel — offline operator flow', () => {
         expect(screen.getByText('Done')).toBeInTheDocument();
 
         // The snapshot persisted the optimistic DONE (survives a cold reload).
-        const snap = JSON.parse(localStorage.getItem('agri.offline.fieldop.v1.task-1')!);
-        expect(snap.lines[0].status).toBe('DONE');
+        // Read through the public accessor rather than the raw bytes: the
+        // stored shape gained a `{t, data}` wrapper when snapshots became
+        // age-able (they had no timestamp and never expired). Asserting on
+        // the accessor keeps this test about the BEHAVIOUR — the optimistic
+        // DONE survives a cold reload — instead of the storage layout.
+        const snap = readFieldSnapshot<{ lines: { status: string }[] }>('task-1');
+        expect(snap?.lines[0].status).toBe('DONE');
 
         // Reconnect → the online event drains the outbox; the queued PATCH
         // goes out and the queue empties.
