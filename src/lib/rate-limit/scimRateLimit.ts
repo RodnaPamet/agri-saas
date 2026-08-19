@@ -36,8 +36,27 @@ import { env } from '@/env';
 import { SCIM_LIMIT, SCIM_IP_LIMIT } from '@/lib/security/rate-limit';
 import { edgeLogger } from '@/lib/observability/edge-logger';
 
-/** The public prefix this limiter defends. Kept in ONE place. */
+/** The public prefixes this limiter defends. Kept in ONE place. */
 export const SCIM_PATH_PREFIX = '/api/scim/';
+
+/**
+ * Signed-webhook prefixes, added 2026-08-20.
+ *
+ * Same situation as SCIM and the same reason for the same budget: these are
+ * public at the Edge (their senders — Stripe, the AV scanner, third-party
+ * integrations — cannot carry a session cookie), so an anonymous caller
+ * reaches a signature comparison. Unbudgeted that is unbounded database and
+ * log load from the internet: every handler logs a warn on a bad signature.
+ *
+ * They share this tier rather than getting a fourth: the traffic class is
+ * identical (machine-to-machine, signed, bursty on retry) and a separate
+ * budget would be a number nobody could justify differently.
+ */
+const WEBHOOK_PATH_PREFIXES = [
+    '/api/stripe/webhook',
+    '/api/storage/av-webhook',
+    '/api/integrations/webhooks/',
+] as const;
 
 /**
  * Does this request belong to the SCIM tier?
@@ -47,7 +66,10 @@ export const SCIM_PATH_PREFIX = '/api/scim/';
  * limiter's scope must not be wider than the carve-out's.
  */
 export function isScimRateLimited(pathname: string): boolean {
-    return pathname.startsWith(SCIM_PATH_PREFIX);
+    return (
+        pathname.startsWith(SCIM_PATH_PREFIX) ||
+        WEBHOOK_PATH_PREFIXES.some((p) => pathname.startsWith(p))
+    );
 }
 
 const _memoryCache = new Map<string, { count: number; resetAt: number }>();

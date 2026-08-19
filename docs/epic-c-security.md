@@ -404,3 +404,59 @@ Redis or a log.
 Operator knobs: `RATE_LIMIT_ENABLED=0` bypasses (all tiers),
 `RATE_LIMIT_MODE=memory` forces the in-process store. Fail-open on backend
 error — an Upstash outage must not take provisioning down.
+
+
+## Signed webhooks at the Edge (2026-08-20)
+
+Three endpoints join SCIM in `PUBLIC_PATH_PREFIXES`:
+
+| route | credential |
+|---|---|
+| `/api/stripe/webhook` | Stripe signature via `constructWebhookEvent` |
+| `/api/storage/av-webhook` | HMAC-SHA256 over the raw body, `timingSafeEqual` |
+| `/api/integrations/webhooks/:provider` | per-connection secret via `processIncomingWebhook` |
+
+**They had never been delivered.** Their senders — Stripe, the AV scanner, a
+third-party service — cannot carry a NextAuth session cookie, so `getToken()`
+returned null and the middleware answered `401 {"error":"Unauthorized"}` before
+any handler ran. Verified by driving the real middleware.
+
+Latent rather than live on the current deployment (Stripe unconfigured, AV
+scanning disabled), which is exactly what let it survive: it fails **silently**
+the day either is enabled. Set `STRIPE_SECRET_KEY` and subscription state
+simply never updates — payments succeed, plans never change, nothing errors.
+
+**Every handler fails CLOSED with no secret configured**, which is what makes
+opening the Edge safe: Stripe throws (`STRIPE_WEBHOOK_SECRET is not
+configured`), the AV webhook 500s in production, integrations 401. The AV
+webhook has an explicit dev-only bypass, gated on `NODE_ENV !== 'production'`.
+
+### The guard is general, not per-route
+
+`tests/guards/public-routes-self-authenticate.test.ts` enforces **both**
+directions of one rule, derived from the filesystem:
+
+- **A** — a route reading a credential header and verifying it must be
+  reachable. Six instances of this failing shipped (`token.error`, `iflk_`,
+  SCIM, and these three).
+- **B** — a route behind a public prefix must verify something.
+
+Either alone is worse than none: A without B turns dead endpoints into
+anonymous ones; B without A leaves them dead. When first run it flagged
+`/api/staging/seed` and the integrations webhook — both legitimate, and the
+DETECTOR was widened rather than the routes exempted, because an exemption
+would hide the next genuinely-anonymous route added under either prefix.
+
+`tests/unit/webhook-edge-reachability.test.ts` is the behavioural half: it
+drives the real middleware, and includes a negative control plus assertions
+that the neighbouring paths (`/api/stripe/customers`,
+`/api/integrations/connections`, `/api/storage/upload`) are still gated.
+
+### Rate limiting
+
+They share the SCIM tier (`SCIM_LIMIT` 300/min per credential, `SCIM_IP_LIMIT`
+600/min per IP). Same traffic class — machine-to-machine, signed, bursty on
+retry — and a separate budget would be a number nobody could justify
+differently. The point is the same as SCIM's: an anonymous caller reaching a
+signature comparison is unbounded database and log load, since every handler
+logs a warn on a bad signature.

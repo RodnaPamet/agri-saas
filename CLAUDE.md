@@ -584,6 +584,20 @@ test that crosses the middleware** — `token.error`, the `iflk_` API key and
 SCIM were all complete, unit-tested mechanisms severed at that seam.
 See `docs/epic-c-security.md`.
 
+**C.1b — Signed webhooks are public at the Edge, and verify themselves.**
+`/api/stripe/webhook`, `/api/storage/av-webhook` and
+`/api/integrations/webhooks/` are in `PUBLIC_PATH_PREFIXES` for the same
+reason SCIM is: their senders cannot carry a session cookie, so `getToken()`
+returns null and the Edge refused them — all three had NEVER been delivered.
+Each verifies its own signature and fails CLOSED with no secret configured.
+The rule is enforced in BOTH directions by
+`tests/guards/public-routes-self-authenticate.test.ts`: a route that verifies
+a credential must be REACHABLE, and a route behind a public prefix must
+VERIFY. Either half alone is worse than neither — the first without the second
+turns dead endpoints into anonymous ones. Both are derived from the
+filesystem, so a new route is covered the moment it exists. See
+`docs/epic-c-security.md`.
+
 **C.2 — Secret detection.** Local pre-commit hook
 (`.husky/pre-commit` → `scripts/detect-secrets.sh`) scans staged
 files; CI guardrail (`tests/guardrails/no-secrets.test.ts`) walks
