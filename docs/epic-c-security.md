@@ -350,3 +350,57 @@ operator action to take — sanitisation never fails the request.
    cases in `tests/unit/security/sanitize.test.ts`. Do not add `style`,
    `class`, `id`, `<svg>`, `<iframe>`, `<object>`, `<embed>` without a
    security review.
+
+## SCIM at the Edge (2026-08-19)
+
+`/api/scim/` is in `PUBLIC_PATH_PREFIXES`, which looks alarming and is not.
+
+A SCIM bearer is an opaque token compared against a SHA-256 hash in
+`TenantScimToken`. The Edge middleware runs on the Edge runtime with no
+database, and `getToken()` understands only a NextAuth JWE — so the Edge
+**cannot** verify a SCIM credential. Before the carve-out it did the only thing
+it could: `getToken()` returned `null` and every SCIM request was answered
+`401 {"error":"Unauthorized"}`. Provisioning had never worked for anyone, since
+the feature shipped, and CI could not see it because the SCIM tests import
+`authenticateScimRequest` directly and never cross the middleware.
+
+**Authentication for these routes lives in the handlers**, via
+`authenticateScimRequest`. That is not a convention anyone has to remember:
+
+| control | what it holds |
+|---|---|
+| `tests/guards/scim-routes-self-authenticate.test.ts` | Fail-closed. Derives the route inventory from the filesystem, so a NEW route under `/api/scim` is covered the moment it exists. One written exemption: `ServiceProviderConfig` (RFC 7644 §4 discovery metadata, no DB access), and the guard fails if that file ever grows a database call. |
+| `tests/unit/scim-edge-reachability.test.ts` | Executing. Drives the real middleware; asserts SCIM passes and that a normal tenant route with the same unusable bearer still 401s. |
+| `tests/e2e/scim-provisioning.spec.ts` | Real HTTP. A bad token must return the **SCIM Error schema**, not the Edge's generic body — that is the difference between "the handler rejected you" and "the handler never ran". |
+| `src/lib/rate-limit/scimRateLimit.ts` | Budget. See below. |
+
+**Tenant isolation is stronger here than a URL slug, not weaker.**
+`authenticateScimRequest` resolves the tenant from the token itself, so a token
+can only ever act on its own tenant; there is no slug in the path to mismatch.
+
+**The token-minting route is NOT covered by the carve-out.**
+`POST /api/t/:slug/admin/scim` stays behind the session gate and
+`requirePermission('admin.scim')` — the trailing slash on `/api/scim/` is what
+keeps the carve-out from widening, and both the unit test and the e2e assert a
+SCIM bearer cannot reach it.
+
+### Rate limiting
+
+SCIM had **no** tier at all: the read tier requires an `/api/t/` prefix, and the
+mutation tier lives in `withApiErrorHandling`, which the SCIM handlers do not
+use. Now that these routes are anonymous at the Edge, they are the one API
+surface where an unauthenticated caller reaches a token comparison — a
+brute-force oracle if unbudgeted.
+
+`SCIM_LIMIT` (300/min per bearer) and `SCIM_IP_LIMIT` (600/min per IP) in
+`src/lib/security/rate-limit.ts`. **Both are required.** Per-bearer alone does
+nothing against the attack: a caller who sends a fresh guess each request gets a
+fresh bucket each request and is never limited. Per-IP alone would throttle
+innocent tenants, because Entra egresses several tenants' syncs from one
+Microsoft IP pool — hence the ceiling being double the per-tenant budget. The
+bearer is hashed into the rate-limit key so a live credential never lands in
+Redis or a log.
+
+Operator knobs: `RATE_LIMIT_ENABLED=0` bypasses (all tiers),
+`RATE_LIMIT_MODE=memory` forces the in-process store. Fail-open on backend
+error — an Upstash outage must not take provisioning down.

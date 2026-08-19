@@ -225,6 +225,38 @@ export const API_READ_LIMIT: RateLimitConfig = {
 };
 
 /**
+ * SCIM provisioning: 300/min per bearer, 600/min per IP.
+ *
+ * `/api/scim/` is in `PUBLIC_PATH_PREFIXES`, so these requests are NOT
+ * authenticated at the Edge — they cannot be, since a SCIM bearer is an
+ * opaque hashed token and the Edge has no database. Authentication happens
+ * inside the handler. That makes this the one API surface where an anonymous
+ * caller can reach a token comparison, which is exactly the shape a bearer
+ * brute-force needs.
+ *
+ * TWO buckets, because either one alone has a hole:
+ *   - Per-BEARER (300/min) is the real budget. A runaway IdP sync exhausts
+ *     its own tenant's allowance and nobody else's.
+ *   - Per-IP (600/min) is what stops the brute-force, since an attacker
+ *     rotating a fresh guess each request would otherwise get a fresh
+ *     per-bearer bucket every time and never be limited at all.
+ *
+ * 600 is double 300 on purpose: Entra egresses several tenants' syncs from a
+ * shared Microsoft IP pool, so the ceiling has to fit more than one legitimate
+ * sync running at once.
+ */
+export const SCIM_LIMIT: RateLimitConfig = {
+    maxAttempts: 300,
+    windowMs: 60 * 1000,
+};
+
+/** The per-IP ceiling for {@link SCIM_LIMIT}. See that doc for why both exist. */
+export const SCIM_IP_LIMIT: RateLimitConfig = {
+    maxAttempts: 600,
+    windowMs: 60 * 1000,
+};
+
+/**
  * API key creation: 5 per hour per (tenant, creator user).
  *
  * Threat model: post-compromise lateral movement. A user with a

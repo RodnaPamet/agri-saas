@@ -23,6 +23,22 @@ const PUBLIC_PATH_PREFIXES = [
     '/api/readyz',       // Readiness probe (no auth)
     '/api/metrics',      // web-vitals telemetry sink (no auth — anonymous RUM beacons)
     '/api/staging/seed', // Staging seed endpoint (token-gated internally)
+    '/api/scim/',        // SCIM 2.0 provisioning (RFC 7644). Every request carries a
+                         // tenant-scoped OPAQUE bearer token, not a NextAuth JWE, so
+                         // `getToken()` below cannot validate one and returns null —
+                         // which 401'd every SCIM request at the Edge before any
+                         // handler ran, from the day the feature shipped. The Edge
+                         // has no DB, so it CANNOT verify a hashed SCIM token; the
+                         // only place that can is the route itself.
+                         //
+                         // This is a deliberate hole in the Edge gate and it is only
+                         // safe because every data-bearing handler under
+                         // `/api/scim/v2` authenticates itself via
+                         // `authenticateScimRequest`. That is not a convention to be
+                         // remembered — it is enforced, fail-closed and derived from
+                         // the filesystem, by
+                         // `tests/guards/scim-routes-self-authenticate.test.ts`.
+                         // Do not add a route here without reading that guard.
     '/privacy',          // Privacy notice — MUST be readable without an account:
                          // the promotions consent box links to it before a
                          // request is submitted, and a prospective user has to

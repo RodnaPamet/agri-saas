@@ -6,6 +6,7 @@ import {
     extractTenantSlug,
     isApiReadRateLimited,
 } from '@/lib/rate-limit/apiReadRateLimit';
+import { isScimRateLimited, checkScimRateLimit } from '@/lib/rate-limit/scimRateLimit';
 import { env } from '@/env';
 import {
     CLIENT_VERSION_HEADER,
@@ -99,6 +100,18 @@ async function authMiddleware(req: NextRequest): Promise<NextResponse> {
 
     // ── 1. Allow public paths (login, auth callbacks, static, etc.) ──
     if (isPublicPath(pathname)) {
+        // SCIM is public HERE and nowhere else in spirit: its credential is an
+        // opaque hashed bearer that `getToken()` cannot verify and the Edge has
+        // no database to check it against, so the handler authenticates
+        // instead. That makes it the ONE API surface where an anonymous caller
+        // reaches a token comparison — a bearer-guessing oracle unless it is
+        // budgeted. Neither existing tier covers it: the read tier requires an
+        // `/api/t/` prefix, and the mutation tier lives in
+        // `withApiErrorHandling`, which the SCIM handlers do not use.
+        if (isScimRateLimited(pathname)) {
+            const rl = await checkScimRateLimit(req);
+            if (!rl.ok && rl.response) return rl.response;
+        }
         return NextResponse.next();
     }
 
