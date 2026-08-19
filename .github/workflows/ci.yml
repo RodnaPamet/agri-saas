@@ -816,12 +816,33 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ steps.pw-version.outputs.version }}
 
+      # ── Playwright install: BOTH steps are capped ──
+      #
+      # These shell out to apt-get, and apt occasionally stalls on a runner.
+      # Without a step-level cap the stall consumes the job's whole 40-minute
+      # budget and the E2E tests never start — and because GitHub reports a
+      # timed-out job as `cancelled`, it reads like a concurrency cancellation
+      # rather than a hang, which is exactly how it was misdiagnosed the first
+      # time.
+      #
+      # Measured 2026-08-19 across eight consecutive runs: 11s, 12s, 14s, 44s,
+      # 62s — then 20m (run 32208305084, which passed only because 20 < 40) and
+      # 35m43s (run 32229209296, BOTH shards, on BOTH attempts). A cap turns
+      # that into a fast, clearly-labelled failure a re-run can clear in
+      # minutes instead of eighty.
+      #
+      # 8 minutes is ~8x the slowest healthy observation, so it cannot fire on
+      # a merely slow runner. Deliberately NOT `|| true`: skipping system deps
+      # would leave a broken browser and surface as confusing spec failures
+      # several steps later, which is worse than an honest red step.
       - name: Install Playwright browsers
         if: steps.pw-cache.outputs.cache-hit != 'true'
+        timeout-minutes: 8
         run: npx playwright install --with-deps chromium
 
       - name: Install Playwright system deps (cached)
         if: steps.pw-cache.outputs.cache-hit == 'true'
+        timeout-minutes: 8
         run: npx playwright install-deps chromium
 
       # ── GAP-20: accessibility gate ──
