@@ -400,6 +400,18 @@ to evict. Three rules, all load-bearing — see
   on a physical iPhone is still unmeasured**, and that cached verdict is how
   the answer gets read back off a real device.
 
+- **Queued work is bound to the operator who queued it.** A replay uses
+  `fetch`, which sends whatever session cookie is CURRENT — not the one that
+  queued the item. On a shared device that means A's work lands attributed to
+  B in a hash-chained audit trail, or (different tenant) earns a 403, which
+  `flushOutbox` classifies as terminal and REMOVES — silently, and invisibly
+  to the loss detector, because the removal looks deliberate and the manifest
+  is re-mirrored straight after. So `enqueue` stamps `queuedByUserId` from
+  `current-user.ts`, and `flushOutbox` skips a foreign item: never sent, never
+  dropped, and SURFACED (`snapshot.foreign`) so held work is not invisible.
+  Legacy items with no attribution still flush, and a drain with no known user
+  (the service worker) still drains everything.
+
 New offline surfaces subscribe to the shared state; they do not add another
 `useState` count or another flush loop.
 

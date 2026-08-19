@@ -27,6 +27,7 @@
  *                          reload, and clears ONLY on an explicit
  *                          acknowledgement (see `durability.ts`).
  */
+import { getCurrentUserId } from './current-user';
 import {
     getOutboxStore,
     isPhotoItem,
@@ -71,6 +72,13 @@ export interface OutboxSnapshot {
     durability: DurabilityVerdict | null;
     /** True when `pending` has passed {@link QUEUE_WARNING_THRESHOLD}. */
     queueGrowing: boolean;
+    /**
+     * Items queued on this device by a DIFFERENT operator. They are never
+     * sent under the current session (wrong attribution, or a 403 that would
+     * destroy them) and never dropped — so they must be VISIBLE, or they are
+     * work that sits on a phone with nobody knowing it is there.
+     */
+    foreign: number;
 }
 
 const EMPTY: OutboxSnapshot = {
@@ -80,6 +88,7 @@ const EMPTY: OutboxSnapshot = {
     lost: null,
     durability: null,
     queueGrowing: false,
+    foreign: 0,
 };
 
 let snapshot: OutboxSnapshot = EMPTY;
@@ -163,8 +172,12 @@ export async function refreshOutboxState(
     // it in the same pass and only an unexplained disappearance is left over.
     writeManifest(all.map(toManifestEntry));
 
-    const live = all.filter((i) => !i.conflict);
+    const owner = getCurrentUserId();
+    const isForeign = (i: OutboxItem) =>
+        Boolean(owner && i.queuedByUserId && i.queuedByUserId !== owner);
+    const live = all.filter((i) => !i.conflict && !isForeign(i));
     emit({
+        foreign: all.filter(isForeign).length,
         pending: live.length,
         pendingPhotos: live.filter(isPhotoItem).length,
         conflicts: all.filter((i) => i.conflict),

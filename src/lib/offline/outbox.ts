@@ -12,6 +12,7 @@
  */
 
 import { IndexedDbOutboxStore, indexedDbAvailable } from './idb-outbox';
+import { getCurrentUserId } from './current-user';
 
 export type OutboxMethod = 'POST' | 'PATCH' | 'DELETE';
 
@@ -59,6 +60,25 @@ interface OutboxItemBase {
      * for writes that don't participate in optimistic locking.
      */
     ifMatch?: number;
+    /**
+     * The user who queued this write.
+     *
+     * A replay uses `fetch`, which sends whatever session cookie is CURRENT —
+     * not the one that queued the item. On a shared farm device that has two
+     * consequences, and the second is the reason this field exists:
+     *
+     *   - same tenant, different operator: the write lands attributed to
+     *     whoever happens to be signed in, in a hash-chained audit trail;
+     *   - different tenant: the URL carries the original tenant's slug, the
+     *     Edge answers 403, `flushOutbox` treats a terminal 4xx as
+     *     undeliverable and REMOVES the item — silently, and invisibly to the
+     *     loss detector, because the removal looks deliberate and the manifest
+     *     is re-mirrored from the queue immediately after.
+     *
+     * Absent on items queued before this shipped; those keep their old
+     * behaviour, since there is nothing to attribute them to.
+     */
+    queuedByUserId?: string;
     /** Present ⇒ a 409 conflict is awaiting operator resolution (not re-sent). */
     conflict?: OutboxConflict;
 }
@@ -197,6 +217,7 @@ export interface EnqueueInput {
 
 /** Append a mutation to the outbox; returns the created item. */
 export async function enqueue(store: OutboxStore, input: EnqueueInput): Promise<MutationOutboxItem> {
+    const queuedByUserId = getCurrentUserId();
     const item: MutationOutboxItem = {
         id: newOutboxId(),
         url: input.url,
@@ -205,6 +226,7 @@ export async function enqueue(store: OutboxStore, input: EnqueueInput): Promise<
         label: input.label,
         createdAt: Date.now(),
         attempts: 0,
+        ...(queuedByUserId ? { queuedByUserId } : {}),
         ...(input.ifMatch !== undefined ? { ifMatch: input.ifMatch } : {}),
     };
     await store.add(item);
