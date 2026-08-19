@@ -418,6 +418,11 @@ describeFn(DB_SUITE_NAME, () => {
             // re-point a LIVE refresh token at another tenant — the
             // permissive-OR leak, on a credential table.
             'NativeRefreshToken',
+            // Native OAuth handoff — `NativeAuthCode` hangs off `UserSession`
+            // and inherits its nullable tenantId. Same asymmetric single
+            // policy: a split INSERT policy would let an app_user-bound
+            // session re-point a LIVE authorization code at another tenant.
+            'NativeAuthCode',
             // feat/ai-rag — `KnowledgeChunk` has a NULLABLE tenantId:
             // NULL = the GLOBAL licensed catalog (KCC / FAIR-Forward QA /
             // EU/USDA organic), readable by every tenant; non-null =

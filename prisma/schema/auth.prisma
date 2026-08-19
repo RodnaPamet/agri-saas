@@ -791,6 +791,9 @@ model UserSession {
   /// delete so a session takedown cannot leave an orphan credential.
   refreshTokens NativeRefreshToken[] @relation("SessionRefreshTokens")
 
+  /// Native-client authorization codes minted against this session.
+  authCodes NativeAuthCode[] @relation("SessionAuthCodes")
+
   @@index([userId])
   @@index([tenantId])
   @@index([userId, revokedAt])
@@ -898,6 +901,49 @@ model NativeRefreshToken {
   @@index([userSessionId])
   @@index([userId])
   @@index([familyId])
+  @@index([expiresAt])
+}
+
+/// A native-client authorization code, exchanged once for a token pair.
+///
+/// The handoff exists because Google refuses OAuth inside embedded webviews,
+/// so a native client must complete sign-in in the SYSTEM browser — which
+/// cannot set a cookie the app's webview can read. A code is what crosses that
+/// boundary, and it is the ONLY thing that crosses: a token in a redirect URL
+/// would be logged by the browser and handed to whatever app claims the scheme.
+///
+/// PKCE is not ceremony here. A custom URL scheme can be registered by another
+/// app on iOS, so without proof-of-possession an intercepted code IS a session.
+/// The exchange must present the verifier whose SHA-256 matches `codeChallenge`.
+///
+/// Only the SHA-256 of the code is stored, like `PasswordResetToken` and
+/// `NativeRefreshToken`.
+model NativeAuthCode {
+  id            String    @id @default(cuid())
+  /// SHA-256 of the raw code. Unique so the exchange is one indexed read.
+  codeHash      String    @unique
+  /// The session the exchanged tokens will hang from.
+  userSessionId String
+  userId        String
+  tenantId      String?
+  /// PKCE: base64url SHA-256 of the client's verifier. S256 only — `plain`
+  /// is not accepted, because it offers no proof of possession at all.
+  codeChallenge String
+  /// Where the code is delivered. Validated against an allowlist at issue so
+  /// this can never become an open redirect.
+  redirectUri   String
+  createdAt     DateTime  @default(now())
+  /// SECONDS, not minutes. The code is handed over in a redirect the OS may
+  /// log; its whole security model is that it is stale almost immediately.
+  expiresAt     DateTime
+  /// Set on exchange. A second attempt is refused — see the atomic claim.
+  consumedAt    DateTime?
+
+  session UserSession @relation("SessionAuthCodes", fields: [userSessionId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([userSessionId])
+  @@index([userId])
   @@index([expiresAt])
 }
 
