@@ -89,7 +89,14 @@ export function ResponsiveToaster() {
     );
 }
 
-export function Providers({ children }: { children: React.ReactNode }) {
+export function Providers({
+    children,
+    userId,
+}: {
+    children: React.ReactNode;
+    /** Signed-in user id from the root layout — namespaces the SWR cache. */
+    userId?: string | null;
+}) {
     // No <SessionProvider>. The tenant layout resolves the session
     // server-side via `auth()`, nothing calls `useSession`, and
     // `signIn`/`signOut` work without the provider. Mounting it would
@@ -110,7 +117,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
     // lists from the on-device cache instead of refetching the whole
     // farm over rural LTE.
     return (
-        <SWRPersistenceProvider>
+        <SWRPersistenceProvider userId={userId}>
         <KeyboardShortcutProvider>
             <CommandPaletteProvider>
                 <ThemeProvider>

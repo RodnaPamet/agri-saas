@@ -333,11 +333,35 @@ Three seams keep a PWA relaunch cheap on rural LTE — see
 
 - **Persistent SWR cache.** `providers.tsx` mounts ONE
   `<SWRConfig provider>` via `SWRPersistenceProvider`, backed by the
-  per-tenant, disk-backed Map in `src/lib/swr/persistent-cache.ts`
-  (localStorage sync-hydrate + IndexedDB backfill, versioned +
-  24h-evicting, graceful fallback). It is KEYED by tenant slug so
-  buckets never leak across tenants. **Never add a second
-  `<SWRConfig provider>`** — extend this one.
+  disk-backed Map in `src/lib/swr/persistent-cache.ts` (localStorage
+  sync-hydrate + IndexedDB backfill, versioned + 24h-evicting, graceful
+  fallback). **Never add a second `<SWRConfig provider>`** — extend this
+  one.
+  - **An ALLOWLIST decides what reaches disk.** `PERSISTABLE_PATHS` in
+    `persistent-cache.ts` — currently journal / farm-tasks / locations /
+    exchange-listings. Everything else is memory-only. This is an
+    allowlist and not a denylist on purpose: `ParcelLease.lessorName` /
+    `lessorEik` are in `ENCRYPTED_FIELDS` *because* they are personal
+    data about a third party, and they still reached plaintext
+    `localStorage`, because persisting them required nobody's decision —
+    only that the Rent page use `useTenantSWR` like every other list. A
+    forgotten denylist entry writes PII to a phone; a forgotten allowlist
+    entry costs one refetch. Adding an entry means deciding that response
+    is acceptable on a phone that may be lost, sold or handed on. Capped
+    and enforced by `tests/guards/swr-persist-allowlist.test.ts`.
+  - **The bucket is namespaced by USER **and** tenant.** Tenant alone let
+    a second operator on a shared device rehydrate the first one's rows —
+    and because this codebase renders an error only when there is nothing
+    to show (`isError && rows.length === 0`), a subsequent 403 would not
+    even display. `RootLayout` resolves the id via `auth()` (a cookie
+    decode, no DB) and passes it down; it namespaces a cache key and is
+    never a credential.
+  - **Bump `SWR_CACHE_VERSION` to erase what is already on devices.** The
+    24h TTL only fires when that namespace is hydrated, and the IndexedDB
+    tier has no delete path at all, so a phone that never revisits a page
+    keeps its bucket indefinitely. `parseBucket` drops a wrong-version
+    bucket wholesale — that constant is the only lever that removes bytes
+    already written.
 - **Conditional revalidation.** Every hot list-read GET returns a weak
   ETag via `jsonWithETag(req, payload)` from `src/lib/http/etag.ts`
   (honors `If-None-Match` → 304). Wired into journal / farm-tasks /
