@@ -257,12 +257,46 @@ describe('outbox single seam', () => {
         expect(/getOutboxStore/.test(panel)).toBe(false);
     });
 
-    it('the hook guards against concurrent flushes (no double-send)', () => {
-        // A `flushing` ref short-circuits a second flush while one is in
-        // flight — without it the `online` event + a manual sync could
-        // drain the same items twice. Lock the guard structurally.
+    it('the flush lock is MODULE-scoped, not per hook instance', () => {
+        // Originally a `flushing` useRef inside the hook. That guarded one
+        // instance against itself, which was the wrong scope: five surfaces
+        // mount this hook, and two mounted at once held a lock EACH, so both
+        // could drain the same items concurrently. The lock now lives in
+        // `outbox-state.ts` at module scope, shared by every instance —
+        // strictly stronger, and the behaviour is executed (not just
+        // asserted about) in tests/unit/offline/outbox-eviction.test.ts.
         const hook = read('src/lib/offline/use-offline-sync.ts');
-        expect(hook).toMatch(/flushing\s*=\s*useRef/);
-        expect(hook).toMatch(/if\s*\(flushing\.current\)/);
+        expect(hook).toMatch(/runExclusiveFlush/);
+        // A per-instance ref must not come back: it would silently re-open
+        // the double-drain window while still looking like a guard.
+        expect(/flushing\s*=\s*useRef/.test(hook)).toBe(false);
+
+        const state = read('src/lib/offline/outbox-state.ts');
+        expect(state).toMatch(/let flushing = false/);
+        expect(state).toMatch(/if \(flushing\) return null/);
+    });
+
+    it('the outbox asks for persistent storage, and records what it was told', () => {
+        // The queue lives in storage the phone may evict. Calling persist()
+        // is half of it; keeping the ANSWER is the other half — without a
+        // recorded verdict nobody can tell whether an operator's lost work
+        // was on a device that had refused persistence.
+        const durability = read('src/lib/offline/durability.ts');
+        expect(durability).toMatch(/storage\.persist\(\)/);
+        expect(durability).toMatch(/DURABILITY_STORAGE_KEY/);
+        // Asked at the engagement moment, not on first paint.
+        const state = read('src/lib/offline/outbox-state.ts');
+        expect(state).toMatch(/noteWorkQueued/);
+        expect(read('src/lib/offline/use-offline-sync.ts')).toMatch(/noteWorkQueued\(\)/);
+    });
+
+    it('a foreground return re-drains the queue', () => {
+        // iOS SUSPENDS a backgrounded PWA and has no Background Sync, so an
+        // operator who regains signal with the phone in a pocket gets no
+        // `online` event and no remount. Without this the queue sits until
+        // they happen to open a surface that mounts the hook.
+        const hook = read('src/lib/offline/use-offline-sync.ts');
+        expect(hook).toMatch(/visibilitychange/);
+        expect(hook).toMatch(/pageshow/);
     });
 });

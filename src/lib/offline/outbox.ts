@@ -107,6 +107,14 @@ export interface OutboxStore {
     all(): Promise<OutboxItem[]>;
     update(item: OutboxItem): Promise<void>;
     remove(id: string): Promise<void>;
+    /**
+     * Optional durability signal: true when the backing store was destroyed
+     * and rebuilt under this session (an eviction). Only the IndexedDB store
+     * can observe this; the localStorage and in-memory stores omit it, and a
+     * caller must treat "absent" as "cannot tell" rather than "did not
+     * happen". See `IndexedDbOutboxStore.wasRecreated`.
+     */
+    wasRecreated?(): boolean;
 }
 
 export const OUTBOX_STORAGE_KEY = 'agri.offline.outbox.v1';

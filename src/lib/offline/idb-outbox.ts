@@ -30,7 +30,17 @@ function hasIndexedDb(): boolean {
     return typeof indexedDB !== 'undefined' && indexedDB !== null;
 }
 
-function openOutboxDb(): Promise<IDBDatabase> {
+/**
+ * Open the outbox database.
+ *
+ * `onCreated` fires when the browser had to CREATE the store — i.e. the
+ * database did not exist at this version. On the very first open of a fresh
+ * install that is normal. On a LATER open, after this page session has
+ * already opened the database successfully, it means the database was
+ * destroyed underneath us: the phone evicted the origin's storage, or the
+ * user cleared website data. See {@link IndexedDbOutboxStore.wasRecreated}.
+ */
+function openOutboxDb(onCreated?: () => void): Promise<IDBDatabase> {
     return new Promise((resolve, reject) => {
         const req = indexedDB.open(OUTBOX_DB_NAME, OUTBOX_DB_VERSION);
         req.onupgradeneeded = () => {
@@ -38,6 +48,7 @@ function openOutboxDb(): Promise<IDBDatabase> {
             if (!db.objectStoreNames.contains(OUTBOX_STORE_NAME)) {
                 db.createObjectStore(OUTBOX_STORE_NAME, { keyPath: 'id' });
             }
+            onCreated?.();
         };
         req.onsuccess = () => resolve(req.result);
         req.onerror = () => reject(req.error ?? new Error('indexedDB.open failed'));
@@ -85,11 +96,59 @@ async function migrateFromLocalStorage(db: IDBDatabase): Promise<void> {
 
 export class IndexedDbOutboxStore implements OutboxStore {
     private dbPromise: Promise<IDBDatabase> | null = null;
+    /** True once this session has held an open connection to the database. */
+    private opened = false;
+    /** Set when the database was created AFTER this session already had it. */
+    private recreated = false;
+
+    /**
+     * Did the backing database get destroyed and rebuilt under this session?
+     *
+     * This is the IN-SESSION eviction signal, and it is exact: the store is
+     * recreated only when the database is genuinely absent at open time, which
+     * cannot happen through any code path in this app. A queue drained by the
+     * service worker — the one other writer — removes records and leaves the
+     * database itself alone, so it can never trip this.
+     *
+     * Reading CONSUMES the signal, so a single eviction is reported once.
+     */
+    wasRecreated(): boolean {
+        const value = this.recreated;
+        this.recreated = false;
+        return value;
+    }
+
+    /**
+     * Drop the cached connection so the next call re-opens.
+     *
+     * `versionchange` fires when something (a `deleteDatabase`, another tab
+     * upgrading) needs our connection gone; holding it open would BLOCK that
+     * request indefinitely. `close` fires when the connection was terminated
+     * abnormally, which is what an eviction of live storage looks like.
+     */
+    private detach(db: IDBDatabase): void {
+        try {
+            db.close();
+        } catch {
+            /* already closed */
+        }
+        this.dbPromise = null;
+    }
 
     private db(): Promise<IDBDatabase> {
         if (!this.dbPromise) {
             this.dbPromise = (async () => {
-                const db = await openOutboxDb();
+                const wasOpenedBefore = this.opened;
+                const db = await openOutboxDb(() => {
+                    // Store created. Normal on a cold start; on a session that
+                    // has already opened the database, it means it was wiped.
+                    if (wasOpenedBefore) this.recreated = true;
+                });
+                this.opened = true;
+                db.onversionchange = () => this.detach(db);
+                db.onclose = () => {
+                    this.dbPromise = null;
+                };
                 await migrateFromLocalStorage(db);
                 return db;
             })();

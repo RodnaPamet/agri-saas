@@ -351,6 +351,34 @@ Three seams keep a PWA relaunch cheap on rural LTE — see
   bare `/journal` (no params) still returns a flat array (offline
   outbox replay depends on it).
 
+### Offline outbox durability
+
+The outbox holds unsynced field work in IndexedDB, which the phone is free
+to evict. Three rules, all load-bearing — see
+`docs/implementation-notes/2026-08-19-outbox-durability.md`.
+
+- **One queue truth: `src/lib/offline/outbox-state.ts`.** Module-scoped, so
+  it survives client-side navigation, and it owns the counts, the loss
+  record and the SHARED flush lock. `useOfflineSync` is a thin subscriber.
+  Never reintroduce a per-instance `flushing` ref — five surfaces mount the
+  hook, and a per-instance lock lets two of them drain the same items at
+  once.
+- **Never claim "synced" without evidence.** An evicted IndexedDB does not
+  error: it rebuilds empty, `all()` resolves `[]`, and that is
+  indistinguishable from a clean drain. So the UI carries THREE states —
+  `pending > 0` ("saved on this phone"), `pending === 0` ("everything is on
+  the server"), and `lost !== null` ("work was queued and is gone"). The
+  lost record is sticky and clears ONLY on an explicit operator
+  acknowledgement; a successful later sync must never wipe it.
+- **`navigator.storage.persist()` is requested at the FIRST ENQUEUE**, not
+  on first paint (Firefox prompts; Chromium grants on engagement). The
+  verdict is recorded under `agri.offline.durability.v1` — **what it returns
+  on a physical iPhone is still unmeasured**, and that cached verdict is how
+  the answer gets read back off a real device.
+
+New offline surfaces subscribe to the shared state; they do not add another
+`useState` count or another flush loop.
+
 ### Auth Brute-Force Protection (Epic A.3)
 
 `authenticateWithPassword` applies `LOGIN_PROGRESSIVE_POLICY`:

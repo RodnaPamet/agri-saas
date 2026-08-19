@@ -100,11 +100,11 @@ test('operator completes a spray job offline and it syncs on reconnect', async (
     // "DONE" enum is no longer shown). The mark-Done *button* is gone in this
     // state (replaced by "Reopen"), so the only "Done" text is the pill.
     await expect(authedPage.getByText('Done', { exact: true })).toBeVisible();
-    await expect(authedPage.getByText('1 queued')).toBeVisible(); // outbox
+    await expect(authedPage.getByTestId('offline-pending-count')).toHaveText('1 change saved on this phone'); // outbox
 
     // 5 — Reconnect. The `online` event drains the outbox; the queue clears.
     await authedPage.context().setOffline(false);
-    await expect(authedPage.getByText('1 queued')).toBeHidden({ timeout: 15_000 });
+    await expect(authedPage.getByTestId('offline-pending-count')).toBeHidden({ timeout: 15_000 });
 
     // 6 — Reload online. The line is DONE from the SERVER (a fresh fetch, not
     //     the optimistic/snapshot copy) — the offline mark really synced.

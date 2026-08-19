@@ -51,7 +51,21 @@ jest.mock('next-intl', () => {
                 const full = ns ? `${ns}.${key}` : key;
                 const msg = get(full);
                 if (typeof msg !== 'string') return full;
-                return msg.replace(/\{(\w+)\}/g, (_, k) =>
+                // Evaluate the ONE ICU form this file's messages use —
+                // `{count, plural, one {…} other {…}}`. Without it the sync
+                // bar's count renders the raw ICU source and the assertion
+                // would be about the mock rather than the copy an operator
+                // reads.
+                const plural = msg.match(
+                    /^\{(\w+),\s*plural,\s*one\s*\{([^}]*)\}\s*other\s*\{([^}]*)\}\}$/,
+                );
+                const body = plural
+                    ? (Number(values?.[plural[1]]) === 1 ? plural[2] : plural[3]).replace(
+                          /#/g,
+                          String(values?.[plural[1]] ?? ''),
+                      )
+                    : msg;
+                return body.replace(/\{(\w+)\}/g, (_, k) =>
                     values?.[k] != null ? String(values[k]) : `{${k}}`,
                 );
             };
@@ -135,7 +149,7 @@ describe('OfflineFieldPanel — offline operator flow', () => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         expect((global as any).fetch).not.toHaveBeenCalled();
         expect(await store.all()).toHaveLength(1);
-        await waitFor(() => expect(screen.getByText('1 queued')).toBeInTheDocument());
+        await waitFor(() => expect(screen.getByTestId('offline-pending-count')).toHaveTextContent('1 change saved on this phone'));
         // AgStatusBadge renders the title-case label ("Done"), not the raw enum.
         expect(screen.getByText('Done')).toBeInTheDocument();
 

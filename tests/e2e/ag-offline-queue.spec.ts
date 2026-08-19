@@ -37,11 +37,11 @@ test('offline queue: three marks queue offline and all flush on reconnect', asyn
             await authedPage.getByRole('button', { name: 'Done' }).first().click();
             await expect(authedPage.getByRole('button', { name: 'Done' })).toHaveCount(remaining - 1);
         }
-        await expect(authedPage.getByText('3 queued')).toBeVisible();
+        await expect(authedPage.getByTestId('offline-pending-count')).toHaveText('3 changes saved on this phone');
 
         // Reconnect → the outbox drains all three; the queue clears.
         await authedPage.context().setOffline(false);
-        await expect(authedPage.getByText(/queued/)).toBeHidden({ timeout: 20_000 });
+        await expect(authedPage.getByTestId('offline-pending-count')).toBeHidden({ timeout: 20_000 });
 
         // Server truth: every line DONE + the lot deducted for each spray.
         const op = await (await api.get(`/api/t/${slug}/field-operations/${sc.taskId}`)).json();
