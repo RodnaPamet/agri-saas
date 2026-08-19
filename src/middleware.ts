@@ -100,14 +100,16 @@ async function authMiddleware(req: NextRequest): Promise<NextResponse> {
 
     // ── 1. Allow public paths (login, auth callbacks, static, etc.) ──
     if (isPublicPath(pathname)) {
-        // SCIM is public HERE and nowhere else in spirit: its credential is an
-        // opaque hashed bearer that `getToken()` cannot verify and the Edge has
-        // no database to check it against, so the handler authenticates
-        // instead. That makes it the ONE API surface where an anonymous caller
-        // reaches a token comparison — a bearer-guessing oracle unless it is
-        // budgeted. Neither existing tier covers it: the read tier requires an
-        // `/api/t/` prefix, and the mutation tier lives in
-        // `withApiErrorHandling`, which the SCIM handlers do not use.
+        // SCIM and the signed webhooks are public HERE and nowhere else in
+        // spirit: their credentials are
+        // things `getToken()` cannot verify — an opaque hashed bearer, a
+        // Stripe signature, an HMAC over the raw body — and the Edge has no
+        // database to check them against, so the handlers authenticate
+        // instead. That makes these the API surfaces where an anonymous
+        // caller reaches a credential comparison, which is unbounded database
+        // and log load unless budgeted. Neither existing tier covers them:
+        // the read tier requires an `/api/t/` prefix, and the mutation tier
+        // lives in `withApiErrorHandling`, which these handlers do not use.
         if (isScimRateLimited(pathname)) {
             const rl = await checkScimRateLimit(req);
             if (!rl.ok && rl.response) return rl.response;

@@ -39,6 +39,30 @@ const PUBLIC_PATH_PREFIXES = [
                          // the filesystem, by
                          // `tests/guards/scim-routes-self-authenticate.test.ts`.
                          // Do not add a route here without reading that guard.
+    // ── Signed webhooks ──
+    //
+    // Each of these verifies its OWN credential — a Stripe signature, an
+    // HMAC-SHA256 over the raw body, a per-connection integration secret —
+    // and none of them can carry a NextAuth session cookie, because the
+    // sender is Stripe / the AV scanner / a third-party service. So
+    // `getToken()` returned null and every one of them was refused at the
+    // Edge before its handler ran. They had NEVER been delivered.
+    //
+    // Verified by driving the real middleware: all three answered
+    // `401 {"error":"Unauthorized"}` — `unauthorizedJson()`, not the
+    // handler's own refusal. Latent rather than live on the current
+    // deployment (Stripe is unconfigured, AV scanning disabled), which is
+    // exactly what let it survive: it fails SILENTLY on the day someone
+    // turns either on.
+    //
+    // Opening the Edge here is safe only because every handler
+    // self-authenticates and fails CLOSED with no secret configured —
+    // Stripe throws, AV 500s in production, integrations 401. That is
+    // enforced, not remembered, by
+    // `tests/guards/public-routes-self-authenticate.test.ts`.
+    '/api/stripe/webhook',
+    '/api/storage/av-webhook',
+    '/api/integrations/webhooks/',
     '/privacy',          // Privacy notice — MUST be readable without an account:
                          // the promotions consent box links to it before a
                          // request is submitted, and a prospective user has to
