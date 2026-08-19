@@ -39,11 +39,88 @@
  * Bump on any change to the persisted entry shape (or to force-evict
  * every client's on-disk cache after a data-model change). A bucket
  * written under a different version is ignored on read.
+ *
+ * **2 (2026-08-19)** — the persist allowlist below. The bump is the
+ * REMEDIATION, not bookkeeping: v1 buckets on real devices already hold
+ * responses the allowlist now excludes, and nothing else removes them.
+ * The 24h TTL only fires when that namespace is hydrated, and the
+ * IndexedDB tier has no delete path at all — so a phone that never opens
+ * the Rent page again keeps its lease PII indefinitely. `parseBucket`
+ * rejects a wrong-version bucket wholesale, so bumping erases every
+ * existing bucket, both tiers, on the next launch.
  */
-export const SWR_CACHE_VERSION = 1;
+export const SWR_CACHE_VERSION = 2;
 
 /** Default max age of a persisted bucket before it self-evicts. */
 export const SWR_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24h
+
+/**
+ * The ONLY endpoints whose responses may be written to disk.
+ *
+ * ## Why an allowlist and not a denylist
+ *
+ * A denylist protects what someone remembered to list, and this repo
+ * already ran that experiment. `ParcelLease.lessorName` / `lessorEik` sit
+ * in the Epic B `ENCRYPTED_FIELDS` manifest *precisely because* they are
+ * personal data about a third party the farm contracts with — and they
+ * still reached plaintext `localStorage`, because persisting them
+ * required nobody's decision. It required only that the Rent page use
+ * `useTenantSWR` like every other list. Nobody connected the two facts
+ * for the entire life of the feature.
+ *
+ * No static analysis can decide "is this response sensitive". So the
+ * question is only which way the omission fails:
+ *
+ *   - a forgotten DENYLIST entry writes personal data to a phone;
+ *   - a forgotten ALLOWLIST entry costs one cold-start refetch.
+ *
+ * The second is the cost this cache exists to avoid, which makes it a
+ * real cost — and still the right one to pay. It also closes the CLASS:
+ * an endpoint nobody has written yet is safe by default.
+ *
+ * ## What belongs here
+ *
+ * The lists the cold-start work (Roadmap-6 P3) was actually built for —
+ * the same four that got `jsonWithETag` for conditional revalidation.
+ * Adding an entry means deciding that this response is acceptable on a
+ * phone that may be lost, sold, or handed to another worker. If it
+ * carries names, contacts, identifiers, financial terms or anything from
+ * `ENCRYPTED_FIELDS`, the answer is no — leave it memory-only and let it
+ * refetch.
+ */
+const PERSISTABLE_PATHS: readonly string[] = [
+    '/journal',
+    '/farm-tasks',
+    '/locations',
+    '/exchange/listings',
+];
+
+/**
+ * Normalise an SWR key to a tenant-relative path.
+ *
+ * Keys are resolved absolute URLs (`useTenantSWR` builds
+ * `/api/t/<slug>/<path>`), so strip the query, the hash and the tenant
+ * prefix. A key that does not match that shape — a non-tenant endpoint
+ * like `/api/auth/me`, or a bespoke key — returns as-is and simply will
+ * not match the allowlist, which is the safe outcome.
+ */
+export function tenantRelativePath(key: string): string {
+    const withoutQuery = key.split('?')[0].split('#')[0];
+    const m = /^\/api\/t\/[^/]+(\/.*)?$/.exec(withoutQuery);
+    return m ? (m[1] ?? '/') : withoutQuery;
+}
+
+/**
+ * May this SWR key's response be written to disk?
+ *
+ * Segment-aware on purpose: `startsWith('/leases')` would also match
+ * `/leases-summary`, and a prefix test that leaks a neighbouring
+ * endpoint is the same bug as a denylist.
+ */
+export function isPersistableKey(key: string): boolean {
+    const path = tenantRelativePath(key);
+    return PERSISTABLE_PATHS.some((p) => path === p || path.startsWith(p + '/'));
+}
 
 const LS_PREFIX = 'agrent-swr';
 /**
@@ -139,6 +216,13 @@ function parseBucket(
 function applyBucket(map: CacheMap, bucket: PersistedBucket): void {
     for (const [key, data] of bucket.entries) {
         if (typeof key !== 'string' || map.has(key)) continue;
+        // Gate the READ too, not just the write. Without this a bucket
+        // already on disk keeps rehydrating its now-disallowed entries
+        // into memory, and the next flush is not guaranteed to run — so
+        // the data would keep surfacing in the UI even though nothing
+        // would write it again. Belt and braces alongside the version
+        // bump, which is what actually erases those bytes.
+        if (!isPersistableKey(key)) continue;
         // Seed as an SWR state object; SWR reads `.data`.
         map.set(key, { data });
     }
@@ -149,6 +233,11 @@ function collectEntries(map: CacheMap): SerializedEntry[] {
     const entries: SerializedEntry[] = [];
     for (const [key, value] of map.entries()) {
         if (typeof key !== 'string' || key.startsWith('$')) continue;
+        // The allowlist gate. `collectEntries` is the single write
+        // funnel — `flush()` serialises ONE entries array and uses it for
+        // both the localStorage write and the IndexedDB spill — so
+        // gating here covers both tiers and every spill path.
+        if (!isPersistableKey(key)) continue;
         const state = value as SwrState | undefined;
         if (!state || state.data === undefined || state.error !== undefined) {
             continue;

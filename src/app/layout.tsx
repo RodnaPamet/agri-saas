@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from 'next';
+import { auth } from '@/auth';
 import { headers } from 'next/headers';
 import { NextIntlClientProvider } from 'next-intl';
 import { getLocale, getMessages } from 'next-intl/server';
@@ -53,6 +54,21 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     const locale = await getLocale();
     const messages = await getMessages();
     const nonce = (await headers()).get(CSP_NONCE_HEADER) ?? undefined;
+
+    // Resolve the signed-in user id for the SWR cache namespace.
+    //
+    // This layout is ALREADY dynamic (it awaits `headers()`), and `auth()`
+    // here decodes the session cookie without a database round-trip — an
+    // unauthenticated request has no cookie and returns null immediately.
+    // Deliberately NOT a `<SessionProvider>`: that would add a client-side
+    // `/api/auth/session` fetch on every page load, which is exactly what
+    // the comment in `providers.tsx` explains was removed.
+    //
+    // The id only namespaces a cache key. It is not a credential and grants
+    // nothing; the cost of getting it wrong is a cache miss, and the cost of
+    // NOT having it is one operator's rows rendering for the next one on a
+    // shared device.
+    const sessionUserId = (await auth())?.user?.id ?? null;
 
     return (
         // `data-theme="dark"` seeds the SSR markup so the first paint matches
@@ -136,7 +152,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                     */}
                     <ServiceWorkerRegistrar />
                     <WebVitalsReporter />
-                    <Providers>
+                    <Providers userId={sessionUserId}>
                         {children}
                     </Providers>
                 </NextIntlClientProvider>
