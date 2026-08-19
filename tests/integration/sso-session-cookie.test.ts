@@ -131,7 +131,11 @@ describe('the claim set the Edge tenant gate needs', () => {
         expect(
             checkTenantAccess(
                 '/t/acme-corp/dashboard',
-                [{ tenantId: 't1', slug: 'acme-corp', role: 'ADMIN' }],
+                // `checkTenantAccess` takes ReadonlyArray<{ slug: string }> —
+                // the slug is the ONLY field it reads, which is precisely why
+                // a token carrying tenantId/role but no `memberships` array
+                // fails it.
+                [{ slug: 'acme-corp' }],
                 false,
             ),
         ).toBe('allow');
