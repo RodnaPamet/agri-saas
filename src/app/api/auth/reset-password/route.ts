@@ -47,7 +47,16 @@ export const POST = withApiErrorHandling(
         // ── Breached-password screening. Fails open on a HIBP outage
         //    (the helper returns breached:false) so an outage cannot
         //    brick the reset flow. Never logs the password or its hash.
-        await checkPasswordAgainstHIBP(body.newPassword);
+        const hibp = await checkPasswordAgainstHIBP(body.newPassword);
+        if (hibp.breached) {
+            return jsonResponse(
+                {
+                    error:
+                        'This password appears in known data breaches. Please choose a different password.',
+                },
+                { status: 400 },
+            );
+        }
 
         // ── Consume the token + swap the hash ──
         const result = await consumePasswordReset(body.token, body.newPassword);
