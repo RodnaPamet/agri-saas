@@ -93,7 +93,12 @@ export const options = {
         // Correctness — relaxed to 80% on the smoke tier (a single
         // retried request can move 200-sample rate noticeably). The
         // full baseline still asserts >98%.
-        'checks{check:evidence_uploaded}': ['rate>0.80'],
+        // `check` is a tag k6 sets ITSELF to the individual check's name, so
+        // the tag passed to `check()` never bound and this sub-metric had
+        // ZERO samples — which k6 passes. See tests/guards/k6-threshold-binding.
+        // `count>0` is what makes the rename verifiable: without it the gate
+        // cannot tell "everything passed" from "nothing ran".
+        'checks{check_group:evidence_uploaded}': ['rate>0.80', 'count>0'],
 
         // E2E loop — wide enough to absorb cold-start noise but
         // tight enough to catch a doubling regression.
@@ -170,7 +175,7 @@ export default function mutationsIteration(data) {
                 }
             },
         },
-        { check: 'evidence_uploaded' },
+        { check_group: 'evidence_uploaded' },
     );
     if (uploadOk) uploadEvidenceOk.add(1);
     else uploadEvidenceFail.add(1);

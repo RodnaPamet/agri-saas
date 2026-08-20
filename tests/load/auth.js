@@ -149,9 +149,24 @@ export const options = {
         'http_req_failed{step:csrf}': ['rate<0.01'],
         'http_req_failed{step:login}': ['rate<0.01'],
         'http_req_failed{step:session}': ['rate<0.01'],
-        'checks{check:csrf_ok}': ['rate>0.99'],
-        'checks{check:login_ok}': ['rate>0.99'],
-        'checks{check:session_ok}': ['rate>0.99'],
+        // ── Check-group correctness ──
+        // `count>0` is NOT decoration. These three thresholds were
+        // previously keyed `checks{check:...}`, and `check` is a tag k6
+        // sets ITSELF to the individual check's NAME — so the tag passed
+        // to `check()` never survived, every sub-metric had ZERO samples,
+        // and k6 passes a threshold with no samples. Measured across 11
+        // nightly artifacts: parent `checks` 2,340 samples per run, these
+        // three 0 every time, all reporting ok. They had never once been
+        // evaluated against data.
+        //
+        // The rename to `check_group` is the fix; `count>0` is what makes
+        // the fix VERIFIABLE. k6 is not installable in the dev loop here,
+        // so if the tag still fails to bind, the next nightly goes RED
+        // instead of quietly green again. Do not remove it — without it
+        // this gate cannot tell "everything passed" from "nothing ran".
+        'checks{check_group:csrf_ok}': ['rate>0.99', 'count>0'],
+        'checks{check_group:login_ok}': ['rate>0.99', 'count>0'],
+        'checks{check_group:session_ok}': ['rate>0.99', 'count>0'],
 
         // ── Latency: ONLY in the uncontended regime ──
         // Service-time budgets calibrated against a real run rather
@@ -172,8 +187,14 @@ export const options = {
         //   login p99    300.7 – 432.2    385.2    2500ms      5.8x
         //   E2E p95      303.0 – 413.0    365.1    2000ms      4.8x
         //
-        // Worst SINGLE login sample in the whole set: 763ms. All 143
-        // auth threshold results across those 11 runs reported ok.
+        // Worst SINGLE login sample in the whole set: 763ms.
+        //
+        // The first version of this note said "all 143 auth threshold
+        // results across those 11 runs reported ok". True, and
+        // misleading: 33 of those 143 were the three `checks{check:...}`
+        // thresholds, which had ZERO samples and passed vacuously (see
+        // the check-group block below). The 110 that carried data all
+        // reported ok; the other 33 reported nothing at all.
         //
         // NO NUMBER MOVED, deliberately — and note what that means for
         // the "~2x" the paragraph above used to claim. On CI the ratios
@@ -252,7 +273,7 @@ function coldLogin(regime) {
                 }
             },
         },
-        { check: 'csrf_ok' },
+        { check_group: 'csrf_ok' },
     );
     if (!csrfOk) {
         authFailureCount.add(1, { regime });
@@ -285,7 +306,7 @@ function coldLogin(regime) {
                 }
             },
         },
-        { check: 'login_ok' },
+        { check_group: 'login_ok' },
     );
     if (!loginOk) {
         authFailureCount.add(1, { regime });
@@ -310,7 +331,7 @@ function coldLogin(regime) {
                 }
             },
         },
-        { check: 'session_ok' },
+        { check_group: 'session_ok' },
     );
 
     if (sessionOk) {

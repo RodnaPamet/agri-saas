@@ -107,7 +107,14 @@ export const options = {
         // Read-path error budget. Anything above 1% is a real problem.
         'http_req_failed{type:list}': ['rate<0.01'],
         list_success_rate: ['rate>0.99'],
-        'checks{check:evidence_ok}': ['rate>0.99'],
+        // `count>0` is load-bearing — see the same block in auth.js.
+        // This was keyed `checks{check:evidence_ok}`, and `check` is a tag
+        // k6 sets ITSELF to the individual check's name, so the tag never
+        // bound: ZERO samples in all 11 nightly artifacts while the parent
+        // `checks` metric carried 12k-22k, and the threshold reported ok
+        // every single time. `count>0` turns a silent no-op back into a
+        // red run if the rename does not take.
+        'checks{check_group:evidence_ok}': ['rate>0.99', 'count>0'],
 
         // Login-step health (gate the warm-up, not the steady state).
         'http_req_failed{step:login}': ['rate<0.05'],
@@ -203,7 +210,7 @@ export default function listsIteration(data) {
                     }
                 },
             },
-            { check: 'evidence_ok' },
+            { check_group: 'evidence_ok' },
         );
         evidenceRequests.add(1);
         listSuccessRate.add(ok);

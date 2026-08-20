@@ -78,7 +78,12 @@ export const options = {
         list_success_rate: ['rate>0.99'],
 
         // Per-endpoint check rate.
-        'checks{check:inventory_lots_ok}': ['rate>0.99'],
+        // `check` is a tag k6 sets ITSELF to the individual check's name, so
+        // the tag passed to `check()` never bound and this sub-metric had
+        // ZERO samples — which k6 passes. See tests/guards/k6-threshold-binding.
+        // `count>0` is what makes the rename verifiable: without it the gate
+        // cannot tell "everything passed" from "nothing ran".
+        'checks{check_group:inventory_lots_ok}': ['rate>0.99', 'count>0'],
 
         // Login-step health (gate the warm-up, not the steady state).
         'http_req_failed{step:login}': ['rate<0.05'],
@@ -111,7 +116,7 @@ function fetchLotsPage(base, cursor, auth) {
                 }
             },
         },
-        { check: 'inventory_lots_ok' },
+        { check_group: 'inventory_lots_ok' },
     );
     lotsRequests.add(1);
     listSuccessRate.add(ok);
