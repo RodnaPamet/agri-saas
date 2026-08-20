@@ -61,7 +61,16 @@ export const POST = withApiErrorHandling(
         }
 
         // ── Breached-password screening (fails open on a HIBP outage) ──
-        await checkPasswordAgainstHIBP(body.newPassword);
+        const hibp = await checkPasswordAgainstHIBP(body.newPassword);
+        if (hibp.breached) {
+            return jsonResponse(
+                {
+                    error:
+                        'This password appears in known data breaches. Please choose a different password.',
+                },
+                { status: 400 },
+            );
+        }
 
         const requestId = req.headers.get('x-request-id') ?? undefined;
         const result = await changePassword(
