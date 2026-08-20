@@ -53,6 +53,16 @@ export const SCIM_PATH_PREFIX = '/api/scim/';
  * budget would be a number nobody could justify differently.
  */
 const WEBHOOK_PATH_PREFIXES = [
+    // Platform-admin API — same situation: public at the Edge because its
+    // credential is a header key the Edge cannot verify, so an anonymous
+    // caller reaches a constant-time key comparison. Budgeted for the same
+    // reason, and it is the highest-value key in the system. Listed to match
+    // the carve-out exactly; /api/admin/diagnostics stays session-gated and
+    // out of this tier.
+    '/api/admin/agri-events',
+    '/api/admin/news-derived-events',
+    '/api/admin/support-schemes',
+    '/api/admin/tenants',
     '/api/stripe/webhook',
     '/api/storage/av-webhook',
     '/api/integrations/webhooks/',

@@ -93,8 +93,51 @@ describe('a signed webhook passes the Edge', () => {
     });
 });
 
+describe('the platform-admin API reaches its handlers', () => {
+    it('a key-bearing, cookie-less request is not refused by the Edge', async () => {
+        // The documented caller: an operator with curl and
+        // `x-platform-admin-key`. It carries no session cookie, so getToken()
+        // returns null — and every one of these routes was 401'd before
+        // `verifyPlatformApiKey` could run. Confirmed by probe before the fix.
+        for (const pathname of [
+            '/api/admin/tenants',
+            '/api/admin/agri-events',
+            '/api/admin/support-schemes',
+            '/api/admin/news-derived-events',
+        ]) {
+            const res = await middleware(
+                new NextRequest(`http://localhost:3000${pathname}`, {
+                    method: 'POST',
+                    headers: { 'x-platform-admin-key': 'k' },
+                }),
+            );
+            expect(res.status).not.toBe(401);
+            expect(res.headers.get('x-middleware-next')).toBe('1');
+        }
+    });
+
+    it('leaves /api/admin/diagnostics behind the session gate', async () => {
+        // Different auth model under the same path root: diagnostics uses
+        // getLegacyCtx + permissions.canAdmin, i.e. an admin SESSION. Opening
+        // the whole /api/admin/ prefix would have stripped its Edge role-floor
+        // for no benefit — the fail-closed guard caught that, and this pins
+        // the narrower carve-out so a future "simplify to one prefix" fails.
+        const res = await middleware(
+            new NextRequest('http://localhost:3000/api/admin/diagnostics', {
+                headers: { 'x-platform-admin-key': 'k' },
+            }),
+        );
+        expect(res.status).toBe(401);
+    });
+});
+
 describe('the webhooks are rate limited', () => {
-    it.each(['/api/stripe/webhook', '/api/storage/av-webhook', '/api/integrations/webhooks/slack'])(
+    it.each([
+        '/api/stripe/webhook',
+        '/api/storage/av-webhook',
+        '/api/integrations/webhooks/slack',
+        '/api/admin/tenants',
+    ])(
         '%s is in the tier',
         (pathname) => {
             // They are anonymous at the Edge now, so an unauthenticated
