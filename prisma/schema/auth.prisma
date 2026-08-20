@@ -1064,9 +1064,13 @@ model TenantSecuritySettings {
   id                         String    @id @default(cuid())
   tenantId                   String    @unique
   mfaPolicy                  MfaPolicy @default(DISABLED)
-  /// Hard cap on JWT lifetime in minutes. When set, every newly minted
-  /// session row's `expiresAt` is min(NextAuth max-age, now + this).
-  sessionMaxAgeMinutes       Int?
+  /// Hard cap on JWT lifetime in minutes. Every newly minted session row's
+  /// `expiresAt` is min(NextAuth max-age, now + this). Defaults to 20160
+  /// (14 days) — the product default from `@/lib/auth/session-lifetime`,
+  /// pinned to that constant by `tests/unit/session-lifetime.test.ts`.
+  /// Still nullable: null means "no tenant-specific cap", which now falls
+  /// back to the same 14 days rather than to a framework default (#618).
+  sessionMaxAgeMinutes       Int?      @default(20160)
   /// Maximum number of concurrent active sessions allowed per user
   /// in this tenant. When reached, the oldest session (by
   /// `lastActiveAt` ASC) is revoked to make room for the new sign-in.
