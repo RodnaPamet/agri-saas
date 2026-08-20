@@ -136,4 +136,31 @@ describe('NewsTab', () => {
             expect(screen.getByTestId('interests-modal')).toBeInTheDocument();
         });
     });
+
+    // ── Attribution (issue #654 harvest) ──
+
+    it('shows the publisher name, not the stored slug', () => {
+        // The regression: `source` holds the slug (`agro-bg`), the card
+        // rendered it raw, and a Bulgarian farmer read `agro-bg` as the
+        // attribution on a news card.
+        mockSWR({
+            data: { category: 'all', items: [item({ source: 'agro-bg' })] },
+            error: undefined,
+        });
+        render(<NewsTab />);
+        expect(screen.getByText('АГРО.БГ')).toBeInTheDocument();
+        expect(screen.queryByText('agro-bg')).not.toBeInTheDocument();
+    });
+
+    it('falls back to the slug for an operator-added feed', () => {
+        // `MARKET_NEWS_FEEDS` lets an operator add a feed with no display
+        // name. Showing its slug is worse than a name and far better than
+        // showing nothing.
+        mockSWR({
+            data: { category: 'all', items: [item({ source: 'some-operator-feed' })] },
+            error: undefined,
+        });
+        render(<NewsTab />);
+        expect(screen.getByText('some-operator-feed')).toBeInTheDocument();
+    });
 });

@@ -38,6 +38,7 @@ import { TabSelect } from '@/components/ui/tab-select';
 import { formatRelativeTime } from '@/lib/format-date';
 import type { TrendNewsResponse, NewsItem } from '@/app-layer/usecases/trends';
 import { InterestsModal } from './InterestsModal';
+import { sourceDisplayName } from '@/lib/news/feeds';
 
 const FILTERS = ['foryou', 'all', 'market', 'policy', 'general'] as const;
 type Filter = (typeof FILTERS)[number];
@@ -55,7 +56,11 @@ function matchesKeyword(item: NewsItem, kw: string): boolean {
     return (
         item.title.toLowerCase().includes(kw) ||
         (item.summary ?? '').toLowerCase().includes(kw) ||
-        item.source.toLowerCase().includes(kw)
+        // BOTH the stored slug and the displayed name. The card shows
+        // "АГРО.БГ" while the row holds `agro-bg`; matching only the slug
+        // would mean typing what you can see finds nothing.
+        item.source.toLowerCase().includes(kw) ||
+        sourceDisplayName(item.source).toLowerCase().includes(kw)
     );
 }
 
@@ -84,7 +89,10 @@ function NewsCard({ item, now }: { item: NewsItem; now: Date }) {
                 {item.summary && (
                     <p className="line-clamp-2 text-sm text-content-muted">{item.summary}</p>
                 )}
-                <p className="text-xs text-content-subtle">{item.source}</p>
+                {/* The publisher's own name, not the stored slug — the slug is
+                    identity (search matches it, `guidHash` derives from it) and was
+                    being rendered raw, so this card read `agro-bg` to a farmer. */}
+                <p className="text-xs text-content-subtle">{sourceDisplayName(item.source)}</p>
             </Card>
         </a>
     );

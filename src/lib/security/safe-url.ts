@@ -36,6 +36,29 @@ export function normaliseHref(raw: string | null | undefined): string | null {
 }
 
 /**
+ * Stricter than {@link isSafeHref}: the value must be an ABSOLUTE `http(s)`
+ * URL.
+ *
+ * `isSafeHref` blocks a denylist (`javascript:`, `data:`, `vbscript:`,
+ * `file:`) and lets everything else through — which is right for an
+ * in-app href, where a relative path is normal and expected. It is the
+ * wrong shape for a value a THIRD PARTY supplied: an RSS `<link>` can
+ * carry any scheme at all, and a denylist has to have anticipated it.
+ *
+ * Use this at ingest boundaries; use `isSafeHref`/`normaliseHref` at
+ * render sites for values the app itself produced.
+ */
+export function isHttpUrl(raw: string | null | undefined): boolean {
+    if (!raw) return false;
+    try {
+        const { protocol } = new URL(raw.trim());
+        return protocol === 'http:' || protocol === 'https:';
+    } catch {
+        return false; // not absolute, or not parseable at all
+    }
+}
+
+/**
  * Canonical anchor attrs for opening a user-supplied URL in a new
  * tab. Satisfies WCAG 2.1 + reverse-tabnabbing mitigation in one call.
  */

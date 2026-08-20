@@ -26,6 +26,14 @@ export interface NewsFeed {
     url: string;
     /** Category applied to an item unless a keyword promotes it. */
     defaultCategory: NewsCategory;
+    /**
+     * How the publisher is spelled to a reader. OPTIONAL, and separate from
+     * `slug` on purpose: the slug is the stored identity (it is what
+     * `source` holds on every row, what the search box matches, and what a
+     * `MARKET_NEWS_FEEDS` override keys on), so it must stay stable. The
+     * display name is presentation and can change without a backfill.
+     */
+    displayName?: string;
 }
 
 /**
@@ -44,11 +52,40 @@ export interface NewsFeed {
  * they'd pollute the tab — left out deliberately.
  */
 export const DEFAULT_NEWS_FEEDS: readonly NewsFeed[] = [
-    { slug: 'agro-bg', url: 'https://agro.bg/rss', defaultCategory: 'general' },
-    { slug: 'agrovest', url: 'https://agrovest.bg/feed/', defaultCategory: 'general' },
-    { slug: 'agrozona', url: 'https://agrozona.bg/feed/', defaultCategory: 'general' },
-    { slug: 'agrotv', url: 'https://agrotv.bg/feed/', defaultCategory: 'general' },
+    { slug: 'agro-bg', url: 'https://agro.bg/rss', defaultCategory: 'general', displayName: 'АГРО.БГ' },
+    { slug: 'agrovest', url: 'https://agrovest.bg/feed/', defaultCategory: 'general', displayName: 'Agrovest.bg' },
+    { slug: 'agrozona', url: 'https://agrozona.bg/feed/', defaultCategory: 'general', displayName: 'Agrozona.bg' },
+    { slug: 'agrotv', url: 'https://agrotv.bg/feed/', defaultCategory: 'general', displayName: 'AgroTV.bg' },
 ];
+
+/**
+ * How a stored `source` slug should be spelled on screen.
+ *
+ * Rows already in the database hold the SLUG, and the UI rendered it raw —
+ * so a Bulgarian farmer read `agro-bg` as the attribution on a news card.
+ * This maps back to the publisher's own name, and falls back to the slug
+ * itself for anything an operator added via `MARKET_NEWS_FEEDS` without a
+ * `displayName` (and for legacy rows whose slug predates this map).
+ *
+ * PURE and dependency-free, so the client bundle can import it: `feeds.ts`
+ * pulls in only `./categorize`, which is a keyword table.
+ *
+ * The SLUGS ARE DELIBERATELY UNTOUCHED. `market-news-pull` derives the
+ * dedupe key as `guidHash(feed.slug, raw.guid)`, so renaming a slug
+ * re-ingests that publisher's entire back-catalogue under new hashes —
+ * every existing item duplicated. Presentation changes here; identity does
+ * not change at all.
+ */
+const DISPLAY_NAMES: Readonly<Record<string, string>> = {
+    'agro-bg': 'АГРО.БГ',
+    agrovest: 'Agrovest.bg',
+    agrozona: 'Agrozona.bg',
+    agrotv: 'AgroTV.bg',
+};
+
+export function sourceDisplayName(slug: string): string {
+    return DISPLAY_NAMES[slug] ?? slug;
+}
 
 const isCategory = (v: unknown): v is NewsCategory =>
     typeof v === 'string' && (NEWS_CATEGORIES as readonly string[]).includes(v);
