@@ -442,6 +442,14 @@ jobs:
   #  effectively a duplicate signal at the PR level (coverage drift
   #  comes from MERGED code).
   #
+  #  NOTE for anyone re-flooring: the `Coverage summary` table this job
+  #  prints is NOT what the "global" threshold checks. jest subtracts the
+  #  path-specific threshold keys in jest.thresholds.json from the global
+  #  group, so summary-branches (69.78) and enforced-global-branches
+  #  (65.46) differ by ~4 points. Take the number from the
+  #  `does not meet "global" threshold` line. Reading the summary instead
+  #  broke main on 2026-08-20.
+  #
   #  The ~30 min estimate is accurate — measured 33m42s on run
   #  32313528177 (1601 suites / 24,231 tests), against a longest
   #  PR job of ~15 min. Moving this to PRs would MORE THAN DOUBLE
