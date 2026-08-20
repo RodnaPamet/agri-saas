@@ -6,6 +6,7 @@ import { CreateBinSchema } from '@/app-layer/schemas/grain.schemas';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { withValidatedBody } from '@/lib/validation/route';
 import { jsonResponse } from '@/lib/api-response';
+import { jsonWithETag } from '@/lib/http/etag';
 
 /**
  * Grain bins — BIN/STORAGE Locations that hold harvested produce (GRAIN
@@ -20,7 +21,7 @@ export const GET = withApiErrorHandling(
         const ctx = await getTenantCtx(params, req);
         await assertModuleEnabled(ctx, 'GRAIN');
         const bins = await listBins(ctx);
-        return jsonResponse(bins);
+        return jsonWithETag(req, bins);
     },
 );
 

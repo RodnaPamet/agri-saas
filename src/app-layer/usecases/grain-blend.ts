@@ -267,6 +267,15 @@ export async function blendLots(ctx: RequestContext, input: BlendLotsInput): Pro
             if (created) mergeLinks += 1;
         }
 
+        // `LOTS_BLENDED` is a domain verb on purpose, and it stays.
+        // `detailsJson.operation` is `'created'` for an ordinary lot creation,
+        // a harvest lot AND a blend, so the verb is the only field that
+        // separates them — and five of `InventoryLot`'s six audit writes
+        // already use one (`INVENTORY_LOT_CREATED`, `STOCK_RECEIVED`,
+        // `STOCK_ADJUSTED`, `HARVEST_LOT_CREATED`). Canonicalising just this
+        // one would make it the odd write out. See the audit-verb convention
+        // in CLAUDE.md; issue #393 item 4 proposed the opposite, on a premise
+        // the measurement contradicts.
         await logEvent(db, ctx, {
             action: 'LOTS_BLENDED',
             entityType: 'InventoryLot',

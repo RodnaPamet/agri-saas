@@ -6,13 +6,15 @@ import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import type { Row } from '@tanstack/react-table';
 import { Button } from '@/components/ui/button';
-import { Plus } from '@/components/ui/icons/nucleo';
+import { BoxArchive, Plus } from '@/components/ui/icons/nucleo';
 import { createColumns } from '@/components/ui/table';
 import {
     FilterProvider,
+    createFilterDefs,
     useFilterContext,
     useFilters,
 } from '@/components/ui/filter';
+import type { FilterDefInput } from '@/components/ui/filter/filter-definitions';
 import { EntityListPage } from '@/components/layout/EntityListPage';
 import { GrainSectionNav } from '../GrainSectionNav';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -55,10 +57,57 @@ function fmtNum(v: number | null): string {
     return formatDecimal(v, 2);
 }
 
+/**
+ * The icon shape the filter contract expects, derived from the contract type
+ * itself so this file carries no direct legacy-icon-package dependency. Same
+ * shape as `grain/costs/filter-defs.ts`, which is the precedent.
+ *
+ * `FilterIcon` is NOT exported from `@/components/ui/filter/types` — it is a
+ * file-local union there — so importing it by name does not compile.
+ */
+type FilterIcon = FilterDefInput['icon'];
+
+/** Cast helper — the nucleo icons are structurally compatible. */
+const asIcon = (c: unknown): FilterIcon => c as FilterIcon;
+
 export function BinsClient(props: BinsClientProps) {
-    // Bins have no faceted filters — the empty key set still gives the
-    // FilterToolbar a context for its live search box.
-    const filterCtx = useFilterContext([], [] as const, {});
+    const t = useTranslations('grain.bins');
+    const tStatus = useTranslations('ag.status.bin');
+
+    // `kind` is the one real facet a bin has, and it is not decorative: a BIN
+    // measures HARVESTED_PRODUCE only, a STORAGE row measures all stock
+    // (see BIN_KINDS in usecases/grain-bin.ts). Before this the toolbar
+    // rendered a Filter button whose popover held nothing but the search box.
+    //
+    // Defined INLINE rather than in a sibling `filter-defs.ts` on purpose.
+    // The labels have to come from `t()` anyway (the sibling grain defs
+    // hard-code English), and `tests/guards/no-hardcoded-ui-strings.test.ts`
+    // caps hard-coded config props at a baseline the tree currently sits
+    // exactly on — a new file with `label: 'Kind'` would breach a one-way
+    // ratchet. A `t(...)` initializer is a CallExpression, not a
+    // StringLiteral, so it is correctly invisible to that scan.
+    //
+    // SINGLE-select: BIN and STORAGE are mutually exclusive, so selecting
+    // both would mean selecting neither. That also keeps it clear of
+    // `multi-select-facet-route-parity`, which requires a CSV-parsing route
+    // counterpart for every `multiple: true` facet.
+    const { filters, filterKeys } = useMemo(
+        () =>
+            createFilterDefs({
+                kind: {
+                    label: t('colKind'),
+                    icon: asIcon(BoxArchive),
+                    options: [
+                        { value: 'BIN', label: tStatus('BIN') },
+                        { value: 'STORAGE', label: tStatus('STORAGE') },
+                    ],
+                    multiple: false,
+                },
+            }),
+        [t, tStatus],
+    );
+
+    const filterCtx = useFilterContext(filters, filterKeys, {});
     return (
         <FilterProvider value={filterCtx}>
             <BinsPageInner {...props} />
@@ -75,7 +124,9 @@ function BinsPageInner({ initialBins, tenantSlug, permissions }: BinsClientProps
     );
 
     const filterCtx = useFilters();
-    const { search } = filterCtx;
+    // `filters` comes from the context, not the outer closure — the defs are
+    // built once in BinsClient and handed to the provider.
+    const { search, state, filters } = filterCtx;
 
     const [isCreateOpen, setIsCreateOpen] = useState(false);
     // No `editing` state: the list creates, the detail page edits. Keeping a
@@ -105,17 +156,28 @@ function BinsPageInner({ initialBins, tenantSlug, permissions }: BinsClientProps
     const loadError =
         binsQuery.isError && rawBins.length === 0 ? t('loadFailed') : undefined;
 
-    // Live free-text search (name / key) over loaded rows.
+    // Live free-text search (name / key) + the `kind` facet, both over the
+    // loaded rows. In-memory because GET /grain/bins takes no query params
+    // and the usecase already caps the list at LIST_TAKE (500), so there is
+    // a bounded set to narrow.
     const bins = useMemo(() => {
         const q = search.trim().toLowerCase();
-        if (!q) return rawBins;
-        // guardrail-ignore: in-memory text filter over the loaded page, not a DB query.
-        return rawBins.filter(
-            (b) =>
+        const kinds = state.kind;
+        const wanted =
+            Array.isArray(kinds) && kinds.length > 0
+                ? new Set(kinds as string[])
+                : null;
+        if (!q && !wanted) return rawBins;
+        // guardrail-ignore: in-memory filter over the loaded page, not a DB query.
+        return rawBins.filter((b) => {
+            if (wanted && !wanted.has(b.kind)) return false;
+            if (!q) return true;
+            return (
                 b.name.toLowerCase().includes(q) ||
-                (b.key ?? '').toLowerCase().includes(q),
-        );
-    }, [rawBins, search]);
+                (b.key ?? '').toLowerCase().includes(q)
+            );
+        });
+    }, [rawBins, search, state.kind]);
 
     const handleRowClick = useCallback(
         (row: Row<BinRow>) => {
@@ -261,7 +323,7 @@ function BinsPageInner({ initialBins, tenantSlug, permissions }: BinsClientProps
                 ) : null,
             }}
             filters={{
-                defs: [],
+                defs: filters,
                 searchId: 'grain-bins-search',
                 searchPlaceholder: t('searchPlaceholder'),
                 toolbarActions: (
@@ -309,7 +371,6 @@ function BinsPageInner({ initialBins, tenantSlug, permissions }: BinsClientProps
                     open={isCreateOpen}
                     setOpen={setIsCreateOpen}
                     tenantSlug={tenantSlug}
-                    onSaved={() => binsQuery.refetch()}
                 />
             )}
         </EntityListPage>
