@@ -30,10 +30,17 @@
  */
 import { NextRequest } from 'next/server';
 
+// Stub ONLY the async budget checks. `isApiReadRateLimited` and
+// `extractTenantSlug` are pure path/method predicates deciding WHICH stage a
+// request reaches; a bare object literal drops them (they read back as
+// `undefined`), which only surfaces once a request gets far enough down the
+// middleware to call one. Spreading requireActual keeps them real.
 jest.mock('../../src/lib/rate-limit/authRateLimit', () => ({
+    ...jest.requireActual('../../src/lib/rate-limit/authRateLimit'),
     checkAuthRateLimit: jest.fn().mockResolvedValue({ ok: true }),
 }));
 jest.mock('../../src/lib/rate-limit/apiReadRateLimit', () => ({
+    ...jest.requireActual('../../src/lib/rate-limit/apiReadRateLimit'),
     checkApiReadRateLimit: jest.fn().mockResolvedValue({ ok: true }),
 }));
 
@@ -51,7 +58,15 @@ function validToken(overrides: Record<string, unknown> = {}) {
         tenantSlug: 'acme-corp',
         role: 'ADMIN',
         userSessionId: 'sess_1',
-        memberships: [{ tenantId: 'tnt_1', tenantSlug: 'acme-corp', role: 'ADMIN' }],
+        // `slug`, NOT `tenantSlug`. The jwt callback builds
+        // `{ slug, role, tenantId }` (src/auth.ts:207-210) and
+        // `checkTenantAccess` scans `m.slug` (guard.ts:326). With the wrong
+        // key this token failed the TENANT-ACCESS gate on every tenant path,
+        // so the "proceeds" cases below were only ever reaching a 403 they
+        // did not assert against — `not.toBe(401)` passes just fine on a 403.
+        // The denial cases were unaffected (they fire upstream at §2), which
+        // is why this stayed invisible.
+        memberships: [{ tenantId: 'tnt_1', slug: 'acme-corp', role: 'ADMIN' }],
         ...overrides,
     };
 }
@@ -101,6 +116,11 @@ describe('the check is precise — it must not deny valid traffic', () => {
         const res = await middleware(req('/t/acme-corp/dashboard'), {} as any);
         expect(res.status).not.toBe(401);
         expect(res.headers.get('location') ?? '').not.toContain('/login');
+        // Pins the membership-key fix above: with `tenantSlug` instead of
+        // `slug` this token is denied by the tenant-access gate, and
+        // "proceeds" quietly means "was refused for a different reason".
+        expect(res.status).not.toBe(403);
+        expect(res.headers.get('location') ?? '').not.toContain('/no-tenant');
     });
 
     it('an EMPTY-STRING error proceeds (absence, not a sentinel)', async () => {
