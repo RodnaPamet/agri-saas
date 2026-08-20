@@ -1094,7 +1094,16 @@ duplicating the limits table).
   See `docs/implementation-notes/2026-05-21-e2e-isolation.md` and
   `tests/e2e/fixtures.ts`.
 - `SKIP_ENV_VALIDATION=1` is set in `jest.setup.js` to prevent env loader crash in unit tests.
-- Coverage thresholds: 60% global (branches, functions, lines, statements); checked on `npm run test:coverage`.
+- Coverage thresholds live in `jest.thresholds.json`, NOT in `jest.config.js`:
+  jest 29.7's per-project (and multi-project top-level) `coverageThreshold` is
+  silently unenforced — the run exits 0 at 9% against a 99% floor — so CI
+  passes the same file via the `--coverageThreshold` CLI flag, which IS
+  enforced. Global floors are branches 67 / functions 69 / lines 70 /
+  statements 70, set at measured−2 and capped at 70 as a brittleness ceiling
+  (the #233 policy). **The gate runs on main push only**, never on PRs: it
+  re-runs the whole suite instrumented, measured at 33m42s against a ~15m
+  longest PR job. `npm run test:coverage` prints the same numbers locally but
+  does not fail.
 
 ### Green is not the same as executed
 

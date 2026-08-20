@@ -440,9 +440,29 @@ jobs:
   #  fail gate; Coverage runs the SAME Jest suite a second time with
   #  instrumentation, adding ~30 min of CPU to every PR for what is
   #  effectively a duplicate signal at the PR level (coverage drift
-  #  comes from MERGED code). Catching it on main + nightly is
-  #  enough — if a PR causes a regression, the FIRST main push will
-  #  block.
+  #  comes from MERGED code).
+  #
+  #  The ~30 min estimate is accurate — measured 33m42s on run
+  #  32313528177 (1601 suites / 24,231 tests), against a longest
+  #  PR job of ~15 min. Moving this to PRs would MORE THAN DOUBLE
+  #  the critical path, so the main-push-only decision stands.
+  #
+  #  BUT one clause of the original rationale is now known to be
+  #  false, and it is left here rather than quietly deleted: "if a
+  #  PR causes a regression, the FIRST main push will block."
+  #  Mechanically true, practically not — a red main push gates
+  #  nothing downstream. Issue #398 documented the gate red across
+  #  FIVE consecutive main pushes (#386, #387, #384, #391, #392)
+  #  with nobody acting, `Load Test (k6)` stayed broken eight days
+  #  the same way, and the concurrency comment above records a red
+  #  main going unnoticed across four merges.
+  #
+  #  So the real exposure is not "which event triggers this" but
+  #  "nobody is told when main goes red" — a notification problem,
+  #  not a trigger problem, and not one a `if:` line can fix. The
+  #  durable fix for the cost side is the SHARDING noted below;
+  #  once this job is as fast as `test`, running it per-PR becomes
+  #  affordable and the question is worth reopening.
   # ═══════════════════════════════════════════════════════════════
   coverage:
     name: "Coverage (≥60%)"
