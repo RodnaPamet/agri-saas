@@ -105,7 +105,17 @@ export async function createTask(ctx: RequestContext, input: {
         if (input.metadataJson !== undefined) {
             input.metadataJson = validateTaskMetadata(input.metadataJson);
         }
-        const task = await WorkItemRepository.create(db, ctx, input);
+        // `description` is an ENCRYPTED_FIELDS column, and encryption
+        // protects confidentiality at rest — not the renderers that decrypt
+        // it. A PDF export, an audit-pack share link or an SDK consumer
+        // reading the row verbatim all get whatever was stored, so the
+        // sanitise has to happen HERE, at the write, not at one render site.
+        const task = await WorkItemRepository.create(db, ctx, {
+            ...input,
+            ...(input.description !== undefined && input.description !== null
+                ? { description: sanitizePlainText(input.description) }
+                : {}),
+        });
 
         await logEvent(db, ctx, {
             action: 'TASK_CREATED',
@@ -170,6 +180,11 @@ export async function updateTask(ctx: RequestContext, taskId: string, patch: {
         // Validate metadataJson on write
         if (patch.metadataJson !== undefined) {
             patch.metadataJson = validateTaskMetadata(patch.metadataJson);
+        }
+        // Same reasoning as createTask — an edit can introduce markup just
+        // as easily as the original write.
+        if (patch.description !== undefined && patch.description !== null) {
+            patch.description = sanitizePlainText(patch.description);
         }
         const task = await WorkItemRepository.update(db, ctx, taskId, patch);
         if (!task) throw notFound('Task not found');
@@ -256,6 +271,13 @@ export async function bulkDeleteTask(
 // ─── Status ───
 
 export async function setTaskStatus(ctx: RequestContext, taskId: string, status: string, resolution?: string | null) {
+    // `resolution` is an ENCRYPTED_FIELDS column. Sanitise BEFORE the
+    // terminal-status emptiness gate below, so a resolution consisting only
+    // of markup fails "a resolution is required" rather than being stored as
+    // a satisfying non-empty string that renders as nothing.
+    if (resolution !== undefined && resolution !== null) {
+        resolution = sanitizePlainText(resolution);
+    }
     const result = await runInTenantContext(ctx, async (db) => {
         // Pre-fetch once so we can both validate + capture fromStatus
         // for the automation event.
@@ -793,6 +815,14 @@ export async function bulkAssignTasks(ctx: RequestContext, taskIds: string[], as
 
 export async function bulkSetTaskStatus(ctx: RequestContext, taskIds: string[], status: string, resolution?: string) {
     assertCanWriteTasks(ctx);
+
+    // `resolution` is an ENCRYPTED_FIELDS column. Sanitise BEFORE the
+    // terminal-status emptiness gate below, so a resolution consisting only
+    // of markup fails "a resolution is required" rather than being stored as
+    // a satisfying non-empty string that renders as nothing.
+    if (resolution !== undefined) {
+        resolution = sanitizePlainText(resolution);
+    }
 
     // Audit Coherence S8 (2026-05-24) — bulk path enforces the same
     // resolution + transition gates as the single-task path. Bulk

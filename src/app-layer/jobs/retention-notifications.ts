@@ -16,6 +16,7 @@ import { TERMINAL_WORK_ITEM_STATUSES } from '../domain/work-item-status';
 import { isNotificationsEnabled } from '../notifications/settings';
 import { emitAutomationEvent } from '../automation';
 import type { RequestContext } from '../types';
+import { sanitizePlainText } from '@/lib/security/sanitize';
 
 /** Fire-and-forget automation trigger — never blocks the notification job. */
 function emitEvidenceTrigger(
@@ -109,12 +110,18 @@ export async function runEvidenceRetentionNotifications(
         // field (Task.createdByUserId is NOT NULL). Background jobs have
         // no actor userId — a system-user sentinel is needed.
         // Tracked in #BUG-retention-task-creator.
+        // `ev.title` is user-supplied and gets interpolated into
+        // `Task.description`, an ENCRYPTED_FIELDS column. Encryption does not
+        // protect the renderers that decrypt it, so sanitise the interpolated
+        // value at the write — this job runs without a request context, so
+        // there is no upstream usecase to have done it.
+        const safeTitle = sanitizePlainText(ev.title);
         const task = await prisma.task.create({
             data: {
                 tenantId: ev.tenantId,
                 type: 'IMPROVEMENT',
-                title: `Refresh expiring evidence: ${ev.title}`,
-                description: `Evidence "${ev.title}" expires in ${daysLeft} days (${formatDate(ev.retentionUntil)}). Please upload refreshed evidence or extend the retention date.`,
+                title: `Refresh expiring evidence: ${safeTitle}`,
+                description: `Evidence "${safeTitle}" expires in ${daysLeft} days (${formatDate(ev.retentionUntil)}). Please upload refreshed evidence or extend the retention date.`,
                 status: 'OPEN',
                 priority: daysLeft <= 7 ? 'HIGH' : 'MEDIUM',
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- createdByUserId missing: background job has no actor; requires system-user id (tracked #BUG-retention-task-creator)

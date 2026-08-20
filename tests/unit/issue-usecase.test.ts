@@ -76,7 +76,17 @@ jest.mock('@/app-layer/services/sla', () => ({
 }));
 
 jest.mock('@/lib/security/sanitize', () => ({
-    sanitizePlainText: jest.fn((s: string) => `SAN::${s}`),
+    // The repo-wide `SAN::` marker, but applied to the CONTENT rather than the
+    // whole string. `setIssueStatus` now sanitises `resolution` BEFORE the
+    // terminal-status emptiness gate (so markup-only text cannot pass as a
+    // reason and then render as nothing), which means a stub that prefixes
+    // unconditionally would turn '   ' into a non-empty value and silently
+    // disable the whitespace-rejection assertion below. The real
+    // `sanitizePlainText` returns whitespace unchanged and markup-only input
+    // as '' — this stub honours both while still marking that it ran.
+    sanitizePlainText: jest.fn((s: string) =>
+        s.trim() === '' ? s : s.replace(/\S[\s\S]*\S|\S/, (m) => `SAN::${m}`),
+    ),
 }));
 
 import { WorkItemRepository } from '@/app-layer/repositories/WorkItemRepository';
@@ -234,7 +244,9 @@ describe('setIssueStatus', () => {
         await setIssueStatus(adminCtx, 'i-1', 'DONE', '  finally fixed  ');
 
         const args = (WorkItemRepository.setStatus as jest.Mock).mock.calls[0];
-        expect(args[4]).toBe('finally fixed');
+        // `SAN::` proves the sanitiser ran on this path — `resolution` is an
+        // ENCRYPTED_FIELDS column and used to reach the repository raw.
+        expect(args[4]).toBe('SAN::finally fixed');
     });
 
     it('allows non-terminal transition with no resolution', async () => {
