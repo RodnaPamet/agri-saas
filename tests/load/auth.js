@@ -156,20 +156,42 @@ export const options = {
         // ── Latency: ONLY in the uncontended regime ──
         // Service-time budgets calibrated against a real run rather
         // than guessed (see docs/slos.md → "Calibrating the auth
-        // budgets"). Measured p95 over 97 uncontended samples:
-        //     csrf     13.8ms      session   21.8ms
-        //     login   793.8ms      E2E      839.2ms
-        // Budgets sit at ~2x those, so a slow shared runner doesn't
-        // flake the gate while a genuine regression — which moves the
-        // login path by 2-3x — trips it. 1500ms is also the login
-        // budget docs/slos.md publishes, so the gate sits on the
-        // stated SLO rather than being fitted to one machine.
+        // budgets"). Originally set from 97 uncontended DEV-BOX
+        // samples: csrf 13.8ms, session 21.8ms, login 793.8ms, E2E
+        // 839.2ms — with a note asking for re-validation against CI
+        // once a few nightlies had landed.
         //
-        // These are DEV-BOX numbers, and this box is noisy: three runs
-        // put the login p95 at 794ms / 1150ms / 1170ms purely on host
-        // load. The first nightly writes the CI figures to the summary
-        // artifact — RE-VALIDATE the budget against those (it may need
-        // to move in either direction) once a few runs have landed.
+        // RE-VALIDATED 2026-08-20 against 11 consecutive nightly runs
+        // (2026-08-10 → 08-20, ids 31357197165 … 32330454008), reading
+        // the {regime:latency} sub-metrics out of each auth-summary.json:
+        //
+        //   metric        CI p95 range     mean    budget   headroom
+        //   csrf           3.0 –   4.7      3.9     500ms      106x
+        //   session        5.6 –   8.6      7.3     500ms       58x
+        //   login p95    295.0 – 403.6    355.0    1500ms      3.7x
+        //   login p99    300.7 – 432.2    385.2    2500ms      5.8x
+        //   E2E p95      303.0 – 413.0    365.1    2000ms      4.8x
+        //
+        // Worst SINGLE login sample in the whole set: 763ms. All 143
+        // auth threshold results across those 11 runs reported ok.
+        //
+        // NO NUMBER MOVED, deliberately — and note what that means for
+        // the "~2x" the paragraph above used to claim. On CI the ratios
+        // are 3.7x–106x, not 2x: the dev-box figures were inflated by
+        // host load (three runs put login p95 at 794/1150/1170ms on the
+        // same box, same build). So these are NOT tight regression
+        // detectors and are not meant to be. They are SLO-CONFORMANCE
+        // gates: 1500ms is the login budget docs/slos.md publishes, and
+        // the gate sits on the stated SLO rather than being fitted to
+        // whatever machine last ran it. Tightening to fit CI would
+        // flake on a dev box while catching nothing extra in CI.
+        //
+        // The accepted cost of that choice, stated plainly: a
+        // BCRYPT_COST 12 -> 14 bump (~4x) still trips 1500ms; a 12 -> 13
+        // (~2x) would not. If we ever want that sensitivity the right
+        // instrument is a run-over-run delta check on the summary
+        // artifact, not a lower absolute budget — a different gate, and
+        // a different issue.
         'http_req_duration{regime:latency,step:csrf}': ['p(95)<500'],
         'http_req_duration{regime:latency,step:login}': ['p(95)<1500', 'p(99)<2500'],
         'http_req_duration{regime:latency,step:session}': ['p(95)<500'],

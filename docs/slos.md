@@ -564,9 +564,13 @@ file asserted p95 < 1500ms against exactly that queue. Measured on CI:
 was ~7x outside the implementation's physical capacity and could never
 have gone green.
 
-Uncontended, the same login measures **p95 ~794ms** — comfortably
-inside the published budget. Same code, same build; the only
-difference is whether anything was queued in front of it.
+Uncontended, the same login measures **p95 ~794ms on a dev box** —
+comfortably inside the published budget. Same code, same build; the
+only difference is whether anything was queued in front of it. (CI is
+faster still: ~355ms mean p95 across 11 nightlies — see "Re-validated
+against CI" below. The 794 figure is kept here because it is the
+number the 8.62s contended measurement was taken against, and the
+contrast is the point.)
 
 **Capacity floors are collapse detectors, not precision gates.**
 Throughput on a shared runner is not a precise instrument: two
@@ -580,6 +584,38 @@ per-run figures land in the summary artifact.
 **When you add a latency threshold to a load scenario, tag it
 `regime:latency`.** An untagged latency threshold silently spans both
 regimes and re-creates this bug.
+
+**Re-validated against CI, 2026-08-20.** The budgets above were set
+from dev-box samples, and `tests/load/auth.js` carried a note asking
+for them to be re-checked against real nightlies. Eleven consecutive
+nightly runs (2026-08-10 → 08-20) have now been read out of the
+summary artifacts:
+
+| metric | CI p95 range | mean | budget | headroom |
+|---|---|---|---|---|
+| csrf | 3.0 – 4.7 ms | 3.9 ms | 500 ms | 106× |
+| session | 5.6 – 8.6 ms | 7.3 ms | 500 ms | 58× |
+| login p95 | 295.0 – 403.6 ms | 355.0 ms | 1500 ms | 3.7× |
+| login p99 | 300.7 – 432.2 ms | 385.2 ms | 2500 ms | 5.8× |
+| E2E p95 | 303.0 – 413.0 ms | 365.1 ms | 2000 ms | 4.8× |
+
+Worst single login sample across the set: 763 ms. All 143 auth
+threshold results reported `ok`.
+
+**No number moved, and the reason is a choice worth stating.** These
+are **SLO-conformance gates, not regression detectors** — 1500 ms is
+the login budget this document publishes, so the gate sits on the
+stated SLO rather than being fitted to whichever machine last ran it.
+Fitting to CI would produce a tighter number that flakes on a dev box
+(the same build measured 794 / 1150 / 1170 ms there purely on host
+load) while catching nothing extra in CI.
+
+The accepted cost: a `BCRYPT_COST` 12 → 14 bump (~4×) still trips
+1500 ms; a 12 → 13 (~2×) would not. If we ever want that sensitivity,
+the instrument is a **run-over-run delta check on the summary
+artifact**, not a lower absolute budget. That is a different gate and
+belongs in its own issue — lowering these numbers would quietly trade
+a stable conformance gate for an unstable regression one.
 
 Run cadence:
 - **PR**: CI smoke (mutations only, 10 VUs × 30s) — automatic.
