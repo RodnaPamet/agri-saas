@@ -14,6 +14,7 @@ import { trace } from '@opentelemetry/api';
 import { emitAutomationEvent } from '../automation';
 import { enqueue } from '@/app-layer/jobs/queue';
 import { Prisma } from '@prisma/client';
+import { sanitizePlainText } from '@/lib/security/sanitize';
 
 /** Prisma's unique-constraint violation — the idempotency-race backstop. */
 function isUniqueViolation(err: unknown): boolean {
@@ -608,7 +609,13 @@ export async function reviewFieldOperation(
     data: { action: 'APPROVE' | 'REQUEST_CHANGES'; comment?: string | null },
 ) {
     assertCanAdmin(ctx);
-    const { action, comment } = data;
+    const { action } = data;
+    // This path writes `comment` straight to `Task.resolution` via
+    // `WorkItemRepository.setStatus` — it does NOT go through `setTaskStatus`,
+    // so it needs its own sanitise. The same value also reaches the audit
+    // `details` text and the reviewer notification, so sanitising once here
+    // covers all three readers.
+    const comment = data.comment != null ? sanitizePlainText(data.comment) : data.comment;
     if (action !== 'APPROVE' && action !== 'REQUEST_CHANGES') {
         throw badRequest('Invalid review action.');
     }

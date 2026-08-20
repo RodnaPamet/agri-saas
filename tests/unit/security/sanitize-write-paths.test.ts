@@ -34,22 +34,20 @@
  * and FarmProfile as covered, plus EvidenceReview as a named gap. None
  * of those is GRC; the teardown did not shrink that set.
  *
- * And there is a live gap the derived guardrail CANNOT see, because its
- * check is file-level ("does task.ts call a sanitiser anywhere?"):
+ * The gap this docblock used to record — `Task.description` and
+ * `Task.resolution` in ENCRYPTED_FIELDS but written UNSANITISED, invisible
+ * to a guardrail whose check was file-level ("does task.ts call a sanitiser
+ * anywhere?") — is CLOSED. Four write paths were fixed (`task.ts`,
+ * `issue.ts`, `field-operation.ts`'s direct `setStatus`, and the retention
+ * job's interpolated evidence title), the guardrail now asks per FIELD
+ * rather than per file, and the executing proof lives in the sibling
+ * `sanitize-task-fields.test.ts` — a separate file only because these paths
+ * need the full work-item repository mocked and widening this file's mock
+ * set would risk four passing tests for no gain.
  *
- *   **`Task.description` and `Task.resolution` are in ENCRYPTED_FIELDS
- *   and are written UNSANITISED.** `createTask` (task.ts:~137) and
- *   `updateTask` (~:223) pass `input.description` straight to
- *   `WorkItemRepository`. The only `sanitizePlainText` calls in that
- *   module are the TaskLink note and the comment body — which is
- *   exactly why the model shows green upstream.
- *
- * That is a PRE-EXISTING defect on the farm-task surface, not something
- * the teardown caused, and fixing it is a source change that belongs in
- * its own reviewed PR rather than buried in a deletion diff. It is
- * recorded here because this per-call-site file is the mechanism that
- * would have caught it, and a docblock claiming the surface is complete
- * is what kept it hidden.
+ * The lesson is worth keeping even though the bug is gone: this
+ * per-call-site file is the mechanism that would have caught it, and a
+ * docblock claiming the surface was complete is what kept it hidden.
  *
  * Adding a new sanitised write path: append a `describe(...)` block
  * below. The derived guardrail is what fails when a NEW encrypted

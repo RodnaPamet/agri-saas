@@ -58,8 +58,16 @@ export async function createIssue(ctx: RequestContext, input: {
     reporterUserId?: string | null;
 }) {
     assertCanCreateIssue(ctx);
+    // Same encrypted-column reasoning as `task.ts` — issues and tasks are the
+    // SAME `Task` row shape, so `description` / `resolution` are the same two
+    // ENCRYPTED_FIELDS columns and need the same write-time sanitise.
     return runInTenantContext(ctx, async (db) => {
-        const issue = await WorkItemRepository.create(db, ctx, input);
+        const issue = await WorkItemRepository.create(db, ctx, {
+            ...input,
+            ...(input.description !== undefined && input.description !== null
+                ? { description: sanitizePlainText(input.description) }
+                : {}),
+        });
         await logEvent(db, ctx, {
             action: 'ISSUE_CREATED',
             entityType: 'Issue',
@@ -96,6 +104,12 @@ export async function updateIssue(ctx: RequestContext, issueId: string, patch: {
     dueAt?: string | null;
 }) {
     assertCanUpdateIssue(ctx);
+    // Same encrypted-column reasoning as `task.ts` — issues and tasks are the
+    // SAME `Task` row shape, so `description` / `resolution` are the same two
+    // ENCRYPTED_FIELDS columns and need the same write-time sanitise.
+    if (patch.description !== undefined && patch.description !== null) {
+        patch.description = sanitizePlainText(patch.description);
+    }
     return runInTenantContext(ctx, async (db) => {
         const issue = await WorkItemRepository.update(db, ctx, issueId, patch);
         if (!issue) throw notFound('Issue not found');
@@ -115,6 +129,13 @@ export async function updateIssue(ctx: RequestContext, issueId: string, patch: {
 
 export async function setIssueStatus(ctx: RequestContext, issueId: string, status: string, resolution?: string | null) {
     assertCanResolveIssue(ctx);
+
+    // Sanitise BEFORE the terminal-status emptiness gate, so a markup-only
+    // resolution fails "a resolution is required" instead of being stored as a
+    // non-empty string that renders as nothing.
+    if (resolution !== undefined && resolution !== null) {
+        resolution = sanitizePlainText(resolution);
+    }
     return runInTenantContext(ctx, async (db) => {
         // Capture fromStatus before the mutation so the automation
         // event payload reflects the transition, not just the new state.
@@ -317,6 +338,13 @@ export async function bulkAssign(ctx: RequestContext, issueIds: string[], assign
 
 export async function bulkSetStatus(ctx: RequestContext, issueIds: string[], status: string, resolution?: string) {
     assertCanResolveIssue(ctx);
+
+    // Sanitise BEFORE the terminal-status emptiness gate, so a markup-only
+    // resolution fails "a resolution is required" instead of being stored as a
+    // non-empty string that renders as nothing.
+    if (resolution !== undefined) {
+        resolution = sanitizePlainText(resolution);
+    }
 
     // Audit Coherence S8 (2026-05-24) — bulk path enforces the same
     // gates as the single-issue path. Bulk operations are convenience,

@@ -54,7 +54,22 @@ type Sanitizer = 'sanitizeRichTextHtml' | 'sanitizePlainText' | 'sanitizePolicyC
 const RICH_TEXT_COVERAGE: Readonly<
     Record<string, { usecases: readonly string[]; sanitizer: Sanitizer }>
 > = {
-    Task: { usecases: ['src/app-layer/usecases/task.ts'], sanitizer: 'sanitizePlainText' },
+    // `Task.description` / `Task.resolution` are written from FOUR places, not
+    // one — tasks and issues are the same `Task` row shape, field-operation
+    // review writes `resolution` via `WorkItemRepository.setStatus` directly
+    // (bypassing `setTaskStatus`), and the retention job interpolates a
+    // user-supplied evidence title into `description` with no request context
+    // upstream to have sanitised it. Listing only `task.ts` is what let the
+    // file-level check below pass for two years while both columns went raw.
+    Task: {
+        usecases: [
+            'src/app-layer/usecases/task.ts',
+            'src/app-layer/usecases/issue.ts',
+            'src/app-layer/usecases/field-operation.ts',
+            'src/app-layer/jobs/retention-notifications.ts',
+        ],
+        sanitizer: 'sanitizePlainText',
+    },
     TaskComment: {
         usecases: ['src/app-layer/usecases/task.ts', 'src/app-layer/usecases/issue.ts'],
         sanitizer: 'sanitizePlainText',
@@ -125,6 +140,101 @@ const KNOWN_UNCOVERED: Readonly<Record<string, string>> = {
         'either register it in RICH_TEXT_COVERAGE (if it already ' +
         'sanitises) or wire sanitizePlainText into it.',
 };
+
+
+/**
+ * ─── Why a FILE-level check was not enough ──────────────────────────
+ *
+ * The `imports AND calls` test below asks whether a usecase file mentions a
+ * sanitiser ANYWHERE. `task.ts` did — for a task-link `note` and a comment
+ * `body` — so `Task` reported covered while `Task.description` and
+ * `Task.resolution`, the two columns actually named in `ENCRYPTED_FIELDS`,
+ * went to the database exactly as typed. Green for as long as the entry
+ * existed. The file-level test is kept (a dangling import is still worth
+ * catching) but it is no longer the guarantee.
+ *
+ * This is the guarantee: every FIELD in `ENCRYPTED_FIELDS[model]` must show a
+ * sanitised binding by name. Three shapes are accepted, which between them
+ * cover every idiom in the repo:
+ *
+ *   (a) `description: sanitizePlainText(input.description)` / `x = san(...)`
+ *   (b) `sanitizePlainText(body)` — the field is the sanitiser's ARGUMENT
+ *   (c) `const safe = sanitizePlainText(v)` … `notes: safe` — via an alias
+ *
+ * A repo-local helper counts as a sanitiser if it transitively calls one of
+ * the three real ones — `company.ts::sanitizeOptional` is the canonical case,
+ * and refusing to resolve it would have pushed five real fields into an
+ * exemption list for no gain.
+ */
+const REAL_SANITISERS: readonly Sanitizer[] = [
+    'sanitizePlainText',
+    'sanitizeRichTextHtml',
+    'sanitizePolicyContent',
+];
+
+/**
+ * Fields whose sanitisation is real but structurally invisible — the write
+ * goes through a whole-input seam that never names the field. Each entry
+ * names the seam, and the test VERIFIES that seam exists and calls a real
+ * sanitiser, so this cannot be used as a silent opt-out.
+ */
+const SEAM_COVERED: Readonly<
+    Record<string, { seam: string; fieldList: string; reason: string }>
+> = {
+    'FarmProfile.egn': {
+        seam: 'norm',
+        fieldList: 'PROFILE_FIELDS',
+        reason:
+            'upsertFarmProfile builds its write object by reducing the ' +
+            'PROFILE_FIELDS constant through `norm`, which sanitises. The ' +
+            'field name never appears beside a sanitiser call because the ' +
+            'seam covers every field generically — which is stronger than ' +
+            'per-field, not weaker.',
+    },
+    'FarmProfile.eik': {
+        seam: 'norm',
+        fieldList: 'PROFILE_FIELDS',
+        reason: 'Same PROFILE_FIELDS reduce seam as FarmProfile.egn.',
+    },
+};
+
+/** Sanitiser names usable in `src`: the three real ones + verified local helpers. */
+function resolveSanitisers(src: string): string[] {
+    const set = new Set<string>(REAL_SANITISERS);
+    const defs = [...src.matchAll(/(?:function|const)\s+(sanitize\w+)\b[\s\S]{0,900}?\n\}/g)];
+    // Fixpoint: sanitizeCompanyInput → sanitizeOptional → sanitizePlainText.
+    for (let pass = 0; pass < 3; pass++) {
+        for (const d of defs) {
+            if ([...set].some((n) => new RegExp(String.raw`\b${n}\s*\(`).test(d[0]))) {
+                set.add(d[1]);
+            }
+        }
+    }
+    return [...set];
+}
+
+/** The binding shape that sanitises `field` in `src`, or null if there is none. */
+function findFieldBinding(src: string, field: string): string | null {
+    const S = `(?:${resolveSanitisers(src).join('|')})`;
+    if (new RegExp(String.raw`\b${field}\s*[:=][^;\n]*\b${S}\s*\(`).test(src)) {
+        return 'assigned from a sanitiser call';
+    }
+    if (
+        new RegExp(
+            String.raw`\b${S}\s*\(\s*(?:[\w$]+(?:\??\.[\w$]+)*\.)?${field}\b`,
+        ).test(src)
+    ) {
+        return 'passed as the sanitiser argument';
+    }
+    for (const m of src.matchAll(
+        new RegExp(String.raw`(?:const|let)\s+([\w$]+)\s*=[^;\n]*\b${S}\s*\(`, 'g'),
+    )) {
+        if (new RegExp(String.raw`\b${field}\s*[:=]\s*${m[1]}\b`).test(src)) {
+            return `bound via the sanitised alias \`${m[1]}\``;
+        }
+    }
+    return null;
+}
 
 const fileExists = (rel: string) => fs.existsSync(path.join(REPO_ROOT, rel));
 const readFile = (rel: string) => fs.readFileSync(path.join(REPO_ROOT, rel), 'utf8');
@@ -197,6 +307,128 @@ describe('rich-text sanitiser coverage — structural completeness', () => {
         // Not a hard cap — but a visible reminder. If this grows, the
         // diff is the conversation. Today: 1 (EvidenceReview).
         expect(Object.keys(KNOWN_UNCOVERED).length).toBeLessThanOrEqual(1);
+    });
+
+
+    // ─── The FIELD-level guarantee ──────────────────────────────────
+    //
+    // This is the test that would have caught `Task.description` /
+    // `Task.resolution`. It asks about the columns named in
+    // ENCRYPTED_FIELDS, not about whether the file says "sanitize" once.
+
+    const fieldEntries = Object.entries(RICH_TEXT_COVERAGE).flatMap(
+        ([model, { usecases }]) =>
+            (ENCRYPTED_FIELDS[model as keyof typeof ENCRYPTED_FIELDS] ?? []).map(
+                (field: string) => [model, field, usecases] as const,
+            ),
+    );
+
+    it('every RICH_TEXT_COVERAGE model declares at least one field to check', () => {
+        // Guard the guard: if ENCRYPTED_FIELDS ever stopped yielding fields
+        // for these models, `fieldEntries` would be empty and every
+        // assertion below would pass vacuously.
+        expect(fieldEntries.length).toBeGreaterThanOrEqual(
+            Object.keys(RICH_TEXT_COVERAGE).length,
+        );
+    });
+
+    it.each(fieldEntries)(
+        '%s.%s is sanitised by name at its write path',
+        (model, field, usecases) => {
+            const key = `${model}.${field}`;
+            const src = usecases
+                .filter((u) => fileExists(u))
+                .map((u) => readFile(u))
+                .join('\n/* ── next usecase ── */\n');
+
+            const seam = SEAM_COVERED[key];
+            if (seam) {
+                // An exemption is only honoured if the seam it names is real
+                // AND sanitises. Otherwise it is just a way to turn the test
+                // off, which is the failure mode this whole file exists for.
+                const sans = resolveSanitisers(src);
+                const seamBody = src.match(
+                    new RegExp(String.raw`\b${seam.seam}\s*=[\s\S]{0,600}?\n\s*\};`),
+                )?.[0];
+                if (!seamBody) {
+                    throw new Error(
+                        `SEAM_COVERED[${key}] names a seam \`${seam.seam}\` that ` +
+                            `no longer exists in ${usecases.join(', ')}. Either the ` +
+                            `seam was renamed (update the entry) or it was removed ` +
+                            `(the field is now unsanitised).`,
+                    );
+                }
+                if (!sans.some((n) => new RegExp(String.raw`\b${n}\s*\(`).test(seamBody))) {
+                    throw new Error(
+                        `SEAM_COVERED[${key}]: seam \`${seam.seam}\` no longer calls ` +
+                            `a sanitiser. ${field} is written unsanitised.`,
+                    );
+                }
+                if (!new RegExp(String.raw`\b${seam.fieldList}\b[\s\S]{0,600}?'${field}'`).test(src)) {
+                    throw new Error(
+                        `SEAM_COVERED[${key}]: '${field}' is not listed in ` +
+                            `\`${seam.fieldList}\`, so the seam does not cover it.`,
+                    );
+                }
+                return;
+            }
+
+            const binding = findFieldBinding(src, field);
+            if (!binding) {
+                throw new Error(
+                    `${key} is an ENCRYPTED_FIELDS column with NO sanitised binding ` +
+                        `in its declared write path(s):\n` +
+                        usecases.map((u) => `  - ${u}`).join('\n') +
+                        `\n\n` +
+                        `Encryption protects the value at rest; it does nothing for ` +
+                        `the PDF export, audit-pack share link or SDK consumer that ` +
+                        `decrypts and renders it. Sanitise at the usecase, before the ` +
+                        `repository write — one of:\n` +
+                        `  ${field}: sanitizePlainText(input.${field})\n` +
+                        `  ${field} = sanitizePlainText(${field})\n` +
+                        `  const safe = sanitizePlainText(v); … ${field}: safe\n\n` +
+                        `If the write goes through a whole-input seam that never ` +
+                        `names the field, add a SEAM_COVERED entry (the seam is ` +
+                        `verified, not trusted).`,
+                );
+            }
+            expect(binding).toEqual(expect.any(String));
+        },
+    );
+
+    it('the field-level detector fails when a real sanitise is removed (mutation proof)', () => {
+        // Without this, "every field is bound" could be a detector that
+        // matches anything. Take the ACTUAL source that covers
+        // Task.description, delete only that call, and require a MISS.
+        const real = readFile('src/app-layer/usecases/task.ts');
+        expect(findFieldBinding(real, 'description')).not.toBeNull();
+
+        // BOTH sites must go — `createTask` and `updateTask` each sanitise
+        // `description`, and leaving either one is (correctly) still a hit.
+        const mutated = real.replace(
+            /sanitizePlainText\((\w+\.description)\)/g,
+            '$1',
+        );
+        const removed = real.split('sanitizePlainText(').length -
+            mutated.split('sanitizePlainText(').length;
+        expect(removed).toBe(2); // the mutation must have applied, to both sites
+        expect(findFieldBinding(mutated, 'description')).toBeNull();
+    });
+
+    it('SEAM_COVERED entries carry a written reason', () => {
+        for (const { reason } of Object.values(SEAM_COVERED)) {
+            expect(reason.trim().length).toBeGreaterThan(20);
+        }
+    });
+
+    it('no SEAM_COVERED entry references a field absent from ENCRYPTED_FIELDS', () => {
+        const stale = Object.keys(SEAM_COVERED).filter((key) => {
+            const [model, field] = key.split('.');
+            const fields: readonly string[] =
+                ENCRYPTED_FIELDS[model as keyof typeof ENCRYPTED_FIELDS] ?? [];
+            return !fields.includes(field);
+        });
+        expect(stale).toEqual([]);
     });
 
     const coverageEntries = Object.entries(RICH_TEXT_COVERAGE).flatMap(
