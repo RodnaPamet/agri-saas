@@ -30,6 +30,16 @@ export interface PromotionDto {
     ctaUrl: string | null;
     validFrom: string | null;
     validTo: string | null;
+    /**
+     * Has the VIEWING tenant already sent a lead for this promotion?
+     *
+     * Viewer-relative, computed in the projection rather than at the call
+     * site — the same shape `ExchangePublicListing.isOwn` uses. It exists
+     * because `@@unique([promotionId, inquirerTenantId])` makes a second
+     * lead impossible: without this the UI cheerfully invites the operator
+     * to retype a message the database will refuse.
+     */
+    hasRequested: boolean;
 }
 
 /**
@@ -122,6 +132,28 @@ export async function listActivePromotions(
             take: limit,
             include: { company: { select: { name: true } } },
         });
+
+        // Which of these has this tenant already asked about? One indexed
+        // lookup over the page we just read — `@@unique([promotionId,
+        // inquirerTenantId])` IS the index, so this is a covered scan of at
+        // most `limit` (<=100) keys, inside the same tenant transaction.
+        // Bounded by the page above, so no `take:` of its own is needed.
+        const requestedIds =
+            rows.length === 0
+                ? new Set<string>()
+                : new Set(
+                      (
+                          await db.promotionLead.findMany({
+                              where: {
+                                  promotionId: { in: rows.map((p) => p.id) },
+                                  inquirerTenantId: ctx.tenantId,
+                                  deletedAt: null,
+                              },
+                              select: { promotionId: true },
+                          })
+                      ).map((l) => l.promotionId),
+                  );
+
         return rows.map((p) => ({
             id: p.id,
             company: p.company.name,
@@ -132,6 +164,7 @@ export async function listActivePromotions(
             ctaUrl: p.ctaUrl,
             validFrom: p.validFrom ? p.validFrom.toISOString() : null,
             validTo: p.validTo ? p.validTo.toISOString() : null,
+            hasRequested: requestedIds.has(p.id),
         }));
     });
 }

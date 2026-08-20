@@ -94,7 +94,11 @@ export default async function OffersPage({ params }: { params: Promise<{ tenantS
                                 </span>
                             </div>
                             <div className="mt-3 flex items-center gap-default">
-                                <AskForOfferModal promotionId={p.id} company={p.company} />
+                                <AskForOfferModal
+                                    promotionId={p.id}
+                                    company={p.company}
+                                    hasRequested={p.hasRequested}
+                                />
                                 {p.ctaUrl && (
                                     <a
                                         href={p.ctaUrl}

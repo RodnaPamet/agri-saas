@@ -2406,15 +2406,19 @@
                 "message": "We have saved your request. {company} is not notified automatically yet."
             },
             "ask": {
-                "open": "Ask for offer",
-                "sent": "Request sent",
-                "titleWithCompany": "Ask {company} for an offer",
+                "alreadySent": "You have already asked {company} about this offer.",
+                "cancel": "Cancel",
+                "consent": "I agree that my name and message are shared with {company} so they can contact me about this offer.",
                 "description": "Describe what you need. Your request is recorded for {company}.",
+                "error": "Could not send your request. Please try again.",
                 "message": "Message",
                 "messagePlaceholder": "Describe what you need…",
-                "cancel": "Cancel",
+                "open": "Ask for offer",
+                "privacyLink": "Privacy notice",
+                "sent": "Request sent",
+                "sentToast": "Request sent to {company}. You will find it in your notifications.",
                 "submit": "Send request",
-                "error": "Could not send your request. Please try again."
+                "titleWithCompany": "Ask {company} for an offer"
             }
         },
         "soil": {
