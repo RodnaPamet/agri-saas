@@ -57,7 +57,21 @@ const RATCHET_FLOOR: Record<string, Metrics> = {
     // (measured 67.24). Branches measures 65.36 and stays at 63 —
     // measured−2 truncates to exactly the floor already in force, so
     // there is nothing to raise until measured reaches 66.
-    global: { branches: 63, functions: 65, lines: 70, statements: 70 },
+    //
+    // 2026-08-20 (run 32313528177, 1601 suites / 24,231 tests):
+    // branches 63 → 67, functions 65 → 69. Measured 69.78 / 71.78.
+    //
+    // This one is a RECOVERY, not a wave. Issue #398 recorded the gate
+    // RED on main across five consecutive pushes at branches 59.29 /
+    // functions 59.91 — roughly ten points below where they now sit.
+    // Nobody raised the floors when coverage climbed back, so the
+    // recovery sat unlocked: coverage could have eroded ten points
+    // again before anything failed. Re-flooring is what converts a
+    // recovery into a guarantee.
+    //
+    // lines/statements measure 83.03 / 80.69 and stay at 70 — the
+    // #233 brittleness ceiling, deliberately not raised.
+    global: { branches: 67, functions: 69, lines: 70, statements: 70 },
     // `usecases/` — quality roadmap + stage-3a/3b/3c/3d waves.
     // Post-Roadmap-3 floor was 42 (branches); measured branch
     // coverage had climbed to ~58 without the floor following.
