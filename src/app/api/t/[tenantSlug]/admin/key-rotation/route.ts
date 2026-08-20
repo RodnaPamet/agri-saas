@@ -47,6 +47,13 @@ export const POST = withApiErrorHandling(
             entityId: ctx.tenantId,
             details: `Key rotation initiated by admin user ${ctx.userId}`,
             metadata: { jobId: job.id },
+            detailsJson: {
+                category: 'data_lifecycle',
+                entityName: 'TenantKey',
+                operation: 'rotation_initiated',
+                summary: 'Master-KEK rotation sweep queued',
+                after: { jobId: job.id },
+            },
         });
 
         return NextResponse.json(

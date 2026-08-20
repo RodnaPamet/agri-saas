@@ -46,6 +46,13 @@ export async function rotateDekPostHandler(
         entityId: tenantId,
         details: `Per-tenant DEK rotated by admin user ${ctx.userId}`,
         metadata: { jobId, sweepJob: 'tenant-dek-rotation' },
+        detailsJson: {
+            category: 'data_lifecycle',
+            entityName: 'TenantKey',
+            operation: 'rotated',
+            summary: 'Per-tenant DEK rotated; re-encryption sweep queued',
+            after: { jobId, sweepJob: 'tenant-dek-rotation' },
+        },
     });
 
     return NextResponse.json(
