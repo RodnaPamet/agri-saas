@@ -1319,6 +1319,30 @@ stands for that PR only — not as a precedent.
 
 - **Zod schemas** for all API input validation live in `src/app-layer/schemas/` (backend) and `src/lib/schemas/` (shared).
 - **Audit trail**: Call `logEvent()` from `src/app-layer/events/audit.ts` after mutating state. Entries are hash-chained — never write directly to the `AuditLog` table.
+- **Audit verbs: domain verbs are the deliberate majority, not a wart.**
+  `AuditEventPayload.action` is a bare `string` with no enum, no registry
+  and no guard, so the convention is the only thing holding it. Measured
+  over every `logEvent` call site in `src/app-layer` carrying a literal
+  action: **193 sites — 65 canonical (34%: `UPDATE` 26, `CREATE` 22,
+  `SOFT_DELETE` 9, `DELETE` 8) and 128 bespoke (66%) across 106 distinct
+  domain verbs.** `docs/app-layer.md` teaches the domain form
+  (`action: 'WIDGET_CREATED'`) as the canonical example. The rule:
+    - **Canonical verb** (`CREATE` / `UPDATE` / `SOFT_DELETE` / `DELETE`)
+      when the operation genuinely *is* a create/update/delete of the row
+      and `changedFields` already says what moved. The lot-move audit
+      (`inventory.ts`, #391) is the reference: changing `locationId` IS a
+      field update.
+    - **Domain verb** (`LOTS_BLENDED`, `STOCK_RECEIVED`,
+      `HARVEST_LOT_CREATED`, …) when the row-level shape understates a
+      distinct business event. `detailsJson.operation` is `'created'` for
+      an ordinary lot creation, a harvest lot AND a blend, so the verb is
+      the only field a SIEM filter can separate them on. Stay consistent
+      *within* an `entityType`: five of `InventoryLot`'s six audit writes
+      use domain verbs, so canonicalising the sixth would make it the odd
+      one out, not the tidy one.
+  Do not "clean up" a domain verb to a canonical one on consistency
+  grounds alone — measure the family first (issue #393 item 4 proposed
+  exactly that, on a premise the measurement contradicted).
 - **Error classes**: Use typed errors from `src/lib/errors/` rather than throwing raw `Error`.
 - **Uploaded bytes always reach a scanner.** Two shapes, both in
   `@/lib/upload/ingest`, and which one you need is decided by whether the

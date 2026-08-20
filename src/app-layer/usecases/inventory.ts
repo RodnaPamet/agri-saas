@@ -300,10 +300,18 @@ export async function updateLotLocation(
         const updated = await InventoryRepository.updateLotLocation(db, ctx, lot.id, target?.id ?? null);
         if (updated === 0) throw notFound('Lot not found.');
 
+        // `UPDATE` + changedFields, not a bespoke MOVED verb — because changing
+        // `locationId` IS a field update, and `changedFields` says which one.
+        // The choice is right; the reason this comment used to give was not.
+        // It claimed the vocabulary is "dominated by CREATE/UPDATE/SOFT_DELETE"
+        // with one-off verbs "a known wart". Measured over every `logEvent`
+        // call site in `src/app-layer` carrying a literal action: 193 sites,
+        // 65 canonical (34%), 128 bespoke (66%) across 106 distinct domain
+        // verbs. The wart is the majority, and it is deliberate — see the
+        // audit-verb convention in CLAUDE.md. Canonical verb when the
+        // operation genuinely IS a create/update/delete of the row; domain
+        // verb when it is a distinct business event.
         await logEvent(db, ctx, {
-            // `UPDATE` + changedFields, not a bespoke MOVED verb: the audit
-            // vocabulary is dominated by CREATE/UPDATE/SOFT_DELETE and the
-            // one-off verbs already in the tree are a known wart.
             action: 'UPDATE',
             entityType: 'InventoryLot',
             entityId: lot.id,
