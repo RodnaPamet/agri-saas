@@ -21,6 +21,10 @@ export const GET = withApiErrorHandling(
         const ctx = await getTenantCtx(params, req);
         await assertModuleEnabled(ctx, 'GRAIN');
         const bins = await listBins(ctx);
+        // Conditional revalidation (Roadmap-6 P3). The client refetches this
+        // list on focus past its staleTime, so an unchanged farm costs a 304
+        // rather than the whole payload on rural LTE. The POST below keeps
+        // `jsonResponse` — an ETag on a 201 means nothing.
         return jsonWithETag(req, bins);
     },
 );

@@ -182,12 +182,49 @@ await logEvent(db, ctx, {
     entityType: 'Widget',
     entityId: widget.id,
     details: `Created widget: ${widget.name}`,
+    detailsJson: {
+        category: 'entity_lifecycle',
+        entityName: 'Widget',
+        operation: 'created',
+        after: { name: widget.name },
+        summary: `Created widget ${widget.name}`,
+    },
 });
 ```
+
+`detailsJson` is not optional in practice — `tests/guards/audit-structured-events.test.ts`
+fails any `logEvent` call site under `src/app-layer/usecases` without one. `details`
+is the human string; `detailsJson` is the machine-readable payload and the only
+part `streamAuditEvent` ships to a tenant's SIEM.
 
 The event writer automatically attaches:
 - `requestId` (from `ctx.requestId`)
 - `tenantId` (from `ctx.tenantId`)
 - `userId` (from `ctx.userId`)
 
-For domain-specific events, create typed emitter wrappers (see `events/risk.events.ts`).
+### Choosing the `action` verb
+
+The example above says `WIDGET_CREATED`, not `CREATE`, and that is deliberate.
+`action` is a free-form `string` with no enum, no registry and no guard, so the
+convention is the only thing holding it — and the tree reflects a **split, not
+drift**. Measured over every `logEvent` call site in `src/app-layer` carrying a
+literal action: **193 sites — 65 canonical (34%) and 128 bespoke (66%) across
+106 distinct domain verbs.**
+
+- **CRUD verb** (`CREATE` / `UPDATE` / `SOFT_DELETE` / `DELETE`) when the
+  operation genuinely is a create, field edit or delete of the row, and
+  `changedFields` already says what moved. A lot move is an `UPDATE` of
+  `locationId`, not a `LOT_MOVED` event (#391).
+- **Domain verb** (`<DOMAIN>_<PAST_TENSE>`: `LOTS_BLENDED`, `STOCK_RECEIVED`,
+  `HARVEST_LOT_CREATED`, …) when the operation has its own business meaning
+  that the row-level shape understates. Keep `detailsJson.operation` for the
+  CRUD shape underneath.
+
+Decide per **model family**, not per PR — all six `InventoryLot` writes are
+visible in one grep and five of them are domain verbs, so canonicalising the
+sixth would make it the odd one out. And note that **a verb is a permanent,
+streamed contract**: `streamAuditEvent` ships it verbatim to a tenant's SIEM,
+so renaming one later breaks their filters.
+
+For domain-specific events, create typed emitter wrappers (see
+`events/onboarding.events.ts`).

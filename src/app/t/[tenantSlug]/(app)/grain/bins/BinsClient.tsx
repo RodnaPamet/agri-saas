@@ -50,6 +50,14 @@ interface BinsClientProps {
     initialBins: BinRow[];
     tenantSlug: string;
     permissions: { canWrite: boolean };
+    /**
+     * SSR-parsed facet values. Without these the server renders the list
+     * UNFILTERED while the client seeds `state` from `window.location.search`
+     * on its first render, so a shared `?kind=BIN` link hydrates against a
+     * different row set than it painted. `serverFilters` is the designed fix
+     * (`filter-context.tsx`), and journal/assets/knowledge already use it.
+     */
+    initialFilters?: Record<string, string>;
 }
 
 function fmtNum(v: number | null): string {
@@ -107,7 +115,9 @@ export function BinsClient(props: BinsClientProps) {
         [t, tStatus],
     );
 
-    const filterCtx = useFilterContext(filters, filterKeys, {});
+    const filterCtx = useFilterContext(filters, filterKeys, {
+        serverFilters: props.initialFilters,
+    });
     return (
         <FilterProvider value={filterCtx}>
             <BinsPageInner {...props} />
@@ -126,7 +136,7 @@ function BinsPageInner({ initialBins, tenantSlug, permissions }: BinsClientProps
     const filterCtx = useFilters();
     // `filters` comes from the context, not the outer closure — the defs are
     // built once in BinsClient and handed to the provider.
-    const { search, state, filters } = filterCtx;
+    const { search, state, filters, hasActive } = filterCtx;
 
     const [isCreateOpen, setIsCreateOpen] = useState(false);
     // No `editing` state: the list creates, the detail page edits. Keeping a
@@ -338,7 +348,11 @@ function BinsPageInner({ initialBins, tenantSlug, permissions }: BinsClientProps
                 getRowId,
                 mobileFallback: 'card',
                 onRowClick: permissions.canWrite ? handleRowClick : undefined,
-                emptyState: search ? (
+                // `hasActive` covers the facet as well as the search box —
+                // `search` alone would show the "no bins yet" empty state to
+                // someone who has bins but filtered them all out by kind,
+                // which reads as data loss rather than an empty result.
+                emptyState: hasActive ? (
                     <EmptyState
                         size="sm"
                         variant="no-results"
@@ -367,6 +381,14 @@ function BinsPageInner({ initialBins, tenantSlug, permissions }: BinsClientProps
             }}
         >
             {permissions.canWrite && (
+                /* No `onSaved` here: BinFormModal already invalidates
+                   ['grain-bins', tenantSlug], which prefix-matches this page's
+                   query key and refetches it for every observer. An explicit
+                   refetch() on top made it two round-trips for one save —
+                   refetch defaults to cancelRefetch:true and the queryFn
+                   passes no AbortSignal, so the first request still went over
+                   the wire. The prop stays on the modal; BinDetailClient uses
+                   it. */
                 <BinFormModal
                     open={isCreateOpen}
                     setOpen={setIsCreateOpen}

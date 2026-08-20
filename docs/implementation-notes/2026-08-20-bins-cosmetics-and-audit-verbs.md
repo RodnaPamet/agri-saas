@@ -37,7 +37,33 @@ of this PR.
    still uses it.
 
 3. **No ETag on the list GET.** Now `jsonWithETag(req, bins)`, matching the
-   cold-start convention and the sibling list reads.
+   cold-start convention and the sibling list reads. The POST keeps
+   `jsonResponse` — an ETag on a 201 means nothing.
+
+### Two defects the issue did not name, found while doing item 1
+
+Neither is cosmetic, and both live in the code item 1 touches.
+
+- **A facet-only miss claimed the farm had no bins.** `emptyState` was gated on
+  `search`, so an operator who filtered every row out by kind got the
+  *no-records* variant — "No bins yet" — rather than *no-results*. That is a
+  confident factual claim about their data, made in response to a filter they
+  applied, and it is the same defect class as the grain-contracts error state
+  (`docs/implementation-notes/2026-07-25-grain-contract-defect-fixes.md`): a
+  UI state that asserts zero rows when zero rows is not what happened. Now
+  gated on `hasActive`, which the filter context already exposes and which
+  covers search *and* facets.
+
+- **A shared `?kind=` link hydrated against a different row set than it
+  painted.** `page.tsx` server-renders `initialBins` unfiltered, while
+  `useFilterContext` seeds `state` from `window.location.search` on the client.
+  Before the facet existed there was no state to disagree about; with it, the
+  server paints every row and the client's first render paints fewer. Fixed
+  with the designed lever — `serverFilters` (`filter-context.tsx`), which the
+  journal, assets and knowledge pages already use — plus `searchParams` on the
+  bins page. Note the list itself is still NOT filtered server-side: what
+  crosses is the facet *state*, not a narrowed query, because the route takes
+  no params.
 
 ### Item 4 — the premise was false, so the fix is the opposite one
 
@@ -78,7 +104,10 @@ CLAUDE.md.
 | `src/app/api/t/[tenantSlug]/grain/bins/route.ts` | item 3 (`jsonWithETag`) |
 | `src/app-layer/usecases/grain-blend.ts` | item 4 — comment recording why `LOTS_BLENDED` stays |
 | `src/app-layer/usecases/inventory.ts` | item 4 — corrects the #391 comment that asserted the false version |
+| `src/app/t/[tenantSlug]/(app)/grain/bins/page.tsx` | `searchParams` → `initialFilters`, so a shared `?kind=` link hydrates cleanly |
+| `tests/rendered/bins-client-kind-filter.test.tsx` | the facet narrows the RENDERED rows — the assertion no structural guard can make |
 | `CLAUDE.md` | the audit-verb convention, with the measured distribution |
+| `docs/app-layer.md` | the same rule at the "Event Writing" section, plus two repairs (below) |
 
 ## Decisions
 
@@ -101,6 +130,21 @@ CLAUDE.md.
   CLAUDE.md's rule is that a PR invalidating a claim updates the claim in the
   same diff, and that comment is exactly the kind of thing the next engineer
   would cite as precedent for a canonicalisation sweep.
+
+- **`docs/app-layer.md` was repaired in two ways beyond the verb rule.** Its
+  closing line pointed at `events/risk.events.ts` as the example of a typed
+  emitter wrapper — a file the GRC teardown deleted, so the doc's only concrete
+  pointer was dead. And its `logEvent` example omitted `detailsJson`, which
+  `tests/guards/audit-structured-events.test.ts` requires of every usecase call
+  site: the doc was teaching a call shape that fails CI.
+
+- **The rendered test is parameterised across BOTH viewports, and carries a
+  control.** `BinsClient` is a `<DataTable mobileFallback="card">` and the jsdom
+  default is a phone, so `MobileCardList` and `Table` render the row set in two
+  separate places — a narrowing that works in one is not evidence about the
+  other. The control (both rows render with no facet active) exists because
+  "the STORAGE row is gone" passes just as well against a component that
+  rendered nothing at all.
 
 - **Both new comments sit ABOVE their `logEvent` call, not inside the object
   literal.** Not stylistic: `tests/guards/audit-structured-events.test.ts`
