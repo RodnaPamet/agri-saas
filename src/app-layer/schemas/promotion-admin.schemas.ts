@@ -18,6 +18,32 @@ export const PROMOTION_CATEGORIES = [
 
 export type PromotionCategory = (typeof PROMOTION_CATEGORIES)[number];
 
+/**
+ * An outbound link this product renders as an `href` for operators.
+ *
+ * `z.string().url()` — what these fields used to be — accepts **any**
+ * parseable URL. Measured against the installed zod (4.4.3):
+ * `http://`, `ftp://` and `javascript:alert(1)` all parse.
+ *
+ * Two backstops already stop the worst of that, and neither is a reason to
+ * leave the schema open:
+ *
+ *   - **React blocks `javascript:` hrefs.** Measured under React 19: the
+ *     attribute is rewritten to
+ *     `javascript:throw new Error('React has blocked a javascript: URL…')`.
+ *   - **The CSP carries no `unsafe-inline` in `script-src`**
+ *     (`src/lib/security/csp.ts`), so a `javascript:` URI is blocked there too.
+ *
+ * What survives both is the plain downgrade: `http://` renders as an ordinary
+ * link out of an authenticated HTTPS app, on a phone where the operator has
+ * no realistic way to notice the scheme. And the field's *contract* was
+ * "anything URL-shaped", which is far wider than the one thing it is for.
+ *
+ * Pinning the scheme is therefore the narrowing, not the patch — the
+ * vulnerability class is already covered; the sloppy contract is not.
+ */
+const httpsUrl = () => z.url({ protocol: /^https$/ }).max(2000);
+
 export const PromotionCategorySchema = z.enum(PROMOTION_CATEGORIES);
 
 /**
@@ -39,7 +65,7 @@ export const CreatePromotionSchema = z
         title: z.string().min(1).max(300),
         body: z.string().max(4000).nullable().optional(),
         category: PromotionCategorySchema.default('service'),
-        ctaUrl: z.string().url().max(2000).nullable().optional(),
+        ctaUrl: httpsUrl().nullable().optional(),
         validFrom: z.coerce.date().nullable().optional(),
         validTo: z.coerce.date().nullable().optional(),
     })
@@ -65,7 +91,7 @@ export const UpdatePromotionSchema = z
         title: z.string().min(1).max(300).optional(),
         body: z.string().max(4000).nullable().optional(),
         category: PromotionCategorySchema.optional(),
-        ctaUrl: z.string().url().max(2000).nullable().optional(),
+        ctaUrl: httpsUrl().nullable().optional(),
         validFrom: z.coerce.date().nullable().optional(),
         validTo: z.coerce.date().nullable().optional(),
     })
@@ -83,7 +109,7 @@ export const UpdateCompanySchema = z
     .object({
         name: z.string().min(1).max(200).optional(),
         eik: z.string().max(40).nullable().optional(),
-        websiteUrl: z.string().url().max(2000).nullable().optional(),
+        websiteUrl: httpsUrl().nullable().optional(),
         contactName: z.string().max(200).nullable().optional(),
         contactEmail: z.string().email().max(320).nullable().optional(),
         contactPhone: z.string().max(60).nullable().optional(),
