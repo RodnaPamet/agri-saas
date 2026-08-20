@@ -104,6 +104,18 @@ async function runA11yScan(page: Page, surfaceLabel: string) {
     // that match neither documented palette). Wait until the theme
     // attribute matches the emulated colorScheme so the scan runs on a
     // settled DOM.
+    // Navigation settle, FIRST. Some surfaces arrive via a redirect —
+    // `/no-tenant` is `redirect('/login')` when unauthenticated
+    // (src/app/no-tenant/page.tsx), which is why its axe report is
+    // labelled `no-tenant` but carries a `/login` URL. A scan that
+    // begins while the page is still moving samples one document and
+    // asserts about another, and the theme guarantee established below
+    // is discarded by the navigation that follows it. Settle the
+    // navigation before establishing anything else.
+    await page.waitForLoadState('domcontentloaded').catch(() => {
+        /* already settled, or torn down — the scan will report either way */
+    });
+
     // Theme settle. Under CI load (multiple workers, dev server
     // compiling on demand) the post-hydration ThemeProvider effect
     // can run later than 10 s — the previous timeout caused
@@ -125,30 +137,18 @@ async function runA11yScan(page: Page, surfaceLabel: string) {
             undefined,
             { timeout: 20_000 },
         )
-        .catch(async () => {
+        .catch(() => {
             // Settle window expired — under heavy CI load, or a slow /
             // failed hydration (a stray ChunkLoadError blocking the
             // ThemeProvider effect), `data-theme` can stay on the
-            // SSR-seeded value past 20 s. Scanning that half-applied
-            // theme is exactly what produces phantom color-contrast
-            // failures: axe composites TRANSLUCENT surfaces (e.g. the
-            // secondary buttons' glass fill, `--btn-glass-fill-secondary`)
-            // over a mid-transition backdrop and reports a ratio the
-            // settled page never shows. Rather than scan that transient
-            // state, force the resolved theme so every token lands on its
-            // final value first — the scan then measures what a user
-            // actually sees (the buttons' real contrast is ~9.7:1).
-            await page
-                .evaluate(() => {
-                    const want = matchMedia('(prefers-color-scheme: dark)')
-                        .matches
-                        ? 'dark'
-                        : 'light';
-                    document.documentElement.setAttribute('data-theme', want);
-                })
-                .catch(() => {
-                    /* page torn down — nothing to force; axe will no-op */
-                });
+            // SSR-seeded value past 20 s.
+            //
+            // Nothing is done about it HERE any more. #266 forced the
+            // resolved theme at this point, which fixed the timeout path
+            // and only the timeout path. The force now runs
+            // unconditionally further down, immediately before the scan,
+            // so this branch exists purely to tolerate the no-show:
+            // a theme that never settles is no longer a distinct case.
         });
 
     // Animation settle. Entry animations (R17's dashboard rise-in,
@@ -169,6 +169,36 @@ async function runA11yScan(page: Page, surfaceLabel: string) {
         }`,
     });
     await page.waitForTimeout(150);
+
+    // Theme force — UNCONDITIONAL, and deliberately the LAST thing before
+    // the scan.
+    //
+    // #266 introduced this force but placed it inside the settle's
+    // `.catch()`, so it fired only when the 20 s wait TIMED OUT. That
+    // covers "the theme never settles" and leaves "the theme settles, and
+    // then something re-establishes it" wide open — which is the failure
+    // that survived: a wait that SUCCEEDS forces nothing, and any later
+    // client-side navigation or re-render can put `data-theme` back to the
+    // SSR-seeded value with the scan still to come.
+    //
+    // Running it here is idempotent by construction: the value written is
+    // the same one the settle above waits FOR, so on the happy path this
+    // is a no-op assignment. It only does work in the case that used to
+    // slip through. Placing it after the animation/transition zeroing
+    // matters too — with transitions live, re-asserting the attribute
+    // would itself start a colour transition for axe to sample mid-flight.
+    await page
+        .evaluate(() => {
+            const want = matchMedia('(prefers-color-scheme: dark)').matches
+                ? 'dark'
+                : 'light';
+            if (document.documentElement.getAttribute('data-theme') !== want) {
+                document.documentElement.setAttribute('data-theme', want);
+            }
+        })
+        .catch(() => {
+            /* context destroyed by a late navigation — axe reports on what is there */
+        });
 
     const results = await new AxeBuilder({ page })
         .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
