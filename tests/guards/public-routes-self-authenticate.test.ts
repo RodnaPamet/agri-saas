@@ -73,7 +73,14 @@ describe('credential-verifying routes are reachable, and public routes verify', 
         const unreachable: string[] = [];
         for (const file of files) {
             const src = fs.readFileSync(file, 'utf8');
-            if (!CREDENTIAL_HEADERS.test(src) || !VERIFIES.test(src)) continue;
+            // Calling a verification function IS the signal. Requiring an
+            // INLINE header read as well was too strict and produced a false
+            // negative on a known instance: the platform-admin routes call
+            // `verifyPlatformApiKey(req)` and let the helper read
+            // `x-platform-admin-key`, so they were skipped entirely — by a
+            // guard written to catch exactly that bug. The header pattern is
+            // now an OR, widening the net rather than narrowing it.
+            if (!VERIFIES.test(src) && !CREDENTIAL_HEADERS.test(src)) continue;
             const p = urlPath(file);
             if (!isPublic(p, prefixes)) {
                 unreachable.push(`${p}  (${path.relative(ROOT, file)})`);

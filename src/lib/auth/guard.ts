@@ -39,6 +39,42 @@ const PUBLIC_PATH_PREFIXES = [
                          // the filesystem, by
                          // `tests/guards/scim-routes-self-authenticate.test.ts`.
                          // Do not add a route here without reading that guard.
+    // ── Platform-admin API ──
+    //
+    // Nine routes (tenant bootstrap, ownership transfer, agri-events,
+    // news-derived-events review, support-scheme review) authenticate with
+    // `PLATFORM_ADMIN_API_KEY` via `verifyPlatformApiKey`, sent as the
+    // `x-platform-admin-key` header by an operator with curl. No session
+    // cookie, so `getToken()` returned null and the Edge refused every one
+    // of them — the documented caller could never reach the handler.
+    // Verified: key-only POST /api/admin/tenants → 401 from the middleware.
+    //
+    // Safe to open for the same reason as the webhooks below:
+    // `verifyPlatformApiKey` fails CLOSED in every direction — 503 when
+    // PLATFORM_ADMIN_API_KEY is unset, 401 on mismatch, constant-time
+    // comparison, and it runs unconditionally at the top of each handler.
+    // Enforced by tests/guards/public-routes-self-authenticate.test.ts.
+    //
+    // What this SKIPS, deliberately: `isAdminPath` below also applies a
+    // Sec-Fetch-Site cross-site check to `/api/admin`. That guards
+    // browser-originated requests, and these are not browser routes — no UI
+    // in src/ calls them, and a cross-site attacker cannot set a custom
+    // header without a CORS preflight nor guess the key. The header key is
+    // the control; the origin check was never the one doing the work here.
+    //
+    // LISTED INDIVIDUALLY, not as a bare `/api/admin/` prefix. The first
+    // attempt opened the whole prefix and the fail-closed guard immediately
+    // flagged `/api/admin/diagnostics`, which uses a DIFFERENT auth model —
+    // `getLegacyCtx` + `permissions.canAdmin`, i.e. an admin SESSION, not
+    // the platform key. It still fails closed (getSessionOrThrow throws),
+    // so it was not a hole; but opening the prefix would have stripped its
+    // Edge role-floor and cross-site check for no benefit at all. A tenth
+    // platform-key route added later is caught by the same guard's
+    // reachability half, so this list cannot silently go stale.
+    '/api/admin/agri-events',
+    '/api/admin/news-derived-events',
+    '/api/admin/support-schemes',
+    '/api/admin/tenants',
     // ── Signed webhooks ──
     //
     // Each of these verifies its OWN credential — a Stripe signature, an
