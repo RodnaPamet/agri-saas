@@ -1,141 +1,32 @@
 # Trivy CVE exemptions — narrow, per-CVE, with written reason + upgrade plan.
-# Each entry MUST include the CVE id, the affected package path, the reason
-# the exemption is safe today, and the trigger that retires the exemption.
+#
+# Every entry is a comment block immediately above a bare CVE/GHSA id, and it
+# MUST carry all three of these fields, spelled exactly like this:
+#
+#   # CVE-YYYY-NNNNN — one-line description of the advisory
+#   #   Affected path:  the path Trivy reports for the vulnerable package
+#   #   Why exempt:     why this is safe in THIS image, today
+#   #   Upgrade plan:   the concrete trigger that retires this entry
+#   CVE-YYYY-NNNNN
+#
+# `Affected path` is not decoration: it is what lets a guard check the
+# exemption still has a subject. An entry naming a path the Dockerfile
+# deletes suppresses nothing, and is deleted rather than kept "just in case".
 #
 # Adding entries here is a structural escape hatch for the Trivy gate. Use
 # sparingly: prefer fixing the dep over ignoring it.
-
-# ── npm CLI transitive deps (node:22-alpine base image) ──
 #
-# The next four entries all flag CVEs in dependencies of the npm CLI
-# that ships with the node:22-alpine base image, not in our app's
-# node_modules tree. The shared reachability argument:
+# Enforced by `tests/guards/trivyignore-exemptions.test.ts`.
+
+# ── No active exemptions ──
 #
-#   - The vulnerable packages live in
-#     `usr/local/lib/node_modules/npm/node_modules/...`, i.e. they
-#     are loaded only when the `npm` binary itself is invoked.
-#   - `npm install` runs at build time (Docker `RUN npm install`) on
-#     our own package.json. No untrusted input flows in.
-#   - The runtime container never execs `npm` — the final image's
-#     CMD is the Next.js server. Application code does not
-#     `child_process.spawn('npm', ...)` anywhere.
-#   - App-level reachability is therefore zero.
+# All eight previous entries exempted CVEs whose affected path was
+# `usr/local/lib/node_modules/npm/node_modules/...`. Dockerfile:163 now
+# deletes that directory outright, so those packages are absent from the
+# image Trivy scans and the exemptions matched nothing. The Dockerfile's
+# own comment states the intent: "Deleting the CLI removes the finding at
+# the source rather than suppressing it in .trivyignore."
 #
-# Each entry is retired when the Node base image bundles an npm CLI
-# whose transitive lockfile no longer carries the vulnerable version.
-# A single base-image bump usually retires several exemptions at once.
-
-# CVE-2026-33671 — picomatch < 4.0.4 RegEx DoS
-#   Affected path:  usr/local/lib/node_modules/npm/node_modules/picomatch (v4.0.3)
-#   Why exempt:     The picomatch instance flagged here is bundled INSIDE
-#                   the npm CLI that ships with the node:22-alpine base
-#                   image — it's not in our application's dependency tree
-#                   (our app's picomatch is pinned to ^4.0.4 via the
-#                   `overrides` block in package.json).
-#   Upgrade plan:   Resolved when the Node base image ships an npm CLI
-#                   that pins picomatch >= 4.0.4 (or 3.0.2 / 2.3.2). The
-#                   next Node image refresh PR removes this entry.
-CVE-2026-33671
-
-# CVE-2026-33672 — picomatch method injection via POSIX bracket expressions
-#   Affected path:  usr/local/lib/node_modules/npm/node_modules/picomatch
-#   Why exempt:     Same reasoning as CVE-2026-33671 — the vulnerable
-#                   picomatch is inside the npm CLI, not in our app
-#                   tree. Our app's picomatch is `^4.0.4` via the
-#                   overrides block. POSIX bracket expressions are not
-#                   user-supplied at build time (the package.json file
-#                   patterns are written by the team, not derived from
-#                   untrusted input).
-#   Upgrade plan:   Cleared by the same base-image bump as
-#                   CVE-2026-33671 — both target the same picomatch
-#                   install path.
-CVE-2026-33672
-
-# CVE-2026-33750 — brace-expansion DoS via zero-step brace patterns
-#   Affected path:  usr/local/lib/node_modules/npm/node_modules/brace-expansion
-#   Why exempt:     brace-expansion is loaded by glob / minimatch
-#                   patterns inside the npm CLI's package resolution
-#                   logic. The only patterns it processes at build
-#                   time are the `files` glob in our own package.json
-#                   and the `.npmignore` / `.gitignore` patterns —
-#                   all of which are committed source-controlled
-#                   content, not untrusted input. A zero-step brace
-#                   pattern in our source code is something we'd
-#                   notice in code review, not something a remote
-#                   attacker can inject.
-#   Upgrade plan:   Cleared by the next base-image bump that ships
-#                   an npm CLI with brace-expansion >= the fixed
-#                   version range.
-CVE-2026-33750
-
-# CVE-2026-42338 — ip-address XSS in Address6 HTML-emitting methods
-#   Affected path:  usr/local/lib/node_modules/npm/node_modules/ip-address
-#   Why exempt:     `ip-address` is loaded inside the npm CLI for
-#                   parsing registry URLs (npm validates the host
-#                   field of `registry` entries in `.npmrc` and
-#                   resolves IPv6-shaped hosts via this lib). The
-#                   XSS sinks are the Address6 HTML-render methods,
-#                   which the CLI never calls (it parses, it doesn't
-#                   render HTML). Even if the methods WERE invoked,
-#                   they'd render into the build host's stderr, not
-#                   into the running container's user-facing surface.
-#   Upgrade plan:   Cleared by the next base-image bump that ships
-#                   an npm CLI with the patched `ip-address` version.
-CVE-2026-42338
-
-# CVE-2026-48815 — sigstore certificateOIDs verification-constraint bypass
-#   Affected path:  usr/local/lib/node_modules/npm/node_modules/sigstore (v3.1.0)
-#   Why exempt:     The flagged sigstore@3.1.0 is bundled INSIDE the npm
-#                   CLI that ships with the node:22-alpine base image
-#                   (npm's libnpmpublish/pacote use it to VERIFY package
-#                   provenance attestations during `npm publish` / install
-#                   with provenance). Our own app tree resolves sigstore
-#                   to the fixed 4.1.1 (via the @semantic-release/npm
-#                   devDependency), and devDeps are pruned from the runtime
-#                   image anyway. The vulnerable code path is provenance
-#                   verification during a publish/install — the runtime
-#                   container never execs `npm`, so app-level reachability
-#                   is zero (same argument as the four npm-CLI entries
-#                   above). Newly published to the Trivy DB 2026-07-02.
-#   Upgrade plan:   Cleared by the next Node base-image bump that ships an
-#                   npm CLI bundling sigstore >= 4.1.1.
-CVE-2026-48815
-
-# CVE-2026-13149 — brace-expansion DoS via exponential-time complexity
-#   Affected path:  usr/local/lib/node_modules/npm/node_modules/brace-expansion (v5.0.6)
-#   Why exempt:     Same install path and reachability argument as
-#                   CVE-2026-33750 above — this is the brace-expansion
-#                   bundled INSIDE the npm CLI that ships with the
-#                   node:22-alpine base image, not our app's copy. Our
-#                   own tree resolves brace-expansion 5.0.7 (patched),
-#                   verified in package-lock.json. `overrides` cannot
-#                   reach npm's bundled dependencies, so a dependency
-#                   bump is structurally unable to clear this one.
-#                   The runtime container never execs `npm` (CMD is the
-#                   Next.js server), so app-level reachability is zero.
-#   Upgrade plan:   Retired by the base-image bump that ships an npm CLI
-#                   bundling brace-expansion >= 5.0.7 — the same bump
-#                   that clears CVE-2026-33750.
-CVE-2026-13149
-
-# CVE-2026-59873 — node-tar DoS via crafted gzip bomb (CRITICAL)
-#   Affected path:  usr/local/lib/node_modules/npm/node_modules/tar (v7.5.16)
-#   Why exempt:     `tar` appears ONLY inside the npm CLI bundled with the
-#                   base image — it is not a dependency of this app
-#                   (verified: the sole lockfile path is
-#                   node_modules/npm/node_modules/tar). npm uses it to
-#                   unpack registry tarballs during the build-time
-#                   `npm ci`, whose inputs are our own lockfile-pinned,
-#                   integrity-checked packages — not untrusted archives.
-#                   The runtime container never execs `npm`.
-#   Upgrade plan:   Retired by the base-image bump that ships an npm CLI
-#                   bundling tar >= 7.5.19 (published; not yet in the
-#                   node:22-alpine npm). Clears CVE-2026-59874 with it.
-CVE-2026-59873
-
-# CVE-2026-59874 — node-tar DoS via malformed tar archive
-#   Affected path:  usr/local/lib/node_modules/npm/node_modules/tar (v7.5.16)
-#   Why exempt:     Same bundled-npm install path and reachability
-#                   argument as CVE-2026-59873 above; fixed in tar 7.5.18.
-#   Upgrade plan:   Cleared by the same base-image bump as CVE-2026-59873.
-CVE-2026-59874
+# Their stated retirement trigger — "the next Node base-image bump that
+# ships an npm CLI bundling ..." — had also become unreachable, since the
+# npm CLI is no longer in the image at any version.
