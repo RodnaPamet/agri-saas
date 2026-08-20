@@ -151,7 +151,10 @@ That is not hypothetical. `auth.js` asserted `p95 < 1500ms` across the
 whole ramp and failed **40 consecutive nightly runs** with 100% of
 checks passing and zero HTTP failures; CI measured p95 8.62s. The gate
 was ~7x outside the implementation's physical capacity. Uncontended,
-the same login measures p95 ~794ms.
+the same login measures p95 ~794ms **on a dev box** (CI: ~355ms mean
+p95 across 11 nightlies — see the threshold table below). The 794 is
+kept because it is what the 8.62s contended figure was measured
+against; the contrast is the point.
 
 Two rules follow:
 
@@ -177,12 +180,20 @@ A run **fails** (non-zero exit) if any of these are crossed.
 | `http_req_failed{step:csrf}`          | `rate < 1%`     | CSRF is a flat read; should never 5xx.      |
 | `http_req_failed{step:login}`         | `rate < 1%`     | Login SLO ceiling.                          |
 | `http_req_failed{step:session}`       | `rate < 1%`     | Session check must be reliable.             |
-| `http_req_duration{regime:latency,step:csrf}`    | `p95 < 500ms`  | Flat read. Measured: 13.8ms.     |
-| `http_req_duration{regime:latency,step:login}`   | `p95 < 1500ms` | Bcrypt bound. Measured: 794ms.   |
-| `http_req_duration{regime:latency,step:login}`   | `p99 < 2500ms` | Tail of the uncontended login.   |
-| `http_req_duration{regime:latency,step:session}` | `p95 < 500ms`  | JWT verify only. Measured: 21.8ms. |
-| `auth_full_login_ms{regime:latency}`             | `p95 < 2000ms` | E2E login. Measured: 839ms.      |
+| `http_req_duration{regime:latency,step:csrf}`    | `p95 < 500ms`  | Flat read. CI p95 3.0–4.7ms.     |
+| `http_req_duration{regime:latency,step:login}`   | `p95 < 1500ms` | Bcrypt bound. CI p95 295–404ms.  |
+| `http_req_duration{regime:latency,step:login}`   | `p99 < 2500ms` | Tail of the uncontended login. CI p99 301–432ms. |
+| `http_req_duration{regime:latency,step:session}` | `p95 < 500ms`  | JWT verify only. CI p95 5.6–8.6ms. |
+| `auth_full_login_ms{regime:latency}`             | `p95 < 2000ms` | E2E login. CI p95 303–413ms.     |
 | `auth_full_login_ms{regime:latency}`             | `p99 < 3000ms` | Tail of the full transaction.    |
+
+The `Measured:` figures here were dev-box numbers until 2026-08-20;
+they are now the observed range across 11 consecutive nightly CI runs
+(2026-08-10 → 08-20). **These budgets are SLO-conformance gates, not
+regression detectors** — they sit on the numbers `docs/slos.md`
+publishes, deliberately, rather than being fitted to CI. See
+`docs/slos.md` → "Re-validated against CI" for the full table and the
+accepted sensitivity limit.
 | `auth_success_count{regime:saturation}`          | `count > floor`| Capacity collapse detector.      |
 | `checks{check:csrf_ok}`               | `rate > 99%`    |                                             |
 | `checks{check:login_ok}`              | `rate > 99%`    |                                             |
