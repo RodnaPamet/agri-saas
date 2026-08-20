@@ -41,6 +41,10 @@ import AzureAD from 'next-auth/providers/azure-ad';
 import { PrismaAdapter } from '@next-auth/prisma-adapter';
 import prisma from '@/lib/prisma';
 import { env } from '@/env';
+import {
+    SESSION_MAX_AGE_MS,
+    SESSION_MAX_AGE_SECONDS,
+} from '@/lib/auth/session-lifetime';
 import { authenticateWithPassword } from '@/lib/auth/credentials';
 import { DEFAULT_LOCALE } from '@/lib/i18n/locales';
 import { isTokenExpired, refreshAccessToken } from '@/lib/auth/refresh';
@@ -387,7 +391,10 @@ export const authOptions: NextAuthOptions = {
         signIn: '/login',
         error: '/login',
     },
-    session: { strategy: 'jwt' },
+    // `maxAge` is explicit because omitting it does not mean "no limit" — it
+    // means NextAuth's own 30-day default, which is how the cookie came to
+    // outlive a lifetime nobody had chosen (issue #618).
+    session: { strategy: 'jwt', maxAge: SESSION_MAX_AGE_SECONDS },
     secret: env.AUTH_SECRET,
     callbacks: {
         /**
@@ -598,11 +605,10 @@ export const authOptions: NextAuthOptions = {
                     const { recordNewSession } = await import(
                         '@/lib/security/session-tracker'
                     );
-                    const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
                     const recorded = await recordNewSession({
                         userId: token.userId!,
                         tenantId: token.tenantId ?? null,
-                        expiresAt: new Date(Date.now() + THIRTY_DAYS_MS),
+                        expiresAt: new Date(Date.now() + SESSION_MAX_AGE_MS),
                     });
                     token.userSessionId = recorded.sessionId;
                 } catch {

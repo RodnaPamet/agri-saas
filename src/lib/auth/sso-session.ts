@@ -54,10 +54,10 @@ import { encode } from 'next-auth/jwt';
 import { env } from '@/env';
 import { buildSessionClaims } from '@/auth';
 import { recordNewSession } from '@/lib/security/session-tracker';
+import { SESSION_MAX_AGE_SECONDS } from '@/lib/auth/session-lifetime';
 import { logger } from '@/lib/observability/logger';
 
-/** v4's own session lifetime default; `recordNewSession` may cap it lower. */
-const SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
+
 
 /**
  * Whether v4 would use the `__Secure-` prefix.
