@@ -1315,6 +1315,29 @@ The exception: if the user has explicitly said "merge despite the
 failures, I know what they are" for a specific PR, that authorisation
 stands for that PR only — not as a precedent.
 
+## A merged PR body is not a tracker
+
+Scope you deliberately leave out is tracked only if it exists as an **open
+issue**. A carve-out explained in a PR description is invisible the moment that
+PR merges — nobody greps merged PR bodies. **File the remainder as its own
+issue BEFORE you merge**, and reference that issue from the PR.
+
+The mechanical half is a trap worth knowing by name. This repo's
+`squash_merge_commit_message` is **`COMMIT_MESSAGES`**, so GitHub builds the
+squash commit from the BRANCH COMMITS, not from the PR body. A `Closes #N` in
+a commit message therefore closes #N on merge, and editing the PR body to say
+"Part of #N" does **not** stop it. That is #641/#626 verbatim: the body opened
+with *"Part of #626 — deliberately does NOT close it"*, the branch commit said
+`Closes #626.`, and the merge closed the issue anyway. The failure is silent
+and inverted — the PR page displays the careful "Part of", while the issue
+quietly reads CLOSED.
+
+So when a PR only partly addresses an issue, the closing keyword must not
+appear in ANY branch commit: write `Part of #N` / `Refs #N` there too. If you
+notice late, amend the COMMIT — amending the body changes nothing, and
+`gh issue reopen` plus a comment stating what shipped and what remains is the
+recovery.
+
 ## Key Conventions
 
 - **Zod schemas** for all API input validation live in `src/app-layer/schemas/` (backend) and `src/lib/schemas/` (shared).
