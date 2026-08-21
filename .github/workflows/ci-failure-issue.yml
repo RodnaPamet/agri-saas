@@ -1,0 +1,142 @@
+# ───────────────────────────────────────────────────────────────
+#  Turn a red run that nobody is watching into a GitHub issue.
+#
+#  ## The problem this exists for
+#
+#  A failing `pull_request` run is loud: it sits on a PR page somebody
+#  opened on purpose. Every OTHER trigger is silent. Measured on this
+#  repo before this workflow existed:
+#
+#    · Terraform "Apply: staging"  — red since 2026-07-02, 50 days
+#    · Restore Test                — 2 runs ever, both failed, unnoticed
+#    · Load Test (k6)              — a real lists-scenario failure on
+#                                    2026-08-10 sat unexamined until it
+#                                    was found by hand 11 days later
+#    · Coverage                    — `if: github.event_name == 'push'`
+#                                    (ci.yml:481), so it can ONLY ever
+#                                    go red after a merge
+#
+#  Three subsystems, one shared failure mode: the signal exists, is
+#  correct, and reaches nobody. GitHub's own notification default for
+#  this account is "don't notify", and even switched on it covers only
+#  runs from pushes you personally made — which is none of the crons.
+#
+#  ## Why an issue rather than a webhook
+#
+#  Issues are demonstrably the queue this repo works from. A webhook
+#  needs a secret, an external dependency and a destination somebody
+#  maintains; an issue needs none of those and lands where triage
+#  already happens.
+#
+#  ## Why this will not become wallpaper
+#
+#  De-dupe is by EXACT TITLE over `gh issue list --label ci-failure`,
+#  not the lagging search index — so a workflow that fails 51 nights
+#  running produces ONE issue with 51 comments, not 51 issues. And the
+#  success branch closes the issue on the next green run, so a fixed
+#  problem stops occupying the queue without anyone tidying up.
+#
+#  ## Deliberately NOT watched
+#
+#  `pull_request` runs (they have a PR page) and `merge_group` runs
+#  (they block the queue, which is its own loud signal).
+# ───────────────────────────────────────────────────────────────
+name: CI failure → issue
+
+on:
+  workflow_run:
+    workflows:
+      - "CI"
+      - "Release"
+      - "Load Test (k6)"
+      - "Restore Test"
+      - "Terraform"
+      - "Deploy"
+    types: [completed]
+
+permissions:
+  contents: read
+  issues: write
+  actions: read
+
+concurrency:
+  # Serialise per workflow so two runs of the same workflow finishing
+  # together cannot both lose the "does an issue already exist?" race
+  # and file duplicates.
+  group: ci-failure-issue-${{ github.event.workflow_run.name }}
+  cancel-in-progress: false
+
+jobs:
+  notify:
+    # A pull_request run is already visible on its PR; merge_group
+    # failures block the queue. Neither is silent, so neither is ours.
+    if: >-
+      github.event.workflow_run.event != 'pull_request' &&
+      github.event.workflow_run.event != 'merge_group'
+    runs-on: ubuntu-latest
+    steps:
+      - name: File, comment on, or close the tracking issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WF: ${{ github.event.workflow_run.name }}
+          CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          EVENT: ${{ github.event.workflow_run.event }}
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          # One stable title per workflow — this string IS the de-dupe key.
+          TITLE="CI failure: ${WF}"
+
+          # Exact-title match over the label, not `--search`: the search
+          # index lags by seconds to minutes, which is exactly the window
+          # in which a nightly would file its second duplicate.
+          EXISTING="$(gh issue list --repo "$REPO" --label ci-failure --state open \
+                        --limit 100 --json number,title \
+                        --jq "[.[] | select(.title == \"${TITLE}\")] | .[0].number // empty")"
+
+          if [ "$CONCLUSION" = "success" ]; then
+            if [ -n "$EXISTING" ]; then
+              gh issue comment "$EXISTING" --repo "$REPO" --body \
+                "✅ **${WF}** is green again — [run ${RUN_ID}](${RUN_URL}) on \`${BRANCH}\` (${SHA})."
+              gh issue close "$EXISTING" --repo "$REPO" --reason completed
+              echo "closed #${EXISTING}: ${WF} recovered"
+            else
+              echo "green, nothing open — nothing to do"
+            fi
+            exit 0
+          fi
+
+          # Anything not-success and not-skipped is worth a human look:
+          # failure, timed_out, cancelled, action_required.
+          if [ "$CONCLUSION" = "skipped" ] || [ "$CONCLUSION" = "neutral" ]; then
+            echo "conclusion=${CONCLUSION} — not a failure"
+            exit 0
+          fi
+
+          BODY="**${WF}** concluded \`${CONCLUSION}\`.
+
+          | | |
+          |---|---|
+          | run | [${RUN_ID}](${RUN_URL}) |
+          | trigger | \`${EVENT}\` |
+          | branch | \`${BRANCH}\` |
+          | commit | ${SHA} |
+
+          This trigger has no PR page, so nothing else would have said so.
+
+          This issue closes itself on the next green run of the same workflow.
+          Repeat failures arrive as comments here rather than as new issues \
+          — if this one has many comments, the problem is persistent, not new."
+
+          if [ -n "$EXISTING" ]; then
+            gh issue comment "$EXISTING" --repo "$REPO" --body "$BODY"
+            echo "commented on #${EXISTING}: ${WF} failed again"
+          else
+            gh issue create --repo "$REPO" --title "$TITLE" --label ci-failure --body "$BODY"
+            echo "filed a new issue for ${WF}"
+          fi
