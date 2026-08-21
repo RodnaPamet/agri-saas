@@ -90,6 +90,19 @@ awaits inline. That is the shape restored here.
   prose-is-not-code limitation `payload-url-scheme.test.ts` parses its way
   around. Worked around here rather than fixed; not this diff.
 
+- **Going async needed process-GROUP cleanup, and the first version hung CI.**
+  `spawnSync` blocks until the child tree resolves; `spawn` does not. `tsx`
+  forks `esbuild`, so `child.kill()` left the grandchild alive holding the
+  inherited stdio pipes — an open handle in the parent, and **Jest never
+  exited**. The signature is unmistakable once seen: the suite PASSED on CI in
+  12.5s, all 410 suites / 7589 tests were green, then `Jest did not exit one
+  second after the test run has completed`, the shard sat until its 35-minute
+  cap, and the runner logged `Terminate orphan process: … (node)` /
+  `… (esbuild)`. Reproduced locally with `--detectOpenHandles`, which never
+  returned. Fixed with `detached: true` plus `process.kill(-pid)` for the whole
+  group, and destroying the streams. Verified: `--detectOpenHandles` returns in
+  19.8s, and shard 1/4 runs 540s clean — back in line with main's 9-10.5 min.
+
 ## Worth knowing
 
 `scripts/worker.ts` and `scripts/scheduler.ts` are **outside `tsconfig.json`**,

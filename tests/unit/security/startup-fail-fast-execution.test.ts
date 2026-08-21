@@ -120,9 +120,23 @@ function bootAsync(
     marker?: string,
 ): Promise<BootResult> {
     return new Promise((resolve) => {
+        // `detached` makes the child a PROCESS-GROUP LEADER, and that is
+        // load-bearing rather than tidy. `tsx` forks `esbuild`; killing the
+        // child alone leaves the grandchild alive holding the inherited stdio
+        // pipes, so the parent keeps an open handle and JEST NEVER EXITS.
+        //
+        // Measured on the first version of this helper: the suite itself
+        // PASSED on CI in 12.5s and all 410 suites / 7589 tests were green —
+        // then `Jest did not exit one second after the test run has
+        // completed`, the job sat until its 35-minute cap, and the runner
+        // reported `Terminate orphan process: … (node)` / `… (esbuild)`.
+        // Reproduced locally with `--detectOpenHandles`, which never returned.
+        // `spawnSync` never had this because it blocks until the tree
+        // resolves; going async is what exposed it.
         const child = spawn(TSX, [entry], {
             cwd: REPO,
             env: { ...process.env, ...BASE_ENV, ...env },
+            detached: true,
         });
         let output = '';
         let settled = false;
@@ -131,7 +145,15 @@ function bootAsync(
             settled = true;
             clearTimeout(cap);
             try {
-                child.kill('SIGKILL');
+                // Negative pid = the whole group, so `esbuild` goes too.
+                if (child.pid) process.kill(-child.pid, 'SIGKILL');
+            } catch {
+                /* already gone */
+            }
+            try {
+                child.stdout?.destroy();
+                child.stderr?.destroy();
+                child.unref();
             } catch {
                 /* already gone */
             }
