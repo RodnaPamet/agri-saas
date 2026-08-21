@@ -143,4 +143,76 @@ describe('runMarketNewsPull', () => {
         expect(fetchFeedImpl).toHaveBeenCalledWith('https://ec.europa.eu/rss', expect.any(Object));
         expect(r.feeds).toBe(1);
     });
+
+    // ── URL scheme, checked at ingest (issue #654 harvest) ──
+
+    it('skips an item whose link is not http(s)', async () => {
+        const db = fakeDb();
+        const fetchFeedImpl = jest
+            .fn()
+            .mockResolvedValueOnce([
+                rawItem({ guid: 'bad', url: 'javascript:alert(1)' }),
+                rawItem({ guid: 'ok', url: 'https://agro.bg/1' }),
+            ])
+            .mockResolvedValue([]);
+
+        const r = await runMarketNewsPull({}, { db: db as any, fetchFeedImpl, now: NOW });
+
+        // The whole card is an anchor, so an item with no usable link is
+        // skipped rather than stored linkless.
+        expect(r.upserted).toBe(1);
+        const urls = db.marketNewsItem.upsert.mock.calls.map(
+            (c: any[]) => c[0].create.url,
+        );
+        expect(urls).toEqual(['https://agro.bg/1']);
+    });
+
+    it.each(['http://plain.example/x', 'https://secure.example/x'])(
+        'keeps an ordinary %s link',
+        async (url) => {
+            const db = fakeDb();
+            const fetchFeedImpl = jest
+                .fn()
+                .mockResolvedValueOnce([rawItem({ url })])
+                .mockResolvedValue([]);
+
+            const r = await runMarketNewsPull({}, { db: db as any, fetchFeedImpl, now: NOW });
+            expect(r.upserted).toBe(1);
+        },
+    );
+
+    it('nulls an unsafe imageUrl but keeps the item', async () => {
+        const db = fakeDb();
+        const fetchFeedImpl = jest
+            .fn()
+            .mockResolvedValueOnce([
+                rawItem({ url: 'https://agro.bg/1', imageUrl: 'javascript:alert(1)' }),
+            ])
+            .mockResolvedValue([]);
+
+        const r = await runMarketNewsPull({}, { db: db as any, fetchFeedImpl, now: NOW });
+
+        // imageUrl is stored "for later" and rendered by nobody yet — which is
+        // exactly why it is checked here and not at a render site.
+        expect(r.upserted).toBe(1);
+        const call = db.marketNewsItem.upsert.mock.calls[0][0];
+        expect(call.create.imageUrl).toBeNull();
+        expect(call.update.imageUrl).toBeNull();
+        expect(call.create.url).toBe('https://agro.bg/1');
+    });
+
+    it('keeps a good imageUrl', async () => {
+        const db = fakeDb();
+        const fetchFeedImpl = jest
+            .fn()
+            .mockResolvedValueOnce([
+                rawItem({ url: 'https://agro.bg/1', imageUrl: 'https://agro.bg/i.jpg' }),
+            ])
+            .mockResolvedValue([]);
+
+        await runMarketNewsPull({}, { db: db as any, fetchFeedImpl, now: NOW });
+        expect(db.marketNewsItem.upsert.mock.calls[0][0].create.imageUrl).toBe(
+            'https://agro.bg/i.jpg',
+        );
+    });
 });

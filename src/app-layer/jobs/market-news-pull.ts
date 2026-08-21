@@ -28,6 +28,7 @@ import { resolveNewsFeeds } from '@/lib/news/feeds';
 import { fetchFeed } from '@/lib/news/rss-client';
 import { categorize } from '@/lib/news/categorize';
 import type { MarketNewsPullPayload } from './types';
+import { isHttpUrl } from '@/lib/security/safe-url';
 
 const COMPONENT = 'market-news-pull';
 /** Items older than this are pruned each run so the table stays bounded. */
@@ -102,6 +103,23 @@ export async function runMarketNewsPull(
                 ? sanitizePlainText(raw.summary).slice(0, SUMMARY_MAX) || null
                 : null;
             const category = categorize(title, summary, feed.defaultCategory);
+
+            // Scheme-check what a third party gave us, at INGEST.
+            //
+            // `raw.url` is rendered as `<a href target="_blank">` on the News
+            // tab, and `raw.imageUrl` is stored "for later" and rendered by
+            // nobody yet — which is exactly why the check belongs here rather
+            // than at the one render site that exists today. React 19 rewrites
+            // a `javascript:` href and the CSP carries no `unsafe-inline`, so
+            // this is not the last line of defence; what it stops reaching the
+            // table is `http://` (a downgrade out of an HTTPS app) and every
+            // other scheme an RSS feed can put in a `<link>`.
+            //
+            // An item with an unusable link is skipped rather than stored
+            // linkless: the whole card is an anchor.
+            if (!isHttpUrl(raw.url)) continue;
+            const imageUrl = isHttpUrl(raw.imageUrl) ? raw.imageUrl : null;
+
             const hash = guidHash(feed.slug, raw.guid);
 
             // Idempotent upsert on the natural dedupe key (a WRITE in the loop —
@@ -115,7 +133,7 @@ export async function runMarketNewsPull(
                     title,
                     summary,
                     url: raw.url,
-                    imageUrl: raw.imageUrl,
+                    imageUrl,
                     publishedAt: raw.publishedAt,
                     guidHash: hash,
                 },
@@ -124,7 +142,7 @@ export async function runMarketNewsPull(
                     title,
                     summary,
                     url: raw.url,
-                    imageUrl: raw.imageUrl,
+                    imageUrl,
                     publishedAt: raw.publishedAt,
                     fetchedAt: now,
                 },
