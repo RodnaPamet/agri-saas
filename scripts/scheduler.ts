@@ -27,6 +27,7 @@ import Redis from 'ioredis';
 import pino from 'pino';
 import { QUEUE_NAME } from '../src/app-layer/jobs/types';
 import { SCHEDULED_JOBS } from '../src/app-layer/jobs/schedules';
+import { assertProductionEncryptionReady } from '../src/lib/security/startup-gate';
 
 // ─── Logger ───
 
@@ -45,29 +46,22 @@ if (!REDIS_URL) {
     process.exit(1);
 }
 
-// ─── GAP-03: production encryption-key fail-fast ───────────────────
-//
-// The scheduler is short-lived (runs once on deploy, exits) and does
-// not itself decrypt any column — it only registers BullMQ
-// repeatable jobs. But it shares the prod-deploy pipeline with the
-// long-running worker, so a missing or bad key here is a strong
-// signal that the worker will fail too. Refusing to register
-// schedules in that state surfaces the misconfiguration on the
-// deploy that introduces it, not three jobs later.
-if (process.env.NODE_ENV === 'production') {
-    (async () => {
-        const { checkProductionEncryptionKey } = await import(
-            '../src/lib/security/startup-encryption-check'
-        );
-        const config = checkProductionEncryptionKey(process.env);
-        if (!config.ok) {
-            log.fatal('[startup] FATAL: ' + config.reason);
-            process.exit(1);
-        }
-    })();
-}
-
 async function main() {
+    // ─── GAP-03: production encryption-key fail-fast ───────────────
+    //
+    // The scheduler is short-lived (runs once on deploy, exits) and does
+    // not itself decrypt any column — it only registers BullMQ repeatable
+    // jobs. But it shares the prod-deploy pipeline with the long-running
+    // worker, so a missing or bad key here is a strong signal that the
+    // worker will fail too. Refusing to register schedules in that state
+    // surfaces the misconfiguration on the deploy that introduces it, not
+    // three jobs later.
+    //
+    // AWAITED, and that is the fix (#698). This ran in a non-awaited async
+    // IIFE at module scope, so `main()` had already logged "registering
+    // repeatable jobs" before the refusal printed.
+    await assertProductionEncryptionReady(log, process.env);
+
     const args = process.argv.slice(2);
     const listOnly = args.includes('--list');
     const cleanAll = args.includes('--clean');
