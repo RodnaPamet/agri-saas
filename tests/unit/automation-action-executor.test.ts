@@ -7,12 +7,22 @@
  */
 const enqueueMock = jest.fn();
 jest.mock('@/app-layer/jobs/queue', () => ({ enqueue: (...a: unknown[]) => enqueueMock(...a) }));
+// `assertPublicAddress` calls `lookup(host, { all: true })`, so the mock must
+// resolve an ARRAY. The `{ all: true }` form is the point of the extraction
+// (#696): the previous inline call took the FIRST address only, so a host with
+// several A records passed as long as one of them was public.
 const lookupMock = jest.fn((..._a: unknown[]) =>
-    Promise.resolve({ address: '93.184.216.34', family: 4 }),
+    Promise.resolve([{ address: '93.184.216.34', family: 4 }]),
 );
 jest.mock('node:dns/promises', () => ({ lookup: (...a: unknown[]) => lookupMock(...a) }));
 
 import { executeAction } from '@/app-layer/automation/action-executor';
+import { _resetDnsVerdictCache } from '@/app-layer/automation/webhook-safety';
+
+// The DNS verdict cache is module-scoped (that is what makes it useful in
+// production — real endpoints concentrate on a handful of hosts). Left alone it
+// would carry one case's verdict into the next.
+beforeEach(() => _resetDnsVerdictCache());
 
 const baseEvent = {
     tenantId: 't1',
@@ -194,7 +204,7 @@ describe('PR-D hardening guards', () => {
 
     it('WEBHOOK blocks a host that resolves to a private IP (no fetch)', async () => {
         const db = makeDb();
-        lookupMock.mockResolvedValueOnce({ address: '10.0.0.5', family: 4 });
+        lookupMock.mockResolvedValueOnce([{ address: '10.0.0.5', family: 4 }]);
         const res = await executeAction(db, ruleOf('WEBHOOK', { url: 'https://evil.example.com/h' }), baseEvent);
         expect(res.ok).toBe(false);
         expect(res.summary).toMatch(/private/i);

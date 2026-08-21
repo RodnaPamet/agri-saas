@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { httpsUrl } from '@/lib/schemas/url';
+import { checkPushEndpoint } from '@/app-layer/automation/webhook-safety';
 
 /**
  * Web Push subscription as produced by `PushSubscription.toJSON()`.
@@ -25,15 +26,27 @@ import { httpsUrl } from '@/lib/schemas/url';
  *     so no stored endpoint can be orphaned by the tightened unsubscribe
  *     payload below.
  *
- * ## What this does NOT fix
+ * ## The host policy (#696)
  *
- * `https://169.254.169.254/` still passes. A scheme pin is not an SSRF guard —
- * the host policy this repo already has for the analogous automation webhook
- * path (`checkWebhookUrl`) has no counterpart here. Tracked separately; do not
- * read this docblock as saying the SSRF is closed.
+ * The scheme pin alone is not an SSRF guard — `https://169.254.169.254/`
+ * passes it. `checkPushEndpoint` adds the host half: the same policy the
+ * automation webhook path uses, plus a rejection of single-label hosts
+ * (`https://redis/` resolves inside the compose network, and the host-less
+ * `https:///path` form parses to one).
+ *
+ * ## Why the check here is STRUCTURAL only
+ *
+ * `withValidatedBody` calls `schema.parse(raw)` — synchronous
+ * (`src/lib/validation/route.ts:23`) — so an async refinement is impossible at
+ * this seam. The DNS half (`assertPublicAddress`) runs at SEND time in
+ * `deliverWebPush`, which is also the only place a row stored under an older
+ * policy is ever re-examined. Both halves are needed; neither is sufficient.
  */
 export const PushSubscriptionSchema = z.object({
-    endpoint: httpsUrl(),
+    endpoint: httpsUrl().refine(
+        (u) => checkPushEndpoint(u).ok,
+        'Endpoint host is not an allowed push service address',
+    ),
     keys: z.object({
         p256dh: z.string().min(1).max(500),
         auth: z.string().min(1).max(500),
@@ -41,8 +54,14 @@ export const PushSubscriptionSchema = z.object({
 });
 
 /**
- * Unsubscribe payload. Pinned to match the subscribe schema — a value that
- * could never be stored must not be accepted for removal either.
+ * Unsubscribe payload. Deliberately looser than the subscribe schema above: it
+ * pins the scheme but NOT the host policy.
+ *
+ * A DELETE causes no outbound request and can only remove the caller's own
+ * row. Applying the host rule here would make a row stored under an older
+ * policy undeletable through the API — and the send path never prunes a
+ * blocked endpoint (see `deliverWebPush`), so there would be no other way to
+ * get rid of it.
  */
 export const RemovePushSubscriptionSchema = z.object({
     endpoint: httpsUrl(),

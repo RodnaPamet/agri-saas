@@ -194,4 +194,47 @@ describe('push subscription schemas', () => {
         expect(RemovePushSubscriptionSchema.safeParse({ endpoint: valid.endpoint }).success).toBe(true);
         expect(RemovePushSubscriptionSchema.safeParse({ endpoint: 'nope' }).success).toBe(false);
     });
+
+    // ── #696: the host policy, at write time ──
+    //
+    // The scheme pin alone is not an SSRF guard, and this schema is the first
+    // of the two seams that enforce the host half. The second is the send path
+    // (`deliverWebPush`), which is the only one that can re-examine a row
+    // stored under an OLDER policy — so neither seam is redundant.
+
+    it.each([
+        ['https://169.254.169.254/x', 'cloud metadata by IP'],
+        ['https://10.0.0.5/x', 'RFC-1918'],
+        ['https://127.0.0.1/x', 'loopback'],
+        ['https://localhost/x', 'the name'],
+        ['https://[::ffff:169.254.169.254]/x', 'v4-mapped v6 — normalises to the hex form'],
+        ['https://metadata.google.internal./x', 'trailing-dot FQDN'],
+        ['https://redis/x', 'single-label host — resolves inside the compose network'],
+        ['https:///wpush/v2/abc', 'host-less URL, which parses to host `wpush`'],
+    ])('rejects %s (%s)', (endpoint) => {
+        expect(PushSubscriptionSchema.safeParse({ ...valid, endpoint }).success).toBe(false);
+    });
+
+    it.each([
+        'https://fcm.googleapis.com/fcm/send/abc123',
+        'https://updates.push.services.mozilla.com/wpush/v2/abc',
+        'https://web.push.apple.com/xyz',
+        'https://abc.notify.windows.com/xyz',
+    ])('still accepts the real push service %s', (endpoint) => {
+        // Resolving power, and the specific regression this guards: the shared
+        // helper used to classify `fcm.googleapis.com` as a PRIVATE ADDRESS
+        // (`startsWith('fc')`), so a naive reuse would have refused every
+        // Chrome/Android subscription while Firefox and Safari worked.
+        expect(PushSubscriptionSchema.safeParse({ ...valid, endpoint }).success).toBe(true);
+    });
+
+    it('removal stays looser on purpose — a stored row must remain deletable', () => {
+        // A DELETE makes no outbound request and can only remove the caller's
+        // own row. Applying the host rule here would strand a row written under
+        // an older policy: the send path never prunes a blocked endpoint, so
+        // there would be no other way to remove it.
+        expect(
+            RemovePushSubscriptionSchema.safeParse({ endpoint: 'https://10.0.0.5/x' }).success,
+        ).toBe(true);
+    });
 });
