@@ -126,6 +126,24 @@ the same diff so the gain is locked.
 *consequence* of A/B-tier gains plus standard-tier hygiene — it is
 not chased directly.
 
+> **Status, 2026-08-22 — the gate is temporarily in SHADOW mode.** The
+> `Coverage (≥60%)` job outgrew its 60-minute timeout at ~24,600 tests and was
+> cancelled on five consecutive main pushes, reporting neither a number nor a
+> diagnosis. It is now **sharded six ways** and merged with
+> `scripts/merge-coverage.mjs`, and the floors are scored by
+> `scripts/check-coverage-thresholds.mjs` (a port of jest's own `_checkThreshold`)
+> because `--coverageThreshold` only applies inside a live jest run.
+>
+> That checker currently runs `--report-only`: it prints the true enforced
+> numbers and exits 0. Enforcement resumes after a decimal-exact parity proof
+> against a single-process reference run on the same commit. **The floor values
+> are unchanged**, and the PR-time ratchet in
+> `tests/guards/coverage-ratchet.test.ts` is unaffected — it guards the numbers
+> in `jest.thresholds.json`, not the CI run.
+>
+> Enforcing before that proof would risk the one outcome worse than a dark
+> gate: a green gate measuring the wrong population, which nobody investigates.
+
 Two rules keep the ratchet honest, both already CI-enforced via
 `jest.config.js` + the `Coverage (≥60%)` job:
 

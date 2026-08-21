@@ -484,8 +484,45 @@ jobs:
   #  once this job is as fast as `test`, running it per-PR becomes
   #  affordable and the question is worth reopening.
   # ═══════════════════════════════════════════════════════════════
+  # ═══════════════════════════════════════════════════════════════
+  #  Coverage — SHARDED, and deliberately in SHADOW mode for now.
+  #
+  #  This job was one `--runInBand` process over the whole suite. It
+  #  outgrew its timeout three times (ci.yml history: 25 -> 35 at ~7,800
+  #  tests, -> 60) and on 2026-08-21 went over 60 at ~24,600 tests,
+  #  cancelling on five consecutive main pushes. A cancelled job also
+  #  loses its log buffer, so the gate reported neither a number nor a
+  #  diagnosis. Raising the ceiling a fourth time buys weeks.
+  #
+  #  So it shards like `test` and the per-shard reports are istanbul-merged
+  #  by the `coverage-gate` job below. That is numerically safe and was
+  #  verified rather than assumed: `CoverageMap.merge` keys on SOURCE
+  #  LOCATION, so hit counts sum and covered/total sets union, and a
+  #  two-shard merge reproduced an unsharded run of the same subset to the
+  #  decimal on all four metrics with an identical file count.
+  #
+  #  TWO THINGS NOT TO "TIDY" HERE:
+  #
+  #  1. `env:` and `services:` are byte-identical to the pre-shard job —
+  #     postgres only, four vars. Do NOT copy the `test` job's redis block.
+  #     `tests/integration/bullmq-real-api.test.ts` gates on REDIS_URL_TEST
+  #     and therefore SKIPS in coverage runs; adding redis starts executing
+  #     it and moves ./src/lib/. That is a re-flooring event hiding inside
+  #     a diff that reads as pure infrastructure.
+  #  2. No `--coverageThreshold` on the shards. A shard sees a fraction of
+  #     the files, so every floor would fail on partial data. Thresholds
+  #     belong to the merged map, once.
+  # ═══════════════════════════════════════════════════════════════
   coverage:
-    name: "Coverage (≥60%)"
+    name: "Coverage (shard ${{ matrix.shard }}/${{ matrix.total }})"
+    strategy:
+      # Never cancel siblings: a missing shard silently SHRINKS the
+      # denominator and usually raises the percentages, so the gate must be
+      # able to see which shard died.
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6]
+        total: [6]
     runs-on: ${{ vars.LARGE_RUNNER || 'ubuntu-latest' }}
     # Main-push only. Dropped from the weekly schedule (scanning-refresh runs
     # stay lean — build + docker/Trivy + codeql); coverage drift comes from
@@ -501,7 +538,7 @@ jobs:
     # the per-shard reports, then check thresholds once) — tracked as
     # a follow-up; the single-job ceiling bump keeps the gate honest
     # in the meantime.
-    timeout-minutes: 60
+    timeout-minutes: 20
 
     env:
       DATABASE_URL: postgresql://ci:ci_password@localhost:5432/ci_testdb?schema=public
@@ -613,12 +650,89 @@ jobs:
       # jest.config.js) — then EXCLUDE the four path-threshold roots above
       # before ranking, or you will target files that cannot move the number
       # that is failing.
-      - name: "Gate: test coverage thresholds"
+      - name: "Coverage (shard ${{ matrix.shard }})"
         run: |
-          node --max-old-space-size=8192 ./node_modules/jest/bin/jest.js --coverage --forceExit --runInBand \
-            --coverageThreshold "$(cat jest.thresholds.json)"
+          status=0
+          timeout --signal=INT --kill-after=60s 18m \
+            node --max-old-space-size=8192 ./node_modules/jest/bin/jest.js \
+              --coverage --forceExit --runInBand \
+              --shard=${{ matrix.shard }}/${{ matrix.total }} \
+              --coverageReporters=json \
+              --coverageDirectory "coverage-shard-${{ matrix.shard }}" || status=$?
 
-      - name: Upload coverage report
+          if [ "$status" -eq 124 ] || [ "$status" -eq 137 ]; then
+            echo "::error::Coverage shard ${{ matrix.shard }} exceeded its 18-minute budget."
+            echo "::error::A shell timeout is used so the step FAILS with its log intact — a runner"
+            echo "::error::cancellation drops the un-flushed buffer and leaves no diagnosis at all."
+            exit 1
+          fi
+          exit "$status"
+
+      - name: Upload shard coverage
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-shard-${{ matrix.shard }}
+          path: coverage-shard-${{ matrix.shard }}/coverage-final.json
+          retention-days: 14
+          if-no-files-found: error
+
+  # ═══════════════════════════════════════════════════════════════
+  #  Coverage gate — merge the shards, then score the floors ONCE.
+  # ═══════════════════════════════════════════════════════════════
+  coverage-gate:
+    name: "Coverage (≥60%)"
+    runs-on: ubuntu-latest
+    needs: [coverage]
+    # `always()` so a dead shard reaches the merge, which then REFUSES on the
+    # count rather than quietly reporting a number over less code.
+    if: ${{ always() && github.event_name == 'push' }}
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Node + Prisma client
+        uses: ./.github/actions/setup-node-prisma
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Download shard reports
+        uses: actions/download-artifact@v7
+        with:
+          pattern: coverage-shard-*
+          path: coverage-shards
+
+      - name: Merge shard reports
+        # --expect is the load-bearing flag. A missing shard does not fail a
+        # merge on its own; it shrinks the denominator and usually RAISES the
+        # percentages, so the gate would pass while measuring less code than it
+        # believes. A green gate over the wrong population is worse than the
+        # dark gate this replaces, because nobody investigates green.
+        run: node scripts/merge-coverage.mjs --expect 6 --out coverage coverage-shards
+
+      - name: "Gate: test coverage thresholds (SHADOW)"
+        # --report-only: prints the real enforced numbers and exits 0.
+        #
+        # Stage 1 restores a NUMBER; enforcement waits on a decimal-exact
+        # parity proof against a single-process reference run on the same
+        # commit. The gate is not a required check and is currently dark, so a
+        # shadow that prints true numbers is strictly better than what exists —
+        # and enforcing before the proof risks the one outcome worse than
+        # darkness.
+        #
+        # The checker prints ALL FIVE group rows unconditionally. Jest prints
+        # them only on failure, which is why the enforced number had to be
+        # reverse-engineered from coverage-summary.json — and why re-flooring
+        # from the whole-map summary table broke main on 2026-08-20. The
+        # populations differ by ~4.45 points on branches.
+        run: |
+          node scripts/check-coverage-thresholds.mjs \
+            --coverage coverage/coverage-final.json \
+            --thresholds jest.thresholds.json \
+            --report-only
+
+      - name: Upload merged coverage report
         if: always()
         uses: actions/upload-artifact@v7
         with:
@@ -627,10 +741,6 @@ jobs:
           retention-days: 14
         continue-on-error: true
 
-  # ═══════════════════════════════════════════════════════════════
-  #  Job 5: Build — production build verification
-  #  No DB needed. Verifies `next build` succeeds cleanly.
-  # ═══════════════════════════════════════════════════════════════
   build:
     name: Build
     runs-on: ${{ vars.LARGE_RUNNER || 'ubuntu-latest' }}
