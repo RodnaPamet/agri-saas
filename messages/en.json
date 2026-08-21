@@ -1065,6 +1065,8 @@
             "cancel": "Cancel",
             "loadFailed": "Failed to load custom roles",
             "createFailed": "Create failed",
+            "createCustomRole": "Create custom role",
+            "createRole": "Create Role",
             "createdSuccess": "Custom role \"{name}\" created successfully.",
             "updateFailed": "Update failed",
             "updatedSuccess": "Custom role \"{name}\" updated successfully.",
