@@ -94,6 +94,14 @@ describe('issuePasswordReset', () => {
             id: 'u1',
             email: 'real@example.com',
             passwordHash: '$2b$12$abcdefghijklmnopqrstuv',
+            // Pinned so the `/reset/i` subject assertion below stays about the
+            // TOKEN, not the copy. Since #694 the body is written in the
+            // recipient's language, and a user row with no `uiLanguage` falls
+            // back to `bg` (the column default) — so an unpinned row here
+            // yields "Смяна на паролата" and this test would be asserting
+            // localisation by accident. The locale behaviour has its own
+            // suite: tests/unit/auth-email-locale.test.ts.
+            uiLanguage: 'en',
         });
         mockPrisma.passwordResetToken.deleteMany.mockResolvedValue({ count: 0 });
         mockPrisma.passwordResetToken.create.mockResolvedValue({});
