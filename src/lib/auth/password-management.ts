@@ -53,6 +53,10 @@ import { logger } from '@/lib/observability/logger';
 import { hashForLookup } from '@/lib/security/encryption';
 
 import { hashPassword, verifyPassword } from './passwords';
+import { translateFor } from '@/lib/i18n/server-messages';
+import { isLocale } from '@/lib/i18n/locales';
+import { escapeHtml } from '@/lib/security/escape-html';
+import { RECIPIENT_FALLBACK_LOCALE } from '@/lib/email/recipient-locale';
 import {
     recordPasswordResetRequested,
     recordPasswordResetCompleted,
@@ -114,7 +118,7 @@ export async function issuePasswordReset(
 
     const user = await prisma.user.findUnique({
         where: { emailHash: hashForLookup(identifier) },
-        select: { id: true, email: true, passwordHash: true },
+        select: { id: true, email: true, passwordHash: true, uiLanguage: true },
     });
 
     // Enumeration-safe no-op: unknown email, or an OAuth-only account
@@ -150,24 +154,30 @@ export async function issuePasswordReset(
     const base = getAppBaseUrl();
     const resetUrl = `${base}/reset-password?token=${encodeURIComponent(raw)}`;
 
+    // Written in the RECIPIENT's language. `translateFor` takes an explicit
+    // locale because `getTranslations()` resolves from the request cookie —
+    // the wrong source for anything addressed to a specific person. See #694.
+    const locale = isLocale(user.uiLanguage) ? user.uiLanguage : RECIPIENT_FALLBACK_LOCALE;
+    const t = (key: string) => translateFor(locale, `auth.email.${key}`);
+
     try {
         await sendEmail({
             to: user.email,
-            subject: 'Reset your password',
+            subject: await t('resetSubject'),
             text: [
-                'We received a request to reset your Agrent password.',
+                await t('resetIntro'),
                 '',
-                'Click the link below to choose a new password. The link expires in 1 hour and can only be used once.',
+                await t('resetBody'),
                 '',
                 resetUrl,
                 '',
-                "If you didn't request this, you can safely ignore this message — your password will not change until the link is used.",
+                await t('resetIgnore'),
             ].join('\n'),
             html: [
-                '<p>We received a request to reset your Agrent password.</p>',
-                '<p>Click the link below to choose a new password. The link expires in 1 hour and can only be used once.</p>',
-                `<p><a href="${resetUrl}">Reset password</a></p>`,
-                "<p>If you didn't request this, you can safely ignore this message — your password will not change until the link is used.</p>",
+                `<p>${escapeHtml(await t('resetIntro'))}</p>`,
+                `<p>${escapeHtml(await t('resetBody'))}</p>`,
+                `<p><a href="${escapeHtml(resetUrl)}">${escapeHtml(await t('resetCta'))}</a></p>`,
+                `<p>${escapeHtml(await t('resetIgnore'))}</p>`,
             ].join(''),
         });
     } catch (err) {

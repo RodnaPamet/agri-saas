@@ -16,16 +16,8 @@ import { logger } from '@/lib/observability/logger';
 import { escapeHtml } from '@/lib/security/escape-html';
 import { translateFor } from '@/lib/i18n/server-messages';
 import { type Locale } from '@/lib/i18n/locales';
+import { RECIPIENT_FALLBACK_LOCALE } from './recipient-locale';
 
-/**
- * Language for a recipient whose `User.uiLanguage` did not resolve.
- *
- * Mirrors the column default in `prisma/schema/auth.prisma`
- * (`uiLanguage String @default("bg")`) rather than `DEFAULT_LOCALE`, for the
- * reason given on `InquiryEmailParams.locale`. If the column default ever
- * changes, this should change with it.
- */
-const RECIPIENT_FALLBACK_LOCALE: Locale = 'bg';
 import { commodityLabel } from '@/lib/market/commodity-label';
 
 export interface InquiryEmailParams {

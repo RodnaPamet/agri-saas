@@ -40,6 +40,10 @@ import { sendEmail } from '@/lib/mailer';
 import { logger } from '@/lib/observability/logger';
 import { recordVerificationEmailDelivery } from '@/lib/observability/metrics';
 import { hashForLookup } from '@/lib/security/encryption';
+import { translateFor } from '@/lib/i18n/server-messages';
+import { isLocale } from '@/lib/i18n/locales';
+import { escapeHtml } from '@/lib/security/escape-html';
+import { RECIPIENT_FALLBACK_LOCALE } from '@/lib/email/recipient-locale';
 
 import {
     recordEmailVerificationIssued,
@@ -148,24 +152,50 @@ export async function issueEmailVerification(
     const verifyUrl = `${base}/api/auth/verify-email?token=${encodeURIComponent(raw)}`;
 
     const flow = opts.flow ?? 'register';
+
+    // The recipient's own language. Unlike the password-reset path, this
+    // function is handed only a userId, so the preference needs a lookup —
+    // one indexed read on a path that is already doing several writes, and
+    // the alternative is sending a first-contact email in the wrong language
+    // to a user whose account default is Bulgarian.
+    //
+    // Fail-soft: a lookup failure must not stop the email. A verification
+    // mail that arrives in the fallback language is recoverable; one that
+    // never arrives locks the user out of signup once
+    // AUTH_REQUIRE_EMAIL_VERIFICATION=1.
+    let locale = RECIPIENT_FALLBACK_LOCALE;
+    try {
+        const row = await prisma.user.findUnique({
+            where: { id: opts.userId },
+            select: { uiLanguage: true },
+        });
+        if (isLocale(row?.uiLanguage)) locale = row.uiLanguage;
+    } catch (err) {
+        logger.warn('verification email locale lookup failed', {
+            component: 'auth',
+            error: err instanceof Error ? err.message : String(err),
+        });
+    }
+    const t = (key: string) => translateFor(locale, `auth.email.${key}`);
+
     try {
         await sendEmail({
             to: identifier,
-            subject: 'Verify your email',
+            subject: await t('verifySubject'),
             text: [
-                'Welcome to Agrent.',
+                await t('verifyIntro'),
                 '',
-                'Click the link below to verify your email address. The link expires in 24 hours.',
+                await t('verifyBody'),
                 '',
                 verifyUrl,
                 '',
-                "If you didn't request this, you can ignore this message — the link won't do anything until you click it.",
+                await t('verifyIgnore'),
             ].join('\n'),
             html: [
-                '<p>Welcome to Agrent.</p>',
-                '<p>Click the link below to verify your email address. The link expires in 24 hours.</p>',
-                `<p><a href="${verifyUrl}">Verify email</a></p>`,
-                "<p>If you didn't request this, you can ignore this message — the link won't do anything until you click it.</p>",
+                `<p>${escapeHtml(await t('verifyIntro'))}</p>`,
+                `<p>${escapeHtml(await t('verifyBody'))}</p>`,
+                `<p><a href="${escapeHtml(verifyUrl)}">${escapeHtml(await t('verifyCta'))}</a></p>`,
+                `<p>${escapeHtml(await t('verifyIgnore'))}</p>`,
             ].join(''),
         });
         recordVerificationEmailDelivery({ outcome: 'sent', flow });
