@@ -3658,6 +3658,17 @@
         "closeGenerate": "Close + generate evidence"
     },
     "exchange": {
+        "email": {
+            "intro": "Another farm expressed interest in your {side} listing for {commodity}.",
+            "messageLabel": "Message:",
+            "privacy": "Contact details are exchanged only if you accept — a decline shares nothing, in either direction.",
+            "quantity": "Quantity of interest: {quantity} t",
+            "reviewLink": "Review the inquiry and respond",
+            "reviewText": "Review it and respond here: {url}",
+            "sideBuy": "purchase",
+            "sideSell": "sale",
+            "subject": "New interest in your {commodity} listing"
+        },
         "nav": {
             "browse": "Browse",
             "myListings": "My listings",
