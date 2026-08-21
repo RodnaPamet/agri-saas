@@ -31,6 +31,7 @@ import { BULGARIA_REGION_OPTIONS } from '@/lib/geo/bulgaria-regions';
 import { CANONICAL_COMMODITIES } from '@/lib/market/commodity-vocabulary';
 import { EXCHANGE_CURRENCY } from '@/lib/exchange/currency';
 import type { ExchangePublicListing } from '@/lib/exchange/public-listing';
+import { commodityLabel, type CommodityTranslator } from '@/lib/market/commodity-label';
 
 /**
  * Offered commodities, DERIVED from the canonical vocabulary.
@@ -44,10 +45,17 @@ import type { ExchangePublicListing } from '@/lib/exchange/public-listing';
  * The submitted VALUE is the canonical slug; the label is Title-Cased for
  * display, which is what the hardcoded list rendered anyway.
  */
-const COMMODITY_OPTIONS: ComboboxOption[] = CANONICAL_COMMODITIES.map((slug) => ({
-    value: slug,
-    label: slug.charAt(0).toUpperCase() + slug.slice(1),
-}));
+/**
+ * Built per-render rather than at module scope, because the label is now
+ * LOCALISED and a module constant would freeze one language into the bundle.
+ * The VALUE is still the canonical slug — only the label moves.
+ */
+function buildCommodityOptions(tCommodity: CommodityTranslator): ComboboxOption[] {
+    return CANONICAL_COMMODITIES.map((slug) => ({
+        value: slug,
+        label: commodityLabel(tCommodity, slug),
+    })).sort((a, b) => a.label.localeCompare(b.label));
+}
 
 interface CreateOfferModalProps {
     open: boolean;
@@ -76,7 +84,11 @@ export function CreateOfferModal({ open, setOpen, onCreated }: CreateOfferModalP
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    const commodityOptions = COMMODITY_OPTIONS;
+    const tCommodity = useTranslations('trends.commodities');
+    const commodityOptions = useMemo(
+        () => buildCommodityOptions(tCommodity),
+        [tCommodity],
+    );
     const regionOptions = useMemo<ComboboxOption[]>(() => [...BULGARIA_REGION_OPTIONS], []);
 
     const qtyNum = Number(quantity);

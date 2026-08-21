@@ -44,12 +44,29 @@ export interface NewsFeed {
  * override via `MARKET_NEWS_FEEDS`, and the pull is fail-soft so a feed that
  * later dies just contributes nothing.
  *
- * Notable rejects (do NOT re-add without re-verifying): agri.bg + sinor.bg
- * (WAF 403 from datacenter IPs — unusable for a server pull), agroclub.bg /
- * dfz.bg / mzh.government.bg (no working RSS / 404 — the Ministry + State Fund
- * expose none), agroportal.bg + agri-press.network.europa.eu (HTML, not a
- * feed). EC general-news + Eurostat feeds work but are NOT agri-specific, so
- * they'd pollute the tab — left out deliberately.
+ * Notable rejects (do NOT re-add without re-verifying): agri.bg + sinor.bg +
+ * fermer.bg (WAF 403 from datacenter IPs — unusable for a server pull),
+ * agroclub.bg / dfz.bg / mzh.government.bg (no working RSS / 404 — the
+ * Ministry + State Fund expose none), agroportal.bg +
+ * agri-press.network.europa.eu (HTML, not a feed). EC general-news + Eurostat
+ * feeds work but are NOT agri-specific, so they'd pollute the tab — left out
+ * deliberately.
+ *
+ * ── agroportal.bg: the recorded reason may not be the real one ──
+ *
+ * "HTML, not a feed" is a fact about the site as probed on 2026-07-15, and it
+ * is the reason that will evaporate the day someone finds a working endpoint.
+ * A parallel WIP branch (`feat/trends-news` @ 545f441a, never merged) records
+ * a different and more durable one in three places: that agroportal.bg is
+ * never fetched because its price content is an EXCLUSIVE BROKERAGE
+ * PARTNERSHIP.
+ *
+ * That claim is UNVERIFIED — `git log --all -S'brokerage'` finds it in that
+ * one dead commit and nowhere else, and nothing in this repo corroborates it.
+ * It is recorded here rather than acted on, so that whoever next has a working
+ * agroportal RSS URL in hand knows to check the commercial question before
+ * adding it, instead of concluding the technical objection has lapsed.
+ * See issue #670.
  */
 export const DEFAULT_NEWS_FEEDS: readonly NewsFeed[] = [
     { slug: 'agro-bg', url: 'https://agro.bg/rss', defaultCategory: 'general', displayName: 'АГРО.БГ' },

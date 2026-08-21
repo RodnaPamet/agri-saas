@@ -58,6 +58,7 @@ import {
 import type { ExchangePublicListing } from '@/lib/exchange/public-listing';
 import { EXCHANGE_SIDE_COLORS, EXCHANGE_ACCENT_GOLD } from '@/components/exchange/ExchangeMap';
 import { buildExchangeFilters, EXCHANGE_FILTER_KEYS } from './filter-defs';
+import { commodityLabel } from '@/lib/market/commodity-label';
 import { CreateOfferModal } from './CreateOfferModal';
 import { InquiryModal } from './InquiryModal';
 import { ExchangeNav } from './ExchangeNav';
@@ -120,6 +121,10 @@ function SideDot({ side }: { side: 'SELL' | 'BUY' }) {
 function ExchangeInner() {
     const t = useTranslations('exchange.client');
     const tFilters = useTranslations('exchangeFilters');
+    // Commodity labels already exist for all 15 slugs in both locales under
+    // `trends.commodities` — the Exchange just never consumed them, so a
+    // Bulgarian operator read `wheat`.
+    const tCommodity = useTranslations('trends.commodities');
     const locale = useLocale();
     const tonne = t('unitTonne');
     const tenantHref = useTenantHref();
@@ -231,8 +236,8 @@ function ExchangeInner() {
     }, [facetPage, state.commodity]);
 
     const liveFilters = useMemo(
-        () => buildExchangeFilters(tFilters, commodityOptions),
-        [tFilters, commodityOptions],
+        () => buildExchangeFilters(tFilters, commodityOptions, tCommodity),
+        [tFilters, commodityOptions, tCommodity],
     );
 
     // ── Market pulse ────────────────────────────────────────────────────
@@ -451,7 +456,9 @@ function ExchangeInner() {
                                 >
                                     <div className="flex items-center gap-compact">
                                         <SideDot side={o.side} />
-                                        <span className="font-medium text-content-emphasis">{o.commodity}</span>
+                                        <span className="font-medium text-content-emphasis">
+                                            {commodityLabel(tCommodity, o.commodity)}
+                                        </span>
                                         <span className="rounded bg-bg-subtle px-1.5 py-0.5 text-[10px] font-medium text-content-secondary">
                                             {t(KIND_LABEL_KEY[o.kind])}
                                         </span>
@@ -512,10 +519,20 @@ function ExchangeInner() {
                     if (!o) setSelectedId(null);
                 }}
                 direction="right"
-                title={selectedOffer?.commodity ?? t('sheetOffer')}
+                title={
+                    selectedOffer
+                        ? commodityLabel(tCommodity, selectedOffer.commodity)
+                        : t('sheetOffer')
+                }
                 description={t('sheetDescription')}
             >
-                <Sheet.Header title={selectedOffer?.commodity ?? t('sheetOffer')} />
+                <Sheet.Header
+                    title={
+                        selectedOffer
+                            ? commodityLabel(tCommodity, selectedOffer.commodity)
+                            : t('sheetOffer')
+                    }
+                />
                 <Sheet.Body className="space-y-section">
                     {selectedOffer && (
                         <div className="space-y-default text-sm">

@@ -11,6 +11,7 @@ import { createTypedFilterDefs } from '@/components/ui/filter/filter-definitions
 import type { FilterType } from '@/components/ui/filter';
 import { ArrowLeftRight, MapPin, Scale, Wheat, Tag } from 'lucide-react';
 import { BULGARIA_REGIONS } from '@/lib/geo/bulgaria-regions';
+import { commodityLabel, type CommodityTranslator } from '@/lib/market/commodity-label';
 
 /** A next-intl translator scoped to the `exchangeFilters` namespace. */
 type Translator = (key: string) => string;
@@ -97,10 +98,16 @@ export const EXCHANGE_FILTER_KEYS = exchangeFilterDefs.filterKeys;
 export function buildExchangeFilters(
     t: Translator,
     commodities: readonly string[],
+    tCommodity?: CommodityTranslator,
 ): FilterType[] {
+    // The VALUE stays the slug — it is what the URL param and the API query
+    // carry. Only the label is localised, and it is sorted on the LABEL so
+    // the dropdown reads alphabetically in the language on screen rather
+    // than in slug order.
+    const label = (c: string) => (tCommodity ? commodityLabel(tCommodity, c) : c);
     const commodityOptions = Array.from(new Set(commodities))
-        .sort((a, b) => a.localeCompare(b))
-        .map((c) => ({ value: c, label: c }));
+        .map((c) => ({ value: c, label: label(c) }))
+        .sort((a, b) => a.label.localeCompare(b.label));
     return exchangeFilterDefs.filters.map((f) => {
         switch (f.key) {
             case 'side':
