@@ -54,6 +54,8 @@ const listSuccessRate = new Rate('list_success_rate');
 // Completed iterations, tagged by regime, so the saturation window
 // carries a throughput floor (see READ_CAPACITY_FLOOR).
 const listIterations = new Counter('list_iterations');
+/** Proves each `check_group` tag still binds — see the thresholds block. */
+const checkRuns = new Counter('check_runs');
 
 // Read throughput floor for the saturation window. Same construction
 // as auth.js: a COUNT over a fixed-length window, derived from an
@@ -114,7 +116,8 @@ export const options = {
         // `checks` metric carried 12k-22k, and the threshold reported ok
         // every single time. `count>0` turns a silent no-op back into a
         // red run if the rename does not take.
-        'checks{check_group:evidence_ok}': ['rate>0.99', 'count>0'],
+        'checks{check_group:evidence_ok}': ['rate>0.99'],
+        'check_runs{check_group:evidence_ok}': ['count>0'],
 
         // Login-step health (gate the warm-up, not the steady state).
         'http_req_failed{step:login}': ['rate<0.05'],
@@ -212,6 +215,7 @@ export default function listsIteration(data) {
             },
             { check_group: 'evidence_ok' },
         );
+        checkRuns.add(1, { check_group: 'evidence_ok' });
         evidenceRequests.add(1);
         listSuccessRate.add(ok);
     });

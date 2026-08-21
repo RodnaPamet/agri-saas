@@ -1017,9 +1017,17 @@ jobs:
   load-smoke:
     name: "Load Smoke (k6)"
     needs: [build, changes]
-    # Main-push only (skips PRs entirely) and only when code changed — a k6
-    # smoke check is redundant per-PR; the merge to main exercises it. Not on
+    # Main-push only (skips PRs entirely) and only when code changed — running
+    # actual load per-PR is redundant; the merge to main exercises it. Not on
     # schedule (scanning-refresh runs stay lean).
+    #
+    # CONSEQUENCE, learned the hard way: a k6 CONFIG error is undetectable
+    # before merge here. An invalid threshold aggregation made every script a
+    # parse error, this job exited at init, and `main` stayed red across three
+    # merges. Script VALIDITY is therefore checked on PRs by
+    # `tests/guards/k6-threshold-binding.test.ts`, which runs in the `test`
+    # job; this job checks BEHAVIOUR. Do not assume a green PR means the load
+    # scripts run — that is the guard's job, not this one's.
     if: ${{ github.event_name == 'push' && needs.changes.outputs.code == 'true' }}
     runs-on: ${{ vars.LARGE_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 12

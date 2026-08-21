@@ -43,6 +43,8 @@ const RUN_ID = __ENV.RUN_ID || `local-${Date.now()}`;
 const uploadEvidenceOk = new Counter('mutation_upload_evidence_ok');
 const uploadEvidenceFail = new Counter('mutation_upload_evidence_fail');
 const mutationLoopMs = new Trend('mutation_loop_ms', true);
+/** Proves each `check_group` tag still binds — see the thresholds block. */
+const checkRuns = new Counter('check_runs');
 
 export const options = {
     scenarios: {
@@ -98,7 +100,8 @@ export const options = {
         // ZERO samples — which k6 passes. See tests/guards/k6-threshold-binding.
         // `count>0` is what makes the rename verifiable: without it the gate
         // cannot tell "everything passed" from "nothing ran".
-        'checks{check_group:evidence_uploaded}': ['rate>0.80', 'count>0'],
+        'checks{check_group:evidence_uploaded}': ['rate>0.80'],
+        'check_runs{check_group:evidence_uploaded}': ['count>0'],
 
         // E2E loop — wide enough to absorb cold-start noise but
         // tight enough to catch a doubling regression.
@@ -177,6 +180,7 @@ export default function mutationsIteration(data) {
         },
         { check_group: 'evidence_uploaded' },
     );
+    checkRuns.add(1, { check_group: 'evidence_uploaded' });
     if (uploadOk) uploadEvidenceOk.add(1);
     else uploadEvidenceFail.add(1);
 

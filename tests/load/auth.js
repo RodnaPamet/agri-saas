@@ -76,6 +76,8 @@ const cfg = loadConfig();
 const authFullLoginMs = new Trend('auth_full_login_ms', true);
 const authSuccessCount = new Counter('auth_success_count');
 const authFailureCount = new Counter('auth_failure_count');
+/** Proves each `check_group` tag still binds — see the thresholds block. */
+const checkRuns = new Counter('check_runs');
 
 // ── Capacity floor for the saturation window ───────────────────────
 // Derived from the measured per-login cost, not guessed. The server
@@ -164,9 +166,12 @@ export const options = {
         // so if the tag still fails to bind, the next nightly goes RED
         // instead of quietly green again. Do not remove it — without it
         // this gate cannot tell "everything passed" from "nothing ran".
-        'checks{check_group:csrf_ok}': ['rate>0.99', 'count>0'],
-        'checks{check_group:login_ok}': ['rate>0.99', 'count>0'],
-        'checks{check_group:session_ok}': ['rate>0.99', 'count>0'],
+        'checks{check_group:csrf_ok}': ['rate>0.99'],
+        'check_runs{check_group:csrf_ok}': ['count>0'],
+        'checks{check_group:login_ok}': ['rate>0.99'],
+        'check_runs{check_group:login_ok}': ['count>0'],
+        'checks{check_group:session_ok}': ['rate>0.99'],
+        'check_runs{check_group:session_ok}': ['count>0'],
 
         // ── Latency: ONLY in the uncontended regime ──
         // Service-time budgets calibrated against a real run rather
@@ -275,6 +280,7 @@ function coldLogin(regime) {
         },
         { check_group: 'csrf_ok' },
     );
+    checkRuns.add(1, { check_group: 'csrf_ok' });
     if (!csrfOk) {
         authFailureCount.add(1, { regime });
         return;
@@ -308,6 +314,7 @@ function coldLogin(regime) {
         },
         { check_group: 'login_ok' },
     );
+    checkRuns.add(1, { check_group: 'login_ok' });
     if (!loginOk) {
         authFailureCount.add(1, { regime });
         return;
@@ -333,6 +340,7 @@ function coldLogin(regime) {
         },
         { check_group: 'session_ok' },
     );
+    checkRuns.add(1, { check_group: 'session_ok' });
 
     if (sessionOk) {
         authSuccessCount.add(1, { regime });

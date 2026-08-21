@@ -613,8 +613,14 @@ against data.
 
 The 110 thresholds that did carry data all reported `ok`, and the latency
 figures above are unaffected — they come from `http_req_duration`, which
-was always populated. The check gates are fixed and now carry `count>0`
-so a threshold with nothing behind it fails instead of passing.
+was always populated.
+
+The check gates are fixed. The first fix was not: it put `count>0` on the
+`checks{…}` thresholds, and `checks` is a **Rate**, which k6 permits only
+`rate` on — so the Load Smoke job became a parse error and stopped running
+across three merges to `main`. The floor now sits on a `check_runs`
+**Counter** submetric, which fails at 0 when a tag stops binding, verified
+locally against k6 v1.4.0. See `tests/load/README.md`.
 
 **No number moved, and the reason is a choice worth stating.** These
 are **SLO-conformance gates, not regression detectors** — 1500 ms is
