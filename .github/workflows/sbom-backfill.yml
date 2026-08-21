@@ -1,0 +1,193 @@
+# ───────────────────────────────────────────────────────────────
+#  Regenerate and attach an SBOM for a release that shipped without one.
+#
+#  ## Why this exists
+#
+#  `release.yml` generates the SBOM inside the publishing run, gated on
+#  `steps.release.outputs.released == 'true'` — i.e. "did the tag change
+#  during THIS run?". That gate is correct: it stops a no-op release run
+#  emitting a stray SBOM for a version it did not publish.
+#
+#  But it also means the artifact is producible ONLY on the run that
+#  publishes the version. On 2026-08-21 `anchore/sbom-action` hit a
+#  transient GitHub 504 fetching the `syft` binary:
+#
+#      [error] received HTTP status=504 for url=
+#              'https://github.com/anchore/syft/releases/v1.42.3'
+#
+#  The release itself published — tag and GitHub Release both exist — and
+#  only the SBOM step failed. Re-running the job then concluded SUCCESS
+#  with steps 8 and 9 `skipped`, because the tag no longer changed. So
+#  `v2.3.13` has no assets while every neighbouring release has
+#  `sbom.spdx.json`, and the pipeline could not repair it. See issue #685.
+#
+#  This workflow is that repair path, and nothing else. It is deliberately
+#  manual: a missing SBOM is rare, and an automatic retry loop would mask
+#  a systematic breakage as an occasional one.
+#
+#  ## Why it checks out the TAG
+#
+#  An SBOM describes one version's dependency tree. Generating it from
+#  `main` would produce a document that is plausible, attachable, and
+#  wrong. The checkout is pinned to the tag and `npm ci` runs against that
+#  version's lockfile, so the result is what the publishing run would have
+#  produced.
+#
+#  It is NOT a hand-generated substitute: same runner OS, same pinned
+#  `anchore/sbom-action@v0.24.0`, same `npm ci` before the scan. A
+#  laptop-built SPDX document would legitimately differ (platform-specific
+#  linux-x64 optional dependencies land in `node_modules`), and nobody
+#  would ever diff it to find out.
+#
+#  ## What this deliberately does NOT do
+#
+#  It does not add `continue-on-error` to the SBOM step in `release.yml`.
+#  That was the obvious "hardening" and it is wrong: the failing step is
+#  the only signal that an SBOM is missing, and since #676 that signal now
+#  reaches a human as a filed issue. Suppressing it would trade a visible
+#  failure for a silent gap — which is the exact trade this repository has
+#  spent the week undoing. The failure should stay loud; what was missing
+#  was a way to fix it afterwards.
+# ───────────────────────────────────────────────────────────────
+name: SBOM backfill
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to generate an SBOM for (e.g. v2.3.13)"
+        required: true
+        type: string
+
+permissions:
+  contents: write # gh release upload
+
+concurrency:
+  group: sbom-backfill-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  backfill:
+    name: "SBOM backfill (${{ inputs.tag }})"
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out the released tag
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag }}
+          fetch-depth: 0
+
+      # Fail here rather than three steps later with a confusing gh error.
+      - name: Verify the tag has a GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG='${{ inputs.tag }}'
+
+          if ! git rev-parse "refs/tags/${TAG}" >/dev/null 2>&1; then
+            echo "::error::No git tag '${TAG}'. Check the spelling — it should look like v2.3.13."
+            exit 1
+          fi
+
+          if ! gh release view "${TAG}" >/dev/null 2>&1; then
+            echo "::error::Tag '${TAG}' exists but has no GitHub Release, so there is nothing to attach an asset to."
+            exit 1
+          fi
+
+          # Not an error — this workflow is idempotent by design — but say so,
+          # because "I ran it and nothing looked different" is a bad outcome.
+          EXISTING="$(gh release view "${TAG}" --json assets \
+                        --jq '[.assets[].name] | join(", ")')"
+          if [ -n "${EXISTING}" ]; then
+            echo "::notice::${TAG} already has assets: ${EXISTING}. An SBOM of the same name will be REPLACED."
+          else
+            echo "${TAG} currently has no assets — this is the gap being filled."
+          fi
+
+      # Mirrors release.yml's own setup exactly — `actions/setup-node@v7`,
+      # node 22, npm cache. NOT the `setup-node-prisma` composite: that is a
+      # different environment, and the point of this workflow is to produce
+      # the document the publishing run would have produced.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+
+      # syft reads the INSTALLED tree, not just the lockfile, so this must run
+      # for the document to match. It is also why a laptop-generated SBOM is
+      # not equivalent: platform-specific linux-x64 optional dependencies land
+      # in node_modules and end up in the SPDX package list.
+      #
+      # The retry loop is copied from release.yml deliberately, including the
+      # per-attempt `timeout`. Its comment there records why: on 2026-07-31
+      # `npm ci` stalled silently for ~8 minutes, ate the whole job budget, and
+      # attempts 2 and 3 never ran — a bare `for` loop only re-enters when the
+      # command RETURNS, so it defends against a fast failure but not a hang.
+      - name: Install dependencies
+        run: |
+          npm config set fetch-retries 5
+          npm config set fetch-retry-maxtimeout 120000
+          npm config set fetch-timeout 300000
+          for attempt in 1 2 3; do
+            status=0
+            timeout -k 10 150 npm ci || status=$?
+            if [ "$status" -eq 0 ]; then exit 0; fi
+            if [ "$status" -eq 124 ]; then
+              echo "::warning::npm ci TIMED OUT after 150s (attempt ${attempt}/3) — retrying"
+            else
+              echo "::warning::npm ci failed with status ${status} (attempt ${attempt}/3) — retrying"
+            fi
+            sleep 5
+          done
+          echo "::error::npm ci failed three times."
+          exit 1
+
+      - name: Generate SBOM (SPDX-JSON)
+        # Same pinned version as release.yml. If that pin moves, move this
+        # one with it, or a backfilled SBOM stops being comparable to its
+        # neighbours.
+        uses: anchore/sbom-action@v0.24.0
+        with:
+          path: .
+          format: spdx-json
+          output-file: "sbom.spdx.json"
+          artifact-name: "sbom-${{ inputs.tag }}.spdx.json"
+
+      # A zero-byte or absent file would upload happily and look like a fix.
+      - name: Verify the SBOM is real before attaching it
+        run: |
+          set -euo pipefail
+          test -s sbom.spdx.json || { echo "::error::sbom.spdx.json is missing or empty."; exit 1; }
+          PKGS="$(jq '.packages | length' sbom.spdx.json)"
+          echo "SBOM contains ${PKGS} packages."
+          # A source tree with a lockfile this size cannot legitimately
+          # resolve to a handful of packages; that would mean syft scanned
+          # an empty or wrong directory.
+          if [ "${PKGS}" -lt 100 ]; then
+            echo "::error::Only ${PKGS} packages — syft almost certainly scanned the wrong tree."
+            exit 1
+          fi
+
+      - name: Attach to the GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: gh release upload '${{ inputs.tag }}' sbom.spdx.json --clobber
+
+      - name: Confirm the asset is actually there
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG='${{ inputs.tag }}'
+          ASSETS="$(gh release view "${TAG}" --json assets --jq '[.assets[].name] | join(", ")')"
+          case "${ASSETS}" in
+            *sbom.spdx.json*) : ;;
+            *) echo "::error::Upload reported success but ${TAG} has assets: [${ASSETS}]"; exit 1 ;;
+          esac
+          {
+            echo "### 🧾 SBOM backfilled for ${TAG}"
+            echo ""
+            echo "Assets now on the release: \`${ASSETS}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
