@@ -17,10 +17,19 @@ describe('executor hardening', () => {
     });
 
     it('WEBHOOK runs the SSRF guard + DNS re-check before fetch', () => {
+        // The DNS half moved OUT of this file in #696. It used to be six inline
+        // lines here — `lookup(...)` then `isPrivateAddress(address)` — which is
+        // what this guard pinned. That made it the only copy, so the Web Push
+        // guard would have inherited only the weaker structural half. It now
+        // lives in `assertPublicAddress`, which additionally passes
+        // `{ all: true }` (a multi-A host cannot pass on its first record) and
+        // bounds the lookup.
         expect(EXEC).toMatch(/checkWebhookUrl/);
-        expect(EXEC).toMatch(/isPrivateAddress\(address\)/);
-        // the guard precedes the fetch call
+        expect(EXEC).toMatch(/assertPublicAddress\(/);
+        expect(EXEC).not.toMatch(/isPrivateAddress\(address\)/); // not re-inlined
+        // both halves precede the fetch call
         expect(EXEC.indexOf('checkWebhookUrl')).toBeLessThan(EXEC.indexOf('fetch('));
+        expect(EXEC.indexOf('assertPublicAddress(')).toBeLessThan(EXEC.indexOf('fetch('));
     });
 
     it('CREATE_TASK dedupes before creating', () => {

@@ -12,11 +12,10 @@
  * dispatcher regresses to a hardcoded outcome note.
  */
 import { createHmac } from 'node:crypto';
-import { lookup } from 'node:dns/promises';
 import type { PrismaClient } from '@prisma/client';
 import { buildOutboundHeaders, computeBatchId } from '../events/webhook-headers';
 import { enqueue } from '../jobs/queue';
-import { checkWebhookUrl, isPrivateAddress } from './webhook-safety';
+import { checkWebhookUrl, assertPublicAddress } from './webhook-safety';
 import { isNotificationsEnabled } from '../notifications/settings';
 import { TERMINAL_WORK_ITEM_STATUSES, isCompletedStatus } from '../domain/work-item-status';
 import type {
@@ -233,14 +232,14 @@ async function fireWebhook(rule: ExecutableRule, event: ActionEvent): Promise<Ac
     // actual IP so a public name pointing at private space is also rejected.
     const verdict = checkWebhookUrl(cfg.url);
     if (!verdict.ok) return { ok: false, summary: `Webhook blocked: ${verdict.reason}` };
-    try {
-        const { address } = await lookup(verdict.host!);
-        if (isPrivateAddress(address)) {
-            return { ok: false, summary: `Webhook blocked: ${verdict.host} resolves to private ${address}` };
-        }
-    } catch {
-        return { ok: false, summary: `Webhook blocked: cannot resolve ${verdict.host}` };
-    }
+    // Layer 2 now lives in `assertPublicAddress` rather than inline here (#696).
+    // It was six lines in this function and nowhere else, so the Web Push guard
+    // would have inherited only the weaker structural half. Extracting it also
+    // upgraded it: `{ all: true }` so a multi-A host cannot pass on its first
+    // record, a 2s bound because `dns.lookup` has none and this runs inside an
+    // HTTP request, and a short per-host cache.
+    const resolved = await assertPublicAddress(verdict.host!);
+    if (!resolved.ok) return { ok: false, summary: `Webhook blocked: ${resolved.reason}` };
     const body = JSON.stringify({
         rule: { id: rule.id, name: rule.name },
         event: { name: event.event, entityType: event.entityType, entityId: event.entityId },

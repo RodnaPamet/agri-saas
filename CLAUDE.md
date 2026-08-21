@@ -1379,9 +1379,23 @@ recovery.
   paths, which `httpsUrl()` would reject. A "no stale entries" test removes the
   exemption's cover as soon as the field is pinned or deleted.
   **A scheme pin is not an SSRF guard.** `https://169.254.169.254/` passes it.
-  For a URL the SERVER will fetch, the host policy is `checkWebhookUrl` in
-  `@/app-layer/automation/webhook-safety` — used by the automation webhook
-  path, and notably absent from the Web Push and OIDC-discovery paths (#696).
+  For a URL the SERVER will fetch, the host policy lives in
+  `@/app-layer/automation/webhook-safety` and is **two layers, both required**:
+  `checkWebhookUrl` (structural — scheme + literal host) and
+  `assertPublicAddress` (resolves DNS with `{ all: true }`, refuses if ANY
+  address is private, bounded at 2s, fails CLOSED on a resolve error, per-host
+  cached). Web Push additionally uses `checkPushEndpoint`, which adds a
+  single-label-host rejection — `https://redis/` resolves inside the compose
+  network, and the host-less `https:///path` form parses to one.
+  **`isPrivateAddress` returns false for anything that is not an IP literal**,
+  and that is deliberate: it used to match `startsWith('fc')` on a raw
+  hostname, so it classified `fcm.googleapis.com` — every Chrome/Android push
+  endpoint — as a private address (#696). A NAME is not an ADDRESS; names are
+  the blocklist's job and DNS's job.
+  `sso-config.discoveryUrl` is still unguarded and is a HARDER case, not the
+  same one: `discoverOidc` uses `fetch`, which follows redirects, so a host
+  check before the call is defeatable by a 302 into private space. It needs a
+  redirect policy as well and is tracked separately.
 - **Audit trail**: Call `logEvent()` from `src/app-layer/events/audit.ts` after mutating state. Entries are hash-chained — never write directly to the `AuditLog` table.
 - **Audit verbs: domain verbs are the deliberate majority, not a wart.**
   `AuditEventPayload.action` is a bare `string` with no enum, no registry
