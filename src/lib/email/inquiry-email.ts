@@ -14,11 +14,50 @@ import { ConsoleEmailProvider, getEmailProvider, sendEmail } from '@/lib/mailer'
 import { env } from '@/env';
 import { logger } from '@/lib/observability/logger';
 import { escapeHtml } from '@/lib/security/escape-html';
+import { translateFor } from '@/lib/i18n/server-messages';
+import { type Locale } from '@/lib/i18n/locales';
+
+/**
+ * Language for a recipient whose `User.uiLanguage` did not resolve.
+ *
+ * Mirrors the column default in `prisma/schema/auth.prisma`
+ * (`uiLanguage String @default("bg")`) rather than `DEFAULT_LOCALE`, for the
+ * reason given on `InquiryEmailParams.locale`. If the column default ever
+ * changes, this should change with it.
+ */
+const RECIPIENT_FALLBACK_LOCALE: Locale = 'bg';
+import { commodityLabel } from '@/lib/market/commodity-label';
 
 export interface InquiryEmailParams {
     /** Recipient (a seller-tenant admin/owner email). */
     to: string;
-    /** The listing's commodity, e.g. "Wheat". */
+    /**
+     * The RECIPIENT's language, from their persisted `User.uiLanguage` — not
+     * the locale of whoever triggered the send. A request-scoped translator
+     * would give the inquirer's language to the seller, which is the wrong
+     * person: this is the one Exchange channel that crosses a tenant
+     * boundary. Same reasoning as the notification writer in
+     * `promotions.ts`; same helper.
+     *
+     * Optional so the existing call shape stays valid. Absent falls back to
+     * `RECIPIENT_FALLBACK_LOCALE` — deliberately NOT `DEFAULT_LOCALE`, which
+     * is `'en'` and is documented as the fallback for UNAUTHENTICATED pages
+     * (login, invite preview) so those stay English. This recipient is always
+     * an authenticated user, and `User.uiLanguage` defaults to `'bg'` at the
+     * column — so `'bg'` is what they would have had, and reaching for the
+     * unauthenticated constant here would hand English to a Bulgarian farmer
+     * whose preference merely failed to load.
+     */
+    locale?: Locale;
+    /**
+     * The listing's canonical commodity SLUG (`wheat`, `ammonium-nitrate`).
+     *
+     * It used to be documented here as "e.g. Wheat", and that stopped being
+     * true at #484, which made the stored value a lowercase slug. Nothing
+     * noticed, so a seller received "New interest in your **wheat** listing"
+     * — the same defect #677 fixed in the UI, still live in the one Exchange
+     * channel that leaves the product. Resolved to a localised name below.
+     */
     commodity: string;
     /** SELL or BUY — the side of the seller's own listing. */
     side: string;
@@ -44,20 +83,45 @@ export async function sendInquiryEmail(
     params: InquiryEmailParams,
 ): Promise<{ sent: boolean }> {
     const { to, commodity, side, message, quantityTonnes, inquiriesUrl } = params;
+    const locale = params.locale ?? RECIPIENT_FALLBACK_LOCALE;
+    const t = (key: string, vars?: Record<string, string | number>) =>
+        translateFor(locale, `exchange.email.${key}`, vars);
 
-    const subject = `New interest in your ${commodity} listing`;
-    const qtyLine = quantityTonnes ? `Quantity of interest: ${quantityTonnes} t\n` : '';
+    // The commodity name, in the RECIPIENT's language. `translateFor` returns
+    // the key path on a miss, which `commodityLabel` already treats as "no
+    // entry" and title-cases — so a slug that predates the catalogue reads as
+    // `Triticale` rather than `trends.commodities.triticale`.
+    const resolvedCommodity = await translateFor(
+        locale,
+        `trends.commodities.${commodity}`,
+    );
+    const commodityName = commodityLabel(
+        (key) => (key === commodity ? resolvedCommodity : key),
+        commodity,
+    );
+    const sideWord = await t(side === 'SELL' ? 'sideSell' : 'sideBuy');
+
+    const subject = await t('subject', { commodity: commodityName });
+    const qtyLine = quantityTonnes
+        ? await t('quantity', { quantity: quantityTonnes })
+        : '';
+    const introLine = await t('intro', { side: sideWord, commodity: commodityName });
+    const messageLabel = await t('messageLabel');
+    const reviewText = await t('reviewText', { url: inquiriesUrl });
+    const reviewLink = await t('reviewLink');
+    const privacyLine = await t('privacy');
+
     const text = [
-        `Another farm expressed interest in your ${side} listing for ${commodity}.`,
+        introLine,
         '',
-        qtyLine ? qtyLine.trimEnd() : null,
-        `Message: ${message}`,
+        qtyLine || null,
+        `${messageLabel} ${message}`,
         '',
-        `Review it and respond here: ${inquiriesUrl}`,
+        reviewText,
         '',
-        'Contact details are exchanged only if you accept — a decline shares nothing, in either direction.',
+        privacyLine,
     ]
-        .filter((l) => l !== null)
+        .filter((l) => l !== null && l !== '')
         .join('\n');
 
     // EVERY interpolated value is escaped here, including the ones that look
@@ -73,18 +137,16 @@ export async function sendInquiryEmail(
     // property of upstream code that can change, and a template with a mix of
     // escaped and unescaped holes teaches the next editor the wrong rule.
     const html = [
-        `<p>Another farm expressed interest in your <strong>${escapeHtml(side)}</strong> listing for <strong>${escapeHtml(commodity)}</strong>.</p>`,
-        quantityTonnes
-            ? `<p style="color:#475467">Quantity of interest: <strong>${escapeHtml(quantityTonnes)} t</strong></p>`
-            : '',
-        `<p style="color:#475467">Message:</p><blockquote style="margin:0;border-left:3px solid #d0d5dd;padding-left:12px;color:#344054">${escapeHtml(message)}</blockquote>`,
-        `<p><a href="${escapeHtml(inquiriesUrl)}">Review the inquiry and respond</a></p>`,
+        `<p>${escapeHtml(introLine)}</p>`,
+        qtyLine ? `<p style="color:#475467">${escapeHtml(qtyLine)}</p>` : '',
+        `<p style="color:#475467">${escapeHtml(messageLabel)}</p><blockquote style="margin:0;border-left:3px solid #d0d5dd;padding-left:12px;color:#344054">${escapeHtml(message)}</blockquote>`,
+        `<p><a href="${escapeHtml(inquiriesUrl)}">${escapeHtml(reviewLink)}</a></p>`,
         // Says what the code does, and no more. Responding is not the trigger
         // — ACCEPTING is: `respondToInquiry` stamps `contactSharedAt` on ACCEPT
         // only, and the reveal gate withholds both sides' details on a decline.
         // The earlier wording ("shared when you choose to respond") described a
         // decline as sharing, which it never was.
-        `<p style="color:#667085;font-size:13px">Contact details are exchanged only if you accept — a decline shares nothing, in either direction.</p>`,
+        `<p style="color:#667085;font-size:13px">${escapeHtml(privacyLine)}</p>`,
     ].join('');
 
     try {

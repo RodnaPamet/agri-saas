@@ -19,6 +19,7 @@ import { regionByCode } from '@/lib/geo/bulgaria-regions';
 import { logger } from '@/lib/observability/logger';
 import { sendInquiryEmail } from '@/lib/email/inquiry-email';
 import { assertWithinLimit } from '@/lib/billing/entitlements';
+import { isLocale } from '@/lib/i18n/locales';
 import {
     Prisma,
     ExchangeSide,
@@ -460,7 +461,11 @@ async function notifySellerOfInquiry(
                     },
                     select: {
                         userId: true,
-                        user: { select: { email: true } },
+                        // `uiLanguage` so the email is written in the
+                        // RECIPIENT's language rather than the inquirer's —
+                        // this is the one Exchange channel that crosses a
+                        // tenant boundary, so the two are different people.
+                        user: { select: { email: true, uiLanguage: true } },
                         tenant: { select: { slug: true } },
                     },
                     // Bounded fanout — a listing's seller has a handful of
@@ -497,13 +502,19 @@ async function notifySellerOfInquiry(
         // Dedupe by email (a user can hold multiple admin memberships) and send
         // with Promise.allSettled so one slow/failing SMTP call neither
         // serializes nor aborts the rest. Still fail-open.
-        const recipients = [
-            ...new Set(admins.map((a) => a.user.email).filter((e): e is string => !!e)),
-        ];
+        // Dedupe by email, keeping the first locale seen for that address —
+        // a user holding several admin memberships is one person with one
+        // language preference.
+        const byEmail = new Map<string, string | null>();
+        for (const a of admins) {
+            const email = a.user.email;
+            if (email && !byEmail.has(email)) byEmail.set(email, a.user.uiLanguage);
+        }
         await Promise.allSettled(
-            recipients.map((to) =>
+            [...byEmail].map(([to, uiLanguage]) =>
                 sendInquiryEmail({
                     to,
+                    locale: isLocale(uiLanguage) ? uiLanguage : undefined,
                     commodity: listing.commodity,
                     side: listing.side,
                     message,
