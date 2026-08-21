@@ -647,8 +647,18 @@ model User {
   sessionVersion                Int                          @default(0)
   /// T00 — persisted UI language preference (BCP-ish short code, e.g.
   /// "en" / "bg"). Drives the `NEXT_LOCALE` cookie the server reads to
-  /// pick the next-intl message catalogue. Defaults to English; a
-  /// returning user's device is seeded from this in the middleware.
+  /// pick the next-intl message catalogue; a returning user's device is
+  /// seeded from this in the middleware.
+  ///
+  /// DEFAULTS TO BULGARIAN. This comment said "Defaults to English" while
+  /// the column below said `@default("bg")` — and the column is right:
+  /// `tests/unit/default-locale.test.ts` asserts the `bg` default, and
+  /// `src/lib/i18n/locales.ts` explains the split deliberately. The `en`
+  /// there (`DEFAULT_LOCALE`) is the fallback for UNAUTHENTICATED pages;
+  /// "Bulgarian for first-time users" is delivered through THIS column.
+  /// Reading the two as one number is how a recipient-addressed email
+  /// ends up in the wrong language — see `RECIPIENT_FALLBACK_LOCALE` in
+  /// `src/lib/email/inquiry-email.ts`.
   uiLanguage                    String                       @default("bg")
   accounts                      Account[]
   ownedAssets                   Asset[]                      @relation("AssetOwner")
