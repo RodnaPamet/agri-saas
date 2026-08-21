@@ -8,6 +8,7 @@
  */
 import { z } from 'zod';
 import { AutomationActionType, AutomationRuleStatus } from '@prisma/client';
+import { httpsUrl } from '@/lib/schemas/url';
 
 const Name = z.string().min(1, 'Name is required').max(200).transform((s) => s.trim());
 const OptionalDescription = z
@@ -19,7 +20,19 @@ const OptionalDescription = z
 const NotifyUserConfig = z.object({
     userIds: z.array(z.string().min(1)).min(1, 'Select at least one recipient'),
     message: z.string().min(1).max(2000),
-    linkUrl: z.string().url().optional(),
+    /**
+     * Reaches `<Link href={n.linkUrl}>` in the notifications bell
+     * (`notifications-bell.tsx:357`). This is the ONLY producer that can put
+     * an absolute URL in that column: all ten in-repo producers write relative
+     * in-app paths (`/t/<slug>/farm-tasks/<id>`, …), and production agrees —
+     * 3660 notification rows carry a link, 0 of them absolute.
+     *
+     * A relative path is what this field wants and `z.string().url()` rejected
+     * one, so the operator-typed form was already the odd one out. Pinning the
+     * scheme narrows it; ACCEPTING a relative path is a separate change and is
+     * not in this diff.
+     */
+    linkUrl: httpsUrl().optional(),
 });
 
 const CreateTaskConfig = z.object({
@@ -38,7 +51,18 @@ const UpdateStatusConfig = z.object({
 });
 
 const WebhookConfig = z.object({
-    url: z.string().url(),
+    /**
+     * `checkWebhookUrl` already refuses a non-https webhook at execution time
+     * (`webhook-safety.ts:56`), so the loose schema was not permissive — it
+     * was CONTRADICTING the runtime, accepting a rule at save time that could
+     * only ever fail when it fired. The pin makes the two agree and moves the
+     * refusal to where the operator is looking.
+     *
+     * Note this is the scheme half only. The SSRF half — private addresses,
+     * `.internal`, cloud metadata — stays in `checkWebhookUrl`, which needs
+     * DNS and cannot live in a zod schema.
+     */
+    url: httpsUrl(),
     method: z.enum(['POST', 'PUT', 'PATCH']).optional(),
     headers: z.record(z.string(), z.string()).optional(),
     secretRef: z.string().optional(),

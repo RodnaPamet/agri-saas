@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { httpsUrl } from '@/lib/schemas/url';
 
 /**
  * The GLOBAL agriculture-events catalogue (#15) — fairs, trainings, webinars,
@@ -33,7 +34,7 @@ export const CreateAgriEventSchema = z
         startsAt: z.coerce.date(),
         endsAt: z.coerce.date().nullable().optional(),
         place: z.string().max(300).nullable().optional(),
-        url: z.string().url().max(2000).nullable().optional(),
+        url: httpsUrl().nullable().optional(),
     })
     .strip()
     .refine((v) => !v.endsAt || v.endsAt >= v.startsAt, {
@@ -56,7 +57,7 @@ export const UpdateAgriEventSchema = z
         startsAt: z.coerce.date().optional(),
         endsAt: z.coerce.date().nullable().optional(),
         place: z.string().max(300).nullable().optional(),
-        url: z.string().url().max(2000).nullable().optional(),
+        url: httpsUrl().nullable().optional(),
     })
     .strip()
     .refine((v) => Object.keys(v).length > 0, { message: 'No fields to update' });

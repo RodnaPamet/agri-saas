@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { httpsUrl } from '@/lib/schemas/url';
 
 /**
  * Platform-support write payloads for the global promotions feed (#12).
@@ -17,32 +18,6 @@ export const PROMOTION_CATEGORIES = [
 ] as const;
 
 export type PromotionCategory = (typeof PROMOTION_CATEGORIES)[number];
-
-/**
- * An outbound link this product renders as an `href` for operators.
- *
- * `z.string().url()` — what these fields used to be — accepts **any**
- * parseable URL. Measured against the installed zod (4.4.3):
- * `http://`, `ftp://` and `javascript:alert(1)` all parse.
- *
- * Two backstops already stop the worst of that, and neither is a reason to
- * leave the schema open:
- *
- *   - **React blocks `javascript:` hrefs.** Measured under React 19: the
- *     attribute is rewritten to
- *     `javascript:throw new Error('React has blocked a javascript: URL…')`.
- *   - **The CSP carries no `unsafe-inline` in `script-src`**
- *     (`src/lib/security/csp.ts`), so a `javascript:` URI is blocked there too.
- *
- * What survives both is the plain downgrade: `http://` renders as an ordinary
- * link out of an authenticated HTTPS app, on a phone where the operator has
- * no realistic way to notice the scheme. And the field's *contract* was
- * "anything URL-shaped", which is far wider than the one thing it is for.
- *
- * Pinning the scheme is therefore the narrowing, not the patch — the
- * vulnerability class is already covered; the sloppy contract is not.
- */
-const httpsUrl = () => z.url({ protocol: /^https$/ }).max(2000);
 
 export const PromotionCategorySchema = z.enum(PROMOTION_CATEGORIES);
 

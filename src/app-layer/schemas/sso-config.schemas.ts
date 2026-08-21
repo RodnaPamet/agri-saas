@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { httpsUrl } from '@/lib/schemas/url';
 
 /**
  * Zod schemas for Enterprise SSO configuration validation.
@@ -16,13 +17,13 @@ export type IdentityProviderType = z.infer<typeof IdentityProviderTypeSchema>;
 
 export const SamlConfigSchema = z.object({
     /** URL to the IdP's SAML metadata XML */
-    metadataUrl: z.string().url().optional(),
+    metadataUrl: httpsUrl().optional(),
     /** IdP Entity ID (if not using metadata URL) */
     entityId: z.string().min(1).optional(),
     /** SSO login URL */
-    ssoUrl: z.string().url().optional(),
+    ssoUrl: httpsUrl().optional(),
     /** SSO logout URL */
-    sloUrl: z.string().url().optional(),
+    sloUrl: httpsUrl().optional(),
     /** Base64-encoded X.509 signing certificate */
     certificate: z.string().min(1).optional(),
     /** NameID format (default: emailAddress) */
@@ -39,16 +40,41 @@ export type SamlConfig = z.infer<typeof SamlConfigSchema>;
 // ─── OIDC Configuration ──────────────────────────────────────────────
 
 export const OidcConfigSchema = z.object({
-    /** OIDC Issuer URL (e.g. https://login.example.com) */
-    issuer: z.string().url(),
+    /**
+     * OIDC Issuer URL (e.g. https://login.example.com).
+     *
+     * Pinned to `https:` on the spec's own authority, not ours. OpenID Connect
+     * Discovery 1.0 §2: *"The returned Issuer location MUST be a URI with a
+     * scheme component that MUST be https, a host component, and optionally,
+     * port and path components and no query or fragment components."* A URN
+     * has no host component and is therefore not a legal OIDC issuer — the
+     * URN-is-legitimate intuition comes from SAML entity IDs, and
+     * `SamlConfigSchema.entityId` above is correctly `z.string().min(1)` for
+     * exactly that reason.
+     *
+     * This codebase has a second, independent reason: `discoverOidc` reads
+     * `issuer` in exactly one place — it concatenates
+     * `/.well-known/openid-configuration` onto it and passes the result to
+     * `fetch` (`@/lib/security/oidc-client:61`). Measured, a URN there fails
+     * with `TypeError: fetch failed … unknown scheme`. So a non-https issuer
+     * was already broken at first sign-in; the pin moves that failure to
+     * config time, where it names the problem.
+     */
+    issuer: httpsUrl(),
     /** Client ID */
     clientId: z.string().min(1),
     /** Client Secret (encrypted at rest in production) */
     clientSecret: z.string().min(1),
     /** Scopes to request (default: openid email profile) */
     scopes: z.array(z.string()).default(['openid', 'email', 'profile']),
-    /** Well-known discovery URL override */
-    discoveryUrl: z.string().url().optional(),
+    /**
+     * Well-known discovery URL override.
+     *
+     * Server-side `fetch` target (`discoverOidc`). Note the pin is a scheme
+     * constraint, NOT an SSRF guard — this path has no host policy at all,
+     * unlike the automation webhook path. Tracked separately.
+     */
+    discoveryUrl: httpsUrl().optional(),
 });
 
 export type OidcConfig = z.infer<typeof OidcConfigSchema>;
