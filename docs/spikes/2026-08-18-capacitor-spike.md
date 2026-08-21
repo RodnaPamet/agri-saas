@@ -4,6 +4,27 @@
 **Opened:** 2026-08-18
 **Verdict:** **INCONCLUSIVE** — see §6. No device session ran; the time box never started.
 
+> ### ⚠️ F4 IS SUPERSEDED — read before acting on §6
+>
+> This is a dated record and its findings are left as written. But **F4 is no
+> longer true**, and it drives probe 3.6's HIGH risk rating and the K4 kill
+> criterion, so acting on §6 as-is aims a device session at the wrong question.
+>
+> F4 says `navigator.storage.persist()` *"appears **nowhere**"*. That was
+> correct on 2026-08-18 (`5e4a4557`, #598) and stopped being correct **the next
+> day**: `e032d039` (#604, 2026-08-19) added `src/lib/offline/durability.ts`,
+> which calls `persist()` and `estimate()` and records the verdict under
+> `agri.offline.durability.v1`. It fires at FIRST ENQUEUE (`outbox-state.ts`
+> `noteWorkQueued()`), not on first paint.
+>
+> So the "cheap mitigation" F4 proposes has already shipped, and the open
+> question narrowed: not *"should we call persist()"* but ***"what does iOS
+> return when we do"*** — which is issue #650, and which the app now answers
+> about itself. Probe 3.6 remains worth running; its premise has changed.
+>
+> Affected lines: the F4 heading and body (§ below), probe 3.6's risk column,
+> the K4 row in §7, and the §8 recommendation. Each is marked inline.
+
 > This document is written FIRST on purpose. A spike whose success criteria are
 > written afterwards always succeeds. Everything in §1–§5 is fixed before code;
 > §6 is filled in from observations, and §3's criteria are answered in the words
@@ -304,6 +325,10 @@ scaffold's existence.
 in `public/sw.js`, `src/lib/offline/**`, or `src/components/pwa/**` — zero
 occurrences.
 
+> **SUPERSEDED 2026-08-19 by #604.** Both now live in
+> `src/lib/offline/durability.ts` and run at first enqueue. See the banner at
+> the top of this document.
+
 Without `persist()`, all of it is best-effort storage. On iOS that means:
 
 - Safari's ITP deletes **all script-writable storage** (Cache API, IndexedDB)
@@ -371,7 +396,7 @@ exists so the device session is **aimed** rather than exploratory.
 | 3.3 | **airplane-mode COLD launch** | **HIGH** | nothing is bundled. The launch is a webview load of a remote URL; it survives only if an already-activated SW intercepts the navigation in a fresh process. There is no Capacitor-level offline fallback in `server.url` mode, so the failure mode is a blank/error view with no shell |
 | 3.4 | warm offline write → sync, no duplicate | **LOW** for duplication (F5), **MEDIUM** for photo Blobs (F4) | idempotency is designed in; Blob durability is not |
 | 3.5 | offline basemap + map pan | **MEDIUM** | two variables. Cache side is a 24 MB budgeted cache-first store; WebGL-in-WKWebView is separate and must be recorded separately |
-| 3.6 | **overnight eviction** | **HIGH** | F4: no `persist()` call anywhere, large Blob + 24 MB basemap footprint, remote-origin storage |
+| 3.6 | **overnight eviction** | **HIGH** | F4: no `persist()` call anywhere, large Blob + 24 MB basemap footprint, remote-origin storage — **F4 superseded, see banner; `persist()` now ships (#604), so this measures iOS's answer to it rather than its absence** |
 
 **3.3 and 3.6 are where we expect this to die**, which matches what §3 already
 committed to in advance. Everything above them is cheap to run and should be run
@@ -523,7 +548,7 @@ not a verdict and is not written as one.
 | **K1** — "App Store rejection under Guideline 4.2, with no mitigation we will build" | **UNANSWERED** | Nothing was submitted. The mitigations K1 requires *before* a submission counts (native camera, native push) are designed but not wired: F9 shows the camera can join the existing outbox; F13 shows APNs has no credentials at all. |
 | **K2** — "the offline stack does not survive the WKWebView" …and the fix is "a larger job than rewriting the six screens we actually care about" | **UNANSWERED** | Split by clause. Registration/scope: LOW risk (F6). Duplication: architecturally prevented (F5). **Offline cold launch: HIGH risk, untested (F8).** The second half of the criterion — "bigger job than a rewrite" — was never reachable without the first. |
 | **K3** — "cold launch on rural LTE is materially worse than the PWA" (>50% or >3s slower, or >1.5× bytes) | **UNANSWERED** | Requires a device on a real cellular network, and a PWA baseline measured in the same session. Neither exists. |
-| **K4** — "iOS silently evicts the outbox" | **UNANSWERED, but the mechanism is confirmed present** | F4: `navigator.storage.persist()` appears **nowhere** in the app. Storage is best-effort by default, holding photo `Blob`s and a 24 MB basemap budget. Whether iOS actually evicted them is unmeasured — that is the difference between a hazard and a finding, and it is not blurred here. |
+| **K4** — "iOS silently evicts the outbox" | **UNANSWERED, but the mechanism is confirmed present** | F4 (**superseded — see banner; `persist()` ships since #604**): `navigator.storage.persist()` appears **nowhere** in the app. Storage is best-effort by default, holding photo `Blob`s and a 24 MB basemap budget. Whether iOS actually evicted them is unmeasured — that is the difference between a hazard and a finding, and it is not blurred here. |
 | **K5** — "a real operator cannot complete the field loop" | **UNANSWERED** | No operator, no device. F2 raises a prior question: whether they could even sign in. |
 
 ### 6.2 Recommendation
@@ -565,9 +590,11 @@ P6 asked for this explicitly because it is the likeliest and the easiest to miss
 platform at all.** The desk findings support taking that seriously, and two of
 them are actionable today without any native work:
 
-- **Data durability is a PWA bug, not a platform limitation (F4).** The app never
-  calls `navigator.storage.persist()`. If operators are losing queued work, that
-  is the first suspect, and the fix is one call — not a rewrite. A native shell in
+- **Data durability is a PWA bug, not a platform limitation (F4).** ~~The app never
+  calls `navigator.storage.persist()`.~~ **Done — #604 shipped the call, plus
+  detection of loss when it happens.** The recommendation was right and has been
+  acted on; what remains is measuring what iOS returns (#650), not making the
+  call. If operators are losing queued work, that is still the first suspect. A native shell in
   `server.url` mode probably does **not** fix it either (§2.5), because the
   storage stays remote-origin web storage.
 - **The camera is already native (F10).** `capture={"environment"}` opens the iOS
