@@ -497,11 +497,27 @@ chars, or equal to the documented dev fallback:
   2. startup hook in `src/instrumentation.ts` (web) +
      `scripts/worker.ts` (BullMQ worker) + `scripts/scheduler.ts`
      (deploy-time scheduler) — exits 1 with `[startup] FATAL: …`.
-     The web tier additionally runs an encrypt → decrypt sentinel
-     to catch keys that pass structural checks but break HKDF/AES.
-  3. Compose `:?error` syntax in `docker-compose.prod.yml` /
-     `docker-compose.staging.yml` / `deploy/docker-compose.prod.yml`
-     — aborts container start before the app process is spawned.
+     The web tier **and the worker** additionally run an encrypt →
+     decrypt sentinel; the scheduler calls only the config check.
+     **The sentinel cannot fail for the reason its docblock used to
+     give** — measured: every key clearing the 32-char floor
+     round-trips, because `deriveKey` is HMAC-SHA256 over
+     `Buffer.from(raw,'utf8')`, which never throws. It is a
+     forward-looking guard on a future derivation that CAN throw, not
+     live defence. See the docblock in `startup-encryption-check.ts`.
+     **The two standalone entrypoints are live before they refuse**
+     — both run the check in a non-awaited async IIFE, so the worker
+     is subscribed to the queue and the scheduler has begun
+     registering jobs by the time `FATAL` prints (#698).
+  3. Compose `:?error` syntax in **every manifest that carries the
+     key** — `docker-compose.prod.yml`, `docker-compose.staging.yml`,
+     `deploy/docker-compose.prod.yml` AND `deploy/docker-compose.vm.yml`
+     (the one the live agrent stack actually runs, absent from this
+     list until 2026-08-21). Aborts container start before the app
+     process is spawned. `docker-compose.yml` and
+     `docker-compose.test.yml` pass no key at all, so the rule does
+     not apply to them — the guard derives that from content rather
+     than from a list of "production" filenames.
 
 Dev gets the in-source fallback key (`encryption-constants.ts`) with
 a WARN log on every server start; test gets the same fallback
@@ -510,6 +526,13 @@ The runtime + structural enforcement is unit-tested in
 `tests/unit/security/startup-encryption-check.test.ts` +
 `tests/unit/env.test.ts`, and the wiring across all five surfaces
 is locked by `tests/guardrails/encryption-key-enforcement.test.ts`.
+Those cover the LOGIC and the SOURCE TEXT. What actually boots a
+process with a bad key and watches it die is
+`tests/unit/security/startup-fail-fast-execution.test.ts` — child
+processes for all three Node surfaces, plus a real `docker compose
+config` for the Compose layer (docker-gated, with a visible skip
+banner and `STARTUP_GUARD_REQUIRE_DOCKER=1` to make absence a
+failure). Until #674 only check 1 had ever executed.
 
 Master-KEK rotation: set `DATA_ENCRYPTION_KEY_PREVIOUS` alongside
 the new primary. `decryptField` falls back transparently. Admins
