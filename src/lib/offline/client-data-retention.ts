@@ -193,6 +193,29 @@ function sweepSwrBuckets(ls: Storage, cutoff: number): number {
  */
 async function sweepCaches(): Promise<number> {
     if (typeof caches === 'undefined') return 0;
+
+    // DEFER while offline. The whole-bucket delete above is justified by "the
+    // SW repopulates on next use" — which is true with a network and false
+    // without one, and this sweep runs once per LAUNCH.
+    //
+    // Offline the sequence is: the SW serves the shell from PAGE_CACHE so the
+    // cold launch succeeds; React hydrates; the sweep deletes PAGE_CACHE; and
+    // nothing can repopulate it. The NEXT cold launch has nothing to serve. So
+    // an offline cold launch worked exactly once per online session — on a
+    // product whose operators are in fields without signal.
+    //
+    // `navigator.onLine === true` does NOT prove reachability (a captive portal
+    // or dead uplink still reads as online), so this is not a guarantee that a
+    // repopulate will succeed. But `false` IS a reliable negative: the browser
+    // is telling us there is no network at all, and deleting the only offline
+    // shell in that state is never right. Treat this as "obviously cannot
+    // repopulate", not as "definitely can".
+    //
+    // Deferral, not exemption — the next online launch sweeps as before, so
+    // this is not an unbounded retention hole. Pinned in both directions by
+    // tests/unit/offline/client-data-retention-caches.test.ts, which is also
+    // the first thing that ever executed this function.
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return 0;
     let removed = 0;
     try {
         for (const name of await caches.keys()) {

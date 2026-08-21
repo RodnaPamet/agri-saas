@@ -428,6 +428,19 @@ that gets lost, sold or handed to another worker. Two rules:
   persistent SWR buckets (whose own TTL only fires on hydrate, so a tenant
   the operator stopped visiting never expired), and the tenant Cache Storage
   buckets.
+  - **The Cache Storage half DEFERS while offline**, and that exception is
+    load-bearing. The buckets are deleted whole rather than aged, justified by
+    "the SW repopulates on next use" — true with a network, false without one.
+    Since the sweep runs once per LAUNCH, an offline cold launch was served
+    from `PAGE_CACHE`, then deleted it, and the NEXT cold launch had nothing to
+    serve: offline cold launch worked exactly once per online session. So
+    `sweepCaches()` returns early on `navigator.onLine === false`. Deferral,
+    not exemption — the next online launch sweeps as before. `onLine === true`
+    does not prove reachability, but `false` is a reliable negative, and that
+    asymmetry is the whole basis for the check. Both directions are pinned by
+    `tests/unit/offline/client-data-retention-caches.test.ts`, which is also
+    the first thing that ever executed this function: jsdom defines no
+    `caches`, so it had always returned 0 at its own guard.
 - **The sweep NEVER touches the outbox** — that is what makes it safe. An
   earlier design purged the queue too, and every serious failure it had came
   from that: clearing the manifest without the queue is exactly the shape the
