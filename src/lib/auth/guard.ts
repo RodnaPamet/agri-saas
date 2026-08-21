@@ -4,6 +4,7 @@
  * Used by middleware.ts for path classification and redirect building.
  */
 import { NextResponse } from 'next/server';
+import { CSP_REPORT_PATH } from '@/lib/security/csp';
 
 // ─── Public path allowlist ───
 
@@ -22,6 +23,29 @@ const PUBLIC_PATH_PREFIXES = [
     '/api/livez',        // Liveness probe (no auth)
     '/api/readyz',       // Readiness probe (no auth)
     '/api/metrics',      // web-vitals telemetry sink (no auth — anonymous RUM beacons)
+    CSP_REPORT_PATH,     // CSP violation sink. Same class as /api/metrics: a browser
+                         // posts violation reports with NO credentials, so `getToken()`
+                         // returned null and the Edge 401'd every one of them — from the
+                         // day the feature shipped (2026-03-21) until #704. The ring
+                         // buffer was permanently empty, the admin summary permanently
+                         // zero, and `csp.ts:16` told operators to "monitor" something
+                         // that could not happen; five months of CSP tightening shipped
+                         // with its safety net disconnected.
+                         //
+                         // Spelled as the CONSTANT, not a literal, and that is
+                         // load-bearing. The same value goes into three response headers
+                         // — `report-uri` (csp.ts:184), `Report-To` and
+                         // `Reporting-Endpoints` (middleware.ts:515-522) — so a literal
+                         // here could drift from what browsers are actually told. The
+                         // duplicated-literal shape is exactly what produced this bug;
+                         // `/api/metrics` still has it (three literals, no constant).
+                         //
+                         // Direction B of `public-routes-self-authenticate` applies: the
+                         // POST is designed anonymous (per-IP rate limit, 16 KB cap,
+                         // always 204, never leaks state), and the GET summary
+                         // authenticates itself with `verifyPlatformApiKey` — it used to
+                         // rely on this very gate, so opening the prefix without that
+                         // would have published every reporter's IP and User-Agent.
     '/api/staging/seed', // Staging seed endpoint (token-gated internally)
     '/api/scim/',        // SCIM 2.0 provisioning (RFC 7644). Every request carries a
                          // tenant-scoped OPAQUE bearer token, not a NextAuth JWE, so

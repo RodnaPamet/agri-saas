@@ -20,6 +20,7 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { isPublicPath } from '../../src/lib/auth/guard';
 
 const ROOT = path.resolve(__dirname, '../..');
 const API_DIR = path.join(ROOT, 'src/app/api');
@@ -48,25 +49,41 @@ function urlPath(file: string): string {
     return '/' + rel.split(path.sep).join('/');
 }
 
-function publicPrefixes(): string[] {
-    const src = fs.readFileSync(path.join(ROOT, 'src/lib/auth/guard.ts'), 'utf8');
-    const block = src.match(/const PUBLIC_PATH_PREFIXES = \[([\s\S]*?)\n\];/);
-    if (!block) throw new Error('PUBLIC_PATH_PREFIXES not found — this guard is inert; fix it.');
-    return [...block[1].matchAll(/^\s*'([^']+)',/gm)].map((m) => m[1]);
-}
-
-/** Mirrors `isPublicPath`'s prefix test for the API surface. */
-function isPublic(p: string, prefixes: string[]): boolean {
-    return prefixes.some((prefix) => p.startsWith(prefix));
+/**
+ * Reachability is asked of the REAL `isPublicPath`, not re-derived from source.
+ *
+ * This used to regex the `PUBLIC_PATH_PREFIXES` array out of `guard.ts` and
+ * re-implement the prefix test locally. Two problems, and #704 hit the first:
+ *
+ *   1. The regex captured STRING LITERALS only (`/^\s*'([^']+)',/`). An entry
+ *      spelled as an imported constant was invisible to it — so a path that
+ *      genuinely IS public read as unreachable, and this guard failed on a
+ *      correct fix. Spelling an entry as a constant is the better practice
+ *      (`CSP_REPORT_PATH` is the same value that goes into three response
+ *      headers, so a literal here could drift from what browsers are told);
+ *      a guard that punishes it is the thing to change.
+ *   2. A local re-implementation of a rule is a mirror that can fall out of
+ *      sync with the original. `isPublicPath` also honours `PUBLIC_PATH_EXACT`
+ *      and `STATIC_EXTENSIONS`, neither of which the mirror knew about.
+ *
+ * Calling the real function is strictly stronger AND it makes this file
+ * partly an EXECUTING test rather than pure source-text matching. The
+ * resolving-power check below replaces the old "guard is inert" throw.
+ */
+function isPublic(p: string): boolean {
+    return isPublicPath(p);
 }
 
 describe('credential-verifying routes are reachable, and public routes verify', () => {
     const files = routeFiles(API_DIR);
-    const prefixes = publicPrefixes();
 
-    it('scans a real route tree and a real prefix list', () => {
+    it('scans a real route tree, and isPublicPath still discriminates', () => {
         expect(files.length).toBeGreaterThan(100);
-        expect(prefixes.length).toBeGreaterThan(5);
+        // Resolving power, replacing the old "PUBLIC_PATH_PREFIXES not found"
+        // throw: an `isPublicPath` that answered true (or false) to everything
+        // would make both assertions below vacuous rather than red.
+        expect(isPublicPath('/api/auth/session')).toBe(true);
+        expect(isPublicPath('/api/t/acme/journal')).toBe(false);
     });
 
     it('A — a route that reads a credential header is not refused by the Edge', () => {
@@ -82,7 +99,7 @@ describe('credential-verifying routes are reachable, and public routes verify', 
             // now an OR, widening the net rather than narrowing it.
             if (!VERIFIES.test(src) && !CREDENTIAL_HEADERS.test(src)) continue;
             const p = urlPath(file);
-            if (!isPublic(p, prefixes)) {
+            if (!isPublic(p)) {
                 unreachable.push(`${p}  (${path.relative(ROOT, file)})`);
             }
         }
@@ -123,7 +140,7 @@ describe('credential-verifying routes are reachable, and public routes verify', 
         const anonymous: string[] = [];
         for (const file of files) {
             const p = urlPath(file);
-            if (!isPublic(p, prefixes)) continue;
+            if (!isPublic(p)) continue;
             // Auth.js's own routes and the invite//register flows are the
             // session-establishing surface; they are public by definition.
             if (p.startsWith('/api/auth') || p.startsWith('/api/invites') || p.startsWith('/api/org/invite')) continue;
@@ -155,7 +172,7 @@ describe('credential-verifying routes are reachable, and public routes verify', 
             '/api/storage/av-webhook',
             '/api/integrations/webhooks/slack',
         ]) {
-            expect(isPublic(p, prefixes)).toBe(true);
+            expect(isPublic(p)).toBe(true);
         }
     });
 

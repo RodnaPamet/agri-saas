@@ -134,12 +134,26 @@ style-src   'self' 'nonce-X' https://fonts.googleapis.com
 # Step 1: Report-only mode (observe violations without blocking)
 CSP_REPORT_ONLY=true
 
-# Step 2: Monitor violations
-GET /api/security/csp-report  # Returns recent violation summary
+# Step 2: Monitor violations — platform-admin key required (#704)
+curl -H "x-platform-admin-key: $PLATFORM_ADMIN_API_KEY" \
+     https://<host>/api/security/csp-report   # recent violation summary
 
 # Step 3: Enforce (block violations)
 CSP_REPORT_ONLY=false  # or unset (default = enforce)
 ```
+
+> **Reports only started arriving on 2026-08-21.** The sink was never in
+> `PUBLIC_PATH_PREFIXES`, so the Edge answered every credential-less browser
+> report with a 401 and the ring buffer was permanently empty — from the day
+> the feature shipped (2026-03-21) until #704. If you are reading a violation
+> summary from before that date, it is empty because nothing was ever stored,
+> not because nothing was violated.
+>
+> The `GET` moved behind `PLATFORM_ADMIN_API_KEY` in the same change. It had
+> relied on the Edge's "any authenticated user" gate, and opening the prefix
+> for the `POST` sink would have removed that — publishing every reporter's IP
+> and User-Agent, since the summary returns whole `CspViolation` objects from a
+> global, un-tenanted ring buffer.
 
 ### Development-Only Exceptions
 | Directive | Exception | Reason |
