@@ -613,10 +613,39 @@ jobs:
       # jest.config.js) — then EXCLUDE the four path-threshold roots above
       # before ranking, or you will target files that cannot move the number
       # that is failing.
+      # A shell `timeout` INSIDE the step, deliberately below the job's
+      # `timeout-minutes`. Not belt-and-braces — it changes what a slow run
+      # LEAVES BEHIND.
+      #
+      # When the RUNNER cancels a job it drops the un-flushed log buffer.
+      # Measured on run 32517286281 (main@1e71854a): a 60-minute cancelled
+      # coverage job produced 1,635 log lines containing just 40 `PASS`
+      # entries, the last ~85 seconds in, then fifty-seven minutes of nothing,
+      # then "The operation was canceled." No summary, no failing suite, no
+      # artifact — the gate reported neither a number nor a diagnosis, five
+      # consecutive main pushes running.
+      #
+      # `timeout` fires first, so the step FAILS normally: jest's output is
+      # flushed, the upload step below still runs (`if: always()`), and a
+      # partial artifact survives. That is the difference between "the gate is
+      # slow, and here is where" and silence.
+      #
+      # SIGINT rather than SIGKILL so jest can flush and print; `-k` KILLs if it
+      # ignores that. 55m against the job's 60m leaves room for both.
       - name: "Gate: test coverage thresholds"
         run: |
-          node --max-old-space-size=8192 ./node_modules/jest/bin/jest.js --coverage --forceExit --runInBand \
-            --coverageThreshold "$(cat jest.thresholds.json)"
+          status=0
+          timeout --signal=INT --kill-after=60s 55m \
+            node --max-old-space-size=8192 ./node_modules/jest/bin/jest.js --coverage --forceExit --runInBand \
+              --coverageThreshold "$(cat jest.thresholds.json)" || status=$?
+
+          if [ "$status" -eq 124 ] || [ "$status" -eq 137 ]; then
+            echo "::error::Coverage exceeded its 55-minute budget and was stopped."
+            echo "::error::The gate went DARK — it did not fail a threshold, it produced no number at all."
+            echo "::error::ci.yml records this ratchet: 25->35 at ~7,800 tests, then ->60. The durable fix is to SHARD this job."
+            exit 1
+          fi
+          exit "$status"
 
       - name: Upload coverage report
         if: always()
