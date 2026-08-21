@@ -317,7 +317,10 @@
         "deepmerge-ts": "^8.0.1",
         "uuid": "^11.1.1",
         "@istanbuljs/load-nyc-config": {
-            "js-yaml": "3.15.0"
+            "js-yaml": "^3.15.1"
+        },
+        "@eslint/eslintrc": {
+            "js-yaml": "^4.3.1"
         },
         "npm": {
             "undici": "^6.27.0"
