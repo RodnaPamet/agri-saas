@@ -125,8 +125,22 @@ trap cleanup EXIT INT TERM
 # it and backups stop with no error anywhere — the failure mode this
 # whole drill exists to catch early.
 log "1/6  asserting snapshot schedule '${SNAPSHOT_SCHEDULE}' is attached to disk '${SOURCE_DISK}'"
-ATTACHED_POLICIES="$(${GC} compute disks describe "${SOURCE_DISK}" --zone "${GCP_ZONE}" \
-    --format='value(resourcePolicies)' 2>/dev/null || true)"
+# A failed API call and a genuinely detached schedule are DIFFERENT
+# ANSWERS and must not collapse into one. `2>/dev/null || true` used to
+# turn a permission error, an IAM propagation delay or a wrong zone into
+# an empty string, which failed the substring test below and printed
+# "Production is running WITHOUT automated backups" — the single most
+# alarming sentence in this script — on a stack whose backups were fine.
+# That happened on 2026-08-21 (issue #663) and was one message away from
+# being reported to an operator as fact. Ask first, and if the question
+# itself fails, say THAT.
+if ! ATTACHED_POLICIES="$(${GC} compute disks describe "${SOURCE_DISK}" --zone "${GCP_ZONE}" \
+    --format='value(resourcePolicies)' 2>&1)"; then
+    fail "could not read disk '${SOURCE_DISK}' in zone '${GCP_ZONE}', so the backup
+     schedule could NOT be checked. This is not evidence that backups are
+     missing — it is evidence the check could not run. gcloud said:
+       ${ATTACHED_POLICIES}"
+fi
 if [[ "${ATTACHED_POLICIES}" != *"${SNAPSHOT_SCHEDULE}"* ]]; then
     fail "snapshot schedule '${SNAPSHOT_SCHEDULE}' is NOT attached to disk '${SOURCE_DISK}'.
      Production is running WITHOUT automated backups. Re-attach with:
@@ -137,10 +151,17 @@ echo "  ✓ attached"
 
 # ── 2. The newest snapshot is fresh ────────────────────────────
 log "2/6  finding newest READY snapshot of '${SOURCE_DISK}'"
-SNAPSHOT_JSON="$(${GC} compute snapshots list \
+# Same distinction as step 1: "the list came back empty" and "the list
+# call failed" are different facts, and only the first one means there is
+# nothing to restore.
+if ! SNAPSHOT_JSON="$(${GC} compute snapshots list \
     --filter="sourceDisk~/${SOURCE_DISK}\$ AND status=READY" \
     --sort-by=~creationTimestamp --limit=1 \
-    --format='value(name,creationTimestamp)' || true)"
+    --format='value(name,creationTimestamp)' 2>&1)"; then
+    fail "could not LIST snapshots for disk '${SOURCE_DISK}', so it is unknown
+     whether a restore point exists. gcloud said:
+       ${SNAPSHOT_JSON}"
+fi
 [[ -n "${SNAPSHOT_JSON}" ]] || fail "no READY snapshot found for disk '${SOURCE_DISK}' — there is nothing to restore."
 
 SNAPSHOT_NAME="$(echo "${SNAPSHOT_JSON}" | awk '{print $1}')"
