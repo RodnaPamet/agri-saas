@@ -1,4 +1,5 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
+import { verifyPlatformApiKey, PlatformAdminError } from '@/lib/auth/platform-admin';
 import {
     checkReportRateLimit,
     storeViolation,
@@ -19,13 +20,16 @@ import { jsonResponse } from '@/lib/api-response';
  *     - Modern: application/reports+json (Reporting API v1, array)
  *     - Fallback: application/json
  *
- * GET — returns recent violation summary (admin debugging)
- *   Protected by admin role check (via middleware auth guard).
+ * GET — returns recent violation summary (operator debugging)
+ *   Protected by `verifyPlatformApiKey` IN THIS HANDLER — see the note on the
+ *   GET below. It must not depend on the Edge gate, because the POST sink
+ *   beside it is deliberately public there.
  *
  * Security:
  *   - Rate limited: 30 reports/IP/min
  *   - Payload size capped at 16 KB
- *   - No CSRF token required (browser sends reports without credentials)
+ *   - No CSRF token required (browser sends reports without credentials) —
+ *     which is also why this path sits in `PUBLIC_PATH_PREFIXES`; see #704
  *   - Always returns 204 on POST (never leaks internal state)
  */
 
@@ -103,11 +107,46 @@ export async function POST(request: Request): Promise<NextResponse> {
     }
 }
 
-// ─── GET: Admin summary of recent violations ────────────────────────
+// ─── GET: Operator summary of recent violations ─────────────────────
 
-export async function GET(): Promise<NextResponse> {
-    // NOTE: This route is protected by the middleware auth guard.
-    // Only authenticated users can access /api/* routes.
+/**
+ * Platform-admin only, and that is a FIX, not a tightening for its own sake
+ * (#704).
+ *
+ * This used to read, in full:
+ *
+ *     // NOTE: This route is protected by the middleware auth guard.
+ *     // Only authenticated users can access /api/* routes.
+ *
+ * Two things were wrong with relying on that. First, "any authenticated user"
+ * is not a meaningful bar for this payload: `getViolationSummary` returns
+ * `recentViolations: CspViolation[]` — the WHOLE objects, including
+ * `clientIp` and `userAgent` — from a single GLOBAL 500-entry ring with no
+ * tenant scoping. Any logged-in member of any tenant could read every other
+ * tenant's reporters.
+ *
+ * Second, and worse: the POST above is now public at the Edge, because a
+ * browser cannot send a session cookie with a violation report. `isPublicPath`
+ * matches on PREFIX, so opening the sink opens this method too. The two bugs
+ * used to cancel — the POST was 401'd, so the buffer was always empty, so this
+ * returned nothing worth having. Fixing the POST is exactly what ARMS this,
+ * which is why the gate had to land in the same diff rather than after it.
+ *
+ * `verifyPlatformApiKey` is the right bar: this is an operator-with-curl
+ * endpoint (no UI calls it — verified), matching the nine other platform-admin
+ * routes. It also satisfies direction B of
+ * `tests/guards/public-routes-self-authenticate.test.ts` without an exemption.
+ */
+export async function GET(request: NextRequest): Promise<NextResponse> {
+    try {
+        verifyPlatformApiKey(request);
+    } catch (err) {
+        if (err instanceof PlatformAdminError) {
+            return NextResponse.json({ error: err.message }, { status: err.status });
+        }
+        throw err;
+    }
+
     const summary = getViolationSummary(50);
     return jsonResponse(summary);
 }

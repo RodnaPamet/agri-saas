@@ -158,20 +158,18 @@ export const BARE_ROUTE_EXEMPTIONS: ReadonlyArray<BareRouteExemption> = [
             'on internal throws.',
     },
 
-    // ─── CSP report sinks ───
+    // ─── CSP report sink ───
     //
     // Browsers send CSP reports without credentials and ignore the
-    // body. Both endpoints always return 204 (and 401/413/429 for
-    // rate-limit / size guards). They must never return our
-    // ApiErrorResponse shape — there is no consumer that reads it
-    // and the 204 invariant lets us never accidentally leak state.
-    {
-        file: 'csp-report/route.ts',
-        category: 'csp_report_sink',
-        reason:
-            'Legacy CSP report endpoint. Best-effort forwards to the ' +
-            '/api/security/csp-report sink and always returns 204.',
-    },
+    // body. The endpoint always returns 204 (and 413/429 for size /
+    // rate-limit guards). It must never return our ApiErrorResponse
+    // shape — there is no consumer that reads it, and the 204
+    // invariant lets us never accidentally leak state.
+    //
+    // The legacy `/api/csp-report` forwarder that used to sit here was
+    // deleted in #704: no header had pointed at it since 2026-03-21, it
+    // was 153 days past the removal condition its own docblock stated,
+    // and it fetched an origin derived from `request.url`.
     {
         file: 'security/csp-report/route.ts',
         category: 'csp_report_sink',

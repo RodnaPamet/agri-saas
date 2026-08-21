@@ -607,6 +607,29 @@ test that crosses the middleware** — `token.error`, the `iflk_` API key and
 SCIM were all complete, unit-tested mechanisms severed at that seam.
 See `docs/epic-c-security.md`.
 
+**C.1c — Uncredentialed browser beacons are the OTHER half of the reachable
+class, and the C.1a/C.1b guard is blind to it.** A browser posts a CSP
+violation report, a web-vitals beacon and a manifest fetch with **no
+credentials** — so `getToken()` returns null and the Edge 401s them, exactly as
+it did to SCIM and the webhooks. `tests/guards/public-routes-self-authenticate.test.ts`
+does not catch these: its direction A derives from routes that READ and VERIFY
+a credential, and a beacon sink verifies nothing. That blind spot cost five
+months — `/api/security/csp-report` was never in `PUBLIC_PATH_PREFIXES`, so
+**no CSP violation report ever reached the store** while `middleware.ts` itself
+advertised the path in `Report-To` and `Reporting-Endpoints` a few hundred
+lines below the gate that refused it. The class is small and closed — the CSP
+sink, `/api/metrics`, the PWA manifest — and is enumerated in
+`tests/unit/csp-edge-reachability.test.ts`. **Spell such an entry as the
+CONSTANT that goes into the header** (`CSP_REPORT_PATH`), never a literal: the
+same value feeds three response headers, and the duplicated-literal shape is
+what produced the bug. Opening a beacon prefix opens EVERY method on it —
+`isPublicPath` matches on prefix — so gate the privileged methods in the
+handler FIRST, in the same diff. Here that was the summary `GET`, which returns
+whole `CspViolation` objects (`clientIp`, `userAgent`) from a global un-tenanted
+ring; it now requires `PLATFORM_ADMIN_API_KEY`, held by
+`tests/unit/csp-summary-gate.test.ts` because direction B could not — its
+`VERIFIES` check matches file TEXT, so a commented-out gate stays green.
+
 **C.1b — Signed webhooks are public at the Edge, and verify themselves.**
 `/api/stripe/webhook`, `/api/storage/av-webhook` and
 `/api/integrations/webhooks/` are in `PUBLIC_PATH_PREFIXES` for the same
