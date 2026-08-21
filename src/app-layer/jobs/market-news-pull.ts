@@ -65,8 +65,10 @@ const MAX_ITEMS_PER_FEED = 40;
  * choice, and right now it is drift between two implementations. If
  * there is a contractual figure, it belongs here. See issue #670.
  *
- * Related: the agroportal.bg exclusion in `@/lib/news/feeds`, which is a
- * commercial constraint rather than a technical one.
+ * Related but SEPARATE: agroportal.bg's price content is under a commercial
+ * restriction, enforced at `@/lib/market/restricted-sources`. That governs the
+ * PRICE pipeline, not this one — its absence from the news feed list is for an
+ * unrelated technical reason. See `@/lib/news/feeds`.
  */
 const TITLE_MAX = 300;
 const SUMMARY_MAX = 500;

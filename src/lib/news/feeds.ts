@@ -52,20 +52,27 @@ export interface NewsFeed {
  * feeds work but are NOT agri-specific, so they'd pollute the tab — left out
  * deliberately.
  *
- * ── agroportal.bg: the recorded reason may not be the real one ──
+ * ── agroportal.bg: a commercial restriction exists, but NOT on this list ──
  *
- * "HTML, not a feed" is a fact about the site as probed on 2026-07-15, and it
- * is the reason that will evaporate the day someone finds a working endpoint.
- * A parallel WIP branch (`feat/trends-news` @ 545f441a, never merged) records
- * a different and more durable one in three places: that agroportal.bg is
- * never fetched because its price content is an EXCLUSIVE BROKERAGE
- * PARTNERSHIP.
+ * agroportal.bg's PRICE content is under an exclusive brokerage partnership —
+ * confirmed by the maintainer on 2026-08-21, and now ENFORCED in code at
+ * `@/lib/market/restricted-sources`, which screens the four operator-settable
+ * price-source URLs.
  *
- * That claim is UNVERIFIED — `git log --all -S'brokerage'` finds it in that
- * one dead commit and nowhere else, and nothing in this repo corroborates it.
- * It is recorded here rather than acted on, so that whoever next has a working
- * agroportal RSS URL in hand knows to check the commercial question before
- * adding it, instead of concluding the technical objection has lapsed.
+ * That restriction does not govern this file, and the distinction is easy to
+ * lose. This list feeds `market-news-pull` (the News tab); prices come from
+ * `market-prices-pull` and `src/lib/market/*`, a separate pipeline with
+ * separate sources. An earlier version of this comment carried the commercial
+ * claim as though it justified the absence below. It does not: the reason
+ * agroportal.bg is not in this list is the technical one above — it serves
+ * HTML, not a feed.
+ *
+ * **What is NOT established:** whether agroportal.bg's news RSS would be
+ * separately permissible if it ever served one. The confirmed restriction is
+ * about price data. So if a working agroportal feed URL ever turns up, the
+ * technical objection may have lapsed while the commercial question is still
+ * open — ask before adding it, and do not read the price restriction as
+ * either a yes or a no.
  * See issue #670.
  *
  * ── Why agri.bg / fermer.bg / sinor.bg 403: two competing diagnoses ──
