@@ -42,6 +42,8 @@ const cfg = loadConfig();
 // Per-endpoint counters so the summary breaks throughput out by surface.
 const locationsRequests = new Counter('list_locations_requests');
 const listSuccessRate = new Rate('list_success_rate');
+/** Proves each `check_group` tag still binds — see the thresholds block. */
+const checkRuns = new Counter('check_runs');
 
 export const options = {
     scenarios: {
@@ -74,7 +76,8 @@ export const options = {
         // ZERO samples — which k6 passes. See tests/guards/k6-threshold-binding.
         // `count>0` is what makes the rename verifiable: without it the gate
         // cannot tell "everything passed" from "nothing ran".
-        'checks{check_group:locations_ok}': ['rate>0.99', 'count>0'],
+        'checks{check_group:locations_ok}': ['rate>0.99'],
+        'check_runs{check_group:locations_ok}': ['count>0'],
 
         // Login-step health (gate the warm-up, not the steady state).
         'http_req_failed{step:login}': ['rate<0.05'],
@@ -151,6 +154,7 @@ export default function parcelListIteration(data) {
             },
             { check_group: 'locations_ok' },
         );
+        checkRuns.add(1, { check_group: 'locations_ok' });
         locationsRequests.add(1);
         listSuccessRate.add(ok);
     });

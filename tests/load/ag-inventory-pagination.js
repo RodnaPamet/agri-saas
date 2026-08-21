@@ -50,6 +50,8 @@ const MAX_PAGES = 3;
 // Per-endpoint counters so the summary breaks throughput out by surface.
 const lotsRequests = new Counter('inventory_lots_requests');
 const listSuccessRate = new Rate('list_success_rate');
+/** Proves each `check_group` tag still binds — see the thresholds block. */
+const checkRuns = new Counter('check_runs');
 
 export const options = {
     scenarios: {
@@ -83,7 +85,8 @@ export const options = {
         // ZERO samples — which k6 passes. See tests/guards/k6-threshold-binding.
         // `count>0` is what makes the rename verifiable: without it the gate
         // cannot tell "everything passed" from "nothing ran".
-        'checks{check_group:inventory_lots_ok}': ['rate>0.99', 'count>0'],
+        'checks{check_group:inventory_lots_ok}': ['rate>0.99'],
+        'check_runs{check_group:inventory_lots_ok}': ['count>0'],
 
         // Login-step health (gate the warm-up, not the steady state).
         'http_req_failed{step:login}': ['rate<0.05'],
@@ -118,6 +121,7 @@ function fetchLotsPage(base, cursor, auth) {
         },
         { check_group: 'inventory_lots_ok' },
     );
+    checkRuns.add(1, { check_group: 'inventory_lots_ok' });
     lotsRequests.add(1);
     listSuccessRate.add(ok);
 

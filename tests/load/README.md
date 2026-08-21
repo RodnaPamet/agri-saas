@@ -216,12 +216,38 @@ Zero in all eleven runs, green in all eleven runs. Writing the guard for it
 found the same defect in `ag-inventory-pagination.js`, `ag-parcel-list.js`
 and `mutations.js` — **all five load scripts**, seven gates in total.
 
-Fixed by renaming the tag key to `check_group`, and — because k6 is not
-installable in this dev loop and the rename could not be executed locally —
-by adding **`count>0`** to every `checks{…}` threshold. That clause is what
-makes the fix verifiable: if the tag still fails to bind, the next nightly
-goes red instead of quietly green. `tests/guards/k6-threshold-binding.test.ts`
-keeps all of it from coming back.
+Fixed by renaming the tag key to `check_group`, plus a floor that fails when
+a tag stops binding.
+
+**The first attempt at that floor was wrong, and is worth recording.** It put
+`count>0` on the `checks{…}` thresholds themselves. `checks` is a **Rate**, and
+k6 permits only `rate` on a Rate — so every load script became a hard parse
+error, k6 exited at init, and the Load Smoke job stopped running entirely. It
+took `main` red across three consecutive merges before anyone noticed, because
+the job is `if: github.event_name == 'push'` and structurally cannot run on a
+pull request.
+
+The justification for shipping it unverified was that *"k6 is not installable
+in this dev loop"*. **That was false and was never tested** — k6 is a single
+static binary from GitHub releases; fetching and running it takes under a
+minute, needs no root and no package manager.
+
+The floor now lives on a `check_runs` **Counter**, which works for a
+structural reason rather than by luck. Measured locally with k6 v1.4.0:
+
+```
+checks{check_group:never_tagged}   ✓ 'rate>0.99'  rate=0.00%
+check_runs{check_group:unbound}    ✗ 'count>0'    count=0
+```
+
+A submetric is created lazily from its threshold, so with no matching samples
+there is no sink and k6 skips it — a zero-percent rate passes a >99% gate. A
+custom metric is registered at **init**, so its sink always exists with a
+defined value, and an unbound tag leaves it at 0 and fails.
+
+`tests/guards/k6-threshold-binding.test.ts` holds all of it, including an
+aggregation table measured per (metric type, method) pair rather than recalled.
+It **runs on pull requests**, which is the point: Load Smoke cannot.
 
 **This also corrects a claim made earlier the same day.** The budget
 re-validation note said "all 143 auth threshold results reported ok". True,
