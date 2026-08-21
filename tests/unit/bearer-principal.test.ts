@@ -25,6 +25,28 @@
  * says failing closed "would turn a database blip into a fleet-wide
  * sign-out", and the cookie path behaves the same way. It is pinned here so
  * the deliberate choice has a test attached to it rather than a comment alone.
+ *
+ * ── Why the gap existed, and why a file listing hid it ───────────────
+ *
+ * `tests/unit/bearer-cookie-parity.test.ts` looks like it covers this seam.
+ * It does not, and it cannot: it mocks `getToken` and sets the SAME
+ * `mockResolvedValue` for both transports before asserting the two answers
+ * match (`:72` and `:75`). The identity holds **by construction** — that is
+ * the audit's own "true by construction" finding, and it is issue #674 part 2.
+ *
+ * Measured against the three suites nearest this module — parity,
+ * session-revocation-enforced, mfa-gate-enforced, 27 tests:
+ *
+ *     mutation to bearer-principal.ts          result
+ *     -------------------------------------    -------------
+ *     drop the token.error check               27/27 GREEN
+ *     drop `if (result.revoked) return null`   27/27 GREEN
+ *     drop the `Bearer ` prefix check          27/27 GREEN
+ *
+ * So live session revocation could be deleted for every native client and the
+ * suite named after this seam stays green. Anyone scanning a file listing
+ * would assume otherwise — and that assumption is precisely what let a
+ * 152-line auth module doing a live DB revocation check sit at zero tests.
  */
 
 const mockHeaders = new Map<string, string>();
