@@ -65,6 +65,7 @@ import { computeListingsMedianIndex, type ListingPriceRow } from '@/lib/market/l
 import { normalizeCommodity } from '@/lib/market/commodity-vocabulary';
 import { invalidatePriceTrendsCache } from '@/app-layer/usecases/trends';
 import type { MarketPricesPullPayload } from './types';
+import { isPriceSourceAllowed, restrictedHostOf } from '@/lib/market/restricted-sources';
 
 const COMPONENT = 'market-prices-pull';
 
@@ -244,8 +245,32 @@ async function persistItems(
 
 // ── EC AGRI-food ──────────────────────────────────────────────────────
 
+/**
+ * Screen an operator-supplied price-source URL against the commercial
+ * restrictions in `@/lib/market/restricted-sources`.
+ *
+ * Returns the URL when it may be used, or `undefined` after logging when it
+ * may not — SKIP, never throw. A misconfigured override must not take down the
+ * unrelated sources in the same run, and a commercial restriction is not an
+ * availability incident. Every one of these env vars is documented as "point
+ * it at a mirror/proxy", so this is a reachable misconfiguration rather than a
+ * hypothetical one.
+ */
+function allowedPriceUrl(url: string | undefined, envVar: string): string | undefined {
+    if (!url) return undefined;
+    if (isPriceSourceAllowed(url)) return url;
+    logger.warn('market_prices.restricted_source_skipped', {
+        component: 'market-prices-pull',
+        envVar,
+        restrictedHost: restrictedHostOf(url),
+        reason: 'commercial restriction — see lib/market/restricted-sources',
+    });
+    return undefined;
+}
+
 function ecFetchOpts(): EcFetchOptions {
-    return env.EC_AGRIFOOD_BASE_URL ? { baseUrl: env.EC_AGRIFOOD_BASE_URL } : {};
+    const baseUrl = allowedPriceUrl(env.EC_AGRIFOOD_BASE_URL, 'EC_AGRIFOOD_BASE_URL');
+    return baseUrl ? { baseUrl } : {};
 }
 
 function ecObservationsToItems(
@@ -501,15 +526,19 @@ async function pullOilBulletin(deps: MarketPricesPullDeps): Promise<UpsertItem[]
     const fetchDiesel = deps.fetchDiesel ?? fetchDieselPrices;
     let observations: DieselObservation[];
     try {
+        const withTaxUrl = allowedPriceUrl(
+            env.EC_OIL_BULLETIN_WITH_TAX_URL,
+            'EC_OIL_BULLETIN_WITH_TAX_URL',
+        );
+        const withoutTaxUrl = allowedPriceUrl(
+            env.EC_OIL_BULLETIN_WITHOUT_TAX_URL,
+            'EC_OIL_BULLETIN_WITHOUT_TAX_URL',
+        );
         observations = await fetchDiesel(
-            env.EC_OIL_BULLETIN_WITH_TAX_URL || env.EC_OIL_BULLETIN_WITHOUT_TAX_URL
+            withTaxUrl || withoutTaxUrl
                 ? {
-                      ...(env.EC_OIL_BULLETIN_WITH_TAX_URL
-                          ? { withTaxUrl: env.EC_OIL_BULLETIN_WITH_TAX_URL }
-                          : {}),
-                      ...(env.EC_OIL_BULLETIN_WITHOUT_TAX_URL
-                          ? { withoutTaxUrl: env.EC_OIL_BULLETIN_WITHOUT_TAX_URL }
-                          : {}),
+                      ...(withTaxUrl ? { withTaxUrl } : {}),
+                      ...(withoutTaxUrl ? { withoutTaxUrl } : {}),
                   }
                 : {},
         );
@@ -561,7 +590,13 @@ async function pullWorldBank(deps: MarketPricesPullDeps): Promise<UpsertItem[]> 
     let observations: FertilizerObservation[];
     try {
         observations = await fetchFertilizer(
-            env.WORLD_BANK_PINK_SHEET_URL ? { url: env.WORLD_BANK_PINK_SHEET_URL } : {},
+            (() => {
+                const url = allowedPriceUrl(
+                    env.WORLD_BANK_PINK_SHEET_URL,
+                    'WORLD_BANK_PINK_SHEET_URL',
+                );
+                return url ? { url } : {};
+            })(),
         );
     } catch (err) {
         logger.warn('market_prices.world_bank_failed', {
