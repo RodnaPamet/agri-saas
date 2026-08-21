@@ -87,17 +87,52 @@ case "$CONCLUSION" in
         fi
         ;;
 
-    *)
-        # cancelled / skipped / neutral / action_required are NOT failures.
+    cancelled)
+        # `cancelled` covers TWO different events, and the difference matters.
         #
-        # `cancelled` is the one that matters and the one that bit us. A
-        # workflow with a `concurrency` group keeps only the most recent
-        # pending run and cancels the earlier ones — so four rapid merges to
-        # main produced two cancelled Release runs, and the first version of
-        # this notifier filed an issue for one of them. That is the queue
-        # working correctly. A human pressing cancel is likewise deliberate.
-        # Neither needs a ticket, and filing for them is precisely the
-        # accumulating noise this design promised to avoid.
+        #   SUPERSEDED — a `concurrency` group keeps only the most recent
+        #   PENDING run and cancels the earlier ones. Routine queue behaviour.
+        #   #682 stopped filing on these because the first version of this
+        #   notifier filed #680 for exactly that, which was the accumulating
+        #   noise the design promised to avoid.
+        #
+        #   TIMED OUT — a job hit its `timeout-minutes` and was killed. That is
+        #   a REAL failure, and GitHub reports it with the same conclusion
+        #   string. Excluding all cancellations therefore created a false
+        #   NEGATIVE: the Coverage gate exceeded its 60-minute budget on three
+        #   consecutive main pushes on 2026-08-21 and this notifier said
+        #   nothing, so a gate that could neither pass nor fail went dark
+        #   unannounced. Fixing one false positive had created a worse false
+        #   negative.
+        #
+        # The discriminator, derived from both real cases rather than guessed:
+        # a SUPERSEDED run is killed while PENDING, so no job ever starts —
+        # #680's run reports ZERO jobs. A timed-out run has jobs that ran, and
+        # siblings that succeeded (17 of 18, in the Coverage case).
+        #
+        # Counting cancelled-vs-succeeded jobs does NOT work: measured 17/1 for
+        # the timeout and 16/1 for the other candidate. Job DURATION alone does
+        # not work either. "Did any job start?" does.
+        STARTED="$("$GH" api "repos/${REPO}/actions/runs/${RUN_ID}/jobs?per_page=100" \
+            --jq '[.jobs[] | select(.started_at != null)] | length' 2>/dev/null || echo 0)"
+        if [ "${STARTED:-0}" -eq 0 ]; then
+            echo "cancelled with no job ever started — superseded, not a failure"
+            exit 0
+        fi
+        echo "cancelled after ${STARTED} job(s) started — treating as a real failure"
+        CONCLUSION="timed_out_or_cancelled"
+        if [ -n "$EXISTING" ]; then
+            "$GH" issue comment "$EXISTING" --repo "$REPO" --body "$(body)"
+            "$GH" issue edit "$EXISTING" --repo "$REPO" --body "$(body)"
+            echo "commented on #${EXISTING}: ${WF} failed again"
+        else
+            "$GH" issue create --repo "$REPO" --title "$TITLE" --label ci-failure --body "$(body)"
+            echo "filed a new issue for ${WF}"
+        fi
+        ;;
+
+    *)
+        # skipped / neutral / action_required are not failures.
         echo "conclusion=${CONCLUSION} — not a failure, no action"
         ;;
 esac
