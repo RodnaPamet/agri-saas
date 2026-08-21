@@ -27,6 +27,7 @@ import {
     SOIL_QUEUE_NAME,
     type JobName,
 } from '../src/app-layer/jobs/types';
+import { assertProductionEncryptionReady } from '../src/lib/security/startup-gate';
 
 // ─── Standalone logger ───
 
@@ -43,41 +44,6 @@ const REDIS_URL = process.env.REDIS_URL;
 if (!REDIS_URL) {
     log.fatal('REDIS_URL is not set. Cannot start worker.');
     process.exit(1);
-}
-
-// ─── GAP-03: production encryption-key fail-fast ───────────────────
-//
-// The Next.js server runs this check via `src/instrumentation.ts`,
-// but BullMQ workers are a separate process — they bootstrap straight
-// from this file and never load the instrumentation hook. Without a
-// mirror check here, a worker process can boot in production with no
-// encryption key, sit idle, and crash on the FIRST job that touches
-// an encrypted column (Finding.description, Risk.treatmentNotes,
-// PolicyVersion.contentText, …). Same blast-radius as the lazy-throw
-// failure mode the audit flagged on the web tier, just shifted to
-// background processing.
-//
-// Imports are dynamic so the worker doesn't pull the encryption
-// module unless we're in production.
-if (process.env.NODE_ENV === 'production') {
-    (async () => {
-        const { checkProductionEncryptionKey, runEncryptionSentinel } =
-            await import('../src/lib/security/startup-encryption-check');
-
-        const config = checkProductionEncryptionKey(process.env);
-        if (!config.ok) {
-            log.fatal('[startup] FATAL: ' + config.reason);
-            process.exit(1);
-        }
-
-        const sentinel = await runEncryptionSentinel();
-        if (!sentinel.ok) {
-            log.fatal('[startup] FATAL: ' + sentinel.reason);
-            process.exit(1);
-        }
-
-        log.info('encryption key check passed (presence + sentinel round-trip)');
-    })();
 }
 
 function createWorkerConnection(): Redis {
@@ -103,13 +69,24 @@ function createWorkerConnection(): Redis {
 
 // ─── Worker Bootstrap ───
 
-log.info({ queueName: QUEUE_NAME, redisUrl: REDIS_URL.replace(/\/\/.*@/, '//***@') }, 'starting worker');
-
-// Wire the automation bus to BullMQ so any domain event emitted from
-// inside a job (e.g. a usecase running inside a scheduled sweep)
-// fans back into the dispatch queue. Safe to call before executors
-// register — the bus accepts a dispatcher at any point.
-(async () => {
+/**
+ * Wire the automation bus to BullMQ so any domain event emitted from inside a
+ * job (e.g. a usecase running inside a scheduled sweep) fans back into the
+ * dispatch queue, and swap the mailer to SMTP.
+ *
+ * AWAITED before any Worker is constructed (#698). This was a non-awaited
+ * async IIFE, so a job could be claimed before it finished — and both halves
+ * matter for correctness, not just tidiness:
+ *
+ *   · without `installAutomationBusDispatcher`, an automation event emitted by
+ *     that job has nowhere to go and is silently dropped;
+ *   · without `initMailerFromEnv`, the worker is still on the console sink, and
+ *     the notification outbox + digests it runs "send" mail that never leaves.
+ *
+ * (`installRlsTripwire` is a documented no-op kept for call-site compatibility,
+ * so nothing isolation-critical was ever in this race — checked, not assumed.)
+ */
+async function bootstrapWorkerRuntime(): Promise<void> {
     const { installAutomationBusDispatcher } = await import(
         '../src/app-layer/automation/bus-bootstrap'
     );
@@ -119,15 +96,12 @@ log.info({ queueName: QUEUE_NAME, redisUrl: REDIS_URL.replace(/\/\/.*@/, '//***@
     const { prisma } = await import('../src/lib/prisma');
     installAutomationBusDispatcher();
     installRlsTripwire(prisma);
-    // Swap the mailer to SMTP when configured — the worker runs the
-    // notification outbox + digests, which send email. Without this the
-    // worker stays on the console sink and those emails never deliver.
     const { initMailerFromEnv } = await import('../src/lib/mailer');
     initMailerFromEnv();
     log.info('automation bus dispatcher + RLS tripwire + mailer installed');
-})();
+}
 
-const connection = createWorkerConnection();
+let connection: Redis;
 
 // Shared processor — dispatches to the executor registry. Reused by both the
 // main worker and the dedicated soil worker (they differ only in the queue
@@ -180,35 +154,52 @@ async function processJob(job: Job) {
     return result;
 }
 
-const worker = new Worker(
-    QUEUE_NAME,
-    processJob,
-    {
-        connection,
-        concurrency: 5,
-        limiter: {
-            max: 50,
-            duration: 60000,
-        },
-    },
-);
+let worker: Worker;
+let soilWorker: Worker;
 
-// Dedicated soil-fetch worker — its own queue + a 5/min limiter so we honour
-// the SoilGrids beta REST fair-use budget without throttling other jobs.
-const soilWorker = new Worker(
-    SOIL_QUEUE_NAME,
-    processJob,
-    {
-        connection: createWorkerConnection(),
-        concurrency: 2,
-        limiter: {
-            max: 5,
-            duration: 60000,
+/**
+ * Construct both workers and attach their event handlers.
+ *
+ * Called only from `main()`, only AFTER the startup gate and the runtime
+ * bootstrap have resolved. Constructing a `Worker` is what subscribes to the
+ * queue, so this is the exact line that must not run early (#698).
+ */
+function startWorkers(): void {
+    worker = new Worker(
+        QUEUE_NAME,
+        processJob,
+        {
+            connection,
+            concurrency: 5,
+            limiter: {
+                max: 50,
+                duration: 60000,
+            },
         },
-    },
-);
+    );
+
+    // Dedicated soil-fetch worker — its own queue + a 5/min limiter so we
+    // honour the SoilGrids beta REST fair-use budget without throttling
+    // other jobs.
+    soilWorker = new Worker(
+        SOIL_QUEUE_NAME,
+        processJob,
+        {
+            connection: createWorkerConnection(),
+            concurrency: 2,
+            limiter: {
+                max: 5,
+                duration: 60000,
+            },
+        },
+    );
+
+    attachWorkerEvents();
+}
 
 // ─── Worker Events ───
+
+function attachWorkerEvents(): void {
 
 worker.on('ready', () => {
     log.info({
@@ -246,14 +237,21 @@ worker.on('error', (error) => {
     }, 'worker error');
 });
 
+}
+
 // ─── Graceful Shutdown ───
 
 async function shutdown(signal: string) {
     log.info({ signal }, 'shutdown signal received — closing worker');
 
     try {
-        await Promise.all([worker.close(), soilWorker.close()]);
-        await connection.quit();
+        // Optional-chained: a SIGTERM can arrive while `main()` is still in
+        // the startup gate, before either worker exists. Before #698 these
+        // were constructed at module scope so they were always defined by the
+        // time a handler could fire; now they are not, and a shutdown that
+        // threw here would exit 1 on an orderly stop.
+        await Promise.all([worker?.close(), soilWorker?.close()]);
+        await connection?.quit();
         log.info('worker shut down gracefully');
         process.exit(0);
     } catch (error) {
@@ -265,4 +263,27 @@ async function shutdown(signal: string) {
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
 
-log.info('worker process started — press Ctrl+C to stop');
+/**
+ * Startup, in the order the checks are meant to happen (#698).
+ *
+ * Nothing below the gate runs on a process that cannot encrypt at rest, and
+ * nothing subscribes to a queue before the runtime is wired. Previously all
+ * three of these raced: two non-awaited async IIFEs against a module body that
+ * constructed both Workers synchronously.
+ */
+async function main(): Promise<void> {
+    await assertProductionEncryptionReady(log, process.env);
+    log.info(
+        { queueName: QUEUE_NAME, redisUrl: REDIS_URL!.replace(/\/\/.*@/, '//***@') },
+        'starting worker',
+    );
+    await bootstrapWorkerRuntime();
+    connection = createWorkerConnection();
+    startWorkers();
+    log.info('worker process started — press Ctrl+C to stop');
+}
+
+main().catch((err) => {
+    log.fatal({ err }, 'worker failed to start');
+    process.exit(1);
+});

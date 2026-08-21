@@ -84,25 +84,47 @@ describe('GAP-03 ratchet — runtime startup hooks', () => {
         expect(src).toMatch(/NODE_ENV.*['"]production['"]/);
     });
 
-    it('BullMQ worker (scripts/worker.ts) calls checkProductionEncryptionKey', () => {
+    // The two standalone entrypoints call the shared gate rather than the two
+    // helpers directly (#698). They used to inline the calls inside a
+    // NON-AWAITED async IIFE, so both processes were already live when the
+    // refusal printed — the worker subscribed to its queues, the scheduler
+    // mid-registration. `assertProductionEncryptionReady` is the awaited form,
+    // and it is where the `NODE_ENV === 'production'` gate now lives.
+    //
+    // This is a structural check and cannot see ordering. The behaviour —
+    // that the FATAL line is the FIRST thing either script emits — is asserted
+    // by driving real child processes in
+    // `tests/unit/security/startup-fail-fast-execution.test.ts`.
+    it('BullMQ worker (scripts/worker.ts) awaits the production startup gate', () => {
         const src = readRepoFile('scripts/worker.ts');
         // Regression: workers run as a separate process and bypass
         // src/instrumentation.ts. Without their own check, a worker
         // can boot in production with no key and crash on the first
         // job that reads/writes an encrypted column.
-        expect(src).toMatch(/checkProductionEncryptionKey/);
-        expect(src).toMatch(/runEncryptionSentinel/);
-        expect(src).toMatch(/NODE_ENV.*['"]production['"]/);
+        expect(src).toMatch(/assertProductionEncryptionReady/);
+        // AWAITED — `void`-ing it is the #698 defect, and it is invisible to
+        // every other assertion in this file.
+        expect(src).toMatch(/await assertProductionEncryptionReady\(/);
+        expect(src).not.toMatch(/void assertProductionEncryptionReady\(/);
     });
 
-    it('Scheduler (scripts/scheduler.ts) calls checkProductionEncryptionKey', () => {
+    it('Scheduler (scripts/scheduler.ts) awaits the production startup gate', () => {
         const src = readRepoFile('scripts/scheduler.ts');
         // Regression: scheduler runs once on deploy. Refusing to
         // register schedules when the key is missing surfaces the
         // misconfiguration on the deploy that caused it, not three
         // jobs later when the worker crashes on its first dispatch.
+        expect(src).toMatch(/await assertProductionEncryptionReady\(/);
+        expect(src).not.toMatch(/void assertProductionEncryptionReady\(/);
+    });
+
+    it('the shared gate runs both halves, and only in production', () => {
+        const src = readRepoFile('src/lib/security/startup-gate.ts');
+        expect(src).toMatch(/export async function assertProductionEncryptionReady/);
         expect(src).toMatch(/checkProductionEncryptionKey/);
-        expect(src).toMatch(/NODE_ENV.*['"]production['"]/);
+        expect(src).toMatch(/runEncryptionSentinel/);
+        expect(src).toMatch(/env\.NODE_ENV !== 'production'/);
+        expect(src).toMatch(/process\.exit\(1\)/);
     });
 
     it('startup-encryption-check exports both helpers', () => {

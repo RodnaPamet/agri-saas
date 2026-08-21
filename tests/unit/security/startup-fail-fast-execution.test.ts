@@ -37,7 +37,7 @@
  * it CAN do rather than restating what it claims.
  */
 
-import { execFileSync, spawnSync } from 'child_process';
+import { execFileSync, spawn, spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { DEV_FALLBACK_DATA_ENCRYPTION_KEY } from '@/lib/security/encryption-constants';
@@ -93,18 +93,96 @@ type BootMode = 'EXIT' | 'SURVIVE';
 
 const bootCache = new Map<string, BootResult>();
 
-function boot(entry: string, env: Record<string, string>, mode: BootMode = 'EXIT'): BootResult {
+/**
+ * SURVIVE mode waits for a MARKER, not for a clock.
+ *
+ * The first version of this used `spawnSync` with a fixed 15s window and
+ * asserted the marker afterwards. That is a race, and it lost one: run alone
+ * the suite was 38/38, but under a full parallel sweep two BOOT cases failed
+ * with `Received: {"msg":"starting worker"}` — the worker had got that far and
+ * the window expired. A spawned `tsx` compiling, importing the app graph and
+ * connecting to Redis does not reliably reach `worker process started` inside
+ * 15 seconds while 1200+ suites compete for the box. (Found by the parallel
+ * session running the full sweep; credited because I would have shipped it.)
+ *
+ * #698 makes that strictly worse — the encryption sentinel now BLOCKS startup
+ * instead of racing it, so the worker does more work before the marker.
+ *
+ * Raising the constant would only move the race. Reading the stream until the
+ * marker appears removes it: the wait ends on the event, the cap is a
+ * backstop rather than the mechanism, and a healthy boot is killed the
+ * instant it has proven itself.
+ */
+function bootAsync(
+    entry: string,
+    env: Record<string, string>,
+    mode: BootMode,
+    marker?: string,
+): Promise<BootResult> {
+    return new Promise((resolve) => {
+        // `detached` makes the child a PROCESS-GROUP LEADER, and that is
+        // load-bearing rather than tidy. `tsx` forks `esbuild`; killing the
+        // child alone leaves the grandchild alive holding the inherited stdio
+        // pipes, so the parent keeps an open handle and JEST NEVER EXITS.
+        //
+        // Measured on the first version of this helper: the suite itself
+        // PASSED on CI in 12.5s and all 410 suites / 7589 tests were green —
+        // then `Jest did not exit one second after the test run has
+        // completed`, the job sat until its 35-minute cap, and the runner
+        // reported `Terminate orphan process: … (node)` / `… (esbuild)`.
+        // Reproduced locally with `--detectOpenHandles`, which never returned.
+        // `spawnSync` never had this because it blocks until the tree
+        // resolves; going async is what exposed it.
+        const child = spawn(TSX, [entry], {
+            cwd: REPO,
+            env: { ...process.env, ...BASE_ENV, ...env },
+            detached: true,
+        });
+        let output = '';
+        let settled = false;
+        const finish = (status: number | null) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(cap);
+            try {
+                // Negative pid = the whole group, so `esbuild` goes too.
+                if (child.pid) process.kill(-child.pid, 'SIGKILL');
+            } catch {
+                /* already gone */
+            }
+            try {
+                child.stdout?.destroy();
+                child.stderr?.destroy();
+                child.unref();
+            } catch {
+                /* already gone */
+            }
+            resolve({ status, output });
+        };
+        const onData = (chunk: Buffer) => {
+            output += chunk.toString();
+            // SURVIVE: the process is expected to keep running, so the marker
+            // is the only signal that it got where it was going.
+            if (mode === 'SURVIVE' && marker && output.includes(marker)) finish(null);
+        };
+        child.stdout.on('data', onData);
+        child.stderr.on('data', onData);
+        child.on('exit', (code) => finish(code));
+        child.on('error', () => finish(null));
+        const cap = setTimeout(() => finish(null), 90_000);
+    });
+}
+
+async function boot(
+    entry: string,
+    env: Record<string, string>,
+    mode: BootMode = 'EXIT',
+    marker?: string,
+): Promise<BootResult> {
     const key = `${mode}|${entry}|${JSON.stringify(env)}`;
     const hit = bootCache.get(key);
     if (hit) return hit;
-
-    const res = spawnSync(TSX, [entry], {
-        cwd: REPO,
-        encoding: 'utf-8',
-        timeout: mode === 'EXIT' ? 60_000 : 15_000,
-        env: { ...process.env, ...BASE_ENV, ...env },
-    });
-    const result = { status: res.status, output: `${res.stdout ?? ''}${res.stderr ?? ''}` };
+    const result = await bootAsync(entry, env, mode, marker);
     bootCache.set(key, result);
     return result;
 }
@@ -141,8 +219,8 @@ jest.setTimeout(180_000);
 
 describe('GAP-03 check 2 — the startup hook actually kills the process', () => {
     describe.each(SURFACES)('$name', ({ entry, alive, terminates }) => {
-        it('refuses to boot in production when the key is below the length floor', () => {
-            const { status, output } = boot(entry, {
+        it('refuses to boot in production when the key is below the length floor', async () => {
+            const { status, output } = await boot(entry, {
                 NODE_ENV: 'production',
                 DATA_ENCRYPTION_KEY: SHORT_KEY,
             });
@@ -151,11 +229,11 @@ describe('GAP-03 check 2 — the startup hook actually kills the process', () =>
             expect(output).toContain('DATA_ENCRYPTION_KEY');
         });
 
-        it('refuses to boot in production when the key IS the documented dev fallback', () => {
+        it('refuses to boot in production when the key IS the documented dev fallback', async () => {
             // The regression this exists for: a prod deploy where someone
             // copied the dev key out of the docs. It passes every structural
             // check — right length, present, parses — and is public.
-            const { status, output } = boot(entry, {
+            const { status, output } = await boot(entry, {
                 NODE_ENV: 'production',
                 DATA_ENCRYPTION_KEY: DEV_FALLBACK_DATA_ENCRYPTION_KEY,
             });
@@ -164,10 +242,10 @@ describe('GAP-03 check 2 — the startup hook actually kills the process', () =>
             expect(output).toContain('dev fallback');
         });
 
-        it('never echoes the rejected key material', () => {
+        it('never echoes the rejected key material', async () => {
             // An operator pastes a startup log into an issue. The refusal has
             // to name the PROBLEM, never the value.
-            const { output } = boot(entry, {
+            const { output } = await boot(entry, {
                 NODE_ENV: 'production',
                 DATA_ENCRYPTION_KEY: SHORT_KEY,
             });
@@ -175,20 +253,21 @@ describe('GAP-03 check 2 — the startup hook actually kills the process', () =>
             expect(output).not.toContain(SHORT_KEY);
         });
 
-        it('boots past the check with a valid key — the guard is passed, not skipped', () => {
+        it('boots past the check with a valid key — the guard is passed, not skipped', async () => {
             // Resolving power. Without this, every assertion above is
             // satisfied by a surface that exits 1 unconditionally.
-            const { output } = boot(
+            const { output } = await boot(
                 entry,
                 { NODE_ENV: 'production', DATA_ENCRYPTION_KEY: GOOD_KEY },
                 terminates ? 'EXIT' : 'SURVIVE',
+                alive,
             );
             expect(output).not.toContain('[startup] FATAL:');
             // …and it got far enough to prove the absence means something.
             expect(output).toContain(alive);
         });
 
-        it('leaves development alone — a short key is fine outside production', () => {
+        it('leaves development alone — a short key is fine outside production', async () => {
             // The dev fallback exists so contributors never manage this var.
             // A check that fired here would be a contributor-experience
             // regression, and it is a documented part of the contract.
@@ -200,21 +279,22 @@ describe('GAP-03 check 2 — the startup hook actually kills the process', () =>
             // dev exemption is genuinely double-guarded, so no single-point
             // mutation kills this; it catches the removal of the exemption,
             // not the removal of one layer of it.
-            const { output } = boot(
+            const { output } = await boot(
                 entry,
                 { NODE_ENV: 'development', DATA_ENCRYPTION_KEY: SHORT_KEY },
                 terminates ? 'EXIT' : 'SURVIVE',
+                alive,
             );
             expect(output).not.toContain('[startup] FATAL:');
             expect(output).toContain(alive);
         });
     });
 
-    it('the web hook completes register() with a valid key', () => {
+    it('the web hook completes register() with a valid key', async () => {
         // Surface-specific: proves the hook ran to the END rather than dying
         // quietly somewhere after the check. `not.toContain('FATAL')` alone
         // cannot tell those apart.
-        const { status, output } = boot(SURFACES[0].entry, {
+        const { status, output } = await boot(SURFACES[0].entry, {
             NODE_ENV: 'production',
             DATA_ENCRYPTION_KEY: GOOD_KEY,
         });
@@ -444,18 +524,30 @@ describe('runEncryptionSentinel — what it can and cannot catch', () => {
 
 describe('the refusal arrives before the process is doing work', () => {
     /**
-     * Writing the tests above surfaced a defect the exit-code assertions
-     * cannot see: both standalone entrypoints run the check inside a
-     * NON-AWAITED async IIFE, so module evaluation races past it. They do exit
-     * 1 — but only after they are already live. Issue #698.
+     * Writing the exit-code tests above surfaced a defect they could not see:
+     * both standalone entrypoints ran the check inside a NON-AWAITED async
+     * IIFE, so module evaluation raced past it. They did exit 1 — but only
+     * after they were already live. Issue #698, measured then as:
      *
-     * The two `worker` / `scheduler` cases below are CHARACTERISATION tests:
-     * they pin the current, wrong order so the defect is visible in CI rather
-     * than only in a filed issue. They are EXPECTED TO FAIL when #698 is
-     * fixed — flip them to assert the correct order in that same PR.
+     *     worker:     starting worker
+     *                 worker process started — press Ctrl+C to stop
+     *                 [startup] FATAL: DATA_ENCRYPTION_KEY is required …
+     *
+     *     scheduler:  registering repeatable jobs
+     *                 [startup] FATAL: DATA_ENCRYPTION_KEY is required …
+     *
+     * #702 pinned that wrong order in two CHARACTERISATION tests so the defect
+     * was visible in CI rather than only in a filed issue, and said they were
+     * expected to fail when the fix landed. They did — exactly those two, with
+     * the other 36 green. These are the flipped versions.
+     *
+     * What the assertions below are really about: `new Worker(...)` is what
+     * SUBSCRIBES to the queue, and `registering repeatable jobs` is the
+     * scheduler's first write. A refusal printed after either of those is a
+     * process that was already doing work.
      */
-    function orderOf(entry: string): string[] {
-        const { output } = boot(entry, {
+    async function orderOf(entry: string): Promise<string[]> {
+        const { output } = await boot(entry, {
             NODE_ENV: 'production',
             DATA_ENCRYPTION_KEY: SHORT_KEY,
         });
@@ -474,30 +566,45 @@ describe('the refusal arrives before the process is doing work', () => {
     const indexOfFatal = (lines: string[]) =>
         lines.findIndex((l) => l.includes('[startup] FATAL:'));
 
-    it('web: the hook refuses before register() does anything else', () => {
+    it('web: the hook refuses before register() does anything else', async () => {
         // The correct shape. `register()` is async and awaits the check
         // inline, so nothing downstream of it ever runs.
-        const lines = orderOf(SURFACES[0].entry);
+        const lines = await orderOf(SURFACES[0].entry);
         expect(indexOfFatal(lines)).toBeGreaterThanOrEqual(0);
         expect(lines.some((l) => l.includes('REGISTER_RETURNED_OK'))).toBe(false);
     });
 
-    it('worker: KNOWN DEFECT #698 — announces itself started BEFORE refusing', () => {
-        const lines = orderOf(SURFACES[1].entry);
-        const started = lines.findIndex((l) => l.includes('worker process started'));
+    it('worker: refuses BEFORE it ever subscribes to the queue', async () => {
+        const lines = await orderOf(SURFACES[1].entry);
         const fatal = indexOfFatal(lines);
-        expect(fatal).toBeGreaterThanOrEqual(0);
-        expect(started).toBeGreaterThanOrEqual(0);
-        // Both BullMQ Workers are constructed and listening by this point.
-        expect(started).toBeLessThan(fatal);
+        // FIRST line, not merely "before the marker". Measured: with the
+        // `await` reverted to `void`, the worker logs `starting worker` and
+        // THEN the refusal — fatal at index 1 — while every absence assertion
+        // below still passes, because the un-awaited gate resolves before the
+        // heavy bootstrap import does. Only the index separates them.
+        expect(fatal).toBe(0);
+        // `worker process started` is logged at the END of main(), after both
+        // Workers exist. It must never appear on a refused boot.
+        expect(lines.some((l) => l.includes('worker process started'))).toBe(false);
+        // Nor may the runtime bootstrap have run — an automation dispatcher and
+        // an SMTP mailer installed by a process that is about to exit 1 is work
+        // done on a broken key.
+        expect(lines.some((l) => l.includes('automation bus dispatcher'))).toBe(false);
     });
 
-    it('scheduler: KNOWN DEFECT #698 — begins registering jobs BEFORE refusing', () => {
-        const lines = orderOf(SURFACES[2].entry);
-        const working = lines.findIndex((l) => l.includes('registering repeatable jobs'));
+    it('scheduler: refuses BEFORE it registers anything', async () => {
+        const lines = await orderOf(SURFACES[2].entry);
         const fatal = indexOfFatal(lines);
-        expect(fatal).toBeGreaterThanOrEqual(0);
-        expect(working).toBeGreaterThanOrEqual(0);
-        expect(working).toBeLessThan(fatal);
+        expect(fatal).toBe(0);
+        expect(lines.some((l) => l.includes('registering repeatable jobs'))).toBe(false);
+    });
+
+    it('the FATAL line is the first thing either script says at all', async () => {
+        // Pins the refusal at the front, so a log line added above the gate
+        // fails here rather than silently re-opening the window.
+        for (const surface of [SURFACES[1], SURFACES[2]]) {
+            const lines = await orderOf(surface.entry);
+            expect(indexOfFatal(lines)).toBe(0);
+        }
     });
 });

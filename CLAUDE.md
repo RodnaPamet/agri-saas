@@ -518,10 +518,19 @@ chars, or equal to the documented dev fallback:
      `Buffer.from(raw,'utf8')`, which never throws. It is a
      forward-looking guard on a future derivation that CAN throw, not
      live defence. See the docblock in `startup-encryption-check.ts`.
-     **The two standalone entrypoints are live before they refuse**
-     — both run the check in a non-awaited async IIFE, so the worker
-     is subscribed to the queue and the scheduler has begun
-     registering jobs by the time `FATAL` prints (#698).
+     All three surfaces now AWAIT the gate — `assertProductionEncryptionReady`
+     in `@/lib/security/startup-gate`, which is the one place the
+     `NODE_ENV === 'production'` decision and both halves live. Until
+     #698 the two standalone entrypoints ran the check in a
+     **non-awaited async IIFE**, so the worker was subscribed to its
+     queues and the scheduler mid-registration by the time `FATAL`
+     printed. `scripts/worker.ts` therefore has a real `main()`:
+     nothing constructs a `Worker` (which is what subscribes) until the
+     gate and the runtime bootstrap have both resolved. The structural
+     guardrail asserts `await`, not merely presence — `void`-ing the
+     call is the defect and is invisible to a presence check; the
+     ordering itself is asserted behaviourally by spawning the real
+     processes.
   3. Compose `:?error` syntax in **every manifest that carries the
      key** — `docker-compose.prod.yml`, `docker-compose.staging.yml`,
      `deploy/docker-compose.prod.yml` AND `deploy/docker-compose.vm.yml`
