@@ -13,6 +13,7 @@
  * `.openapi(...)` to every NEW request schema when you add it.
  */
 import { z } from '@/lib/openapi/zod';
+import { httpsUrl } from '@/lib/schemas/url';
 
 export const EmptyBodySchema = z.object({}).strip().openapi('EmptyBody', {
     description: 'Empty request body. Used by mutation endpoints whose semantics live entirely in the URL (e.g. POST /restore on a soft-deleted resource).',
@@ -215,14 +216,14 @@ export const AssignTaskSchema = z.object({
 });
 
 export const LinkTaskEvidenceSchema = z.object({
-    url: z.string().url().max(2000),
+    url: httpsUrl(),
     note: z.string().max(2000).nullable().optional(),
 }).strip().openapi('TaskEvidenceLinkRequest', {
     description: 'Attach a URL as evidence on a task. File uploads use the multipart /evidence/uploads endpoint with a taskId.',
 });
 
 export const LinkAssetEvidenceSchema = z.object({
-    url: z.string().url().max(2000),
+    url: httpsUrl(),
     note: z.string().max(2000).nullable().optional(),
 }).strip().openapi('AssetEvidenceLinkRequest', {
     description: 'Attach a URL as evidence on an asset. File uploads use the multipart /evidence/uploads endpoint with an assetId.',

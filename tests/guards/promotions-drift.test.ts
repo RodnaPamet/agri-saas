@@ -33,7 +33,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import * as ts from 'typescript';
+import { findUnpinnedUrlFields } from '../helpers/url-field-parser';
 
 const REPO = path.resolve(__dirname, '..', '..');
 const API_DIR = path.resolve(REPO, 'src', 'app', 'api');
@@ -64,43 +64,6 @@ function collectRoutes(dir: string): string[] {
         else if (entry.isFile() && entry.name === 'route.ts') out.push(full);
     }
     return out;
-}
-
-/**
- * Every URL-shaped property in a schema source, and whether it is
- * scheme-constrained.
- *
- * Parses rather than greps. A property counts as URL-shaped if its name ends
- * in `Url`/`url`, or its initializer mentions `.url(`. It counts as pinned if
- * that initializer routes through the file's `httpsUrl()` helper or spells
- * `z.url({ protocol: ... })` inline.
- */
-export function findUnpinnedUrlFields(
-    displayPath: string,
-    source: string,
-): { fields: string[]; unpinned: string[] } {
-    const sf = ts.createSourceFile(displayPath, source, ts.ScriptTarget.Latest, true);
-    const fields: string[] = [];
-    const unpinned: string[] = [];
-
-    const visit = (node: ts.Node): void => {
-        if (ts.isPropertyAssignment(node) && node.name && ts.isIdentifier(node.name)) {
-            const name = node.name.text;
-            const init = node.initializer.getText(sf);
-            const looksUrl = /url$/i.test(name) || init.includes('.url(');
-            if (looksUrl) {
-                fields.push(name);
-                const pinned = init.includes('httpsUrl(') || /z\.url\(\s*\{/.test(init);
-                if (!pinned) {
-                    const line = sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1;
-                    unpinned.push(`${displayPath}:${line} — ${name} accepts any URL scheme`);
-                }
-            }
-        }
-        ts.forEachChild(node, visit);
-    };
-    visit(sf);
-    return { fields, unpinned };
 }
 
 describe('promotions — structural drift guard', () => {

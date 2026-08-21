@@ -15,6 +15,7 @@
  * validation — fail-closed, never a partial/guessed spec.
  */
 import { z } from 'zod';
+import { httpsUrl } from '@/lib/schemas/url';
 
 /**
  * The application-rate triple, e.g. `{ value: 2.5, unit: 'L', per: 'ha' }`
@@ -46,7 +47,7 @@ export const PesticideSafetySpecSchema = z.object({
     maxApplicationsPerSeason: z.number().int().positive().optional(),
     /** EPA / label registration number — used as the citation source. */
     registrationNumber: z.string().min(1).max(120).optional(),
-    labelUrl: z.string().url().optional(),
+    labelUrl: httpsUrl().optional(),
 });
 
 export type PesticideSafetySpec = z.infer<typeof PesticideSafetySpecSchema>;

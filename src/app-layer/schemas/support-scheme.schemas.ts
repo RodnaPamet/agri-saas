@@ -11,6 +11,7 @@
  * @module app-layer/schemas/support-scheme
  */
 import { z } from 'zod';
+import { httpsUrl } from '@/lib/schemas/url';
 
 /** Issuing bodies. ДФЗ = Държавен фонд „Земеделие"; МЗХ = the ministry. */
 export const SUPPORT_SCHEME_AUTHORITIES = ['ДФЗ', 'МЗХ', 'EC'] as const;
@@ -85,7 +86,7 @@ export const CreateSupportSchemeSchema = z
         eligibilitySummary: z.string().max(4000).optional(),
         budgetAmount: z.number().nonnegative().optional(),
         budgetCurrency: z.string().length(3).optional(),
-        sourceUrl: z.string().url().max(2000).optional(),
+        sourceUrl: httpsUrl().optional(),
         source: z.enum(SUPPORT_SCHEME_SOURCES).optional(),
     })
     .strip();

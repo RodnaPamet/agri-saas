@@ -1341,6 +1341,24 @@ recovery.
 ## Key Conventions
 
 - **Zod schemas** for all API input validation live in `src/app-layer/schemas/` (backend) and `src/lib/schemas/` (shared).
+- **A URL field in a payload schema uses `httpsUrl()`** from
+  `@/lib/schemas/url`, never a bare `z.string().url()`. Under the installed zod
+  (4.4.3) the loose form accepts `http://`, `ftp://`, `file://`, `data:`,
+  `urn:` and `javascript:` — all measured. This is contract-narrowing, not XSS
+  remediation (React 19 rewrites `javascript:` hrefs and the CSP carries no
+  `unsafe-inline` in `script-src`); what survives those is the plain `http://`
+  downgrade and a field contract far wider than the field's purpose.
+  `tests/guards/payload-url-scheme.test.ts` scans
+  `src/app-layer/schemas/` + `src/lib/schemas/` from the FILESYSTEM, so a new
+  schema file is covered the moment it exists. A field that must stay open goes
+  in `OPEN_BY_DESIGN` keyed `file:field` **with a written reason** — the two
+  entries there today are output-DTO fields holding server-minted RELATIVE
+  paths, which `httpsUrl()` would reject. A "no stale entries" test removes the
+  exemption's cover as soon as the field is pinned or deleted.
+  **A scheme pin is not an SSRF guard.** `https://169.254.169.254/` passes it.
+  For a URL the SERVER will fetch, the host policy is `checkWebhookUrl` in
+  `@/app-layer/automation/webhook-safety` — used by the automation webhook
+  path, and notably absent from the Web Push and OIDC-discovery paths (#696).
 - **Audit trail**: Call `logEvent()` from `src/app-layer/events/audit.ts` after mutating state. Entries are hash-chained — never write directly to the `AuditLog` table.
 - **Audit verbs: domain verbs are the deliberate majority, not a wart.**
   `AuditEventPayload.action` is a bare `string` with no enum, no registry
