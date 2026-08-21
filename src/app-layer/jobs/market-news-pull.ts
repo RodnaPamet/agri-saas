@@ -36,6 +36,38 @@ const RETENTION_DAYS = 60;
 /** Per-feed newest-items cap. */
 const MAX_ITEMS_PER_FEED = 40;
 /** Column length caps — keep headlines/excerpts sane, never store blobs. */
+/**
+ * ── LEGAL FRAME: why these caps exist ────────────────────────────────
+ *
+ * This aggregator stores and renders **only** title + a short snippet +
+ * the source + an outbound link, and every card links **out** to the
+ * publisher. **No full-text republication. No scraping of paywalled or
+ * partner content.** That is the constraint the whole feature is built
+ * inside — the caps below are its implementation, not arbitrary numbers.
+ *
+ * Recovered from `feat/trends-news` @ 545f441a, an unmerged WIP branch
+ * that stated it in five places while `main`, which shipped the feature
+ * by a different route, stated it in none. Grepping this tree for
+ * `legal|copyright|republicat|paywall` returned nothing before this
+ * comment existed. The behaviour complied; the reason was undocumented,
+ * which is a different thing and a more fragile one.
+ *
+ * **Why it matters in this repo specifically:** this is an offline-first
+ * product with a documented cold-start and rural-LTE concern, so
+ * "cache the article text so operators can read it offline" is a
+ * plausible and well-intentioned next feature. It would breach the frame
+ * above. Nothing else in the codebase would have told that engineer.
+ *
+ * **One discrepancy, recorded rather than silently reconciled.** The
+ * source branch capped the snippet at **300** characters; `SUMMARY_MAX`
+ * here is **500**. Both are snippets rather than full text, so neither
+ * is obviously outside the frame — but the number should be a deliberate
+ * choice, and right now it is drift between two implementations. If
+ * there is a contractual figure, it belongs here. See issue #670.
+ *
+ * Related: the agroportal.bg exclusion in `@/lib/news/feeds`, which is a
+ * commercial constraint rather than a technical one.
+ */
 const TITLE_MAX = 300;
 const SUMMARY_MAX = 500;
 
