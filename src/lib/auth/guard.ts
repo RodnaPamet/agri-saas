@@ -336,8 +336,15 @@ export function checkTenantAccess(
  * restricted machine-operator persona is allowed to reach? Everything else
  * is redirected to `/t/{slug}/my-work` (pages) or 403'd (APIs) by the
  * middleware. Extracted pure so the allowlist is unit-testable without the
- * Edge runtime (the middleware wires the NextResponse branches; E2E covers
- * those).
+ * Edge runtime. The middleware wires the NextResponse branches, and those are
+ * covered by `tests/unit/operator-lockdown-enforced.test.ts`, which imports the
+ * real middleware export at `:98`.
+ *
+ * This sentence previously read "E2E covers those". It never did — a grep for
+ * MECHANISATOR across `tests/e2e/` returns nothing, and always would have. The
+ * 2026-08-19 enforcement-seam audit named this docblock as one of three
+ * asserting coverage that did not exist, and called them a principal reason
+ * fifteen unenforced seams went unnoticed.
  *
  * Allowed:
  *   - Pages: the "My work" screen, the field-operation completion flow, and

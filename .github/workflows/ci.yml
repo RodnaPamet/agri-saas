@@ -303,6 +303,18 @@ jobs:
       # is read by that one test file and nothing else.
       REDIS_URL_TEST: redis://localhost:6379
       BULLMQ_SMOKE_REQUIRE_REDIS: "1"
+      # Same argument, applied to the database this job also declares.
+      # tests/guardrails/rls-coverage.test.ts skips its DB-backed
+      # assertions when Postgres is unreachable — deliberately, so a
+      # developer without a local Postgres can still run the sweep —
+      # and prints a banner instead. That means the ENTIRE RLS +
+      # tenant-isolation assurance layer can go quiet and still report
+      # green, which CLAUDE.md records happening live: six assertions
+      # failed against a stale DB and then went SILENT when that DB
+      # became unreachable. This job creates the RLS roles and runs
+      # `prisma migrate deploy`, so a skip here means the service is
+      # broken and the build should say so.
+      RLS_GUARDRAIL_REQUIRE_DB: "1"
       # GAP-03 — deterministic test key so the startup-encryption-check
       # integration test can simulate NODE_ENV=production with a real
       # key, AND so any future test that asserts prod-only encryption

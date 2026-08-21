@@ -4,7 +4,21 @@
  * Tests the pure `checkTenantAccess` function extracted from middleware so
  * tests are not coupled to Next.js Edge Runtime machinery. The middleware
  * itself wires the result to NextResponse redirects/JSON — those branches
- * are exercised by the E2E suite.
+ * are NOT exercised anywhere in this file.
+ *
+ * This docblock said "those branches are exercised by the E2E suite" until
+ * 2026-08-21. They never were: a grep for `no_tenant_access` across
+ * `tests/e2e/` returns nothing. What covers them today are executing unit
+ * tests that import the real middleware export —
+ * `tests/unit/operator-lockdown-enforced.test.ts` and
+ * `tests/unit/admin-cross-site-gate-enforced.test.ts`, both from #640.
+ *
+ * The false claim mattered. The 2026-08-19 enforcement-seam audit found that
+ * docblocks asserting non-existent coverage were a principal reason fifteen
+ * unenforced seams went unnoticed — one of them even named a test file that
+ * has never existed in this repo's history. If you extract another pure helper
+ * out of the middleware, name the test that drives the wiring, or say plainly
+ * that nothing does.
  *
  * Also tests `extractTenantSlugFromPath` and the updated `isPublicPath`
  * carve-outs for /no-tenant, /invite/, and /api/invites/.
