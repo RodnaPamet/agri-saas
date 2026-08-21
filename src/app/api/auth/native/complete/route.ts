@@ -33,7 +33,7 @@ import { withApiErrorHandling } from '@/lib/errors/api';
 import { LOGIN_LIMIT } from '@/lib/security/rate-limit';
 import {
     issueAuthCode,
-    isAllowedRedirect,
+    classifyRedirect,
     HANDOFF_COOKIE,
 } from '@/lib/auth/native/auth-codes';
 
@@ -66,7 +66,22 @@ async function handleComplete(req: NextRequest): Promise<NextResponse> {
     // Re-validate on the way OUT as well as on the way in. The cookie is
     // HttpOnly, but a check that only runs at /start would be one tampering
     // primitive away from an open redirect carrying a live code.
-    if (!isAllowedRedirect(redirectUri, allowlist())) {
+    const verdict = classifyRedirect(redirectUri, allowlist());
+    if (verdict !== 'allowed') {
+        // The response is identical either way, deliberately — this route is
+        // unauthenticated and must not tell an anonymous caller whether our
+        // allowlist is empty. The LOG carries the distinction, because
+        // "misconfigured server" and "misbehaving client" need different fixes
+        // and answering `redirect_uri_not_allowed` to both is what made the
+        // 2026-08-21 production outage of this flow undiagnosable.
+        if (verdict === 'allowlist_unconfigured') {
+            logger.error('native-auth.redirect_allowlist_unconfigured', {
+                component: 'native-auth',
+                msg: 'NATIVE_AUTH_REDIRECT_ALLOWLIST is empty, so native sign-in refuses EVERY redirect. This is configuration, not a bad client.',
+            });
+        } else {
+            logger.warn('native-auth.redirect_not_on_allowlist', { component: 'native-auth' });
+        }
         return NextResponse.json({ error: 'redirect_uri_not_allowed' }, { status: 400 });
     }
 

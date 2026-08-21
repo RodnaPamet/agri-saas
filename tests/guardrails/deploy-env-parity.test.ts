@@ -27,6 +27,27 @@ const EXAMPLE = fs.readFileSync(path.join(ROOT, 'deploy/env.prod.example'), 'utf
 // AUTH_URL). A new prod-conditional var must be added here in the same PR.
 const ALSO_REQUIRED_IN_PROD = ['REDIS_URL', 'DATA_ENCRYPTION_KEY', 'NEXTAUTH_URL', 'AUTH_URL'];
 
+/**
+ * A THIRD category the "required" rule cannot see: vars whose schema DEFAULT
+ * silently switches a feature OFF.
+ *
+ * `requiredServerVars` treats `.default(...)` as "safe to omit", and for most
+ * vars it is — the default is a working value. But a default can also be a
+ * fail-closed sentinel, and then omitting the key from the example produces no
+ * boot error, no log line, and a feature that simply does not work.
+ *
+ * `NATIVE_AUTH_REDIRECT_ALLOWLIST` is the measured case. It is
+ * `z.string().default("")` in src/env.ts; `isAllowedRedirect` returns false on
+ * an empty allowlist by design; and on 2026-08-21 the key was absent from
+ * /opt/agrent/.env entirely, so every native sign-in redirect was refused in
+ * production while CI, the schema and this guard were all green.
+ *
+ * Each entry must be listed in deploy/env.prod.example WITH a comment saying
+ * what the default disables — the key alone is not enough, because an operator
+ * reading `NATIVE_AUTH_REDIRECT_ALLOWLIST=` learns nothing from it.
+ */
+const FEATURE_DISABLING_DEFAULTS = ['NATIVE_AUTH_REDIRECT_ALLOWLIST'];
+
 function serverBlock(src: string): string {
     const start = src.indexOf('server: {');
     if (start < 0) throw new Error('could not locate server block in src/env.ts');
@@ -81,6 +102,56 @@ describe('deploy/env.prod.example parity with src/env.ts', () => {
 
     it.each(required)('deploy/env.prod.example lists prod-required var %s', (name) => {
         expect(keys.has(name)).toBe(true);
+    });
+
+    it.each(FEATURE_DISABLING_DEFAULTS)(
+        'deploy/env.prod.example lists %s, whose default disables a feature',
+        (name) => {
+            expect(keys.has(name)).toBe(true);
+        },
+    );
+
+    it.each(FEATURE_DISABLING_DEFAULTS)('%s is EXPLAINED, not just listed', (name) => {
+        // The key on its own teaches an operator nothing. What they need is the
+        // sentence saying an empty value turns the feature off — that is the
+        // whole reason this category exists.
+        const lines = EXAMPLE.split(/\r?\n/);
+        const at = lines.findIndex((l) => l.startsWith(`${name}=`));
+        expect(at).toBeGreaterThan(-1);
+
+        // Walk UP from the key and count only the CONTIGUOUS comment block that
+        // belongs to it. A windowed search ("any # lines within N chars") passes
+        // on the strength of the PREVIOUS var's comments — measured: stripping
+        // this var's entire explanation left such a check green.
+        let n = 0;
+        for (let i = at - 1; i >= 0 && lines[i].startsWith('#'); i--) n++;
+        if (n < 3) {
+            throw new Error(
+                `${name} is listed in deploy/env.prod.example with ${n} comment line(s) ` +
+                    `directly above it. It needs an explanation of what its DEFAULT disables — ` +
+                    `the bare key teaches an operator nothing, which is the whole reason this ` +
+                    `category exists.`,
+            );
+        }
+    });
+
+    it('every FEATURE_DISABLING_DEFAULTS entry really has a default in src/env.ts', () => {
+        // No stale entries: if a var is promoted to required, or deleted, this
+        // list must shrink in the same diff rather than quietly guarding nothing.
+        const block = serverBlock(ENV_TS);
+        for (const name of FEATURE_DISABLING_DEFAULTS) {
+            const re = new RegExp(`\\n {8}${name}:\\s*z[^\\n]*`, 'g');
+            const decl = block.match(re)?.[0];
+            if (decl === undefined) {
+                throw new Error(
+                    `${name} is in FEATURE_DISABLING_DEFAULTS but is not declared in ` +
+                        `src/env.ts's server block. Remove the stale entry, or fix the name.`,
+                );
+            }
+            // If it lost its default it is now genuinely required, and belongs
+            // in the derived set rather than this list.
+            expect(decl).toContain('.default(');
+        }
     });
 });
 

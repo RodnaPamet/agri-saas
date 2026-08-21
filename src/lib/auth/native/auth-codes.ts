@@ -190,6 +190,33 @@ export async function exchangeAuthCode(input: {
  * rather than allowing everything.
  */
 export function isAllowedRedirect(uri: string, allowlist: string[]): boolean {
-    if (allowlist.length === 0) return false;
-    return allowlist.some((prefix) => prefix.length > 0 && uri.startsWith(prefix));
+    return classifyRedirect(uri, allowlist) === 'allowed';
+}
+
+/**
+ * Why the caller needs three answers and the CLIENT only gets one.
+ *
+ * `isAllowedRedirect` collapses two very different situations into `false`:
+ * the allowlist is UNCONFIGURED (so every redirect is refused, and the feature
+ * is off), or the allowlist is configured and this URI simply is not on it.
+ *
+ * On 2026-08-21 the first was true in production — `NATIVE_AUTH_REDIRECT_ALLOWLIST`
+ * was absent from `/opt/agrent/.env` entirely — so the whole native sign-in flow
+ * refused every redirect and answered `redirect_uri_not_allowed`, which reads as
+ * "your client sent a bad URI". Nothing distinguished a misconfigured server
+ * from a misbehaving client. That is the same distinction the restore drill
+ * needed in #678: "the answer is no" and "I could not ask" are different facts.
+ *
+ * The distinction is for the SERVER LOG ONLY. The HTTP response stays
+ * `redirect_uri_not_allowed` in both cases on purpose: this route is
+ * unauthenticated, and telling an anonymous caller "our allowlist is empty"
+ * hands them a fact about our configuration they have no business having.
+ */
+export type RedirectVerdict = 'allowed' | 'not_on_allowlist' | 'allowlist_unconfigured';
+
+export function classifyRedirect(uri: string, allowlist: string[]): RedirectVerdict {
+    if (allowlist.length === 0) return 'allowlist_unconfigured';
+    return allowlist.some((prefix) => prefix.length > 0 && uri.startsWith(prefix))
+        ? 'allowed'
+        : 'not_on_allowlist';
 }
