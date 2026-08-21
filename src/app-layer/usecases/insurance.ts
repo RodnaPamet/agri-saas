@@ -9,13 +9,50 @@
  * @module app-layer/usecases/insurance
  */
 import type { RequestContext } from '../types';
-import { assertCanWrite } from '../policies/common';
+import { assertCanRead, assertCanWrite } from '../policies/common';
 import { logEvent } from '../events/audit';
 import { runInTenantContext } from '@/lib/db-context';
 import { conflict } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { logger } from '@/lib/observability/logger';
 import { Prisma } from '@prisma/client';
+
+/**
+ * Parcel ids this tenant has already requested a quote for.
+ *
+ * The read half that never existed. `InsuranceLead` had NO reader anywhere in
+ * `src/app-layer` — the only queries against it were the retention job's
+ * cross-tenant sweep — so the UI had no way to know a request had been sent
+ * and fell back to component-local `useState`, which dies on unmount.
+ *
+ * Returns ids rather than rows: the caller only needs to know WHETHER, the
+ * `message` column is free text a farmer wrote, and shipping it to render a
+ * disabled button would be handing out more than the question asked for.
+ *
+ * `@@unique([parcelId, inquirerTenantId])` is the index this rides, so the
+ * lookup is covered. Bounded by `take` — a tenant with thousands of open
+ * quote requests is not a case worth paging for here; the UI only asks about
+ * parcels currently on screen.
+ */
+export async function listInquiredParcelIds(
+    ctx: RequestContext,
+    opts: { parcelIds?: readonly string[] } = {},
+): Promise<string[]> {
+    assertCanRead(ctx);
+    return runInTenantContext(ctx, async (db) => {
+        const rows = await db.insuranceLead.findMany({
+            where: {
+                inquirerTenantId: ctx.tenantId,
+                ...(opts.parcelIds && opts.parcelIds.length > 0
+                    ? { parcelId: { in: [...opts.parcelIds] } }
+                    : {}),
+            },
+            select: { parcelId: true },
+            take: 500,
+        });
+        return rows.map((r) => r.parcelId);
+    });
+}
 
 export interface CreateInsuranceLeadInput {
     parcelId: string;
