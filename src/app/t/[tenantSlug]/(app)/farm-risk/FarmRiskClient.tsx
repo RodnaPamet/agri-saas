@@ -64,6 +64,17 @@ export function FarmRiskClient({
         [locations],
     );
     const parcelsQ = useTenantSWR<ParcelsResp>(locationId ? `/locations/${locationId}/parcels` : null);
+    // Which parcels has this tenant already asked about? Fetched ONCE for the
+    // whole page rather than per card: the answer is a small id set and the
+    // rows are rendered from one list, so N cards would otherwise mean N
+    // identical requests on a phone. `@@unique([parcelId, inquirerTenantId])`
+    // is what makes a second request impossible, and this is what stops the UI
+    // offering one anyway.
+    const inquiredQ = useTenantSWR<{ parcelIds: string[] }>('/insurance/leads');
+    const inquired = useMemo(
+        () => new Set(inquiredQ.data?.parcelIds ?? []),
+        [inquiredQ.data],
+    );
     const parcels = parcelsQ.data?.parcels ?? [];
 
     return (
@@ -111,6 +122,8 @@ export function FarmRiskClient({
                                     fallbackName={p.name}
                                     areaHa={p.areaHa ?? null}
                                     geeConfigured={geeConfigured}
+                                    hasRequested={inquired.has(p.id)}
+                                    onRequested={() => void inquiredQ.mutate()}
                                 />
                             ))}
                         </ul>
@@ -127,12 +140,18 @@ function ParcelRiskCard({
     fallbackName,
     areaHa,
     geeConfigured,
+    hasRequested,
+    onRequested,
 }: {
     parcelId: string;
     locationId: string;
     fallbackName: string;
     areaHa: number | null;
     geeConfigured: boolean;
+    /** Has this tenant already asked about THIS parcel? Server-read. */
+    hasRequested: boolean;
+    /** Refresh the server list after a successful send. */
+    onRequested: () => void;
 }) {
     const t = useTranslations('ag.risk');
     const tCrops = useTranslations('crops');
@@ -213,6 +232,8 @@ function ParcelRiskCard({
                             parcelId={parcelId}
                             locationId={locationId}
                             risk={{ overall: risk.overall, ndvi: risk.ndvi, ndmi: risk.ndmi }}
+                            hasRequested={hasRequested}
+                            onRequested={onRequested}
                         />
                     </div>
                 </>

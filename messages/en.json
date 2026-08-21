@@ -2476,8 +2476,10 @@
                 "unknown": "No data"
             },
             "ask": {
+                "alreadySent": "You have already requested a quote for this parcel.",
                 "open": "Ask for insurance offer",
                 "sent": "Request sent",
+                "sentToast": "Quote request sent. You will find it in your notifications.",
                 "title": "Ask for an insurance offer",
                 "description": "Send an insurer a quote request for this parcel; they'll get back to you.",
                 "message": "Message",
