@@ -5382,6 +5382,18 @@
     },
     "auth": {
         "backToSignIn": "Back to sign in",
+        "email": {
+            "resetBody": "Click the link below to choose a new password. The link expires in 1 hour and can only be used once.",
+            "resetCta": "Reset password",
+            "resetIgnore": "If you didn't request this, you can safely ignore this message — your password will not change until the link is used.",
+            "resetIntro": "We received a request to reset your Agrent password.",
+            "resetSubject": "Reset your password",
+            "verifyBody": "Click the link below to verify your email address. The link expires in 24 hours.",
+            "verifyCta": "Verify email",
+            "verifyIgnore": "If you didn't create this account, you can safely ignore this message.",
+            "verifyIntro": "Welcome to Agrent.",
+            "verifySubject": "Verify your email"
+        },
         "emailLabel": "Email",
         "emailPlaceholder": "you@company.com",
         "forgot": {
