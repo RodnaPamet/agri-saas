@@ -67,6 +67,27 @@ export interface NewsFeed {
  * agroportal RSS URL in hand knows to check the commercial question before
  * adding it, instead of concluding the technical objection has lapsed.
  * See issue #670.
+ *
+ * ── Why agri.bg / fermer.bg / sinor.bg 403: two competing diagnoses ──
+ *
+ * This file says "WAF 403 from datacenter IPs — unusable for a server pull".
+ * The same WIP branch says they 403 **server User-Agents**, and adds that they
+ * are therefore "NOT hardcoded; an operator can add any feed that serves a
+ * UA-agnostic RSS/Atom".
+ *
+ * The distinction is not academic: a datacenter-IP block is unfixable from
+ * here, whereas a User-Agent block is fixable by sending a real one. **Neither
+ * diagnosis has been tested against the live sites**, and the operational
+ * instruction is the same either way — do not re-add without re-verifying.
+ * Recorded so the cheaper hypothesis is not lost.
+ *
+ * Relevant to it: `fetchFeed` in `./rss-client` currently sends **no
+ * User-Agent at all** — only an `Accept` header. The branch shipped one
+ * (`AgrentNewsBot/1.0 (+…; agri-news RSS aggregator)`) with the rationale that
+ * it lets publishers attribute traffic. Deliberately NOT adopted here: it
+ * changes what we send to third parties, its effect on the 403s is untested,
+ * and the URL inside it names a domain this repo should confirm before
+ * publishing in an outbound header. See issue #670.
  */
 export const DEFAULT_NEWS_FEEDS: readonly NewsFeed[] = [
     { slug: 'agro-bg', url: 'https://agro.bg/rss', defaultCategory: 'general', displayName: 'АГРО.БГ' },
