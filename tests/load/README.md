@@ -169,6 +169,66 @@ purely because the host's load average climbed, so a tight floor would
 just be a new flaky red. They sit at ~30% of the observed line;
 precision lives in the summary artifact.
 
+## What the nightly artifacts actually showed (2026-08-21)
+
+Eleven consecutive nightly runs (2026-08-10 → 08-20) were downloaded and
+parsed. Two things came out of that, and neither was visible from the
+pass/fail status alone.
+
+### The 2026-08-10 `lists` failure, and its recurrence
+
+Run `31357197165` failed the read-path gate hard: `http_req_failed{type:list}`
+**0.670**, `list_success_rate` **0.330** — 2,065 of 6,252 list requests
+errored, while `auth` in the same run was completely clean. So it was not a
+platform-wide outage; the read path specifically was returning errors.
+
+It was recorded at the time as "has not recurred". **That is not accurate.**
+The most recent run in the set, `32330454008` (2026-08-20), shows
+`http_req_failed{type:list}` **0.0018** — 11 failures in 5,964 requests. The
+nine runs between the two are exactly 0.000. So the read path is not
+reliably clean; it is *usually* clean, with a small failure rate that
+reappeared below the 1% gate and therefore below notice.
+
+"Not recurred" and "recurred under the threshold" are different claims, and
+only the second one is true. Whether 0.18% warrants action is a judgement —
+but it should be made against the number, not against a green tick.
+
+### Four correctness gates that had never run
+
+`auth.js` and `lists.js` declared thresholds like
+`'checks{check:login_ok}': ['rate>0.99']` and tagged the corresponding
+`check()` with `{ check: 'login_ok' }`.
+
+**`check` is a tag k6 sets itself**, to the individual check's *name*. A user
+tag with the same key does not survive, so those sub-metrics received no
+samples — and k6 **passes a threshold that has no samples**:
+
+| metric | samples per run | threshold |
+|---|---|---|
+| `checks` (parent, `auth.js`) | 2,340 | — |
+| `checks{check:csrf_ok}` | **0** | ok |
+| `checks{check:login_ok}` | **0** | ok |
+| `checks{check:session_ok}` | **0** | ok |
+| `checks` (parent, `lists.js`) | 12,000–22,000 | — |
+| `checks{check:evidence_ok}` | **0** | ok |
+
+Zero in all eleven runs, green in all eleven runs. Writing the guard for it
+found the same defect in `ag-inventory-pagination.js`, `ag-parcel-list.js`
+and `mutations.js` — **all five load scripts**, seven gates in total.
+
+Fixed by renaming the tag key to `check_group`, and — because k6 is not
+installable in this dev loop and the rename could not be executed locally —
+by adding **`count>0`** to every `checks{…}` threshold. That clause is what
+makes the fix verifiable: if the tag still fails to bind, the next nightly
+goes red instead of quietly green. `tests/guards/k6-threshold-binding.test.ts`
+keeps all of it from coming back.
+
+**This also corrects a claim made earlier the same day.** The budget
+re-validation note said "all 143 auth threshold results reported ok". True,
+and misleading: 33 of those 143 were these vacuous gates. The 110 that
+carried data all reported ok, and the latency figures are unaffected — they
+come from `http_req_duration`, which was always populated.
+
 ## Thresholds
 
 A run **fails** (non-zero exit) if any of these are crossed.

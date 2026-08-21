@@ -599,8 +599,22 @@ summary artifacts:
 | login p99 | 300.7 – 432.2 ms | 385.2 ms | 2500 ms | 5.8× |
 | E2E p95 | 303.0 – 413.0 ms | 365.1 ms | 2000 ms | 4.8× |
 
-Worst single login sample across the set: 763 ms. All 143 auth
-threshold results reported `ok`.
+Worst single login sample across the set: 763 ms.
+
+**Correction (same day).** The first version of this table said *"all 143
+auth threshold results reported `ok`"*. That is true and it was
+misleading: **33 of those 143 carried no data at all.** The three
+`checks{check:...}` thresholds in `auth.js` — and one in `lists.js` — were
+keyed on `check`, a tag k6 sets *itself* to the individual check's name,
+so the tag passed to `check()` never bound. Every one of those
+sub-metrics recorded **zero samples in all eleven runs**, and k6 passes a
+threshold that has no samples. They had never once been evaluated
+against data.
+
+The 110 thresholds that did carry data all reported `ok`, and the latency
+figures above are unaffected — they come from `http_req_duration`, which
+was always populated. The check gates are fixed and now carry `count>0`
+so a threshold with nothing behind it fails instead of passing.
 
 **No number moved, and the reason is a choice worth stating.** These
 are **SLO-conformance gates, not regression detectors** — 1500 ms is
