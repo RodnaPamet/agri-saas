@@ -36,6 +36,24 @@
 #  success branch closes the issue on the next green run, so a fixed
 #  problem stops occupying the queue without anyone tidying up.
 #
+#  ## Two things the first version got wrong, both caught in production
+#
+#  Within two minutes of #676 merging, this filed an issue for a
+#  CANCELLED `Release` run. A `concurrency` group keeps only the most
+#  recent pending run and cancels earlier ones, so four rapid merges to
+#  main produced two cancellations — the queue working correctly.
+#  `cancelled` is no longer treated as a failure.
+#
+#  And that issue was then closed by a SUCCESS for an EARLIER commit
+#  whose run merely finished later. The body now carries a
+#  `ci-failure-run: <id>` high-water mark, and a success only closes
+#  when its own run id is greater.
+#
+#  Both were decision logic, which is why the logic now lives in
+#  `.github/scripts/ci-failure-issue.sh` where it can be executed —
+#  see `tests/unit/ci-failure-notifier.test.ts`. Logic embedded in
+#  workflow YAML cannot be tested, and this is what that costs.
+#
 #  ## Deliberately NOT watched
 #
 #  `pull_request` runs (they have a PR page) and `merge_group` runs
@@ -75,6 +93,12 @@ jobs:
       github.event.workflow_run.event != 'merge_group'
     runs-on: ubuntu-latest
     steps:
+      - name: Check out the decision script
+        uses: actions/checkout@v7
+        with:
+          sparse-checkout: .github/scripts
+          sparse-checkout-cone-mode: false
+
       - name: File, comment on, or close the tracking issue
         env:
           GH_TOKEN: ${{ github.token }}
@@ -86,57 +110,4 @@ jobs:
           BRANCH: ${{ github.event.workflow_run.head_branch }}
           SHA: ${{ github.event.workflow_run.head_sha }}
           REPO: ${{ github.repository }}
-        run: |
-          set -euo pipefail
-
-          # One stable title per workflow — this string IS the de-dupe key.
-          TITLE="CI failure: ${WF}"
-
-          # Exact-title match over the label, not `--search`: the search
-          # index lags by seconds to minutes, which is exactly the window
-          # in which a nightly would file its second duplicate.
-          EXISTING="$(gh issue list --repo "$REPO" --label ci-failure --state open \
-                        --limit 100 --json number,title \
-                        --jq "[.[] | select(.title == \"${TITLE}\")] | .[0].number // empty")"
-
-          if [ "$CONCLUSION" = "success" ]; then
-            if [ -n "$EXISTING" ]; then
-              gh issue comment "$EXISTING" --repo "$REPO" --body \
-                "✅ **${WF}** is green again — [run ${RUN_ID}](${RUN_URL}) on \`${BRANCH}\` (${SHA})."
-              gh issue close "$EXISTING" --repo "$REPO" --reason completed
-              echo "closed #${EXISTING}: ${WF} recovered"
-            else
-              echo "green, nothing open — nothing to do"
-            fi
-            exit 0
-          fi
-
-          # Anything not-success and not-skipped is worth a human look:
-          # failure, timed_out, cancelled, action_required.
-          if [ "$CONCLUSION" = "skipped" ] || [ "$CONCLUSION" = "neutral" ]; then
-            echo "conclusion=${CONCLUSION} — not a failure"
-            exit 0
-          fi
-
-          BODY="**${WF}** concluded \`${CONCLUSION}\`.
-
-          | | |
-          |---|---|
-          | run | [${RUN_ID}](${RUN_URL}) |
-          | trigger | \`${EVENT}\` |
-          | branch | \`${BRANCH}\` |
-          | commit | ${SHA} |
-
-          This trigger has no PR page, so nothing else would have said so.
-
-          This issue closes itself on the next green run of the same workflow.
-          Repeat failures arrive as comments here rather than as new issues \
-          — if this one has many comments, the problem is persistent, not new."
-
-          if [ -n "$EXISTING" ]; then
-            gh issue comment "$EXISTING" --repo "$REPO" --body "$BODY"
-            echo "commented on #${EXISTING}: ${WF} failed again"
-          else
-            gh issue create --repo "$REPO" --title "$TITLE" --label ci-failure --body "$BODY"
-            echo "filed a new issue for ${WF}"
-          fi
+        run: ./.github/scripts/ci-failure-issue.sh
