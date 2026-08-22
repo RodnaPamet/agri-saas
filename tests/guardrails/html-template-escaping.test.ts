@@ -35,6 +35,7 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { collectTemplates } from '../helpers/template-interpolations';
 
 const ROOT = path.resolve(__dirname, '../..');
 
@@ -52,6 +53,13 @@ const SAFE_BY_CONSTRUCTION: Record<string, string> = {
     // ── Numeric: cannot express markup ──
     days: 'number — day count computed from a Date difference',
     'days === 1 ? \'\' : \'s\'': 'ternary over two string literals — no external input',
+    // Surfaced by the #717 parser fix, not by new code: it sits inside a
+    // NESTED template literal, and the old regex's outer-literal matcher
+    // stopped at the inner backtick, so this region was never parsed properly.
+    // A hex colour chosen from two string constants — no external input, and a
+    // `#rrggbb` value cannot express markup.
+    "isApproved ? '#10b981' : '#ef4444'":
+        'ternary over two hex-colour literals — no external input, no markup expressible',
     'items.length': 'number — array length',
     daysRemaining: 'number — computed day count',
     submittedScore: 'number — declared `submittedScore: number` on the template params',
@@ -80,23 +88,44 @@ interface Finding {
     expr: string;
 }
 
-/** Every `${…}` inside a template literal that contains HTML markup. */
+/**
+ * Every `${…}` inside a template literal that contains HTML markup.
+ *
+ * Extraction is BRACE-BALANCED, not regex (#717). The previous version used
+ * `/\$\{([^}{]*)\}/g`, whose negated class excludes `{` — so an interpolation
+ * whose expression contained a brace was never SEEN, escaped or not, and the
+ * guard failed OPEN on it. That is the ordinary shape of an i18n call with
+ * parameters (`t('k', { name })`), which is what localising these templates
+ * introduces at scale.
+ */
 function findUnescapedInterpolations(files: string[]): Finding[] {
     const out: Finding[] = [];
     for (const file of files) {
-        const src = fs.readFileSync(file, 'utf8');
-        // No `s` flag: the negated class already matches newlines, and the
-        // dotAll flag needs an es2018 target this project does not use.
-        for (const literal of src.matchAll(/`(?:[^`\\]|\\[^])*`/g)) {
-            const lit = literal[0];
-            if (!/<[a-zA-Z]/.test(lit)) continue; // not an HTML template
-            for (const interp of lit.matchAll(/\$\{([^}{]*)\}/g)) {
-                const expr = interp[1].trim();
-                if (!expr) continue;
-                if (expr.includes('escapeHtml(')) continue;
-                if (expr in SAFE_BY_CONSTRUCTION) continue;
-                out.push({ file: path.relative(ROOT, file), expr });
-            }
+        out.push(
+            ...scanSource(fs.readFileSync(file, 'utf8')).map((expr) => ({
+                file: path.relative(ROOT, file),
+                expr,
+            })),
+        );
+    }
+    return out;
+}
+
+/** The file-independent half, so the detector can be driven from a string. */
+function scanSource(src: string): string[] {
+    const out: string[] = [];
+    for (const tpl of collectTemplates(src)) {
+        if (!/<[a-zA-Z]/.test(tpl.raw)) continue; // not an HTML template
+        for (const { expr, structural } of tpl.interpolations) {
+            if (!expr) continue;
+            // A wrapper that composes markup from a NESTED literal is not a
+            // value being injected; escaping it would destroy the markup it
+            // exists to emit. The nested literal is returned separately and
+            // its own interpolations are checked on the next iteration.
+            if (structural) continue;
+            if (expr.includes('escapeHtml(')) continue;
+            if (expr in SAFE_BY_CONSTRUCTION) continue;
+            out.push(expr);
         }
     }
     return out;
@@ -128,6 +157,62 @@ describe('Guardrail: HTML templates escape every interpolated value', () => {
                   'If a value genuinely cannot be user-supplied, add it to ' +
                   'SAFE_BY_CONSTRUCTION with a written reason.',
         ).toBe('');
+    });
+
+    /**
+     * The detector's own resolving power (#717).
+     *
+     * This guard failed OPEN for its entire life on one expression shape, and
+     * nothing here could have told you: every assertion above is of the form
+     * "no findings", which a detector that finds nothing satisfies perfectly.
+     * These drive `scanSource` against fixtures instead — the shape
+     * `payload-url-scheme.test.ts` uses.
+     */
+    describe('the detector actually detects', () => {
+        it('catches a plainly unescaped interpolation', () => {
+            expect(scanSource('const h = `<p>${evil}</p>`;')).toEqual(['evil']);
+        });
+
+        it('CATCHES an unescaped interpolation containing an object literal', () => {
+            // THE #717 REGRESSION. Verified against the pre-fix guard by
+            // dropping this exact shape into a scanned directory: it exited 0,
+            // reporting nothing, while interpolating attacker data into HTML
+            // with no escaping at all. The old regex could not see past the `{`.
+            expect(
+                scanSource("const h = `<p>${await t('greeting', { name: evil })}</p>`;"),
+            ).toEqual(["await t('greeting', { name: evil })"]);
+        });
+
+        it('accepts the same expression once escaped', () => {
+            expect(
+                scanSource(
+                    "const h = `<p>${escapeHtml(await t('greeting', { name: evil }))}</p>`;",
+                ),
+            ).toEqual([]);
+        });
+
+        it('does not demand escaping of a wrapper that composes a NESTED literal', () => {
+            // Escaping this would destroy the markup it exists to emit. The
+            // nested literal is checked in its own right — see the next case.
+            expect(
+                scanSource("const h = `<div>${cond ? `<b>${escapeHtml(x)}</b>` : ''}</div>`;"),
+            ).toEqual([]);
+        });
+
+        it('…and still catches an unescaped value INSIDE that nested literal', () => {
+            expect(
+                scanSource("const h = `<div>${cond ? `<b>${x}</b>` : ''}</div>`;"),
+            ).toEqual(['x']);
+        });
+
+        it('ignores a template literal with no markup', () => {
+            expect(scanSource('const s = `hello ${name}`;')).toEqual([]);
+        });
+
+        it('is not confused by a brace inside a string, or by a comment', () => {
+            expect(scanSource('const h = `<p>${fmt("}")}</p>`;')).toEqual(['fmt("}")']);
+            expect(scanSource('// `<p>${evil}</p>`\nconst x = 1;')).toEqual([]);
+        });
     });
 
     it('keeps escapeHtml on a single definition', () => {
