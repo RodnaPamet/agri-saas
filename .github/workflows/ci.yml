@@ -528,16 +528,19 @@ jobs:
     # stay lean — build + docker/Trivy + codeql); coverage drift comes from
     # MERGED code, which the first main push after a merge already catches.
     if: github.event_name == 'push'
-    # 60-minute budget. The coverage-instrumented, --runInBand run has
-    # kept growing with the suite: #716 raised the ceiling 25→35 at
-    # ~7,800 tests, and the suite has since climbed past 24,000 tests
-    # (plus the DB-backed integration specs), which pushed the run over
-    # 35 min and started CANCELLING the gate before it could report a
-    # number. Raised to 60 to restore headroom over the real run.
-    # The durable fix is to SHARD this job like `test` (istanbul-merge
-    # the per-shard reports, then check thresholds once) — tracked as
-    # a follow-up; the single-job ceiling bump keeps the gate honest
-    # in the meantime.
+    # 20-minute PER-SHARD budget, against a measured 5-10 min per shard.
+    #
+    # The history this replaces: as ONE --runInBand process the job kept
+    # outgrowing its ceiling (25 -> 35 at ~7,800 tests -> 60), and past
+    # ~24,600 tests it began CANCELLING at 60 on consecutive main pushes,
+    # taking its log buffer with it — the gate reported neither a number
+    # nor a diagnosis. Raising a ceiling a fourth time buys weeks; sharding
+    # changes the slope, which is why the job now shards instead.
+    #
+    # The inner `timeout ... 18m` in the run step is the one that normally
+    # fires. It exists so an over-budget shard FAILS with its log intact
+    # rather than being cancelled by the runner, which is what made the
+    # original problem so hard to diagnose. This 20 is the outer backstop.
     timeout-minutes: 20
 
     env:

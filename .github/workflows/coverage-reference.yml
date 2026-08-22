@@ -1,0 +1,286 @@
+# ───────────────────────────────────────────────────────────────
+#  Coverage parity: prove the SHARDED gate measures what a single
+#  unsharded process measures — the gate on turning enforcement back on.
+#
+#  ## Why this exists
+#
+#  The Coverage job used to be one `--runInBand` process over the whole
+#  suite. It outgrew its ceiling repeatedly and on 2026-08-21 began
+#  CANCELLING at 60 minutes on consecutive main pushes; a cancelled job
+#  loses its log buffer, so the gate reported neither a number nor a
+#  diagnosis. It now shards six ways and the per-shard reports are
+#  istanbul-merged (ci.yml, jobs `coverage` + `coverage-gate`).
+#
+#  That merge is believed sound — `CoverageMap.merge` keys on SOURCE
+#  LOCATION, so hit counts sum and covered/total sets union — and a
+#  two-shard merge reproduced an unsharded run of the same SUBSET to the
+#  decimal. But "a subset reproduced" is not "the whole suite reproduces",
+#  and the gate scores the whole suite. So `coverage-gate` runs
+#  `--report-only`: it prints true numbers and exits 0.
+#
+#  This workflow produces the missing evidence. One unsharded run, on one
+#  commit, diffed against that same commit's sharded merge. When it passes,
+#  drop `--report-only` from ci.yml. Until it does, the gate stays shadow.
+#
+#  ## Why it is dispatch-only
+#
+#  It is a measurement instrument, not a gate. A ~60-90 minute single-process
+#  run is exactly the cost the sharding removed; putting it on `push` would
+#  reinstate the problem it certifies the fix for. Run it when the merge
+#  mechanism changes — a jest major, an istanbul major, a change to
+#  merge-coverage.mjs or the shard count — not on a schedule.
+#
+#  ## The parity is only as good as the ENV MATCH
+#
+#  `env:` and `services:` below are byte-identical to ci.yml's `coverage`
+#  job — postgres only, four vars, no redis. That is not tidiness, it is the
+#  entire validity of the comparison. `tests/integration/bullmq-real-api.test.ts`
+#  gates on REDIS_URL_TEST and SKIPS without it; adding redis here would run
+#  tests the sharded side never ran, and the diff would report a real
+#  difference that means nothing about sharding. If ci.yml's coverage job
+#  ever gains a service or a variable, this file gains it in the same diff.
+# ───────────────────────────────────────────────────────────────
+name: Coverage parity (reference run)
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Commit SHA to measure. MUST be a commit whose main-push CI produced a coverage-report artifact (i.e. a merged commit, not a PR head)."
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read # gh run download, to fetch the sharded artifact
+
+concurrency:
+  # One at a time — this job is long and runner-hungry, and two concurrent
+  # copies would contend for the same runners the normal CI needs.
+  group: coverage-reference
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: "22"
+  SKIP_ENV_VALIDATION: "1"
+  AUTH_SECRET: ci-auth-secret-that-is-long-enough
+  JWT_SECRET: ci-jwt-secret-that-is-long-enough
+  NEXTAUTH_SECRET: ci-auth-secret-that-is-long-enough
+  NEXTAUTH_URL: http://localhost:3006
+  AUTH_URL: http://localhost:3006
+  GOOGLE_CLIENT_ID: ci-google-id
+  GOOGLE_CLIENT_SECRET: ci-google-secret
+  MICROSOFT_CLIENT_ID: ci-ms-id
+  MICROSOFT_CLIENT_SECRET: ci-ms-secret
+  MICROSOFT_TENANT_ID: ci-ms-tenant
+  UPLOAD_DIR: /tmp/ci-uploads
+  CORS_ALLOWED_ORIGINS: http://localhost:3000,http://localhost:3006
+  FILE_STORAGE_ROOT: /tmp/ci-uploads
+
+jobs:
+  reference:
+    name: "Coverage parity (${{ inputs.ref }})"
+    runs-on: ${{ vars.LARGE_RUNNER || 'ubuntu-latest' }}
+    # The sharded job budgets 18 minutes PER SHARD. Unsharded was running
+    # 40-60 and cancelling at 60; 120 gives real headroom so this cannot
+    # fail for the very reason it is measuring.
+    timeout-minutes: 120
+
+    # ── byte-identical to ci.yml `coverage` — see the header ──
+    env:
+      DATABASE_URL: postgresql://ci:ci_password@localhost:5432/ci_testdb?schema=public
+      DATABASE_URL_TEST: postgresql://ci:ci_password@localhost:5432/ci_testdb?schema=public
+      DIRECT_DATABASE_URL: postgresql://ci:ci_password@localhost:5432/ci_testdb?schema=public
+      DATA_ENCRYPTION_KEY: ci-test-data-encryption-key-32-chars-or-more-deterministic-x
+
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci_password
+          POSTGRES_DB: ci_testdb
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U ci -d ci_testdb"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+
+      # Fail here, not 90 minutes later, if the requested commit has no
+      # sharded artifact to compare against.
+      - name: Locate this commit's sharded coverage artifact
+        id: sharded
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          # Name the commits that WOULD work, so a failed dispatch is one
+          # re-run away rather than a hunt through the Actions tab.
+          # Name the commits that WOULD work, so a failed dispatch is one
+          # re-run away rather than a hunt through the Actions tab.
+          #
+          # No `| head -5`: under `set -o pipefail` head closes the pipe, the
+          # producer takes SIGPIPE, and the function returns 141 — which under
+          # `set -e` aborts the step BEFORE its own `exit 1`. Measured. The
+          # counter below stops at five without a second pipeline stage.
+          suggest_candidates() {
+            echo "::error::"
+            echo "::error::Commits with a usable sharded artifact (newest first):"
+            local shown=0
+            while read -r rid rsha; do
+              [ "${shown}" -ge 5 ] && break
+              n="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${rid}/artifacts" \
+                     --jq '[.artifacts[] | select(.name=="coverage-report" and .expired==false)] | length' \
+                     2>/dev/null || echo 0)"
+              if [ "${n}" -gt 0 ]; then
+                echo "::error::  ${rsha}"
+                shown=$((shown + 1))
+              fi
+            done <<< "$(gh run list --workflow=CI --branch main --limit 20 \
+                          --json databaseId,headSha,event \
+                          --jq '.[] | select(.event=="push") | "\(.databaseId) \(.headSha)"')"
+            if [ "${shown}" -eq 0 ]; then
+              echo "::error::  (none found — has any main push run since the sharded gate landed?)"
+            fi
+          }
+
+          SHA="$(git rev-parse HEAD)"
+          echo "Resolved ${{ inputs.ref }} -> ${SHA}"
+          echo "sha=${SHA}" >> "$GITHUB_OUTPUT"
+
+          RUN_ID="$(gh run list --workflow=CI --limit 60 \
+                      --json databaseId,headSha,event \
+                      --jq "[.[] | select(.headSha == \"${SHA}\" and .event == \"push\")] | .[0].databaseId // empty")"
+
+          if [ -z "${RUN_ID}" ]; then
+            echo "::error::No main-push CI run found for ${SHA}."
+            echo "::error::"
+            echo "::error::This is EXPECTED if you dispatched on 'main': semantic-release commits"
+            echo "::error::are marked [skip ci], so main's HEAD often has no CI run at all. It is"
+            echo "::error::also what you get from a PR head. Either way the fix is the same —"
+            echo "::error::re-dispatch with one of the commits listed below."
+            echo "::error::"
+            echo "::error::The workflow deliberately does NOT auto-pick a nearby commit: it would"
+            echo "::error::then measure code you did not name, which is the exact class of silent"
+            echo "::error::mismatch this parity check exists to detect."
+            suggest_candidates
+            exit 1
+          fi
+
+          if ! gh run download "${RUN_ID}" -n coverage-report -D sharded 2>/dev/null; then
+            echo "::error::CI run ${RUN_ID} has no 'coverage-report' artifact."
+            echo "::error::Either the run predates the sharded gate, its shards failed, or the"
+            echo "::error::14-day artifact retention has expired."
+            suggest_candidates
+            exit 1
+          fi
+          test -s sharded/coverage-final.json || {
+            echo "::error::Downloaded coverage-final.json is empty."; exit 1; }
+          echo "Sharded artifact from CI run ${RUN_ID}."
+
+      - name: Setup Node + Prisma client
+        uses: ./.github/actions/setup-node-prisma
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Create PostgreSQL roles for RLS
+        run: |
+          PGPASSWORD=ci_password psql -h localhost -U ci -d ci_testdb <<'SQL'
+          DO $$ BEGIN
+            IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'app_user') THEN CREATE ROLE app_user NOLOGIN; END IF;
+            IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'postgres') THEN CREATE ROLE postgres NOLOGIN; END IF;
+          END $$;
+          GRANT app_user TO ci;
+          GRANT app_user TO postgres;
+          SQL
+
+      - name: Enable pgvector (PGDG)
+        uses: ./.github/actions/enable-pgvector
+
+      - name: Apply Prisma migrations
+        run: ./node_modules/.bin/prisma migrate deploy
+
+      # The sharded step, minus --shard. Every other flag matches ci.yml so the
+      # only variable under test is the sharding itself.
+      - name: "Reference coverage run (unsharded, single process)"
+        run: |
+          status=0
+          timeout --signal=INT --kill-after=60s 110m \
+            node --max-old-space-size=8192 ./node_modules/jest/bin/jest.js \
+              --coverage --forceExit --runInBand \
+              --coverageReporters=json \
+              --coverageDirectory "coverage-reference" || status=$?
+
+          if [ "$status" -eq 124 ] || [ "$status" -eq 137 ]; then
+            echo "::error::Reference run exceeded its 110-minute budget."
+            echo "::error::A shell timeout is used so the step FAILS with its log intact — a"
+            echo "::error::runner cancellation drops the un-flushed buffer and leaves no diagnosis."
+            exit 1
+          fi
+          exit "$status"
+
+      # Test FAILURES do not invalidate the comparison: a test that fails in
+      # both runs still produces coverage, and the sharded side recorded the
+      # same failure. What WOULD invalidate it is a missing map, so assert that
+      # instead of gating on jest's exit code.
+      - name: Verify the reference map is real
+        run: |
+          set -euo pipefail
+          test -s coverage-reference/coverage-final.json \
+            || { echo "::error::No reference coverage map was produced."; exit 1; }
+          FILES="$(node -e 'const m=require("./coverage-reference/coverage-final.json");console.log(Object.keys(m).length)')"
+          echo "Reference map: ${FILES} files."
+          if [ "${FILES}" -lt 500 ]; then
+            echo "::error::Only ${FILES} files — the run almost certainly aborted early."
+            exit 1
+          fi
+
+      - name: "PARITY: sharded merge vs unsharded reference"
+        run: |
+          node scripts/diff-coverage.mjs \
+            --a sharded/coverage-final.json   --label-a sharded \
+            --b coverage-reference/coverage-final.json --label-b reference \
+            --thresholds jest.thresholds.json \
+            | tee parity.txt
+
+      - name: Summarise
+        if: always()
+        run: |
+          {
+            echo "### Coverage parity — \`${{ steps.sharded.outputs.sha }}\`"
+            echo ""
+            if [ -s parity.txt ] && grep -q "PARITY PROVEN" parity.txt; then
+              echo "✅ **Sharded and unsharded runs are identical.**"
+              echo ""
+              echo "Next step: drop \`--report-only\` from the \`coverage-gate\` step in \`ci.yml\`."
+            else
+              echo "❌ **Parity FAILED** — the gate must stay in shadow mode."
+              echo ""
+              echo "Do **not** re-floor \`jest.thresholds.json\` to make this pass."
+              echo "A difference means the two runs measured different code."
+            fi
+            echo ""
+            echo '```'
+            tail -60 parity.txt 2>/dev/null || echo "(no parity output — an earlier step failed)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload both maps
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-parity-${{ steps.sharded.outputs.sha }}
+          path: |
+            coverage-reference/coverage-final.json
+            sharded/coverage-final.json
+            parity.txt
+          retention-days: 14
+        continue-on-error: true
