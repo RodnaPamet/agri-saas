@@ -1437,10 +1437,17 @@ recovery.
   hostname, so it classified `fcm.googleapis.com` — every Chrome/Android push
   endpoint — as a private address (#696). A NAME is not an ADDRESS; names are
   the blocklist's job and DNS's job.
-  `sso-config.discoveryUrl` is still unguarded and is a HARDER case, not the
-  same one: `discoverOidc` uses `fetch`, which follows redirects, so a host
-  check before the call is defeatable by a 302 into private space. It needs a
-  redirect policy as well and is tracked separately.
+  **A URL the server will `fetch` needs the policy at every HOP, not once.**
+  `fetch` follows redirects by default — measured: a `302` to
+  `http://127.0.0.1:9/` is followed, so a check before the call validates the
+  URL the caller chose while the responder chooses where the request lands.
+  Use `fetchPublicUrl` from `@/lib/security/safe-fetch`, which takes the
+  redirect loop back (`redirect: 'manual'`) and re-runs both layers per hop.
+  `web-push` did not need this — it uses raw `https.request` and treats any
+  non-2xx as an error, so there is no `Location` handling to abuse.
+  **`maxRedirects: 0` for any request whose BODY carries a credential**: the
+  OIDC token exchange POSTs `client_secret`, and following a redirect would
+  re-send it to a host the responder named (#708).
 - **Audit trail**: Call `logEvent()` from `src/app-layer/events/audit.ts` after mutating state. Entries are hash-chained — never write directly to the `AuditLog` table.
 - **Audit verbs: domain verbs are the deliberate majority, not a wart.**
   `AuditEventPayload.action` is a bare `string` with no enum, no registry

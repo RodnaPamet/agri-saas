@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { randomBytes, createHash } from 'crypto';
 import type { OidcConfig } from '@/app-layer/schemas/sso-config.schemas';
+import { fetchPublicUrl } from './safe-fetch';
 
 /**
  * Lightweight OIDC client for tenant-scoped enterprise SSO.
@@ -66,9 +67,15 @@ export async function discoverOidc(config: OidcConfig): Promise<OidcDiscoveryDoc
         return cached.doc;
     }
 
-    const res = await fetch(discoveryUrl, {
-        headers: { 'Accept': 'application/json' },
-        signal: AbortSignal.timeout(10_000),
+    // SSRF: operator-supplied URL, fetched server-side. `fetchPublicUrl`
+    // re-applies the host policy at EVERY redirect hop — a check before a
+    // plain `fetch` is worthless here, because `fetch` follows redirects and
+    // the responder chooses where the request lands (#708). Redirects are
+    // allowed on discovery because real issuers use them; each one is checked.
+    const res = await fetchPublicUrl(discoveryUrl, {
+        headers: { Accept: 'application/json' },
+        timeoutMs: 10_000,
+        maxRedirects: 3,
     });
 
     if (!res.ok) {
@@ -169,14 +176,25 @@ export async function exchangeCodeForTokens(
         code_verifier: codeVerifier,
     });
 
-    const res = await fetch(discovery.token_endpoint, {
+    // `token_endpoint` comes out of the FETCHED discovery document, so a
+    // hostile or compromised IdP chooses it — it gets the same host policy as
+    // the discovery URL itself.
+    //
+    // `maxRedirects: 0` is deliberate and is the sharper half. This body
+    // carries `client_secret`. Following a redirect would re-send it to
+    // whatever host the responder named, which turns a redirect into a
+    // credential-exfiltration primitive — and a 303 would additionally rewrite
+    // the method. A token endpoint has no legitimate reason to redirect, so a
+    // redirect here is refused rather than followed.
+    const res = await fetchPublicUrl(discovery.token_endpoint, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/x-www-form-urlencoded',
-            'Accept': 'application/json',
+            Accept: 'application/json',
         },
         body: body.toString(),
-        signal: AbortSignal.timeout(15_000),
+        timeoutMs: 15_000,
+        maxRedirects: 0,
     });
 
     if (!res.ok) {
