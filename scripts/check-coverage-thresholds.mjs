@@ -36,6 +36,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
+import {
+    GLOBAL,
+    PATH,
+    GLOB,
+    assignGroups,
+    combineCoverage as combineFiles,
+    filesScoredForGroup,
+} from './lib/coverage-groups.mjs';
 
 // Resolve istanbul from the script's own location (the normal case: this
 // file lives in the repo's scripts/ next to node_modules), falling back to
@@ -46,6 +54,11 @@ const require = (id) => {
     try { return selfRequire(id); } catch { return cwdRequire(id); }
 };
 const libCoverage = require('istanbul-lib-coverage');
+
+// jest's group-assignment algorithm lives in ONE place, shared with
+// scripts/diff-coverage.mjs. See that module's docblock for the four
+// semantics this depends on.
+
 
 const argv = process.argv.slice(2);
 /**
@@ -97,87 +110,20 @@ function check(name, thresholds, actuals) {
     }, []);
 }
 
-const GLOBAL = 'global';
-const PATH = 'path';
-const GLOB = 'glob';
-
-const coveredFiles = map.files();
+const { groupTypeByThresholdGroup, coveredFiles, inGroup } = assignGroups(
+    map,
+    coverageThreshold,
+    require,
+);
 const thresholdGroups = Object.keys(coverageThreshold);
-const groupTypeByThresholdGroup = {};
-const filesByGlob = {};
-
-const sorted = coveredFiles.reduce((files, file) => {
-    const matches = thresholdGroups.reduce((agg, group) => {
-        if (group === GLOBAL) return agg;
-
-        // Preserve trailing slash, but not required if root dir.
-        const resolved = path.resolve(group);
-        const suffix =
-            (group.endsWith(path.sep) ||
-                (process.platform === 'win32' && group.endsWith('/'))) &&
-            !resolved.endsWith(path.sep)
-                ? path.sep
-                : '';
-        const abs = `${resolved}${suffix}`;
-
-        if (file.indexOf(abs) === 0) {
-            groupTypeByThresholdGroup[group] = PATH;
-            agg.push([file, group]);
-            return agg;
-        }
-
-        if (filesByGlob[abs] === undefined) {
-            // Lazy — jest.thresholds.json currently declares no globs, so the
-            // dependency is never loaded on the normal path.
-            const { globSync } = require('glob');
-            filesByGlob[abs] = globSync(abs, { windowsPathsNoEscape: true }).map((f) =>
-                path.resolve(f),
-            );
-        }
-        if (filesByGlob[abs].includes(file)) {
-            groupTypeByThresholdGroup[group] = GLOB;
-            agg.push([file, group]);
-            return agg;
-        }
-        return agg;
-    }, []);
-
-    if (matches.length > 0) {
-        files.push(...matches);
-        return files;
-    }
-    if (thresholdGroups.includes(GLOBAL)) {
-        groupTypeByThresholdGroup[GLOBAL] = GLOBAL;
-        files.push([file, GLOBAL]);
-        return files;
-    }
-    files.push([file, undefined]);
-    return files;
-}, []);
-
-if (thresholdGroups.includes(GLOBAL)) groupTypeByThresholdGroup[GLOBAL] = GLOBAL;
-
-const inGroup = (g) => sorted.filter(([, grp]) => grp === g).map(([f]) => f);
-
-function combineCoverage(filePaths) {
-    return filePaths
-        .map((f) => map.fileCoverageFor(f))
-        .reduce(
-            (combined, next) =>
-                combined === undefined || combined === null
-                    ? next.toSummary()
-                    : combined.merge(next.toSummary()),
-            undefined,
-        );
-}
+const combineCoverage = (filePaths) => combineFiles(map, filePaths);
 
 let errors = [];
 for (const group of thresholdGroups) {
     switch (groupTypeByThresholdGroup[group]) {
         case GLOBAL: {
-            const globalFiles = inGroup(GLOBAL);
             const coverage = combineCoverage(
-                globalFiles.length > 0 ? globalFiles : coveredFiles,
+                filesScoredForGroup(group, GLOBAL, inGroup, coveredFiles),
             );
             if (coverage) errors = [...errors, ...check(group, coverageThreshold[group], coverage)];
             break;
@@ -211,7 +157,7 @@ console.log('Per-threshold-group coverage (the populations the floors score):');
 for (const group of thresholdGroups) {
     const type = groupTypeByThresholdGroup[group];
     if (type !== GLOBAL && type !== PATH) continue;
-    const files = type === GLOBAL ? (inGroup(GLOBAL).length > 0 ? inGroup(GLOBAL) : coveredFiles) : inGroup(group);
+    const files = filesScoredForGroup(group, type, inGroup, coveredFiles);
     const s = combineCoverage(files);
     if (!s) continue;
     console.log(
