@@ -2,7 +2,16 @@
  * Coverage ratchet — the enforced floors are one-way-up.
  *
  * `jest.thresholds.json` holds the per-layer coverage floors that
- * the CI `Coverage (≥60%)` job enforces via `--coverageThreshold`.
+ * the CI `Coverage (≥60%)` job scores.
+ *
+ * NOTE (2026-08-22): that job is now SHARDED, and it scores the floors with
+ * `scripts/check-coverage-thresholds.mjs` over an istanbul-merged map rather
+ * than with jest's `--coverageThreshold` flag — the flag only applies inside a
+ * live jest run, and no shard sees the whole tree. It is also temporarily in
+ * SHADOW mode (`--report-only`): it prints the real numbers and exits 0 until a
+ * decimal-exact parity proof against a single-process reference run. THIS
+ * RATCHET IS UNAFFECTED — it guards the floor VALUES in the file, which are
+ * unchanged, and it runs on every PR.
  * The policy (`docs/coverage-policy.md`) is that a floor is **never
  * lowered** — raised when a PR earns it, never dropped to turn a
  * red PR green. `jest.config.js` documents that rule in prose; this
