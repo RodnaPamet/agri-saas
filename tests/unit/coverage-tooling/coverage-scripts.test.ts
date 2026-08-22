@@ -171,7 +171,8 @@ describe('diff-coverage.mjs — must be able to say NO', () => {
 
         expect(r.status).toBe(1);
         expect(r.out).toContain('src/lib/a.ts');
-        expect(r.out).toMatch(/5\/10.*4\/10|4\/10.*5\/10/s);
+        // [\s\S] rather than the /s (dotAll) flag — tsconfig targets below es2018.
+        expect(r.out).toMatch(/5\/10[\s\S]*4\/10|4\/10[\s\S]*5\/10/);
     });
 
     it('refuses an EMPTY map instead of comparing it equal to another empty map', () => {
