@@ -25,7 +25,7 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { runJob } from '@/lib/observability/job-runner';
 import { logger } from '@/lib/observability/logger';
-import type { DueItem, DueItemUrgency, JobRunResult } from './types';
+import type { DueItem, DueItemReason, DueItemUrgency, JobRunResult } from './types';
 import { resolveDueItemOwner } from '../domain/due-item-ownership';
 
 // ─── Configuration ──────────────────────────────────────────────────
@@ -123,17 +123,18 @@ async function scanExpiringEvidence(
         const daysRemaining = Math.ceil(diffMs / 86_400_000);
 
         let urgency: DueItemUrgency;
-        let reason: string;
+        // Descriptors, not sentences — see the note on `DueItem.reason`.
+        let reason: DueItemReason;
 
         if (daysRemaining < 0) {
             urgency = 'OVERDUE';
-            reason = `Evidence retention expired ${Math.abs(daysRemaining)} day(s) ago`;
+            reason = { key: 'evidenceRetentionExpired', params: { days: Math.abs(daysRemaining) } };
         } else if (daysRemaining <= 7) {
             urgency = 'URGENT';
-            reason = `Evidence expires in ${daysRemaining} day(s)`;
+            reason = { key: 'evidenceExpires', params: { days: daysRemaining } };
         } else {
             urgency = 'UPCOMING';
-            reason = `Evidence expires in ${daysRemaining} day(s)`;
+            reason = { key: 'evidenceExpires', params: { days: daysRemaining } };
         }
 
         items.push({
@@ -164,7 +165,7 @@ async function scanExpiringEvidence(
             entityId: ev.id,
             tenantId: ev.tenantId,
             name: ev.title,
-            reason: `Evidence expired ${Math.abs(daysRemaining)} day(s) ago`,
+            reason: { key: 'evidenceExpired', params: { days: Math.abs(daysRemaining) } },
             urgency: 'OVERDUE',
             dueDate: expiredDate.toISOString(),
             daysRemaining,
@@ -231,16 +232,16 @@ async function scanEvidenceDueForReview(
         const daysRemaining = Math.ceil((reviewDate.getTime() - now.getTime()) / 86_400_000);
 
         let urgency: DueItemUrgency;
-        let reason: string;
+        let reason: DueItemReason;
         if (daysRemaining < 0) {
             urgency = 'OVERDUE';
-            reason = `Evidence review overdue by ${Math.abs(daysRemaining)} day(s)`;
+            reason = { key: 'evidenceReviewOverdue', params: { days: Math.abs(daysRemaining) } };
         } else if (daysRemaining <= 7) {
             urgency = 'URGENT';
-            reason = `Evidence review due in ${daysRemaining} day(s)`;
+            reason = { key: 'evidenceReviewDue', params: { days: daysRemaining } };
         } else {
             urgency = 'UPCOMING';
-            reason = `Evidence review due in ${daysRemaining} day(s)`;
+            reason = { key: 'evidenceReviewDue', params: { days: daysRemaining } };
         }
 
         return {

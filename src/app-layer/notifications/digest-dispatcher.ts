@@ -22,6 +22,8 @@
  */
 
 import { prisma } from '@/lib/prisma';
+import { resolveRecipientLocale } from '@/lib/email/recipient-locale';
+import type { Locale } from '@/lib/i18n/locales';
 import { logger } from '@/lib/observability/logger';
 import type { DueItem } from '../jobs/types';
 import { isNotificationsEnabled } from './settings';
@@ -69,6 +71,13 @@ export interface RecipientInfo {
     userId: string;
     email: string;
     name: string;
+    /**
+     * The recipient's language (#694). Carried on the recipient because the
+     * digest routes ONE `DueItem` to potentially SEVERAL people whose
+     * `uiLanguage` differs — so the language cannot be decided when the item
+     * is produced, only when it is addressed.
+     */
+    locale: Locale;
 }
 
 // ─── Recipient Resolution ───────────────────────────────────────────
@@ -84,7 +93,7 @@ async function resolveRecipients(
 
     const users = await prisma.user.findMany({
         where: { id: { in: userIds } },
-        select: { id: true, email: true, name: true },
+        select: { id: true, email: true, name: true, uiLanguage: true },
     });
 
     const result = new Map<string, RecipientInfo>();
@@ -94,6 +103,7 @@ async function resolveRecipients(
                 userId: u.id,
                 email: u.email,
                 name: u.name ?? u.email.split('@')[0],
+                locale: resolveRecipientLocale(u.uiLanguage),
             });
         }
     }
@@ -114,7 +124,7 @@ async function resolveTenantAdmins(
         },
         select: {
             user: {
-                select: { id: true, email: true, name: true },
+                select: { id: true, email: true, name: true, uiLanguage: true },
             },
         },
         take: 10, // Cap to avoid spamming large admin teams
@@ -126,6 +136,7 @@ async function resolveTenantAdmins(
             userId: m.user.id,
             email: m.user.email,
             name: m.user.name ?? m.user.email.split('@')[0],
+            locale: resolveRecipientLocale(m.user.uiLanguage),
         }));
 }
 
@@ -161,17 +172,18 @@ export function buildDigestDedupeKey(
 
 // ─── Template Selector ──────────────────────────────────────────────
 
-function buildDigestEmail(
+async function buildDigestEmail(
     category: DigestCategory,
     recipientName: string,
     tenantSlug: string,
     items: DueItem[],
-): { subject: string; bodyText: string; bodyHtml: string } {
+    locale: Locale,
+): Promise<{ subject: string; bodyText: string; bodyHtml: string }> {
     switch (category) {
         case 'DEADLINE_DIGEST':
-            return buildDeadlineDigestEmail({ recipientName, tenantSlug, items });
+            return buildDeadlineDigestEmail({ recipientName, tenantSlug, items }, locale);
         case 'EVIDENCE_EXPIRY_DIGEST':
-            return buildEvidenceExpiryDigestEmail({ recipientName, tenantSlug, items });
+            return buildEvidenceExpiryDigestEmail({ recipientName, tenantSlug, items }, locale);
         default: {
             const _exhaustive: never = category;
             throw new Error(`Unknown digest category: ${_exhaustive}`);
@@ -384,8 +396,8 @@ async function enqueueDigest(
     now: Date,
 ): Promise<{ id: string; dedupeKey: string } | null> {
     const dedupeKey = buildDigestDedupeKey(tenantId, category, recipient.email, now);
-    const { subject, bodyText, bodyHtml } = buildDigestEmail(
-        category, recipient.name, tenantSlug, items,
+    const { subject, bodyText, bodyHtml } = await buildDigestEmail(
+        category, recipient.name, tenantSlug, items, recipient.locale,
     );
 
     try {

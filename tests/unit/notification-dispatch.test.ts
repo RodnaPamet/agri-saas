@@ -69,7 +69,7 @@ function makeDueItem(overrides: Partial<DueItem> = {}): DueItem {
         entityId: 'task-1',
         tenantId: 'tenant-1',
         name: 'Spray north field',
-        reason: 'Practice testing overdue by 5 day(s)',
+        reason: { key: 'taskOverdue', params: { days: 5 } },
         urgency: 'OVERDUE',
         dueDate: '2026-04-12T00:00:00Z',
         daysRemaining: -5,
@@ -84,63 +84,67 @@ function makeDueItem(overrides: Partial<DueItem> = {}): DueItem {
 
 describe('Digest Templates', () => {
     describe('buildDeadlineDigestEmail', () => {
-        test('renders subject with item count', () => {
-            const result = buildDeadlineDigestEmail({
+        test('renders subject with item count', async () => {
+            const result = await buildDeadlineDigestEmail({
                 recipientName: 'Alice',
                 tenantSlug: 'acme',
                 items: [makeDueItem(), makeDueItem({ entityId: 'ctrl-2', name: 'Access Control' })],
-            });
+            }, 'en');
 
             expect(result.subject).toContain('2 item(s)');
-            expect(result.subject).toContain('Compliance Deadline Digest');
+            // The subject dropped "Compliance" when it was localised (#694):
+            // this is an agri product after the GRC teardown, and a Bulgarian
+            // farm operator's deadline digest should not be named after a
+            // framework the product no longer has.
+            expect(result.subject).toContain('Deadline digest');
         });
 
-        test('includes urgency marker when overdue items exist', () => {
-            const result = buildDeadlineDigestEmail({
+        test('includes urgency marker when overdue items exist', async () => {
+            const result = await buildDeadlineDigestEmail({
                 recipientName: 'Alice',
                 tenantSlug: 'acme',
                 items: [makeDueItem({ urgency: 'OVERDUE' })],
-            });
+            }, 'en');
 
             expect(result.subject).toContain('🔴');
         });
 
-        test('no urgency marker when only upcoming items', () => {
-            const result = buildDeadlineDigestEmail({
+        test('no urgency marker when only upcoming items', async () => {
+            const result = await buildDeadlineDigestEmail({
                 recipientName: 'Alice',
                 tenantSlug: 'acme',
-                items: [makeDueItem({ urgency: 'UPCOMING', reason: 'due in 20 days' })],
-            });
+                items: [makeDueItem({ urgency: 'UPCOMING', reason: { key: 'taskDue', params: { days: 20 } } })],
+            }, 'en');
 
             expect(result.subject).not.toContain('🔴');
         });
 
-        test('bodyText contains recipient name', () => {
-            const result = buildDeadlineDigestEmail({
+        test('bodyText contains recipient name', async () => {
+            const result = await buildDeadlineDigestEmail({
                 recipientName: 'Bob',
                 tenantSlug: 'acme',
                 items: [makeDueItem()],
-            });
+            }, 'en');
 
             expect(result.bodyText).toContain('Hi Bob');
         });
 
-        test('bodyHtml contains tenant-scoped links', () => {
-            const result = buildDeadlineDigestEmail({
+        test('bodyHtml contains tenant-scoped links', async () => {
+            const result = await buildDeadlineDigestEmail({
                 recipientName: 'Alice',
                 tenantSlug: 'acme-corp',
                 items: [makeDueItem()],
-            });
+            }, 'en');
 
             expect(result.bodyHtml).toContain('/t/acme-corp/');
         });
 
-        test('bodyHtml escapes HTML in item names', () => {
-            const result = buildDeadlineDigestEmail({
+        test('bodyHtml escapes HTML in item names', async () => {
+            const result = await buildDeadlineDigestEmail({
                 recipientName: 'Alice',
                 tenantSlug: 'acme',
                 items: [makeDueItem({ name: '<script>alert("xss")</script>' })],
-            });
+            }, 'en');
 
             expect(result.bodyHtml).not.toContain('<script>');
             expect(result.bodyHtml).toContain('&lt;script&gt;');
@@ -148,23 +152,23 @@ describe('Digest Templates', () => {
     });
 
     describe('buildEvidenceExpiryDigestEmail', () => {
-        test('renders subject with item count', () => {
-            const result = buildEvidenceExpiryDigestEmail({
+        test('renders subject with item count', async () => {
+            const result = await buildEvidenceExpiryDigestEmail({
                 recipientName: 'Alice',
                 tenantSlug: 'acme',
                 items: [makeDueItem({ entityType: 'EVIDENCE' })],
-            });
+            }, 'en');
 
             expect(result.subject).toContain('1 item(s)');
-            expect(result.subject).toContain('Evidence Expiry');
+            expect(result.subject).toContain('Evidence expiry');
         });
 
-        test('includes warning for expired items', () => {
-            const result = buildEvidenceExpiryDigestEmail({
+        test('includes warning for expired items', async () => {
+            const result = await buildEvidenceExpiryDigestEmail({
                 recipientName: 'Alice',
                 tenantSlug: 'acme',
                 items: [makeDueItem({ entityType: 'EVIDENCE', urgency: 'OVERDUE' })],
-            });
+            }, 'en');
 
             expect(result.subject).toContain('⚠️');
         });

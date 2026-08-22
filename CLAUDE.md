@@ -1539,9 +1539,17 @@ recovery.
   extractor excluded braces, so the inline form was invisible to it; the
   extractor is brace-balanced now, and the local-const form keeps each
   interpolation readable at the point it is escaped.
+  **A value shown to a recipient must not be a pre-rendered sentence.**
+  `DueItem.reason` was English prose built in the monitor jobs; a monitor
+  produces each item ONCE and the digest routes it to SEVERAL recipients whose
+  languages differ, so the language is not knowable where the item is built.
+  It is a descriptor now — `{ key, params }` resolved under
+  `notificationEmail.digest.reason.*` at render time. Any future
+  recipient-facing string produced far from its reader wants the same shape.
   Localised so far: the two auth emails, the Exchange inquiry, task-assigned,
-  both access-review notices, and evidence-expiry. Still English: the digest
-  and the invite (#694, #722).
+  both access-review notices, evidence-expiry, and both digests. Still English:
+  the invite (#722 — an invitee has no `User` row, so any fix picks a proxy;
+  that is a product decision, not wiring).
 - **Path alias**: `@/` maps to `src/`. Always use this alias — never relative paths crossing layer boundaries.
 - **`@/lib/storage`, never `@/lib/storage/index`.** `src/lib/storage.ts`
   AND `src/lib/storage/index.ts` both exist; the bare specifier resolves to
