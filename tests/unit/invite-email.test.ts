@@ -30,6 +30,11 @@ const baseParams = {
     invitedByName: 'Dana Admin',
     expiresAt: new Date('2026-06-10T00:00:00Z'),
     now: new Date('2026-06-03T00:00:00Z'),
+    // Pinned: since #722 the invite is written in the INVITER's language, and
+    // an unpinned fixture would take the recipient fallback ('bg') and fail
+    // every English assertion below while the feature works correctly. The
+    // localisation itself is covered by `invite-email-locale.test.ts`.
+    locale: 'en' as const,
 };
 
 describe('sendInviteEmail', () => {
