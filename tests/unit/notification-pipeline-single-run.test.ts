@@ -131,7 +131,7 @@ describe('notification-dispatch: precomputed items skip scanners', () => {
             entityId: 'ctrl-1',
             tenantId: 'tenant-1',
             name: 'Test Practice',
-            reason: 'Due in 5 days',
+            reason: { key: 'taskDue', params: { days: 5 } },
             urgency: 'UPCOMING' as const,
             dueDate: '2026-04-22T00:00:00Z',
             daysRemaining: 5,

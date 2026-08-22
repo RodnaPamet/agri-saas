@@ -95,6 +95,19 @@ export type DueItemUrgency = 'OVERDUE' | 'URGENT' | 'UPCOMING';
  *   - Group by entityType → summary dashboards
  *   - All fields are JSON-serializable
  */
+/**
+ * A reason to show a recipient, deferred until their locale is known.
+ *
+ * Kept JSON-serializable like the rest of `DueItem` — these cross a job
+ * boundary as plain data.
+ */
+export interface DueItemReason {
+    /** Key suffix under `notificationEmail.digest.reason.` */
+    key: string;
+    /** Interpolation params for that key. */
+    params?: Record<string, string | number>;
+}
+
 export interface DueItem {
     /** Entity type being monitored */
     entityType: MonitoredEntityType;
@@ -104,8 +117,19 @@ export interface DueItem {
     tenantId: string;
     /** Human-readable name/title */
     name: string;
-    /** Specific reason this item is flagged */
-    reason: string;
+    /**
+     * Why this item is flagged — a TRANSLATION DESCRIPTOR, not a sentence.
+     *
+     * It used to be rendered English prose (`Task overdue by 3 day(s)`), and
+     * that could not be localised at the point it is built (#694). A monitor
+     * produces each item ONCE, and the digest can route that same item to
+     * several recipients whose `uiLanguage` differs — so the language cannot
+     * be decided here. Only the digest knows who is reading.
+     *
+     * `key` is resolved under `notificationEmail.digest.reason.*` and `params`
+     * is interpolated, both by `translateFor` at render time.
+     */
+    reason: DueItemReason;
     /** Urgency classification */
     urgency: DueItemUrgency;
     /** The date that drives this due item (ISO string) */

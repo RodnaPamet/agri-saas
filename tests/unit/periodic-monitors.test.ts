@@ -153,7 +153,7 @@ describe('DueItem contract', () => {
             entityId: 'task-123',
             tenantId: 'tenant-abc',
             name: 'Spray north field',
-            reason: 'Task overdue by 5 day(s)',
+            reason: { key: 'taskOverdue', params: { days: 5 } },
             urgency: 'OVERDUE',
             dueDate: '2026-04-12T00:00:00Z',
             daysRemaining: -5,
@@ -171,7 +171,7 @@ describe('DueItem contract', () => {
             entityId: 'ev-456',
             tenantId: 'tenant-abc',
             name: 'SOC 2 Report',
-            reason: 'Evidence expires in 5 day(s)',
+            reason: { key: 'evidenceExpires', params: { days: 5 } },
             urgency: 'URGENT',
             dueDate: '2026-04-22T00:00:00Z',
             daysRemaining: 5,
@@ -232,7 +232,11 @@ describe('Deadline Monitor', () => {
         expect(items[0].daysRemaining).toBeLessThan(0);
         expect(items[0].tenantId).toBe('tenant-1');
         expect(items[0].ownerUserId).toBe('user-1');
-        expect(items[0].reason).toContain('overdue');
+        // `reason` is a translation DESCRIPTOR now, not a sentence (#694) —
+        // the monitor cannot know the reader's language. The key is what
+        // carries the meaning, and it is the thing a digest looks up.
+        expect(items[0].reason.key).toBe('taskOverdue');
+        expect(items[0].reason.params).toMatchObject({ days: expect.any(Number) });
     });
 
     test('detects upcoming tasks', async () => {
@@ -404,7 +408,7 @@ describe('Evidence Expiry Monitor', () => {
 
         expect(items).toHaveLength(1);
         expect(items[0].urgency).toBe('OVERDUE');
-        expect(items[0].reason).toContain('expired');
+        expect(items[0].reason.key).toMatch(/expired|Expired/);
     });
 
     test('deduplicates evidence appearing in both queries', async () => {
@@ -486,7 +490,7 @@ describe('Evidence Expiry Monitor', () => {
         const { items } = await runEvidenceExpiryMonitor({ now });
 
         expect(items[0].urgency).toBe('OVERDUE');
-        expect(items[0].reason).toContain('expired');
+        expect(items[0].reason.key).toMatch(/expired|Expired/);
     });
 });
 

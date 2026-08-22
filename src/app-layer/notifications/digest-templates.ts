@@ -12,8 +12,10 @@
  * @module app-layer/notifications/digest-templates
  */
 
-import type { DueItem, DueItemUrgency, MonitoredEntityType } from '../jobs/types';
+import type { DueItem, DueItemReason, DueItemUrgency, MonitoredEntityType } from '../jobs/types';
 import { escapeHtml } from '@/lib/security/escape-html';
+import { translateFor } from '@/lib/i18n/server-messages';
+import type { Locale } from '@/lib/i18n/locales';
 
 export interface EmailTemplateResult {
     subject: string;
@@ -36,16 +38,23 @@ const URGENCY_COLOR: Record<DueItemUrgency, string> = {
     UPCOMING: '#10b981',
 };
 
-const URGENCY_LABEL: Record<DueItemUrgency, string> = {
-    OVERDUE: 'Overdue',
-    URGENT: 'Due Soon',
-    UPCOMING: 'Upcoming',
-};
+/**
+ * `URGENCY_LABEL` and `ENTITY_LABEL` used to be module-level English maps.
+ * They are catalogue lookups now (#694): the digest is written in the
+ * RECIPIENT's language, and a constant cannot know who is reading.
+ *
+ * The enum MEMBER is the key, so a new member fails at the lookup rather than
+ * silently rendering its raw identifier.
+ */
+const urgencyLabel = (u: DueItemUrgency, locale: Locale) =>
+    translateFor(locale, `notificationEmail.digest.urgency.${u}`);
 
-const ENTITY_LABEL: Record<MonitoredEntityType, string> = {
-    EVIDENCE: 'Evidence',
-    TASK: 'Task',
-};
+const entityLabel = (e: MonitoredEntityType, locale: Locale) =>
+    translateFor(locale, `notificationEmail.digest.entity.${e}`);
+
+/** A `DueItem.reason` descriptor, rendered for one recipient. */
+const reasonText = (reason: DueItemReason, locale: Locale) =>
+    translateFor(locale, `notificationEmail.digest.reason.${reason.key}`, reason.params);
 
 /**
  * Deep-link path segment per entity type. These must be REAL route
@@ -66,42 +75,62 @@ const ENTITY_PATH: Record<MonitoredEntityType, string> = {
 
 // ─── Text Rendering Helpers ─────────────────────────────────────────
 
-function renderItemText(item: DueItem): string {
+async function renderItemText(item: DueItem, locale: Locale): Promise<string> {
     const emoji = URGENCY_EMOJI[item.urgency];
-    return `  ${emoji} ${item.name} — ${item.reason}`;
+    const reason = await reasonText(item.reason, locale);
+    return `  ${emoji} ${item.name} — ${reason}`;
 }
 
-function renderItemHtml(item: DueItem, tenantSlug: string): string {
+async function renderItemHtml(
+    item: DueItem,
+    tenantSlug: string,
+    locale: Locale,
+): Promise<string> {
     const color = URGENCY_COLOR[item.urgency];
-    const label = URGENCY_LABEL[item.urgency];
     const path = ENTITY_PATH[item.entityType];
-    const entityLabel = ENTITY_LABEL[item.entityType];
+    // Resolved to locals BEFORE the template literal — see the note in
+    // `templates.ts`: an interpolation carrying an object literal was
+    // invisible to the escaping guard until #717, and this keeps every
+    // interpolation brace-free and readable at the point it is escaped.
+    const label = await urgencyLabel(item.urgency, locale);
+    const entity = await entityLabel(item.entityType, locale);
+    const reason = await reasonText(item.reason, locale);
 
     return `
 <tr>
   <td style="padding: 8px 12px; border-bottom: 1px solid #eee;">
     <span style="display: inline-block; background: ${escapeHtml(color)}; color: #fff; font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: 600;">${escapeHtml(label)}</span>
   </td>
-  <td style="padding: 8px 12px; border-bottom: 1px solid #eee; color: #666; font-size: 13px;">${escapeHtml(entityLabel)}</td>
+  <td style="padding: 8px 12px; border-bottom: 1px solid #eee; color: #666; font-size: 13px;">${escapeHtml(entity)}</td>
   <td style="padding: 8px 12px; border-bottom: 1px solid #eee;">
     <a href="/t/${escapeHtml(tenantSlug)}/${escapeHtml(path)}" style="color: #4f46e5; text-decoration: none; font-weight: 500;">${escapeHtml(item.name)}</a>
   </td>
-  <td style="padding: 8px 12px; border-bottom: 1px solid #eee; color: #666; font-size: 13px;">${escapeHtml(item.reason)}</td>
+  <td style="padding: 8px 12px; border-bottom: 1px solid #eee; color: #666; font-size: 13px;">${escapeHtml(reason)}</td>
 </tr>`.trim();
 }
 
 // ─── Digest Table Builder ───────────────────────────────────────────
 
-function buildDigestTable(items: DueItem[], tenantSlug: string): string {
-    const rows = items.map(i => renderItemHtml(i, tenantSlug)).join('\n');
+async function buildDigestTable(
+    items: DueItem[],
+    tenantSlug: string,
+    locale: Locale,
+): Promise<string> {
+    const rows = (await Promise.all(items.map((i) => renderItemHtml(i, tenantSlug, locale)))).join('\n');
+    const th = {
+        status: await translateFor(locale, 'notificationEmail.digest.table.status'),
+        type: await translateFor(locale, 'notificationEmail.digest.table.type'),
+        name: await translateFor(locale, 'notificationEmail.digest.table.name'),
+        details: await translateFor(locale, 'notificationEmail.digest.table.details'),
+    };
     return `
 <table style="width: 100%; border-collapse: collapse; margin: 16px 0;">
   <thead>
     <tr style="background: #f8fafc;">
-      <th style="text-align: left; padding: 8px 12px; border-bottom: 2px solid #e2e8f0; font-size: 12px; color: #64748b; text-transform: uppercase;">Status</th>
-      <th style="text-align: left; padding: 8px 12px; border-bottom: 2px solid #e2e8f0; font-size: 12px; color: #64748b; text-transform: uppercase;">Type</th>
-      <th style="text-align: left; padding: 8px 12px; border-bottom: 2px solid #e2e8f0; font-size: 12px; color: #64748b; text-transform: uppercase;">Name</th>
-      <th style="text-align: left; padding: 8px 12px; border-bottom: 2px solid #e2e8f0; font-size: 12px; color: #64748b; text-transform: uppercase;">Details</th>
+      <th style="text-align: left; padding: 8px 12px; border-bottom: 2px solid #e2e8f0; font-size: 12px; color: #64748b; text-transform: uppercase;">${escapeHtml(th.status)}</th>
+      <th style="text-align: left; padding: 8px 12px; border-bottom: 2px solid #e2e8f0; font-size: 12px; color: #64748b; text-transform: uppercase;">${escapeHtml(th.type)}</th>
+      <th style="text-align: left; padding: 8px 12px; border-bottom: 2px solid #e2e8f0; font-size: 12px; color: #64748b; text-transform: uppercase;">${escapeHtml(th.name)}</th>
+      <th style="text-align: left; padding: 8px 12px; border-bottom: 2px solid #e2e8f0; font-size: 12px; color: #64748b; text-transform: uppercase;">${escapeHtml(th.details)}</th>
     </tr>
   </thead>
   <tbody>
@@ -110,14 +139,23 @@ function buildDigestTable(items: DueItem[], tenantSlug: string): string {
 </table>`.trim();
 }
 
-function summaryLine(items: DueItem[]): string {
-    const overdue = items.filter(i => i.urgency === 'OVERDUE').length;
-    const urgent = items.filter(i => i.urgency === 'URGENT').length;
-    const upcoming = items.filter(i => i.urgency === 'UPCOMING').length;
+async function summaryLine(items: DueItem[], locale: Locale): Promise<string> {
+    const counts = {
+        overdue: items.filter((i) => i.urgency === 'OVERDUE').length,
+        dueSoon: items.filter((i) => i.urgency === 'URGENT').length,
+        upcoming: items.filter((i) => i.urgency === 'UPCOMING').length,
+    };
+    // Emoji stay in CODE — `no-decorative-emoji-in-messages` bans them in
+    // messages/*.json and sanctions them here.
+    const emoji = { overdue: '🔴', dueSoon: '🟡', upcoming: '🟢' } as const;
     const parts: string[] = [];
-    if (overdue > 0) parts.push(`🔴 ${overdue} overdue`);
-    if (urgent > 0) parts.push(`🟡 ${urgent} due soon`);
-    if (upcoming > 0) parts.push(`🟢 ${upcoming} upcoming`);
+    for (const k of ['overdue', 'dueSoon', 'upcoming'] as const) {
+        if (counts[k] === 0) continue;
+        const text = await translateFor(locale, `notificationEmail.digest.summary.${k}`, {
+            count: counts[k],
+        });
+        parts.push(`${emoji[k]} ${text}`);
+    }
     return parts.join(', ');
 }
 
@@ -129,35 +167,40 @@ export interface DeadlineDigestPayload {
     items: DueItem[];
 }
 
-export function buildDeadlineDigestEmail(payload: DeadlineDigestPayload): EmailTemplateResult {
+export async function buildDeadlineDigestEmail(
+    payload: DeadlineDigestPayload,
+    locale: Locale,
+): Promise<EmailTemplateResult> {
     const { recipientName, tenantSlug, items } = payload;
-    const summary = summaryLine(items);
-    const overdue = items.filter(i => i.urgency === 'OVERDUE').length;
+    const summary = await summaryLine(items, locale);
+    const overdue = items.filter((i) => i.urgency === 'OVERDUE').length;
     const urgencyMarker = overdue > 0 ? '🔴 ' : '';
+    const link = `/t/${tenantSlug}/dashboard`;
+    const t = (key: string, params?: Record<string, string | number>) =>
+        translateFor(locale, `notificationEmail.digest.deadline.${key}`, params);
+
+    const subject = await t('subject', { count: items.length });
+    const heading = await t('heading');
+    const greeting = await t('greeting', { name: recipientName });
+    const intro = await t('intro', { count: items.length });
+    const cta = await t('cta');
+    const ctaLine = await t('ctaLine', { link });
+    const signature = await translateFor(locale, 'notificationEmail.signature');
+    const table = await buildDigestTable(items, tenantSlug, locale);
+    const lines = await Promise.all(items.map((i) => renderItemText(i, locale)));
 
     return {
-        subject: `${urgencyMarker}Compliance Deadline Digest: ${items.length} item(s) need attention`,
-        bodyText: [
-            `Hi ${recipientName},`,
-            '',
-            `You have ${items.length} item(s) that need attention:`,
-            summary,
-            '',
-            ...items.map(renderItemText),
-            '',
-            `View your dashboard: /t/${tenantSlug}/dashboard`,
-            '',
-            '— Agrent',
-        ].join('\n'),
+        subject: `${urgencyMarker}${subject}`,
+        bodyText: [greeting, '', intro, summary, '', ...lines, '', ctaLine, '', signature].join('\n'),
         bodyHtml: `
 <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 640px; margin: 0 auto; padding: 24px;">
-  <h2 style="color: #1a1a2e; font-size: 18px; margin-bottom: 8px;">${escapeHtml(urgencyMarker)}Compliance Deadline Digest</h2>
+  <h2 style="color: #1a1a2e; font-size: 18px; margin-bottom: 8px;">${escapeHtml(urgencyMarker)}${escapeHtml(heading)}</h2>
   <p style="color: #666; font-size: 14px; margin-bottom: 16px;">${escapeHtml(summary)}</p>
-  <p style="color: #444; line-height: 1.5;">Hi ${escapeHtml(recipientName)},</p>
-  <p style="color: #444; line-height: 1.5;">You have <strong>${items.length} item(s)</strong> that need your attention:</p>
-  ${buildDigestTable(items, tenantSlug)}
-  <a href="/t/${escapeHtml(tenantSlug)}/dashboard" style="display: inline-block; background: #4f46e5; color: #fff; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: 500; margin-top: 8px;">View Dashboard</a>
-  <p style="color: #999; font-size: 12px; margin-top: 24px;">— Agrent</p>
+  <p style="color: #444; line-height: 1.5;">${escapeHtml(greeting)}</p>
+  <p style="color: #444; line-height: 1.5;">${escapeHtml(intro)}</p>
+  ${table}
+  <a href="/t/${escapeHtml(tenantSlug)}/dashboard" style="display: inline-block; background: #4f46e5; color: #fff; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: 500; margin-top: 8px;">${escapeHtml(cta)}</a>
+  <p style="color: #999; font-size: 12px; margin-top: 24px;">${escapeHtml(signature)}</p>
 </div>`.trim(),
     };
 }
@@ -170,35 +213,40 @@ export interface EvidenceExpiryDigestPayload {
     items: DueItem[];
 }
 
-export function buildEvidenceExpiryDigestEmail(payload: EvidenceExpiryDigestPayload): EmailTemplateResult {
+export async function buildEvidenceExpiryDigestEmail(
+    payload: EvidenceExpiryDigestPayload,
+    locale: Locale,
+): Promise<EmailTemplateResult> {
     const { recipientName, tenantSlug, items } = payload;
-    const expired = items.filter(i => i.urgency === 'OVERDUE').length;
+    const expired = items.filter((i) => i.urgency === 'OVERDUE').length;
     const urgencyMarker = expired > 0 ? '⚠️ ' : '';
+    const link = `/t/${tenantSlug}/evidence`;
+    const t = (key: string, params?: Record<string, string | number>) =>
+        translateFor(locale, `notificationEmail.digest.evidenceExpiry.${key}`, params);
+
+    const subject = await t('subject', { count: items.length });
+    const heading = await t('heading');
+    const greeting = await t('greeting', { name: recipientName });
+    const intro = await t('intro', { count: items.length });
+    const advice = await t('advice');
+    const cta = await t('cta');
+    const ctaLine = await t('ctaLine', { link });
+    const signature = await translateFor(locale, 'notificationEmail.signature');
+    const table = await buildDigestTable(items, tenantSlug, locale);
+    const lines = await Promise.all(items.map((i) => renderItemText(i, locale)));
 
     return {
-        subject: `${urgencyMarker}Evidence Expiry Alert: ${items.length} item(s) expiring`,
-        bodyText: [
-            `Hi ${recipientName},`,
-            '',
-            `${items.length} evidence item(s) are expiring or have expired:`,
-            '',
-            ...items.map(renderItemText),
-            '',
-            'Please upload refreshed evidence or extend retention dates.',
-            '',
-            `View evidence: /t/${tenantSlug}/evidence`,
-            '',
-            '— Agrent',
-        ].join('\n'),
+        subject: `${urgencyMarker}${subject}`,
+        bodyText: [greeting, '', intro, '', ...lines, '', advice, '', ctaLine, '', signature].join('\n'),
         bodyHtml: `
 <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 640px; margin: 0 auto; padding: 24px;">
-  <h2 style="color: #1a1a2e; font-size: 18px; margin-bottom: 8px;">${escapeHtml(urgencyMarker)}Evidence Expiry Alert</h2>
-  <p style="color: #444; line-height: 1.5;">Hi ${escapeHtml(recipientName)},</p>
-  <p style="color: #444; line-height: 1.5;"><strong>${items.length} evidence item(s)</strong> are expiring or have expired:</p>
-  ${buildDigestTable(items, tenantSlug)}
-  <p style="color: #444; line-height: 1.5;">Please upload refreshed evidence or extend retention dates.</p>
-  <a href="/t/${escapeHtml(tenantSlug)}/evidence" style="display: inline-block; background: #4f46e5; color: #fff; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: 500; margin-top: 8px;">View Evidence</a>
-  <p style="color: #999; font-size: 12px; margin-top: 24px;">— Agrent</p>
+  <h2 style="color: #1a1a2e; font-size: 18px; margin-bottom: 8px;">${escapeHtml(urgencyMarker)}${escapeHtml(heading)}</h2>
+  <p style="color: #444; line-height: 1.5;">${escapeHtml(greeting)}</p>
+  <p style="color: #444; line-height: 1.5;">${escapeHtml(intro)}</p>
+  ${table}
+  <p style="color: #444; line-height: 1.5;">${escapeHtml(advice)}</p>
+  <a href="/t/${escapeHtml(tenantSlug)}/evidence" style="display: inline-block; background: #4f46e5; color: #fff; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: 500; margin-top: 8px;">${escapeHtml(cta)}</a>
+  <p style="color: #999; font-size: 12px; margin-top: 24px;">${escapeHtml(signature)}</p>
 </div>`.trim(),
     };
 }

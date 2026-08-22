@@ -55,7 +55,7 @@ function makeDueItem(overrides: Partial<DueItem> = {}): DueItem {
         entityId: 'task-1',
         tenantId: 'tenant-enabled',
         name: 'Spray north field',
-        reason: 'Task overdue by 5 day(s)',
+        reason: { key: 'taskOverdue', params: { days: 5 } },
         urgency: 'OVERDUE',
         dueDate: '2026-04-12T00:00:00Z',
         daysRemaining: -5,

@@ -126,9 +126,12 @@ async function scanTasks(
             entityId: t.id,
             tenantId: t.tenantId,
             name: t.title,
+            // A descriptor, not a sentence — the digest renders it in the
+            // RECIPIENT's language, and one item can reach several
+            // recipients whose languages differ (#694).
             reason: classification.urgency === 'OVERDUE'
-                ? `Task overdue by ${Math.abs(classification.daysRemaining)} day(s)`
-                : `Task due in ${classification.daysRemaining} day(s)`,
+                ? { key: 'taskOverdue', params: { days: Math.abs(classification.daysRemaining) } }
+                : { key: 'taskDue', params: { days: classification.daysRemaining } },
             urgency: classification.urgency,
             dueDate: t.dueAt.toISOString(),
             daysRemaining: classification.daysRemaining,

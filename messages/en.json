@@ -6079,6 +6079,54 @@
             "subject": "Evidence expiring in {days} day(s): {title}",
             "body": "Evidence \"{title}\" expires in {days} days. Please upload refreshed evidence or extend the retention date."
         },
-        "signature": "— Agrent"
+        "signature": "— Agrent",
+        "digest": {
+            "reason": {
+                "taskOverdue": "Task overdue by {days} day(s)",
+                "taskDue": "Task due in {days} day(s)",
+                "evidenceRetentionExpired": "Evidence retention expired {days} day(s) ago",
+                "evidenceExpires": "Evidence expires in {days} day(s)",
+                "evidenceExpired": "Evidence expired {days} day(s) ago",
+                "evidenceReviewOverdue": "Evidence review overdue by {days} day(s)",
+                "evidenceReviewDue": "Evidence review due in {days} day(s)"
+            },
+            "urgency": {
+                "OVERDUE": "Overdue",
+                "URGENT": "Due Soon",
+                "UPCOMING": "Upcoming"
+            },
+            "entity": {
+                "EVIDENCE": "Evidence",
+                "TASK": "Task"
+            },
+            "table": {
+                "status": "Status",
+                "type": "Type",
+                "name": "Name",
+                "details": "Details"
+            },
+            "summary": {
+                "overdue": "{count} overdue",
+                "dueSoon": "{count} due soon",
+                "upcoming": "{count} upcoming"
+            },
+            "deadline": {
+                "subject": "Deadline digest: {count} item(s) need attention",
+                "heading": "Deadline digest",
+                "greeting": "Hi {name},",
+                "intro": "You have {count} item(s) that need your attention:",
+                "cta": "View Dashboard",
+                "ctaLine": "View your dashboard: {link}"
+            },
+            "evidenceExpiry": {
+                "subject": "Evidence expiry alert: {count} item(s) expiring",
+                "heading": "Evidence expiry alert",
+                "greeting": "Hi {name},",
+                "intro": "{count} evidence item(s) are expiring or have expired:",
+                "advice": "Please upload refreshed evidence or extend retention dates.",
+                "cta": "View Evidence",
+                "ctaLine": "View evidence: {link}"
+            }
+        }
     }
 }

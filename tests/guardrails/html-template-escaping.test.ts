@@ -69,6 +69,12 @@ const SAFE_BY_CONSTRUCTION: Record<string, string> = {
     daysOverdue: 'number — declared `daysOverdue: number` on the template params',
     // ── Already-escaped HTML fragments composed inside this guarded set ──
     rows: 'HTML fragment built by buildDigestTable, whose own cells are escaped',
+    // Same fragment as `buildDigestTable(items, tenantSlug)` below — the call
+    // was hoisted to a local when the builder became async (#694), so the
+    // expression text changed while the value did not. The guard flagged it,
+    // which is the guard working: a declared-safe expression became an
+    // undeclared one and that had to be re-decided rather than inherited.
+    table: 'HTML fragment awaited from buildDigestTable, whose own cells are escaped',
     'buildDigestTable(items, tenantSlug)':
         'HTML fragment; the function is in this guarded set and escapes its own cells',
 };
