@@ -9,6 +9,8 @@
  *   await runEvidenceRetentionNotifications({ tenantId: 'xxx' });    // single tenant
  */
 import { Prisma } from '@prisma/client';
+import { resolveRecipientLocale } from '@/lib/email/recipient-locale';
+import { translateFor } from '@/lib/i18n/server-messages';
 import { formatDate } from '@/lib/format-date';
 import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/observability/logger';
@@ -152,7 +154,9 @@ export async function runEvidenceRetentionNotifications(
             } else {
                 const members = await prisma.tenantMembership.findMany({
                     where: { tenantId: ev.tenantId, role: { in: ['ADMIN', 'EDITOR'] } },
-                    include: { user: { select: { email: true, name: true } } },
+                    // `uiLanguage` — the expiry notice is written in each
+                    // RECIPIENT's language (#694).
+                    include: { user: { select: { email: true, name: true, uiLanguage: true } } },
                 });
 
                 // `practiceName` was previously looked up here but
@@ -166,13 +170,30 @@ export async function runEvidenceRetentionNotifications(
 
                 for (const m of members) {
                     if (!m.user.email) continue;
+                    // This producer writes its own outbox row rather than
+                    // going through `enqueueEmail` — so `buildEmailContent`'s
+                    // EVIDENCE_EXPIRING arm is unreachable and the strings are
+                    // built here. Localised in place (#694); unifying the two
+                    // paths is tracked separately.
+                    const locale = resolveRecipientLocale(m.user.uiLanguage);
+                    const urgencyTag = daysLeft <= 7 ? '⚠️ ' : '';
+                    const subject = await translateFor(
+                        locale,
+                        'notificationEmail.evidenceExpiring.subject',
+                        { days: daysLeft, title: ev.title },
+                    );
+                    const bodyText = await translateFor(
+                        locale,
+                        'notificationEmail.evidenceExpiring.body',
+                        { days: daysLeft, title: ev.title },
+                    );
                     await prisma.notificationOutbox.create({
                         data: {
                             tenantId: ev.tenantId,
                             type: 'EVIDENCE_EXPIRING',
                             toEmail: m.user.email,
-                            subject: `${daysLeft <= 7 ? '⚠️ ' : ''}Evidence expiring in ${daysLeft} day(s): ${ev.title}`,
-                            bodyText: `Evidence "${ev.title}" expires in ${daysLeft} days. Please upload refreshed evidence or extend the retention date.`,
+                            subject: `${urgencyTag}${subject}`,
+                            bodyText,
                             bodyHtml: null,
                             dedupeKey: `${ev.tenantId}:EVIDENCE_EXPIRING:${m.user.email}:${ev.id}:${new Date().toISOString().slice(0, 10)}`,
                         },

@@ -33,6 +33,8 @@
  *   decisions land.
  */
 import type { PrismaClient } from '@prisma/client';
+import { resolveRecipientLocale } from '@/lib/email/recipient-locale';
+import type { Locale } from '@/lib/i18n/locales';
 import { logger } from '@/lib/observability/logger';
 import { enqueueEmail } from '../notifications/enqueue';
 import { daysUntilDue } from './access-review-reminder';
@@ -80,6 +82,13 @@ interface EscalationCandidate {
 interface AdminRecipient {
     email: string;
     name: string | null;
+    /**
+     * The ADMIN's language (#694). Carried on the recipient rather than
+     * resolved at the send site because `loadAdmins` is bulk-fetched once for
+     * every tenant — resolving inside the per-admin loop would put a query
+     * back where the D1 N+1 guardrail had it hoisted out.
+     */
+    locale: Locale;
 }
 
 /**
@@ -107,7 +116,7 @@ async function loadAdmins(
         },
         select: {
             tenantId: true,
-            user: { select: { email: true, name: true } },
+            user: { select: { email: true, name: true, uiLanguage: true } },
         },
     });
 
@@ -119,7 +128,13 @@ async function loadAdmins(
         const email = r.user?.email ?? null;
         if (!email) continue;
         const list = out.get(r.tenantId);
-        if (list) list.push({ email, name: r.user?.name ?? null });
+        if (list) {
+            list.push({
+                email,
+                name: r.user?.name ?? null,
+                locale: resolveRecipientLocale(r.user?.uiLanguage),
+            });
+        }
     }
     return out;
 }
@@ -224,6 +239,7 @@ export async function processAccessReviewOverdueEscalation(
                 tenantId: c.tenantId,
                 type: 'ACCESS_REVIEW_OVERDUE_ESCALATION',
                 toEmail: admin.email,
+                locale: admin.locale,
                 entityId: c.id,
                 payload: {
                     adminName: admin.name ?? admin.email,

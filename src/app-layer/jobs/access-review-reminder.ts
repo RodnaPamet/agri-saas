@@ -34,6 +34,8 @@
  *   - Zero pending decisions (no reason to nudge).
  */
 import type { PrismaClient } from '@prisma/client';
+import { resolveRecipientLocale } from '@/lib/email/recipient-locale';
+import type { Locale } from '@/lib/i18n/locales';
 import { logger } from '@/lib/observability/logger';
 import { enqueueEmail } from '../notifications/enqueue';
 
@@ -72,6 +74,7 @@ interface CampaignSnapshot {
     dueAt: Date;
     reviewerEmail: string | null;
     reviewerName: string | null;
+    reviewerLocale: Locale;
     tenantSlug: string;
     pendingCount: number;
     totalCount: number;
@@ -140,7 +143,9 @@ export async function processAccessReviewReminders(
             tenantId: true,
             name: true,
             dueAt: true,
-            reviewer: { select: { email: true, name: true } },
+            // `uiLanguage`: the reminder is written in the REVIEWER's
+            // language (#694). Already a nested select on this query.
+            reviewer: { select: { email: true, name: true, uiLanguage: true } },
             tenant: { select: { slug: true } },
             decisions: {
                 select: { id: true, decision: true },
@@ -163,6 +168,7 @@ export async function processAccessReviewReminders(
                 dueAt: r.dueAt as Date,
                 reviewerEmail: r.reviewer?.email ?? null,
                 reviewerName: r.reviewer?.name ?? null,
+                reviewerLocale: resolveRecipientLocale(r.reviewer?.uiLanguage),
                 tenantSlug: r.tenant.slug,
                 pendingCount,
                 totalCount,
@@ -197,6 +203,7 @@ export async function processAccessReviewReminders(
             tenantId: c.tenantId,
             type: 'ACCESS_REVIEW_REMINDER',
             toEmail: c.reviewerEmail,
+            locale: c.reviewerLocale,
             entityId: c.id,
             payload: {
                 reviewerName: c.reviewerName ?? c.reviewerEmail,

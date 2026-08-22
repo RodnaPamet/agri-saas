@@ -3,6 +3,7 @@ import { WorkItemRepository, TaskLinkRepository, TaskCommentRepository, TaskWatc
 import { assertCanReadTasks, assertCanWriteTasks, assertCanCommentOnTasks } from '../policies/task.policies';
 import { logEvent } from '../events/audit';
 import { emitAutomationEvent } from '../automation';
+import { resolveRecipientLocale } from '@/lib/email/recipient-locale';
 import { enqueueEmail } from '../notifications/enqueue';
 import { createTaskDueNotification } from '../notifications/task-due';
 import { createAssignmentNotification } from '../notifications/assignment';
@@ -406,7 +407,10 @@ async function enqueueTaskAssignedNotification(
     try {
         const assignee = await db.user.findUnique({
             where: { id: assigneeUserId },
-            select: { email: true, name: true },
+            // `uiLanguage` so the email is written in the ASSIGNEE's language
+            // rather than the assigner's (#694). One more column on a query
+            // this path already makes — no extra round trip.
+            select: { email: true, name: true, uiLanguage: true },
         });
         if (!assignee?.email) return;
 
@@ -419,6 +423,7 @@ async function enqueueTaskAssignedNotification(
             tenantId: ctx.tenantId,
             type: 'TASK_ASSIGNED',
             toEmail: assignee.email,
+            locale: resolveRecipientLocale(assignee.uiLanguage),
             entityId: taskId,
             requestId: ctx.requestId,
             payload: {

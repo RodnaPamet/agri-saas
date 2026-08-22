@@ -6031,5 +6031,54 @@
         "schemeSingular": "support scheme",
         "schemePlural": "support schemes",
         "loadFailed": "Couldn't load support schemes. Reload the page to try again."
+    },
+    "notificationEmail": {
+        "taskAssigned": {
+            "subject": "Task assigned to you: {task}",
+            "heading": "Task assigned to you",
+            "greeting": "Hi {name},",
+            "introWithAssigner": "You have been assigned a {taskType} task by {assigner}:",
+            "intro": "You have been assigned a {taskType} task:",
+            "viewTasks": "View Tasks",
+            "viewTasksLine": "View your tasks: {link}"
+        },
+        "accessReviewReminder": {
+            "subject": "Access review {dueLabel}: {campaign}",
+            "heading": "Access review {dueLabel}",
+            "greeting": "Hi {name},",
+            "intro": "You have an access review campaign that is {dueLabel}.",
+            "campaignLabel": "Campaign",
+            "pendingLabel": "Pending decisions",
+            "pendingValue": "{pending} of {total}",
+            "openCampaign": "Open Campaign",
+            "openCampaignLine": "Open the campaign: {link}",
+            "closeoutNote": "Until every subject has a CONFIRM, REVOKE, or MODIFY verdict the campaign cannot be closed and the closeout PDF cannot be generated. Auditors will look for this artifact in the next SOC 2 cycle.",
+            "dueOverdue": "overdue by {days} day(s)",
+            "dueToday": "due today",
+            "dueTomorrow": "due tomorrow",
+            "dueInDays": "due in {days} days"
+        },
+        "accessReviewOverdue": {
+            "subject": "Access review {days} days overdue: {campaign}",
+            "heading": "Access review {days} days overdue",
+            "greeting": "Hi {name},",
+            "intro": "An access review campaign in your tenant is now {days} days past its deadline and still has pending decisions. The assigned reviewer has been receiving daily reminders.",
+            "campaignLabel": "Campaign",
+            "reviewerLabel": "Reviewer",
+            "pendingLabel": "Pending decisions",
+            "pendingValue": "{pending} of {total}",
+            "daysOverdueLabel": "Days overdue",
+            "optionsIntro": "As a tenant admin you can:",
+            "optionReassign": "Reassign the campaign to a different reviewer.",
+            "optionForceClose": "Force-close the campaign (this will skip pending verdicts).",
+            "optionChase": "Chase the reviewer through other channels.",
+            "openCampaign": "Open Campaign",
+            "openCampaignLine": "Open the campaign: {link}"
+        },
+        "evidenceExpiring": {
+            "subject": "Evidence expiring in {days} day(s): {title}",
+            "body": "Evidence \"{title}\" expires in {days} days. Please upload refreshed evidence or extend the retention date."
+        },
+        "signature": "— Agrent"
     }
 }

@@ -11,6 +11,7 @@ import type { PrismaTx } from '@/lib/db-context';
 import type { EmailNotificationType } from '@prisma/client';
 import { isNotificationsEnabled } from './settings';
 import { logger } from '@/lib/observability/logger';
+import type { Locale } from '@/lib/i18n/locales';
 import {
     buildTaskAssignedEmail,
     buildEvidenceExpiringEmail,
@@ -40,6 +41,22 @@ export interface EnqueueEmailInput {
     tenantId: string;
     type: EmailNotificationType;
     toEmail: string;
+    /**
+     * The RECIPIENT's language — required, deliberately not optional (#694).
+     *
+     * The outbox row stores RENDERED text, so the language is frozen at
+     * enqueue time and a forgotten locale is indistinguishable from a chosen
+     * one: it would silently ship `bg` to an English speaker with nothing to
+     * notice. There are three call sites, so requiring it costs three lines
+     * and TypeScript enforces it — strictly better than a guard that greps.
+     *
+     * Producers resolve it with `resolveRecipientLocale(user.uiLanguage)`. A
+     * producer that genuinely has only an email must write
+     * `RECIPIENT_FALLBACK_LOCALE` explicitly, so the decision appears in the
+     * diff. Same reasoning as the `scanStatus` argument in the upload
+     * convention: never restore a default that means "unknown".
+     */
+    locale: Locale;
     entityId: string;
     payload:
         | TaskAssignedPayload
@@ -83,7 +100,7 @@ export async function enqueueEmail(
     db: PrismaTx,
     input: EnqueueEmailInput,
 ): Promise<{ id: string; dedupeKey: string } | null> {
-    const { tenantId, type, toEmail, entityId, payload, sendAfter, requestId } = input;
+    const { tenantId, type, toEmail, locale, entityId, payload, sendAfter, requestId } = input;
 
     // Check tenant settings — skip if disabled
     const enabled = await isNotificationsEnabled(db, tenantId);
@@ -94,8 +111,8 @@ export async function enqueueEmail(
         return null;
     }
 
-    // Build email content from template
-    const { subject, bodyText, bodyHtml } = buildEmailContent(type, payload);
+    // Build email content from template, in the RECIPIENT's language.
+    const { subject, bodyText, bodyHtml } = await buildEmailContent(type, payload, locale);
 
     // Compute dedupe key
     const dedupeKey = buildDedupeKey(tenantId, type, toEmail, entityId);
@@ -134,7 +151,7 @@ export async function enqueueEmail(
 /**
  * Build email content based on notification type.
  */
-function buildEmailContent(
+async function buildEmailContent(
     type: EmailNotificationType,
     payload:
         | TaskAssignedPayload
@@ -148,10 +165,25 @@ function buildEmailContent(
         | AccessReviewReminderPayload
         | AccessReviewOverdueEscalationPayload
         | ExceptionExpiringPayload,
-): { subject: string; bodyText: string; bodyHtml: string } {
+    locale: Locale,
+): Promise<{ subject: string; bodyText: string; bodyHtml: string }> {
     switch (type) {
+        // ── LIVE arms: localised (#694) ──
         case 'TASK_ASSIGNED':
-            return buildTaskAssignedEmail(payload as TaskAssignedPayload);
+            return buildTaskAssignedEmail(payload as TaskAssignedPayload, locale);
+        // ── UNREACHABLE arms, left English and synchronous (#694) ──
+        //
+        // No producer passes any of these types to `enqueueEmail`. Verified by
+        // grepping every `type: '<T>'` literal outside this file:
+        // POLICY_* / VENDOR_ASSESSMENT_* / EXCEPTION_EXPIRING lost their models
+        // in the GRC teardown, and EVIDENCE_EXPIRING has a live producer that
+        // does NOT come through here — `retention-notifications.ts:169` writes
+        // its own `notificationOutbox` row with inline strings, so this arm and
+        // `buildEvidenceExpiringEmail` are both dead.
+        //
+        // An `async` function auto-wraps a synchronous return, so they need no
+        // change. Deleting them is tracked separately; doing it here would
+        // bury a localisation diff under a 400-line removal.
         case 'EVIDENCE_EXPIRING':
             return buildEvidenceExpiringEmail(payload as EvidenceExpiringPayload);
         case 'POLICY_APPROVAL_REQUESTED':
@@ -179,10 +211,12 @@ function buildEmailContent(
         case 'ACCESS_REVIEW_REMINDER':
             return buildAccessReviewReminderEmail(
                 payload as AccessReviewReminderPayload,
+                locale,
             );
         case 'ACCESS_REVIEW_OVERDUE_ESCALATION':
             return buildAccessReviewOverdueEscalationEmail(
                 payload as AccessReviewOverdueEscalationPayload,
+                locale,
             );
         case 'EXCEPTION_EXPIRING':
             return buildExceptionExpiringEmail(
