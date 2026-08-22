@@ -153,6 +153,62 @@ describe('coverage parity: the reference run must match the sharded job', () => 
         expect(Object.keys(on)).toEqual(['workflow_dispatch']);
     });
 
+    it('sets `pipefail` in every step that pipes — a pipeline hides its own failure', () => {
+        // Measured 2026-08-22, run 32584730983: the parity step ended
+        //   node scripts/diff-coverage.mjs ... | tee parity.txt
+        // with no `set -o pipefail`. A pipeline's exit status is its LAST
+        // command's, so `tee` returned 0 and swallowed diff-coverage's exit 1 —
+        // the comparison reported COVERAGE PARITY FAILED for 53 files and the
+        // JOB WENT GREEN. The step summary said FAILED simultaneously, so the
+        // two signals disagreed, which is worse than a clean failure: the job
+        // badge is what anyone reads first.
+        //
+        // Asserted as a RULE over every piped step rather than pinned to the
+        // parity step, because the next pipeline someone adds has the same
+        // problem and will not be this one.
+        // Backslash CONTINUATIONS must be joined first. The real offender was
+        // `| tee parity.txt` sitting on its own continuation line, where nothing
+        // precedes the pipe — a naive per-line scan finds no token before `|`
+        // and passes vacuously. That is precisely how the first version of this
+        // very guard reported green against the bug it was written for.
+        const logicalLines = (run: string): string[] => {
+            const out: string[] = [];
+            let acc = '';
+            for (const raw of run.split('\n')) {
+                const line = raw.trim();
+                if (!acc && (line === '' || line.startsWith('#'))) continue;
+                acc += (acc ? ' ' : '') + line.replace(/\\$/, '');
+                if (!line.endsWith('\\')) {
+                    out.push(acc);
+                    acc = '';
+                }
+            }
+            if (acc) out.push(acc);
+            return out;
+        };
+
+        const offenders: string[] = [];
+        for (const step of referenceJob.steps ?? []) {
+            const run = step.run;
+            if (!run) continue;
+            const lines = logicalLines(run);
+            // `run.includes('pipefail')` is WRONG and was the first version of
+            // this check: the step's own explanatory COMMENT about pipefail
+            // contains the word, so the step was skipped and the guard passed
+            // vacuously against the very bug it was written for. Match an actual
+            // `set` command on a comment-stripped line instead.
+            if (lines.some((l) => /^set\b[^|]*\bpipefail\b/.test(l))) continue;
+            for (const line of lines) {
+                if (line.includes('||')) continue;
+                if (/[\w"')\]]\s*\|\s*[\w$/]/.test(line)) {
+                    offenders.push(`${step.name ?? '(unnamed)'}: ${line.slice(0, 90)}`);
+                    break;
+                }
+            }
+        }
+        expect(offenders).toEqual([]);
+    });
+
     // ── Mutation proof ──────────────────────────────────────────────────
     // The assertions above are only meaningful if they can FAIL. A guard that
     // compares two things which happen to be equal for an unrelated reason is

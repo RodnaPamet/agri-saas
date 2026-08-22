@@ -271,6 +271,14 @@ jobs:
 
       - name: "PARITY: sharded merge vs unsharded reference"
         run: |
+          # `set -o pipefail` is LOAD-BEARING, not boilerplate. A pipeline's exit
+          # status is its LAST command's, so `| tee` returns 0 and swallows a
+          # non-zero from diff-coverage. Measured 2026-08-22 on run 32584730983:
+          # the comparison reported COVERAGE PARITY FAILED (53 files differing)
+          # and the JOB went green. The step summary said FAILED at the same
+          # time, so the two signals disagreed — worse than a clean failure,
+          # because the job badge is what anyone reads first.
+          set -euo pipefail
           node scripts/diff-coverage.mjs \
             --a sharded/coverage-final.json   --label-a sharded \
             --b coverage-reference/coverage-final.json --label-b reference \
