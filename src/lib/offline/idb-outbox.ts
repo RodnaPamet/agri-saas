@@ -119,6 +119,20 @@ export class IndexedDbOutboxStore implements OutboxStore {
     }
 
     /**
+     * Record a recreation this store did not observe itself.
+     *
+     * The service worker opens the SAME database, and `indexedDB.open` cannot
+     * open without creating. Whoever opens first after an eviction consumes
+     * the one `upgradeneeded` event, so on the browsers where the worker
+     * cannot pre-check existence it is the worker that learns the queue was
+     * destroyed — and only the page can tell the operator. This is how that
+     * signal crosses back. See `public/sw.js`.
+     */
+    markRecreated(): void {
+        this.recreated = true;
+    }
+
+    /**
      * Drop the cached connection so the next call re-opens.
      *
      * `versionchange` fires when something (a `deleteDatabase`, another tab

@@ -65,6 +65,8 @@ const OUTBOX_DB_VERSION = 1;
 const OUTBOX_STORE = 'outbox';
 const OUTBOX_MAX_ATTEMPTS = 8; // mirrors MAX_ATTEMPTS in sync.ts
 const FLUSH_OUTBOX_TAG = 'flush-outbox';
+/** Posted to clients when the worker finds the outbox database rebuilt. */
+const OUTBOX_RECREATED_MSG = 'outbox-db-recreated';
 
 self.addEventListener('install', (event) => {
     // Precache the shell, but do NOT skipWaiting — a deploy mid-field-session
@@ -285,18 +287,55 @@ self.addEventListener('fetch', (event) => {
 });
 
 // ── Background Sync: replay the IndexedDB outbox ───────────────────────
+
+/**
+ * Does the outbox database exist RIGHT NOW?
+ *
+ * `indexedDB.open` has no read-only mode: opening an absent database CREATES
+ * it. That is why this check exists — see `openOutboxDb` below for why the
+ * worker must never be the one to create it. Returns `null` where the browser
+ * has no `databases()` (pre-14 WebKit), meaning "cannot tell".
+ */
+async function outboxDbExists() {
+    if (typeof indexedDB.databases !== 'function') return null;
+    try {
+        return (await indexedDB.databases()).some((d) => d.name === OUTBOX_DB);
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * Open the outbox, reporting whether THIS open had to create the store.
+ *
+ * Creating it is never routine here: the worker only ever READS a queue the
+ * page wrote, so an absent store means the database was destroyed — an
+ * eviction. That event is the app's only exact eviction signal
+ * (`IndexedDbOutboxStore.wasRecreated`), it is delivered once, to whoever
+ * opens first, and only the PAGE can act on it. A worker that quietly
+ * recreated the store consumed the signal and the operator was never told
+ * their queued work had been deleted. See `flushOutbox`.
+ */
 function openOutboxDb() {
     return new Promise((resolve, reject) => {
         const req = indexedDB.open(OUTBOX_DB, OUTBOX_DB_VERSION);
+        let created = false;
         req.onupgradeneeded = () => {
             const db = req.result;
             if (!db.objectStoreNames.contains(OUTBOX_STORE)) {
+                created = true;
                 db.createObjectStore(OUTBOX_STORE, { keyPath: 'id' });
             }
         };
-        req.onsuccess = () => resolve(req.result);
+        req.onsuccess = () => resolve({ db: req.result, created });
         req.onerror = () => reject(req.error || new Error('indexedDB.open failed'));
     });
+}
+
+/** Tell every open client the queue's database was rebuilt underneath it. */
+async function reportOutboxRecreated() {
+    const clients = await self.clients.matchAll({ includeUncontrolled: true });
+    clients.forEach((c) => c.postMessage({ type: OUTBOX_RECREATED_MSG }));
 }
 function idbGetAll(db) {
     return new Promise((resolve, reject) => {
@@ -331,8 +370,22 @@ function isTransient(status) {
 // retain everything, surface the server's Retry-After to open clients, and
 // throw so the browser reschedules the drain after backing off.
 async function flushOutbox() {
+    // An absent database has no queue to replay, so there is nothing to gain
+    // by opening it — and everything to lose, because opening CREATES it and
+    // destroys the page's eviction signal. Skip without touching it.
+    if ((await outboxDbExists()) === false) return;
+
     let db;
-    try { db = await openOutboxDb(); } catch { return; }
+    let created;
+    try { ({ db, created } = await openOutboxDb()); } catch { return; }
+    // `databases()` was unavailable and the store turned out to be absent, so
+    // this open created it and consumed the signal. Hand it to the clients
+    // rather than swallowing it; the queue is empty by definition.
+    if (created) {
+        try { db.close(); } catch { /* already closed */ }
+        await reportOutboxRecreated();
+        return;
+    }
     let items;
     try { items = await idbGetAll(db); } catch { return; }
     items.sort((a, b) => a.createdAt - b.createdAt);

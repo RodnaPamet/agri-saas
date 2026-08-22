@@ -135,6 +135,12 @@ export interface OutboxStore {
      * happen". See `IndexedDbOutboxStore.wasRecreated`.
      */
     wasRecreated?(): boolean;
+
+    /**
+     * Accept a recreation signal observed elsewhere (the service worker).
+     * Optional: stores with no second opener have nothing to reconcile.
+     */
+    markRecreated?(): void;
 }
 
 export const OUTBOX_STORAGE_KEY = 'agri.offline.outbox.v1';

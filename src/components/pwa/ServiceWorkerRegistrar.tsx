@@ -10,6 +10,7 @@
  * SW.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { noteOutboxRecreatedElsewhere } from '@/lib/offline/outbox-state';
 import { InstallPrompt } from './InstallPrompt';
 import { UpdateAvailableBanner } from './UpdateAvailableBanner';
 import { isChunkLoadError } from '@/lib/pwa/chunk-error';
@@ -80,8 +81,22 @@ export function ServiceWorkerRegistrar() {
                 .catch(() => {});
         };
         window.addEventListener('online', nudgeFlush);
+
+        // The worker found the outbox database rebuilt — i.e. the phone
+        // evicted queued work. It opens the same database we do, and
+        // `indexedDB.open` cannot open without creating, so on browsers where
+        // the worker cannot pre-check existence it is the worker that
+        // consumes the one creation event. Only this side can tell the
+        // operator, so take the signal and re-run the detector.
+        const onMessage = (event: MessageEvent) => {
+            if ((event.data as { type?: string } | null)?.type !== 'outbox-db-recreated') return;
+            void noteOutboxRecreatedElsewhere();
+        };
+        navigator.serviceWorker.addEventListener('message', onMessage);
+
         return () => {
             window.removeEventListener('online', nudgeFlush);
+            navigator.serviceWorker.removeEventListener('message', onMessage);
             navigator.serviceWorker.removeEventListener('controllerchange', onControllerChange);
         };
         // reloadOnce is a stable useCallback([]) — listed to satisfy

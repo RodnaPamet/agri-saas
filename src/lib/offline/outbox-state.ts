@@ -222,6 +222,22 @@ export async function runExclusiveFlush<T>(run: () => Promise<T>): Promise<T | n
     }
 }
 
+/**
+ * The service worker found the outbox database rebuilt underneath us.
+ *
+ * `indexedDB.open` cannot open without creating, so whichever of the two
+ * openers reaches a destroyed database first consumes its one `upgradeneeded`
+ * event. When that is the worker, this is how the signal crosses back to the
+ * only side that can tell the operator. Kept here so the raw store stays
+ * behind the single seam this module owns.
+ */
+export async function noteOutboxRecreatedElsewhere(
+    store: OutboxStore = getOutboxStore(),
+): Promise<OutboxSnapshot> {
+    store.markRecreated?.();
+    return refreshOutboxState(store);
+}
+
 /** Clear the lost-work record after the operator has actually seen it. */
 export function acknowledgeLoss(): void {
     acknowledgeLostWork();

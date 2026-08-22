@@ -44,14 +44,18 @@ test.describe('offline outbox survives eviction visibly @mobile', () => {
         await expect(page.getByText('No journal entries yet')).toBeVisible();
 
         // Open the create modal ONLINE so its lazy chunk lands, then cut the
-        // network before submitting.
+        // network before submitting. Waiting on `#journal-entry-title` alone
+        // would prove only that the modal is open, not that the ~200KB
+        // RichTextEditor chunk has arrived; `openJournalEntryModalWarm` waits
+        // for the editor itself.
         //
-        // The wait lives in `openJournalEntryModalWarm` because the obvious
-        // version of it is WRONG and cost this spec two intermittent failures
-        // on main (#730): waiting for `#journal-entry-title` proves the modal
-        // is open, not that the ~200KB RichTextEditor chunk has arrived, and
-        // cutting the network in that window fails the fetch with a
-        // ChunkLoadError that breaks the render the assertions below depend on.
+        // This is a real hazard but it was NOT the cause of this spec's two
+        // failures on main (#730). That was traced instead to the service
+        // worker racing the page to reopen the evicted database and consuming
+        // the one `upgradeneeded` event the loss detector depends on — see
+        // `tests/unit/offline/sw-outbox-recreation.test.ts`. The trace from
+        // the failing run carries no ChunkLoadError at all, and every
+        // assertion before the banner passed.
         await openJournalEntryModalWarm(page);
 
         await page.context().setOffline(true);

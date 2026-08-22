@@ -2,15 +2,25 @@
  * The offline journal specs must warm the LAZY CHUNK before cutting the
  * network, not merely open the modal (#730).
  *
- * ## Why a guard rather than a test run
+ * ## What this is, and what it is NOT
  *
- * The bug is a race, so a passing spec proves nothing — it passed most of the
- * time before the fix too, and failed twice on main across two days:
+ * CORRECTION. This guard was written believing the ChunkLoadErrors seen on
+ * main were these specs failing. They were not, on two counts. The errors
+ * belong to `field-op-conflict-resolution.spec.ts` — they precede its `✓` on
+ * six runs out of six, green ones included, where that spec clicks a control
+ * while offline and pulls the lazily-imported `MapCanvas`. And the eviction
+ * spec's own failure trace carries no ChunkLoadError at all; its real cause
+ * was the service worker consuming the outbox eviction signal
+ * (`tests/unit/offline/sw-outbox-recreation.test.ts`, #730).
  *
- * ```
- * 95ccd2eb  mobile-android  ChunkLoadError: Loading chunk 78301 failed
- * 09cfd8a5  mobile-iphone   ChunkLoadError: Loading chunk 78301 failed
- * ```
+ * The original attribution came from reading the log line BEFORE each error
+ * rather than after it. Playwright prints `✓` when a spec finishes while
+ * console output arrives asynchronously, so adjacency runs the other way.
+ *
+ * The warm-up this guard enforces is still correct and still worth holding:
+ * cutting the network while a ~200KB chunk is in flight is a real hazard, and
+ * the wait that looks obvious is the wrong one. It was simply never the bug it
+ * was filed against.
  *
  * What CAN be checked deterministically is the shape of the warm-up: that both
  * specs wait on something which only exists once the chunk has landed. The

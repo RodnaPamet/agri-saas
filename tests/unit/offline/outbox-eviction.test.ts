@@ -337,3 +337,59 @@ describe('the persistence request', () => {
         expect(persist).toHaveBeenCalledTimes(1);
     });
 });
+
+describe('a recreation the page did not observe itself (#730)', () => {
+    // The service worker opens the same database, and `indexedDB.open` cannot
+    // open without creating — so on a browser where the worker cannot
+    // pre-check existence, the worker consumes the one `upgradeneeded` event
+    // and the page never learns. `markRecreated` is how that signal crosses
+    // back. Executed here because the alternative — the page believing a
+    // destroyed queue was a drained one — is silent by construction.
+    it('reports the loss once the worker hands the signal over', async () => {
+        store.items = [item('a')];
+        await refreshOutboxState(store);
+
+        // The phone evicts and the WORKER wins the race to reopen, so the
+        // page's own store observed no `upgradeneeded` and would otherwise
+        // read a destroyed queue as a drained one.
+        store.items = [];
+        store.recreated = false;
+        // The worker reports what it consumed; `markRecreated` sets the flag.
+        store.recreated = true;
+
+        const snap = await refreshOutboxState(store);
+        expect(snap.lost?.entries.map((e) => e.id)).toEqual(['a']);
+        expect(snap.lost?.entries[0].label).toContain('a');
+    });
+
+    it('a blind refresh BEFORE the signal arrives cannot be recovered', async () => {
+        // The residual race, stated honestly rather than left implicit. The
+        // manifest is the only record of what was queued, and a refresh that
+        // mirrors an empty queue over it erases that record for good — a later
+        // signal has nothing left to reconcile against. This is why the worker
+        // not opening an absent database is the PRIMARY fix and the message is
+        // only a backstop: the message can lose the race, the skipped open
+        // cannot.
+        store.items = [item('a')];
+        await refreshOutboxState(store);
+        store.items = [];
+        store.recreated = false;
+        await refreshOutboxState(store);      // blind
+        store.recreated = true;               // signal arrives too late
+        const snap = await refreshOutboxState(store);
+        expect(snap.lost).toBeNull();
+        expect(readManifest()).toEqual([]);
+    });
+
+    it('the real store accepts the signal', async () => {
+        // The method exists on IndexedDbOutboxStore, not just the fake, and
+        // sets the flag `wasRecreated` consumes.
+        const { IndexedDbOutboxStore } = await import('@/lib/offline/idb-outbox');
+        const real = new IndexedDbOutboxStore();
+        expect(real.wasRecreated()).toBe(false);
+        real.markRecreated();
+        expect(real.wasRecreated()).toBe(true);
+        // Consumed on read — one eviction, reported once.
+        expect(real.wasRecreated()).toBe(false);
+    });
+});

@@ -261,6 +261,32 @@ describe('binary photo outbox path (client + SW lockstep)', () => {
     });
 });
 
+// ─── 2b — the worker's eviction signal reaches the page ────────────
+
+describe('the SW recreation signal is wired end to end', () => {
+    // The WORKER half is executed in `tests/unit/offline/sw-outbox-recreation.test.ts`
+    // — that drives the real `flushOutbox` against a fake IndexedDB. What is
+    // structural here is the PAGE half: a listener inside a `useEffect` whose
+    // absence is silent, and whose failure mode is an operator never being told
+    // their queued work was deleted. Both ends must name the same message.
+    it('the worker reports a recreation rather than swallowing it', () => {
+        const sw = read('public/sw.js');
+        expect(sw).toContain("const OUTBOX_RECREATED_MSG = 'outbox-db-recreated'");
+        // The primary fix: never open a database that is not there.
+        expect(sw).toMatch(/if \(\(await outboxDbExists\(\)\) === false\) return;/);
+    });
+
+    it('the page listens for it and routes it through the offline seam', () => {
+        const reg = read('src/components/pwa/ServiceWorkerRegistrar.tsx');
+        expect(reg).toContain("'outbox-db-recreated'");
+        expect(reg).toContain('noteOutboxRecreatedElsewhere(');
+        expect(reg).toContain("navigator.serviceWorker.addEventListener('message'");
+        // Removed on unmount — a listener that outlives its effect fires
+        // against a stale closure on every later navigation.
+        expect(reg).toContain("navigator.serviceWorker.removeEventListener('message'");
+    });
+});
+
 // ─── 3 — outbox single seam ────────────────────────────────────────
 
 function walk(dir: string): string[] {
