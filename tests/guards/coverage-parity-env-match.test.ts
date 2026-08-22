@@ -116,6 +116,34 @@ describe('coverage parity: the reference run must match the sharded job', () => 
         );
     });
 
+    it('resolves the dispatch ref ITSELF instead of handing it to actions/checkout', () => {
+        // `actions/checkout` does not accept a SHORT sha. Given `ref: fd221856`
+        // it treats the value as a ref-NAME pattern and runs
+        //   git fetch --depth=1 origin +refs/heads/fd221856*:... +refs/tags/fd221856*:...
+        // which matches nothing and fails with a bare
+        //   The process '/usr/bin/git' failed with exit code 1
+        // that never names the ref. Measured on this workflow's first real
+        // dispatch (2026-08-22).
+        //
+        // This matters more than it looks: every `git log --oneline` and
+        // `gh run list` in this repo prints the SHORT form, and the input asks
+        // for "a commit sha" — so the short form is exactly what an operator
+        // will paste. Resolving it ourselves accepts short, full, branch and tag.
+        const steps = referenceJob.steps ?? [];
+        const checkout = steps.find((s) => (s.uses ?? '').startsWith('actions/checkout')) as
+            | { with?: Record<string, unknown> }
+            | undefined;
+
+        expect(checkout).toBeDefined();
+        expect(checkout?.with?.ref).toBeUndefined();
+        // Full history, or a short sha still will not resolve locally.
+        expect(checkout?.with?.['fetch-depth']).toBe(0);
+
+        const runs = steps.map((s) => s.run ?? '').join('\n');
+        expect(runs).toContain('rev-parse --verify');
+        expect(runs).toContain('git checkout --detach');
+    });
+
     it('is dispatch-only — a long single-process run must never gate a push', () => {
         const raw = fs.readFileSync(
             path.join(ROOT, '.github/workflows/coverage-reference.yml'),
