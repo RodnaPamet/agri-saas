@@ -6031,5 +6031,54 @@
         "schemeSingular": "мярка",
         "schemePlural": "мерки",
         "loadFailed": "Мерките не се заредиха. Презаредете страницата."
+    },
+    "notificationEmail": {
+        "taskAssigned": {
+            "subject": "Възложена ви е задача: {task}",
+            "heading": "Възложена ви е задача",
+            "greeting": "Здравейте, {name},",
+            "introWithAssigner": "Възложена ви е задача от тип {taskType} от {assigner}:",
+            "intro": "Възложена ви е задача от тип {taskType}:",
+            "viewTasks": "Преглед на задачите",
+            "viewTasksLine": "Вижте задачите си: {link}"
+        },
+        "accessReviewReminder": {
+            "subject": "Преглед на достъпа {dueLabel}: {campaign}",
+            "heading": "Преглед на достъпа {dueLabel}",
+            "greeting": "Здравейте, {name},",
+            "intro": "Имате кампания за преглед на достъпа, която е {dueLabel}.",
+            "campaignLabel": "Кампания",
+            "pendingLabel": "Чакащи решения",
+            "pendingValue": "{pending} от {total}",
+            "openCampaign": "Отваряне на кампанията",
+            "openCampaignLine": "Отворете кампанията: {link}",
+            "closeoutNote": "Докато всеки субект няма решение CONFIRM, REVOKE или MODIFY, кампанията не може да бъде затворена и заключителният PDF не може да бъде генериран. Одиторите ще търсят този документ при следващия цикъл по SOC 2.",
+            "dueOverdue": "просрочена с {days} дни",
+            "dueToday": "с краен срок днес",
+            "dueTomorrow": "с краен срок утре",
+            "dueInDays": "с краен срок след {days} дни"
+        },
+        "accessReviewOverdue": {
+            "subject": "Преглед на достъпа, просрочен с {days} дни: {campaign}",
+            "heading": "Преглед на достъпа, просрочен с {days} дни",
+            "greeting": "Здравейте, {name},",
+            "intro": "Кампания за преглед на достъпа във вашия акаунт е просрочена с {days} дни и все още има чакащи решения. Определеният проверяващ получава ежедневни напомняния.",
+            "campaignLabel": "Кампания",
+            "reviewerLabel": "Проверяващ",
+            "pendingLabel": "Чакащи решения",
+            "pendingValue": "{pending} от {total}",
+            "daysOverdueLabel": "Дни просрочие",
+            "optionsIntro": "Като администратор на акаунта можете да:",
+            "optionReassign": "Преназначите кампанията на друг проверяващ.",
+            "optionForceClose": "Затворите принудително кампанията (чакащите решения ще бъдат пропуснати).",
+            "optionChase": "Потърсите проверяващия по друг канал.",
+            "openCampaign": "Отваряне на кампанията",
+            "openCampaignLine": "Отворете кампанията: {link}"
+        },
+        "evidenceExpiring": {
+            "subject": "Доказателство изтича след {days} дни: {title}",
+            "body": "Доказателството „{title}“ изтича след {days} дни. Моля, качете обновено доказателство или удължете срока на съхранение."
+        },
+        "signature": "— Agrent"
     }
 }

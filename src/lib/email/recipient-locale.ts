@@ -25,6 +25,20 @@
  *
  * @module lib/email/recipient-locale
  */
-import { type Locale } from '@/lib/i18n/locales';
+import { isLocale, type Locale } from '@/lib/i18n/locales';
 
 export const RECIPIENT_FALLBACK_LOCALE: Locale = 'bg';
+
+/**
+ * Narrow a stored `User.uiLanguage` to a `Locale`, falling back when it is
+ * absent or unrecognised.
+ *
+ * The column is a plain `String`, so nothing at the type level stops a row
+ * holding `'de'` or `''`. Every sender needs the same narrowing, and before
+ * this it was copy-pasted at three call sites as
+ * `isLocale(x) ? x : RECIPIENT_FALLBACK_LOCALE`. One site means one place to
+ * change if the column default moves, and one place to test.
+ */
+export function resolveRecipientLocale(uiLanguage: unknown): Locale {
+    return isLocale(uiLanguage) ? uiLanguage : RECIPIENT_FALLBACK_LOCALE;
+}

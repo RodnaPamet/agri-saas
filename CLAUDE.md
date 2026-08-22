@@ -1520,6 +1520,28 @@ recovery.
       (brand, unit, deliberately bilingual) go in `UNTRANSLATED_ALLOWLIST`
       with a reason.
   `i18n-diff.mjs --check` runs in CI (the `Lint` job) and `.husky/pre-commit`.
+- **An outbound email is written in the RECIPIENT's language, not the
+  sender's.** `getTranslations()` resolves from the request cookie, which at
+  send time is the *sender's* — on a task assignment the sender is the assigner
+  and the recipient is the assignee. Use `translateFor(locale, key, params)`
+  from `@/lib/i18n/server-messages` with an EXPLICIT locale, resolved via
+  `resolveRecipientLocale(user.uiLanguage)` from `@/lib/email/recipient-locale`.
+  The fallback there is `bg` — deliberately NOT `DEFAULT_LOCALE`, which is `en`
+  for *unauthenticated* surfaces; an email recipient is a known user whose
+  column default is `bg`.
+  `EnqueueEmailInput.locale` is **required**, not defaulted: `NotificationOutbox`
+  stores RENDERED text, so a forgotten locale is indistinguishable from a chosen
+  one and would silently ship the wrong language. A producer with only an email
+  must write `RECIPIENT_FALLBACK_LOCALE` so the decision shows in the diff.
+  Inside an HTML template, **resolve each translated string to a local `const`
+  before interpolating it** — `${escapeHtml(t)}`, never
+  `${escapeHtml(await t('k', { n }))}`. Until #717 the escaping guard's
+  extractor excluded braces, so the inline form was invisible to it; the
+  extractor is brace-balanced now, and the local-const form keeps each
+  interpolation readable at the point it is escaped.
+  Localised so far: the two auth emails, the Exchange inquiry, task-assigned,
+  both access-review notices, and evidence-expiry. Still English: the digest
+  and the invite (#694, #722).
 - **Path alias**: `@/` maps to `src/`. Always use this alias — never relative paths crossing layer boundaries.
 - **`@/lib/storage`, never `@/lib/storage/index`.** `src/lib/storage.ts`
   AND `src/lib/storage/index.ts` both exist; the bare specifier resolves to

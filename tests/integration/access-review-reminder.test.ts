@@ -50,10 +50,22 @@ let reader: UserFixture;
 let bAdmin: UserFixture;
 let bReviewer: UserFixture;
 
-async function makeUser(label: string, tenantId: string, role: Role): Promise<UserFixture> {
+async function makeUser(
+    label: string,
+    tenantId: string,
+    role: Role,
+    uiLanguage = 'en',
+): Promise<UserFixture> {
     const email = `${SUITE_TAG}-${label}@example.test`;
     const u = await globalPrisma.user.create({
-        data: { email, emailHash: hashForLookup(email) },
+        // `uiLanguage` is PINNED, and the default is deliberately 'en' here
+        // rather than the column's 'bg'. Since #694 the reminder is written in
+        // the REVIEWER's language, and `User.uiLanguage` is `@default("bg")` —
+        // so an unpinned fixture renders Bulgarian and every English assertion
+        // in this suite fails while the feature is working correctly. Pinning
+        // keeps these tests about access-review behaviour; the localisation
+        // itself is asserted by the `bg` case at the bottom of this file.
+        data: { email, emailHash: hashForLookup(email), uiLanguage },
     });
     const m = await globalPrisma.tenantMembership.create({
         data: {
@@ -445,5 +457,37 @@ describeFn('Epic G-4 reminder — DB integration', () => {
         });
         expect(outbox?.subject).toMatch(/due tomorrow/i);
         expect(outbox?.subject).toContain('Q1 due-tomorrow probe');
+    });
+
+    it('renders the reminder in the REVIEWER\'s language, through the real job', async () => {
+        // End-to-end proof of #694 that the unit tests cannot give: a real
+        // reviewer row with `uiLanguage: 'bg'`, the real job, and the real
+        // outbox row that `processOutbox` will later replay verbatim.
+        //
+        // It also pins the direction that matters. `getTranslations()` would
+        // resolve the SENDER's locale; this job has no request scope at all
+        // and the recipient is the reviewer, so nothing but an explicit
+        // per-recipient locale can be right here.
+        const bgReviewer = await makeUser('bg-reviewer', TENANT_A_ID, Role.ADMIN, 'bg');
+        const now = new Date('2026-05-07T12:00:00Z');
+        await makeCampaign({
+            name: 'Bulgarian probe',
+            dueAt: new Date('2026-05-08T12:00:00Z'),
+            reviewerUserId: bgReviewer.userId,
+            decisions: [{ subjectUserId: editor.userId, snapshotRole: Role.EDITOR }],
+        });
+        await processAccessReviewReminders(globalPrisma, { now, tenantId: TENANT_A_ID });
+
+        const outbox = await globalPrisma.notificationOutbox.findFirst({
+            where: {
+                tenantId: TENANT_A_ID,
+                type: 'ACCESS_REVIEW_REMINDER',
+                toEmail: { contains: 'bg-reviewer' },
+            },
+        });
+        expect(outbox).not.toBeNull();
+        expect(outbox?.subject).toContain('Преглед на достъпа');
+        expect(outbox?.subject).toContain('Bulgarian probe'); // data is not translated
+        expect(outbox?.subject).not.toMatch(/due tomorrow/i);
     });
 });
