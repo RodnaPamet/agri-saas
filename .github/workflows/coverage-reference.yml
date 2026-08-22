@@ -46,7 +46,7 @@ on:
   workflow_dispatch:
     inputs:
       ref:
-        description: "Commit SHA to measure. MUST be a commit whose main-push CI produced a coverage-report artifact (i.e. a merged commit, not a PR head)."
+        description: "Commit to measure — short sha, full sha, branch or tag. MUST be a commit whose main-push CI produced a coverage-report artifact (i.e. a merged commit, not a PR head)."
         required: true
         type: string
 
@@ -109,9 +109,35 @@ jobs:
           --health-retries=10
 
     steps:
+      # Full history, and the ref is resolved in the NEXT step rather than by
+      # the action. `actions/checkout` does not accept a SHORT sha: given
+      # `ref: fd221856` it treats the value as a ref-name pattern and runs
+      #
+      #   git fetch --depth=1 origin +refs/heads/fd221856*:... +refs/tags/fd221856*:...
+      #
+      # which matches no branch and no tag, and dies with a bare
+      # "The process '/usr/bin/git' failed with exit code 1" that never names
+      # the ref. Measured 2026-08-22 on the first real dispatch of this
+      # workflow. Only a full 40-char sha works there — while every
+      # `git log --oneline` and `gh run list` in this repo prints the short
+      # form, and this workflow's own input asks for "a commit SHA". Resolving
+      # it ourselves accepts short shas, full shas, branches and tags alike.
       - uses: actions/checkout@v7
         with:
-          ref: ${{ inputs.ref }}
+          fetch-depth: 0
+
+      - name: Check out the requested ref
+        run: |
+          set -euo pipefail
+          REF='${{ inputs.ref }}'
+          if ! git rev-parse --verify "${REF}^{commit}" >/dev/null 2>&1; then
+            echo "::error::Cannot resolve '${REF}' to a commit in this repository."
+            echo "::error::Pass a commit sha (short or full), a branch, or a tag that exists on origin."
+            exit 1
+          fi
+          RESOLVED="$(git rev-parse "${REF}^{commit}")"
+          git checkout --detach "${RESOLVED}"
+          echo "Checked out '${REF}' -> ${RESOLVED}"
 
       # Fail here, not 90 minutes later, if the requested commit has no
       # sharded artifact to compare against.
