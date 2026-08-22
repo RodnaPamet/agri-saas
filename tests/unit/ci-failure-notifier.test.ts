@@ -40,6 +40,8 @@ const SCRIPT = path.join(REPO_ROOT, '.github/scripts/ci-failure-issue.sh');
 interface Scenario {
     /** What `gh issue list` should report: an issue number, or empty for none. */
     openIssue?: string;
+    /** How many jobs the run reports as having STARTED — the cancel discriminator. */
+    startedJobs?: number;
     /** What `gh issue view --json body` should report as the existing body. */
     existingBody?: string;
     conclusion: string;
@@ -63,6 +65,7 @@ printf '%s\\n' "\${args//$'\\n'/ }" >> ${JSON.stringify(callLog)}
 case "$1 $2" in
   "issue list")   printf '%s' ${JSON.stringify(s.openIssue ?? '')} ;;
   "issue view")   printf '%s' ${JSON.stringify(s.existingBody ?? '')} ;;
+  api*)           printf '%s' ${JSON.stringify(String(s.startedJobs ?? 0))} ;;
 esac
 exit 0
 `;
@@ -119,20 +122,44 @@ describe('CI-failure notifier — files for real failures, and only those', () =
         expect(calls.some((l) => l.startsWith('issue edit'))).toBe(true);
     });
 
-    it('CANCELLED is not a failure — this is defect 1, and it fired in production', () => {
-        // A `concurrency` group cancels earlier pending runs. Four rapid
-        // merges to main produced two cancelled Release runs, and the first
-        // version of this notifier filed an issue for one of them.
-        const { out, calls } = run({ conclusion: 'cancelled', runId: '202' });
+    it('a SUPERSEDED cancel files nothing — no job ever started', () => {
+        // Defect 1, which fired in production as #680. A `concurrency` group
+        // kills the earlier PENDING run, so it reports ZERO jobs — measured on
+        // the real run: `gh api .../jobs` returned an empty set.
+        const { out, calls } = run({ conclusion: 'cancelled', runId: '202', startedJobs: 0 });
 
         expect(created(calls)).toBe(false);
         expect(commented(calls)).toBe(false);
         expect(closed(calls)).toBe(false);
-        expect(out).toContain('not a failure');
+        expect(out).toContain('superseded');
+    });
+
+    it('a TIMED-OUT cancel DOES file — jobs ran, and one was killed', () => {
+        // The false NEGATIVE that fixing defect 1 created. On 2026-08-21 the
+        // Coverage gate hit its 60-minute timeout on three consecutive main
+        // pushes; the run concluded `cancelled` with 17 of 18 jobs SUCCEEDING,
+        // and this notifier said nothing. A gate that can neither pass nor fail
+        // went dark unannounced.
+        const { out, calls } = run({ conclusion: 'cancelled', runId: '203', startedJobs: 17 });
+
+        expect(created(calls)).toBe(true);
+        expect(out).toContain('real failure');
+    });
+
+    it('a timed-out cancel COMMENTS rather than duplicating, like any failure', () => {
+        const { calls } = run({
+            conclusion: 'cancelled',
+            runId: '204',
+            startedJobs: 17,
+            openIssue: '42',
+        });
+
+        expect(created(calls)).toBe(false);
+        expect(commented(calls)).toBe(true);
     });
 
     it.each(['skipped', 'neutral', 'action_required'])('%s is not a failure either', (c) => {
-        const { calls } = run({ conclusion: c, runId: '203' });
+        const { calls } = run({ conclusion: c, runId: '205' });
         expect(created(calls)).toBe(false);
     });
 
