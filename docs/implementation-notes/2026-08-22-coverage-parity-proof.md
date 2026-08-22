@@ -116,6 +116,24 @@ stronger than the gate's own resolution.
   commit whose 14-day artifact retention has expired rather than discovering it
   90 minutes in.
 
+- **A failed lookup names the commits that would work.** Found by running the
+  lookup rather than reasoning about it: this repo auto-releases, and
+  semantic-release commits are `[skip ci]`, so **main's HEAD frequently has no
+  CI run at all** — at the time of writing, the two most recent main commits
+  were both releases with no artifact. The obvious dispatch (`ref: main`) would
+  therefore fail routinely, and the first draft's error blamed the operator for
+  passing "a PR head". It now explains the `[skip ci]` case and lists the five
+  most recent commits that do have a usable artifact.
+
+  It deliberately does **not** auto-select one. Checking out a commit other than
+  the one named would measure code the operator did not ask for — the exact
+  class of silent mismatch this whole check exists to detect.
+
+  The suggestion helper carries its own scar: the first version ended
+  `| head -5`, which under `set -o pipefail` sends SIGPIPE to the producer and
+  returns 141, and under `set -e` that aborts the step **before** its own
+  `exit 1`. Measured, then replaced with a counter and a here-string.
+
 - **Test failures do not invalidate the run.** A test failing in both runs still
   produces coverage and the sharded side recorded the same failure. The step
   asserts a non-trivial map was produced (≥500 files) instead of gating on
