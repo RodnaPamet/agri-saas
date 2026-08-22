@@ -7,7 +7,7 @@
 import { randomUUID, randomBytes } from 'node:crypto';
 import { appendFileSync, mkdirSync } from 'node:fs';
 import { dirname, resolve as resolvePath } from 'node:path';
-import { request as playwrightRequest, type APIRequestContext, type Page } from '@playwright/test';
+import { expect, request as playwrightRequest, type APIRequestContext, type Page } from '@playwright/test';
 
 /**
  * Pick an option from one of the shared `<Combobox>` practices (Epic 55
@@ -521,4 +521,50 @@ export async function signInAs(
         );
     }
     return slug;
+}
+
+/**
+ * Open the journal create-entry modal and wait until its LAZY CHUNK has
+ * actually landed, so a caller may safely cut the network next.
+ *
+ * ## Why this is a helper and not two lines in each spec (#730)
+ *
+ * Both offline journal specs open this modal online "so its lazy chunk lands",
+ * then go offline. Both waited on `#journal-entry-title` — the plain title
+ * `<input>` — which is the WRONG element. The modal's lazy chunk is
+ * `RichTextEditor`:
+ *
+ * ```ts
+ * const RichTextEditor = dynamic(
+ *     () => import('@/components/ui/RichTextEditor').then((m) => m.RichTextEditor),
+ *     { ssr: false, loading: () => <SkeletonCard lines={4} /> },
+ * );
+ * ```
+ *
+ * It renders a skeleton while loading, so the title input is visible LONG
+ * BEFORE the ~200KB Tiptap/ProseMirror chunk arrives. Cutting the network in
+ * that window fails the fetch, and `ChunkLoadError` breaks the render pass the
+ * assertions later depend on.
+ *
+ * Measured on main, twice, before this existed:
+ *
+ * ```
+ * 95ccd2eb  mobile-android  ChunkLoadError: Loading chunk 78301 failed
+ * 09cfd8a5  mobile-iphone   ChunkLoadError: Loading chunk 78301 failed
+ * ```
+ *
+ * Same chunk both times, on different projects — a race, not a loaded runner.
+ *
+ * `data-testid="rich-text-editor"` sits on the Card the REAL component renders
+ * (`RichTextEditor.tsx:227`); `SkeletonCard` carries no such attribute. So its
+ * visibility is exactly the signal "the chunk resolved and mounted", which the
+ * title input never was.
+ */
+export async function openJournalEntryModalWarm(page: Page): Promise<void> {
+    await page.getByRole('button', { name: 'Add entry' }).click();
+    await expect(page.locator('#journal-entry-title')).toBeVisible();
+    // THE LOAD-BEARING WAIT. Do not replace this with the title input, and do
+    // not delete it as redundant — it is the only assertion here that proves
+    // the lazy chunk is no longer in flight.
+    await expect(page.getByTestId('rich-text-editor')).toBeVisible();
 }

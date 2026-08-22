@@ -26,6 +26,7 @@
  * does NOT claim the work is on the server".
  */
 import { test, expect } from '../fixtures';
+import { openJournalEntryModalWarm } from '../e2e-utils';
 
 test.describe('offline outbox survives eviction visibly @mobile', () => {
     test.describe.configure({ retries: 0 });
@@ -43,9 +44,15 @@ test.describe('offline outbox survives eviction visibly @mobile', () => {
         await expect(page.getByText('No journal entries yet')).toBeVisible();
 
         // Open the create modal ONLINE so its lazy chunk lands, then cut the
-        // network before submitting — same warm-up as journal-offline-create.
-        await page.getByRole('button', { name: 'Add entry' }).click();
-        await expect(page.locator('#journal-entry-title')).toBeVisible();
+        // network before submitting.
+        //
+        // The wait lives in `openJournalEntryModalWarm` because the obvious
+        // version of it is WRONG and cost this spec two intermittent failures
+        // on main (#730): waiting for `#journal-entry-title` proves the modal
+        // is open, not that the ~200KB RichTextEditor chunk has arrived, and
+        // cutting the network in that window fails the fetch with a
+        // ChunkLoadError that breaks the render the assertions below depend on.
+        await openJournalEntryModalWarm(page);
 
         await page.context().setOffline(true);
         await page.locator('#journal-entry-title').fill(title);

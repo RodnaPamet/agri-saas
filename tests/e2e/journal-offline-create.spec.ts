@@ -11,6 +11,7 @@
  * Mutating spec → isolated empty tenant.
  */
 import { test, expect } from './fixtures';
+import { openJournalEntryModalWarm } from './e2e-utils';
 
 test('@mobile journal entry created offline queues and delivers exactly once', async ({ authedPage, isolatedTenant }) => {
     const slug = isolatedTenant.tenantSlug;
@@ -22,8 +23,12 @@ test('@mobile journal entry created offline queues and delivers exactly once', a
 
     // Open the create modal WHILE ONLINE so its lazy chunk + catalog fetches
     // land — then we cut the network before submitting.
-    await authedPage.getByRole('button', { name: 'Add entry' }).click();
-    await expect(authedPage.locator('#journal-entry-title')).toBeVisible();
+    //
+    // Same warm-up as offline-eviction, and it had the same latent bug (#730):
+    // the old wait was on the title input, which is visible while the
+    // RichTextEditor chunk is still downloading. This spec had not been
+    // observed to fail, which was luck rather than a difference in design.
+    await openJournalEntryModalWarm(authedPage);
 
     // Go offline and log the entry (title-only — no signal needed).
     await authedPage.context().setOffline(true);
