@@ -37,6 +37,7 @@ import { NextRequest } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 import { headers } from 'next/headers';
 import type { NextAuthOptions, Session } from 'next-auth';
+import type { JWT } from 'next-auth/jwt';
 import { env } from '@/env';
 import { DEFAULT_LOCALE } from '@/lib/i18n/locales';
 import { verifyAndTouchSession } from '@/lib/security/session-tracker';
@@ -49,6 +50,47 @@ import { logger } from '@/lib/observability/logger';
  * through unchanged.
  */
 export async function resolveBearerSession(): Promise<Session | null> {
+    const token = await resolveBearerToken();
+    if (!token) return null;
+
+    const userId = token.userId ?? token.sub;
+
+    // The SAME shaper the cookie path uses. The empty shell mirrors what
+    // NextAuth core hands the callback, so the callback cannot tell the two
+    // apart — which is the point.
+    const shell: Session = {
+        user: {
+            id: userId as string,
+            // The session callback overwrites every field it cares about; these
+            // are only here to satisfy the shell's type. `email` is NOT copied
+            // by the callback, and a bearer principal deliberately carries none
+            // — nothing downstream reads it, and inventing one would be worse.
+            email: '',
+            tenantId: null,
+            role: 'READER',
+            uiLanguage: DEFAULT_LOCALE,
+            mfaPending: false,
+            memberships: [],
+            orgMemberships: [],
+        },
+        expires: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+    };
+
+    return authSessionCallback(shell, token);
+}
+
+/**
+ * Validate the `Authorization: Bearer` credential and return its CLAIMS.
+ *
+ * Extracted so there is exactly ONE validator for a bearer, with two shapers
+ * over it: `resolveBearerSession` (a `Session`, for `auth()`) and the
+ * `/api/auth/native/adopt` route (a session COOKIE, for a WKWebView). A second
+ * validator that drifted on the revocation check or the `token.error` check
+ * would be silently more permissive than this one, in a population no fixture
+ * covers — the same "ONE locator / ONE shaper" reasoning this module already
+ * applies to claim production.
+ */
+export async function resolveBearerToken(): Promise<JWT | null> {
     const h = await headers();
     const authorization = h.get('authorization');
     if (!authorization || !authorization.startsWith('Bearer ')) return null;
@@ -102,29 +144,7 @@ export async function resolveBearerSession(): Promise<Session | null> {
         }
     }
 
-    // The SAME shaper the cookie path uses. The empty shell mirrors what
-    // NextAuth core hands the callback, so the callback cannot tell the two
-    // apart — which is the point.
-    const shell: Session = {
-        user: {
-            id: userId,
-            // The session callback overwrites every field it cares about; these
-            // are only here to satisfy the shell's type. `email` is NOT copied
-            // by the callback, and a bearer principal deliberately carries none
-            // — nothing downstream reads it, and inventing one would be worse.
-            email: '',
-            tenantId: null,
-            role: 'READER',
-            uiLanguage: DEFAULT_LOCALE,
-            mfaPending: false,
-            memberships: [],
-            orgMemberships: [],
-        },
-        expires: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
-    };
-
-    const shaped = await authSessionCallback(shell, token);
-    return shaped;
+    return token;
 }
 
 /**
