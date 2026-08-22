@@ -19,6 +19,8 @@ import { ConsoleEmailProvider, getEmailProvider, sendEmail } from '@/lib/mailer'
 import { env } from '@/env';
 import { logger } from '@/lib/observability/logger';
 import { escapeHtml } from '@/lib/security/escape-html';
+import { translateFor } from '@/lib/i18n/server-messages';
+import type { Locale } from '@/lib/i18n/locales';
 
 export interface InviteEmailParams {
     /** Recipient address (the invited email). */
@@ -37,6 +39,28 @@ export interface InviteEmailParams {
     expiresAt: Date;
     /** Stamped at the send site (Date.now() is unavailable in some sandboxes). */
     now?: Date;
+    /**
+     * The language to write in — the INVITER's, by product decision (#722).
+     *
+     * Every other outbound email reads the recipient's `User.uiLanguage`. An
+     * invitee has no `User` row; that is the whole point of an invite. So this
+     * one email must pick a PROXY, and the alternatives were weighed rather
+     * than defaulted:
+     *
+     *   · inviter's language — right for the common case (a Bulgarian farm
+     *     inviting Bulgarian staff), wrong when inviting an external
+     *     agronomist or a foreign buyer;
+     *   · bilingual — never wrong, visibly clunky, doubles the body;
+     *   · English — measured against this user base it is wrong for 4 of 5
+     *     people, and the column default is `bg`, so it is not the neutral
+     *     choice it looks like;
+     *   · ask the admin — most correct, needs a schema column and UI on three
+     *     surfaces, and imposes a decision on every invite.
+     *
+     * Required, not optional, for the same reason as `EnqueueEmailInput.locale`:
+     * a defaulted value here is indistinguishable from a chosen one.
+     */
+    locale: Locale;
 }
 
 function daysUntil(expiresAt: Date, now: Date): number {
@@ -61,23 +85,43 @@ export async function sendInviteEmail(
         roleLabel,
         invitedByName,
         expiresAt,
+        locale,
         now = new Date(),
     } = params;
 
-    const inviter = invitedByName?.trim()
-        ? `${invitedByName.trim()} invited you`
-        : `You've been invited`;
     const days = daysUntil(expiresAt, now);
-    const subject = `Invitation to join ${spaceName} on Agrent`;
+    const t = (key: string, p?: Record<string, string | number>) =>
+        translateFor(locale, `notificationEmail.invite.${key}`, p);
+
+    const kindLabel = await t(`kind.${kind}`);
+    const name = invitedByName?.trim();
+    // Resolved to locals before any interpolation — see the escaping-guard
+    // note in `app-layer/notifications/templates.ts`.
+    const subject = await t('subject', { space: spaceName });
+    const intro = name
+        ? await t('introByInviter', {
+            inviter: name,
+            kind: kindLabel,
+            space: spaceName,
+            role: roleLabel,
+        })
+        : await t('intro', { kind: kindLabel, space: spaceName, role: roleLabel });
+    const accept = await t('accept');
+    // Both languages pluralise, and the previous English copy already did
+    // (`day${days === 1 ? '' : 's'}`). Collapsing that to "day(s)" would have
+    // been a quality regression riding in on a translation change — the
+    // existing test caught it.
+    const expires = days === 1 ? await t('expiresOne') : await t('expiresMany', { days });
+    const ignore = await t('ignore');
 
     const text = [
-        `${inviter} to join the ${kind} "${spaceName}" on Agrent as ${roleLabel}.`,
+        intro,
         '',
-        `Accept your invitation:`,
+        `${accept}:`,
         acceptUrl,
         '',
-        `This link expires in ${days} day${days === 1 ? '' : 's'}.`,
-        `If you weren't expecting this, you can ignore this email.`,
+        expires,
+        ignore,
     ].join('\n');
 
     // Escaped at the sink. `spaceName` and the display name inside `inviter`
@@ -87,9 +131,9 @@ export async function sendInviteEmail(
     // composed `inviter` also escapes the apostrophe in its own literal, which
     // renders identically.
     const html = [
-        `<p>${escapeHtml(inviter)} to join the ${escapeHtml(kind)} <strong>${escapeHtml(spaceName)}</strong> on Agrent as <strong>${escapeHtml(roleLabel)}</strong>.</p>`,
-        `<p><a href="${escapeHtml(acceptUrl)}">Accept your invitation</a></p>`,
-        `<p style="color:#667085;font-size:13px">This link expires in ${days} day${days === 1 ? '' : 's'}. If you weren't expecting this, you can ignore this email.</p>`,
+        `<p>${escapeHtml(intro)}</p>`,
+        `<p><a href="${escapeHtml(acceptUrl)}">${escapeHtml(accept)}</a></p>`,
+        `<p style="color:#667085;font-size:13px">${escapeHtml(expires)} ${escapeHtml(ignore)}</p>`,
     ].join('');
 
     try {

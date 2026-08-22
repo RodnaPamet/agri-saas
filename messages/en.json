@@ -6127,6 +6127,19 @@
                 "cta": "View Evidence",
                 "ctaLine": "View evidence: {link}"
             }
+        },
+        "invite": {
+            "subject": "Invitation to join {space} on Agrent",
+            "introByInviter": "{inviter} invited you to join the {kind} \"{space}\" on Agrent as {role}.",
+            "intro": "You've been invited to join the {kind} \"{space}\" on Agrent as {role}.",
+            "accept": "Accept your invitation",
+            "expiresOne": "This link expires in 1 day.",
+            "expiresMany": "This link expires in {days} days.",
+            "ignore": "If you weren't expecting this, you can ignore this email.",
+            "kind": {
+                "organization": "organization",
+                "workspace": "workspace"
+            }
         }
     }
 }

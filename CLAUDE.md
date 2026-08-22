@@ -1546,10 +1546,19 @@ recovery.
   It is a descriptor now — `{ key, params }` resolved under
   `notificationEmail.digest.reason.*` at render time. Any future
   recipient-facing string produced far from its reader wants the same shape.
-  Localised so far: the two auth emails, the Exchange inquiry, task-assigned,
-  both access-review notices, evidence-expiry, and both digests. Still English:
-  the invite (#722 — an invitee has no `User` row, so any fix picks a proxy;
-  that is a product decision, not wiring).
+  **The invite email is the one exception, and it uses the INVITER's language**
+  (#722). An invitee has no `User` row, so there is no recipient locale to read
+  and any answer picks a proxy. The product call was the inviter's, via
+  `inviterLocale(ctx.userId)` from `@/lib/email/inviter-locale` — right for the
+  common case (a Bulgarian farm inviting Bulgarian staff) and no worse than
+  English for a foreign invitee. **English is NOT the neutral fallback it looks
+  like**: measured, four of five users carry `uiLanguage: 'bg'`. The resolver
+  fails SOFT — an invite in the fallback language is recoverable, one that never
+  sends because a lookup threw is not, and the invite row is already committed
+  by then. `tests/guards/invite-email-locale-wiring.test.ts` derives the call
+  sites from the filesystem, so a fourth invite route is covered the moment it
+  exists.
+  Every outbound email is now localised.
 - **Path alias**: `@/` maps to `src/`. Always use this alias — never relative paths crossing layer boundaries.
 - **`@/lib/storage`, never `@/lib/storage/index`.** `src/lib/storage.ts`
   AND `src/lib/storage/index.ts` both exist; the bare specifier resolves to

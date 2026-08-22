@@ -7,6 +7,7 @@
  * Both handlers require admin.members permission.
  */
 import { NextRequest } from 'next/server';
+import { inviterLocale } from '@/lib/email/inviter-locale';
 import { requirePermission } from '@/lib/security/permission-middleware';
 import { createInviteToken, listPendingInvites } from '@/app-layer/usecases/tenant-invites';
 import { withApiErrorHandling } from '@/lib/errors/api';
@@ -63,6 +64,12 @@ export const POST = withApiErrorHandling(
         // creation — `url` is the copy-paste fallback and `emailSent`
         // tells the admin whether it went out.
         const { sent } = await sendInviteEmail({
+            // The INVITER's language (#722). An invitee has no `User` row, so
+            // this email has no recipient locale to read and must pick a
+            // proxy; the inviter's is right for the common case — a Bulgarian
+            // farm inviting Bulgarian staff — and no worse than English in the
+            // uncommon one.
+            locale: await inviterLocale(ctx.userId),
             to: result.invite.email,
             acceptUrl: resolvePublicOrigin(req) + result.url,
             kind: 'workspace',
