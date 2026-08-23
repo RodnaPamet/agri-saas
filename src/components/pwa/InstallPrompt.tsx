@@ -17,6 +17,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { useMediaQuery } from '@/components/ui/hooks';
+import { isIos, isStandalone } from '@/lib/pwa/display-mode';
 
 const SNOOZE_KEY = 'agri.install.snoozeUntil';
 const SNOOZE_MS = 7 * 24 * 60 * 60 * 1000;
@@ -33,19 +34,6 @@ function isSnoozed(): boolean {
     } catch {
         return false;
     }
-}
-
-function isStandalone(): boolean {
-    if (typeof window === 'undefined') return false;
-    return (
-        window.matchMedia?.('(display-mode: standalone)').matches === true ||
-        (navigator as Navigator & { standalone?: boolean }).standalone === true
-    );
-}
-
-function isIos(): boolean {
-    if (typeof navigator === 'undefined') return false;
-    return /iphone|ipad|ipod/i.test(navigator.userAgent) && !/crios|fxios/i.test(navigator.userAgent);
 }
 
 export function InstallPrompt() {
