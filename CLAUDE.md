@@ -1164,11 +1164,9 @@ duplicating the limits table).
 - `SKIP_ENV_VALIDATION=1` is set in `jest.setup.js` to prevent env loader crash in unit tests.
 - Coverage thresholds live in `jest.thresholds.json`, NOT in `jest.config.js`:
   jest 29.7's per-project (and multi-project top-level) `coverageThreshold` is
-  silently unenforced — the run exits 0 at 9% against a 99% floor — so CI
-  passes the same file via the `--coverageThreshold` CLI flag, which IS
-  enforced. Global floors are branches 63 / functions 65 / lines 70 /
-  statements 70, set at measured−2 and capped at 70 as a brittleness ceiling
-  (the #233 policy).
+  silently unenforced — the run exits 0 at 9% against a 99% floor. Global floors
+  are branches 63 / functions 65 / lines 70 / statements 70, set at measured−2
+  and capped at 70 as a brittleness ceiling (the #233 policy).
   **Re-floor from the ENFORCED number, never the summary.** Because this file
   carries path-specific keys (`usecases/`, `policies/`, `events/`, `lib/`),
   jest SUBTRACTS those paths from the `global` group — so the `Coverage
@@ -1176,10 +1174,53 @@ duplicating the limits table).
   against (65.46) differ by ~4 points. Take the value from the
   `does not meet "global" threshold` line; re-flooring from the summary broke
   main on 2026-08-20.
-  **The gate runs on main push only**, never on PRs: it
-  re-runs the whole suite instrumented, measured at 33m42s against a ~15m
-  longest PR job. `npm run test:coverage` prints the same numbers locally but
-  does not fail.
+  **The gate runs on main push only**, never on PRs. `npm run test:coverage`
+  prints the same numbers locally but does not fail.
+
+- **The coverage job is SHARDED, and the floors are scored once on the merged
+  map.** As one `--runInBand` process it outgrew its ceiling three times
+  (25 → 35 → 60) and past ~24,600 tests began CANCELLING at 60 on consecutive
+  main pushes — and a cancelled job loses its log buffer, so the gate reported
+  neither a number nor a diagnosis. It now runs `--shard=i/6` (5-10 min per
+  shard against an 18-minute inner budget, ~13 min wall clock), and
+  `coverage-gate` merges the six reports with `scripts/merge-coverage.mjs`
+  before scoring them with `scripts/check-coverage-thresholds.mjs`.
+    - `check-coverage-thresholds.mjs` is a line-for-line port of jest 30's
+      `_checkThreshold`, because `--coverageThreshold` only applies to a live
+      jest run and the merged map is not one. It prints all five group rows
+      unconditionally — jest prints them only on failure, which is what made
+      the enforced number guessable and the 2026-08-20 re-floor possible.
+    - `merge-coverage.mjs --expect N` is load-bearing. istanbul's merge UNIONS
+      the file set, so a missing shard does not depress coverage — it removes
+      files from the DENOMINATOR and the percentages **RISE**. Measured:
+      dropping 3 of 315 files from `./src/lib/` moved it statements
+      84.96 → 85.06. Never remove `--expect`, and never let a shard failure be
+      non-fatal.
+    - `scripts/lib/coverage-groups.mjs` holds jest's group-assignment algorithm
+      ONCE, shared by the checker and the differ. Do not fork it.
+  All four are executed — not merely guarded — by
+  `tests/unit/coverage-tooling/coverage-scripts.test.ts`.
+
+- **Every jest project must compile with the SAME TypeScript target.**
+  `jest.config.js` declares `node` and `jsdom`, each handing ts-jest a tsconfig.
+  Until 2026-08-23 those disagreed (ES2017 vs ES2020). `?.` and `??` are ES2020,
+  so under ES2017 ts-jest DOWNLEVELS them — and istanbul instruments the emitted
+  JS, not the source. The same file therefore got a different coverage shape
+  depending on which project loaded it, and when both ran in ONE process jest
+  merged the two instrumentations into an inflated map (**50 statements for a
+  26-statement file**). Coverage totals became dependent on load order. Held by
+  `tests/guards/jest-project-instrumentation-parity.test.ts`, which derives each
+  project's tsconfig from `jest.config.js`. See
+  `docs/implementation-notes/2026-08-23-jest-project-instrumentation-divergence.md`.
+
+- **`.github/workflows/coverage-reference.yml` proves the sharded merge is
+  faithful.** Dispatch-only (a ~60-90 min single-process run is exactly the cost
+  sharding removed): it runs the suite unsharded on a named commit, downloads
+  that commit's sharded merge, and diffs file set, per-file covered/total, and
+  the five group rows via `scripts/diff-coverage.mjs`. Run it when the merge
+  MECHANISM changes — a jest or istanbul major, an edit to `merge-coverage.mjs`,
+  a change to the shard count. **If it fails, find the divergence; do not move
+  the floors.**
 
 ### Green is not the same as executed
 
@@ -1196,7 +1237,15 @@ rendered test took it 0% → 88.76% branches
 (`docs/implementation-notes/2026-07-28-coverage-wave-14.md`).
 `tests/guardrails/jwt-membership-bound.test.ts` greps `src/auth.ts` for
 `.slice(0, MAX_JWT_MEMBERSHIPS)` — it proves the JWT membership cap exists
-in source and never once runs it (wave 15). A guard is the right tool for
+in source and never once runs it (wave 15). The third and worst was the
+COVERAGE GATE ITSELF: `merge-coverage.mjs`, `diff-coverage.mjs`,
+`check-coverage-thresholds.mjs` and `coverage-groups.mjs` were 675 lines
+deciding whether the gate passes, and every test naming them was a guard.
+Neutering BOTH seams at once — the differ hardcoded to report parity, and
+`--expect` ignored so a missing shard passes silently — left **28 of 28 tests
+green** (2026-08-22). Both failures point TOWARD GREEN, which is why it
+mattered: a gate green over less code is worse than a dark one, because
+darkness at least prompts someone to look. A guard is the right tool for
 "this pattern is present / this banned token is gone". When you need the
 guarantee that the code *behaves*, write an executing test under
 `tests/unit/`, `tests/rendered/`, or `tests/integration/`. The four-tier
