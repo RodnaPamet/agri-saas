@@ -560,6 +560,25 @@ export async function signInAs(
  * visibility is exactly the signal "the chunk resolved and mounted", which the
  * title input never was.
  */
+/**
+ * Wait until the field page's lazily-imported map has actually mounted.
+ *
+ * `OfflineFieldPanel` renders `MapCanvas` through `dynamic(… ssr: false)`, and
+ * the controls a spec interacts with — the per-line Done buttons — sit BELOW
+ * it and become visible without it. So waiting on a Done button proves the
+ * page rendered, not that the map chunk arrived, and a spec that then cuts the
+ * network fails that fetch with a ChunkLoadError (#732).
+ *
+ * `role="group"` with the parcel-map label is MapCanvas's own root, so it
+ * exists only once the chunk has landed. Scoped to `main` because a Next
+ * streaming duplicate of the page can otherwise match twice.
+ */
+export async function waitForFieldMapWarm(page: Page): Promise<void> {
+    await expect(
+        page.getByRole('main').getByRole('group', { name: /^Parcel map/ }),
+    ).toBeVisible({ timeout: 30_000 });
+}
+
 export async function openJournalEntryModalWarm(page: Page): Promise<void> {
     await page.getByRole('button', { name: 'Add entry' }).click();
     await expect(page.locator('#journal-entry-title')).toBeVisible();

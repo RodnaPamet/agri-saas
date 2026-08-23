@@ -21,6 +21,7 @@
 import { test, expect } from './fixtures';
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
+import { waitForFieldMapWarm } from './e2e-utils';
 
 // A small valid WGS84 square near [0,0] for the parcel geometry.
 const SQUARE = {
@@ -89,6 +90,10 @@ test('operator completes a spray job offline and it syncs on reconnect', async (
     await expect(authedPage.getByText('North 40')).toBeVisible();
     await expect(authedPage.getByRole('button', { name: 'Done' })).toBeVisible();
     await expect(authedPage.getByText('Online', { exact: true })).toBeVisible();
+
+    // The map is lazily imported and sits above these controls, so a
+    // visible Done button does not mean its chunk landed (#732).
+    await waitForFieldMapWarm(authedPage);
 
     // 4 — Go offline, mark Done. The line flips DONE optimistically and the
     //     mutation is queued (no network); the pending-sync count appears.
