@@ -17,10 +17,12 @@
  * on the server" once it is not. The silent state is gone; there is always a
  * claim on screen, and it is always the claim the app can actually support.
  */
+import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { cn } from '@/lib/cn';
+import { installingWouldPersist } from '@/lib/pwa/display-mode';
 
 export interface OfflineSyncBarProps {
     online: boolean;
@@ -59,6 +61,12 @@ export function OfflineSyncBar({
     className,
 }: OfflineSyncBarProps) {
     const t = useTranslations('offline');
+    // Post-mount: `navigator.userAgent` and `matchMedia` are client-only, and
+    // reading either during render would mismatch the server's markup.
+    const [showInstallHint, setShowInstallHint] = useState(false);
+    useEffect(() => {
+        setShowInstallHint(installingWouldPersist());
+    }, []);
     // Photos and text mutations queue in the same outbox but read very
     // differently to a field operator ("2 photos will upload" vs "3 marks
     // will sync"), so show them as separate counts.
@@ -114,6 +122,14 @@ export function OfflineSyncBar({
             {pending > 0 && storagePersisted === false && (
                 <p className="mt-tight text-xs text-content-warning" data-testid="offline-storage-unprotected">
                     {t('storageUnprotected')}
+                    {/* Measured: on a physical iPhone, mobile Safari refuses
+                        `persist()` while the installed Home Screen app grants
+                        it. So for THIS population the refusal is not merely
+                        bad news, it is bad news with a remedy — and the app
+                        already knew that at enqueue time and said nothing.
+                        Gated to un-installed iOS because that is the only
+                        configuration the answer is known to flip in. */}
+                    {showInstallHint && <> {t('storageUnprotectedInstallHint')}</>}
                 </p>
             )}
         </div>
