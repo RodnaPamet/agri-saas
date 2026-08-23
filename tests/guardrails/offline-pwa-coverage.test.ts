@@ -159,6 +159,34 @@ describe('offline basemap pack (dedicated cache + LRU eviction)', () => {
         expect(src).toMatch(/evictCacheOverBudget\(cache, PAGE_CACHE_BUDGET_BYTES\)/);
     });
 
+    it('bounds STATIC_CACHE, the one nothing else reclaims (#739)', () => {
+        // Three mechanisms exist and each covers the others: `activate` deletes
+        // caches not prefixed with CACHE_VERSION; the byte budgets cover DATA /
+        // PAGE / BASEMAP; and the window sweep clears the tenant buckets. All
+        // three missed STATIC. CACHE_VERSION is a hardcoded literal no build
+        // varies, so `agrent-v1-static` survives every deploy, and the sweep
+        // skips it on PRIVACY grounds ("holds no tenant data") that are correct
+        // and simply blind to STORAGE PRESSURE. Every deploy emits fresh
+        // [contenthash] URLs, cache.put keys on the URL, so entries only ever
+        // accumulated — and storage pressure is what makes a phone evict the
+        // origin, taking the outbox with it.
+        const src = read('public/sw.js');
+        expect(src).toMatch(/STATIC_CACHE_MAX_ENTRIES\s*=/);
+        expect(src).toMatch(/function trimStaticCache\(cache\)/);
+        // A COUNT, not a byte budget. Measured: Caddy's `encode gzip zstd`
+        // drops Content-Length, so `basemapEntrySize` would score almost every
+        // entry here at its 8KB fallback and a "byte budget" would silently be
+        // an entry cap ~7x looser than its number. Reusing that sizing on this
+        // cache is the regression to guard against.
+        expect(src).not.toMatch(/evictCacheOverBudget\(cache, STATIC_CACHE/);
+        // Reachable ONLY from the network-success path. An offline cold launch
+        // reads its chunks out of this cache, so a prune on the read path would
+        // make the launch that needs the cache the one that empties it. The
+        // behaviour is executed in tests/unit/offline/sw-static-cache-budget.test.ts;
+        // this pins the shape so the call cannot drift onto the read side.
+        expect(src).toMatch(/\.put\(request, res\.clone\(\)\)\s*\n\s*\.then\(\(\) => enforceStaticBudget\(cache\)\)/);
+    });
+
     it('leaves AGEING those caches to the window, not the service worker', () => {
         // A byte cap bounds size, not age — a capped cache still holds a
         // farm indefinitely. Ageing is deliberately done from the window

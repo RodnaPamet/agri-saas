@@ -50,6 +50,26 @@ const BASEMAP_CACHE_BUDGET_BYTES = 24 * 1024 * 1024;
 // deletes both buckets wholesale via caches.delete), deliberately kept OUT
 // of this file: a bug here ships to phones that will not take an update
 // until the operator agrees.
+// Entry cap for STATIC_CACHE. A COUNT, not a byte budget, and the distinction
+// is measured rather than stylistic: `basemapEntrySize` sizes an entry from
+// `Content-Length`, and `deploy/Caddyfile` serves `encode gzip zstd`, which
+// makes Caddy DROP that header on a compressed response. 28 of the 30 assets
+// on the live login page carry no `Content-Length` at all, so they would each
+// fall to that function's 8KB fallback — one real 641,667-byte chunk counts as
+// 8,192. A "24MB" byte budget would therefore have been an entry cap of ~3,072
+// in disguise, firing at roughly 176MB of real bytes. A worker cannot ask for
+// an identity encoding either: `Accept-Encoding` is a forbidden header name.
+//
+// So this bounds what it can actually count. 750 entries is generous against a
+// full build of 569 JS+CSS files, of which a real client only caches the routes
+// it visits — several builds' worth of realistic use, and a bound where there
+// was none. It exists because nothing else reclaims this cache: `activate`
+// keeps any name starting with CACHE_VERSION (a hardcoded literal no build
+// varies), and the window's retention sweep skips it since it holds no tenant
+// data. Unbounded, every deploy's chunks accumulate forever — and storage
+// pressure is what makes a phone evict the origin, which takes the outbox with
+// it. See #739.
+const STATIC_CACHE_MAX_ENTRIES = 750;
 const DATA_CACHE_BUDGET_BYTES = 8 * 1024 * 1024;
 const PAGE_CACHE_BUDGET_BYTES = 4 * 1024 * 1024;
 const PRECACHE = ['/icon.svg', '/manifest.webmanifest'];
@@ -194,6 +214,42 @@ async function evictCacheOverBudget(cache, budgetBytes) {
     );
 }
 
+// Trim STATIC_CACHE to its entry cap, oldest first.
+//
+// `cache.keys()` is last-successful-`put` order — a put on an existing key
+// removes the old record and appends a new one — and the stale-while-revalidate
+// branch re-puts every asset the CURRENT build requests on each online load. So
+// live chunks ride at the newest end and the leading entries are the ones no
+// page references any more.
+//
+// Deliberately does NOT reuse `evictCacheOverBudget`: that walks the cache with
+// a sequential `await cache.match` PER ENTRY to size it, which on this cache
+// means hundreds of disk-backed Response opens per sweep on a low-end phone,
+// and every one of those awaits widens the window in which a concurrently
+// re-put hot asset can be deleted by a stale victim list. One `keys()` and the
+// deletes is all a count needs.
+let staticEvictionInFlight = null;
+async function trimStaticCache(cache) {
+    const keys = await cache.keys();
+    const over = keys.length - STATIC_CACHE_MAX_ENTRIES;
+    if (over <= 0) return;
+    await Promise.all(keys.slice(0, over).map((req) => cache.delete(req)));
+}
+
+// One sweep at a time: a page load puts dozens of assets, and running a sweep
+// per put would repeat the same walk dozens of times. Only ever reached from
+// the network-success path below, so it cannot run while offline — an offline
+// cold launch reads this cache and must never prune it.
+function enforceStaticBudget(cache) {
+    if (staticEvictionInFlight) return staticEvictionInFlight;
+    staticEvictionInFlight = trimStaticCache(cache)
+        .catch(() => {})
+        .then(() => {
+            staticEvictionInFlight = null;
+        });
+    return staticEvictionInFlight;
+}
+
 // Kept as a named wrapper: the offline-pwa-coverage guardrail pins this
 // symbol, and the basemap budget is the one that mirrors a constant in
 // src/lib/offline/basemap-pack.ts.
@@ -247,7 +303,18 @@ self.addEventListener('fetch', (event) => {
                 const cached = await cache.match(request);
                 const network = fetch(request)
                     .then((res) => {
-                        if (res.ok) cache.put(request, res.clone());
+                        if (res.ok) {
+                            // Bound the cache after the write lands. Eviction is
+                            // oldest-first by last successful put, and this
+                            // branch re-puts every asset the CURRENT build
+                            // requests on each online load — so live chunks ride
+                            // at the newest end and only ones no page references
+                            // any more age out.
+                            cache
+                                .put(request, res.clone())
+                                .then(() => enforceStaticBudget(cache))
+                                .catch(() => {});
+                        }
                         return res;
                     })
                     .catch(() => cached);
