@@ -20,6 +20,7 @@
  */
 import {
     __resetOutboxStateForTests,
+    noteOutboxDrainedElsewhere,
     acknowledgeLoss,
     getOutboxSnapshot,
     noteWorkQueued,
@@ -391,5 +392,38 @@ describe('a recreation the page did not observe itself (#730)', () => {
         expect(real.wasRecreated()).toBe(true);
         // Consumed on read — one eviction, reported once.
         expect(real.wasRecreated()).toBe(false);
+    });
+});
+
+describe('a drain the WORKER performed (#740)', () => {
+    // The worker removes delivered items from the same IndexedDB the page
+    // reads. The page then sees a shorter queue it did not shorten — which is
+    // observationally identical to an eviction, and must NOT be reported as
+    // one. This is the false-positive half of the durability contract: a
+    // warning that fires on a normal successful sync is one operators learn
+    // to ignore.
+    it('reports the work as gone from the phone, and claims no loss', async () => {
+        store.items = [item('a'), item('b')];
+        await refreshOutboxState(store);
+        expect(readManifest().map((e) => e.id)).toEqual(['a', 'b']);
+
+        // The worker delivered both and deleted them. It did NOT destroy the
+        // database, so `recreated` stays false.
+        store.items = [];
+        const snap = await noteOutboxDrainedElsewhere(store);
+
+        expect(snap.pending).toBe(0);
+        expect(snap.lost).toBeNull();
+        expect(readManifest()).toEqual([]);
+    });
+
+    it('a partial drain leaves the rest pending', async () => {
+        store.items = [item('a'), item('b')];
+        await refreshOutboxState(store);
+        await store.remove('a');
+        const snap = await noteOutboxDrainedElsewhere(store);
+        expect(snap.pending).toBe(1);
+        expect(snap.lost).toBeNull();
+        expect(readManifest().map((e) => e.id)).toEqual(['b']);
     });
 });

@@ -223,6 +223,24 @@ export async function runExclusiveFlush<T>(run: () => Promise<T>): Promise<T | n
 }
 
 /**
+ * The service worker drained the queue behind our back.
+ *
+ * `public/sw.js` posts `outbox-flushed` after every pass so an open page can
+ * re-read the queue — its comment has said so since the worker was written,
+ * while nothing on this side listened. Without it the count stays at whatever
+ * the last page-side refresh saw, so the UI goes on reporting work as "saved
+ * on this phone" after it has reached the server.
+ *
+ * Refresh only. This deliberately does NOT flush: the worker just did, and a
+ * flush here would race the drain it is reporting.
+ */
+export async function noteOutboxDrainedElsewhere(
+    store: OutboxStore = getOutboxStore(),
+): Promise<OutboxSnapshot> {
+    return refreshOutboxState(store);
+}
+
+/**
  * The service worker found the outbox database rebuilt underneath us.
  *
  * `indexedDB.open` cannot open without creating, so whichever of the two
