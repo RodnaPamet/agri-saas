@@ -397,23 +397,28 @@ to evict. Three rules, all load-bearing — see
 - **`navigator.storage.persist()` is requested at the FIRST ENQUEUE**, not
   on first paint (Firefox prompts; Chromium grants on engagement). The
   verdict is recorded under `agri.offline.durability.v1`, and that cached
-  verdict is how the answer gets read back off a real device. **Measured
-  2026-08-23 on a physical iPhone, mobile Safari: REFUSED** (`persisted:
-  false`). Home Screen / installed-PWA mode is still unmeasured and can
-  differ — iOS has historically given an installed app its own storage jar.
-  So on iOS the behavioural mitigations above are not a backstop, they are
-  the ONLY defence, and eviction is a live risk rather than a theoretical
-  one. Note the request is armed once per PAGE LOAD (a module-scoped flag),
-  so a reload re-measures; an app opened with work already queued and
-  nothing new enqueued shows the CACHED verdict.
+  verdict is how the answer gets read back off a real device. **Measured on a
+  physical iPhone (2026-08-23/24), and the two contexts DISAGREE: mobile
+  Safari REFUSES (`persisted: false`), the installed Home Screen PWA GRANTS
+  (`persisted: true`).** So installing the app is a real durability
+  mitigation on iOS, not a packaging preference — in Safari the behavioural
+  mitigations above are the ONLY defence and eviction is live; installed,
+  the origin is one the UA has agreed to keep. `InstallPrompt` already
+  carries the iOS Add-to-Home-Screen hint (Safari fires no
+  `beforeinstallprompt`), so the path exists; whether it is prominent enough
+  for a field operator is an open question. Note the request is armed once
+  per PAGE LOAD (a module-scoped flag), so a reload re-measures; an app
+  opened with work already queued and nothing new enqueued shows the CACHED
+  verdict.
 - **The detector assumes eviction is SELECTIVE, and iOS's is not.** The queue
   is in IndexedDB while the manifest and lost record are in localStorage, and
   reconciling one against the other is what makes loss visible. A cap that
   clears script-writable storage as a CLASS takes both, and then neither
   detector fires: `wasRecreated` needs a prior open in the same session, which
   an eviction-while-closed never has, and `reconcileManifest` returns `[]` the
-  moment the manifest is empty. See the durability note and #744 — this is
-  known, not fixed.
+  moment the manifest is empty. Reachable in SAFARI, where persistence is
+  refused; the installed PWA's grant is what keeps it off the table there.
+  See the durability note and #744 — known, not fixed.
 
 - **Queued work is bound to the operator who queued it.** A replay uses
   `fetch`, which sends whatever session cookie is CURRENT — not the one that
