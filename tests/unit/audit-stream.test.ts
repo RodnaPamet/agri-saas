@@ -261,6 +261,110 @@ describe('audit-stream — batching', () => {
     });
 });
 
+// ─── Periodic (time-based) flush ───────────────────────────────────
+
+describe('audit-stream — periodic flush (FLUSH_INTERVAL_MS)', () => {
+    // The 5-second timer scheduled inside `streamAuditEvent` is the OTHER
+    // half of the documented "flush on 100 events OR 5 seconds" contract.
+    // Every other test in this file reaches delivery through
+    // `flushAllAuditStreams()`, which deliberately BYPASSES that timer —
+    // so the periodic path was only ever executed when a slow run let a
+    // real 5s timer fire. These tests drive it deterministically.
+    //
+    // Hook ordering: the file-level `beforeEach` runs first (outer →
+    // inner), so the transport + resolver seams are already installed
+    // when fake timers go in. On the way out the inner `afterEach` runs
+    // before the file-level one, and either way both complete before the
+    // next test's `beforeEach` — so no later test inherits fake timers.
+    beforeEach(() => {
+        jest.useFakeTimers();
+    });
+
+    afterEach(() => {
+        jest.useRealTimers();
+    });
+
+    it('delivers the buffered batch once 5s elapse — with no manual flush at all', async () => {
+        streamAuditEvent(makeEvent({ id: 'periodic-1' }));
+        streamAuditEvent(makeEvent({ id: 'periodic-2' }));
+
+        // Under FLUSH_AT_COUNT and the timer has not fired: nothing sent.
+        await Promise.resolve();
+        expect(capturedPosts).toHaveLength(0);
+
+        // Advance exactly FLUSH_INTERVAL_MS. The async variant drains
+        // microtasks between ticks, so the resolver → deliverBatch →
+        // postFn chain settles without waiting on real time.
+        await jest.advanceTimersByTimeAsync(5_000);
+
+        // The observable outcome — the transport was actually CALLED with
+        // the buffered events, not merely that a timer was scheduled.
+        expect(capturedPosts).toHaveLength(1);
+        expect(capturedPosts[0].url).toBe('https://siem.example/ingest');
+        const body = JSON.parse(capturedPosts[0].body) as AuditStreamPayload;
+        expect(body.count).toBe(2);
+        expect(body.events.map((e) => e.id)).toEqual(['periodic-1', 'periodic-2']);
+        expect(body.tenantId).toBe('tenant-1');
+        // Signed like any other batch — the periodic path is not a
+        // second, weaker delivery route.
+        expect(capturedPosts[0].headers['X-Inflect-Signature']).toBe(
+            `sha256=${computeHmacSha256(capturedPosts[0].body, 'shhh-1', 'hex')}`,
+        );
+        expect(mockRecordDelivery).toHaveBeenCalledTimes(1);
+        expect(mockRecordDelivery).toHaveBeenCalledWith(
+            expect.objectContaining({ outcome: 'success', status: 200, attempts: 1 }),
+        );
+    });
+
+    it('does not fire early — silent at 4999ms, delivered on the 5000th', async () => {
+        streamAuditEvent(makeEvent({ id: 'not-yet' }));
+
+        await jest.advanceTimersByTimeAsync(4_999);
+        expect(capturedPosts).toHaveLength(0);
+        expect(mockRecordDelivery).not.toHaveBeenCalled();
+
+        await jest.advanceTimersByTimeAsync(1);
+        expect(capturedPosts).toHaveLength(1);
+        const body = JSON.parse(capturedPosts[0].body) as AuditStreamPayload;
+        expect(body.events.map((e) => e.id)).toEqual(['not-yet']);
+    });
+
+    it('schedules one periodic flush per tenant — batches stay separate', async () => {
+        streamAuditEvent(makeEvent({ tenantId: 'tenant-1', id: 'p-a' }));
+        streamAuditEvent(makeEvent({ tenantId: 'tenant-2', id: 'p-b' }));
+
+        await jest.advanceTimersByTimeAsync(5_000);
+
+        expect(capturedPosts).toHaveLength(2);
+        const t1 = capturedPosts.find((p) => p.url.endsWith('/ingest'))!;
+        const t2 = capturedPosts.find((p) => p.url.endsWith('/two'))!;
+        expect(
+            (JSON.parse(t1.body) as AuditStreamPayload).events.map((e) => e.id),
+        ).toEqual(['p-a']);
+        expect(
+            (JSON.parse(t2.body) as AuditStreamPayload).events.map((e) => e.id),
+        ).toEqual(['p-b']);
+    });
+
+    it('rearms on the next event — a second batch flushes 5s after the first drained', async () => {
+        streamAuditEvent(makeEvent({ id: 'wave-1' }));
+        await jest.advanceTimersByTimeAsync(5_000);
+        expect(capturedPosts).toHaveLength(1);
+
+        // The flush cleared the timer; a fresh event must schedule a new
+        // one, otherwise the buffer would sit undelivered forever.
+        streamAuditEvent(makeEvent({ id: 'wave-2' }));
+        await jest.advanceTimersByTimeAsync(5_000);
+
+        expect(capturedPosts).toHaveLength(2);
+        expect(
+            (JSON.parse(capturedPosts[1].body) as AuditStreamPayload).events.map(
+                (e) => e.id,
+            ),
+        ).toEqual(['wave-2']);
+    });
+});
+
 // ─── Tenant config gating ──────────────────────────────────────────
 
 describe('audit-stream — tenant config gating', () => {
