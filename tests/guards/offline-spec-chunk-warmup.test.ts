@@ -69,6 +69,60 @@ function offlineJournalSpecs(): string[] {
     return [...new Set(out)].sort();
 }
 
+/** Specs that take the app offline on the lazily-mapped field page. */
+function offlineFieldSpecs(): string[] {
+    const out: string[] = [];
+    const walk = (dir: string) => {
+        if (!fs.existsSync(dir)) return;
+        for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+            const full = path.join(dir, e.name);
+            if (e.isDirectory()) walk(full);
+            else if (e.name.endsWith('.spec.ts')) {
+                const src = fs.readFileSync(full, 'utf8');
+                if (src.includes('setOffline(true)') && /goto\(`\/t\/\$\{[^}]*\}\/field\//.test(src)) {
+                    out.push(path.relative(ROOT, full));
+                }
+            }
+        }
+    };
+    walk(path.join(ROOT, 'tests/e2e'));
+    return [...new Set(out)].sort();
+}
+
+describe('offline FIELD specs warm the lazy map (#732)', () => {
+    it('finds the specs it is meant to be guarding', () => {
+        // Anti-vacuity, and the reason this is derived rather than listed: the
+        // defect is what a NEW offline field spec would repeat.
+        expect(offlineFieldSpecs().length).toBeGreaterThanOrEqual(1);
+    });
+
+    it.each(offlineFieldSpecs())('%s warms the map before going offline', (rel) => {
+        const src = fs.readFileSync(path.join(ROOT, rel), 'utf8');
+        // `(` for the same reason as the journal half — the bare identifier
+        // also matches the import line.
+        expect(src).toContain('waitForFieldMapWarm(');
+        // ORDER is the whole point: warming after the cut warms nothing.
+        expect(src.indexOf('waitForFieldMapWarm(')).toBeLessThan(src.indexOf('setOffline(true)'));
+    });
+
+    it('the helper waits on the map ROOT, not a control that renders without it', () => {
+        const src = fs.readFileSync(path.join(ROOT, 'tests/e2e/e2e-utils.ts'), 'utf8');
+        const helper = src.slice(src.indexOf('export async function waitForFieldMapWarm'));
+        expect(helper).toMatch(/getByRole\('group'/);
+    });
+
+    it('the field panel really does load the map lazily', () => {
+        // If MapCanvas ever becomes a static import the race is gone and this
+        // guard is obsolete — fail here and have that conversation.
+        const panel = fs.readFileSync(
+            path.join(ROOT, 'src/components/offline/OfflineFieldPanel.tsx'),
+            'utf8',
+        );
+        expect(panel).toMatch(/const MapCanvas = dynamic\(/);
+        expect(panel).toContain('ssr: false');
+    });
+});
+
 describe('offline journal specs warm the lazy chunk', () => {
     it('finds the specs it is meant to be guarding', () => {
         // Anti-vacuity. Two today: journal-offline-create and offline-eviction.

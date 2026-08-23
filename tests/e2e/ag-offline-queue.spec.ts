@@ -13,6 +13,7 @@
  */
 import { test, expect } from './fixtures';
 import { agPrisma, seedSprayScenario } from './ag-fixtures';
+import { waitForFieldMapWarm } from './e2e-utils';
 
 test('offline queue: three marks queue offline and all flush on reconnect', async ({ authedPage, isolatedTenant }) => {
     const slug = isolatedTenant.tenantSlug;
@@ -27,6 +28,10 @@ test('offline queue: three marks queue offline and all flush on reconnect', asyn
         await authedPage.goto(`/t/${slug}/field/${sc.taskId}`);
         await expect(authedPage.getByText('North 40')).toBeVisible();
         await expect(authedPage.getByRole('button', { name: 'Done' })).toHaveCount(3);
+
+        // The map is lazily imported and sits above these controls, so a
+        // visible Done button does not mean its chunk landed (#732).
+        await waitForFieldMapWarm(authedPage);
 
         // Go offline; mark all three lines Done. Each click flips its line
         // DONE optimistically (its Done button disappears) and enqueues a

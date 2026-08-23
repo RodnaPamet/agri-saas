@@ -11,6 +11,7 @@
  */
 import { test, expect } from './fixtures';
 import { agPrisma, seedSprayScenario } from './ag-fixtures';
+import { waitForFieldMapWarm } from './e2e-utils';
 
 test('@mobile a stale offline mark surfaces the conflict resolver', async ({ authedPage, isolatedTenant }) => {
     const slug = isolatedTenant.tenantSlug;
@@ -36,6 +37,11 @@ test('@mobile a stale offline mark surfaces the conflict resolver', async ({ aut
             { data: { status: 'SKIPPED' } },
         );
         expect(patch.ok()).toBeTruthy();
+
+        // The map is lazily imported and renders ABOVE these controls, so a
+        // visible Done button does not mean its chunk has landed. Cutting the
+        // network mid-flight fails that fetch (#732).
+        await waitForFieldMapWarm(authedPage);
 
         // Offline: mark the same line Done — queued at the now-stale version.
         await authedPage.context().setOffline(true);
