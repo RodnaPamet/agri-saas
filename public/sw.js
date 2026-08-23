@@ -60,10 +60,16 @@ const BASEMAP_CACHE_BUDGET_BYTES = 24 * 1024 * 1024;
 // in disguise, firing at roughly 176MB of real bytes. A worker cannot ask for
 // an identity encoding either: `Accept-Encoding` is a forbidden header name.
 //
-// So this bounds what it can actually count. 750 entries is generous against a
-// full build of 569 JS+CSS files, of which a real client only caches the routes
-// it visits — several builds' worth of realistic use, and a bound where there
-// was none. It exists because nothing else reclaims this cache: `activate`
+// So this bounds what it can actually count. The cap has a FLOOR, and it is the
+// reason for the number rather than a tidier one: eviction is oldest-by-last-put,
+// so during a deploy the previous build's chunks are the ones no longer being
+// requested and they age out first — a new build never evicts itself, PROVIDED
+// the cap clears that build's own footprint. A full build is 569 JS+CSS files,
+// so a cap below ~600 would make an operator who visits every route evict chunks
+// they still need on every load, permanently, breaking their offline launches.
+// 750 is the smallest round number with real headroom over that (~32%), holding
+// one whole build plus part of the previous one mid-transition. If the app's
+// built file count ever approaches 600, raise this with it. It exists because nothing else reclaims this cache: `activate`
 // keeps any name starting with CACHE_VERSION (a hardcoded literal no build
 // varies), and the window's retention sweep skips it since it holds no tenant
 // data. Unbounded, every deploy's chunks accumulate forever — and storage
