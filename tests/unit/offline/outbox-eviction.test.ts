@@ -417,6 +417,36 @@ describe('a drain the WORKER performed (#740)', () => {
         expect(readManifest()).toEqual([]);
     });
 
+    it('NEVER records loss when it is the first refresh of the page load', async () => {
+        // The dangerous inversion, and the reason this seam is not a bare
+        // `refreshOutboxState`. The registrar that receives this message lives
+        // in the ROOT layout, while `useOfflineSync` — which is what sets
+        // `reconciled` — mounts only under a tenant. So on a non-tenant route
+        // the message can arrive with no baseline established.
+        //
+        // Where Background Sync is absent (iOS Safari, Firefox — where the
+        // worker still drains via the page's own nudge) the cross-session
+        // detector reads every manifest gap as loss. A worker drain IS that
+        // gap: it removed what it delivered and left no receipt. Reporting it
+        // would write a STICKY false "your work was deleted" that clears only
+        // on explicit acknowledgement — the exact inverse of the #733 defect,
+        // and unrecoverable by a later success.
+        writeManifest([
+            { id: 'a', label: 'Mark a done', createdAt: 1 },
+            { id: 'b', label: 'Mark b done', createdAt: 2 },
+        ]);
+        // Fresh page load: nothing has reconciled yet.
+        __resetOutboxStateForTests();
+        store.items = [];
+
+        const snap = await noteOutboxDrainedElsewhere(store);
+
+        expect(snap.lost).toBeNull();
+        expect(readLostWork()).toBeNull();
+        // And the evidence is left intact for a real refresh to judge.
+        expect(readManifest().map((e) => e.id)).toEqual(['a', 'b']);
+    });
+
     it('a partial drain leaves the rest pending', async () => {
         store.items = [item('a'), item('b')];
         await refreshOutboxState(store);

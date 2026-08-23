@@ -237,6 +237,24 @@ export async function runExclusiveFlush<T>(run: () => Promise<T>): Promise<T | n
 export async function noteOutboxDrainedElsewhere(
     store: OutboxStore = getOutboxStore(),
 ): Promise<OutboxSnapshot> {
+    // Never let THIS be the first refresh of a page load.
+    //
+    // `refreshOutboxState` runs the cross-session detector on its first pass,
+    // and where Background Sync is absent (iOS Safari, Firefox — where the
+    // worker still drains, via the page's own `flush-outbox` nudge)
+    // `reconcileManifest` reads every manifest gap as loss. A worker drain
+    // produces exactly that gap: it removed items it DELIVERED, and being a
+    // worker it cannot write localStorage, so it left no receipt. Running the
+    // detector here would record a STICKY "unsent work was deleted" for work
+    // that had just landed — additive, and clearing only on an explicit
+    // operator acknowledgement, so a later success cannot undo it.
+    //
+    // Skipping costs nothing. This message exists to refresh a VISIBLE pending
+    // count, and that count is only rendered where `useOfflineSync` is mounted
+    // — which is also what sets `reconciled`. The registrar sits in the ROOT
+    // layout, so on a non-tenant route there is no counter to update and no
+    // baseline to reconcile against.
+    if (!reconciled) return snapshot;
     return refreshOutboxState(store);
 }
 
