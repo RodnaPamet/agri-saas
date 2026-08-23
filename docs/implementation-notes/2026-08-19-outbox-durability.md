@@ -2,14 +2,93 @@
 
 **Commit:** `<pending> fix(offline): make outbox loss visible, and stop losing it silently`
 
-## STEP 1 was not run, and this note does not pretend otherwise
+## MEASURED — 2026-08-23/24, physical iPhone, BOTH contexts
+
+**The two contexts disagree, and that is the finding.**
+
+| context | `persisted` | what the operator saw |
+|---|---|---|
+| mobile Safari | **`false`** — refused | the refusal line below |
+| Home Screen (installed PWA) | **`true`** — granted | queue line only, no refusal line |
+
+### Safari — refused
+
+The device showed the offline bar's refusal line (`offline-storage-unprotected`):
+
+> Този телефон не се съгласи да пази неизпратената работа. Синхронизирайте
+> веднага щом имате сигнал.
+
+which renders on `pending > 0 && storagePersisted === false` — so the stored
+verdict carried `persisted: false`. The instrument this note describes was used
+exactly as intended: an operator queued one journal entry offline and read the
+answer off the phone.
+
+Ambiguity worth recording rather than glossing: that render condition cannot
+separate `persist()` returning `false` from `navigator.storage` being absent
+altogether, because both write `persisted: false`. On a current iPhone the
+former is overwhelmingly likely, and operationally the two are the same fact —
+unsent work is not protected.
+
+### Home Screen — granted
+
+The same procedure in the installed app produced the queue line
+(`1 промяна, запазена на този телефон`) and **no refusal line**. That branch
+renders on `pending > 0 && storagePersisted === false`, and `noteWorkQueued`
+awaits `requestPersistence()` before republishing the snapshot — deliberately, so
+"the phone did not agree to keep this" reaches the UI on THIS queue rather than
+the next one. So the absence is a read verdict of `true`, not an unwritten one.
+
+**Installing the app is therefore a real durability mitigation on iOS**, not a
+packaging preference. It is the difference between storage the UA may reclaim at
+will and storage it has agreed to keep.
+
+### What the answer changes
+
+Nothing in the code, which was the point of taking both STEP 2 branches. What it
+changes is confidence:
+
+- The behavioural mitigations — sticky loss record, three-state UI — are not
+  belt-and-braces. On this device they are the **only** defence.
+- Eviction is reachable, which is what the static-cache bound (#739/#742) was
+  argued on. That bound is reducing real risk, not tidying.
+- It exposes a blind spot in the Safari case: see below.
+- And it gives that blind spot a mitigation — install the app — which is why
+  the two readings were worth taking separately.
+
+### The blind spot this measurement makes reachable
+
+The queue lives in **IndexedDB**; the manifest and lost-work record live in
+**localStorage** (`writeJson` → `globalThis.localStorage`). The detector works by
+reconciling one against the other, which is sound when eviction is *selective*.
+
+iOS ITP's cap on script-writable storage for an unengaged origin is **not**
+selective — it clears the class. If IndexedDB and localStorage go together while
+the app is closed, neither detector fires:
+
+- **in-session** (`wasRecreated`) needs `wasOpenedBefore` — true only if *this*
+  session already opened the database. An eviction while closed never has that.
+- **cross-session** (`reconcileManifest`) opens with
+  `if (manifest.length === 0) return []` — no manifest, nothing to reconcile.
+
+So the operator is told nothing, which is the precise failure this whole
+mechanism exists to prevent. Tracked as #744; not fixed here.
+
+The Home Screen grant is the practical answer: a persisted origin is not one the
+UA clears on its own schedule. That moves "install the app" from a nicety to the
+recommended posture for field use — and `InstallPrompt` already carries an iOS
+Add-to-Home-Screen hint, since Safari fires no `beforeinstallprompt`. Whether
+that hint is prominent enough for an operator who never reads it is now a real
+question rather than a cosmetic one.
+
+## STEP 1 has now been half-run — the note below predates it
 
 The prompt asked for `navigator.storage.persisted()` / `persist()` / `estimate()`
 read off a **physical iPhone**, in both mobile Safari and Home Screen mode,
-before anything was built. **That measurement has not been taken.** Nobody has
-run this on an iPhone; there is no device in this loop. Every claim below about
-what iOS does is either a claim about code in this repo or is labelled as an
-assumption.
+before anything was built. **At the time of writing that measurement had not
+been taken** — the Safari half landed on 2026-08-23 and is recorded above; the
+Home Screen half is still outstanding. Every claim below about what iOS does is
+either a claim about code in this repo or is labelled as an assumption, and is
+left as written so the reasoning that shipped without evidence stays legible.
 
 So the measurement was turned into a shipped instrument instead of a guess.
 `requestPersistence()` calls the API, stores the verdict under
