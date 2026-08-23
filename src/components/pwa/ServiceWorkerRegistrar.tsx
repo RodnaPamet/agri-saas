@@ -10,7 +10,10 @@
  * SW.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { noteOutboxRecreatedElsewhere } from '@/lib/offline/outbox-state';
+import {
+    noteOutboxDrainedElsewhere,
+    noteOutboxRecreatedElsewhere,
+} from '@/lib/offline/outbox-state';
 import { InstallPrompt } from './InstallPrompt';
 import { UpdateAvailableBanner } from './UpdateAvailableBanner';
 import { isChunkLoadError } from '@/lib/pwa/chunk-error';
@@ -89,8 +92,19 @@ export function ServiceWorkerRegistrar() {
         // consumes the one creation event. Only this side can tell the
         // operator, so take the signal and re-run the detector.
         const onMessage = (event: MessageEvent) => {
-            if ((event.data as { type?: string } | null)?.type !== 'outbox-db-recreated') return;
-            void noteOutboxRecreatedElsewhere();
+            const type = (event.data as { type?: string } | null)?.type;
+            if (type === 'outbox-db-recreated') {
+                void noteOutboxRecreatedElsewhere();
+                return;
+            }
+            // The worker drained the queue — re-read it so the pending count
+            // stops reporting work that has already reached the server. The
+            // worker also sends `retryAfterSeconds`; it is deliberately not
+            // wired to anything here, because no surface renders backoff and
+            // the page's own flush path already schedules its own retry
+            // (`use-offline-sync.ts`). Consuming it would mean inventing UI,
+            // which is a separate decision.
+            if (type === 'outbox-flushed') void noteOutboxDrainedElsewhere();
         };
         navigator.serviceWorker.addEventListener('message', onMessage);
 
