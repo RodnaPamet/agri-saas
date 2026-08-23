@@ -151,7 +151,7 @@ const ROOT = path.resolve(__dirname, '../..');
 //   traceability-panel-undo  / unlink surface, deleted with the component
 // The Epic 67 undo-toast contract the two traceability suites also carried
 // survives on the other registered sites (see epic-67-rollout-coverage).
-const RENDERED_TEST_FLOOR = 211;
+const RENDERED_TEST_FLOOR = 220;
 // Lowered 55 → 54 in the risk-quantification uproot (2026-08-08).
 // `ai-risk-assessment.spec.ts` and `new-risk-modal.spec.ts` were both
 // wholly about the deleted register; the specs that merely REFERENCED a
