@@ -1214,13 +1214,26 @@ duplicating the limits table).
   `docs/implementation-notes/2026-08-23-jest-project-instrumentation-divergence.md`.
 
 - **`.github/workflows/coverage-reference.yml` proves the sharded merge is
-  faithful.** Dispatch-only (a ~60-90 min single-process run is exactly the cost
-  sharding removed): it runs the suite unsharded on a named commit, downloads
-  that commit's sharded merge, and diffs file set, per-file covered/total, and
-  the five group rows via `scripts/diff-coverage.mjs`. Run it when the merge
-  MECHANISM changes — a jest or istanbul major, an edit to `merge-coverage.mjs`,
-  a change to the shard count. **If it fails, find the divergence; do not move
-  the floors.**
+  faithful, and it HAS.** Dispatch-only (a ~60-90 min single-process run is
+  exactly the cost sharding removed): it runs the suite unsharded on a named
+  commit, downloads that commit's sharded merge, and diffs file set, per-file
+  covered/total, and the five group rows via `scripts/diff-coverage.mjs`.
+  Proven 2026-08-23 on `71e00520` (run 32662217666): identical file set
+  (1381/1381), **all 1381 files identical**, all five groups identical to the
+  decimal — which is why the gate ENFORCES rather than running `--report-only`.
+  Re-run it when the merge MECHANISM changes — a jest or istanbul major, an edit
+  to `merge-coverage.mjs`, a change to the shard count. **If it fails, find the
+  divergence; do not move the floors.**
+
+  Getting there took four fixes, and three of them were invisible rather than
+  wrong: a `| tee` with no `pipefail` reported a failed comparison as a green
+  job; `actions/checkout` silently rejects a SHORT sha; the two jest projects
+  instrumented the same file differently; and three `setTimeout` callbacks were
+  covered only when a run happened to be slow enough
+  (`audit-stream.ts` 5s periodic flush, `filter-context.tsx` bare-pathname arm,
+  `CostEntryFormModal.tsx` deferred autofocus — each now pinned by a real test,
+  because a tolerance would have hidden untested behaviour rather than fixed
+  it).
 
 ### Green is not the same as executed
 

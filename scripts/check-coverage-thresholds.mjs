@@ -64,14 +64,16 @@ const argv = process.argv.slice(2);
 /**
  * SHADOW MODE. Print every group's real numbers and exit 0 regardless.
  *
- * Stage 1 of the sharding change lands report-only on purpose. The gate is
- * currently DARK (cancelled at its timeout on five consecutive main pushes) and
- * is not a required check, so a shadow run that prints the true enforced numbers
- * is strictly better than what exists — while enforcement waits on a
- * decimal-exact parity proof against a single-process reference run.
+ * CI no longer passes this — the gate has ENFORCED since 2026-08-23, once the
+ * sharded merge was proven decimal-identical to a single-process reference run
+ * (parity run 32662217666: identical file set, all 1381 files identical,
+ * all five threshold groups identical).
  *
- * Enforcing before that proof is how you get the one failure worse than a dark
- * gate: a green gate measuring the wrong population, which nobody investigates.
+ * The flag stays because it is genuinely useful: it prints the true numbers for
+ * every group without blocking a push, which is what you want while diagnosing
+ * a failing gate. What it must never become is the default — a green gate
+ * measuring the wrong population is the one failure worse than a dark one,
+ * because nobody investigates green.
  */
 const reportOnly = argv.includes('--report-only');
 const opt = (name, dflt) => {

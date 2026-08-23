@@ -485,7 +485,7 @@ jobs:
   #  affordable and the question is worth reopening.
   # ═══════════════════════════════════════════════════════════════
   # ═══════════════════════════════════════════════════════════════
-  #  Coverage — SHARDED, and deliberately in SHADOW mode for now.
+  #  Coverage — SHARDED, merged, and ENFORCING.
   #
   #  This job was one `--runInBand` process over the whole suite. It
   #  outgrew its timeout three times (ci.yml history: 25 -> 35 at ~7,800
@@ -714,15 +714,21 @@ jobs:
         # dark gate this replaces, because nobody investigates green.
         run: node scripts/merge-coverage.mjs --expect 6 --out coverage coverage-shards
 
-      - name: "Gate: test coverage thresholds (SHADOW)"
-        # --report-only: prints the real enforced numbers and exits 0.
+      - name: "Gate: test coverage thresholds"
+        # ENFORCING. This ran --report-only from the day the job was sharded
+        # until 2026-08-23, because a merged map is not a live jest run and the
+        # equivalence had never been demonstrated at full scale. It has been
+        # now — run 32662217666 on 71e00520:
         #
-        # Stage 1 restores a NUMBER; enforcement waits on a decimal-exact
-        # parity proof against a single-process reference run on the same
-        # commit. The gate is not a required check and is currently dark, so a
-        # shadow that prints true numbers is strictly better than what exists —
-        # and enforcing before the proof risks the one outcome worse than
-        # darkness.
+        #     file set   1381 = 1381, identical
+        #     per-file   all 1381 shared files identical
+        #     all five threshold groups identical to the decimal
+        #
+        # `--report-only` remains a supported flag for debugging a failing gate
+        # without blocking a push; it is simply no longer passed. Re-run the
+        # proof with the `Coverage parity (reference run)` workflow whenever the
+        # merge MECHANISM changes — a jest or istanbul major, an edit to
+        # merge-coverage.mjs, a change to the shard count.
         #
         # The checker prints ALL FIVE group rows unconditionally. Jest prints
         # them only on failure, which is why the enforced number had to be
@@ -732,8 +738,7 @@ jobs:
         run: |
           node scripts/check-coverage-thresholds.mjs \
             --coverage coverage/coverage-final.json \
-            --thresholds jest.thresholds.json \
-            --report-only
+            --thresholds jest.thresholds.json
 
       - name: Upload merged coverage report
         if: always()
