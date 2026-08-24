@@ -16,7 +16,7 @@ services:
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-inflect}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env.production}
-      POSTGRES_DB: ${POSTGRES_DB:-inflect_production}
+      POSTGRES_DB: ${POSTGRES_DB:-agrent_production}
     volumes:
       - prod-pgdata:/var/lib/postgresql/data
     tmpfs:
@@ -24,7 +24,7 @@ services:
       - /run/postgresql:size=16M
     shm_size: '256m'           # Shared memory for Postgres
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-inflect} -d ${POSTGRES_DB:-inflect_production}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-inflect} -d ${POSTGRES_DB:-agrent_production}"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -46,7 +46,7 @@ services:
       DB_PORT: "5432"
       DB_USER: ${POSTGRES_USER:-inflect}
       DB_PASSWORD: ${POSTGRES_PASSWORD}
-      DB_NAME: ${POSTGRES_DB:-inflect_production}
+      DB_NAME: ${POSTGRES_DB:-agrent_production}
       POOL_MODE: transaction
       DEFAULT_POOL_SIZE: "25"
       MAX_CLIENT_CONN: "200"
@@ -131,9 +131,9 @@ services:
     environment:
       NODE_ENV: production
       # Runtime queries go through PgBouncer (pooled, transaction mode)
-      DATABASE_URL: postgresql://${POSTGRES_USER:-inflect}:${POSTGRES_PASSWORD}@pgbouncer:5432/${POSTGRES_DB:-inflect_production}?schema=public&pgbouncer=true
+      DATABASE_URL: postgresql://${POSTGRES_USER:-inflect}:${POSTGRES_PASSWORD}@pgbouncer:5432/${POSTGRES_DB:-agrent_production}?schema=public&pgbouncer=true
       # Migrations/introspection use direct Postgres connection (bypasses PgBouncer)
-      DIRECT_DATABASE_URL: postgresql://${POSTGRES_USER:-inflect}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-inflect_production}?schema=public
+      DIRECT_DATABASE_URL: postgresql://${POSTGRES_USER:-inflect}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-agrent_production}?schema=public
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       CLAMAV_HOST: clamav:3310
       AV_SCAN_MODE: strict
@@ -189,8 +189,8 @@ services:
       - .env.production
     environment:
       NODE_ENV: production
-      DATABASE_URL: postgresql://${POSTGRES_USER:-inflect}:${POSTGRES_PASSWORD}@pgbouncer:5432/${POSTGRES_DB:-inflect_production}?schema=public&pgbouncer=true
-      DIRECT_DATABASE_URL: postgresql://${POSTGRES_USER:-inflect}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-inflect_production}?schema=public
+      DATABASE_URL: postgresql://${POSTGRES_USER:-inflect}:${POSTGRES_PASSWORD}@pgbouncer:5432/${POSTGRES_DB:-agrent_production}?schema=public&pgbouncer=true
+      DIRECT_DATABASE_URL: postgresql://${POSTGRES_USER:-inflect}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-agrent_production}?schema=public
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       CLAMAV_HOST: clamav:3310
       AV_SCAN_MODE: strict
