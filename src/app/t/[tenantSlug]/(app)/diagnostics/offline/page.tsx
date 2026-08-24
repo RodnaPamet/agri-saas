@@ -59,6 +59,11 @@ import {
 import { getOutboxSnapshot, refreshOutboxState, type OutboxSnapshot } from '@/lib/offline/outbox-state';
 import { isIos, isStandalone } from '@/lib/pwa/display-mode';
 import { Button } from '@/components/ui/button';
+import { Eyebrow, Heading } from '@/components/ui/typography';
+import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
+import { useParams } from 'next/navigation';
+import { useCopyToClipboard } from '@/components/ui/hooks';
+import { useTranslations } from 'next-intl';
 
 /**
  * The four caches `public/sw.js` declares, by SUFFIX. #648 probe 2 asks for
@@ -228,8 +233,8 @@ function Section({ probe, title, children }: { probe: string; title: string; chi
     return (
         <section className="space-y-default rounded-lg border border-border-subtle p-default">
             <header className="space-y-tight">
-                <span className="font-mono text-xs uppercase tracking-wide text-content-muted">{probe}</span>
-                <h2 className="text-base font-semibold text-content-default">{title}</h2>
+                <Eyebrow>{probe}</Eyebrow>
+                <Heading level={2}>{title}</Heading>
             </header>
             <div>{children}</div>
         </section>
@@ -237,6 +242,7 @@ function Section({ probe, title, children }: { probe: string; title: string; chi
 }
 
 export default function OfflineDiagnosticsPage() {
+    const { tenantSlug } = useParams<{ tenantSlug: string }>();
     const { data, recollect } = useDiagnostics();
     const caches_ = data?.caches ?? null;
     const sw = data?.sw ?? null;
@@ -246,7 +252,8 @@ export default function OfflineDiagnosticsPage() {
     const lost = data?.lost ?? null;
     const manifestCount = data?.manifestCount ?? null;
     const ranAt = data?.ranAt ?? '';
-    const [copied, setCopied] = React.useState(false);
+    const { copy, copied } = useCopyToClipboard();
+    const t = useTranslations('diagnostics.offline');
 
     const standalone = typeof window !== 'undefined' ? isStandalone() : false;
     const ios = typeof window !== 'undefined' ? isIos() : false;
@@ -281,44 +288,44 @@ export default function OfflineDiagnosticsPage() {
         return lines.join('\n');
     }, [ranAt, standalone, ios, verdict, estimate, sw, caches_, outbox, manifestCount, lost]);
 
-    const copy = React.useCallback(async () => {
-        try {
-            await navigator.clipboard.writeText(asText);
-            setCopied(true);
-            window.setTimeout(() => setCopied(false), 2000);
-        } catch {
-            setCopied(false);
-        }
-    }, [asText]);
 
     return (
         <div className="space-y-section p-default">
             <header className="space-y-tight">
-                <h1 className="text-lg font-semibold text-content-default">Offline diagnostics</h1>
+                {/* `<PageBreadcrumbs>` rather than a bare `<Breadcrumbs>`: it also
+                    pushes the trail into the desktop top chrome, and this page is
+                    reached by URL with no nav entry — so the trail is the only way
+                    back out. */}
+                <PageBreadcrumbs
+                    items={[
+                        { label: t('breadcrumbRoot'), href: `/t/${tenantSlug}/dashboard` },
+                        { label: t('title') },
+                    ]}
+                />
+                <Heading level={1}>{t('title')}</Heading>
                 <p className="text-sm text-content-muted">
-                    Instrument for issue #648. Screenshot this page, or press Copy and paste the text into the issue.
-                    Not linked from navigation — reach it by URL.
+                    {t('intro')}
                 </p>
                 <p className="font-mono text-xs text-content-muted">collected {ranAt || '…'}</p>
             </header>
 
             <div className="flex flex-wrap gap-compact">
-                <Button variant="secondary" onClick={recollect} text="Re-collect" />
+                <Button variant="secondary" onClick={recollect} text={t('recollect')} />
                 <Button
                     variant="secondary"
-                    onClick={() => void copy()}
-                    text={copied ? 'Copied' : 'Copy as text'}
+                    onClick={() => void copy(asText)}
+                    text={copied ? t('copied') : t('copyAsText')}
                 />
             </div>
 
-            <Section probe="context" title="Browsing context">
+            <Section probe="context" title={t('contextTitle')}>
                 {/* Shown FIRST because it is the variable that predicts the verdict
                     below: measured 2026-08-23, Safari refuses persist(), the
                     installed PWA grants it. */}
                 <Row
                     label="displayMode"
                     value={standalone ? 'standalone (installed PWA)' : 'browser tab'}
-                    hint="installed PWA is granted persistence; mobile Safari is refused"
+                    hint={t('displayModeHint')}
                 />
                 <Row label="iOS" value={String(ios)} />
                 <Row
@@ -331,11 +338,9 @@ export default function OfflineDiagnosticsPage() {
                 />
             </Section>
 
-            <Section probe="probe 6 · storage" title="Durability verdict">
+            <Section probe="probe 6 · storage" title={t('durabilityTitle')}>
                 <p className="pb-compact text-xs text-content-muted">
-                    Read from <span className="font-mono">{DURABILITY_STORAGE_KEY}</span>. This page does not call
-                    persist() — that is armed once per page load at first enqueue, so measuring here would produce a
-                    second, different answer.
+                    {t('readsNotMeasures', { key: DURABILITY_STORAGE_KEY })}
                 </p>
                 {verdict ? (
                     <>
@@ -350,21 +355,21 @@ export default function OfflineDiagnosticsPage() {
                     <Row
                         label="verdict"
                         value="NONE STORED"
-                        hint="nothing has been queued on this device yet — queue one entry offline first"
+                        hint={t('verdictAbsentHint')}
                     />
                 )}
                 <Row label="estimate.quota (live)" value={mb(estimate?.quota)} />
                 <Row label="estimate.usage (live)" value={mb(estimate?.usage)} />
             </Section>
 
-            <Section probe="probe 1" title="Service worker">
+            <Section probe="probe 1" title={t('swTitle')}>
                 {sw ? (
                     <>
                         <Row label="supported" value={String(sw.supported)} />
                         <Row
                             label="controlled"
                             value={String(sw.controlled)}
-                            hint="true means a SW is actually serving this page, not merely registered"
+                            hint={t('swControlledHint')}
                         />
                         <Row label="scope" value={sw.scope ?? '—'} />
                         <Row label="active.state" value={sw.activeState ?? '—'} />
@@ -375,7 +380,7 @@ export default function OfflineDiagnosticsPage() {
                 )}
             </Section>
 
-            <Section probe="probe 2" title="Caches, by name">
+            <Section probe="probe 2" title={t('cachesTitle')}>
                 {caches_ === null ? (
                     <Row label="CacheStorage" value="UNAVAILABLE" hint="no caches API in this context" />
                 ) : (
@@ -390,7 +395,7 @@ export default function OfflineDiagnosticsPage() {
                 )}
             </Section>
 
-            <Section probe="probes 4 · 6" title="Outbox">
+            <Section probe="probes 4 · 6" title={t('outboxTitle')}>
                 {outbox ? (
                     <>
                         <Row label="pending" value={String(outbox.pending)} />
@@ -398,7 +403,7 @@ export default function OfflineDiagnosticsPage() {
                         <Row
                             label="foreign"
                             value={String(outbox.foreign)}
-                            hint="queued by a different operator — never sent, never dropped"
+                            hint={t('foreignHint')}
                         />
                         <Row label="conflicts" value={String(outbox.conflicts.length)} />
                         <Row label="queueGrowing" value={String(outbox.queueGrowing)} />
