@@ -72,7 +72,14 @@ test.describe('offline outbox survives eviction visibly @mobile', () => {
         // The work is really in IndexedDB (not just in React state).
         const queuedBefore = await page.evaluate(async () => {
             const db = await new Promise<IDBDatabase>((resolve, reject) => {
-                const req = indexedDB.open('agri-offline', 1);
+                // NO VERSION. Opening at a fixed version fails the moment the
+                // app's schema moves ahead — IndexedDB refuses to open below
+                // the version a database already holds, so this threw
+                // `VersionError: The requested version (1) is less than the
+                // existing version (2)` the day the delivery-receipt store
+                // landed. A test that only READS must not pin a version, or it
+                // becomes a tripwire for every future migration.
+                const req = indexedDB.open('agri-offline');
                 req.onsuccess = () => resolve(req.result);
                 req.onerror = () => reject(req.error);
             });

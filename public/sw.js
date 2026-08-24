@@ -87,7 +87,9 @@ const PRECACHE = ['/icon.svg', '/manifest.webmanifest'];
 // branches on `item.kind` — kept in lockstep with fetchSender in
 // src/lib/offline/sync.ts.
 const OUTBOX_DB = 'agri-offline';
-const OUTBOX_DB_VERSION = 1;
+const OUTBOX_DB_VERSION = 2;
+/** Delivery receipts — mirrors RECEIPT_STORE_NAME in src/lib/offline/idb-outbox.ts. */
+const OUTBOX_RECEIPT_STORE = 'delivered';
 const OUTBOX_STORE = 'outbox';
 const OUTBOX_MAX_ATTEMPTS = 8; // mirrors MAX_ATTEMPTS in sync.ts
 const FLUSH_OUTBOX_TAG = 'flush-outbox';
@@ -399,6 +401,11 @@ function openOutboxDb() {
                 created = true;
                 db.createObjectStore(OUTBOX_STORE, { keyPath: 'id' });
             }
+            // Added at version 2. Guarded, like the queue above, so an
+            // ordinary version bump never looks like a recreation.
+            if (!db.objectStoreNames.contains(OUTBOX_RECEIPT_STORE)) {
+                db.createObjectStore(OUTBOX_RECEIPT_STORE, { keyPath: 'id' });
+            }
         };
         req.onsuccess = () => resolve({ db: req.result, created });
         req.onerror = () => reject(req.error || new Error('indexedDB.open failed'));
@@ -410,6 +417,24 @@ async function reportOutboxRecreated() {
     const clients = await self.clients.matchAll({ includeUncontrolled: true });
     clients.forEach((c) => c.postMessage({ type: OUTBOX_RECREATED_MSG }));
 }
+// Record that an item was removed DELIBERATELY. The page subtracts these before
+// deciding anything was lost — without them a worker drain is indistinguishable
+// from an eviction, because the worker cannot write localStorage and so leaves
+// no other trace. Mirrors src/lib/offline/delivery-receipts.ts.
+function idbNoteDelivered(db, id) {
+    return new Promise((resolve) => {
+        try {
+            const tx = db.transaction(OUTBOX_RECEIPT_STORE, 'readwrite');
+            tx.objectStore(OUTBOX_RECEIPT_STORE).put({ id, at: Date.now() });
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => resolve();
+            tx.onabort = () => resolve();
+        } catch {
+            resolve(); // a missing receipt must never break the drain
+        }
+    });
+}
+
 function idbGetAll(db) {
     return new Promise((resolve, reject) => {
         const rq = db.transaction(OUTBOX_STORE, 'readonly').objectStore(OUTBOX_STORE).getAll();
@@ -429,7 +454,7 @@ function idbWrite(db, op, arg) {
 function isTransient(status) {
     // status 0 = network throw. 408 + 5xx are retryable-with-attempt-bump.
     // 429 is handled separately (retain, no bump, stop the burst) — see below.
-    return status === 0 || status === 408 || status >= 500;
+    return status === 408 || status >= 500;
 }
 
 // Replays every queued mutation once, applying the same policy as
@@ -464,9 +489,13 @@ async function flushOutbox() {
     items.sort((a, b) => a.createdAt - b.createdAt);
 
     let transientRemains = false;
+    let authBlocked = false;
     let rateLimited = false;
     let retryAfterSeconds;
     for (const item of items) {
+        // Already parked as undeliverable — re-sending an auth-blocked item
+        // before the operator signs in again just reproduces the 401.
+        if (item.blocked) continue;
         // A parked 409 conflict awaits operator resolution in an open client —
         // never re-send it (would 409 again, or clobber once versions align).
         if (item.conflict) continue;
@@ -516,6 +545,8 @@ async function flushOutbox() {
         }
 
         if (ok) {
+            // Receipt then removal — see idbNoteDelivered.
+            await idbNoteDelivered(db, item.id);
             await idbWrite(db, 'delete', item.id);
         } else if (status === 409) {
             // Optimistic-lock conflict — the row moved on while this edit sat
@@ -534,12 +565,26 @@ async function flushOutbox() {
             const parsed = retryAfterHeader ? parseInt(retryAfterHeader, 10) : NaN;
             if (Number.isFinite(parsed) && parsed >= 0) retryAfterSeconds = parsed;
             break;
+        } else if (status === 0) {
+            // Never reached the server. Retain untouched — no attempt spent.
+            // Counting a dead radio as a failure marched work toward
+            // OUTBOX_MAX_ATTEMPTS and then deleted it.
+            transientRemains = true;
+        } else if (status === 401 || status === 403) {
+            // The server refused the SESSION, not the work. Retain, block, and
+            // stop the pass — every remaining item carries the same credential.
+            await idbWrite(db, 'put', { ...item, blocked: 'auth' });
+            authBlocked = true;
+            break;
         } else if (isTransient(status)) {
             const next = { ...item, attempts: (item.attempts || 0) + 1 };
-            if (next.attempts >= OUTBOX_MAX_ATTEMPTS) await idbWrite(db, 'delete', item.id);
+            // Park, never delete. The escape from a poison item is that it
+            // stops being retried, not that the work is destroyed.
+            if (next.attempts >= OUTBOX_MAX_ATTEMPTS) await idbWrite(db, 'put', { ...next, blocked: 'exhausted' });
             else { await idbWrite(db, 'put', next); transientRemains = true; }
         } else {
-            // Terminal client error — drop so the queue keeps moving.
+            // Genuinely terminal for THIS item (a 4xx about the payload).
+            await idbNoteDelivered(db, item.id);
             await idbWrite(db, 'delete', item.id);
         }
     }

@@ -57,7 +57,12 @@ describe('flushOutbox', () => {
         expect((await s.all())[0].attempts).toBe(1);
     });
 
-    it('drops a poison item once it exceeds MAX_ATTEMPTS', async () => {
+    it('PARKS a poison item past MAX_ATTEMPTS — it must never be deleted', async () => {
+        // Changed deliberately. The escape from an item the server keeps
+        // rejecting is that it stops being RETRIED, not that the operator's
+        // work is destroyed. Field marks queued in a dead-signal valley are
+        // not reproducible; a queue that deletes them to keep itself moving
+        // is solving the wrong problem.
         const s = new InMemoryOutboxStore();
         const it: OutboxItem = {
             id: 'poison',
@@ -70,8 +75,49 @@ describe('flushOutbox', () => {
         };
         await s.add(it);
         const res = await flushOutbox(s, serverErr);
-        expect(res.dropped).toBe(1);
-        expect(await s.all()).toHaveLength(0);
+
+        expect(res.dropped).toBe(0);
+        expect(res.blocked).toBe(1);
+        const [kept] = await s.all();
+        expect(kept).toBeDefined();
+        expect(kept.blocked).toBe('exhausted');
+    });
+
+    it('a request that NEVER LEFT the phone does not spend an attempt', async () => {
+        // status 0 means dead radio — the request reached nobody. Counting it
+        // as a failure marched work toward MAX_ATTEMPTS and then deleted it,
+        // so a phone retrying with no signal destroyed the work it was holding.
+        const s = new InMemoryOutboxStore();
+        await s.add({
+            id: 'a', url: '/u', method: 'PATCH', body: {}, label: 'L',
+            createdAt: 1, attempts: 3,
+        } as OutboxItem);
+
+        const res = await flushOutbox(s, async () => { throw new Error('offline'); });
+
+        expect(res.dropped).toBe(0);
+        const [kept] = await s.all();
+        expect(kept.attempts).toBe(3);
+        expect(kept.blocked).toBeUndefined();
+    });
+
+    it('a refused SESSION blocks the queue instead of deleting it', async () => {
+        // The headline defect: 401/403 was "terminal client error — drop so the
+        // queue keeps moving", so changing a password on a laptop deleted the
+        // phone's queued field work on the next flush. Silently, because the
+        // removal looked deliberate to the loss detector.
+        const s = new InMemoryOutboxStore();
+        for (const id of ['a', 'b', 'c']) {
+            await s.add({ id, url: '/u', method: 'PATCH', body: {}, label: id, createdAt: 1, attempts: 0 } as OutboxItem);
+        }
+
+        const res = await flushOutbox(s, async () => ({ ok: false, status: 401 }));
+
+        expect(res.dropped).toBe(0);
+        expect(res.authBlocked).toBe(true);
+        // Nothing was lost, and the pass STOPPED — the rest carry the same
+        // credential and would meet the same answer.
+        expect(await s.all()).toHaveLength(3);
     });
 
     it('flushes in FIFO order', async () => {
