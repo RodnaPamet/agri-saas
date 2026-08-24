@@ -74,3 +74,23 @@ describe('the recreation signal fires only on a real recreation', () => {
         expect(SW).toMatch(/if \(!db\.objectStoreNames\.contains\(OUTBOX_STORE\)\) \{\s*\n\s*created = true;/);
     });
 });
+
+describe('nothing pins the database version except the two openers', () => {
+    it('no test opens the outbox at a FIXED version', () => {
+        // Learned the hard way: `offline-eviction.spec.ts` opened
+        // `indexedDB.open('agri-offline', 1)` and broke the moment the schema
+        // moved to 2 — IndexedDB refuses to open below the version a database
+        // already holds. A reader that pins a version is a tripwire for every
+        // future migration, and it fails in CI rather than where it was written.
+        const specs = fs
+            .readdirSync(path.join(ROOT, 'tests/e2e/mobile'))
+            .filter((f) => f.endsWith('.spec.ts'))
+            .map((f) => path.join('tests/e2e/mobile', f));
+        const offenders = specs.filter((rel) =>
+            /indexedDB\.open\(\s*['"]agri-offline['"]\s*,/.test(
+                fs.readFileSync(path.join(ROOT, rel), 'utf8'),
+            ),
+        );
+        expect(offenders).toEqual([]);
+    });
+});
