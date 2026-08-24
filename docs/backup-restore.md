@@ -158,7 +158,7 @@ gcloud compute snapshots list --filter='sourceDisk~/agrent$' \
 # 2. FIRST: salvage anything still readable from the live volume —
 #    the snapshot is up to 24h stale and is the floor, not the ceiling.
 gcloud compute ssh agrent --zone europe-west1-b --command \
-  "sudo docker exec agrent-db pg_dump -U inflect inflect_production | gzip > /tmp/salvage.sql.gz"
+  "sudo docker exec agrent-db pg_dump -U inflect agrent_production | gzip > /tmp/salvage.sql.gz"
 
 # 3. Build a new disk from the snapshot.
 gcloud compute disks create agrent-restored-$(date -u +%Y%m%d%H%M%S) \

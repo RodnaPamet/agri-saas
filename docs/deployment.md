@@ -401,11 +401,11 @@ This app uses **local file storage** for evidence uploads. Platforms without per
 ```bash
 # Backup
 docker compose -f docker-compose.prod.yml exec db \
-  pg_dump -U inflect inflect_production > backup_$(date +%Y%m%d).sql
+  pg_dump -U inflect agrent_production > backup_$(date +%Y%m%d).sql
 
 # Restore
 docker compose -f docker-compose.prod.yml exec -i db \
-  psql -U inflect inflect_production < backup_20240314.sql
+  psql -U inflect agrent_production < backup_20240314.sql
 ```
 
 ### Uploads

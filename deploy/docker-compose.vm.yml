@@ -20,13 +20,13 @@ services:
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
-      POSTGRES_DB: ${POSTGRES_DB:-inflect_production}
+      POSTGRES_DB: ${POSTGRES_DB:-agrent_production}
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./init-roles.sh:/docker-entrypoint-initdb.d/01-init-roles.sh:ro
     shm_size: '256m'
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-inflect} -d ${POSTGRES_DB:-inflect_production}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-inflect} -d ${POSTGRES_DB:-agrent_production}"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -46,7 +46,7 @@ services:
       DB_PORT: "5432"
       DB_USER: ${POSTGRES_USER:-inflect}
       DB_PASSWORD: ${POSTGRES_PASSWORD}
-      DB_NAME: ${POSTGRES_DB:-inflect_production}
+      DB_NAME: ${POSTGRES_DB:-agrent_production}
       POOL_MODE: transaction
       DEFAULT_POOL_SIZE: "25"
       MAX_CLIENT_CONN: "200"
@@ -107,8 +107,8 @@ services:
       - .env
     environment:
       NODE_ENV: production
-      DATABASE_URL: postgresql://${POSTGRES_USER:-inflect}:${POSTGRES_PASSWORD}@pgbouncer:5432/${POSTGRES_DB:-inflect_production}?schema=public&pgbouncer=true
-      DIRECT_DATABASE_URL: postgresql://${POSTGRES_USER:-inflect}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-inflect_production}?schema=public
+      DATABASE_URL: postgresql://${POSTGRES_USER:-inflect}:${POSTGRES_PASSWORD}@pgbouncer:5432/${POSTGRES_DB:-agrent_production}?schema=public&pgbouncer=true
+      DIRECT_DATABASE_URL: postgresql://${POSTGRES_USER:-inflect}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-agrent_production}?schema=public
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       STORAGE_PROVIDER: local
       AV_SCAN_MODE: disabled
@@ -150,8 +150,8 @@ services:
       - .env
     environment:
       NODE_ENV: production
-      DATABASE_URL: postgresql://${POSTGRES_USER:-inflect}:${POSTGRES_PASSWORD}@pgbouncer:5432/${POSTGRES_DB:-inflect_production}?schema=public&pgbouncer=true
-      DIRECT_DATABASE_URL: postgresql://${POSTGRES_USER:-inflect}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-inflect_production}?schema=public
+      DATABASE_URL: postgresql://${POSTGRES_USER:-inflect}:${POSTGRES_PASSWORD}@pgbouncer:5432/${POSTGRES_DB:-agrent_production}?schema=public&pgbouncer=true
+      DIRECT_DATABASE_URL: postgresql://${POSTGRES_USER:-inflect}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-agrent_production}?schema=public
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       STORAGE_PROVIDER: local
       AV_SCAN_MODE: disabled
