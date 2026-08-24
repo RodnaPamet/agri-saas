@@ -328,6 +328,15 @@ export class OpenAiCompatibleProvider implements AiProvider {
         const response = await this.client.embeddings.create({
             model,
             input: opts.texts,
+            // NAME THE WIRE FORMAT. Omit this and the SDK silently sends
+            // `encoding_format: "base64"` and base64-decodes the reply — a
+            // backend that answers with plain float arrays (which
+            // OpenAI-COMPATIBLE hosts are free to do, and this provider exists
+            // to talk to them) decodes to an EMPTY vector with no error
+            // raised. The count check below would still pass, because the
+            // count is right: one empty vector per input. Measured in
+            // tests/integration/openai-real-api.test.ts.
+            encoding_format: 'float',
         });
         // The OpenAI embeddings API returns one datum per input, carrying
         // an `index` — sort by it so the vectors line up with the inputs
@@ -340,10 +349,22 @@ export class OpenAiCompatibleProvider implements AiProvider {
                     `received ${sorted.length}.`,
             );
         }
-        return sorted.map((datum, i): AiEmbedding => ({
-            text: opts.texts[i],
-            vector: datum.embedding as number[],
-        }));
+        return sorted.map((datum, i): AiEmbedding => {
+            const vector = datum.embedding as number[];
+            // Defence in depth behind the explicit format above. `embedding`
+            // is cast, not checked, so an empty array satisfies both the
+            // compiler and the count guard — and an empty vector is not a
+            // degraded embedding, it is a silently useless one that would be
+            // stored and searched as though it meant something.
+            if (!Array.isArray(vector) || vector.length === 0) {
+                throw new AiProviderError(
+                    this.backend,
+                    `Embedding ${i} came back empty — the backend may have ignored ` +
+                        `the requested encoding_format.`,
+                );
+            }
+            return { text: opts.texts[i], vector };
+        });
     }
 
     async health(): Promise<AiHealth> {
