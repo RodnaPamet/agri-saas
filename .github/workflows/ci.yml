@@ -471,16 +471,23 @@ jobs:
           echo "All Test shards passed."
 
   # ═══════════════════════════════════════════════════════════════
-  #  Job 4: Coverage — enforce minimum test coverage threshold
-  #  Blocking gate: fails if coverage drops below 60%.
+  #  Job 4: Coverage gate — scores the floors on the MERGED shard map.
+  #  Blocking: fails if a threshold group drops below its floor.
   #
-  #  RUNS ON MAIN PUSH ONLY.
+  #  RUNS ON PULL REQUESTS TOO, and that is the point.
   #
-  #  Rationale: the Test matrix above (sharded) is the per-PR pass/
-  #  fail gate; Coverage runs the SAME Jest suite a second time with
-  #  instrumentation, adding ~30 min of CPU to every PR for what is
-  #  effectively a duplicate signal at the PR level (coverage drift
-  #  comes from MERGED code).
+  #  This comment used to read "RUNS ON MAIN PUSH ONLY", with the rationale that
+  #  instrumenting a second full suite added ~30 min of CPU per PR for a
+  #  duplicate signal. The premise was right and the conclusion had a hole: a
+  #  main-push-only gate can only detect a regression AFTER the merge, and
+  #  making it a required check in that shape is THEATRE — a job skipped by
+  #  `if:` reports SKIPPED, and a skipped required check counts as PASSING.
+  #
+  #  The duplicate-suite objection is gone because there is no second suite:
+  #  `test` collects coverage itself. Instrumentation costs ~1.5x and the 6-way
+  #  split is ~1.5x finer, so shards stay 5-9 min and PR wall clock stays under
+  #  E2E's ~16 min. Main pushes got CHEAPER — the standalone 6-shard coverage
+  #  job is gone.
   #
   #  NOTE for anyone re-flooring: the `Coverage summary` table this job
   #  prints is NOT what the "global" threshold checks. jest subtracts the
