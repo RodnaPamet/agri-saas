@@ -44,7 +44,7 @@ function load(rel: string): Workflow {
 const ci = load('.github/workflows/ci.yml');
 const ref = load('.github/workflows/coverage-reference.yml');
 
-const coverageJob = ci.jobs.coverage;
+const coverageJob = ci.jobs.test; // coverage is collected by the `test` job
 const referenceJob = ref.jobs.reference;
 
 /** The step that actually invokes jest, in either workflow. */
@@ -56,6 +56,10 @@ function jestStep(job: Job): string {
 
 describe('coverage parity: the reference run must match the sharded job', () => {
     it('both jobs exist — the guard fails loudly if either is renamed', () => {
+        // `coverageJob` is ci.yml's `test` job: coverage was folded into it so
+        // the gate could run on PULL REQUESTS and therefore actually block a
+        // merge. While it lived in its own job it was main-push only, and a
+        // required check that reports SKIPPED counts as PASSING — theatre.
         expect(coverageJob).toBeDefined();
         expect(referenceJob).toBeDefined();
     });
@@ -65,20 +69,38 @@ describe('coverage parity: the reference run must match the sharded job', () => 
         expect(referenceJob.env).toEqual(coverageJob.env);
     });
 
-    it('declares IDENTICAL services — postgres only, no redis on either side', () => {
+    it('declares IDENTICAL services — redis on BOTH sides or neither', () => {
         expect(referenceJob.services).toEqual(coverageJob.services);
 
-        // Stated explicitly as well as structurally, because "no redis" is the
-        // specific trap and a future reader should see it named.
-        expect(Object.keys(referenceJob.services ?? {})).toEqual(['postgres']);
-        expect(Object.keys(coverageJob.services ?? {})).toEqual(['postgres']);
+        // Named explicitly because redis is the specific trap, in both
+        // directions. `tests/integration/bullmq-real-api.test.ts` gates on
+        // REDIS_URL_TEST: without redis it SKIPS and its code never enters the
+        // denominator; with redis it runs. A side that has redis while the
+        // other does not is comparing two different populations, and the diff
+        // reports a real difference that says nothing about sharding.
+        //
+        // This is not hypothetical — folding coverage into `test` (which has
+        // redis) while this file still matched the old postgres-only coverage
+        // job is exactly the drift this assertion caught.
+        const services = Object.keys(coverageJob.services ?? {}).sort();
+        expect(Object.keys(referenceJob.services ?? {}).sort()).toEqual(services);
+        expect(services).toContain('postgres');
     });
 
     it('runs the same jest flags, differing ONLY by --shard', () => {
         const shardedFlags = jestStep(coverageJob);
         const referenceFlags = jestStep(referenceJob);
 
-        for (const flag of ['--coverage', '--forceExit', '--runInBand', '--coverageReporters=json']) {
+        // Only flags that can change the MEASURED POPULATION are required to
+        // match. `--forceExit` is deliberately NOT in this list: it governs what
+        // jest does after the tests have finished (exit despite open handles),
+        // not which tests run or what gets instrumented, so it cannot move a
+        // coverage number. The reference run keeps it because it is a single
+        // ~90-minute process where a hang is expensive; the sharded side omits
+        // it so a handle leak still surfaces as a failure rather than being
+        // silently swallowed. That divergence is intentional — anything on this
+        // list is not.
+        for (const flag of ['--coverage', '--runInBand', '--coverageReporters=json']) {
             expect(shardedFlags).toContain(flag);
             expect(referenceFlags).toContain(flag);
         }
@@ -214,18 +236,14 @@ describe('coverage parity: the reference run must match the sharded job', () => 
     // compares two things which happen to be equal for an unrelated reason is
     // the exact failure mode this repo keeps finding.
     it('detects an env drift (proof the comparison is live)', () => {
-        const drifted = {
-            ...(referenceJob.env as Record<string, unknown>),
-            REDIS_URL_TEST: 'redis://localhost:6379',
-        };
+        const drifted = { ...(referenceJob.env as Record<string, unknown>) };
+        delete drifted.REDIS_URL_TEST;
         expect(drifted).not.toEqual(coverageJob.env);
     });
 
     it('detects a service drift (proof the comparison is live)', () => {
-        const drifted = {
-            ...(referenceJob.services as Record<string, unknown>),
-            redis: { image: 'redis:7-alpine' },
-        };
+        const drifted = { ...(referenceJob.services as Record<string, unknown>) };
+        delete drifted.redis;
         expect(drifted).not.toEqual(coverageJob.services);
     });
 });

@@ -282,8 +282,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4]
-        total: [4]
+        shard: [1, 2, 3, 4, 5, 6]
+        total: [6]
 
     env:
       DATABASE_URL: postgresql://ci:ci_password@localhost:5432/ci_testdb?schema=public
@@ -395,7 +395,35 @@ jobs:
         # too small for the `--runInBand` suite and OOMs ("Reached heap
         # limit … Aborted"); NODE_OPTIONS does not reliably reach the jest
         # process, so the flag is applied to this V8 instance directly.
-        run: node --max-old-space-size=8192 ./node_modules/jest/bin/jest.js --runInBand --no-coverage --shard=${{ matrix.shard }}/${{ matrix.total }}
+        run: |
+          status=0
+          timeout --signal=INT --kill-after=60s 25m \
+            node --max-old-space-size=8192 ./node_modules/jest/bin/jest.js \
+              --runInBand --coverage \
+              --shard=${{ matrix.shard }}/${{ matrix.total }} \
+              --coverageReporters=json \
+              --coverageDirectory "coverage-shard-${{ matrix.shard }}" || status=$?
+
+          if [ "$status" -eq 124 ] || [ "$status" -eq 137 ]; then
+            echo "::error::Test shard ${{ matrix.shard }} exceeded its 25-minute budget."
+            echo "::error::A shell timeout is used so the step FAILS with its log intact — a"
+            echo "::error::runner cancellation drops the un-flushed buffer and leaves no diagnosis."
+            exit 1
+          fi
+          exit "$status"
+
+      # The gate scores the MERGED map, so every shard hands its report over
+      # even when its own tests failed. A shard that dies without uploading
+      # becomes a `--expect` refusal downstream — the correct outcome, but a
+      # confusing one to debug from a missing artifact.
+      - name: Upload shard coverage
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-shard-${{ matrix.shard }}
+          path: coverage-shard-${{ matrix.shard }}/coverage-final.json
+          retention-days: 14
+          if-no-files-found: error
 
       # ── Architectural guard + API contract gates ──
       # These suites are fast (~30s combined) and not sharded — they
@@ -484,212 +512,19 @@ jobs:
   #  once this job is as fast as `test`, running it per-PR becomes
   #  affordable and the question is worth reopening.
   # ═══════════════════════════════════════════════════════════════
-  # ═══════════════════════════════════════════════════════════════
-  #  Coverage — SHARDED, merged, and ENFORCING.
-  #
-  #  This job was one `--runInBand` process over the whole suite. It
-  #  outgrew its timeout three times (ci.yml history: 25 -> 35 at ~7,800
-  #  tests, -> 60) and on 2026-08-21 went over 60 at ~24,600 tests,
-  #  cancelling on five consecutive main pushes. A cancelled job also
-  #  loses its log buffer, so the gate reported neither a number nor a
-  #  diagnosis. Raising the ceiling a fourth time buys weeks.
-  #
-  #  So it shards like `test` and the per-shard reports are istanbul-merged
-  #  by the `coverage-gate` job below. That is numerically safe and was
-  #  verified rather than assumed: `CoverageMap.merge` keys on SOURCE
-  #  LOCATION, so hit counts sum and covered/total sets union, and a
-  #  two-shard merge reproduced an unsharded run of the same subset to the
-  #  decimal on all four metrics with an identical file count.
-  #
-  #  TWO THINGS NOT TO "TIDY" HERE:
-  #
-  #  1. `env:` and `services:` are byte-identical to the pre-shard job —
-  #     postgres only, four vars. Do NOT copy the `test` job's redis block.
-  #     `tests/integration/bullmq-real-api.test.ts` gates on REDIS_URL_TEST
-  #     and therefore SKIPS in coverage runs; adding redis starts executing
-  #     it and moves ./src/lib/. That is a re-flooring event hiding inside
-  #     a diff that reads as pure infrastructure.
-  #  2. No `--coverageThreshold` on the shards. A shard sees a fraction of
-  #     the files, so every floor would fail on partial data. Thresholds
-  #     belong to the merged map, once.
-  # ═══════════════════════════════════════════════════════════════
-  coverage:
-    name: "Coverage (shard ${{ matrix.shard }}/${{ matrix.total }})"
-    strategy:
-      # Never cancel siblings: a missing shard silently SHRINKS the
-      # denominator and usually raises the percentages, so the gate must be
-      # able to see which shard died.
-      fail-fast: false
-      matrix:
-        shard: [1, 2, 3, 4, 5, 6]
-        total: [6]
-    runs-on: ${{ vars.LARGE_RUNNER || 'ubuntu-latest' }}
-    # Main-push only. Dropped from the weekly schedule (scanning-refresh runs
-    # stay lean — build + docker/Trivy + codeql); coverage drift comes from
-    # MERGED code, which the first main push after a merge already catches.
-    if: github.event_name == 'push'
-    # 20-minute PER-SHARD budget, against a measured 5-10 min per shard.
-    #
-    # The history this replaces: as ONE --runInBand process the job kept
-    # outgrowing its ceiling (25 -> 35 at ~7,800 tests -> 60), and past
-    # ~24,600 tests it began CANCELLING at 60 on consecutive main pushes,
-    # taking its log buffer with it — the gate reported neither a number
-    # nor a diagnosis. Raising a ceiling a fourth time buys weeks; sharding
-    # changes the slope, which is why the job now shards instead.
-    #
-    # The inner `timeout ... 18m` in the run step is the one that normally
-    # fires. It exists so an over-budget shard FAILS with its log intact
-    # rather than being cancelled by the runner, which is what made the
-    # original problem so hard to diagnose. This 20 is the outer backstop.
-    timeout-minutes: 20
-
-    env:
-      DATABASE_URL: postgresql://ci:ci_password@localhost:5432/ci_testdb?schema=public
-      DATABASE_URL_TEST: postgresql://ci:ci_password@localhost:5432/ci_testdb?schema=public
-      DIRECT_DATABASE_URL: postgresql://ci:ci_password@localhost:5432/ci_testdb?schema=public
-      # GAP-03 — see comment on the `test` job above. Same deterministic
-      # value so the coverage run sees identical encryption setup.
-      DATA_ENCRYPTION_KEY: ci-test-data-encryption-key-32-chars-or-more-deterministic-x
-
-    services:
-      postgres:
-        image: postgis/postgis:16-3.4
-        env:
-          POSTGRES_USER: ci
-          POSTGRES_PASSWORD: ci_password
-          POSTGRES_DB: ci_testdb
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd="pg_isready -U ci -d ci_testdb"
-          --health-interval=5s
-          --health-timeout=5s
-          --health-retries=10
-
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Setup Node + Prisma client
-        uses: ./.github/actions/setup-node-prisma
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-
-      # ── Create roles required by RLS migrations ──
-      - name: Create PostgreSQL roles for RLS
-        run: |
-          PGPASSWORD=ci_password psql -h localhost -U ci -d ci_testdb <<'SQL'
-          DO $$ BEGIN
-            IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'app_user') THEN CREATE ROLE app_user NOLOGIN; END IF;
-            IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'postgres') THEN CREATE ROLE postgres NOLOGIN; END IF;
-          END $$;
-          GRANT app_user TO ci;
-          GRANT app_user TO postgres;
-          SQL
-
-      - name: Enable pgvector (PGDG)
-        uses: ./.github/actions/enable-pgvector
-      - name: Apply Prisma migrations
-        run: ./node_modules/.bin/prisma migrate deploy
-
-      # ── Coverage gate: Jest enforces thresholds via --coverageThreshold ──
-      # The threshold values live in `jest.thresholds.json` (single source
-      # of truth, also referenced by `jest.config.js`). They are passed
-      # via the `--coverageThreshold` CLI flag because jest 29.7.0's
-      # `coverageThreshold` config (top-level OR per-project) is silently
-      # NOT enforced when `projects:` is set — runs exit 0 even on
-      # observed coverage of 9% against a 99% floor. The CLI flag IS
-      # enforced (exit 1 + "coverage threshold ... not met" message).
-      # Empirical evidence + alternative paths considered:
-      # docs/implementation-notes/2026-04-27-gap-15-coverage-enforcement.md
-      #
-      # Current floors (recalibrated 2026-07-29 from CI's coverage artifact
-      # of run 30483470674 / main@f61def62 — post-#458, so the barrel
-      # exclusion is in effect, and post-wave-23. Same convention as the
-      # 2026-07-10 pass: measured − 2, capped at 70, never lowering an
-      # already-stricter floor):
-      #   global   branches=63 functions=65 lines=70 statements=70
-      #   usecases branches=68 functions=70 lines=77 statements=75
-      #   policies branches=78 functions=88 lines=88 statements=85
-      #   events   branches=72 functions=61 lines=78 statements=75
-      #   lib      branches=70 functions=70 lines=71 statements=70
-      #
-      # Measured PER THRESHOLD GROUP at this recalibration (NOT the whole-map
-      # summary — see the "HOW TO READ A FAILURE" note below):
-      #   global   B65.36 F67.24 L80.06 S77.75
-      #   usecases B70.99 F78.40 L85.04 S82.82
-      #   policies B87.12 F96.82 L94.38 S93.65
-      #   events   B77.01 F63.41 L81.59 S80.28
-      #   lib      B76.80 F79.66 L87.98 S86.06
-      #
-      # Three floors moved: global functions 64→65, usecases branches 67→68,
-      # lib functions 66→70. measured−2 clears the 70 cap on 16 of the 20
-      # metrics (so the existing, higher, never-lowered floor stands), and on
-      # 2 of the remaining 4 it truncates to exactly the floor already in
-      # force — global branches (65.36−2 = 63.36 → 63) and events functions
-      # (63.41−2 = 61.41 → 61).
-      #
-      # The tightest margin is now global branches (+2.36); it needs measured
-      # ≥ 66.00 before the floor can reach 64. It is the number that will
-      # redden this gate first, and it moves only by covering the REMAINDER
-      # (repositories, route handlers, components) — never by covering
-      # src/lib/ or the usecases layer, which leave `global` untouched.
-      #
-      # HOW TO READ A FAILURE FROM THIS STEP.
-      #
-      # The "Coverage summary" table printed below covers the WHOLE map.
-      # The threshold error does not. Jest drops a file from the `global`
-      # group the moment it matches a PATH threshold, and
-      # jest.thresholds.json declares paths for
-      # ./src/app-layer/{usecases,policies,events}/ and ./src/lib/ — so
-      # `global` is scored over everything else (mostly src/components/**,
-      # src/app/**, and the remainder of src/app-layer/**).
-      #
-      # So a run can legitimately print "Branches: 66.54%" and fail with
-      # "Coverage for branches (59.94%) does not meet global threshold
-      # (63%)". Two populations, both correct.
-      #
-      # To find WHICH files to fix, download the `coverage-report` artifact
-      # and read coverage-summary.json (json-summary reporter, wired in
-      # jest.config.js) — then EXCLUDE the four path-threshold roots above
-      # before ranking, or you will target files that cannot move the number
-      # that is failing.
-      - name: "Coverage (shard ${{ matrix.shard }})"
-        run: |
-          status=0
-          timeout --signal=INT --kill-after=60s 18m \
-            node --max-old-space-size=8192 ./node_modules/jest/bin/jest.js \
-              --coverage --forceExit --runInBand \
-              --shard=${{ matrix.shard }}/${{ matrix.total }} \
-              --coverageReporters=json \
-              --coverageDirectory "coverage-shard-${{ matrix.shard }}" || status=$?
-
-          if [ "$status" -eq 124 ] || [ "$status" -eq 137 ]; then
-            echo "::error::Coverage shard ${{ matrix.shard }} exceeded its 18-minute budget."
-            echo "::error::A shell timeout is used so the step FAILS with its log intact — a runner"
-            echo "::error::cancellation drops the un-flushed buffer and leaves no diagnosis at all."
-            exit 1
-          fi
-          exit "$status"
-
-      - name: Upload shard coverage
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: coverage-shard-${{ matrix.shard }}
-          path: coverage-shard-${{ matrix.shard }}/coverage-final.json
-          retention-days: 14
-          if-no-files-found: error
-
-  # ═══════════════════════════════════════════════════════════════
-  #  Coverage gate — merge the shards, then score the floors ONCE.
-  # ═══════════════════════════════════════════════════════════════
   coverage-gate:
     name: "Coverage (≥60%)"
     runs-on: ubuntu-latest
-    needs: [coverage]
+    needs: [test]
     # `always()` so a dead shard reaches the merge, which then REFUSES on the
     # count rather than quietly reporting a number over less code.
-    if: ${{ always() && github.event_name == 'push' }}
+    #
+    # Runs on PULL REQUESTS too, which is the whole point of folding coverage
+    # into `test`. While it was main-push only the gate could only ever detect a
+    # regression AFTER the merge — and adding it to branch protection in that
+    # shape would have been theatre, because a job skipped by `if:` reports as
+    # SKIPPED and a skipped required check counts as PASSING.
+    if: ${{ always() && github.event_name != 'schedule' }}
     timeout-minutes: 10
 
     steps:

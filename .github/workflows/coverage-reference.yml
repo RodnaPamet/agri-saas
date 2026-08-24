@@ -32,13 +32,20 @@
 #
 #  ## The parity is only as good as the ENV MATCH
 #
-#  `env:` and `services:` below are byte-identical to ci.yml's `coverage`
-#  job — postgres only, four vars, no redis. That is not tidiness, it is the
-#  entire validity of the comparison. `tests/integration/bullmq-real-api.test.ts`
-#  gates on REDIS_URL_TEST and SKIPS without it; adding redis here would run
-#  tests the sharded side never ran, and the diff would report a real
-#  difference that means nothing about sharding. If ci.yml's coverage job
-#  ever gains a service or a variable, this file gains it in the same diff.
+#  `env:` and `services:` below are byte-identical to ci.yml's `test` job,
+#  which is where coverage is now collected. That is not tidiness, it is the
+#  entire validity of the comparison: `tests/integration/bullmq-real-api.test.ts`
+#  gates on REDIS_URL_TEST and SKIPS without it, so a side that lacks redis runs
+#  tests the other side ran and the diff reports a real difference that means
+#  nothing about sharding.
+#
+#  This bit once already: while coverage lived in its own postgres-only job,
+#  this file matched THAT. Folding coverage into `test` (which has redis, plus
+#  BULLMQ_SMOKE_REQUIRE_REDIS and RLS_GUARDRAIL_REQUIRE_DB) silently made the
+#  two sides different populations —
+#  `tests/guards/coverage-parity-env-match.test.ts` is what caught it, and it
+#  is derived from ci.yml so it keeps catching it. If the `test` job ever gains
+#  a service or a variable, this file gains it in the same diff.
 # ───────────────────────────────────────────────────────────────
 name: Coverage parity (reference run)
 
@@ -91,9 +98,22 @@ jobs:
       DATABASE_URL: postgresql://ci:ci_password@localhost:5432/ci_testdb?schema=public
       DATABASE_URL_TEST: postgresql://ci:ci_password@localhost:5432/ci_testdb?schema=public
       DIRECT_DATABASE_URL: postgresql://ci:ci_password@localhost:5432/ci_testdb?schema=public
+      REDIS_URL_TEST: redis://localhost:6379
+      BULLMQ_SMOKE_REQUIRE_REDIS: "1"
+      RLS_GUARDRAIL_REQUIRE_DB: "1"
       DATA_ENCRYPTION_KEY: ci-test-data-encryption-key-32-chars-or-more-deterministic-x
 
     services:
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
       postgres:
         image: postgis/postgis:16-3.4
         env:
