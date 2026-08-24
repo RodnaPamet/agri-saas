@@ -89,14 +89,33 @@ describe('coverage parity proof is still current', () => {
     });
 
     it('the shard count is unchanged since the proof', () => {
-        // Scoped to the COVERAGE job. ci.yml declares three shard matrices —
-        // `test` is 4-way, `coverage` is 6-way, `e2e-shard` is 2-way — and an
-        // unanchored /shard:\s*\[/ matches the first one, silently asserting
-        // against the wrong job. The first draft of this guard did exactly that
-        // and read 4 where it meant 6.
-        const jobStart = ci.indexOf('\n  coverage:\n');
+        // Scoped to the job that COLLECTS coverage, which is `test` — coverage
+        // was folded into it so the gate could run on pull requests. ci.yml
+        // declares more than one shard matrix (`test` 6-way, `e2e-shard` 2-way),
+        // and an unanchored /shard:\s*\[/ matches whichever comes first,
+        // silently asserting against the wrong job. The first draft of this
+        // guard did exactly that and read 4 where it meant 6.
+        //
+        // This anchor previously pointed at a standalone `coverage:` job. That
+        // job was deleted by the fold, and because the two changes touched no
+        // file in common, git merged them cleanly and the guard would have
+        // failed on main — a semantic collision git cannot see. Caught by
+        // merging main into the fold branch and re-running, before either
+        // landed.
+        // The end anchor is found STRUCTURALLY — the next top-level job — not by
+        // name. A hardcoded next-job name is worse than no anchor: `indexOf`
+        // returns -1 for a name that does not exist, `slice(start, -1)` then runs
+        // to the end of the FILE, and the assertion passes only because `test`'s
+        // matrix happens to be the first one it meets. That is a guard passing by
+        // accident, which is indistinguishable from one passing on purpose until
+        // the job order changes. (Observed while writing this: an end anchor of
+        // `test-gate:` — a job that does not exist — did exactly that.)
+        const jobStart = ci.indexOf('\n  test:\n');
         expect(jobStart).toBeGreaterThan(-1);
-        const jobBlock = ci.slice(jobStart, ci.indexOf('\n  coverage-gate:', jobStart));
+        const rest = ci.slice(jobStart + 1);
+        const nextJob = rest.slice(1).search(/\n {2}[a-z][a-z0-9-]*:\n/);
+        expect(nextJob).toBeGreaterThan(-1);
+        const jobBlock = rest.slice(0, nextJob + 1);
         const matrix = jobBlock.match(/shard:\s*\[([0-9,\s]+)\]/);
         expect(matrix).not.toBeNull();
         const count = (matrix as RegExpMatchArray)[1].split(',').filter((x) => x.trim()).length;
