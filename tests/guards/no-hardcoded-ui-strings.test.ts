@@ -38,6 +38,16 @@ const FILE_ALLOWLIST: { pattern: RegExp; reason: string }[] = [
     { pattern: /(^|\/)error\.tsx$/, reason: 'React error boundary — renders below the intl provider; must not depend on it' },
     { pattern: /(^|\/)global-error\.tsx$/, reason: 'Root error boundary — replaces the whole tree incl. the intl provider' },
     { pattern: /(^|\/)not-found\.tsx$/, reason: 'Next not-found boundary — may render outside the locale segment' },
+    {
+        pattern: /(^|\/)diagnostics\/offline\/page\.tsx$/,
+        reason:
+            'Engineering instrument for issue #648, not product UI. Every label is an API ' +
+            'identifier the operator must be able to match against the code and against the ' +
+            'issue — PAGE_CACHE, navigator.storage.persisted(), quota, usage, scope. Its output ' +
+            'is pasted verbatim into an English GitHub issue, so translating the identifiers ' +
+            'would make the artefact HARDER to read, not easier. Reachable by URL only and ' +
+            'linked from no navigation, so no farmer meets it.',
+    },
 ];
 
 /** JSX attributes whose STRING value is shown to the user (so a literal is a
