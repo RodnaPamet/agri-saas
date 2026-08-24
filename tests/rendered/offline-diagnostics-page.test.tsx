@@ -47,6 +47,8 @@ const snapshot = {
     durability: null,
     queueGrowing: false,
     foreign: 0,
+    blocked: 0,
+    blockedAuth: 0,
 };
 jest.mock('@/lib/offline/outbox-state', () => ({
     getOutboxSnapshot: () => snapshot,
