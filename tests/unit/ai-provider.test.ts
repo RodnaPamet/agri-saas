@@ -378,6 +378,33 @@ describe('embed()', () => {
         const call = mockEmbeddingsCreate.mock.calls[0][0];
         expect(call.model).toBe('nomic-embed-text');
         expect(call.input).toEqual(['first', 'second']);
+        // NAMES THE WIRE FORMAT. Omitted, the SDK silently sends
+        // `encoding_format: "base64"` and base64-decodes the reply — and a
+        // backend answering with plain float arrays then decodes to an EMPTY
+        // vector with nothing raised. Measured against the real SDK in
+        // tests/integration/openai-real-api.test.ts (#754); asserted here because
+        // that test exercises the SDK and cannot see OUR call site.
+        expect(call.encoding_format).toBe('float');
+    });
+
+    it('REFUSES an empty vector rather than returning a useless one', async () => {
+        // The count guard alone is not enough: one empty vector per input is
+        // the RIGHT COUNT, and `embedding as number[]` is a cast, so neither
+        // the check nor the compiler objects. An empty embedding is not
+        // degraded, it is silently meaningless — it would be stored and
+        // similarity-searched as though it meant something.
+        const provider = new OpenAiCompatibleProvider({
+            backend: 'ollama',
+            baseURL: 'http://localhost:11434/v1',
+            apiKey: 'ollama',
+            model: 'qwen3:1.7b',
+            embedModel: 'nomic-embed-text',
+        });
+        mockEmbeddingsCreate.mockResolvedValueOnce({
+            data: [{ index: 0, embedding: [] }],
+        });
+
+        await expect(provider.embed({ texts: ['first'] })).rejects.toThrow(/empty/i);
     });
 
     it('returns [] for empty input without calling the backend', async () => {
