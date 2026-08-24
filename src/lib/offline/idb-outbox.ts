@@ -23,8 +23,10 @@ const LEGACY_LOCALSTORAGE_KEY = 'agri.offline.outbox.v1';
 
 /** Shared contract with `public/sw.js` — do not rename without updating the SW. */
 export const OUTBOX_DB_NAME = 'agri-offline';
-export const OUTBOX_DB_VERSION = 1;
+export const OUTBOX_DB_VERSION = 2;
 export const OUTBOX_STORE_NAME = 'outbox';
+/** Delivery receipts — see `delivery-receipts.ts`. Added at version 2. */
+export const RECEIPT_STORE_NAME = 'delivered';
 
 function hasIndexedDb(): boolean {
     return typeof indexedDB !== 'undefined' && indexedDB !== null;
@@ -45,10 +47,20 @@ function openOutboxDb(onCreated?: () => void): Promise<IDBDatabase> {
         const req = indexedDB.open(OUTBOX_DB_NAME, OUTBOX_DB_VERSION);
         req.onupgradeneeded = () => {
             const db = req.result;
-            if (!db.objectStoreNames.contains(OUTBOX_STORE_NAME)) {
+            // Was the QUEUE itself absent? That — and only that — means the
+            // database was destroyed. `onupgradeneeded` also fires on an
+            // ordinary version bump, and firing `onCreated` there would report
+            // an eviction to every existing device the moment we add a store.
+            // This gate is why adding `delivered` at version 2 is safe.
+            // `public/sw.js` has always gated it correctly; this side did not.
+            const queueWasAbsent = !db.objectStoreNames.contains(OUTBOX_STORE_NAME);
+            if (queueWasAbsent) {
                 db.createObjectStore(OUTBOX_STORE_NAME, { keyPath: 'id' });
             }
-            onCreated?.();
+            if (!db.objectStoreNames.contains(RECEIPT_STORE_NAME)) {
+                db.createObjectStore(RECEIPT_STORE_NAME, { keyPath: 'id' });
+            }
+            if (queueWasAbsent) onCreated?.();
         };
         req.onsuccess = () => resolve(req.result);
         req.onerror = () => reject(req.error ?? new Error('indexedDB.open failed'));
@@ -128,6 +140,34 @@ export class IndexedDbOutboxStore implements OutboxStore {
      * destroyed — and only the page can tell the operator. This is how that
      * signal crosses back. See `public/sw.js`.
      */
+    /**
+     * Receipt then removal, in ONE transaction over both stores — so a receipt
+     * exists if and only if the removal was deliberate. Split across two
+     * transactions, a crash between them would leave the item gone with no
+     * receipt, which reads as an eviction.
+     */
+    async noteDelivered(id: string): Promise<void> {
+        const db = await this.db();
+        const tx = db.transaction(RECEIPT_STORE_NAME, 'readwrite');
+        tx.objectStore(RECEIPT_STORE_NAME).put({ id, at: Date.now() });
+        await txDone(tx);
+    }
+
+    /** Read and CLEAR the receipts — each one discharges exactly one reconcile. */
+    async takeDelivered(): Promise<Array<{ id: string; at: number }>> {
+        const db = await this.db();
+        const tx = db.transaction(RECEIPT_STORE_NAME, 'readwrite');
+        const store = tx.objectStore(RECEIPT_STORE_NAME);
+        const rows = await new Promise<Array<{ id: string; at: number }>>((resolve, reject) => {
+            const rq = store.getAll();
+            rq.onsuccess = () => resolve((rq.result as Array<{ id: string; at: number }>) ?? []);
+            rq.onerror = () => reject(rq.error);
+        });
+        store.clear();
+        await txDone(tx);
+        return rows;
+    }
+
     markRecreated(): void {
         this.recreated = true;
     }

@@ -33,6 +33,7 @@
  * exactly-once.
  */
 import { isPhotoItem, type OutboxItem, type OutboxStore } from './outbox';
+import { noteDelivered } from './delivery-receipts';
 
 export interface SendResult {
     ok: boolean;
@@ -55,6 +56,15 @@ export interface FlushSummary {
      * destroyed) and never dropped — they wait for their owner to sign in.
      */
     foreign: number;
+    /**
+     * Retained but undeliverable until something outside the queue changes —
+     * a refused session (401/403) or exhausted server-side retries. Never
+     * sent, NEVER dropped. Counted separately from `failed` because only
+     * these need an operator to do something.
+     */
+    blocked: number;
+    /** The pass stopped because the session was refused. */
+    authBlocked: boolean;
     remaining: number;
     /** True when the pass stopped early because the server rate-limited us. */
     rateLimited: boolean;
@@ -67,8 +77,22 @@ export interface FlushSummary {
 export const MAX_ATTEMPTS = 8;
 
 /** Non-429 retryable: network throw (0), 408 timeout, any 5xx. */
+/**
+ * A SERVER-produced transient. Deliberately excludes `status === 0`.
+ *
+ * Status 0 means the request never reached anyone — dead radio, aeroplane
+ * mode, a captive portal. Counting that as a failed attempt marched queued
+ * work toward MAX_ATTEMPTS and then deleted it, so a phone retrying in a
+ * field with no signal destroyed the very work it was holding. A request
+ * that was never sent has not failed; there is nothing to give up on.
+ */
 function isTransient(status: number): boolean {
-    return status === 0 || status === 408 || status >= 500;
+    return status === 408 || status >= 500;
+}
+
+/** The request never left the device. Retain untouched — no attempt spent. */
+function neverSent(status: number): boolean {
+    return status === 0;
 }
 
 /** Drain the outbox once. Safe to call repeatedly (idempotent per item). */
@@ -85,6 +109,8 @@ export async function flushOutbox(
 ): Promise<FlushSummary> {
     const items = await store.all(); // FIFO (createdAt asc)
     let sent = 0;
+    let blocked = 0;
+    let authBlocked = false;
     let failed = 0;
     let dropped = 0;
     let foreign = 0;
@@ -96,6 +122,13 @@ export async function flushOutbox(
         // A parked 409 conflict awaits operator resolution — never re-send it
         // (a blind retry would 409 again, or clobber once versions align).
         if (item.conflict) continue;
+
+        // Already parked as undeliverable. Re-sending an auth-blocked item
+        // before the operator signs in again just reproduces the 401.
+        if (item.blocked) {
+            blocked++;
+            continue;
+        }
 
         // Queued by a DIFFERENT operator on this device. A replay uses the
         // CURRENT session cookie, so sending it would either attribute the
@@ -118,6 +151,11 @@ export async function flushOutbox(
         }
 
         if (res.ok) {
+            // Receipt FIRST, then removal. A receipt exists if and only if the
+            // removal was deliberate, which is what lets the page tell a drain
+            // apart from an eviction — including a drain the SERVICE WORKER
+            // performed, which leaves no other trace the page can read.
+            await noteDelivered(store, item.id);
             await store.remove(item.id);
             sent++;
         } else if (res.status === 409) {
@@ -138,24 +176,45 @@ export async function flushOutbox(
             rateLimited = true;
             retryAfterSeconds = res.retryAfter;
             break;
+        } else if (neverSent(res.status)) {
+            // Never reached the server. Retain EXACTLY as-is: no attempt
+            // spent, nothing dropped. Eight passes with dead radio used to
+            // exhaust MAX_ATTEMPTS and delete the item.
+            failed++;
+        } else if (res.status === 401 || res.status === 403) {
+            // The server refused the SESSION, not the work. Retain and block:
+            // a revoked or expired session is a property of the session, and
+            // deleting an operator's marks because their password changed on
+            // a laptop destroys field work nothing can recover. Stop the pass
+            // — every remaining item carries the same credential and would
+            // meet the same answer.
+            await store.update({ ...item, blocked: 'auth' });
+            blocked++;
+            authBlocked = true;
+            break;
         } else if (isTransient(res.status)) {
             const next = { ...item, attempts: item.attempts + 1 };
             if (next.attempts >= MAX_ATTEMPTS) {
-                await store.remove(item.id);
-                dropped++;
+                // Park, never delete. The poison-item escape is that it stops
+                // being retried, not that the work is destroyed.
+                await store.update({ ...next, blocked: 'exhausted' });
+                blocked++;
             } else {
                 await store.update(next);
                 failed++;
             }
         } else {
-            // Terminal client error — drop so the queue keeps moving.
+            // Genuinely terminal for THIS item (a 4xx about the payload).
+            // Dropping keeps the queue moving, and the receipt below is what
+            // stops the loss detector reading it as an eviction.
+            await noteDelivered(store, item.id);
             await store.remove(item.id);
             dropped++;
         }
     }
 
     const remaining = (await store.all()).length;
-    return { sent, failed, dropped, foreign, conflicts, remaining, rateLimited, retryAfterSeconds };
+    return { sent, failed, dropped, foreign, blocked, authBlocked, conflicts, remaining, rateLimited, retryAfterSeconds };
 }
 
 /** A fetch-backed Sender for the browser. */

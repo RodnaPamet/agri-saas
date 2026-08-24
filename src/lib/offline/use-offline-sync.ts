@@ -140,7 +140,7 @@ export function useOfflineSync(): OfflineSync {
         });
         if (res === null) {
             const remaining = (await getOutboxStore().all()).length;
-            return { sent: 0, failed: 0, dropped: 0, foreign: 0, conflicts: 0, remaining, rateLimited: false };
+            return { sent: 0, failed: 0, dropped: 0, foreign: 0, blocked: 0, authBlocked: false, conflicts: 0, remaining, rateLimited: false };
         }
         // Rate-limited mid-burst with work still queued → back off for the
         // server's Retry-After (default one mutation window) and re-drain,
