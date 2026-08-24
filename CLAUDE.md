@@ -1194,17 +1194,38 @@ duplicating the limits table).
   against (65.46) differ by ~4 points. Take the value from the
   `does not meet "global" threshold` line; re-flooring from the summary broke
   main on 2026-08-20.
-  **The gate runs on main push only**, never on PRs. `npm run test:coverage`
-  prints the same numbers locally but does not fail.
+  **The gate runs on PULL REQUESTS as well as main pushes**, because coverage is
+  collected by the `test` job (see below). `npm run test:coverage` prints the
+  same numbers locally but does not fail.
 
-- **The coverage job is SHARDED, and the floors are scored once on the merged
-  map.** As one `--runInBand` process it outgrew its ceiling three times
-  (25 → 35 → 60) and past ~24,600 tests began CANCELLING at 60 on consecutive
-  main pushes — and a cancelled job loses its log buffer, so the gate reported
-  neither a number nor a diagnosis. It now runs `--shard=i/6` (5-10 min per
-  shard against an 18-minute inner budget, ~13 min wall clock), and
-  `coverage-gate` merges the six reports with `scripts/merge-coverage.mjs`
+- **Coverage is collected by the `test` job, 6 shards, and the floors are
+  scored once on the merged map.** As its own `--runInBand` job it outgrew its
+  ceiling three times (25 → 35 → 60) and past ~24,600 tests began CANCELLING at
+  60 on consecutive main pushes — a cancelled job loses its log buffer, so the
+  gate reported neither a number nor a diagnosis. Sharding fixed that; folding
+  it into `test` fixed something else.
+
+  **Why folded:** while coverage had its own `if: github.event_name == 'push'`
+  job it could only ever detect a regression AFTER the merge, and adding it to
+  branch protection in that shape would have been THEATRE — a job skipped by
+  `if:` reports as SKIPPED, and a skipped required check counts as PASSING. The
+  `test` job already ran the whole suite on every PR without coverage, so the
+  two events were paying for two full runs. Now `test` runs `--shard=i/6
+  --coverage` (instrumentation costs ~1.5x, a 6-way split is ~1.5x finer — they
+  cancel, so shards stay 5-9 min and PR wall clock stays under E2E's ~16 min),
+  and `coverage-gate` merges the six reports with `scripts/merge-coverage.mjs`
   before scoring them with `scripts/check-coverage-thresholds.mjs`.
+
+  **The fold CHANGED THE POPULATION, deliberately.** `test` sets
+  `REDIS_URL_TEST`, `BULLMQ_SMOKE_REQUIRE_REDIS=1` and
+  `RLS_GUARDRAIL_REQUIRE_DB=1` and declares a redis service; the old coverage
+  job had postgres only. So `tests/integration/bullmq-real-api.test.ts` — which
+  gates on `REDIS_URL_TEST` and had NEVER been in the denominator — now
+  executes. `.github/workflows/coverage-reference.yml` must match `test`'s
+  `env:` and `services:` exactly or the parity comparison is measuring two
+  different populations; that is held by
+  `tests/guards/coverage-parity-env-match.test.ts`, which derives both sides
+  from the live YAML.
     - `check-coverage-thresholds.mjs` is a line-for-line port of jest 30's
       `_checkThreshold`, because `--coverageThreshold` only applies to a live
       jest run and the merged map is not one. It prints all five group rows
