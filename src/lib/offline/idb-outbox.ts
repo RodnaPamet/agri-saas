@@ -23,6 +23,21 @@ const LEGACY_LOCALSTORAGE_KEY = 'agri.offline.outbox.v1';
 
 /** Shared contract with `public/sw.js` — do not rename without updating the SW. */
 export const OUTBOX_DB_NAME = 'agri-offline';
+/**
+ * Bumping this is a ONE-WAY DOOR for devices, and the rollback direction is
+ * the one to think about.
+ *
+ * IndexedDB refuses to open a database at a LOWER version than it holds. So
+ * shipping an app version that reverts this number strands every device that
+ * already upgraded: `openOutboxDb` rejects with a VersionError, `all()`
+ * throws, and `refreshOutboxState` catches it and holds the last snapshot —
+ * "a store that cannot be read is not a store that is empty".
+ *
+ * Nothing is deleted; the queue sits intact in IndexedDB. But sync freezes and
+ * the pending count goes stale until a version that CAN open v2 reaches the
+ * device. That is the client-side analogue of the migration rollback rule in
+ * `deploy/rollback/README.md`: roll the code forward, not back.
+ */
 export const OUTBOX_DB_VERSION = 2;
 export const OUTBOX_STORE_NAME = 'outbox';
 /** Delivery receipts — see `delivery-receipts.ts`. Added at version 2. */
