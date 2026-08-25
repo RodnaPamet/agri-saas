@@ -6160,7 +6160,9 @@
             "swControlledHint": "True means a service worker is actually serving this page, not merely registered.",
             "foreignHint": "Queued by a different operator — never sent, never dropped.",
             "readsNotMeasures": "Read from {key}. This page does not call persist() — that is armed once per page load at first enqueue, so measuring here would produce a second, different answer.",
-            "breadcrumbRoot": "Dashboard"
+            "breadcrumbRoot": "Dashboard",
+            "blockedHint": "A subset of pending — retained but undeliverable until something outside the queue changes.",
+            "blockedAuthHint": "The session was refused. This work will not move until the operator signs in again."
         }
     }
 }
