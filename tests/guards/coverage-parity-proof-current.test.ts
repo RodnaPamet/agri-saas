@@ -7,8 +7,15 @@
  * assembled from six shards — not on a live jest run. That is only sound because
  * the merge was proven decimal-identical to a single-process reference run:
  *
- *     parity run 32662217666, commit 71e00520, 2026-08-23
- *     file set 1381 = 1381 · all 1381 files identical · all five groups identical
+ *     parity run 32769512898, commit fe56063d, 2026-08-24
+ *     file set 1382 = 1382 · all 1382 files identical · all five groups identical
+ *
+ * Re-run because the POPULATION changed, not the mechanism: coverage moved into
+ * the `test` job, which has redis, so `bullmq-real-api.test.ts` now executes and
+ * enters the denominator for the first time. The mechanism inputs this file pins
+ * were all unchanged, so the guard stayed green — and that is exactly why the
+ * re-run was worth doing by hand. A constant that is merely DEFENSIBLE is not
+ * the same as one that is TRUE.
  *
  * That proof is a snapshot. It says nothing about a merge mechanism that has
  * since changed — a jest major that alters `_checkThreshold`, an istanbul major
@@ -46,9 +53,9 @@ const ROOT = path.resolve(__dirname, '../..');
  * mechanism inputs that proof was valid for.
  */
 const PARITY_PROOF = {
-    runId: '32662217666',
-    commit: '71e00520',
-    date: '2026-08-23',
+    runId: '32769512898',
+    commit: 'fe56063d',
+    date: '2026-08-24',
     /** Majors only — a patch bump cannot change merge semantics. */
     jestMajor: 30,
     istanbulLibCoverageMajor: 3,
