@@ -34,8 +34,10 @@ import {
     type OutboxItem,
     type OutboxStore,
 } from './outbox';
+import { takeDeliveryReceipts } from './delivery-receipts';
 import {
     backgroundSyncPossible,
+    forgetManifestEntries,
     readDurabilityVerdict,
     readLostWork,
     recordLostWork,
@@ -79,6 +81,24 @@ export interface OutboxSnapshot {
      * work that sits on a phone with nobody knowing it is there.
      */
     foreign: number;
+    /**
+     * Retained but undeliverable until something OUTSIDE the queue changes —
+     * a refused session (401/403) or exhausted server-side retries (#761).
+     *
+     * These are a SUBSET of `pending`, not a sibling of it, and that is the
+     * reason this field has to exist. `pending` alone says "waiting to send",
+     * which an operator reads as "will go when I get signal". A blocked item
+     * will never go, however long they stand in the yard, until they act. Two
+     * populations behind one reassuring number is the same shape as the
+     * evicted-queue problem the three-state UI was built for.
+     */
+    blocked: number;
+    /**
+     * The subset of `blocked` whose session was refused — the only one with an
+     * operator action attached, and the action is "sign in again". Separated
+     * from `exhausted` because that one resolves itself when the server does.
+     */
+    blockedAuth: number;
 }
 
 const EMPTY: OutboxSnapshot = {
@@ -89,6 +109,8 @@ const EMPTY: OutboxSnapshot = {
     durability: null,
     queueGrowing: false,
     foreign: 0,
+    blocked: 0,
+    blockedAuth: 0,
 };
 
 let snapshot: OutboxSnapshot = EMPTY;
@@ -153,6 +175,13 @@ export async function refreshOutboxState(
         return snapshot;
     }
 
+    // Items removed ON PURPOSE, by this page OR by the service worker, since
+    // the last reconcile. Subtracting them is what lets a drain be told apart
+    // from an eviction — the distinction the queue alone cannot make, because
+    // a removal looks identical either way.
+    const delivered = await takeDeliveryReceipts(store);
+    if (delivered.length > 0) forgetManifestEntries(delivered);
+
     const queuedIds = all.map((i) => i.id);
     let lost = readLostWork();
 
@@ -176,10 +205,16 @@ export async function refreshOutboxState(
     const isForeign = (i: OutboxItem) =>
         Boolean(owner && i.queuedByUserId && i.queuedByUserId !== owner);
     const live = all.filter((i) => !i.conflict && !isForeign(i));
+    // Counted over `live`, so `blocked` is a strict subset of `pending` and the
+    // two can be shown as "N waiting, of which M cannot move" rather than as
+    // two numbers an operator has to reconcile.
+    const blocked = live.filter((i) => i.blocked);
     emit({
         foreign: all.filter(isForeign).length,
         pending: live.length,
         pendingPhotos: live.filter(isPhotoItem).length,
+        blocked: blocked.length,
+        blockedAuth: blocked.filter((i) => i.blocked === 'auth').length,
         conflicts: all.filter((i) => i.conflict),
         lost,
         durability: readDurabilityVerdict(),
@@ -249,12 +284,14 @@ export async function noteOutboxDrainedElsewhere(
     // that had just landed — additive, and clearing only on an explicit
     // operator acknowledgement, so a later success cannot undo it.
     //
-    // Skipping costs nothing. This message exists to refresh a VISIBLE pending
-    // count, and that count is only rendered where `useOfflineSync` is mounted
-    // — which is also what sets `reconciled`. The registrar sits in the ROOT
-    // layout, so on a non-tenant route there is no counter to update and no
-    // baseline to reconcile against.
-    if (!reconciled) return snapshot;
+    // NOTE: this used to return early when `!reconciled`, to stop the worker's
+    // message being the pass that ran the cross-session detector. That deferred
+    // the false positive rather than removing it — the manifest stayed stale,
+    // and the NEXT tenant load reconciled it against an empty queue and wrote
+    // exactly the sticky "your work was deleted" it was meant to prevent.
+    //
+    // Delivery receipts remove the ambiguity at its source, so this can now do
+    // the straightforward thing.
     return refreshOutboxState(store);
 }
 

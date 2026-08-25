@@ -55,6 +55,20 @@ interface OutboxItemBase {
     createdAt: number;
     attempts: number;
     /**
+     * Retained but undeliverable until something outside this item changes.
+     *
+     * `auth` — the server refused the SESSION (401/403), not the work. A
+     * revoked or expired session is a property of the session; deleting the
+     * operator's marks because their password changed on another device
+     * destroys field work that nothing can recover. `exhausted` — past
+     * MAX_ATTEMPTS on genuine server-side transients.
+     *
+     * Blocked items are never sent and never dropped. They are surfaced so an
+     * operator can act (sign in again), which is the only thing that can
+     * unblock them.
+     */
+    blocked?: 'auth' | 'exhausted';
+    /**
      * Optimistic-lock version the client saw when it queued this write, sent
      * back as `If-Match` on replay. The server 409s if the row moved on. Absent
      * for writes that don't participate in optimistic locking.
@@ -141,6 +155,16 @@ export interface OutboxStore {
      * Optional: stores with no second opener have nothing to reconcile.
      */
     markRecreated?(): void;
+
+    /**
+     * Record that an item was removed DELIBERATELY, in the same transaction as
+     * the removal. See `delivery-receipts.ts` — this is what lets the page tell
+     * a drain apart from an eviction, including a drain the service worker did.
+     */
+    noteDelivered?(id: string): Promise<void>;
+
+    /** Read and clear the delivery receipts. */
+    takeDelivered?(): Promise<Array<{ id: string; at: number }>>;
 }
 
 export const OUTBOX_STORAGE_KEY = 'agri.offline.outbox.v1';

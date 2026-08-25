@@ -400,6 +400,20 @@ export default function OfflineDiagnosticsPage() {
                     <>
                         <Row label="pending" value={String(outbox.pending)} />
                         <Row label="pendingPhotos" value={String(outbox.pendingPhotos)} />
+                        {/* Directly under `pending` because it is a SUBSET of it, not a
+                            sibling. "3 pending" on a phone whose 3 items are all
+                            blocked reads as "will go when I get signal", and it never
+                            will. */}
+                        <Row
+                            label="blocked"
+                            value={String(outbox.blocked)}
+                            hint={t('blockedHint')}
+                        />
+                        <Row
+                            label="blocked · auth"
+                            value={String(outbox.blockedAuth)}
+                            hint={t('blockedAuthHint')}
+                        />
                         <Row
                             label="foreign"
                             value={String(outbox.foreign)}

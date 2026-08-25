@@ -66,6 +66,7 @@ function item(id: string, over: Partial<MutationOutboxItem> = {}): OutboxItem {
  */
 class FakeStore implements OutboxStore {
     items: OutboxItem[] = [];
+    receipts: Array<{ id: string; at: number }> = [];
     recreated = false;
     throwOnRead = false;
 
@@ -81,6 +82,12 @@ class FakeStore implements OutboxStore {
     }
     async remove(id: string) {
         this.items = this.items.filter((x) => x.id !== id);
+    }
+    async noteDelivered(id: string) {
+        this.receipts.push({ id, at: Date.now() });
+    }
+    async takeDelivered() {
+        return this.receipts.splice(0);
     }
     wasRecreated() {
         const v = this.recreated;
@@ -417,34 +424,45 @@ describe('a drain the WORKER performed (#740)', () => {
         expect(readManifest()).toEqual([]);
     });
 
-    it('NEVER records loss when it is the first refresh of the page load', async () => {
-        // The dangerous inversion, and the reason this seam is not a bare
-        // `refreshOutboxState`. The registrar that receives this message lives
-        // in the ROOT layout, while `useOfflineSync` — which is what sets
-        // `reconciled` — mounts only under a tenant. So on a non-tenant route
-        // the message can arrive with no baseline established.
+    it('a worker drain leaves a RECEIPT, so it is never read as loss', async () => {
+        // This replaces a guard that returned early when nothing had reconciled
+        // yet. That deferred the false positive rather than removing it: the
+        // manifest stayed stale, and the NEXT tenant load reconciled it against
+        // an empty queue and wrote exactly the sticky "your work was deleted"
+        // it was meant to prevent.
         //
-        // Where Background Sync is absent (iOS Safari, Firefox — where the
-        // worker still drains via the page's own nudge) the cross-session
-        // detector reads every manifest gap as loss. A worker drain IS that
-        // gap: it removed what it delivered and left no receipt. Reporting it
-        // would write a STICKY false "your work was deleted" that clears only
-        // on explicit acknowledgement — the exact inverse of the #733 defect,
-        // and unrecoverable by a later success.
+        // A receipt is written in the same transaction as the removal, so it
+        // exists if and only if the removal was deliberate — by this page or by
+        // the worker, which cannot write localStorage and leaves no other trace.
         writeManifest([
             { id: 'a', label: 'Mark a done', createdAt: 1 },
             { id: 'b', label: 'Mark b done', createdAt: 2 },
         ]);
-        // Fresh page load: nothing has reconciled yet.
         __resetOutboxStateForTests();
         store.items = [];
+        store.receipts = [
+            { id: 'a', at: Date.now() },
+            { id: 'b', at: Date.now() },
+        ];
 
         const snap = await noteOutboxDrainedElsewhere(store);
 
         expect(snap.lost).toBeNull();
         expect(readLostWork()).toBeNull();
-        // And the evidence is left intact for a real refresh to judge.
-        expect(readManifest().map((e) => e.id)).toEqual(['a', 'b']);
+        expect(readManifest()).toEqual([]);
+    });
+
+    it('and a queue that vanished with NO receipt is still reported', async () => {
+        // The other direction, and the reason receipts are not just a mute
+        // button: an eviction leaves no receipt, so it must still be caught.
+        writeManifest([{ id: 'a', label: 'Mark a done', createdAt: 1 }]);
+        __resetOutboxStateForTests();
+        store.items = [];
+        store.receipts = [];
+        store.recreated = true;
+
+        const snap = await refreshOutboxState(store);
+        expect(snap.lost?.entries.map((e) => e.id)).toEqual(['a']);
     });
 
     it('a partial drain leaves the rest pending', async () => {

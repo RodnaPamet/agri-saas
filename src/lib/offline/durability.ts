@@ -233,6 +233,22 @@ export function writeManifest(entries: ManifestEntry[]): void {
  * work is gone" on a platform that had in fact delivered it would be worse —
  * it would teach operators to ignore the warning.
  */
+/**
+ * Drop entries that were removed deliberately, per their delivery receipts.
+ *
+ * Called before reconciliation so a drain — by this page or by the service
+ * worker — never presents as a gap. Without it the manifest keeps listing work
+ * that reached the server, and the next cross-session pass reads that as an
+ * eviction.
+ */
+export function forgetManifestEntries(ids: readonly string[]): void {
+    if (ids.length === 0) return;
+    const drop = new Set(ids);
+    const manifest = readManifest();
+    if (manifest.length === 0) return;
+    writeManifest(manifest.filter((e) => !drop.has(e.id)));
+}
+
 export function reconcileManifest(
     queuedIds: readonly string[],
     backgroundSyncPossible: boolean,
