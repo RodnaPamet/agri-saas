@@ -99,8 +99,22 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 
-# System deps for Prisma
-RUN apk add --no-cache openssl
+# System deps for Prisma, on a PATCHED base.
+#
+# `apk add` installs what is missing; it does NOT upgrade what the base image
+# already ships. `node:22-alpine` bakes in libcrypto3/libssl3, so adding
+# `openssl` on top left the pre-existing 3.5.7-r0 in place and the image
+# carried CVE-2026-14456 (HIGH, fixed upstream in 3.5.8-r0) across all three
+# of libcrypto3, libssl3 and openssl.
+#
+# The Trivy gate blocks on CRITICAL,HIGH and is ratchet-guarded against being
+# lowered (tests/guardrails/security-gate-strictness.test.ts), so the fix is to
+# patch the image rather than to widen the gate — which is the whole point of
+# having the ratchet.
+#
+# `upgrade` FIRST, then `add`: upgrading afterwards would leave whatever `add`
+# had just resolved against the stale index.
+RUN apk upgrade --no-cache && apk add --no-cache openssl
 
 # Non-root user
 RUN addgroup --system --gid 1001 nodejs && \
