@@ -394,6 +394,22 @@ const ghostGlass = [
 export const buttonVariants = cva(
   [
     "inline-flex items-center justify-center gap-tight whitespace-nowrap",
+    // ── Coarse-pointer touch floor (WCAG 2.5.5 / Apple HIG 44px) ──────
+    //
+    // The density ladder below is tuned for a mouse: 28 / 32 / 36 / 40px.
+    // Every rung of it is UNDER the 44px minimum for a finger, and this is
+    // a mobile-first product — the operator is in a field, on a phone,
+    // often wearing gloves. `sm` alone is 361 call sites at 32px.
+    //
+    // `min-h` only ever RAISES, so the desktop ladder is untouched: fine
+    // pointers keep the graded density that R20-PR-C/E/F and R24-PR-C
+    // tuned, and coarse pointers get a tap target that fits a thumb. The
+    // two goals stop competing rather than one losing.
+    //
+    // Borrowed from the sibling compliance product, which pairs it with a
+    // flat 28px ladder — there it is what makes that collapse safe on
+    // touch. Here the ladder stays; only the floor is adopted.
+    "pointer-coarse:min-h-11",
     // R22-PR-C — icon discipline. `[&_svg]:shrink-0` keeps icons
     // from being squished in dense flex contexts (the canonical
     // defensive Tailwind pattern). Per-size icon sizing lives on
@@ -642,7 +658,9 @@ export const buttonVariants = cva(
         // height as md so it lines up beside text buttons in the
         // detail-page header row. Callers MUST supply
         // `aria-label="…"` (lint enforces it for accessibility).
-        icon: "h-9 w-9 p-0 rounded-md tracking-normal font-medium [&_svg]:size-4",
+        // Icon-only is SQUARE, so the floor has to raise width as well —
+        // `min-h` alone would leave a 44x28 target that is still a miss.
+        icon: "h-9 w-9 p-0 rounded-md tracking-normal font-medium [&_svg]:size-4 pointer-coarse:min-w-11",
       },
     },
     defaultVariants: {
