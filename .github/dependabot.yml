@@ -105,6 +105,22 @@ updates:
       # held. Remove this entry as part of the migration, not before.
       - dependency-name: "@tanstack/react-table"
         update-types: ["version-update:semver-major"]
+      # conventional-changelog-conventionalcommits v10 requires
+      # conventional-changelog-writer@9+, and BOTH semantic-release plugins
+      # we use (@semantic-release/commit-analyzer, /release-notes-generator)
+      # pin writer ^8. Taking v10 therefore breaks `Release` — which it did:
+      # merged in a dev-deps group on 2026-08-24, Release failed on main for
+      # three consecutive runs, and #759 pinned the preset back to ^9.3.1.
+      #
+      # The failure is INVISIBLE ON THE PR. `Release` only runs on push to
+      # main, so a bump of this package goes green through every check and
+      # breaks after merge — which is how it got in the first time, and why
+      # an ignore is the right instrument rather than review discipline.
+      #
+      # PATCH AND MINOR ON 9.x STILL COME THROUGH. Lift this when the
+      # semantic-release plugins accept writer@9, not before.
+      - dependency-name: "conventional-changelog-conventionalcommits"
+        update-types: ["version-update:semver-major"]
 
   # ── GitHub Actions (monthly) ──
   - package-ecosystem: github-actions
