@@ -105,9 +105,22 @@ const INLINED_EMPTY = /NEXT_PUBLIC_MAPTILER_KEY:""/;
  */
 const NOT_INLINED = /NEXT_PUBLIC_MAPTILER_KEY:[A-Za-z_$][\w$]*\.env\.NEXT_PUBLIC_MAPTILER_KEY/;
 
-/** Positive controls — the two branch URLs the resolver can produce. */
-const DEMOTILES_LITERAL = 'demotiles.maplibre.org';
-const MAPTILER_LITERAL = 'api.maptiler.com';
+/**
+ * Positive controls — the two branch URLs the resolver can produce.
+ *
+ * Matched as ANCHORED PATTERNS over the full literal rather than as a
+ * hostname substring. Two reasons, and the second is the one that matters:
+ *
+ *  1. A bare `text.includes('demotiles.maplibre.org')` is what CodeQL's
+ *     `js/incomplete-url-substring-sanitization` flags, and it is right to —
+ *     the hostname can sit anywhere in a longer string.
+ *  2. More usefully, the hostname alone is NOT the control we want. It
+ *     appears in prose, in comments and in unrelated constants; what proves
+ *     the resolver still exists is the exact URL it emits. Pinning the full
+ *     literal makes the control specific to the thing it is controlling for.
+ */
+const DEMOTILES_STYLE_URL = /https:\/\/demotiles\.maplibre\.org\/style\.json/;
+const MAPTILER_STYLE_URL = /https:\/\/api\.maptiler\.com\/maps\//;
 
 async function collectJsFiles(dir: string): Promise<string[]> {
     const out: string[] = [];
@@ -157,8 +170,8 @@ export async function scanChunkDir(dir: string): Promise<BasemapScanResult> {
         } catch {
             continue;
         }
-        if (text.includes(DEMOTILES_LITERAL)) sawDemotilesLiteral = true;
-        if (text.includes(MAPTILER_LITERAL)) sawMaptilerLiteral = true;
+        if (DEMOTILES_STYLE_URL.test(text)) sawDemotilesLiteral = true;
+        if (MAPTILER_STYLE_URL.test(text)) sawMaptilerLiteral = true;
 
         // Order matters: INLINED_NON_EMPTY must be tested before INLINED_EMPTY,
         // since `""` would also satisfy a laxer non-empty pattern.
