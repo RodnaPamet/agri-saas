@@ -36,8 +36,13 @@ import { join } from 'node:path';
  *
  * ## The three inlined shapes, measured
  *
- * Next defines `process.env.NEXT_PUBLIC_*` only when the value is non-null and
- * emits `JSON.stringify(value)`, so:
+ * Next inlines a `NEXT_PUBLIC_*` variable only when its build-time value is
+ * non-null, and emits it through `JSON.stringify`, so:
+ *
+ * (Spelled without the `process.<env>.` prefix on purpose —
+ * `tests/unit/no-fallbacks.test.ts` bans that literal anywhere under `src/`,
+ * comments included, and it is right to: the ban is what keeps env access
+ * funnelled through `@/env`. This module reads no environment at all.)
  *
  * | build env            | emitted text                                  | branch    |
  * |----------------------|-----------------------------------------------|-----------|
