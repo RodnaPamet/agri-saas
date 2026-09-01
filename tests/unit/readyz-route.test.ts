@@ -174,6 +174,27 @@ describe('GET /api/readyz — capabilities.satellite is REPORTED, never GATING',
         expect(body.checks).not.toHaveProperty('satellite');
     });
 
+    it('reports capabilities.basemap, and it can never gate the probe (#781)', async () => {
+        process.env.REDIS_URL = 'redis://localhost:6379';
+        pingMock.mockResolvedValue('PONG');
+        const { GET } = loadRouteFresh();
+
+        const res = await GET();
+        const body = await res.json();
+
+        // Under jest there is no `.next/static/chunks` to scan, so the honest
+        // answer is `blind` — which is exactly the point: a fingerprint that
+        // cannot see the build says so instead of guessing a branch.
+        expect(res.status).toBe(200);
+        expect(body.status).toBe('ready');
+        expect(['maptiler', 'demotiles', 'blind']).toContain(body.capabilities.basemap.branch);
+        expect(body.failed).not.toContain('basemap');
+        expect(body.checks).not.toHaveProperty('basemap');
+        // The response is a closed enum plus counts — never the key, never a path.
+        expect(JSON.stringify(body.capabilities.basemap)).not.toContain('NEXT_PUBLIC_MAPTILER_KEY');
+        expect(JSON.stringify(body.capabilities.basemap)).not.toMatch(/\/app|\.next/);
+    });
+
     it('reports configured:true when both keys are present', async () => {
         process.env.REDIS_URL = 'redis://localhost:6379';
         process.env.GEE_PROJECT_ID = 'my-ee-project';

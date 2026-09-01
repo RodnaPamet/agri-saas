@@ -44,7 +44,8 @@
  *       // Degradable, OPTIONAL features — reported for operator
  *       // observability, never part of `checks`/`failed`, so they can
  *       // never 503 the probe.
- *       "satellite": { "configured": boolean, "missing": string[] }
+ *       "satellite": { "configured": boolean, "missing": string[] },
+ *       "basemap":   { "branch": "maptiler" | "demotiles" | "blind", ... }
  *     },
  *     "latencyMs": N           // total probe time
  *   }
@@ -63,6 +64,7 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { HeadBucketCommand, S3Client } from '@aws-sdk/client-s3';
 import { env } from '@/env';
 import { geeConfigStatus } from '@/lib/agro/gee-config';
+import { basemapBranchStatus } from '@/lib/geo/basemap-bundle-scan';
 import { jsonResponse } from '@/lib/api-response';
 import { logger } from '@/lib/observability/logger';
 
@@ -255,6 +257,17 @@ export async function GET() {
     // deliberately OUTSIDE `checks`/`failed` so it can never 503 the probe.
     const satellite = geeConfigStatus();
 
+    // Basemap branch (#781). Same argument as satellite, different silence: the
+    // map keeps WORKING when the MapTiler key is missing — it just falls back
+    // to a third-party demo CDN. There is no error to alert on, which is why
+    // nothing noticed. `resolveBasemapStyle` reads a build-time-inlined var, so
+    // the only honest place to read the answer is the shipped bundle itself;
+    // the workflow, the Dockerfile ARG and the code that READS the var all
+    // report the same thing on both branches. Memoized after the first probe
+    // (~90ms one-time over ~560 chunk files), OUTSIDE `checks`/`failed`, and
+    // the result is a closed enum — the key never appears in the response.
+    const basemap = await basemapBranchStatus();
+
     if (!allOk) {
         // Log the failure for observability — operators want to see
         // readyz failures in the logs even though the probe response
@@ -275,7 +288,7 @@ export async function GET() {
             version: process.env.BUILD_SHA || process.env.VERCEL_GIT_COMMIT_SHA || 'dev',
             checks,
             failed,
-            capabilities: { satellite },
+            capabilities: { satellite, basemap },
             latencyMs: Date.now() - start,
         },
         { status: allOk ? 200 : 503 },
