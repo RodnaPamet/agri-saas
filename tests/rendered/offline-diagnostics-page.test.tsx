@@ -29,7 +29,7 @@
  * assertions are on text, not layout, so the jsdom phone default is honest here.
  */
 import * as React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { DURABILITY_STORAGE_KEY } from '@/lib/offline/durability';
 
 jest.mock('next/navigation', () => ({
@@ -175,5 +175,90 @@ describe('offline diagnostics — probe 2 asks for caches BY NAME', () => {
         render(<OfflineDiagnosticsPage />);
 
         await waitFor(() => expect(screen.getByText('UNAVAILABLE')).toBeInTheDocument());
+    });
+});
+
+describe('offline diagnostics — the PASTED record, not just the screen', () => {
+    /**
+     * The page tells the operator to "press Copy and paste the text into the
+     * issue" (`diagnostics.offline.intro`), so for #648 the paste IS the
+     * artefact — a phone read at night, one-handed, is read from the paste.
+     *
+     * #763 added `blocked` / `blockedAuth` to the RENDERED rows and not to
+     * `asText`. That is the worst possible half: post-#761 nothing leaves the
+     * queue on a refused session or exhausted retries, it is retained and
+     * marked, so `pending` alone no longer separates "waiting for signal" from
+     * "will never move until you act". The record reaching the issue was
+     * missing exactly the number that distinguishes them.
+     *
+     * These assertions execute `asText`, which nothing did before.
+     */
+    const original = { ...snapshot };
+
+    afterEach(() => {
+        Object.assign(snapshot, original);
+    });
+
+    function captureClipboard() {
+        const writeText = jest.fn().mockResolvedValue(undefined);
+        Object.defineProperty(navigator, 'clipboard', {
+            configurable: true,
+            value: { writeText },
+        });
+        return writeText;
+    }
+
+    async function copiedText(): Promise<string> {
+        const writeText = captureClipboard();
+        render(<OfflineDiagnosticsPage />);
+
+        const button = await screen.findByRole('button', { name: 'Copy as text' });
+
+        // The button renders on the FIRST paint, while `outbox` is still null
+        // — clicking straight away copies `## outbox / unavailable` and the
+        // assertion below fails for a reason that has nothing to do with the
+        // fields under test. Observed intermittently before this wait: one of
+        // the two tests would capture the settled snapshot and the other the
+        // empty one, in the same run.
+        //
+        // `queueGrowing` renders ONLY inside the `outbox ? … : …` truthy
+        // branch, so its presence is proof the snapshot has landed.
+        await screen.findByText('queueGrowing');
+
+        fireEvent.click(button);
+
+        await waitFor(() => expect(writeText).toHaveBeenCalled());
+        return writeText.mock.calls[0][0] as string;
+    }
+
+    it('carries blocked and blockedAuth, so "3 pending" cannot be misread as "3 will send"', async () => {
+        Object.assign(snapshot, { pending: 3, pendingPhotos: 1, blocked: 2, blockedAuth: 1 });
+
+        const text = await copiedText();
+
+        expect(text).toContain('blocked=2');
+        expect(text).toContain('blockedAuth=1');
+    });
+
+    it('mirrors every outbox field the page renders — the omission was one field going missing', async () => {
+        Object.assign(snapshot, { pending: 3, pendingPhotos: 1, blocked: 2, blockedAuth: 1 });
+
+        const text = await copiedText();
+        const outboxLine = text.split('\n').find((l) => l.startsWith('pending='));
+
+        expect(outboxLine).toBeDefined();
+        // Same set, same order as the rendered rows in the `probes 4 · 6`
+        // section. A future row added to one and not the other fails here.
+        for (const field of [
+            'pending',
+            'photos',
+            'blocked',
+            'blockedAuth',
+            'foreign',
+            'conflicts',
+            'queueGrowing',
+        ]) {
+            expect(outboxLine).toContain(`${field}=`);
+        }
     });
 });

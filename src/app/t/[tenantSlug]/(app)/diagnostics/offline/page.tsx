@@ -278,9 +278,17 @@ export default function OfflineDiagnosticsPage() {
         if (caches_ === null) lines.push('Cache Storage unavailable in this context');
         lines.push('');
         lines.push('## outbox');
+        /* `blocked` / `blockedAuth` ride here in the same order as the rendered
+           rows, and their absence was the defect: this text is what actually
+           reaches the issue, and a phone read at night is read from the paste,
+           not from the screen. Post-#761 nothing leaves the queue on a refused
+           session or exhausted retries — it is RETAINED and marked — so
+           `pending` alone no longer separates "waiting for signal" from "will
+           never go until you act". Dropping the two fields that carry that
+           distinction left the decisive number out of the record. */
         lines.push(
             outbox
-                ? `pending=${outbox.pending} photos=${outbox.pendingPhotos} foreign=${outbox.foreign} conflicts=${outbox.conflicts.length} queueGrowing=${outbox.queueGrowing}`
+                ? `pending=${outbox.pending} photos=${outbox.pendingPhotos} blocked=${outbox.blocked} blockedAuth=${outbox.blockedAuth} foreign=${outbox.foreign} conflicts=${outbox.conflicts.length} queueGrowing=${outbox.queueGrowing}`
                 : 'unavailable',
         );
         lines.push(`manifestEntries: ${manifestCount ?? '?'}`);
