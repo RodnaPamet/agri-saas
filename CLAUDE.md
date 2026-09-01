@@ -1181,6 +1181,46 @@ duplicating the limits table).
       risk-matrix E2E spec).
   See `docs/implementation-notes/2026-05-21-e2e-isolation.md` and
   `tests/e2e/fixtures.ts`.
+- **The map surface is network-hermetic under E2E, held by TWO EXECUTING
+  assertions — not a guard, and not the DNS blackhole.** Every run that
+  mounted a map used to fetch `demotiles.maplibre.org`; it had already failed
+  on GitHub runners and been harmless only by luck of which specs assert what
+  (#764). MapLibre reaches it from three routes — `/locations/{id}` (whose
+  detail page DEFAULTS to the Map tab, so merely opening a location mounts
+  it), `/field/{taskId}` and `/farm-tasks/{taskId}` — so ~16 specs were
+  exposed, most with no map intent at all. That breadth is why the fix is an
+  app-level seam rather than a per-spec stub.
+    - **Client:** `NEXT_PUBLIC_MAP_BASEMAP_FIXTURE=1` makes
+      `resolveBasemapStyle` (`src/lib/geo/basemap-style.ts`) return an inline,
+      sources-free style **object** — zero requests. `NEXT_PUBLIC_*` is
+      inlined at **BUILD** time, so it belongs on the build step:
+      `ci.yml`'s `Build Next.js app` and `scripts/e2e-local.mjs`. Setting it
+      on `playwright test` is inert.
+    - **Server:** `E2E_BASEMAP_FIXTURE_TILES=1` makes the per-location basemap
+      proxy serve a checked-in 38-byte vector tile and never call `fetch`.
+      Separate from the client flag because that fetch runs in the **Node**
+      process, which Playwright route interception cannot see. A plain runtime
+      var, so ONE site — `playwright.config.ts`'s `webServer.command` —
+      covers CI, `e2e-local` and a bare `npx playwright test`.
+    - **`NEXT_PUBLIC_MAPTILER_KEY` must never be set in CI.** The fixture
+      branch is checked FIRST precisely so a runner that carries one stays
+      hermetic anyway.
+    - **The enforcement is `tests/e2e/map-basemap-hermetic.spec.ts`** (a live
+      `page.on('request')` observer against a written allowlist, plus an
+      absence-of-`AJAXError` assertion) **and the `X-Basemap-Source: fixture`
+      header** asserted in `offline-basemap.spec.ts` — the only observable
+      that separates "server half wired" from "server half unwired but the CDN
+      was up", because the proxy soft-fails to 204 and the download button
+      counts a 204 as success (#780). The `/etc/hosts` blackhole in `ci.yml`
+      is belt-and-braces only: **blocking the CDN does not turn the suite
+      red** — `maplibregl-canvas` is created synchronously in the Map
+      constructor before any style fetch, the map specs' controls are React
+      siblings of `<Map>`, and nothing asserts on console output. Both
+      runner-up designs proposed that blackhole AS the ratchet; it was
+      measured inert.
+    - The suite is **demotiles-hermetic, not hermetic**: `fonts.googleapis.com`
+      (#779) and `maps.isric.org` (#782) are allowlisted with written reasons.
+      A NEW external origin fails the spec until somebody decides otherwise.
 - `SKIP_ENV_VALIDATION=1` is set in `jest.setup.js` to prevent env loader crash in unit tests.
 - Coverage thresholds live in `jest.thresholds.json`, NOT in `jest.config.js`:
   jest 29.7's per-project (and multi-project top-level) `coverageThreshold` is
