@@ -1,6 +1,6 @@
 # 2026-09-01 — self-hosting the web fonts (#779)
 
-**Commit:** `<sha>` feat(fonts): self-host the web fonts instead of fetching them from Google
+**Commit:** `f3ee1c5d0` feat(fonts): self-host the web fonts instead of fetching them from Google
 
 ## Design
 
