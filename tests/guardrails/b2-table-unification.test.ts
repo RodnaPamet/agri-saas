@@ -59,10 +59,17 @@ describe('B2 — table unification', () => {
 
         it('cva size axis carries an `icon` square variant', () => {
             // The variant is the only honest way to make every edit
-            // button line up dimensionally. h-9 w-9 + no padding +
-            // size-4 icon by default.
+            // button line up dimensionally: square, zero padding, and
+            // the same height as the text buttons it sits beside.
+            //
+            // #776 collapsed the ladder to one 28px rung, so this moved
+            // h-9 w-9 -> h-7 w-7. The ASSERTION is unchanged in intent —
+            // square and padding-free — and is deliberately still pinned
+            // to a literal height rather than loosened to /h-\d/, because
+            // "square" alone would pass while the icon button drifted out
+            // of line with the text buttons, which is the whole property.
             expect(src).toMatch(
-                /icon:\s*"[^"]*h-9[^"]*w-9[^"]*p-0[^"]*"/,
+                /icon:\s*"[^"]*h-7[^"]*w-7[^"]*p-0[^"]*"/,
             );
         });
     });

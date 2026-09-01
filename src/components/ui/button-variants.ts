@@ -642,8 +642,8 @@ export const buttonVariants = cva(
         // variant carried its own 8px radius because at h-7 the
         // earlier 10px base read "pill-ish"; the canonicalisation to
         // `rounded-full` on the cva root makes that override moot.
-        xs: "h-7 px-2 text-[11px] gap-1 tracking-[0.005em] font-medium [&_svg]:size-3.5",
-        sm: "h-8 px-2.5 text-xs gap-1.5 tracking-[0.01em] font-medium [&_svg]:size-3.5",
+        xs: "h-7 px-[0.7rem] text-[0.76rem] gap-tight tracking-[0.005em] font-[560] [&_svg]:size-[15px]",
+        sm: "h-7 px-[0.7rem] text-[0.76rem] gap-tight tracking-[0.005em] font-[560] [&_svg]:size-[15px]",
         // Roadmap-6 P4 — mobile thumb-target floor. `md` is the DEFAULT
         // Button size, so raising its mobile min-height to 44px (WCAG 2.5.5
         // / Apple HIG) lifts every primary action into a comfortable tap
@@ -651,8 +651,8 @@ export const buttonVariants = cva(
         // `md:min-h-9` so dense toolbars / detail-header rows are unchanged.
         // Only `md` is touched — the compact sizes (xs/sm/icon) used in
         // dense tables + toolbars keep their existing heights.
-        md: "h-9 min-h-[44px] md:min-h-9 px-2.5 text-sm gap-tight tracking-[-0.005em] font-semibold [&_svg]:size-4",
-        lg: "h-10 px-3 text-sm gap-tight tracking-[-0.01em] font-bold [&_svg]:size-[18px]",
+        md: "h-7 px-[0.7rem] text-[0.76rem] gap-tight tracking-[0.005em] font-[560] [&_svg]:size-[15px]",
+        lg: "h-7 px-[0.7rem] text-[0.76rem] gap-tight tracking-[0.005em] font-[560] [&_svg]:size-[15px]",
         // B2 — icon-only button size variant. Square (h=w=h-9) so
         // the chrome stays balanced regardless of icon size; same
         // height as md so it lines up beside text buttons in the
@@ -660,7 +660,7 @@ export const buttonVariants = cva(
         // `aria-label="…"` (lint enforces it for accessibility).
         // Icon-only is SQUARE, so the floor has to raise width as well —
         // `min-h` alone would leave a 44x28 target that is still a miss.
-        icon: "h-9 w-9 p-0 rounded-md tracking-normal font-medium [&_svg]:size-4 pointer-coarse:min-w-11",
+        icon: "h-7 w-7 p-0 rounded-md tracking-normal font-[560] [&_svg]:size-[15px] pointer-coarse:min-w-11",
       },
     },
     defaultVariants: {
