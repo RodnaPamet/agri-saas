@@ -75,6 +75,11 @@ process.env.STORAGE_PROVIDER = process.env.STORAGE_PROVIDER || 'local';
 // hydration filters SoilSample by `env.SOIL_PROVIDER`, and it must not be
 // undefined under test.
 process.env.SOIL_PROVIDER = process.env.SOIL_PROVIDER || 'soilgrids';
+// #779: answer HIBP from a local fixture. `register-atomicity.test.ts` has no
+// jest.mock and drives the real register POST three times, so the coverage
+// lane made live api.pwnedpasswords.com requests on every PR. Assigned with
+// `??=` so a test that needs the real default can still override it.
+process.env.E2E_HIBP_FIXTURE ??= '1';
 process.env.CORS_ALLOWED_ORIGINS = 'http://localhost:3000';
 
 // Note: tests/unit/env.test.ts clears this and runs in a separate process

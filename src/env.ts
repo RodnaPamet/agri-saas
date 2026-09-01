@@ -124,6 +124,15 @@ export const env = createEnv({
         // different licence — one flag would make "which third party did this
         // run reach" unanswerable, which is the question #781 was about.
         E2E_SOIL_FIXTURE_TILES: z.enum(["0", "1"]).optional(),
+        // E2E/test ONLY. "1" makes checkPasswordAgainstHIBP answer from a
+        // local fixture instead of reaching api.pwnedpasswords.com. Every
+        // isolated-tenant test registers a user, so a full E2E run made ~55-65
+        // range requests; unreachable, each one burns the 2s abort SILENTLY
+        // (the helper fails open and nothing asserts on it) — ~2 minutes a run
+        // that looks like general slowness. Substitutes the TRANSPORT only:
+        // hashing, prefix/suffix split, parsing and the count comparison all
+        // still execute (#779).
+        E2E_HIBP_FIXTURE: z.enum(["0", "1"]).optional(),
         // When "1", the Credentials provider rejects sign-ins whose User row
         // has `emailVerified = null`. See src/lib/auth/credentials.ts. Default
         // is OFF so existing deployments behave unchanged until verification
@@ -617,6 +626,7 @@ export const env = createEnv({
         AUTH_TEST_MODE: process.env.AUTH_TEST_MODE,
         E2E_BASEMAP_FIXTURE_TILES: process.env.E2E_BASEMAP_FIXTURE_TILES,
         E2E_SOIL_FIXTURE_TILES: process.env.E2E_SOIL_FIXTURE_TILES,
+        E2E_HIBP_FIXTURE: process.env.E2E_HIBP_FIXTURE,
         AUTH_REQUIRE_EMAIL_VERIFICATION: process.env.AUTH_REQUIRE_EMAIL_VERIFICATION,
         UPSTASH_REDIS_REST_URL: process.env.UPSTASH_REDIS_REST_URL,
         UPSTASH_REDIS_REST_TOKEN: process.env.UPSTASH_REDIS_REST_TOKEN,
