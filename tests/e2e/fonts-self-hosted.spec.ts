@@ -75,39 +75,59 @@ test.describe('self-hosted web fonts', () => {
             external.push(`${req.method()} ${req.url()}`);
         });
 
+        // Font responses are collected from the NETWORK, which survives a
+        // navigation. `page.evaluate` does not: /login is client-rendered and
+        // something re-navigates shortly after the form appears (production
+        // `next start` runs the chunk-error auto-reload and the SW registrar),
+        // which destroys the execution context mid-probe. That cost two CI
+        // runs — the lesson is that a spec asserting on a settled page has to
+        // choose primitives that tolerate the page NOT being settled.
+        const fontResponses: { url: string; status: number }[] = [];
+        page.on('response', (res) => {
+            const u = res.url();
+            if (u.includes('/fonts/') && u.endsWith('.woff2')) {
+                fontResponses.push({ url: u, status: res.status() });
+            }
+        });
+
         await safeGoto(page, '/login', { timeout: 90_000 });
-        // `/login` is CLIENT-rendered and its credentials form is gated on a
-        // post-hydration provider fetch, so `domcontentloaded` is too early:
-        // the page navigates out from under `page.evaluate` and the execution
-        // context is destroyed mid-probe. Waiting on the form's email input is
-        // what `loginAndGetTenant` uses as its hydration anchor — by the time
-        // it is visible the page has settled and the fonts have been
-        // requested.
         await expect(
             page.locator('#credentials-form input[type="email"][name="email"]'),
         ).toBeVisible({ timeout: 60_000 });
 
         // ── 1. Each (family, script) pair resolves to at least one face ────
-        // `load()` REJECTS on a 404, so a rejection here is the 404 surfacing
-        // rather than being swallowed. The returned array length is the
+        // `waitForFunction` RE-EVALUATES after a navigation instead of
+        // rejecting, so it is the navigation-tolerant form of the probe.
+        // `load()` still rejects on a 404 — that rejection is captured per
+        // probe rather than swallowed. The returned array length is the
         // per-subset signal: 0 means no face covers this script.
-        const results = await page.evaluate(async (probes) => {
-            const out: { family: string; script: string; matched: number; error: string | null }[] = [];
-            for (const p of probes) {
-                try {
-                    const faces = await document.fonts.load(`600 16px "${p.family}"`, p.text);
-                    out.push({ family: p.family, script: p.script, matched: faces.length, error: null });
-                } catch (err) {
-                    out.push({
-                        family: p.family,
-                        script: p.script,
-                        matched: -1,
-                        error: err instanceof Error ? err.message : String(err),
-                    });
+        const handle = await page.waitForFunction(
+            async (probes) => {
+                const out: { family: string; script: string; matched: number; error: string | null }[] = [];
+                for (const p of probes) {
+                    try {
+                        const faces = await document.fonts.load(`600 16px "${p.family}"`, p.text);
+                        out.push({ family: p.family, script: p.script, matched: faces.length, error: null });
+                    } catch (err) {
+                        out.push({
+                            family: p.family,
+                            script: p.script,
+                            matched: -1,
+                            error: err instanceof Error ? err.message : String(err),
+                        });
+                    }
                 }
-            }
-            return out;
-        }, PROBES as unknown as { family: string; script: string; text: string }[]);
+                return out;
+            },
+            PROBES as unknown as { family: string; script: string; text: string }[],
+            { timeout: 60_000 },
+        );
+        const results = (await handle.jsonValue()) as {
+            family: string;
+            script: string;
+            matched: number;
+            error: string | null;
+        }[];
 
         for (const r of results) {
             expect(
@@ -120,11 +140,18 @@ test.describe('self-hosted web fonts', () => {
             ).toBeGreaterThan(0);
         }
 
+        // ── 1b. Every font the page actually requested came from us, and OK ─
+        // Independent of the probe above and immune to navigation: this is the
+        // 404 detector that cannot be raced.
+        expect(fontResponses.length, 'the page requested no self-hosted font at all').toBeGreaterThan(0);
+        const bad = fontResponses.filter((r) => r.status !== 200);
+        expect(bad, `self-hosted fonts returned non-200: ${JSON.stringify(bad)}`).toEqual([]);
+
         // ── 2. The app's OWN stack renders in the vendored family ──────────
         // Measured against the stack MINUS its first family, because a missing
         // family falls back to the browser default (serif) — so comparing to
         // `sans-serif` would pass on a broken font.
-        const widths = await page.evaluate((text) => {
+        const widthsHandle = await page.waitForFunction((text) => {
             const stack = getComputedStyle(document.body).fontFamily;
             const families = stack.split(',').map((s) => s.trim());
             const measure = (fontFamily: string) => {
@@ -144,7 +171,13 @@ test.describe('self-hosted web fonts', () => {
                 withoutFirst: measure(families.slice(1).join(', ')),
                 familyCount: families.length,
             };
-        }, 'Handgloves');
+        }, 'Handgloves', { timeout: 60_000 });
+        const widths = (await widthsHandle.jsonValue()) as {
+            stack: string;
+            withFirst: number;
+            withoutFirst: number;
+            familyCount: number;
+        };
 
         expect(widths.familyCount, `body font stack has no fallback to compare against: ${widths.stack}`)
             .toBeGreaterThan(1);
