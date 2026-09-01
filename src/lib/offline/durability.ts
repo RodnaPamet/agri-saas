@@ -23,16 +23,22 @@
  *  3. **Record loss durably** once detected, so it survives the reload and
  *     the operator cannot navigate away from it by accident.
  *
- * ## WHAT persist() RETURNS ON A REAL iPHONE IS STILL UNMEASURED
+ * ## WHAT persist() RETURNS ON A REAL iPHONE — MEASURED 2026-08-23/24
  *
  * The spike finding asked for `persisted()` / `persist()` / `estimate()` read
  * off a physical device in both mobile Safari and Home Screen mode. That
- * measurement has NOT been taken — nobody has run this on an iPhone.
+ * measurement HAS now been taken, on a physical iPhone, and the two contexts
+ * DISAGREE: mobile Safari REFUSES (`persisted: false`); the installed Home
+ * Screen PWA GRANTS (`persisted: true`). So installing the app is a real
+ * durability mitigation on iOS rather than a packaging preference — in
+ * Safari the behavioural mitigations are the only defence and eviction is
+ * live. See `docs/implementation-notes/2026-08-19-outbox-durability.md`.
  *
- * Rather than guess, this module MAKES the measurement: it calls the API,
- * stores the verdict under {@link DURABILITY_STORAGE_KEY}, and the offline
- * panel renders it. The first operator to open the app on a real device
- * answers the question by using it, and support can read the answer back.
+ * This module is what MADE that measurement and is what keeps making it: it
+ * calls the API, stores the verdict under {@link DURABILITY_STORAGE_KEY},
+ * and `/t/<slug>/diagnostics/offline` renders it. Support reads the answer
+ * back off the device from that cached verdict — which is also why the
+ * diagnostics page must never call `persist()` itself.
  *
  * That is why the behaviour here does not branch on the expected answer:
  * everything downstream (manifest, loss detection, the "on this phone" vs
