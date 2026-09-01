@@ -5,8 +5,10 @@
  * navigation, and that a full submit POSTs a new listing. Isolation: each
  * test runs on its own fresh tenant (isolatedTenant), which has the EXCHANGE
  * module available (a tenant with no module-settings row gets all modules).
- * The map (maplibre/WebGL) may not render under headless chromium, but the
- * header + modal are independent of it, so the flow is exercised regardless.
+ * The map is a bespoke 2D <canvas> renderer (NOT MapLibre, and so no
+ * third-party basemap CDN — see #764), and the header + modal are
+ * independent of it, so the flow is exercised regardless of whether it
+ * paints under headless chromium.
  *
  * All selectors use existing id attributes — no data-testid additions.
  */

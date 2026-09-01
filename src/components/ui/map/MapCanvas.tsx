@@ -18,7 +18,8 @@
  *
  * MapLibre GL (BSD-3) + react-map-gl (MIT) + terra-draw (MIT). Basemap is
  * MapTiler (satellite `hybrid` by default) when NEXT_PUBLIC_MAPTILER_KEY
- * is set, else the bare MapLibre demo style — see `resolveBasemapStyle`.
+ * is set, else the bare MapLibre demo style — see `resolveBasemapStyle`
+ * in `@/lib/geo/basemap-style`.
  * Geometry is GeoJSON in WGS84.
  */
 import 'maplibre-gl/dist/maplibre-gl.css';
@@ -31,10 +32,11 @@ import bbox from '@turf/bbox';
 import { Crosshairs3, MapPosition, Minus, Plus } from '@/components/ui/icons/nucleo';
 import { useReducedMotion } from '@/components/ui/hooks';
 import { cn } from '@/lib/cn';
-import { env } from '@/env';
+import type { StyleSpecification } from 'maplibre-gl';
 import { SOIL_PENDING_COLOR } from '@/lib/soil/types';
 import { CropGlyph } from '@/components/agriculture/CropGlyph';
 import { buildOfflineBasemapStyle } from '@/lib/geo/offline-basemap-style';
+import { resolveBasemapStyle } from '@/lib/geo/basemap-style';
 import { getOneShotPosition } from '@/lib/geo/one-shot-position';
 
 // Below this zoom the per-parcel crop glyphs are hidden — at a whole-region
@@ -220,10 +222,6 @@ export interface MapCanvasProps {
     className?: string;
 }
 
-// Bare outline-only basemap (no imagery). Used as the fallback when no
-// MapTiler key is configured, so the map still renders without signup.
-const DEMO_STYLE = 'https://demotiles.maplibre.org/style.json';
-
 /**
  * Where maplibre loads its web worker from. REQUIRED on maplibre v6 — without
  * it the map does not render at all.
@@ -254,21 +252,11 @@ const DEMO_STYLE = 'https://demotiles.maplibre.org/style.json';
  */
 const MAPLIBRE_WORKER_URL = '/maplibre/maplibre-gl-worker.mjs';
 
-/**
- * Resolve the basemap style URL. With a MapTiler key (referrer-restricted
- * in the dashboard — it's fetched in the browser, so necessarily public)
- * we render a real basemap; `hybrid` (satellite imagery + labels) is the
- * default and the best fit for an agriculture product. Without a key we
- * fall back to the bare MapLibre demo style.
- */
-function resolveBasemapStyle(): string {
-    const key = env.NEXT_PUBLIC_MAPTILER_KEY;
-    if (!key) return DEMO_STYLE;
-    const style = env.NEXT_PUBLIC_MAP_BASEMAP_STYLE;
-    return `https://api.maptiler.com/maps/${style}/style.json?key=${key}`;
-}
-
-const BASEMAP_STYLE = resolveBasemapStyle();
+// MapTiler when a key is configured, the keyless demotiles style otherwise —
+// and, under E2E only, an inline network-free fixture. The decision lives in
+// `@/lib/geo/basemap-style` so it can be unit-tested in milliseconds; see the
+// docblock there for the precedence and why the fixture branch comes first.
+const BASEMAP_STYLE: string | StyleSpecification = resolveBasemapStyle();
 
 export function MapCanvas({
     parcels,

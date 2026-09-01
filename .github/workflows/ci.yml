@@ -785,6 +785,16 @@ jobs:
           restore-keys: |
             nextcache-e2e-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-
 
+      # Belt-and-braces tripwire (#764). Blackholes the basemap CDN for the
+      # WHOLE job — browser AND the Next server process — so a run that still
+      # reaches it fails fast instead of silently depending on a third party.
+      # Nothing listens on 127.0.0.1:443, so it is ECONNREFUSED, never a hang.
+      # This is NOT the detector: tests/e2e/map-basemap-hermetic.spec.ts
+      # observes the request and names the URL. Do NOT append `|| true` — a
+      # step that cannot fail is a skipped step wearing a green tick.
+      - name: Blackhole the basemap CDN
+        run: echo "127.0.0.1 demotiles.maplibre.org" | sudo tee -a /etc/hosts
+
       - name: Build Next.js app
         # --webpack: match the deployed bundler (nonce strict-CSP chunks).
         run: npx next build --webpack
@@ -803,6 +813,14 @@ jobs:
           # `waitForLoadState('networkidle')` from settling within the
           # 180s test timeout on slow CI runners.
           NEXT_PUBLIC_TEST_MODE: "1"
+          # Hermetic basemap (#764): MapCanvas renders an inline, network-free
+          # fixture style instead of demotiles, so a run never depends on a
+          # third-party CDN being up. NEXT_PUBLIC_* is inlined at BUILD time
+          # (see above), so this MUST live here and not on `playwright test`.
+          # Mirrored in scripts/e2e-local.mjs. The SERVER half is
+          # E2E_BASEMAP_FIXTURE_TILES, set on webServer.command in
+          # playwright.config.ts — a runtime var needs no build-time inlining.
+          NEXT_PUBLIC_MAP_BASEMAP_FIXTURE: "1"
 
       # ── Playwright with browser cache ──
       - name: Get Playwright version

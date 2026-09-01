@@ -1,6 +1,9 @@
 /**
  * Pure helpers for ExchangeMap — split out so they're unit-testable without
- * importing maplibre-gl (which needs a browser/WebGL and can't load in jsdom).
+ * importing the renderer, which needs a browser `<canvas>` and can't load in
+ * jsdom. ExchangeMap is a bespoke 2D Canvas map, NOT MapLibre; the earlier
+ * wording here said maplibre-gl and is what put `exchange-create.spec.ts` on
+ * #764's list of CDN-exposed specs.
  */
 
 export interface ExchangeMapListing {

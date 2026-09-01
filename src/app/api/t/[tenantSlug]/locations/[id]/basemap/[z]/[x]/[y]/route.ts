@@ -24,6 +24,8 @@
  */
 import { NextRequest } from 'next/server';
 import { getTenantCtx } from '@/app-layer/context';
+import { env } from '@/env';
+import { basemapFixtureTile } from '@/lib/offline/basemap-fixture-tile';
 import { getLocationBounds } from '@/app-layer/usecases/location';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import {
@@ -64,6 +66,17 @@ export const GET = withApiErrorHandling(
             return new Response(null, { status: 404 });
         }
 
+        // E2E fixture mode: serve a checked-in vector tile instead of reaching
+        // the public demotiles upstream. Playwright route interception cannot
+        // see THIS fetch — it runs in the Next server process — so a hermetic
+        // E2E run needs the seam here rather than in the browser (#764).
+        // Placed AFTER every validation above, so the fixture path is exactly
+        // as bounded as the real one: a bad address is still a 400 and a tile
+        // outside the location's bbox is still a 404.
+        if (env.E2E_BASEMAP_FIXTURE_TILES === '1') {
+            return tileResponse(basemapFixtureTile(), 'fixture');
+        }
+
         const upstream = BASEMAP_UPSTREAM_TILE_TEMPLATE
             .replace('{z}', String(z))
             .replace('{x}', String(x))
@@ -75,6 +88,12 @@ export const GET = withApiErrorHandling(
                 // Never forward the caller's cookies/credentials to the public
                 // upstream; this is an anonymous natural-earth fetch.
                 headers: { Accept: 'application/x-protobuf,*/*' },
+                // There was no timeout here, and `DownloadBasemapButton` loops
+                // SEQUENTIALLY over up to BASEMAP_PACK_MAX_TILES=256 tiles — so
+                // a hanging upstream was a production stall, not the fast 204
+                // the catch below promises. An abort throws, which that catch
+                // already maps to 204.
+                signal: AbortSignal.timeout(5_000),
             });
         } catch {
             // Upstream unreachable → 204 so MapLibre simply skips the tile.
@@ -89,18 +108,32 @@ export const GET = withApiErrorHandling(
             return new Response(null, { status: 502 });
         }
 
-        const body = await res.arrayBuffer();
-        return new Response(body, {
-            status: 200,
-            headers: {
-                'Content-Type': 'application/x-protobuf',
-                // Public-domain natural-earth geometry (no tenant data) and
-                // immutable per tile — long-lived cache so a downloaded pack
-                // stays warm. The SW's dedicated basemap cache is the offline
-                // store; this header lets the HTTP cache help too.
-                'Cache-Control': 'public, max-age=604800, immutable',
-                'Content-Length': String(body.byteLength),
-            },
-        });
+        return tileResponse(await res.arrayBuffer(), 'upstream');
     },
 );
+
+/**
+ * The 200 response, shared by the fixture and upstream branches so their
+ * headers cannot drift apart.
+ */
+function tileResponse(body: ArrayBuffer | Buffer, source: 'fixture' | 'upstream') {
+    return new Response(body as BodyInit, {
+        status: 200,
+        headers: {
+            'Content-Type': 'application/x-protobuf',
+            // Public-domain natural-earth geometry (no tenant data) and
+            // immutable per tile — long-lived cache so a downloaded pack
+            // stays warm. The SW's dedicated basemap cache is the offline
+            // store; this header lets the HTTP cache help too.
+            'Cache-Control': 'public, max-age=604800, immutable',
+            'Content-Length': String(body.byteLength),
+            // Observable provenance of the bytes (public-domain data source,
+            // no secret). This is the ONLY signal that distinguishes "the
+            // server half is wired" from "the server half is unwired but the
+            // CDN happened to be up": the 204 soft-fail above makes those two
+            // indistinguishable from the client, and DownloadBasemapButton
+            // counts a 204 as a cached tile (#780).
+            'X-Basemap-Source': source,
+        },
+    });
+}

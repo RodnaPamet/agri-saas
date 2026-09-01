@@ -13,10 +13,10 @@
  * The pack is sourced from the MapLibre **demotiles** vector tiles
  * (`demotiles.maplibre.org`) — Natural Earth data, public domain — the SAME
  * source the app already renders as its keyless fallback basemap (see
- * `resolveBasemapStyle` in MapCanvas). We deliberately do NOT cache live
- * MapTiler tiles: MapTiler's licence for a wholesale/bulk offline copy is
- * unclear, so a bounded, user-initiated download of MapTiler imagery would
- * be a licensing risk. Natural-earth demotiles are unambiguously
+ * `resolveBasemapStyle` in `@/lib/geo/basemap-style`). We deliberately do
+ * NOT cache live MapTiler tiles: MapTiler's licence for a wholesale/bulk
+ * offline copy is unclear, so a bounded, user-initiated download of MapTiler
+ * imagery would be a licensing risk. Natural-earth demotiles are unambiguously
  * redistributable, so the offline pack degrades to the same coarse
  * (country / coastline / graticule) backdrop the app shows without a
  * MapTiler key — served SAME-ORIGIN so the service worker can cache it. The
