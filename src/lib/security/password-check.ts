@@ -26,6 +26,7 @@
  */
 
 import { logger } from '@/lib/observability/logger';
+import { env } from '@/env';
 
 export interface BreachedPasswordCheckOptions {
     /**
@@ -104,6 +105,46 @@ async function sha1Hex(input: string): Promise<string> {
  *   const r = await checkPasswordAgainstHIBP('hunter2');
  *   if (r.breached) return { error: 'Please choose a different password' };
  */
+/**
+ * Offline stand-in for the HIBP range API, used when `E2E_HIBP_FIXTURE=1`.
+ *
+ * Substitutes the TRANSPORT and nothing else. The caller still hashes the
+ * password, splits prefix/suffix, parses the response body line by line and
+ * compares counts against `minOccurrences` — so the code under test is the
+ * real code, with the network hop removed.
+ *
+ * It deliberately does NOT short-circuit to `{ breached: false }`. That would
+ * be the failure mode `basemap-fixture-tile.ts` names: a fixture that makes
+ * the test pass by removing the thing the test exercises. A caller asking
+ * "does this password get rejected" would then be asserting over a code path
+ * that no longer runs.
+ *
+ * The canonical weak password stays BREACHED so the rejection path is still
+ * reachable offline; every other password answers not-breached. That is more
+ * permissive than the real API, which is the safe direction: a fixture cannot
+ * newly reject a password an existing test relies on.
+ */
+const FIXTURE_BREACHED_PREFIX = '5BAA6';
+// SHA-1("password") minus its 5-char prefix. A published, universally-known
+// digest of the single most common password — not a credential.
+const FIXTURE_BREACHED_SUFFIX = '1E4C9B93F3F0682250B6CF8331B7EE68FD8'; // pragma: allowlist secret
+
+function hibpFixtureFetch(url: string): Promise<Response> {
+    const prefix = url.split('/').pop()?.toUpperCase() ?? '';
+    // Filler lines so the parser sees a realistic multi-line body rather than
+    // a degenerate one-line response it would never meet in production.
+    const lines = [
+        '0018A45C4D1DEF81644B54AB7F969B88D65:1',
+        '00D4F6E8FA6EECAD2A3AA415EEC418D38EC:2',
+    ];
+    if (prefix === FIXTURE_BREACHED_PREFIX) {
+        lines.push(`${FIXTURE_BREACHED_SUFFIX}:9999999`);
+    }
+    return Promise.resolve(
+        new Response(lines.join('\r\n'), { status: 200, headers: { 'Content-Type': 'text/plain' } }),
+    );
+}
+
 export async function checkPasswordAgainstHIBP(
     plaintext: string,
     options: BreachedPasswordCheckOptions = {},
@@ -111,7 +152,10 @@ export async function checkPasswordAgainstHIBP(
     const endpoint = options.endpoint ?? DEFAULT_ENDPOINT;
     const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     const minOccurrences = options.minOccurrences ?? 1;
-    const fetchImpl = options.fetchImpl ?? fetch;
+    // An explicit `fetchImpl` always wins — unit tests inject their own.
+    // The flag only replaces the DEFAULT transport, and only in test/E2E.
+    const defaultFetch = env.E2E_HIBP_FIXTURE === '1' ? hibpFixtureFetch : fetch;
+    const fetchImpl = options.fetchImpl ?? (defaultFetch as typeof fetch);
 
     let hash: string;
     try {

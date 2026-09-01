@@ -124,6 +124,14 @@ export default defineConfig({
         //     webserver hash `admin@acme.com` under different keys.
         // NOT a real secret; visible in source so no operator confuses it
         // for prod.
+        // E2E_HIBP_FIXTURE=1 is the same idea for the LAST third-party the
+        // suite reached on its own: api.pwnedpasswords.com. Every
+        // isolated-tenant test registers a user and /api/auth/register calls
+        // checkPasswordAgainstHIBP, so a full run made ~55-65 range requests —
+        // and with the endpoint unreachable each burns a 2s abort SILENTLY,
+        // because the helper fails open and nothing asserts on it (#779).
+        // Substitutes the TRANSPORT only, so hashing, parsing and the count
+        // comparison all still run.
         // E2E_SOIL_FIXTURE_TILES=1 is the same idea for the ISRIC soil WMS
         // (#782) — the SECOND third-party map origin, which #764's survey
         // missed. It needs no client half: unlike the basemap style, the soil
@@ -137,7 +145,7 @@ export default defineConfig({
         // The CLIENT half is NEXT_PUBLIC_MAP_BASEMAP_FIXTURE and must live on
         // the BUILD step (Next inlines NEXT_PUBLIC_* at build time) —
         // deliberately NOT repeated here, where it would be inert.
-        command: `DATA_ENCRYPTION_KEY=\${DATA_ENCRYPTION_KEY:-e2e-deterministic-test-encryption-key-32+-chars} npx cross-env NODE_ENV=test NODE_OPTIONS="--max-old-space-size=4096" NEXT_IGNORE_INCORRECT_LOCKFILE=1 AUTH_TEST_MODE=1 NEXT_TEST_MODE=1 NEXT_PUBLIC_TEST_MODE=1 E2E_BASEMAP_FIXTURE_TILES=1 E2E_SOIL_FIXTURE_TILES=1 AUTH_URL=http://localhost:${port} NEXTAUTH_URL=http://localhost:${port} PORT=${port} npx next start -p ${port}`,
+        command: `DATA_ENCRYPTION_KEY=\${DATA_ENCRYPTION_KEY:-e2e-deterministic-test-encryption-key-32+-chars} npx cross-env NODE_ENV=test NODE_OPTIONS="--max-old-space-size=4096" NEXT_IGNORE_INCORRECT_LOCKFILE=1 AUTH_TEST_MODE=1 NEXT_TEST_MODE=1 NEXT_PUBLIC_TEST_MODE=1 E2E_BASEMAP_FIXTURE_TILES=1 E2E_SOIL_FIXTURE_TILES=1 E2E_HIBP_FIXTURE=1 AUTH_URL=http://localhost:${port} NEXTAUTH_URL=http://localhost:${port} PORT=${port} npx next start -p ${port}`,
         port,
         reuseExistingServer: !isCI,
         timeout: 120_000,
