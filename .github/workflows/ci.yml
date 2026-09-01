@@ -923,13 +923,52 @@ jobs:
       - name: Run E2E tests
         # Skip the a11y spec here — run as the gate above. The functional
         # suite spans many files, so `--shard=i/2` splits them evenly.
-        run: npx playwright test --grep-invert "a11y" --shard=${{ matrix.shard }}/2
+        #
+        # ── #748: budget this step BELOW the job, the same way the `test`
+        #    job budgets jest ──
+        # `timeout-minutes: 40` does not fail this job, it CANCELS it, and a
+        # cancelled job skips every step whose `if:` lacks `always()` /
+        # `cancelled()` — so the two uploads below produced nothing, and the
+        # un-flushed log buffer went with the runner. That is how `fc71d0ff`
+        # reported `cancelled` while concealing two genuine test failures:
+        # `cancelled` reads as infrastructure noise, so main was left
+        # unverified and nobody looked.
+        #
+        # A shell timeout converts the overrun into a step FAILURE with its
+        # log intact — identical mechanism and rationale to the jest budget
+        # at the `test` job above. `--signal=INT` matters for Playwright
+        # specifically: on SIGINT it shuts down gracefully and still writes
+        # its HTML report and summary, so the artifact uploads have something
+        # to carry. `--kill-after=60s` is the backstop if it does not.
+        #
+        # 25m against a 40m job: the slowest healthy shard observed is
+        # ~6m of Playwright (setup accounts for the rest of the job), while
+        # every recorded overrun sat at 32-37m. So this fires only on the
+        # pathological case and leaves ~6m for the uploads.
+        run: |
+          status=0
+          timeout --signal=INT --kill-after=60s 25m \
+            npx playwright test --grep-invert "a11y" --shard=${{ matrix.shard }}/2 || status=$?
+
+          if [ "$status" -eq 124 ] || [ "$status" -eq 137 ]; then
+            echo "::error::E2E shard ${{ matrix.shard }} exceeded its 25-minute budget."
+            echo "::error::Failing the step rather than letting the job time out, so the"
+            echo "::error::Playwright report and traces below still upload and the log survives."
+            exit 1
+          fi
+          exit "$status"
         env:
           CI: "true"
 
       # ── Artifacts (always on non-success) ──
+      # `failure() || cancelled()`, not `failure()`: the header has always
+      # claimed "on non-success", and a cancellation is the non-success whose
+      # diagnosis is otherwise unavailable. The step budget above should mean
+      # this job now fails rather than cancels — this is the backstop for the
+      # cancellations it cannot catch (pathological setup, a manual cancel).
+      # `always()` would pay artifact storage on every green run instead.
       - name: Upload Playwright HTML report
-        if: failure()
+        if: ${{ failure() || cancelled() }}
         uses: actions/upload-artifact@v7
         with:
           name: playwright-report-shard-${{ matrix.shard }}
@@ -938,7 +977,7 @@ jobs:
         continue-on-error: true
 
       - name: Upload test results (traces, screenshots, videos)
-        if: failure()
+        if: ${{ failure() || cancelled() }}
         uses: actions/upload-artifact@v7
         with:
           name: playwright-test-results-shard-${{ matrix.shard }}
@@ -1411,6 +1450,16 @@ jobs:
         uses: docker/setup-buildx-action@v4
 
       - name: Build Docker image (no push)
+        # ── #748, second job type ──
+        # This step ran 31m49s against the job's `timeout-minutes: 30` on
+        # `212bafbd` and cancelled the job. Durations over the preceding 14
+        # runs were 10-20m, so the outlier is ~1.6x the worst normal build.
+        # A STEP budget fails the step instead, which keeps the job in
+        # `failure` rather than `cancelled` — the distinction the notifier
+        # and every human reader use to decide whether to investigate.
+        # No shell wrapper here: this is a `uses:` action, so `timeout` has
+        # nothing to wrap.
+        timeout-minutes: 24
         uses: docker/build-push-action@v7
         with:
           context: .
