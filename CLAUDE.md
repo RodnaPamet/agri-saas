@@ -546,9 +546,15 @@ to evict. Three rules, all load-bearing — see
   a test that exercises one path cannot catch it, which is why
   `tests/unit/offline/outbox-user-binding.test.ts` drives the enqueue cases
   from one table. Legacy items with no attribution still flush, and a drain
-  with no known user still drains everything — the service worker's
-  Background Sync drain calls `flushOutbox` with no owner (`public/sw.js`),
-  so the binding is enforced on the PAGE drain only.
+  with no known user still drains everything. **The service worker is a
+  separate case, and the rule above structurally cannot reach it:**
+  `public/sw.js` cannot import from `src/`, so its Background Sync drain is a
+  parallel REIMPLEMENTATION of the flush (`public/sw.js`'s own
+  `flushOutbox`, not the one in `sync.ts`) with no attribution concept at all
+  — zero occurrences of `queuedByUserId`, `foreign` or `owner`. So the
+  binding is enforced on the PAGE drain only, and `attribution()` living in
+  `src/` is exactly why: two implementations drifting is the same shape as
+  #786, one level up.
 
 New offline surfaces subscribe to the shared state; they do not add another
 `useState` count or another flush loop.
