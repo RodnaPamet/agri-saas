@@ -97,12 +97,20 @@ export const GET = withApiErrorHandling(
             });
         } catch {
             // Upstream unreachable → 204 so MapLibre simply skips the tile.
-            return new Response(null, { status: 204 });
+            //
+            // The header is what makes this tellable from the 204 below, and
+            // they mean OPPOSITE things: this one is a failure, that one is a
+            // correct answer. `DownloadBasemapButton` counted both as a cached
+            // tile, so an upstream outage produced a full sweep of 204s and a
+            // cheerful "Offline map ready" over an empty pack (#780).
+            return emptyTile('upstream-unreachable');
         }
 
-        // Upstream has no tile here (ocean / out of coverage) → 204.
+        // Upstream has no tile here (ocean / out of coverage) → 204. This one
+        // is legitimate: there is genuinely nothing to cache at this address,
+        // and a pack that skips it is complete.
         if (res.status === 204 || res.status === 404) {
-            return new Response(null, { status: 204 });
+            return emptyTile('upstream-empty');
         }
         if (!res.ok) {
             return new Response(null, { status: 502 });
@@ -116,7 +124,21 @@ export const GET = withApiErrorHandling(
  * The 200 response, shared by the fixture and upstream branches so their
  * headers cannot drift apart.
  */
-function tileResponse(body: ArrayBuffer | Buffer, source: 'fixture' | 'upstream') {
+/**
+ * Every value `X-Basemap-Source` can take. A union rather than a bare string
+ * because the header is now the ONLY thing separating an upstream outage from
+ * a correct "no tile here" (#780) — a fifth value added without the compiler
+ * noticing is how the two 204s came to be indistinguishable in the first
+ * place.
+ */
+type BasemapSource = 'fixture' | 'upstream' | 'upstream-unreachable' | 'upstream-empty';
+
+/** A 204 — no tile — carrying WHY. MapLibre skips it either way; the caller cannot. */
+function emptyTile(source: Extract<BasemapSource, `upstream-${string}`>): Response {
+    return new Response(null, { status: 204, headers: { 'X-Basemap-Source': source } });
+}
+
+function tileResponse(body: ArrayBuffer | Buffer, source: BasemapSource) {
     return new Response(body as BodyInit, {
         status: 200,
         headers: {
@@ -130,9 +152,10 @@ function tileResponse(body: ArrayBuffer | Buffer, source: 'fixture' | 'upstream'
             // Observable provenance of the bytes (public-domain data source,
             // no secret). This is the ONLY signal that distinguishes "the
             // server half is wired" from "the server half is unwired but the
-            // CDN happened to be up": the 204 soft-fail above makes those two
-            // indistinguishable from the client, and DownloadBasemapButton
-            // counts a 204 as a cached tile (#780).
+            // CDN happened to be up", because a 200 looks identical either
+            // way. The 204 paths above now carry the same header for the same
+            // reason — an unreachable upstream and a genuinely empty tile are
+            // both 204 and mean opposite things (#780).
             'X-Basemap-Source': source,
         },
     });

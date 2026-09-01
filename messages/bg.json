@@ -5009,6 +5009,7 @@
             "offlineMapDownloading": "Сваляне… {done}/{total}",
             "offlineMapDownloaded": "Офлайн картата е готова",
             "offlineMapReady": "Офлайн картата е запазена — картата на този парцел вече работи без сигнал.",
+            "offlineMapPartial": "Офлайн картата е непълна — {stored} запазени, {missing} липсват. Докоснете за нов опит.",
             "offlineMapFailed": "Неуспешно запазване на офлайн картата. Опитайте отново при връзка.",
             "dnevnikBtn": "Дневник (PDF)",
             "coachTitle": "Планирайте земеделска задача",
