@@ -44,15 +44,21 @@ describe('E2E_HIBP_FIXTURE — offline transport', () => {
         // would be green over a code path that no longer runs.
         process.env.E2E_HIBP_FIXTURE = '1';
         const r = await checkPasswordAgainstHIBP('password');
+        // `breached: true` is its own arm of the union, so reaching it already
+        // excludes the upstream-error arm — the fixture completed, it did not
+        // fail open.
         expect(r.breached).toBe(true);
-        expect(r.skipped).toBeFalsy();
     });
 
     it('reports an ordinary password as not breached', async () => {
         process.env.E2E_HIBP_FIXTURE = '1';
         const r = await checkPasswordAgainstHIBP('c9c1f0a4-not-in-any-corpus');
         expect(r.breached).toBe(false);
-        expect(r.skipped).toBeFalsy();
+        // The union's error arm ALSO reports `breached: false`, so this second
+        // assertion is what separates "the fixture answered not-breached" from
+        // "the check failed open and we learned nothing". Without it a broken
+        // fixture would look exactly like a clean pass.
+        expect(r).not.toHaveProperty('skipped');
     });
 
     it('exercises the REAL parse path, not a short-circuit', async () => {
